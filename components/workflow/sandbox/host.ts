@@ -22,6 +22,7 @@ import {
   PHASE1_METHODS,
   RATE,
   SHELL_PATH,
+  STORAGE_AREAS,
   STREAM,
   UPDATE,
   VIEWPORT,
@@ -33,6 +34,9 @@ import {
   type BridgeResponse,
   type FramePayload,
   type HostViewport,
+  type StorageArea,
+  type StorageBatch,
+  type StorageSeed,
   type StreamMessage,
 } from './protocol';
 import {
@@ -244,6 +248,137 @@ export function checkDownload(params: Record<string, unknown>): {
 // ---------------------------------------------------------------------------
 
 /** What the frame gets back for a fetch: enough to build a Response. */
+// ---------------------------------------------------------------------------
+// Storage: what render code keeps in localStorage / sessionStorage
+// ---------------------------------------------------------------------------
+
+/** Every key a sandboxed page or workflow keeps on the host starts with this. */
+export const STORAGE_PREFIX = 'labs-sandbox-storage:';
+
+/** A `storage` request, checked: the area, and only strings, within the limits. */
+export function checkStorageBatch(
+  params: Record<string, unknown>,
+): StorageBatch {
+  const area = params.area as StorageArea;
+  if (!STORAGE_AREAS.includes(area)) {
+    throw new BridgeError('storage: area must be local or session');
+  }
+  const key = (k: unknown) => {
+    if (typeof k !== 'string' || k.length > LIMITS.storageKeyLength) {
+      throw new BridgeError('storage: a key must be a short string');
+    }
+    return k;
+  };
+  const set: Record<string, string> = {};
+  if (params.set !== undefined) {
+    if (!isPlainObject(params.set)) {
+      throw new BridgeError('storage: set must be an object');
+    }
+    for (const [k, v] of Object.entries(params.set)) {
+      if (typeof v !== 'string') {
+        throw new BridgeError('storage: a value must be a string');
+      }
+      set[key(k)] = v;
+    }
+  }
+  const remove: string[] = [];
+  if (params.remove !== undefined) {
+    if (
+      !Array.isArray(params.remove) ||
+      params.remove.length > LIMITS.storageKeys
+    ) {
+      throw new BridgeError('storage: remove must be a list of keys');
+    }
+    for (const k of params.remove) remove.push(key(k));
+  }
+  return { area, clear: params.clear === true, set, remove };
+}
+
+function storedBytes(entries: Iterable<[string, string]>): number {
+  let n = 0;
+  for (const [k, v] of entries) n += k.length + v.length;
+  return n;
+}
+
+/**
+ * The host's own localStorage / sessionStorage, as ONE page or workflow sees it:
+ * only keys under `labs-sandbox-storage:<scope>:`, with that prefix taken off. The
+ * scope is the host's (the definition id it drew), never the frame's say, so a
+ * frame reads and writes its own keys and nothing else of labs'. With no scope, or
+ * where the host's storage throws, nothing is kept: the frame's in-memory copy is
+ * all there is, as before.
+ */
+export function scopedStorage(win: Window, scope: string | null) {
+  const prefix = scope ? `${STORAGE_PREFIX}${scope}:` : null;
+  const areaOf = (name: StorageArea): Storage | null => {
+    if (!prefix) return null;
+    try {
+      return name === 'local' ? win.localStorage : win.sessionStorage;
+    } catch {
+      return null;
+    }
+  };
+  const entries = (s: Storage, start: string): [string, string][] => {
+    const out: [string, string][] = [];
+    for (let i = 0; i < s.length; i += 1) {
+      const k = s.key(i);
+      if (k === null || !k.startsWith(start)) continue;
+      out.push([k, s.getItem(k) ?? '']);
+    }
+    return out;
+  };
+  return {
+    seed(): StorageSeed {
+      const seed: StorageSeed = { local: {}, session: {} };
+      for (const name of STORAGE_AREAS) {
+        const s = areaOf(name);
+        if (!s) continue;
+        try {
+          for (const [k, v] of entries(s, prefix!)) {
+            seed[name][k.slice(prefix!.length)] = v;
+          }
+        } catch {
+          // unreadable: start empty
+        }
+      }
+      return seed;
+    },
+    apply(batch: StorageBatch): void {
+      const s = areaOf(batch.area);
+      if (!s) return;
+      const own = new Map(
+        entries(s, prefix!).map(([k, v]) => [k.slice(prefix!.length), v]),
+      );
+      const drop = batch.clear ? Array.from(own.keys()) : [];
+      drop.push(...batch.remove);
+      for (const k of drop) {
+        own.delete(k);
+        s.removeItem(prefix + k);
+      }
+      for (const [k, v] of Object.entries(batch.set)) own.set(k, v);
+      if (own.size > LIMITS.storageKeys) {
+        throw new BridgeError('storage: too many keys for one page');
+      }
+      const mine = storedBytes(own);
+      if (mine > LIMITS.storageBytes) {
+        throw new BridgeError('storage: too much stored for one page');
+      }
+      const others = storedBytes(
+        entries(s, STORAGE_PREFIX).filter(([k]) => !k.startsWith(prefix!)),
+      );
+      if (others + mine > LIMITS.storageTotalBytes) {
+        throw new BridgeError('storage: no room left in this browser');
+      }
+      try {
+        for (const [k, v] of Object.entries(batch.set))
+          s.setItem(prefix + k, v);
+      } catch {
+        throw new BridgeError('storage: the browser has no room');
+      }
+    },
+  };
+}
+
 export interface FetchAnswer {
   status: number;
   statusText: string;
@@ -535,6 +670,8 @@ export interface HostHandlers {
   confirm(text: string): Promise<boolean>;
   download(file: { filename: string; mime: string; bytes: Uint8Array }): void;
   reportError(message: string): void;
+  /** Keep a batch of storage changes (scopedStorage). Without it, nothing is kept. */
+  storage?(batch: StorageBatch): void;
 }
 
 /**
@@ -627,7 +764,7 @@ export const PINNED_ADDRESS_PARAMS = [
 export const RUN_ONLY_METHODS = ['updateState', 'completeRun'];
 
 /** Methods outside the request budget (see the dispatcher). */
-const UNCOUNTED_METHODS = ['resize', 'scroll', 'reveal'];
+const UNCOUNTED_METHODS = ['resize', 'scroll', 'reveal', 'storage'];
 
 /** Answer one frame request at a time: `(request) => response`, never throwing. */
 export function createDispatcher(
@@ -645,6 +782,7 @@ export function createDispatcher(
   const streams = new Map<string, AbortController>();
   const streamOpens: number[] = [];
   const jobStarts: number[] = [];
+  const storageWrites: number[] = [];
   let streamSeq = 0;
   let warnedTall = false;
 
@@ -964,6 +1102,20 @@ export function createDispatcher(
         handlers.download(checkDownload(params));
         return true;
       }
+      case 'storage': {
+        // Its own budget: storage is written as render code runs, and must never
+        // crowd out the requests the page draws with.
+        perMinute(
+          storageWrites,
+          LIMITS.storageWritesPerMinute,
+          'storage writes',
+        );
+        if (bytesOf(params) > LIMITS.storageBytes + 64 * 1024) {
+          throw new BridgeError('storage: too much in one change');
+        }
+        handlers.storage?.(checkStorageBatch(params));
+        return true;
+      }
       case 'reportError': {
         const message =
           typeof params.message === 'string' ? params.message : '';
@@ -1170,8 +1322,12 @@ export function createDispatcher(
       const cap = full ? LIMITS.workflowParamsBytes : LIMITS.paramsBytes;
       if (
         !isPlainObject(params) ||
-        // A download's bytes and a fetch's body are sized against their own caps.
-        (method !== 'download' && method !== 'fetch' && bytesOf(params) > cap)
+        // A download's bytes, a fetch's body and a storage change are sized
+        // against their own caps.
+        (method !== 'download' &&
+          method !== 'fetch' &&
+          method !== 'storage' &&
+          bytesOf(params) > cap)
       ) {
         throw new BridgeError('params must be a small plain object');
       }
@@ -1227,7 +1383,11 @@ export interface SandboxHostOptions {
   container: HTMLElement;
   labsOrigin: string;
   payload: FramePayload;
-  handlers: Omit<HostHandlers, 'resize' | 'scroll' | 'reveal'>;
+  handlers: Omit<HostHandlers, 'resize' | 'scroll' | 'reveal' | 'storage'>;
+  /** Whose storage the frame reads and writes (the definition id): its keys are
+   * kept on this page's localStorage / sessionStorage under that name only. Null:
+   * in memory only. */
+  storageScope?: string | null;
   /** 'workflow' to answer the phase-2 methods (routeContext and workflow needed). */
   mode?: SandboxMode;
   routeContext?: RouteContext;
@@ -1465,9 +1625,11 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
         })
       : null;
 
+  const storage = scopedStorage(win, options.storageScope ?? null);
   const dispatch = createDispatcher(
     {
       ...options.handlers,
+      storage: (batch) => storage.apply(batch),
       resize: (h) => {
         iframe.style.height = `${h}px`;
         sendViewport();
@@ -1530,9 +1692,11 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
     placeHorizontally();
     const viewport = viewportNow();
     sentViewport = JSON.stringify(viewport);
-    iframe.contentWindow?.postMessage({ type: INIT, payload, viewport }, '*', [
-      channel.port2,
-    ]);
+    iframe.contentWindow?.postMessage(
+      { type: INIT, payload, viewport, storage: storage.seed() },
+      '*',
+      [channel.port2],
+    );
   }
 
   function onLoad() {

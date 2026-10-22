@@ -57,8 +57,6 @@ def test_each_breaking_pattern_is_found(line, pattern):
 
 
 CHANGING = [
-    ("localStorage.setItem('k', 'v');", "storage"),
-    ("sessionStorage.getItem('k');", "storage"),
     ("const f = <form onSubmit={save}><button/></form>;", "form_submit"),
 ]
 
@@ -83,6 +81,9 @@ WORKS = [
     ("const c = document.cookie;", "document_cookie"),
     ("alert('Saved');", "alert"),
     ("window.alert('Saved');", "alert"),
+    # Kept by the host for this workflow (host.ts scopedStorage).
+    ("localStorage.setItem('k', 'v');", "storage"),
+    ("sessionStorage.getItem('k');", "storage"),
 ]
 
 

@@ -147,7 +147,8 @@ render code receives today, with `actions` / `view` functions that are bridge ca
 (phase-1 methods; phase-2 ones reject with "not available on a page yet").
 
 It also: intercepts clicks on `<a>` (capture phase) and turns them into `navigate`
-(honouring `target="_blank"`); installs in-memory `localStorage` / `sessionStorage`;
+(honouring `target="_blank"`); installs in-memory `localStorage` / `sessionStorage`,
+seeded and kept by the host ("Storage" below);
 reports its content height with a `ResizeObserver`; catches render errors and reports them;
 makes its window the host's (`components/workflow/sandbox/viewport.ts`, "Sizing" below).
 
@@ -295,6 +296,32 @@ Built as written, with these differences, each for the reason given:
 - **`localStorage` in the live test.** The frame shims storage in memory (component 4),
   so "must fail" is checked as "the page cannot see labs' storage": a key the host page
   set is absent in the frame.
+
+### Storage
+
+Render code that keeps a filter, a tab or a sign-in's return state in `localStorage` /
+`sessionStorage` finds it there on the next load, as on the run page (Ward Progress
+Tracker, the KMC audit dashboard and MBW copies do; added 2026-10-22 under the
+no-exemptions ruling). The frame's storage stays in memory, so render code reads and
+writes it synchronously; the host seeds it in INIT (`storage`) and keeps every change:
+
+- **Scope is the host's.** Keys live on the labs page's own storage under
+  `labs-sandbox-storage:<definition id>:` (`host.ts scopedStorage`); the frame never
+  names a scope, sees only its own keys with the prefix taken off, and can neither read
+  nor write any other key of labs' or of another workflow's. A page is scoped the same
+  way (a page is a workflow with no run). With no definition id, nothing is kept.
+- **Order.** The frame batches changes (one `storage` request per area per 50 ms) and
+  sends what is waiting before any other request, so `sessionStorage.setItem(...)`
+  then a navigation reaches the host in that order; the host applies each message
+  before the next one is handled.
+- **Limits** (`protocol.ts LIMITS`): 512 KB and 500 keys per scope per area, 2 MB for
+  every sandboxed scope together in one browser (labs keeps the rest of the origin's
+  room), 1,200 batches a minute on their own budget, so storage never crowds out a
+  page's requests. Over a limit the batch is refused and the frame's copy keeps the
+  value until the reload.
+- **Not carried over:** what the plain run page stored under its own keys. Reading
+  those would hand a frame keys it cannot be shown to own, so the first sandboxed
+  load starts empty.
 - **The unsandboxed runner gains `view.confirm`, `actions.download` and
   `actions.copyText` too**, so a page author's code works the same in both places.
 - The webpack entry is in `webpack/base.config.js` (there is no `webpack.config.js`).
@@ -417,7 +444,7 @@ land is checked against the table again. Request headers are cut to `content-typ
 | `EventSource` | read by the host for the frame (bridge `streamOpen`), for a GET the route table allows as a read; does not reconnect (see "Compile-time rewrites" below; until then it was absent) |
 | `window.location = ...`, `location.reload()` | compiled, in the frame only, to `__labsSandbox.location`, whose changes are bridge `navigate` (see "Compile-time rewrites"). It cannot be shimmed at run time: the Navigation API that could cancel a navigation is disabled in an opaque-origin document (checked in Chromium) |
 | `window.confirm` | directly in an async function or an event handler: compiled to an awaited host question; anywhere else answers No, with a host notice (see "Compile-time rewrites") |
-| `alert`, `window.open`, `history.pushState/replaceState`, `navigator.clipboard`, `<a download href="blob:">`, `document.cookie`, the DOM CSRF token, `#user-opportunities`, `WORKFLOW_API_ENDPOINTS`, `localStorage` | host notice; `navigate` in a new tab; the host's query/hash (same path); `copyText`; `download`; `""`; a dummy (the host adds the real token); this workflow's opportunities only; passed in; in memory |
+| `alert`, `window.open`, `history.pushState/replaceState`, `navigator.clipboard`, `<a download href="blob:">`, `document.cookie`, the DOM CSRF token, `#user-opportunities`, `WORKFLOW_API_ENDPOINTS`, `localStorage` | host notice; `navigate` in a new tab; the host's query/hash (same path); `copyText`; `download`; `""`; a dummy (the host adds the real token); this workflow's opportunities only; passed in; kept by the host for this workflow ("Storage") |
 | `window.LabsReport`, `ConnectMap`, `PlanLayers`, `MicroplansMapPanel`, `LabsAudit`, Chart.js, Leaflet, Mapbox GL | loaded by the shell from labs static and the pinned CDN URLs; Leaflet tiles from OpenStreetMap and CARTO are now in img-src (GETs to tile servers nobody here controls) |
 
 ### Rollout

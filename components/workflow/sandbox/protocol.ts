@@ -4,7 +4,7 @@
  * Spec: docs/superpowers/specs/2026-10-12-page-sandbox-design.md, "The bridge".
  *
  *   frame -> parent (window):  {type: HELLO}                     until INIT arrives
- *   host  -> frame  (window):  {type: INIT, payload} + one MessagePort
+ *   host  -> frame  (window):  {type: INIT, payload, viewport, storage} + one MessagePort
  *   host  -> frame  (port):    {type: UPDATE, payload}
  *   frame -> host   (port):    {id, method, params}  ->  {id, result} | {id, error}
  *   host  -> frame  (port):    {type: STREAM, stream, kind, ...}  (an EventSource the
@@ -77,6 +77,9 @@ export const PHASE1_METHODS = [
   'confirm',
   'download',
   'reportError',
+  // What render code put in localStorage / sessionStorage: kept by the host for THIS
+  // page or workflow (host.ts scopedStorage), so it is there on the next load.
+  'storage',
 ] as const;
 export type BridgeMethod = (typeof PHASE1_METHODS)[number];
 
@@ -158,6 +161,16 @@ export const LIMITS = {
   streamOpensPerMinute: 20,
   /** Requests that start server-side work (a job, a footprints fetch), per minute. */
   jobStartsPerMinute: 30,
+  /** What one page or workflow keeps in each of localStorage and sessionStorage on
+   * the host (keys plus values, in characters), and how many keys. */
+  storageBytes: 512 * 1024,
+  storageKeys: 500,
+  storageKeyLength: 512,
+  /** ...and every sandboxed page and workflow together, in one browser: labs' own
+   * storage keeps the rest of the origin's room. */
+  storageTotalBytes: 2 * 1024 * 1024,
+  /** Batches of storage changes per minute (the frame sends at most one per 50 ms). */
+  storageWritesPerMinute: 1_200,
 };
 
 /** Per-mode request budgets: a workflow loads images and rows a page never does. */
@@ -224,6 +237,21 @@ export const NAVIGATE_DENIED_PARAMS = [
   'return_to',
   'return_url',
 ];
+
+export type StorageArea = 'local' | 'session';
+export const STORAGE_AREAS: StorageArea[] = ['local', 'session'];
+
+/** What INIT carries of this page's or workflow's storage: every key it kept. */
+export type StorageSeed = Record<StorageArea, Record<string, string>>;
+
+/** The `storage` request: changes since the last one, applied in this order --
+ * `clear`, then `remove`, then `set` (the frame keeps the two lists apart). */
+export interface StorageBatch {
+  area: StorageArea;
+  clear: boolean;
+  set: Record<string, string>;
+  remove: string[];
+}
 
 export interface BridgeRequest {
   id: number | string;

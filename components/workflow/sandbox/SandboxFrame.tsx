@@ -203,6 +203,11 @@ export function SandboxFrame(props: SandboxFrameProps) {
       mode: props.mode,
       routeContext: wf?.routeContext,
       workflow: workflowHandlers,
+      // What render code keeps in localStorage / sessionStorage is this
+      // definition's, on this page: kept across loads, seen by no other.
+      storageScope: wf?.routeContext.definitionId
+        ? String(wf.routeContext.definitionId)
+        : null,
       search: window.location.search,
       handlers: {
         querySupply: (alias, args) => propsRef.current.querySupply(alias, args),
