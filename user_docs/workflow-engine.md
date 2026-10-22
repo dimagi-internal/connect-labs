@@ -117,7 +117,7 @@ When you open a workflow or page in the sandbox, it looks and scrolls exactly li
 One deliberate difference from the normal page: a header row set to stay fixed at the top of the report sticks just below the Labs header, where it remains visible as you scroll. On the normal page, that same sticky header can slide underneath the Labs header and become hidden.
 
 !!! note "All live workflows are fully compatible with the sandbox"
-    Every workflow that exists on Labs today works correctly in the protected frame. This includes the older MBW monitoring dashboards, which load their data, stream their progress, open GPS details, and save snapshots as normal. Authorization buttons (such as **Authorize CommCare** or **Authorize OCS**) bring you back to the workflow after you sign in. Any confirmation question a workflow presents is shown in Labs' own dialog and properly waited for before continuing. No workflow requires an exemption from the sandbox.
+    Every workflow that exists on Labs today works correctly in the protected frame. This includes the older MBW monitoring dashboards, which load their data, stream their progress, open GPS details, and save snapshots as normal. The GPS map groups its markers into clusters exactly as it does outside the sandbox. Authorization buttons (such as **Authorize CommCare** or **Authorize OCS**) bring you back to the workflow after you sign in. Any confirmation question a workflow presents is shown in Labs' own dialog and properly waited for before continuing. No workflow requires an exemption from the sandbox.
 
 #### Sandbox exemptions
 
@@ -210,4 +210,4 @@ The **R2 Revisit Analysis** report — the CHC study's second-revisit planning t
 
 The planning table lists work areas and their R2 selection status for the organisation and ward you choose. Two additional columns appear for each ward:
 
-- **EVC per building** — the ward's total expected visit count divided by its
+- **
