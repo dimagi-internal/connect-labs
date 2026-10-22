@@ -270,7 +270,12 @@
     box.hidden = false;
     try {
       const data = await post(cfg.visitsUrl, {
-        opportunity_ids: selected(),
+        // The opportunities the shown result came from, not the current ticks: the
+        // person may have changed the selection since running it.
+        opportunity_ids:
+          lastResult && lastResult.opportunities
+            ? lastResult.opportunities.map((o) => o.id)
+            : selected(),
         visit_ids: [visitId],
       });
       const visit = data.visits[0];
