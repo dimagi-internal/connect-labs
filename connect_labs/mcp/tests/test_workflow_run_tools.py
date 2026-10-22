@@ -608,3 +608,22 @@ def test_the_agent_is_told_to_say_nothing_before_the_preview():
     # Live 2026-10-09: two previews, two cards in the chat.
     assert "preview ONCE" in CHAT_AFTER_PREVIEW
     assert CHAT_AFTER_PREVIEW in HOW_TO_RUN_CLICK_TO_SEND
+
+
+def test_a_workflow_that_offers_the_data_agent_takes_no_actions_from_any_embedded_agent(user, actionable, monkeypatch):
+    definition = _definition_with_opps()
+    definition.data["config"]["agent"] = {"share": True, "agent": "data"}
+    actionable.get_definition.return_value = definition
+    monkeypatch.setattr(wa, "_delegated_token", lambda: MagicMock(client_id="canopy"))
+    with pytest.raises(MCPToolError) as e:
+        _call(
+            "workflow_run_action",
+            user,
+            run_id=70,
+            program_id=25,
+            action="initiate_ai_coach",
+            arguments={"workers": [{"key": "10::asha", "prompt": "x"}]},
+        )
+    assert e.value.code == "PERMISSION_DENIED" and "data agent" in str(e.value)
+    # Reading the run is still fine.
+    assert _call("workflow_run_context", user, run_id=70, program_id=25)

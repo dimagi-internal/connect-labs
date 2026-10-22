@@ -132,3 +132,33 @@ def test_the_catalog_describes_the_thresholds_the_run_was_graded_with():
     assert catalog[0]["id"] == "wt"
     assert catalog[0]["bands"] == [80, 60]
     assert catalog[0]["target"] == 80
+
+
+def test_a_workflow_names_its_agent_by_role_with_a_brief():
+    from types import SimpleNamespace
+
+    from connect_labs.workflow.agent_sharing import AgentConfig, agent_config
+
+    def of(agent):
+        return agent_config(SimpleNamespace(data={"config": {"agent": agent}}, template_type=None))
+
+    assert of({"share": True}) == AgentConfig(share=True, agent="site", brief="")
+    assert of({"share": True, "agent": "data", "brief": "Weights in grams."}) == AgentConfig(
+        True, "data", "Weights in grams."
+    )
+    assert of({"share": True, "agent": "something-else"}).agent == "site"
+    assert of(None) == AgentConfig()
+
+
+def test_a_persons_choice_is_checked():
+    from connect_labs.workflow.agent_sharing import BRIEF_MAX_CHARS, clean_agent_config
+
+    assert clean_agent_config(share=1, agent="data", brief="  hi ").as_config() == {
+        "share": True,
+        "agent": "data",
+        "brief": "hi",
+    }
+    with pytest.raises(ValueError):
+        clean_agent_config(share=True, agent="labsdata", brief="")
+    with pytest.raises(ValueError):
+        clean_agent_config(share=True, agent="data", brief="x" * (BRIEF_MAX_CHARS + 1))

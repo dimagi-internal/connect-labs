@@ -305,3 +305,61 @@ def test_a_workflows_agent_is_granted_the_run_scopes(enabled, canopy_redeem, vis
     assert {"workflow_run_context", "workflow_run_indicators", "workflow_run_action"} <= listed
     assert {"data_workflow_context", "data_query", "data_visits"} <= listed
     assert page.is_error  # not a page's tool
+
+
+DATA_AGENT_WORKFLOW = {**SHARING_WORKFLOW, "config": {"agent": {"share": True, "agent": "data", "brief": "Check it."}}}
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_workflow_that_offers_the_data_agent_grants_it_the_runs_reads_and_no_actions(
+    enabled, canopy_redeem, visitor, settings
+):
+    from config.asgi import build_application
+    from connect_labs.workflow.views import WorkflowRunView
+
+    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"
+    path = "/labs/workflow/47/run/?run_id=503&program_id=25"
+    with (
+        mock.patch("connect_labs.workflow.views.get_org_data", return_value={}),
+        mock.patch("connect_labs.labs.synthetic.provenance.all_generated", return_value=True),
+    ):
+        _response, panel = _panel(
+            WorkflowRunView, _request(path, visitor, {"program_id": 25}), DATA_AGENT_WORKFLOW, definition_id=47
+        )
+    assert panel and panel["ready"] and panel["agent"] == "labsdata"
+    arrival = _mint(panel, visitor)
+    id_jag = arrival[contract.ARRIVAL_ID_JAG_FIELD]
+    # The run's reads and the raw data behind it -- never workflow:act -- for labsdata, on ZDR.
+    assert _scopes(id_jag) == {"workflow:read", "data:read"}
+    signed = json.dumps(unverified_claims(arrival["assertion"]))
+    assert "labsdata" in signed and "zdr" in signed
+
+    token = _redeem(canopy_redeem, id_jag)
+
+    async def add_proof(request):
+        request.headers["DPoP"] = enabled.dpop_proof(request.method, RESOURCE, access_token=token)
+
+    async def work(mcp_client):
+        return {t.name for t in await mcp_client.list_tools()}
+
+    listed = _run_mcp(build_application(), {"Authorization": f"DPoP {token}"}, add_proof, work)
+    assert {"workflow_run_context", "data_workflow_context", "data_query"} <= listed
+    assert "workflow_run_action" not in listed
+
+
+@pytest.mark.django_db
+def test_asking_for_the_data_agent_with_none_configured_offers_no_agent(enabled, visitor, settings):
+    from connect_labs.workflow.views import WorkflowRunView
+
+    settings.CANOPY_DATA_AGENT_SLUG = ""
+    with (
+        mock.patch("connect_labs.workflow.views.get_org_data", return_value={}),
+        mock.patch("connect_labs.labs.synthetic.provenance.all_generated", return_value=True),
+    ):
+        _response, panel = _panel(
+            WorkflowRunView,
+            _request("/labs/workflow/47/run/?run_id=503&program_id=25", visitor, {"program_id": 25}),
+            DATA_AGENT_WORKFLOW,
+            definition_id=47,
+        )
+    assert not panel

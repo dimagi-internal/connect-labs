@@ -188,7 +188,7 @@ def test_workflow_context_hands_over_a_visits_query_that_runs(cache, resolved):
         template_type="kmc_flw_flags",
         registry_source={"registry_id": 5},
         opportunity_ids=[OPP.id],
-        data={},
+        data={"config": {"agent": {"share": True, "agent": "data", "brief": "Deaths are counted per case."}}},
         pipeline_sources=[{"pipeline_id": 501, "alias": "flw_flags"}],
     )
     pipeline = SimpleNamespace(name="FLW flags", schema=SCHEMA)
@@ -224,6 +224,7 @@ def test_workflow_context_hands_over_a_visits_query_that_runs(cache, resolved):
         out = workflow_context.workflow_context(_caller(), 77, opportunity_id=OPP.id)
 
     assert out["workflow"]["registry_source"] == {"registry_id": 5}
+    assert out["workflow"]["brief"] == "Deaths are counted per case."
     assert out["opportunities"] == [{"id": OPP.id, "name": OPP.name, "llo": OPP.llo}]
     flags = out["pipelines"][0]
     assert flags["alias"] == "flw_flags" and flags["grouping_key"] == "username"

@@ -176,6 +176,7 @@ urlpatterns = [
         views.UpdateOpportunityIdsView.as_view(),
         name="api_update_opportunity_ids",
     ),
+    path("api/<int:definition_id>/agent/", views.UpdateAgentConfigView.as_view(), name="api_update_agent_config"),
     path(
         "api/<int:definition_id>/audit-batch-config/",
         views.UpdateAuditBatchConfigView.as_view(),

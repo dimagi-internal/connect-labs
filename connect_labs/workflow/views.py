@@ -1056,7 +1056,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
           visitor's own access), not the page state's.
         """
         from connect_labs.workflow.actions import definition_actions
-        from connect_labs.workflow.agent_sharing import definition_shares_with_agent, worker_key
+        from connect_labs.workflow.agent_sharing import DATA_AGENT, agent_config, worker_key
 
         run_id = run_data["id"]
         context["workflow_data"]["actions"] = [
@@ -1064,11 +1064,21 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         ]
         context["workflow_data"]["apiEndpoints"]["actionBase"] = f"/labs/workflow/api/run/{run_id}/actions/"
         context["workflow_data"]["apiEndpoints"]["actionExecutionBase"] = "/labs/workflow/api/actions/executions/"
-        if not definition_shares_with_agent(definition):
+        offered = agent_config(definition)
+        if not offered.share:
             return
 
-        from connect_labs.labs import canopy_panel
+        from connect_labs.labs import canopy, canopy_panel
 
+        # The workflow's choice of agent (config.agent.agent): the site's, or the data
+        # agent -- read-only, on ZDR runners, its token signed for the run's read scopes
+        # only. Asked for the data agent with none configured: no panel, not the site's.
+        page_agent, page_key = None, ""
+        if offered.agent == DATA_AGENT:
+            page_agent = canopy_panel.data_agent()
+            if not page_agent.agent:
+                return
+            page_key = canopy.RUN_FOR_DATA_AGENT
         scope = (
             {"opportunity_id": run_data["opportunity_id"]}
             if run_data.get("opportunity_id")
@@ -1079,6 +1089,8 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         panel = canopy_panel.panel(
             self.request,
             reads=canopy_panel.workflow_reads(definition, run_data.get("opportunity_id")),
+            page_agent=page_agent,
+            page_key=page_key,
             resource=f"labs-workflow://{definition.id}/runs/{run_id}",
             backing_tool="workflow_run_indicators",
             visible_ids=[worker_key(w.get("opportunity_id"), w.get("username")) for w in workers if w.get("username")],
@@ -1087,6 +1099,24 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         )
         if panel is not None:
             context["canopy_panel"] = panel
+
+    def _add_agent_settings(self, context, definition):
+        """What the run page's "Agent" box shows and saves (``UpdateAgentConfigView``):
+        this workflow's ``config.agent``, and which agents labs names for each role
+        (Labs Admin › Canopy agents)."""
+        from django.urls import reverse
+
+        from connect_labs.labs import canopy_settings
+        from connect_labs.workflow.agent_sharing import BRIEF_MAX_CHARS, agent_config
+
+        agents = canopy_settings.current()
+        context["agent_settings"] = {
+            **agent_config(definition).as_config(),
+            "site_agent": agents.site_agent,
+            "data_agent": agents.data_agent,
+            "brief_max": BRIEF_MAX_CHARS,
+            "url": reverse("labs:workflow:api_update_agent_config", args=[definition.id]),
+        }
 
     def _add_page_actions(self, context, definition, scope_qs):
         """A page's declared actions (workflow/actions.py): the same preview -> confirm ->
@@ -1610,6 +1640,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # presentation link: a page shared with a funder carries no actions and no agent.
             if not is_edit_mode and not page and not context["present_mode"]:
                 self._add_actions_and_agent(context, definition, run_data, workers)
+                self._add_agent_settings(context, definition)
             elif page and not context["present_mode"]:
                 self._add_page_actions(context, definition, run_scope_qs)
                 self._add_page_agent(context, definition, scope, labs_context)
@@ -7519,6 +7550,56 @@ class UpdateAuditBatchConfigView(LoginRequiredMixin, View):
             )
         except Exception:
             logger.exception("Failed to update audit_batch config for %s", definition_id)
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
+        finally:
+            data_access.close()
+
+
+class UpdateAgentConfigView(LoginRequiredMixin, View):
+    """The run page's "Agent" box: whether this workflow offers an embedded agent, which
+    one (the site's, or the read-only data agent), and the author's brief for it --
+    ``config.agent`` (workflow/agent_sharing.py), in place of hand-editing it through
+    ``workflow_update_definition``. Saved as the person, under the workflow's own
+    LabsRecord ACL, like every definition write.
+
+    POST JSON body: {"share": bool, "agent": "site" | "data", "brief": str}.
+    """
+
+    def post(self, request, definition_id):
+        from connect_labs.workflow.agent_sharing import clean_agent_config
+
+        try:
+            body = json.loads(request.body or b"{}")
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+        if not isinstance(body, dict):
+            return JsonResponse({"error": "Expected an object"}, status=400)
+        try:
+            wanted = clean_agent_config(
+                share=body.get("share"), agent=body.get("agent", "site"), brief=body.get("brief", "")
+            )
+        except ValueError as e:
+            return JsonResponse({"error": str(e)}, status=400)
+
+        data_access = WorkflowDataAccess(request=request)
+        try:
+            definition = data_access.get_definition(definition_id)
+            if not definition:
+                return JsonResponse({"error": "Workflow not found"}, status=404)
+            refused = _page_write_refused(request, definition)
+            if refused is not None:
+                return refused
+            new_def_data = dict(definition.data)
+            new_config = dict(new_def_data.get("config") or {})
+            # Merged, not replaced: any other key set on config.agent survives a Save.
+            new_config["agent"] = {**(new_config.get("agent") or {}), **wanted.as_config()}
+            new_def_data["config"] = new_config
+            updated = data_access.update_definition(definition_id, new_def_data)
+            if not updated:
+                return JsonResponse({"error": "Workflow not found"}, status=404)
+            return JsonResponse({"success": True, "agent": wanted.as_config()})
+        except Exception:
+            logger.exception("Failed to update the agent config for %s", definition_id)
             return JsonResponse({"error": "An internal error occurred"}, status=500)
         finally:
             data_access.close()

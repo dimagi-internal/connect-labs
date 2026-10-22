@@ -2309,6 +2309,12 @@ A coaching conversation can be about ONE CASE (in KMC, one baby) instead of a wo
 - **The agent acts** through the same `workflow_run_action` as everyone else.
 - **Canopy calls** to the `workflow_*` run tools are refused on a workflow that does not share. A person's own agent is not affected.
 
+**Which agent, and what to tell it** (`{"agent": {"share": true, "agent": "data", "brief": "..."}}`; set in the run page's **Agent** box or with `workflow_update_definition`):
+
+- **`agent`** is a role: `"site"` (the default; the agent every labs page offers) or `"data"` (the agent Labs Admin › Canopy agents names for data, `labsdata`). The data agent runs only on zero-data-retention runners, and its token carries the run's reads and the raw data behind it (`workflow:read`, `data:read`; page key `labs:workflow:run:data`) and never `workflow:act`. A workflow set to `"data"` takes no `workflow_run_action` from any embedded agent; its own buttons still work. Asked for the data agent with none configured, the run page offers no agent rather than the site's.
+- **`brief`** (up to 4,000 characters) is the author's note to the agent: what the workflow is for, what correct looks like, what to check first, known quirks of the form. `data_workflow_context` returns it as `workflow.brief`, read as the visitor; the agent is told to treat it as the author's claim to test.
+- **Over production data** the panel still appears only for an agent labs has cleared and canopy vouches for on each call (`docs/canopy-agent-panel.md`).
+
 ## 15. Supply sources (supply chain data, beside pipelines)
 
 A workflow can read the supply chain's own figures — stock in workers' hands, the stores, orders, tenders — as **supply sources**, declared next to `pipeline_sources` (`connect_labs/workflow/supply_sources.py`):
