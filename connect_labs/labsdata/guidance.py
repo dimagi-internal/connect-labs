@@ -82,8 +82,13 @@ To check a workflow (a report, dashboard or audit) against the raw data:
 3. Where they differ, go to row level: find the visits that disagree and read them whole with data_visits.
    Common causes: an app version that moved a field (a path missing from `paths`), a filter value spelled
    differently, rejected visits counted, a repeat group read as one value, a stale cache.
-4. Report what matches, what does not, the visits that show it, and the fix (a path to add, a filter to
-   change) -- you cannot change the workflow yourself.
+4. Check coverage before any programme-level number. `programme_opportunities_not_in_workflow` lists the
+   person's opportunities in the same programme that this workflow does not read -- often one launched after
+   the workflow was set up. If it is not empty, say so first, naming them: the workflow's totals leave them
+   out. Adding them is a change to the workflow (its opportunity list), which a person makes in Labs.
+   If the person names an opportunity that is not in `opportunities`, say whether it is one of these.
+5. Report what matches, what does not, the visits that show it, and the fix (a path to add, a filter to
+   change, an opportunity to add) -- you cannot change the workflow yourself.
 """
 
 SQL_NOTES = """\

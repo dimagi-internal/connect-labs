@@ -149,6 +149,12 @@ def workflow_context(
         },
         "opportunities": [{"id": o.id, "name": o.name, "llo": o.llo} for o in held],
         "opportunities_not_listed": opp_ids[scope.MAX_OPPORTUNITIES :],
+        # The programme's other opportunities, held by the visitor, that this workflow does
+        # not read: what its programme-level numbers silently leave out.
+        "programme_opportunities_not_in_workflow": [
+            {"id": o.id, "name": o.name, "llo": o.llo, "program": o.program_name}
+            for o in scope.left_out_of(caller, opp_ids)
+        ],
         "pipelines": pipelines,
         "how_to_verify": guidance.VERIFYING_A_WORKFLOW,
     }

@@ -217,11 +217,19 @@ def test_workflow_context_hands_over_a_visits_query_that_runs(cache, resolved):
         def close(self):
             pass
 
+    sibling = Opportunity(id=OTHER.id, name=OTHER.name, llo=OTHER.llo, program_id=7, program_name="KMC")
     with (
         mock.patch("connect_labs.workflow.data_access.WorkflowDataAccess", FakeWDA),
         mock.patch("connect_labs.workflow.data_access.PipelineDataAccess", FakePDA),
+        mock.patch.object(scope, "left_out_of", return_value=[sibling]) as left_out,
     ):
         out = workflow_context.workflow_context(_caller(), 77, opportunity_id=OPP.id)
+
+    left_out.assert_called_once_with(mock.ANY, [OPP.id])
+    assert out["programme_opportunities_not_in_workflow"] == [
+        {"id": OTHER.id, "name": OTHER.name, "llo": OTHER.llo, "program": "KMC"}
+    ]
+    assert "programme_opportunities_not_in_workflow" in out["how_to_verify"]
 
     assert out["workflow"]["registry_source"] == {"registry_id": 5}
     assert out["workflow"]["brief"] == "Deaths are counted per case."
@@ -240,3 +248,54 @@ def test_workflow_context_needs_exactly_one_scope():
         workflow_context.workflow_context(_caller(), 1)
     with pytest.raises(scope.ScopeError):
         workflow_context.workflow_context(_caller(), 1, opportunity_id=1, program_id=2)
+
+
+# --- a programme's opportunities a workflow leaves out (Scout #922) ----------
+
+
+def _opp(oid, program):
+    return Opportunity(id=oid, name=f"Opp {oid}", llo="LLO", program_id=program, program_name=f"P{program}")
+
+
+def test_left_out_of_names_the_programmes_other_held_opportunities():
+    seen = {o.id: o for o in [_opp(1, 7), _opp(2, 7), _opp(3, 7), _opp(4, 8), _opp(5, None)]}
+    with (
+        mock.patch.object(scope, "directory", return_value=seen),
+        # 3 is in the programme but not held: never named.
+        mock.patch.object(scopes, "opportunity_ids", return_value={1, 2, 4, 5}),
+    ):
+        assert [o.id for o in scope.left_out_of(_caller(), [1])] == [2]
+        assert scope.left_out_of(_caller(), [1, 2]) == []
+        # An opportunity with no programme has no siblings to miss.
+        assert scope.left_out_of(_caller(), [5]) == []
+
+
+def test_left_out_of_says_nothing_when_holdings_are_unknowable():
+    seen = {o.id: o for o in [_opp(1, 7), _opp(2, 7)]}
+    with (
+        mock.patch.object(scope, "directory", return_value=seen),
+        mock.patch.object(scopes, "opportunity_ids", side_effect=scopes.ScopesUnavailable("down")),
+    ):
+        assert scope.left_out_of(_caller(), [1]) == []
+
+
+def test_directory_reads_each_opportunitys_programme():
+    tree = {
+        "organizations": [{"slug": "llo-a", "name": "LLO A"}],
+        "programs": [{"id": 7, "name": "KMC"}],
+        "opportunities": [
+            {"id": 1, "name": "Opp 1", "organization": "llo-a", "program": 7},
+            {"id": 2, "name": "Opp 2", "organization": "llo-a", "program": 9, "program_name": "Own name"},
+            {"id": 3, "name": "Opp 3", "organization": "llo-a"},
+        ],
+    }
+    with mock.patch.object(scope, "_org_tree", return_value=tree):
+        seen = scope.directory(_caller())
+    assert (seen[1].program_id, seen[1].program_name, seen[1].llo) == (7, "KMC", "LLO A")
+    assert (seen[2].program_id, seen[2].program_name) == (9, "Own name")
+    assert (seen[3].program_id, seen[3].program_name) == (None, "")
+
+
+def test_a_cut_off_result_points_the_agent_at_the_full_result_on_the_page():
+    shaped = service.shape_for_agent({"rows": [[1]], "row_count": 1, "truncated": True, "open_on_page": "/x"})
+    assert any("open_on_page" in n and "CSV" in n for n in shaped["notes"])

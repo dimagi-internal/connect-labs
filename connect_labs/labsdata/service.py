@@ -157,7 +157,9 @@ def shape_for_agent(result: dict) -> dict:
     if result.get("truncated"):
         notes.append(
             "These rows hit the row cap: do not present them as complete. To answer from all of the data, "
-            "aggregate further (GROUP BY, COUNT, percentiles) or filter, then query again."
+            "aggregate further (GROUP BY, COUNT, percentiles) or filter, then query again. If the person "
+            f"needs every row, give them `open_on_page`: the Data page runs it for them (up to {HARD_MAX_ROWS} "
+            "rows, raise max rows there) and downloads it as CSV; the rows never pass through you."
         )
     if len(rows) < len(result.get("rows") or []):
         notes.append(
