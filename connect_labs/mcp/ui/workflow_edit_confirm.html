@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Confirm an edit</title>
+    <!--
+  ui://labs/workflow-edit-confirm -- an MCP Apps View (SEP-1865, 2026-01-26).
+
+  Rendered by a host (canopy) for a workflow_edit_propose result: an edit an agent
+  proposed to a workflow, a pipeline or a semantic registry, held unsaved. It reads the
+  edit back AS THE VIEWER (workflow_edit_review_view, app-only), shows the diff, and
+  saves it on the viewer's Confirm (workflow_edit_apply) with the token that read
+  issued. The agent never holds that token. In a conversation that keeps no tool
+  results (canopy's ZDR sessions) the card finds the edit from the proposal's input.
+
+  Self-contained on purpose: no network load of any kind. Every call goes to the host
+  over postMessage. Code is shown as text, never run.
+-->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --color-background-primary: light-dark(#ffffff, #171717);
+        --color-background-secondary: light-dark(#f6f7f9, #222326);
+        --color-background-warning: light-dark(#fff7e0, #3a2f10);
+        --color-background-success: light-dark(#eaf7ef, #12301f);
+        --color-background-danger: light-dark(#fdecec, #3a1717);
+        --color-text-primary: light-dark(#171717, #f2f2f2);
+        --color-text-secondary: light-dark(#5b6470, #a8b0ba);
+        --color-text-warning: light-dark(#7a5300, #f3c969);
+        --color-text-success: light-dark(#1d6b3a, #8fdcaa);
+        --color-text-danger: light-dark(#a12b2b, #f3a3a3);
+        --color-text-inverse: light-dark(#ffffff, #171717);
+        --color-background-inverse: light-dark(#1f2937, #f2f2f2);
+        --color-border-primary: light-dark(#d9dde3, #3a3d42);
+        --color-border-secondary: light-dark(#eceff3, #2c2f33);
+        --color-ring-primary: light-dark(#2563eb, #7aa7ff);
+        --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        --font-text-sm-size: 13px;
+        --font-text-md-size: 14px;
+        --font-heading-sm-size: 15px;
+        --font-weight-medium: 500;
+        --font-weight-semibold: 600;
+        --border-radius-sm: 6px;
+        --border-radius-md: 8px;
+        --border-width-regular: 1px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: var(--font-sans);
+        font-size: var(--font-text-md-size);
+        line-height: 1.45;
+        color: var(--color-text-primary);
+        background: var(--color-background-primary);
+      }
+      main {
+        padding: 14px;
+        max-width: 720px;
+      }
+      h1 {
+        font-size: var(--font-heading-sm-size);
+        font-weight: var(--font-weight-semibold);
+        margin: 0 0 2px;
+      }
+      .sub {
+        color: var(--color-text-secondary);
+        font-size: var(--font-text-sm-size);
+        margin: 0 0 12px;
+      }
+      .change {
+        border: var(--border-width-regular) solid var(--color-border-primary);
+        border-radius: var(--border-radius-md);
+        margin: 0 0 10px;
+        overflow: hidden;
+      }
+      .change-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--color-text-secondary);
+        padding: 6px 10px;
+        background: var(--color-background-secondary);
+      }
+      pre.diff {
+        margin: 0;
+        padding: 8px 0;
+        font:
+          12px/1.45 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        overflow-x: auto;
+        max-height: 420px;
+        overflow-y: auto;
+      }
+      pre.diff span {
+        display: block;
+        padding: 0 10px;
+        white-space: pre;
+      }
+      pre.diff .add {
+        background: var(--color-background-success);
+        color: var(--color-text-success);
+      }
+      pre.diff .del {
+        background: var(--color-background-danger);
+        color: var(--color-text-danger);
+      }
+      pre.diff .hunk {
+        color: var(--color-text-secondary);
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin: 12px 0 0;
+      }
+      .note {
+        border-radius: var(--border-radius-sm);
+        padding: 8px 10px;
+        margin: 0 0 10px;
+        font-size: var(--font-text-sm-size);
+        background: var(--color-background-secondary);
+        color: var(--color-text-secondary);
+      }
+      .note.warn {
+        background: var(--color-background-warning);
+        color: var(--color-text-warning);
+      }
+      .note.ok {
+        background: var(--color-background-success);
+        color: var(--color-text-success);
+      }
+      .note.err {
+        background: var(--color-background-danger);
+        color: var(--color-text-danger);
+      }
+      button {
+        font: inherit;
+        font-size: var(--font-text-md-size);
+        cursor: pointer;
+        border-radius: var(--border-radius-sm);
+        border: var(--border-width-regular) solid var(--color-border-primary);
+        background: var(--color-background-primary);
+        color: var(--color-text-primary);
+        padding: 7px 12px;
+        min-height: 34px;
+      }
+      button.primary {
+        background: var(--color-background-inverse);
+        color: var(--color-text-inverse);
+        border-color: var(--color-background-inverse);
+        font-weight: var(--font-weight-medium);
+      }
+      button.link {
+        border: none;
+        background: none;
+        padding: 7px 4px;
+        min-height: 0;
+        color: var(--color-text-secondary);
+        text-decoration: underline;
+        font-size: var(--font-text-sm-size);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="app" aria-live="polite">
+      <h1 id="title">Loading the proposed edit…</h1>
+      <p class="sub" id="subtitle"></p>
+      <div id="notes"></div>
+      <div id="changes"></div>
+      <div id="actions" class="actions"></div>
+    </main>
+    <script>
+      (function () {
+        "use strict";
+
+        var REVIEW_TOOL = "workflow_edit_review_view";
+        var APPLY_TOOL = "workflow_edit_apply";
+        var DECLINE_TOOL = "workflow_edit_decline";
+        var PROTOCOL_VERSION = "2026-01-26";
+        // ---------------------------------------------------------------- transport
+        // JSON-RPC 2.0 over postMessage to the host (via its sandbox proxy). Only the
+        // parent window is listened to.
+        var nextId = 1;
+        var pending = {};
+
+        function post(message) {
+          window.parent.postMessage(message, "*");
+        }
+
+        function request(method, params) {
+          var id = nextId++;
+          return new Promise(function (resolve, reject) {
+            pending[id] = { resolve: resolve, reject: reject };
+            post({
+              jsonrpc: "2.0",
+              id: id,
+              method: method,
+              params: params || {},
+            });
+          });
+        }
+
+        function notify(method, params) {
+          post({ jsonrpc: "2.0", method: method, params: params || {} });
+        }
+
+        function respond(id, result) {
+          post({ jsonrpc: "2.0", id: id, result: result || {} });
+        }
+
+        window.addEventListener("message", function (event) {
+          if (event.source !== window.parent) return;
+          var msg = event.data;
+          if (!msg || typeof msg !== "object" || msg.jsonrpc !== "2.0") return;
+          if (
+            msg.method === undefined &&
+            msg.id !== undefined &&
+            pending[msg.id]
+          ) {
+            var p = pending[msg.id];
+            delete pending[msg.id];
+            if (msg.error)
+              p.reject(
+                new Error((msg.error && msg.error.message) || "Request failed"),
+              );
+            else p.resolve(msg.result);
+            return;
+          }
+          if (typeof msg.method !== "string") return;
+          if (msg.id !== undefined) {
+            // Requests from the host.
+            if (msg.method === "ui/resource-teardown" || msg.method === "ping")
+              respond(msg.id, {});
+            else
+              post({
+                jsonrpc: "2.0",
+                id: msg.id,
+                error: { code: -32601, message: "Method not found" },
+              });
+            return;
+          }
+          var handler = notifications[msg.method];
+          if (handler) handler(msg.params || {});
+        });
+
+        // ---------------------------------------------------------------- state
+        var state = {
+          hostContext: {},
+          canAct: false,
+          input: null, // the agent's workflow_edit_propose arguments: {tool, arguments}
+          changeId: null, // from its result, when the host passes one
+          card: null, // the viewer's own read: summary, changes, confirm
+          busy: false,
+          loading: false,
+        };
+
+        var el = function (id) {
+          return document.getElementById(id);
+        };
+
+        function h(tag, attrs, children) {
+          var node = document.createElement(tag);
+          if (attrs)
+            Object.keys(attrs).forEach(function (k) {
+              if (k === "text") node.textContent = attrs[k];
+              else if (k === "class") node.className = attrs[k];
+              else if (k.slice(0, 2) === "on")
+                node.addEventListener(k.slice(2), attrs[k]);
+              else node.setAttribute(k, attrs[k]);
+            });
+          (children || []).forEach(function (c) {
+            if (c)
+              node.appendChild(
+                typeof c === "string" ? document.createTextNode(c) : c,
+              );
+          });
+          return node;
+        }
+        // ---------------------------------------------------------------- theme
+        function applyHostContext(ctx) {
+          if (!ctx) return;
+          Object.keys(ctx).forEach(function (k) {
+            state.hostContext[k] = ctx[k];
+          });
+          var root = document.documentElement;
+          var vars = ctx.styles && ctx.styles.variables;
+          if (vars)
+            Object.keys(vars).forEach(function (k) {
+              if (
+                vars[k] !== undefined &&
+                vars[k] !== null &&
+                k.indexOf("--") === 0
+              )
+                root.style.setProperty(k, String(vars[k]));
+            });
+          if (ctx.theme === "light" || ctx.theme === "dark") {
+            root.style.colorScheme = ctx.theme;
+            root.setAttribute("data-theme", ctx.theme);
+          }
+          var dims = ctx.containerDimensions;
+          if (dims && dims.maxWidth) root.style.maxWidth = dims.maxWidth + "px";
+        }
+
+        // ---------------------------------------------------------------- size
+        var lastSize = "";
+        var initialized = false; // nothing goes to the host before the handshake completes
+        function reportSize() {
+          if (!initialized) return;
+          var w = Math.ceil(document.documentElement.scrollWidth);
+          var hgt = Math.ceil(document.documentElement.scrollHeight);
+          var key = w + "x" + hgt;
+          if (key === lastSize) return;
+          lastSize = key;
+          notify("ui/notifications/size-changed", { width: w, height: hgt });
+        }
+        if (typeof ResizeObserver === "function")
+          new ResizeObserver(reportSize).observe(document.documentElement);
+
+        // ---------------------------------------------------------------- tools
+        function callTool(name, args) {
+          return request("tools/call", { name: name, arguments: args }).then(
+            function (result) {
+              if (!result) throw new Error("No result");
+              if (result.isError) {
+                var text = (result.content || [])
+                  .map(function (c) {
+                    return c && c.text;
+                  })
+                  .filter(Boolean)
+                  .join(" ");
+                throw new Error(firstLine(text) || "The call failed");
+              }
+              return result.structuredContent || parseText(result);
+            },
+          );
+        }
+
+        function parseText(result) {
+          var text = (result.content || [])
+            .map(function (c) {
+              return c && c.text;
+            })
+            .filter(Boolean)
+            .join("");
+          try {
+            return JSON.parse(text);
+          } catch (e) {
+            return {};
+          }
+        }
+
+        function firstLine(text) {
+          return String(text || "")
+            .split("\n")[0]
+            .slice(0, 400);
+        }
+
+        // ---------------------------------------------------------------- render
+        function showNote(text, kind) {
+          var notes = el("notes");
+          notes.textContent = "";
+          if (text)
+            notes.appendChild(
+              h("p", { class: "note " + (kind || ""), text: text }),
+            );
+          reportSize();
+        }
+
+        function diffBlock(change) {
+          var pre = h("pre", { class: "diff" });
+          String(change.diff || "")
+            .split("\n")
+            .forEach(function (line) {
+              var cls = "";
+              if (line.indexOf("+++") === 0 || line.indexOf("---") === 0)
+                cls = "hunk";
+              else if (line.charAt(0) === "+") cls = "add";
+              else if (line.charAt(0) === "-") cls = "del";
+              else if (line.indexOf("@@") === 0) cls = "hunk";
+              pre.appendChild(h("span", { class: cls, text: line || " " }));
+            });
+          return h("div", { class: "change" }, [
+            h("div", { class: "change-label", text: change.label || "change" }),
+            pre,
+            change.truncated
+              ? h("p", {
+                  class: "note",
+                  text: "The diff is longer than shown here.",
+                })
+              : null,
+          ]);
+        }
+
+        var STATE_TEXT = {
+          applied: "Saved",
+          declined: "Declined — nothing was saved",
+          failed: "Not saved",
+        };
+
+        function render() {
+          var c = state.card;
+          var changes = el("changes");
+          var actions = el("actions");
+          changes.textContent = "";
+          actions.textContent = "";
+          if (!c) {
+            reportSize();
+            return;
+          }
+          var done = c.state && c.state !== "pending";
+          el("title").textContent = done
+            ? (STATE_TEXT[c.state] || c.state) + ": " + (c.summary || "edit")
+            : "Confirm this edit: " + (c.summary || "edit");
+          el("subtitle").textContent = done
+            ? ""
+            : "The agent proposed it. Nothing changes until you confirm; it then saves straight to the workflow.";
+          (c.changes || []).forEach(function (change) {
+            changes.appendChild(diffBlock(change));
+          });
+          var breaks = (c.sandbox_findings || []).filter(function (f) {
+            return f.severity !== "info";
+          });
+          if (breaks.length)
+            changes.appendChild(
+              h("p", {
+                class: "note warn",
+                text:
+                  breaks.length +
+                  " part(s) of this render code may not work in the sandbox (lines " +
+                  breaks
+                    .map(function (f) {
+                      return f.line;
+                    })
+                    .join(", ") +
+                  ").",
+              }),
+            );
+          if (c.state === "failed" && c.error) showNote(c.error, "err");
+          else if (c.state === "applied")
+            showNote("Saved to the workflow.", "ok");
+          if (!done) {
+            var can = state.canAct && !!c.confirm && !state.busy;
+            actions.appendChild(
+              h(
+                "button",
+                { type: "button", class: "primary", onclick: confirmEdit },
+                ["Confirm and save"],
+              ),
+            );
+            actions.appendChild(
+              h("button", { type: "button", onclick: declineEdit }, [
+                "Decline",
+              ]),
+            );
+            Array.prototype.forEach.call(
+              actions.querySelectorAll("button"),
+              function (b) {
+                b.disabled = !can;
+              },
+            );
+            if (!state.canAct)
+              showNote(
+                "Only a participant who can act in this conversation can confirm.",
+                "warn",
+              );
+          }
+          reportSize();
+        }
+
+        // ---------------------------------------------------------------- calls
+        function lookup() {
+          if (state.changeId) return { change_id: state.changeId };
+          var i = state.input || {};
+          return { tool: i.tool, arguments: i.arguments || {} };
+        }
+
+        function load() {
+          if (!state.canAct || state.loading) return;
+          if (!state.changeId && !(state.input && state.input.tool)) return;
+          state.loading = true;
+          callTool(REVIEW_TOOL, lookup()).then(
+            function (card) {
+              state.loading = false;
+              state.card = card;
+              state.changeId = card.change_id;
+              render();
+            },
+            function (err) {
+              state.loading = false;
+              el("title").textContent = "Could not load the proposed edit";
+              showNote(err.message, "err");
+            },
+          );
+        }
+
+        function decide(tool, doneState) {
+          var c = state.card;
+          if (!c || !c.confirm || state.busy) return;
+          state.busy = true;
+          render();
+          callTool(tool, { change_id: c.change_id, confirm: c.confirm }).then(
+            function () {
+              state.busy = false;
+              c.state = doneState;
+              c.confirm = null;
+              render();
+            },
+            function (err) {
+              state.busy = false;
+              // Reload what is true now (already saved, expired, refused) rather than guess.
+              state.card = null;
+              showNote(err.message, "err");
+              load();
+            },
+          );
+        }
+
+        function confirmEdit() {
+          decide(APPLY_TOOL, "applied");
+        }
+
+        function declineEdit() {
+          decide(DECLINE_TOOL, "declined");
+        }
+
+        // ---------------------------------------------------------------- lifecycle
+        var notifications = {
+          "ui/notifications/tool-input": function (params) {
+            if (state.input) return;
+            state.input = params.arguments || {};
+            load();
+          },
+          "ui/notifications/tool-result": function (params) {
+            var sc = params && (params.structuredContent || parseText(params));
+            if (sc && sc.change_id && !state.changeId) {
+              state.changeId = sc.change_id;
+              if (!state.card) load();
+            }
+          },
+          "ui/notifications/tool-cancelled": function () {
+            showNote("The agent's proposal was cancelled.", "warn");
+          },
+          "ui/notifications/host-context-changed": function (params) {
+            applyHostContext(params);
+            render();
+          },
+        };
+
+        request("ui/initialize", {
+          protocolVersion: PROTOCOL_VERSION,
+          appCapabilities: { availableDisplayModes: ["inline"] },
+          clientInfo: { name: "labs-workflow-edit-confirm", version: "1.0.0" },
+        }).then(
+          function (result) {
+            result = result || {};
+            applyHostContext(result.hostContext || {});
+            // A host that cannot proxy tool calls for this viewer omits serverTools.
+            state.canAct = !!(
+              result.hostCapabilities && result.hostCapabilities.serverTools
+            );
+            notify("ui/notifications/initialized", {});
+            initialized = true;
+            load();
+            render();
+          },
+          function (err) {
+            showNote("Could not start: " + err.message, "err");
+          },
+        );
+      })();
+    </script>
+  </body>
+</html>
