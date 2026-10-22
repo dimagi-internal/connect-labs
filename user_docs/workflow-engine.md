@@ -184,9 +184,14 @@ The generic indicator reports (and KMC reports that use the shared tiles) have f
 
 Long indicator names in the headline tiles now wrap onto as many lines as needed. Previously, names could be cut off (for example, "TRANSFER …" or "SHORT VISI…") because a **lower is better** chip sat on the same line and forced the name to truncate. The chip now moves to its own line when the name and chip do not fit side by side, and every tile's figure stays at the same height regardless of name length.
 
-#### "Ask an agent" launcher no longer covers the report
+#### "Ask an agent" launcher
 
-On pages that show the agent panel, a strip at the bottom of the window is reserved for the launcher — the same way the Labs header reserves a strip at the top. Report content scrolls out of view above the launcher, and the bottom of the page can scroll fully clear of it, so the launcher no longer sits over readable content.
+The **Ask an agent** launcher appears only on workflows that are running over generated synthetic data. On any workflow whose data comes from a real production opportunity, the launcher is not shown.
+
+An agent can be offered on real data only once it has passed a clearance process: its author must claim it is safe to use with personally identifiable health information, Labs must accept that claim, and conversations must run on machines configured for zero data retention. No agent has completed that process yet, so the launcher is currently absent from all workflows over real data.
+
+!!! note "This does not affect workflow buttons"
+    Buttons built into a workflow itself — for example, an **Initiate AI coach** button — are unaffected. The restriction applies only to the general-purpose "Ask an agent" launcher that sits at the bottom of the window. Marketplace, targeting, supply, and explorer pages are also unaffected.
 
 #### Band legend and Attention column appear only when targets are set
 
@@ -200,10 +205,4 @@ The status chip on the visit card now reads **"review status: all approved"** (w
 
 #### Readable labels for stored field codes
 
-Case and visit fields can now display human-readable labels in place of the raw codes that CommCare stores internally. For example, a visit-outcome field that stores `met`, `not_home`, and `left` can instead show **Met her**, **Not at home**, and **Left the programme** in the Indicator Worker Review's visit list and in the case tables of the Indicator Programme, Opportunity, and Worker reports.
-
-These labels are set up by your program administrator in the report's registry. If a stored code has no label defined, the raw code continues to show as before. If a field has no labels configured at all, nothing changes.
-
-### MUAC image audit runs
-
-The weekly **dual-track MUAC image audit** run can now be completed as expected. Previously, finishing the last field worker's review — or pressing **Mark Run Complete
+Case and visit fields can now display human-readable labels in place of the raw codes that CommCare stores internally. For example, a visit-outcome field that stores `met`, `not_home`, and `left` can instead show **Met her**, **Not at home**, and **Left the programme** in the

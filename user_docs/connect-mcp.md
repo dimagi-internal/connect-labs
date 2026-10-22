@@ -239,6 +239,8 @@ You can ask Claude to add or update a `values` map for any field in your registr
 
 ---
 
-## Demonstration Awards on Calls
+## Ask an Agent on Workflow Pages
 
-A call's owner can run a **demonstration award**: an award (and review) of an invented, owner-entered response on an unlisted call, even when the person awarding belongs to the same organisation that submitted the response. This exists so that automated end-to-end tests of a call can complete a full cycle — seeding a response and awarding it — without needing a
+Workflow pages have an **Ask an agent** panel that lets you ask the AI assistant questions about what you are looking at — for example, to explain a column, summarise patterns, or help you understand the data.
+
+**This panel is available only when the workflow is running over generated synthetic data.** When the workflow's opportunities contain real production data, the agent launcher does not appear
