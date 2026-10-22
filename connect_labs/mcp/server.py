@@ -378,6 +378,7 @@ def _write_audit(
     version_after: int | None = None,
     client_id: str = "",
     actor: str = "",
+    execution: dict | None = None,
 ) -> None:
     """Best-effort audit write. Never raises — failure to log must not abort
     a tool call. Identical semantics to ``transport._log``.
@@ -388,6 +389,7 @@ def _write_audit(
         MCPAuditLog.objects.create(
             client_id=(client_id or "")[:255],
             actor=(actor or "")[:100],
+            execution=execution or {},
             user=user if (user and getattr(user, "is_authenticated", False)) else None,
             tool_name=tool_name,
             is_write=is_write,
@@ -415,7 +417,16 @@ def _delegation_audit(actor_header: str = "") -> dict:
     # The client (canopy) and the agent it says is acting. The header is
     # informational — logged, never trusted for anything — so it is recorded
     # beside the authenticated client rather than instead of it.
-    return {"client_id": access.client_id or "", "actor": actor_header or ""}
+    from . import execution
+
+    call = execution.current()
+    return {
+        "client_id": access.client_id or "",
+        "actor": actor_header or "",
+        # Who canopy says executed the call -- agent, commit, declaration, runner --
+        # as verified, or why it could not be.
+        "execution": call.audit() if call else {},
+    }
 
 
 def _run_registry_tool(
@@ -440,6 +451,8 @@ def _run_registry_tool(
 
     # mcp_caller: any pipeline this call runs reads Open Chat Studio as this user, never
     # with the server's team key (ocs_tokens.current_mcp_caller).
+    from . import execution
+
     with (
         audit_context(
             user=user,
@@ -448,8 +461,21 @@ def _run_registry_tool(
             path=f"mcp:{spec.name}",
         ),
         mcp_caller(user),
+        # Canopy acting for a visitor: verify its Canopy-Execution statement ONCE for
+        # this call (it is single-use) and keep it for every check the call makes.
+        execution.bound(_call_execution()),
     ):
         return _run_registry_tool_inner(spec, arguments, user, progress, actor_header)
+
+
+def _call_execution():
+    """This delegated call's verified statement (or refusal); None for any other caller."""
+    from . import execution
+
+    access = get_access_token()
+    if (getattr(access, "claims", None) or {}).get("auth_method") != "delegated":
+        return None
+    return execution.for_this_request(access)
 
 
 def policy_denial(tool_name: str, arguments: dict, user, restricted: bool, delegated: bool = False) -> str | None:

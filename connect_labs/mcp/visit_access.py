@@ -303,7 +303,7 @@ def delegated_denied_reason(user, tool_name: str, arguments: dict) -> str | None
     reads_of = DELEGATED_READS.get(tool_name)
     if reads_of is None or reads_of is JUDGED_IN_TOOL:
         return None
-    clearance = canopy_panel.clearance_for(reads_of(user, arguments))
+    clearance = canopy_panel.call_clearance_for(reads_of(user, arguments))
     if clearance.granted:
         return None
     return (

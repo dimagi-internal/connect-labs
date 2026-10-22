@@ -180,6 +180,11 @@ class MCPAuditLog(models.Model):
     #: for PATs and ordinary OAuth sign-ins, whose caller IS the user.
     client_id = models.CharField(max_length=255, blank=True, default="")
     actor = models.CharField(max_length=100, blank=True, default="")
+    #: Delegated calls only: what canopy's verified ``Canopy-Execution`` statement said
+    #: about who executed the call (agent, commit, PHI-safe declaration and who made it,
+    #: runner and its flags, turn, session) -- or ``{"refused": code}``. See
+    #: ``mcp/execution.py``.
+    execution = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:

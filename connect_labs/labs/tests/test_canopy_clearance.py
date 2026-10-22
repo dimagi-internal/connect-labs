@@ -194,7 +194,18 @@ def test_canopy_may_read_a_run_over_generated_data():
         assert policy_denial("workflow_run_indicators", {"run_id": 1}, MagicMock(), False, delegated=True) is None
 
 
-def test_a_cleared_agent_may_read_real_data(cleared):
+class _Vouched:
+    """A verified Canopy-Execution statement that clears the call (mcp/execution.py)."""
+
+    agent = "workflow-agent"
+    requirements = ("zdr",)
+
+    def phi_clearance(self, *, agents, require=("zdr",)):
+        return None if self.agent in set(agents) else "agent_not_allowed"
+
+
+def test_a_cleared_agent_may_read_real_data_on_a_call_canopy_vouched_for(cleared):
+    from connect_labs.mcp import execution
     from connect_labs.mcp.server import policy_denial
 
     with (
@@ -202,7 +213,11 @@ def test_a_cleared_agent_may_read_real_data(cleared):
         _generated(False),
         patch("connect_labs.labs.synthetic.access.labs_only_scope_denied_reason", return_value=None),
     ):
-        assert policy_denial("workflow_run_indicators", {"run_id": 1}, MagicMock(), False, delegated=True) is None
+        with execution.bound(execution.CallExecution(execution=_Vouched())):
+            assert policy_denial("workflow_run_indicators", {"run_id": 1}, MagicMock(), False, delegated=True) is None
+        # The same agent, labs fully configured, but no statement on this call: refused.
+        reason = policy_denial("workflow_run_indicators", {"run_id": 1}, MagicMock(), False, delegated=True)
+    assert reason and "did not vouch" in reason
 
 
 def test_a_persons_own_agent_is_not_judged_by_the_canopy_rule():

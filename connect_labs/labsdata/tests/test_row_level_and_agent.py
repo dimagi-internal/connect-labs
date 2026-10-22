@@ -127,7 +127,7 @@ def test_shape_for_agent_keeps_the_result_inside_its_budget():
 @pytest.mark.parametrize("granted", [False, True])
 def test_real_rows_reach_an_agent_only_when_labs_has_cleared_it(cache, resolved, granted):
     clearance = canopy_panel.Clearance(granted, "" if granted else "not cleared")
-    with mock.patch.object(canopy_panel, "real_data_clearance", return_value=clearance):
+    with mock.patch.object(canopy_panel, "call_real_data_clearance", return_value=clearance):
         if not granted:
             with pytest.raises(service.RealDataRefused):
                 service.query(_caller(), [OPP.id], "SELECT COUNT(*) FROM visits", for_agent=True)
