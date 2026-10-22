@@ -140,12 +140,14 @@ def test_real_rows_reach_an_agent_only_when_labs_has_cleared_it(cache, resolved,
     assert visits["visits"][0]["visit_id"] == f"v{OPP.id}-1"
 
 
-def test_today_no_agent_is_cleared_for_real_data(settings):
-    # Canopy does not yet vouch for the call, so even an allow-listed agent on ZDR runners is refused.
-    settings.CANOPY_AGENT_SLUG = "labsdata"
+def test_no_call_is_cleared_without_canopys_statement(settings):
+    # Labs fully configured for labsdata, but outside a call canopy vouched for, the data
+    # tools never see real rows (mcp/execution.py; test_execution_statement.py).
+    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"
     settings.CANOPY_PHI_AGENTS = ["labsdata"]
     settings.CANOPY_RUNNER_REQUIREMENTS = ["zdr"]
-    assert canopy_panel.real_data_clearance().granted is False
+    assert canopy_panel.call_real_data_clearance().granted is False
+    assert service.agent_sees_real_rows(True, [OPP]) is False
 
 
 def test_a_person_reads_whole_visits_and_it_is_audited(cache, resolved):
