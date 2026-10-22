@@ -28,10 +28,15 @@ token minted before a workflow's data class changed is refused too.
    ``CANOPY_RUNNER_REQUIREMENTS``, which the SDK signs into every visitor assertion and
    canopy enforces when a runner claims the turn.
 3. canopy vouches, on each call, for the agent's PHI-safe declaration and the runner
-   that is executing it, in a statement labs verifies. Canopy does not issue that
-   statement yet (canopy-web spec ``2026-10-22-phi-agents-on-zdr-runners``), so
-   ``CANOPY_EXECUTION_STATEMENTS`` is False and real-data clearance is never granted.
-   Until then an agent works over generated synthetic data only.
+   that is executing it, in a ``Canopy-Execution`` statement labs verifies
+   (``mcp/execution.py``; canopy-web spec ``2026-10-22-phi-agents-on-zdr-runners`` §6).
+
+The first two, plus an SDK that can verify statements (``CANOPY_EXECUTION_STATEMENTS``),
+decide whether a PAGE may offer the agent (``real_data_clearance``). Each CALL is then
+held to its own verified statement as well (``call_real_data_clearance``): the agent it
+names is allow-listed, its author declared the capability PHI-safe at exactly the commit
+that is executing, the runner carries ``zdr`` in force and reports ZDR mode, and the
+conversation requires ``zdr``. No statement, or one that does not verify, is refused.
 """
 
 from __future__ import annotations
@@ -40,10 +45,18 @@ from dataclasses import dataclass
 
 from django.conf import settings
 
-#: Canopy does not yet sign a per-call statement naming the agent, its PHI-safe
-#: declaration and the runner. Flip only together with verifying that statement in
-#: ``mcp/server.py`` -- never on its own.
-CANOPY_EXECUTION_STATEMENTS = False
+
+def _execution_statements_supported() -> bool:
+    from connect_labs.mcp import execution
+
+    return execution.supported()
+
+
+#: Whether labs can verify canopy's per-call ``Canopy-Execution`` statement (the SDK
+#: has ``verify_execution``, dimagi-canopy >= 0.12). Without it no agent is ever
+#: cleared for real data. With it, a page may offer a cleared agent, and every call is
+#: still held to its own verified statement (``call_real_data_clearance``).
+CANOPY_EXECUTION_STATEMENTS = _execution_statements_supported()
 
 #: The runner flag every conversation over real data must require.
 ZDR = "zdr"
@@ -97,6 +110,32 @@ def real_data_clearance(agent: str = "", runner_requirements=()) -> Clearance:
     return Clearance(True)
 
 
+def call_real_data_clearance() -> Clearance:
+    """Whether THIS call (canopy acting for a visitor) may be given real data.
+
+    Labs' own conditions for the agent canopy's verified statement names, then the
+    statement's: PHI-safe declaration at the executing commit, ``zdr`` in force on a
+    runner in ZDR mode, a conversation that requires it (``Execution.phi_clearance``).
+    """
+    from connect_labs.mcp import execution
+
+    call = execution.current()
+    if call is None or call.execution is None:
+        why = (call.refused if call else "") or "no statement"
+        return Clearance(False, f"canopy did not vouch for this call ({why})")
+    stated = call.execution
+    labs_side = real_data_clearance(stated.agent, stated.requirements)
+    if not labs_side.granted:
+        return labs_side
+    refusal = stated.phi_clearance(
+        agents=set(getattr(settings, "CANOPY_PHI_AGENTS", ()) or ()),
+        require=(ZDR,),
+    )
+    if refusal:
+        return Clearance(False, f"canopy's statement does not clear this call for real data ({refusal})")
+    return Clearance(True)
+
+
 def is_real(reads: Reads) -> bool:
     """True when the page would show the agent visit data that is not all generated."""
     from connect_labs.labs.synthetic.provenance import all_generated
@@ -113,6 +152,13 @@ def clearance_for(reads: Reads, agent: str = "", runner_requirements=()) -> Clea
     if not is_real(reads):
         return Clearance(True)
     return real_data_clearance(agent, runner_requirements)
+
+
+def call_clearance_for(reads: Reads) -> Clearance:
+    """Whether this delegated call may read what ``reads`` names (its own statement decides)."""
+    if not is_real(reads):
+        return Clearance(True)
+    return call_real_data_clearance()
 
 
 @dataclass(frozen=True)
@@ -139,7 +185,7 @@ def data_agent() -> PageAgent:
 
 
 def data_agent_clearance() -> Clearance:
-    """Whether the data tools may show real rows to the agent the data pages offer."""
+    """Whether the data pages may offer their agent over real data (the page-level check)."""
     page = data_agent()
     return real_data_clearance(page.agent, page.runner_requirements)
 

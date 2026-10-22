@@ -67,10 +67,16 @@ Clearance needs all three: the offered agent is in `CANOPY_PHI_AGENTS` (its auth
 claims it PHI-safe and labs accepts that); `zdr` is in `CANOPY_RUNNER_REQUIREMENTS`
 (signed into every visitor assertion, so canopy routes the conversation only to
 zero-data-retention runners); and canopy vouches on each call for the agent's
-declaration and the runner executing it. Canopy does not sign that statement yet
-(canopy-web spec `2026-10-22-phi-agents-on-zdr-runners`), so **today no agent is offered
-over real data** -- a sharing workflow over production opps shows its own buttons and
-no launcher.
+declaration and the runner executing it, in a signed `Canopy-Execution` statement
+(canopy-web spec `2026-10-22-phi-agents-on-zdr-runners` §6). Labs verifies that
+statement once per delegated tool call (`mcp/execution.py`, dimagi-canopy >= 0.12) and
+holds the call to it (`canopy_panel.call_real_data_clearance`): the agent it names is
+allow-listed, declared PHI-safe at the commit actually running, on a runner with `zdr`
+in force in ZDR mode, in a conversation that requires `zdr`. Each delegated call's
+statement (or why there was none) is recorded on `MCPAuditLog.execution`. With an SDK
+older than 0.12, or `CANOPY_PHI_AGENTS` empty (the default), **no agent is offered over
+real data** -- a sharing workflow over production opps shows its own buttons and no
+launcher.
 
 Not drawn means no page token, no grant and no ID-JAG. Labs' MCP holds canopy's calls to
 the same rule independently (`mcp/visit_access.py:delegated_denied_reason`, every tool

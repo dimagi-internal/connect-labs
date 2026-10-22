@@ -10,9 +10,10 @@ read (and, for SQL, a hash of the statement).
 **Who sees real rows.** A person (the page, their own MCP sign-in) sees everything
 they hold. An agent calling through canopy as a visitor (``for_agent``) sees real
 rows only when labs has cleared it for real data (``labs/canopy_panel.py``:
-``real_data_clearance`` -- a PHI-declared agent, on ZDR runners, vouched for by
-canopy on the call). Until then it gets structure, validation and synthetic data,
-and hands SQL to the page, where the person runs it.
+``call_real_data_clearance`` -- a PHI-declared agent, on ZDR runners, vouched for
+by canopy in this call's verified ``Canopy-Execution`` statement). Otherwise it gets
+structure, validation and synthetic data, and hands SQL to the page, where the person
+runs it.
 """
 
 from __future__ import annotations
@@ -121,7 +122,7 @@ def agent_sees_real_rows(for_agent: bool, opps) -> bool:
         return True
     from connect_labs.labs import canopy_panel
 
-    return canopy_panel.data_agent_clearance().granted
+    return canopy_panel.call_real_data_clearance().granted
 
 
 #: What an agent receives from one call, at most. A visit's form_json alone can run to

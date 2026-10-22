@@ -59,7 +59,7 @@ def test_an_uncleared_agent_gets_a_hand_off_not_rows():
         mock.patch.object(scope, "resolve", return_value=[OPP]),
         mock.patch.object(tools, "_caller", return_value=scopes.Caller(access_token="t")),
         mock.patch.object(tools, "_from_canopy", return_value=True),
-        mock.patch.object(canopy_panel, "real_data_clearance", return_value=canopy_panel.Clearance(False, "no")),
+        mock.patch.object(canopy_panel, "call_real_data_clearance", return_value=canopy_panel.Clearance(False, "no")),
     ):
         out = tools.query(mock.Mock(), [OPP.id], "SELECT COUNT(*) AS n FROM visits")
         bad = None

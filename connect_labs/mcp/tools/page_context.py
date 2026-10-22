@@ -127,7 +127,7 @@ def page_context(
         # rule that also keeps the panel off such a page.
         from connect_labs.labs import canopy_panel
 
-        clearance = canopy_panel.clearance_for(canopy_panel.page_reads(definition, token))
+        clearance = canopy_panel.call_clearance_for(canopy_panel.page_reads(definition, token))
         if not clearance.granted:
             raise MCPToolError(
                 "PERMISSION_DENIED",
