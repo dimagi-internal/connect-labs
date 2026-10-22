@@ -19,9 +19,8 @@ from connect_labs.mcp import execution
 @dataclass(frozen=True)
 class FakeExecution:
     agent: str = "labsdata"
-    agent_sha: str = "abc123"
     declaration: dict | None = field(
-        default_factory=lambda: {"data": "phi", "sha": "abc123", "capability": "data", "declared_by": "a person"}
+        default_factory=lambda: {"data": "phi", "capability": "data", "declared_by": "a person"}
     )
     runner: dict = field(default_factory=lambda: {"id": 7, "name": "zdr-1", "flags": [{"flag": "zdr"}]})
     runner_posture: dict = field(default_factory=lambda: {"data_mode": "zdr"})
@@ -112,7 +111,6 @@ def test_a_verified_phi_declared_zdr_call_is_cleared(labs_allows, sdk):
     [
         (FakeExecution(agent="ace"), "CANOPY_PHI_AGENTS"),
         (FakeExecution(requirements=()), "requirements"),
-        (FakeExecution(refusal="sha_mismatch"), "sha_mismatch"),
         (FakeExecution(refusal="runner_flags"), "runner_flags"),
         (FakeExecution(refusal="undeclared"), "undeclared"),
     ],
@@ -144,7 +142,7 @@ def test_a_refused_statement_names_why(labs_allows, sdk):
 
 def test_the_audit_records_who_executed_never_the_whole_claims(sdk):
     audit = execution.verify({"canopy-execution": "jwt"}, "tok").audit()
-    assert audit["agent"] == "labsdata" and audit["agent_sha"] == "abc123"
+    assert audit["agent"] == "labsdata" and "agent_sha" not in audit
     assert audit["declaration"]["declared_by"] == "a person"
     assert audit["runner"] == {"id": 7, "name": "zdr-1", "flags": ["zdr"]}
     assert audit["runner_data_mode"] == "zdr" and audit["requirements"] == ["zdr"]

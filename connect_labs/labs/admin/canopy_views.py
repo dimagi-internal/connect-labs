@@ -47,7 +47,7 @@ def _checks(current: canopy_settings.AgentSettings) -> list[dict]:
         {
             "label": "Labs verifies canopy's per-call statement",
             "ok": canopy_panel.CANOPY_EXECUTION_STATEMENTS,
-            "detail": "dimagi-canopy >= 0.12" if canopy_panel.CANOPY_EXECUTION_STATEMENTS else "SDK too old",
+            "detail": "dimagi-canopy >= 0.13" if canopy_panel.CANOPY_EXECUTION_STATEMENTS else "SDK too old",
         },
         {
             "label": "So a Data page may offer it over real data",
