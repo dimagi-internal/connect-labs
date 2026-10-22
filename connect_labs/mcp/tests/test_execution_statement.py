@@ -79,7 +79,11 @@ def labs_allows(settings):
 
 
 def test_without_an_sdk_that_verifies_nothing_is_vouched(monkeypatch):
-    monkeypatch.setitem(sys.modules, "canopy_sdk.django.execution", None)  # import fails
+    import canopy_sdk.django
+
+    # An SDK older than 0.12: no canopy_sdk.django.execution to import.
+    monkeypatch.setitem(sys.modules, "canopy_sdk.django.execution", None)
+    monkeypatch.delattr(canopy_sdk.django, "execution", raising=False)
     assert execution.supported() is False
     assert execution.verify({"canopy-execution": "x"}, "tok").refused == "sdk_unsupported"
 

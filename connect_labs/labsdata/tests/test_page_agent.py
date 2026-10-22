@@ -28,8 +28,9 @@ def test_a_pages_zdr_requirement_counts_toward_clearance_but_canopy_must_still_v
     settings.CANOPY_PHI_AGENTS = ["labsdata"]
     settings.CANOPY_RUNNER_REQUIREMENTS = []  # the site does not require ZDR; the data page does
     without_page = canopy_panel.real_data_clearance("labsdata")
-    with_page = canopy_panel.real_data_clearance("labsdata", ("zdr",))
     assert not without_page.granted and "ZDR" in without_page.reason
+    with mock.patch.object(canopy_panel, "CANOPY_EXECUTION_STATEMENTS", False):  # an SDK that cannot verify
+        with_page = canopy_panel.real_data_clearance("labsdata", ("zdr",))
     assert not with_page.granted and "vouch" in with_page.reason
     with mock.patch.object(canopy_panel, "CANOPY_EXECUTION_STATEMENTS", True):
         assert canopy_panel.real_data_clearance("labsdata", ("zdr",)).granted
