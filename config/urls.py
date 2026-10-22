@@ -72,7 +72,9 @@ urlpatterns = [
     path("labs/admin/", include("connect_labs.labs.admin.urls", namespace="labs_admin")),
     path("labs/targeting/", include("connect_labs.labs.indicators.urls", namespace="targeting")),
     path("labs/benchmarks/", include("connect_labs.benchmarks.urls", namespace="benchmarks")),
-    path("labs/explorer/", include("connect_labs.explorer.urls", namespace="explorer")),
+    path("labs/data/", include("connect_labs.labsdata.urls", namespace="labsdata")),
+    # The SQL explorer became the Data page (labsdata); keep its old address working.
+    path("labs/explorer/", RedirectView.as_view(url="/labs/data/", query_string=True, permanent=False)),
     path("labs/", include("connect_labs.labs.urls", namespace="labs")),
     path(
         "custom_analysis/chc_nutrition/",

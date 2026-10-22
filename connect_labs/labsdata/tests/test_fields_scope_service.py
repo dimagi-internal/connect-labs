@@ -8,11 +8,11 @@ from unittest import mock
 import pytest
 from django.utils import timezone
 
-from connect_labs.explorer import fields, scope, service
-from connect_labs.explorer.scope import Opportunity, ScopeError
 from connect_labs.labs.access import scopes
 from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
 from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
+from connect_labs.labsdata import fields, scope, service
+from connect_labs.labsdata.scope import Opportunity, ScopeError
 
 pytestmark = pytest.mark.django_db
 
@@ -151,40 +151,47 @@ def test_tools_are_registered_gated_and_resolved():
     from connect_labs.mcp import token_scopes, visit_access
     from connect_labs.mcp.tool_registry import _REGISTRY
 
-    for name in ("explorer_describe", "explorer_query"):
+    for name in ("explorer_describe", "explorer_query", "data_describe", "data_query", "data_visits"):
         assert name in _REGISTRY
         assert name in token_scopes.USERVISIT_DATA_TOOLS
         assert name in token_scopes.GENERATED_ONLY_TOOLS
         assert visit_access.RESOLVERS[name](None, {"opportunity_ids": [5, "6"]}) == [5, 6]
-        assert name in SCOPE_TOOLS["explorer:read"]
-    assert visit_access.RESOLVERS["explorer_query"](None, {}) is None
-    assert PAGE_SCOPES["explorer:index"] == ("explorer:read",)
+    for name in ("data_describe", "data_query", "data_visits", "data_validate", "data_workflow_context"):
+        assert name in SCOPE_TOOLS["data:read"]
+    # scout-queries' names stay registered but are not handed to canopy agents.
+    assert not {"explorer_describe", "explorer_query", "explorer_validate"} & SCOPE_TOOLS["data:read"]
+    assert visit_access.RESOLVERS["data_query"](None, {}) is None
+    assert PAGE_SCOPES["labsdata:index"] == ("data:read",)
+    assert "data:read" in PAGE_SCOPES["labs:workflow:run"]
 
 
 def test_page_and_api(client, django_user_model, forms):
     user = django_user_model.objects.create_user(username="explorer-test", password="x")
     client.force_login(user)
     with mock.patch.object(scope, "directory", return_value={OPP.id: OPP}):
-        page = client.get(f"/labs/explorer/?opps={OPP.id}")
+        page = client.get(f"/labs/data/?opps={OPP.id}")
+        old = client.get(f"/labs/explorer/?opps={OPP.id}")
     assert page.status_code == 200
-    assert b"SQL explorer" in page.content and b"Opp F" in page.content
+    assert b"<h1" in page.content and b">Data</h1>" in page.content and b"Opp F" in page.content
+    assert old.status_code == 302 and old["Location"] == f"/labs/data/?opps={OPP.id}"
 
     with mock.patch.object(scope, "resolve", return_value=[OPP]):
         ok = client.post(
-            "/labs/explorer/api/query/",
+            "/labs/data/api/query/",
             json.dumps({"opportunity_ids": [OPP.id], "sql": "SELECT COUNT(*) AS n FROM visits"}),
             content_type="application/json",
         )
         bad = client.post(
-            "/labs/explorer/api/query/",
+            "/labs/data/api/query/",
             json.dumps({"opportunity_ids": [OPP.id], "sql": "SELECT * FROM users_user"}),
             content_type="application/json",
         )
     assert ok.status_code == 200 and ok.json()["rows"] == [[40]]
     assert bad.status_code == 400 and bad.json()["error"] == "table_not_allowed"
+    assert bad.json()["recovery_action"] == "use_allowed_relations"
 
     with mock.patch.object(scope, "resolve", side_effect=ScopeError("not_held", "no")):
         denied = client.post(
-            "/labs/explorer/api/describe/", json.dumps({"opportunity_ids": [1]}), content_type="application/json"
+            "/labs/data/api/describe/", json.dumps({"opportunity_ids": [1]}), content_type="application/json"
         )
     assert denied.status_code == 403

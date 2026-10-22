@@ -90,18 +90,26 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
     # check program membership on every call. Reads only: the panel analyses what the
     # tables show (ruling 2026-10-07: the product shows the data, the AI judges it on
     # request); every change stays the person's own, made in the tables.
-    # The SQL explorer (connect_labs/explorer). Canopy's agent WRITES SQL; it never
-    # sees real rows: through canopy, describe returns structure only and query runs
-    # only on synthetic opportunities (service.py, `for_agent`). It validates over
-    # zero rows and hands the SQL to the page (the `explorer_set_query` page action),
-    # where the person runs it and sees the result. The registry tools let it use a
-    # governed definition before writing its own.
-    "explorer:read": frozenset(
+    # Labs data (connect_labs/labsdata), the labsdata agent's scope: SQL over the
+    # visits of the opportunities on screen, whole visits down to their form JSON,
+    # and the definitions behind a workflow (its pipelines, their SQL, the semantic
+    # registry). Read-only throughout. The data_* tools decide for themselves what an
+    # agent sees (labsdata/service.py:agent_sees_real_rows): real rows only for an
+    # agent labs has cleared for real data (labs/canopy_panel.py); otherwise
+    # structure, validation over zero rows and synthetic data, and the agent hands
+    # its SQL to the person on the Data page (the `data_set_query` page action).
+    "data:read": frozenset(
         {
-            "explorer_describe",
-            "explorer_validate",
-            "explorer_query",
+            "data_describe",
+            "data_validate",
+            "data_query",
+            "data_visits",
+            "data_workflow_context",
+            "workflow_get",
+            "pipeline_get",
+            "pipeline_sql",
             "semantic_registry_list",
+            "semantic_registry_get",
             "semantic_registry_explain",
         }
     ),
@@ -142,7 +150,9 @@ PREVIEWED_WRITE_SCOPES: frozenset[str] = frozenset({"workflow:act"})
 PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "marketplace:network": ("marketplace:read",),
     "marketplace:round": ("marketplace:read",),
-    "labs:workflow:run": ("workflow:read", "workflow:act"),
+    # data:read so the agent can check a run against the raw data behind it
+    # (data_workflow_context, data_query, data_visits) -- real rows only for a cleared agent.
+    "labs:workflow:run": ("workflow:read", "workflow:act", "data:read"),
     # A page drawn at its workflow URL (or any route registered with more than a page
     # needs): its panel names this key instead of the route (``PAGE_ON_ANOTHER_ROUTE``),
     # so a page's agent reads the page and nothing a workflow's run would reach.
@@ -152,7 +162,7 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "supply_chain:workflow_view": ("page:read",),
     "targeting:index": ("targeting:read",),
     "targeting:pmc": ("targeting:read",),
-    "explorer:index": ("explorer:read",),
+    "labsdata:index": ("data:read",),
     "supply_chain:procurement_tender_detail": ("supply:read",),
     "supply_chain:procurement_comparison": ("supply:read",),
 }

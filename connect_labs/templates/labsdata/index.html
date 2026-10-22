@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}SQL explorer · Connect Labs{% endblock %}
+{% block title %}Data · Connect Labs{% endblock %}
 
 {% block css %}
   {{ block.super }}
@@ -34,6 +34,8 @@
     .ex-muted { color: #a8a29e; }
     .ex-status { font-size: 12px; color: #57534e; padding: 8px 12px; border-top: 1px solid #f5f5f4; }
     .ex-status b { color: #1c1917; }
+    .ex-link { color: #16006d; text-decoration: underline; text-underline-offset: 2px; font: inherit; }
+    .ex-json { margin: 0; padding: 12px 14px; max-height: 60vh; overflow: auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
     .ex-search { box-sizing: border-box; width: 100%; font-size: 13px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 5px 8px; }
   </style>
 {% endblock %}
@@ -42,8 +44,8 @@
 <div class="px-6 py-5 max-w-[1500px] mx-auto">
   <div class="flex items-baseline justify-between mb-4">
     <div>
-      <h1 class="text-2xl font-semibold text-stone-900">SQL explorer</h1>
-      <p class="text-sm text-stone-500">Query live visit data for the opportunities you hold. Read-only, audit-logged. Ask the agent (bottom right) to write the SQL for you.</p>
+      <h1 class="text-2xl font-semibold text-stone-900">Data</h1>
+      <p class="text-sm text-stone-500">Query the visits of the opportunities you hold, down to each submitted form. Click a visit id to open the whole visit. Read-only, audit-logged. Ask the agent to write the SQL for you.</p>
     </div>
   </div>
 
@@ -88,6 +90,7 @@
         </div>
       </div>
       <div id="ex-result"></div>
+      <div id="ex-visit" class="ex-card" hidden></div>
     </section>
   </div>
 </div>
@@ -96,12 +99,13 @@
 {% block inline_javascript %}
   {{ block.super }}
   <script>
-    window.EXPLORER = {
-      describeUrl: "{% url 'explorer:describe' %}",
-      queryUrl: "{% url 'explorer:query' %}",
+    window.LABSDATA = {
+      describeUrl: "{% url 'labsdata:describe' %}",
+      queryUrl: "{% url 'labsdata:query' %}",
+      visitsUrl: "{% url 'labsdata:visits' %}",
       csrf: "{{ csrf_token }}",
     };
   </script>
-  <script src="{% static 'explorer/explorer.js' %}"></script>
+  <script src="{% static 'labsdata/data.js' %}"></script>
   {% if canopy_panel %}{% include "canopy_host/panel.html" %}{% endif %}
 {% endblock %}

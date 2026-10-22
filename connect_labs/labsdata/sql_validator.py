@@ -1,6 +1,6 @@
 # Harvested from dimagi-rad/scout @ d5ca8aa6, mcp_server/services/sql_validator.py -- unchanged
 # apart from black's formatting.
-# Keep it a copy: labs-specific rules live in connect_labs/explorer/validator.py, so a
+# Keep it a copy: labs-specific rules live in connect_labs/labsdata/validator.py, so a
 # Scout fix can be diffed in. Upstream tests: dimagi-rad/scout tests/test_sql_validator.py.
 """
 SQL validation for the Scout MCP server.

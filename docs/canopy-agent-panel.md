@@ -59,7 +59,7 @@ whether an agent may be offered at all:
 
 | The page reads | Agent offered |
 | --- | --- |
-| no visit data (`NO_VISIT_DATA`: the directory, targeting, a tender, the explorer) | yes |
+| no visit data (`NO_VISIT_DATA`: the directory, targeting, a tender, the Data page -- whose `data_*` tools give an uncleared agent structure only) | yes |
 | visits of opportunities that all hold GENERATED synthetic data (`provenance.is_generated`) | yes, any agent |
 | any real visits, or it cannot tell | only an agent labs has cleared for real data |
 

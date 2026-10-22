@@ -135,7 +135,7 @@ The `mcp/no_user_visit/` address enforces a strict set of rules to prevent real 
 - **Generating from an old mirror-mode profile.** Profiles saved in the old mirror mode (before case timelines were introduced) hold real cases lightly perturbed, so their data never counts as "generated". Profiling with `case_timelines=true` *is* allowed: it models each worker's caseload and each case's timeline and saves only newly sampled cases, which are generated — not copies of real data. Re-profile any old mirror-mode profiles to use this safer approach.
 - **Generating from a profile created before measurement numbers were fully modelled.** Profiles created before all numeric measurements (such as weights and visit-day sequences) were regenerated hold data that traces back to real cases. A synthetic programme profiled before this change no longer counts as generated data and must be re-profiled before it can be read on the restricted address.
 - **Writing synthetic data onto a real opportunity, wiping a shared demo environment, or reading or writing a profile bundle outside Drive.**
-- **Using the SQL explorer (`explorer_describe`, `explorer_query`).** These tools read live visit data and are not available on the restricted address.
+- **Reading visit data with the Data tools (`data_describe`, `data_query`, `data_visits`, and the older `explorer_describe` / `explorer_query` names).** These tools read live visit data and are not available on the restricted address, except over generated synthetic opportunities. `data_validate` and `data_workflow_context` read no visit data and are available there.
 - **Starting a run on a page-type workflow.** Pages are not run through MCP — open them in the browser instead.
 
 The restricted address offers a simpler set of synthetic tools: `synthetic_clone_opp` (plus status checking, fidelity scoring, demo environments, and visibility) rather than the full set of step-by-step tools available on the full-access address.
@@ -190,32 +190,36 @@ You do not need to do anything differently — Claude handles the checking autom
 
 ---
 
-## SQL Explorer
+## Data (formerly the SQL explorer)
 
-The SQL explorer at [labs.connect.dimagi.com/labs/explorer/](https://labs.connect.dimagi.com/labs/explorer/) lets you query live visit data for the opportunities you have access to, without needing a developer to write reports.
+The Data page at [labs.connect.dimagi.com/labs/data/](https://labs.connect.dimagi.com/labs/data/) lets you query live visit data for the opportunities you have access to, down to each submitted form, without needing a developer to write reports. The old `/labs/explorer/` address redirects here.
 
 ### How it works
 
 Select one or more opportunities from the list, then use the two panels on the page:
 
 - **Field browser.** Lists every question in the submitted forms for the opportunities you selected, shows how often each field is filled in, and displays the answer choices for multiple-choice questions. Use the search box to find fields quickly (for example, type "birth" to find all birth-related questions). Click any field to insert it directly into your query.
-- **SQL editor.** Write a query against the `visits` table — one row per visit — which contains the opportunity, its LLO, the worker, the case, the visit status, and the full form data. Run your query and view results as a table. Download results as a CSV file.
+- **SQL editor.** Write a query against the `visits` table — one row per visit — which contains the opportunity, its LLO, the worker, the case, the visit status, the review and flag details, and the full form data. Run your query and view results as a table. Download results as a CSV file.
+- **Whole visits.** Click any `visit_id` in a result to open that visit with every field and the complete submitted form, so you can check a number against the visits behind it.
 
-You can also click **Ask an agent** on the page to have the AI assistant write a query for you based on a plain-English question (for example, "hospital vs home births by LLO"). The agent writes the SQL and places it in the editor for you to review and run. **The agent itself never receives your program's real visit data** — it only learns whether the query was valid, not what the results contain. This means you stay in control of your data at all times. On synthetic (demo) opportunities, the agent can run queries and read results in order to test and refine its SQL.
+You can also ask the agent on the page to write a query for you from a plain-English question (for example, "hospital vs home births by LLO"). Today the agent writes the SQL and places it in the editor for you to review and run; **it does not receive your program's real visit data**. On synthetic (demo) opportunities it can run queries and read results to test its SQL. A dedicated read-only data agent that can work with real data on zero-data-retention infrastructure is being prepared; until Labs turns that on, no agent sees real rows.
 
-### Using the SQL explorer through MCP
-
-The same two tools are available to Claude Desktop and Claude Code through the MCP:
+### Using the Data tools through MCP
 
 | Tool | What it does |
 | --- | --- |
-| `explorer_describe` | Lists available fields for the selected opportunities, with fill rates and answer choices |
-| `explorer_query` | Runs a SQL query against the `visits` table and returns results |
+| `data_describe` | Lists available fields for the selected opportunities, with fill rates and answer choices, and the rules for answering |
+| `data_query` | Runs a read-only SQL query against the `visits` table and returns results |
+| `data_visits` | Returns whole visits by id, including the full submitted form |
+| `data_validate` | Checks a query end to end without reading any data |
+| `data_workflow_context` | Explains how a workflow computes what it shows: its pipelines' fields, filters and a ready query over `visits` that reproduces them |
 
-This means you can ask Claude questions like "show me hospital vs home births broken down by LLO" and it will use these tools to query your data and return an answer directly.
+The older names `explorer_describe`, `explorer_query` and `explorer_validate` still work.
+
+This means you can ask Claude questions like "show me hospital vs home births broken down by LLO", or "check that this workflow counts deaths correctly", and it will use these tools to answer from your data.
 
 !!! note "Access and safety"
-    The SQL explorer is read-only. It is limited to opportunities you hold, and every query is recorded in the audit trail. The explorer tools are not available on the `mcp/no_user_visit/` restricted address — they require the full `/mcp/` address. When you use **Ask an agent** on the page, the agent writes and can run the query in your browser but never receives real visit data in its context — results from real opportunities stay in your browser only.
+    The Data tools are read-only. They are limited to opportunities you hold, and every query and visit read is recorded in the audit trail. The visit-reading tools are not available on the `mcp/no_user_visit/` restricted address except over generated synthetic data.
 
 ---
 

@@ -8,10 +8,10 @@ from . import apps  # noqa: F401
 from . import benchmarks  # noqa: F401  -- registers benchmarks_cohort_*
 from . import campaign  # noqa: F401  -- registers campaign_build_national
 from . import custom_analysis_run  # noqa: F401  -- registers custom_analysis_run
-from . import explorer  # noqa: F401  -- registers explorer_describe, explorer_query
 from . import funds  # noqa: F401
 from . import jobs  # noqa: F401  -- registers job_status, job_cancel (mcp/jobs.py)
 from . import labs_context  # noqa: F401
+from . import labsdata  # noqa: F401  -- registers data_* (and the explorer_* names scout-queries uses)
 from . import marketplace  # noqa: F401  -- registers marketplace_* (orgs_get, rounds_list, round_responses)
 from . import microplans  # noqa: F401  -- list/work_areas/delete_plan/delete_group/transition_plan
 from . import microplans_create  # noqa: F401  -- registers microplans_bulk_create_plans/_status/coverage_param_schema

@@ -9,11 +9,11 @@ import pytest
 from django.db import connection
 from django.utils import timezone
 
-from connect_labs.explorer import engine
-from connect_labs.explorer.engine import QueryError, run_query
-from connect_labs.explorer.scope import Opportunity
 from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
 from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
+from connect_labs.labsdata import engine
+from connect_labs.labsdata.engine import QueryError, run_query
+from connect_labs.labsdata.scope import Opportunity
 
 pytestmark = pytest.mark.django_db
 
@@ -122,7 +122,7 @@ def test_a_table_the_validator_missed_still_does_not_resolve(cache, monkeypatch)
     # Defence in depth: switch the relation allow-list OFF and name the real cache
     # table. The empty search_path means it does not resolve, so the query fails
     # instead of reading every opportunity's visits.
-    from connect_labs.explorer.validator import ExplorerValidator
+    from connect_labs.labsdata.validator import ExplorerValidator
 
     monkeypatch.setattr(ExplorerValidator, "_validate_table_access", lambda self, statement, sql: None)
     with pytest.raises(QueryError) as e:

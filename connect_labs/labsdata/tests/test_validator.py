@@ -2,8 +2,8 @@
 
 import pytest
 
-from connect_labs.explorer.sql_validator import SQLValidationError
-from connect_labs.explorer.validator import HARD_MAX_ROWS, validator
+from connect_labs.labsdata.sql_validator import SQLValidationError
+from connect_labs.labsdata.validator import HARD_MAX_ROWS, validator
 
 
 def _ok(sql, max_rows=500):
