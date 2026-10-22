@@ -1,4 +1,4 @@
-# Canopy and a connected site say what they offer and need: the site offer
+# The site agents API: canopy and a connected site describe themselves to each other
 
 Status: approved 2026-10-22 (owner); canopy-web side and SDK 0.14 first, then labs.
 
@@ -22,7 +22,8 @@ labs text field empty, and the KMC report drew no panel with no word as to why.
 
 ## The design
 
-Each side publishes, signed, what it offers and what it needs, and the other side's
+Each side describes itself through a signed API -- canopy its agents for the site, the
+site what it needs -- and the other side's
 settings are CHOSEN from that, never typed. The per-call `Canopy-Execution` statement
 stays: it is still the final check that this conversation is that agent on that runner.
 It stops being the first place a mismatch shows.
@@ -35,15 +36,15 @@ No new secrets. The two trust anchors already exist:
   (`https://canopy.dimagi.com/oauth/client.json`), which is how labs verifies
   `Canopy-Execution` statements today.
 
-### 1. The offer: canopy → site
+### 1. The site agents API: canopy → site
 
-`GET {canopy}/api/sites/offer`
+`GET {canopy}/api/sites/agents`
 
 **Request.** `Authorization: Bearer <site assertion>`: a JWT signed with the site's key
 (the one at its `jwks_url`): `iss` = the site's name (`AppCredential.name`, e.g.
-`connect-labs`), `aud` = the offer URL, `iat`/`exp` (lifetime at most 60 s), `jti`.
+`connect-labs`), `aud` = the endpoint's URL, `iat`/`exp` (lifetime at most 60 s), `jti`.
 canopy resolves the site by `iss` (`embed_apps.resolve_site`), verifies against its keys,
-and refuses (401) anything else. The SDK builds it: `canopy_sdk.offer.request_assertion`.
+and refuses (401) anything else. The SDK builds it: `canopy_sdk.site_agents.request_assertion`.
 
 **Response.** `application/jose`: a compact JWS signed with canopy's client key (the
 `Canopy-Execution` key, its `kid` in `client.json`). Payload:
@@ -98,17 +99,17 @@ and refuses (401) anything else. The SDK builds it: `canopy_sdk.offer.request_as
   (`"no ready runner with zdr: canopy › Runners"`, `"no GitHub token: …/settings/credentials"`).
 - `version`: changes exactly when anything above (bar `iat`/`exp`) changes.
 
-**SDK 0.14** (`canopy_sdk.offer`):
+**SDK 0.14** (`canopy_sdk.site_agents`):
 
-- `fetch_offer(canopy_url, site_name, site_key, canopy_keys) -> Offer`: builds the
+- `fetch_site_agents(canopy_url, site_name, site_key, canopy_keys) -> SiteAgents`: builds the
   assertion, GETs through `canopy_sdk.fetch` (pinned, bounded, no redirects), verifies
-  signature, `aud`, `exp`, `v`; raises `OfferError` otherwise.
-- `Offer` / `OfferedAgent` / `OfferedCapability` dataclasses mirroring the payload, with
-  `Offer.agent(slug)`.
-- `canopy_sdk.django.offer.current() -> Offer | None`: cached in the host's cache for 5
-  minutes, refreshed on miss; on a failed refresh it serves the last good offer marked
-  `stale=True` (and its age) for up to 24 h, then None. Hosts treat None as "offer
-  nothing" (fail closed).
+  signature, `aud`, `exp`, `v`; raises `SiteAgentsError` otherwise.
+- `SiteAgents` / `SiteAgent` / `AgentCapability` dataclasses mirroring the payload, with
+  `SiteAgents.agent(slug)`.
+- `canopy_sdk.django.site_agents.current() -> SiteAgents | None`: cached in the host's cache for 5
+  minutes, refreshed on miss; on a failed refresh it serves the last good response marked
+  `stale=True` (and its age) for up to 24 h, then None. Hosts treat None as "show
+  no agent" (fail closed).
 
 ### 2. The needs: site → canopy
 
@@ -138,7 +139,7 @@ signed with the site's key. Payload:
   "uses": {
     "agents": ["ace", "labsdata"],
     "real_data_agents": ["labsdata"],
-    "version": "<offer version chosen against>"
+    "version": "<site agents version chosen against>"
   }
 }
 ```
@@ -148,34 +149,34 @@ the site's Connected sites page: the site's pages and scopes; which allowed agen
 site actually offers and lets read real data; and for each, whether it meets the site's
 `real_data.requires` (PHI-safe, ready on a runner with the flag) and, if not, why.
 
-### 3. Labs: settings chosen from the offer
+### 3. Labs: settings chosen from the site agents API
 
-**Labs Admin › Canopy agents** becomes a table built from the offer, one row per offered
-agent:
+**Labs Admin › Canopy agents** becomes a table built from the site agents API response, one row
+per agent canopy lists:
 
-| Agent | What it does here | PHI-safe | ZDR runner | Ready | Offer on labs | Real data | Default |
-| ----- | ----------------- | -------- | ---------- | ----- | ------------- | --------- | ------- |
+| Agent | What it does here | PHI-safe | ZDR runner | Ready | Show on labs | Real data | Default |
+| ----- | ----------------- | -------- | ---------- | ----- | ------------ | --------- | ------- |
 
-- "Offer on labs" and "Real data" are ticks; "Default" is one radio. No free text.
+- "Show on labs" and "Real data" are ticks; "Default" is one radio. No free text.
 - "Real data" can be ticked only when canopy says the agent is PHI-safe AND ready with
   `zdr`; otherwise it is disabled with canopy's reason and a link to fix it there.
-- Ticking "Real data" implies "Offer on labs". An agent offered over real data is always
+- Ticking "Real data" implies "Show on labs". An agent offered over real data is always
   read-only on ZDR (the `labs:workflow:run:data` page key) — no separate "data agent" role.
-- Runner flags come from `offer.runner_flags`, not a constant.
-- Each save records the offer `version` it was made against (history, audit metadata).
-- Drift: an agent ticked here that the current offer no longer lists, or no longer lists
+- Runner flags come from the response's `runner_flags`, not a constant.
+- Each save records the response's `version` it was made against (history, audit metadata).
+- Drift: an agent ticked here that the current response no longer lists, or no longer lists
   as PHI-safe/ready, is shown in red with canopy's reason, and labs stops offering it at
   once — the page, the run pages and the Data page all read the same answer.
 
 The model (`CanopyAgentSettings`, append-only, history + restore as today) becomes
 `agents: [{slug, offered, real_data}]`, `default_agent`, `runner_requirements`,
-`offer_version`. A data migration maps each existing row: `site_agent` → default and
+`site_agents_version`. A data migration maps each existing row: `site_agent` → default and
 offered; `data_agent` → offered; `phi_agents` → real_data; `offered_agents` → offered.
 The env defaults stay as the cold-start defaults.
 
 **One answer to "may this agent be offered here, and if not, why".**
 `canopy_agents.availability(slug, reads) -> Availability(ok, read_only, reasons)`
-combines labs' ticks, the offer, and what the page reads. Everything uses it:
+combines labs' ticks, canopy's site agents response, and what the page reads. Everything uses it:
 
 - the panel decision (`canopy_panel.panel`) — no panel when not ok;
 - the run page's **Agent** box: every agent labs offers is listed; one not available on
@@ -198,12 +199,12 @@ as the default agent / the first real-data agent).
 
 ## Order of work
 
-1. **canopy-web**: `GET /api/sites/offer`; SDK 0.14 (`canopy_sdk.offer`,
-   `canopy_sdk.django.offer`, `site.json` host route); Connected sites page shows the
+1. **canopy-web**: `GET /api/sites/agents`; SDK 0.14 (`canopy_sdk.site_agents`,
+   `canopy_sdk.django.site_agents`, `site.json` host route); Connected sites page shows the
    site's needs and per-agent fit. Release `dimagi-canopy` 0.14.0.
 2. **labs**: bump to 0.14; `canopy_agents.availability`; the model + data migration; the
    Labs Admin table; the Agent box and the held-back line; publish `site.json` (the SDK
    route, fed by `PAGE_SCOPES` and the settings).
 
 The "never silent" line and greyed choices (step 2's run-page half) need only labs' own
-ticks and can land before the offer does.
+ticks and can land before the site agents API does.
