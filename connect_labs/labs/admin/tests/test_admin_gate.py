@@ -38,6 +38,7 @@ def external_user(db):
         "labs_admin:app_downloader",
         "labs_admin:admin_boundaries:index",
         "labs_admin:schedules",
+        "labs_admin:canopy_agents",
     ],
 )
 def test_admin_tools_forbidden_for_external_user(client, external_user, url_name):

@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}Canopy Agents{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-5xl">
+  <div class="mb-6">
+    <a href="{% url 'labs_admin:index' %}" class="text-blue-600 text-sm"><i class="fa-solid fa-chevron-left mr-1"></i>Labs Admin</a>
+    <h1 class="text-3xl font-bold text-gray-900 mt-2">
+      <i class="fa-solid fa-robot text-orange-600 mr-2"></i>Canopy Agents
+    </h1>
+    <p class="text-gray-600 mt-1">
+      Which canopy agents labs offers in its agent panel, and which of them may read real visit data.
+      An agent gets real rows only when labs allows it here <em>and</em> canopy vouches, on every call,
+      that its author declared it PHI-safe at the running commit and it runs on a ZDR runner.
+    </p>
+  </div>
+
+  {% if messages %}
+  <div class="mb-4 space-y-2">
+    {% for message in messages %}
+    <div class="px-4 py-2 rounded text-sm {% if message.tags == 'error' %}bg-red-100 text-red-700{% else %}bg-green-100 text-green-700{% endif %}">{{ message }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# ── Settings ─────────────────────────────────────────────────────── #}
+  <form method="post" class="bg-white shadow rounded-lg p-6 mb-8 space-y-5">
+    {% csrf_token %}
+    <div class="flex items-baseline justify-between">
+      <h2 class="text-xl font-bold text-gray-900">Settings</h2>
+      <span class="text-xs text-gray-500">
+        {% if current.row_id %}In force: change #{{ current.row_id }}{% else %}In force: the deployment's defaults (nobody has saved here yet){% endif %}
+      </span>
+    </div>
+
+    <label class="block">
+      <span class="text-sm font-semibold text-gray-800">Site agent</span>
+      <span class="block text-xs text-gray-500 mb-1">The agent every labs page offers, and the canopy workspace every token names. Default: <code>{{ environment.site_agent }}</code>.</span>
+      <input name="site_agent" value="{{ current.site_agent }}" required {% if not can_change %}disabled{% endif %}
+             class="w-full md:w-80 border rounded px-3 py-2 font-mono text-sm" />
+    </label>
+
+    <label class="block">
+      <span class="text-sm font-semibold text-gray-800">Data pages' agent</span>
+      <span class="block text-xs text-gray-500 mb-1">Offered on <a class="text-blue-600" href="/labs/data/">Data</a> in place of the site agent, always on ZDR runners. It must also be allowed on canopy's connect-labs site. Empty: Data offers the site agent.</span>
+      <input name="data_agent" value="{{ current.data_agent }}" placeholder="labsdata" {% if not can_change %}disabled{% endif %}
+             class="w-full md:w-80 border rounded px-3 py-2 font-mono text-sm" />
+    </label>
+
+    <label class="block">
+      <span class="text-sm font-semibold text-gray-800">Agents allowed over real data</span>
+      <span class="block text-xs text-gray-500 mb-1">Space- or comma-separated. Labs accepting the author's PHI-safe claim; canopy's per-call statement is still required. Empty: no agent is shown real data.</span>
+      <input name="phi_agents" value="{{ current.phi_agents|join:' ' }}" {% if not can_change %}disabled{% endif %}
+             class="w-full border rounded px-3 py-2 font-mono text-sm" />
+    </label>
+
+    <fieldset>
+      <legend class="text-sm font-semibold text-gray-800">Every visitor conversation must run on</legend>
+      <span class="block text-xs text-gray-500 mb-1">Signed into every page token; canopy holds the conversation to runners carrying the flag. The Data pages' agent requires ZDR whatever this says.</span>
+      {% for flag in known_flags %}
+      <label class="inline-flex items-center mr-4 text-sm">
+        <input type="checkbox" name="runner_requirements" value="{{ flag }}" class="mr-2"
+               {% if flag in current.runner_requirements %}checked{% endif %} {% if not can_change %}disabled{% endif %} />
+        <code>{{ flag }}</code>{% if flag == "zdr" %}&nbsp;(zero-data-retention runners){% endif %}
+      </label>
+      {% endfor %}
+    </fieldset>
+
+    {% if can_change %}
+    <div class="flex items-center gap-3">
+      <input name="note" placeholder="Why (kept with the change)" class="flex-1 border rounded px-3 py-2 text-sm" />
+      <button class="bg-orange-600 hover:bg-orange-700 text-white font-semibold px-4 py-2 rounded text-sm">Save</button>
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-500"><i class="fa-solid fa-lock mr-1"></i>Only Django staff can change these.</p>
+    {% endif %}
+  </form>
+
+  {# ── Labs' checks ─────────────────────────────────────────────────── #}
+  <div class="bg-white shadow rounded-lg p-6 mb-8">
+    <h2 class="text-xl font-bold text-gray-900 mb-3">Will the Data pages' agent get real rows?</h2>
+    <p class="text-sm font-semibold text-gray-700 mb-2">Labs' side</p>
+    <ul class="space-y-1 text-sm mb-5">
+      {% for c in checks %}
+      <li>
+        {% if c.ok %}<i class="fa-solid fa-circle-check text-green-600 mr-2"></i>{% else %}<i class="fa-solid fa-circle-xmark text-red-600 mr-2"></i>{% endif %}
+        <span class="font-medium">{{ c.label }}</span> <span class="text-gray-500">— {{ c.detail }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    <p class="text-sm font-semibold text-gray-700 mb-2">Canopy's side (set in canopy; labs sees it only in each call's statement, below)</p>
+    <ol class="list-decimal ml-5 space-y-1 text-sm text-gray-700">
+      <li>The runner declares the <code>zdr</code> flag (canopy › Runners › the runner).</li>
+      <li>The agent may run on that runner (canopy › the agent › Runners).</li>
+      <li>Its author declares its capability <code>data: phi</code> at the commit it runs (canopy › the agent › Settings › Interface, with a passkey).</li>
+      <li>The agent is allowed on canopy's <code>connect-labs</code> site (canopy › Connected sites).</li>
+    </ol>
+    {% if canopy_url %}
+    <p class="text-sm mt-3">
+      <a class="text-blue-600" href="{{ canopy_url }}" target="_blank" rel="noopener">Open canopy</a>
+      {% if data_agent_url %} · <a class="text-blue-600" href="{{ data_agent_url }}" target="_blank" rel="noopener">{{ current.data_agent }} in canopy</a>{% endif %}
+    </p>
+    {% endif %}
+  </div>
+
+  {# ── Recent calls ─────────────────────────────────────────────────── #}
+  <div class="bg-white shadow rounded-lg p-6 mb-8">
+    <h2 class="text-xl font-bold text-gray-900 mb-1">Recent data calls through canopy</h2>
+    <p class="text-sm text-gray-500 mb-3">What canopy's signed statement said about each call (MCP audit log). A refusal names what was missing.</p>
+    {% if calls %}
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-gray-500 uppercase text-xs">
+          <tr><th class="px-3 py-2">When (UTC)</th><th class="px-3 py-2">Tool</th><th class="px-3 py-2">Visitor</th><th class="px-3 py-2">Statement</th></tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for call in calls %}
+          <tr>
+            <td class="px-3 py-2 whitespace-nowrap">{{ call.created_at|date:"Y-m-d H:i:s" }}</td>
+            <td class="px-3 py-2 font-mono">{{ call.tool_name }}</td>
+            <td class="px-3 py-2">{{ call.user.email|default:"—" }}</td>
+            <td class="px-3 py-2">
+              {% if call.execution.refused %}
+                <span class="text-red-700">refused: {{ call.execution.refused }}</span>
+              {% else %}
+                <span class="font-mono">{{ call.execution.agent }}@{{ call.execution.agent_sha|slice:":8" }}</span>
+                on {{ call.execution.runner.name }} [{{ call.execution.runner.flags|join:", "|default:"no flags" }}]
+                · {% if call.execution.declaration %}declared {{ call.execution.declaration.data }}{% else %}<span class="text-red-700">not declared</span>{% endif %}
+                · requires [{{ call.execution.requirements|join:", "|default:"nothing" }}]
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-500">None yet. Ask the agent a question on the <a class="text-blue-600" href="/labs/data/">Data</a> page and reload.</p>
+    {% endif %}
+  </div>
+
+  {# ── History ──────────────────────────────────────────────────────── #}
+  <div class="bg-white shadow rounded-lg p-6">
+    <h2 class="text-xl font-bold text-gray-900 mb-3">History</h2>
+    {% if history %}
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+      <thead class="bg-gray-50 text-left text-gray-500 uppercase text-xs">
+        <tr><th class="px-3 py-2">#</th><th class="px-3 py-2">When (UTC)</th><th class="px-3 py-2">By</th><th class="px-3 py-2">Settings</th><th class="px-3 py-2">Note</th><th></th></tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for row in history %}
+        <tr class="{% if row.pk == current.row_id %}bg-orange-50{% endif %}">
+          <td class="px-3 py-2">{{ row.pk }}</td>
+          <td class="px-3 py-2 whitespace-nowrap">{{ row.changed_at|date:"Y-m-d H:i" }}</td>
+          <td class="px-3 py-2">{{ row.changed_by.email|default:"—" }}</td>
+          <td class="px-3 py-2 font-mono text-xs">
+            site={{ row.site_agent }} data={{ row.data_agent|default:"—" }}<br>
+            real data=[{{ row.phi_agents|join:", " }}] runners=[{{ row.runner_requirements|join:", " }}]
+          </td>
+          <td class="px-3 py-2">{{ row.note }}</td>
+          <td class="px-3 py-2 text-right">
+            {% if can_change and row.pk != current.row_id %}
+            <form method="post">{% csrf_token %}<button name="restore" value="{{ row.pk }}" class="text-blue-600 text-xs">Restore</button></form>
+            {% elif row.pk == current.row_id %}<span class="text-xs text-orange-700">in force</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-sm text-gray-500">No changes yet: the deployment's defaults are in force.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

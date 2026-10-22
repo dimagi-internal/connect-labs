@@ -6,7 +6,7 @@ from django.urls import include, path
 
 from connect_labs.labs.analytics_views import AnalyticsDashboardView, UmamiSSOView
 
-from . import registry_views, views
+from . import canopy_views, registry_views, views
 
 app_name = "labs_admin"
 
@@ -55,6 +55,7 @@ urlpatterns = [
         name="semantic_registry_delete",
     ),
     # Scheduled Workflows
+    path("canopy-agents/", canopy_views.CanopyAgentsView.as_view(), name="canopy_agents"),
     path("schedules/", views.ScheduleListView.as_view(), name="schedules"),
     path("schedules/<int:schedule_id>/toggle/", views.ScheduleToggleView.as_view(), name="schedule_toggle"),
     path("schedules/<int:schedule_id>/delete/", views.ScheduleDeleteView.as_view(), name="schedule_delete"),

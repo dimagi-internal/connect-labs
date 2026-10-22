@@ -182,6 +182,28 @@
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Canopy Agents Card -->
+        <a href="{% url 'labs_admin:canopy_agents' %}" class="group h-full">
+          <div class="border-2 border-gray-200 hover:border-orange-500 rounded-lg p-6 transition-all hover:shadow-md bg-gray-50 hover:bg-white h-full flex flex-col">
+            <div class="flex items-center mb-4">
+              <div class="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mr-4 flex-shrink-0">
+                <i class="fa-solid fa-robot text-2xl text-orange-600"></i>
+              </div>
+              <h3 class="text-xl font-bold text-gray-900 group-hover:text-orange-600">
+                Canopy Agents
+              </h3>
+            </div>
+            <p class="text-sm text-gray-600 leading-relaxed mb-4 flex-grow">
+              Which canopy agents labs offers, which may read real visit data, and on which runners.
+              Shows the last data calls and whether canopy cleared each.
+            </p>
+            <div class="flex items-center text-orange-600 text-sm font-semibold mt-auto">
+              <span>Open Canopy Agents</span>
+              <i class="fa-solid fa-chevron-right ml-2 text-xs group-hover:translate-x-1 transition-transform"></i>
+            </div>
+          </div>
+        </a>
+
         <!-- Task Manager Card -->
         <a href="{% url 'labs_admin:task_manager' %}" class="group h-full">
           <div class="border-2 border-gray-200 hover:border-orange-500 rounded-lg p-6 transition-all hover:shadow-md bg-gray-50 hover:bg-white h-full flex flex-col">

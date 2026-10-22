@@ -33,6 +33,8 @@ from __future__ import annotations
 
 from django.conf import settings
 
+from connect_labs.labs import canopy_settings
+
 #: What each scope unlocks. THE only place a delegated token's reach is decided:
 #: a tool not listed under one of the token's scopes is neither listed nor
 #: callable with it.
@@ -274,16 +276,17 @@ def host_settings() -> dict:
     as before.
     """
     public = (getattr(settings, "LABS_PUBLIC_URL", "") or "").rstrip("/")
+    agents = canopy_settings.current()  # Labs Admin › Canopy agents, over the CANOPY_* defaults
     config = {
         "SIGNING_KEY": getattr(settings, "CANOPY_SIGNING_KEY", ""),
         "CANOPY_BASE_URL": getattr(settings, "CANOPY_BASE_URL", ""),
         "APP_NAME": getattr(settings, "CANOPY_APP_NAME", ""),
-        "AGENT_SLUG": getattr(settings, "CANOPY_AGENT_SLUG", ""),
+        "AGENT_SLUG": agents.site_agent,
         "CLIENT_ID": getattr(settings, "CANOPY_CLIENT_ID", ""),
         "ISSUER": public,
         "RESOURCE": f"{public}/mcp/" if public else "",
         "TOKEN_ENDPOINT": f"{public}/o/token/" if public else "",
-        "RUNNER_REQUIREMENTS": list(getattr(settings, "CANOPY_RUNNER_REQUIREMENTS", ()) or ()),
+        "RUNNER_REQUIREMENTS": list(agents.runner_requirements),
         "SCOPE_TOOLS": SCOPE_TOOLS,
         "PAGE_SCOPES": PAGE_SCOPES,
         "USER_CLAIMS": user_claims,
