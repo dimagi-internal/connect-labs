@@ -1,9 +1,10 @@
 # Page and workflow sandbox: where it stands and how to finish it
 
-**Status (2026-10-13, paused for a demo):** the sandbox is **switched off on labs** (PR #2489:
+**Status (2026-10-22): ready to switch on; still switched off on labs** (PR #2489:
 `LABS_WORKFLOW_SANDBOX=off`, `LABS_PAGE_SANDBOX=false` in `deploy/task-definitions/web.json`).
-Pages and workflows draw as they did before it. Adding `?sandbox=1` to any address
-(`&sandbox=1` if it already has a `?`) previews the sandboxed render to whoever asks.
+Everything below is merged and deployed. Pages and workflows draw as they did before it.
+Adding `?sandbox=1` to any address (`&sandbox=1` if it already has a `?`) previews the
+sandboxed render to whoever asks. What is left is the owner's look and word, below.
 Design and every ruling: [`docs/superpowers/specs/2026-10-12-page-sandbox-design.md`](2026-10-12-page-sandbox-design.md).
 
 ## The owner's rulings that set the finish line
@@ -32,55 +33,58 @@ Design and every ruling: [`docs/superpowers/specs/2026-10-12-page-sandbox-design
 | #2492 | Every live workflow's needs supported; exemptions removed (migration 0007 drops the table) |
 | #2493 | Canopy panel on every sharing page and workflow, sandboxed or not; end-to-end test `connect_labs/mcp/tests/test_canopy_panel_end_to_end.py` |
 | #2489 | Switched off on labs; `?sandbox=1` previews |
+| #2496 | The frame's CSP allows the marker-cluster plugin (used only by MBW v1 copies; see "MBW v1" below) |
+| #2644 | localStorage / sessionStorage kept by the host per definition, across loads (the design doc's "Storage") |
 | #2495 | Pages and workflows size the same way: the frame grows to its content, the labs page scrolls (host viewport for `vh`/`h-screen`, fixed dialogs placed in view, scrolls go to the host). Matched plain vs `?sandbox=1` on 11 templates, 3 browsers, desktop and phone |
 
-## What is open
+## Verified (2026-10-22)
 
-- **Residual differences from #2495**, to show the owner and decide on: a document-level
-  `sticky top-0` sticks just below the labs header (plain, it slides under the header); a dialog's
-  dark backdrop does not cover the labs header and side nav, and the dialog centres in the window
-  below the header (~32px lower); near the top of a page a tall dialog scrolls inside itself.
-  Untested: touch scrolling on a real phone; `kmc_flw_review` with a real saved report (only its
-  empty state was compared locally).
-- **#2496 `sandbox-markercluster`** (draft): the frame's CSP allows the marker-cluster plugin the
-  MBW GPS map uses. CI not yet checked.
+- **Live scan** (`workflow_sandbox_scan --as-user jonathan`, run on labs): 658 definitions and
+  45 seed templates, **0 breaks**; after #2644 the 17 `storage` findings are `info`. Coverage is
+  the scopes Jonathan can read (`--all-users` has not been run: the owner's call).
+- **Probes, Chromium + Firefox + WebKit, a workflow AND a page, sandbox on** (local server, a
+  labs-only opportunity, Playwright): token mint (shimmed fetch and raw XHR), an unlisted labs
+  API (relative and absolute), `document.cookie`, `parent.document`, `top.location` read and
+  write, `window.open`, off-site fetch and image: **every one blocked**; labs' own
+  `localStorage` key unseen in the frame; local and session storage kept across a reload, each
+  definition under its own key. The harness is a probe render code, a seeder and a Playwright
+  driver; rebuild it from this list if it is gone (it lived in a session scratchpad).
+- Unit: 312 vitest sandbox tests, 156 Python sandbox tests, CI green.
 
-## Steps to finish, in order
+## What only the owner can do
 
-1. **Land #2496.** Check its CI (`gh pr checks 2496`), fix anything red, mark ready, squash-merge.
-2. **Run the checks that were not run in a real browser:**
-   - The probes (token mint, labs API fetch, cookie, `parent.document`, `top.location`,
-     localStorage, `window.open`, off-site fetch/image) on a sandboxed page AND workflow, in
-     Chromium, Firefox and WebKit: every one blocked.
-   - The canopy panel in a browser on a page and a workflow, sandboxed and not: the widget loads,
-     the share/selection reaches the agent, the panel token is `page:read` on a page and
-     `workflow:read`+`workflow:act` on a run.
-   - `interviews_reporting_v2` (never finished loading locally in either mode) and an MBW v1
-     copy's stream (needs a CommCare login).
-   A local harness was written by the agent in its session scratchpad (`sandbox-verify-harness/`);
-   if that is gone, rebuild from the probes listed in the spec. Use a local runserver
-   (`make manage CMD="runserver"`), the Postgres container `connect-labs-db-1`, and the browse
-   binary `~/.claude/skills/gstack/browse/dist/browse` (not on PATH).
-3. **Deploy main** (owner-approved deploy; check migrations since the last deploy, at least
-   `workflow/0007`, so `run_migrations=true`):
-   `gh workflow run deploy-labs.yml --repo dimagi-internal/connect-labs --ref main --field run_migrations=true`
-4. **Live checks with the sandbox still off**, each plain and with `?sandbox=1`:
-   - Scan: `gh workflow run run-labs-command.yml --repo dimagi-internal/connect-labs --ref main --field command="workflow_sandbox_scan --as-user jonathan --summary"`.
-     Expect **0 breaks** under `all` (19839 calls a removed endpoint and reports as info).
-   - Screens to compare side by side and send the owner:
-     - Stock review `https://labs.connect.dimagi.com/supply/views/stock-review/?program_id=10112`
-     - Forecast `https://labs.connect.dimagi.com/supply/views/forecast/?program_id=10112`
-     - KMC worker review `https://labs.connect.dimagi.com/labs/workflow/5618/run/?run_id=5620&opportunity_id=10042&flw=10019%3A%3Aflw_001&source_run=5801`
-     - Program home (page) `https://labs.connect.dimagi.com/labs/p/programme/10112/`
-     - Org home (page) `https://labs.connect.dimagi.com/labs/p/org/labs-synthetic-labs-synthetic/`
-     - 10730 (attach-pipeline flow asks first) and 14556 (control room run links)
-   - The live canopy checklist (panel on a sharing page and a workflow; "Ask an agent" answers
-     about what is on screen).
-5. **Show the owner**, then on the owner's word switch it on: set `LABS_PAGE_SANDBOX` to `true`
-   and `LABS_WORKFLOW_SANDBOX` to `all` in `deploy/task-definitions/web.json` (PR, merge,
-   deploy), and re-check the screens above live.
-6. **Cleanup:** remove leftover worktrees (`git worktree list`), and the local test records for
-   opportunity 10790.
+1. **Look, side by side, plain vs `?sandbox=1`**, signed in to labs:
+   - Stock review `https://labs.connect.dimagi.com/supply/views/stock-review/?program_id=10112`
+   - Forecast `https://labs.connect.dimagi.com/supply/views/forecast/?program_id=10112`
+   - KMC worker review `https://labs.connect.dimagi.com/labs/workflow/5618/run/?run_id=5620&opportunity_id=10042&flw=10019%3A%3Aflw_001&source_run=5801`
+     (also one with a real saved report)
+   - Program home (page) `https://labs.connect.dimagi.com/labs/p/programme/10112/`
+   - Org home (page) `https://labs.connect.dimagi.com/labs/p/org/labs-synthetic-labs-synthetic/`
+   - 10730 (attach-pipeline flow asks first), 14556 (control room run links),
+     `interviews_reporting_v2`, a Ward Progress Tracker (change a filter, reload: it stays)
+   - The canopy panel on a page and a workflow: "Ask an agent" answers about what is on screen.
+   - One touch scroll on a phone.
+2. **Rule on the three residual differences from #2495:** a document-level `sticky top-0`
+   sticks just below the labs header (plain, it slides under it); a dialog's backdrop does not
+   cover the labs header and side nav, and the dialog sits ~32px lower; near the top of a page
+   a tall dialog scrolls inside itself.
+3. **Switch it on:** `LABS_PAGE_SANDBOX` to `true` and `LABS_WORKFLOW_SANDBOX` to `all` in
+   `deploy/task-definitions/web.json` (PR, merge, deploy), then re-check the screens above.
+
+## MBW v1
+
+The deprecated `mbw_monitoring` package (Python job handler + stream; not the current workflow
+architecture, which is `mbw_auditing_v5`/`v6`) has 11 live copies: 897 and 2642 on opportunity
+765 hold real review sessions from March/April 2026; the rest are tests/QA copies on 740, 1167
+and 709. No current template uses its endpoints. The sandbox supports them only because of the
+no-exemptions ruling: the 5 `/custom_analysis/mbw_monitoring/...` routes (`sandbox_routes.py`,
+`routes.ts`) and the marker-cluster CSP entry (#2496). Ali is deleting the copies (2026-10-22);
+once they are gone, delete those routes, the CSP entry, the package, its job handler and its URL
+entry (`DEPRECATED.md` lists them). Snapshot saving there is broken whether sandboxed or not.
+
+## Cleanup
+
+Leftover worktrees (`git worktree list`); the local `labs_sandbox_verify` database.
 
 ## Known items outside the sandbox
 

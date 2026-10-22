@@ -24,10 +24,11 @@ Severities:
 
 * ``breaks`` -- would fail or stop the frame (a refused fetch or stream, a
   ``confirm`` that answers No, reaching into the page around the frame).
-* ``changes`` -- works, differently (storage is in memory only).
+* ``changes`` -- works, differently (a ``<form>`` submitted without ``preventDefault``).
 * ``info`` -- worth knowing, nothing to fix (a navigation or question compiled to the
-  host's, an ``alert`` drawn as a host notice, a dynamic fetch the scan cannot
-  resolve, a guarded fallback, a CSRF read the host makes harmless).
+  host's, an ``alert`` drawn as a host notice, storage the host keeps for the
+  workflow, a dynamic fetch the scan cannot resolve, a guarded fallback, a CSRF read
+  the host makes harmless).
 
 Output carries ids, names, pattern ids and line numbers only: never code.
 """
@@ -192,9 +193,10 @@ PATTERNS: tuple[Pattern, ...] = (
     ),
     Pattern(
         "storage",
-        CHANGES,
-        "localStorage / sessionStorage are in memory only (lost on reload)",
-        "keep it in run state (onUpdateState) if it must last",
+        INFO,
+        "localStorage / sessionStorage are kept by the labs page for this workflow only "
+        "(what the plain run page stored is not carried over)",
+        "nothing needed",
         r"\b(?:localStorage|sessionStorage)\b",
     ),
     Pattern(

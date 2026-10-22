@@ -34,18 +34,31 @@ import {
   VIEWPORT,
   type BridgeResponse,
   type FramePayload,
+  STORAGE_AREAS,
   type HostViewport,
+  type StorageArea,
+  type StorageBatch,
+  type StorageSeed,
   type StreamMessage,
 } from './protocol';
 import { SANDBOX_GLOBAL, sandboxRewritePlugin } from './rewrite';
 import { installViewport } from './viewport';
 
 // ---------------------------------------------------------------------------
-// Storage: an opaque origin has none, and reading localStorage throws there.
+// Storage: an opaque origin has none, and reading localStorage throws there. The
+// frame's copy answers render code at once (it is synchronous); the host keeps it
+// for this page or workflow (host.ts scopedStorage) and hands it back in INIT.
 // ---------------------------------------------------------------------------
+
+export type StorageChange =
+  | { op: 'set'; key: string; value: string }
+  | { op: 'remove'; key: string }
+  | { op: 'clear' };
 
 export class MemoryStorage {
   private items = new Map<string, string>();
+  /** Told of every change render code makes (not of `seed`). */
+  onChange: ((change: StorageChange) => void) | null = null;
   get length() {
     return this.items.size;
   }
@@ -56,19 +69,37 @@ export class MemoryStorage {
     return this.items.has(String(k)) ? this.items.get(String(k))! : null;
   }
   setItem(k: string, v: string) {
-    this.items.set(String(k), String(v));
+    const key = String(k);
+    const value = String(v);
+    this.items.set(key, value);
+    this.onChange?.({ op: 'set', key, value });
   }
   removeItem(k: string) {
-    this.items.delete(String(k));
+    const key = String(k);
+    this.items.delete(key);
+    this.onChange?.({ op: 'remove', key });
   }
   clear() {
     this.items.clear();
+    this.onChange?.({ op: 'clear' });
+  }
+  /** What the host kept from an earlier load. */
+  seed(items: Record<string, string> | undefined) {
+    for (const [k, v] of Object.entries(items || {})) {
+      if (typeof v === 'string') this.items.set(k, v);
+    }
   }
 }
 
+export type InstalledStorage = Partial<Record<StorageArea, MemoryStorage>>;
+
 /** Replace localStorage / sessionStorage with in-memory ones where they throw. */
-export function installMemoryStorage(win: Window): void {
-  for (const name of ['localStorage', 'sessionStorage'] as const) {
+export function installMemoryStorage(win: Window): InstalledStorage {
+  const installed: InstalledStorage = {};
+  for (const [area, name] of [
+    ['local', 'localStorage'],
+    ['session', 'sessionStorage'],
+  ] as const) {
     let works = false;
     try {
       works = !!win[name];
@@ -76,15 +107,83 @@ export function installMemoryStorage(win: Window): void {
       works = false;
     }
     if (works) continue;
+    const storage = new MemoryStorage();
     try {
       Object.defineProperty(win, name, {
-        value: new MemoryStorage(),
+        value: storage,
         configurable: true,
       });
+      installed[area] = storage;
     } catch {
       // Not replaceable here; render code that touches it will see the throw.
     }
   }
+  return installed;
+}
+
+/**
+ * Send storage changes to the host as batches (one `storage` request per area, at
+ * most every `delayMs`), and `flush()` what is waiting at once: the frame calls it
+ * before every other request, so `sessionStorage.setItem(...)` then a navigation
+ * reaches the host in that order, as on the run page.
+ */
+export function createStoragePersister(
+  send: (batch: StorageBatch) => void,
+  delayMs = 50,
+) {
+  const empty = () => ({
+    clear: false,
+    set: new Map<string, string>(),
+    remove: new Set<string>(),
+  });
+  const waiting: Record<StorageArea, ReturnType<typeof empty>> = {
+    local: empty(),
+    session: empty(),
+  };
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  function flush() {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    for (const area of STORAGE_AREAS) {
+      const w = waiting[area];
+      if (!w.clear && !w.set.size && !w.remove.size) continue;
+      waiting[area] = empty();
+      send({
+        area,
+        clear: w.clear,
+        set: Object.fromEntries(w.set),
+        remove: Array.from(w.remove),
+      });
+    }
+  }
+  function record(area: StorageArea, change: StorageChange) {
+    const w = waiting[area];
+    if (change.op === 'clear') {
+      waiting[area] = { ...empty(), clear: true };
+    } else if (change.op === 'set') {
+      w.remove.delete(change.key);
+      w.set.set(change.key, change.value);
+    } else {
+      w.set.delete(change.key);
+      w.remove.add(change.key);
+    }
+    if (!timer) timer = setTimeout(flush, delayMs);
+  }
+  return { record, flush };
+}
+
+/** `bridge`, but storage changes still waiting are sent before each request. */
+export function flushingStorageFirst(
+  bridge: Bridge,
+  persister: { flush: () => void },
+): Bridge {
+  return {
+    ...bridge,
+    request(method, params) {
+      if (method !== 'storage') persister.flush();
+      return bridge.request(method, params);
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +264,7 @@ export function connectBridge(
       payload: FramePayload,
       bridge: Bridge,
       viewport: HostViewport | null,
+      storage: StorageSeed | null,
     ) => void;
     onUpdate: (payload: FramePayload) => void;
     /** The host's window changed (./viewport.ts). */
@@ -242,6 +342,7 @@ export function connectBridge(
       type?: string;
       payload?: FramePayload;
       viewport?: unknown;
+      storage?: unknown;
     };
     if (!data || data.type !== INIT || !data.payload || !event.ports?.[0])
       return;
@@ -253,6 +354,7 @@ export function connectBridge(
       data.payload,
       bridge,
       isViewport(data.viewport) ? data.viewport : null,
+      isStorageSeed(data.storage) ? data.storage : null,
     );
   }
 
@@ -273,6 +375,12 @@ export function connectBridge(
 // ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
+
+function isStorageSeed(v: unknown): v is StorageSeed {
+  if (!v || typeof v !== 'object') return false;
+  const o = v as Record<string, unknown>;
+  return STORAGE_AREAS.every((a) => !!o[a] && typeof o[a] === 'object');
+}
 
 function isViewport(v: unknown): v is HostViewport {
   if (!v || typeof v !== 'object') return false;
@@ -528,7 +636,7 @@ function WorkflowFramePage({
 }
 
 export function startFrame(win: Window, rootEl: HTMLElement): void {
-  installMemoryStorage(win);
+  const storages = installMemoryStorage(win);
   const reactRoot = createRoot(rootEl);
   let bridge: Bridge | null = null;
   let current: FramePayload | null = null;
@@ -560,7 +668,21 @@ export function startFrame(win: Window, rootEl: HTMLElement): void {
   );
   let viewport: ReturnType<typeof installViewport> | null = null;
   connectBridge(win, {
-    onInit(payload, b, hostViewport) {
+    onInit(payload, connected, hostViewport, storageSeed) {
+      // What render code stored on an earlier load, before it runs; its changes go
+      // to the host, ahead of any request made after them.
+      const persister = createStoragePersister((batch) => {
+        connected
+          .request('storage', batch)
+          .catch((e) => console.warn('[sandbox] storage not kept:', e.message));
+      });
+      for (const area of STORAGE_AREAS) {
+        const storage = storages[area];
+        if (!storage) continue;
+        storage.seed(storageSeed?.[area]);
+        storage.onChange = (change) => persister.record(area, change);
+      }
+      const b = flushingStorageFirst(connected, persister);
       bridge = b;
       current = payload;
       // The host's window, before anything is drawn: 100vh is its height from the
