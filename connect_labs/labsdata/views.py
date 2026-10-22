@@ -64,6 +64,8 @@ class DataView(LoginRequiredMixin, TemplateView):
         ctx["canopy_panel"] = canopy_panel.panel(
             self.request,
             reads=canopy_panel.NO_VISIT_DATA,
+            # labsdata on ZDR runners when configured (CANOPY_DATA_AGENT_SLUG), else the site's agent.
+            page_agent=canopy_panel.data_agent(),
             resource="labs-data://opportunities/" + ",".join(map(str, selected)) if selected else "labs-data://",
             backing_tool="data_describe",
             visible_ids=selected,

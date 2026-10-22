@@ -121,7 +121,7 @@ def agent_sees_real_rows(for_agent: bool, opps) -> bool:
         return True
     from connect_labs.labs import canopy_panel
 
-    return canopy_panel.real_data_clearance().granted
+    return canopy_panel.data_agent_clearance().granted
 
 
 #: What an agent receives from one call, at most. A visit's form_json alone can run to

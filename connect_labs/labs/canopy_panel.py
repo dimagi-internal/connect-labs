@@ -80,13 +80,18 @@ class Clearance:
     reason: str = ""
 
 
-def real_data_clearance() -> Clearance:
-    """Whether labs may let the agent it offers work over real (non-generated) data."""
-    agent = getattr(settings, "CANOPY_AGENT_SLUG", "") or ""
+def real_data_clearance(agent: str = "", runner_requirements=()) -> Clearance:
+    """Whether labs may let ``agent`` (default: the site's) work over real (non-generated) data.
+
+    ``runner_requirements`` are the page's own, which add to the site's (canopy SDK
+    0.11: a page can raise the floor, never lower it).
+    """
+    agent = agent or getattr(settings, "CANOPY_AGENT_SLUG", "") or ""
     if agent not in set(getattr(settings, "CANOPY_PHI_AGENTS", ()) or ()):
         return Clearance(False, f"labs has not allowed the agent {agent!r} on real data (CANOPY_PHI_AGENTS)")
-    if ZDR not in set(getattr(settings, "CANOPY_RUNNER_REQUIREMENTS", ()) or ()):
-        return Clearance(False, "labs does not require ZDR runners of its visitors (CANOPY_RUNNER_REQUIREMENTS)")
+    required = set(getattr(settings, "CANOPY_RUNNER_REQUIREMENTS", ()) or ()) | set(runner_requirements or ())
+    if ZDR not in required:
+        return Clearance(False, "labs does not require ZDR runners of this conversation (CANOPY_RUNNER_REQUIREMENTS)")
     if not CANOPY_EXECUTION_STATEMENTS:
         return Clearance(False, "canopy does not yet vouch for the agent's declaration and its runner on each call")
     return Clearance(True)
@@ -103,24 +108,59 @@ def is_real(reads: Reads) -> bool:
     return not all_generated(reads.opportunity_ids)
 
 
-def clearance_for(reads: Reads) -> Clearance:
-    """Whether an agent may be offered over what ``reads`` names."""
+def clearance_for(reads: Reads, agent: str = "", runner_requirements=()) -> Clearance:
+    """Whether ``agent`` (default: the site's) may be offered over what ``reads`` names."""
     if not is_real(reads):
         return Clearance(True)
-    return real_data_clearance()
+    return real_data_clearance(agent, runner_requirements)
 
 
-def panel(request, *, reads: Reads, **panel_kwargs) -> dict | None:
+@dataclass(frozen=True)
+class PageAgent:
+    """Which agent a page offers, what its conversations must run on, and how its panel looks."""
+
+    agent: str = ""
+    runner_requirements: tuple[str, ...] = ()
+    panel: dict | None = None
+
+
+#: A data page's panel: docked beside the data at a working width, and expandable
+#: (canopy's widget grows it over the page).
+DATA_PANEL = {"mode": "docked", "width": 560, "expandable": True}
+
+
+def data_agent() -> PageAgent:
+    """The agent labs' data pages offer: ``CANOPY_DATA_AGENT_SLUG`` (``labsdata``) on ZDR
+    runners only, or -- when unset -- the site's agent, as on every other page."""
+    slug = getattr(settings, "CANOPY_DATA_AGENT_SLUG", "") or ""
+    if not slug:
+        return PageAgent()
+    return PageAgent(agent=slug, runner_requirements=(ZDR,), panel=dict(DATA_PANEL))
+
+
+def data_agent_clearance() -> Clearance:
+    """Whether the data tools may show real rows to the agent the data pages offer."""
+    page = data_agent()
+    return real_data_clearance(page.agent, page.runner_requirements)
+
+
+def panel(request, *, reads: Reads, page_agent: PageAgent | None = None, **panel_kwargs) -> dict | None:
     """The SDK's panel context for this page, or None when no agent may be offered here.
 
     ``panel_kwargs`` are the SDK's ``panel_context`` arguments (resource, backing_tool,
-    visible_ids, filters, path). None renders nothing: the include is skipped and no
-    page token is issued.
+    visible_ids, filters, path). ``page_agent`` names the page's own agent and runner
+    requirements, signed into its page token. None renders nothing: the include is
+    skipped and no page token is issued.
     """
-    if not clearance_for(reads).granted:
+    page_agent = page_agent or PageAgent()
+    if not clearance_for(reads, page_agent.agent, page_agent.runner_requirements).granted:
         return None
     from canopy_sdk.django.pages import panel_context
 
+    if page_agent.agent:
+        panel_kwargs.update(agent=page_agent.agent, runner_requirements=list(page_agent.runner_requirements))
+    if page_agent.panel:
+        panel_kwargs["panel"] = page_agent.panel
     return panel_context(request, **panel_kwargs)
 
 
