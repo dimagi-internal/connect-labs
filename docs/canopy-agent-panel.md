@@ -119,6 +119,21 @@ leaves the agent blind to all of it.
 **Compute it from what this visitor can see.** "The agent sees exactly what the
 user sees" is the access story, and keeping it true belongs to the page.
 
+## The data agent (labsdata) on the Data page
+
+The Data page (`/labs/data/`, `connect_labs/labsdata`) can offer a different agent from
+every other page: `CANOPY_DATA_AGENT_SLUG` (`labsdata`, the read-only data agent). When it
+is set, the page passes `canopy_panel.data_agent()` -- that agent, `runner_requirements:
+["zdr"]` and a docked, expandable panel -- and the SDK (dimagi-canopy >= 0.11) signs the
+agent and the requirement into the page token. Canopy then binds the visitor's token and the
+host grant to that agent, so an ACE turn cannot spend the `data:read` grant the Data page
+minted, and the conversation runs only on ZDR runners. Unset (the default), the page offers
+the site's agent as before.
+
+Set it only after `labsdata` is allow-listed on canopy's connect-labs site, or the mint is
+refused (403). Offering it is not clearing it: real rows still need
+`real_data_clearance("labsdata", ("zdr",))`, which waits on canopy's execution statement.
+
 ## Three things that are true of labs specifically
 
 **The CSRF cookie is unreadable from JavaScript.** Labs sets

@@ -753,6 +753,12 @@ CANOPY_RUNNER_REQUIREMENTS = env.list("CANOPY_RUNNER_REQUIREMENTS", default=[])
 # PHI-safe. One of three conditions, all required (labs/canopy_panel.py). Empty by
 # default: over real data no agent panel is drawn.
 CANOPY_PHI_AGENTS = env.list("CANOPY_PHI_AGENTS", default=[])
+# The agent labs' DATA pages offer in place of CANOPY_AGENT_SLUG: `labsdata`, the
+# read-only data agent (connect_labs/labsdata). Its conversations always require ZDR
+# runners (signed into that page's token, so canopy binds the visitor's token and grant
+# to it). Must be allow-listed on canopy's connect-labs site first, or the panel's mint
+# is refused. Empty = data pages offer the site's agent, as every other page does.
+CANOPY_DATA_AGENT_SLUG = env("CANOPY_DATA_AGENT_SLUG", default="")
 # What the canopy SDK (`canopy_sdk.django`) reads. Not a second copy of the
 # values above: a callable the SDK resolves on every read, so it sees them (and
 # LABS_PUBLIC_URL, which later settings modules override) as they are NOW, plus
