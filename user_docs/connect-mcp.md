@@ -204,6 +204,17 @@ Select one or more opportunities from the list, then use the two panels on the p
 
 You can also ask the agent on the page to write a query for you from a plain-English question (for example, "hospital vs home births by LLO"). On real opportunities, the agent writes the SQL and places it in the editor for you to review and run — **it does not receive your program's real visit data**. On synthetic (demo) opportunities it can run queries and read results directly, and shows the output as a table and a chart in the chat, along with the SQL and a link that opens the query on the Data page. A dedicated read-only data agent that can work with real data on zero-data-retention runners is being prepared; until Labs turns that on, no agent sees real rows.
 
+### Editing workflows from the agent on a workflow's page
+
+The agent embedded in a workflow's run page can do more than answer questions — it can also propose changes to the workflow itself. It can fix a pipeline's SQL, add or adjust an indicator in the semantic registry, update the workflow's definition, or rewrite its render code.
+
+The agent **never saves anything on its own.** When it has a change to propose, it presents a card in the chat showing exactly what would change, with the old version and the new version side by side. Nothing is written until you decide:
+
+- **Confirm and save** — saves the change straight to the workflow. The workflow's version history is your undo if you change your mind.
+- **Decline** — saves nothing.
+
+You stay in control at every step. The agent proposes; you decide.
+
 ### Using the Data tools through MCP
 
 | Tool | What it does |
@@ -216,15 +227,4 @@ You can also ask the agent on the page to write a query for you from a plain-Eng
 
 The older names `explorer_describe`, `explorer_query` and `explorer_validate` still work.
 
-This means you can ask Claude questions like "show me hospital vs home births broken down by LLO", "check that this workflow counts deaths correctly", or "explain how this workflow's columns are built and give me a query I can run to verify them", and it will use these tools to answer from your data.
-
-!!! note "Access and safety"
-    The Data tools are read-only. They are limited to opportunities you hold, and every query and visit read is recorded in the audit trail. The visit-reading tools are not available on the `mcp/no_user_visit/` restricted address except over generated synthetic data.
-
----
-
-## Embedded Agent Settings on a Workflow's Run Page
-
-Each workflow's run page has an **Agent** box that controls whether and how an AI assistant appears when someone opens a run. Anyone who can edit the workflow can change these settings directly in the browser — no MCP session required.
-
-The Agent box is displayed on every workflow's run page as **"Agent: off · Edit"
+This means you can ask Claude questions like "show me hospital vs home births broken down by LLO", "check that this workflow counts deaths correctly", or "explain how this
