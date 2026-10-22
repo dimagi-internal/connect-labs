@@ -199,10 +199,10 @@ The Data page at [labs.connect.dimagi.com/labs/data/](https://labs.connect.dimag
 Select one or more opportunities from the list, then use the two panels on the page:
 
 - **Field browser.** Lists every question in the submitted forms for the opportunities you selected, shows how often each field is filled in, and displays the answer choices for multiple-choice questions. Use the search box to find fields quickly (for example, type "birth" to find all birth-related questions). Click any field to insert it directly into your query.
-- **SQL editor.** Write a query against the `visits` table — one row per visit — which contains the opportunity, its LLO, the worker, the case, the visit status, the review and flag details, and the full form data. Run your query and view results as a table. Download results as a CSV file.
+- **SQL editor.** Write a query against the `visits` table — one row per visit — which contains the opportunity, its LLO, the worker, the case, the visit status, the review and flag details, the rejection reason, location, justification, completed work, image references, and the full form data. Run your query and view results as a table. Download results as a CSV file.
 - **Whole visits.** Click any `visit_id` in a result to open that visit with every field and the complete submitted form, so you can check a number against the visits behind it.
 
-You can also ask the agent on the page to write a query for you from a plain-English question (for example, "hospital vs home births by LLO"). Today the agent writes the SQL and places it in the editor for you to review and run; **it does not receive your program's real visit data**. On synthetic (demo) opportunities it can run queries and read results to test its SQL. A dedicated read-only data agent that can work with real data on zero-data-retention infrastructure is being prepared; until Labs turns that on, no agent sees real rows.
+You can also ask the agent on the page to write a query for you from a plain-English question (for example, "hospital vs home births by LLO"). On real opportunities, the agent writes the SQL and places it in the editor for you to review and run — **it does not receive your program's real visit data**. On synthetic (demo) opportunities it can run queries and read results directly, and shows the output as a table and a chart in the chat, along with the SQL and a link that opens the query on the Data page. A dedicated read-only data agent that can work with real data on zero-data-retention infrastructure is being prepared; until Labs turns that on, no agent sees real rows.
 
 ### Using the Data tools through MCP
 
@@ -216,7 +216,7 @@ You can also ask the agent on the page to write a query for you from a plain-Eng
 
 The older names `explorer_describe`, `explorer_query` and `explorer_validate` still work.
 
-This means you can ask Claude questions like "show me hospital vs home births broken down by LLO", or "check that this workflow counts deaths correctly", and it will use these tools to answer from your data.
+This means you can ask Claude questions like "show me hospital vs home births broken down by LLO", "check that this workflow counts deaths correctly", or "explain how this workflow's columns are built and give me a query I can run to verify them", and it will use these tools to answer from your data.
 
 !!! note "Access and safety"
     The Data tools are read-only. They are limited to opportunities you hold, and every query and visit read is recorded in the audit trail. The visit-reading tools are not available on the `mcp/no_user_visit/` restricted address except over generated synthetic data.
@@ -225,26 +225,4 @@ This means you can ask Claude questions like "show me hospital vs home births br
 
 ## Indicator Registry: Readable Labels for Stored Codes
 
-When a case or visit field stores short codes — for example, a visit-outcome field that records `met`, `not_home`, or `left` — the Indicator Worker Review's visit list and the case tables in the Indicator Programme, Opportunity, and Worker reports can now show a human-readable label instead of the raw code.
-
-To enable this, add a `values` map to the field's entry in the registry's `display` block:
-
-```yaml
-display:
-  visit_fields:
-    - { field: visit_outcome, label: Outcome,
-        values: { met: Met her, not_home: Not at home, left: Left the programme } }
-```
-
-- Any code the map does not name continues to display as stored.
-- If you do not add a `values` map, nothing changes — codes show exactly as before.
-
-You can ask Claude to add or update a `values` map for any field in your registry by describing the labels you want in plain English.
-
----
-
-## Ask an Agent on Workflow Pages
-
-Workflow pages have an **Ask an agent** panel that lets you ask the AI assistant questions about what you are looking at — for example, to explain a column, summarise patterns, or help you understand the data.
-
-**This panel is available only when the workflow is running over generated synthetic data.** When the workflow's opportunities contain real production data, the agent launcher does not appear
+When a case or visit field stores short codes — for example, a visit-outcome field that records `met`, `not_home`, or `left` — the Indicator Worker Review's visit list and the case tables in the Indicator Programme, Opportunity, and Worker reports can now show a human-readable label instead of
