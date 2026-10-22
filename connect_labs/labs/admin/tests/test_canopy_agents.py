@@ -1,5 +1,5 @@
 """Labs Admin › Canopy agents: the settings that decide which canopy agent may read real
-data are changed in the UI, by staff only, with history, and labs reads them everywhere.
+data are changed in the UI, by Dimagi staff only, with history, and labs reads them everywhere.
 
 Every name here is invented (this repository is public).
 """
@@ -37,6 +37,11 @@ def dimagi_user():
     return get_user_model().objects.create_user(username="d", email="d@dimagi.com", password="pw")
 
 
+@pytest.fixture
+def outsider():
+    return get_user_model().objects.create_user(username="o", email="o@partner.example", password="pw")
+
+
 def _allow_data_bot(user):
     return canopy_settings.save(
         user, site_agent="site-bot", data_agent="data-bot", phi_agents=["data-bot"], runner_requirements=[]
@@ -61,10 +66,13 @@ def test_a_saved_change_is_what_labs_reads_everywhere(env, staff, monkeypatch):
     assert host["AGENT_SLUG"] == "site-bot" and host["RUNNER_REQUIREMENTS"] == []
 
 
-def test_only_staff_can_change_it(env, dimagi_user):
+def test_only_dimagi_staff_can_change_it(env, dimagi_user, outsider):
     with pytest.raises(PermissionError):
-        _allow_data_bot(dimagi_user)
+        _allow_data_bot(outsider)
     assert not CanopyAgentSettings.objects.exists()
+    # A Dimagi sign-in is enough: an OAuth-created labs user never gets Django's
+    # is_staff, and no labs page grants it, so is_staff alone left nobody able to.
+    assert _allow_data_bot(dimagi_user).data_agent == "data-bot"
 
 
 @pytest.mark.parametrize(
@@ -109,9 +117,9 @@ def test_the_page_shows_the_settings_and_lets_staff_save(env, client, staff):
 
 
 @override_settings(**LABS_SETTINGS)
-def test_a_dimagi_user_who_is_not_staff_sees_it_but_cannot_save(env, client, dimagi_user):
+def test_a_dimagi_user_without_the_staff_bit_can_save(env, client, dimagi_user):
     client.force_login(dimagi_user)
     page = client.get(reverse(URL))
-    assert page.status_code == 200 and b"Only Django staff" in page.content
+    assert page.status_code == 200 and b"Only Dimagi staff" not in page.content
     client.post(reverse(URL), {"site_agent": "site-bot", "phi_agents": "data-bot"})
-    assert not CanopyAgentSettings.objects.exists()
+    assert CanopyAgentSettings.objects.get().phi_agents == ["data-bot"]

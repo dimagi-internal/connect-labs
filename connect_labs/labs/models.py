@@ -650,7 +650,7 @@ class CanopyAgentSettings(models.Model):
 
     Append-only. The newest row is in force (``labs/canopy_settings.py``); with none,
     the ``CANOPY_*`` environment settings are. Changed at Labs Admin › Canopy agents,
-    by Django staff. Undo is a new row carrying an earlier row's values, so the
+    by Dimagi staff. Undo is a new row carrying an earlier row's values, so the
     history is never rewritten."""
 
     site_agent = models.CharField(max_length=100)

@@ -81,7 +81,7 @@ launcher.
 **Labs' side is set in the UI**, at Labs Admin › Canopy agents
 (`/labs/admin/canopy-agents/`, `labs/canopy_settings.py`): the site agent, the Data pages'
 agent, the agents allowed over real data, and the runner flags every conversation must
-run on. Dimagi users can read it; only Django staff can change it. Each change is a new
+run on. Labs Admin users can read it; Dimagi staff (a Dimagi sign-in, `is_dimagi_staff`) change it. Each change is a new
 `CanopyAgentSettings` row (who, when, why, audited) and any earlier one can be restored.
 The `CANOPY_AGENT_SLUG` / `CANOPY_DATA_AGENT_SLUG` / `CANOPY_PHI_AGENTS` /
 `CANOPY_RUNNER_REQUIREMENTS` environment settings are only the defaults until someone
