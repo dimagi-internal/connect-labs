@@ -223,6 +223,10 @@ This means you can ask Claude questions like "show me hospital vs home births br
 
 ---
 
-## Indicator Registry: Readable Labels for Stored Codes
+## Embedded Agent Settings on a Workflow's Run Page
 
-When a case or visit field stores short codes — for example, a visit-outcome field that records `met`, `not_home`, or `left` — the Indicator Worker Review's visit list and the case tables in the Indicator Programme, Opportunity, and Worker reports can now show a human-readable label instead of
+Each workflow's run page has an **Agent** box that controls whether and how an AI assistant appears when someone opens a run. Anyone who can edit the workflow can change these settings directly in the browser — no MCP session required.
+
+### What you can set
+
+**Turn the agent on or off.** You can disable the embedded
