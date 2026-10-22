@@ -311,7 +311,7 @@ DATA_AGENT_WORKFLOW = {**SHARING_WORKFLOW, "config": {"agent": {"share": True, "
 
 
 @pytest.mark.django_db(transaction=True)
-def test_a_workflow_that_offers_the_data_agent_grants_it_the_runs_reads_and_no_actions(
+def test_a_workflow_that_offers_the_data_agent_grants_it_the_runs_reads_and_edits_and_no_actions(
     enabled, canopy_redeem, visitor, settings
 ):
     from config.asgi import build_application
@@ -333,8 +333,9 @@ def test_a_workflow_that_offers_the_data_agent_grants_it_the_runs_reads_and_no_a
     assert box["agent"] == "data" and box["share"] is True
     arrival = _mint(panel, visitor)
     id_jag = arrival[contract.ARRIVAL_ID_JAG_FIELD]
-    # The run's reads and the raw data behind it -- never workflow:act -- for labsdata, on ZDR.
-    assert _scopes(id_jag) == {"workflow:read", "data:read"}
+    # The run's reads, the raw data behind it and edits confirmed in chat -- never
+    # workflow:act -- for labsdata, on ZDR.
+    assert _scopes(id_jag) == {"workflow:read", "data:read", "workflow:edit"}
     signed = json.dumps(unverified_claims(arrival["assertion"]))
     assert "labsdata" in signed and "zdr" in signed
 
@@ -375,8 +376,9 @@ def test_asking_for_the_data_agent_with_none_configured_offers_no_agent(enabled,
     [
         # Any other agent labs lists: named on the panel, the run page's usual scopes.
         ("coach-bot", [], "coach-bot", {"workflow:read", "workflow:act", "data:read"}),
-        # One allowed over real data: read-only, on ZDR, like the data agent.
-        ("deep-bot", ["deep-bot"], "deep-bot", {"workflow:read", "data:read"}),
+        # One allowed over real data: on ZDR, like the data agent -- reads, and edits
+        # a person confirms in chat, but no actions.
+        ("deep-bot", ["deep-bot"], "deep-bot", {"workflow:read", "data:read", "workflow:edit"}),
         # One labs no longer lists: no panel at all, not the site's agent in its place.
         ("gone-bot", [], None, None),
     ],

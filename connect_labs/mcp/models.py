@@ -270,3 +270,41 @@ class MCPJob(models.Model):
 
     def __str__(self) -> str:
         return f"{self.tool_name} job {self.id} ({self.state})"
+
+
+class StagedEdit(models.Model):
+    """An edit an agent proposed through canopy, held until a person confirms it in chat.
+
+    canopy (acting for a visitor) does not call Labs' edit tools directly: it proposes
+    one (``workflow_edit_propose``), which checks it and stores it here unsaved. The
+    confirm card canopy draws for that proposal shows the change to the person looking
+    at it and, on their click, saves it (``workflow_edit_apply``) by running the edit
+    tool as that person. The agent never holds the confirm token, so it cannot confirm
+    its own edit. See ``mcp/tools/workflow_edit.py``.
+    """
+
+    PENDING = "pending"
+    APPLIED = "applied"
+    DECLINED = "declined"
+    FAILED = "failed"
+    STATE_CHOICES = [(PENDING, "Pending"), (APPLIED, "Applied"), (DECLINED, "Declined"), (FAILED, "Failed")]
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mcp_staged_edits")
+    tool_name = models.CharField(max_length=100)
+    arguments = models.JSONField(default=dict, blank=True)
+    #: sha256 of (user, tool, arguments): how the confirm card, which knows only the
+    #: proposal's input, finds it again.
+    digest = models.CharField(max_length=64, db_index=True)
+    #: What the card shows: a one-line summary and the diff, computed at proposal time.
+    preview = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
+    client_id = models.CharField(max_length=255, blank=True, default="")
+    actor = models.CharField(max_length=100, blank=True, default="")
+    state = models.CharField(max_length=20, choices=STATE_CHOICES, default=PENDING, db_index=True)
+    result = models.JSONField(null=True, blank=True, encoder=DjangoJSONEncoder)
+    error = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]

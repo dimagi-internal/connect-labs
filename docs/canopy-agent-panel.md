@@ -152,8 +152,9 @@ A workflow chooses which agent its run pages offer (`config.agent.agent`, the ru
 **Agent** box; WORKFLOW_REFERENCE.md §14): the site agent, the data agent, or any other agent
 Labs Admin lists under "Other agents workflows may choose" (`canopy_settings.choices`), so
 different workflows can offer different agents. The data agent, and any agent allowed over
-real data, is offered read-only: ZDR runners, page key `labs:workflow:run:data`
-(`workflow:read` + `data:read`, never `workflow:act`). Every agent gets the author's `brief`
+real data, is offered on ZDR runners, page key `labs:workflow:run:data`
+(`workflow:read` + `data:read` + `workflow:edit`, never `workflow:act`): it reads, and it
+changes the workflow only by an edit the person confirms in chat (below). Every agent gets the author's `brief`
 through `data_workflow_context`. A choice Labs Admin no longer lists offers no panel.
 
 Set it only after `labsdata` is allow-listed on canopy's connect-labs site, or the mint is
@@ -240,9 +241,23 @@ to canopy:
 | --- | --- |
 | `workflow:read` | `workflow_run_context`, `workflow_run_indicators`, `workflow_indicator_explain`, `workflow_action_status` |
 | `workflow:act` | `workflow_run_action`, `workflow_action_preview_view` (app-only: the coaching View's own preview) |
+| `workflow:edit` | `workflow_edit_propose`; app-only, for the confirm card: `workflow_edit_review_view`, `workflow_edit_apply`, `workflow_edit_decline` |
 | `targeting:read` | every `targeting_*` read tool, incl. `targeting_cost_effectiveness` |
 
-**The one write scope, and why it is safe to hand to a page.** `workflow_run_action`
+**Edits, confirmed in chat (`workflow:edit`).** The agent never calls an edit tool
+(`workflow_update_definition`, `workflow_patch_render_code`, `pipeline_update_schema`, the
+`semantic_registry_*` writes …). It proposes one: `workflow_edit_propose` checks it, works
+out the diff and holds it unsaved (`StagedEdit`). canopy draws the confirm card
+(`ui://labs/workflow-edit-confirm`), which reads the edit back as the viewer, with a
+single-use token only the card gets, and saves it on their Confirm by running the edit
+tool as them -- straight to the workflow, whose version history is the undo. Refused
+whatever the person confirms, because they would send data elsewhere: anything but the
+listed edit tools (sharing, publishing, cloning, deleting), a definition's `kind`, `page`,
+`workflow_sources`, `config_reads`, `config.actions`, `config.agent` and `config.sandbox`,
+and render code on a workflow that does not run in the page sandbox. Code:
+`mcp/tools/workflow_edit.py`.
+
+**The coaching write scope, and why it is safe to hand to a page.** `workflow_run_action`
 cannot act in one call. Its first call is a preview of exactly what would happen,
 with a single-use token bound to the visitor, the run and those arguments. Only a
 second call carrying that token acts, and changing anything in between refuses it.

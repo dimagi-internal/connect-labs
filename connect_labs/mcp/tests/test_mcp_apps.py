@@ -162,7 +162,16 @@ def test_the_views_preview_tool_is_app_only():
 
 def test_only_view_tools_carry_ui_meta():
     with_ui = {t["name"] for t in registry_list_tools() if "ui" in (t.get("_meta") or {})}
-    assert with_ui == {"workflow_run_action", "workflow_action_preview_view", "targeting_pmc_states", "data_query"}
+    assert with_ui == {
+        "workflow_run_action",
+        "workflow_action_preview_view",
+        "targeting_pmc_states",
+        "data_query",
+        "workflow_edit_propose",
+        "workflow_edit_review_view",
+        "workflow_edit_apply",
+        "workflow_edit_decline",
+    }
 
 
 def test_the_views_preview_tool_reads_and_the_commit_writes():

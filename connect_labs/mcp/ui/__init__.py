@@ -37,6 +37,10 @@ PMC_STATES_URI = "ui://labs/pmc-states"
 #: opens the query on the Data page.
 DATA_RESULT_URI = "ui://labs/data-result"
 
+#: An edit an agent proposed through canopy: what would change, as a diff, and the
+#: Confirm that saves it -- as the viewer (mcp/tools/workflow_edit.py).
+WORKFLOW_EDIT_CONFIRM_URI = "ui://labs/workflow-edit-confirm"
+
 _HERE = Path(__file__).resolve().parent
 
 
@@ -88,6 +92,16 @@ RESOURCES: tuple[UIResource, ...] = (
             "link that opens the query on the Data page. Rows withheld from the agent are withheld here too."
         ),
         filename="data_result.html",
+        meta={"prefersBorder": True},
+    ),
+    UIResource(
+        uri=WORKFLOW_EDIT_CONFIRM_URI,
+        name="workflow_edit_confirm",
+        description=(
+            "An edit an agent proposed to a workflow, a pipeline or a semantic registry: what would change, "
+            "as a diff, and the Confirm that saves it as the person looking at it."
+        ),
+        filename="workflow_edit_confirm.html",
         meta={"prefersBorder": True},
     ),
 )

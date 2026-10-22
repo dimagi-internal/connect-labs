@@ -61,6 +61,14 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
         }
     ),
     "workflow:act": frozenset({"workflow_run_action", "workflow_action_preview_view"}),
+    # Change the workflow, its pipelines and its semantic registry -- by proposal only.
+    # The agent proposes (workflow_edit_propose); the person saves it with the confirm
+    # card's Confirm (workflow_edit_apply, app-only, carrying the token only the card
+    # gets). The edit tools themselves are not here. What may be proposed, and what is
+    # refused because it would send data elsewhere: mcp/tools/workflow_edit.py.
+    "workflow:edit": frozenset(
+        {"workflow_edit_propose", "workflow_edit_review_view", "workflow_edit_apply", "workflow_edit_decline"}
+    ),
     # A page (workflow/page_mode.py): what it is built from -- its scope, the Settings it
     # reads and its workflow sources' run summaries -- read as the visitor. The tool
     # refuses a definition that is not a page, or does not share, whatever the token.
@@ -137,7 +145,7 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
 VISIT_SCOPES: frozenset[str] = frozenset({"workflow:read", "workflow:act", "page:read"})
 
 #: Write scopes whose every tool acts only on a confirmed preview.
-PREVIEWED_WRITE_SCOPES: frozenset[str] = frozenset({"workflow:act"})
+PREVIEWED_WRITE_SCOPES: frozenset[str] = frozenset({"workflow:act", "workflow:edit"})
 
 #: Which pages may let canopy act as the visitor, and with which scopes, keyed by
 #: URL name. A page's scopes are decided here, server-side, and never from
@@ -156,8 +164,9 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     # (data_workflow_context, data_query, data_visits) -- real rows only for a cleared agent.
     "labs:workflow:run": ("workflow:read", "workflow:act", "data:read"),
     # A run whose workflow offers the DATA agent (``config.agent.agent == "data"``): the
-    # run's reads and the raw data behind it, never ``workflow:act`` (``RUN_FOR_DATA_AGENT``).
-    "labs:workflow:run:data": ("workflow:read", "data:read"),
+    # run's reads, the raw data behind it, and edits to the workflow confirmed in chat --
+    # never ``workflow:act`` (``RUN_FOR_DATA_AGENT``).
+    "labs:workflow:run:data": ("workflow:read", "data:read", "workflow:edit"),
     # A page drawn at its workflow URL (or any route registered with more than a page
     # needs): its panel names this key instead of the route (``PAGE_ON_ANOTHER_ROUTE``),
     # so a page's agent reads the page and nothing a workflow's run would reach.

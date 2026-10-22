@@ -242,6 +242,7 @@ def test_metadata_advertises_the_grant_only_when_it_is_on(settings):
         "supply:read",
         "targeting:read",
         "workflow:act",
+        "workflow:edit",
         "workflow:read",
     ]
     assert on["token_endpoint"] == TOKEN_ENDPOINT
@@ -307,8 +308,15 @@ def test_every_scoped_tool_exists_and_only_previewed_scopes_write():
             assert spec is not None, f"{scope} names a tool that does not exist: {name}"
             if scope not in canopy.PREVIEWED_WRITE_SCOPES:
                 assert not spec.is_write, f"{scope} is a read scope but {name} writes"
-    assert canopy.PREVIEWED_WRITE_SCOPES == {"workflow:act"}
+    assert canopy.PREVIEWED_WRITE_SCOPES == {"workflow:act", "workflow:edit"}
     assert canopy.SCOPE_TOOLS["workflow:act"] == {"workflow_run_action", "workflow_action_preview_view"}
+    # Edits by proposal only: the edit tools themselves are never in a delegated scope.
+    assert canopy.SCOPE_TOOLS["workflow:edit"] == {
+        "workflow_edit_propose",
+        "workflow_edit_review_view",
+        "workflow_edit_apply",
+        "workflow_edit_decline",
+    }
     assert all(scope.endswith(":read") for scope in set(canopy.SCOPE_TOOLS) - canopy.PREVIEWED_WRITE_SCOPES)
 
 

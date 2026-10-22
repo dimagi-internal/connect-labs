@@ -29,6 +29,7 @@ from . import synthetic  # noqa: F401  -- registers synthetic_*, incl. synthetic
 from . import synthetic_tasks  # noqa: F401  -- registers task_create_synthetic
 from . import templates  # noqa: F401
 from . import workflow_create_run  # noqa: F401  -- registers workflow_create_run
+from . import workflow_edit  # noqa: F401  -- workflow_edit_* (an agent's edit, confirmed in chat)
 from . import workflow_history  # noqa: F401  -- workflow_*history / _preview_as_of / _ensure_visit_cache
 from . import workflow_resume_dual_track_run  # noqa: F401  -- registers workflow_resume_dual_track_run
 from . import workflow_run  # noqa: F401  -- workflow_run_*, _indicator_explain, _action_status
