@@ -51,16 +51,44 @@ what is labs':
 | The overlay | the SDK's `canopy_host/panel.html`, styled by `canopy.PANEL` |
 | What the agent reads | `connect_labs/mcp/tools/marketplace.py` |
 
+## Real data: no agent unless labs has cleared it
+
+**Over production visit data no agent panel is drawn.** Every page states what the
+agent could read through it, and `connect_labs/labs/canopy_panel.py` decides from that
+whether an agent may be offered at all:
+
+| The page reads | Agent offered |
+| --- | --- |
+| no visit data (`NO_VISIT_DATA`: the directory, targeting, a tender, the explorer) | yes |
+| visits of opportunities that all hold GENERATED synthetic data (`provenance.is_generated`) | yes, any agent |
+| any real visits, or it cannot tell | only an agent labs has cleared for real data |
+
+Clearance needs all three: the offered agent is in `CANOPY_PHI_AGENTS` (its author
+claims it PHI-safe and labs accepts that); `zdr` is in `CANOPY_RUNNER_REQUIREMENTS`
+(signed into every visitor assertion, so canopy routes the conversation only to
+zero-data-retention runners); and canopy vouches on each call for the agent's
+declaration and the runner executing it. Canopy does not sign that statement yet
+(canopy-web spec `2026-10-22-phi-agents-on-zdr-runners`), so **today no agent is offered
+over real data** -- a sharing workflow over production opps shows its own buttons and
+no launcher.
+
+Not drawn means no page token, no grant and no ID-JAG. Labs' MCP holds canopy's calls to
+the same rule independently (`mcp/visit_access.py:delegated_denied_reason`, every tool
+under `canopy.VISIT_SCOPES`), so a token minted before an opportunity's data changed is
+refused too. A person's own agent (a PAT or MCP sign-in) is not affected.
+
 ## Putting it on a page
 
-Give the view a `canopy_panel`, and include the partial in
-`{% block inline_javascript %}`:
+Give the view a `canopy_panel` from **`canopy_panel.panel`** -- never the SDK's
+`panel_context` directly (a test pins that) -- saying what the page reads, and include
+the partial in `{% block inline_javascript %}`:
 
 ```python
-from canopy_sdk.django.pages import panel_context
+from connect_labs.labs import canopy_panel
 
-context["canopy_panel"] = panel_context(
+context["canopy_panel"] = canopy_panel.panel(
     request,
+    reads=canopy_panel.NO_VISIT_DATA,  # or canopy_panel.visits(opportunity_ids)
     resource="labs-marketplace://orgs",
     backing_tool="marketplace_orgs_get",
     visible_ids=[row["org"].slug for row in listed],

@@ -302,10 +302,11 @@ class TargetingView(OpenLocallyMixin, TemplateView):
         # only: the panel mints a token about request.user, and the page is open
         # to anonymous visitors when running locally.
         if self.request.user.is_authenticated:
-            from canopy_sdk.django.pages import panel_context
+            from connect_labs.labs import canopy_panel
 
-            ctx["canopy_panel"] = panel_context(
+            ctx["canopy_panel"] = canopy_panel.panel(
                 self.request,
+                reads=canopy_panel.NO_VISIT_DATA,  # public open data
                 resource="labs-targeting://map",
                 backing_tool="targeting_select",
                 filters={k: v for k, v in self.request.GET.items() if k in PANEL_FILTER_KEYS and v},
@@ -947,10 +948,11 @@ class PmcView(OpenLocallyMixin, TemplateView):
         # Same rule as the map page: the panel only for a signed-in visitor, and
         # it carries what the visitor chose, never the rows.
         if self.request.user.is_authenticated:
-            from canopy_sdk.django.pages import panel_context
+            from connect_labs.labs import canopy_panel
 
-            ctx["canopy_panel"] = panel_context(
+            ctx["canopy_panel"] = canopy_panel.panel(
                 self.request,
+                reads=canopy_panel.NO_VISIT_DATA,  # public open data
                 resource="labs-targeting://pmc",
                 backing_tool="targeting_pmc_rank",
                 filters={"iso": pmc.ISO}

@@ -925,13 +925,14 @@ def _quotes_panel(request, tender_id, quote_ids, *, commodity=None):
     """
     if not request.user.is_authenticated or getattr(request, "supply_as_of", None):
         return None
-    from canopy_sdk.django.pages import panel_context
+    from connect_labs.labs import canopy_panel
 
     filters = {"tender_id": tender_id, "program_id": _access(request).program_id}
     if commodity:
         filters["commodity_slug"] = commodity
-    return panel_context(
+    return canopy_panel.panel(
         request,
+        reads=canopy_panel.NO_VISIT_DATA,  # a tender and its quotes: supply data, no visits
         resource=f"labs-supply://tenders/{tender_id}",
         backing_tool="supply_chain_tender_compare",
         visible_ids=[str(q) for q in quote_ids if q],

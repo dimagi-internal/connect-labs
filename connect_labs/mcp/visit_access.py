@@ -251,3 +251,79 @@ def denied_reason(user, tool_name: str, arguments: dict) -> str | None:
             "reads is not one of those."
         )
     return None
+
+
+# ---------------------------------------------------------------------------
+# Canopy acting as a visitor: real data only for a cleared agent
+# ---------------------------------------------------------------------------
+
+
+def _page_reads(user, arguments: dict):
+    """What a ``page_context`` call shows the agent: its page's workflow sources' opps."""
+    from connect_labs.labs import canopy_panel
+    from connect_labs.workflow.data_access import WorkflowDataAccess
+
+    from .connect_token import require_connect_token
+
+    owner = {k: arguments.get(k) for k in ("opportunity_id", "program_id", "organization_id")}
+    owner = {k: v for k, v in owner.items() if v not in (None, "")}
+    if len(owner) != 1:
+        return canopy_panel.visits(None)
+    token = require_connect_token(user)
+    access = WorkflowDataAccess(access_token=token, **owner)
+    try:
+        definition = access.get_definition(int(arguments.get("definition_id")))
+    except Exception:  # noqa: BLE001 -- unreadable is "cannot tell", which refuses
+        definition = None
+    finally:
+        access.close()
+    if definition is None:
+        return canopy_panel.visits(None)
+    return canopy_panel.page_reads(definition, token)
+
+
+def _visits_of(key: str):
+    resolve = _workflow(key)
+
+    def reads(user, arguments: dict):
+        from connect_labs.labs import canopy_panel
+
+        return canopy_panel.visits(resolve(user, arguments))
+
+    return reads
+
+
+#: What each tool a canopy page scope reaches would show the agent. Every tool under
+#: ``canopy.VISIT_SCOPES`` has an entry (a test pins it): over real data they run only
+#: for an agent labs has cleared (``labs/canopy_panel.py``), the same rule that decides
+#: whether the page draws the panel at all.
+DELEGATED_READS = {
+    "workflow_run_context": _visits_of("run_id"),
+    "workflow_run_indicators": _visits_of("run_id"),
+    "workflow_indicator_explain": _visits_of("run_id"),
+    "workflow_run_cases": _visits_of("run_id"),
+    "workflow_action_status": _visits_of("run_id"),
+    "workflow_run_action": _visits_of("run_id"),
+    "workflow_action_preview_view": _visits_of("run_id"),
+    "page_context": _page_reads,
+}
+
+
+def delegated_denied_reason(user, tool_name: str, arguments: dict) -> str | None:
+    """Why canopy, acting for a visitor, may not make this call, or None to allow it.
+
+    Only tools under ``canopy.VISIT_SCOPES`` are judged here; what a delegated token
+    may reach at all is its scopes (``server.allowed_tools``).
+    """
+    from connect_labs.labs import canopy_panel
+
+    reads_of = DELEGATED_READS.get(tool_name)
+    if reads_of is None:
+        return None
+    clearance = canopy_panel.clearance_for(reads_of(user, arguments))
+    if clearance.granted:
+        return None
+    return (
+        f"Through canopy, {tool_name} runs only on synthetic opportunities whose data was "
+        f"generated: {clearance.reason}."
+    )
