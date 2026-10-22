@@ -129,7 +129,10 @@ class TestDurableMovementsAskForNoBatch:
         dispenser = _durable(da)
         body = client_in_programme.get(reverse("supply_chain:movement_record")).content.decode()
         assert 'data-durable-hides="batch expiry"' in body
-        option = re.search(rf'<option value="{dispenser["id"]}"[^>]*>', body).group(0)
+        # Inside the item picker: another select (commodity, supply point) can
+        # hold an option with the same pk, and it comes first on the page.
+        picker = re.search(r'<select name="item".*?</select>', body, re.S).group(0)
+        option = re.search(rf'<option value="{dispenser["id"]}"[^>]*>', picker).group(0)
         assert 'data-durable="1"' in option
         assert 'id="div_id_batch"' in body and 'id="div_id_expiry"' in body
 
