@@ -407,3 +407,32 @@ def test_a_workflow_offers_the_agent_it_chose_on_that_agents_terms(
     assert _scopes(arrival[contract.ARRIVAL_ID_JAG_FIELD]) == expect_scopes
     signed = json.dumps(unverified_claims(arrival["assertion"]))
     assert ("zdr" in signed) == bool(phi)
+
+
+@pytest.mark.django_db
+def test_a_held_back_agent_is_never_silent(enabled, visitor, settings):
+    """Owner, 2026-10-22: labsdata was set up everywhere but one labs field, and the KMC
+    report drew no panel and said nothing. Now the Agent box says why, and the choice is
+    shown greyed with the same reason."""
+    from connect_labs.workflow.views import WorkflowRunView
+
+    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"
+    settings.CANOPY_PHI_AGENTS = []
+    with (
+        mock.patch("connect_labs.workflow.views.get_org_data", return_value={}),
+        mock.patch("connect_labs.labs.synthetic.provenance.all_generated", return_value=False),
+    ):
+        response, panel = _panel(
+            WorkflowRunView,
+            _request("/labs/workflow/47/run/?run_id=503&program_id=25", visitor, {"program_id": 25}),
+            DATA_AGENT_WORKFLOW,
+            definition_id=47,
+        )
+    assert not panel
+    box = _json_script(response.content.decode(), "agent-settings")
+    assert any("not allowed over real data" in r for r in box["held_back"])
+    data = next(c for c in box["choices"] if c["value"] == "data")
+    assert data["available"] is False and data["reasons"] == box["held_back"]
+    # The site's agent is not allowed over real data either, and says so.
+    site = next(c for c in box["choices"] if c["value"] == "site")
+    assert site["available"] is False and site["reasons"]

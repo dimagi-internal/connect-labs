@@ -1074,10 +1074,13 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         # offers. A read-only one (the data agent, or any allowed over real data) runs on
         # ZDR runners, its token signed for the run's read scopes only. A choice labs no
         # longer offers: no panel, not the site's agent in its place.
-        chosen = canopy_panel.chosen_agent(offered.agent)
-        if chosen is None:
+        reads = canopy_panel.workflow_reads(definition, run_data.get("opportunity_id"))
+        available = canopy_panel.availability(offered.agent, reads)
+        if not available.ok:
+            # Never silent: the Agent box says why the chosen agent is not here.
+            context["agent_held_back"] = list(available.reasons)
             return
-        page_agent, read_only = chosen
+        page_agent, read_only = canopy_panel.chosen_agent(offered.agent)
         page_key = canopy.RUN_FOR_DATA_AGENT if read_only else ""
         scope = (
             {"opportunity_id": run_data["opportunity_id"]}
@@ -1088,7 +1091,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         # it for real data (labs/canopy_panel.py): no panel, no page token, no grant.
         panel = canopy_panel.panel(
             self.request,
-            reads=canopy_panel.workflow_reads(definition, run_data.get("opportunity_id")),
+            reads=reads,
             page_agent=page_agent,
             page_key=page_key,
             resource=f"labs-workflow://{definition.id}/runs/{run_id}",
@@ -1100,18 +1103,26 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         if panel is not None:
             context["canopy_panel"] = panel
 
-    def _add_agent_settings(self, context, definition):
+    def _add_agent_settings(self, context, definition, run_data):
         """What the run page's "Agent" box shows and saves (``UpdateAgentConfigView``):
         this workflow's ``config.agent``, and the agents labs offers workflows
         (Labs Admin › Canopy agents, ``canopy_settings.choices``)."""
         from django.urls import reverse
 
-        from connect_labs.labs import canopy_settings
+        from connect_labs.labs import canopy_panel, canopy_settings
         from connect_labs.workflow.agent_sharing import BRIEF_MAX_CHARS, agent_config
 
+        # Each choice as THIS workflow would get it: one not available over what it reads
+        # is shown greyed, with why (canopy_panel.availability).
+        reads = canopy_panel.workflow_reads(definition, run_data.get("opportunity_id"))
+        choices = []
+        for offered in canopy_settings.choices():
+            here = canopy_panel.availability(offered.value, reads)
+            choices.append({**offered.as_dict(), "available": here.ok, "reasons": list(here.reasons)})
         context["agent_settings"] = {
             **agent_config(definition).as_config(),
-            "choices": [o.as_dict() for o in canopy_settings.choices()],
+            "choices": choices,
+            "held_back": context.get("agent_held_back") or [],
             "brief_max": BRIEF_MAX_CHARS,
             "url": reverse("labs:workflow:api_update_agent_config", args=[definition.id]),
         }
@@ -1638,7 +1649,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # presentation link: a page shared with a funder carries no actions and no agent.
             if not is_edit_mode and not page and not context["present_mode"]:
                 self._add_actions_and_agent(context, definition, run_data, workers)
-                self._add_agent_settings(context, definition)
+                self._add_agent_settings(context, definition, run_data)
             elif page and not context["present_mode"]:
                 self._add_page_actions(context, definition, run_scope_qs)
                 self._add_page_agent(context, definition, scope, labs_context)

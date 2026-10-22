@@ -64,6 +64,9 @@ CANOPY_EXECUTION_STATEMENTS = _execution_statements_supported()
 #: The runner flag every conversation over real data must require.
 ZDR = "zdr"
 
+#: Where labs' side of every refusal is fixed.
+ADMIN_PAGE = "Labs Admin › Canopy agents"
+
 
 @dataclass(frozen=True)
 class Reads:
@@ -107,14 +110,15 @@ def real_data_clearance(agent: str = "", runner_requirements=()) -> Clearance:
     if agent not in set(configured.phi_agents):
         return Clearance(
             False,
-            f"labs has not allowed the agent {agent!r} on real data (CANOPY_PHI_AGENTS, Labs Admin › Canopy agents)",
+            f'{agent} is not allowed over real data: add it to "Agents allowed over real data" '
+            f"in {ADMIN_PAGE} (CANOPY_PHI_AGENTS)",
         )
     required = set(configured.runner_requirements) | set(runner_requirements or ())
     if ZDR not in required:
         return Clearance(
             False,
-            "labs does not require ZDR runners of this conversation "
-            "(CANOPY_RUNNER_REQUIREMENTS, Labs Admin › Canopy agents)",
+            f"conversations with {agent} here are not held to ZDR (zero-data-retention) runners: "
+            f"offer it read-only, or tick zdr, in {ADMIN_PAGE} (CANOPY_RUNNER_REQUIREMENTS)",
         )
     if not CANOPY_EXECUTION_STATEMENTS:
         return Clearance(False, "canopy does not yet vouch for the agent's declaration and its runner on each call")
@@ -220,6 +224,28 @@ def chosen_agent(choice: str) -> tuple[PageAgent, bool] | None:
     if offered.value == canopy_settings.SITE_ROLE:
         return PageAgent(), False
     return PageAgent(agent=offered.slug, runner_requirements=canopy_settings.current().runner_requirements), False
+
+
+@dataclass(frozen=True)
+class Availability:
+    """Whether a page may offer the agent a workflow chose, and if not, why -- the one
+    answer the panel, the run page's Agent box and its "held back" line all read."""
+
+    ok: bool
+    read_only: bool = False
+    reasons: tuple[str, ...] = ()
+
+
+def availability(choice: str, reads: Reads) -> Availability:
+    """``choice`` (``config.agent.agent``: a role or a slug) over what the page ``reads``."""
+    chosen = chosen_agent(choice)
+    if chosen is None:
+        return Availability(False, reasons=(f"labs does not offer {choice}: choose an agent {ADMIN_PAGE} lists",))
+    page_agent, read_only = chosen
+    clearance = clearance_for(reads, page_agent.agent, page_agent.runner_requirements)
+    if not clearance.granted:
+        return Availability(False, read_only, (clearance.reason,))
+    return Availability(True, read_only)
 
 
 def data_agent_clearance() -> Clearance:
