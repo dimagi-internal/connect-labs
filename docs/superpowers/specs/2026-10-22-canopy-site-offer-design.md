@@ -7,13 +7,13 @@ Status: approved 2026-10-22 (owner); canopy-web side and SDK 0.14 first, then la
 Labs offers canopy agents on its pages and lets some of them read real visit data. Every
 fact labs uses to decide that is a copy it keeps by hand of something canopy owns:
 
-| Labs keeps                                   | Canopy owns                                                         |
-| -------------------------------------------- | ------------------------------------------------------------------- |
-| agent slugs typed into text fields           | which agents exist and are allowed on the connect-labs site         |
-| a "data agent" role, offered read-only       | what each agent's capability does on this site                      |
-| a list of agents "allowed over real data"    | whether the agent is PHI-safe (`data: phi`, set behind a passkey)   |
-| `KNOWN_RUNNER_FLAGS = ("zdr",)`              | the runner flags canopy knows, and which runners an agent can use    |
-| nothing                                      | whether the agent is ready (GitHub token, a ready runner, ...)       |
+| Labs keeps                                | Canopy owns                                                       |
+| ----------------------------------------- | ----------------------------------------------------------------- |
+| agent slugs typed into text fields        | which agents exist and are allowed on the connect-labs site       |
+| a "data agent" role, offered read-only    | what each agent's capability does on this site                    |
+| a list of agents "allowed over real data" | whether the agent is PHI-safe (`data: phi`, set behind a passkey) |
+| `KNOWN_RUNNER_FLAGS = ("zdr",)`           | the runner flags canopy knows, and which runners an agent can use |
+| nothing                                   | whether the agent is ready (GitHub token, a ready runner, ...)    |
 
 Nothing checks the copies against the originals until a visitor's call reaches labs with
 canopy's `Canopy-Execution` statement, and a mismatch then shows as an agent that silently
@@ -56,8 +56,8 @@ and refuses (401) anything else. The SDK builds it: `canopy_sdk.offer.request_as
   "iat": 1792700000,
   "exp": 1792700900,
   "version": "<sha256 of the canonical agents+flags content>",
-  "site": {"name": "connect-labs", "tenant": "connect"},
-  "runner_flags": [{"flag": "zdr", "meaning": "zero data retention: ..."}],
+  "site": { "name": "connect-labs", "tenant": "connect" },
+  "runner_flags": [{ "flag": "zdr", "meaning": "zero data retention: ..." }],
   "agents": [
     {
       "slug": "labsdata",
@@ -78,7 +78,7 @@ and refuses (401) anything else. The SDK builds it: `canopy_sdk.offer.request_as
       ],
       "runners": {
         "flags_available": ["zdr"],
-        "ready_with": {"zdr": true}
+        "ready_with": { "zdr": true }
       },
       "ready": true,
       "problems": []
@@ -123,11 +123,23 @@ signed with the site's key. Payload:
   "v": 1,
   "iss": "connect-labs",
   "pages": [
-    {"key": "labs:workflow:run", "title": "A workflow run", "scopes": ["workflow:read", "workflow:act", "data:read"]},
-    {"key": "labs:workflow:run:data", "title": "A workflow run, read-only", "scopes": ["workflow:read", "data:read"]}
+    {
+      "key": "labs:workflow:run",
+      "title": "A workflow run",
+      "scopes": ["workflow:read", "workflow:act", "data:read"]
+    },
+    {
+      "key": "labs:workflow:run:data",
+      "title": "A workflow run, read-only",
+      "scopes": ["workflow:read", "data:read"]
+    }
   ],
-  "real_data": {"requires": {"phi_safe": true, "runner_flag": "zdr"}},
-  "uses": {"agents": ["ace", "labsdata"], "real_data_agents": ["labsdata"], "version": "<offer version chosen against>"}
+  "real_data": { "requires": { "phi_safe": true, "runner_flag": "zdr" } },
+  "uses": {
+    "agents": ["ace", "labsdata"],
+    "real_data_agents": ["labsdata"],
+    "version": "<offer version chosen against>"
+  }
 }
 ```
 
