@@ -435,3 +435,61 @@ def test_the_awarded_implementer_runs_procurement_end_to_end(manager, meadow, la
     from connect_labs.supply_chain.models import Contract
 
     assert Contract.objects.get(pk=contract["id"]).recorded_by_org == lakeside
+
+
+SYNTHETIC_PROGRAM, SYNTHETIC_OPP = 10_853, 10_854
+
+
+@pytest.fixture
+def synthetic_programme():
+    """A registered labs-only programme: no Connect manager can exist for it."""
+    from connect_labs.labs.synthetic import registry
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+
+    SyntheticOpportunity.objects.create(
+        opportunity_id=SYNTHETIC_OPP, program_id=SYNTHETIC_PROGRAM, labs_only=True, enabled=True,
+        label="synthetic supply", allowed_domains=["@meadow.example"],
+    )  # fmt: skip
+    registry.invalidate_cache()
+    yield SYNTHETIC_PROGRAM
+    registry.invalidate_cache()
+
+
+class TestASyntheticProgramme:
+    """A labs-only programme has no Connect manager, so Dimagi declares itself to run it."""
+
+    def test_a_dimagi_member_who_can_see_it_declares_dimagi(self, manager, synthetic_programme):
+        result = declare_as(manager, dimagi_org(), program_id=synthetic_programme)
+        assert (result["org_id"], result["your_standing"]) == (dimagi_org().pk, PROGRAMME)
+        assert ProgrammeRunner.objects.get(program_id=synthetic_programme).declared_by == manager
+
+    def test_someone_who_is_not_dimagi_may_not(self, plain_manager, synthetic_programme):
+        # They can see it (their domain is allowed); they are not Dimagi.
+        with pytest.raises(PermissionDenied, match="no running organisation yet"):
+            declare_as(plain_manager, dimagi_org(), program_id=synthetic_programme)
+
+    def test_dimagi_may_not_name_another_organisation(self, manager, meadow, synthetic_programme):
+        with pytest.raises(PermissionDenied, match="no running organisation yet"):
+            declare_as(manager, meadow, program_id=synthetic_programme)
+
+    def test_a_dimagi_member_who_cannot_see_it_may_not(self, synthetic_programme):
+        # A Dimagi associate belongs to the Dimagi organisation but is not one of
+        # labs' internal domains, so the programme's allowed domains govern them.
+        associate = make_user("associate", email="helper@dimagi-associate.com")
+        with patch("connect_labs.supply_chain.data_access.may_use", return_value=None):
+            access = _access(associate, program_id=synthetic_programme)
+        with pytest.raises(PermissionDenied, match="no running organisation yet"):
+            op(access, "programme_runner_set", org_id=dimagi_org().pk)
+
+    def test_a_real_programme_with_no_manager_is_still_refused(self, stranger):
+        dimagi_person = make_user("dimagi-person", email="person@dimagi.com")
+        for user in (stranger, dimagi_person):
+            with patch("connect_labs.supply_chain.data_access.may_use", return_value=None):
+                access = _access(user)
+            with pytest.raises(PermissionDenied, match=r"manages it in Connect \(or platform support\)"):
+                op(access, "programme_runner_set", org_id=dimagi_org().pk)
+
+    def test_an_existing_runner_still_changes_only_by_its_own_rule(self, manager, synthetic_programme):
+        declare_as(manager, dimagi_org(), program_id=synthetic_programme)
+        with pytest.raises(PermissionDenied, match="runs program"):
+            declare_as(manager, dimagi_org(), program_id=synthetic_programme)

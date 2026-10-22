@@ -12,6 +12,10 @@ own managers partners in it -- until someone asked support. Now:
                          it), never from a labs-only registration, whose
                          organisation is a name-bucket anyone who can register a
                          synthetic opp can file under.
+                         A synthetic (registered labs-only) programme has no
+                         Connect manager at all, so on one of those a Dimagi
+                         member who can open it declares Dimagi -- and only
+                         Dimagi -- to run it (2026-10-21).
     changing it          an admin granted for the current running organisation,
                          or a Connect member of it when Connect knows it (Connect
                          membership is that organisation's grant; labs cannot see
@@ -22,7 +26,9 @@ own managers partners in it -- until someone asked support. Now:
 and the organisation named must be one the evidence ties to the programme:
 
     - the managing organisation itself (by Connect id, never by slug);
-    - Dimagi, when the caller manages the programme AND is Dimagi;
+    - Dimagi, when the caller manages the programme AND is Dimagi, or when the
+      programme is synthetic, has no runner yet, and the caller is a Dimagi
+      member who can open it;
     - an organisation delivering an opportunity in the programme, as Connect
       lists it to the caller (matched on the row's Connect slug; a Connect slug
       shared by two rows matches neither);
@@ -127,6 +133,29 @@ def _may_change(access, current) -> bool:
     return not current.labs_only and _connect_member(access, current)
 
 
+def _dimagi_on_synthetic(access, program_id) -> bool:
+    """Whether this caller is a Dimagi member who can open `program_id`, a registered labs-only programme.
+
+    A synthetic programme exists nowhere in Connect, so nobody can ever manage
+    it there; without this, only support (or a seeder) could give one a runner,
+    and every supply write on it is refused until one is declared. Opening it is
+    checked with the same rule its supply team is (`_can_open_programme`: the
+    registration's `allowed_domains` / workspace), so a Dimagi address that the
+    programme does not admit gets nothing here.
+    """
+    from connect_labs.supply_chain.runner.operations import _can_open_programme
+    from connect_labs.supply_chain.scopes import is_synthetic
+    from connect_labs.utils.dimagi_user import is_dimagi_org_member
+
+    user = _user_of(access)
+    return (
+        user is not None
+        and is_dimagi_org_member(user)
+        and is_synthetic(program_id)
+        and _can_open_programme(user, program_id)
+    )
+
+
 def _delivers_in(tree, program_id, org) -> bool:
     slug = org.connect_organization_slug
     if not tree or not slug or org.connect_organization_id is None:
@@ -153,6 +182,8 @@ def why_eligible(access, program_id, org, *, tree, manager_id, current) -> str |
         user = _user_of(access)
         if manager_id is not None and user is not None and is_dimagi_org_member(user):
             return "you manage the program in Connect, as Dimagi"
+        if manager_id is None and current is None and _dimagi_on_synthetic(access, pid):
+            return "it is a synthetic labs-only program, and you are Dimagi"
         return None
     if manager_id is not None and org.connect_organization_id == manager_id:
         return "it manages the program in Connect"
@@ -194,10 +225,13 @@ def require_may_declare(access, program_id, org) -> None:
         tree = connect_tree(access, refresh=True) or tree
         manager_id = managing_org_id(tree, program_id)
     if current is None:
-        if manager_id is None:
+        from connect_labs.supply_chain.runner import DIMAGI_ORG_SLUG
+
+        if manager_id is None and not (org.slug == DIMAGI_ORG_SLUG and _dimagi_on_synthetic(access, program_id)):
             raise PermissionDenied(
                 f"program {program_id} has no running organisation yet, and only a member of the organisation that "
-                "manages it in Connect (or platform support) declares the first one"
+                "manages it in Connect (or platform support) declares the first one; on a synthetic labs-only "
+                "program, a Dimagi member who can open it may declare Dimagi"
             )
     elif not _may_change(access, current):
         raise PermissionDenied(

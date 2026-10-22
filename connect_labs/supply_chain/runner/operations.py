@@ -43,7 +43,9 @@ def programme_runner_get(access):
         "Connect knows, its Connect members); platform support always. The organisation named must be the one "
         "managing the programme in Connect (bind it first with org_upsert + connect_organization_id), Dimagi "
         "(when you are Dimagi and manage it), one delivering an opportunity in it, or one awarded a call for "
-        "it (award_response) -- support declares any other. Labs-only organisations are never named this way."
+        "it (award_response) -- support declares any other. A synthetic labs-only programme has no Connect "
+        "manager: while it has no runner, a Dimagi member who can open it may declare Dimagi (and only Dimagi) "
+        "to run it. Labs-only organisations are never named this way."
     ),
     input_schema=obj({"org_id": ID, "note": {"type": "string"}}, required=("org_id",)),
     is_write=True,
