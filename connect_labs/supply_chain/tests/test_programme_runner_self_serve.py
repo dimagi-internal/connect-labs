@@ -448,27 +448,37 @@ def synthetic_programme():
 
     SyntheticOpportunity.objects.create(
         opportunity_id=SYNTHETIC_OPP, program_id=SYNTHETIC_PROGRAM, labs_only=True, enabled=True,
-        label="synthetic supply", allowed_domains=["@meadow.example"],
+        label="synthetic supply", allowed_domains=["@meadow.example", "@dimagi.com"],
     )  # fmt: skip
     registry.invalidate_cache()
     yield SYNTHETIC_PROGRAM
     registry.invalidate_cache()
 
 
+def _opted_in(user):
+    """A user who has switched synthetic programmes on, as an agent building one has."""
+    user.view_synthetic_opps = True
+    user.save(update_fields=["view_synthetic_opps"])
+    return user
+
+
 class TestASyntheticProgramme:
     """A labs-only programme has no Connect manager, so Dimagi declares itself to run it."""
 
     def test_a_dimagi_member_who_can_see_it_declares_dimagi(self, manager, synthetic_programme):
+        _opted_in(manager)
         result = declare_as(manager, dimagi_org(), program_id=synthetic_programme)
         assert (result["org_id"], result["your_standing"]) == (dimagi_org().pk, PROGRAMME)
         assert ProgrammeRunner.objects.get(program_id=synthetic_programme).declared_by == manager
 
     def test_someone_who_is_not_dimagi_may_not(self, plain_manager, synthetic_programme):
         # They can see it (their domain is allowed); they are not Dimagi.
+        _opted_in(plain_manager)
         with pytest.raises(PermissionDenied, match="no running organisation yet"):
             declare_as(plain_manager, dimagi_org(), program_id=synthetic_programme)
 
     def test_dimagi_may_not_name_another_organisation(self, manager, meadow, synthetic_programme):
+        _opted_in(manager)
         with pytest.raises(PermissionDenied, match="no running organisation yet"):
             declare_as(manager, meadow, program_id=synthetic_programme)
 
@@ -490,6 +500,7 @@ class TestASyntheticProgramme:
                 op(access, "programme_runner_set", org_id=dimagi_org().pk)
 
     def test_an_existing_runner_still_changes_only_by_its_own_rule(self, manager, synthetic_programme):
+        _opted_in(manager)
         declare_as(manager, dimagi_org(), program_id=synthetic_programme)
         with pytest.raises(PermissionDenied, match="runs program"):
             declare_as(manager, dimagi_org(), program_id=synthetic_programme)
