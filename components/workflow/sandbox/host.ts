@@ -269,7 +269,8 @@ export function checkStorageBatch(
     }
     return k;
   };
-  const set: Record<string, string> = {};
+  // No prototype: `__proto__` is a key like any other.
+  const set: Record<string, string> = Object.create(null);
   if (params.set !== undefined) {
     if (!isPlainObject(params.set)) {
       throw new BridgeError('storage: set must be an object');
@@ -329,7 +330,10 @@ export function scopedStorage(win: Window, scope: string | null) {
   };
   return {
     seed(): StorageSeed {
-      const seed: StorageSeed = { local: {}, session: {} };
+      const seed: StorageSeed = {
+        local: Object.create(null),
+        session: Object.create(null),
+      };
       for (const name of STORAGE_AREAS) {
         const s = areaOf(name);
         if (!s) continue;
@@ -351,10 +355,9 @@ export function scopedStorage(win: Window, scope: string | null) {
       );
       const drop = batch.clear ? Array.from(own.keys()) : [];
       drop.push(...batch.remove);
-      for (const k of drop) {
-        own.delete(k);
-        s.removeItem(prefix + k);
-      }
+      // Every limit is checked on the result before anything is written or
+      // removed: a refused batch leaves what was kept as it was.
+      for (const k of drop) own.delete(k);
       for (const [k, v] of Object.entries(batch.set)) own.set(k, v);
       if (own.size > LIMITS.storageKeys) {
         throw new BridgeError('storage: too many keys for one page');
@@ -370,6 +373,7 @@ export function scopedStorage(win: Window, scope: string | null) {
         throw new BridgeError('storage: no room left in this browser');
       }
       try {
+        for (const k of drop) s.removeItem(prefix + k);
         for (const [k, v] of Object.entries(batch.set))
           s.setItem(prefix + k, v);
       } catch {

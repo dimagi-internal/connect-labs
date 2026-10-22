@@ -99,6 +99,29 @@ describe('the host keeps each page and workflow its own storage', () => {
     );
   });
 
+  it('a refused clear leaves what was kept', () => {
+    const store = scopedStorage(window, '7');
+    store.apply(batch({ set: { a: 'kept' } }));
+    const big = 'x'.repeat(LIMITS.storageBytes + 1);
+    expect(() => store.apply(batch({ clear: true, set: { b: big } }))).toThrow(
+      /too much stored/,
+    );
+    expect(store.seed().local).toEqual({ a: 'kept' });
+  });
+
+  it('__proto__ is a key like any other', () => {
+    const store = scopedStorage(window, '7');
+    store.apply(
+      checkStorageBatch(
+        JSON.parse('{"area": "local", "set": {"__proto__": "v"}}'),
+      ),
+    );
+    expect(window.localStorage.getItem(`${STORAGE_PREFIX}7:__proto__`)).toBe(
+      'v',
+    );
+    expect(Object.keys(store.seed().local)).toEqual(['__proto__']);
+  });
+
   it('keeps nothing without a scope', () => {
     const store = scopedStorage(window, null);
     store.apply(batch({ set: { a: '1' } }));
