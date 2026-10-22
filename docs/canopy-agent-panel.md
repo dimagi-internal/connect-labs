@@ -148,6 +148,11 @@ host grant to that agent, so an ACE turn cannot spend the `data:read` grant the 
 minted, and the conversation runs only on ZDR runners. Unset (the default), the page offers
 the site's agent as before.
 
+A workflow can offer the same agent on its run pages: `config.agent.agent: "data"` (the run
+page's **Agent** box; WORKFLOW_REFERENCE.md §14), signed for the page key
+`labs:workflow:run:data` (`workflow:read` + `data:read`, never `workflow:act`), with the
+author's `brief` handed to it through `data_workflow_context`.
+
 Set it only after `labsdata` is allow-listed on canopy's connect-labs site, or the mint is
 refused (403). Offering it is not clearing it: real rows still need
 `real_data_clearance("labsdata", ("zdr",))`, which waits on canopy's execution statement.

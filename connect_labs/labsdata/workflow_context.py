@@ -115,6 +115,7 @@ def workflow_context(
     pipeline is read.
     """
     from connect_labs.labsdata.service import _token
+    from connect_labs.workflow.agent_sharing import agent_config
     from connect_labs.workflow.data_access import WorkflowDataAccess
     from connect_labs.workflow.visit_cache import workflow_opportunity_ids
 
@@ -143,6 +144,8 @@ def workflow_context(
             "name": definition.name,
             "template": getattr(definition, "template_type", None),
             "registry_source": definition.registry_source or None,
+            # The author's brief for an embedded agent (config.agent.brief, workflow/agent_sharing.py).
+            "brief": agent_config(definition).brief or None,
         },
         "opportunities": [{"id": o.id, "name": o.name, "llo": o.llo} for o in held],
         "opportunities_not_listed": opp_ids[scope.MAX_OPPORTUNITIES :],

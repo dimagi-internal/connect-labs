@@ -1753,3 +1753,35 @@ class TestWorkflowRunViewRecoversAProgramOwnedDefinition:
                 rf, dimagi_user, "/labs/workflow/9027/run/?run_id=10021&owning_program_id=10121", in_program=False
             )
         assert response.status_code != 302
+
+
+class TestUpdateAgentConfigView:
+    def _post(self, rf, dimagi_user, body, existing):
+        import json
+
+        from connect_labs.workflow.views import UpdateAgentConfigView
+
+        request = rf.post("/labs/workflow/api/1/agent/", data=json.dumps(body), content_type="application/json")
+        request.user = dimagi_user
+        request.labs_context = {"opportunity_id": 700}
+        request.session = {"labs_oauth": {"access_token": "t"}}
+        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+            mock_wda = MockWDA.return_value
+            mock_wda.get_definition.return_value = MagicMock(data={"name": "T", "config": existing})
+            response = UpdateAgentConfigView.as_view()(request, definition_id=1)
+        return response, mock_wda
+
+    def test_saves_the_choice_and_brief_keeping_everything_else(self, dimagi_user, rf: RequestFactory):
+        existing = {"actions": [{"key": "a"}], "agent": {"share": False, "other": 1}}
+        response, mock_wda = self._post(
+            rf, dimagi_user, {"share": True, "agent": "data", "brief": "Weights are grams."}, existing
+        )
+        assert response.status_code == 200
+        saved = mock_wda.update_definition.call_args[0][1]["config"]
+        assert saved["agent"] == {"share": True, "agent": "data", "brief": "Weights are grams.", "other": 1}
+        assert saved["actions"] == [{"key": "a"}]
+
+    def test_an_unknown_agent_is_refused_before_anything_is_read(self, dimagi_user, rf: RequestFactory):
+        response, mock_wda = self._post(rf, dimagi_user, {"share": True, "agent": "labsdata"}, {})
+        assert response.status_code == 400
+        mock_wda.get_definition.assert_not_called()

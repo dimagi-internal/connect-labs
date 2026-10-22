@@ -211,13 +211,16 @@ def data_agent_clearance() -> Clearance:
     return real_data_clearance(page.agent, page.runner_requirements)
 
 
-def panel(request, *, reads: Reads, page_agent: PageAgent | None = None, **panel_kwargs) -> dict | None:
+def panel(
+    request, *, reads: Reads, page_agent: PageAgent | None = None, page_key: str = "", **panel_kwargs
+) -> dict | None:
     """The SDK's panel context for this page, or None when no agent may be offered here.
 
     ``panel_kwargs`` are the SDK's ``panel_context`` arguments (resource, backing_tool,
     visible_ids, filters, path). ``page_agent`` names the page's own agent and runner
-    requirements, signed into its page token. None renders nothing: the include is
-    skipped and no page token is issued.
+    requirements, signed into its page token. ``page_key`` signs that token for a
+    ``PAGE_SCOPES`` key other than the route's (narrower scopes on the same URL). None
+    renders nothing: the include is skipped and no page token is issued.
     """
     page_agent = page_agent or PageAgent()
     if not clearance_for(reads, page_agent.agent, page_agent.runner_requirements).granted:
@@ -228,7 +231,28 @@ def panel(request, *, reads: Reads, page_agent: PageAgent | None = None, **panel
         panel_kwargs.update(agent=page_agent.agent, runner_requirements=list(page_agent.runner_requirements))
     if page_agent.panel:
         panel_kwargs["panel"] = page_agent.panel
-    return panel_context(request, **panel_kwargs)
+    context = panel_context(request, **panel_kwargs)
+    return _signed_for(request, context, page_key, page_agent) if page_key else context
+
+
+def _signed_for(request, context: dict, page_key: str, page_agent: PageAgent) -> dict:
+    """The panel with its page token signed for ``page_key`` (a ``PAGE_SCOPES`` key no
+    route resolves to) instead of the route that drew it: the page's scopes are
+    ``page_key``'s. Only in signed mode -- in key mode the browser names the page by its
+    path, so the route's scopes would apply: no panel (fail closed)."""
+    if not context.get("ready"):
+        return context
+    from canopy_sdk.django import conf
+    from canopy_sdk.django.pages import _token_url, panel_options
+
+    if conf.page_mode() != conf.SIGNED:
+        return {**context, "ready": False}
+    token = conf.page_tokens().issue(
+        page_key, request.user.pk, agent=page_agent.agent, runner_requirements=list(page_agent.runner_requirements)
+    )
+    context = {**context, "page_token": token, "token_url": _token_url(token)}
+    context["options"] = panel_options(context)
+    return context
 
 
 def workflow_reads(definition, owner_opportunity_id) -> Reads:

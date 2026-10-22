@@ -155,6 +155,9 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     # data:read so the agent can check a run against the raw data behind it
     # (data_workflow_context, data_query, data_visits) -- real rows only for a cleared agent.
     "labs:workflow:run": ("workflow:read", "workflow:act", "data:read"),
+    # A run whose workflow offers the DATA agent (``config.agent.agent == "data"``): the
+    # run's reads and the raw data behind it, never ``workflow:act`` (``RUN_FOR_DATA_AGENT``).
+    "labs:workflow:run:data": ("workflow:read", "data:read"),
     # A page drawn at its workflow URL (or any route registered with more than a page
     # needs): its panel names this key instead of the route (``PAGE_ON_ANOTHER_ROUTE``),
     # so a page's agent reads the page and nothing a workflow's run would reach.
@@ -173,6 +176,10 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
 #: than ``page:read`` (the workflow run URL). Not a URL name: no route resolves to it.
 PAGE_ON_ANOTHER_ROUTE = "labs:workflow:run:page"
 PAGE_ONLY_SCOPES = ("page:read",)
+
+#: The page key a run page's panel uses when its workflow offers the data agent.
+#: Not a URL name either: the run route's own registration includes ``workflow:act``.
+RUN_FOR_DATA_AGENT = "labs:workflow:run:data"
 
 #: The panel's look on labs' pages. Rendered by the SDK's ``canopy_host/panel.html``.
 PANEL = {

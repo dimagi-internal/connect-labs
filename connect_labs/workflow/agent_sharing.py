@@ -11,6 +11,19 @@ may call the ``workflow_*`` run tools AS the visitor. Without it, those tools re
 a canopy call; a person's own agent (a PAT or MCP sign-in) is not affected, since it
 already reaches every tool.
 
+Which agent, and what its author tells it, ride on the same key:
+
+    "config": {"agent": {"share": True, "agent": "data", "brief": "..."}}
+
+* ``agent`` -- ``"site"`` (the default: the agent every labs page offers) or ``"data"``
+  (the agent Labs Admin › Canopy agents names for data, ``labsdata``: read-only, on ZDR
+  runners, with the run's read scopes and never ``workflow:act``). A role, not a slug,
+  so swapping the agent is one change in one place.
+* ``brief`` -- what the workflow is for, what correct looks like, what to check first.
+  The agent reads it with the workflow (``data_workflow_context``, as the visitor).
+
+Set in the run page's Agent box (``UpdateAgentConfigView``) or ``workflow_update_definition``.
+
 **Reading** is what this module supplies: the run's grading, trimmed for an agent.
 "Red" is decided by the grading the report draws (``semantic/snapshot.py:band_of``),
 never guessed by an agent from numbers.
@@ -22,6 +35,7 @@ run.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 FLW_SEP = "::"
@@ -51,6 +65,48 @@ def shares_with_agent(definition_data: dict | None, template_type: str | None = 
 
 def definition_shares_with_agent(definition) -> bool:
     return shares_with_agent(getattr(definition, "data", None) or {}, getattr(definition, "template_type", None))
+
+
+SITE_AGENT = "site"
+DATA_AGENT = "data"
+AGENT_ROLES = (SITE_AGENT, DATA_AGENT)
+BRIEF_MAX_CHARS = 4000
+
+
+@dataclass(frozen=True)
+class AgentConfig:
+    share: bool = False
+    agent: str = SITE_AGENT
+    brief: str = ""
+
+    def as_config(self) -> dict:
+        return {"share": self.share, "agent": self.agent, "brief": self.brief}
+
+
+def agent_config(definition) -> AgentConfig:
+    """A workflow's ``config.agent``, read as ``shares_with_agent`` reads it; an unknown
+    role reads as the site agent's."""
+    from connect_labs.workflow.templates import with_inherited_config_flags
+
+    data = with_inherited_config_flags(
+        getattr(definition, "data", None) or {}, getattr(definition, "template_type", None)
+    )
+    raw = (data.get("config") or {}).get("agent")
+    if not isinstance(raw, dict):
+        return AgentConfig()
+    role = raw.get("agent") if raw.get("agent") in AGENT_ROLES else SITE_AGENT
+    brief = raw.get("brief") if isinstance(raw.get("brief"), str) else ""
+    return AgentConfig(share=bool(raw.get("share")), agent=role, brief=brief[:BRIEF_MAX_CHARS])
+
+
+def clean_agent_config(*, share, agent, brief) -> AgentConfig:
+    """What a person asked for, checked: a known role, a brief within bounds."""
+    if agent not in AGENT_ROLES:
+        raise ValueError(f"agent must be one of {', '.join(AGENT_ROLES)}")
+    brief = (brief or "").strip()
+    if len(brief) > BRIEF_MAX_CHARS:
+        raise ValueError(f"the brief is {len(brief)} characters; at most {BRIEF_MAX_CHARS}")
+    return AgentConfig(share=bool(share), agent=agent, brief=brief)
 
 
 # ---------------------------------------------------------------------------
