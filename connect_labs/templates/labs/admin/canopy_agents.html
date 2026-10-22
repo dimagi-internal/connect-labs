@@ -48,8 +48,15 @@
     </label>
 
     <label class="block">
+      <span class="text-sm font-semibold text-gray-800">Other agents workflows may choose</span>
+      <span class="block text-xs text-gray-500 mb-1">Space- or comma-separated. Each workflow picks its agent in its run page's Agent box, from the site agent, the data agent and these. Each must also be allowed on canopy's connect-labs site.</span>
+      <input name="offered_agents" value="{{ current.offered_agents|join:' ' }}" {% if not can_change %}disabled{% endif %}
+             class="w-full border rounded px-3 py-2 font-mono text-sm" />
+    </label>
+
+    <label class="block">
       <span class="text-sm font-semibold text-gray-800">Agents allowed over real data</span>
-      <span class="block text-xs text-gray-500 mb-1">Space- or comma-separated. Labs accepting the author's PHI-safe claim; canopy's per-call statement is still required. Empty: no agent is shown real data.</span>
+      <span class="block text-xs text-gray-500 mb-1">Space- or comma-separated. Labs accepting the author's PHI-safe claim; canopy's per-call statement is still required. A workflow offers these read-only, on ZDR runners. Empty: no agent is shown real data.</span>
       <input name="phi_agents" value="{{ current.phi_agents|join:' ' }}" {% if not can_change %}disabled{% endif %}
              class="w-full border rounded px-3 py-2 font-mono text-sm" />
     </label>

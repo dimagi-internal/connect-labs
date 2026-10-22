@@ -1771,7 +1771,8 @@ class TestUpdateAgentConfigView:
             response = UpdateAgentConfigView.as_view()(request, definition_id=1)
         return response, mock_wda
 
-    def test_saves_the_choice_and_brief_keeping_everything_else(self, dimagi_user, rf: RequestFactory):
+    def test_saves_the_choice_and_brief_keeping_everything_else(self, dimagi_user, rf: RequestFactory, settings):
+        settings.CANOPY_DATA_AGENT_SLUG = "data-bot"
         existing = {"actions": [{"key": "a"}], "agent": {"share": False, "other": 1}}
         response, mock_wda = self._post(
             rf, dimagi_user, {"share": True, "agent": "data", "brief": "Weights are grams."}, existing
@@ -1780,6 +1781,14 @@ class TestUpdateAgentConfigView:
         saved = mock_wda.update_definition.call_args[0][1]["config"]
         assert saved["agent"] == {"share": True, "agent": "data", "brief": "Weights are grams.", "other": 1}
         assert saved["actions"] == [{"key": "a"}]
+
+    def test_any_agent_labs_offers_may_be_chosen_by_slug_and_no_other(self, dimagi_user, rf: RequestFactory, settings):
+        settings.CANOPY_OFFERED_AGENTS = ["coach-bot"]
+        response, mock_wda = self._post(rf, dimagi_user, {"share": True, "agent": "coach-bot", "brief": ""}, {})
+        assert response.status_code == 200
+        assert mock_wda.update_definition.call_args[0][1]["config"]["agent"]["agent"] == "coach-bot"
+        response, mock_wda = self._post(rf, dimagi_user, {"share": True, "agent": "other-bot", "brief": ""}, {})
+        assert response.status_code == 400 and not mock_wda.update_definition.called
 
     def test_an_unknown_agent_is_refused_before_anything_is_read(self, dimagi_user, rf: RequestFactory):
         response, mock_wda = self._post(rf, dimagi_user, {"share": True, "agent": "labsdata"}, {})

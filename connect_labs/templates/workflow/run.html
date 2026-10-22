@@ -147,11 +147,14 @@
             error: '',
             cfg: JSON.parse(document.getElementById('agent-settings').textContent),
             csrf: '{{ csrf_token }}',
+            chosen() {
+                return this.cfg.choices.find(c => c.value === this.cfg.agent || c.slug === this.cfg.agent);
+            },
             summary() {
                 if (!this.cfg.share) return 'off';
-                return this.cfg.agent === 'data'
-                    ? 'Data agent' + (this.cfg.data_agent ? ' (' + this.cfg.data_agent + ')' : ' (none configured)')
-                    : 'Site agent (' + this.cfg.site_agent + ')';
+                const c = this.chosen();
+                if (!c) return this.cfg.agent + ' (no longer offered: Labs Admin › Canopy agents)';
+                return c.slug + (c.read_only ? ' (read-only)' : '');
             },
             async save() {
                 if (this.saving) return;
@@ -185,19 +188,22 @@
                     <span>Offer an agent on this workflow's runs</span>
                 </label>
                 <fieldset class="space-y-2" :disabled="!cfg.share">
-                    <label class="flex items-start gap-2">
-                        <input type="radio" value="site" x-model="cfg.agent" class="mt-1">
-                        <span><span class="font-medium">Site agent</span> (<span x-text="cfg.site_agent"></span>):
-                            reads the run and can propose this workflow's actions for a person to confirm.
-                            Over production data it is not offered.</span>
-                    </label>
-                    <label class="flex items-start gap-2">
-                        <input type="radio" value="data" x-model="cfg.agent" class="mt-1">
-                        <span><span class="font-medium">Data agent</span>
-                            (<span x-text="cfg.data_agent || 'none configured'"></span>):
-                            read-only; checks the run against the raw visits and form JSON behind it, on
-                            zero-data-retention runners. Takes no actions.</span>
-                    </label>
+                    <template x-for="c in cfg.choices" :key="c.value">
+                        <label class="flex items-start gap-2">
+                            <input type="radio" :value="c.value" x-model="cfg.agent" class="mt-1">
+                            <span>
+                                <span class="font-medium font-mono" x-text="c.slug"></span>
+                                <span x-show="c.value === 'site'" class="text-xs text-gray-500">(the site's agent)</span>
+                                <span x-show="c.value === 'data'" class="text-xs text-gray-500">(the data agent)</span>:
+                                <span x-show="c.read_only">read-only; reads the run, the workflow behind it and the raw
+                                    visits and form JSON, on zero-data-retention runners<span x-show="c.real_data">, over
+                                    production data too</span>. Takes no actions.</span>
+                                <span x-show="!c.read_only">reads the run and can propose this workflow's actions for a
+                                    person to confirm. Over production data it is not offered.</span>
+                            </span>
+                        </label>
+                    </template>
+                    <p class="text-xs text-gray-500">Which agents are listed is set in Labs Admin › Canopy agents.</p>
                 </fieldset>
                 <label class="block">
                     <span class="font-medium text-gray-800">Brief for the agent</span>

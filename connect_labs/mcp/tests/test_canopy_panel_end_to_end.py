@@ -363,3 +363,43 @@ def test_asking_for_the_data_agent_with_none_configured_offers_no_agent(enabled,
             definition_id=47,
         )
     assert not panel
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "agent, phi, expect_agent, expect_scopes",
+    [
+        # Any other agent labs lists: named on the panel, the run page's usual scopes.
+        ("coach-bot", [], "coach-bot", {"workflow:read", "workflow:act", "data:read"}),
+        # One allowed over real data: read-only, on ZDR, like the data agent.
+        ("deep-bot", ["deep-bot"], "deep-bot", {"workflow:read", "data:read"}),
+        # One labs no longer lists: no panel at all, not the site's agent in its place.
+        ("gone-bot", [], None, None),
+    ],
+)
+def test_a_workflow_offers_the_agent_it_chose_on_that_agents_terms(
+    enabled, visitor, settings, agent, phi, expect_agent, expect_scopes
+):
+    from connect_labs.workflow.views import WorkflowRunView
+
+    settings.CANOPY_OFFERED_AGENTS = ["coach-bot", "deep-bot"]
+    settings.CANOPY_PHI_AGENTS = phi
+    workflow = {**SHARING_WORKFLOW, "config": {"agent": {"share": True, "agent": agent}}}
+    with (
+        mock.patch("connect_labs.workflow.views.get_org_data", return_value={}),
+        mock.patch("connect_labs.labs.synthetic.provenance.all_generated", return_value=True),
+    ):
+        _response, panel = _panel(
+            WorkflowRunView,
+            _request("/labs/workflow/47/run/?run_id=503&program_id=25", visitor, {"program_id": 25}),
+            workflow,
+            definition_id=47,
+        )
+    if expect_agent is None:
+        assert not panel
+        return
+    assert panel and panel["ready"] and panel["agent"] == expect_agent
+    arrival = _mint(panel, visitor)
+    assert _scopes(arrival[contract.ARRIVAL_ID_JAG_FIELD]) == expect_scopes
+    signed = json.dumps(unverified_claims(arrival["assertion"]))
+    assert ("zdr" in signed) == bool(phi)

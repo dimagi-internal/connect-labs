@@ -11,6 +11,11 @@ the same names:
   conditions in ``canopy_panel.py``; canopy's per-call statement is still required.
 * ``runner_requirements`` (``CANOPY_RUNNER_REQUIREMENTS``) -- runner flags every visitor
   conversation must run on.
+* ``offered_agents`` (``CANOPY_OFFERED_AGENTS``) -- further agents a workflow may choose
+  for its runs, beside those two. Which one a workflow offers is its own choice
+  (``config.agent.agent``, workflow/agent_sharing.py); ``choices`` lists them and
+  ``resolve`` reads one. An agent allowed over real data is always offered read-only, on
+  ZDR runners -- the same terms as the data agent.
 
 The newest ``CanopyAgentSettings`` row is in force. With none, the environment settings
 are, so a deploy changes nothing until someone saves. If the database cannot be read,
@@ -45,6 +50,7 @@ class AgentSettings:
     data_agent: str
     phi_agents: tuple[str, ...]
     runner_requirements: tuple[str, ...]
+    offered_agents: tuple[str, ...] = ()
     #: The row in force, or None when these are the environment settings.
     row_id: int | None = None
 
@@ -52,6 +58,7 @@ class AgentSettings:
         out = asdict(self)
         out["phi_agents"] = list(self.phi_agents)
         out["runner_requirements"] = list(self.runner_requirements)
+        out["offered_agents"] = list(self.offered_agents)
         out.pop("row_id")
         return out
 
@@ -62,6 +69,7 @@ def from_environment() -> AgentSettings:
         data_agent=getattr(settings, "CANOPY_DATA_AGENT_SLUG", "") or "",
         phi_agents=tuple(getattr(settings, "CANOPY_PHI_AGENTS", ()) or ()),
         runner_requirements=tuple(getattr(settings, "CANOPY_RUNNER_REQUIREMENTS", ()) or ()),
+        offered_agents=tuple(getattr(settings, "CANOPY_OFFERED_AGENTS", ()) or ()),
     )
 
 
@@ -71,6 +79,7 @@ def _from_row(row) -> AgentSettings:
         data_agent=row.data_agent,
         phi_agents=tuple(row.phi_agents or ()),
         runner_requirements=tuple(row.runner_requirements or ()),
+        offered_agents=tuple(row.offered_agents or ()),
         row_id=row.pk,
     )
 
@@ -92,20 +101,79 @@ def history(limit: int = 50):
     return list(CanopyAgentSettings.objects.select_related("changed_by").order_by("-id")[:limit])
 
 
-def validate(*, site_agent, data_agent, phi_agents, runner_requirements) -> AgentSettings:
+def _slugs(values) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(a.strip() for a in values or () if a and a.strip()))
+
+
+def validate(*, site_agent, data_agent, phi_agents, runner_requirements, offered_agents=()) -> AgentSettings:
     site_agent = (site_agent or "").strip()
     data_agent = (data_agent or "").strip()
-    phi = tuple(dict.fromkeys(a.strip() for a in phi_agents or () if a and a.strip()))
+    phi = _slugs(phi_agents)
+    offered = _slugs(offered_agents)
     flags = tuple(dict.fromkeys(f.strip() for f in runner_requirements or () if f and f.strip()))
     if not _SLUG.match(site_agent):
         raise InvalidSettings("The site agent must be a canopy agent slug (lowercase letters, digits, hyphens).")
-    for slug in (data_agent, *phi) if data_agent else phi:
+    for slug in (data_agent, *phi, *offered) if data_agent else (*phi, *offered):
         if not _SLUG.match(slug):
             raise InvalidSettings(f"{slug!r} is not a canopy agent slug (lowercase letters, digits, hyphens).")
     unknown = [f for f in flags if f not in KNOWN_RUNNER_FLAGS]
     if unknown:
         raise InvalidSettings(f"Unknown runner flag(s): {', '.join(unknown)}. Known: {', '.join(KNOWN_RUNNER_FLAGS)}.")
-    return AgentSettings(site_agent, data_agent, phi, flags)
+    return AgentSettings(site_agent, data_agent, phi, flags, offered)
+
+
+# ---------------------------------------------------------------------------
+# Which agent a workflow offers
+# ---------------------------------------------------------------------------
+
+#: A workflow's ``config.agent.agent`` may name a role, which follows whatever agent
+#: these settings name for it, or an agent's slug.
+SITE_ROLE = "site"
+DATA_ROLE = "data"
+
+
+@dataclass(frozen=True)
+class Offered:
+    """An agent a workflow may offer, and on what terms."""
+
+    value: str  # what config.agent.agent holds: a role or a slug
+    slug: str
+    #: Read-only, on ZDR runners, never ``workflow:act``: the data agent, and every
+    #: agent labs allows over real data.
+    read_only: bool
+    real_data: bool
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+
+def choices(agents: AgentSettings | None = None) -> list[Offered]:
+    """Every agent a workflow may choose, the site's first."""
+    agents = agents or current()
+
+    def offered(value, slug):
+        real = slug in agents.phi_agents
+        return Offered(value, slug, read_only=real or slug == agents.data_agent, real_data=real)
+
+    out = [offered(SITE_ROLE, agents.site_agent)]
+    if agents.data_agent:
+        out.append(offered(DATA_ROLE, agents.data_agent))
+    named = {agents.site_agent, agents.data_agent}
+    for slug in agents.offered_agents:
+        if slug not in named:
+            named.add(slug)
+            out.append(offered(slug, slug))
+    return out
+
+
+def resolve(value: str, agents: AgentSettings | None = None) -> Offered | None:
+    """The agent a workflow's choice names now, or None when labs does not offer it
+    (a slug since removed here, or the data role with no data agent)."""
+    by_value = {o.value: o for o in choices(agents)}
+    if value in by_value:
+        return by_value[value]
+    # A slug that is also one of the roles' agents: the same agent, on the role's terms.
+    return next((o for o in by_value.values() if o.slug == value), None)
 
 
 def save(user, *, note: str = "", **values) -> AgentSettings:
