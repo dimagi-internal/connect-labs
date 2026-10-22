@@ -452,7 +452,7 @@ def _run_registry_tool(
         return _run_registry_tool_inner(spec, arguments, user, progress, actor_header)
 
 
-def policy_denial(tool_name: str, arguments: dict, user, restricted: bool) -> str | None:
+def policy_denial(tool_name: str, arguments: dict, user, restricted: bool, delegated: bool = False) -> str | None:
     """Why this call is refused on policy grounds, or None. Raises nothing.
 
     The checks every tool call passes after its scope: what a restricted caller may do
@@ -473,6 +473,15 @@ def policy_denial(tool_name: str, arguments: dict, user, restricted: bool) -> st
         from .visit_access import denied_reason
 
         reason = denied_reason(user, tool_name, arguments)
+        if reason:
+            return reason
+    # Canopy acting for a visitor: a tool that shows the agent visit data runs on real
+    # data only for an agent labs has cleared (labs/canopy_panel.py) -- the rule that
+    # also keeps the panel off such a page.
+    if delegated:
+        from .visit_access import delegated_denied_reason
+
+        reason = delegated_denied_reason(user, tool_name, arguments)
         if reason:
             return reason
     # Central labs-only access gate. Any tool scoped to a labs-only opp/program
@@ -516,7 +525,8 @@ def _run_registry_tool_inner(
         except jsonschema.ValidationError as e:
             audit(user, spec.name, arguments, success=False, error_code="INVALID_SCHEMA", is_write=spec.is_write)
             raise ToolError(f"Invalid arguments for {spec.name}: {e.message}") from e
-    denied = policy_denial(spec.name, arguments, user, restricted)
+    delegated = (getattr(access_token, "claims", None) or {}).get("auth_method") == "delegated"
+    denied = policy_denial(spec.name, arguments, user, restricted, delegated=delegated)
     if denied:
         audit(user, spec.name, arguments, success=False, error_code="PERMISSION_DENIED", is_write=spec.is_write)
         raise ToolError(denied)

@@ -251,3 +251,59 @@ def denied_reason(user, tool_name: str, arguments: dict) -> str | None:
             "reads is not one of those."
         )
     return None
+
+
+# ---------------------------------------------------------------------------
+# Canopy acting as a visitor: real data only for a cleared agent
+# ---------------------------------------------------------------------------
+
+
+def _visits_of(key: str):
+    resolve = _workflow(key)
+
+    def reads(user, arguments: dict):
+        from connect_labs.labs import canopy_panel
+
+        return canopy_panel.visits(resolve(user, arguments))
+
+    return reads
+
+
+#: A tool that judges canopy's call itself, once it has read what it needs with its
+#: own token (``page_context``: the page's workflow sources).
+JUDGED_IN_TOOL = object()
+
+#: What each tool a canopy page scope reaches would show the agent. Every tool under
+#: ``canopy.VISIT_SCOPES`` has an entry (a test pins it): over real data they run only
+#: for an agent labs has cleared (``labs/canopy_panel.py``), the same rule that decides
+#: whether the page draws the panel at all.
+DELEGATED_READS = {
+    "workflow_run_context": _visits_of("run_id"),
+    "workflow_run_indicators": _visits_of("run_id"),
+    "workflow_indicator_explain": _visits_of("run_id"),
+    "workflow_run_cases": _visits_of("run_id"),
+    "workflow_action_status": _visits_of("run_id"),
+    "workflow_run_action": _visits_of("run_id"),
+    "workflow_action_preview_view": _visits_of("run_id"),
+    "page_context": JUDGED_IN_TOOL,
+}
+
+
+def delegated_denied_reason(user, tool_name: str, arguments: dict) -> str | None:
+    """Why canopy, acting for a visitor, may not make this call, or None to allow it.
+
+    Only tools under ``canopy.VISIT_SCOPES`` are judged here; what a delegated token
+    may reach at all is its scopes (``server.allowed_tools``).
+    """
+    from connect_labs.labs import canopy_panel
+
+    reads_of = DELEGATED_READS.get(tool_name)
+    if reads_of is None or reads_of is JUDGED_IN_TOOL:
+        return None
+    clearance = canopy_panel.clearance_for(reads_of(user, arguments))
+    if clearance.granted:
+        return None
+    return (
+        f"Through canopy, {tool_name} runs only on synthetic opportunities whose data was "
+        f"generated: {clearance.reason}."
+    )

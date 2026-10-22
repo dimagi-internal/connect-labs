@@ -22,7 +22,6 @@ from __future__ import annotations
 import datetime
 from collections import Counter
 
-from canopy_sdk.django.pages import panel_context as canopy_panel_context
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -32,6 +31,7 @@ from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
+from connect_labs.labs import canopy_panel
 from connect_labs.labs.chrome import page_chrome
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import programs, queries
@@ -262,8 +262,9 @@ def network(request):
             # The agent panel is told WHICH organisations are on screen and how
             # the visitor narrowed to them — never the rows, which it reads for
             # itself through `marketplace_orgs_get`.
-            "canopy_panel": canopy_panel_context(
+            "canopy_panel": canopy_panel.panel(
                 request,
+                reads=canopy_panel.NO_VISIT_DATA,  # the org directory
                 resource="labs-marketplace://orgs",
                 backing_tool="marketplace_orgs_get",
                 visible_ids=[row["org"].slug for row in listed],
@@ -359,8 +360,9 @@ def round_detail(request, slug):
             # round in the resource is what makes "draft an email for each of
             # these orgs to submit to THIS EOI" answerable without the visitor
             # having to say which one they are looking at.
-            "canopy_panel": canopy_panel_context(
+            "canopy_panel": canopy_panel.panel(
                 request,
+                reads=canopy_panel.NO_VISIT_DATA,  # the org directory
                 resource=f"labs-marketplace://rounds/{round_.slug}",
                 backing_tool="marketplace_rounds_list",
                 visible_ids=[a["org"].slug for a in applicants if a.get("org")],
@@ -539,8 +541,9 @@ def round_scores(request, slug):
             "set_by_people": sum(1 for a in applicants if a["review"]["by_person"] and a["review"]["outcome"]),
             "can_edit": access.can_set_round_criteria(request, round_),
             # The same figures an agent reads through `marketplace_round_scores`.
-            "canopy_panel": canopy_panel_context(
+            "canopy_panel": canopy_panel.panel(
                 request,
+                reads=canopy_panel.NO_VISIT_DATA,  # the org directory
                 resource=f"labs-marketplace://rounds/{round_.slug}/scores",
                 backing_tool="marketplace_round_scores",
                 visible_ids=[a["org"].slug for a in applicants if a.get("org")],

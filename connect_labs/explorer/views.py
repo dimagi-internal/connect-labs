@@ -52,11 +52,14 @@ class ExplorerView(LoginRequiredMixin, TemplateView):
                 "default_max_rows": DEFAULT_MAX_ROWS,
             }
         )
-        from canopy_sdk.django.pages import panel_context
+        from connect_labs.labs import canopy_panel
 
         # Ids, never rows: the agent reads data through explorer_* as the visitor.
-        ctx["canopy_panel"] = panel_context(
+        ctx["canopy_panel"] = canopy_panel.panel(
             self.request,
+            # Through canopy the explorer returns structure only, and runs queries
+            # only on generated opps (explorer/service.py, `for_agent`): no rows.
+            reads=canopy_panel.NO_VISIT_DATA,
             resource=(
                 "labs-explorer://opportunities/" + ",".join(map(str, selected)) if selected else "labs-explorer://"
             ),

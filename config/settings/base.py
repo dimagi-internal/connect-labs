@@ -745,6 +745,14 @@ CANOPY_SIGNING_KEY = env("CANOPY_SIGNING_KEY", default="").replace("\\n", "\n")
 # Unset = the grant is off: no ID-JAG is issued, /o/token/ refuses the grant,
 # and nothing else changes. Needs LABS_PUBLIC_URL and CANOPY_SIGNING_KEY too.
 CANOPY_CLIENT_ID = env("CANOPY_CLIENT_ID", default="")
+# Runner flags every visitor conversation must run on (`zdr`: zero-data-retention
+# boxes only). Signed into every visitor assertion; canopy enforces it at claim.
+# Empty = no requirement, and so no agent over real data (labs/canopy_panel.py).
+CANOPY_RUNNER_REQUIREMENTS = env.list("CANOPY_RUNNER_REQUIREMENTS", default=[])
+# Agents labs allows over REAL (non-generated) visit data, whose authors claim them
+# PHI-safe. One of three conditions, all required (labs/canopy_panel.py). Empty by
+# default: over real data no agent panel is drawn.
+CANOPY_PHI_AGENTS = env.list("CANOPY_PHI_AGENTS", default=[])
 # What the canopy SDK (`canopy_sdk.django`) reads. Not a second copy of the
 # values above: a callable the SDK resolves on every read, so it sees them (and
 # LABS_PUBLIC_URL, which later settings modules override) as they are NOW, plus

@@ -1067,21 +1067,26 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         if not definition_shares_with_agent(definition):
             return
 
-        from canopy_sdk.django.pages import panel_context
+        from connect_labs.labs import canopy_panel
 
         scope = (
             {"opportunity_id": run_data["opportunity_id"]}
             if run_data.get("opportunity_id")
             else {"program_id": run_data.get("program_id")}
         )
-        context["canopy_panel"] = panel_context(
+        # Over real (non-generated) visits no agent is offered unless labs has cleared
+        # it for real data (labs/canopy_panel.py): no panel, no page token, no grant.
+        panel = canopy_panel.panel(
             self.request,
+            reads=canopy_panel.workflow_reads(definition, run_data.get("opportunity_id")),
             resource=f"labs-workflow://{definition.id}/runs/{run_id}",
             backing_tool="workflow_run_indicators",
             visible_ids=[worker_key(w.get("opportunity_id"), w.get("username")) for w in workers if w.get("username")],
             filters={"definition_id": definition.id, "run_id": run_id, **scope, "workflow": definition.name},
             path=self.request.get_full_path(),
         )
+        if panel is not None:
+            context["canopy_panel"] = panel
 
     def _add_page_actions(self, context, definition, scope_qs):
         """A page's declared actions (workflow/actions.py): the same preview -> confirm ->
@@ -1126,7 +1131,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
 
         if not _is_page(definition) or not definition_shares_with_agent(definition):
             return
-        from canopy_sdk.django.pages import panel_context
+        from connect_labs.labs import canopy_panel
 
         slug = ((definition.data or {}).get("page") or {}).get("slug") or str(definition.id)
         scope_type = scope.type if scope else ""
@@ -1134,15 +1139,20 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         owner = {
             k: labs_context[k] for k in ("opportunity_id", "program_id", "organization_id") if labs_context.get(k)
         }
-        panel = panel_context(
+        # A page's workflow sources carry run summaries computed from visits: over real
+        # data, no agent unless cleared (labs/canopy_panel.py).
+        token = ((self.request.session.get("labs_oauth") or {}).get("access_token")) or ""
+        panel = canopy_panel.panel(
             self.request,
+            reads=canopy_panel.page_reads(definition, token),
             resource=f"labs-page://{scope_type}/{scope_key}/{slug}",
             backing_tool="page_context",
             visible_ids=[],
             filters={"definition_id": definition.id, "scope_type": scope_type, "scope_key": scope_key, **owner},
             path=self.request.path,
         )
-        context["canopy_panel"] = _page_only_panel(self.request, panel)
+        if panel is not None:
+            context["canopy_panel"] = _page_only_panel(self.request, panel)
 
     def render_to_response(self, context, **response_kwargs):
         response = super().render_to_response(context, **response_kwargs)

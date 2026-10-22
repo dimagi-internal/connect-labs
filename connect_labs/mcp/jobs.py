@@ -399,7 +399,8 @@ def _run(job: MCPJob, owner: str) -> None:
         mcp_caller(user),
         restricted_job(job.restricted),
     ):
-        denied = policy_denial(job.tool_name, job.arguments, user, job.restricted)
+        # A job a canopy call queued carries canopy's client id (only delegated calls have one).
+        denied = policy_denial(job.tool_name, job.arguments, user, job.restricted, delegated=bool(job.client_id))
         if denied:
             _finish(job_id, owner, MCPJob.FAILED, error_code="PERMISSION_DENIED", error=denied)
             return

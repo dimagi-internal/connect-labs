@@ -120,6 +120,12 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
     ),
 }
 
+#: Scopes whose tools show the agent data computed from visits. Over real
+#: (non-generated) data they run only for an agent labs has cleared
+#: (``labs/canopy_panel.py``, ``mcp/visit_access.py:delegated_denied_reason``); a
+#: test pins that every one of their tools says what it reads.
+VISIT_SCOPES: frozenset[str] = frozenset({"workflow:read", "workflow:act", "page:read"})
+
 #: Write scopes whose every tool acts only on a confirmed preview.
 PREVIEWED_WRITE_SCOPES: frozenset[str] = frozenset({"workflow:act"})
 
@@ -267,6 +273,7 @@ def host_settings() -> dict:
         "ISSUER": public,
         "RESOURCE": f"{public}/mcp/" if public else "",
         "TOKEN_ENDPOINT": f"{public}/o/token/" if public else "",
+        "RUNNER_REQUIREMENTS": list(getattr(settings, "CANOPY_RUNNER_REQUIREMENTS", ()) or ()),
         "SCOPE_TOOLS": SCOPE_TOOLS,
         "PAGE_SCOPES": PAGE_SCOPES,
         "USER_CLAIMS": user_claims,
