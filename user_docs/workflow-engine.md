@@ -116,6 +116,12 @@ When you open a workflow or page in the sandbox, it looks and scrolls exactly li
 
 One deliberate difference from the normal page: a header row set to stay fixed at the top of the report sticks just below the Labs header, where it remains visible as you scroll. On the normal page, that same sticky header can slide underneath the Labs header and become hidden.
 
+#### Saved filters in the sandbox
+
+Dashboards that remember your filter choices — for example, the Ward Progress Tracker's ward and period filters, the KMC audit dashboard's filters, or a status filter that is kept across a CommCare sign-in — continue to remember those choices after a page reload when the sandbox is switched on. The behaviour matches what you already experience without the sandbox.
+
+This only applies when you are previewing with `?sandbox=1`. The sandbox is not switched on by default on Labs, so nothing changes for everyday use.
+
 !!! note "All live workflows are fully compatible with the sandbox"
     Every workflow that exists on Labs today works correctly in the protected frame. This includes the older MBW monitoring dashboards, which load their data, stream their progress, open GPS details, and save snapshots as normal. The GPS map groups its markers into clusters exactly as it does outside the sandbox. Authorization buttons (such as **Authorize CommCare** or **Authorize OCS**) bring you back to the workflow after you sign in. Any confirmation question a workflow presents is shown in Labs' own dialog and properly waited for before continuing. No workflow requires an exemption from the sandbox.
 
@@ -200,14 +206,4 @@ These labels are set up by your program administrator in the report's registry. 
 
 ### MUAC image audit runs
 
-The weekly **dual-track MUAC image audit** run can now be completed as expected. Previously, finishing the last field worker's review — or pressing **Mark Run Complete** — failed silently: the run stayed "in progress" and no summary was produced. Both actions now complete the run correctly and display the run summary.
-
-### R2 Revisit Analysis
-
-The **R2 Revisit Analysis** report — the CHC study's second-revisit planning table — has three tabs: **Table**, **Map**, and **Download CSV**.
-
-#### Table tab
-
-The planning table lists work areas and their R2 selection status for the organisation and ward you choose. Two additional columns appear for each ward:
-
-- **
+The weekly **dual-track MUAC image audit** run can now be completed as expected. Previously, finishing the last field worker's review — or pressing **Mark Run Complete
