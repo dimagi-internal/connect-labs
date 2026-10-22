@@ -1,6 +1,6 @@
 """Labs Admin › Canopy agents: which canopy agents labs offers, and which may read real data.
 
-Readable by anyone with Labs Admin; changed only by Django staff
+Readable by anyone with Labs Admin; changed only by Dimagi staff
 (``canopy_settings.can_change``). Shows, beside the settings, everything labs can
 check about whether an agent will be given real rows, and the last delegated data
 calls with what canopy's statement said about each, so a test from the Data page can
@@ -91,7 +91,7 @@ class CanopyAgentsView(AdminRequiredMixin, TemplateView):
     def post(self, request, *args, **kwargs):
         here = reverse("labs_admin:canopy_agents")
         if not canopy_settings.can_change(request.user):
-            messages.error(request, "Only Django staff can change which agents labs allows.")
+            messages.error(request, "Only Dimagi staff can change which agents labs allows.")
             return redirect(here)
         try:
             if request.POST.get("restore"):

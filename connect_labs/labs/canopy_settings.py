@@ -25,6 +25,8 @@ from dataclasses import asdict, dataclass
 
 from django.conf import settings
 
+from connect_labs.utils.dimagi_user import is_dimagi_staff
+
 logger = logging.getLogger(__name__)
 
 #: Runner flags a conversation can be required to run on (canopy's known flags).
@@ -113,7 +115,7 @@ def save(user, *, note: str = "", **values) -> AgentSettings:
     from connect_labs.labs.models import CanopyAgentSettings
 
     if not can_change(user):
-        raise PermissionError("Only Django staff can change which agents labs allows.")
+        raise PermissionError("Only Dimagi staff can change which agents labs allows.")
     new = validate(**values)
     before = current()
     row = CanopyAgentSettings.objects.create(**new.as_dict(), note=(note or "")[:500], changed_by=user)
@@ -136,6 +138,10 @@ def restore(user, row_id: int) -> AgentSettings:
 
 
 def can_change(user) -> bool:
-    """Django staff (granted by hand), never merely a Dimagi login: this decides which
-    agents may read production visit data."""
-    return bool(user and user.is_authenticated and (user.is_staff or user.is_superuser))
+    """Dimagi staff (``is_dimagi_staff``: a Dimagi sign-in, or Django's ``is_staff``).
+
+    Not ``is_staff`` alone: an OAuth-created labs user never gets that flag and no labs
+    page grants it, so the setting could be changed by nobody. This allow-list is one of
+    three locks (canopy's passkey-gated PHI declaration and ZDR flag are the others),
+    and every change is attributed, audited and restorable."""
+    return bool(user and user.is_authenticated and is_dimagi_staff(user))
