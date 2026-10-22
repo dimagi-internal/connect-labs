@@ -32,6 +32,8 @@ class Opportunity:
     id: int
     name: str
     llo: str  # the organization that runs the opportunity
+    program_id: int | None = None
+    program_name: str = ""
 
 
 MAX_OPPORTUNITIES = 25
@@ -63,10 +65,18 @@ def _org_tree(caller: scopes.Caller) -> dict:
     return tree
 
 
+def _int_or_none(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def directory(caller: scopes.Caller) -> dict[int, Opportunity]:
-    """Every opportunity the caller can see, by id, with its name and LLO."""
+    """Every opportunity the caller can see, by id, with its name, LLO and programme."""
     tree = _org_tree(caller)
     org_names = {o.get("slug"): o.get("name") or o.get("slug") for o in tree.get("organizations") or []}
+    program_names = {_int_or_none(p.get("id")): p.get("name") or "" for p in tree.get("programs") or []}
     out: dict[int, Opportunity] = {}
     for opp in tree.get("opportunities") or []:
         try:
@@ -74,10 +84,37 @@ def directory(caller: scopes.Caller) -> dict[int, Opportunity]:
         except (TypeError, ValueError):
             continue
         org = opp.get("organization")
+        program = _int_or_none(opp.get("program"))
         out[oid] = Opportunity(
-            id=oid, name=opp.get("name") or f"Opportunity {oid}", llo=org_names.get(org) or org or ""
+            id=oid,
+            name=opp.get("name") or f"Opportunity {oid}",
+            llo=org_names.get(org) or org or "",
+            program_id=program,
+            program_name=opp.get("program_name") or program_names.get(program) or "",
         )
     return out
+
+
+def left_out_of(caller: scopes.Caller, opportunity_ids) -> list[Opportunity]:
+    """Opportunities the caller holds in the same programme(s) as these, that these leave out.
+
+    A workflow's opportunities are chosen by hand, so a programme's new opportunity is
+    silently missing from its programme-level numbers until someone adds it (Scout #922).
+    Only what the caller holds: the list names nothing they could not already open.
+    """
+    ids = {int(i) for i in opportunity_ids or []}
+    seen = directory(caller)
+    programs = {seen[i].program_id for i in ids if i in seen and seen[i].program_id is not None}
+    if not programs:
+        return []
+    try:
+        held = scopes.opportunity_ids(caller)
+    except scopes.ScopesUnavailable:
+        return []
+    return sorted(
+        (o for o in seen.values() if o.program_id in programs and o.id not in ids and o.id in held),
+        key=lambda o: o.id,
+    )
 
 
 def resolve(caller: scopes.Caller, requested) -> list[Opportunity]:
