@@ -227,6 +227,4 @@ This means you can ask Claude questions like "show me hospital vs home births br
 
 Each workflow's run page has an **Agent** box that controls whether and how an AI assistant appears when someone opens a run. Anyone who can edit the workflow can change these settings directly in the browser — no MCP session required.
 
-### What you can set
-
-**Turn the agent on or off.** You can disable the embedded
+The Agent box is displayed on every workflow's run page as **"Agent: off · Edit"
