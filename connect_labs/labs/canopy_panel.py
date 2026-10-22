@@ -124,7 +124,10 @@ def call_real_data_clearance() -> Clearance:
         why = (call.refused if call else "") or "no statement"
         return Clearance(False, f"canopy did not vouch for this call ({why})")
     stated = call.execution
-    labs_side = real_data_clearance(stated.agent, stated.requirements)
+    # Labs' own policy for the agent the statement names -- from labs' settings, never
+    # from the statement: the site's requirements, plus the data pages' ZDR when it is
+    # the data agent. The statement is then checked against it, separately, below.
+    labs_side = real_data_clearance(stated.agent, _labs_requirements_for(stated.agent))
     if not labs_side.granted:
         return labs_side
     refusal = stated.phi_clearance(
@@ -152,6 +155,13 @@ def clearance_for(reads: Reads, agent: str = "", runner_requirements=()) -> Clea
     if not is_real(reads):
         return Clearance(True)
     return real_data_clearance(agent, runner_requirements)
+
+
+def _labs_requirements_for(agent: str) -> tuple[str, ...]:
+    """The runner requirements LABS sets for ``agent``'s conversations beyond the site's:
+    a data page's ZDR for the data agent (``data_agent``), nothing for any other."""
+    page = data_agent()
+    return page.runner_requirements if agent and agent == page.agent else ()
 
 
 def call_clearance_for(reads: Reads) -> Clearance:
