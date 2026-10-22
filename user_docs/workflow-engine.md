@@ -186,9 +186,17 @@ Long indicator names in the headline tiles now wrap onto as many lines as needed
 
 #### "Ask an agent" launcher
 
-The **Ask an agent** launcher appears only on workflows that are running over generated synthetic data. On any workflow whose data comes from a real production opportunity, the launcher is not shown.
+The **Ask an agent** launcher appears only on workflows that are running over generated synthetic data, or on workflows whose author has selected an agent that has been cleared for use with real data.
 
-An agent can be offered on real data only once it has passed a clearance process: its author must claim it is safe to use with personally identifiable health information, Labs must accept that claim, and conversations must run on machines configured for zero data retention. No agent has completed that process yet, so the launcher is currently absent from all workflows over real data.
+Each workflow can now offer its own chosen agent rather than always offering the site-wide default. A workflow's **Agent** box on its run page lists:
+
+- the site's default agent
+- the data agent
+- any additional agents that a Labs Administrator has added to the **Canopy agents › Other agents workflows may choose** list
+
+The workflow's author picks whichever agent is most appropriate. For example, a KMC worker review could be configured to offer `labsdata` — an agent that reads the raw visits behind the numbers and takes no actions — while a different workflow keeps the site's general-purpose agent.
+
+Any agent that is permitted over real data is always offered in read-only mode, running on zero-data-retention machines. No agent is made available over real data unless it has passed a clearance process: its author must claim it is safe to use with personally identifiable health information, Labs must accept that claim, and conversations must run on machines configured for zero data retention.
 
 !!! note "This does not affect workflow buttons"
     Buttons built into a workflow itself — for example, an **Initiate AI coach** button — are unaffected. The restriction applies only to the general-purpose "Ask an agent" launcher that sits at the bottom of the window. Marketplace, targeting, supply, and explorer pages are also unaffected.
@@ -199,10 +207,4 @@ If no indicator in the report's registry has performance bands, nothing can be *
 
 #### Visit card counts match its rows
 
-The visit card header previously counted the gap since the last visit as an extra interval, which could produce a mismatch such as "5 gaps over 7 days" sitting above only four marked intervals. The count now matches the rows shown — for example, **"4 gaps over 7 days · no visit for 9 days since 2 Oct"**.
-
-The status chip on the visit card now reads **"review status: all approved"** (with a tooltip explaining that this is Connect's review of each visit, not a visit field such as "Payable").
-
-#### Readable labels for stored field codes
-
-Case and visit fields can now display human-readable labels in place of the raw codes that CommCare stores internally. For example, a visit-outcome field that stores `met`, `not_home`, and `left` can instead show **Met her**, **Not at home**, and **Left the programme** in the
+The visit card header previously counted the gap since the last visit as an extra interval, which could produce a mismatch such as "5 gaps over 7 days" sitting above only four marked intervals. The count now matches the rows shown — for example, **"4 gaps over 7
