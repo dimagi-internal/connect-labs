@@ -177,6 +177,10 @@
         <button type="button" @click="show = true" class="text-blue-600 hover:text-blue-800">
             <i class="fa-solid fa-pen-to-square"></i> Edit
         </button>
+        <template x-if="cfg.share && cfg.held_back.length">
+            <span class="text-red-700"><i class="fa-solid fa-circle-exclamation mr-1"></i>not shown on this page:
+                <span x-text="cfg.held_back.join('; ')"></span></span>
+        </template>
 
         <div x-show="show" x-cloak class="fixed inset-0 z-50">
             <div class="absolute inset-0 bg-black/30" @click="show = false"></div>
@@ -188,7 +192,7 @@
                 </label>
                 <fieldset class="space-y-2" :disabled="!cfg.share">
                     <template x-for="c in cfg.choices" :key="c.value">
-                        <label class="flex items-start gap-2">
+                        <label class="flex items-start gap-2" :class="c.available ? '' : 'opacity-60'">
                             <input type="radio" :value="c.value" x-model="cfg.agent" class="mt-1">
                             <span>
                                 <span class="font-medium font-mono" x-text="c.slug"></span>
@@ -199,6 +203,8 @@
                                     production data too</span>. Takes no actions.</span>
                                 <span x-show="!c.read_only">reads the run and can propose this workflow's actions for a
                                     person to confirm. Over production data it is not offered.</span>
+                                <span x-show="!c.available" class="block text-red-700 text-xs">
+                                    Not available on this workflow: <span x-text="c.reasons.join('; ')"></span></span>
                             </span>
                         </label>
                     </template>
