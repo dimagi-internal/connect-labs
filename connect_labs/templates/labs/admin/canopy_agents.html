@@ -11,7 +11,7 @@
     <p class="text-gray-600 mt-1">
       Which canopy agents labs shows in its agent panel, and which of them may read real visit data, chosen from
       the agents canopy lists for labs. An agent gets real rows only when labs allows it here <em>and</em> canopy
-      vouches, on every call, that its author declared it PHI-safe and it runs on a ZDR runner.
+      vouches, on every call, that its author declared it handles sensitive data and it runs on a sensitive-data runner.
     </p>
   </div>
 
@@ -40,10 +40,10 @@
       </span>
     </div>
     <p class="text-sm text-gray-600">
-      One row per agent canopy allows on labs' site. The PHI-safe, ZDR runner and Ready columns are canopy's, signed by canopy:
+      One row per agent canopy allows on labs' site. The Handles sensitive data, Sensitive-data runner and Ready columns are canopy's, signed by canopy:
       fix them there. <strong>Show on labs</strong> lists the agent in every workflow's Agent box;
-      <strong>Real data</strong> lets it be offered over production visits (read-only, on ZDR runners), and can be ticked
-      only when canopy says it is PHI-safe and has a ready ZDR runner. An agent canopy declares PHI-safe is always offered read-only.
+      <strong>Real data</strong> lets it be offered over production visits (read-only, on sensitive-data runners), and can be ticked
+      only when canopy says it handles sensitive data and has a ready sensitive-data runner. An agent canopy declares handles sensitive data is always offered read-only.
     </p>
 
     <div class="overflow-x-auto">
@@ -51,7 +51,7 @@
         <thead class="bg-gray-50 text-left text-gray-500 uppercase text-xs">
           <tr>
             <th class="px-3 py-2">Agent</th><th class="px-3 py-2">What it does here</th>
-            <th class="px-3 py-2">PHI-safe</th><th class="px-3 py-2">ZDR runner</th><th class="px-3 py-2">Ready</th>
+            <th class="px-3 py-2">Handles sensitive data</th><th class="px-3 py-2">Sensitive-data runner</th><th class="px-3 py-2">Ready</th>
             <th class="px-3 py-2 text-center">Show on labs</th><th class="px-3 py-2 text-center">Real data</th><th class="px-3 py-2 text-center">Default</th>
           </tr>
         </thead>
@@ -69,13 +69,13 @@
               {% for reason in row.real_data_held_back %}<span class="block text-xs text-red-700"><i class="fa-solid fa-circle-exclamation mr-1"></i>Not offered over real data: {{ reason }}</span>{% endfor %}
             </td>
             <td class="px-3 py-2">
-              {% if row.phi_safe %}<i class="fa-solid fa-circle-check text-green-600"></i>
-                {% if row.phi_set_by %}<span class="block text-xs text-gray-500">by {{ row.phi_set_by }}{% if row.phi_set_at %}, {{ row.phi_set_at|slice:":10" }}{% endif %}</span>{% endif %}
+              {% if row.handles_sensitive %}<i class="fa-solid fa-circle-check text-green-600"></i>
+                {% if row.sensitive_set_by %}<span class="block text-xs text-gray-500">by {{ row.sensitive_set_by }}{% if row.sensitive_set_at %}, {{ row.sensitive_set_at|slice:":10" }}{% endif %}</span>{% endif %}
               {% elif row.listed %}<span class="text-gray-400">no</span>{% else %}—{% endif %}
             </td>
             <td class="px-3 py-2">
-              {% if row.zdr %}<i class="fa-solid fa-circle-check text-green-600"></i> ready
-              {% elif row.zdr_available %}<span class="text-amber-700">none ready</span>
+              {% if row.sensitive_data_runner %}<i class="fa-solid fa-circle-check text-green-600"></i> ready
+              {% elif row.sensitive_data_runner_available %}<span class="text-amber-700">none ready</span>
               {% elif row.listed %}<span class="text-gray-400">none</span>{% else %}—{% endif %}
             </td>
             <td class="px-3 py-2">
@@ -110,7 +110,7 @@
 
     <fieldset>
       <legend class="text-sm font-semibold text-gray-800">Every visitor conversation must run on</legend>
-      <span class="block text-xs text-gray-500 mb-1">Signed into every page token; canopy holds the conversation to runners carrying the flag. Read-only agents always require ZDR whatever this says.</span>
+      <span class="block text-xs text-gray-500 mb-1">Signed into every page token; canopy holds the conversation to runners carrying the flag. Read-only agents always require <code>sensitive_data</code> whatever this says.</span>
       {% for flag in runner_flags %}
       <label class="inline-flex items-center mr-4 text-sm">
         <input type="checkbox" name="runner_requirements" value="{{ flag.flag }}" class="mr-2"
@@ -151,7 +151,7 @@
       </li>
       {% endfor %}
     </ul>
-    <p class="text-sm font-semibold text-gray-700 mb-2">Canopy's side: the PHI-safe, ZDR runner and Ready columns above, and each call's statement below.</p>
+    <p class="text-sm font-semibold text-gray-700 mb-2">Canopy's side: the Handles sensitive data, Sensitive-data runner and Ready columns above, and each call's statement below.</p>
     {% if canopy_url %}<p class="text-sm"><a class="text-blue-600" href="{{ canopy_url }}" target="_blank" rel="noopener">Open canopy</a></p>{% endif %}
   </div>
 

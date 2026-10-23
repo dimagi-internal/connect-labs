@@ -24,6 +24,12 @@ DATA_TOOLS = ("data_query", "data_visits", "data_describe")
 #: Any real (non-generated) opportunity: what "over real data" means for a row's state.
 _REAL = canopy_panel.visits(None)
 
+#: What ``sensitive_data`` means, when canopy has not said (it is unreachable).
+SENSITIVE_DATA_MEANING = (
+    "a sensitive-data runner: a ZDR API key, a locked harness, egress limited to an allowlist, "
+    "nothing kept on the box"
+)
+
 
 def _rows(ticks: canopy_settings.AgentSettings, listing) -> list[dict]:
     """One row per agent canopy lists, then any labs ticks that canopy does not."""
@@ -36,7 +42,7 @@ def _rows(ticks: canopy_settings.AgentSettings, listing) -> list[dict]:
         eligible, why_not = canopy_settings.eligible_for_real_data(agent)
         here = canopy_panel.availability(slug, canopy_panel.NO_VISIT_DATA, ticks=ticks, listing=listing)
         over_real = canopy_panel.availability(slug, _REAL, ticks=ticks, listing=listing)
-        phi = next((c for c in agent.capabilities if c.phi_safe), None) if agent else None
+        sensitive = next((c for c in agent.capabilities if c.handles_sensitive), None) if agent else None
         rows.append(
             {
                 "slug": slug,
@@ -46,11 +52,13 @@ def _rows(ticks: canopy_settings.AgentSettings, listing) -> list[dict]:
                 or "; ".join(c.description for c in (agent.capabilities if agent else ()) if c.description),
                 "owner": agent.owner if agent else "",
                 "url": agent.url if agent else "",
-                "phi_safe": bool(agent and agent.phi_safe),
-                "phi_set_by": phi.phi_set_by if phi else "",
-                "phi_set_at": phi.phi_set_at if phi else "",
-                "zdr": bool(agent and agent.ready_with_flag(canopy_settings.ZDR)),
-                "zdr_available": bool(agent and canopy_settings.ZDR in agent.flags_available),
+                "handles_sensitive": bool(agent and agent.handles_sensitive),
+                "sensitive_set_by": sensitive.sensitive_set_by if sensitive else "",
+                "sensitive_set_at": sensitive.sensitive_set_at if sensitive else "",
+                "sensitive_data_runner": bool(agent and agent.ready_with_flag(canopy_settings.SENSITIVE_DATA)),
+                "sensitive_data_runner_available": bool(
+                    agent and canopy_settings.SENSITIVE_DATA in agent.flags_available
+                ),
                 "ready": bool(agent and agent.ready),
                 "problems": list(agent.problems) if agent else [],
                 "offered": bool(tick and tick.offered),
@@ -91,7 +99,8 @@ def _checks(ticks: canopy_settings.AgentSettings, listing) -> list[dict]:
         {
             "label": "An agent for data work is shown (the Data page and read-only workflows)",
             "ok": bool(agent),
-            "detail": agent or 'none: tick a PHI-safe agent\'s "Show on labs"; Data offers the default agent',
+            "detail": agent
+            or 'none: tick "Show on labs" for an agent that handles sensitive data; Data offers the default agent',
         },
         {
             "label": "Labs lets it read real data",
@@ -141,10 +150,10 @@ class CanopyAgentsView(AdminRequiredMixin, TemplateView):
         ticks = canopy_settings.current()
         listing = canopy_settings.site_agents()
         canopy = (getattr(settings, "CANOPY_BASE_URL", "") or "").rstrip("/")
-        # The runner flags canopy names (zdr always), and what each means.
+        # The runner flags canopy names (sensitive_data always), and what each means.
         flags = [{"flag": f.flag, "meaning": f.meaning} for f in (listing.runner_flags if listing else ())]
-        if not any(f["flag"] == canopy_settings.ZDR for f in flags):
-            flags.append({"flag": canopy_settings.ZDR, "meaning": "zero data retention"})
+        if not any(f["flag"] == canopy_settings.SENSITIVE_DATA for f in flags):
+            flags.append({"flag": canopy_settings.SENSITIVE_DATA, "meaning": SENSITIVE_DATA_MEANING})
         context.update(
             current=ticks,
             listing=listing,

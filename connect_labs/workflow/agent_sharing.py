@@ -18,8 +18,8 @@ Which agent, and what its author tells it, ride on the same key:
 * ``agent`` -- which agent: the slug of one Labs Admin › Canopy agents shows (and canopy
   lists for labs). Absent, it is the default agent. The legacy values ``"site"`` (the
   default agent) and ``"data"`` (the agent for data work) still read
-  (``canopy_settings.resolve_choice``). An agent canopy declares PHI-safe, or that labs
-  lets read real data, is offered read-only: on ZDR runners, with the run's read scopes
+  (``canopy_settings.resolve_choice``). An agent canopy declares handles sensitive data, or
+  that labs lets read real data, is offered read-only: on sensitive-data runners, with the run's read scopes
   and never ``workflow:act`` (``canopy_panel.availability``).
 * ``brief`` -- what the workflow is for, what correct looks like, what to check first.
   The agent reads it with the workflow (``data_workflow_context``, as the visitor).

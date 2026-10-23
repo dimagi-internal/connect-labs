@@ -365,13 +365,13 @@ class TestTheSiteDocument:
     def test_it_is_signed_and_says_what_labs_asks_and_uses(self, client, configured, settings):
         from canopy_sdk.site import verify_site_document
 
-        settings.CANOPY_PHI_AGENTS = ["labsdata"]
+        settings.CANOPY_SENSITIVE_AGENTS = ["labsdata"]
         response = client.get(reverse("labs:canopy_site"))
         assert response.status_code == 200 and response["Content-Type"] == "application/jose"
         needs = verify_site_document(
             response.content.decode(), [_published_key(client)], site_name=settings.CANOPY_APP_NAME
         )
-        assert dict(needs.real_data_requires) == {"phi_safe": True, "runner_flag": "zdr"}
+        assert dict(needs.real_data_requires) == {"handles_sensitive": True, "runner_flag": "sensitive_data"}
         assert "labsdata" in needs.uses_real_data_agents
         pages = {p.key: p for p in needs.pages}
         assert tuple(pages["labs:workflow:run:data"].scopes) == ("workflow:read", "data:read", "workflow:edit")

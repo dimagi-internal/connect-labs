@@ -613,7 +613,7 @@ def test_the_agent_is_told_to_say_nothing_before_the_preview():
 def test_a_workflow_that_offers_the_data_agent_takes_no_actions_from_any_embedded_agent(
     user, actionable, monkeypatch, settings
 ):
-    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"  # shown, and PHI-safe in canopy: read-only
+    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"  # shown, and handles sensitive data in canopy: read-only
     definition = _definition_with_opps()
     definition.data["config"]["agent"] = {"share": True, "agent": "labsdata"}
     actionable.get_definition.return_value = definition

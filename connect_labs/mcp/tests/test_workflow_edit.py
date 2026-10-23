@@ -84,7 +84,7 @@ def test_a_proposal_saves_nothing_and_says_so(person, wda):
 def test_the_card_finds_the_edit_from_the_proposal_input_and_confirm_saves_it(person, wda):
     user, raw = person
     _propose(raw)
-    # A ZDR conversation keeps no tool result: the card has only the proposal's input.
+    # A sensitive conversation keeps no tool result: the card has only the proposal's input.
     card = _ok(call_tool(raw, "workflow_edit_review_view", {"tool": "workflow_patch_render_code", "arguments": PATCH}))
     assert card["confirm"] and card["state"] == "pending"
 

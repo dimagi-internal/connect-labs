@@ -26,7 +26,7 @@ own outbound actions, its agent settings, who it shares to), and render code may
 changed only on a workflow that runs in the page sandbox, whose enforced
 ``connect-src`` names no host the code could post rows to (``workflow/sandbox.py``).
 Sharing, publishing, cloning and the like are simply not proposable.
-Design: canopy-web ``docs/superpowers/specs/2026-10-22-phi-agents-on-zdr-runners-design.md`` §7.
+Design: canopy-web ``docs/superpowers/specs/2026-10-22-sensitive-data-agents-design.md`` §7.
 """
 
 from __future__ import annotations

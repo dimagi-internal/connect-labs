@@ -8,13 +8,13 @@ in §3, with the two choices under "As built" below.
 Labs offers canopy agents on its pages and lets some of them read real visit data. Every
 fact labs uses to decide that is a copy it keeps by hand of something canopy owns:
 
-| Labs keeps                                | Canopy owns                                                       |
-| ----------------------------------------- | ----------------------------------------------------------------- |
-| agent slugs typed into text fields        | which agents exist and are allowed on the connect-labs site       |
-| a "data agent" role, offered read-only    | what each agent's capability does on this site                    |
-| a list of agents "allowed over real data" | whether the agent is PHI-safe (`data: phi`, set behind a passkey) |
-| `KNOWN_RUNNER_FLAGS = ("zdr",)`           | the runner flags canopy knows, and which runners an agent can use |
-| nothing                                   | whether the agent is ready (GitHub token, a ready runner, ...)    |
+| Labs keeps                                 | Canopy owns                                                                        |
+| ------------------------------------------ | ---------------------------------------------------------------------------------- |
+| agent slugs typed into text fields         | which agents exist and are allowed on the connect-labs site                        |
+| a "data agent" role, offered read-only     | what each agent's capability does on this site                                     |
+| a list of agents "allowed over real data"  | whether the agent handles sensitive data (`data: sensitive`, set behind a passkey) |
+| `KNOWN_RUNNER_FLAGS = ("sensitive_data",)` | the runner flags canopy knows, and which runners an agent can use                  |
+| nothing                                    | whether the agent is ready (GitHub token, a ready runner, ...)                     |
 
 Nothing checks the copies against the originals until a visitor's call reaches labs with
 canopy's `Canopy-Execution` statement, and a mismatch then shows as an agent that silently
@@ -59,7 +59,9 @@ and refuses (401) anything else. The SDK builds it: `canopy_sdk.site_agents.requ
   "exp": 1792700900,
   "version": "<sha256 of the canonical agents+flags content>",
   "site": { "name": "connect-labs", "tenant": "connect" },
-  "runner_flags": [{ "flag": "zdr", "meaning": "zero data retention: ..." }],
+  "runner_flags": [
+    { "flag": "sensitive_data", "meaning": "a sensitive-data runner: ..." }
+  ],
   "agents": [
     {
       "slug": "labsdata",
@@ -73,14 +75,14 @@ and refuses (401) anything else. The SDK builds it: `canopy_sdk.site_agents.requ
           "name": "data",
           "description": "Ask data questions about the workflow you are looking at ...",
           "callers": ["contact", "member"],
-          "phi_safe": true,
-          "phi_set_by": "a person's name",
-          "phi_set_at": "2026-10-22T22:00:09Z"
+          "handles_sensitive": true,
+          "sensitive_set_by": "a person's name",
+          "sensitive_set_at": "2026-10-22T22:00:09Z"
         }
       ],
       "runners": {
-        "flags_available": ["zdr"],
-        "ready_with": { "zdr": true }
+        "flags_available": ["sensitive_data"],
+        "ready_with": { "sensitive_data": true }
       },
       "ready": true,
       "problems": []
@@ -93,11 +95,11 @@ and refuses (401) anything else. The SDK builds it: `canopy_sdk.site_agents.requ
   (`AppCredentialAgent`) AND that have a capability naming this site in `sites:`. An
   agent allowed but with no capability for the site is listed with `ready: false` and a
   problem saying so.
-- `phi_safe`: the capability has `data: phi` (canopy-web#1887's interface setting).
+- `handles_sensitive`: the capability has `data: sensitive` (canopy-web#1887's interface setting).
 - `runners.flags_available`: flags carried by at least one runner the agent may run on;
   `ready_with[flag]`: one of those runners is ready now.
 - `problems`: plain sentences an admin can act on, each naming where to fix it in canopy
-  (`"no ready runner with zdr: canopy › Runners"`, `"no GitHub token: …/settings/credentials"`).
+  (`"no ready runner with sensitive_data: canopy › Runners"`, `"no GitHub token: …/settings/credentials"`).
 - `version`: changes exactly when anything above (bar `iat`/`exp`) changes.
 
 **SDK 0.14** (`canopy_sdk.site_agents`):
@@ -136,7 +138,9 @@ signed with the site's key. Payload:
       "scopes": ["workflow:read", "data:read"]
     }
   ],
-  "real_data": { "requires": { "phi_safe": true, "runner_flag": "zdr" } },
+  "real_data": {
+    "requires": { "handles_sensitive": true, "runner_flag": "sensitive_data" }
+  },
   "uses": {
     "agents": ["ace", "labsdata"],
     "real_data_agents": ["labsdata"],
@@ -148,25 +152,25 @@ signed with the site's key. Payload:
 canopy fetches it like `jwks_url` (https only, bounded, cached, fail-closed) and shows on
 the site's Connected sites page: the site's pages and scopes; which allowed agents the
 site actually offers and lets read real data; and for each, whether it meets the site's
-`real_data.requires` (PHI-safe, ready on a runner with the flag) and, if not, why.
+`real_data.requires` (handles sensitive data, ready on a runner with the flag) and, if not, why.
 
 ### 3. Labs: settings chosen from the site agents API
 
 **Labs Admin › Canopy agents** becomes a table built from the site agents API response, one row
 per agent canopy lists:
 
-| Agent | What it does here | PHI-safe | ZDR runner | Ready | Show on labs | Real data | Default |
-| ----- | ----------------- | -------- | ---------- | ----- | ------------ | --------- | ------- |
+| Agent | What it does here | Handles sensitive data | Sensitive-data runner | Ready | Show on labs | Real data | Default |
+| ----- | ----------------- | ---------------------- | --------------------- | ----- | ------------ | --------- | ------- |
 
 - "Show on labs" and "Real data" are ticks; "Default" is one radio. No free text.
-- "Real data" can be ticked only when canopy says the agent is PHI-safe AND ready with
-  `zdr`; otherwise it is disabled with canopy's reason and a link to fix it there.
+- "Real data" can be ticked only when canopy says the agent handles sensitive data AND is
+  ready with `sensitive_data`; otherwise it is disabled with canopy's reason and a link to fix it there.
 - Ticking "Real data" implies "Show on labs". An agent offered over real data is always
-  read-only on ZDR (the `labs:workflow:run:data` page key) — no separate "data agent" role.
+  read-only on sensitive-data runners (the `labs:workflow:run:data` page key) — no separate "data agent" role.
 - Runner flags come from the response's `runner_flags`, not a constant.
 - Each save records the response's `version` it was made against (history, audit metadata).
 - Drift: an agent ticked here that the current response no longer lists, or no longer lists
-  as PHI-safe/ready, is shown in red with canopy's reason, and labs stops offering it at
+  as handling sensitive data/ready, is shown in red with canopy's reason, and labs stops offering it at
   once — the page, the run pages and the Data page all read the same answer.
 
 The model (`CanopyAgentSettings`, append-only, history + restore as today) becomes
@@ -181,7 +185,7 @@ combines labs' ticks, canopy's site agents response, and what the page reads. Ev
 
 - the panel decision (`canopy_panel.panel`) — no panel when not ok;
 - the run page's **Agent** box: every agent labs offers is listed; one not available on
-  this workflow is greyed with its reasons ("not PHI-safe in canopy", "not allowed over
+  this workflow is greyed with its reasons ("not declared to handle sensitive data in canopy", "not allowed over
   real data in Labs Admin"), and an available one is pre-selected;
 - a line beside the Agent box for an editor when the chosen agent is held back:
   "labsdata is not shown: <reason> — <where to fix>". Never silent.
@@ -212,9 +216,9 @@ ticks and can land before the site agents API does.
 
 ## As built (labs)
 
-- **A PHI-safe agent is always read-only.** §3 made an agent read-only only when "Real
-  data" is ticked. Labs also offers an agent read-only, on ZDR runners, whenever canopy
-  says its author declared it PHI-safe, so `labsdata` never gains `workflow:act` on a
+- **An agent that handles sensitive data is always read-only.** §3 made an agent read-only only when "Real
+  data" is ticked. Labs also offers an agent read-only, on sensitive-data runners, whenever
+  canopy says its author declared it handles sensitive data, so `labsdata` never gains `workflow:act` on a
   synthetic workflow just because "Real data" is not ticked yet. This replaces the old
   "data agent" role's guarantee, from canopy's word rather than a typed role.
 - **A call is held to its statement, not to the cached listing.** The page decision reads
@@ -222,4 +226,4 @@ ticks and can land before the site agents API does.
   ticks and its own verified `Canopy-Execution` statement, which is canopy's word on
   exactly that call, so a cache miss at canopy cannot refuse or admit a call by itself.
 - **The Data page** offers "the agent for data work": the first agent with "Real data"
-  ticked, else the first shown agent canopy declares PHI-safe, else the default agent.
+  ticked, else the first shown agent canopy declares handles sensitive data, else the default agent.

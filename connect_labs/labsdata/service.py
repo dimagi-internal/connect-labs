@@ -10,7 +10,8 @@ read (and, for SQL, a hash of the statement).
 **Who sees real rows.** A person (the page, their own MCP sign-in) sees everything
 they hold. An agent calling through canopy as a visitor (``for_agent``) sees real
 rows only when labs has cleared it for real data (``labs/canopy_panel.py``:
-``call_real_data_clearance`` -- a PHI-declared agent, on ZDR runners, vouched for
+``call_real_data_clearance`` -- an agent declared to handle sensitive data, on
+sensitive-data runners, vouched for
 by canopy in this call's verified ``Canopy-Execution`` statement). Otherwise it gets
 structure, validation and synthetic data, and hands SQL to the page, where the person
 runs it.

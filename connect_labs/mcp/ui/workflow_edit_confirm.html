@@ -12,7 +12,7 @@
   edit back AS THE VIEWER (workflow_edit_review_view, app-only), shows the diff, and
   saves it on the viewer's Confirm (workflow_edit_apply) with the token that read
   issued. The agent never holds that token. In a conversation that keeps no tool
-  results (canopy's ZDR sessions) the card finds the edit from the proposal's input.
+  results (canopy's sensitive conversations) the card finds the edit from the proposal's input.
 
   Self-contained on purpose: no network load of any kind. Every call goes to the host
   over postMessage. Code is shown as text, never run.

@@ -21,17 +21,18 @@ token minted before a workflow's data class changed is refused too.
 
 **Which agent, and whether at all** is ``availability``: labs' ticks (Labs Admin ›
 Canopy agents, ``labs/canopy_settings.py``) AND canopy's signed word on the agent (the
-site agents API: listed for labs, ready, PHI-safe, a ready ZDR runner). When canopy has
-said nothing usable for a day, no agent is shown. An agent canopy declares PHI-safe, or
-that labs lets read real data, is always offered read-only, on ZDR runners.
+site agents API: listed for labs, ready, handles sensitive data, a ready sensitive-data
+runner). When canopy has said nothing usable for a day, no agent is shown. An agent
+canopy declares handles sensitive data, or that labs lets read real data, is always
+offered read-only, on sensitive-data runners.
 
 **Clearance for real data** needs, and fails closed on, each of:
 
 1. labs lets the agent read real data ("Real data" ticked; off by default);
-2. canopy declares it PHI-safe and it has a ready ZDR runner (the page check, from the
-   site agents API -- so drift in canopy withdraws it at once);
-3. every conversation with it requires ZDR runners (signed into its page token);
-4. canopy vouches, on each call, for the agent's PHI-safe declaration and the runner
+2. canopy declares it handles sensitive data and it has a ready sensitive-data runner
+   (the page check, from the site agents API -- so drift in canopy withdraws it at once);
+3. every conversation with it requires sensitive-data runners (signed into its page token);
+4. canopy vouches, on each call, for the agent's sensitive-data declaration and the runner
    executing it, in a ``Canopy-Execution`` statement labs verifies (``mcp/execution.py``;
    ``call_real_data_clearance``). No statement, or one that does not verify, is refused.
 
@@ -58,8 +59,10 @@ def _execution_statements_supported() -> bool:
 #: still held to its own verified statement (``call_real_data_clearance``).
 CANOPY_EXECUTION_STATEMENTS = _execution_statements_supported()
 
-#: The runner flag every conversation over real data must require.
-ZDR = "zdr"
+#: The runner flag every conversation over real data must require: a sensitive-data
+#: runner (a ZDR API key, a locked harness, egress limited to an allowlist, nothing kept
+#: on the box).
+SENSITIVE_DATA = "sensitive_data"
 
 #: Where labs' side of every refusal is fixed.
 ADMIN_PAGE = "Labs Admin › Canopy agents"
@@ -100,7 +103,8 @@ class Clearance:
 
 def real_data_clearance(agent: str = "", runner_requirements=()) -> Clearance:
     """Labs' own side of letting ``agent`` (default: the default agent) work over real
-    (non-generated) data: "Real data" ticked, conversations held to ZDR, and an SDK that
+    (non-generated) data: "Real data" ticked, conversations held to sensitive-data runners,
+    and an SDK that
     verifies canopy's per-call statement. Canopy's side is ``canopy_real_data`` (a page)
     or the call's statement (``call_real_data_clearance``).
 
@@ -112,11 +116,11 @@ def real_data_clearance(agent: str = "", runner_requirements=()) -> Clearance:
     if agent not in ticks.real_data_agents:
         return Clearance(False, f'{agent} is not allowed over real data: tick "Real data" for it in {ADMIN_PAGE}')
     required = set(ticks.runner_requirements) | set(runner_requirements or ())
-    if ZDR not in required:
+    if SENSITIVE_DATA not in required:
         return Clearance(
             False,
-            f"conversations with {agent} here are not held to ZDR (zero-data-retention) runners: "
-            f"tick zdr under the runner requirements in {ADMIN_PAGE}",
+            f"conversations with {agent} here are not held to sensitive-data runners: "
+            f"tick {SENSITIVE_DATA} under the runner requirements in {ADMIN_PAGE}",
         )
     if not CANOPY_EXECUTION_STATEMENTS:
         return Clearance(False, "canopy does not yet vouch for the agent's declaration and its runner on each call")
@@ -124,8 +128,8 @@ def real_data_clearance(agent: str = "", runner_requirements=()) -> Clearance:
 
 
 def canopy_real_data(agent: str, listing) -> Clearance:
-    """canopy's side, for a page: the site agents API lists ``agent`` as PHI-safe and
-    ready on a ZDR runner. Drift in canopy withdraws the agent here at once."""
+    """canopy's side, for a page: the site agents API lists ``agent`` as handling
+    sensitive data and ready on a sensitive-data runner. Drift in canopy withdraws the agent here at once."""
     if listing is None:
         return Clearance(False, canopy_settings.unreachable_reason())
     ok, why = canopy_settings.eligible_for_real_data(listing.agent(agent))
@@ -136,8 +140,9 @@ def call_real_data_clearance() -> Clearance:
     """Whether THIS call (canopy acting for a visitor) may be given real data.
 
     Labs' own conditions for the agent canopy's verified statement names, then the
-    statement's: PHI-safe declaration at the executing commit, ``zdr`` in force on a
-    runner in ZDR mode, a conversation that requires it (``Execution.phi_clearance``).
+    statement's: the capability declared to handle sensitive data, ``sensitive_data`` in
+    force on a runner in sensitive-data mode, a conversation that requires it
+    (``Execution.sensitive_clearance``).
     """
     from connect_labs.mcp import execution
 
@@ -147,15 +152,15 @@ def call_real_data_clearance() -> Clearance:
         return Clearance(False, f"canopy did not vouch for this call ({why})")
     stated = call.execution
     # Labs' own policy for the agent the statement names -- from labs' ticks, never from
-    # the statement. An agent allowed over real data is only ever offered on ZDR runners
+    # the statement. An agent allowed over real data is only ever offered on sensitive-data runners
     # (its page token requires them), so that is its requirement here too. The
     # statement is then checked against it, separately, below.
-    labs_side = real_data_clearance(stated.agent, (ZDR,))
+    labs_side = real_data_clearance(stated.agent, (SENSITIVE_DATA,))
     if not labs_side.granted:
         return labs_side
-    refusal = stated.phi_clearance(
+    refusal = stated.sensitive_clearance(
         agents=set(canopy_settings.current().real_data_agents),
-        require=(ZDR,),
+        require=(SENSITIVE_DATA,),
     )
     if refusal:
         return Clearance(False, f"canopy's statement does not clear this call for real data ({refusal})")
@@ -211,8 +216,8 @@ def availability(choice: str, reads: Reads, *, ticks=None, listing=_UNSET) -> Av
     """Whether ``choice`` (a slug; legacy ``"site"``/``"data"``, or "" for the default
     agent) may be offered over what the page ``reads``, and on what terms.
 
-    Shown by labs ("Show on labs"), listed and ready in canopy; read-only on ZDR runners
-    when canopy declares it PHI-safe or labs lets it read real data; over real data,
+    Shown by labs ("Show on labs"), listed and ready in canopy; read-only on sensitive-data
+    runners when canopy declares it handles sensitive data or labs lets it read real data; over real data,
     only when both sides clear it (``real_data_clearance``, ``canopy_real_data``)."""
     ticks = ticks or canopy_settings.current()
     listing = canopy_settings.site_agents() if listing is _UNSET else listing
@@ -231,16 +236,16 @@ def availability(choice: str, reads: Reads, *, ticks=None, listing=_UNSET) -> Av
         )
     if not agent.ready:
         return Availability(False, slug, reasons=agent.problems or (f"{slug} is not ready in canopy",))
-    read_only = tick.real_data or agent.phi_safe
+    read_only = tick.real_data or agent.handles_sensitive
     if read_only:
-        if not agent.ready_with_flag(ZDR):
+        if not agent.ready_with_flag(SENSITIVE_DATA):
             return Availability(
                 False,
                 slug,
                 True,
-                (f"{slug} runs only on ZDR runners, and has no ready one in canopy (canopy › Runners)",),
+                (f"{slug} runs only on sensitive-data runners, and has no ready one in canopy (canopy › Runners)",),
             )
-        page_agent = PageAgent(agent=slug, runner_requirements=(ZDR,), panel=dict(DATA_PANEL))
+        page_agent = PageAgent(agent=slug, runner_requirements=(SENSITIVE_DATA,), panel=dict(DATA_PANEL))
     elif slug == ticks.default_agent:
         page_agent = PageAgent()
     else:
@@ -257,7 +262,7 @@ def availability(choice: str, reads: Reads, *, ticks=None, listing=_UNSET) -> Av
 
 def data_page_agent(reads: Reads = None) -> Availability:
     """The Data pages' agent: the agent for data work (``canopy_settings.data_agent``),
-    always read-only on ZDR runners -- or the default agent when there is none."""
+    always read-only on sensitive-data runners -- or the default agent when there is none."""
     reads = reads or NO_VISIT_DATA
     ticks = canopy_settings.current()
     listing = canopy_settings.site_agents()

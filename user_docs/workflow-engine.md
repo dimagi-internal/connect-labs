@@ -196,17 +196,17 @@ Labs Administrators manage available agents in **Labs Admin › Canopy agents**.
 
 | Column | What it means |
 |---|---|
-| **PHI-safe** | Whether the agent's author has declared it safe to use with personally identifiable health information, who made that declaration, and when |
-| **ZDR runner** | Whether a zero-data-retention runner is ready for this agent |
+| **Handles sensitive data** | Whether the agent's author has declared that it handles sensitive data (such as personally identifiable health information), who made that declaration, and when |
+| **Sensitive-data runner** | Whether a sensitive-data runner is ready for this agent: a locked-down machine that uses a zero-data-retention (ZDR) API key, can reach only an allowlist of hosts, and keeps nothing after each conversation |
 | **Ready** | Whether the agent is ready to use, and — if not — what is currently wrong |
 
 Labs Administrators set three options for each agent using tick boxes in the same row:
 
 - **Show on Labs** — whether the agent appears to workflow authors and users at all
-- **Real data** — whether the agent may be used on workflows with real (non-synthetic) data; this box can only be ticked once Canopy confirms the agent is PHI-safe **and** has a ready ZDR runner; otherwise the box is disabled and shows the reason
+- **Real data** — whether the agent may be used on workflows with real (non-synthetic) data; this box can only be ticked once Canopy confirms the agent handles sensitive data **and** has a ready sensitive-data runner; otherwise the box is disabled and shows the reason
 - **Default** — whether this agent is the site-wide default
 
-If anything changes on the Canopy side — for example, an agent's author withdraws a PHI-safe declaration, or Canopy stops allowing an agent on Labs — Labs follows immediately: the agent stops being offered and its row turns red with Canopy's reason shown. If Canopy cannot be reached, Labs shows no agent at all until the connection is restored.
+If anything changes on the Canopy side — for example, an agent's author withdraws the declaration that it handles sensitive data, or Canopy stops allowing an agent on Labs — Labs follows immediately: the agent stops being offered and its row turns red with Canopy's reason shown. If Canopy cannot be reached, Labs shows no agent at all until the connection is restored.
 
 !!! note "This does not affect workflow buttons"
     Buttons built into a workflow itself — for example, an **Initiate AI coach**
