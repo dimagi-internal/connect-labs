@@ -269,6 +269,24 @@ These are written to `audit_trail`, with `metadata.embed_client`:
 The embedded page's own reads are audited as usual, attributed to the user, because the request
 _is_ that user.
 
+## The reference example (built)
+
+`connect_labs/embed_example/` is a live embedding system inside labs, at `/embed-example/`,
+for engineers to read and copy. It is written as an outside system would write it: it
+imports nothing from `connect_labs/embed/`, holds its own Ed25519 key
+(`EMBED_EXAMPLE_PRIVATE_KEY`), publishes its JWKS (registered as `jwks_uri`, so labs fetches
+it like anyone's), signs for the signed-in labs user only, calls `/embed/token/` over HTTP,
+and frames the report with both handoffs.
+
+`embed_example_register` registers it as an identity authority with
+`generated_data_only`: labs refuses it, at token time, any resource that reads anything but
+generated data. That check is `EmbedKind.reads_only_generated`, which for a workflow is the
+MCP's "no user visit data" resolver, plus a refusal of `workflow_sources`.
+
+It is same-origin until `EMBED_EXAMPLE_BASE_URL` names a second hostname (DNS plus an ALB
+certificate). A `*.dimagi.com` subdomain would reproduce Connect's position exactly: a
+different origin, but the same site.
+
 ## Phase 2: users who have never signed in to labs (Connect builds this)
 
 Phase 1 needs a stored Connect token for the viewer. For someone who has never opened labs,

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>Embedding labs: a live example</title>
+  {% comment %}
+  The browser half of the reference embedder (connect_labs/embed_example/). Deliberately
+  NOT a labs page: no labs base template, no labs scripts. It stands in for another
+  system's page, and shows the two ways to hand the labs frame its one-time token and how
+  to listen to the frame's messages.
+  {% endcomment %}
+  <style>
+    :root { --ink: #1c1917; --muted: #57534e; --line: #d6d3d1; --bg: #fafaf9; --accent: #4338ca; --bad: #b91c1c; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; color: var(--ink); background: var(--bg); }
+    header { padding: 16px 24px; border-bottom: 1px solid var(--line); background: #fff; }
+    header h1 { margin: 0; font-size: 18px; }
+    header p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+    main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; padding: 24px; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 16px; } }
+    .frame { border: 1px solid var(--line); border-radius: 8px; background: #fff; min-height: 640px; width: 100%; }
+    aside section { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin-bottom: 16px; font-size: 14px; }
+    aside h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; }
+    a { color: var(--accent); }
+    .choices a { display: inline-block; margin: 0 8px 6px 0; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; text-decoration: none; }
+    .choices a.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button { font: inherit; padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; }
+    #log { font: 12px/1.5 ui-monospace, monospace; max-height: 240px; overflow: auto; white-space: pre-wrap; margin: 8px 0 0; }
+    .refused { border: 1px solid #fecaca; background: #fef2f2; color: var(--bad); padding: 12px; border-radius: 8px; }
+    ol { padding-left: 18px; margin: 0; } li { margin-bottom: 6px; }
+    code { font-size: 12px; background: #f5f5f4; padding: 1px 4px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Embedding labs: a live example</h1>
+    <p>This page plays another system (such as Connect) showing a labs report as you, through the real embedding protocol. Read its code to build your own.</p>
+  </header>
+
+  {% if not configured %}
+    <main><div class="refused">The example is not configured on this server (no signing key, or no labs address).</div></main>
+  {% elif not resources %}
+    <main><div class="refused">The example has no resources to show yet.</div></main>
+  {% else %}
+  <main>
+    <div>
+      {% if refused %}
+        <div class="refused" data-testid="refused">
+          Labs refused: <strong>{{ refused.error }}</strong> — {{ refused.description }}
+        </div>
+      {% else %}
+        <iframe id="labs-frame" class="frame" title="{{ resource.label }}" src="{{ frame_src }}" data-testid="labs-frame"></iframe>
+      {% endif %}
+    </div>
+    <aside>
+      <section>
+        <h2>What to show</h2>
+        <div class="choices">
+          {% for r in resources %}
+            <a href="?resource={{ r.key|urlencode }}&handoff={{ handoff }}" class="{% if r.key == resource.key %}on{% endif %}">{{ r.label }}</a>
+          {% endfor %}
+        </div>
+      </section>
+      <section>
+        <h2>How the token reaches the frame</h2>
+        <div class="choices">
+          <a href="?resource={{ resource.key|urlencode }}&handoff=fragment" class="{% if handoff == 'fragment' %}on{% endif %}" data-testid="handoff-fragment">In the address</a>
+          <a href="?resource={{ resource.key|urlencode }}&handoff=message" class="{% if handoff == 'message' %}on{% endif %}" data-testid="handoff-message">By postMessage</a>
+        </div>
+        {% if handoff == 'fragment' %}
+          <p>The server minted a token while drawing this page and put it after <code>#</code> in the frame's address. Browsers never send the fragment to a server.</p>
+        {% else %}
+          <p>The frame loaded with no token and asked for one (<code>needs-token</code>). This page's script fetched a fresh token from its own server and posted it in.</p>
+        {% endif %}
+        <button type="button" id="reload" data-testid="reload-frame">Reload the frame</button>
+        <p>Each frame load needs a new token: reloading makes the frame ask again, and the script answers.</p>
+      </section>
+      <section>
+        <h2>Messages from the frame</h2>
+        <div id="log" data-testid="log"></div>
+      </section>
+      <section>
+        <h2>What just happened</h2>
+        <ol>
+          <li>This system's server signed a statement: you (<code>{{ request.user.username }}</code>), this report, valid 60 seconds, once.</li>
+          <li>It sent the statement to labs' <code>/embed/token/</code>. Labs checked the signature against this system's published keys (client <code>{{ client_id }}</code>), and that you may open the report.</li>
+          <li>Labs answered with a one-time token. The frame traded it for a session for this one report, as you, read-only.</li>
+        </ol>
+      </section>
+      <section>
+        <h2>The code</h2>
+        <ul>
+          <li><a href="https://github.com/dimagi-internal/connect-labs/blob/main/connect_labs/embed_example/embedder.py">embedder.py</a>: keys, signing, the token exchange</li>
+          <li><a href="https://github.com/dimagi-internal/connect-labs/blob/main/connect_labs/embed_example/views.py">views.py</a>: this system's endpoints</li>
+          <li><a href="https://github.com/dimagi-internal/connect-labs/blob/main/connect_labs/templates/embed_example/page.html">page.html</a>: this page, including the script below</li>
+          <li><a href="/labs/docs/help/developers/embedding/">The integration guide</a></li>
+        </ul>
+      </section>
+    </aside>
+  </main>
+  {{ example_config|json_script:"example-config" }}
+  <script>
+  (function () {
+    var cfg = JSON.parse(document.getElementById("example-config").textContent);
+    var frame = document.getElementById("labs-frame");
+    var log = document.getElementById("log");
+    if (!frame) return;
+
+    function note(line) {
+      log.textContent += new Date().toLocaleTimeString() + "  " + line + "\n";
+      log.scrollTop = log.scrollHeight;
+    }
+
+    // Ask THIS system's server for a fresh one-time token (it signs the statement and
+    // calls labs). The private key never reaches the browser.
+    function freshToken() {
+      return fetch(cfg.tokenUrl, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "X-CSRFToken": cfg.csrfToken }
+      }).then(function (r) {
+        return r.json().then(function (body) {
+          if (!r.ok) throw new Error(body.error_description || "no token");
+          return body.token;
+        });
+      });
+    }
+
+    // Listen to the frame. Check BOTH the origin and the source: only labs, only this frame.
+    window.addEventListener("message", function (event) {
+      if (event.origin !== cfg.labsOrigin || event.source !== frame.contentWindow) return;
+      var message = event.data || {};
+      if (message.type !== "labs-embed") return;
+      note("frame -> " + JSON.stringify(message));
+      if (message.event === "needs-token") {
+        freshToken().then(function (token) {
+          // Name labs' origin as the target, so the token can go nowhere else.
+          frame.contentWindow.postMessage({ type: "labs-embed-token", token: token }, cfg.labsOrigin);
+          note("page -> frame: a fresh token");
+        }).catch(function (error) { note("could not get a token: " + error.message); });
+      }
+    });
+
+    // Only ever point the frame at labs: parse the address and check its origin, rather
+    // than trusting any text from the page as a URL (a "javascript:" URL would run here).
+    function labsAddress(text) {
+      var url = new URL(text, window.location.href);
+      if (url.origin !== cfg.labsOrigin) throw new Error("not a labs address");
+      url.hash = "";
+      return url.href;
+    }
+
+    document.getElementById("reload").addEventListener("click", function () {
+      note("reloading the frame with no token");
+      try {
+        frame.src = labsAddress("{{ example_config.frameAddress|escapejs }}");
+      } catch (error) {
+        note("refused to load the frame: " + error.message);
+      }
+    });
+  })();
+  </script>
+  {% endif %}
+</body>
+</html>

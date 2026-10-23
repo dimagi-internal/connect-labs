@@ -97,6 +97,7 @@ Go to **Django admin → Embedding labs in other systems → Embed clients → A
 | **Client id** | A short name with no spaces, such as `connect`. The embedding system puts this in its signed statements. |
 | **Name** | A readable name, such as "CommCare Connect (production)". |
 | **Active** | Ticked. Unticking ends every session this system issued, on its next request. |
+| **Generated data only** | Ticked for demos and the reference example: labs then refuses, at token time, any report that reads anything but generated (synthetic) data, whatever the resources list says. |
 | **Identity authority** | Ticked **only for a system labs already trusts to say who people are**. Today that is Connect, because labs accounts come from Connect sign-in. A system without it cannot get tokens yet (see [What's next](#whats-next)). |
 | **JWKS URI** *or* **JWKS** | Where the system publishes its public keys (an `https://` address), **or** the keys themselves pasted in as `{"keys": [ ... ]}`. Fill exactly one. Public keys only: labs refuses a key with private parts. |
 | **Allowed origins** | The websites allowed to frame labs, as a list of exact origins: `["https://connect.dimagi.com"]`. There is no path and no wildcard. |

@@ -141,6 +141,10 @@
         {
           "name": "LABS_EMOD_REGION",
           "value": "us-east-1"
+        },
+        {
+          "name": "EMBED_EXAMPLE_RESOURCES",
+          "value": "[{\"kind\": \"workflow\", \"id\": 4965, \"opportunity_id\": 10010, \"label\": \"CHC nutrition analysis (generated data)\"}]"
         }
       ],
       "mountPoints": [],
@@ -213,6 +217,10 @@
         {
           "name": "CANOPY_SIGNING_KEY",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-canopy-signing-key-hS59zO"
+        },
+        {
+          "name": "EMBED_EXAMPLE_PRIVATE_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-embed-example-private-key-700i8e"
         }
       ],
       "logConfiguration": {

@@ -97,6 +97,16 @@ def _workflow(key: str) -> Resolver:
     return resolve
 
 
+def workflow_reads(user, definition_id, *, opportunity_id=None, program_id=None) -> list[int] | None:
+    """Every opportunity a workflow reads, when its scope is generated data; else None.
+
+    The same answer the "no user visit data" gate gives a workflow tool, for callers
+    outside the MCP (connect_labs/embed: a client limited to generated data).
+    """
+    arguments = {"definition_id": definition_id, "opportunity_id": opportunity_id, "program_id": program_id}
+    return _workflow("definition_id")(user, {k: v for k, v in arguments.items() if v is not None})
+
+
 def _read_definition(user, key: str, arguments: dict, opportunity_id, program_id):
     from connect_labs.workflow.data_access import WorkflowDataAccess
 

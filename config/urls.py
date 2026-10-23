@@ -72,6 +72,8 @@ urlpatterns = [
     path("mcp/", include("connect_labs.mcp.urls", namespace="mcp")),
     # Other systems framing labs: token endpoint, session start, the frame (embed/).
     path("embed/", include("connect_labs.embed.urls", namespace="embed")),
+    # A live stand-in for another system embedding labs, to read and copy (embed_example/).
+    path("embed-example/", include("connect_labs.embed_example.urls", namespace="embed_example")),
     path("labs/audit-trail/", include("connect_labs.audit_trail.urls", namespace="audit_trail")),
     path("labs/pulse/", include("connect_labs.pulse.urls", namespace="pulse")),
     path("labs/marketplace/", include("connect_labs.marketplace.urls", namespace="marketplace")),

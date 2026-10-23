@@ -43,6 +43,13 @@ class EmbedClient(models.Model):
             "are (Connect, labs' identity provider). Staff only."
         ),
     )
+    generated_data_only = models.BooleanField(
+        default=False,
+        help_text=(
+            "May show only resources whose data is generated (synthetic), checked by labs at "
+            "token time whatever the resources list says. For demos and the reference example."
+        ),
+    )
     jwks_uri = models.URLField(blank=True, help_text="https URL of the client's JWKS.")
     jwks = models.JSONField(null=True, blank=True, help_text='Or the JWKS itself: {"keys": [...]}, public keys only.')
     allowed_origins = models.JSONField(

@@ -5,6 +5,25 @@ How to show a labs report inside your own system's pages, as the person viewing 
 !!! info "Standards, not a labs-specific protocol"
     Everything here is standard: a JWT used as an OAuth authorization grant ([RFC 7523](https://www.rfc-editor.org/rfc/rfc7523)), public keys published as a JWKS ([RFC 7517](https://www.rfc-editor.org/rfc/rfc7517)), OAuth error responses ([RFC 6749 §5.2](https://www.rfc-editor.org/rfc/rfc6749#section-5.2)), an iframe, and `postMessage`. Any language with a JWT library can do it.
 
+## See It Working First
+
+A **live reference embedder** runs inside labs at [/embed-example/](https://labs.connect.dimagi.com/embed-example/) (labs sign-in needed). It plays the part of another system: it holds its own key, publishes its own public keys, signs a statement for you, exchanges it at the token endpoint, and frames a labs report. It does both token handoffs (in the address, and by `postMessage`) and shows every message the frame sends. A "reload the frame" button shows a frame asking for a fresh token.
+
+Its code is written the way an outside system would write it. It imports nothing from labs' own embedding code, and is short enough to read top to bottom:
+
+| File | What it shows |
+| --- | --- |
+| [`embed_example/embedder.py`](https://github.com/dimagi-internal/connect-labs/blob/main/connect_labs/embed_example/embedder.py) | The whole server side: the key, the JWKS, signing the statement, the token exchange. PyJWT, cryptography and an HTTP client only. |
+| [`embed_example/views.py`](https://github.com/dimagi-internal/connect-labs/blob/main/connect_labs/embed_example/views.py) | The example system's three endpoints: its page, a token endpoint for the page's script, and its published keys. |
+| [`templates/embed_example/page.html`](https://github.com/dimagi-internal/connect-labs/blob/main/connect_labs/templates/embed_example/page.html) | The browser side: the iframe, both handoffs, and listening to the frame. |
+| [`embed_example/tests/`](https://github.com/dimagi-internal/connect-labs/tree/main/connect_labs/embed_example/tests) | A round trip through labs' real token endpoint with the example's own key. |
+
+!!! note "What the example cannot show"
+    The example is served from labs' own address, so the frame is not cross-origin. Your system's page will be. Everything else runs exactly as it will for you, but the cross-origin parts (the `frame-ancestors` check against your origin, and the browser keeping the frame's cookie under your site) are only exercised once you embed from your own origin.
+
+!!! note "Why it is safe to leave running"
+    The example only ever names the person already signed in to labs. Its code never takes a username from a request. Labs also limits its registration to **generated data** (the client's "generated data only" setting), checked at token time over everything the report reads. So even a leaked example key could show nothing real.
+
 ## At a Glance
 
 | Item | Value |

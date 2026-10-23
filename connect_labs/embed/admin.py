@@ -6,8 +6,8 @@ from connect_labs.embed.models import EmbedClient, EmbedSession
 
 @admin.register(EmbedClient)
 class EmbedClientAdmin(admin.ModelAdmin):
-    list_display = ("client_id", "name", "active", "identity_authority", "updated_at")
-    list_filter = ("active", "identity_authority")
+    list_display = ("client_id", "name", "active", "identity_authority", "generated_data_only", "updated_at")
+    list_filter = ("active", "identity_authority", "generated_data_only")
     search_fields = ("client_id", "name")
     readonly_fields = ("created_at", "updated_at")
 
