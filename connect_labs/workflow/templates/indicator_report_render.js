@@ -288,6 +288,9 @@ function WorkflowUI({
 
   // ══ Cases, resolved; last visit per row ════════════════════════════════════
   var caseIndex = P.cases || [];
+  // Whether this run stores its case list at all. A programme run does not
+  // (case_index.embed false); an opportunity report does, even when it is empty.
+  var CASES_STORED = Array.isArray(P.cases);
   var lastVisit = React.useMemo(
     function () {
       // `open` counts each group's cases still under way; a group with cases
@@ -1543,7 +1546,7 @@ function WorkflowUI({
     if (!cs.length)
       return (
         <div className="text-xs text-gray-500">
-          {caseIndex.length
+          {CASES_STORED
             ? 'No ' + ENT.plural + ' in this report.'
             : "This report does not store each worker's " +
               ENT.plural +
@@ -2908,7 +2911,7 @@ function WorkflowUI({
   // rows, which carry their case count (`n`), rather than read zero.
   var scopeCases = !DRILLED
     ? meta.cases
-    : caseIndex.length
+    : CASES_STORED
       ? caseIndex.filter(function (c) {
           return inScope(c.opportunity_id, c.llo);
         }).length

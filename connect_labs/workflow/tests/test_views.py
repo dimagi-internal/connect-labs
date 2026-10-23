@@ -1860,6 +1860,152 @@ class TestRunHistoryReadsAtTheHintedProgram:
         assert made and "program_id" not in made[0]
 
 
+class TestProgramHintIsValidatedLikeAContextParam:
+    """owning_program_id is untrusted, and a LABS-ONLY program reads the local records
+    backend, which filters by scope, never by user. So the hint goes through the
+    middleware's own validation: a labs-only program the user cannot reach is refused
+    (no read there, no shared-cache hit), a real Connect program still passes."""
+
+    DENY = "connect_labs.labs.synthetic.access.labs_only_scope_denied_reason"
+
+    def _history(self, rf, user, *, denied, own_programs=()):
+        from connect_labs.workflow import views as views_mod
+
+        request = rf.get("/labs/workflow/api/26677/runs/history/?keys=snapshot.meta&owning_program_id=10077")
+        request.user = user
+        request.labs_context = {"organization_id": 7}
+        request.session = {
+            "labs_oauth": {
+                "access_token": "t",
+                "organization_data": {"programs": [{"id": p} for p in own_programs]},
+            }
+        }
+        made = []
+
+        def access(*args, **kwargs):
+            made.append(kwargs)
+            wda = MagicMock()
+            wda.list_runs.return_value = []
+            return wda
+
+        cache_get = MagicMock(return_value=None)
+        with (
+            patch(
+                self.DENY, return_value="labs-only program 10077 is not accessible to your account" if denied else None
+            ),
+            patch("connect_labs.workflow.views.WorkflowDataAccess", side_effect=access),
+            patch("connect_labs.workflow.views.declared_reads.refusal", return_value=None),
+            patch("connect_labs.workflow.history_cache.get", cache_get),
+            patch("connect_labs.workflow.history_cache.store"),
+        ):
+            response = views_mod.run_history_api(request, definition_id=26677)
+        return response, made, cache_get
+
+    def test_history_refuses_a_labs_only_program_the_user_cannot_reach(self, dimagi_user, rf: RequestFactory):
+        response, made, cache_get = self._history(rf, dimagi_user, denied=True)
+        assert response.status_code == 200
+        assert all("program_id" not in m for m in made), "read at a refused program"
+        assert all("prog10077" not in str(c.args) for c in cache_get.call_args_list), "served its cache"
+
+    def test_history_reads_a_program_the_user_may_reach(self, dimagi_user, rf: RequestFactory):
+        response, made, cache_get = self._history(rf, dimagi_user, denied=False, own_programs=(10077,))
+        assert response.status_code == 200
+        assert made and made[0].get("program_id") == 10077
+        assert any("prog10077" in str(c.args) for c in cache_get.call_args_list)
+
+    def test_an_unproven_program_is_read_live_never_from_the_shared_cache(self, dimagi_user, rf: RequestFactory):
+        # Not labs-only, so it passes validation for the records API to check on
+        # read -- but the shared cache would answer before that check.
+        response, made, cache_get = self._history(rf, dimagi_user, denied=False, own_programs=())
+        assert response.status_code == 200
+        assert made and made[0].get("program_id") == 10077
+        assert cache_get.call_count == 0
+
+    def test_history_ignores_a_refused_raw_program_id_too(self, dimagi_user, rf: RequestFactory):
+        from connect_labs.workflow import views as views_mod
+
+        request = rf.get("/labs/workflow/api/26677/runs/history/?keys=snapshot.meta&program_id=10077")
+        request.user = dimagi_user
+        request.labs_context = {}
+        request.session = {"labs_oauth": {"access_token": "t"}}
+        cache_get = MagicMock(return_value=[{"id": 1}])
+        with (
+            patch(self.DENY, return_value="labs-only program 10077 is not accessible to your account"),
+            patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA,
+            patch("connect_labs.workflow.views.declared_reads.refusal", return_value=None),
+            patch("connect_labs.workflow.history_cache.get", cache_get),
+            patch("connect_labs.workflow.history_cache.store"),
+        ):
+            MockWDA.return_value.list_runs.return_value = []
+            views_mod.run_history_api(request, definition_id=26677)
+        assert all("prog10077" not in str(c.args) for c in cache_get.call_args_list)
+
+    def test_run_view_does_not_redirect_into_a_refused_program(self, dimagi_user, rf: RequestFactory):
+        from connect_labs.workflow.views import WorkflowRunView
+
+        request = rf.get("/labs/workflow/26679/run/?run_id=26681&owning_program_id=10077")
+        request.user = dimagi_user
+        request.labs_context = {"organization_id": 7}
+        request.session = {"labs_oauth": {"access_token": "t"}}
+        looked = []
+
+        def access(*args, program_id=None, **kwargs):
+            looked.append(program_id)
+            wda = MagicMock()
+            wda.get_definition.return_value = MagicMock(program_id=10077, opportunity_id=None)
+            return wda
+
+        with (
+            patch(self.DENY, return_value="labs-only program 10077 is not accessible to your account"),
+            patch("connect_labs.workflow.views.WorkflowDataAccess", side_effect=access),
+            patch("connect_labs.workflow.views.get_org_data", return_value={}),
+            patch("connect_labs.workflow.views.WorkflowRunView.get_context_data", return_value={}),
+        ):
+            view = WorkflowRunView()
+            view.setup(request, definition_id=26679)
+            response = view.get(request, definition_id=26679)
+        assert response.status_code != 302
+        assert 10077 not in looked
+
+    def test_run_program_hint_is_dropped_when_refused(self, dimagi_user, rf: RequestFactory):
+        from connect_labs.workflow.views import _run_program_hint
+
+        request = rf.get("/x/?owning_program_id=10077")
+        request.user = dimagi_user
+        request.session = {"labs_oauth": {"access_token": "t"}}
+        with patch(self.DENY, return_value="refused"):
+            assert _run_program_hint(request) is None
+        with patch(self.DENY, return_value=None):
+            assert _run_program_hint(request) == 10077
+
+
+class TestGetRunRefusesALabsOnlyProgramHint:
+    """get_run's program fallback reads the hinted program; for a labs-only program
+    that is the local backend, with no per-user check. A user who cannot reach it
+    gets nothing from it."""
+
+    def test_refused_hint_reads_nothing(self, dimagi_user, rf: RequestFactory):
+        from connect_labs.workflow.data_access import WorkflowDataAccess
+
+        request = rf.get("/x/")
+        request.user = dimagi_user
+        request.session = {"labs_oauth": {"access_token": "t"}}
+        dao = WorkflowDataAccess.__new__(WorkflowDataAccess)
+        dao.request = request
+        dao.access_token = "t"
+        dao.opportunity_id = 765
+        dao.program_id = None
+        with (
+            patch.object(WorkflowDataAccess, "_get_run_direct", return_value=None),
+            patch(
+                "connect_labs.labs.synthetic.access.labs_only_scope_denied_reason",
+                return_value="labs-only program 10077 is not accessible to your account",
+            ),
+            patch.object(WorkflowDataAccess, "__init__", side_effect=AssertionError("read a refused program")),
+        ):
+            assert dao.get_run(26697, program_hint=10077) is None
+
+
 class TestUpdateAgentConfigView:
     def _post(self, rf, dimagi_user, body, existing):
         import json

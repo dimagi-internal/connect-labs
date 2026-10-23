@@ -394,6 +394,32 @@ describe('a programme run without a stored case list', () => {
   });
 });
 
+describe('an opportunity report that stores an empty case list', () => {
+  test('an opened worker says there are none, not that they are elsewhere', async () => {
+    const p = oppProps();
+    const snap = JSON.parse(JSON.stringify(PAYLOAD));
+    snap.cases = [];
+    snap.byFLW.forEach((f) => {
+      f.rows = [];
+    });
+    p.view = { isCompleted: true, state: { snapshot: snap } };
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/2/run/?opportunity_id=10097&run_id=12',
+      props: p,
+      routes: {},
+    });
+    const w = PAYLOAD.byFLW.find((f) => f.opp === 10097);
+    const row = Array.from(el.querySelectorAll('tr')).find((tr) =>
+      (tr.textContent || '').includes(w.name || w.flw),
+    );
+    await click(row);
+    expect(el.textContent).toContain('No communities in this report.');
+    expect(el.textContent).not.toContain(
+      "listed on the opportunity's own report",
+    );
+  });
+});
+
 describe('a program report opened at ?program_id', () => {
   test('its reads carry the owner as owning_program_id when the run does not', async () => {
     const props = programmeProps();
