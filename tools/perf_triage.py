@@ -99,6 +99,12 @@ DB_CONNECTIONS_HIGH = 90
 # between the two so a climbing leak gets mentioned before it alarms.
 DB_CONNECTIONS_NOTEWORTHY = 60
 DB_CPU_HIGH = 50.0
+# Sustained at/above this is the database itself as the bottleneck -- the slow
+# dependency the latency branch would otherwise send you hunting for upstream.
+# Deliberately well above DB_CPU_HIGH: the shared instance's normal range has
+# crept up (63-90% Maximum over 2026-10-20..23, four services on it), so a line
+# at 50 would fire on every slow window and stop meaning anything.
+DB_CPU_SATURATED = 90.0
 
 
 def _aws(args: list[str], timeout: int = 120) -> dict | list:
@@ -296,6 +302,43 @@ def collect(hours: int) -> dict:
         stats=["Sum"],
     )
 
+    # The same p95, split by target group. labs-jj-alb fronts canopy-web, ace-web
+    # and umami as well as the labs web tier, and the alarm reads the
+    # LoadBalancer-wide series -- so "the ALB is slow" does not yet say WHOSE
+    # requests were slow. On 2026-10-23 the latency page landed while a sibling
+    # was mid-incident on canopy-web (same ALB, same DB); one split showed labs
+    # at 17-30s and canopy-web at 1-3s, i.e. a separate incident.
+    tg_metrics = _aws(
+        [
+            "cloudwatch",
+            "list-metrics",
+            "--namespace",
+            "AWS/ApplicationELB",
+            "--metric-name",
+            "TargetResponseTime",
+            "--dimensions",
+            f"Name=LoadBalancer,Value={ALB_DIMENSION}",
+        ]
+    ).get("Metrics", [])
+    target_groups = sorted(
+        {dim["Value"] for m in tg_metrics for dim in m["Dimensions"] if dim["Name"] == "TargetGroup"}
+    )
+    alb_p95_by_target_group = {
+        tg.split("/")[1]: _peak_ext(
+            _metric(
+                "AWS/ApplicationELB",
+                "TargetResponseTime",
+                {"LoadBalancer": ALB_DIMENSION, "TargetGroup": tg},
+                start,
+                end,
+                period,
+                ext=["p95"],
+            ),
+            "p95",
+        )
+        for tg in target_groups
+    }
+
     alarms = [
         {"name": a["AlarmName"], "state": a["StateValue"]}
         for a in _aws(["cloudwatch", "describe-alarms"]).get("MetricAlarms", [])
@@ -331,8 +374,10 @@ def collect(hours: int) -> dict:
         "worker_cpu_peak_pct": _peak(worker_cpu, "Maximum"),
         "worker_cpu_avg_peak_pct": _peak(worker_cpu),
         "db_cpu_peak_pct": _peak(db_cpu),
+        "db_cpu_saturated_periods": _sustained(db_cpu, DB_CPU_SATURATED, period),
         "db_connections_peak": _peak(db_conns, "Maximum"),
         "alb_p95_peak_s": _peak_ext(alb_p95, "p95"),
+        "alb_p95_by_target_group": alb_p95_by_target_group,
         "alb_p95_slow_periods": len(
             [p for p in alb_p95 if p.get("ExtendedStatistics", {}).get("p95", 0) > ALB_P95_SLOW_S]
         ),
@@ -418,7 +463,36 @@ def judge(d: dict) -> dict:
             f"{d['alb_p95_slow_periods']} period(s); median p95 is normally "
             f"{BASELINE['alb_p95_median_s']}s."
         )
-        if verdict == "healthy":
+        slow_tgs = {tg: s for tg, s in (d.get("alb_p95_by_target_group") or {}).items() if s and s > ALB_P95_SLOW_S}
+        if slow_tgs:
+            findings.append(
+                "SLOW TARGET GROUP(S): "
+                + ", ".join(f"{tg} p95 {s:.1f}s" for tg, s in sorted(slow_tgs.items(), key=lambda kv: -kv[1]))
+                + ". Everything else behind the ALB stayed under "
+                f"{ALB_P95_SLOW_S:.0f}s, so start with "
+                + ("the labs web tier." if "labs-jj-target-group" in slow_tgs else "THAT service, not labs-jj-web.")
+            )
+        db_sat = d.get("db_cpu_saturated_periods") or 0
+        if verdict == "healthy" and db_sat:
+            # The database IS the slow dependency. Without this branch the tool
+            # collected DB CPU at 100%, said "slow_no_saturation", and sent the
+            # reader to outbound_by_host -- which was {} on every slow request
+            # (2026-10-23, labs-jj-alb-latency-high: a day-by-day audit-trail
+            # scrape, ~14s of db_ms per page, pinned the DB for 30+ minutes).
+            findings.append(
+                f"DATABASE SATURATED: labs-jj-postgres >={DB_CPU_SATURATED:.0f}% CPU for "
+                f">={db_sat * period_min} consecutive minutes (normal {BASELINE['db_cpu_normal_pct']}%). "
+                "Web CPU is fine because the requests are waiting on the DB, not computing."
+            )
+            verdict = "db_saturated"
+            next_step = (
+                "Logs Insights on /ecs/labs-jj-web: "
+                'filter event = "slow_request" | stats count(*) as n, sum(db_ms) as db_ms '
+                "by path, username | sort db_ms desc | limit 20 -- one path or one user "
+                "holding most of the db_ms is the load. The DB is shared with canopy-web, "
+                "ace-web and umami: if no labs path dominates, check theirs."
+            )
+        elif verdict == "healthy":
             verdict = "slow_no_saturation"
             next_step = (
                 "High latency without CPU saturation implies a slow dependency. "

@@ -340,3 +340,62 @@ def test_target_5xx_finding_names_the_alarm_it_agrees_with():
         _snapshot(target_5xx_total=410, target_5xx_peak_period=42, target_5xx_breaching_periods=4)
     )
     assert any("labs-jj-alb-target-5xx-high" in f for f in verdict["findings"])
+
+
+# --- the database as the slow dependency, and which service was slow ---------
+#
+# 2026-10-23, labs-jj-alb-latency-high: a day-by-day audit-trail scrape held
+# labs-jj-postgres at 100% for 30+ minutes; ALB p95 19.9s, web CPU unremarkable.
+# The tool said slow_no_saturation and pointed at outbound_by_host, which was {}
+# on every slow request. It had collected DB CPU at 100% and not used it.
+
+
+def test_latency_with_a_pinned_database_names_the_database():
+    verdict = perf_triage.judge(
+        _snapshot(alb_p95_peak_s=19.9, alb_p95_slow_periods=3, db_cpu_peak_pct=100.0, db_cpu_saturated_periods=4)
+    )
+    assert verdict["verdict"] == "db_saturated"
+    assert "outbound_by_host" not in verdict["next_step"]
+    assert "db_ms" in verdict["next_step"]
+
+
+def test_latency_with_a_busy_but_unsaturated_database_is_unchanged():
+    """The shared DB now idles at 63-90%; a high peak alone must not claim the verdict."""
+    verdict = perf_triage.judge(
+        _snapshot(alb_p95_peak_s=19.9, alb_p95_slow_periods=3, db_cpu_peak_pct=88.0, db_cpu_saturated_periods=0)
+    )
+    assert verdict["verdict"] == "slow_no_saturation"
+
+
+def test_a_pinned_database_without_latency_does_not_change_the_verdict():
+    verdict = perf_triage.judge(_snapshot(db_cpu_peak_pct=100.0, db_cpu_saturated_periods=4))
+    assert verdict["verdict"] == "healthy"
+
+
+def test_slow_target_group_is_named():
+    verdict = perf_triage.judge(
+        _snapshot(
+            alb_p95_peak_s=29.7,
+            alb_p95_slow_periods=3,
+            alb_p95_by_target_group={
+                "labs-jj-target-group": 29.7,
+                "labs-jj-canopy-web-tg": 3.2,
+                "labs-jj-umami-tg": None,
+            },
+        )
+    )
+    slow = [f for f in verdict["findings"] if f.startswith("SLOW TARGET GROUP")]
+    assert slow and "labs-jj-target-group p95 29.7s" in slow[0]
+    assert "canopy-web" not in slow[0]
+
+
+def test_a_slow_neighbour_is_not_blamed_on_labs():
+    verdict = perf_triage.judge(
+        _snapshot(
+            alb_p95_peak_s=25.0,
+            alb_p95_slow_periods=3,
+            alb_p95_by_target_group={"labs-jj-target-group": 0.4, "labs-jj-canopy-web-tg": 25.0},
+        )
+    )
+    slow = [f for f in verdict["findings"] if f.startswith("SLOW TARGET GROUP")][0]
+    assert "labs-jj-canopy-web-tg" in slow and "not labs-jj-web" in slow
