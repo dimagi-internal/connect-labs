@@ -202,8 +202,13 @@ def static_prefix(origin: str) -> str:
     return origin + "/" + static_url.lstrip("/")
 
 
-def frame_policy(origin: str) -> str:
-    """The frame document's enforced CSP, as one string (tested as a string)."""
+def frame_policy(origin: str, extra_ancestors: tuple[str, ...] = ()) -> str:
+    """The frame document's enforced CSP, as one string (tested as a string).
+
+    ``extra_ancestors``: the origins of systems allowed to embed labs. ``frame-ancestors``
+    is checked against every ancestor, and an embedded workflow's shell sits in a labs
+    page inside that system's page (connect_labs/embed/framing.py).
+    """
     static = static_prefix(origin)
     script_src = [
         static,
@@ -238,7 +243,7 @@ def frame_policy(origin: str) -> str:
         "form-action 'none'",
         "base-uri 'none'",
         "object-src 'none'",
-        f"frame-ancestors {origin}",
+        "frame-ancestors " + " ".join((origin, *extra_ancestors)),
     ]
     return "; ".join(parts)
 
@@ -294,7 +299,9 @@ def sandbox_render(request, rest=""):
     """
     origin = labs_origin(request)
     response = HttpResponse(shell_html(origin), content_type="text/html; charset=utf-8")
-    response["Content-Security-Policy"] = frame_policy(origin)
+    from connect_labs.embed.framing import embed_ancestor_origins
+
+    response["Content-Security-Policy"] = frame_policy(origin, embed_ancestor_origins())
     response["Cross-Origin-Resource-Policy"] = "same-origin"
     # A URL-restricted Mapbox token needs labs' origin as the referrer.
     response["Referrer-Policy"] = "strict-origin"

@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% comment %}
+A workflow embedded in another system (embed/views.py EmbedWorkflowView): the same runner
+as the workflow's own page, as the embed session's person, with no labs chrome and
+nothing that edits. Tells its parent it is ready, and takes a new token if given one (_token.html).
+{% endcomment %}
+
+{% block title %}{{ definition.name|default:"Connect Labs" }}{% endblock %}
+
+{% block javascript %}
+  {{ block.super }}
+  {% if has_context and render_code and not error %}
+    {% include "workflow/_runner_scripts.html" %}
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+<link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.13.0/mapbox-gl.css"/>
+<div class="py-4" style="overflow-x: clip">
+  {% if no_runs %}
+    <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">This workflow has no runs yet.</div>
+  {% elif error %}
+    <div class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{{ error }}</div>
+  {% elif not has_context %}
+    <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">This view could not find what it belongs to.</div>
+  {% elif not render_code %}
+    <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">This workflow has nothing to show yet.</div>
+  {% else %}
+    {{ workflow_data|json_script:"workflow-data" }}
+    <div id="workflow-root" data-csrf-token="{{ csrf_token }}">
+      <div class="flex items-center justify-center py-12 text-gray-600">
+        <i class="fa-solid fa-spinner fa-spin text-2xl text-blue-600 mr-3"></i> Loading…
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+  {{ block.super }}
+  {% include "embed/_token.html" %}
+{% endblock %}

@@ -4,11 +4,11 @@ Automated system that keeps user-facing documentation current without manual eff
 
 ## Overview
 
-| Component | What it does | When it runs |
-|---|---|---|
-| Labs help site | Rich HTML docs for non-developer program staff, at `/labs/docs/help/` (login required) | Built into the Labs image on every deploy |
-| Per-merge doc updater | Updates the relevant help page and Confluence summary when a PR ships a user-visible change | On every push to `main` |
-| Weekly changelog | Plain-English summary of the week's changes → Confluence + Slack | Mondays 09:00 UTC (+ manual trigger) |
+| Component             | What it does                                                                                | When it runs                              |
+| --------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| Labs help site        | Rich HTML docs for non-developer program staff, at `/labs/docs/help/` (login required)      | Built into the Labs image on every deploy |
+| Per-merge doc updater | Updates the relevant help page and Confluence summary when a PR ships a user-visible change | On every push to `main`                   |
+| Weekly changelog      | Plain-English summary of the week's changes → Confluence + Slack                            | Mondays 09:00 UTC (+ manual trigger)      |
 
 ## How it knows what changed
 
@@ -61,6 +61,9 @@ user_docs/
   shared-report-templates.md, weekly-trends-and-snapshots.md
                          Report/indicator pages (not auto-updated: no entry in
                          update_docs.py's FEATURE_TO_DOC_FILE, so no Confluence page)
+  embedding-labs.md      Embedding Labs (programme teams and staff; not auto-updated)
+  developers/            Developer documentation: for engineers on OTHER systems
+                         (see "Two audiences" below). Never auto-updated.
   assets/screenshots/    Manually maintained screenshots
 
 mkdocs.yml               MkDocs Material theme config (Mermaid.js via superfences)
@@ -72,29 +75,57 @@ mkdocs.yml               MkDocs Material theme config (Mermaid.js via superfence
   regenerate-confluence.yml  workflow_dispatch only: runs regenerate_confluence.py
 ```
 
+## Two audiences
+
+The help site has two kinds of page, produced differently.
+
+|               | Programme documentation                                                             | Developer documentation                                                                                     |
+| ------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Where         | `user_docs/*.md` (nav: Feature Guides, For Power Users)                             | `user_docs/developers/` (nav: **For Developers**)                                                           |
+| Reader        | Programme staff using labs in the browser                                           | Engineers on other systems integrating with labs (an embedding system today)                                |
+| Style         | Plain English, no code (the updater's prompt enforces it)                           | Technical by design: claims, HTTP, code, error codes                                                        |
+| Written by    | The per-merge updater, from the PR's Product Description (mapped pages), or by hand | **By hand, in the same PR as the interface change**, by the engineer making it                              |
+| Automation    | `update_docs.py` may rewrite mapped pages                                           | `update_docs.py` refuses to touch it (`is_developer_doc`, tested in `automation/tests/test_update_docs.py`) |
+| Compatibility | Describes behaviour as it is                                                        | A public interface: a breaking change is announced on the page and in #engineering-connect before it ships  |
+
+A feature that has both (embedding: `embedding-labs.md` for staff, `developers/embedding.md` for
+integrators) gets one page for each reader, linked to each other, rather than one page doing both.
+
+**When to write developer docs:** any change to something another system calls or relies
+on. Today that means the embed token endpoint, the frame address, the frame's messages, and
+the error codes (`connect_labs/embed/`). Update `user_docs/developers/` in the same PR. A
+reviewer should treat a missing update as a missing test.
+
+**Access:** the developer pages sit behind the labs login like the rest of the help site
+(decided 2026-10-23: Connect's engineers have labs accounts). Revisit, by serving only
+`developers/` publicly, when a third party with no labs account integrates.
+
+**What never goes in them:** keys, tokens, real client ids of other organisations,
+internal hostnames or anything that only works inside Dimagi. The repo is public.
+
 ## GitHub Actions secrets required
 
-| Secret | Used by | Status |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | `update_docs.py`, `weekly_changelog.py` | ✓ Set |
-| `CONFLUENCE_API_TOKEN` | Both scripts | ✓ Set |
-| `CONFLUENCE_EMAIL` | Both scripts (`connect-wiki-bot@dimagi.com`) | ✓ Set |
-| `SLACK_WEBHOOK_URL` | `weekly_changelog.py` | Add when ready |
+| Secret                 | Used by                                      | Status         |
+| ---------------------- | -------------------------------------------- | -------------- |
+| `ANTHROPIC_API_KEY`    | `update_docs.py`, `weekly_changelog.py`      | ✓ Set          |
+| `CONFLUENCE_API_TOKEN` | Both scripts                                 | ✓ Set          |
+| `CONFLUENCE_EMAIL`     | Both scripts (`connect-wiki-bot@dimagi.com`) | ✓ Set          |
+| `SLACK_WEBHOOK_URL`    | `weekly_changelog.py`                        | Add when ready |
 
 ## Confluence pages
 
-| Page | ID |
-|---|---|
+| Page                                | ID           |
+| ----------------------------------- | ------------ |
 | Connect Labs Documentation (parent) | `3916103691` |
-| Connect Labs Changelog | `3918528513` |
-| Audit & QA Review | `3927900187` |
-| Workflow Engine | `3927801864` |
-| Task Management | `3928293395` |
-| Solicitations | `3927179271` |
-| Custom Analysis | `3928817669` |
-| Coverage Maps | `3927867398` |
-| AI Features | `3928817690` |
-| Connect MCP & Safe Mode | `3927801885` |
+| Connect Labs Changelog              | `3918528513` |
+| Audit & QA Review                   | `3927900187` |
+| Workflow Engine                     | `3927801864` |
+| Task Management                     | `3928293395` |
+| Solicitations                       | `3927179271` |
+| Custom Analysis                     | `3928817669` |
+| Coverage Maps                       | `3927867398` |
+| AI Features                         | `3928817690` |
+| Connect MCP & Safe Mode             | `3927801885` |
 
 ## Labs help site
 
@@ -109,12 +140,12 @@ to `dimagi-internal`, and the repo is public, so Pages would publish the docs op
 
 ## Model usage and cost
 
-| Call | Model | When | Approx cost |
-|---|---|---|---|
-| User-visibility triage | Haiku | Per merge (skipped if no Product Description) | ~$0.001 |
-| Markdown doc rewrite | Sonnet | Per merge, per affected feature | ~$0.01–0.05 |
-| Confluence one-liner | Haiku | Per merge, per affected feature | ~$0.001 |
-| Weekly summary | Haiku | Once per week | ~$0.002 |
+| Call                   | Model  | When                                          | Approx cost |
+| ---------------------- | ------ | --------------------------------------------- | ----------- |
+| User-visibility triage | Haiku  | Per merge (skipped if no Product Description) | ~$0.001     |
+| Markdown doc rewrite   | Sonnet | Per merge, per affected feature               | ~$0.01–0.05 |
+| Confluence one-liner   | Haiku  | Per merge, per affected feature               | ~$0.001     |
+| Weekly summary         | Haiku  | Once per week                                 | ~$0.002     |
 
 All system prompts use `cache_control: ephemeral` to reduce repeat costs.
 
@@ -127,9 +158,11 @@ GitHub → Actions → Weekly Changelog → Run workflow
 The `docs-update.yml` workflow fires automatically on every push to `main`. Check Actions for the run log.
 
 **Re-run bootstrap** (only if Confluence pages are deleted and need recreating):
+
 ```bash
 CONFLUENCE_EMAIL=... CONFLUENCE_API_TOKEN=... python automation/bootstrap_docs.py
 ```
+
 Then update `FEATURE_PAGE_IDS` in `automation/update_docs.py` with the new IDs.
 
 ## Screenshots

@@ -45,6 +45,9 @@ graph LR
 | [Cross-Programme Reports](cross-program-rollups.md) | Roll opportunities from different Connect programmes up into one report |
 | [Weekly Trends and Saved Runs](weekly-trends-and-snapshots.md) | How trend lines come from saved runs, and how to build and repair the history |
 | [AI Features](ai-features.md)         | AI assistants embedded throughout Labs for editing, reviewing, and analysis   |
+| [Embedding Labs in Other Systems](embedding-labs.md) | Show labs reports inside Connect (and later other systems), as the person viewing, with no second sign-in |
+
+**Engineers on other systems:** the [For Developers](developers/index.md) section has technical integration guides.
 
 These features work together. A common flow: review visits with **Audit**, create follow-up **Tasks** for flagged workers, and monitor outcomes in a **Workflow** dashboard.
 

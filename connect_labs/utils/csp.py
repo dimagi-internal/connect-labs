@@ -67,7 +67,7 @@ def default_script_src() -> tuple[str, ...]:
     return DEFAULT_SCRIPT_SRC + ((canopy + "/embed/widget.js",) if canopy else ())
 
 
-def build_policy() -> str:
+def build_policy(frame_ancestors: tuple[str, ...] | None = None) -> str:
     def directive(name: str, default: tuple[str, ...]) -> str:
         key = "CSP_" + name.replace("-", "_").upper()
         values = getattr(settings, key, None) or default
@@ -87,7 +87,13 @@ def build_policy() -> str:
         # re-points every relative script URL).
         "object-src 'none'",
         "base-uri 'self'",
-        directive("frame-ancestors", DEFAULT_FRAME_ANCESTORS),
+        # An embeddable response (connect_labs/embed/framing.py) names the origins that
+        # may frame it; everything else keeps the default.
+        (
+            f"frame-ancestors {' '.join(frame_ancestors)}"
+            if frame_ancestors
+            else directive("frame-ancestors", DEFAULT_FRAME_ANCESTORS)
+        ),
     ]
     report_uri = getattr(settings, "CSP_REPORT_URI", None)
     if report_uri:
@@ -121,10 +127,12 @@ class ContentSecurityPolicyMiddleware:
         if getattr(response, "csp_exempt", False):
             return response
         header = "Content-Security-Policy-Report-Only" if self.report_only else "Content-Security-Policy"
+        ancestors = getattr(response, "csp_frame_ancestors", None)
+        policy = build_policy(frame_ancestors=tuple(ancestors)) if ancestors else self.policy
         if header not in response:
-            response[header] = self.policy
+            response[header] = policy
         elif getattr(response, "csp_extra_policy", False):
             # A view added a narrow enforced policy of its own (a page's frame-src). Both
             # apply: a comma separates two policies in one header.
-            response[header] = f"{response[header]}, {self.policy}"
+            response[header] = f"{response[header]}, {policy}"
         return response
