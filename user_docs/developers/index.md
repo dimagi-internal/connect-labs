@@ -5,6 +5,9 @@ These pages are for **engineers on other systems** who integrate with Connect La
 !!! note "How these pages differ from the rest of the help site"
     The rest of this site is written for programme staff, in plain English, and is updated automatically when features change. The developer pages are technical by design: they show code, claims and HTTP. They are written by hand by the engineers who change the interface, in the same change, and are never rewritten automatically.
 
+!!! info "Access"
+    Like the rest of this site, these pages need a labs sign-in. An engineer without a labs account can get one through their Dimagi contact, or be sent the guide directly.
+
 ## Guides
 
 | Guide | What it covers |

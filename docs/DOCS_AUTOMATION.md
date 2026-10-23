@@ -96,6 +96,10 @@ on. Today that means the embed token endpoint, the frame address, the frame's me
 the error codes (`connect_labs/embed/`). Update `user_docs/developers/` in the same PR. A
 reviewer should treat a missing update as a missing test.
 
+**Access:** the developer pages sit behind the labs login like the rest of the help site
+(decided 2026-10-23: Connect's engineers have labs accounts). Revisit, by serving only
+`developers/` publicly, when a third party with no labs account integrates.
+
 **What never goes in them:** keys, tokens, real client ids of other organisations,
 internal hostnames or anything that only works inside Dimagi. The repo is public.
 
