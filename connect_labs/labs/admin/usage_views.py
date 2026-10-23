@@ -63,9 +63,19 @@ class UsageView(AdminRequiredMixin, TemplateView):
                 "recent": self._recent(events, directory) if kind != "all" else [],
                 "parent": self._parent(scope, directory),
                 "query": self.request.GET.urlencode(),
+                "staff_included_url": self._with_staff(False),
+                "staff_excluded_url": self._with_staff(True),
             }
         )
         return context
+
+    def _with_staff(self, exclude: bool) -> str:
+        """This page with the staff filter set, everything else kept."""
+        params = self.request.GET.copy()
+        params.pop(EXCLUDE_STAFF_PARAM, None)
+        if exclude:
+            params[EXCLUDE_STAFF_PARAM] = "1"
+        return f"{self.request.path}?{params.urlencode()}" if params else self.request.path
 
     @staticmethod
     def _title(scope, directory) -> str:

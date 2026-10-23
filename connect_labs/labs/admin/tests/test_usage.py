@@ -232,10 +232,26 @@ def test_exclude_dimagi_staff_filters_and_carries_into_every_drill_down(
     content = response.content.decode()
     assert "amina" in content
     assert "d2@dimagi-associate.com" not in content
-    assert 'name="exclude_dimagi_staff" value="1" onchange="this.form.submit()" checked' in content
+    assert 'name="exclude_dimagi_staff" value="1"' in content  # the window picker keeps it
     for kind, key in [("org", "acme"), ("program", 25), ("opp", 812), ("user", partner.pk)]:
         link = reverse("labs_admin:usage_scope", args=[kind, key]) + "?days=90&amp;exclude_dimagi_staff=1"
         assert link in content, f"{kind} link drops the filter"
+
+
+@override_settings(**LABS_SETTINGS)
+@pytest.mark.django_db
+def test_staff_toggle_at_the_top_switches_the_filter_and_keeps_the_rest(client, staff):
+    client.force_login(staff)
+    url = reverse("labs_admin:usage_scope", args=["org", "acme"])
+
+    on = client.get(url + "?days=90").content.decode()
+    off = client.get(url + "?days=90&exclude_dimagi_staff=1").content.decode()
+
+    assert f'href="{url}?days=90&amp;exclude_dimagi_staff=1" id="staff-excluded"' in on
+    assert f'href="{url}?days=90" id="staff-included" aria-current="true"' in on
+    assert f'href="{url}?days=90" id="staff-included"' in off
+    assert 'id="staff-excluded" aria-current="true"' in off
+    assert "Partner activity only" in off and "Partner activity only" not in on
 
 
 @override_settings(**LABS_SETTINGS)
