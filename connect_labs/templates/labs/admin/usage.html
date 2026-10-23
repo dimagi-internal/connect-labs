@@ -14,6 +14,14 @@
         <a href="{% url 'labs_admin:usage_scope' crumb.kind crumb.key %}{% if query %}?{{ query }}{% endif %}" class="hover:underline">{{ crumb.label }}</a>
       {% endfor %}
     </nav>
+    {% if context_link %}
+    <div class="mb-3 text-sm text-gray-600">
+      <i class="fa-solid fa-location-crosshairs text-blue-600 mr-1"></i>
+      Your labs context is <span class="font-semibold text-gray-800">{{ context_link.label }}</span>.
+      This page does not follow it:
+      <a href="{{ context_link.url }}" id="usage-context-link" class="text-blue-600 hover:underline font-semibold">see usage for it</a>.
+    </div>
+    {% endif %}
     {# Staff toggle: the most common switch on this page, so it sits above everything. #}
     <div class="flex flex-wrap items-center gap-3 mb-4 p-3 rounded-lg border {% if hide_staff %}bg-amber-50 border-amber-300{% else %}bg-gray-50 border-gray-200{% endif %}">
       <span class="text-sm font-semibold text-gray-700"><i class="fa-solid fa-user-group mr-1"></i>Dimagi staff</span>

@@ -2,11 +2,13 @@
 doing what, over time. One view serves the overview and every drill-down; the
 rollups live in ``usage.py``."""
 
-from django.http import Http404
+from django.http import Http404, HttpResponseRedirect
+from django.urls import reverse
 from django.views.generic import TemplateView
 
 from connect_labs.audit_trail import service as audit_service
 from connect_labs.audit_trail.models import Action as AuditAction
+from connect_labs.labs.context import CONTEXT_PARAMS
 from connect_labs.labs.view_mixins import AdminRequiredMixin
 
 from . import usage
@@ -16,8 +18,42 @@ EXCLUDE_STAFF_PARAM = "exclude_dimagi_staff"
 SCOPE_KINDS = {"org": "Organisation", "program": "Programme", "opp": "Opportunity", "user": "User"}
 
 
+# Labs context param -> usage scope kind, most specific first.
+CONTEXT_SCOPES = (("opportunity_id", "opp"), ("program_id", "program"), ("organization_id", "org"))
+
+
+def _scope_from(context: dict) -> tuple[str, str] | None:
+    for param, kind in CONTEXT_SCOPES:
+        value = context.get(param)
+        if value not in (None, ""):
+            return kind, str(value)
+    return None
+
+
 class UsageView(AdminRequiredMixin, TemplateView):
+    """Usage pages carry their scope in the path, and the overview is about all of
+    labs, so the labs context does not decide what they show. The context
+    middleware leaves them undecorated (``CROSS_SCOPE_PAGE_PREFIXES``); an explicit
+    context param on the overview is honoured by sending you to that scope's page."""
+
     template_name = "labs/admin/usage.html"
+
+    def get(self, request, *args, **kwargs):
+        if kwargs.get("kind", "all") == "all":
+            explicit = _scope_from({p: request.GET.get(p) for p in CONTEXT_PARAMS})
+            if explicit:
+                target = reverse("labs_admin:usage_scope", args=explicit)
+                query = self._forwarded_params().urlencode()
+                return HttpResponseRedirect(f"{target}?{query}" if query else target)
+        return super().get(request, *args, **kwargs)
+
+    def _forwarded_params(self):
+        """This request's params minus labs context ones, which say nothing to a
+        usage page and would otherwise ride along on every link it draws."""
+        params = self.request.GET.copy()
+        for param in CONTEXT_PARAMS:
+            params.pop(param, None)
+        return params
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -62,7 +98,8 @@ class UsageView(AdminRequiredMixin, TemplateView):
                 "agent_tools": usage.agent_tools(scope, report["since"], hide_staff=hide_staff),
                 "recent": self._recent(events, directory) if kind != "all" else [],
                 "parent": self._parent(scope, directory),
-                "query": self.request.GET.urlencode(),
+                "query": self._forwarded_params().urlencode(),
+                "context_link": self._context_link(scope),
                 "staff_included_url": self._with_staff(False),
                 "staff_excluded_url": self._with_staff(True),
             }
@@ -71,11 +108,27 @@ class UsageView(AdminRequiredMixin, TemplateView):
 
     def _with_staff(self, exclude: bool) -> str:
         """This page with the staff filter set, everything else kept."""
-        params = self.request.GET.copy()
+        params = self._forwarded_params()
         params.pop(EXCLUDE_STAFF_PARAM, None)
         if exclude:
             params[EXCLUDE_STAFF_PARAM] = "1"
         return f"{self.request.path}?{params.urlencode()}" if params else self.request.path
+
+    def _context_link(self, scope) -> dict | None:
+        """A one-click way from here to the usage of the labs context you are in."""
+        target = _scope_from(getattr(self.request, "labs_context", None) or {})
+        if not target or (scope.kind, scope.key) == target:
+            return None
+        kind, key = target
+        directory = usage.Directory.load(
+            [int(key)] if kind == "opp" else [],
+            [int(key)] if kind == "program" else [],
+            [key] if kind == "org" else [],
+        )
+        label = self._title(usage.Scope(kind, key), directory)
+        query = self._forwarded_params().urlencode()
+        url = reverse("labs_admin:usage_scope", args=[kind, key])
+        return {"label": f"{SCOPE_KINDS[kind]}: {label}", "url": f"{url}?{query}" if query else url}
 
     @staticmethod
     def _title(scope, directory) -> str:

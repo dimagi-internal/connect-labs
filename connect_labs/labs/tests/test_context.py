@@ -242,6 +242,21 @@ class TestContextRedirect:
 
         assert getattr(request, "labs_context", None) is not None
 
+    def test_cross_scope_usage_pages_are_not_decorated(self, db):
+        """Labs Usage looks across every scope and names its own in the path; a
+        ``?opportunity_id=`` it then ignored made its URL claim a scope it was
+        not showing."""
+        user = self._user(db)
+        for path in ("/labs/admin/usage/", "/labs/admin/usage/org/acme/"):
+            request = self._request(path, user)
+            assert LabsContextMiddleware(lambda r: None).process_request(request) is None, path
+
+    def test_the_rest_of_labs_admin_still_carries_context(self, db):
+        request = self._request("/labs/admin/records/", self._user(db))
+        response = LabsContextMiddleware(lambda r: None).process_request(request)
+
+        assert response is not None and "opportunity_id=1488" in response["Location"]
+
 
 class TestSupplyContext:
     """Supply is scoped by programme alone; its links and its context must say which.

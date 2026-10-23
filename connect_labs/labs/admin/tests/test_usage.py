@@ -254,6 +254,45 @@ def test_staff_toggle_at_the_top_switches_the_filter_and_keeps_the_rest(client, 
     assert "Partner activity only" in off and "Partner activity only" not in on
 
 
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "params, target",
+    [
+        ("opportunity_id=2166&program_id=25", ["opp", "2166"]),
+        ("program_id=25", ["program", "25"]),
+        ("organization_id=acme", ["org", "acme"]),
+    ],
+)
+def test_overview_honours_an_explicit_context_param(rf, staff, params, target):
+    # The view alone: the context middleware in front of it validates access to
+    # the context first, which is not what this pins.
+    from connect_labs.labs.admin.usage_views import UsageView
+
+    request = rf.get(f"{reverse('labs_admin:usage')}?{params}&days=90&exclude_dimagi_staff=1")
+    request.user = staff
+    response = UsageView.as_view()(request)
+
+    assert response.status_code == 302
+    assert response["Location"] == reverse("labs_admin:usage_scope", args=target) + "?days=90&exclude_dimagi_staff=1"
+
+
+@pytest.mark.django_db
+def test_overview_offers_the_usage_of_the_context_you_are_in(rf, staff, directory):
+    from connect_labs.labs.admin.usage_views import UsageView
+
+    request = rf.get(reverse("labs_admin:usage"), {"days": "90"})
+    request.user = staff
+    request.labs_context = {"opportunity_id": 812, "program_id": 25}
+    response = UsageView.as_view()(request)
+    response.render()
+    content = response.content.decode()
+
+    assert "Opportunity: Kano rollout" in content
+    assert f'href="{reverse("labs_admin:usage_scope", args=["opp", 812])}?days=90" id="usage-context-link"' in content
+    # ...and the context is not dragged onto the links the page draws.
+    assert "opportunity_id=812" not in content
+
+
 @override_settings(**LABS_SETTINGS)
 @pytest.mark.django_db
 def test_viewing_usage_is_audited(client, staff):
