@@ -34,8 +34,8 @@
           </select>
         </label>
         <label class="text-gray-600 flex items-center gap-1">
-          <input type="checkbox" name="staff" value="hide" onchange="this.form.submit()" {% if hide_staff %}checked{% endif %}>
-          Hide Dimagi staff
+          <input type="checkbox" name="exclude_dimagi_staff" value="1" onchange="this.form.submit()" {% if hide_staff %}checked{% endif %}>
+          Exclude Dimagi staff
         </label>
       </form>
     </div>

@@ -42,6 +42,7 @@ from django.db.models.functions import Cast, Coalesce, NullIf, TruncDate
 from django.utils import timezone
 
 from connect_labs.audit_trail.models import Action, AuditEvent, Source
+from connect_labs.utils.dimagi_user import DIMAGI_ORG_DOMAINS
 
 WINDOW_CHOICES = (7, 30, 90, 180, 365)
 DEFAULT_WINDOW = 30
@@ -98,7 +99,10 @@ AREAS = (
 AGENT_AREA = "Agent (MCP)"
 OTHER_AREA = "Other"
 
-STAFF_EMAIL_SUFFIXES = ("@dimagi.com", "@dimagi-ai.com")
+# Everyone who signs in as part of the Dimagi organisation, associates included:
+# "exclude Dimagi staff" means "show me partners' use", and an associate's use is
+# Dimagi's use.
+STAFF_EMAIL_SUFFIXES = DIMAGI_ORG_DOMAINS
 
 NO_ORG = ""  # key for activity that named no organisation
 
