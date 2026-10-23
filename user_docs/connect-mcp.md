@@ -206,7 +206,7 @@ You can also ask the agent on the page to write a query for you from a plain-Eng
 
 ### Editing workflows from the agent on a workflow's page
 
-The agent embedded in a workflow's run page can do more than answer questions — it can also propose changes to the workflow itself. It can fix a pipeline's SQL, add or adjust an indicator in the semantic registry, update the workflow's definition, or rewrite its render code.
+The agent embedded in a workflow's run page runs on sensitive-data runners, reads the run and the data behind it, and can propose edits to the workflow and its pipelines for you to confirm. Those edits stay in Labs. It runs none of the workflow's actions.
 
 The agent **never saves anything on its own.** When it has a change to propose, it presents a card in the chat showing exactly what would change, with the old version and the new version side by side. Nothing is written until you decide:
 
@@ -225,6 +225,4 @@ You stay in control at every step. The agent proposes; you decide.
 | `data_validate` | Checks a query end to end without reading any data |
 | `data_workflow_context` | Explains how a workflow computes what it shows: its pipelines' fields, filters and a ready query over `visits` that reproduces them |
 
-The older names `explorer_describe`, `explorer_query` and `explorer_validate` still work.
-
-This means you can ask Claude questions like "show me hospital vs home births broken down by LLO", "check that this workflow counts deaths correctly", or "explain how this
+The older names `explorer_describe`, `explorer_query` and `explorer_validate`
