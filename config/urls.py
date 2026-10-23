@@ -27,6 +27,7 @@ urlpatterns = [
     path("about/", TemplateView.as_view(template_name="pages/about.html"), name="about"),
     path("health/", views.health_check, name="health_check"),
     path("robots.txt", views.robots_txt, name="robots_txt"),
+    path("favicon.ico", views.favicon_ico, name="favicon_ico"),
     path(".well-known/assetlinks.json", views.assetlinks_json, name="assetlinks_json"),
     # MCP dynamic client registration (RFC 7591): the one endpoint the standard
     # MCP sign-in needs that django-oauth-toolkit does not ship. Listed before the
