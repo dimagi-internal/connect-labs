@@ -113,6 +113,22 @@ SCOPES: dict[str, list[str]] = {
 # which is the check defeating itself.
 INTRINSIC_SCOPE_COLUMNS = frozenset({"opportunity_id", "username", "cohort_month", "case_id"})
 
+# A measure's GRAIN: the rows it aggregates. Absent, it is the entity rows of
+# `props`, as every measure always has been. `worker_day` is one row per worker
+# per calendar day of the as-of-cut visits, for a figure that is a statistic of a
+# worker's DAY -- which no entity row can carry, because a day spans several
+# entities (MBW's Daily Meter/Visit: the median of each FLW-day's home-to-home
+# distances, then the median across the FLW's days). Such a measure names ONE visit
+# column in `sql`: a `number` is the median across the days of each day's median of
+# that column, a `count` is how many non-null values it has. Each level (worker,
+# opportunity, LLO, programme) is computed once and carried onto every `props` row,
+# so the value reads the same through the CTE chain and through a materialised
+# props table; at any other scope (month, case) it is NULL.
+MEASURE_GRAINS = ("worker_day",)
+_GRAIN_TYPES = ("number", "count")
+# scope -> the pre-computed level a worker_day measure reads there
+_GRAIN_LEVELS = {"flw": "flw", "opportunity": "opp", "llo": "llo", "programme": "prog"}
+
 _CUBE_REF = re.compile(r"\{CUBE\}\.([a-zA-Z_][a-zA-Z0-9_]*)")
 # `{CUBE}` is the column namespace, not a measure -- exclude it or a measure sql
 # that references a column (C17 does) tries to resolve a measure named CUBE.
@@ -198,7 +214,10 @@ def compile_measures(registry: dict[str, Any]) -> dict[str, str]:
             raise RegistryError(f"measure {name!r} referenced but not defined")
         resolving.add(name)
 
-        if measure["type"] == "number":
+        if measure.get("grain") == "worker_day":
+            # The programme-level value; each scope reads its own level (_grain_expr).
+            expr = _grain_expr(name, "programme", None)
+        elif measure["type"] == "number":
             sql = measure.get("sql")
             if not sql:
                 raise RegistryError(f"{name}: type number needs sql")
@@ -1041,6 +1060,7 @@ def validate(
     problems.extend(_name_problems("measures", registry["measures"]))
     problems.extend(validate_properties_doc(props_doc, llo_map))
     problems.extend(indicator_model_problems(registry))
+    problems.extend(_grain_problems(props_doc, registry))
     for rule in registry.get("suppression") or []:
         scope_col = rule.get("scope", "llo") if isinstance(rule, dict) else None
         if scope_col not in INTRINSIC_SCOPE_COLUMNS | {"llo"}:
@@ -1336,6 +1356,158 @@ weight_agg AS (
 ),"""
 
 
+def _grain_measures(registry: dict[str, Any]) -> list[dict[str, Any]]:
+    """The measures declared `grain: worker_day`, in registry order."""
+    return [m for m in registry.get("measures") or [] if isinstance(m, dict) and m.get("grain") == "worker_day"]
+
+
+def _grain_levels(llo_map: dict[Any, str] | None) -> list[str]:
+    return ["flw", "opp", "prog"] + (["llo"] if llo_map else [])
+
+
+def grain_columns(registry: dict[str, Any], llo_map: dict[Any, str] | None) -> list[str]:
+    """The `props` columns carrying the worker_day measures: one per measure per level."""
+    return [f"{m['name']}__{lv}" for m in _grain_measures(registry) for lv in _grain_levels(llo_map)]
+
+
+def _grain_expr(name: str, scope: str, llo_map: dict[Any, str] | None) -> str:
+    """A worker_day measure at one scope: its pre-computed level, else NULL.
+
+    Every props row of one scope group carries the same level value (it was joined
+    on that group's own key), so MAX reads it back unchanged.
+    """
+    level = _GRAIN_LEVELS.get(scope)
+    if level is None or (level == "llo" and not llo_map):
+        return "NULL"
+    return f"MAX(props.{name}__{level})"
+
+
+def _grain_problems(props_doc: dict[str, Any], registry: dict[str, Any]) -> list[str]:
+    """A `grain` must be known, its measure a number or count over ONE declared visit
+    column with no filters, and no other measure may reference it: its value is
+    chosen per scope, so inlining it into another expression would freeze one
+    scope's value into every scope."""
+    measures = [m for m in registry.get("measures") or [] if isinstance(m, dict)]
+    declared = _declared_visit_columns(props_doc.get("visit_columns"))
+    grained: set[str] = set()
+    problems: list[str] = []
+    for m in measures:
+        if "grain" not in m:
+            continue
+        name = m.get("name")
+        if m["grain"] not in MEASURE_GRAINS:
+            problems.append(f"{name}.grain: {m['grain']!r} is not a grain; expected one of {list(MEASURE_GRAINS)}")
+            continue
+        grained.add(name)
+        if m.get("type") not in _GRAIN_TYPES:
+            problems.append(f"{name}: a worker_day measure is type number or count, got {m.get('type')!r}")
+        if m.get("filters"):
+            problems.append(f"{name}: a worker_day measure takes no filters; put the condition in its visit column")
+        col = m.get("sql")
+        if not (isinstance(col, str) and _IDENTIFIER.match(col) and col in declared):
+            problems.append(
+                f"{name}: a worker_day measure's sql must name one of the registry's visit_columns, got {col!r}"
+            )
+    for m in measures:
+        for ref in _MEASURE_REF.findall(str(m.get("sql") or "")):
+            if ref in grained:
+                problems.append(
+                    f"{m.get('name')}: cannot reference {ref}, a worker_day measure (its value is per scope)"
+                )
+    return problems
+
+
+def _grain_ctes(
+    grained: list[dict[str, Any]],
+    llo_map: dict[Any, str] | None,
+    key: str,
+    entity_worker: str | None = None,
+) -> str:
+    """worker_day -> one row per worker per day; then each level's value over those days.
+
+    The day's value is the median (number) or count (count) of the measure's visit
+    column over the worker's visits that day; a level's value is the median of the
+    day values (days with no value are skipped by PERCENTILE_CONT) or their sum.
+    Above one worker (opportunity, LLO, programme) the median is over every
+    worker-day in that scope pooled, not a median of the workers' own values.
+    Reads `visits`, so it is cut at the report date like everything else -- which
+    also means no visit without a date reaches it (`visit_date < date + 1` drops
+    NULL). A day is the calendar day of `visit_date`, which Connect already stores
+    as a date.
+
+    Which visits count, so the grain agrees with the entity rows it rides on:
+      * only visits that have an entity key -- `visit_agg` drops the others, so a
+        visit outside every entity would otherwise count here and nowhere else;
+      * under a one-worker evaluation (`entity_worker`, see _split_worker_filter)
+        only that worker's visits. With `alphabetical` the filter already dropped
+        the other workers' visits before this CTE; with `last_visit`/`first_visit`
+        the visits stay whole for attribution, and without this the opportunity /
+        LLO / programme levels would cover every worker while every other measure
+        covers only this worker's entities.
+    """
+    if not grained:
+        return ""
+    worker_only = ""
+    if entity_worker is not None:
+        worker_only = " AND v.username = '" + entity_worker.replace("'", "''") + "'"
+
+    def day(m: dict[str, Any]) -> str:
+        if m["type"] == "count":
+            return f"COUNT({m['sql']}) AS {m['name']}"
+        return f"PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {m['sql']}) AS {m['name']}"
+
+    def level(m: dict[str, Any]) -> str:
+        if m["type"] == "count":
+            return f"SUM({m['name']}) AS {m['name']}"
+        return f"PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {m['name']}) AS {m['name']}"
+
+    day_cols = ",\n           ".join(day(m) for m in grained)
+    rolled = ", ".join(level(m) for m in grained)
+    llo_col = f",\n           {_llo_case_sql(llo_map)} AS llo" if llo_map else ""
+    llo_cte = f"\nwd_llo AS (SELECT llo, {rolled} FROM worker_day GROUP BY llo)," if llo_map else ""
+    return f"""
+worker_day AS (
+    -- One row per worker per calendar day: the grain of a worker_day measure.
+    SELECT v.opportunity_id, v.username{llo_col},
+           {day_cols}
+    FROM visits v
+    WHERE v.username IS NOT NULL AND v.{key} IS NOT NULL{worker_only}
+    GROUP BY v.opportunity_id, v.username, CAST(v.visit_date AS DATE)
+),
+wd_flw AS (SELECT opportunity_id, username, {rolled} FROM worker_day GROUP BY opportunity_id, username),
+wd_opp AS (SELECT opportunity_id, {rolled} FROM worker_day GROUP BY opportunity_id),
+wd_prog AS (SELECT {rolled} FROM worker_day),{llo_cte}"""
+
+
+def _grain_join(grained: list[dict[str, Any]], llo_map: dict[Any, str] | None) -> tuple[str, str]:
+    """(columns for base_m's select, joins onto visit_agg v) carrying each level.
+
+    The worker level joins on the ENTITY's worker (`entity.worker`), because that is
+    the worker an flw-scope row is. A worker who visited but is no entity's worker
+    therefore has no flw row -- for this measure as for every other -- while their
+    days still count in the opportunity, LLO and programme levels, which are about
+    the days, not the entities. An opportunity missing from llo_map has a NULL llo:
+    `IS NOT DISTINCT FROM` gives that NULL-llo group its own value, as GROUPING SETS
+    gives it its own row.
+    """
+    if not grained:
+        return "", ""
+    aliases = {"flw": "g_flw", "opp": "g_opp", "prog": "g_prog", "llo": "g_llo"}
+    cols = "".join(
+        f",\n           {aliases[lv]}.{m['name']} AS {m['name']}__{lv}"
+        for m in grained
+        for lv in _grain_levels(llo_map)
+    )
+    joins = (
+        "\n    LEFT JOIN wd_flw g_flw ON g_flw.opportunity_id = v.opportunity_id AND g_flw.username = v.username"
+        "\n    LEFT JOIN wd_opp g_opp ON g_opp.opportunity_id = v.opportunity_id"
+        "\n    CROSS JOIN wd_prog g_prog"
+    )
+    if llo_map:
+        joins += f"\n    LEFT JOIN wd_llo g_llo ON g_llo.llo IS NOT DISTINCT FROM {_llo_case_sql(llo_map)}"
+    return cols, joins
+
+
 def _worker_sql(model: RegistryModel) -> str:
     """The entity's worker, per `entity.worker` (see model.WORKER_ATTRIBUTIONS).
 
@@ -1429,6 +1601,9 @@ def _build_ctes(
     compiled = compile_measures(registry)
     llo_col = f",\n           {_llo_case_sql(llo_map)} AS llo" if llo_map else ""
     series_select, series_join = (", w.*", f"\n    LEFT JOIN weight_agg w USING ({rid})") if ws else ("", "")
+    grained = _grain_measures(registry)
+    grain_ctes = _grain_ctes(grained, llo_map, key, entity_worker)
+    grain_cols, grain_join = _grain_join(grained, llo_map)
 
     ctes = f"""WITH visits_all AS (
 {visit_sql}
@@ -1441,7 +1616,7 @@ visits AS (
     -- `< date + 1` keeps the whole of the as-of day, midnight included.
     SELECT * FROM visits_all
     WHERE visit_date < ((({as_of}))::date + 1)::timestamp{visit_filter_sql(visit_filter, key)}
-),{series_ctes}
+),{series_ctes}{grain_ctes}
 visit_agg AS (
     -- One row per entity, keyed (opportunity, key) -- see _build_ctes.
     SELECT opportunity_id || '|' || {key} AS {rid},
@@ -1461,8 +1636,8 @@ base_m AS (
            DATE_TRUNC(
                'month',
                {cohort}
-           )::date AS cohort_month{llo_col}
-    FROM visit_agg v{series_join}{worker_where}
+           )::date AS cohort_month{llo_col}{grain_cols}
+    FROM visit_agg v{series_join}{grain_join}{worker_where}
 ),
 {prop_cte_sql},
 props AS (SELECT * FROM {final_props})"""
@@ -1575,6 +1750,7 @@ def compile_indicator_sql(
     """One statement for ONE scope. Prefer compile_rollup_sql for several."""
     _check_scopes([scope], llo_map)
     ctes, compiled = _build_ctes(props_doc, registry, visit_sql, as_of, llo_map=llo_map, visit_filter=visit_filter)
+    compiled = {**compiled, **{m["name"]: _grain_expr(m["name"], scope, llo_map) for m in _grain_measures(registry)}}
     supp = _suppression_columns(registry, settings, llo_map)
     scope_cols = SCOPES[scope]
     scope_select = "".join(f"props.{c},\n    " for c in scope_cols)
@@ -1639,12 +1815,18 @@ def _rollup_select(
     )
     # GROUPING() reports 0 when a column participated in the row's grouping set,
     # which is how each row is labelled back to the scope that produced it.
-    label_cases = "\n        ".join(
-        "WHEN "
-        + (" AND ".join(f"GROUPING(props.{c}) = {0 if c in SCOPES[sc] else 1}" for c in all_cols) or "TRUE")
-        + f" THEN '{sc}'"
+    is_scope = {
+        sc: " AND ".join(f"GROUPING(props.{c}) = {0 if c in SCOPES[sc] else 1}" for c in all_cols) or "TRUE"
         for sc in scopes
-    )
+    }
+    label_cases = "\n        ".join(f"WHEN {is_scope[sc]} THEN '{sc}'" for sc in scopes)
+    # A worker_day measure reads the level of the row's own scope (see MEASURE_GRAINS).
+    grained = _grain_measures(registry)
+    if grained:
+        compiled = dict(compiled)
+        for m in grained:
+            whens = " ".join(f"WHEN {is_scope[sc]} THEN {_grain_expr(m['name'], sc, llo_map)}" for sc in scopes)
+            compiled[m["name"]] = f"CASE {whens} END"
     col_select = "".join(f"props.{c},\n    " for c in all_cols)
     alias = "" if source == "props" else " AS props"
 
@@ -1708,6 +1890,8 @@ def compile_props_sql(
     # set -- and the key is restored once, from case_id, which holds the same value.
     rid = resolve_model(props_doc).row_id
     cols = sorted(case_row_columns(props_doc) - {rid}) + (["llo"] if llo_map else [])
+    # The worker_day levels ride on every row so a rollup over the table reads them.
+    cols += grain_columns(registry, llo_map)
     select = ", ".join([f"props.case_id AS {rid}"] + [f"props.{c}" for c in cols])
     return f"{ctes}\nSELECT {select} FROM props", compiled
 
