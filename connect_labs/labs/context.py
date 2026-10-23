@@ -488,6 +488,18 @@ def _with_opportunitys_programme(request: HttpRequest, context: dict) -> dict:
     return {**context, **validate_context_access(request, {"program_id": program_id})}
 
 
+# Pages a human lands on that are deliberately NOT about the context in view:
+# they look across organisations, programmes and opportunities, and carry the one
+# they are about in their path. Decorating them with the session's context added
+# ``?opportunity_id=`` to a page that then (rightly) ignored it, so the URL claimed
+# a scope the page was not showing. They still get ``request.labs_context`` from
+# the session; only the redirect is skipped.
+#
+# ``/labs/admin/usage/``: labs usage across every scope (labs/admin/usage_views.py).
+# Its overview honours an explicit context param by redirecting to that scope's page.
+CROSS_SCOPE_PAGE_PREFIXES = ("/labs/admin/usage/",)
+
+
 def _redirect_is_pointless(path: str) -> bool:
     """True when decorating this URL with context params buys nothing."""
     return path.startswith(REDIRECT_EXEMPT_PREFIXES)
@@ -550,7 +562,7 @@ class LabsContextMiddleware(MiddlewareMixin):
             ]
             is_whitelisted = any(path.startswith(prefix) for prefix in whitelisted_prefixes)
 
-            if is_whitelisted and not _redirect_is_pointless(path):
+            if is_whitelisted and not _redirect_is_pointless(path) and not path.startswith(CROSS_SCOPE_PAGE_PREFIXES):
                 logger.debug(f"Redirecting {path} to add context params from session")
                 redirect_url = add_context_to_url(request.get_full_path(), session_context)
                 return HttpResponseRedirect(redirect_url)
