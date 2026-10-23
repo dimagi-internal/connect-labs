@@ -1,6 +1,7 @@
 # The site agents API: canopy and a connected site describe themselves to each other
 
-Status: approved 2026-10-22 (owner); canopy-web side and SDK 0.14 first, then labs.
+Status: built. canopy-web#1902 (+#1906, #1907) and dimagi-canopy 0.14.0; labs as described
+in §3, with the two choices under "As built" below.
 
 ## The problem
 
@@ -208,3 +209,17 @@ as the default agent / the first real-data agent).
 
 The "never silent" line and greyed choices (step 2's run-page half) need only labs' own
 ticks and can land before the site agents API does.
+
+## As built (labs)
+
+- **A PHI-safe agent is always read-only.** §3 made an agent read-only only when "Real
+  data" is ticked. Labs also offers an agent read-only, on ZDR runners, whenever canopy
+  says its author declared it PHI-safe, so `labsdata` never gains `workflow:act` on a
+  synthetic workflow just because "Real data" is not ticked yet. This replaces the old
+  "data agent" role's guarantee, from canopy's word rather than a typed role.
+- **A call is held to its statement, not to the cached listing.** The page decision reads
+  the site agents API (so drift withdraws an agent at once); a delegated call reads labs'
+  ticks and its own verified `Canopy-Execution` statement, which is canopy's word on
+  exactly that call, so a cache miss at canopy cannot refuse or admit a call by itself.
+- **The Data page** offers "the agent for data work": the first agent with "Real data"
+  ticked, else the first shown agent canopy declares PHI-safe, else the default agent.

@@ -745,23 +745,18 @@ CANOPY_SIGNING_KEY = env("CANOPY_SIGNING_KEY", default="").replace("\\n", "\n")
 # Unset = the grant is off: no ID-JAG is issued, /o/token/ refuses the grant,
 # and nothing else changes. Needs LABS_PUBLIC_URL and CANOPY_SIGNING_KEY too.
 CANOPY_CLIENT_ID = env("CANOPY_CLIENT_ID", default="")
-# CANOPY_AGENT_SLUG above and the three agent settings below are DEFAULTS: labs reads
-# them through labs/canopy_settings.py, where Labs Admin › Canopy agents overrides them.
+# CANOPY_AGENT_SLUG above and the agent settings below are COLD-START DEFAULTS: labs
+# reads them, as ticks, through labs/canopy_settings.py until someone saves at Labs
+# Admin › Canopy agents, which chooses from the agents canopy lists for labs.
 # Runner flags every visitor conversation must run on (`zdr`: zero-data-retention
 # boxes only). Signed into every visitor assertion; canopy enforces it at claim.
-# Empty = no requirement, and so no agent over real data (labs/canopy_panel.py).
 CANOPY_RUNNER_REQUIREMENTS = env.list("CANOPY_RUNNER_REQUIREMENTS", default=[])
-# Agents labs allows over REAL (non-generated) visit data, whose authors claim them
-# PHI-safe. One of three conditions, all required (labs/canopy_panel.py). Empty by
-# default: over real data no agent panel is drawn.
+# Agents with "Real data" ticked by default. Empty: over real data no agent panel is drawn.
 CANOPY_PHI_AGENTS = env.list("CANOPY_PHI_AGENTS", default=[])
-# The agent labs' DATA pages offer in place of CANOPY_AGENT_SLUG: `labsdata`, the
-# read-only data agent (connect_labs/labsdata). Its conversations always require ZDR
-# runners (signed into that page's token, so canopy binds the visitor's token and grant
-# to it). Must be allow-listed on canopy's connect-labs site first, or the panel's mint
-# is refused. Empty = data pages offer the site's agent, as every other page does.
+# An agent shown by default (labsdata). Whether it is read-only on ZDR is canopy's word:
+# an agent its author declares PHI-safe always is.
 CANOPY_DATA_AGENT_SLUG = env("CANOPY_DATA_AGENT_SLUG", default="")
-# Further agents a workflow may choose for its runs (default for Labs Admin › Canopy agents).
+# Further agents shown by default.
 CANOPY_OFFERED_AGENTS = env.list("CANOPY_OFFERED_AGENTS", default=[])
 # What the canopy SDK (`canopy_sdk.django`) reads. Not a second copy of the
 # values above: a callable the SDK resolves on every read, so it sees them (and

@@ -161,7 +161,7 @@ def test_a_persons_choice_is_checked():
     }
     with pytest.raises(ValueError):
         clean_agent_config(share=True, agent="labsdata", brief="")
-    # An agent labs offers (canopy_settings.choices) may be named by its slug.
+    # An agent labs shows (Labs Admin ticks) may be named by its slug.
     offered = ["site", "data", "coach-bot"]
     assert clean_agent_config(share=True, agent="coach-bot", brief="", offered=offered).agent == "coach-bot"
     with pytest.raises(ValueError):

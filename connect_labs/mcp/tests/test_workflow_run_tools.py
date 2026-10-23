@@ -610,9 +610,12 @@ def test_the_agent_is_told_to_say_nothing_before_the_preview():
     assert CHAT_AFTER_PREVIEW in HOW_TO_RUN_CLICK_TO_SEND
 
 
-def test_a_workflow_that_offers_the_data_agent_takes_no_actions_from_any_embedded_agent(user, actionable, monkeypatch):
+def test_a_workflow_that_offers_the_data_agent_takes_no_actions_from_any_embedded_agent(
+    user, actionable, monkeypatch, settings
+):
+    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"  # shown, and PHI-safe in canopy: read-only
     definition = _definition_with_opps()
-    definition.data["config"]["agent"] = {"share": True, "agent": "data"}
+    definition.data["config"]["agent"] = {"share": True, "agent": "labsdata"}
     actionable.get_definition.return_value = definition
     monkeypatch.setattr(wa, "_delegated_token", lambda: MagicMock(client_id="canopy"))
     with pytest.raises(MCPToolError) as e:
@@ -624,6 +627,26 @@ def test_a_workflow_that_offers_the_data_agent_takes_no_actions_from_any_embedde
             action="initiate_ai_coach",
             arguments={"workers": [{"key": "10::asha", "prompt": "x"}]},
         )
-    assert e.value.code == "PERMISSION_DENIED" and "read-only agent" in str(e.value)
+    assert e.value.code == "PERMISSION_DENIED" and "read-only agent (labsdata)" in str(e.value)
     # Reading the run is still fine.
     assert _call("workflow_run_context", user, run_id=70, program_id=25)
+
+
+def test_a_workflow_whose_agent_is_not_available_takes_no_actions_from_any_embedded_agent(
+    user, actionable, monkeypatch, fake_canopy
+):
+    fake_canopy.set(None)  # canopy has said nothing for a day: no agent anywhere
+    definition = _definition_with_opps()
+    definition.data["config"]["agent"] = {"share": True}
+    actionable.get_definition.return_value = definition
+    monkeypatch.setattr(wa, "_delegated_token", lambda: MagicMock(client_id="canopy"))
+    with pytest.raises(MCPToolError) as e:
+        _call(
+            "workflow_run_action",
+            user,
+            run_id=70,
+            program_id=25,
+            action="initiate_ai_coach",
+            arguments={"workers": [{"key": "10::asha", "prompt": "x"}]},
+        )
+    assert e.value.code == "PERMISSION_DENIED" and "not available (canopy has not said" in str(e.value)

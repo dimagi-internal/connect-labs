@@ -1071,17 +1071,16 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         from connect_labs.labs import canopy, canopy_panel
 
         # The workflow's choice of agent (config.agent.agent), from those Labs Admin
-        # offers. A read-only one (the data agent, or any allowed over real data) runs on
-        # ZDR runners, its token signed for the run's read scopes only. A choice labs no
-        # longer offers: no panel, not the site's agent in its place.
+        # shows and canopy lists. A read-only one (PHI-safe in canopy, or allowed over
+        # real data) runs on ZDR runners, its token signed for the run's read scopes
+        # only. One that is not available here: no panel, not another agent in its place.
         reads = canopy_panel.workflow_reads(definition, run_data.get("opportunity_id"))
         available = canopy_panel.availability(offered.agent, reads)
         if not available.ok:
             # Never silent: the Agent box says why the chosen agent is not here.
             context["agent_held_back"] = list(available.reasons)
             return
-        page_agent, read_only = canopy_panel.chosen_agent(offered.agent)
-        page_key = canopy.RUN_FOR_DATA_AGENT if read_only else ""
+        page_key = canopy.RUN_FOR_DATA_AGENT if available.read_only else ""
         scope = (
             {"opportunity_id": run_data["opportunity_id"]}
             if run_data.get("opportunity_id")
@@ -1092,7 +1091,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         panel = canopy_panel.panel(
             self.request,
             reads=reads,
-            page_agent=page_agent,
+            available=available,
             page_key=page_key,
             resource=f"labs-workflow://{definition.id}/runs/{run_id}",
             backing_tool="workflow_run_indicators",
@@ -1105,22 +1104,37 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
 
     def _add_agent_settings(self, context, definition, run_data):
         """What the run page's "Agent" box shows and saves (``UpdateAgentConfigView``):
-        this workflow's ``config.agent``, and the agents labs offers workflows
-        (Labs Admin › Canopy agents, ``canopy_settings.choices``)."""
+        this workflow's ``config.agent``, and every agent labs shows (Labs Admin ›
+        Canopy agents), each as THIS workflow would get it -- one not available over what
+        it reads is greyed, with why (``canopy_panel.availability``)."""
         from django.urls import reverse
 
         from connect_labs.labs import canopy_panel, canopy_settings
         from connect_labs.workflow.agent_sharing import BRIEF_MAX_CHARS, agent_config
 
-        # Each choice as THIS workflow would get it: one not available over what it reads
-        # is shown greyed, with why (canopy_panel.availability).
         reads = canopy_panel.workflow_reads(definition, run_data.get("opportunity_id"))
+        ticks = canopy_settings.current()
+        listing = canopy_settings.site_agents()
         choices = []
-        for offered in canopy_settings.choices():
-            here = canopy_panel.availability(offered.value, reads)
-            choices.append({**offered.as_dict(), "available": here.ok, "reasons": list(here.reasons)})
+        for slug in ticks.offered:
+            here = canopy_panel.availability(slug, reads, ticks=ticks, listing=listing)
+            listed = listing.agent(slug) if listing is not None else None
+            choices.append(
+                {
+                    "slug": slug,
+                    "default": slug == ticks.default_agent,
+                    "description": listed.description if listed else "",
+                    "read_only": here.read_only,
+                    "real_data": slug in ticks.real_data_agents,
+                    "available": here.ok,
+                    "reasons": list(here.reasons),
+                }
+            )
+        config = agent_config(definition).as_config()
+        # A legacy role ("site", "data") is shown as the agent it names now.
+        config["agent"] = canopy_settings.resolve_choice(config["agent"], ticks, listing) or config["agent"]
         context["agent_settings"] = {
-            **agent_config(definition).as_config(),
+            **config,
             "choices": choices,
             "held_back": context.get("agent_held_back") or [],
             "brief_max": BRIEF_MAX_CHARS,
@@ -7566,13 +7580,13 @@ class UpdateAuditBatchConfigView(LoginRequiredMixin, View):
 
 class UpdateAgentConfigView(LoginRequiredMixin, View):
     """The run page's "Agent" box: whether this workflow offers an embedded agent, which
-    one (from those Labs Admin offers, ``canopy_settings.choices``), and the author's
+    one (from those Labs Admin shows), and the author's
     brief for it --
     ``config.agent`` (workflow/agent_sharing.py), in place of hand-editing it through
     ``workflow_update_definition``. Saved as the person, under the workflow's own
     LabsRecord ACL, like every definition write.
 
-    POST JSON body: {"share": bool, "agent": "site" | "data" | <an offered slug>, "brief": str}.
+    POST JSON body: {"share": bool, "agent": <a slug labs shows>, "brief": str}.
     """
 
     def post(self, request, definition_id):
@@ -7588,9 +7602,9 @@ class UpdateAgentConfigView(LoginRequiredMixin, View):
         try:
             wanted = clean_agent_config(
                 share=body.get("share"),
-                agent=body.get("agent", "site"),
+                agent=body.get("agent") or canopy_settings.current().default_agent,
                 brief=body.get("brief", ""),
-                offered=[o.value for o in canopy_settings.choices()],
+                offered=canopy_settings.current().offered,
             )
         except ValueError as e:
             return JsonResponse({"error": str(e)}, status=400)

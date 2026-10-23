@@ -646,19 +646,21 @@ class WorkspaceAccess(models.Model):
 
 
 class CanopyAgentSettings(models.Model):
-    """Which canopy agents labs offers, and which it allows over real data: one row per change.
+    """Which canopy agents labs shows, and which it lets read real data: one row per change.
 
     Append-only. The newest row is in force (``labs/canopy_settings.py``); with none,
     the ``CANOPY_*`` environment settings are. Changed at Labs Admin › Canopy agents,
-    by Dimagi staff. Undo is a new row carrying an earlier row's values, so the
-    history is never rewritten."""
+    by Dimagi staff, choosing from the agents canopy lists for labs (the site agents
+    API). Undo is a new row carrying an earlier row's values, so the history is never
+    rewritten."""
 
-    site_agent = models.CharField(max_length=100)
-    data_agent = models.CharField(max_length=100, blank=True, default="")
-    phi_agents = models.JSONField(default=list, blank=True)
+    #: ``[{"slug", "offered", "real_data"}]``: the Labs Admin table's ticks.
+    agents = models.JSONField(default=list, blank=True)
+    #: The agent every labs page offers, and the canopy registration every token names.
+    default_agent = models.CharField(max_length=100)
     runner_requirements = models.JSONField(default=list, blank=True)
-    #: Further agents a workflow may choose for its runs, beside the site and data agents.
-    offered_agents = models.JSONField(default=list, blank=True)
+    #: The site agents ``version`` this change was made against ("" before the API).
+    site_agents_version = models.CharField(max_length=100, blank=True, default="")
     note = models.CharField(max_length=500, blank=True, default="")
     changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
     changed_at = models.DateTimeField(auto_now_add=True)

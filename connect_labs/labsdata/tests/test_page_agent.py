@@ -1,4 +1,5 @@
-"""The Data page offers labsdata on ZDR runners when labs names it; every other page is unchanged."""
+"""The Data page offers the agent for data work (a PHI-safe one, labsdata) read-only on ZDR
+runners; with none, the default agent. Every other page is unchanged."""
 
 from unittest import mock
 
@@ -11,22 +12,24 @@ from connect_labs.labsdata.scope import Opportunity
 OPP = Opportunity(id=951, name="Opp P", llo="LLO P")
 
 
-def test_unset_the_data_pages_offer_the_sites_agent(settings):
+def test_with_no_agent_for_data_work_the_data_pages_offer_the_default_agent(settings):
     settings.CANOPY_DATA_AGENT_SLUG = ""
-    assert canopy_panel.data_agent() == canopy_panel.PageAgent()
+    here = canopy_panel.data_page_agent()
+    assert here.ok and here.page_agent == canopy_panel.PageAgent()
 
 
-def test_set_the_data_pages_offer_labsdata_on_zdr_runners(settings):
-    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"
-    page = canopy_panel.data_agent()
-    assert page.agent == "labsdata"
-    assert page.runner_requirements == ("zdr",)
-    assert page.panel == {"mode": "docked", "width": 560, "expandable": True}
+def test_a_phi_safe_agent_labs_shows_is_offered_on_the_data_pages_on_zdr_runners(settings):
+    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"  # shown, and the fake canopy declares it PHI-safe
+    here = canopy_panel.data_page_agent()
+    assert here.ok and here.read_only
+    assert here.page_agent.agent == "labsdata"
+    assert here.page_agent.runner_requirements == ("zdr",)
+    assert here.page_agent.panel == {"mode": "docked", "width": 560, "expandable": True}
 
 
-def test_a_pages_zdr_requirement_counts_toward_clearance_but_canopy_must_still_vouch(settings):
+def test_labs_zdr_requirement_counts_toward_clearance_but_canopy_must_still_vouch(settings):
     settings.CANOPY_PHI_AGENTS = ["labsdata"]
-    settings.CANOPY_RUNNER_REQUIREMENTS = []  # the site does not require ZDR; the data page does
+    settings.CANOPY_RUNNER_REQUIREMENTS = []  # the site does not require ZDR; a read-only page does
     without_page = canopy_panel.real_data_clearance("labsdata")
     assert not without_page.granted and "ZDR" in without_page.reason
     with mock.patch.object(canopy_panel, "CANOPY_EXECUTION_STATEMENTS", False):  # an SDK that cannot verify
@@ -34,7 +37,7 @@ def test_a_pages_zdr_requirement_counts_toward_clearance_but_canopy_must_still_v
     assert not with_page.granted and "vouch" in with_page.reason
     with mock.patch.object(canopy_panel, "CANOPY_EXECUTION_STATEMENTS", True):
         assert canopy_panel.real_data_clearance("labsdata", ("zdr",)).granted
-        # The site's agent is not cleared just because the data agent is.
+        # The default agent is not cleared just because the data agent is.
         assert not canopy_panel.real_data_clearance("ace", ("zdr",)).granted
 
 
@@ -46,8 +49,9 @@ def test_panel_signs_the_pages_agent_and_requirements_into_the_page():
         return {"ready": True}
 
     page = canopy_panel.PageAgent(agent="labsdata", runner_requirements=("zdr",), panel={"mode": "docked"})
+    available = canopy_panel.Availability(True, "labsdata", True, (), page)
     with mock.patch("canopy_sdk.django.pages.panel_context", fake_panel_context):
-        canopy_panel.panel(None, reads=canopy_panel.NO_VISIT_DATA, page_agent=page, resource="labs-data://")
+        canopy_panel.panel(None, reads=canopy_panel.NO_VISIT_DATA, available=available, resource="labs-data://")
     assert captured["agent"] == "labsdata"
     assert captured["runner_requirements"] == ["zdr"]
     assert captured["panel"] == {"mode": "docked"}
@@ -58,6 +62,13 @@ def test_panel_signs_the_pages_agent_and_requirements_into_the_page():
     assert "agent" not in captured and "runner_requirements" not in captured and "panel" not in captured
 
 
+def test_no_panel_at_all_when_canopy_has_said_nothing(fake_canopy):
+    fake_canopy.set(None)
+    with mock.patch("canopy_sdk.django.pages.panel_context") as sdk:
+        assert canopy_panel.panel(None, reads=canopy_panel.NO_VISIT_DATA, resource="labs-data://") is None
+    sdk.assert_not_called()
+
+
 @pytest.mark.django_db
 def test_the_data_page_asks_for_labsdata_when_configured(client, django_user_model, settings):
     settings.CANOPY_DATA_AGENT_SLUG = "labsdata"
@@ -65,8 +76,8 @@ def test_the_data_page_asks_for_labsdata_when_configured(client, django_user_mod
     client.force_login(user)
     seen = {}
 
-    def fake_panel(request, *, reads, page_agent=None, **kwargs):
-        seen["page_agent"] = page_agent
+    def fake_panel(request, *, reads, available=None, **kwargs):
+        seen["available"] = available
         return None
 
     with (
@@ -74,5 +85,5 @@ def test_the_data_page_asks_for_labsdata_when_configured(client, django_user_mod
         mock.patch.object(canopy_panel, "panel", fake_panel),
     ):
         assert client.get(f"/labs/data/?opps={OPP.id}").status_code == 200
-    assert seen["page_agent"].agent == "labsdata"
-    assert seen["page_agent"].runner_requirements == ("zdr",)
+    assert seen["available"].page_agent.agent == "labsdata"
+    assert seen["available"].page_agent.runner_requirements == ("zdr",)

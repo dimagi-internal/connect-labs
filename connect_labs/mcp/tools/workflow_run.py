@@ -761,20 +761,24 @@ def workflow_run_action(
     from ..visit_access import caller_restricted
 
     with _Run(user, run_id, opportunity_id, program_id) as r:
-        from connect_labs.labs import canopy_settings
+        from connect_labs.labs import canopy_panel
         from connect_labs.workflow.agent_sharing import agent_config
 
-        # A workflow that offers a read-only agent (the data agent, or any allowed over
+        # A workflow that offers a read-only agent (PHI-safe in canopy, or allowed over
         # real data) takes no agent actions, from any agent: its run page grants no
-        # ``workflow:act``, and no other page's token may act on it either. A choice labs
-        # no longer offers is treated the same way: fail closed.
+        # ``workflow:act``, and no other page's token may act on it either. A choice
+        # that is not available now is treated the same way: fail closed.
         choice = agent_config(r.definition).agent
-        chosen = canopy_settings.resolve(choice)
-        if r.delegated and (chosen is None or chosen.read_only):
+        chosen = canopy_panel.availability(choice, canopy_panel.NO_VISIT_DATA)
+        if r.delegated and (not chosen.ok or chosen.read_only):
+            why = (
+                f"offers a read-only agent ({chosen.slug})"
+                if chosen.ok
+                else f"offers an agent that is not available ({'; '.join(chosen.reasons)})"
+            )
             raise MCPToolError(
                 "PERMISSION_DENIED",
-                f"This workflow offers a read-only agent ({chosen.slug if chosen else choice}): its runs take no "
-                "actions from an embedded agent. Its own buttons still work.",
+                f"This workflow {why}: its runs take no actions from an embedded agent. Its own buttons still work.",
             )
         # A coaching action briefs each worker from the run's grading, read in the
         # caller's own scope and restriction -- the same cells workflow_run_indicators returns.

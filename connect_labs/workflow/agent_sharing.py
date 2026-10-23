@@ -15,12 +15,12 @@ Which agent, and what its author tells it, ride on the same key:
 
     "config": {"agent": {"share": True, "agent": "data", "brief": "..."}}
 
-* ``agent`` -- which agent: ``"site"`` (the default: the agent every labs page offers),
-  ``"data"`` (the agent Labs Admin › Canopy agents names for data, ``labsdata``), or the
-  slug of any other agent Labs Admin lists for workflows to choose
-  (``canopy_settings.choices``). A role follows whatever agent Labs Admin names for it;
-  a slug pins one. The data agent, and any agent allowed over real data, is offered
-  read-only: on ZDR runners, with the run's read scopes and never ``workflow:act``.
+* ``agent`` -- which agent: the slug of one Labs Admin › Canopy agents shows (and canopy
+  lists for labs). Absent, it is the default agent. The legacy values ``"site"`` (the
+  default agent) and ``"data"`` (the agent for data work) still read
+  (``canopy_settings.resolve_choice``). An agent canopy declares PHI-safe, or that labs
+  lets read real data, is offered read-only: on ZDR runners, with the run's read scopes
+  and never ``workflow:act`` (``canopy_panel.availability``).
 * ``brief`` -- what the workflow is for, what correct looks like, what to check first.
   The agent reads it with the workflow (``data_workflow_context``, as the visitor).
 
@@ -105,8 +105,8 @@ def agent_config(definition) -> AgentConfig:
 
 
 def clean_agent_config(*, share, agent, brief, offered=AGENT_ROLES) -> AgentConfig:
-    """What a person asked for, checked: an agent labs offers (``offered``: the values of
-    ``canopy_settings.choices``), a brief within bounds."""
+    """What a person asked for, checked: an agent labs shows (``offered``: the slugs Labs
+    Admin ticks), a brief within bounds."""
     if agent not in offered:
         raise ValueError(f"agent must be one of {', '.join(offered)}")
     brief = (brief or "").strip()

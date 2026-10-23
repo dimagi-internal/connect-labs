@@ -147,12 +147,12 @@
             cfg: JSON.parse(document.getElementById('agent-settings').textContent),
             csrf: '{{ csrf_token }}',
             chosen() {
-                return this.cfg.choices.find(c => c.value === this.cfg.agent || c.slug === this.cfg.agent);
+                return this.cfg.choices.find(c => c.slug === this.cfg.agent);
             },
             summary() {
                 if (!this.cfg.share) return 'off';
                 const c = this.chosen();
-                if (!c) return this.cfg.agent + ' (no longer offered: Labs Admin › Canopy agents)';
+                if (!c) return this.cfg.agent + ' (not shown on labs: Labs Admin › Canopy agents)';
                 return c.slug + (c.read_only ? ' (read-only)' : '');
             },
             async save() {
@@ -191,13 +191,13 @@
                     <span>Offer an agent on this workflow's runs</span>
                 </label>
                 <fieldset class="space-y-2" :disabled="!cfg.share">
-                    <template x-for="c in cfg.choices" :key="c.value">
+                    <template x-for="c in cfg.choices" :key="c.slug">
                         <label class="flex items-start gap-2" :class="c.available ? '' : 'opacity-60'">
-                            <input type="radio" :value="c.value" x-model="cfg.agent" class="mt-1">
+                            <input type="radio" :value="c.slug" x-model="cfg.agent" class="mt-1">
                             <span>
                                 <span class="font-medium font-mono" x-text="c.slug"></span>
-                                <span x-show="c.value === 'site'" class="text-xs text-gray-500">(the site's agent)</span>
-                                <span x-show="c.value === 'data'" class="text-xs text-gray-500">(the data agent)</span>:
+                                <span x-show="c.default" class="text-xs text-gray-500">(labs' default agent)</span>:
+                                <span x-show="c.description" class="block text-xs text-gray-500" x-text="c.description"></span>
                                 <span x-show="c.read_only">read-only; reads the run, the workflow behind it and the raw
                                     visits and form JSON, on zero-data-retention runners<span x-show="c.real_data">, over
                                     production data too</span>. Takes no actions.</span>
@@ -208,7 +208,7 @@
                             </span>
                         </label>
                     </template>
-                    <p class="text-xs text-gray-500">Which agents are listed is set in Labs Admin › Canopy agents.</p>
+                    <p class="text-xs text-gray-500">Which agents are listed is set in Labs Admin › Canopy agents, from those canopy allows on labs.</p>
                 </fieldset>
                 <label class="block">
                     <span class="font-medium text-gray-800">Brief for the agent</span>

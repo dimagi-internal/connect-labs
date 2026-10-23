@@ -1775,11 +1775,11 @@ class TestUpdateAgentConfigView:
         settings.CANOPY_DATA_AGENT_SLUG = "data-bot"
         existing = {"actions": [{"key": "a"}], "agent": {"share": False, "other": 1}}
         response, mock_wda = self._post(
-            rf, dimagi_user, {"share": True, "agent": "data", "brief": "Weights are grams."}, existing
+            rf, dimagi_user, {"share": True, "agent": "data-bot", "brief": "Weights are grams."}, existing
         )
         assert response.status_code == 200
         saved = mock_wda.update_definition.call_args[0][1]["config"]
-        assert saved["agent"] == {"share": True, "agent": "data", "brief": "Weights are grams.", "other": 1}
+        assert saved["agent"] == {"share": True, "agent": "data-bot", "brief": "Weights are grams.", "other": 1}
         assert saved["actions"] == [{"key": "a"}]
 
     def test_any_agent_labs_offers_may_be_chosen_by_slug_and_no_other(self, dimagi_user, rf: RequestFactory, settings):
