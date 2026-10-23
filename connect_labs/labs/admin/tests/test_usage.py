@@ -95,13 +95,23 @@ def test_agent_calls_count_tool_calls_not_data_touches(partner, directory):
     assert opp["top_area"] == usage.AGENT_AREA
 
 
-@pytest.mark.django_db
-def test_hide_staff(partner, staff, directory):
-    event(partner, query_string="opportunity_id=812")
-    event(staff, query_string="opportunity_id=812")
+@pytest.fixture
+def dimagi_people(db):
+    User = get_user_model()
+    return [
+        User.objects.create_user(username=f"d{i}", email=f"d{i}@{domain}", password="pw")
+        for i, domain in enumerate(("dimagi.com", "dimagi-ai.com", "dimagi-associate.com"))
+    ]
 
-    assert usage.build_report(usage.Scope())["totals"]["users"] == 2
-    assert usage.build_report(usage.Scope(), hide_staff=True)["totals"]["users"] == 1
+
+@pytest.mark.django_db
+def test_hide_staff_excludes_every_dimagi_domain(partner, dimagi_people, directory):
+    for person in [partner, *dimagi_people]:
+        event(person, query_string="opportunity_id=812")
+
+    assert usage.build_report(usage.Scope())["totals"]["users"] == 4
+    report = usage.build_report(usage.Scope(), hide_staff=True)
+    assert [r["label"] for r in report["users"]] == ["amina"]
 
 
 @pytest.mark.django_db
@@ -206,6 +216,42 @@ def test_recent_activity_names_the_mcp_tool(client, staff, partner, directory):
     response = client.get(reverse("labs_admin:usage_scope", args=["opp", "812"]))
 
     assert "MCP workflow_update_render_code" in response.content.decode()
+
+
+@override_settings(**LABS_SETTINGS)
+@pytest.mark.django_db
+def test_exclude_dimagi_staff_filters_and_carries_into_every_drill_down(
+    client, staff, partner, dimagi_people, directory
+):
+    event(partner, query_string="opportunity_id=812")
+    event(dimagi_people[2], query_string="opportunity_id=812")
+    client.force_login(staff)
+
+    response = client.get(reverse("labs_admin:usage") + "?days=90&exclude_dimagi_staff=1")
+
+    content = response.content.decode()
+    assert "amina" in content
+    assert "d2@dimagi-associate.com" not in content
+    assert 'name="exclude_dimagi_staff" value="1"' in content  # the window picker keeps it
+    for kind, key in [("org", "acme"), ("program", 25), ("opp", 812), ("user", partner.pk)]:
+        link = reverse("labs_admin:usage_scope", args=[kind, key]) + "?days=90&amp;exclude_dimagi_staff=1"
+        assert link in content, f"{kind} link drops the filter"
+
+
+@override_settings(**LABS_SETTINGS)
+@pytest.mark.django_db
+def test_staff_toggle_at_the_top_switches_the_filter_and_keeps_the_rest(client, staff):
+    client.force_login(staff)
+    url = reverse("labs_admin:usage_scope", args=["org", "acme"])
+
+    on = client.get(url + "?days=90").content.decode()
+    off = client.get(url + "?days=90&exclude_dimagi_staff=1").content.decode()
+
+    assert f'href="{url}?days=90&amp;exclude_dimagi_staff=1" id="staff-excluded"' in on
+    assert f'href="{url}?days=90" id="staff-included" aria-current="true"' in on
+    assert f'href="{url}?days=90" id="staff-included"' in off
+    assert 'id="staff-excluded" aria-current="true"' in off
+    assert "Partner activity only" in off and "Partner activity only" not in on
 
 
 @override_settings(**LABS_SETTINGS)

@@ -14,6 +14,23 @@
         <a href="{% url 'labs_admin:usage_scope' crumb.kind crumb.key %}{% if query %}?{{ query }}{% endif %}" class="hover:underline">{{ crumb.label }}</a>
       {% endfor %}
     </nav>
+    {# Staff toggle: the most common switch on this page, so it sits above everything. #}
+    <div class="flex flex-wrap items-center gap-3 mb-4 p-3 rounded-lg border {% if hide_staff %}bg-amber-50 border-amber-300{% else %}bg-gray-50 border-gray-200{% endif %}">
+      <span class="text-sm font-semibold text-gray-700"><i class="fa-solid fa-user-group mr-1"></i>Dimagi staff</span>
+      <div class="inline-flex rounded-md overflow-hidden border border-gray-300 text-sm font-semibold" role="group" aria-label="Dimagi staff activity">
+        <a href="{{ staff_included_url }}" id="staff-included" {% if not hide_staff %}aria-current="true"{% endif %}
+           class="px-3 py-1 {% if hide_staff %}bg-white text-gray-600 hover:bg-gray-100{% else %}bg-blue-600 text-white{% endif %}">Included</a>
+        <a href="{{ staff_excluded_url }}" id="staff-excluded" {% if hide_staff %}aria-current="true"{% endif %}
+           class="px-3 py-1 border-l border-gray-300 {% if hide_staff %}bg-amber-500 text-white{% else %}bg-white text-gray-600 hover:bg-gray-100{% endif %}">Excluded</a>
+      </div>
+      <span class="text-xs text-gray-500">
+        {% if hide_staff %}
+          Partner activity only: @dimagi.com, @dimagi-ai.com and @dimagi-associate.com users are left out, here and on every page you open from here.
+        {% else %}
+          Everyone's activity, Dimagi staff included.
+        {% endif %}
+      </span>
+    </div>
     <div class="flex flex-wrap items-end justify-between gap-4">
       <div>
         <h1 class="text-3xl font-bold text-gray-900">
@@ -33,10 +50,7 @@
             {% for d in window_choices %}<option value="{{ d }}" {% if d == days %}selected{% endif %}>Last {{ d }} days</option>{% endfor %}
           </select>
         </label>
-        <label class="text-gray-600 flex items-center gap-1">
-          <input type="checkbox" name="staff" value="hide" onchange="this.form.submit()" {% if hide_staff %}checked{% endif %}>
-          Hide Dimagi staff
-        </label>
+        {% if hide_staff %}<input type="hidden" name="exclude_dimagi_staff" value="1">{% endif %}
       </form>
     </div>
   </div>

@@ -11,6 +11,8 @@ from connect_labs.labs.view_mixins import AdminRequiredMixin
 
 from . import usage
 
+EXCLUDE_STAFF_PARAM = "exclude_dimagi_staff"
+
 SCOPE_KINDS = {"org": "Organisation", "program": "Programme", "opp": "Opportunity", "user": "User"}
 
 
@@ -33,7 +35,9 @@ class UsageView(AdminRequiredMixin, TemplateView):
             days = usage.DEFAULT_WINDOW
         if days not in usage.WINDOW_CHOICES:
             days = usage.DEFAULT_WINDOW
-        hide_staff = self.request.GET.get("staff") == "hide"
+        # Carried forward on every link the page draws (they append ``query``), so
+        # it holds while you drill down.
+        hide_staff = self.request.GET.get(EXCLUDE_STAFF_PARAM) == "1"
 
         # Usage metadata is audit-trail data (who was where); reading it is itself audited.
         audit_service.record(
@@ -59,9 +63,19 @@ class UsageView(AdminRequiredMixin, TemplateView):
                 "recent": self._recent(events, directory) if kind != "all" else [],
                 "parent": self._parent(scope, directory),
                 "query": self.request.GET.urlencode(),
+                "staff_included_url": self._with_staff(False),
+                "staff_excluded_url": self._with_staff(True),
             }
         )
         return context
+
+    def _with_staff(self, exclude: bool) -> str:
+        """This page with the staff filter set, everything else kept."""
+        params = self.request.GET.copy()
+        params.pop(EXCLUDE_STAFF_PARAM, None)
+        if exclude:
+            params[EXCLUDE_STAFF_PARAM] = "1"
+        return f"{self.request.path}?{params.urlencode()}" if params else self.request.path
 
     @staticmethod
     def _title(scope, directory) -> str:
