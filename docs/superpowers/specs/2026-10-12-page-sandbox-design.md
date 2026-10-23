@@ -1021,13 +1021,38 @@ screen. So the frame's window is made to be the host's:
   (`--labs-gutter-left` / `--labs-gutter-right` as `#sandbox-root`'s margins). A box on the
   page that clips (the run page's container has `overflow-x: clip`) does not stop the reach
   -- fixed elements were never clipped by it -- but the frame clips overflowing content where
-  it did (`clip-path` on `#sandbox-root`, `--labs-clip-left` / `--labs-clip-right`). So `vw`,
+  it did (`clip-path` on `#sandbox-root`, `--labs-root-clip`, none where nothing clips). So `vw`,
   `innerWidth` and media queries are the window's (less a scrollbar), and a dialog or a toast
   is where it was.
 
-What still differs, and why: a fixed dialog's backdrop cannot cover labs' own header and
-sidenav (the frame cannot draw outside itself), and the dialog is centred in the part of the
-window below the header, not the whole window, so it is never under it.
+- **A dialog the person opens covers labs' header and nav, as on the run page.** While a
+  fixed element as tall as the window is open, the frame says so (bridge `overlay`, not
+  counted against the budget) and the host lifts the iframe over the whole window
+  (`liftFrame`): `position: relative` up to the top of the page, edge to edge of the window,
+  `z-index: 50` (a modal's on the run page, over the header's 30 and the nav's 40), with as
+  much height taken back below it, so the page is laid out exactly as before and scrolling
+  with the dialog open moves only the page. The frame keeps its content where it was
+  (`liftTop`, `--labs-lift-top`), the slice becomes the window (a dialog gets the whole
+  window's height, centred in it), sticky elements still stick below the header, and the
+  content under the header is clipped (`#sandbox-clip`, `overflow-y: clip`,
+  `--labs-band-top`), so the header shows there under the dialog's backdrop; the dialog is
+  not clipped, as its containing block is the body, outside that box. Put back when the
+  dialog closes.
+  - **Only for a dialog the person just opened** (transient activation, as `navigate`):
+    lifted, the frame paints over labs' own chrome, so a page cannot cover the header on its
+    own. Refused, the dialog stays in the part of the frame on screen, as before.
+  - **Not where a box around the frame would keep it under the header anyway** (one that
+    clips it vertically, or a stacking context of its own: `canLift`).
+
+What still differs, and why: a dialog opened with no click (a timer, on load) is drawn in the
+part of the window below the header, as above; near the top of a page a tall one runs past
+the frame's top there. Where a box on the page clips the content horizontally, the content
+under the header is not clipped while a dialog is open (a `clip-path` draws the dialog with
+the content, so it would be clipped too).
+Verified in Chromium against a page with labs' header and nav (2026-10-23): a `max-h-[90vh]`
+dialog opened at the top of the page got the window's 90vh, centred, over the header and nav;
+scrolled 600px with it open, the header showed dimmed above it; closing put the frame and the
+page back where they were.
 
 Verified locally (Chromium, Firefox, WebKit via Playwright; 1440x900 and 390x844), plain
 against `?sandbox=1` with the same fixture data: `supply_stock_review`,

@@ -700,6 +700,8 @@ export interface HostHandlers {
   navigate(href: string, newTab: boolean): void;
   shareSelection(selection: ReturnType<typeof sanitizeSelection>): void;
   resize(height: number): void;
+  /** A dialog opened (or closed) in the frame: lift it over the window (liftFrame). */
+  overlay?(open: boolean): void;
   /** Scroll the host window to `top` (host page coordinates). */
   scroll(top: number, smooth: boolean): void;
   /** Scroll the host so `top..bottom` (FRAME document coordinates) is in view. */
@@ -819,7 +821,7 @@ function isColdRead(checked: CheckedRequest): boolean {
 }
 
 /** Methods outside the request budget (see the dispatcher). */
-const UNCOUNTED_METHODS = ['resize', 'scroll', 'reveal', 'storage'];
+const UNCOUNTED_METHODS = ['resize', 'overlay', 'scroll', 'reveal', 'storage'];
 
 /** Answer one frame request at a time: `(request) => response`, never throwing. */
 export function createDispatcher(
@@ -1144,6 +1146,15 @@ export function createDispatcher(
         }
         handlers.resize(clamped);
         return clamped;
+      }
+      case 'overlay': {
+        // Lifted, the frame paints over labs' own header and nav, so only as a
+        // dialog the person just opened: a page cannot cover them on its own.
+        // Refused, the dialog stays in the part of the frame they can see.
+        const open = params.open === true;
+        if (open && !options.hasActivation()) return false;
+        handlers.overlay?.(open);
+        return true;
       }
       case 'scroll': {
         const top = Number(params.top);
@@ -1485,7 +1496,10 @@ export interface SandboxHostOptions {
   container: HTMLElement;
   labsOrigin: string;
   payload: FramePayload;
-  handlers: Omit<HostHandlers, 'resize' | 'scroll' | 'reveal' | 'storage'>;
+  handlers: Omit<
+    HostHandlers,
+    'resize' | 'overlay' | 'scroll' | 'reveal' | 'storage'
+  >;
   /** Whose storage the frame reads and writes (the definition id): its keys are
    * kept on this page's localStorage / sessionStorage under that name only. Null:
    * in memory only. */
@@ -1612,6 +1626,7 @@ export function measureViewport(
   iframe: HTMLIFrameElement,
   insetTop: number,
   gutters: Gutters = { left: 0, right: 0, clipLeft: -1, clipRight: -1 },
+  liftTop = -1,
 ): HostViewport {
   const r = iframe.getBoundingClientRect();
   return {
@@ -1626,6 +1641,63 @@ export function measureViewport(
     gutterRight: gutters.right,
     clipLeft: gutters.clipLeft,
     clipRight: gutters.clipRight,
+    liftTop,
+  };
+}
+
+/**
+ * Whether the frame can be lifted over the window (liftFrame): no box around it
+ * clips it vertically or draws it in a stacking context of its own, either of which
+ * would keep it under labs' header however it is placed.
+ */
+export function canLift(iframe: HTMLIFrameElement, win: Window): boolean {
+  const doc = iframe.ownerDocument;
+  for (
+    let a = iframe.parentElement;
+    a && a !== doc.documentElement;
+    a = a.parentElement
+  ) {
+    const cs = win.getComputedStyle(a);
+    if (cs.overflowY && cs.overflowY !== 'visible') return false;
+    const positioned = cs.position && cs.position !== 'static';
+    if (
+      (positioned && cs.zIndex && cs.zIndex !== 'auto') ||
+      (cs.transform && cs.transform !== 'none') ||
+      (cs.filter && cs.filter !== 'none') ||
+      (cs.opacity && parseFloat(cs.opacity) < 1) ||
+      cs.isolation === 'isolate'
+    )
+      return false;
+  }
+  return true;
+}
+
+/** How far a lifted frame reaches past its place: up to the page's top, out to the
+ * window's edges. */
+export interface Lift {
+  top: number;
+  left: number;
+  right: number;
+}
+
+/**
+ * Where to lift the frame to, given where it is now (`rect`, drawn with `current`
+ * lift, if any): from the top of the page, so that scrolling with a dialog open moves
+ * nothing but the page, and from edge to edge of the window.
+ */
+export function liftFor(
+  rect: { top: number; left: number; right: number },
+  current: Lift | null,
+  scrollY: number,
+  width: number,
+): Lift {
+  const top = rect.top + (current?.top || 0);
+  const left = rect.left + (current?.left || 0);
+  const right = rect.right - (current?.right || 0);
+  return {
+    top: Math.max(0, Math.round(top + scrollY)),
+    left: Math.max(0, Math.round(left)),
+    right: Math.max(0, Math.round(width - right)),
   };
 }
 
@@ -1689,16 +1761,65 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
   let inset = 0;
   let gutters: Gutters = { left: 0, right: 0, clipLeft: -1, clipRight: -1 };
   let sentViewport = '';
+  let contentHeight = LIMITS.minHeight * 4;
+  let lift: Lift | null = null;
 
-  /** Reach into the page's margins (frameGutters); the frame keeps its content in
-   * the column. */
+  /** Reach into the page's margins (frameGutters), and while lifted to the window's
+   * edges; the frame keeps its content in the column. */
   const placeHorizontally = () => {
     gutters = frameGutters(options.container, win);
-    iframe.style.width = `calc(100% + ${gutters.left + gutters.right}px)`;
-    iframe.style.marginLeft = `${-gutters.left}px`;
-    iframe.style.marginRight = `${-gutters.right}px`;
+    const left = gutters.left + (lift?.left || 0);
+    const right = gutters.right + (lift?.right || 0);
+    iframe.style.width = `calc(100% + ${left + right}px)`;
+    iframe.style.marginLeft = `${-left}px`;
+    iframe.style.marginRight = `${-right}px`;
   };
-  const viewportNow = () => measureViewport(win, iframe, inset, gutters);
+  /**
+   * While the frame has a dialog open, it is lifted over the whole window, as a
+   * dialog on the run page covered labs' header and nav: drawn from the top of the
+   * page, edge to edge, above them, with the page laid out exactly as before (the
+   * extra height is taken back below it). The frame keeps its content where it was
+   * (`liftTop`), so only the dialog's backdrop reaches the new parts. Put back when
+   * the dialog closes.
+   */
+  const placeVertically = () => {
+    if (lift) {
+      iframe.style.position = 'relative';
+      iframe.style.top = `${-lift.top}px`;
+      iframe.style.zIndex = '50';
+      iframe.style.marginBottom = `${-lift.top}px`;
+      iframe.style.height = `${contentHeight + lift.top}px`;
+    } else {
+      iframe.style.position = '';
+      iframe.style.top = '';
+      iframe.style.zIndex = '';
+      iframe.style.marginBottom = '';
+      iframe.style.height = `${contentHeight}px`;
+    }
+  };
+  const liftFrame = (open: boolean) => {
+    const next =
+      open && canLift(iframe, win)
+        ? liftFor(
+            iframe.getBoundingClientRect(),
+            lift,
+            win.scrollY,
+            doc.documentElement.clientWidth || win.innerWidth,
+          )
+        : null;
+    if (JSON.stringify(next) === JSON.stringify(lift)) return;
+    lift = next;
+    placeVertically();
+    placeHorizontally();
+  };
+  const viewportNow = () =>
+    measureViewport(win, iframe, inset, gutters, lift ? lift.top : -1);
+  const layoutChanged = () => {
+    // Content above the frame grew or shrank: the page's top moved.
+    if (lift) liftFrame(true);
+    else placeHorizontally();
+    sendViewport();
+  };
   /** Tell the frame about the window, when anything in it changed. */
   const sendViewport = () => {
     if (!port || stopped) return;
@@ -1710,8 +1831,7 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
   };
   const onWindowResize = () => {
     inset = headerInset(doc, win);
-    placeHorizontally();
-    sendViewport();
+    layoutChanged();
   };
   // Content above the frame that changes height moves it without a scroll.
   let rafId = 0;
@@ -1721,8 +1841,7 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
           if (rafId) return;
           rafId = win.requestAnimationFrame(() => {
             rafId = 0;
-            placeHorizontally();
-            sendViewport();
+            layoutChanged();
           });
         })
       : null;
@@ -1733,7 +1852,12 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
       ...options.handlers,
       storage: (batch) => storage.apply(batch),
       resize: (h) => {
-        iframe.style.height = `${h}px`;
+        contentHeight = h;
+        placeVertically();
+        sendViewport();
+      },
+      overlay: (open) => {
+        liftFrame(open);
         sendViewport();
       },
       scroll: (top, smooth) =>
@@ -1768,6 +1892,10 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
 
   function stop() {
     stopped = true;
+    if (lift) {
+      lift = null;
+      placeVertically();
+    }
     dispatch.closeStreams();
     if (port) port.close();
     port = null;

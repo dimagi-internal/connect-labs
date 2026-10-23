@@ -96,7 +96,11 @@ Design and every ruling: [`docs/superpowers/specs/2026-10-12-page-sandbox-design
 2. **Rule on the three residual differences from #2495:** a document-level `sticky top-0`
    sticks just below the labs header (plain, it slides under it); a dialog's backdrop does not
    cover the labs header and side nav, and the dialog sits ~32px lower; near the top of a page
-   a tall dialog scrolls inside itself.
+   a tall dialog scrolls inside itself. *The dialog ones are fixed for a dialog the person
+   opens (the frame is lifted over the window while it is open; page-sandbox spec, "Sizing").
+   One opened with no click still draws below the header, and near the top of a page a tall
+   one runs past the frame's top (its title and close button out of sight, not scrolling
+   inside itself as said here).*
 3. **Switch it on:** `LABS_PAGE_SANDBOX` to `true` and `LABS_WORKFLOW_SANDBOX` to `all` in
    `deploy/task-definitions/web.json` (PR, merge, deploy), then re-check the screens above.
 

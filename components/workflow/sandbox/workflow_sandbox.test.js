@@ -843,6 +843,7 @@ describe('a page can do everything a workflow can, except what needs a run', () 
       navigate: { url: '/audit/5/bulk/' },
       shareSelection: { visible_ids: ['a'] },
       resize: { height: 300 },
+      overlay: { open: false },
       scroll: { top: 40 },
       reveal: { top: 10, bottom: 20 },
       copyText: { text: 'x' },

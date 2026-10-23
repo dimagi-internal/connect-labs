@@ -18,8 +18,13 @@
  *   pointer) agrees, client coordinates are the slice's: `getBoundingClientRect`,
  *   `clientY` and `elementFromPoint` are moved by the slice's top, `scrollY` is the
  *   host's plus as much, and `innerHeight` is the host window's.
- * - `position: sticky` sticks to the top of the slice (below labs' header), as the
- *   frame has no scrolling of its own for it to stick to.
+ * - `position: sticky` sticks below labs' header, as the frame has no scrolling of
+ *   its own for it to stick to.
+ * - While a dialog is open (a fixed element as tall as the window) the host lifts the
+ *   frame over the whole window (host.ts liftFrame), so the slice is the window and
+ *   the dialog covers labs' header and nav as it did on the run page; the content is
+ *   kept where it was (`--labs-lift-top`), and what of it is under the header is
+ *   clipped (`--labs-band-top`), so the header shows there under the backdrop.
  * - `scrollTo`, `scrollIntoView` and focusing a field scroll the HOST.
  *
  * Horizontally the frame reaches past its column into the page's empty margins
@@ -36,8 +41,9 @@ export const SLICE_TOP_VAR = '--labs-slice-top';
 export const SLICE_HEIGHT_VAR = '--labs-slice-height';
 export const GUTTER_LEFT_VAR = '--labs-gutter-left';
 export const GUTTER_RIGHT_VAR = '--labs-gutter-right';
-export const CLIP_LEFT_VAR = '--labs-clip-left';
-export const CLIP_RIGHT_VAR = '--labs-clip-right';
+export const LIFT_TOP_VAR = '--labs-lift-top';
+export const BAND_TOP_VAR = '--labs-band-top';
+export const ROOT_CLIP_VAR = '--labs-root-clip';
 /** Far enough to be no clip at all. */
 const UNCLIPPED = 100000;
 
@@ -62,9 +68,13 @@ export interface Slice {
   height: number;
 }
 
-export function sliceOf(vp: HostViewport): Slice {
+/** Lifted over the window (`liftTop`), the frame is under no header. */
+export function sliceOf(
+  vp: HostViewport,
+  inset = vp.liftTop >= 0 ? 0 : vp.insetTop,
+): Slice {
   const clamp = (n: number) => Math.min(vp.frameHeight, Math.max(0, n));
-  const top = clamp(vp.insetTop - vp.frameTop);
+  const top = clamp(inset - vp.frameTop);
   const bottom = clamp(vp.height - vp.frameTop);
   return {
     top: Math.round(top),
@@ -130,6 +140,8 @@ export function installViewport(
   const html = doc.documentElement;
   let vp: HostViewport | null = null;
   let slice: Slice = { top: 0, height: 0 };
+  /** Where a sticky element sticks: below labs' header, lifted or not. */
+  let stickTo: Slice = { top: 0, height: 0 };
   let overlayOpen = false;
   let minHeightListener: (() => void) | null = null;
   const cleanups: (() => void)[] = [];
@@ -492,7 +504,7 @@ export function installViewport(
       const c = nativeRect.call(box);
       const natural = { top: r.top - s.shift, height: r.height };
       const shift = Math.round(
-        stickyShift(natural, { top: c.top, bottom: c.bottom }, slice, s),
+        stickyShift(natural, { top: c.top, bottom: c.bottom }, stickTo, s),
       );
       reads.push([el, s, shift]);
     }
@@ -563,6 +575,7 @@ export function installViewport(
     if (open !== overlayOpen) {
       overlayOpen = open;
       minHeightListener?.();
+      bridge.request('overlay', { open }).catch(() => undefined);
     }
   };
   let scanQueued = 0;
@@ -628,16 +641,30 @@ export function installViewport(
       const before = vp;
       vp = next;
       slice = sliceOf(next);
+      stickTo = sliceOf(next, next.insetTop);
       html.style.setProperty(VH_VAR, `${next.height / 100}px`);
       html.style.setProperty(SLICE_TOP_VAR, `${slice.top}px`);
       html.style.setProperty(SLICE_HEIGHT_VAR, `${slice.height}px`);
       html.style.setProperty(GUTTER_LEFT_VAR, `${next.gutterLeft || 0}px`);
       html.style.setProperty(GUTTER_RIGHT_VAR, `${next.gutterRight || 0}px`);
       // Where the page clipped content that overflowed the column (an inset as far
-      // out as that, or none).
+      // out as that), and no clip-path at all where nothing did: one draws a dialog
+      // with the content, so the content's clip under labs' header would clip the
+      // dialog too.
       const clipAt = (n: number) => `${-(n >= 0 ? n : UNCLIPPED)}px`;
-      html.style.setProperty(CLIP_LEFT_VAR, clipAt(next.clipLeft));
-      html.style.setProperty(CLIP_RIGHT_VAR, clipAt(next.clipRight));
+      const clips = next.clipLeft >= 0 || next.clipRight >= 0;
+      html.style.setProperty(
+        ROOT_CLIP_VAR,
+        clips
+          ? `inset(-${UNCLIPPED}px ${clipAt(next.clipRight)} -${UNCLIPPED}px ${clipAt(next.clipLeft)})`
+          : 'none',
+      );
+      const lift = Math.max(0, next.liftTop);
+      html.style.setProperty(LIFT_TOP_VAR, `${lift}px`);
+      // Lifted: how far down the content labs' header ends (none of it is over it).
+      const band =
+        next.liftTop >= 0 && !clips ? Math.max(0, stickTo.top - lift) : 0;
+      html.style.setProperty(BAND_TOP_VAR, `${band}px`);
       placeStickies();
       checkOverlay();
       if (!before) return;
