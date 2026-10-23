@@ -108,7 +108,8 @@ class MCPAccessToken(models.Model):
     def verify(cls, raw: str) -> "MCPAccessToken | None":
         """Look up an active, non-expired token by raw value.
 
-        Returns None if the token is unknown, inactive, or expired.
+        Returns None if the token is unknown, inactive, or expired, or its user is
+        deactivated: a person an admin switched off loses every token with them.
         """
         if not raw:
             return None
@@ -117,6 +118,7 @@ class MCPAccessToken(models.Model):
             token = cls.objects.select_related("user").get(
                 token_hash=token_hash,
                 is_active=True,
+                user__is_active=True,
             )
         except cls.DoesNotExist:
             return None

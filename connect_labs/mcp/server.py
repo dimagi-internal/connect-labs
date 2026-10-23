@@ -142,7 +142,10 @@ def _verify_pat_sync(raw: str):
     old ``auth.authenticate_request`` did.
     """
     token = MCPAccessToken.verify(raw)
-    if token is None or token.scope in token_scopes.NOT_MCP_SCOPES:
+    if token is None or not getattr(token.user, "is_active", False):
+        # ``verify`` already refuses a deactivated user's token; checked again at the door.
+        return None
+    if token.scope in token_scopes.NOT_MCP_SCOPES:
         # A PAT that is not for MCP at all (a coaching-pictures token) is refused,
         # not mapped to a tool set; no OAuth or delegated token matches it either.
         return None
@@ -522,7 +525,7 @@ def _run_registry_tool(
         mcp_caller(user),
         # Canopy acting for a visitor: verify its Canopy-Execution statement ONCE for
         # this call (it is single-use) and keep it for every check the call makes.
-        execution.bound(_call_execution()),
+        execution.bound(_call_execution(spec.name, arguments)),
     ):
         started = _call_started.set(time.monotonic())
         try:
@@ -531,14 +534,17 @@ def _run_registry_tool(
             _call_started.reset(started)
 
 
-def _call_execution():
-    """This delegated call's verified statement (or refusal); None for any other caller."""
+def _call_execution(tool_name: str, arguments: dict):
+    """This delegated call's verified statement (or refusal); None for any other caller.
+    The statement must be for THIS ``tools/call`` -- this tool, these arguments."""
     from . import execution
 
     access = get_access_token()
     if (getattr(access, "claims", None) or {}).get("auth_method") != "delegated":
         return None
-    return execution.for_this_request(access)
+    return execution.for_this_request(
+        access, rpc=("tools/call", {"name": tool_name, "arguments": dict(arguments or {})})
+    )
 
 
 def policy_denial(tool_name: str, arguments: dict, user, restricted: bool, delegated: bool = False) -> str | None:

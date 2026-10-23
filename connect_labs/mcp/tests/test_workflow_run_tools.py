@@ -708,10 +708,15 @@ def test_a_colleague_who_can_open_the_run_may_read_its_indicators(user, wda):
     out = _call("workflow_run_indicators", user, run_id=70, program_id=25)
     colleague = get_user_model().objects.create_user(username="colleague", password="p")
     assert kept_results.read(out["result_uri"], reader=colleague.pk).kind == "workflow_run_indicators"
-    # One who cannot open the run (labs' API does not show it to them) may not.
+    # One who cannot open the run (labs' API does not show it to them) may not -- once the
+    # minute a yes is trusted for has passed (kept_results.ACL_CACHE_SECONDS).
+    from django.core.cache import cache
+
     wda.get_run.return_value = None
+    cache.clear()
     with pytest.raises(kept_results.Refused) as refused:
         kept_results.read(out["result_uri"], reader=colleague.pk)
     assert refused.value.code == "forbidden"
-    # The owner still may: the owner check comes first.
-    assert kept_results.read(out["result_uri"], reader=user.pk).owner == user
+    # Nor does the owner: they are held to the same rule, now, not when they ran it.
+    with pytest.raises(kept_results.Refused):
+        kept_results.read(out["result_uri"], reader=user.pk)

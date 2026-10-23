@@ -57,7 +57,7 @@ def sdk(monkeypatch):
     module.ExecutionRefused = FakeRefused
     module.calls = []
 
-    def verify_execution(headers, access_token=None):
+    def verify_execution(headers, access_token=None, rpc=None):
         module.calls.append((headers, access_token))
         if "canopy-execution" not in headers:
             raise FakeRefused("no_statement")
