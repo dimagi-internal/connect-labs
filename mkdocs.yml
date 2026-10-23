@@ -43,7 +43,7 @@ nav:
   # hand with the interface they describe; never rewritten by automation/update_docs.py.
   - For Developers:
       - Overview: developers/index.md
-      - "Embedding Labs: Integration Guide": developers/embedding.md
+      - 'Embedding Labs: Integration Guide': developers/embedding.md
 
 markdown_extensions:
   - admonition
