@@ -22,7 +22,15 @@ Everything a page draws arrives over the bridge from the host page around it
      is centred where they are looking; the content is moved back by as much, so it
      stays where it is. The frame also reaches into the page's empty margins either side
      (host.ts frameGutters); the margins keep the content in its column, and the clip-path
-     clips what overflows it where a box on the page clipped it. {% endcomment %}
+     clips what overflows it where a box on the page clipped it. While a dialog is open
+     the host lifts the frame over the whole window, from the top of the page; the
+     content is moved down by as much (--labs-lift-top), so it stays where it is, and
+     what of it is under labs' header is clipped (--labs-band-top, #sandbox-clip), so
+     the header shows there under the dialog's backdrop. A fixed element's containing
+     block is the body, outside #sandbox-clip, so no dialog is clipped by it -- unless
+     the content clips (--labs-root-clip, `none` unless a box on the page clipped it): a
+     clip-path draws the dialog with the content, so then nothing is clipped there.
+     {% endcomment %}
   <style>
     html, body { margin: 0; background: transparent; overflow-x: clip; }
     html { overflow: hidden; }
@@ -30,17 +38,22 @@ Everything a page draws arrives over the bridge from the host page around it
       height: var(--labs-slice-height, auto);
       transform: translateY(var(--labs-slice-top, 0px));
     }
+    #sandbox-clip {
+      position: relative;
+      top: calc(var(--labs-lift-top, 0px) - var(--labs-slice-top, 0px) + var(--labs-band-top, 0px));
+      overflow-y: clip;
+    }
     #sandbox-root {
       position: relative;
-      top: calc(-1 * var(--labs-slice-top, 0px));
+      top: calc(-1 * var(--labs-band-top, 0px));
       margin-left: var(--labs-gutter-left, 0px);
       margin-right: var(--labs-gutter-right, 0px);
-      clip-path: inset(-100000px var(--labs-clip-right, -100000px) -100000px var(--labs-clip-left, -100000px));
+      clip-path: var(--labs-root-clip, none);
     }
   </style>
 </head>
 <body class="font-work-sans">
-  <div id="sandbox-root"></div>
+  <div id="sandbox-clip"><div id="sandbox-root"></div></div>
   <script src="{{ babel_url }}"></script>
   <script src="{{ chart_js_url }}"></script>
   <script src="{{ chart_adapter_url }}"></script>

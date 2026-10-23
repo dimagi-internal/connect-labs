@@ -397,6 +397,7 @@ function isViewport(v: unknown): v is HostViewport {
     'gutterRight',
     'clipLeft',
     'clipRight',
+    'liftTop',
   ].every((k) => typeof o[k] === 'number' && Number.isFinite(o[k] as number));
 }
 

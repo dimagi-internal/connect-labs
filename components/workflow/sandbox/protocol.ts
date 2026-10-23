@@ -35,6 +35,9 @@ export const VIEWPORT = 'labs-sandbox:viewport';
  * in, into the page's empty margins (host.ts frameGutters); the frame keeps its content
  * in the column, so what overflowed the column on the page still shows. `clipLeft` /
  * `clipRight`: how far it may overflow before a box on the host clipped it (-1: none).
+ * `liftTop`: while the frame has a dialog open it is lifted over the whole window
+ * (host.ts liftFrame), up to the top of the page: how far above its place it then
+ * reaches, which the frame keeps its content below (-1: not lifted).
  */
 export interface HostViewport {
   width: number;
@@ -48,6 +51,7 @@ export interface HostViewport {
   gutterRight: number;
   clipLeft: number;
   clipRight: number;
+  liftTop: number;
 }
 
 /** One thing that happened on a stream the host reads for the frame. */
@@ -73,6 +77,9 @@ export const PHASE1_METHODS = [
   // scrolls the page around the frame: the frame itself never scrolls.
   'scroll',
   'reveal',
+  // A dialog opened or closed in the frame: lifted over labs' header and nav while
+  // it is open, as a dialog on the run page covered them (host.ts liftFrame).
+  'overlay',
   'copyText',
   'confirm',
   'download',

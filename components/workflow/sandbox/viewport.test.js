@@ -6,9 +6,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createRequire } from 'module';
 import {
+  canLift,
   createDispatcher,
   createSandboxHost,
   frameGutters,
+  liftFor,
   revealTarget,
   measureViewport,
 } from './host';
@@ -42,6 +44,7 @@ function vp(over = {}) {
     gutterRight: 0,
     clipLeft: -1,
     clipRight: -1,
+    liftTop: -1,
     ...over,
   };
 }
@@ -95,6 +98,84 @@ describe('what the person sees of the frame (the slice)', () => {
       top: 2964,
       height: 36,
     });
+  });
+});
+
+describe('a dialog covers labs’ header and nav, as on the run page', () => {
+  it('lifted, the slice is the whole window', () => {
+    // Lifted from the page's top: the frame starts 144px above the window here.
+    expect(
+      sliceOf(vp({ frameTop: -144, frameHeight: 3144, liftTop: 144 })),
+    ).toEqual({ top: 144, height: 900 });
+    // Without the lift, the header still hides its top.
+    expect(sliceOf(vp({ frameTop: -1000 }))).toEqual({
+      top: 1064,
+      height: 836,
+    });
+  });
+
+  it('is lifted from the top of the page to the window’s edges, wherever it is now', () => {
+    expect(liftFor({ top: 144, left: 64, right: 1424 }, null, 0, 1440)).toEqual(
+      { top: 144, left: 64, right: 16 },
+    );
+    // Scrolled 500: the page's top is 500 further up.
+    expect(
+      liftFor({ top: -356, left: 64, right: 1424 }, null, 500, 1440),
+    ).toEqual({ top: 144, left: 64, right: 16 });
+    // Measured while lifted: the same lift, not a bigger one.
+    const lift = { top: 144, left: 64, right: 16 };
+    expect(
+      liftFor({ top: -500, left: 0, right: 1440 }, lift, 500, 1440),
+    ).toEqual(lift);
+  });
+
+  it('is not lifted where a box around it would keep it under the header', () => {
+    const outer = document.createElement('div');
+    const iframe = document.createElement('iframe');
+    outer.appendChild(iframe);
+    document.body.appendChild(outer);
+    expect(canLift(iframe, window)).toBe(true);
+    outer.style.transform = 'translateX(1px)';
+    expect(canLift(iframe, window)).toBe(false);
+    outer.style.transform = '';
+    outer.style.overflowY = 'auto';
+    expect(canLift(iframe, window)).toBe(false);
+    outer.style.overflowY = '';
+    outer.style.position = 'relative';
+    outer.style.zIndex = '1';
+    expect(canLift(iframe, window)).toBe(false);
+    outer.remove();
+  });
+
+  it('only for a dialog the person just opened; closing needs nothing', async () => {
+    const overlay = vi.fn();
+    let active = false;
+    const d = createDispatcher(
+      {
+        querySupply: vi.fn(),
+        queryWorkflow: vi.fn(),
+        navigate: vi.fn(),
+        shareSelection: vi.fn(),
+        resize: vi.fn(),
+        overlay,
+        scroll: vi.fn(),
+        reveal: vi.fn(),
+        copyText: vi.fn(),
+        confirm: vi.fn(),
+        download: vi.fn(),
+        reportError: vi.fn(),
+      },
+      { labsOrigin: LABS, hasActivation: () => active, push: () => undefined },
+    );
+    const ask = (open) => d({ id: 1, method: 'overlay', params: { open } });
+    expect((await ask(true)).result).toBe(false);
+    expect(overlay).not.toHaveBeenCalled();
+    active = true;
+    expect((await ask(true)).result).toBe(true);
+    expect(overlay).toHaveBeenLastCalledWith(true);
+    active = false;
+    expect((await ask(false)).result).toBe(true);
+    expect(overlay).toHaveBeenLastCalledWith(false);
   });
 });
 
@@ -253,6 +334,48 @@ describe('the host tells the frame about its window', () => {
       frameHeight: 3000,
     });
     spy.mockRestore();
+    host.destroy();
+  });
+
+  it('a dialog lifts the frame over the window, and closing it puts it back', async () => {
+    const host = drawn('page');
+    const { port } = connect(host);
+    const got = [];
+    port.onmessage = (e) => got.push(e.data);
+    const ask = (id, method, params) => {
+      port.postMessage({ id, method, params });
+      return new Promise((r) => setTimeout(r, 30));
+    };
+    await ask(1, 'resize', { height: 2000 });
+    // The frame sits 144px down the page, under a 64px header.
+    let lifted = false;
+    host.iframe.getBoundingClientRect = () =>
+      lifted
+        ? { top: 0, left: 0, right: 1024, height: 2144 }
+        : { top: 144, left: 0, right: 1024, height: 2000 };
+    await ask(2, 'overlay', { open: true });
+    lifted = true;
+    expect(host.iframe.style.position).toBe('relative');
+    expect(host.iframe.style.top).toBe('-144px');
+    expect(host.iframe.style.zIndex).toBe('50');
+    // The page around it is laid out as before: the extra height is taken back.
+    expect(host.iframe.style.height).toBe('2144px');
+    expect(host.iframe.style.marginBottom).toBe('-144px');
+    const view = got.filter((m) => m.type === VIEWPORT).at(-1).viewport;
+    expect(view.liftTop).toBe(144);
+    // A new height while lifted keeps the lift.
+    await ask(3, 'resize', { height: 2500 });
+    expect(host.iframe.style.height).toBe('2644px');
+    await ask(4, 'overlay', { open: false });
+    lifted = false;
+    expect(host.iframe.style.position).toBe('');
+    expect(host.iframe.style.top).toBe('');
+    expect(host.iframe.style.zIndex).toBe('');
+    expect(host.iframe.style.marginBottom).toBe('');
+    expect(host.iframe.style.height).toBe('2500px');
+    expect(got.filter((m) => m.type === VIEWPORT).at(-1).viewport.liftTop).toBe(
+      -1,
+    );
     host.destroy();
   });
 
@@ -415,6 +538,62 @@ describe('the frame’s window is the host’s', () => {
     return bridge;
   }
 
+  it('says when a dialog opens and closes, and keeps the content where it was once lifted', async () => {
+    // This test DOM lays nothing out: the dialog is as tall as the window.
+    const native = Element.prototype.getBoundingClientRect;
+    const rect = vi
+      .spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockImplementation(function () {
+        return this.dataset && this.dataset.dialog
+          ? new DOMRect(0, 0, 1440, 900)
+          : native.call(this);
+      });
+    const bridge = install();
+    controller.apply(vp());
+    const dialog = document.createElement('div');
+    dialog.style.position = 'fixed';
+    dialog.className = 'fixed';
+    dialog.dataset.dialog = '1';
+    document.body.appendChild(dialog);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(bridge.request).toHaveBeenCalledWith('overlay', { open: true });
+    // The frame 144px down the page, lifted to its top: the content is moved down by
+    // as much, and the slice is the window.
+    controller.apply(vp({ frameTop: 0, frameHeight: 3144, liftTop: 144 }));
+    const style = document.documentElement.style;
+    expect(style.getPropertyValue('--labs-lift-top')).toBe('144px');
+    expect(style.getPropertyValue('--labs-slice-top')).toBe('0px');
+    expect(style.getPropertyValue('--labs-slice-height')).toBe('900px');
+    // Below the header: nothing of the content is under it.
+    expect(style.getPropertyValue('--labs-band-top')).toBe('0px');
+    // Scrolled 600 with it open: the top 520px of the content is under the header.
+    controller.apply(
+      vp({ scrollY: 600, frameTop: -600, frameHeight: 3144, liftTop: 144 }),
+    );
+    expect(style.getPropertyValue('--labs-band-top')).toBe('520px');
+    expect(style.getPropertyValue('--labs-root-clip')).toBe('none');
+    // Where the content clips, a clip there would clip the dialog too: none.
+    controller.apply(
+      vp({
+        scrollY: 600,
+        frameTop: -600,
+        frameHeight: 3144,
+        liftTop: 144,
+        clipLeft: 16,
+      }),
+    );
+    expect(style.getPropertyValue('--labs-band-top')).toBe('0px');
+    expect(style.getPropertyValue('--labs-root-clip')).toBe(
+      'inset(-100000px -100000px -100000px -16px)',
+    );
+    dialog.remove();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(bridge.request).toHaveBeenLastCalledWith('overlay', { open: false });
+    controller.destroy();
+    controller = null;
+    rect.mockRestore();
+  });
+
   it('innerHeight is the host window’s, and 100vh reads it', () => {
     install();
     controller.apply(vp({ height: 777 }));
@@ -426,12 +605,12 @@ describe('the frame’s window is the host’s', () => {
       document.documentElement.style.getPropertyValue('--labs-slice-top'),
     ).toBe('0px');
     expect(
-      document.documentElement.style.getPropertyValue('--labs-clip-left'),
-    ).toBe('-100000px');
+      document.documentElement.style.getPropertyValue('--labs-root-clip'),
+    ).toBe('none');
     controller.apply(vp({ frameTop: -1000, clipLeft: 16, gutterLeft: 32 }));
     expect(
-      document.documentElement.style.getPropertyValue('--labs-clip-left'),
-    ).toBe('-16px');
+      document.documentElement.style.getPropertyValue('--labs-root-clip'),
+    ).toBe('inset(-100000px -100000px -100000px -16px)');
     expect(
       document.documentElement.style.getPropertyValue('--labs-gutter-left'),
     ).toBe('32px');
