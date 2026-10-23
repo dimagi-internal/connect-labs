@@ -330,7 +330,8 @@ def test_a_workflow_that_offers_the_data_agent_grants_it_the_runs_reads_and_edit
     # The run page draws its Agent box (it once sat inside the edit-mode block, so
     # no run page ever showed it).
     box = _json_script(response.content.decode(), "agent-settings")
-    assert box["agent"] == "data" and box["share"] is True
+    # The legacy "data" choice is shown as the agent it names now.
+    assert box["agent"] == "labsdata" and box["share"] is True
     arrival = _mint(panel, visitor)
     id_jag = arrival[contract.ARRIVAL_ID_JAG_FIELD]
     # The run's reads, the raw data behind it and edits confirmed in chat -- never
@@ -433,8 +434,8 @@ def test_a_held_back_agent_is_never_silent(enabled, visitor, settings):
     assert not panel
     box = _json_script(response.content.decode(), "agent-settings")
     assert any("not allowed over real data" in r for r in box["held_back"])
-    data = next(c for c in box["choices"] if c["value"] == "data")
+    data = next(c for c in box["choices"] if c["slug"] == "labsdata")
     assert data["available"] is False and data["reasons"] == box["held_back"]
-    # The site's agent is not allowed over real data either, and says so.
-    site = next(c for c in box["choices"] if c["value"] == "site")
+    # The default agent is not allowed over real data either, and says so.
+    site = next(c for c in box["choices"] if c["default"])
     assert site["available"] is False and site["reasons"]

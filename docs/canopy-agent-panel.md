@@ -44,12 +44,12 @@ import `canopy_sdk`, from canopy-web `sdk/python`), the one implementation of
 canopy's host grant contract that canopy itself tests against. Labs owns only
 what is labs':
 
-| Piece | Where |
-| --- | --- |
-| Page → scope and scope → tool registries, what labs vouches for, `CANOPY_HOST` built from labs' settings | `connect_labs/labs/canopy.py` |
-| The mint and the published key (SDK views, labs' URLs) | `connect_labs/labs/urls.py` → `/labs/canopy/token/`, `/labs/canopy/jwks/`, `/labs/canopy/probe/` |
-| The overlay | the SDK's `canopy_host/panel.html`, styled by `canopy.PANEL` |
-| What the agent reads | `connect_labs/mcp/tools/marketplace.py` |
+| Piece                                                                                                    | Where                                                                                            |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Page → scope and scope → tool registries, what labs vouches for, `CANOPY_HOST` built from labs' settings | `connect_labs/labs/canopy.py`                                                                    |
+| The mint and the published key (SDK views, labs' URLs)                                                   | `connect_labs/labs/urls.py` → `/labs/canopy/token/`, `/labs/canopy/jwks/`, `/labs/canopy/probe/` |
+| The overlay                                                                                              | the SDK's `canopy_host/panel.html`, styled by `canopy.PANEL`                                     |
+| What the agent reads                                                                                     | `connect_labs/mcp/tools/marketplace.py`                                                          |
 
 ## Real data: no agent unless labs has cleared it
 
@@ -57,37 +57,66 @@ what is labs':
 agent could read through it, and `connect_labs/labs/canopy_panel.py` decides from that
 whether an agent may be offered at all:
 
-| The page reads | Agent offered |
-| --- | --- |
-| no visit data (`NO_VISIT_DATA`: the directory, targeting, a tender, the Data page -- whose `data_*` tools give an uncleared agent structure only) | yes |
-| visits of opportunities that all hold GENERATED synthetic data (`provenance.is_generated`) | yes, any agent |
-| any real visits, or it cannot tell | only an agent labs has cleared for real data |
+| The page reads                                                                                                                                    | Agent offered                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| no visit data (`NO_VISIT_DATA`: the directory, targeting, a tender, the Data page -- whose `data_*` tools give an uncleared agent structure only) | yes                                          |
+| visits of opportunities that all hold GENERATED synthetic data (`provenance.is_generated`)                                                        | yes, any agent                               |
+| any real visits, or it cannot tell                                                                                                                | only an agent labs has cleared for real data |
 
-Clearance needs all three: the offered agent is in `CANOPY_PHI_AGENTS` (its author
-claims it PHI-safe and labs accepts that); `zdr` is in `CANOPY_RUNNER_REQUIREMENTS`
-(signed into every visitor assertion, so canopy routes the conversation only to
-zero-data-retention runners); and canopy vouches on each call for the agent's
-declaration and the runner executing it, in a signed `Canopy-Execution` statement
-(canopy-web spec `2026-10-22-phi-agents-on-zdr-runners` §6). Labs verifies that
-statement once per delegated tool call (`mcp/execution.py`, dimagi-canopy >= 0.13) and
-holds the call to it (`canopy_panel.call_real_data_clearance`): the agent it names is
-allow-listed, declared PHI-safe at the commit actually running, on a runner with `zdr`
-in force in ZDR mode, in a conversation that requires `zdr`. Each delegated call's
-statement (or why there was none) is recorded on `MCPAuditLog.execution`. With an SDK
-older than 0.12, or `CANOPY_PHI_AGENTS` empty (the default), **no agent is offered over
+**Which agent, and whether at all, is one answer**: `canopy_panel.availability(slug, reads)`.
+It combines labs' ticks with canopy's signed word on the agent, and the panel, the run
+page's Agent box (greyed choices and the red "not shown on this page" line) and the Labs
+Admin table all read it, so none of them can disagree or fall silent.
+
+- **canopy's word** is the site agents API (`GET {canopy}/api/sites/agents`, dimagi-canopy
+  0.14, `canopy_sdk.django.site_agents.current()`, read through
+  `canopy_settings.site_agents()`): the agents canopy allows on labs' connected site,
+  signed with canopy's client key, each with whether its author declared it PHI-safe,
+  whether it has a ready ZDR runner, whether it is ready, and canopy's own problems.
+  Cached five minutes; when canopy is unreachable its last word is used for up to a day,
+  then **no agent is shown anywhere** (fail closed).
+- **labs' ticks** (below) say which of those labs shows, which may read real data, and the
+  default agent.
+- An agent canopy declares PHI-safe, or that labs lets read real data, is always offered
+  **read-only, on ZDR runners**: page key `labs:workflow:run:data` (`workflow:read`,
+  `data:read`, `workflow:edit`, never `workflow:act`) and a docked panel.
+
+Over real data an agent needs, failing closed on each: "Real data" ticked in labs;
+canopy's word that it is PHI-safe with a ready ZDR runner (so drift in canopy withdraws it
+at once); every conversation with it required to run on ZDR (signed into its page token);
+and canopy's per-call `Canopy-Execution` statement (canopy-web spec
+`2026-10-22-phi-agents-on-zdr-runners` §6). Labs verifies that statement once per
+delegated tool call (`mcp/execution.py`) and holds the call to it
+(`canopy_panel.call_real_data_clearance`): the agent it names has "Real data" ticked, is
+declared PHI-safe at the commit actually running, on a runner with `zdr` in force in ZDR
+mode, in a conversation that requires `zdr`. A call is held to the statement, never to the
+cached listing. Each delegated call's statement (or why there was none) is recorded on
+`MCPAuditLog.execution`. With nothing ticked (the default), **no agent is offered over
 real data** -- a sharing workflow over production opps shows its own buttons and no
 launcher.
 
 **Labs' side is set in the UI**, at Labs Admin › Canopy agents
-(`/labs/admin/canopy-agents/`, `labs/canopy_settings.py`): the site agent, the Data pages'
-agent, the other agents workflows may choose, the agents allowed over real data, and the runner
-flags every conversation must run on. Labs Admin users can read it; Dimagi staff (a Dimagi sign-in, `is_dimagi_staff`) change it. Each change is a new
-`CanopyAgentSettings` row (who, when, why, audited) and any earlier one can be restored.
-The `CANOPY_AGENT_SLUG` / `CANOPY_DATA_AGENT_SLUG` / `CANOPY_OFFERED_AGENTS` /
-`CANOPY_PHI_AGENTS` / `CANOPY_RUNNER_REQUIREMENTS` environment settings are only the defaults until someone
-saves there. The page also lists labs' checks for the Data pages' agent and the last
-delegated `data_*` calls with what canopy's statement said about each -- where to look
-when testing from the Data page.
+(`/labs/admin/canopy-agents/`, `labs/canopy_settings.py`): a table with one row per agent
+canopy lists (Agent, What it does here, PHI-safe, ZDR runner, Ready -- canopy's columns --
+then labs' ticks: Show on labs, Real data, Default), plus the runner flags every
+conversation must run on, chosen from the flags canopy names. Nothing is typed. "Real
+data" can be ticked only when canopy says the agent is PHI-safe with a ready ZDR runner; an
+agent labs still ticks that canopy no longer lists, or no longer clears, is shown in red
+with canopy's reason and is not offered. Labs Admin users can read it; Dimagi staff (a
+Dimagi sign-in, `is_dimagi_staff`) change it. Each change is a new `CanopyAgentSettings`
+row (who, when, why, the site agents `version` it was made against, audited) and any
+earlier one can be restored. The `CANOPY_AGENT_SLUG` / `CANOPY_DATA_AGENT_SLUG` /
+`CANOPY_OFFERED_AGENTS` / `CANOPY_PHI_AGENTS` / `CANOPY_RUNNER_REQUIREMENTS` environment
+settings are only the cold-start defaults until someone saves there. The page also lists
+labs' checks for the agent for data work and the last delegated `data_*` calls with what
+canopy's statement said about each.
+
+**Labs tells canopy what it needs**, too: `/labs/canopy/site.json` (the SDK's
+`site_document`, beside the JWKS, signed with the same key) lists labs' pages and the
+scopes each grants (`PAGE_SCOPES`, titled by `PAGE_TITLES`), what real data requires
+(`phi_safe`, runner flag `zdr`), and which agents labs shows and lets read real data
+(`canopy.site_needs`). canopy's Connected sites page reads it and shows, per agent,
+whether it meets labs' needs.
 
 Not drawn means no page token, no grant and no ID-JAG. Labs' MCP holds canopy's calls to
 the same rule independently (`mcp/visit_access.py:delegated_denied_reason`, every tool
@@ -136,30 +165,23 @@ leaves the agent blind to all of it.
 **Compute it from what this visitor can see.** "The agent sees exactly what the
 user sees" is the access story, and keeping it true belongs to the page.
 
-## The data agent (labsdata) on the Data page
+## The agent for data work (labsdata), on the Data page and on workflows
 
-The Data page (`/labs/data/`, `connect_labs/labsdata`) can offer a different agent from
-every other page: the Data pages' agent at Labs Admin › Canopy agents (`labsdata`, the
-read-only data agent; default `CANOPY_DATA_AGENT_SLUG`). When it
-is set, the page passes `canopy_panel.data_agent()` -- that agent, `runner_requirements:
-["zdr"]` and a docked, expandable panel -- and the SDK (dimagi-canopy >= 0.11) signs the
-agent and the requirement into the page token. Canopy then binds the visitor's token and the
-host grant to that agent, so an ACE turn cannot spend the `data:read` grant the Data page
-minted, and the conversation runs only on ZDR runners. Unset (the default), the page offers
-the site's agent as before.
+The Data page (`/labs/data/`, `connect_labs/labsdata`) offers the **agent for data work**
+(`canopy_settings.data_agent`): the first agent labs lets read real data, else the first
+shown agent canopy declares PHI-safe (`labsdata`). With none, it offers the default agent.
+The page passes `canopy_panel.data_page_agent()` -- that agent, `runner_requirements:
+["zdr"]` and a docked, expandable panel -- and the SDK signs the agent and the requirement
+into the page token. Canopy then binds the visitor's token and the host grant to that
+agent, so another agent cannot spend the `data:read` grant the Data page minted, and the
+conversation runs only on ZDR runners.
 
-A workflow chooses which agent its run pages offer (`config.agent.agent`, the run page's
-**Agent** box; WORKFLOW_REFERENCE.md §14): the site agent, the data agent, or any other agent
-Labs Admin lists under "Other agents workflows may choose" (`canopy_settings.choices`), so
-different workflows can offer different agents. The data agent, and any agent allowed over
-real data, is offered on ZDR runners, page key `labs:workflow:run:data`
-(`workflow:read` + `data:read` + `workflow:edit`, never `workflow:act`): it reads, and it
-changes the workflow only by an edit the person confirms in chat (below). Every agent gets the author's `brief`
-through `data_workflow_context`. A choice Labs Admin no longer lists offers no panel.
-
-Set it only after `labsdata` is allow-listed on canopy's connect-labs site, or the mint is
-refused (403). Offering it is not clearing it: real rows still need
-`real_data_clearance("labsdata", ("zdr",))`, which waits on canopy's execution statement.
+A workflow chooses which agent its run pages offer (`config.agent.agent`, a slug, the run
+page's **Agent** box; WORKFLOW_REFERENCE.md §14) from the agents Labs Admin shows, so
+different workflows can offer different agents. A read-only agent (above) reads the run,
+and changes the workflow only by an edit the person confirms in chat (below). Every agent
+gets the author's `brief` through `data_workflow_context`. A choice that is not available
+offers no panel, and the Agent box says why.
 
 ## Three things that are true of labs specifically
 
@@ -176,7 +198,7 @@ address with `email_verified: true` (it came from Connect's OAuth identity, whic
 is how they signed in). Canopy turns that into the person's own canopy account
 only if exactly one canopy user holds that address verified AND is a member of
 the workspace connect-labs is registered in — so they see their own chats and act
-with their own access. Everyone else arrives as a canopy *contact*, which reaches
+with their own access. Everyone else arrives as a canopy _contact_, which reaches
 only the agents this site offers and their own conversations. Canopy never
 creates an account from an assertion, and there is no domain list to configure
 on either side.
@@ -202,7 +224,7 @@ Two things a capability cannot fix, learned the same way: a confined turn has no
 [below](#letting-canopy-act-as-the-visitor-off-by-default)), a registered page's
 tools run **as the visitor**, limited to that page's scopes. Without it they run
 with the agent's own labs credential, so the ids in the page state narrow what it
-looks at but do not *limit* what it could look at. For the marketplace that adds no
+looks at but do not _limit_ what it could look at. For the marketplace that adds no
 exposure, since every labs user can already read the whole directory. Workflow run
 pages need the grant: a run's data is scoped to the people with access to its
 opportunities, and an agent reading as itself would see that person's run with
@@ -237,12 +259,12 @@ to canopy:
   grant. Every `workflow_*` run tool also refuses a canopy call on a workflow that
   does not share, whatever the token carries.
 
-| Scope | Tools |
-| --- | --- |
-| `workflow:read` | `workflow_run_context`, `workflow_run_indicators`, `workflow_indicator_explain`, `workflow_action_status` |
-| `workflow:act` | `workflow_run_action`, `workflow_action_preview_view` (app-only: the coaching View's own preview) |
-| `workflow:edit` | `workflow_edit_propose`; app-only, for the confirm card: `workflow_edit_review_view`, `workflow_edit_apply`, `workflow_edit_decline` |
-| `targeting:read` | every `targeting_*` read tool, incl. `targeting_cost_effectiveness` |
+| Scope            | Tools                                                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `workflow:read`  | `workflow_run_context`, `workflow_run_indicators`, `workflow_indicator_explain`, `workflow_action_status`                            |
+| `workflow:act`   | `workflow_run_action`, `workflow_action_preview_view` (app-only: the coaching View's own preview)                                    |
+| `workflow:edit`  | `workflow_edit_propose`; app-only, for the confirm card: `workflow_edit_review_view`, `workflow_edit_apply`, `workflow_edit_decline` |
+| `targeting:read` | every `targeting_*` read tool, incl. `targeting_cost_effectiveness`                                                                  |
 
 **Edits, confirmed in chat (`workflow:edit`).** The agent never calls an edit tool
 (`workflow_update_definition`, `workflow_patch_render_code`, `pipeline_update_schema`, the
@@ -322,12 +344,12 @@ Steps 1–2 are one-off per environment.
 **1. Connect the site in canopy**, as a workspace owner, at
 `/canopy/w/<workspace>/settings/connected-apps`:
 
-| Field | Value |
-| --- | --- |
-| Name | `connect-labs` (matches `CANOPY_APP_NAME`) |
-| Site URLs | `https://labs.connect.dimagi.com` **and** `http://localhost:8000` |
-| Agents it may offer | ACE and Eva |
-| Where your site publishes its keys | `https://labs.connect.dimagi.com/labs/canopy/jwks/` |
+| Field                              | Value                                                             |
+| ---------------------------------- | ----------------------------------------------------------------- |
+| Name                               | `connect-labs` (matches `CANOPY_APP_NAME`)                        |
+| Site URLs                          | `https://labs.connect.dimagi.com` **and** `http://localhost:8000` |
+| Agents it may offer                | ACE and Eva                                                       |
+| Where your site publishes its keys | `https://labs.connect.dimagi.com/labs/canopy/jwks/`               |
 
 All three fail closed, which is why "nothing happens" is almost always a missing
 one rather than something broken.
@@ -420,13 +442,13 @@ connection**, and checks that (a) the probe tool succeeds, (b) a tool outside
 the scope is neither listed nor callable, and (c) the call without a valid DPoP
 proof is refused.
 
-| | |
-| --- | --- |
-| Principal | `canopy:probe` — a service account, never a person. Created by `mcp/migrations/0006` (the deploy runs `migrate` whenever a migration changes). Active, no usable password, no staff bit, no email, no PAT; the `:` is a character no Connect username can have, and the OAuth callback refuses the name besides |
-| Scope / tool | `marketplace:read` → `marketplace_rounds_list` with `{"open_only": true}`: no per-user gate, so it succeeds for the probe user; an empty list is still a success |
-| Denied tool | `list_templates` — a real read tool outside the scope |
-| Page | `marketplace:network` (audit only) |
-| Endpoint | `{LABS_PUBLIC_URL}/labs/canopy/probe/` — must be the public URL exactly (a DPoP proof's `htu`), and is advertised as `canopy_probe_endpoint` in `/.well-known/oauth-authorization-server` |
+|              |                                                                                                                                                                                                                                                                                                                 |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Principal    | `canopy:probe` — a service account, never a person. Created by `mcp/migrations/0006` (the deploy runs `migrate` whenever a migration changes). Active, no usable password, no staff bit, no email, no PAT; the `:` is a character no Connect username can have, and the OAuth callback refuses the name besides |
+| Scope / tool | `marketplace:read` → `marketplace_rounds_list` with `{"open_only": true}`: no per-user gate, so it succeeds for the probe user; an empty list is still a success                                                                                                                                                |
+| Denied tool  | `list_templates` — a real read tool outside the scope                                                                                                                                                                                                                                                           |
+| Page         | `marketplace:network` (audit only)                                                                                                                                                                                                                                                                              |
+| Endpoint     | `{LABS_PUBLIC_URL}/labs/canopy/probe/` — must be the public URL exactly (a DPoP proof's `htu`), and is advertised as `canopy_probe_endpoint` in `/.well-known/oauth-authorization-server`                                                                                                                       |
 
 All of it is in `connect_labs/labs/canopy.py` (`PROBE_*`, `probe_subject`), and
 none of it is a secret. It is **on wherever the grant is** and needs no env var
@@ -437,15 +459,15 @@ then reports a refused probe rather than an unconfigured one).
 
 ## When it does not work
 
-| Symptom | Cause |
-| --- | --- |
-| No launcher at all | one of the three settings is unset — the include renders nothing |
-| Every mint 401s with `bad_signature` | canopy cannot reach `/labs/canopy/jwks/`, or it is serving `{"keys": []}` because `CANOPY_SIGNING_KEY` is not a readable PEM |
-| Launcher, then a token error | the mint 403'd (CSRF binding), 502'd (canopy unreachable) or 401'd (signature). Labs logs canopy's own words; the browser deliberately does not get them |
-| Blank panel, console says a frame refused to load | labs' origin is not in the site's **Site URLs** |
-| "No agent is available here yet" | no allowed-agents row, or the agent is not in that workspace |
-| The agent knows nothing about the page | `resource` not declared, or the panel rendered in `<head>` |
-| A message sends, no reply ever arrives | no runner online for that agent — canopy-side, not labs |
+| Symptom                                           | Cause                                                                                                                                                    |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No launcher at all                                | one of the three settings is unset — the include renders nothing                                                                                         |
+| Every mint 401s with `bad_signature`              | canopy cannot reach `/labs/canopy/jwks/`, or it is serving `{"keys": []}` because `CANOPY_SIGNING_KEY` is not a readable PEM                             |
+| Launcher, then a token error                      | the mint 403'd (CSRF binding), 502'd (canopy unreachable) or 401'd (signature). Labs logs canopy's own words; the browser deliberately does not get them |
+| Blank panel, console says a frame refused to load | labs' origin is not in the site's **Site URLs**                                                                                                          |
+| "No agent is available here yet"                  | no allowed-agents row, or the agent is not in that workspace                                                                                             |
+| The agent knows nothing about the page            | `resource` not declared, or the panel rendered in `<head>`                                                                                               |
+| A message sends, no reply ever arrives            | no runner online for that agent — canopy-side, not labs                                                                                                  |
 
 ## Related
 

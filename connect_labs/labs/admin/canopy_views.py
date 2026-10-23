@@ -1,10 +1,10 @@
-"""Labs Admin › Canopy agents: which canopy agents labs offers, and which may read real data.
+"""Labs Admin › Canopy agents: which canopy agents labs shows, and which may read real data.
 
-Readable by anyone with Labs Admin; changed only by Dimagi staff
-(``canopy_settings.can_change``). Shows, beside the settings, everything labs can
-check about whether an agent will be given real rows, and the last delegated data
-calls with what canopy's statement said about each, so a test from the Data page can
-be read here.
+A table built from canopy's site agents API (``canopy_settings.site_agents``): one row
+per agent canopy lists for labs, plus any labs still ticks that canopy no longer lists
+(shown in red). Labs' choices are ticks; nothing is typed. Readable by anyone with Labs
+Admin; changed only by Dimagi staff (``canopy_settings.can_change``). Below the table,
+the last delegated data calls with what canopy's statement said about each.
 """
 
 from __future__ import annotations
@@ -21,21 +21,82 @@ from connect_labs.labs.view_mixins import AdminRequiredMixin
 #: Delegated calls whose statement decides whether an agent sees real rows.
 DATA_TOOLS = ("data_query", "data_visits", "data_describe")
 
+#: Any real (non-generated) opportunity: what "over real data" means for a row's state.
+_REAL = canopy_panel.visits(None)
 
-def _checks(current: canopy_settings.AgentSettings) -> list[dict]:
+
+def _rows(ticks: canopy_settings.AgentSettings, listing) -> list[dict]:
+    """One row per agent canopy lists, then any labs ticks that canopy does not."""
+    listed = list(listing.agents) if listing is not None else []
+    slugs = [a.slug for a in listed] + [t.slug for t in ticks.agents if t.slug not in {a.slug for a in listed}]
+    rows = []
+    for slug in slugs:
+        agent = listing.agent(slug) if listing is not None else None
+        tick = ticks.ticks(slug)
+        eligible, why_not = canopy_settings.eligible_for_real_data(agent)
+        here = canopy_panel.availability(slug, canopy_panel.NO_VISIT_DATA, ticks=ticks, listing=listing)
+        over_real = canopy_panel.availability(slug, _REAL, ticks=ticks, listing=listing)
+        phi = next((c for c in agent.capabilities if c.phi_safe), None) if agent else None
+        rows.append(
+            {
+                "slug": slug,
+                "listed": agent is not None,
+                "name": (agent.name if agent else "") or slug,
+                "description": (agent.description if agent else "")
+                or "; ".join(c.description for c in (agent.capabilities if agent else ()) if c.description),
+                "owner": agent.owner if agent else "",
+                "url": agent.url if agent else "",
+                "phi_safe": bool(agent and agent.phi_safe),
+                "phi_set_by": phi.phi_set_by if phi else "",
+                "phi_set_at": phi.phi_set_at if phi else "",
+                "zdr": bool(agent and agent.ready_with_flag(canopy_settings.ZDR)),
+                "zdr_available": bool(agent and canopy_settings.ZDR in agent.flags_available),
+                "ready": bool(agent and agent.ready),
+                "problems": list(agent.problems) if agent else [],
+                "offered": bool(tick and tick.offered),
+                "real_data": bool(tick and tick.real_data),
+                "default": slug == ticks.default_agent,
+                "eligible_for_real_data": eligible,
+                "why_not_real_data": why_not,
+                # Ticked but held back (drift, or canopy unreachable): in red, with why.
+                "held_back": list(here.reasons) if tick and tick.offered and not here.ok else [],
+                "real_data_held_back": (
+                    list(over_real.reasons) if tick and tick.real_data and here.ok and not over_real.ok else []
+                ),
+                "read_only": here.read_only,
+            }
+        )
+    return rows
+
+
+def _status(listing) -> dict:
+    if listing is None:
+        return {"level": "error", "text": canopy_settings.unreachable_reason() + ". No agent is shown on labs."}
+    minutes = int(listing.age // 60)
+    fetched = f"{minutes} min ago" if minutes else "just now"
+    if listing.stale:
+        return {
+            "level": "warning",
+            "text": f"canopy cannot be reached: using its last word, fetched {fetched}. "
+            "After a day without a fresh one, no agent is shown.",
+        }
+    return {"level": "ok", "text": f"canopy's signed list for {listing.site_name or 'labs'}, fetched {fetched}."}
+
+
+def _checks(ticks: canopy_settings.AgentSettings, listing) -> list[dict]:
     """Labs' side of "will the data agent get real rows?", each ok or not, with why."""
-    agent = current.data_agent
-    clearance = canopy_panel.data_agent_clearance()
+    agent = canopy_settings.data_agent(ticks, listing)
+    over_real = canopy_panel.availability(agent, _REAL, ticks=ticks, listing=listing) if agent else None
     return [
         {
-            "label": "The Data pages offer their own agent",
+            "label": "An agent for data work is shown (the Data page and read-only workflows)",
             "ok": bool(agent),
-            "detail": agent or "not set: the Data pages offer the site agent",
+            "detail": agent or 'none: tick a PHI-safe agent\'s "Show on labs"; Data offers the default agent',
         },
         {
-            "label": "Labs allows it over real data",
-            "ok": bool(agent) and agent in current.phi_agents,
-            "detail": ", ".join(current.phi_agents) or "no agent is allowed",
+            "label": "Labs lets it read real data",
+            "ok": bool(agent) and agent in ticks.real_data_agents,
+            "detail": ", ".join(ticks.real_data_agents) or 'no agent has "Real data" ticked',
         },
         {
             "label": "Canopy can act as the visitor here",
@@ -50,9 +111,13 @@ def _checks(current: canopy_settings.AgentSettings) -> list[dict]:
             "detail": "dimagi-canopy >= 0.13" if canopy_panel.CANOPY_EXECUTION_STATEMENTS else "SDK too old",
         },
         {
-            "label": "So a Data page may offer it over real data",
-            "ok": clearance.granted,
-            "detail": clearance.reason or "yes; each call is still held to canopy's statement",
+            "label": "So a workflow over real data may offer it",
+            "ok": bool(over_real and over_real.ok),
+            "detail": (
+                "; ".join(over_real.reasons)
+                if over_real and over_real.reasons
+                else ("yes; each call is still held to canopy's statement" if over_real else "no agent for data work")
+            ),
         },
     ]
 
@@ -73,18 +138,25 @@ class CanopyAgentsView(AdminRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        current = canopy_settings.current()
+        ticks = canopy_settings.current()
+        listing = canopy_settings.site_agents()
         canopy = (getattr(settings, "CANOPY_BASE_URL", "") or "").rstrip("/")
+        # The runner flags canopy names (zdr always), and what each means.
+        flags = [{"flag": f.flag, "meaning": f.meaning} for f in (listing.runner_flags if listing else ())]
+        if not any(f["flag"] == canopy_settings.ZDR for f in flags):
+            flags.append({"flag": canopy_settings.ZDR, "meaning": "zero data retention"})
         context.update(
-            current=current,
-            environment=canopy_settings.from_environment(),
+            current=ticks,
+            listing=listing,
+            status=_status(listing),
+            rows=_rows(ticks, listing),
+            runner_flags=flags,
             can_change=canopy_settings.can_change(self.request.user),
-            known_flags=canopy_settings.KNOWN_RUNNER_FLAGS,
             history=canopy_settings.history(),
-            checks=_checks(current),
+            checks=_checks(ticks, listing),
             calls=_recent_calls(),
             canopy_url=canopy,
-            data_agent_url=f"{canopy}/agents/{current.data_agent}" if canopy and current.data_agent else "",
+            admin_page=canopy_panel.ADMIN_PAGE,
         )
         return context
 
@@ -98,13 +170,21 @@ class CanopyAgentsView(AdminRequiredMixin, TemplateView):
                 canopy_settings.restore(request.user, int(request.POST["restore"]))
                 messages.success(request, "Restored.")
             else:
+                listing = canopy_settings.site_agents()
+                agents = [
+                    canopy_settings.AgentTicks(
+                        slug,
+                        offered=f"offered:{slug}" in request.POST,
+                        real_data=f"real_data:{slug}" in request.POST,
+                    )
+                    for slug in request.POST.getlist("slug")
+                ]
                 canopy_settings.save(
                     request.user,
-                    site_agent=request.POST.get("site_agent", ""),
-                    data_agent=request.POST.get("data_agent", ""),
-                    phi_agents=request.POST.get("phi_agents", "").replace(",", " ").split(),
+                    agents=agents,
+                    default_agent=request.POST.get("default_agent", ""),
                     runner_requirements=request.POST.getlist("runner_requirements"),
-                    offered_agents=request.POST.get("offered_agents", "").replace(",", " ").split(),
+                    listing=listing,
                     note=request.POST.get("note", ""),
                 )
                 messages.success(request, "Saved. It is in force now.")

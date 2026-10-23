@@ -22,6 +22,9 @@ urlpatterns = [
     # swap rather than a person re-pasting a key into canopy. canopy has THIS
     # URL registered for labs' Connected site: do not move it.
     path("canopy/jwks/", canopy_views.jwks, name="canopy_jwks"),
+    # Public: what labs asks of canopy's agents, signed with the same key (the SDK's
+    # view, canopy_sdk.site). canopy reads it beside the JWKS (canopy-web#1907).
+    path("canopy/site.json", canopy_views.site_document, name="canopy_site"),
     # Public: canopy's live probe (the SDK's view, csrf-exempt; it authenticates
     # canopy's client itself with private_key_jwt + DPoP). 404s until the probe
     # is configured. Its public URL is CANOPY_HOST["PROBE"]["ENDPOINT"] in

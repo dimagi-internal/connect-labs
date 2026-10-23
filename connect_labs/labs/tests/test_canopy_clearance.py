@@ -1,4 +1,4 @@
-"""Over real (non-generated) visit data no canopy agent is offered unless labs has cleared it.
+"""Over real (non-generated) visit data no canopy agent is offered unless labs and canopy have cleared it.
 
 The rule lives in ``labs/canopy_panel.py`` and is held in two places that must agree:
 whether a page draws the panel at all, and whether labs' MCP answers canopy's calls.
@@ -33,53 +33,76 @@ def _generated(value: bool):
 # ---------------------------------------------------------------------------
 
 
+def _here(reads, agent=""):
+    return canopy_panel.availability(agent, reads)
+
+
 def test_no_visit_data_is_always_offered(settings):
     settings.CANOPY_PHI_AGENTS = []
-    assert canopy_panel.clearance_for(canopy_panel.NO_VISIT_DATA).granted
+    assert _here(canopy_panel.NO_VISIT_DATA).ok
 
 
 def test_generated_data_is_offered_to_any_agent(settings):
     settings.CANOPY_PHI_AGENTS = []
     with _generated(True):
-        assert canopy_panel.clearance_for(canopy_panel.visits([10_101])).granted
+        assert _here(canopy_panel.visits([10_101])).ok
 
 
-def test_real_data_is_refused_today_whatever_labs_configures(cleared, monkeypatch):
-    # Canopy does not yet vouch for the agent and its runner on each call, so even a
-    # fully configured labs refuses: the switch is a constant, not a setting.
+def test_real_data_is_refused_without_canopys_per_call_statement(cleared, monkeypatch):
+    # Without an SDK that verifies canopy's per-call statement, even a fully
+    # configured labs refuses: the switch is a constant, not a setting.
     monkeypatch.setattr(canopy_panel, "CANOPY_EXECUTION_STATEMENTS", False)
     with _generated(False):
-        clearance = canopy_panel.clearance_for(canopy_panel.visits([501]))
-    assert not clearance.granted
-    assert "canopy does not yet vouch" in clearance.reason
+        here = _here(canopy_panel.visits([501]))
+    assert not here.ok
+    assert "canopy does not yet vouch" in here.reasons[0]
 
 
 @pytest.mark.parametrize(
     "setting, value, reason",
     [
-        ("CANOPY_PHI_AGENTS", [], "CANOPY_PHI_AGENTS"),
-        ("CANOPY_PHI_AGENTS", ["some-other-agent"], "CANOPY_PHI_AGENTS"),
-        ("CANOPY_RUNNER_REQUIREMENTS", [], "CANOPY_RUNNER_REQUIREMENTS"),
+        ("CANOPY_PHI_AGENTS", [], 'tick "Real data"'),
+        ("CANOPY_PHI_AGENTS", ["some-other-agent"], 'tick "Real data"'),
     ],
 )
 def test_each_condition_fails_closed_on_its_own(cleared, settings, setting, value, reason):
     setattr(settings, setting, value)
     with _generated(False):
-        clearance = canopy_panel.clearance_for(canopy_panel.visits([501]))
-    assert not clearance.granted
-    assert reason in clearance.reason
+        here = _here(canopy_panel.visits([501]))
+    assert not here.ok
+    assert reason in here.reasons[0]
 
 
-def test_all_three_conditions_clear_real_data(cleared):
+def test_canopys_word_is_a_condition_too(cleared, fake_canopy):
+    from connect_labs.testing.fake_canopy import agent, listing
+
+    for said, why in [
+        (None, "canopy has not said"),
+        (listing(), "canopy does not allow workflow-agent"),
+        (listing(agent("workflow-agent", phi_safe=False)), "not declared PHI-safe"),
+        (listing(agent("workflow-agent", phi_safe=True, zdr=False)), "no ready one"),
+        (
+            listing(agent("workflow-agent", phi_safe=True, ready=False, problems=["no GitHub token"])),
+            "no GitHub token",
+        ),
+    ]:
+        fake_canopy.set(said)
+        with _generated(False):
+            here = _here(canopy_panel.visits([501]))
+        assert not here.ok and why in here.reasons[0], (said, here)
+
+
+def test_every_condition_met_clears_real_data(cleared):
     with _generated(False):
-        assert canopy_panel.clearance_for(canopy_panel.visits([501])).granted
+        here = _here(canopy_panel.visits([501]))
+    assert here.ok and here.read_only and here.page_agent.runner_requirements == ("zdr",)
 
 
 @pytest.mark.parametrize("ids", [None, [], ["not-an-id"]])
 def test_a_page_that_cannot_tell_what_it_reads_counts_as_real(settings, ids):
     settings.CANOPY_PHI_AGENTS = []
     with _generated(True):
-        assert not canopy_panel.clearance_for(canopy_panel.visits(ids)).granted
+        assert not _here(canopy_panel.visits(ids)).ok
 
 
 def test_refused_means_no_panel_and_no_page_token():

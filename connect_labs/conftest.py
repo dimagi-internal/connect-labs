@@ -100,3 +100,15 @@ def api_client() -> APIClient:
 @pytest.fixture
 def user(db) -> User:
     return UserFactory()
+
+
+@pytest.fixture(autouse=True)
+def fake_canopy(monkeypatch):
+    """canopy's site agents API, faked: by default it agrees with labs' ticks
+    (``connect_labs/testing/fake_canopy.py``); ``fake_canopy.set(...)`` to say otherwise."""
+    from connect_labs.labs import canopy_settings
+    from connect_labs.testing.fake_canopy import FakeCanopy
+
+    fake = FakeCanopy()
+    monkeypatch.setattr(canopy_settings, "site_agents", fake)
+    return fake

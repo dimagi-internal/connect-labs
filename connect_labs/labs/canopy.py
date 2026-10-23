@@ -181,6 +181,23 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "supply_chain:procurement_comparison": ("supply:read",),
 }
 
+#: What each page is, for people reading labs' ``site.json`` in canopy (Connected sites).
+PAGE_TITLES: dict[str, str] = {
+    "marketplace:network": "The partner network",
+    "marketplace:round": "A marketplace round",
+    "labs:workflow:run": "A workflow run",
+    "labs:workflow:run:data": "A workflow run, read-only (a PHI-safe agent, on ZDR runners)",
+    "labs:workflow:run:page": "A page drawn at its workflow's address",
+    "labs:page_home": "An organisation's or programme's home page",
+    "labs:page": "A page",
+    "supply_chain:workflow_view": "A supply page",
+    "targeting:index": "Targeting",
+    "targeting:pmc": "Targeting: malaria PMC",
+    "labsdata:index": "Data",
+    "supply_chain:procurement_tender_detail": "A tender",
+    "supply_chain:procurement_comparison": "A tender's quote comparison",
+}
+
 #: The page key a page's panel uses on a route whose own registration grants more
 #: than ``page:read`` (the workflow run URL). Not a URL name: no route resolves to it.
 PAGE_ON_ANOTHER_ROUTE = "labs:workflow:run:page"
@@ -279,6 +296,21 @@ def user_claims(user) -> dict:
     }
 
 
+def site_needs() -> dict:
+    """What labs asks of canopy's agents, for ``site.json``: to read real data an agent
+    must be declared PHI-safe and run on ZDR runners; and which agents labs shows and
+    lets read real data now, against which site agents version they were chosen."""
+    agents = canopy_settings.current()
+    return {
+        "real_data": {"requires": {"phi_safe": True, "runner_flag": canopy_settings.ZDR}},
+        "uses": {
+            "agents": list(agents.offered),
+            "real_data_agents": list(agents.real_data_agents),
+            "version": agents.site_agents_version,
+        },
+    }
+
+
 def host_settings() -> dict:
     """``CANOPY_HOST`` as the SDK reads it, from labs' settings as they are NOW.
 
@@ -297,7 +329,7 @@ def host_settings() -> dict:
         "SIGNING_KEY": getattr(settings, "CANOPY_SIGNING_KEY", ""),
         "CANOPY_BASE_URL": getattr(settings, "CANOPY_BASE_URL", ""),
         "APP_NAME": getattr(settings, "CANOPY_APP_NAME", ""),
-        "AGENT_SLUG": agents.site_agent,
+        "AGENT_SLUG": agents.default_agent,
         "CLIENT_ID": getattr(settings, "CANOPY_CLIENT_ID", ""),
         "ISSUER": public,
         "RESOURCE": f"{public}/mcp/" if public else "",
@@ -305,6 +337,9 @@ def host_settings() -> dict:
         "RUNNER_REQUIREMENTS": list(agents.runner_requirements),
         "SCOPE_TOOLS": SCOPE_TOOLS,
         "PAGE_SCOPES": PAGE_SCOPES,
+        "PAGE_TITLES": PAGE_TITLES,
+        # site.json: what labs asks of canopy's agents (spec 2026-10-22-canopy-site-agents-api-design §2).
+        "SITE_NEEDS": site_needs,
         "USER_CLAIMS": user_claims,
         # Reversed by the SDK per request, so it follows labs' URLconf.
         "PANEL_TOKEN_URL_NAME": "labs:canopy_token",

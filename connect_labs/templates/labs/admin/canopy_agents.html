@@ -9,9 +9,9 @@
       <i class="fa-solid fa-robot text-orange-600 mr-2"></i>Canopy Agents
     </h1>
     <p class="text-gray-600 mt-1">
-      Which canopy agents labs offers in its agent panel, and which of them may read real visit data.
-      An agent gets real rows only when labs allows it here <em>and</em> canopy vouches, on every call,
-      that its author declared it PHI-safe at the running commit and it runs on a ZDR runner.
+      Which canopy agents labs shows in its agent panel, and which of them may read real visit data, chosen from
+      the agents canopy lists for labs. An agent gets real rows only when labs allows it here <em>and</em> canopy
+      vouches, on every call, that its author declared it PHI-safe and it runs on a ZDR runner.
     </p>
   </div>
 
@@ -23,52 +23,99 @@
   </div>
   {% endif %}
 
+  {# ── canopy's word ────────────────────────────────────────────────── #}
+  <div class="mb-4 px-4 py-2 rounded text-sm
+      {% if status.level == 'error' %}bg-red-100 text-red-700{% elif status.level == 'warning' %}bg-amber-100 text-amber-800{% else %}bg-gray-100 text-gray-700{% endif %}">
+    <i class="fa-solid {% if status.level == 'ok' %}fa-circle-check text-green-600{% else %}fa-triangle-exclamation{% endif %} mr-1"></i>{{ status.text }}
+    {% if listing %}<span class="text-xs text-gray-500 ml-1">version {{ listing.version|slice:":12" }}</span>{% endif %}
+  </div>
+
   {# ── Settings ─────────────────────────────────────────────────────── #}
   <form method="post" class="bg-white shadow rounded-lg p-6 mb-8 space-y-5">
     {% csrf_token %}
     <div class="flex items-baseline justify-between">
-      <h2 class="text-xl font-bold text-gray-900">Settings</h2>
+      <h2 class="text-xl font-bold text-gray-900">Agents</h2>
       <span class="text-xs text-gray-500">
         {% if current.row_id %}In force: change #{{ current.row_id }}{% else %}In force: the deployment's defaults (nobody has saved here yet){% endif %}
       </span>
     </div>
+    <p class="text-sm text-gray-600">
+      One row per agent canopy allows on labs' site. The PHI-safe, ZDR runner and Ready columns are canopy's, signed by canopy:
+      fix them there. <strong>Show on labs</strong> lists the agent in every workflow's Agent box;
+      <strong>Real data</strong> lets it be offered over production visits (read-only, on ZDR runners), and can be ticked
+      only when canopy says it is PHI-safe and has a ready ZDR runner. An agent canopy declares PHI-safe is always offered read-only.
+    </p>
 
-    <label class="block">
-      <span class="text-sm font-semibold text-gray-800">Site agent</span>
-      <span class="block text-xs text-gray-500 mb-1">The agent every labs page offers, and the canopy workspace every token names. Default: <code>{{ environment.site_agent }}</code>.</span>
-      <input name="site_agent" value="{{ current.site_agent }}" required {% if not can_change %}disabled{% endif %}
-             class="w-full md:w-80 border rounded px-3 py-2 font-mono text-sm" />
-    </label>
-
-    <label class="block">
-      <span class="text-sm font-semibold text-gray-800">Data pages' agent</span>
-      <span class="block text-xs text-gray-500 mb-1">Offered on <a class="text-blue-600" href="/labs/data/">Data</a> in place of the site agent, always on ZDR runners. It must also be allowed on canopy's connect-labs site. Empty: Data offers the site agent.</span>
-      <input name="data_agent" value="{{ current.data_agent }}" placeholder="labsdata" {% if not can_change %}disabled{% endif %}
-             class="w-full md:w-80 border rounded px-3 py-2 font-mono text-sm" />
-    </label>
-
-    <label class="block">
-      <span class="text-sm font-semibold text-gray-800">Other agents workflows may choose</span>
-      <span class="block text-xs text-gray-500 mb-1">Space- or comma-separated. Each workflow picks its agent in its run page's Agent box, from the site agent, the data agent and these. Each must also be allowed on canopy's connect-labs site.</span>
-      <input name="offered_agents" value="{{ current.offered_agents|join:' ' }}" {% if not can_change %}disabled{% endif %}
-             class="w-full border rounded px-3 py-2 font-mono text-sm" />
-    </label>
-
-    <label class="block">
-      <span class="text-sm font-semibold text-gray-800">Agents allowed over real data</span>
-      <span class="block text-xs text-gray-500 mb-1">Space- or comma-separated. Labs accepting the author's PHI-safe claim; canopy's per-call statement is still required. A workflow offers these read-only, on ZDR runners. Empty: no agent is shown real data.</span>
-      <input name="phi_agents" value="{{ current.phi_agents|join:' ' }}" {% if not can_change %}disabled{% endif %}
-             class="w-full border rounded px-3 py-2 font-mono text-sm" />
-    </label>
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50 text-left text-gray-500 uppercase text-xs">
+          <tr>
+            <th class="px-3 py-2">Agent</th><th class="px-3 py-2">What it does here</th>
+            <th class="px-3 py-2">PHI-safe</th><th class="px-3 py-2">ZDR runner</th><th class="px-3 py-2">Ready</th>
+            <th class="px-3 py-2 text-center">Show on labs</th><th class="px-3 py-2 text-center">Real data</th><th class="px-3 py-2 text-center">Default</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for row in rows %}
+          <tr class="{% if row.held_back or row.real_data_held_back %}bg-red-50{% endif %} align-top">
+            <td class="px-3 py-2">
+              <input type="hidden" name="slug" value="{{ row.slug }}">
+              {% if row.url %}<a class="font-mono text-blue-600" href="{{ row.url }}" target="_blank" rel="noopener">{{ row.slug }}</a>{% else %}<span class="font-mono">{{ row.slug }}</span>{% endif %}
+              {% if row.owner %}<span class="block text-xs text-gray-500">{{ row.owner }}</span>{% endif %}
+            </td>
+            <td class="px-3 py-2 text-gray-700 max-w-xs">
+              {% if row.listed %}{{ row.description|default:"—" }}{% else %}<span class="text-red-700">canopy no longer lists it for labs (canopy › Connected sites)</span>{% endif %}
+              {% for reason in row.held_back %}<span class="block text-xs text-red-700"><i class="fa-solid fa-circle-exclamation mr-1"></i>Not shown: {{ reason }}</span>{% endfor %}
+              {% for reason in row.real_data_held_back %}<span class="block text-xs text-red-700"><i class="fa-solid fa-circle-exclamation mr-1"></i>Not offered over real data: {{ reason }}</span>{% endfor %}
+            </td>
+            <td class="px-3 py-2">
+              {% if row.phi_safe %}<i class="fa-solid fa-circle-check text-green-600"></i>
+                {% if row.phi_set_by %}<span class="block text-xs text-gray-500">by {{ row.phi_set_by }}{% if row.phi_set_at %}, {{ row.phi_set_at|slice:":10" }}{% endif %}</span>{% endif %}
+              {% elif row.listed %}<span class="text-gray-400">no</span>{% else %}—{% endif %}
+            </td>
+            <td class="px-3 py-2">
+              {% if row.zdr %}<i class="fa-solid fa-circle-check text-green-600"></i> ready
+              {% elif row.zdr_available %}<span class="text-amber-700">none ready</span>
+              {% elif row.listed %}<span class="text-gray-400">none</span>{% else %}—{% endif %}
+            </td>
+            <td class="px-3 py-2">
+              {% if row.ready %}<i class="fa-solid fa-circle-check text-green-600"></i>
+              {% elif row.listed %}<i class="fa-solid fa-circle-xmark text-red-600"></i>
+                {% for p in row.problems %}<span class="block text-xs text-red-700">{{ p }}</span>{% endfor %}
+              {% else %}—{% endif %}
+            </td>
+            <td class="px-3 py-2 text-center">
+              <input type="checkbox" name="offered:{{ row.slug }}" data-offered="{{ row.slug }}"
+                     {% if row.offered %}checked{% endif %}
+                     {% if not can_change or not row.listed and not row.offered %}disabled{% endif %}>
+            </td>
+            <td class="px-3 py-2 text-center">
+              <input type="checkbox" name="real_data:{{ row.slug }}" data-real="{{ row.slug }}"
+                     {% if row.real_data %}checked{% endif %}
+                     {% if not can_change or not row.eligible_for_real_data and not row.real_data %}disabled title="{{ row.why_not_real_data }}"{% endif %}>
+              {% if not row.eligible_for_real_data and row.listed %}<span class="block text-xs text-gray-500 max-w-[10rem] mx-auto">{{ row.why_not_real_data }}</span>{% endif %}
+            </td>
+            <td class="px-3 py-2 text-center">
+              <input type="radio" name="default_agent" value="{{ row.slug }}" {% if row.default %}checked{% endif %}
+                     {% if not can_change %}disabled{% endif %}>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="8" class="px-3 py-4 text-gray-500">No agents: canopy lists none for labs, and labs ticks none.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-xs text-gray-500">The <strong>default</strong> agent is offered on every labs page that has no agent of its own (marketplace, targeting, supply), and every token names its canopy registration.</p>
 
     <fieldset>
       <legend class="text-sm font-semibold text-gray-800">Every visitor conversation must run on</legend>
-      <span class="block text-xs text-gray-500 mb-1">Signed into every page token; canopy holds the conversation to runners carrying the flag. The Data pages' agent requires ZDR whatever this says.</span>
-      {% for flag in known_flags %}
+      <span class="block text-xs text-gray-500 mb-1">Signed into every page token; canopy holds the conversation to runners carrying the flag. Read-only agents always require ZDR whatever this says.</span>
+      {% for flag in runner_flags %}
       <label class="inline-flex items-center mr-4 text-sm">
-        <input type="checkbox" name="runner_requirements" value="{{ flag }}" class="mr-2"
-               {% if flag in current.runner_requirements %}checked{% endif %} {% if not can_change %}disabled{% endif %} />
-        <code>{{ flag }}</code>{% if flag == "zdr" %}&nbsp;(zero-data-retention runners){% endif %}
+        <input type="checkbox" name="runner_requirements" value="{{ flag.flag }}" class="mr-2"
+               {% if flag.flag in current.runner_requirements %}checked{% endif %} {% if not can_change %}disabled{% endif %} />
+        <code>{{ flag.flag }}</code>{% if flag.meaning %}&nbsp;<span class="text-gray-500">({{ flag.meaning }})</span>{% endif %}
       </label>
       {% endfor %}
     </fieldset>
@@ -78,6 +125,15 @@
       <input name="note" placeholder="Why (kept with the change)" class="flex-1 border rounded px-3 py-2 text-sm" />
       <button class="bg-orange-600 hover:bg-orange-700 text-white font-semibold px-4 py-2 rounded text-sm">Save</button>
     </div>
+    <script>
+      // Ticking "Real data" ticks "Show on labs" (real data implies shown; the server enforces it too).
+      document.querySelectorAll('[data-real]').forEach(function (box) {
+        box.addEventListener('change', function () {
+          var shown = document.querySelector('[data-offered="' + box.dataset.real + '"]');
+          if (box.checked && shown) { shown.checked = true; }
+        });
+      });
+    </script>
     {% else %}
     <p class="text-sm text-gray-500"><i class="fa-solid fa-lock mr-1"></i>Only Dimagi staff can change these.</p>
     {% endif %}
@@ -85,7 +141,7 @@
 
   {# ── Labs' checks ─────────────────────────────────────────────────── #}
   <div class="bg-white shadow rounded-lg p-6 mb-8">
-    <h2 class="text-xl font-bold text-gray-900 mb-3">Will the Data pages' agent get real rows?</h2>
+    <h2 class="text-xl font-bold text-gray-900 mb-3">Will the agent for data work get real rows?</h2>
     <p class="text-sm font-semibold text-gray-700 mb-2">Labs' side</p>
     <ul class="space-y-1 text-sm mb-5">
       {% for c in checks %}
@@ -95,19 +151,8 @@
       </li>
       {% endfor %}
     </ul>
-    <p class="text-sm font-semibold text-gray-700 mb-2">Canopy's side (set in canopy; labs sees it only in each call's statement, below)</p>
-    <ol class="list-decimal ml-5 space-y-1 text-sm text-gray-700">
-      <li>The runner declares the <code>zdr</code> flag (canopy › Runners › the runner).</li>
-      <li>The agent may run on that runner (canopy › the agent › Runners).</li>
-      <li>Its author declares its capability <code>data: phi</code> at the commit it runs (canopy › the agent › Settings › Interface, with a passkey).</li>
-      <li>The agent is allowed on canopy's <code>connect-labs</code> site (canopy › Connected sites).</li>
-    </ol>
-    {% if canopy_url %}
-    <p class="text-sm mt-3">
-      <a class="text-blue-600" href="{{ canopy_url }}" target="_blank" rel="noopener">Open canopy</a>
-      {% if data_agent_url %} · <a class="text-blue-600" href="{{ data_agent_url }}" target="_blank" rel="noopener">{{ current.data_agent }} in canopy</a>{% endif %}
-    </p>
-    {% endif %}
+    <p class="text-sm font-semibold text-gray-700 mb-2">Canopy's side: the PHI-safe, ZDR runner and Ready columns above, and each call's statement below.</p>
+    {% if canopy_url %}<p class="text-sm"><a class="text-blue-600" href="{{ canopy_url }}" target="_blank" rel="noopener">Open canopy</a></p>{% endif %}
   </div>
 
   {# ── Recent calls ─────────────────────────────────────────────────── #}
@@ -142,7 +187,7 @@
       </table>
     </div>
     {% else %}
-    <p class="text-sm text-gray-500">None yet. Ask the agent a question on the <a class="text-blue-600" href="/labs/data/">Data</a> page and reload.</p>
+    <p class="text-sm text-gray-500">None yet. Ask the agent a question on a workflow, or on the <a class="text-blue-600" href="/labs/data/">Data</a> page, and reload.</p>
     {% endif %}
   </div>
 
@@ -161,8 +206,9 @@
           <td class="px-3 py-2 whitespace-nowrap">{{ row.changed_at|date:"Y-m-d H:i" }}</td>
           <td class="px-3 py-2">{{ row.changed_by.email|default:"—" }}</td>
           <td class="px-3 py-2 font-mono text-xs">
-            site={{ row.site_agent }} data={{ row.data_agent|default:"—" }}<br>
-            real data=[{{ row.phi_agents|join:", " }}] runners=[{{ row.runner_requirements|join:", " }}]
+            default={{ row.default_agent }}<br>
+            {% for a in row.agents %}{% if a.offered %}{{ a.slug }}{% if a.real_data %} (real data){% endif %}{% if not forloop.last %}, {% endif %}{% endif %}{% endfor %}<br>
+            runners=[{{ row.runner_requirements|join:", " }}]{% if row.site_agents_version %} · canopy {{ row.site_agents_version|slice:":8" }}{% endif %}
           </td>
           <td class="px-3 py-2">{{ row.note }}</td>
           <td class="px-3 py-2 text-right">

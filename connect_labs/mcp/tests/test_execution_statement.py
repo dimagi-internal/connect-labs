@@ -70,8 +70,7 @@ def sdk(monkeypatch):
 
 @pytest.fixture
 def labs_allows(settings):
-    """Labs allows labsdata on real data and requires ZDR of it -- through the data pages'
-    own requirement (CANOPY_DATA_AGENT_SLUG), not the site's."""
+    """Labs lets labsdata read real data ("Real data" ticked), and so requires ZDR of it."""
     settings.CANOPY_PHI_AGENTS = ["labsdata"]
     settings.CANOPY_DATA_AGENT_SLUG = "labsdata"
     settings.CANOPY_RUNNER_REQUIREMENTS = []
@@ -109,7 +108,7 @@ def test_a_verified_phi_declared_zdr_call_is_cleared(labs_allows, sdk):
 @pytest.mark.parametrize(
     "stated, reason",
     [
-        (FakeExecution(agent="ace"), "CANOPY_PHI_AGENTS"),
+        (FakeExecution(agent="ace"), 'tick "Real data"'),
         (FakeExecution(requirements=()), "requirements"),
         (FakeExecution(refusal="runner_flags"), "runner_flags"),
         (FakeExecution(refusal="undeclared"), "undeclared"),
@@ -122,15 +121,14 @@ def test_each_condition_on_the_statement_fails_closed(labs_allows, sdk, stated, 
     assert not clearance.granted and reason in clearance.reason
 
 
-def test_the_statement_cannot_supply_labs_own_zdr_requirement(labs_allows, settings, sdk):
-    # Labs requires ZDR neither site-wide nor through a data page for this agent: a
-    # statement that says the conversation requires ZDR does not stand in for labs' policy.
+def test_labs_requires_zdr_of_every_agent_it_lets_read_real_data(labs_allows, settings, sdk):
+    # No site-wide requirement and no data-agent setting: labs' own policy still holds
+    # an agent it lets read real data to ZDR runners (it is only ever offered on them),
+    # so the call clears -- and a statement whose conversation does not require ZDR is
+    # refused (test_each_condition_on_the_statement_fails_closed).
     settings.CANOPY_DATA_AGENT_SLUG = ""
+    settings.CANOPY_RUNNER_REQUIREMENTS = []
     with execution.bound(execution.verify({"canopy-execution": "jwt"}, "tok")):
-        clearance = canopy_panel.call_real_data_clearance()
-    assert not clearance.granted and "ZDR" in clearance.reason
-    settings.CANOPY_RUNNER_REQUIREMENTS = ["zdr"]
-    with execution.bound(execution.verify({"canopy-execution": "jwt2"}, "tok")):
         assert canopy_panel.call_real_data_clearance().granted
 
 
