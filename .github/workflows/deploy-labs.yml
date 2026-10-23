@@ -749,10 +749,16 @@ jobs:
           #
           # `aws ecs wait services-stable` polls (~15s x 40 = up to 10 min)
           # until runningCount == desiredCount and only the PRIMARY deployment
-          # remains (rolloutState COMPLETED) for BOTH services. If a new task
-          # crash-loops or never passes health checks, the waiter times out and
-          # this job fails RED — surfacing a broken deploy instead of the old
-          # always-green "Deploy triggered" that hid failures.
+          # remains (rolloutState COMPLETED) for BOTH services.
+          #
+          # Stable is not the same as shipped. If a new task crash-loops or never
+          # passes health checks, the circuit breaker (rollback=true, above) rolls
+          # the service back to the previous revision and THAT reaches a steady
+          # state, so the waiter returns success with the old code still live.
+          # On 2026-10-22 a release whose image could not import its URLconf
+          # (a stale base image) went green this way while migrations had already
+          # run. So after the wait, each service must be running the task
+          # definition this run registered, or the job fails RED.
           #
           # The short sleep first avoids the known waiter race: called too soon
           # after update-service, it can sample the service before the new
@@ -762,4 +768,16 @@ jobs:
           aws ecs wait services-stable \
             --cluster ${{ env.ECS_CLUSTER }} \
             --services ${{ env.ECS_WEB_SERVICE }} ${{ env.ECS_WORKER_SERVICE }}
-          echo "Both services stable — deploy complete and healthy."
+          for PAIR in "${{ env.ECS_WEB_SERVICE }}=${{ steps.taskdefs.outputs.web_td }}" \
+                      "${{ env.ECS_WORKER_SERVICE }}=${{ steps.taskdefs.outputs.worker_td }}"; do
+            SERVICE="${PAIR%%=*}"; WANT="${PAIR#*=}"
+            LIVE=$(aws ecs describe-services --cluster ${{ env.ECS_CLUSTER }} --services "$SERVICE" \
+              --query 'services[0].taskDefinition' --output text)
+            if [ "$LIVE" != "$WANT" ]; then
+              echo "::error::$SERVICE is stable on $LIVE, not $WANT: ECS rolled this deploy back (its new tasks failed to start). Read the stopped tasks' logs in /ecs/$SERVICE."
+              aws ecs describe-services --cluster ${{ env.ECS_CLUSTER }} --services "$SERVICE" \
+                --query 'services[0].events[0:8].message' --output text | tr '\t' '\n'
+              exit 1
+            fi
+          done
+          echo "Both services stable on this run's task definitions — deploy complete and healthy."
