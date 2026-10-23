@@ -176,6 +176,9 @@ In KMC reports (program, opportunity, and worker review) and the generic indicat
 - **Thresholds** are displayed as small chips rather than inline text.
 - The **underlying query** sits below a divider and wraps onto multiple lines, so long queries are no longer cut off at the right edge of the popup.
 
+!!! note "Indicator definition popup on program-level reports"
+    If another browser tab had moved your session to a different opportunity or scope, clicking an indicator name on a program-level report could previously show "Could not read the definition: Workflow not found". The popup now correctly resolves the indicator's definition at program scope regardless of where your other tabs are, so this error should no longer appear. If it does, try refreshing the report page.
+
 ### Indicator reports
 
 The generic indicator reports (and KMC reports that use the shared tiles) have four display improvements.
@@ -184,26 +187,24 @@ The generic indicator reports (and KMC reports that use the shared tiles) have f
 
 Long indicator names in the headline tiles now wrap onto as many lines as needed. Previously, names could be cut off (for example, "TRANSFER …" or "SHORT VISI…") because a **lower is better** chip sat on the same line and forced the name to truncate. The chip now moves to its own line when the name and chip do not fit side by side, and every tile's figure stays at the same height regardless of name length.
 
-#### "Ask an agent" launcher
+#### Whole counts display correctly
 
-The **Ask an agent** launcher appears only on workflows that are running over generated synthetic data, or on workflows whose author has selected an agent that has been cleared for use with real data.
+Counts that are built by summing integer values — for example, a total number of visits across workers — previously displayed with an unwanted decimal point, such as "359.0" or "1,332.0". These now display as whole numbers ("359" or "1,332") as expected. Averages and other figures that genuinely have a decimal place are unchanged.
 
-Each workflow can now offer its own chosen agent rather than always offering the site-wide default. A workflow's **Agent** box on its run page lists the agents that Labs is currently showing, each with its description. An agent that is not available on that particular workflow is greyed out with a reason shown alongside it.
+#### Trend charts on program-level reports
 
-##### How agents are managed (Labs Admin › Canopy agents)
+The trend chart on a program-level indicator report shows how a given indicator has changed across saved runs over time. When a report has a large number of saved runs — for example, 55 weekly snapshots — the chart previously drew a date label and a value label for every single point, causing them to overprint one another into an unreadable solid band.
 
-Labs Administrators manage available agents in **Labs Admin › Canopy agents**. This screen shows a table of every agent that Canopy allows on Labs. Each row displays what Canopy currently says about that agent:
+The chart now keeps the display legible regardless of how many runs exist:
 
-| Column | What it means |
-|---|---|
-| **Handles sensitive data** | Whether the agent's author has declared that it handles sensitive data (such as personally identifiable health information), who made that declaration, and when |
-| **Sensitive-data runner** | Whether a sensitive-data runner is ready for this agent: a locked-down machine that uses a zero-data-retention (ZDR) API key, can reach only an allowlist of hosts, and keeps nothing after each conversation |
-| **Ready** | Whether the agent is ready to use, and — if not — what is currently wrong |
+- Date labels are shown for at most 8 evenly spaced points, always including the first and last run.
+- Value labels are shown only for the first run, the last run, the highest value, the lowest value, and the first run that fell below the target threshold.
+- Every point still has a tooltip, so you can hover over any point to see its exact figure and date.
 
-Labs Administrators set three options for each agent using tick boxes in the same row:
+#### Opening the worker review from a program-level report
 
-- **Show on Labs** — whether the agent appears to workflow authors and users at all
-- **Real data** — whether the agent may be used on workflows with real (non-synthetic) data; this box can only be ticked once Canopy confirms the agent handles sensitive data **and** has a ready sensitive-data runner; otherwise the box is disabled and shows the reason
-- **Default** — whether this agent is the site-wide default
+Clicking **Review** on a worker row in a program-level indicator report now opens their worker review correctly in all cases. Previously, if your current session scope was set to an organisation rather than a specific opportunity, the worker review would open with the message "Please select an opportunity from the labs context to run this workflow" instead of loading the worker's data. The link now navigates to the correct program context automatically, so the worker review opens as expected.
 
-If anything changes on the Canopy side — for example, an agent's author withdraws the declaration that it handles sensitive data, or Canopy stops allowing an agent on Labs — Labs follows immediately: the agent stops being offered and its row turns red with Canopy's reason shown. If Canopy cannot be reached, Labs shows no agent at all until
+#### Case counts and last visit date on a drilled program report
+
+When you drill
