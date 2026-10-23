@@ -204,6 +204,7 @@ Errors follow OAuth (RFC 6749): a JSON body `{"error": ..., "error_description":
 | `invalid_grant`: *"This person cannot open that workflow."* | They do not have access to the report's opportunity or programme. Check their Connect access, or check that the resource entry names the right scope. |
 | The report draws but says an opportunity "is not accessible to your account" | The person can open the report but not everything it reads. That is their real access, applied as it would be in labs. |
 | Reloading only the frame shows a loading message | Expected: each load needs a new token. Answer the frame's `needs-token` message (step 5). |
+| A button in the embedded report reports *"This embedded view is read-only."* | Embedded reports are read-only: saving, completing a run and actions are refused. Open the report in labs to change it. |
 | A report left open for a long time stops loading new data | Its session lasts the system's **Session seconds** (an hour by default), and the person's Connect sign-in must still be valid. Post in a new token, or reload the page. |
 
 

@@ -163,19 +163,35 @@ def frame_view(request, client_id, kind, resource_id):
 # --- the workflow kind's view -------------------------------------------------------------
 
 
-def newest_run_id(request, definition_id: int, scope: dict) -> int | None:
-    """The newest run of the definition in the resource's scope. An embed never creates one."""
+def frame_reach(request, definition_id: int, scope: dict) -> tuple[int | None, dict]:
+    """What the frame drawn for this definition may read, recorded on its session.
+
+    The middleware binds every id a sandbox read route names to this
+    (``kinds.WorkflowKind.allowed``): the workflow's runs, the definitions it declares it
+    reads (``declared_reads``), and the opportunities and programmes it covers. Returns the
+    newest run in the resource's scope (an embed never creates one) and that record.
+    """
     from connect_labs.workflow.data_access import WorkflowDataAccess
+    from connect_labs.workflow.declared_reads import readable_definition_ids
 
     access = WorkflowDataAccess(request=request)
     try:
+        definition = access.get_definition(definition_id)
         runs = access.list_runs(definition_id)
     finally:
         access.close()
     opportunity_id = scope.get("opportunity_id")
-    if opportunity_id:
-        runs = [r for r in runs if getattr(r, "opportunity_id", None) in (None, opportunity_id)]
-    return max((r.id for r in runs), default=None)
+    shown = [r for r in runs if not opportunity_id or getattr(r, "opportunity_id", None) in (None, opportunity_id)]
+    opps = {scope.get("opportunity_id"), getattr(definition, "opportunity_id", None)}
+    opps |= set(getattr(definition, "opportunity_ids", None) or [])
+    programs = {scope.get("program_id"), getattr(definition, "program_id", None)}
+    reach = {
+        "runs": sorted({r.id for r in runs}),
+        "readable": sorted(readable_definition_ids(definition) | {definition_id}) if definition else [definition_id],
+        "opps": sorted(int(o) for o in opps if o),
+        "programs": sorted(int(p) for p in programs if p),
+    }
+    return max((r.id for r in shown), default=None), reach
 
 
 class EmbedWorkflowView(WorkflowRunView):
@@ -198,17 +214,18 @@ class EmbedWorkflowView(WorkflowRunView):
         for name in ("run_id", "edit", "template_draft"):
             params.pop(name, None)
         is_page = self._is_page_definition(definition_id)
+        run_id, reach = frame_reach(request, definition_id, request.labs_context)
         if is_page:
             self.page_mode = True
         elif is_page is False:
-            run_id = newest_run_id(request, definition_id, request.labs_context)
             if run_id is None:
                 self.no_runs = True
             else:
                 params["run_id"] = str(run_id)
-                if (session.state or {}).get("run_id") != run_id:
-                    session.state = {**(session.state or {}), "run_id": run_id}
-                    session.save(update_fields=["state"])
+        state = {**(session.state or {}), **reach, "run_id": run_id if is_page is False else None}
+        if state != session.state:
+            session.state = state
+            session.save(update_fields=["state"])
         request.GET = params
         if self.no_runs:
             return self.render_to_response(

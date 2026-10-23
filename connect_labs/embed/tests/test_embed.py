@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from datetime import timedelta
@@ -467,7 +468,8 @@ def live_session(key, client_row, person):
         kind="workflow",
         resource_id="123",
         entry=client_row.resources[0],
-        state={"run_id": 77},
+        # What the frame recorded when it drew (views.frame_reach).
+        state={"run_id": 77, "runs": [76, 77], "readable": [123, 9027], "opps": [456], "programs": []},
         bootstrap_checksum="b",
         bootstrap_expires_at=timezone.now(),
         started_at=timezone.now(),
@@ -477,7 +479,12 @@ def live_session(key, client_row, person):
     return session, raw
 
 
-def through_middleware(path, raw, method="get", cookie="labs_embed_workflow_123", **extra):
+FRAME = f"{LABS}/embed/c/connect/workflow/123/"
+
+
+def through_middleware(path, raw, method="get", cookie="labs_embed_workflow_123", referer=FRAME, **extra):
+    if referer:
+        extra["HTTP_REFERER"] = referer
     request = getattr(RequestFactory(), method)(path, **extra)
     request.COOKIES[cookie] = raw
     request.user = AnonymousUser()
@@ -503,6 +510,13 @@ def through_middleware(path, raw, method="get", cookie="labs_embed_workflow_123"
         "/labs/workflow/api/123/pipeline-rows/",
         "/labs/workflow/api/123/pipeline-data/stream/",
         "/labs/workflow/api/123/semantic/",
+        "/labs/workflow/api/9027/runs/history/",  # a definition it declares it reads
+        "/labs/workflow/api/run/77/flags/list/",
+        "/labs/workflow/api/run/76/",  # another run of this workflow
+        "/labs/workflow/api/image/456/abc123/",  # a picture from an opportunity it covers
+        "/labs/workflow/api/456/visit-images/",
+        "/labs/benchmarks/api/456/",
+        "/labs/workflow/api/job/tok-1/status/",
         "/labs/workflow/api/run/77/snapshot/",
         "/labs/workflow/api/workers/",
         "/embed/c/connect/workflow/123/",
@@ -522,8 +536,10 @@ def test_a_session_acts_as_its_person_on_its_own_reads(live_session, person, pat
     "method, path",
     [
         ("get", "/labs/workflow/api/124/pipeline-rows/"),  # another workflow
-        ("get", "/labs/workflow/api/run/78/snapshot/"),  # another run
-        ("post", "/labs/workflow/api/run/77/state/"),  # a write
+        ("get", "/labs/workflow/api/run/78/snapshot/"),  # a run of another workflow
+        ("get", "/labs/workflow/api/9999/runs/history/"),  # a definition it does not read
+        ("get", "/labs/workflow/api/image/457/abc123/"),  # another opportunity's picture
+        ("get", "/labs/benchmarks/api/457/"),
         ("post", "/labs/workflow/api/123/render-code/"),
         ("post", "/labs/workflow/api/run/77/actions/coach/run/"),
         ("get", "/labs/workflow/123/run/"),  # the full labs page
@@ -537,6 +553,70 @@ def test_a_session_carries_no_authority_anywhere_else(live_session, method, path
     _, seen = through_middleware(path, raw, method=method, HTTP_ORIGIN=LABS)
     assert not seen["user"].is_authenticated
     assert seen["oauth"] is None
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/labs/workflow/api/run/77/state/",  # the run's own state ("own")
+        "/labs/workflow/api/run/77/complete/",  # past the run ("effect")
+        "/tasks/api/single-create/",
+        "/audit/api/audit/create/",
+    ],
+)
+def test_a_write_from_an_embed_frame_is_refused_as_read_only(live_session, path):
+    """Not a fall-through to the login page -- or, on a page served from labs' own origin,
+    to the person's labs session, which the request would carry too."""
+    _, raw = live_session
+    response, seen = through_middleware(path, raw, method="post", HTTP_ORIGIN=LABS)
+    assert response.status_code == 403 and json.loads(response.content) == {
+        "error": "This embedded view is read-only."
+    }
+    assert not seen
+    # ...with or without an embed cookie: the frame it came from is enough.
+    response, seen = through_middleware(path, raw, method="post", cookie="unrelated", HTTP_ORIGIN=LABS)
+    assert response.status_code == 403 and not seen
+
+
+def test_the_same_write_from_an_ordinary_labs_page_is_left_alone(live_session):
+    _, raw = live_session
+    response, seen = through_middleware(
+        "/labs/workflow/api/run/77/state/", raw, method="post", referer=f"{LABS}/labs/workflow/123/run/"
+    )
+    assert response.status_code == 200 and not seen["user"].is_authenticated
+
+
+@pytest.mark.parametrize(
+    "referer",
+    [
+        None,  # no referrer: fails closed
+        f"{LABS}/labs/workflow/123/run/",  # the person's own labs tab (the cookie rides along: one site)
+        f"{LABS}/embed/c/connect/workflow/124/",  # another embed's frame
+        "https://evil.example.org/embed/c/connect/workflow/123/",  # not labs
+    ],
+)
+def test_a_session_acts_only_for_its_own_frame(live_session, referer):
+    _, raw = live_session
+    _, seen = through_middleware("/labs/workflow/api/123/pipeline-rows/", raw, referer=referer)
+    assert not seen["user"].is_authenticated
+
+
+def test_the_frame_itself_needs_no_referrer(live_session, person):
+    _, raw = live_session
+    _, seen = through_middleware("/embed/c/connect/workflow/123/", raw, referer=None)
+    assert seen["user"] == person
+
+
+def test_every_id_a_sandbox_read_names_is_one_the_embed_binds():
+    """A new kind of id in the sandbox route table must be bound here before an embed may
+    reach that route: an unknown one is refused (fail closed), and this says so first."""
+    from connect_labs.workflow.sandbox_routes import ROUTES, compiled
+
+    known = {"def", "rel", "run", "opp", "prog", "pipe", "job"}
+    for route, pattern in compiled():
+        if route.gate == "read":
+            assert set(pattern.groupindex) <= known, route.path
+    assert set(kinds._UNNAMED) <= {route.path for route in ROUTES}
 
 
 def test_a_post_read_must_come_from_the_labs_frame(live_session, settings):
@@ -621,3 +701,40 @@ def test_a_request_from_an_opaque_origin_never_acts_as_the_person(live_session, 
     _, raw = live_session
     response, seen = through_middleware(path, raw, method=method, HTTP_ORIGIN="null")
     assert response.status_code == 403 and not seen
+
+
+def test_the_frame_records_what_it_may_read(monkeypatch, person, rf):
+    """Its runs, the definitions it declares it reads, and the opportunities and programmes
+    it covers -- what the middleware binds every sandbox read to."""
+    from connect_labs.embed.views import frame_reach
+
+    definition = type(
+        "Definition",
+        (),
+        {
+            "id": 123,
+            "opportunity_id": 456,
+            "opportunity_ids": [456, 458],
+            "program_id": None,
+            "data": {"config": {"source_workflow_id": 9027}},
+        },
+    )()
+    run = lambda run_id, opp: type("Run", (), {"id": run_id, "opportunity_id": opp})()  # noqa: E731
+
+    class FakeAccess:
+        def __init__(self, **kwargs):
+            pass
+
+        def get_definition(self, definition_id):
+            return definition
+
+        def list_runs(self, definition_id):
+            return [run(76, 456), run(77, 456), run(80, 458)]
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("connect_labs.workflow.data_access.WorkflowDataAccess", FakeAccess)
+    newest, reach = frame_reach(rf.get("/"), 123, {"opportunity_id": 456})
+    assert newest == 77  # the newest in the resource's own scope
+    assert reach == {"runs": [76, 77, 80], "readable": [123, 9027], "opps": [456, 458], "programs": []}
