@@ -1,6 +1,6 @@
 """What can be embedded: a registry of kinds.
 
-A kind is anything labs can draw without chrome for one person. It supplies five
+A kind is anything labs can draw without chrome for one person. It supplies six
 things and nothing else; the token endpoint, the session, the cookie, the framing
 headers, the CSRF rule and the audit trail are the embed app's and a kind cannot
 widen them:
@@ -9,6 +9,9 @@ widen them:
 * ``scope(entry)`` -- the labs context the resource is read in;
 * ``check_access(user, access_token, entry)`` -- at token time, as the person: may
   they open it? ``None`` if so, else a reason the embedder is told;
+* ``reads_only_generated(user, entry)`` -- whether everything the resource reads is
+  generated data (``labs/synthetic/provenance.py``), for a client limited to it. Fails
+  closed: ``False`` when it cannot tell;
 * ``render(request, session)`` -- the chromeless view drawn in the frame;
 * ``allowed(session, method, path)`` -- the routes a session for this resource may
   reach. The frame's own address is always allowed and is not listed here.
@@ -39,6 +42,9 @@ class EmbedKind:
 
     def check_access(self, user, access_token: str, entry: dict) -> str | None:
         raise NotImplementedError
+
+    def reads_only_generated(self, user, entry: dict) -> bool:
+        return False
 
     def render(self, request, session):
         raise NotImplementedError
@@ -134,6 +140,31 @@ class WorkflowKind(EmbedKind):
         if definition is None:
             return "This person cannot open that workflow."
         return None
+
+    def reads_only_generated(self, user, entry):
+        """Every opportunity the workflow reads is generated: its scope, and the definition's
+        own opportunities (the MCP's "no user visit data" resolver). A workflow that reads
+        other workflows' runs (``workflow_sources``) is refused: those runs are computed
+        from visits this check does not see."""
+        from connect_labs.labs.synthetic.provenance import all_generated
+        from connect_labs.mcp.visit_access import workflow_reads
+
+        try:
+            reads = workflow_reads(user, int(entry["id"]), **self.scope(entry))
+            if not reads or not all_generated(reads):
+                return False
+            from connect_labs.labs.connect_tokens import get_valid_access_token
+            from connect_labs.workflow.data_access import WorkflowDataAccess
+
+            access = WorkflowDataAccess(access_token=get_valid_access_token(user), user=user, **self.scope(entry))
+            try:
+                definition = access.get_definition(int(entry["id"]))
+            finally:
+                access.close()
+        except Exception:  # noqa: BLE001 -- cannot tell is not generated
+            logger.info("embed: could not establish what workflow %s reads", entry.get("id"), exc_info=True)
+            return False
+        return definition is not None and not (definition.data or {}).get("workflow_sources")
 
     def render(self, request, session):
         from connect_labs.embed.views import EmbedWorkflowView

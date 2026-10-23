@@ -10,7 +10,8 @@ its authentication. In order:
 3. the client may assert users (phase 1: identity authorities only);
 4. ``resource`` names a kind and id this client registered;
 5. the subject is an active labs user labs holds a Connect token for;
-6. the kind lets that user open the resource, read as them;
+6. the kind lets that user open the resource, read as them -- and, for a client limited
+   to generated data, everything the resource reads is generated;
 7. the assertion has not been used -- consumed only now, once everything else passed.
 
 Then a bootstrap token is issued: random, single use, two minutes, stored as a checksum.
@@ -162,6 +163,10 @@ def issue(form, request) -> Issued:
     refusal = kind.check_access(user, access_token, entry)
     if refusal:
         raise EmbedRefused("invalid_grant", refusal, "no_access", 400, client)
+    if client.generated_data_only and not kind.reads_only_generated(user, entry):
+        # Whatever the resources list says: a client limited to generated data (a demo,
+        # the reference example) never shows a real visit, even if registered wrongly.
+        raise EmbedRefused("invalid_target", "This system may show only generated data.", "not_generated", 400, client)
 
     # --- 7. The assertion works once. -------------------------------------------------
     from canopy_sdk.django.stores import DjangoJtiStore

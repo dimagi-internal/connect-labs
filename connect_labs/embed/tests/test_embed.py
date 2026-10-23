@@ -268,6 +268,66 @@ def test_the_workflow_kind_asks_labs_first_whether_the_person_holds_the_scope(mo
     assert asked == {"user": person, "token": "tok", "opportunity_id": 10001}
 
 
+def test_a_generated_data_only_client_is_refused_real_data(client, key, client_row, person, monkeypatch):
+    client_row.generated_data_only = True
+    client_row.save()
+    monkeypatch.setattr(kinds.WorkflowKind, "reads_only_generated", lambda self, user, entry: False)
+    response = redeem(client, assertion(key))
+    assert response.json() == {
+        "error": "invalid_target",
+        "error_description": "This system may show only generated data.",
+    }
+    monkeypatch.setattr(kinds.WorkflowKind, "reads_only_generated", lambda self, user, entry: True)
+    assert redeem(client, assertion(key)).status_code == 200
+
+
+def test_an_ordinary_client_is_not_asked_about_generated_data(client, key, client_row, person, monkeypatch):
+    monkeypatch.setattr(
+        kinds.WorkflowKind, "reads_only_generated", lambda *a: pytest.fail("only a generated-data-only client asks")
+    )
+    assert redeem(client, assertion(key)).status_code == 200
+
+
+class TestWorkflowReadsOnlyGenerated:
+    ENTRY = {"kind": "workflow", "id": 1, "opportunity_id": 10001}
+
+    @pytest.fixture
+    def reads(self, monkeypatch):
+        state = {"reads": [10001], "generated": True, "data": {}}
+        monkeypatch.setattr(
+            "connect_labs.mcp.visit_access.workflow_reads", lambda user, definition_id, **scope: state["reads"]
+        )
+        monkeypatch.setattr("connect_labs.labs.synthetic.provenance.all_generated", lambda ids: state["generated"])
+
+        class FakeAccess:
+            def __init__(self, **kwargs):
+                pass
+
+            def get_definition(self, definition_id):
+                return type("Definition", (), {"data": state["data"]})()
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr("connect_labs.workflow.data_access.WorkflowDataAccess", FakeAccess)
+        return state
+
+    def test_everything_generated_and_no_other_workflows(self, reads, person):
+        assert kinds.WorkflowKind().reads_only_generated(person, self.ENTRY) is True
+
+    def test_a_real_opportunity_anywhere_is_not(self, reads, person):
+        reads["generated"] = False
+        assert kinds.WorkflowKind().reads_only_generated(person, self.ENTRY) is False
+
+    def test_cannot_tell_is_not(self, reads, person):
+        reads["reads"] = None
+        assert kinds.WorkflowKind().reads_only_generated(person, self.ENTRY) is False
+
+    def test_reading_other_workflows_runs_is_not(self, reads, person):
+        reads["data"] = {"workflow_sources": [{"definition_id": 9}]}
+        assert kinds.WorkflowKind().reads_only_generated(person, self.ENTRY) is False
+
+
 def test_the_token_endpoint_refuses_other_grants(client, client_row):
     response = client.post(TOKEN_URL, {"grant_type": "client_credentials"})
     assert response.json()["error"] == "unsupported_grant_type"

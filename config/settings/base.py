@@ -178,6 +178,7 @@ LOCAL_APPS = [
     "connect_labs.pulse",
     "connect_labs.scope_config",
     "connect_labs.embed",
+    "connect_labs.embed_example",
     "connect_labs.solicitations",
     "connect_labs.supply_chain",
     "connect_labs.users",
@@ -583,6 +584,13 @@ LABS_PUBLIC_URL = env("LABS_PUBLIC_URL", default="")
 # embedding-labs-design.md). Nothing is framable until a client is registered; this is the
 # emergency switch that turns every embed endpoint and session off at once.
 LABS_EMBED_ENABLED = env.bool("LABS_EMBED_ENABLED", default=True)
+# The live reference embedder (connect_labs/embed_example/): a stand-in for another system,
+# at /embed-example/. Inert until its private key is set; see embed_example/config.py.
+EMBED_EXAMPLE_PRIVATE_KEY = env("EMBED_EXAMPLE_PRIVATE_KEY", default="")
+EMBED_EXAMPLE_CLIENT_ID = env("EMBED_EXAMPLE_CLIENT_ID", default="labs-example")
+EMBED_EXAMPLE_LABS_URL = env("EMBED_EXAMPLE_LABS_URL", default="")
+EMBED_EXAMPLE_BASE_URL = env("EMBED_EXAMPLE_BASE_URL", default="")
+EMBED_EXAMPLE_RESOURCES = env.json("EMBED_EXAMPLE_RESOURCES", default=[])
 # Pages' render code runs in a sandboxed frame (workflow/sandbox.py). An emergency switch
 # back only; there is no per-page opt-out.
 LABS_PAGE_SANDBOX = env.bool("LABS_PAGE_SANDBOX", default=True)
