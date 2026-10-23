@@ -101,11 +101,20 @@ What you see is determined entirely by your own account — the embedding system
 
 ### Protected (sandboxed) workflows
 
-Some workflows are designed to run inside a **protected frame** — sometimes called a sandbox. Pages and workflows on Labs are drawn directly in the page by default. To preview the sandboxed version of any page or workflow, add `?sandbox=1` to its address in your browser (or `&sandbox=1` if the address already contains a `?`).
+Every page and workflow in Labs now runs inside a **protected frame** (sandbox) by default. A workflow's own content cannot act on your behalf without Labs asking you first.
 
-A workflow in the protected frame looks and works exactly the same as normal, but it operates with an important safety constraint: its content cannot act on your behalf without asking you first.
+When a workflow wants to do something beyond displaying its own data — such as creating tasks or audits, starting a coaching conversation with a worker, or launching a background job that creates records — Labs shows you a prompt in its own words before anything happens. The prompt appears in an amber box with **Cancel** focused, so dismissing it is the default action. Confirming once covers that type of action for the next two minutes, so you will not be asked repeatedly during a single session.
 
-Specifically, a protected workflow cannot:
+Pages and workflows should otherwise look and behave exactly as they did before.
+
+!!! note "Details shown in confirmation prompts"
+    - **Coaching conversations:** The prompt names the bot, identifies the worker who will receive the message, and quotes the opening message. A workflow can only start a conversation with the task's own worker — it cannot message a different worker on your behalf.
+    - **Background jobs:** The prompt names the job before it runs.
+    - **Rate limiting:** If a page keeps asking repeatedly, Labs slows it down. After you say no, Labs will not ask again for a few seconds, and it will ask at most 20 times per minute regardless.
+
+Previously, you could preview the sandboxed version of any page or workflow by adding `?sandbox=1` to its address in your browser. That preview option still works, but the sandbox is now active everywhere — you do not need the parameter to get the protected behaviour.
+
+Specifically, the sandbox means a workflow cannot do any of the following without Labs first prompting you:
 
 - Create tasks or audits
 - Start a coaching conversation with a worker
@@ -114,11 +123,9 @@ Specifically, a protected workflow cannot:
 - Attach or detach one of its own pipelines
 - Mark runs it is watching in a control room
 
-…without Labs first showing you a prompt along the lines of **"This workflow wants to …, as you."** The prompt appears in an amber box with **Cancel** focused, so dismissing it is the default action. Confirming once covers that type of action for the next two minutes, so you will not be asked repeatedly during a single session.
-
 On each workflow's listing you will see a line indicating whether it is built to support the protected frame. If it is, a **View it sandboxed** link lets you try the protected version by opening it with `?sandbox=1`.
 
-If you are asked to confirm an action you did not expect while previewing in sandbox mode, that is the protection working as intended — check what the workflow is about to do before clicking yes.
+If you are asked to confirm an action you did not expect, that is the protection working as intended — check what the workflow is about to do before clicking yes.
 
 #### Scrolling and layout in the sandbox
 
@@ -134,8 +141,6 @@ One deliberate difference from the normal page: a header row set to stay fixed a
 #### Saved filters in the sandbox
 
 Dashboards that remember your filter choices — for example, the Ward Progress Tracker's ward and period filters, the KMC audit dashboard's filters, or a status filter that is kept across a CommCare sign-in — continue to remember those choices after a page reload when the sandbox is switched on. The behaviour matches what you already experience without the sandbox.
-
-This only applies when you are previewing with `?sandbox=1`. The sandbox is not switched on by default on Labs, so nothing changes for everyday use.
 
 !!! note "All live workflows are fully compatible with the sandbox"
     Every workflow that exists on Labs today works correctly in the protected frame. This includes the older MBW monitoring dashboards, which load their data, stream their progress, open GPS details, and save snapshots as normal. The GPS map groups its markers into clusters exactly as it does outside the sandbox. Authorization buttons (such as **Authorize CommCare** or **Authorize OCS**) bring you back to the workflow after you sign in. Any confirmation question a workflow presents is shown in Labs' own dialog and properly waited for before continuing. No workflow requires an exemption from the sandbox.
@@ -200,12 +205,4 @@ The generic indicator reports (and KMC reports that use the shared tiles) have f
 
 #### Headline tile labels
 
-Long indicator names in the headline tiles now wrap onto as many lines as needed. Previously, names could be cut off (for example, "TRANSFER …" or "SHORT VISI…") because a **lower is better** chip sat on the same line and forced the name to truncate. The chip now moves to its own line when the name and chip do not fit side by side, and every tile's figure stays at the same height regardless of name length.
-
-#### Whole counts display correctly
-
-Counts that are built by summing integer values — for example, a total number of visits across workers — previously displayed with an unwanted decimal point, such as "359.0" or "1,332.0". These now display as whole numbers ("359" or "1,332") as expected. Averages and other figures that genuinely have a decimal place are unchanged.
-
-#### Trend charts on program-level reports
-
-The trend chart on a program-level indicator report shows how a given indicator has changed across saved runs over time. When a report
+Long indicator names in the headline tiles now wrap onto as many lines as needed. Previously, names could be cut off (for example, "TRANSFER …" or "SHORT VISI…") because a **lower is better** chip sat on the same line and forced the name to truncate. The chip now moves to its own line when the name and chip do not fit side by side, and every tile's figure stays at the same height regardless of name length

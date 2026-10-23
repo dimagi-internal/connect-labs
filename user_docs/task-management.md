@@ -140,6 +140,19 @@ You can also connect your own assistant (outside Labs) to the report if your pro
 !!! tip
     Once Chat Studio (or another connected assistant) is linked, it stays connected — so it can start coaching conversations for you without requiring you to return to the page each time.
 
+### How Labs asks permission before acting
+
+Every page and workflow in Labs now runs in a protected mode by default. When a workflow needs to do something beyond its own run — such as creating a task, starting a coaching conversation, or creating an audit — Labs pauses and asks you first, in plain language, before anything happens.
+
+What you will see in the confirmation prompt depends on the action:
+
+- **Starting a coaching conversation** — Labs names the bot that will be used, identifies which worker will receive the message, and quotes the exact opening line the worker will see. A workflow can only start a conversation with the worker the task is already about; it cannot reach other workers without a separate confirmation for each.
+- **Running a background job** — Labs names the job before it starts.
+
+If you decline, Labs waits a few seconds before asking again — it will not keep prompting immediately after a "no". To prevent a runaway workflow from flooding you with prompts, Labs also limits itself to at most 20 questions per minute.
+
+Outside of these permission prompts, pages and workflows look and behave exactly as they do today.
+
 ---
 
 ## Weekly Review Table — Manager Actions
@@ -198,3 +211,6 @@ The worker receives a short, fixed greeting — for example, *"Hello Tiyamike! T
 
 **What is a "Coaching pictures only" token and when would I need one?**
 If your programme uses Open Chat Studio and wants to fetch the worker figures pictures that Labs generates, your administrator can create a **Coaching pictures only** token at the token management page. This token gives Open Chat Studio permission to retrieve coaching pictures — nothing else. It cannot be used to access other Labs data or the export API. If you are not sure whether your programme needs one, ask your program administrator.
+
+**Why is Labs asking me to confirm before starting a coaching conversation or creating a task?**
+Labs now asks permission before any workflow takes an action that affects people or records outside its own run — such as sending a coaching message or creating a task. This prompt tells you exactly what will happen (which bot, which worker, what opening message) so nothing is sent without your knowledge. See [How Labs asks permission before acting](#how-labs-asks-permission-before-acting) for details.
