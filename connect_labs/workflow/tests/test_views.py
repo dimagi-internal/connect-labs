@@ -1979,6 +1979,70 @@ class TestProgramHintIsValidatedLikeAContextParam:
             assert _run_program_hint(request) == 10077
 
 
+class TestRunHistoryCacheOnlyForScopesInTheUsersOwnData:
+    """The middleware passes a REAL Connect program or opportunity the user's OAuth
+    data does not list straight into labs_context, for the records API to check on
+    read. The shared history cache answers before that read, so it is used only for
+    a scope in the user's own OAuth data; and the read always uses the scope the
+    answer is keyed by."""
+
+    def _get(self, rf, user, url, labs_context, *, programs=(), opportunities=()):
+        from connect_labs.workflow import views as views_mod
+
+        request = rf.get(url)
+        request.user = user
+        request.labs_context = labs_context
+        request.session = {
+            "labs_oauth": {
+                "access_token": "t",
+                "organization_data": {
+                    "programs": [{"id": p} for p in programs],
+                    "opportunities": [{"id": o} for o in opportunities],
+                },
+            }
+        }
+        made = []
+
+        def access(*args, **kwargs):
+            made.append(kwargs)
+            wda = MagicMock()
+            wda.list_runs.return_value = []
+            return wda
+
+        cache_get = MagicMock(return_value=None)
+        with (
+            patch("connect_labs.workflow.views.WorkflowDataAccess", side_effect=access),
+            patch("connect_labs.workflow.views.declared_reads.refusal", return_value=None),
+            patch("connect_labs.workflow.history_cache.get", cache_get),
+            patch("connect_labs.workflow.history_cache.store"),
+        ):
+            response = views_mod.run_history_api(request, definition_id=26677)
+        return response, made, cache_get
+
+    def test_a_pass_through_context_program_is_read_live(self, dimagi_user, rf: RequestFactory):
+        url = "/labs/workflow/api/26677/runs/history/?keys=snapshot.meta"
+        response, made, cache_get = self._get(rf, dimagi_user, url, {"program_id": 99}, programs=())
+        assert cache_get.call_count == 0, "served the shared cache for a scope not in the user's data"
+        assert made and made[0].get("program_id") == 99
+
+    def test_a_context_program_of_the_users_own_uses_the_cache(self, dimagi_user, rf: RequestFactory):
+        url = "/labs/workflow/api/26677/runs/history/?keys=snapshot.meta"
+        response, made, cache_get = self._get(rf, dimagi_user, url, {"program_id": 99}, programs=(99,))
+        assert any("prog99" in str(c.args) for c in cache_get.call_args_list)
+
+    def test_a_pass_through_context_opportunity_is_read_live(self, dimagi_user, rf: RequestFactory):
+        url = "/labs/workflow/api/26677/runs/history/?keys=snapshot.meta"
+        response, made, cache_get = self._get(rf, dimagi_user, url, {"opportunity_id": 765}, opportunities=())
+        assert cache_get.call_count == 0
+        assert made and made[0].get("opportunity_id") == 765
+
+    def test_a_url_only_opportunity_is_the_scope_read(self, dimagi_user, rf: RequestFactory):
+        url = "/labs/workflow/api/26677/runs/history/?keys=snapshot.meta&opportunity_id=765"
+        response, made, cache_get = self._get(rf, dimagi_user, url, {}, opportunities=(765,))
+        assert made and made[0].get("opportunity_id") == 765
+        assert any("opp765" in str(c.args) for c in cache_get.call_args_list)
+
+
 class TestGetRunRefusesALabsOnlyProgramHint:
     """get_run's program fallback reads the hinted program; for a labs-only program
     that is the local backend, with no per-user check. A user who cannot reach it

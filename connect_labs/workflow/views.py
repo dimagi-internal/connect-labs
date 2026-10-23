@@ -137,6 +137,14 @@ def _program_in_oauth_data(request, program_id: int | None) -> bool:
     return any(p.get("id") == program_id for p in programs)
 
 
+def _opportunity_in_oauth_data(request, opportunity_id: int | None) -> bool:
+    """The opportunity equivalent of ``_program_in_oauth_data``."""
+    if opportunity_id is None:
+        return False
+    opportunities = (get_org_data(request) or {}).get("opportunities", []) or []
+    return any(o.get("id") == opportunity_id for o in opportunities)
+
+
 def _validated_opportunity_id(request, opportunity_id: int | None) -> int | None:
     """The same validation as ``_validated_program_id``, for an opportunity id."""
     if opportunity_id is None:
@@ -3269,30 +3277,26 @@ def run_history_api(request, definition_id):
     labs_context = getattr(request, "labs_context", {}) or {}
     # Every scope that keys the cache or reads runs is a VALIDATED one: the context
     # middleware already validated labs_context; a raw URL param or the hint is put
-    # through the same check here. The cached answer is shared by everyone reading
-    # that scope and is served before any downstream check, so an unvalidated id
-    # (a labs-only program the user cannot reach) must never select it.
+    # through the same check here, so an unvalidated id (a labs-only program the
+    # user cannot reach) never selects a read.
     opp = labs_context.get("opportunity_id")
     program = labs_context.get("program_id")
-    # The shared cache answers before any per-user check, so it is used only for a
-    # scope proven for this user: the middleware-validated context (as before), or
-    # a URL id / hint that is one of the user's own programs. Anything else is read
-    # live, where the records API checks access.
-    use_cache = True
     if not opp and not program:
         opp = _validated_opportunity_id(request, _coerce_int(request.GET.get("opportunity_id")))
         program = _validated_program_id(request, _coerce_int(request.GET.get("program_id")))
-        if opp or program:
-            use_cache = bool(program) and not opp and _program_in_oauth_data(request, program)
-    scope_kwargs = {}
-    hint = _run_program_hint(request)
-    if not opp and not program and hint is not None:
+    if not opp and not program:
         # An organisation (or empty) session scope, set by another tab, reads no
         # program-owned runs at all, so the trend went blank. The program report
         # names its owner as owning_program_id; read the history there.
-        program = hint
-        scope_kwargs = {"program_id": hint}
-        use_cache = _program_in_oauth_data(request, hint)
+        program = _run_program_hint(request)
+    # The read uses the scope the answer is keyed by, whichever source gave it.
+    scope_kwargs = {"opportunity_id": opp} if opp else ({"program_id": program} if program else {})
+    # The cached answer is shared by everyone reading that scope and is served
+    # before any records-API check. "Validated" is not enough for that: the
+    # middleware passes a REAL Connect program or opportunity the user's OAuth data
+    # does not list straight through, for the API to check on read. So the cache is
+    # used only for a scope in the user's own OAuth data; anything else is read live.
+    use_cache = _opportunity_in_oauth_data(request, opp) if opp else _program_in_oauth_data(request, program)
     scope_key = f"opp{opp}" if opp else (f"prog{program}" if program else "none")
     try:
         cached = history_cache.get(definition_id, scope_key, keys) if use_cache else None
