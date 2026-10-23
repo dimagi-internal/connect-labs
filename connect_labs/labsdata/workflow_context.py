@@ -53,19 +53,34 @@ def _schema_fields(schema: dict) -> list[dict]:
 
 
 def _pipeline(source: dict, token: str, owner: dict) -> dict:
-    """What one pipeline source reads and how, read where its record lives."""
+    """What one pipeline source reads and how, read where its record lives.
+
+    Read exactly as the workflow's run page reads it (``PipelineDataAccess.use_sources``),
+    with the caller's own Connect token: in the source's ``home_scope`` when it names one
+    -- an opportunity, a programme, an organisation, or ``{"public": true}`` for a
+    pipeline its owner shared -- else in the workflow's own scope. So a pipeline the
+    workflow references is readable here exactly when the caller could open it in Labs,
+    and Connect's record ACL is what decides. Only the workflow's own sources are read.
+    """
     from connect_labs.labs.analysis.backends.sql.query_builder import generate_sql_preview
     from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT, raw_cache_slot
-    from connect_labs.workflow.data_access import PIPELINE_HOME_SCOPE_KEYS, PipelineDataAccess
+    from connect_labs.workflow.data_access import PipelineDataAccess, pipeline_homes_for
 
     pipeline_id = int(source["pipeline_id"])
-    home = {k: int(v) for k, v in (source.get("home_scope") or {}).items() if k in PIPELINE_HOME_SCOPE_KEYS and v}
-    entry = {"alias": source.get("alias"), "pipeline_id": pipeline_id}
-    pda = PipelineDataAccess(access_token=token, **(home or owner))
+    home = pipeline_homes_for([source]).get(pipeline_id)
+    entry = {"alias": source.get("alias"), "pipeline_id": pipeline_id, **({"home_scope": home} if home else {})}
+    # The client's own scope is the workflow's; a home scope (public included) overrides it
+    # for this pipeline's record read. KMC's per-opportunity reports reference the programme
+    # report's shared pipelines this way.
+    pda = PipelineDataAccess(access_token=token, **owner).use_sources([source])
     try:
         definition = pda.get_definition(pipeline_id)
         if definition is None:
-            return {**entry, "error": "pipeline not readable here; try pipeline_get with its home scope"}
+            where = "where it lives (its home_scope)" if home else "in the workflow's own scope"
+            return {
+                **entry,
+                "error": f"pipeline not readable by this person {where}: Connect did not return it to them",
+            }
         schema = definition.schema or {}
         config = pda._schema_to_config(schema, pipeline_id)
     except Exception as e:  # noqa: BLE001 -- one unreadable pipeline must not cost the rest

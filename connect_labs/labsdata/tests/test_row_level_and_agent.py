@@ -206,6 +206,9 @@ def test_workflow_context_hands_over_a_visits_query_that_runs(cache, resolved):
         def __init__(self, **kw):
             pass
 
+        def use_sources(self, _sources):
+            return self
+
         def get_definition(self, _id):
             return pipeline
 
