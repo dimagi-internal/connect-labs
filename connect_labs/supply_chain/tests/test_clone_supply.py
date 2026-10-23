@@ -243,6 +243,8 @@ class TestTheSeededClone:
 
         rule = DispensingRule.objects.get(program_id=opp, opportunity_id=opp)
         assert rule.cases == validate_cases(clone_supply.rule_cases())
+        # A clone's balance answers are drawn field by field; the rule never reads them as counts.
+        assert not (rule.reports or {}).get("balance_paths")
         workers = SupplyPoint.objects.filter(program_id=opp, kind="user_held")
         assert {p.connect_username for p in workers} == set(WORKERS)
 

@@ -142,6 +142,9 @@ def _round_up(quantity: Decimal, step: int = 10) -> Decimal:
     return (quantity / step).to_integral_value(rounding=ROUND_CEILING) * step
 
 
+# The note is the key `top_up` finds earlier invented counts by, so it is not reworded: since
+# 2026-10-23 a clone's visits DO carry balance answers, but drawn field by field (see the
+# dispensing rule in `seed`), which is no more a count a worker could report.
 COUNTED = (
     "Invented for the demo: the clone's visits carry no stock balance a worker could report "
     "(the app's running balance is a calculated field, which a clone does not reproduce). "
@@ -543,10 +546,10 @@ def seed(
     rule = op(setup, 12, "dispensing_rule_upsert", data={
         "opportunity_id": opportunity_id, "item_id": item["id"], "resupply_point_id": partner["id"],
         "active_from": first.isoformat(), "lines": rule_lines(),
-        "reports": {
-            "balance_paths": [PATHS["balance"], PATHS["remaining"]],
-            "receipt": {"quantity_paths": [PATHS["received"]], "date_paths": [PATHS["received_on"]]},
-        },
+        # No `reports`: a clone's stock-balance and receipt answers are drawn field by field, so
+        # one worker reads 1, 106 and 118 sachets on the same day (opportunity 10173, cloned
+        # 2026-10-23). Read as counts they disagree with any ledger, and every worker would show
+        # a variance. The weekly counts are invented instead (`record_counts`, COUNTED).
         "cases": rule_cases(),
     })  # fmt: skip
 
