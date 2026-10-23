@@ -393,7 +393,8 @@ def learn_workspace(listing) -> str:
     from connect_labs.labs.models import CanopyAgentSettings
 
     ticks = current()
-    tenant = _workspace(listing)
+    # Only from a fresh answer: a stale one is a day-old word, not a fact to record.
+    tenant = "" if getattr(listing, "stale", False) else _workspace(listing)
     if ticks.row_id is None or ticks.workspace or not tenant:
         return ticks.workspace
     if CanopyAgentSettings.objects.filter(pk=ticks.row_id, workspace="").update(workspace=tenant):

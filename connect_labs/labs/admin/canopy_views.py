@@ -54,14 +54,19 @@ def canopy_links(listing) -> dict[str, str]:
         if tenant:
             links[canopy_settings.CONNECTED_SITES] = f"{base}/w/{tenant}/settings/connected-apps"
     site_url = getattr(listing, "site_settings_url", "") if listing is not None else ""
-    if site_url:
+    if _is_web_url(site_url):
         links[canopy_settings.CONNECTED_SITES] = site_url
     return links
 
 
 def _agent_links(agent, links: dict[str, str]) -> dict[str, str]:
     """``links``, plus each of ``agent``'s problem sentences linked where canopy says it is fixed."""
-    return {**links, **{p.text: p.url for p in getattr(agent, "problem_links", ()) if p.text and p.url}}
+    return {**links, **{p.text: p.url for p in getattr(agent, "problem_links", ()) if p.text and _is_web_url(p.url)}}
+
+
+def _is_web_url(url: str) -> bool:
+    """An absolute http(s) URL: the only kind of link canopy's answer may put on this page."""
+    return bool(_URL.fullmatch(url or ""))
 
 
 def linkify(text: str, links: dict[str, str] | None = None) -> SafeString:

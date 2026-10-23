@@ -476,3 +476,25 @@ def test_canopys_own_links_are_used_where_it_gives_them(env, client, staff, cano
     html = page.content.decode()
     assert 'href="https://canopy.example/fix/1" target="_blank" rel="noopener">No ready runner.</a>' in html
     assert page.context["connected_sites_url"] == "https://canopy.example/w/connect/settings/connected-apps#site-7"
+
+
+@override_settings(**LABS_SETTINGS)
+def test_only_web_links_from_canopy_reach_the_page(env, client, staff, canopy_agents):
+    canopy_agents("site-bot", offered=["coach-bot"])
+    env.set(
+        listing(
+            agent("site-bot"),
+            agent("coach-bot", ready=False, problem_links=[("Fix it.", "javascript:alert(1)")]),
+            settings_url="javascript:alert(2)",
+        )
+    )
+    client.force_login(staff)
+    page = client.get(reverse(URL))
+    assert "javascript:" not in page.content.decode()
+    assert page.context["connected_sites_url"] == "https://canopy.example/w/connect/settings/connected-apps"
+
+
+def test_a_stale_answer_does_not_set_the_workspace(env, canopy_agents):
+    canopy_agents("site-bot")
+    assert canopy_settings.learn_workspace(listing(agent("site-bot"), stale=True)) == ""
+    assert canopy_settings.current().workspace == ""
