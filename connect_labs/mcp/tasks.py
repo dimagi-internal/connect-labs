@@ -58,6 +58,18 @@ def mcp_job_housekeeping() -> dict:
     return jobs.housekeeping()
 
 
+@celery_app.task
+def sweep_artifacts() -> int:
+    """Beat: delete kept tool results past their day (``mcp/artifacts.py``). An expired one
+    already reads as ``expired``; this stops it sitting in the database."""
+    from . import artifacts
+
+    deleted = artifacts.sweep()
+    if deleted:
+        logger.info("swept %d expired labs-result artifact(s)", deleted)
+    return deleted
+
+
 @signals.worker_shutting_down.connect
 def _on_worker_shutting_down(sender=None, how=None, **kwargs):
     """Hand back the jobs this worker holds, so the new worker takes them over at once (jobs.py, 5).

@@ -405,14 +405,73 @@ def workflow_run_indicators(
         }
         try:
             if scope == "worker":
-                return {
-                    **head,
-                    **select_workers(graded, band=band, indicators=indicators, worker_keys=worker_keys, limit=limit),
-                }
-            rows = scope_rows(graded, scope, indicators)
+                selected = select_workers(
+                    graded, band=band, indicators=indicators, worker_keys=worker_keys, limit=limit
+                )
+                result = {**head, **selected}
+                records, lead = selected["workers"], _WORKER_COLUMNS
+            else:
+                rows = scope_rows(graded, scope, indicators)
+                result = {**head, "rows": rows, "opportunity_labels": graded.get("opportunity_labels")}
+                records, lead = rows, _SCOPE_COLUMNS
         except GradingError as e:
             raise MCPToolError("INVALID_SCHEMA", str(e)) from e
-        return {**head, "rows": rows, "opportunity_labels": graded.get("opportunity_labels")}
+        return _kept_indicators(r, result, records, lead, scope=scope, band=band)
+
+
+#: The leading columns of a kept indicators table, before one column per indicator.
+_WORKER_COLUMNS = ("key", "name", "username", "organisation", "opportunity_id", "cases", "reds", "yellows", "matched")
+_SCOPE_COLUMNS = ("scope", "key", "name", "llo", "opp", "n", "reds", "yellows")
+
+
+def _indicator_table(records: list[dict], lead: tuple[str, ...]) -> tuple[list[str], list[list]]:
+    """``(columns, rows)``: each record's own fields, then one column per indicator
+    holding its cell (``{band, value, n}``) -- the same cells, as a table to page through."""
+    present = [c for c in lead if any(c in rec for rec in records)]
+    indicator_ids = list(dict.fromkeys(i for rec in records for i in (rec.get("indicators") or {})))
+    rows = [
+        [rec.get(c) for c in present] + [(rec.get("indicators") or {}).get(i) for i in indicator_ids]
+        for rec in records
+    ]
+    return present + indicator_ids, rows
+
+
+def _kept_indicators(r: _Run, result: dict, records: list[dict], lead, *, scope: str, band: str | None) -> dict:
+    """The run's indicator rows kept as a ``labs-result://`` table, and what the caller gets.
+
+    Canopy's agent gets the facts (``summarize_rows`` over the table: how many rows, the
+    columns, the first ``artifacts.INLINE_ROWS``) with what it asked for and the link, and
+    reads the rest with ``site_read``. Every other caller (Claude Code, ACE) gets the
+    result as before, with the link beside it."""
+    from connect_labs.workflow.visit_cache import workflow_opportunity_ids
+
+    from .. import artifacts
+
+    columns, rows = _indicator_table(records, lead)
+    opps = [int(o) for o in workflow_opportunity_ids(r.definition, getattr(r.run, "opportunity_id", None)) or []]
+    link = artifacts.save(
+        r.user,
+        artifacts.KIND_INDICATORS,
+        {"columns": columns, "rows": rows, **{k: v for k, v in result.items() if k not in ("workers", "rows")}},
+        access={
+            "run_id": r.run.id,
+            "opportunity_id": r.opportunity_id,
+            "program_id": r.program_id,
+            "opportunity_ids": opps,
+            "sensitive": artifacts.sensitive(opps),
+        },
+        name=f"{r.definition.name} -- run {r.run.id}, {scope} indicators"[:200],
+        description=f"{len(rows)} {scope} rows" + (f" with a {band} indicator" if band else ""),
+    )
+    if not r.delegated:
+        return artifacts.with_link(result, link)
+    facts = {k: v for k, v in result.items() if k not in ("workers", "rows")}
+    facts.update(artifacts.facts(columns, rows))
+    facts["asked"] = {"scope": scope, "band": band}
+    if scope == "worker":
+        # select_workers' own cut: workers past `limit` are in neither the table nor here.
+        facts["workers_over_limit"] = result.get("truncated", False)
+    return artifacts.with_link(facts, link)
 
 
 @register(

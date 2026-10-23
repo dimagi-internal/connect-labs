@@ -317,6 +317,19 @@ def site_needs() -> dict:
     }
 
 
+#: ``CANOPY_HOST["ARTIFACTS"]``: results labs' tools keep under ``labs-result://``, for a day,
+#: read by their owner and anyone who could run the same thing. The hooks are dotted paths
+#: into ``connect_labs/mcp/artifacts.py`` (which needs the app registry; this module must not).
+ARTIFACTS = {
+    "SCHEME": "labs-result",
+    "TTL": 24 * 60 * 60,
+    "MAY_READ": "connect_labs.mcp.artifacts.may_read",
+    "ON_READ": None,
+    "READER": "connect_labs.mcp.artifacts.reader_subject",
+    "NOTIFY": True,
+}
+
+
 def host_settings() -> dict:
     """``CANOPY_HOST`` as the SDK reads it, from labs' settings as they are NOW.
 
@@ -359,6 +372,9 @@ def host_settings() -> dict:
         # Reversed by the SDK per request, so it follows labs' URLconf.
         "PANEL_TOKEN_URL_NAME": "labs:canopy_token",
         "PANEL": PANEL,
+        # Host-held results (dimagi-canopy 0.18): what a tool produced is kept here and read
+        # back as the reader (connect_labs/mcp/artifacts.py). Declares the scheme in site.json.
+        "ARTIFACTS": dict(ARTIFACTS),
     }
     if public:
         # site.json's ``site`` block: labs' key is at its own long-standing URL, not the

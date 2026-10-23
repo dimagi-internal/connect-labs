@@ -9,7 +9,9 @@
 
   Rendered by a host (canopy) for a targeting_pmc_rank result. It lists the states
   the answer considered, each with its multiple of GiveWell's bar on the lower death
-  estimate and the range across both estimates. The viewer ticks states and picks a
+  estimate and the range across both estimates. It reads the ranking from the
+  labs-result:// link the tool result carries (resources/read, as the viewer; Labs keeps
+  it for a day). The viewer ticks states and picks a
   price; the View re-totals them by calling targeting_pmc_rank AS THE VIEWER, tells
   the agent what is on screen (ui/update-model-context), and opens the selection in
   the PMC explorer (ui/open-link, a new tab) or asks the agent about it (ui/message).
@@ -800,11 +802,11 @@
           new ResizeObserver(reportSize).observe(document.documentElement);
 
         // ---------------------------------------------------------------- lifecycle
-        // The agent's ARGUMENTS are what the View can rely on: a host passes the
-        // result on intact only for some paths (canopy's runner path records text, and
-        // for an answer this size that is not the structured result). So the View asks
-        // the same question again as the viewer, and reads the result only as a
-        // fallback for a viewer who cannot call tools.
+        // The ranking the agent's call produced is kept by Labs (connect_labs/mcp/artifacts.py)
+        // and the tool result names it with a resource_link (labs-result://<id>): the View
+        // reads it back as its viewer -- never asks the agent's question again. Re-totals
+        // for the states the viewer ticks still go through targeting_pmc_rank, as the viewer.
+        var SCHEME = 'labs-result://';
         function show(sc) {
           if (state.result) return;
           if (!readResult({ structuredContent: sc })) {
@@ -816,56 +818,83 @@
           render();
           run(); // the starting total, for the starting ticks
         }
-        var agentArgs = null;
-        function askAgain() {
-          if (!state.canAct || !agentArgs || state.result) return;
-          var args = {};
-          [
-            'states',
-            'cost_per_visit',
-            'platform_fee',
-            'dose_rate',
-            'deaths_basis',
-            'ages',
-          ].forEach(function (k) {
-            if (agentArgs[k] != null) args[k] = agentArgs[k];
-          });
-          args.top_n = 1;
-          request('tools/call', { name: RANK_TOOL, arguments: args }).then(
+        function say(text, cls) {
+          document.getElementById('app').innerHTML =
+            '<div class="sub' +
+            (cls ? ' ' + cls : '') +
+            '">' +
+            esc(text) +
+            '</div>';
+          reportSize();
+        }
+        function linkOf(params) {
+          var link = ((params && params.content) || []).filter(function (c) {
+            return (
+              c &&
+              c.type === 'resource_link' &&
+              typeof c.uri === 'string' &&
+              c.uri.indexOf(SCHEME) === 0
+            );
+          })[0];
+          return link ? link.uri : '';
+        }
+        var resultUri = '';
+        var canRead = false;
+        var started = false;
+        function readKept() {
+          if (!resultUri || !started || state.result) return;
+          if (!canRead) {
+            if (pendingResult) show(pendingResult);
+            else
+              say(
+                'This host cannot read the answer back. Ask again in the chat.',
+              );
+            return;
+          }
+          request('resources/read', { uri: resultUri }).then(
             function (res) {
-              var sc =
-                res &&
-                !res.isError &&
-                (res.structuredContent || parseText(res));
-              if (sc && sc.recommendation) show(sc);
-              else if (pendingResult) show(pendingResult);
+              var c = ((res && res.contents) || [])[0];
+              var body = null;
+              try {
+                body = c && JSON.parse(c.text);
+              } catch (e) {
+                body = null;
+              }
+              if (body && body.recommendation) show(body);
+              else say('No states to show for this answer.');
             },
             function (err) {
-              if (pendingResult) show(pendingResult);
-              else {
-                document.getElementById('app').innerHTML =
-                  '<div class="sub err">Could not load the states: ' +
-                  esc(err.message) +
-                  '</div>';
-                reportSize();
-              }
+              var m = String((err && err.message) || '');
+              if (/\bexpired\b/.test(m))
+                say('This answer has expired — ask again in the chat.');
+              else if (/\bnot_found\b/.test(m))
+                say('This answer is no longer kept — ask again in the chat.');
+              else if (/\bforbidden\b/.test(m))
+                say('This answer is not yours to see.', 'err');
+              else say('Could not load the states: ' + m, 'err');
             },
           );
         }
         var pendingResult = null;
+        var gotResult = false;
+        // Once the host has answered ui/initialize and the result has arrived, in either order.
+        function onResult() {
+          if (!started || !gotResult || state.result) return;
+          if (resultUri) readKept();
+          else if (pendingResult) show(pendingResult);
+          else say('This answer is no longer kept — ask again in the chat.');
+        }
 
         var notifications = {
-          'ui/notifications/tool-input': function (params) {
-            if (agentArgs) return;
-            agentArgs = params.arguments || {};
-            askAgain();
-          },
+          'ui/notifications/tool-input': function () {},
           'ui/notifications/tool-result': function (params) {
             var sc = params && (params.structuredContent || parseText(params));
-            if (sc && sc.recommendation) pendingResult = sc;
-            // A viewer who cannot call tools sees the agent's own answer, if it arrived whole.
-            if (!state.canAct && pendingResult) show(pendingResult);
-            else if (!agentArgs && pendingResult) show(pendingResult);
+            // A result from before Labs kept its answers carried the whole ranking.
+            if (sc && sc.recommendation && sc.recommendation.states)
+              pendingResult = sc;
+            resultUri = linkOf(params);
+            gotResult = true;
+            onResult();
           },
           'ui/notifications/host-context-changed': function (params) {
             applyHostContext(params);
@@ -883,9 +912,14 @@
             state.canAct = !!(
               result.hostCapabilities && result.hostCapabilities.serverTools
             );
+            canRead = !!(
+              result.hostCapabilities && result.hostCapabilities.serverResources
+            );
             notify('ui/notifications/initialized', {});
             initialized = true;
+            started = true;
             render();
+            onResult();
           },
           function (err) {
             document.getElementById('app').innerHTML =

@@ -41,9 +41,12 @@ def test_the_view_is_self_contained_and_speaks_mcp_apps():
         "ui/notifications/size-changed",
         "ui/open-link",
         "ui/request-display-mode",
-        "tools/call",
+        "resources/read",
+        "resources/subscribe",
     ):
         assert method in html, method
+    # It reads the kept result; it never runs the query again as the viewer.
+    assert "tools/call" not in html
 
 
 def test_withheld_rows_are_withheld_from_the_view_too():

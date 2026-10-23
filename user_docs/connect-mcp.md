@@ -202,7 +202,7 @@ Select one or more opportunities from the list, then use the two panels on the p
 - **SQL editor.** Write a query against the `visits` table — one row per visit — which contains the opportunity, its LLO, the worker, the case, the visit status, the review and flag details, the rejection reason, location, justification, completed work, image references, and the full form data. Run your query and view results as a table. Download results as a CSV file.
 - **Whole visits.** Click any `visit_id` in a result to open that visit with every field and the complete submitted form, so you can check a number against the visits behind it.
 
-You can also ask the agent on the page to write a query for you from a plain-English question (for example, "hospital vs home births by LLO"). On production opportunities, whose visit data is sensitive, the agent writes the SQL and places it in the editor for you to review and run — **it does not receive your program's visit data** — unless Labs has cleared it for sensitive data. On synthetic (demo) opportunities it can run queries and read results directly, and shows the output as a table and a chart in the chat, along with the SQL and a link that opens the query on the Data page. An agent that Labs has cleared for sensitive data (the **Sensitive data** tick in Labs Admin › Canopy agents), running on a sensitive-data runner (a zero-data-retention, locked-down machine), can read production rows too; the data stays in Labs and that runner.
+You can also ask the agent on the page to write a query for you from a plain-English question (for example, "hospital vs home births by LLO"). On production opportunities, whose visit data is sensitive, the agent writes the SQL and places it in the editor for you to review and run — **it does not receive your program's visit data** — unless Labs has cleared it for sensitive data. On synthetic (demo) opportunities it can run queries and read results directly, and shows the output as a table and a chart in the chat, along with the SQL and a link that opens the query on the Data page. The chat card reads the result from Labs as you, a page at a time — use Previous/Next and the rows-per-page menu, and click a column heading to sort the page. Labs keeps each result for a day; after that the card says it has expired and you can ask again in the chat. An agent that Labs has cleared for sensitive data (the **Sensitive data** tick in Labs Admin › Canopy agents), running on a sensitive-data runner (a zero-data-retention, locked-down machine), can read production rows too; the data stays in Labs and that runner.
 
 ### Editing workflows from the agent on a workflow's page
 
@@ -220,7 +220,7 @@ You stay in control at every step. The agent proposes; you decide.
 | Tool | What it does |
 | --- | --- |
 | `data_describe` | Lists available fields for the selected opportunities, with fill rates and answer choices, and the rules for answering |
-| `data_query` | Runs a read-only SQL query against the `visits` table and returns results |
+| `data_query` | Runs a read-only SQL query against the `visits` table and returns results. The result is also kept for a day as a `labs-result://` resource you can read a page at a time |
 | `data_visits` | Returns whole visits by id, including the full submitted form |
 | `data_validate` | Checks a query end to end without reading any data |
 | `data_workflow_context` | Explains how a workflow computes what it shows: its pipelines' fields, filters and a ready query over `visits` that reproduces them |

@@ -652,3 +652,67 @@ def test_a_workflow_whose_agent_is_not_available_takes_no_actions_from_any_embed
             arguments={"workers": [{"key": "10::asha", "prompt": "x"}]},
         )
     assert e.value.code == "PERMISSION_DENIED" and "not available (canopy has not said" in str(e.value)
+
+
+# ---------------------------------------------------------------------------
+# Host-held results: the indicator rows are kept and read back (mcp/artifacts.py)
+# ---------------------------------------------------------------------------
+
+
+def test_a_persons_own_client_gets_every_worker_and_the_kept_table(user, wda):
+    from canopy_sdk.django import artifacts
+
+    out = _call("workflow_run_indicators", user, run_id=70, program_id=25)
+    assert [w["key"] for w in out["workers"]] == ["10::asha", "10::binta"]
+    assert out["_links"][0]["uri"] == out["result_uri"]
+    kept = artifacts.read(out["result_uri"], reader=str(user.pk))
+    assert kept.owner == str(user.pk) and kept.kind == "workflow_run_indicators"
+    assert kept.payload["columns"] == [
+        "key",
+        "name",
+        "username",
+        "organisation",
+        "opportunity_id",
+        "cases",
+        "reds",
+        "yellows",
+        "wt",
+        "fu",
+    ]
+    assert kept.payload["rows"][0][:3] == ["10::asha", "asha", "asha"]
+    assert kept.payload["rows"][0][-2] == {"band": "red", "value": 0.4, "n": 30}
+    assert kept.payload["access"] == {
+        "run_id": 70,
+        "opportunity_id": None,
+        "program_id": 25,
+        "opportunity_ids": [],
+        # No opportunities named: treated as sensitive (fail closed).
+        "sensitive": True,
+        "through_canopy": False,
+    }
+
+
+def test_canopys_agent_gets_the_facts_and_the_link(user, wda, monkeypatch):
+    monkeypatch.setattr(wa, "_delegated_token", lambda: MagicMock(client_id="canopy"))
+    out = _call("workflow_run_indicators", user, run_id=70, program_id=25, band="red")
+    assert "workers" not in out
+    assert out["row_count"] == 1 and out["truncated"] is False
+    assert out["sample_rows"][0]["key"] == "10::asha" and out["sample_rows"][0]["matched"] == ["wt"]
+    assert out["asked"] == {"scope": "worker", "band": "red"}
+    assert out["result_uri"].startswith("labs-result://")
+
+
+def test_a_colleague_who_can_open_the_run_may_read_its_indicators(user, wda):
+    from canopy_sdk.django import artifacts
+    from canopy_sdk.host.artifacts import ArtifactRefused
+
+    out = _call("workflow_run_indicators", user, run_id=70, program_id=25)
+    colleague = get_user_model().objects.create_user(username="colleague", password="p")
+    assert artifacts.read(out["result_uri"], reader=str(colleague.pk)).kind == "workflow_run_indicators"
+    # One who cannot open the run (labs' API does not show it to them) may not.
+    wda.get_run.return_value = None
+    with pytest.raises(ArtifactRefused) as refused:
+        artifacts.read(out["result_uri"], reader=str(colleague.pk))
+    assert refused.value.code == "forbidden"
+    # The owner still may: the SDK's owner check comes first.
+    assert artifacts.read(out["result_uri"], reader=str(user.pk)).owner == str(user.pk)

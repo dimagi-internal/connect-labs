@@ -9,18 +9,25 @@
 
   Rendered by a host (canopy) for a data_query result: the rows as a table, a chart of
   them, and the SQL that produced them, with a link that opens the query on Labs' Data
-  page. When the result reached the View without its rows (a host that keeps no tool
-  results for a sensitive session), it asks the same question again AS THE VIEWER.
+  page.
 
-  When Labs withheld production rows from the agent (`withheld`), the View shows none
-  either: rows travel through canopy only for an agent Labs has cleared for sensitive data.
-  It offers the Data page instead, where the person runs the query inside Labs.
+  The rows are not in the tool result. Labs keeps the result (connect_labs/mcp/artifacts.py)
+  and the tool result names it with a `resource_link` (labs-result://<id>); this View reads
+  it back with `resources/read`, AS ITS VIEWER, a page at a time (?page=&page_size=), and
+  sorts within the page. In a sensitive conversation the host keeps nothing else of the
+  result (`_meta["canopy/withheld"]`), and the link is all this View needs. It subscribes
+  to the link and reads again when Labs says it changed. It never runs the query itself.
+
+  A refused read says why: expired (ask again in the chat), not yours to see, or sensitive
+  data that stays in Labs. When Labs withheld production rows from the agent, the kept
+  result holds none either and the View offers the Data page, where the person runs the
+  query inside Labs.
 
   Self-contained on purpose: no network load of any kind. Every call goes to the host
   over postMessage. The chart is drawn here, as SVG, so no library has to load.
 -->
     <style>
-      :root {
+      <style > :root {
         color-scheme: light dark;
         --color-background-primary: light-dark(#ffffff, #171717);
         --color-background-secondary: light-dark(#f6f7f9, #222326);
@@ -198,6 +205,27 @@
         margin-right: 4px;
         vertical-align: -1px;
       }
+      .pager {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 10px;
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--color-text-secondary);
+      }
+      .btn[disabled] {
+        opacity: 0.45;
+        cursor: default;
+      }
+      th[data-sort] {
+        cursor: pointer;
+        user-select: none;
+      }
+      th .dir {
+        color: var(--brand);
+        margin-left: 3px;
+      }
     </style>
   </head>
   <body>
@@ -206,10 +234,12 @@
       (function () {
         'use strict';
 
-        var QUERY_TOOL = 'data_query';
         var PROTOCOL_VERSION = '2026-01-26';
+        var SCHEME = 'labs-result://';
         var SERIES = ['--s1', '--s2', '--s3', '--s4', '--s5'];
         var MAX_BARS = 30;
+        var PAGE_SIZES = [50, 100, 250, 500, 1000];
+        var META_KEY = 'canopy/artifact';
 
         // ---------------------------------------------------------------- transport
         var nextId = 1;
@@ -268,14 +298,23 @@
 
         // ---------------------------------------------------------------- state
         var state = {
-          canAct: false,
+          initialized: false,
+          canRead: false, // the host reads resources for this View (hostCapabilities.serverResources)
+          canSubscribe: false,
           args: null, // the agent's arguments: opportunity_ids, sql, max_rows
-          result: null,
+          facts: null, // what the tool result said, when the host passed it on
+          uri: '', // the kept result: labs-result://<id>, without a page
+          result: null, // the page on screen: {columns, rows, sql_executed, ...} or a withheld note
+          paging: null, // {page, pages, page_size, row_count}
+          pageSize: 100,
+          sort: { col: -1, dir: 1 }, // within the page
           tab: 'table',
           x: null,
           ys: [],
           error: '',
-          busy: false,
+          sensitive: false, // the refusal was labs keeping sensitive data in Labs
+          loading: false,
+          subscribed: false,
         };
 
         function esc(v) {
@@ -292,7 +331,7 @@
         function parseText(result) {
           var text = ((result && result.content) || [])
             .map(function (c) {
-              return c && c.text;
+              return c && c.type !== 'resource_link' && c.text;
             })
             .filter(Boolean)
             .join('');
@@ -314,16 +353,133 @@
         function looksLikeDate(v) {
           return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v);
         }
-
-        // ---------------------------------------------------------------- reading
-        function hasRows(sc) {
-          return sc && Array.isArray(sc.columns) && Array.isArray(sc.rows);
+        function hasRows(r) {
+          return r && Array.isArray(r.columns) && Array.isArray(r.rows);
         }
-        function accept(sc) {
-          state.result = sc;
-          state.error = '';
+        function openUrl() {
+          return (
+            (state.result && state.result.open_on_page) ||
+            (state.facts && state.facts.open_on_page) ||
+            ''
+          );
+        }
+
+        // ---------------------------------------------------------------- the kept result
+        function resultLink(params) {
+          var links = ((params && params.content) || []).filter(function (c) {
+            return (
+              c &&
+              c.type === 'resource_link' &&
+              typeof c.uri === 'string' &&
+              c.uri.indexOf(SCHEME) === 0
+            );
+          });
+          return links.length ? links[0].uri.split('?')[0] : '';
+        }
+        // Why a read was refused, as the person should read it. Labs names its refusals
+        // (`expired`, `forbidden`, `not_found`); the host passes them on (`host_refused: …`).
+        function refusal(message) {
+          var m = String(message || '');
+          state.sensitive = false;
+          if (/\bexpired\b/.test(m))
+            return 'This result has expired — ask again in the chat.';
+          if (/\bnot_found\b/.test(m))
+            return 'This result is no longer kept — ask again in the chat.';
+          if (/\bforbidden\b/.test(m)) {
+            if (/sensitive/i.test(m)) {
+              state.sensitive = true;
+              return 'This result holds sensitive data, which stays in Labs. Open the query on the Data page to see it there.';
+            }
+            return 'This result is not yours to see: only the person it was run for, and people who could run the same query themselves, can read it.';
+          }
+          return 'Could not read the result: ' + m;
+        }
+        function read(page) {
+          if (!state.uri || !state.initialized) return;
+          if (!state.canRead) {
+            showSample();
+            return;
+          }
+          state.loading = true;
+          render();
+          var uri =
+            state.uri + '?page=' + (page || 1) + '&page_size=' + state.pageSize;
+          request('resources/read', { uri: uri }).then(
+            function (res) {
+              state.loading = false;
+              var c = ((res && res.contents) || [])[0];
+              var body = null;
+              try {
+                body =
+                  c && typeof c.text === 'string' ? JSON.parse(c.text) : null;
+              } catch (e) {
+                body = null;
+              }
+              if (!body) {
+                state.error = 'The result could not be read.';
+                render();
+                return;
+              }
+              var meta = (c._meta && c._meta[META_KEY]) || {};
+              var first = !state.result;
+              state.result = body;
+              state.paging = hasRows(body)
+                ? {
+                    page: meta.page || 1,
+                    pages: meta.pages || 1,
+                    page_size: meta.page_size || state.pageSize,
+                    row_count:
+                      meta.row_count != null
+                        ? meta.row_count
+                        : body.rows.length,
+                  }
+                : null;
+              state.error = '';
+              if (first || state.x === null) pickAxes();
+              render();
+              subscribe();
+            },
+            function (err) {
+              state.loading = false;
+              state.error = refusal(err && err.message);
+              render();
+            },
+          );
+        }
+        // A host that cannot read resources still gets the facts' sample (an ordinary
+        // conversation passes the tool result on).
+        function showSample() {
+          var f = state.facts;
+          if (!f || !Array.isArray(f.columns)) {
+            state.error =
+              'This host cannot read the result back. Ask again in the chat.';
+            render();
+            return;
+          }
+          var rows = Array.isArray(f.rows)
+            ? f.rows
+            : (f.sample_rows || []).map(function (r) {
+                return f.columns.map(function (c) {
+                  return r[c];
+                });
+              });
+          state.result = Object.assign({}, f, { rows: rows });
+          state.paging = {
+            page: 1,
+            pages: 1,
+            page_size: rows.length,
+            row_count: f.row_count != null ? f.row_count : rows.length,
+            sample: rows.length < (f.row_count || 0),
+          };
           pickAxes();
           render();
+        }
+        function subscribe() {
+          if (state.subscribed || !state.canSubscribe || !state.uri) return;
+          state.subscribed = true;
+          request('resources/subscribe', { uri: state.uri }).catch(function () {
+            state.subscribed = false;
+          });
         }
         function pickAxes() {
           var r = state.result;
@@ -341,8 +497,30 @@
             if (n && i !== state.x && state.ys.length < SERIES.length)
               state.ys.push(i);
           });
-          if (state.ys.length && r.rows.length > 1)
-            state.tab = state.tab || 'table';
+        }
+        // Sorted within the page on screen: the order the query gave is the order the
+        // pages come in.
+        function compare(a, b) {
+          if (a === b) return 0;
+          if (a === null || a === undefined) return 1;
+          if (b === null || b === undefined) return -1;
+          if (isNum(a) && isNum(b)) return a - b;
+          return cellText(a).localeCompare(cellText(b), undefined, {
+            numeric: true,
+          });
+        }
+        function sortedRows() {
+          var r = state.result;
+          var rows = r.rows.slice();
+          var col = state.sort.col;
+          if (col < 0) return rows;
+          var dir = state.sort.dir;
+          return rows.sort(function (a, b) {
+            var c = compare(a[col], b[col]);
+            // nulls stay last whichever way the column is sorted
+            if (a[col] == null || b[col] == null) return c;
+            return dir * c;
+          });
         }
 
         // ---------------------------------------------------------------- chart (SVG)
@@ -350,7 +528,7 @@
           var r = state.result;
           if (!hasRows(r) || state.x === null || !state.ys.length)
             return '<div class="sub">Nothing to chart: the result needs a numeric column.</div>';
-          var rows = r.rows.slice(0, 500);
+          var rows = sortedRows().slice(0, 500);
           var line =
             rows.length > 1 &&
             rows.every(function (row) {
@@ -558,11 +736,22 @@
         function table() {
           var r = state.result;
           var head = r.columns
-            .map(function (c) {
-              return '<th>' + esc(c) + '</th>';
+            .map(function (c, i) {
+              var dir =
+                state.sort.col === i ? (state.sort.dir > 0 ? '▲' : '▼') : '';
+              return (
+                '<th data-sort="' +
+                i +
+                '" title="Sort this page by ' +
+                esc(c) +
+                '">' +
+                esc(c) +
+                (dir ? '<span class="dir">' + dir + '</span>' : '') +
+                '</th>'
+              );
             })
             .join('');
-          var body = r.rows
+          var body = sortedRows()
             .map(function (row) {
               return (
                 '<tr>' +
@@ -592,26 +781,96 @@
             '</tbody></table></div>'
           );
         }
+        function pager() {
+          var p = state.paging;
+          if (!p) return '';
+          if (p.sample)
+            return (
+              '<div class="pager">Showing the first ' +
+              p.page_size +
+              ' of ' +
+              p.row_count.toLocaleString() +
+              ' rows.</div>'
+            );
+          var from = p.row_count ? (p.page - 1) * p.page_size + 1 : 0;
+          var to = Math.min(p.row_count, p.page * p.page_size);
+          var sizes = PAGE_SIZES.map(function (n) {
+            return (
+              '<option value="' +
+              n +
+              '"' +
+              (n === state.pageSize ? ' selected' : '') +
+              '>' +
+              n +
+              '</option>'
+            );
+          }).join('');
+          return (
+            '<div class="pager">' +
+            '<button class="btn" id="prev"' +
+            (p.page <= 1 || state.loading ? ' disabled' : '') +
+            '>Previous</button>' +
+            '<span>Rows ' +
+            from.toLocaleString() +
+            '–' +
+            to.toLocaleString() +
+            ' of ' +
+            p.row_count.toLocaleString() +
+            ' · page ' +
+            p.page +
+            ' of ' +
+            p.pages +
+            '</span>' +
+            '<button class="btn" id="next"' +
+            (p.page >= p.pages || state.loading ? ' disabled' : '') +
+            '>Next</button>' +
+            '<label>Rows per page <select id="size">' +
+            sizes +
+            '</select></label>' +
+            (state.loading ? '<span>Loading…</span>' : '') +
+            '</div>'
+          );
+        }
+        function openButton(primary) {
+          return openUrl()
+            ? '<button class="btn' +
+                (primary ? ' primary' : '') +
+                '" id="open">Open on the Data page</button>'
+            : '';
+        }
+        function sqlText() {
+          var r = state.result || {};
+          return (
+            r.sql_executed ||
+            (state.facts && state.facts.sql_executed) ||
+            (state.args && state.args.sql) ||
+            ''
+          );
+        }
         function render() {
           var app = document.getElementById('app');
           var r = state.result;
           if (state.error) {
             app.innerHTML =
-              '<div class="sub err">' + esc(state.error) + '</div>';
+              '<div class="sub' +
+              (state.sensitive ? '' : ' err') +
+              '">' +
+              esc(state.error) +
+              '</div>' +
+              (state.sensitive
+                ? '<div class="bar" style="margin-top:8px">' +
+                  openButton(true) +
+                  '</div>'
+                : '');
             return reportSize();
           }
           if (!r) {
             app.innerHTML =
               '<div class="sub">' +
-              (state.busy ? 'Running the query…' : 'Waiting for the result…') +
+              (state.uri ? 'Reading the result…' : 'Waiting for the result…') +
               '</div>';
             return reportSize();
           }
-          var open = r.open_on_page
-            ? '<button class="btn' +
-              (r.withheld ? ' primary' : '') +
-              '" id="open">Open on the Data page</button>'
-            : '';
           if (r.withheld) {
             app.innerHTML =
               '<div class="bar"><span class="title">Sensitive data stays in Labs</span></div>' +
@@ -619,22 +878,20 @@
               esc(r.message || '') +
               '</div>' +
               '<div class="bar" style="margin-top:8px">' +
-              open +
+              openButton(true) +
               '</div>' +
-              (r.sql_executed || (state.args && state.args.sql)
-                ? '<pre>' + esc(r.sql_executed || state.args.sql) + '</pre>'
-                : '');
+              (sqlText() ? '<pre>' + esc(sqlText()) + '</pre>' : '');
             return reportSize();
           }
           if (!hasRows(r)) {
             app.innerHTML = '<div class="sub">No rows to show.</div>';
             return reportSize();
           }
-          var shown = r.rows_returned != null ? r.rows_returned : r.rows.length;
+          var total = state.paging ? state.paging.row_count : r.rows.length;
           var summary =
-            shown.toLocaleString() +
+            total.toLocaleString() +
             ' row' +
-            (shown === 1 ? '' : 's') +
+            (total === 1 ? '' : 's') +
             (r.truncated
               ? ' <span class="warn">(cut at the row cap)</span>'
               : '') +
@@ -667,10 +924,10 @@
             '</span>';
           var body =
             state.tab === 'chart'
-              ? chart()
+              ? chart() + pager()
               : state.tab === 'sql'
-                ? '<pre>' + esc(r.sql_executed || '') + '</pre>'
-                : table();
+                ? '<pre>' + esc(sqlText()) + '</pre>'
+                : table() + pager();
           var notes = (r.notes || []).length
             ? '<ul class="notes">' +
               r.notes
@@ -687,7 +944,7 @@
             summary +
             '</span><span class="spacer"></span>' +
             '<button class="btn" id="expand" title="Show larger">Expand</button>' +
-            open +
+            openButton(false) +
             '</div>' +
             body +
             notes;
@@ -698,13 +955,25 @@
           var t = e.target;
           if (!(t instanceof Element)) return;
           var tab = t.closest('[data-tab]');
+          var th = t.closest('[data-sort]');
           if (tab) {
             state.tab = tab.getAttribute('data-tab');
             render();
+          } else if (th) {
+            var col = Number(th.getAttribute('data-sort'));
+            state.sort =
+              state.sort.col === col
+                ? { col: col, dir: -state.sort.dir }
+                : { col: col, dir: 1 };
+            render();
+          } else if (t.closest('#prev')) {
+            if (state.paging && state.paging.page > 1)
+              read(state.paging.page - 1);
+          } else if (t.closest('#next')) {
+            if (state.paging && state.paging.page < state.paging.pages)
+              read(state.paging.page + 1);
           } else if (t.closest('#open')) {
-            request('ui/open-link', { url: state.result.open_on_page }).catch(
-              function () {},
-            );
+            request('ui/open-link', { url: openUrl() }).catch(function () {});
           } else if (t.closest('#expand')) {
             request('ui/request-display-mode', { mode: 'fullscreen' }).catch(
               function () {},
@@ -714,7 +983,10 @@
         document.addEventListener('change', function (e) {
           var t = e.target;
           if (!(t instanceof Element)) return;
-          if (t.id === 'x') {
+          if (t.id === 'size') {
+            state.pageSize = Number(t.value) || 100;
+            read(1);
+          } else if (t.id === 'x') {
             state.x = Number(t.value);
             state.ys = state.ys.filter(function (i) {
               return i !== state.x;
@@ -747,9 +1019,8 @@
             render();
         }
         var lastSize = '';
-        var initialized = false;
         function reportSize() {
-          if (!initialized) return;
+          if (!state.initialized) return;
           var w = Math.ceil(document.documentElement.scrollWidth);
           var hgt = Math.ceil(document.documentElement.scrollHeight);
           var key = w + 'x' + hgt;
@@ -761,54 +1032,54 @@
           new ResizeObserver(reportSize).observe(document.documentElement);
 
         // ---------------------------------------------------------------- lifecycle
-        // The result is the source when it arrives whole. A host that keeps no tool
-        // results for a sensitive session passes it on without its rows; then the
-        // View asks the same question again as the viewer -- which Labs answers with
-        // rows only where the agent itself was allowed them.
-        function askAgain() {
-          if (!state.canAct || !state.args || state.busy) return;
-          state.busy = true;
-          render();
-          var args = {};
-          ['opportunity_ids', 'sql', 'max_rows'].forEach(function (k) {
-            if (state.args[k] != null) args[k] = state.args[k];
-          });
-          request('tools/call', { name: QUERY_TOOL, arguments: args }).then(
-            function (res) {
-              state.busy = false;
-              var sc =
-                res &&
-                !res.isError &&
-                (res.structuredContent || parseText(res));
-              if (sc) accept(sc);
-              else {
-                state.error =
-                  (res && parseText(res) && parseText(res).message) ||
-                  'The query could not be run.';
-                render();
-              }
-            },
-            function (err) {
-              state.busy = false;
-              state.error = 'Could not run the query: ' + err.message;
-              render();
-            },
-          );
-        }
-        var gotResult = false;
+        // The result is read from the link the tool result carries, never from the rows
+        // a host passed on and never by running the query again.
         var notifications = {
           'ui/notifications/tool-input': function (params) {
             if (!state.args) state.args = params.arguments || {};
-            if (gotResult && !state.result) askAgain();
           },
           'ui/notifications/tool-result': function (params) {
-            gotResult = true;
-            var sc = params && (params.structuredContent || parseText(params));
-            if (sc && (hasRows(sc) || sc.withheld)) accept(sc);
-            else if (params && params.isError) {
-              state.error = (sc && sc.message) || 'The query failed.';
-              render();
-            } else askAgain();
+            params = params || {};
+            var sc = params.structuredContent || parseText(params);
+            var withheld = !!(params._meta && params._meta['canopy/withheld']);
+            if (sc && !withheld) state.facts = sc;
+            if (params.isError) {
+              state.error =
+                (sc && (sc.message || (sc.error && sc.error.message))) ||
+                'The query failed.';
+              return render();
+            }
+            var uri = resultLink(params);
+            if (uri) {
+              if (uri === state.uri && state.result) return;
+              state.uri = uri;
+              state.result = null;
+              state.error = '';
+              return read(1);
+            }
+            // No link: a result from before Labs kept its results. Show what arrived;
+            // there is nothing to read back.
+            if (sc && (hasRows(sc) || sc.withheld)) {
+              state.result = sc;
+              state.paging = hasRows(sc)
+                ? {
+                    page: 1,
+                    pages: 1,
+                    page_size: sc.rows.length,
+                    row_count: sc.rows.length,
+                  }
+                : null;
+              pickAxes();
+              return render();
+            }
+            state.error =
+              'This result is no longer kept — ask again in the chat.';
+            render();
+          },
+          'notifications/resources/updated': function (params) {
+            var uri = String((params && params.uri) || '').split('?')[0];
+            if (uri && uri === state.uri)
+              read(state.paging ? state.paging.page : 1);
           },
           'ui/notifications/host-context-changed': function (params) {
             applyHostContext(params);
@@ -818,17 +1089,21 @@
         request('ui/initialize', {
           protocolVersion: PROTOCOL_VERSION,
           appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] },
-          clientInfo: { name: 'labs-data-result', version: '1.0.0' },
+          clientInfo: { name: 'labs-data-result', version: '2.0.0' },
         }).then(
           function (result) {
             result = result || {};
             applyHostContext(result.hostContext || {});
-            state.canAct = !!(
-              result.hostCapabilities && result.hostCapabilities.serverTools
+            var caps = result.hostCapabilities || {};
+            state.canRead = !!caps.serverResources;
+            state.canSubscribe = !!(
+              caps.serverResources && caps.serverResources.subscribe
             );
             notify('ui/notifications/initialized', {});
-            initialized = true;
-            render();
+            state.initialized = true;
+            // A link that arrived before the host answered is read now.
+            if (state.uri && !state.result && !state.error) read(1);
+            else render();
           },
           function (err) {
             document.getElementById('app').innerHTML =

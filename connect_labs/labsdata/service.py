@@ -241,10 +241,18 @@ def validate(sql: str) -> dict:
 
 
 def query(
-    caller: Caller, opportunity_ids, sql: str, max_rows: int = DEFAULT_MAX_ROWS, *, for_agent: bool = False
+    caller: Caller,
+    opportunity_ids,
+    sql: str,
+    max_rows: int = DEFAULT_MAX_ROWS,
+    *,
+    for_agent: bool = False,
+    shaped: bool = True,
 ) -> dict:
     """Run SQL. ``for_agent`` (a canopy call) gets production rows only when cleared
-    (``agent_sees_sensitive_rows``), and its result is shaped for a model's context."""
+    (``agent_sees_sensitive_rows``), and its result is shaped for a model's context --
+    unless ``shaped`` is False: the caller keeps the whole result and shapes what it
+    hands the model itself (the MCP tool, which keeps the rows as a result to read back)."""
     opps = scope.resolve(caller, opportunity_ids)
     if not agent_sees_sensitive_rows(for_agent, opps):
         # Still tell the agent whether its SQL would run: that is what it needs to hand
@@ -286,7 +294,7 @@ def query(
         "opportunities": [{"id": o.id, "name": o.name, "llo": o.llo} for o in opps],
         "open_on_page": open_on_page_url([o.id for o in opps], sql),
     }
-    return shape_for_agent(out) if for_agent else out
+    return shape_for_agent(out) if (for_agent and shaped) else out
 
 
 def open_on_page_url(opportunity_ids, sql: str = "") -> str:

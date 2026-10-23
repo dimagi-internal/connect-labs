@@ -199,6 +199,51 @@ different workflows can offer different agents. An agent that works with sensiti
 gets the author's `brief` through `data_workflow_context`. A choice that is not available
 offers no panel, and the Agent box says why.
 
+## Results labs keeps: facts for the agent, the rows in labs (`labs-result://`)
+
+A tool that produces rows does not put them in its result. `data_query`,
+`workflow_run_indicators` and `targeting_pmc_states` keep what they produced as an
+**artifact** in labs' database (`connect_labs/mcp/artifacts.py`, over the canopy SDK's
+host-held results, dimagi-canopy 0.18; canopy-web spec
+`2026-10-23-host-held-results-design`) and return **facts** -- the row count, the
+columns, a sample, what was asked (the SQL) -- plus an MCP `resource_link`
+(`labs-result://<id>`, also `result_uri` in the JSON). canopy carries the link, never the
+rows; in a sensitive conversation the link is all it stores, and `site.json` declares the
+`labs-result` scheme (`site.resource_schemes`) so canopy keeps it.
+
+- **Who gets what inline.** A canopy agent gets the first `INLINE_ROWS` (20) rows as
+  `sample_rows` (`sample_is_partial` when there are more): most aggregates arrive whole,
+  and a long result arrives as a sample it reads further with canopy's `site_read`, a page
+  at a time. Every other caller -- Claude Code, ACE, scout-queries -- has no `site_read`
+  and parses rows, so it still gets every row inline, with the link beside them.
+  `explorer_query` (scout-queries' name) keeps nothing and is unchanged.
+- **Reading one back** is MCP `resources/read` on labs' MCP server
+  (`labs-result://{id}{?page,page_size}`, mounted by `artifacts.mount_fastmcp`): a table
+  pages through the URI (default 100, max 1000 rows a page) with
+  `_meta["canopy/artifact"]` saying the page, pages, row count, expiry and that it is the
+  **snapshot** the agent saw (no `ON_READ`: the card and the agent agree on the rows).
+- **Who may read it.** The person the call ran as (`str(user.pk)`, read from the MCP
+  request's token -- the `READER` hook), and anyone who could run the same thing
+  themselves (`MAY_READ`): holds every opportunity the query read, can open the run the
+  indicators came from; a public PMC ranking, any labs user. Nobody else (`forbidden`).
+- **What a read through canopy may carry** (`server.ArtifactReadGate`, every reader, the
+  owner too): a result holding sensitive data goes back through canopy only to an agent
+  whose own `Canopy-Execution` statement clears it, or to the person's own card -- a read
+  with no statement, no agent acting -- for a result a cleared agent already received.
+  A "no user visit data" caller never reads one. Each read is on the audit trail
+  (`resource_type` `labs_result`).
+- **For a day.** Expired results read as `expired`; `connect_labs.mcp.tasks.sweep_artifacts`
+  (beat, hourly) deletes them.
+
+**The results card** (`ui://labs/data-result`) reads the link as its viewer, pages on the
+server and sorts within the page, subscribes to the link and re-reads when labs says it
+changed, and never runs the query itself. It names each refusal: expired ("ask again in
+the chat"), not yours, or sensitive data that stays in Labs (with the Data page). The PMC
+card (`ui://labs/pmc-states`) reads its ranking the same way and re-totals ticked states
+through `targeting_pmc_rank` as the viewer. The coaching preview and the edit-confirm
+cards deliberately preview again as the viewer: their confirm token must be the viewer's
+own, never the agent's.
+
 ## Three things that are true of labs specifically
 
 **The CSRF cookie is unreadable from JavaScript.** Labs sets

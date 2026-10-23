@@ -28,6 +28,7 @@ from connect_labs.labsdata.scope import ScopeError
 from connect_labs.labsdata.validator import DEFAULT_MAX_ROWS, HARD_MAX_ROWS
 from connect_labs.labsdata.workflow_context import WorkflowNotFound, workflow_context
 
+from .. import artifacts
 from ..connect_token import require_connect_token
 from ..tool_registry import MCPToolError, register
 from ..ui import DATA_RESULT_URI, tool_meta
@@ -155,14 +156,57 @@ QUERY = dict(
 )
 
 
+#: data_query only: what it keeps (explorer_query, scout-queries' name, returns rows inline).
+QUERY_KEPT = (
+    " The result is kept for a day at `result_uri` (a labs-result:// resource, also a resource_link in the "
+    f"content). An agent calling through canopy gets the first {artifacts.INLINE_ROWS} rows as `sample_rows` "
+    "(`sample_is_partial` when there are more) and reads the rest with site_read on that URI, a page at a time "
+    "(?page=N&page_size=M, up to 1000) -- never by running the query again; the person's card shows every row. "
+    "Other callers get every row in `rows`."
+)
+
+
 def query(user, opportunity_ids, sql, max_rows=DEFAULT_MAX_ROWS):
+    agent = _from_canopy()
+    try:
+        out = service.query(_caller(user), opportunity_ids, sql, max_rows=int(max_rows), for_agent=agent, shaped=False)
+    except ScopeError as e:
+        raise _scope_error(e) from e
+    except service.SensitiveDataRefused as e:
+        # Not an error: the SQL is valid (checked over zero rows) and the person can
+        # run it. The agent -- and the View canopy draws for it -- get no rows. The View
+        # reads even this from the kept result, so a sensitive conversation's card, which
+        # gets only the link, still offers the Data page.
+        withheld = {
+            "withheld": True,
+            "reason": e.code,
+            "message": e.message,
+            "sql_executed": sql,
+            "open_on_page": service.open_on_page_url(opportunity_ids, sql),
+        }
+        link = artifacts.save(
+            user,
+            artifacts.KIND_QUERY,
+            withheld,
+            access={"opportunity_ids": _ids(opportunity_ids), "sensitive": False},
+            name="Query (rows stay in Labs)",
+            description="Production rows withheld from the agent; open it on the Data page.",
+        )
+        return artifacts.with_link(withheld, link)
+    except QueryError as e:
+        raise _query_error(e) from e
+    return _kept(user, out, agent)
+
+
+def explorer_query(user, opportunity_ids, sql, max_rows=DEFAULT_MAX_ROWS):
+    """scout-queries' ``explorer_query``: the result whole and inline, nothing kept.
+    Its caller is Claude Code reading ``content[0].text``; it has no View and no
+    ``site_read``, so it keeps exactly the shape it was built against."""
     try:
         return service.query(_caller(user), opportunity_ids, sql, max_rows=int(max_rows), for_agent=_from_canopy())
     except ScopeError as e:
         raise _scope_error(e) from e
     except service.SensitiveDataRefused as e:
-        # Not an error: the SQL is valid (checked over zero rows) and the person can
-        # run it. The agent -- and the View canopy draws for it -- get no rows.
         return {
             "withheld": True,
             "reason": e.code,
@@ -174,15 +218,69 @@ def query(user, opportunity_ids, sql, max_rows=DEFAULT_MAX_ROWS):
         raise _query_error(e) from e
 
 
+def _ids(opportunity_ids) -> list[int]:
+    try:
+        return sorted({int(i) for i in opportunity_ids or []})
+    except (TypeError, ValueError):
+        return []
+
+
+def _kept(user, out: dict, agent: bool) -> dict:
+    """The query's result kept as a ``labs-result://`` artifact, and what the caller gets.
+
+    The artifact holds every row the query returned (up to its row cap), unshaped: the
+    person's card pages and sorts through it, and the agent reads more of it with
+    ``site_read``. A canopy agent gets the facts -- the row count, the columns, the first
+    ``artifacts.INLINE_ROWS`` rows (long cells cut, as before), the SQL, the notes -- and
+    the link. Any other caller (Claude Code, ACE, scout-queries) has no ``site_read`` and
+    reads ``rows``, so it gets the whole result as before, with the link beside it."""
+    ids = [o["id"] for o in out.get("opportunities") or []]
+    names = ", ".join(str(o.get("name") or o["id"]) for o in out.get("opportunities") or [])
+    link = artifacts.save(
+        user,
+        artifacts.KIND_QUERY,
+        out,
+        access={"opportunity_ids": ids, "sensitive": artifacts.sensitive(ids)},
+        name=f"Query over {names}"[:200] if names else "Query result",
+        description=f"{out['row_count']} rows, {len(out['columns'])} columns",
+    )
+    if not agent:
+        return artifacts.with_link(out, link)
+    from canopy_sdk.host.artifacts import summarize_rows
+
+    rows = out["rows"]
+    # Long cells cut and the row-cap note added exactly as an agent's result always was.
+    shaped = service.shape_for_agent({**out, "rows": rows[: artifacts.INLINE_ROWS]})
+    summary = summarize_rows(out["columns"], rows, sample=artifacts.INLINE_ROWS)
+    summary["sample_rows"] = [dict(zip(out["columns"], r)) for r in shaped["rows"]]
+    facts = {
+        **{k: v for k, v in out.items() if k != "rows"},
+        "row_count": summary["row_count"],
+        "sample_rows": summary["sample_rows"],
+        # summarize_rows' `truncated` (the sample is not every row). `truncated` stays the
+        # query's own: the row cap was hit.
+        "sample_is_partial": summary["truncated"],
+        "notes": shaped["notes"],
+    }
+    if summary["truncated"]:
+        facts["notes"] = [
+            *facts["notes"],
+            f"These are the first {len(summary['sample_rows'])} of {summary['row_count']} rows. The person's card "
+            "shows every row. Read more with site_read on `result_uri`, a page at a time (?page=2, "
+            "?page_size= up to 1000) -- do not run the query again to see them.",
+        ]
+    return artifacts.with_link(facts, link)
+
+
 for _name, _spec, _fn in (
     ("data_describe", DESCRIBE, describe),
     ("data_validate", VALIDATE, validate),
-    ("data_query", QUERY, query),
+    ("data_query", {**QUERY, "description": QUERY["description"] + QUERY_KEPT}, query),
     # scout-queries' names for the same three (see the module docstring), without the
     # result View: they are called from Claude Code, not drawn in canopy.
     ("explorer_describe", DESCRIBE, describe),
     ("explorer_validate", VALIDATE, validate),
-    ("explorer_query", {k: v for k, v in QUERY.items() if k != "meta"}, query),
+    ("explorer_query", {k: v for k, v in QUERY.items() if k != "meta"}, explorer_query),
 ):
     register(name=_name, **_spec)(_fn)
 

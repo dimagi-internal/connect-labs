@@ -476,12 +476,42 @@ def test_the_candidate_states_view_re_totals_as_the_viewer_and_hands_the_selecti
         '"ui/open-link"',
     ):
         assert method in script, method
-    # It asks the agent's question again from the arguments: canopy's runner path passes the
-    # result on as text, which for an answer this size is not the structured result.
-    assert '"ui/notifications/tool-input"' in script and "askAgain" in script
+    # It reads the ranking the agent's call kept, from the result's labs-result:// link, as
+    # the viewer -- it no longer asks the agent's question again.
+    assert '"resources/read"' in script and '"labs-result://"' in script
+    assert "askAgain" not in script
     # It starts with the four BEST kept states ticked: `keep` is not in rank order (live: it
     # ticked Ondo and Imo and left Benue, the best, unticked).
     assert "kept.indexOf(r.state)" in script and "(reco.keep || []).slice(0, 4)" not in script
     # It re-totals through the same read-only tool the agent called, and opens only https.
     assert '"targeting_pmc_rank"' in script
     assert 'indexOf("https://") !== 0' in script
+
+
+def _data_result_resource():
+    from connect_labs.mcp.ui import DATA_RESULT_URI, RESOURCES
+
+    return next(r for r in RESOURCES if r.uri == DATA_RESULT_URI)
+
+
+def test_the_results_view_is_self_contained():
+    doc = _Doc()
+    doc.feed(_data_result_resource().html())
+    for tag, attrs in doc.tags:
+        assert not (tag == "script" and attrs.get("src")), "external script"
+        assert tag not in ("link", "iframe", "object", "embed", "base"), tag
+    for banned in ("fetch(", "XMLHttpRequest", "WebSocket", "eval(", "new Function"):
+        assert banned not in doc.script, banned
+
+
+def test_the_results_view_reads_the_kept_result_and_never_runs_the_query():
+    """Its behaviour is tested in data_result.test.js against a stand-in host; this pins the
+    contract a reviewer reads: resources/read + subscribe on labs-result://, no tools/call."""
+    doc = _Doc()
+    doc.feed(_data_result_resource().html())
+    script = doc.script.replace("'", '"')
+    for method in ('"resources/read"', '"resources/subscribe"', '"notifications/resources/updated"'):
+        assert method in script, method
+    assert '"labs-result://"' in script
+    assert '"tools/call"' not in script and "askAgain" not in script
+    assert "ask again in the chat" in script

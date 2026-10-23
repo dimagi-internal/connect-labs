@@ -43,6 +43,10 @@ You are answering questions about live CommCare Connect program data for the opp
     a field or column -- search `fields` instead -- and stop and tell the person after three failures in a
     row. Never probe system catalogs.
 13. Read `notes` on every result: they say when rows were cut and what to do about it.
+14. A result is kept for a day at `result_uri` (labs-result://). Through canopy you get its first rows as
+    `sample_rows` (`sample_is_partial` when there are more); read the rest with site_read on that URI, a page
+    at a time (?page=2, ?page_size= up to 1000), instead of running the query again. The person's card shows
+    every row.
 """
 
 #: For an agent (a canopy call) over PRODUCTION opportunities that labs has not cleared it

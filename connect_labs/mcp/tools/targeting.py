@@ -2036,8 +2036,8 @@ def targeting_pmc_rank(
         },
         "additionalProperties": False,
     },
-    # The candidate-states View (ui://labs/pmc-states). It re-asks and re-totals as the viewer
-    # through targeting_pmc_rank; this tool only puts the card in the chat.
+    # The candidate-states View (ui://labs/pmc-states). It reads the ranking this call keeps
+    # (`result_uri`) and re-totals the ticked states as the viewer through targeting_pmc_rank.
     meta=tool_meta(PMC_STATES_URI, "model", "app"),
 )
 def targeting_pmc_states(
@@ -2056,12 +2056,28 @@ def targeting_pmc_states(
     if not out.get("available"):
         return out
     reco = out.get("recommendation") or {}
+    # The whole ranking is kept (mcp/artifacts.py) and the card reads it from the link, as
+    # its viewer -- it no longer asks targeting_pmc_rank the same question again. Public
+    # data: any labs user may read it.
+    from .. import artifacts
+
+    link = artifacts.save(
+        user,
+        artifacts.KIND_PMC,
+        {**out, "asked": {"states": states, "deaths_basis": deaths_basis, "ages": ages}},
+        access={"sensitive": False},
+        name=f"PMC candidate states: {reco.get('label') or 'ranking'}"[:200],
+        description=f"{len(reco.get('states') or [])} states considered",
+    )
     # The agent gets the card's headline, not the whole ranking again: it already has that.
-    return {
-        "available": True,
-        "card": "shown to the visitor",
-        "recommendation": {k: reco.get(k) for k in ("label", "keep", "drop", "multiple_of_benchmark", "by_basis")},
-        "costs": out.get("costs"),
-        "explorer_path": out.get("explorer_path"),
-        "explorer_url": out.get("explorer_url"),
-    }
+    return artifacts.with_link(
+        {
+            "available": True,
+            "card": "shown to the visitor",
+            "recommendation": {k: reco.get(k) for k in ("label", "keep", "drop", "multiple_of_benchmark", "by_basis")},
+            "costs": out.get("costs"),
+            "explorer_path": out.get("explorer_path"),
+            "explorer_url": out.get("explorer_url"),
+        },
+        link,
+    )
