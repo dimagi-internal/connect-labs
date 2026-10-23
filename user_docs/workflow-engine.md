@@ -206,7 +206,4 @@ Labs Administrators set three options for each agent using tick boxes in the sam
 - **Real data** — whether the agent may be used on workflows with real (non-synthetic) data; this box can only be ticked once Canopy confirms the agent handles sensitive data **and** has a ready sensitive-data runner; otherwise the box is disabled and shows the reason
 - **Default** — whether this agent is the site-wide default
 
-If anything changes on the Canopy side — for example, an agent's author withdraws the declaration that it handles sensitive data, or Canopy stops allowing an agent on Labs — Labs follows immediately: the agent stops being offered and its row turns red with Canopy's reason shown. If Canopy cannot be reached, Labs shows no agent at all until the connection is restored.
-
-!!! note "This does not affect workflow buttons"
-    Buttons built into a workflow itself — for example, an **Initiate AI coach**
+If anything changes on the Canopy side — for example, an agent's author withdraws the declaration that it handles sensitive data, or Canopy stops allowing an agent on Labs — Labs follows immediately: the agent stops being offered and its row turns red with Canopy's reason shown. If Canopy cannot be reached, Labs shows no agent at all until
