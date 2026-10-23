@@ -173,7 +173,8 @@ def _jsonpath_to_sql(parts: list[str], column: str) -> str:
 
     `user_data.claim_limits[payment_unit=994].max_visits` ->
     jsonb_path_query_first(form_json,
-        '$."user_data"."claim_limits"[*] ? (@."payment_unit" == 994 || @."payment_unit" == "994")."max_visits"')
+        'strict $."user_data"."claim_limits"[*] ? (@."payment_unit" == 994 || @."payment_unit" == "994")."max_visits"',
+        '{}', true)
     #>> '{}'
 
     A numeric value matches a JSON number or the same digits as a string, as
@@ -181,8 +182,13 @@ def _jsonpath_to_sql(parts: list[str], column: str) -> str:
     key are restricted by `utils.LIST_MATCH_SEGMENT` to letters, digits, `_` and `-`,
     and the whole literal still goes through _sql_str. `#>> '{}'` returns a scalar as
     text and an object as its JSON text, the same as `->>` does for a key.
+
+    STRICT, with errors silenced (the `true`): lax mode wraps a non-list in a list and
+    unwraps a list under a key, so it would read a value where `extract_json_path`
+    walks only dicts and lists and returns None. Strict raises on any such shape
+    mismatch, and silent turns that into NULL -- the same answer the Python side gives.
     """
-    out = ["$"]
+    out = ["strict $"]
     for part in parts:
         match = parse_list_match(part)
         if not match:
@@ -195,7 +201,7 @@ def _jsonpath_to_sql(parts: list[str], column: str) -> str:
         else:
             cond = f'{member} == "{value}"'
         out.append(f".{_jsonpath_key(name)}[*] ? ({cond})")
-    return f"jsonb_path_query_first({column}, '{_sql_str(''.join(out))}') #>> '{{}}'"
+    return f"jsonb_path_query_first({column}, '{_sql_str(''.join(out))}', '{{}}', true) #>> '{{}}'"
 
 
 def _build_join_subquery(joins: list[JoinConfig], opportunity_id: int, pipeline_id: int | None) -> str:

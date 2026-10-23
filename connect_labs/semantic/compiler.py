@@ -1417,16 +1417,39 @@ def _grain_problems(props_doc: dict[str, Any], registry: dict[str, Any]) -> list
     return problems
 
 
-def _grain_ctes(grained: list[dict[str, Any]], llo_map: dict[Any, str] | None) -> str:
+def _grain_ctes(
+    grained: list[dict[str, Any]],
+    llo_map: dict[Any, str] | None,
+    key: str,
+    entity_worker: str | None = None,
+) -> str:
     """worker_day -> one row per worker per day; then each level's value over those days.
 
     The day's value is the median (number) or count (count) of the measure's visit
     column over the worker's visits that day; a level's value is the median of the
     day values (days with no value are skipped by PERCENTILE_CONT) or their sum.
-    Reads `visits`, so it is cut at the report date like everything else.
+    Above one worker (opportunity, LLO, programme) the median is over every
+    worker-day in that scope pooled, not a median of the workers' own values.
+    Reads `visits`, so it is cut at the report date like everything else -- which
+    also means no visit without a date reaches it (`visit_date < date + 1` drops
+    NULL). A day is the calendar day of `visit_date`, which Connect already stores
+    as a date.
+
+    Which visits count, so the grain agrees with the entity rows it rides on:
+      * only visits that have an entity key -- `visit_agg` drops the others, so a
+        visit outside every entity would otherwise count here and nowhere else;
+      * under a one-worker evaluation (`entity_worker`, see _split_worker_filter)
+        only that worker's visits. With `alphabetical` the filter already dropped
+        the other workers' visits before this CTE; with `last_visit`/`first_visit`
+        the visits stay whole for attribution, and without this the opportunity /
+        LLO / programme levels would cover every worker while every other measure
+        covers only this worker's entities.
     """
     if not grained:
         return ""
+    worker_only = ""
+    if entity_worker is not None:
+        worker_only = " AND v.username = '" + entity_worker.replace("'", "''") + "'"
 
     def day(m: dict[str, Any]) -> str:
         if m["type"] == "count":
@@ -1448,7 +1471,7 @@ worker_day AS (
     SELECT v.opportunity_id, v.username{llo_col},
            {day_cols}
     FROM visits v
-    WHERE v.username IS NOT NULL
+    WHERE v.username IS NOT NULL AND v.{key} IS NOT NULL{worker_only}
     GROUP BY v.opportunity_id, v.username, CAST(v.visit_date AS DATE)
 ),
 wd_flw AS (SELECT opportunity_id, username, {rolled} FROM worker_day GROUP BY opportunity_id, username),
@@ -1457,7 +1480,16 @@ wd_prog AS (SELECT {rolled} FROM worker_day),{llo_cte}"""
 
 
 def _grain_join(grained: list[dict[str, Any]], llo_map: dict[Any, str] | None) -> tuple[str, str]:
-    """(columns for base_m's select, joins onto visit_agg v) carrying each level."""
+    """(columns for base_m's select, joins onto visit_agg v) carrying each level.
+
+    The worker level joins on the ENTITY's worker (`entity.worker`), because that is
+    the worker an flw-scope row is. A worker who visited but is no entity's worker
+    therefore has no flw row -- for this measure as for every other -- while their
+    days still count in the opportunity, LLO and programme levels, which are about
+    the days, not the entities. An opportunity missing from llo_map has a NULL llo:
+    `IS NOT DISTINCT FROM` gives that NULL-llo group its own value, as GROUPING SETS
+    gives it its own row.
+    """
     if not grained:
         return "", ""
     aliases = {"flw": "g_flw", "opp": "g_opp", "prog": "g_prog", "llo": "g_llo"}
@@ -1472,7 +1504,7 @@ def _grain_join(grained: list[dict[str, Any]], llo_map: dict[Any, str] | None) -
         "\n    CROSS JOIN wd_prog g_prog"
     )
     if llo_map:
-        joins += f"\n    LEFT JOIN wd_llo g_llo ON g_llo.llo = {_llo_case_sql(llo_map)}"
+        joins += f"\n    LEFT JOIN wd_llo g_llo ON g_llo.llo IS NOT DISTINCT FROM {_llo_case_sql(llo_map)}"
     return cols, joins
 
 
@@ -1570,7 +1602,7 @@ def _build_ctes(
     llo_col = f",\n           {_llo_case_sql(llo_map)} AS llo" if llo_map else ""
     series_select, series_join = (", w.*", f"\n    LEFT JOIN weight_agg w USING ({rid})") if ws else ("", "")
     grained = _grain_measures(registry)
-    grain_ctes = _grain_ctes(grained, llo_map)
+    grain_ctes = _grain_ctes(grained, llo_map, key, entity_worker)
     grain_cols, grain_join = _grain_join(grained, llo_map)
 
     ctes = f"""WITH visits_all AS (

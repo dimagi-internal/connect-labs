@@ -106,8 +106,8 @@ def test_a_list_match_path_compiles_to_one_jsonpath_query():
     sql = _jsonb_path_to_sql(PATH)
     assert sql == (
         "jsonb_path_query_first(form_json, "
-        '\'$."user_data"."claim_limits"[*] ? (@."payment_unit" == 994 || @."payment_unit" == "994")'
-        ".\"max_visits\"') #>> '{}'"
+        '\'strict $."user_data"."claim_limits"[*] ? (@."payment_unit" == 994 || @."payment_unit" == "994")'
+        ".\"max_visits\"', '{}', true) #>> '{}'"
     )
 
 
@@ -138,6 +138,23 @@ def test_postgres_agrees_with_python_on_strings_and_misses():
     assert _run(_jsonb_path_to_sql(PATH), _record(as_text)) == "7"
     assert _run(_jsonb_path_to_sql(PATH), _record([])) is None
     assert _run(_jsonb_path_to_sql(PATH), _record("not a list")) is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "record",
+    [
+        # Not a list: lax jsonpath wraps the object in a one-item list and matches it.
+        {"user_data": {"claim_limits": {"max_visits": 5, "payment_unit": 994}}},
+        # A list where an object is expected: lax unwraps it and walks into each item.
+        {"user_data": [{"claim_limits": [{"max_visits": 5, "payment_unit": 994}]}]},
+        # A matched item without the field asked for.
+        {"user_data": {"claim_limits": [{"payment_unit": 994}]}},
+    ],
+)
+def test_postgres_reads_nothing_where_python_reads_nothing(record):
+    assert extract_json_path(record, PATH) is None
+    assert _run(_jsonb_path_to_sql(PATH), record) is None
 
 
 @pytest.mark.django_db

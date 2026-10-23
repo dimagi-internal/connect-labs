@@ -434,9 +434,12 @@ def english(registry: dict[str, Any], props_doc: dict[str, Any], indicator: str)
         # A worker-day measure: `sql` names one visit column (compiler.MEASURE_GRAINS).
         col = _words(expr)
         if top.get("type") == "count":
-            definition = f"The number of visits with a {col}, over the worker's days."
+            definition = f"The number of visits with a {col}, over every worker-day in scope."
         else:
-            definition = f"The median, across each worker's days, of that day's median {col}."
+            definition = (
+                f"The median, across each worker's days, of that day's median {col}; above one worker, "
+                "the median of every worker-day in scope."
+            )
     elif len(refs) == 2 and expr.startswith("100.0 *"):
         definition = f"{parts[refs[0]]}, as a percentage of {parts[refs[1]]}."
     elif len(refs) == 2 and "NULLIF" in expr:

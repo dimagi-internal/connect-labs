@@ -82,7 +82,7 @@ def _config():
 def _visit(visit_id, username, date, mother, hop=None):
     from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
 
-    form = {"mother": mother}
+    form = {"mother": mother} if mother is not None else {}
     if hop is not None:
         form["hop"] = str(hop)
     RawVisitCache.objects.create(
@@ -110,7 +110,9 @@ def day_cache(db):
     return True
 
 
-def _evaluate(scopes, *, as_of="DATE '2026-09-30'", llo_map=LLO_MAP, indicators=INDICATORS):
+def _evaluate(
+    scopes, *, as_of="DATE '2026-09-30'", llo_map=LLO_MAP, indicators=INDICATORS, props=PROPS, visit_filter=None
+):
     from django.db import connection
 
     from connect_labs.semantic.runtime import evaluate
@@ -118,10 +120,11 @@ def _evaluate(scopes, *, as_of="DATE '2026-09-30'", llo_map=LLO_MAP, indicators=
     return evaluate(
         _config(),
         [OPP],
-        registry_documents=(PROPS, indicators),
+        registry_documents=(props, indicators),
         scopes=scopes,
         as_of=as_of,
         llo_map=llo_map,
+        visit_filter=visit_filter,
         connection=connection,
     )
 
@@ -210,6 +213,47 @@ def test_a_materialised_props_table_reads_the_same(day_cache):
 def test_no_llo_map_still_compiles_every_other_level(day_cache):
     rows = _by_scope(_evaluate(["programme", "flw"], llo_map=None))
     assert rows[("programme", None)]["m03"] == pytest.approx(20)
+
+
+def test_an_opportunity_missing_from_the_llo_map_still_gets_its_llo_value(day_cache):
+    """Its llo is NULL; GROUPING SETS gives the NULL-llo group a row, and that row
+    must carry the value, not lose it to a `NULL = NULL` join."""
+    rows = _by_scope(_evaluate(["llo"], llo_map={OPP + 1: "Elsewhere"}))
+    assert rows[("llo", None)]["llo"] is None
+    assert rows[("llo", None)]["m03"] == pytest.approx(20)
+
+
+@pytest.mark.parametrize("worker", ["last_visit", "first_visit", "alphabetical"])
+def test_a_one_worker_evaluation_counts_only_that_workers_days(day_cache, worker):
+    """Every attribution rule gives one worker's evaluation the same answer: their
+    own days (ada: 60), at every scope -- as every other measure counts only their
+    entities. Under last_visit the visits stay whole for attribution, so without the
+    worker filter on the grain the programme level was every worker's (20)."""
+    props = copy.deepcopy(PROPS)
+    props["entity"]["worker"] = worker
+    rows = _by_scope(_evaluate(["programme", "flw"], props=props, visit_filter={"username": "ada"}))
+    assert rows[("programme", None)]["m03"] == pytest.approx(60)
+    assert rows[("flw", "ada")]["m03"] == pytest.approx(60)
+    assert rows[("programme", None)]["m01_mothers"] == 3
+
+
+def test_a_visit_outside_every_entity_does_not_count(day_cache):
+    """A visit with no entity key is in no entity row, so it is in no day either."""
+    _visit("c1", "cara", "2026-09-04", None, 1000)
+    rows = _by_scope(_evaluate(["programme", "flw"]))
+    assert rows[("programme", None)]["m03"] == pytest.approx(20)
+    assert ("flw", "cara") not in rows
+
+
+def test_a_worker_who_is_no_entitys_worker_has_no_flw_row_but_their_days_count(day_cache):
+    """Documented behaviour: an flw row is an entity's worker (last_visit here).
+    dina visited m4 before bola did, so m4 is bola's and dina has no flw row -- for
+    this measure as for every other -- while dina's day is part of the programme's
+    days: median(20, 100, 7, 50) = 35."""
+    _visit("d1", "dina", "2026-08-30", "m4", 50)
+    rows = _by_scope(_evaluate(["programme", "flw"]))
+    assert ("flw", "dina") not in rows
+    assert rows[("programme", None)]["m03"] == pytest.approx(35)
 
 
 # ── validation ─────────────────────────────────────────────────────────────────
