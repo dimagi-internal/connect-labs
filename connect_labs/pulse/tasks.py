@@ -491,10 +491,30 @@ def warm_summary_cache() -> int:
     axis) on a timer means the interactive path is always a cache hit; scoped
     requests (a filter applied) are rarer, warm on first use, and ride the
     same TTL.
+
+    Only while someone is WATCHING, though. Four variants take ~54s against a
+    60s beat, so warming unconditionally kept one database core busy around the
+    clock: measured 2026-10-23, it was ~80% of labs-jj-postgres' active time
+    and the whole of the step from ~22% to ~70% baseline CPU, on a day with
+    zero summary requests. With no viewer in ``PULSE_SUMMARY_WATCHED_SECONDS``
+    it refreshes every ``PULSE_SUMMARY_IDLE_WARM_SECONDS`` instead, and writes a
+    TTL that outlives that gap -- so a cold public link is still a cache hit
+    (a baseline at most that old, with live events on top), and that viewer's
+    request puts the warmer back on the 60s cadence.
     """
+    from django.conf import settings
+    from django.core.cache import cache
     from django.http import QueryDict
 
-    from connect_labs.pulse.api import SummaryView
+    from connect_labs.pulse.api import SUMMARY_WATCHED_KEY, SummaryView
+
+    ttl = None  # SummaryView's own TTL
+    idle_every = getattr(settings, "PULSE_SUMMARY_IDLE_WARM_SECONDS", 900)
+    if idle_every and not cache.get(SUMMARY_WATCHED_KEY):
+        last = cache.get(_SUMMARY_LAST_WARM_KEY)
+        if last is not None and time.time() - last < idle_every:
+            return 0
+        ttl = idle_every + getattr(settings, "PULSE_SUMMARY_CACHE_SECONDS", 180)
 
     class _User:
         is_authenticated = True
@@ -511,9 +531,13 @@ def warm_summary_cache() -> int:
     # Both views of fixed costs: the wall opens in either, per the viewer's toggle.
     for user in (_User(), _Anon()):
         for query in ("", "costs=spread"):
-            SummaryView().get(_Req(user, query), refresh=True)
+            SummaryView().get(_Req(user, query), refresh=True, ttl=ttl)
             warmed += 1
+    cache.set(_SUMMARY_LAST_WARM_KEY, time.time(), None)
     return warmed
+
+
+_SUMMARY_LAST_WARM_KEY = "pulse:summary:last_warm:v1"
 
 
 @celery_app.task(name="connect_labs.pulse.tasks.import_partner_directory")
