@@ -6,13 +6,14 @@ Admin-gated dashboard: filterable event list, anomaly summary cards, and a
 documented, practiced review process auditors ask about.
 """
 
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Count, Max, Sum
 from django.shortcuts import redirect
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.utils.functional import cached_property
 from django.views.generic import TemplateView
 
@@ -26,6 +27,15 @@ PAGE_SIZE = 50
 # Stop counting matching rows past this many. The pager shows "10,000+" instead
 # of an exact total beyond it.
 COUNT_CAP = 10_000
+
+
+def _day_start(value):
+    """Midnight (current timezone) of a ``YYYY-MM-DD`` filter value, or None if unparseable."""
+    try:
+        day = parse_date(value or "")
+    except ValueError:  # well-formed but impossible, e.g. 2026-02-30
+        return None
+    return timezone.make_aware(datetime.combine(day, time.min)) if day else None
 
 
 class CappedPaginator(Paginator):
@@ -83,10 +93,16 @@ class AuditTrailDashboardView(AdminRequiredMixin, TemplateView):
                 pass
         if params.get("outcome"):
             qs = qs.filter(outcome=params["outcome"])
-        if params.get("date_from"):
-            qs = qs.filter(occurred_at__date__gte=params["date_from"])
-        if params.get("date_to"):
-            qs = qs.filter(occurred_at__date__lte=params["date_to"])
+        # A half-open datetime range, never ``occurred_at__date``: that compiles
+        # to ``(occurred_at AT TIME ZONE 'UTC')::date``, which no index serves, so
+        # every page (and its capped count) walked the occurred_at index back from
+        # now across the whole table. Planned on production 2026-10-23 (4.8M rows),
+        # one export-filtered day, page 30: cost 34,622 with the cast, 262 as a
+        # range. A scrape paging the trail day by day pinned the DB at 100%.
+        if date_from := _day_start(params.get("date_from")):
+            qs = qs.filter(occurred_at__gte=date_from)
+        if date_to := _day_start(params.get("date_to")):
+            qs = qs.filter(occurred_at__lt=date_to + timedelta(days=1))
         if params.get("include_labs_only") != "1":
             qs = qs.filter(labs_only=False)
         if params.get("include_canary") != "1":
