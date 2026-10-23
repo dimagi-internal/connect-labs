@@ -83,8 +83,8 @@ def test_labs_declares_its_scheme_and_keeps_the_results_itself():
     from canopy_sdk.django import conf
 
     settings = canopy.host_settings()
-    # The storage is labs' own: the SDK's helper is not turned on.
-    assert "ARTIFACTS" not in settings and conf.artifacts_settings() == {}
+    # The storage is labs' own (dimagi-canopy >= 0.19 has no helper for it).
+    assert "ARTIFACTS" not in settings
     assert settings["RESOURCE_SCHEMES"] == [kept_results.SCHEME] == ["labs-result"]
     # site.json declares it, so canopy keeps the links in a sensitive conversation.
     assert conf.resource_schemes() == ["labs-result"]
@@ -292,3 +292,58 @@ def test_the_mcp_server_lists_the_kept_result_template():
     template = listed["labs_results"]
     assert template.uri_template == "labs-result://{id}{?page,page_size}"
     assert template.mime_type == "application/json"
+
+
+# --- the owner too, now; the token's scope; a deactivated person --------------------------
+
+
+def test_an_owner_who_lost_the_opportunities_no_longer_reads_the_rows(owner, connect):
+    uri = _uri(owner, connect)
+    connect["users"].discard(owner.pk)
+    with pytest.raises(Refused) as refused:
+        kept_results.read(uri, reader=owner.pk)
+    assert refused.value.code == "forbidden"
+
+
+def test_a_yes_is_kept_a_minute_so_paging_does_not_ask_connect_each_time(owner, connect, monkeypatch):
+    uri = _uri(owner, connect)
+    asked = []
+    real = kept_results._could_run
+    monkeypatch.setattr(kept_results, "_could_run", lambda u, r: asked.append(1) or real(u, r))
+    for page in (1, 2, 3):
+        kept_results.read_as(f"{uri}?page={page}&page_size=20", owner.pk, _token(owner))
+    assert len(asked) == 1
+
+
+def test_read_as_judges_once(owner, connect, monkeypatch):
+    uri = _uri(owner, connect)
+    calls = []
+    real = kept_results.may_read
+    monkeypatch.setattr(kept_results, "may_read", lambda *a: calls.append(1) or real(*a))
+    kept_results.read_as(uri, owner.pk, _token(owner))
+    assert len(calls) == 1
+
+
+def test_a_token_reads_back_only_what_a_tool_in_its_scope_keeps(owner, connect, monkeypatch):
+    from connect_labs.mcp import server
+
+    uri = _uri(owner, connect)
+    kept = kept_results.stored(uri)
+    monkeypatch.setattr(server, "allowed_tools", lambda token: frozenset({"marketplace_orgs_get"}))
+    assert "data_query" in kept_results.scope_denial(kept, _token(owner))
+    with pytest.raises(Refused):
+        kept_results.read_as(uri, owner.pk, _token(owner))
+    monkeypatch.setattr(server, "allowed_tools", lambda token: frozenset({"data_query"}))
+    assert kept_results.scope_denial(kept, _token(owner)) is None
+    monkeypatch.setattr(server, "allowed_tools", lambda token: None)
+    assert kept_results.scope_denial(kept, _token(owner)) is None
+
+
+def test_a_deactivated_persons_pat_opens_nothing(owner):
+    from connect_labs.mcp.server import _verify_pat_sync
+
+    raw = _pat(owner)
+    assert _verify_pat_sync(raw) is not None
+    owner.is_active = False
+    owner.save(update_fields=["is_active"])
+    assert MCPAccessToken.verify(raw) is None and _verify_pat_sync(raw) is None

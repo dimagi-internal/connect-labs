@@ -4,14 +4,16 @@ Through labs' real code and the real canopy SDK (>= 0.13): the Data page mints a
 for ``labsdata`` on sensitive-data runners, canopy redeems it at ``/o/token/`` and calls labs' MCP
 as the visitor over DPoP -- and with a ``Canopy-Execution`` statement signed by canopy's
 client key (``consumer.execution_statement``) the call gets production rows; with none, or with
-one that does not clear it, the rows are withheld. canopy is stubbed only where it is
-canopy (the contact-token mint, its client documents).
+one that does not clear it, the rows are withheld. The person's own View reads them back only
+with canopy's ``Canopy-View`` (``consumer.view_statement``) for that result and that person.
+canopy is stubbed only where it is canopy (the contact-token mint, its client documents).
 
 THIS REPOSITORY IS PUBLIC. Every name and value here is invented.
 """
 
 from __future__ import annotations
 
+import time
 from datetime import date, timedelta
 from unittest import mock
 
@@ -94,9 +96,38 @@ def _data_page_grant(canopy_redeem, visitor):
     return _redeem(canopy_redeem, id_jag)
 
 
-def _headers(client_creds, token, facts):
+def _view_statement(client_creds, token, *, subject, uri, now=None, key=None, rpc=None):
+    """canopy's ``Canopy-View``: the person's own View reading ``uri`` (consumer.view_statement),
+    bound to the request ``rpc`` names (by default, the read of ``uri``)."""
+    return consumer.view_statement(
+        key or client_creds.client_key,
+        client_creds.client_id,
+        RESOURCE,
+        subject=str(subject),
+        uri=uri,
+        session="session-1",
+        jkt=consumer.dpop_jkt(client_creds.dpop_key),
+        access_token=token,
+        viewer="user:7",
+        agent="labsdata",
+        rpc=rpc or contract.rpc_digest("resources/read", {"uri": uri}),
+        now=now,
+    )
+
+
+def _headers(client_creds, token, facts, view=None, rpc=None):
+    """canopy's gateway, per request: DPoP, and the statement for THIS JSON-RPC request
+    (its ``rpc`` digest, from the body -- or ``rpc``, to lift one onto another call)."""
+
     async def add_headers(request):
         request.headers["DPoP"] = client_creds.dpop_proof(request.method, RESOURCE, access_token=token)
+        bound = rpc or contract.rpc_digest_of_body(request.content)
+        if view is not None:
+            # A fresh statement per request, as canopy's gateway signs one per request --
+            # unless the test hands one in to spend twice.
+            request.headers[contract.VIEW_HEADER] = view.get("raw") or _view_statement(
+                client_creds, token, **{"rpc": bound, **view}
+            )
         if facts is not None:
             request.headers[contract.EXECUTION_HEADER] = consumer.execution_statement(
                 client_creds.client_key,
@@ -105,17 +136,18 @@ def _headers(client_creds, token, facts):
                 facts,
                 jkt=consumer.dpop_jkt(client_creds.dpop_key),
                 access_token=token,
+                rpc=bound,
             )
 
     return add_headers
 
 
-def _query(client_creds, token, facts):
+def _query(client_creds, token, facts, rpc=None):
     """Call data_query through labs' real MCP as canopy does: DPoP on every request,
     and -- when ``facts`` -- a fresh Canopy-Execution statement on each."""
     from config.asgi import build_application
 
-    add_headers = _headers(client_creds, token, facts)
+    add_headers = _headers(client_creds, token, facts, rpc=rpc)
 
     async def work(mcp_client):
         return await mcp_client.call_tool(
@@ -130,9 +162,10 @@ def _query(client_creds, token, facts):
         return _run_mcp(build_application(), {"Authorization": f"DPoP {token}"}, add_headers, work)
 
 
-def _read(client_creds, token, facts, uri):
+def _read(client_creds, token, facts, uri, view=None):
     """``resources/read`` of a kept result through labs' real MCP, as canopy's gateway
-    does: ``facts`` for an agent's ``site_read``, None for a View (no agent acting)."""
+    does: ``facts`` for an agent's ``site_read``; ``view`` (``Canopy-View``'s subject, uri,
+    ...) for the person's own View; neither for a call canopy vouches nothing for."""
     from fastmcp.exceptions import ClientError
 
     from config.asgi import build_application
@@ -143,9 +176,14 @@ def _read(client_creds, token, facts, uri):
         except (ClientError, Exception) as e:  # noqa: BLE001 -- the refusal is the result
             return e
 
-    return _run_mcp(
-        build_application(), {"Authorization": f"DPoP {token}"}, _headers(client_creds, token, facts), work
-    )
+    # The reader still holds the opportunity (kept_results.may_read asks again, owner too).
+    with (
+        mock.patch("connect_labs.labs.connect_tokens.get_valid_access_token", return_value="t"),
+        mock.patch.object(scope, "resolve", return_value=[REAL]),
+    ):
+        return _run_mcp(
+            build_application(), {"Authorization": f"DPoP {token}"}, _headers(client_creds, token, facts, view), work
+        )
 
 
 @pytest.mark.django_db(transaction=True)
@@ -220,10 +258,81 @@ def test_the_cleared_agent_reads_the_kept_rows_back_a_page_at_a_time(labsdata, c
 
 @pytest.mark.django_db(transaction=True)
 def test_the_persons_own_view_reads_what_the_cleared_agent_was_given(labsdata, canopy_redeem, visitor, real_visits):
-    """A View's read carries no statement: no agent is acting, the person is looking at a
-    result that already reached a cleared agent through canopy."""
+    """A View's read carries canopy's signed ``Canopy-View`` for this result and this person:
+    no agent is acting, the person is looking at a result that already reached a cleared
+    agent through canopy. Every page of it, each request with its own statement."""
+    from connect_labs.audit_trail.models import AuditEvent
+
     token, uri = _kept(labsdata, canopy_redeem, visitor)
-    assert _rows(_read(labsdata, token, None, uri)) == ["rv0", "rv1", "rv2"]
+    assert _rows(_read(labsdata, token, None, uri, view={"subject": visitor.pk, "uri": uri})) == ["rv0", "rv1", "rv2"]
+    paged = f"{uri}?page=2&page_size=2"
+    assert _rows(_read(labsdata, token, None, paged, view={"subject": visitor.pk, "uri": uri})) == ["rv2"]
+    read = AuditEvent.objects.filter(resource_type="labs_result").latest("id")
+    assert (read.action, read.opportunity_id, read.record_count) == ("read", REAL.id, 1)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_delegated_read_with_no_statement_is_refused(labsdata, canopy_redeem, visitor, real_visits):
+    """The regression: a delegated read carrying no statement at all -- an agent that
+    omits its ``Canopy-Execution``, or anything else that makes canopy call without one --
+    is NOT the person's View. It used to be read as one."""
+    token, uri = _kept(labsdata, canopy_redeem, visitor)
+    refused = _read(labsdata, token, None, uri)
+    assert isinstance(refused, Exception) and "forbidden" in str(refused) and "sensitive" in str(refused)
+    assert "no_statement" in str(refused)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize(
+    "view, code",
+    [
+        ({"uri": "labs-result://another-result"}, "wrong_resource"),
+        ({"subject": "999999"}, "wrong_person"),
+        ({"now": time.time() - 3600}, "expired"),
+        ({"key": "stranger"}, "bad_signature"),
+        ({"rpc": contract.rpc_digest("resources/read", {"uri": "labs-result://x?page=9"})}, "wrong_request"),
+    ],
+    ids=["another-uri", "another-person", "expired", "not-canopys-key", "another-request"],
+)
+def test_a_view_statement_that_does_not_fit_is_refused(labsdata, canopy_redeem, visitor, real_visits, view, code):
+    from canopy_sdk.keys import generate_private_key
+
+    token, uri = _kept(labsdata, canopy_redeem, visitor)
+    stated = {"subject": visitor.pk, "uri": uri, **view}
+    if stated.get("key") == "stranger":
+        stated["key"] = generate_private_key("EdDSA")
+    refused = _read(labsdata, token, None, uri, view=stated)
+    assert isinstance(refused, Exception) and "forbidden" in str(refused)
+    assert code in str(refused) or (code == "bad_signature" and "unknown_key" in str(refused))
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_statement_lifted_onto_another_call_withholds_the_rows(labsdata, canopy_redeem, visitor, real_visits):
+    """A cleared agent's statement, made for one call, does not clear another on its token."""
+    token = _data_page_grant(canopy_redeem, visitor)
+    other = contract.rpc_digest("tools/call", {"name": "data_query", "arguments": {"sql": "SELECT 1"}})
+    result = _query(labsdata, token, SENSITIVE_DECLARED, rpc=other).structured_content
+    assert result["withheld"] is True and "rows" not in result
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_view_statement_is_spent_once(labsdata, canopy_redeem, visitor, real_visits):
+    token, uri = _kept(labsdata, canopy_redeem, visitor)
+    raw = _view_statement(labsdata, token, subject=visitor.pk, uri=uri)
+    assert _rows(_read(labsdata, token, None, uri, view={"raw": raw})) == ["rv0", "rv1", "rv2"]
+    refused = _read(labsdata, token, None, uri, view={"raw": raw})
+    assert isinstance(refused, Exception) and "replayed" in str(refused)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_an_uncleared_agent_cannot_pass_itself_off_as_the_view(labsdata, canopy_redeem, visitor, real_visits):
+    """An agent's call is judged as the agent: a view statement beside its execution
+    statement does not make it the person."""
+    token, uri = _kept(labsdata, canopy_redeem, visitor)
+    refused = _read(
+        labsdata, token, {**SENSITIVE_DECLARED, "agent": "ace"}, uri, view={"subject": visitor.pk, "uri": uri}
+    )
+    assert isinstance(refused, Exception) and "forbidden" in str(refused)
 
 
 @pytest.mark.django_db(transaction=True)

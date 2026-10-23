@@ -12,16 +12,20 @@ a private conversation.
 
 * **Who owns it.** The labs user the call ran as (every MCP token here, a PAT, an OAuth
   sign-in or canopy's delegated grant, resolves to one).
-* **Who else may read it** (``may_read``): a labs user who could run the same thing
-  themselves -- holds every opportunity a query read, can open the run its indicators
-  came from. Public results (``targeting_pmc_states``) any signed-in labs user may read.
+* **Who may read it** (``may_read``, the owner included): an active labs user who could
+  run the same thing themselves -- holds every opportunity a query read, can open the run
+  its indicators came from -- now, not when it was made (a yes is cached a minute). Public
+  results (``targeting_pmc_states``) any signed-in labs user may read. A token reads back
+  only what a tool in its scope keeps (``scope_denial``).
 * **What a read may carry** (``read_denial``, asked of EVERY reader, the owner
   included): a result holding labs' sensitive data (rows from production visits) goes
   back through canopy only where the call that read it could: an agent whose
   ``Canopy-Execution`` statement clears it for sensitive data, or the person's own View
-  (a delegated read with no statement: no agent is acting) of a result a cleared agent
-  already received through canopy. A "no user visit data" caller never reads one. Every
-  read is audit-logged.
+  -- which canopy STATES with a signed ``Canopy-View`` for this resource and this person
+  (``execution.view_for_this_request``) -- of a result a cleared agent already received
+  through canopy. A delegated read with no statement is refused: an absence is never
+  taken for "the person is looking". A "no user visit data" caller never reads one.
+  Every read is audit-logged.
 * **Snapshot, not fresh.** A read serves what the tool produced: the View and the agent
   must agree on the rows the agent reasoned on. Paging is over that snapshot. Labs never
   changes a kept result, so it never sends canopy a "result changed" push.
@@ -276,7 +280,8 @@ def stored(uri: str):
 
 def read(uri: str, reader: int | None):
     """The kept result ``uri`` names, as ``reader`` (a labs user id) may see it, or a
-    named ``Refused``: its owner reads it, and so does anyone ``may_read`` admits."""
+    named ``Refused``. ``may_read`` decides for everyone, its owner included: an owner who
+    has since lost the opportunities a query read no longer reads its rows."""
     from .models import KeptResult
 
     result_id, _ = parse(uri)
@@ -285,7 +290,7 @@ def read(uri: str, reader: int | None):
         raise Refused("not_found", "there is no such result here")
     if _expired(result):
         raise Refused("expired", "this result has expired; run the query again")
-    if not (reader is not None and int(reader) == result.owner_id) and not may_read(reader, result):
+    if not may_read(reader, result):
         raise Refused("forbidden", "this result is not yours to read")
     return result
 
@@ -314,8 +319,12 @@ def contents(uri: str, reader: int | None) -> list[dict]:
     """The ``resources/read`` answer for ``uri``, read as ``reader``: one JSON text
     content, a page of the rows when it is a table, with ``_meta[META_KEY]`` saying what it
     is (kind, tool call, created/expires, ``snapshot``, and the page)."""
+    return contents_of(read(uri, reader), uri)
+
+
+def contents_of(result, uri: str) -> list[dict]:
+    """``contents`` for a result already loaded and judged (``read``)."""
     _, query = parse(uri)
-    result = read(uri, reader)
     body, paging = page(result.payload, query)
     meta = {
         "kind": result.kind,
@@ -329,16 +338,30 @@ def contents(uri: str, reader: int | None) -> list[dict]:
     return [{"uri": uri, "mimeType": result.mime_type, "text": text, "_meta": {META_KEY: meta}}]
 
 
+#: How long a reader's "could run it" answer is trusted (``may_read``): a View pages
+#: through a result in quick reads, and each check may ask Connect.
+ACL_CACHE_SECONDS = 60
+
+
 def may_read(reader: int | None, result) -> bool:
-    """For a reader who is not the owner: could they run it themselves?"""
+    """Could ``reader`` (an active labs user; the owner too) run it themselves? A yes is
+    kept ``ACL_CACHE_SECONDS`` per (reader, result); a no is asked again."""
+    from django.core.cache import cache
+
     user = _active_user(reader) if reader is not None else None
     if user is None:
         return False
+    key = f"labs-result-acl:{user.pk}:{result.id}"
+    if cache.get(key):
+        return True
     try:
-        return _could_run(user, result) is None
+        ok = _could_run(user, result) is None
     except Exception:  # noqa: BLE001 -- a check that cannot answer says no
         logger.info("kept result ACL check failed for %s", getattr(result, "kind", ""), exc_info=True)
         return False
+    if ok:
+        cache.set(key, True, ACL_CACHE_SECONDS)
+    return ok
 
 
 def _could_run(user, result) -> str | None:
@@ -368,14 +391,54 @@ def _could_run(user, result) -> str | None:
     return f"no read rule for {kind!r} results"
 
 
-def read_denial(result, access_token) -> str | None:
-    """Why this read may not carry this result, or None. Asked of every reader, the owner too.
+#: The tool that keeps each kind of result: a token reads a result back only when it may
+#: call that tool (``scope_denial``).
+KIND_TOOLS = {KIND_QUERY: "data_query", KIND_INDICATORS: "workflow_run_indicators", KIND_PMC: "targeting_pmc_states"}
+
+
+def scope_denial(result, access_token) -> str | None:
+    """Why this token's tool scope does not reach this result, or None. A token -- a
+    delegated grant's, a restricted PAT -- reads back only what a tool it may call keeps
+    (``server.allowed_tools``); a full PAT or sign-in reaches every tool."""
+    from .server import allowed_tools
+
+    permitted = allowed_tools(access_token)
+    if permitted is None:
+        return None
+    tool = KIND_TOOLS.get(result.kind)
+    if tool is None or tool not in permitted:
+        return f"this token may not call {tool or result.kind}, so it may not read what it kept"
+    return None
+
+
+def _subject(access_token) -> str:
+    """The labs user a token serves, as canopy names them in a statement (the delegated
+    grant's subject: the user's id)."""
+    claims = getattr(access_token, "claims", None) or {}
+    uid = claims.get("user_id")
+    if uid is None:
+        uid = claims.get("sub")
+    return "" if uid is None else str(uid)
+
+
+def _names(uri: str, result) -> bool:
+    try:
+        return parse(uri)[0] == result.id
+    except Refused:
+        return False
+
+
+def read_denial(result, access_token, uri: str = "") -> str | None:
+    """Why this read of ``uri`` may not carry this result, or None. Asked of every reader,
+    the owner too.
 
     Only a result holding sensitive data is judged. A restricted ("no user visit data")
-    call never reads one. A delegated call (canopy) reads one when its own statement
-    clears it for sensitive data (an agent's ``site_read``), or when it carries no
-    statement -- the person's own View, no agent acting -- and the result already went
-    through canopy to a cleared agent. Anything else is refused, as the call that made
+    call never reads one. A delegated call (canopy) reads one only when canopy says who is
+    reading, positively: its ``Canopy-Execution`` statement clears an agent for sensitive
+    data (an agent's ``site_read``), or its ``Canopy-View`` statement says this is the
+    person's own View, for THIS result and THIS person, and the result already went
+    through canopy to a cleared agent. No statement, or one that does not verify (bad,
+    expired, replayed, for another resource or person), is refused, as the call that made
     it would have been."""
     from . import execution
     from .server import restricted_call
@@ -389,16 +452,26 @@ def read_denial(result, access_token) -> str | None:
         return None
     from connect_labs.labs import canopy_panel
 
-    call = execution.for_this_request(access_token)
+    read_uri = uri or f"{SCHEME}://{result.id}"
+    call = execution.for_this_request(access_token, rpc=("resources/read", {"uri": read_uri}))
     with execution.bound(call):
         clearance = canopy_panel.call_sensitive_data_clearance()
     if clearance.granted:
         return None
-    if call.execution is None and call.refused == "no_statement" and result.through_canopy:
-        return None
+    if call.execution is None and result.through_canopy:
+        # No agent's statement verified: only canopy's word that the person is looking
+        # admits it -- never the absence of a statement.
+        view = execution.view_for_this_request(
+            access_token, uri=uri or f"{SCHEME}://{result.id}", subject=_subject(access_token)
+        )
+        if view.view is not None and _names(view.view.uri, result):
+            return None
+        why = f"{clearance.reason}; not the person's own View ({view.refused or 'another result'})"
+    else:
+        why = clearance.reason
     return (
-        "this result holds sensitive data, which reaches an agent through canopy only when Labs has cleared it "
-        f"({clearance.reason}); open it on the Data page instead"
+        "this result holds sensitive data, which reaches an agent through canopy only when Labs has cleared it, "
+        f"and the person's View only when canopy says it is theirs ({why}); open it on the Data page instead"
     )
 
 
@@ -432,10 +505,10 @@ def read_as(uri: str, reader: int | None, access_token) -> list[dict]:
     """A whole ``resources/read`` of a kept result, as ``reader``: the owner / ``may_read``
     / expiry check, labs' ``read_denial`` for this token, the page, and the audit record."""
     result = read(uri, reader)
-    denied = read_denial(result, access_token)
+    denied = scope_denial(result, access_token) or read_denial(result, access_token, uri)
     if denied:
         raise Refused("forbidden", denied)
-    out = contents(uri, reader)
+    out = contents_of(result, uri)
     record_read(result, _active_user(reader) if reader is not None else None, uri)
     return out
 
