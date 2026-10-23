@@ -466,9 +466,14 @@ jobs:
           DEPLOYED_TAG="${DEPLOYED_IMAGE##*:}"
           echo "Service is running image tag: ${DEPLOYED_TAG:-<none>}"
           if echo "$DEPLOYED_TAG" | grep -qE '^[0-9a-f]{40}$' && git cat-file -e "$DEPLOYED_TAG" 2>/dev/null; then
-            CHANGED=$(git diff --name-only "$DEPLOYED_TAG" "$GITHUB_SHA" -- '*/migrations/*.py')
+            # The pinned requirements count too: an installed package can ship
+            # migrations of its own (dimagi-canopy 0.18.0's canopy_host.0002_artifact
+            # was skipped on 2026-10-23 because no labs migration file changed, and
+            # every kept result failed on a missing table). A dependency bump with
+            # no migrations costs one no-op migrate.
+            CHANGED=$(git diff --name-only "$DEPLOYED_TAG" "$GITHUB_SHA" -- '*/migrations/*.py' 'requirements/*.txt')
             if [ -n "$CHANGED" ]; then
-              echo "Migration files changed since deployed SHA ${DEPLOYED_TAG}:"
+              echo "Migration files or pinned requirements changed since deployed SHA ${DEPLOYED_TAG}:"
               echo "$CHANGED"
               echo "run=true" >> "$GITHUB_OUTPUT"
             else
