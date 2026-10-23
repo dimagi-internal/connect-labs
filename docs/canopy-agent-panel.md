@@ -349,15 +349,15 @@ ID-JAG's scopes, the redeem at `/o/token/`, and the MCP call as the visitor.
 Labs Admin › Canopy agents (`/labs/admin/canopy-agents/`) is the one place labs' side is
 set up. Besides it, a deployment needs one secret and, in canopy, the site.
 
-**1. Connect the site in canopy**, as a workspace owner, at canopy › Connected sites
-(`https://canopy.dimagi.com/w/<workspace>/settings/connected-apps`):
-
-| Field                              | Value                                                             |
-| ---------------------------------- | ----------------------------------------------------------------- |
-| Name                               | `connect-labs` (`CANOPY_APP_NAME`; this is its default)           |
-| Site URLs                          | `https://labs.connect.dimagi.com` **and** `http://localhost:8000` |
-| Agents it may offer                | the agents labs may choose from on its settings page              |
-| Where your site publishes its keys | `https://labs.connect.dimagi.com/labs/canopy/jwks/`               |
+**1. Register the site in canopy**, as a workspace owner, at canopy › Connected sites
+(`https://canopy.dimagi.com/w/<workspace>/settings/connected-apps`): type labs' address
+(`https://labs.connect.dimagi.com`), press **Fill from the site**, check what it filled
+in, and confirm. canopy reads labs' signed site document at
+`/.well-known/canopy-site.json` (also at `/labs/canopy/site.json`): its name
+(`connect-labs`, `CANOPY_APP_NAME`), its origins (`LABS_PUBLIC_URL`), where its keys are
+(`/labs/canopy/jwks/`), and, while the grant is on, its issuer and MCP server. Then
+choose the agents canopy may offer on labs; they are what labs' settings page chooses
+from. (A local labs at `http://localhost:8000` is added as another site URL by hand.)
 
 **2. Generate a key pair** and put the private half in Secrets Manager as
 `CANOPY_SIGNING_KEY` (already referenced by `deploy/task-definitions/*.json`). It
@@ -388,7 +388,18 @@ Newlines survive an env var as literal `\n`; the settings module unescapes them.
 labs shows, which may read real data, the default agent, the runner flags, and whether
 canopy may act as the visitor; then Save. Until then no agent is offered.
 
-Nothing else is configured by hand. `CANOPY_BASE_URL` defaults to
+The page also shows the **canopy workspace** labs' site is registered in. Labs learns it
+from canopy's first answer (and records it on every save) and sends it as
+`CANOPY_HOST["WORKSPACE"]`, so deleting or moving the default agent cannot break
+canopy's list; until it is known the default agent names the workspace. If canopy moves
+the site and refuses the stored one (`workspace_mismatch`), the page offers to ask by
+the default agent again. When canopy says nothing, the page shows canopy's own reason
+(the SDK's `last_error()`: `unreachable`, `unknown_issuer`, `workspace_mismatch`, …), and
+canopy's problem sentences link to the canopy page that fixes each. Restoring an earlier
+change is checked against canopy's list like a save, and refused when canopy no longer
+lists its default agent.
+
+The only environment variable is the secret, `CANOPY_SIGNING_KEY`. `CANOPY_BASE_URL` defaults to
 `https://canopy.dimagi.com` on AWS (`config/settings/labs_aws.py`) and `CANOPY_APP_NAME`
 to `connect-labs`; set either only to point labs at another canopy or site name (locally,
 `CANOPY_BASE_URL` has no default, so the panel is off). canopy's OAuth client id is

@@ -663,6 +663,9 @@ class CanopyAgentSettings(models.Model):
     site_agents_version = models.CharField(max_length=100, blank=True, default="")
     #: Whether canopy may act as the visitor at labs' MCP (the jwt-bearer grant).
     acts_as_visitor = models.BooleanField(default=False)
+    #: The canopy workspace (tenant) labs' site is registered in, from canopy's answer.
+    #: Blank until learnt: the default agent then names the tenant.
+    workspace = models.CharField(max_length=100, blank=True, default="")
     note = models.CharField(max_length=500, blank=True, default="")
     changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
     changed_at = models.DateTimeField(auto_now_add=True)

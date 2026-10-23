@@ -17,9 +17,19 @@ _AGREES = object()
 
 
 def agent(
-    slug, *, handles_sensitive=False, sensitive_data=True, ready=True, problems=(), description="", flags=None
+    slug,
+    *,
+    handles_sensitive=False,
+    sensitive_data=True,
+    ready=True,
+    problems=(),
+    problem_links=(),
+    description="",
+    flags=None,
 ) -> dict:
-    """One listed agent, as canopy's claims carry it."""
+    """One listed agent, as canopy's claims carry it. ``problem_links``: ``(text, url)``
+    pairs (canopy's ``problem_links``); their texts are problems too."""
+    problems = [*problems, *(text for text, _ in problem_links)]
     return {
         "slug": slug,
         "name": slug,
@@ -32,17 +42,20 @@ def agent(
         },
         "ready": ready,
         "problems": list(problems),
+        "problem_links": [{"text": text, "url": url} for text, url in problem_links],
     }
 
 
-def listing(*agents, version="v-test", flags=("sensitive_data",), stale=False) -> SiteAgents:
+def listing(
+    *agents, version="v-test", flags=("sensitive_data",), stale=False, tenant="connect", settings_url=""
+) -> SiteAgents:
     """canopy's answer listing ``agents`` (each from ``agent`` or a bare slug)."""
     claims = {
         "v": 1,
         "iss": "https://canopy.example",
         "aud": "connect-labs",
         "version": version,
-        "site": {"name": "connect-labs", "tenant": "connect"},
+        "site": {"name": "connect-labs", "tenant": tenant, "settings_url": settings_url},
         "runner_flags": [
             {"flag": f, "meaning": "a sensitive-data runner" if f == "sensitive_data" else ""} for f in flags
         ],
@@ -66,6 +79,8 @@ class FakeCanopy:
     def __init__(self):
         self.answer = _AGREES
         self.declared_sensitive: set[str] = set()
+        #: What ``last_error`` says when canopy has said nothing (a ``SiteAgentsError``).
+        self.error = None
 
     def set(self, answer):
         """``answer``: a ``SiteAgents`` (``listing(...)``), or None for "canopy said nothing"."""
@@ -78,11 +93,24 @@ class FakeCanopy:
     def __call__(self):
         return agreeing(self.declared_sensitive) if self.answer is _AGREES else self.answer
 
+    def fail(self, code, message, status=None):
+        """canopy says nothing, for this reason (``last_error``, and what ``refresh`` raises)."""
+        from canopy_sdk.site_agents import SiteAgentsError
+
+        self.answer = None
+        self.error = SiteAgentsError(code, message, status=status)
+
+    def last_error(self):
+        """``canopy_settings.last_error``: why canopy said nothing, or None while it answers."""
+        if self.answer is not None:
+            return None
+        from canopy_sdk.site_agents import SiteAgentsError
+
+        return self.error or SiteAgentsError("unreachable", "canopy could not be reached")
+
     def refresh(self):
         """``canopy_settings.refresh``: the same answer, or the SDK's error for none."""
         answer = self()
         if answer is None:
-            from canopy_sdk.site_agents import SiteAgentsError
-
-            raise SiteAgentsError("unreachable", "canopy could not be reached")
+            raise self.last_error()
         return answer

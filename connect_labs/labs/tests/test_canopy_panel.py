@@ -377,6 +377,17 @@ class TestTheSiteDocument:
         assert tuple(pages["labs:workflow:run:data"].scopes) == ("workflow:read", "data:read", "workflow:edit")
         assert pages["labs:workflow:run"].title == "A workflow run"
 
+    def test_it_is_also_at_the_well_known_path_with_labs_own_facts(self, client, configured):
+        from canopy_sdk.site import WELL_KNOWN_PATH, verify_site_document
+
+        response = client.get(WELL_KNOWN_PATH)
+        assert response.status_code == 200
+        needs = verify_site_document(response.content.decode(), [_published_key(client)], site_name="connect-labs")
+        site = needs.site
+        assert site.jwks_url == f"{BASE}/labs/canopy/jwks/"
+        assert tuple(site.origins) == (BASE,)
+        assert site.issuer == BASE and site.mcp_resource == f"{BASE}/mcp/"  # the grant is on
+
 
 # ---------------------------------------------------------------------------
 # The rendered panel

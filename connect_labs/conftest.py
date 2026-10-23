@@ -112,6 +112,7 @@ def fake_canopy(monkeypatch):
     fake = FakeCanopy()
     monkeypatch.setattr(canopy_settings, "site_agents", fake)
     monkeypatch.setattr(canopy_settings, "refresh", fake.refresh)
+    monkeypatch.setattr(canopy_settings, "last_error", fake.last_error)
     return fake
 
 

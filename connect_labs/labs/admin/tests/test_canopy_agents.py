@@ -160,7 +160,7 @@ def test_every_change_is_kept_audited_and_can_be_restored(env, staff):
         runner_requirements=["sensitive_data"],
         listing=canopy_settings.site_agents(),
     )
-    restored = canopy_settings.restore(staff, first.row_id)
+    restored = canopy_settings.restore(staff, first.row_id, listing=canopy_settings.site_agents())
     assert restored.row_id != first.row_id
     assert restored.as_dict() == first.as_dict()
     assert CanopyAgentSettings.objects.count() == 3
@@ -388,3 +388,91 @@ def test_the_migration_keeps_the_grant_where_it_was_possible(settings, monkeypat
     migration.forwards(apps, None)
     row.refresh_from_db()
     assert row.acts_as_visitor is expect
+
+
+def test_restore_is_checked_against_canopys_list(env, staff):
+    first = _allow_data_bot(staff)
+    canopy_settings.save(
+        staff,
+        agents=[Tick("coach-bot")],
+        default_agent="coach-bot",
+        runner_requirements=[],
+        listing=canopy_settings.site_agents(),
+    )
+    # canopy drops the old default agent from labs' site: that row cannot come back.
+    env.set(listing(agent("data-bot", handles_sensitive=True), agent("coach-bot"), version="v2"))
+    with pytest.raises(canopy_settings.InvalidSettings, match="its default agent, site-bot, is no longer listed"):
+        canopy_settings.restore(staff, first.row_id, listing=canopy_settings.site_agents())
+    # Nor one whose real-data agent canopy no longer clears.
+    env.set(listing(agent("site-bot"), agent("data-bot"), agent("coach-bot")))
+    with pytest.raises(canopy_settings.InvalidSettings, match="cannot be restored: data-bot cannot be allowed"):
+        canopy_settings.restore(staff, first.row_id, listing=canopy_settings.site_agents())
+    assert canopy_settings.current().default_agent == "coach-bot"
+
+
+def test_the_workspace_is_learnt_from_canopy_and_names_the_tenant(env, staff, canopy_agents, client):
+    """Blank until canopy's answer names it (production's existing row): meanwhile the
+    default agent names the tenant. Then CANOPY_HOST["WORKSPACE"] carries it."""
+    canopy_agents("site-bot")
+    assert canopy.host_settings()["WORKSPACE"] == "" and canopy.host_settings()["AGENT_SLUG"] == "site-bot"
+    client.force_login(staff)
+    with override_settings(**LABS_SETTINGS):
+        page = client.get(reverse(URL))
+    assert canopy_settings.current().workspace == "connect"  # the fake listing's tenant
+    assert canopy.host_settings()["WORKSPACE"] == "connect"
+    assert b"<code>connect</code>" in page.content or b"connect" in page.content
+    # Every save records the workspace canopy's answer names.
+    env.set(listing(agent("site-bot"), tenant="other-ws"))
+    assert _save_site_bot(staff).workspace == "other-ws"
+
+
+def _save_site_bot(user):
+    return canopy_settings.save(
+        user,
+        agents=[Tick("site-bot")],
+        default_agent="site-bot",
+        runner_requirements=[],
+        listing=canopy_settings.site_agents(),
+    )
+
+
+@override_settings(**LABS_SETTINGS)
+def test_a_workspace_canopy_refuses_can_be_forgotten(env, client, staff):
+    _save_site_bot(staff)
+    assert canopy_settings.current().workspace == "connect"
+    env.fail("workspace_mismatch", "site-bot is not in workspace connect", status=409)
+    client.force_login(staff)
+    page = client.get(reverse(URL))
+    assert page.context["status"]["text"].startswith(
+        "canopy has not said which agents labs may show (workspace_mismatch: site-bot is not in workspace connect)"
+    )
+    assert page.context["offer_forget_workspace"]
+    client.post(reverse(URL), {"forget_workspace": "1"})
+    assert canopy_settings.current().workspace == "" and canopy_settings.current().default_agent == "site-bot"
+
+
+@override_settings(**LABS_SETTINGS)
+def test_refresh_reports_canopys_own_reason(env, client, staff):
+    env.fail("unknown_issuer", "canopy does not know connect-labs")
+    client.force_login(staff)
+    resp = client.post(reverse(URL), {"refresh": "1"}, follow=True)
+    assert [str(m) for m in resp.context["messages"]] == [
+        "canopy could not be asked (unknown_issuer): canopy does not know connect-labs"
+    ]
+
+
+@override_settings(**LABS_SETTINGS)
+def test_canopys_own_links_are_used_where_it_gives_them(env, client, staff, canopy_agents):
+    canopy_agents("site-bot", offered=["coach-bot"])
+    env.set(
+        listing(
+            agent("site-bot"),
+            agent("coach-bot", ready=False, problem_links=[("No ready runner.", "https://canopy.example/fix/1")]),
+            settings_url="https://canopy.example/w/connect/settings/connected-apps#site-7",
+        )
+    )
+    client.force_login(staff)
+    page = client.get(reverse(URL))
+    html = page.content.decode()
+    assert 'href="https://canopy.example/fix/1" target="_blank" rel="noopener">No ready runner.</a>' in html
+    assert page.context["connected_sites_url"] == "https://canopy.example/w/connect/settings/connected-apps#site-7"

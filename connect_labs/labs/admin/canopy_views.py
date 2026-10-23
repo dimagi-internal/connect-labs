@@ -39,18 +39,29 @@ _URL = re.compile(r"https?://[^\s<>\"']+")
 
 
 def canopy_links(listing) -> dict[str, str]:
-    """canopy's pages, by the words a problem sentence names them with, where the URL is
-    known: its tenant's Connected sites and Runners settings (the tenant is canopy's
-    answer's), else its Supervisor's Runners tab."""
+    """canopy's pages, by the words labs' own sentences name them with. canopy's answer
+    gives labs' site page (``site_settings_url``) and, per agent, the page that fixes each
+    problem (``problem_links``, see ``_agent_links``); labs builds a URL only where canopy
+    gives none: its tenant's Runners settings (else Supervisor's Runners tab), and the
+    Connected sites page of a canopy that predates ``site_settings_url``."""
     base = canopy_settings.canopy_url()
-    if not base:
-        return {}
-    tenant = quote(getattr(listing, "tenant", "") or "", safe="") if listing is not None else ""
-    links = {canopy_settings.RUNNERS: f"{base}/supervisor?tab=runners"}
-    if tenant:
-        links[canopy_settings.CONNECTED_SITES] = f"{base}/w/{tenant}/settings/connected-apps"
-        links[canopy_settings.RUNNERS] = f"{base}/w/{tenant}/settings/topology/runners"
+    links = {}
+    if base:
+        tenant = quote(getattr(listing, "tenant", "") or "", safe="") if listing is not None else ""
+        links[canopy_settings.RUNNERS] = (
+            f"{base}/w/{tenant}/settings/topology/runners" if tenant else f"{base}/supervisor?tab=runners"
+        )
+        if tenant:
+            links[canopy_settings.CONNECTED_SITES] = f"{base}/w/{tenant}/settings/connected-apps"
+    site_url = getattr(listing, "site_settings_url", "") if listing is not None else ""
+    if site_url:
+        links[canopy_settings.CONNECTED_SITES] = site_url
     return links
+
+
+def _agent_links(agent, links: dict[str, str]) -> dict[str, str]:
+    """``links``, plus each of ``agent``'s problem sentences linked where canopy says it is fixed."""
+    return {**links, **{p.text: p.url for p in getattr(agent, "problem_links", ()) if p.text and p.url}}
 
 
 def linkify(text: str, links: dict[str, str] | None = None) -> SafeString:
@@ -86,6 +97,7 @@ def _rows(ticks: canopy_settings.AgentSettings, listing, links: dict[str, str]) 
     for slug in slugs:
         agent = listing.agent(slug) if listing is not None else None
         tick = ticks.ticks(slug)
+        agent_links = _agent_links(agent, links)
         eligible, why_not = canopy_settings.eligible_for_real_data(agent)
         here = canopy_panel.availability(slug, canopy_panel.NO_VISIT_DATA, ticks=ticks, listing=listing)
         over_real = canopy_panel.availability(slug, _REAL, ticks=ticks, listing=listing)
@@ -107,19 +119,19 @@ def _rows(ticks: canopy_settings.AgentSettings, listing, links: dict[str, str]) 
                     agent and canopy_settings.SENSITIVE_DATA in agent.flags_available
                 ),
                 "ready": bool(agent and agent.ready),
-                "problems": [linkify(p, links) for p in agent.problems] if agent else [],
+                "problems": [linkify(p, agent_links) for p in agent.problems] if agent else [],
                 "offered": bool(tick and tick.offered),
                 "real_data": bool(tick and tick.real_data),
                 "default": slug == ticks.default_agent,
                 "eligible_for_real_data": eligible,
                 "why_not_real_data": why_not,  # plain, for a title attribute
-                "why_not_real_data_html": linkify(why_not, links),
+                "why_not_real_data_html": linkify(why_not, agent_links),
                 # Ticked but held back (drift, or canopy unreachable): in red, with why.
                 "held_back": (
-                    [linkify(r, links) for r in here.reasons] if tick and tick.offered and not here.ok else []
+                    [linkify(r, agent_links) for r in here.reasons] if tick and tick.offered and not here.ok else []
                 ),
                 "real_data_held_back": (
-                    [linkify(r, links) for r in over_real.reasons]
+                    [linkify(r, agent_links) for r in over_real.reasons]
                     if tick and tick.real_data and here.ok and not over_real.ok
                     else []
                 ),
@@ -135,9 +147,11 @@ def _status(listing) -> dict:
     minutes = int(listing.age // 60)
     fetched = f"{minutes} min ago" if minutes else "just now"
     if listing.stale:
+        error = canopy_settings.last_error()
+        why = f" ({error.code}: {error.message})" if error is not None else ""
         return {
             "level": "warning",
-            "text": f"canopy cannot be reached: using its last word, fetched {fetched}. "
+            "text": f"canopy's list could not be refreshed{why}: using its last word, fetched {fetched}. "
             "After a day without a fresh one, no agent is shown.",
         }
     return {"level": "ok", "text": f"canopy's signed list for {listing.site_name or 'labs'}, fetched {fetched}."}
@@ -217,9 +231,12 @@ class CanopyAgentsView(AdminRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        ticks = canopy_settings.current()
         listing = canopy_settings.site_agents()
+        if listing is not None:
+            canopy_settings.learn_workspace(listing)
+        ticks = canopy_settings.current()
         links = canopy_links(listing)
+        error = canopy_settings.last_error()
         # The runner flags canopy names (sensitive_data always), and what canopy says each
         # means -- nothing, when canopy cannot be reached.
         flags = [{"flag": f.flag, "meaning": f.meaning} for f in (listing.runner_flags if listing else ())]
@@ -238,6 +255,9 @@ class CanopyAgentsView(AdminRequiredMixin, TemplateView):
             calls=_recent_calls(),
             canopy_url=canopy_settings.canopy_url(),
             connected_sites_url=links.get(canopy_settings.CONNECTED_SITES, ""),
+            error=error,
+            # The tenant labs names cannot be right: offer to name it by the default agent again.
+            offer_forget_workspace=bool(ticks.workspace and error is not None and error.code == "workspace_mismatch"),
             grant_available=bool(canopy.canopy_client_id()),
             admin_page=canopy_panel.ADMIN_PAGE,
         )
@@ -252,8 +272,13 @@ class CanopyAgentsView(AdminRequiredMixin, TemplateView):
             if request.POST.get("refresh"):
                 self._refresh(request)
             elif request.POST.get("restore"):
-                canopy_settings.restore(request.user, int(request.POST["restore"]))
+                canopy_settings.restore(
+                    request.user, int(request.POST["restore"]), listing=canopy_settings.site_agents()
+                )
                 messages.success(request, "Restored.")
+            elif request.POST.get("forget_workspace"):
+                canopy_settings.forget_workspace(request.user)
+                messages.success(request, "Workspace forgotten: canopy is asked by the default agent again.")
             else:
                 listing = canopy_settings.site_agents()
                 agents = [
@@ -281,7 +306,6 @@ class CanopyAgentsView(AdminRequiredMixin, TemplateView):
     @staticmethod
     def _refresh(request):
         """Ask canopy for its list now, and say what came back."""
-        from canopy_sdk.host import HostNotConfigured
         from canopy_sdk.site_agents import SiteAgentsError
 
         try:
@@ -289,13 +313,11 @@ class CanopyAgentsView(AdminRequiredMixin, TemplateView):
         except SiteAgentsError as e:
             messages.error(request, f"canopy could not be asked ({e.code}): {e.message}")
             return
-        except HostNotConfigured as e:
-            messages.error(request, f"labs is not connected to canopy: {e}")
-            return
         except Exception as e:  # noqa: BLE001 -- say it on the page, never a 500
             logger.exception("Refresh from canopy failed")
             messages.error(request, f"canopy could not be asked ({type(e).__name__}).")
             return
+        canopy_settings.learn_workspace(listing)
         agents = ", ".join(a.slug for a in listing.agents) or "none"
         messages.success(
             request,

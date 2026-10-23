@@ -12,7 +12,9 @@ Two sources, kept apart:
   (``offered``) and "Real data" (``real_data``); the ``default_agent`` every labs page
   offers (and every token names); the runner flags every visitor conversation must run
   on; whether canopy may act as the visitor at labs' MCP (``acts_as_visitor``, the
-  jwt-bearer grant); and the site agents ``version`` the save was made against.
+  jwt-bearer grant); the canopy workspace labs' site is registered in (``workspace``,
+  canopy's ``tenant``, learnt from its answer); and the site agents ``version`` the save
+  was made against.
 
 The newest row is in force, and it is the ONLY source: no environment variable chooses
 an agent. With no row (or a database that cannot be read) nothing is set up (``NOTHING``):
@@ -29,7 +31,7 @@ import logging
 import re
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 
 from django.conf import settings
 
@@ -69,17 +71,27 @@ def site_agents():
 
 
 def refresh():
-    """Ask canopy for its list now (not the five-minute cache): the ``SiteAgents`` it
-    returned. Raises ``SiteAgentsError`` (with a ``code``) or ``HostNotConfigured``."""
+    """Ask canopy for its list now (not the five-minute cache or the retry pause): the
+    ``SiteAgents`` it returned. Raises ``SiteAgentsError`` (with a ``code``), which
+    ``last_error`` then reports."""
     from canopy_sdk.django import site_agents as sdk
 
     return sdk.refresh()
 
 
+def last_error():
+    """Why canopy's list could not be had the last time labs asked (``SiteAgentsError``:
+    ``code`` and a message safe to show), or None."""
+    from canopy_sdk.django import site_agents as sdk
+
+    return sdk.last_error()
+
+
 def unreachable_reason() -> str:
-    return (
-        "canopy has not said which agents labs may show (it has been unreachable for a day, or labs is not connected)"
-    )
+    """Why labs shows no agent when canopy has said nothing usable: canopy's own reason."""
+    error = last_error()
+    why = f"{error.code}: {error.message}" if error is not None else "no answer yet"
+    return f"canopy has not said which agents labs may show ({why})"
 
 
 def canopy_url(path: str = "") -> str:
@@ -137,6 +149,9 @@ class AgentSettings:
     #: Whether canopy may act as the visitor at labs' MCP: the jwt-bearer grant, with
     #: ``CLIENT_ID`` derived from ``CANOPY_BASE_URL`` (``canopy.host_settings``).
     acts_as_visitor: bool = False
+    #: The canopy workspace (tenant) labs' site is registered in, from canopy's answer
+    #: (``listing.tenant``); "" until learnt, when the default agent names the tenant.
+    workspace: str = ""
     #: The row in force, or None when nothing is set up.
     row_id: int | None = field(default=None, compare=False)
 
@@ -167,6 +182,7 @@ class AgentSettings:
             "runner_requirements": list(self.runner_requirements),
             "site_agents_version": self.site_agents_version,
             "acts_as_visitor": self.acts_as_visitor,
+            "workspace": self.workspace,
         }
 
 
@@ -190,6 +206,7 @@ def _from_row(row) -> AgentSettings:
         runner_requirements=tuple(row.runner_requirements or ()),
         site_agents_version=row.site_agents_version or "",
         acts_as_visitor=bool(row.acts_as_visitor),
+        workspace=row.workspace or "",
         row_id=row.pk,
     )
 
@@ -285,7 +302,14 @@ def validate(
         runner_requirements=flags,
         site_agents_version=listing.version if listing is not None else before.site_agents_version,
         acts_as_visitor=before.acts_as_visitor if acts_as_visitor is None else bool(acts_as_visitor),
+        workspace=_workspace(listing, before),
     )
+
+
+def _workspace(listing, *fallbacks: AgentSettings) -> str:
+    """The workspace canopy's answer names (its ``tenant``), else the first one known."""
+    tenant = (getattr(listing, "tenant", "") or "").strip() if listing is not None else ""
+    return tenant or next((f.workspace for f in fallbacks if f.workspace), "")
 
 
 def save(
@@ -318,9 +342,10 @@ def save(
     return _from_row(row)
 
 
-def restore(user, row_id: int) -> AgentSettings:
-    """Undo to an earlier row: its ticks, as a new row. Not re-checked against canopy:
-    whatever canopy says now still decides what is offered (``availability``)."""
+def restore(user, row_id: int, listing=None) -> AgentSettings:
+    """Undo to an earlier row: its ticks, as a new row -- checked against canopy's word
+    (``listing``) exactly as a save is, and refused when canopy no longer lists its
+    default agent. The workspace is canopy's current answer, else the one known."""
     from connect_labs.audit_trail.models import Action
     from connect_labs.audit_trail.service import record
     from connect_labs.labs.models import CanopyAgentSettings
@@ -328,13 +353,80 @@ def restore(user, row_id: int) -> AgentSettings:
     if not can_change(user):
         raise PermissionError("Only Dimagi staff can change which agents labs allows.")
     old = _from_row(CanopyAgentSettings.objects.get(pk=row_id))
+    if listing is not None and listing.agent(old.default_agent) is None:
+        raise InvalidSettings(
+            f"#{row_id} cannot be restored: its default agent, {old.default_agent}, is no longer listed for "
+            f"labs in canopy ({CONNECTED_SITES}). Allow it there first, or choose another default."
+        )
     before = current()
-    row = CanopyAgentSettings.objects.create(**old.as_dict(), note=f"restored #{row_id}", changed_by=user)
+    try:
+        new = validate(
+            agents=old.agents,
+            default_agent=old.default_agent,
+            runner_requirements=old.runner_requirements,
+            acts_as_visitor=old.acts_as_visitor,
+            listing=listing,
+            before=before,
+        )
+    except InvalidSettings as e:
+        raise InvalidSettings(f"#{row_id} cannot be restored: {e}") from e
+    new = replace(new, workspace=_workspace(listing, old, before))
+    row = CanopyAgentSettings.objects.create(**new.as_dict(), note=f"restored #{row_id}", changed_by=user)
     record(
         Action.UPDATE,
         resource_type="canopy_agent_settings",
         resource_id=row.pk,
-        metadata={"before": before.as_dict(), "after": old.as_dict(), "note": row.note},
+        metadata={"before": before.as_dict(), "after": new.as_dict(), "note": row.note},
+        user=user,
+    )
+    return _from_row(row)
+
+
+def learn_workspace(listing) -> str:
+    """Fill the workspace in on the row in force from canopy's answer, when it is blank.
+
+    Not a choice anyone makes -- the workspace labs' site is registered in is canopy's
+    fact -- so it is filled in place (audited) rather than as a new change. Until it is,
+    the default agent names the tenant, as before. Returns the workspace in force."""
+    from connect_labs.audit_trail.models import Action
+    from connect_labs.audit_trail.service import record
+    from connect_labs.labs.models import CanopyAgentSettings
+
+    ticks = current()
+    tenant = _workspace(listing)
+    if ticks.row_id is None or ticks.workspace or not tenant:
+        return ticks.workspace
+    if CanopyAgentSettings.objects.filter(pk=ticks.row_id, workspace="").update(workspace=tenant):
+        record(
+            Action.UPDATE,
+            resource_type="canopy_agent_settings",
+            resource_id=ticks.row_id,
+            metadata={"workspace": tenant, "note": "learnt from canopy's answer"},
+            user=None,
+        )
+    return tenant
+
+
+def forget_workspace(user) -> AgentSettings:
+    """A new row like the one in force, with no workspace: the default agent names the
+    tenant again. For a site canopy has moved to another workspace (``workspace_mismatch``):
+    the next answer then names the new one."""
+    from connect_labs.audit_trail.models import Action
+    from connect_labs.audit_trail.service import record
+    from connect_labs.labs.models import CanopyAgentSettings
+
+    if not can_change(user):
+        raise PermissionError("Only Dimagi staff can change which agents labs allows.")
+    before = current()
+    if before.row_id is None:
+        raise InvalidSettings("Nothing is set up yet.")
+    new = replace(before, workspace="", row_id=None)
+    row = CanopyAgentSettings.objects.create(**new.as_dict(), note="workspace forgotten", changed_by=user)
+    record(
+        Action.UPDATE,
+        resource_type="canopy_agent_settings",
+        resource_id=row.pk,
+        metadata={"before": before.as_dict(), "after": new.as_dict(), "note": row.note},
         user=user,
     )
     return _from_row(row)

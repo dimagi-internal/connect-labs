@@ -38,6 +38,22 @@
     {% endif %}
   </div>
 
+  {% if current.is_set_up %}
+  <div class="mb-4 text-sm text-gray-700 flex items-center gap-3" data-workspace>
+    <span>
+      <span class="font-semibold">Canopy workspace:</span>
+      {% if current.workspace %}<code>{{ current.workspace }}</code>
+      {% else %}<span class="text-gray-500">not known yet — canopy is asked by the default agent ({{ current.default_agent }}) until its first answer names it</span>{% endif %}
+      {% if connected_sites_url %}· <a class="text-blue-600" href="{{ connected_sites_url }}" target="_blank" rel="noopener">labs' site in canopy</a>{% endif %}
+    </span>
+    {% if can_change and offer_forget_workspace %}
+    <form method="post">{% csrf_token %}
+      <button name="forget_workspace" value="1" class="text-blue-600 text-xs font-semibold">Ask canopy by the default agent instead</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% if not current.is_set_up %}
   <div class="mb-4 px-4 py-3 rounded text-sm bg-amber-100 text-amber-800" data-nothing-set-up>
     <i class="fa-solid fa-circle-info mr-1"></i><strong>Nothing is set up yet — choose agents below.</strong>
@@ -241,7 +257,7 @@
           <td class="px-3 py-2 font-mono text-xs">
             default={{ row.default_agent }}<br>
             {% for a in row.agents %}{% if a.offered %}{{ a.slug }}{% if a.real_data %} (real data){% endif %}{% if not forloop.last %}, {% endif %}{% endif %}{% endfor %}<br>
-            runners=[{{ row.runner_requirements|join:", " }}] · acts as visitor={{ row.acts_as_visitor|yesno:"on,off" }}{% if row.site_agents_version %} · canopy {{ row.site_agents_version|slice:":8" }}{% endif %}
+            runners=[{{ row.runner_requirements|join:", " }}] · acts as visitor={{ row.acts_as_visitor|yesno:"on,off" }}{% if row.workspace %} · workspace={{ row.workspace }}{% endif %}{% if row.site_agents_version %} · canopy {{ row.site_agents_version|slice:":8" }}{% endif %}
           </td>
           <td class="px-3 py-2">{{ row.note }}</td>
           <td class="px-3 py-2 text-right">

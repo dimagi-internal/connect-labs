@@ -327,7 +327,8 @@ def host_settings() -> dict:
     origin — every URL it names is absolute — so without one it is off.
 
     ``AGENT_SLUG`` is the saved default agent and nothing else ("" until someone
-    saves). ``CLIENT_ID`` turns the jwt-bearer grant on: it is canopy's client
+    saves); ``WORKSPACE`` the tenant canopy named for labs' site ("" until learnt,
+    when ``AGENT_SLUG`` names it). ``CLIENT_ID`` turns the jwt-bearer grant on: it is canopy's client
     id, derived from ``CANOPY_BASE_URL``, while the saved settings say canopy
     may act as the visitor, and "" (the grant off) otherwise.
     """
@@ -339,6 +340,9 @@ def host_settings() -> dict:
         "CANOPY_BASE_URL": base,
         "APP_NAME": getattr(settings, "CANOPY_APP_NAME", ""),
         "AGENT_SLUG": agents.default_agent,
+        # The tenant labs' site is registered in (dimagi-canopy 0.16). While it is not
+        # yet known, AGENT_SLUG names it.
+        "WORKSPACE": agents.workspace,
         "CLIENT_ID": canopy_client_id() if agents.acts_as_visitor else "",
         "ISSUER": public,
         "RESOURCE": f"{public}/mcp/" if public else "",
@@ -354,6 +358,10 @@ def host_settings() -> dict:
         "PANEL_TOKEN_URL_NAME": "labs:canopy_token",
         "PANEL": PANEL,
     }
+    if public:
+        # site.json's ``site`` block: labs' key is at its own long-standing URL, not the
+        # SDK's default route (the origins default to ISSUER's).
+        config["JWKS_URL"] = f"{public}/labs/canopy/jwks/"
     if public:
         # Configured wherever the grant can be. The SDK runs the probe only on
         # top of a working grant (CLIENT_ID set), and ``probe_subject``
