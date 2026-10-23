@@ -188,23 +188,25 @@ Long indicator names in the headline tiles now wrap onto as many lines as needed
 
 The **Ask an agent** launcher appears only on workflows that are running over generated synthetic data, or on workflows whose author has selected an agent that has been cleared for use with real data.
 
-Each workflow can now offer its own chosen agent rather than always offering the site-wide default. A workflow's **Agent** box on its run page lists:
+Each workflow can now offer its own chosen agent rather than always offering the site-wide default. A workflow's **Agent** box on its run page lists the agents that Labs is currently showing, each with its description. An agent that is not available on that particular workflow is greyed out with a reason shown alongside it.
 
-- the site's default agent
-- the data agent
-- any additional agents that a Labs Administrator has added to the **Canopy agents › Other agents workflows may choose** list
+##### How agents are managed (Labs Admin › Canopy agents)
 
-The workflow's author picks whichever agent is most appropriate. For example, a KMC worker review could be configured to offer `labsdata` — an agent that reads the raw visits behind the numbers and takes no actions — while a different workflow keeps the site's general-purpose agent.
+Labs Administrators manage available agents in **Labs Admin › Canopy agents**. This screen shows a table of every agent that Canopy allows on Labs. Each row displays what Canopy currently says about that agent:
 
-Any agent that is permitted over real data is always offered in read-only mode, running on zero-data-retention machines. No agent is made available over real data unless it has passed a clearance process: its author must claim it is safe to use with personally identifiable health information, Labs must accept that claim, and conversations must run on machines configured for zero data retention.
+| Column | What it means |
+|---|---|
+| **PHI-safe** | Whether the agent's author has declared it safe to use with personally identifiable health information, who made that declaration, and when |
+| **ZDR runner** | Whether a zero-data-retention runner is ready for this agent |
+| **Ready** | Whether the agent is ready to use, and — if not — what is currently wrong |
+
+Labs Administrators set three options for each agent using tick boxes in the same row:
+
+- **Show on Labs** — whether the agent appears to workflow authors and users at all
+- **Real data** — whether the agent may be used on workflows with real (non-synthetic) data; this box can only be ticked once Canopy confirms the agent is PHI-safe **and** has a ready ZDR runner; otherwise the box is disabled and shows the reason
+- **Default** — whether this agent is the site-wide default
+
+If anything changes on the Canopy side — for example, an agent's author withdraws a PHI-safe declaration, or Canopy stops allowing an agent on Labs — Labs follows immediately: the agent stops being offered and its row turns red with Canopy's reason shown. If Canopy cannot be reached, Labs shows no agent at all until the connection is restored.
 
 !!! note "This does not affect workflow buttons"
-    Buttons built into a workflow itself — for example, an **Initiate AI coach** button — are unaffected. The restriction applies only to the general-purpose "Ask an agent" launcher that sits at the bottom of the window. Marketplace, targeting, supply, and explorer pages are also unaffected.
-
-#### Band legend and Attention column appear only when targets are set
-
-If no indicator in the report's registry has performance bands, nothing can be **Off target** or on **Watch**, so the "Off target / Watch / Uncoloured" legend and the **Attention** column (which counts those) are hidden. The moment any one indicator has a band defined, both the legend and the column return as before.
-
-#### Visit card counts match its rows
-
-The visit card header previously counted the gap since the last visit as an extra interval, which could produce a mismatch such as "5 gaps over 7 days" sitting above only four marked intervals. The count now matches the rows shown — for example, **"4 gaps over 7
+    Buttons built into a workflow itself — for example, an **Initiate AI coach**
