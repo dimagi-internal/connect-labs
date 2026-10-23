@@ -1,4 +1,4 @@
-"""Canopy's Canopy-Execution statement: verified once per delegated call, and what real data waits on.
+"""Canopy's Canopy-Execution statement: verified once per delegated call, and what sensitive data waits on.
 
 The SDK's verification itself (signature, issuer, audience, lifetime, jti, DPoP and
 access-token binding) is tested in canopy-web against the real thing; here a fake SDK
@@ -72,8 +72,9 @@ def sdk(monkeypatch):
 
 @pytest.fixture
 def labs_allows(canopy_agents):
-    """Labs lets labsdata read real data ("Real data" ticked), and so requires sensitive-data runners of it."""
-    canopy_agents("ace", real_data=["labsdata"])
+    """Labs lets labsdata work with sensitive data ("Sensitive data" ticked), and so requires
+    sensitive-data runners of it."""
+    canopy_agents("ace", sensitive_data=["labsdata"])
 
 
 def test_without_an_sdk_that_verifies_nothing_is_vouched(monkeypatch):
@@ -93,22 +94,22 @@ def test_a_missing_or_bad_statement_is_a_refusal_never_an_error(sdk):
 
 
 def test_outside_a_delegated_call_there_is_no_vouching(labs_allows, sdk):
-    clearance = canopy_panel.call_real_data_clearance()
+    clearance = canopy_panel.call_sensitive_data_clearance()
     assert not clearance.granted and "no statement" in clearance.reason
 
 
 def test_a_verified_sensitive_call_on_a_sensitive_data_runner_is_cleared(labs_allows, sdk):
     call = execution.verify({"canopy-execution": "jwt"}, "tok")
     with execution.bound(call):
-        assert canopy_panel.call_real_data_clearance().granted
+        assert canopy_panel.call_sensitive_data_clearance().granted
     # And not once the call is over.
-    assert not canopy_panel.call_real_data_clearance().granted
+    assert not canopy_panel.call_sensitive_data_clearance().granted
 
 
 @pytest.mark.parametrize(
     "stated, reason",
     [
-        (FakeExecution(agent="ace"), 'tick "Real data"'),
+        (FakeExecution(agent="ace"), 'tick "Sensitive data"'),
         (FakeExecution(requirements=()), "requirements"),
         (FakeExecution(refusal="runner_flags"), "runner_flags"),
         (FakeExecution(refusal="undeclared"), "undeclared"),
@@ -117,22 +118,22 @@ def test_a_verified_sensitive_call_on_a_sensitive_data_runner_is_cleared(labs_al
 def test_each_condition_on_the_statement_fails_closed(labs_allows, sdk, stated, reason):
     sdk.result = stated
     with execution.bound(execution.verify({"canopy-execution": "jwt"}, "tok")):
-        clearance = canopy_panel.call_real_data_clearance()
+        clearance = canopy_panel.call_sensitive_data_clearance()
     assert not clearance.granted and reason in clearance.reason
 
 
-def test_labs_requires_sensitive_data_of_every_agent_it_lets_read_real_data(labs_allows, sdk):
-    # No site-wide requirement: labs' own policy still holds an agent it lets read real
+def test_labs_requires_sensitive_data_of_every_agent_it_lets_read_sensitive_data(labs_allows, sdk):
+    # No site-wide requirement: labs' own policy still holds an agent it lets work with sensitive
     # data to sensitive-data runners (it is only ever offered on them), so the call
     # clears -- and a statement whose conversation does not require sensitive-data
     # runners is refused (test_each_condition_on_the_statement_fails_closed).
     with execution.bound(execution.verify({"canopy-execution": "jwt"}, "tok")):
-        assert canopy_panel.call_real_data_clearance().granted
+        assert canopy_panel.call_sensitive_data_clearance().granted
 
 
 def test_a_refused_statement_names_why(labs_allows, sdk):
     with execution.bound(execution.verify({}, "tok")):
-        clearance = canopy_panel.call_real_data_clearance()
+        clearance = canopy_panel.call_sensitive_data_clearance()
     assert not clearance.granted and "no_statement" in clearance.reason
 
 
@@ -157,8 +158,8 @@ def test_a_delegated_tool_call_verifies_once_and_audits_the_statement(labs_allow
     seen = []
 
     def handler(user, **kwargs):
-        seen.append(canopy_panel.call_real_data_clearance().granted)
-        seen.append(canopy_panel.call_real_data_clearance().granted)
+        seen.append(canopy_panel.call_sensitive_data_clearance().granted)
+        seen.append(canopy_panel.call_sensitive_data_clearance().granted)
         return {"ok": True}
 
     import dataclasses

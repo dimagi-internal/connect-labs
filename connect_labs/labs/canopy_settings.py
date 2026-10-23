@@ -1,4 +1,4 @@
-"""Which canopy agents labs shows, and which it lets read real data -- chosen in the UI
+"""Which canopy agents labs shows, and which it lets work with sensitive data -- chosen in the UI
 from what canopy says (spec ``2026-10-22-canopy-site-agents-api-design`` §3).
 
 Two sources, kept apart:
@@ -9,7 +9,7 @@ Two sources, kept apart:
   flags it can run on, and whether it is ready. Cached five minutes; when canopy cannot
   be reached its last word is used for up to a day, then None -- and labs shows no agent.
 * **labs' ticks** -- the ``CanopyAgentSettings`` row in force: per agent, "Show on labs"
-  (``offered``) and "Real data" (``real_data``); the ``default_agent`` every labs page
+  (``offered``) and "Sensitive data" (``sensitive_data``); the ``default_agent`` every labs page
   offers (and every token names); the runner flags every visitor conversation must run
   on; whether canopy may act as the visitor at labs' MCP (``acts_as_visitor``, the
   jwt-bearer grant); the canopy workspace labs' site is registered in (``workspace``,
@@ -39,7 +39,7 @@ from connect_labs.utils.dimagi_user import is_dimagi_staff
 
 logger = logging.getLogger(__name__)
 
-#: The runner flag real data needs: a sensitive-data runner (a ZDR API key, a locked
+#: The runner flag sensitive data needs: a sensitive-data runner (a ZDR API key, a locked
 #: harness, egress limited to an allowlist, nothing kept on the box).
 SENSITIVE_DATA = "sensitive_data"
 
@@ -105,8 +105,8 @@ CONNECTED_SITES = "canopy › Connected sites"
 RUNNERS = "canopy › Runners"
 
 
-def eligible_for_real_data(agent) -> tuple[bool, str]:
-    """Whether canopy says ``agent`` (a ``SiteAgent`` or None) may read real data: listed,
+def eligible_for_sensitive_data(agent) -> tuple[bool, str]:
+    """Whether canopy says ``agent`` (a ``SiteAgent`` or None) may work with sensitive data: listed,
     its author declared it handles sensitive data, and it is ready on a runner with
     ``sensitive_data``."""
     if agent is None:
@@ -133,7 +133,7 @@ class AgentTicks:
 
     slug: str
     offered: bool = True
-    real_data: bool = False
+    sensitive_data: bool = False
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -172,8 +172,8 @@ class AgentSettings:
         return tuple(out)
 
     @property
-    def real_data_agents(self) -> tuple[str, ...]:
-        return tuple(a.slug for a in self.agents if a.offered and a.real_data)
+    def sensitive_data_agents(self) -> tuple[str, ...]:
+        return tuple(a.slug for a in self.agents if a.offered and a.sensitive_data)
 
     def as_dict(self) -> dict:
         return {
@@ -196,7 +196,7 @@ def _slugs(values) -> tuple[str, ...]:
 
 def _from_row(row) -> AgentSettings:
     agents = tuple(
-        AgentTicks(str(a.get("slug")), bool(a.get("offered")), bool(a.get("real_data")))
+        AgentTicks(str(a.get("slug")), bool(a.get("offered")), bool(a.get("sensitive_data")))
         for a in row.agents or ()
         if isinstance(a, dict) and a.get("slug")
     )
@@ -263,7 +263,7 @@ def validate(
 
     An agent newly shown must be one canopy lists; one already shown that canopy no
     longer lists may stay (it is shown in red, and not offered, until canopy lists it
-    again). "Real data" newly ticked needs canopy's declaration that the agent handles
+    again). "Sensitive data" newly ticked needs canopy's declaration that the agent handles
     sensitive data and a ready sensitive-data runner. A runner flag must be one canopy
     names (``sensitive_data`` always may be). ``acts_as_visitor`` None keeps the grant
     as it is."""
@@ -277,15 +277,15 @@ def validate(
         if any(t.slug == slug for t in ticks):
             continue
         was = before.ticks(slug)
-        real = bool(a.real_data)
-        offered = bool(a.offered) or real  # real data implies shown
+        sensitive = bool(a.sensitive_data)
+        offered = bool(a.offered) or sensitive  # sensitive data implies shown
         if offered and slug not in listed and not (was and was.offered):
             raise InvalidSettings(f"canopy does not list {slug} for labs: allow it on canopy's Connected sites first.")
-        if real and not (was and was.real_data):
-            ok, why = eligible_for_real_data(listed.get(slug))
+        if sensitive and not (was and was.sensitive_data):
+            ok, why = eligible_for_sensitive_data(listed.get(slug))
             if not ok:
-                raise InvalidSettings(f"{slug} cannot be allowed over real data: {why}.")
-        ticks.append(AgentTicks(slug, offered, real))
+                raise InvalidSettings(f"{slug} cannot be allowed sensitive data: {why}.")
+        ticks.append(AgentTicks(slug, offered, sensitive))
     default_agent = (default_agent or "").strip()
     if not any(t.slug == default_agent and t.offered for t in ticks):
         raise InvalidSettings("The default agent must be one labs shows.")
@@ -450,11 +450,11 @@ def can_change(user) -> bool:
 
 
 def data_agent(ticks: AgentSettings | None = None, listing=None) -> str:
-    """The agent for data work: the first one labs lets read real data, else the first
+    """The agent for data work: the first one labs lets work with sensitive data, else the first
     shown agent canopy declares handles sensitive data. "" when there is none."""
     ticks = ticks or current()
-    if ticks.real_data_agents:
-        return ticks.real_data_agents[0]
+    if ticks.sensitive_data_agents:
+        return ticks.sensitive_data_agents[0]
     if listing is not None:
         for slug in ticks.offered:
             agent = listing.agent(slug)

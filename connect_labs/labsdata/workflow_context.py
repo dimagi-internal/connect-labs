@@ -110,7 +110,7 @@ def workflow_context(
 ) -> dict:
     """A workflow's opportunities, registry binding and pipelines, as labs data reads them.
 
-    Definitions only -- no visit rows -- so it needs no real-data clearance; the
+    Definitions only -- no visit rows -- so it needs no sensitive-data clearance; the
     opportunities it names are checked against what the caller holds before any
     pipeline is read.
     """

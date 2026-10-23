@@ -1,4 +1,4 @@
-"""The canopy boundary: an agent calling through canopy never receives real visit data.
+"""The canopy boundary: an agent calling through canopy never receives sensitive data unless cleared.
 
 It may get form STRUCTURE, semantic-registry definitions, validation over zero rows,
 and full results on SYNTHETIC opportunities; it hands SQL to the page, where the
@@ -53,8 +53,8 @@ def resolved():
         yield
 
 
-def test_agent_query_on_real_data_is_refused(real_visits, resolved):
-    with pytest.raises(service.RealDataRefused):
+def test_agent_query_on_sensitive_data_is_refused(real_visits, resolved):
+    with pytest.raises(service.SensitiveDataRefused):
         service.query(_caller(), [REAL.id], "SELECT COUNT(*) FROM visits", for_agent=True)
 
 
@@ -68,7 +68,7 @@ def test_the_person_still_gets_real_results(real_visits, resolved):
     assert service.query(_caller(), [REAL.id], "SELECT COUNT(*) FROM visits")["rows"] == [[30]]
 
 
-def test_agent_describe_on_real_data_is_structure_only(real_visits, resolved):
+def test_agent_describe_on_sensitive_data_is_structure_only(real_visits, resolved):
     with mock.patch.object(service, "related_registries", return_value=[]):
         out = service.describe(_caller(), [REAL.id], for_agent=True)
     place = next(f for f in out["fields"] if f["path"] == "form.birth.place")
@@ -76,11 +76,11 @@ def test_agent_describe_on_real_data_is_structure_only(real_visits, resolved):
     assert not {"values", "filled_pct", "distinct_in_sample"} & set(place)
     assert out["opportunities"] == [{"opportunity_id": REAL.id, "opportunity_name": "Real opp", "llo": "LLO R"}]
     assert out["sampled_visits"] is None
-    assert out["real_data_visible_to_you"] is False
+    assert out["sensitive_data_visible_to_you"] is False
     assert out["answering_rules"] == guidance.AGENT_RULES
 
 
-def test_agent_describe_does_not_load_real_data(real_visits, resolved):
+def test_agent_describe_does_not_load_sensitive_data(real_visits, resolved):
     with mock.patch.object(service, "warm") as warm, mock.patch.object(service, "related_registries", return_value=[]):
         service.describe(_caller(), [REAL.id], load_missing=True, for_agent=True)
     warm.assert_not_called()

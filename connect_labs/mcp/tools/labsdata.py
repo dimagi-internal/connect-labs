@@ -15,8 +15,8 @@ them; new callers use ``data_*``.
 
 Visit readers: a restricted ("no user visit data") caller reaches them only for
 opportunities whose data is generated (``token_scopes``, ``visit_access``), and
-canopy acting as a visitor gets real rows only for an agent labs has cleared
-(``labsdata/service.py:agent_sees_real_rows``).
+canopy acting as a visitor gets production rows only for an agent labs has cleared
+(``labsdata/service.py:agent_sees_sensitive_rows``).
 """
 
 from __future__ import annotations
@@ -47,8 +47,8 @@ def _caller(user) -> Caller:
 def _from_canopy() -> bool:
     """True when canopy is calling as a visitor (the delegated grant).
 
-    That caller is an agent: it gets real rows only when labs has cleared it for
-    real data, and otherwise structure, validation and synthetic data, handing SQL
+    That caller is an agent: it gets production rows only when labs has cleared it for
+    sensitive data, and otherwise structure, validation and synthetic data, handing SQL
     to the page. A person's own MCP sign-in (Claude Desktop/Code) is not delegated.
     """
     from .workflow_run import _delegated_token
@@ -75,8 +75,8 @@ DESCRIBE = dict(
         "fields), the semantic registries that cover these opportunities, and the rules for answering. "
         "Use `field_search` to find a field ('birth', 'delivery', 'weight'). Set `load_missing` to fetch "
         "opportunities that have nothing cached (can take a minute). An agent calling through canopy that "
-        "Labs has not cleared for real data gets structure only on REAL opportunities (no values, fill rates "
-        "or counts)."
+        "Labs has not cleared for sensitive data gets structure only on PRODUCTION opportunities (no values, fill "
+        "rates or counts)."
     ),
     input_schema={
         "type": "object",
@@ -138,8 +138,8 @@ QUERY = dict(
         f"{DEFAULT_MAX_ROWS}, max {HARD_MAX_ROWS} rows) and time out after 20s, so aggregate. Returns columns, "
         "rows, row_count, truncated, the SQL actually executed, `notes` to read before answering and "
         "`open_on_page` (the query on the Data page). Errors carry category / retryable / recovery_action. Every "
-        "query is audit-logged. An agent calling through canopy that Labs has not cleared for real data gets "
-        "real rows withheld: `withheld: true`, the SQL checked, and `open_on_page` for the person to run it."
+        "query is audit-logged. An agent calling through canopy that Labs has not cleared for sensitive data gets "
+        "production rows withheld: `withheld: true`, the SQL checked, and `open_on_page` for the person to run it."
     ),
     meta=tool_meta(DATA_RESULT_URI, "model", "app"),
     input_schema={
@@ -160,7 +160,7 @@ def query(user, opportunity_ids, sql, max_rows=DEFAULT_MAX_ROWS):
         return service.query(_caller(user), opportunity_ids, sql, max_rows=int(max_rows), for_agent=_from_canopy())
     except ScopeError as e:
         raise _scope_error(e) from e
-    except service.RealDataRefused as e:
+    except service.SensitiveDataRefused as e:
         # Not an error: the SQL is valid (checked over zero rows) and the person can
         # run it. The agent -- and the View canopy draws for it -- get no rows.
         return {
@@ -194,7 +194,7 @@ for _name, _spec, _fn in (
         f"given opportunities' cached visits. Up to {MAX_VISITS_PER_READ} visits per call. Use it to check a "
         "number at row level -- the visits behind it -- or to see exactly what a worker submitted. Returns "
         "{visits, not_found, notes}. Audit-logged. An agent calling through canopy that Labs has not cleared "
-        "for real data reads only SYNTHETIC opportunities."
+        "for sensitive data reads only SYNTHETIC opportunities."
     ),
     input_schema={
         "type": "object",
@@ -217,7 +217,7 @@ def data_visits(user, opportunity_ids, visit_ids):
         return service.visits(_caller(user), opportunity_ids, visit_ids, for_agent=_from_canopy())
     except ScopeError as e:
         raise _scope_error(e) from e
-    except service.RealDataRefused as e:
+    except service.SensitiveDataRefused as e:
         raise MCPToolError("PERMISSION_DENIED", e.message, {"reason": e.code}) from e
     except QueryError as e:
         raise _query_error(e) from e

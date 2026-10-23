@@ -57,8 +57,8 @@ class DataView(LoginRequiredMixin, TemplateView):
         from connect_labs.labs import canopy_panel
 
         # Ids, never rows: the agent reads data itself through the data_* tools, as
-        # the visitor, and those tools decide whether it may see real rows
-        # (service.agent_sees_real_rows). Until labs clears the agent for real data
+        # the visitor, and those tools decide whether it may see production rows
+        # (service.agent_sees_sensitive_rows). Until labs clears the agent for sensitive data
         # it gets structure and hands SQL back to this page, so the page shows it no
         # visit data by itself.
         ctx["canopy_panel"] = canopy_panel.panel(

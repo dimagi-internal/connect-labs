@@ -153,7 +153,7 @@
                 if (!this.cfg.share) return 'off';
                 const c = this.chosen();
                 if (!c) return this.cfg.agent + ' (not shown on labs: Labs Admin › Canopy agents)';
-                return c.slug + (c.read_only ? ' (read-only)' : '');
+                return c.slug + (c.read_only ? ' (sensitive-data runners)' : '');
             },
             async save() {
                 if (this.saving) return;
@@ -198,11 +198,12 @@
                                 <span class="font-medium font-mono" x-text="c.slug"></span>
                                 <span x-show="c.default" class="text-xs text-gray-500">(labs' default agent)</span>:
                                 <span x-show="c.description" class="block text-xs text-gray-500" x-text="c.description"></span>
-                                <span x-show="c.read_only">read-only; reads the run, the workflow behind it and the raw
-                                    visits and form JSON, on zero-data-retention runners<span x-show="c.real_data">, over
-                                    production data too</span>. Takes no actions.</span>
+                                <span x-show="c.read_only">on sensitive-data runners; reads the run, the workflow behind it
+                                    and the raw visits and form JSON<span x-show="c.sensitive_data">, over Labs' sensitive data
+                                    (production visits) too</span>, and can propose edits to this workflow and its pipelines
+                                    for a person to confirm (they stay in Labs). Runs none of the workflow's actions.</span>
                                 <span x-show="!c.read_only">reads the run and can propose this workflow's actions for a
-                                    person to confirm. Over production data it is not offered.</span>
+                                    person to confirm. Over sensitive data (production visits) it is not offered.</span>
                                 <span x-show="!c.available" class="block text-red-700 text-xs">
                                     Not available on this workflow: <span x-text="c.reasons.join('; ')"></span></span>
                             </span>

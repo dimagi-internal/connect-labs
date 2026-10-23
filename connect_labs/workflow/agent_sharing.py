@@ -19,7 +19,8 @@ Which agent, and what its author tells it, ride on the same key:
   lists for labs). Absent, it is the default agent. The legacy values ``"site"`` (the
   default agent) and ``"data"`` (the agent for data work) still read
   (``canopy_settings.resolve_choice``). An agent canopy declares handles sensitive data, or
-  that labs lets read real data, is offered read-only: on sensitive-data runners, with the run's read scopes
+  that labs lets work with sensitive data, is offered on sensitive-data runners, with the run's
+  read scopes and edits to the workflow confirmed in chat (``workflow:edit``, kept in labs),
   and never ``workflow:act`` (``canopy_panel.availability``).
 * ``brief`` -- what the workflow is for, what correct looks like, what to check first.
   The agent reads it with the workflow (``data_workflow_context``, as the visitor).

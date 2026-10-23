@@ -49,7 +49,7 @@ def test_the_view_is_self_contained_and_speaks_mcp_apps():
 def test_withheld_rows_are_withheld_from_the_view_too():
     # The View never asks for rows itself when the agent was refused them.
     html = _resource().html()
-    assert "r.withheld" in html and "Real data stays in Labs" in html
+    assert "r.withheld" in html and "Sensitive data stays in Labs" in html
 
 
 def test_an_uncleared_agent_gets_a_hand_off_not_rows():
@@ -59,7 +59,9 @@ def test_an_uncleared_agent_gets_a_hand_off_not_rows():
         mock.patch.object(scope, "resolve", return_value=[OPP]),
         mock.patch.object(tools, "_caller", return_value=scopes.Caller(access_token="t")),
         mock.patch.object(tools, "_from_canopy", return_value=True),
-        mock.patch.object(canopy_panel, "call_real_data_clearance", return_value=canopy_panel.Clearance(False, "no")),
+        mock.patch.object(
+            canopy_panel, "call_sensitive_data_clearance", return_value=canopy_panel.Clearance(False, "no")
+        ),
     ):
         out = tools.query(mock.Mock(), [OPP.id], "SELECT COUNT(*) AS n FROM visits")
         bad = None

@@ -265,7 +265,7 @@ def test_a_workflows_agent_is_granted_the_run_scopes(enabled, canopy_redeem, vis
     with (
         override_settings(LABS_WORKFLOW_SANDBOX="opt_in"),
         mock.patch("connect_labs.workflow.views.get_org_data", return_value={}),
-        # Generated synthetic data: over real data no agent is offered at all
+        # Generated synthetic data: over sensitive data no agent is offered at all
         # (labs/canopy_panel.py; test_canopy_clearance.py).
         mock.patch("connect_labs.labs.synthetic.provenance.all_generated", return_value=True),
     ):
@@ -378,7 +378,7 @@ def test_asking_for_the_data_agent_with_none_configured_offers_no_agent(enabled,
     [
         # Any other agent labs lists: named on the panel, the run page's usual scopes.
         ("coach-bot", [], "coach-bot", {"workflow:read", "workflow:act", "data:read"}),
-        # One allowed over real data: on sensitive-data runners, like the data agent -- reads, and edits
+        # One allowed sensitive data: on sensitive-data runners, like the data agent -- reads, and edits
         # a person confirms in chat, but no actions.
         ("deep-bot", ["deep-bot"], "deep-bot", {"workflow:read", "data:read", "workflow:edit"}),
         # One labs no longer lists: no panel at all, not the site's agent in its place.
@@ -390,7 +390,7 @@ def test_a_workflow_offers_the_agent_it_chose_on_that_agents_terms(
 ):
     from connect_labs.workflow.views import WorkflowRunView
 
-    canopy_agents("ace", offered=["coach-bot", "deep-bot"], real_data=sensitive)
+    canopy_agents("ace", offered=["coach-bot", "deep-bot"], sensitive_data=sensitive)
     workflow = {**SHARING_WORKFLOW, "config": {"agent": {"share": True, "agent": agent}}}
     with (
         mock.patch("connect_labs.workflow.views.get_org_data", return_value={}),
@@ -433,9 +433,9 @@ def test_a_held_back_agent_is_never_silent(enabled, visitor, canopy_agents, fake
         )
     assert not panel
     box = _json_script(response.content.decode(), "agent-settings")
-    assert any("not allowed over real data" in r for r in box["held_back"])
+    assert any("not allowed sensitive data" in r for r in box["held_back"])
     data = next(c for c in box["choices"] if c["slug"] == "labsdata")
     assert data["available"] is False and data["reasons"] == box["held_back"]
-    # The default agent is not allowed over real data either, and says so.
+    # The default agent is not allowed sensitive data either, and says so.
     site = next(c for c in box["choices"] if c["default"])
     assert site["available"] is False and site["reasons"]

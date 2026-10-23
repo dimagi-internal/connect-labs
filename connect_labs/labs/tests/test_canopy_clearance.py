@@ -1,4 +1,4 @@
-"""Over real (non-generated) visit data no canopy agent is offered unless labs and canopy have cleared it.
+"""Over sensitive data (non-generated visits) no canopy agent is offered unless labs and canopy have cleared it.
 
 The rule lives in ``labs/canopy_panel.py`` and is held in two places that must agree:
 whether a page draws the panel at all, and whether labs' MCP answers canopy's calls.
@@ -18,7 +18,7 @@ REPO_ROOT = pathlib.Path(canopy_panel.__file__).resolve().parents[1]
 @pytest.fixture
 def cleared(canopy_agents, monkeypatch):
     """Every clearance condition met, as it will be once canopy signs its statement."""
-    canopy_agents("workflow-agent", real_data=["workflow-agent"], runner_requirements=["sensitive_data"])
+    canopy_agents("workflow-agent", sensitive_data=["workflow-agent"], runner_requirements=["sensitive_data"])
     monkeypatch.setattr(canopy_panel, "CANOPY_EXECUTION_STATEMENTS", True)
 
 
@@ -46,7 +46,7 @@ def test_generated_data_is_offered_to_any_agent(canopy_agents):
         assert _here(canopy_panel.visits([10_101])).ok
 
 
-def test_real_data_is_refused_without_canopys_per_call_statement(cleared, monkeypatch):
+def test_sensitive_data_is_refused_without_canopys_per_call_statement(cleared, monkeypatch):
     # Without an SDK that verifies canopy's per-call statement, even a fully
     # configured labs refuses: the switch is a constant, not a setting.
     monkeypatch.setattr(canopy_panel, "CANOPY_EXECUTION_STATEMENTS", False)
@@ -57,14 +57,14 @@ def test_real_data_is_refused_without_canopys_per_call_statement(cleared, monkey
 
 
 @pytest.mark.parametrize(
-    "real_data, reason",
+    "sensitive_data, reason",
     [
-        ([], 'tick "Real data"'),
-        (["some-other-agent"], 'tick "Real data"'),
+        ([], 'tick "Sensitive data"'),
+        (["some-other-agent"], 'tick "Sensitive data"'),
     ],
 )
-def test_each_condition_fails_closed_on_its_own(cleared, canopy_agents, real_data, reason):
-    canopy_agents("workflow-agent", real_data=real_data, runner_requirements=["sensitive_data"])
+def test_each_condition_fails_closed_on_its_own(cleared, canopy_agents, sensitive_data, reason):
+    canopy_agents("workflow-agent", sensitive_data=sensitive_data, runner_requirements=["sensitive_data"])
     with _generated(False):
         here = _here(canopy_panel.visits([501]))
     assert not here.ok
@@ -90,7 +90,7 @@ def test_canopys_word_is_a_condition_too(cleared, fake_canopy):
         assert not here.ok and why in here.reasons[0], (said, here)
 
 
-def test_every_condition_met_clears_real_data(cleared):
+def test_every_condition_met_clears_sensitive_data(cleared):
     with _generated(False):
         here = _here(canopy_panel.visits([501]))
     assert here.ok and here.read_only and here.page_agent.runner_requirements == ("sensitive_data",)
@@ -181,8 +181,8 @@ def test_every_delegated_tool_that_reads_visits_is_judged_or_returns_no_rows():
     from connect_labs.mcp.token_scopes import USERVISIT_DATA_TOOLS
     from connect_labs.mcp.visit_access import DELEGATED_READS
 
-    # Labs data judges itself (labsdata/service.py, `agent_sees_real_rows`): through
-    # canopy it returns real rows only to an agent labs has cleared for real data, and
+    # Labs data judges itself (labsdata/service.py, `agent_sees_sensitive_rows`): through
+    # canopy it returns production rows only to an agent labs has cleared for sensitive data, and
     # otherwise structure only, running queries only on generated opps.
     returns_no_rows = {"explorer_describe", "explorer_query", "data_describe", "data_query", "data_visits"}
     reachable = set().union(*canopy.SCOPE_TOOLS.values())
@@ -197,7 +197,7 @@ def _delegated_reads(ids):
     )
 
 
-def test_canopy_is_refused_a_run_over_real_data():
+def test_canopy_is_refused_a_run_over_sensitive_data():
     from connect_labs.mcp.server import policy_denial
 
     with _delegated_reads([501]), _generated(False):
@@ -226,7 +226,7 @@ class _Vouched:
         return None if self.agent in set(agents) else "agent_not_allowed"
 
 
-def test_a_cleared_agent_may_read_real_data_on_a_call_canopy_vouched_for(cleared):
+def test_a_cleared_agent_may_read_sensitive_data_on_a_call_canopy_vouched_for(cleared):
     from connect_labs.mcp import execution
     from connect_labs.mcp.server import policy_denial
 

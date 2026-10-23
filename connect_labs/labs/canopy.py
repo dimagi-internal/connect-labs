@@ -105,8 +105,8 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
     # visits of the opportunities on screen, whole visits down to their form JSON,
     # and the definitions behind a workflow (its pipelines, their SQL, the semantic
     # registry). Read-only throughout. The data_* tools decide for themselves what an
-    # agent sees (labsdata/service.py:agent_sees_real_rows): real rows only for an
-    # agent labs has cleared for real data (labs/canopy_panel.py); otherwise
+    # agent sees (labsdata/service.py:agent_sees_sensitive_rows): production rows only for an
+    # agent labs has cleared for sensitive data (labs/canopy_panel.py); otherwise
     # structure, validation over zero rows and synthetic data, and the agent hands
     # its SQL to the person on the Data page (the `data_set_query` page action).
     "data:read": frozenset(
@@ -139,8 +139,8 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
     ),
 }
 
-#: Scopes whose tools show the agent data computed from visits. Over real
-#: (non-generated) data they run only for an agent labs has cleared
+#: Scopes whose tools show the agent data computed from visits. Over labs' sensitive
+#: data (non-generated visits) they run only for an agent labs has cleared
 #: (``labs/canopy_panel.py``, ``mcp/visit_access.py:delegated_denied_reason``); a
 #: test pins that every one of their tools says what it reads.
 VISIT_SCOPES: frozenset[str] = frozenset({"workflow:read", "workflow:act", "page:read"})
@@ -162,11 +162,12 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "marketplace:network": ("marketplace:read",),
     "marketplace:round": ("marketplace:read",),
     # data:read so the agent can check a run against the raw data behind it
-    # (data_workflow_context, data_query, data_visits) -- real rows only for a cleared agent.
+    # (data_workflow_context, data_query, data_visits) -- production rows only for a cleared agent.
     "labs:workflow:run": ("workflow:read", "workflow:act", "data:read"),
-    # A run whose workflow offers the DATA agent (``config.agent.agent == "data"``): the
-    # run's reads, the raw data behind it, and edits to the workflow confirmed in chat --
-    # never ``workflow:act`` (``RUN_FOR_DATA_AGENT``).
+    # A run whose workflow offers an agent that handles sensitive data (the data agent;
+    # ``canopy_panel.availability(...).read_only``): the run's reads, the raw data behind
+    # it, and edits to the workflow and its pipelines, confirmed in chat and kept in labs
+    # -- never ``workflow:act`` (``RUN_FOR_DATA_AGENT``).
     "labs:workflow:run:data": ("workflow:read", "data:read", "workflow:edit"),
     # A page drawn at its workflow URL (or any route registered with more than a page
     # needs): its panel names this key instead of the route (``PAGE_ON_ANOTHER_ROUTE``),
@@ -188,7 +189,8 @@ PAGE_TITLES: dict[str, str] = {
     "marketplace:round": "A marketplace round",
     "labs:workflow:run": "A workflow run",
     "labs:workflow:run:data": (
-        "A workflow run, read-only (an agent that handles sensitive data, on sensitive-data runners)"
+        "A workflow run over sensitive data (edits stay in Labs; an agent that handles sensitive data, "
+        "on a sensitive-data runner)"
     ),
     "labs:workflow:run:page": "A page drawn at its workflow's address",
     "labs:page_home": "An organisation's or programme's home page",
@@ -300,16 +302,16 @@ def user_claims(user) -> dict:
 
 
 def site_needs() -> dict:
-    """What labs asks of canopy's agents, for ``site.json``: to read real data an agent
-    must be declared to handle sensitive data and run on sensitive-data runners; and which
-    agents labs shows and lets read real data now, against which site agents version they
-    were chosen."""
+    """What labs asks of canopy's agents, for ``site.json``: to work with sensitive data an
+    agent must be declared to handle sensitive data and run on sensitive-data runners; and
+    which agents labs shows and lets work with sensitive data now, against which site
+    agents version they were chosen."""
     agents = canopy_settings.current()
     return {
-        "real_data": {"requires": {"handles_sensitive": True, "runner_flag": canopy_settings.SENSITIVE_DATA}},
+        "sensitive_data": {"requires": {"handles_sensitive": True, "runner_flag": canopy_settings.SENSITIVE_DATA}},
         "uses": {
             "agents": list(agents.offered),
-            "real_data_agents": list(agents.real_data_agents),
+            "sensitive_data_agents": list(agents.sensitive_data_agents),
             "version": agents.site_agents_version,
         },
     }

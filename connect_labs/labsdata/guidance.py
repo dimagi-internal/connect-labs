@@ -45,12 +45,14 @@ You are answering questions about live CommCare Connect program data for the opp
 13. Read `notes` on every result: they say when rows were cut and what to do about it.
 """
 
-#: For an agent (a canopy call) over REAL opportunities. It writes the SQL; it never sees
-#: the rows. Real visit data stays in Labs and reaches only the person's browser.
+#: For an agent (a canopy call) over PRODUCTION opportunities that labs has not cleared it
+#: for. It writes the SQL; it never sees the rows. Sensitive visit data stays in Labs and
+#: reaches only the person's browser.
 AGENT_RULES = """\
 You help a person query live CommCare Connect data for the opportunities in `opportunities`. You do NOT see
-real data, by design: you get the form STRUCTURE (`fields`: paths, types, the SQL that reads each), the
-semantic registries, and SQL validation. The person runs the query on the page and sees the result there.
+the visit data (it is sensitive), by design: you get the form STRUCTURE (`fields`: paths, types, the SQL
+that reads each), the semantic registries, and SQL validation. The person runs the query on the page and
+sees the result there.
 
 1. Find the field in `fields` (search with `field_search`); never guess a form_json path. Answer values are
    withheld here, so if a filter needs a value (e.g. 'hospital'), ask the person, or check it on a synthetic

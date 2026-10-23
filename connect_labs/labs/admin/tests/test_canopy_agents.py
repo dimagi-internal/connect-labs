@@ -1,5 +1,5 @@
-"""Labs Admin › Canopy agents: which canopy agents labs shows, and which may read real
-data, chosen in the UI from the agents canopy lists for labs (the site agents API) --
+"""Labs Admin › Canopy agents: which canopy agents labs shows, and which may work with
+sensitive data, chosen in the UI from the agents canopy lists for labs (the site agents API) --
 by Dimagi staff only, with history -- and labs reads them everywhere.
 
 Every name here is invented (this repository is public).
@@ -61,7 +61,7 @@ def outsider():
 def _allow_data_bot(user, **kw):
     return canopy_settings.save(
         user,
-        agents=[Tick("site-bot"), Tick("data-bot", real_data=True)],
+        agents=[Tick("site-bot"), Tick("data-bot", sensitive_data=True)],
         default_agent="site-bot",
         runner_requirements=[],
         listing=canopy_settings.site_agents(),
@@ -89,7 +89,7 @@ def test_a_saved_change_is_what_labs_reads_everywhere(env, staff):
     assert (here.page_agent.agent, here.page_agent.runner_requirements) == ("data-bot", ("sensitive_data",))
     # The Data page offers it, read-only on sensitive-data runners.
     assert canopy_panel.data_page_agent().page_agent.agent == "data-bot"
-    # The default agent is not allowed over real data.
+    # The default agent is not allowed sensitive data.
     assert not canopy_panel.availability("site-bot", REAL).ok
     host = canopy.host_settings()
     assert host["AGENT_SLUG"] == "site-bot" and host["RUNNER_REQUIREMENTS"] == []
@@ -101,7 +101,7 @@ def test_only_dimagi_staff_can_change_it(env, dimagi_user, outsider):
     assert not CanopyAgentSettings.objects.exists()
     # A Dimagi sign-in is enough: an OAuth-created labs user never gets Django's
     # is_staff, and no labs page grants it, so is_staff alone left nobody able to.
-    assert _allow_data_bot(dimagi_user).real_data_agents == ("data-bot",)
+    assert _allow_data_bot(dimagi_user).sensitive_data_agents == ("data-bot",)
 
 
 @pytest.mark.parametrize(
@@ -111,10 +111,10 @@ def test_only_dimagi_staff_can_change_it(env, dimagi_user, outsider):
         ([Tick("site-bot"), Tick("Data Bot")], "site-bot", [], "not a canopy agent slug"),
         # Only agents canopy lists for labs can be shown.
         ([Tick("site-bot"), Tick("stranger-bot")], "site-bot", [], "canopy does not list stranger-bot"),
-        # Real data needs canopy's sensitive-data declaration and a ready sensitive-data runner.
-        ([Tick("site-bot", real_data=True)], "site-bot", [], "not declared to handle sensitive data"),
+        # Sensitive data needs canopy's sensitive-data declaration and a ready sensitive-data runner.
+        ([Tick("site-bot", sensitive_data=True)], "site-bot", [], "not declared to handle sensitive data"),
         (
-            [Tick("site-bot"), Tick("coach-bot", real_data=True)],
+            [Tick("site-bot"), Tick("coach-bot", sensitive_data=True)],
             "site-bot",
             [],
             "not declared to handle sensitive data",
@@ -133,17 +133,17 @@ def test_choices_canopy_does_not_back_are_refused(env, staff, agents, default, f
         )
 
 
-def test_real_data_cannot_be_newly_ticked_while_canopy_says_nothing(env, staff, canopy_agents):
+def test_sensitive_data_cannot_be_newly_ticked_while_canopy_says_nothing(env, staff, canopy_agents):
     canopy_agents("site-bot")
     env.set(None)
     with pytest.raises(canopy_settings.InvalidSettings, match="canopy does not list data-bot"):
         _allow_data_bot(staff)
 
 
-def test_ticking_real_data_shows_the_agent(env, staff):
+def test_ticking_sensitive_data_shows_the_agent(env, staff):
     saved = canopy_settings.save(
         staff,
-        agents=[Tick("site-bot"), Tick("data-bot", offered=False, real_data=True)],
+        agents=[Tick("site-bot"), Tick("data-bot", offered=False, sensitive_data=True)],
         default_agent="site-bot",
         runner_requirements=[],
         listing=canopy_settings.site_agents(),
@@ -165,7 +165,7 @@ def test_every_change_is_kept_audited_and_can_be_restored(env, staff):
     assert restored.as_dict() == first.as_dict()
     assert CanopyAgentSettings.objects.count() == 3
     event = AuditEvent.objects.filter(resource_type="canopy_agent_settings").latest("id")
-    assert {"slug": "data-bot", "offered": True, "real_data": True} in event.metadata["after"]["agents"]
+    assert {"slug": "data-bot", "offered": True, "sensitive_data": True} in event.metadata["after"]["agents"]
     assert event.metadata["after"]["site_agents_version"] == "v1"
     assert event.metadata["before"]["runner_requirements"] == ["sensitive_data"]
 
@@ -174,7 +174,7 @@ def test_drift_in_canopy_withdraws_the_agent_at_once(env, staff):
     _allow_data_bot(staff)
     assert canopy_panel.availability("data-bot", REAL).ok
     # Its author withdraws the sensitive-data declaration in canopy: labs stops offering it
-    # over real data, and says why.
+    # over sensitive data, and says why.
     env.set(listing(agent("site-bot"), agent("data-bot", handles_sensitive=False)))
     held = canopy_panel.availability("data-bot", REAL)
     assert not held.ok and "not declared to handle sensitive data" in held.reasons[0]
@@ -199,8 +199,8 @@ def test_the_page_is_a_table_of_canopys_agents_with_labs_ticks(env, client, staf
     assert page.status_code == 200
     rows = {r["slug"]: r for r in page.context["rows"]}
     assert list(rows) == ["site-bot", "data-bot", "coach-bot"]
-    assert rows["data-bot"]["handles_sensitive"] and rows["data-bot"]["eligible_for_real_data"]
-    assert not rows["coach-bot"]["eligible_for_real_data"]
+    assert rows["data-bot"]["handles_sensitive"] and rows["data-bot"]["eligible_for_sensitive_data"]
+    assert not rows["coach-bot"]["eligible_for_sensitive_data"]
     assert rows["site-bot"]["default"] and rows["site-bot"]["offered"]
     assert b"Checks workflows against raw data" in page.content
 
@@ -213,14 +213,14 @@ def test_staff_save_ticks_from_the_page(env, client, staff):
         {
             "slug": ["site-bot", "data-bot", "coach-bot"],
             "offered:site-bot": "on",
-            "real_data:data-bot": "on",
+            "sensitive_data:data-bot": "on",
             "default_agent": "site-bot",
             "note": "testing",
         },
     )
     assert resp.status_code == 302
     saved = canopy_settings.current()
-    assert saved.offered == ("site-bot", "data-bot") and saved.real_data_agents == ("data-bot",)
+    assert saved.offered == ("site-bot", "data-bot") and saved.sensitive_data_agents == ("data-bot",)
     assert saved.runner_requirements == ()
     assert CanopyAgentSettings.objects.get().note == "testing"
 
@@ -254,8 +254,12 @@ def test_legacy_workflow_choices_read_as_the_agents_they_name(env, staff):
 def test_site_json_says_what_labs_asks_and_uses(env, staff):
     _allow_data_bot(staff)
     needs = canopy.site_needs()
-    assert needs["real_data"] == {"requires": {"handles_sensitive": True, "runner_flag": "sensitive_data"}}
-    assert needs["uses"] == {"agents": ["site-bot", "data-bot"], "real_data_agents": ["data-bot"], "version": "v1"}
+    assert needs["sensitive_data"] == {"requires": {"handles_sensitive": True, "runner_flag": "sensitive_data"}}
+    assert needs["uses"] == {
+        "agents": ["site-bot", "data-bot"],
+        "sensitive_data_agents": ["data-bot"],
+        "version": "v1",
+    }
     # Every page labs registers has a title for people reading it in canopy.
     assert set(canopy.PAGE_TITLES) == set(canopy.PAGE_SCOPES)
 
@@ -403,7 +407,7 @@ def test_restore_is_checked_against_canopys_list(env, staff):
     env.set(listing(agent("data-bot", handles_sensitive=True), agent("coach-bot"), version="v2"))
     with pytest.raises(canopy_settings.InvalidSettings, match="its default agent, site-bot, is no longer listed"):
         canopy_settings.restore(staff, first.row_id, listing=canopy_settings.site_agents())
-    # Nor one whose real-data agent canopy no longer clears.
+    # Nor one whose sensitive-data agent canopy no longer clears.
     env.set(listing(agent("site-bot"), agent("data-bot"), agent("coach-bot")))
     with pytest.raises(canopy_settings.InvalidSettings, match="cannot be restored: data-bot cannot be allowed"):
         canopy_settings.restore(staff, first.row_id, listing=canopy_settings.site_agents())

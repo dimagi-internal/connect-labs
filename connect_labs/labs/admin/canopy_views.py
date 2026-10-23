@@ -29,11 +29,12 @@ from connect_labs.labs.view_mixins import AdminRequiredMixin
 
 logger = logging.getLogger(__name__)
 
-#: Delegated calls whose statement decides whether an agent sees real rows.
+#: Delegated calls whose statement decides whether an agent sees production rows.
 DATA_TOOLS = ("data_query", "data_visits", "data_describe")
 
-#: Any real (non-generated) opportunity: what "over real data" means for a row's state.
-_REAL = canopy_panel.visits(None)
+#: Any production (non-generated) opportunity -- labs' sensitive data: what "over sensitive
+#: data" means for a row's state.
+_SENSITIVE = canopy_panel.visits(None)
 
 _URL = re.compile(r"https?://[^\s<>\"']+")
 
@@ -103,9 +104,9 @@ def _rows(ticks: canopy_settings.AgentSettings, listing, links: dict[str, str]) 
         agent = listing.agent(slug) if listing is not None else None
         tick = ticks.ticks(slug)
         agent_links = _agent_links(agent, links)
-        eligible, why_not = canopy_settings.eligible_for_real_data(agent)
+        eligible, why_not = canopy_settings.eligible_for_sensitive_data(agent)
         here = canopy_panel.availability(slug, canopy_panel.NO_VISIT_DATA, ticks=ticks, listing=listing)
-        over_real = canopy_panel.availability(slug, _REAL, ticks=ticks, listing=listing)
+        over_sensitive = canopy_panel.availability(slug, _SENSITIVE, ticks=ticks, listing=listing)
         sensitive = next((c for c in agent.capabilities if c.handles_sensitive), None) if agent else None
         rows.append(
             {
@@ -126,18 +127,18 @@ def _rows(ticks: canopy_settings.AgentSettings, listing, links: dict[str, str]) 
                 "ready": bool(agent and agent.ready),
                 "problems": [linkify(p, agent_links) for p in agent.problems] if agent else [],
                 "offered": bool(tick and tick.offered),
-                "real_data": bool(tick and tick.real_data),
+                "sensitive_data": bool(tick and tick.sensitive_data),
                 "default": slug == ticks.default_agent,
-                "eligible_for_real_data": eligible,
-                "why_not_real_data": why_not,  # plain, for a title attribute
-                "why_not_real_data_html": linkify(why_not, agent_links),
+                "eligible_for_sensitive_data": eligible,
+                "why_not_sensitive_data": why_not,  # plain, for a title attribute
+                "why_not_sensitive_data_html": linkify(why_not, agent_links),
                 # Ticked but held back (drift, or canopy unreachable): in red, with why.
                 "held_back": (
                     [linkify(r, agent_links) for r in here.reasons] if tick and tick.offered and not here.ok else []
                 ),
-                "real_data_held_back": (
-                    [linkify(r, agent_links) for r in over_real.reasons]
-                    if tick and tick.real_data and here.ok and not over_real.ok
+                "sensitive_data_held_back": (
+                    [linkify(r, agent_links) for r in over_sensitive.reasons]
+                    if tick and tick.sensitive_data and here.ok and not over_sensitive.ok
                     else []
                 ),
                 "read_only": here.read_only,
@@ -175,20 +176,20 @@ def _drift(ticks: canopy_settings.AgentSettings, listing) -> str:
 
 
 def _checks(ticks: canopy_settings.AgentSettings, listing) -> list[dict]:
-    """Labs' side of "will the data agent get real rows?", each ok or not, with why."""
+    """Labs' side of "will the data agent get sensitive data?", each ok or not, with why."""
     agent = canopy_settings.data_agent(ticks, listing)
-    over_real = canopy_panel.availability(agent, _REAL, ticks=ticks, listing=listing) if agent else None
+    over_sensitive = canopy_panel.availability(agent, _SENSITIVE, ticks=ticks, listing=listing) if agent else None
     return [
         {
-            "label": "An agent for data work is shown (the Data page and read-only workflows)",
+            "label": "An agent for data work is shown (the Data page and workflows over sensitive data)",
             "ok": bool(agent),
             "detail": agent
             or 'none: tick "Show on labs" for an agent that handles sensitive data; Data offers the default agent',
         },
         {
-            "label": "Labs lets it read real data",
-            "ok": bool(agent) and agent in ticks.real_data_agents,
-            "detail": ", ".join(ticks.real_data_agents) or 'no agent has "Real data" ticked',
+            "label": "Labs lets it work with sensitive data",
+            "ok": bool(agent) and agent in ticks.sensitive_data_agents,
+            "detail": ", ".join(ticks.sensitive_data_agents) or 'no agent has "Sensitive data" ticked',
         },
         {
             "label": "Canopy can act as the visitor here",
@@ -209,12 +210,16 @@ def _checks(ticks: canopy_settings.AgentSettings, listing) -> list[dict]:
             "detail": "dimagi-canopy >= 0.13" if canopy_panel.CANOPY_EXECUTION_STATEMENTS else "SDK too old",
         },
         {
-            "label": "So a workflow over real data may offer it",
-            "ok": bool(over_real and over_real.ok),
+            "label": "So a workflow over sensitive data may offer it",
+            "ok": bool(over_sensitive and over_sensitive.ok),
             "detail": (
-                "; ".join(over_real.reasons)
-                if over_real and over_real.reasons
-                else ("yes; each call is still held to canopy's statement" if over_real else "no agent for data work")
+                "; ".join(over_sensitive.reasons)
+                if over_sensitive and over_sensitive.reasons
+                else (
+                    "yes; each call is still held to canopy's statement"
+                    if over_sensitive
+                    else "no agent for data work"
+                )
             ),
         },
     ]
@@ -290,7 +295,7 @@ class CanopyAgentsView(AdminRequiredMixin, TemplateView):
                     canopy_settings.AgentTicks(
                         slug,
                         offered=f"offered:{slug}" in request.POST,
-                        real_data=f"real_data:{slug}" in request.POST,
+                        sensitive_data=f"sensitive_data:{slug}" in request.POST,
                     )
                     for slug in request.POST.getlist("slug")
                 ]

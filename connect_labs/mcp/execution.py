@@ -10,12 +10,12 @@ and access token of THIS request.
 
 Single-use is why it is verified here, once, at the start of the tool call, and the
 result kept in a context variable for everything the call does
-(``labs/canopy_panel.py:call_real_data_clearance`` reads it): a second verification
+(``labs/canopy_panel.py:call_sensitive_data_clearance`` reads it): a second verification
 of the same statement is a replay and would be refused.
 
 Fails closed: no statement, a statement that does not verify, or an SDK too old to
-verify one all leave the call without a verified execution, and real data stays out
-of reach. ``Canopy-Actor`` still only NAMES the agent and is never trusted.
+verify one all leave the call without a verified execution, and sensitive data stays
+out of reach. ``Canopy-Actor`` still only NAMES the agent and is never trusted.
 """
 
 from __future__ import annotations

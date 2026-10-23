@@ -4,8 +4,8 @@ By default (the autouse ``fake_canopy`` fixture in ``connect_labs/conftest.py``)
 agrees with labs' saved settings (the ``CanopyAgentSettings`` row in force, set in a test
 with ``connect_labs/testing/canopy_agents.py``): it lists every agent labs ticks, each
 ready on a sensitive-data runner, and declares as handling sensitive data the ones labs
-lets read real data, plus any the test names with ``fake_canopy.declare_sensitive(...)``
-(an agent canopy declares, which labs shows without "Real data"). A test about canopy's
+lets work with sensitive data, plus any the test names with ``fake_canopy.declare_sensitive(...)``
+(an agent canopy declares, which labs shows without "Sensitive data"). A test about canopy's
 word sets a whole answer with ``fake_canopy.set(...)``.
 """
 
@@ -66,12 +66,12 @@ def listing(
 
 def agreeing(declared_sensitive=()) -> SiteAgents:
     """canopy agreeing with labs' ticks (the default): every agent the saved row ticks, each
-    declared to handle sensitive data when the row lets it read real data or the test
+    declared to handle sensitive data when the row lets it work with sensitive data or the test
     declared it."""
     from connect_labs.labs import canopy_settings
 
     ticks = canopy_settings.current()
-    sensitive = set(ticks.real_data_agents) | set(declared_sensitive)
+    sensitive = set(ticks.sensitive_data_agents) | set(declared_sensitive)
     return listing(*(agent(t.slug, handles_sensitive=t.slug in sensitive) for t in ticks.agents))
 
 

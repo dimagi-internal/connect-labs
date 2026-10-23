@@ -303,7 +303,7 @@ def validate_query(sql: str) -> dict:
     It runs through the same path as a real query, over a ``visits`` relation that
     holds zero rows, so Postgres still resolves every column, type and function and
     reports what is wrong; the only thing that comes back is the result's column
-    names. This is how an agent that may not see real data can still write SQL that
+    names. This is how an agent that may not see sensitive data can still write SQL that
     will run.
     """
     result = run_query([NO_DATA], sql)

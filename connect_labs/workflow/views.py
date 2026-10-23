@@ -1148,9 +1148,10 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         from connect_labs.labs import canopy, canopy_panel
 
         # The workflow's choice of agent (config.agent.agent), from those Labs Admin
-        # shows and canopy lists. A read-only one (handles sensitive data in canopy, or
-        # allowed over real data) runs on sensitive-data runners, its token signed for the run's read scopes
-        # only. One that is not available here: no panel, not another agent in its place.
+        # shows and canopy lists. One that works with sensitive data (handles sensitive data in
+        # canopy, or allowed sensitive data in labs) runs on sensitive-data runners, its token
+        # signed for RUN_FOR_DATA_AGENT: the run's reads and confirmed workflow edits, no
+        # actions. One that is not available here: no panel, not another agent in its place.
         reads = canopy_panel.workflow_reads(definition, run_data.get("opportunity_id"))
         available = canopy_panel.availability(offered.agent, reads)
         if not available.ok:
@@ -1163,8 +1164,8 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             if run_data.get("opportunity_id")
             else {"program_id": run_data.get("program_id")}
         )
-        # Over real (non-generated) visits no agent is offered unless labs has cleared
-        # it for real data (labs/canopy_panel.py): no panel, no page token, no grant.
+        # Over sensitive data (non-generated visits) no agent is offered unless labs has
+        # cleared it for sensitive data (labs/canopy_panel.py): no panel, no page token, no grant.
         panel = canopy_panel.panel(
             self.request,
             reads=reads,
@@ -1202,7 +1203,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "default": slug == ticks.default_agent,
                     "description": listed.description if listed else "",
                     "read_only": here.read_only,
-                    "real_data": slug in ticks.real_data_agents,
+                    "sensitive_data": slug in ticks.sensitive_data_agents,
                     "available": here.ok,
                     "reasons": list(here.reasons),
                 }
@@ -1269,7 +1270,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         owner = {
             k: labs_context[k] for k in ("opportunity_id", "program_id", "organization_id") if labs_context.get(k)
         }
-        # A page's workflow sources carry run summaries computed from visits: over real
+        # A page's workflow sources carry run summaries computed from visits: over sensitive
         # data, no agent unless cleared (labs/canopy_panel.py).
         token = ((self.request.session.get("labs_oauth") or {}).get("access_token")) or ""
         panel = canopy_panel.panel(

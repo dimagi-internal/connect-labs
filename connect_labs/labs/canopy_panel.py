@@ -9,12 +9,13 @@ agent could read through it:
   explorer (whose agent writes SQL and never sees a row). Offered as before.
 * ``visits(opportunity_ids)`` -- a workflow run, or a page whose workflow sources carry
   run summaries computed from visits. ``None`` means "cannot tell", which counts as
-  real data.
+  sensitive data.
 
 **The rule.** Over visit data that is not all GENERATED synthetic data
-(``labs/synthetic/provenance.py``) -- production data, with PII and PHI in it -- the
-panel is not drawn at all, unless labs has cleared the agent for real data
-(``real_data_clearance``). No panel means no page token, no grant and no ID-JAG, so the
+(``labs/synthetic/provenance.py``) -- production data, with PII and PHI in it: labs'
+sensitive data -- the panel is not drawn at all, unless labs has cleared the agent for
+sensitive data
+(``sensitive_data_clearance``). No panel means no page token, no grant and no ID-JAG, so the
 agent cannot reach the page's tools as the visitor by any path. The MCP server holds
 canopy's calls to the same rule independently (``mcp/server.py:policy_denial``), so a
 token minted before a workflow's data class changed is refused too.
@@ -23,20 +24,22 @@ token minted before a workflow's data class changed is refused too.
 Canopy agents, ``labs/canopy_settings.py``) AND canopy's signed word on the agent (the
 site agents API: listed for labs, ready, handles sensitive data, a ready sensitive-data
 runner). When canopy has said nothing usable for a day, no agent is shown. An agent
-canopy declares handles sensitive data, or that labs lets read real data, is always
-offered read-only, on sensitive-data runners.
+canopy declares handles sensitive data, or that labs lets work with sensitive data, is always
+offered on sensitive-data runners and never with the run's actions (``workflow:act``): it
+reads, and on a run may propose edits to the workflow that the person confirms and that
+stay in labs (``canopy.RUN_FOR_DATA_AGENT``).
 
-**Clearance for real data** needs, and fails closed on, each of:
+**Clearance for sensitive data** needs, and fails closed on, each of:
 
-1. labs lets the agent read real data ("Real data" ticked; off by default);
+1. labs lets the agent work with sensitive data ("Sensitive data" ticked; off by default);
 2. canopy declares it handles sensitive data and it has a ready sensitive-data runner
    (the page check, from the site agents API -- so drift in canopy withdraws it at once);
 3. every conversation with it requires sensitive-data runners (signed into its page token);
 4. canopy vouches, on each call, for the agent's sensitive-data declaration and the runner
    executing it, in a ``Canopy-Execution`` statement labs verifies (``mcp/execution.py``;
-   ``call_real_data_clearance``). No statement, or one that does not verify, is refused.
+   ``call_sensitive_data_clearance``). No statement, or one that does not verify, is refused.
 
-A CALL is held to 1, 3 and its own statement (``call_real_data_clearance``), never to a
+A CALL is held to 1, 3 and its own statement (``call_sensitive_data_clearance``), never to a
 cached listing: the statement is canopy's word on exactly that call.
 """
 
@@ -55,8 +58,8 @@ def _execution_statements_supported() -> bool:
 
 #: Whether labs can verify canopy's per-call ``Canopy-Execution`` statement (the SDK
 #: has ``verify_execution``, dimagi-canopy >= 0.13). Without it no agent is ever
-#: cleared for real data. With it, a page may offer a cleared agent, and every call is
-#: still held to its own verified statement (``call_real_data_clearance``).
+#: cleared for sensitive data. With it, a page may offer a cleared agent, and every call is
+#: still held to its own verified statement (``call_sensitive_data_clearance``).
 CANOPY_EXECUTION_STATEMENTS = _execution_statements_supported()
 
 #: Where labs' side of every refusal is fixed.
@@ -70,7 +73,7 @@ class Reads:
     """What the agent could read through a page: no visit data, or visits of these opps.
 
     ``opportunity_ids is None`` with ``visit_data`` means the page cannot tell which
-    opportunities it reads, which is treated as real data.
+    opportunities it reads, which is treated as sensitive data.
     """
 
     visit_data: bool
@@ -96,37 +99,37 @@ class Clearance:
     reason: str = ""
 
 
-def real_data_clearance(agent: str = "") -> Clearance:
-    """Labs' own side of letting ``agent`` (default: the default agent) work over real
-    (non-generated) data: "Real data" ticked, and an SDK that verifies canopy's per-call
-    statement. Canopy's side is ``canopy_real_data`` (a page) or the call's statement
-    (``call_real_data_clearance``).
+def sensitive_data_clearance(agent: str = "") -> Clearance:
+    """Labs' own side of letting ``agent`` (default: the default agent) work with labs'
+    sensitive data (non-generated visits): "Sensitive data" ticked, and an SDK that verifies canopy's per-call
+    statement. Canopy's side is ``canopy_sensitive_data`` (a page) or the call's statement
+    (``call_sensitive_data_clearance``).
 
     Its conversations are held to sensitive-data runners by construction, not by a
-    setting: an agent with "Real data" ticked is offered only read-only, with
+    setting: an agent with "Sensitive data" ticked is offered only on sensitive-data runners, with
     ``sensitive_data`` signed into its page token (``availability``), and a call is
-    cleared only when its statement shows that requirement (``call_real_data_clearance``).
+    cleared only when its statement shows that requirement (``call_sensitive_data_clearance``).
     """
     ticks = canopy_settings.current()
     agent = agent or ticks.default_agent
-    if agent not in ticks.real_data_agents:
-        return Clearance(False, f'{agent} is not allowed over real data: tick "Real data" for it in {ADMIN_PAGE}')
+    if agent not in ticks.sensitive_data_agents:
+        return Clearance(False, f'{agent} is not allowed sensitive data: tick "Sensitive data" for it in {ADMIN_PAGE}')
     if not CANOPY_EXECUTION_STATEMENTS:
         return Clearance(False, "canopy does not yet vouch for the agent's declaration and its runner on each call")
     return Clearance(True)
 
 
-def canopy_real_data(agent: str, listing) -> Clearance:
+def canopy_sensitive_data(agent: str, listing) -> Clearance:
     """canopy's side, for a page: the site agents API lists ``agent`` as handling
     sensitive data and ready on a sensitive-data runner. Drift in canopy withdraws the agent here at once."""
     if listing is None:
         return Clearance(False, canopy_settings.unreachable_reason())
-    ok, why = canopy_settings.eligible_for_real_data(listing.agent(agent))
+    ok, why = canopy_settings.eligible_for_sensitive_data(listing.agent(agent))
     return Clearance(ok, why)
 
 
-def call_real_data_clearance() -> Clearance:
-    """Whether THIS call (canopy acting for a visitor) may be given real data.
+def call_sensitive_data_clearance() -> Clearance:
+    """Whether THIS call (canopy acting for a visitor) may be given sensitive data.
 
     Labs' own conditions for the agent canopy's verified statement names, then the
     statement's: the capability declared to handle sensitive data, ``sensitive_data`` in
@@ -141,23 +144,24 @@ def call_real_data_clearance() -> Clearance:
         return Clearance(False, f"canopy did not vouch for this call ({why})")
     stated = call.execution
     # Labs' own policy for the agent the statement names -- from labs' ticks, never from
-    # the statement. An agent allowed over real data is only ever offered on sensitive-data
+    # the statement. An agent allowed sensitive data is only ever offered on sensitive-data
     # runners (its page token requires them), so that is its requirement here too, and the
     # statement is checked against it below.
-    labs_side = real_data_clearance(stated.agent)
+    labs_side = sensitive_data_clearance(stated.agent)
     if not labs_side.granted:
         return labs_side
     refusal = stated.sensitive_clearance(
-        agents=set(canopy_settings.current().real_data_agents),
+        agents=set(canopy_settings.current().sensitive_data_agents),
         require=(canopy_settings.SENSITIVE_DATA,),
     )
     if refusal:
-        return Clearance(False, f"canopy's statement does not clear this call for real data ({refusal})")
+        return Clearance(False, f"canopy's statement does not clear this call for sensitive data ({refusal})")
     return Clearance(True)
 
 
-def is_real(reads: Reads) -> bool:
-    """True when the page would show the agent visit data that is not all generated."""
+def is_sensitive(reads: Reads) -> bool:
+    """True when the page would show the agent labs' sensitive data: visit data that is not
+    all generated (production visits carry PII and PHI)."""
     from connect_labs.labs.synthetic.provenance import all_generated
 
     if not reads.visit_data:
@@ -169,9 +173,9 @@ def is_real(reads: Reads) -> bool:
 
 def call_clearance_for(reads: Reads) -> Clearance:
     """Whether this delegated call may read what ``reads`` names (its own statement decides)."""
-    if not is_real(reads):
+    if not is_sensitive(reads):
         return Clearance(True)
-    return call_real_data_clearance()
+    return call_sensitive_data_clearance()
 
 
 @dataclass(frozen=True)
@@ -196,6 +200,9 @@ class Availability:
 
     ok: bool
     slug: str = ""
+    #: Held to sensitive-data runners and given none of a run's actions (``workflow:act``).
+    #: Not "no writes": on a run its page key is ``canopy.RUN_FOR_DATA_AGENT``, whose
+    #: ``workflow:edit`` lets it propose edits to the workflow that the person confirms.
     read_only: bool = False
     reasons: tuple[str, ...] = ()
     page_agent: PageAgent | None = None
@@ -205,9 +212,10 @@ def availability(choice: str, reads: Reads, *, ticks=None, listing=_UNSET) -> Av
     """Whether ``choice`` (a slug; legacy ``"site"``/``"data"``, or "" for the default
     agent) may be offered over what the page ``reads``, and on what terms.
 
-    Shown by labs ("Show on labs"), listed and ready in canopy; read-only on sensitive-data
-    runners when canopy declares it handles sensitive data or labs lets it read real data; over real data,
-    only when both sides clear it (``real_data_clearance``, ``canopy_real_data``)."""
+    Shown by labs ("Show on labs"), listed and ready in canopy; on sensitive-data runners,
+    without the run's actions, when canopy declares it handles sensitive data or labs lets it
+    work with sensitive data; over sensitive data,
+    only when both sides clear it (``sensitive_data_clearance``, ``canopy_sensitive_data``)."""
     ticks = ticks or canopy_settings.current()
     listing = canopy_settings.site_agents() if listing is _UNSET else listing
     if not ticks.agents:
@@ -227,7 +235,7 @@ def availability(choice: str, reads: Reads, *, ticks=None, listing=_UNSET) -> Av
         )
     if not agent.ready:
         return Availability(False, slug, reasons=agent.problems or (f"{slug} is not ready in canopy",))
-    read_only = tick.real_data or agent.handles_sensitive
+    read_only = tick.sensitive_data or agent.handles_sensitive
     if read_only:
         if not agent.ready_with_flag(canopy_settings.SENSITIVE_DATA):
             return Availability(
@@ -246,10 +254,10 @@ def availability(choice: str, reads: Reads, *, ticks=None, listing=_UNSET) -> Av
         page_agent = PageAgent()
     else:
         page_agent = PageAgent(agent=slug, runner_requirements=tuple(ticks.runner_requirements))
-    if is_real(reads):
+    if is_sensitive(reads):
         for clearance in (
-            real_data_clearance(slug),
-            canopy_real_data(slug, listing),
+            sensitive_data_clearance(slug),
+            canopy_sensitive_data(slug, listing),
         ):
             if not clearance.granted:
                 return Availability(False, slug, read_only, (clearance.reason,), page_agent)
@@ -258,7 +266,7 @@ def availability(choice: str, reads: Reads, *, ticks=None, listing=_UNSET) -> Av
 
 def data_page_agent(reads: Reads = None) -> Availability:
     """The Data pages' agent: the agent for data work (``canopy_settings.data_agent``),
-    always read-only on sensitive-data runners -- or the default agent when there is none."""
+    always on sensitive-data runners -- or the default agent when there is none."""
     reads = reads or NO_VISIT_DATA
     ticks = canopy_settings.current()
     listing = canopy_settings.site_agents()
