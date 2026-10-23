@@ -121,3 +121,60 @@ def test_capped_count_stops_one_past_the_cap(monkeypatch):
     assert paginator.is_capped is True
     # The LIMIT is the whole point -- without it this is a full-table scan.
     assert "LIMIT 4" in str(AuditEvent.objects.all()[:4].query)
+
+
+# --- date filters ----------------------------------------------------------------
+#
+# ``occurred_at__date`` compiles to ``(occurred_at AT TIME ZONE 'UTC')::date``,
+# which no index serves: every page walked the occurred_at index back from now
+# across the whole table. A scrape paging the trail one day at a time pinned the
+# production DB at 100% CPU (2026-10-23). The filter is a datetime range now.
+
+
+def _at(day, hh, mm=0, ss=0):
+    from datetime import datetime
+
+    from django.utils import timezone
+
+    return timezone.make_aware(datetime.fromisoformat(f"{day}T{hh:02d}:{mm:02d}:{ss:02d}"))
+
+
+@pytest.mark.django_db
+def test_date_filter_keeps_whole_days_inclusive(client, admin_user):
+    for name, when in [
+        ("before", _at("2026-10-11", 23, 59, 59)),
+        ("first", _at("2026-10-12", 0)),
+        ("last", _at("2026-10-13", 23, 59, 59)),
+        ("after", _at("2026-10-14", 0)),
+    ]:
+        AuditEvent.objects.create(action=Action.EXPORT, resource_type="x", username=name, occurred_at=when)
+    client.force_login(admin_user)
+
+    response = client.get(
+        reverse("audit_trail:dashboard"), {"action": "export", "date_from": "2026-10-12", "date_to": "2026-10-13"}
+    )
+
+    assert sorted(e.username for e in response.context["page_obj"]) == ["first", "last"]
+
+
+@pytest.mark.django_db
+def test_date_filter_is_an_indexable_range(client, admin_user):
+    client.force_login(admin_user)
+
+    response = client.get(reverse("audit_trail:dashboard"), {"date_from": "2026-10-12", "date_to": "2026-10-12"})
+
+    sql = str(response.context["page_obj"].paginator.object_list.query)
+    assert "occurred_at" in sql
+    assert "AT TIME ZONE" not in sql and "::date" not in sql
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("bad", ["yesterday", "2026-02-30", "2026-13-01"])
+def test_unparseable_date_is_ignored_not_a_500(client, admin_user, bad):
+    AuditEvent.objects.create(action=Action.EXPORT, resource_type="x", username="alice")
+    client.force_login(admin_user)
+
+    response = client.get(reverse("audit_trail:dashboard"), {"action": "export", "date_from": bad, "date_to": bad})
+
+    assert response.status_code == 200
+    assert response.context["total_events"] == 1
