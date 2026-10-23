@@ -123,7 +123,7 @@ def page_context(
 
     if _delegated_token() is not None:
         # Canopy for a visitor: its workflow sources' run summaries are computed from
-        # visits, so over real data only a cleared agent (labs/canopy_panel.py) -- the
+        # visits, so over sensitive data only a cleared agent (labs/canopy_panel.py) -- the
         # rule that also keeps the panel off such a page.
         from connect_labs.labs import canopy_panel
 

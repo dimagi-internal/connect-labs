@@ -646,7 +646,7 @@ class WorkspaceAccess(models.Model):
 
 
 class CanopyAgentSettings(models.Model):
-    """Which canopy agents labs shows, and which it lets read real data: one row per change.
+    """Which canopy agents labs shows, and which it lets work with sensitive data: one row per change.
 
     Append-only. The newest row is in force (``labs/canopy_settings.py``); with none,
     nothing is set up and no agent is offered. Changed at Labs Admin › Canopy agents,
@@ -654,7 +654,7 @@ class CanopyAgentSettings(models.Model):
     API). Undo is a new row carrying an earlier row's values, so the history is never
     rewritten."""
 
-    #: ``[{"slug", "offered", "real_data"}]``: the Labs Admin table's ticks.
+    #: ``[{"slug", "offered", "sensitive_data"}]``: the Labs Admin table's ticks.
     agents = models.JSONField(default=list, blank=True)
     #: The agent every labs page offers, and the canopy registration every token names.
     default_agent = models.CharField(max_length=100)

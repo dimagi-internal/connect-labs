@@ -551,7 +551,7 @@ def workflow_run_cases(
         opps = workflow_opportunity_ids(r.definition, getattr(r.run, "opportunity_id", None))
         if r.delegated and not all_generated(opps):
             # Case-level rows (a case's name, its visits) never go back through canopy
-            # on real data -- the explorer's rule (explorer/service.py, `for_agent`).
+            # on production (sensitive) data -- the explorer's rule (explorer/service.py, `for_agent`).
             raise MCPToolError(
                 "PERMISSION_DENIED", "Through canopy, case states are read only on synthetic opportunities."
             )
@@ -764,15 +764,15 @@ def workflow_run_action(
         from connect_labs.labs import canopy_panel
         from connect_labs.workflow.agent_sharing import agent_config
 
-        # A workflow that offers a read-only agent (handles sensitive data in canopy, or allowed over
-        # real data) takes no agent actions, from any agent: its run page grants no
+        # A workflow that offers an agent that works with sensitive data (handles sensitive data
+        # in canopy, or allowed sensitive data in labs) takes no agent actions, from any agent: its run page grants no
         # ``workflow:act``, and no other page's token may act on it either. A choice
         # that is not available now is treated the same way: fail closed.
         choice = agent_config(r.definition).agent
         chosen = canopy_panel.availability(choice, canopy_panel.NO_VISIT_DATA)
         if r.delegated and (not chosen.ok or chosen.read_only):
             why = (
-                f"offers a read-only agent ({chosen.slug})"
+                f"offers an agent that works with sensitive data ({chosen.slug})"
                 if chosen.ok
                 else f"offers an agent that is not available ({'; '.join(chosen.reasons)})"
             )

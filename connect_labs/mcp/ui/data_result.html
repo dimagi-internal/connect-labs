@@ -12,8 +12,8 @@
   page. When the result reached the View without its rows (a host that keeps no tool
   results for a sensitive session), it asks the same question again AS THE VIEWER.
 
-  When Labs withheld real rows from the agent (`withheld`), the View shows none
-  either: rows travel through canopy only for an agent Labs has cleared for real data.
+  When Labs withheld production rows from the agent (`withheld`), the View shows none
+  either: rows travel through canopy only for an agent Labs has cleared for sensitive data.
   It offers the Data page instead, where the person runs the query inside Labs.
 
   Self-contained on purpose: no network load of any kind. Every call goes to the host
@@ -614,7 +614,7 @@
             : '';
           if (r.withheld) {
             app.innerHTML =
-              '<div class="bar"><span class="title">Real data stays in Labs</span></div>' +
+              '<div class="bar"><span class="title">Sensitive data stays in Labs</span></div>' +
               '<div class="sub">' +
               esc(r.message || '') +
               '</div>' +

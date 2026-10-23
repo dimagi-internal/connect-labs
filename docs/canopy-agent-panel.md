@@ -51,17 +51,19 @@ what is labs':
 | The overlay                                                                                              | the SDK's `canopy_host/panel.html`, styled by `canopy.PANEL`                                     |
 | What the agent reads                                                                                     | `connect_labs/mcp/tools/marketplace.py`                                                          |
 
-## Real data: no agent unless labs has cleared it
+## Sensitive data: no agent unless labs has cleared it
 
-**Over production visit data no agent panel is drawn.** Every page states what the
+Labs' **sensitive data** is production visit data (it carries PII and PHI), as opposed to
+GENERATED synthetic data. **Over sensitive data no agent panel is drawn** unless labs has
+cleared the agent. Every page states what the
 agent could read through it, and `connect_labs/labs/canopy_panel.py` decides from that
 whether an agent may be offered at all:
 
-| The page reads                                                                                                                                    | Agent offered                                |
-| ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| no visit data (`NO_VISIT_DATA`: the directory, targeting, a tender, the Data page -- whose `data_*` tools give an uncleared agent structure only) | yes                                          |
-| visits of opportunities that all hold GENERATED synthetic data (`provenance.is_generated`)                                                        | yes, any agent                               |
-| any real visits, or it cannot tell                                                                                                                | only an agent labs has cleared for real data |
+| The page reads                                                                                                                                    | Agent offered                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| no visit data (`NO_VISIT_DATA`: the directory, targeting, a tender, the Data page -- whose `data_*` tools give an uncleared agent structure only) | yes                                               |
+| visits of opportunities that all hold GENERATED synthetic data (`provenance.is_generated`)                                                        | yes, any agent                                    |
+| any production visits (sensitive data), or it cannot tell                                                                                         | only an agent labs has cleared for sensitive data |
 
 **Which agent, and whether at all, is one answer**: `canopy_panel.availability(slug, reads)`.
 It combines labs' ticks with canopy's signed word on the agent, and the panel, the run
@@ -75,13 +77,15 @@ Admin table all read it, so none of them can disagree or fall silent.
   sensitive data, whether it has a ready sensitive-data runner, whether it is ready, and canopy's own problems.
   Cached five minutes; when canopy is unreachable its last word is used for up to a day,
   then **no agent is shown anywhere** (fail closed).
-- **labs' ticks** (below) say which of those labs shows, which may read real data, and the
+- **labs' ticks** (below) say which of those labs shows, which may work with sensitive data, and the
   default agent.
-- An agent canopy declares handles sensitive data, or that labs lets read real data, is
-  always offered **read-only, on sensitive-data runners**: page key `labs:workflow:run:data` (`workflow:read`,
-  `data:read`, `workflow:edit`, never `workflow:act`) and a docked panel.
+- An agent canopy declares handles sensitive data, or that labs lets work with sensitive data, is
+  always offered **on sensitive-data runners, without the run's actions**: page key
+  `labs:workflow:run:data` (`workflow:read`, `data:read`, `workflow:edit`, never `workflow:act`)
+  and a docked panel. It is not read-only: it may propose edits to the workflow and its
+  pipelines, which the person confirms in chat and which stay in labs; the data goes nowhere else.
 
-Over real data an agent needs, failing closed on each: "Real data" ticked in labs;
+Over sensitive data an agent needs, failing closed on each: "Sensitive data" ticked in labs;
 canopy's word that it handles sensitive data with a ready sensitive-data runner (a ZDR API
 key, a locked harness, egress limited to an allowlist, nothing kept on the box; so drift in
 canopy withdraws it at once); every conversation with it required to run on sensitive-data
@@ -89,21 +93,22 @@ runners (signed into its page token);
 and canopy's per-call `Canopy-Execution` statement (canopy-web spec
 `2026-10-22-sensitive-data-agents-design` §6). Labs verifies that statement once per
 delegated tool call (`mcp/execution.py`) and holds the call to it
-(`canopy_panel.call_real_data_clearance`): the agent it names has "Real data" ticked, is
+(`canopy_panel.call_sensitive_data_clearance`): the agent it names has "Sensitive data" ticked, is
 declared to handle sensitive data (`data: sensitive`), on a runner with `sensitive_data` in
 force in sensitive-data mode, in a conversation that requires `sensitive_data`. A call is held to the statement, never to the
 cached listing. Each delegated call's statement (or why there was none) is recorded on
 `MCPAuditLog.execution`. With nothing ticked (the default), **no agent is offered over
-real data** -- a sharing workflow over production opps shows its own buttons and no
+sensitive data** -- a sharing workflow over production opps shows its own buttons and no
 launcher.
 
 **Labs' side is set in the UI**, at Labs Admin › Canopy agents
 (`/labs/admin/canopy-agents/`, `labs/canopy_settings.py`): a table with one row per agent
 canopy lists (Agent, What it does here, Handles sensitive data, Sensitive-data runner, Ready -- canopy's
 columns --
-then labs' ticks: Show on labs, Real data, Default), plus the runner flags every
-conversation must run on, chosen from the flags canopy names. Nothing is typed. "Real
-data" can be ticked only when canopy says the agent handles sensitive data with a ready sensitive-data runner; an
+then labs' ticks: Show on labs, Sensitive data, Default), plus the runner flags every
+conversation must run on, chosen from the flags canopy names. Nothing is typed. "Sensitive
+data" -- the agent may work with Labs' sensitive data (production visit data) -- can be
+ticked only when canopy says the agent handles sensitive data with a ready sensitive-data runner; an
 agent labs still ticks that canopy no longer lists, or no longer clears, is shown in red
 with canopy's reason and is not offered. Labs Admin users can read it; Dimagi staff (a
 Dimagi sign-in, `is_dimagi_staff`) change it. Each change is a new `CanopyAgentSettings`
@@ -120,10 +125,13 @@ the last delegated `data_*` calls with what canopy's statement said about each.
 
 **Labs tells canopy what it needs**, too: `/labs/canopy/site.json` (the SDK's
 `site_document`, beside the JWKS, signed with the same key) lists labs' pages and the
-scopes each grants (`PAGE_SCOPES`, titled by `PAGE_TITLES`), what real data requires
-(`handles_sensitive`, runner flag `sensitive_data`), and which agents labs shows and lets read real data
-(`canopy.site_needs`). canopy's Connected sites page reads it and shows, per agent,
-whether it meets labs' needs.
+scopes each grants (`PAGE_SCOPES`, titled by `PAGE_TITLES`), what sensitive data requires
+(`sensitive_data.requires`: `handles_sensitive`, runner flag `sensitive_data`), and which
+agents labs shows and lets work with sensitive data (`uses.agents`,
+`uses.sensitive_data_agents`; `canopy.site_needs`, dimagi-canopy 0.17). canopy's Connected
+sites page reads it and shows, per agent, whether it meets labs' needs. Canopy agents do
+not need to know labs' pages: labs describes them in `site.json` for reference, and
+enforces each page's scopes itself.
 
 Not drawn means no page token, no grant and no ID-JAG. Labs' MCP holds canopy's calls to
 the same rule independently (`mcp/visit_access.py:delegated_denied_reason`, every tool
@@ -175,7 +183,7 @@ user sees" is the access story, and keeping it true belongs to the page.
 ## The agent for data work (labsdata), on the Data page and on workflows
 
 The Data page (`/labs/data/`, `connect_labs/labsdata`) offers the **agent for data work**
-(`canopy_settings.data_agent`): the first agent labs lets read real data, else the first
+(`canopy_settings.data_agent`): the first agent labs lets work with sensitive data, else the first
 shown agent canopy declares handles sensitive data (`labsdata`). With none, it offers the default agent.
 The page passes `canopy_panel.data_page_agent()` -- that agent, `runner_requirements:
 ["sensitive_data"]` and a docked, expandable panel -- and the SDK signs the agent and the requirement
@@ -185,8 +193,9 @@ conversation runs only on sensitive-data runners.
 
 A workflow chooses which agent its run pages offer (`config.agent.agent`, a slug, the run
 page's **Agent** box; WORKFLOW_REFERENCE.md §14) from the agents Labs Admin shows, so
-different workflows can offer different agents. A read-only agent (above) reads the run,
-and changes the workflow only by an edit the person confirms in chat (below). Every agent
+different workflows can offer different agents. An agent that works with sensitive data
+(above) reads the run, and changes the workflow only by an edit the person confirms in chat
+(below). Every agent
 gets the author's `brief` through `data_workflow_context`. A choice that is not available
 offers no panel, and the Agent box says why.
 
@@ -385,7 +394,7 @@ back there.)
 Newlines survive an env var as literal `\n`; the settings module unescapes them.
 
 **3. Choose the agents** at Labs Admin › Canopy agents, as Dimagi staff: tick the agents
-labs shows, which may read real data, the default agent, the runner flags, and whether
+labs shows, which may work with sensitive data, the default agent, the runner flags, and whether
 canopy may act as the visitor; then Save. Until then no agent is offered.
 
 The page also shows the **canopy workspace** labs' site is registered in. Labs learns it

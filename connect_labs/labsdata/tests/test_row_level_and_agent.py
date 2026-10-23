@@ -127,11 +127,11 @@ def test_shape_for_agent_keeps_the_result_inside_its_budget():
 @pytest.mark.parametrize("granted", [False, True])
 def test_real_rows_reach_an_agent_only_when_labs_has_cleared_it(cache, resolved, granted):
     clearance = canopy_panel.Clearance(granted, "" if granted else "not cleared")
-    with mock.patch.object(canopy_panel, "call_real_data_clearance", return_value=clearance):
+    with mock.patch.object(canopy_panel, "call_sensitive_data_clearance", return_value=clearance):
         if not granted:
-            with pytest.raises(service.RealDataRefused):
+            with pytest.raises(service.SensitiveDataRefused):
                 service.query(_caller(), [OPP.id], "SELECT COUNT(*) FROM visits", for_agent=True)
-            with pytest.raises(service.RealDataRefused):
+            with pytest.raises(service.SensitiveDataRefused):
                 service.visits(_caller(), [OPP.id], [f"v{OPP.id}-1"], for_agent=True)
             return
         out = service.query(_caller(), [OPP.id], "SELECT visit_id, form_json FROM visits", for_agent=True)
@@ -142,10 +142,10 @@ def test_real_rows_reach_an_agent_only_when_labs_has_cleared_it(cache, resolved,
 
 def test_no_call_is_cleared_without_canopys_statement(canopy_agents):
     # Labs fully configured for labsdata, but outside a call canopy vouched for, the data
-    # tools never see real rows (mcp/execution.py; test_execution_statement.py).
-    canopy_agents("ace", real_data=["labsdata"], runner_requirements=["sensitive_data"])
-    assert canopy_panel.call_real_data_clearance().granted is False
-    assert service.agent_sees_real_rows(True, [OPP]) is False
+    # tools never see production rows (mcp/execution.py; test_execution_statement.py).
+    canopy_agents("ace", sensitive_data=["labsdata"], runner_requirements=["sensitive_data"])
+    assert canopy_panel.call_sensitive_data_clearance().granted is False
+    assert service.agent_sees_sensitive_rows(True, [OPP]) is False
 
 
 def test_a_person_reads_whole_visits_and_it_is_audited(cache, resolved):

@@ -388,7 +388,7 @@
 
   // The agent's way to hand SQL back to Labs. canopy turns this into the agent tool
   // `page_data_set_query`; the callback runs in THIS tab. It returns only an
-  // acknowledgement -- never rows, counts or answers: real data stays in the
+  // acknowledgement -- never rows, counts or answers: sensitive data stays in the
   // person's browser and never travels back through canopy.
   function registerAgentActions(host) {
     if (!host || !host.widget || !host.widget.registerAction) return;

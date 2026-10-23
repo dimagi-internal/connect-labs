@@ -31,17 +31,17 @@ def test_an_agent_handling_sensitive_data_labs_shows_is_offered_on_the_data_page
     assert here.page_agent.panel == {"mode": "docked", "width": 560, "expandable": True}
 
 
-def test_real_data_ticked_counts_toward_clearance_but_canopy_must_still_vouch(canopy_agents):
+def test_sensitive_data_ticked_counts_toward_clearance_but_canopy_must_still_vouch(canopy_agents):
     # The site does not require sensitive-data runners; a read-only page does, always.
-    canopy_agents("ace", real_data=["labsdata"])
+    canopy_agents("ace", sensitive_data=["labsdata"])
     with mock.patch.object(canopy_panel, "CANOPY_EXECUTION_STATEMENTS", False):  # an SDK that cannot verify
-        refused = canopy_panel.real_data_clearance("labsdata")
+        refused = canopy_panel.sensitive_data_clearance("labsdata")
     assert not refused.granted and "vouch" in refused.reason
     with mock.patch.object(canopy_panel, "CANOPY_EXECUTION_STATEMENTS", True):
-        assert canopy_panel.real_data_clearance("labsdata").granted
+        assert canopy_panel.sensitive_data_clearance("labsdata").granted
         # The default agent is not cleared just because the data agent is.
-        assert not canopy_panel.real_data_clearance("ace").granted
-        # An agent with "Real data" is only ever offered on sensitive-data runners.
+        assert not canopy_panel.sensitive_data_clearance("ace").granted
+        # An agent with "Sensitive data" is only ever offered on sensitive-data runners.
         assert canopy_panel.availability("labsdata", canopy_panel.NO_VISIT_DATA).page_agent.runner_requirements == (
             "sensitive_data",
         )

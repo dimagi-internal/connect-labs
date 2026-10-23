@@ -614,7 +614,7 @@ def test_the_agent_is_told_to_say_nothing_before_the_preview():
 def test_a_workflow_that_offers_the_data_agent_takes_no_actions_from_any_embedded_agent(
     user, actionable, monkeypatch, canopy_agents, fake_canopy
 ):
-    canopy_agents("ace", offered=["labsdata"])  # shown, and handles sensitive data in canopy: read-only
+    canopy_agents("ace", offered=["labsdata"])  # shown, and handles sensitive data in canopy: no run actions
     fake_canopy.declare_sensitive("labsdata")
     definition = _definition_with_opps()
     definition.data["config"]["agent"] = {"share": True, "agent": "labsdata"}
@@ -629,7 +629,7 @@ def test_a_workflow_that_offers_the_data_agent_takes_no_actions_from_any_embedde
             action="initiate_ai_coach",
             arguments={"workers": [{"key": "10::asha", "prompt": "x"}]},
         )
-    assert e.value.code == "PERMISSION_DENIED" and "read-only agent (labsdata)" in str(e.value)
+    assert e.value.code == "PERMISSION_DENIED" and "an agent that works with sensitive data (labsdata)" in str(e.value)
     # Reading the run is still fine.
     assert _call("workflow_run_context", user, run_id=70, program_id=25)
 

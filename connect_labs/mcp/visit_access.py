@@ -257,7 +257,7 @@ def denied_reason(user, tool_name: str, arguments: dict) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Canopy acting as a visitor: real data only for a cleared agent
+# Canopy acting as a visitor: sensitive data only for a cleared agent
 # ---------------------------------------------------------------------------
 
 
@@ -277,7 +277,7 @@ def _visits_of(key: str):
 JUDGED_IN_TOOL = object()
 
 #: What each tool a canopy page scope reaches would show the agent. Every tool under
-#: ``canopy.VISIT_SCOPES`` has an entry (a test pins it): over real data they run only
+#: ``canopy.VISIT_SCOPES`` has an entry (a test pins it): over sensitive data they run only
 #: for an agent labs has cleared (``labs/canopy_panel.py``), the same rule that decides
 #: whether the page draws the panel at all.
 DELEGATED_READS = {

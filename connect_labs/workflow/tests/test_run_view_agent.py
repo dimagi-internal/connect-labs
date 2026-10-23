@@ -16,7 +16,7 @@ def _request(run_id=503, extra=""):
 
 def _context(config: dict, extra: str = "", generated: bool = True):
     """The run page's context. ``generated``: whether the workflow's opps (10, 11) hold
-    generated synthetic data -- over real data no agent is offered (labs/canopy_panel.py)."""
+    generated synthetic data -- over sensitive data no agent is offered (labs/canopy_panel.py)."""
     from connect_labs.workflow.data_access import WorkflowDefinitionRecord, WorkflowRunRecord
     from connect_labs.workflow.views import WorkflowRunView
 
@@ -92,8 +92,8 @@ def test_a_workflows_actions_reach_its_buttons_whether_or_not_it_shares():
 
 
 @pytest.mark.django_db
-def test_a_shared_run_over_real_data_gets_no_panel():
-    # Production visits: no agent unless labs has cleared it for real data, and today
+def test_a_shared_run_over_sensitive_data_gets_no_panel():
+    # Production visits: no agent unless labs has cleared it for sensitive data, and today
     # none is (labs/canopy_panel.py). Not a panel that refuses -- no panel at all.
     context = _context(SHARED, generated=False)
     assert "canopy_panel" not in context

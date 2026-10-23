@@ -727,7 +727,7 @@ MCP_WRITE_RATE_LIMIT = env("MCP_WRITE_RATE_LIMIT", default="30/m")
 # public half. See docs/canopy-agent-panel.md.
 #
 # Only WHERE labs and canopy meet, and the one secret, are settings. Everything
-# else -- which agents labs shows, which may read real data, the default agent
+# else -- which agents labs shows, which may work with sensitive data, the default agent
 # (which also names the canopy tenant), the runner flags, and whether canopy may
 # act as the visitor at labs' MCP -- is chosen at Labs Admin › Canopy agents
 # (labs/canopy_settings.py). Until someone saves there, no agent is offered.

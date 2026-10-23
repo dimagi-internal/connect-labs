@@ -1,9 +1,9 @@
-"""labsdata end to end: the Data page's grant, and real rows only on a call canopy vouched for.
+"""labsdata end to end: the Data page's grant, and production rows only on a call canopy vouched for.
 
 Through labs' real code and the real canopy SDK (>= 0.13): the Data page mints a grant
 for ``labsdata`` on sensitive-data runners, canopy redeems it at ``/o/token/`` and calls labs' MCP
 as the visitor over DPoP -- and with a ``Canopy-Execution`` statement signed by canopy's
-client key (``consumer.execution_statement``) the call gets real rows; with none, or with
+client key (``consumer.execution_statement``) the call gets production rows; with none, or with
 one that does not clear it, the rows are withheld. canopy is stubbed only where it is
 canopy (the contact-token mint, its client documents).
 
@@ -51,7 +51,7 @@ SENSITIVE_DECLARED = {
 
 @pytest.fixture
 def labsdata(enabled, canopy_agents):
-    canopy_agents("ace", real_data=["labsdata"])
+    canopy_agents("ace", sensitive_data=["labsdata"])
     return enabled
 
 

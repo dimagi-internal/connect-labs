@@ -7,10 +7,11 @@ it shows. Each starts at ``scope.resolve``, so no surface can forget the access
 check, and every read is written to the audit trail with the opportunities it
 read (and, for SQL, a hash of the statement).
 
-**Who sees real rows.** A person (the page, their own MCP sign-in) sees everything
-they hold. An agent calling through canopy as a visitor (``for_agent``) sees real
-rows only when labs has cleared it for real data (``labs/canopy_panel.py``:
-``call_real_data_clearance`` -- an agent declared to handle sensitive data, on
+**Who sees production rows.** A person (the page, their own MCP sign-in) sees everything
+they hold. An agent calling through canopy as a visitor (``for_agent``) sees production
+rows -- labs' sensitive data -- only when labs has cleared it for sensitive data
+(``labs/canopy_panel.py``:
+``call_sensitive_data_clearance`` -- an agent declared to handle sensitive data, on
 sensitive-data runners, vouched for
 by canopy in this call's verified ``Canopy-Execution`` statement). Otherwise it gets
 structure, validation and synthetic data, and hands SQL to the page, where the person
@@ -106,24 +107,27 @@ def related_registries(caller: Caller, opps: list[scope.Opportunity]) -> list[di
     return out
 
 
-class RealDataRefused(Exception):
-    """An agent asked for real rows it is not cleared for. It may write SQL; the person runs it."""
+class SensitiveDataRefused(Exception):
+    """An agent asked for production rows (sensitive data) it is not cleared for. It may write
+    SQL; the person runs it."""
 
-    code = "real_data_stays_in_labs"
+    code = "sensitive_data_stays_in_labs"
     message = (
-        "Real visit data reaches an agent only when Labs has cleared it for real data, and this one is not. "
+        "Production visit data is sensitive: it reaches an agent only when Labs has cleared it for sensitive "
+        "data, and this one is not. "
         "Validate the SQL with data_validate, try it on a synthetic opportunity, then give the person the "
         "SQL to run on the Data page (/labs/data/) -- they see the result there."
     )
 
 
-def agent_sees_real_rows(for_agent: bool, opps) -> bool:
-    """Whether this call may return real rows: always for a person; for an agent only when cleared."""
+def agent_sees_sensitive_rows(for_agent: bool, opps) -> bool:
+    """Whether this call may return production rows: always for a person; for an agent only when
+    cleared for sensitive data."""
     if not for_agent or all_generated([o.id for o in opps]):
         return True
     from connect_labs.labs import canopy_panel
 
-    return canopy_panel.call_real_data_clearance().granted
+    return canopy_panel.call_sensitive_data_clearance().granted
 
 
 #: What an agent receives from one call, at most. A visit's form_json alone can run to
@@ -196,15 +200,15 @@ def describe(
 
     ``for_agent`` (a canopy call): STRUCTURE only -- form paths, types, the SQL that
     reads each, the registries -- with no answer values, fill rates or row counts,
-    unless every opportunity is synthetic or labs has cleared the agent for real data.
+    unless every opportunity is synthetic or labs has cleared the agent for sensitive data.
     The person on the page gets everything.
     """
     opps = scope.resolve(caller, opportunity_ids)
-    real = not agent_sees_real_rows(for_agent, opps)
-    loaded = warm(caller, opps) if load_missing and not real else []
+    withheld = not agent_sees_sensitive_rows(for_agent, opps)
+    loaded = warm(caller, opps) if load_missing and not withheld else []
     described = fields.search_fields(fields.describe_fields(opps), field_search)
     status = fields.cache_status(opps)
-    if real:
+    if withheld:
         described["fields"] = [_structure_only(f) for f in described["fields"]]
         status = [
             {"opportunity_id": s["opportunity_id"], "opportunity_name": s["opportunity_name"], "llo": s["llo"]}
@@ -212,7 +216,7 @@ def describe(
         ]
     return {
         "opportunities": status,
-        "real_data_visible_to_you": not real,
+        "sensitive_data_visible_to_you": not withheld,
         "loaded": loaded,
         "relations": {
             "visits": {
@@ -221,10 +225,10 @@ def describe(
             }
         },
         "fields": described["fields"],
-        "sampled_visits": None if real else described["sampled_visits"],
+        "sampled_visits": None if withheld else described["sampled_visits"],
         "field_search": field_search,
         "registries": related_registries(caller, opps) if include_registries else [],
-        "answering_rules": guidance.AGENT_RULES if real else guidance.ANSWERING_RULES,
+        "answering_rules": guidance.AGENT_RULES if withheld else guidance.ANSWERING_RULES,
         "verifying_a_workflow": guidance.VERIFYING_A_WORKFLOW,
         "sql_notes": guidance.SQL_NOTES,
         "max_rows": {"default": DEFAULT_MAX_ROWS, "max": HARD_MAX_ROWS},
@@ -239,14 +243,14 @@ def validate(sql: str) -> dict:
 def query(
     caller: Caller, opportunity_ids, sql: str, max_rows: int = DEFAULT_MAX_ROWS, *, for_agent: bool = False
 ) -> dict:
-    """Run SQL. ``for_agent`` (a canopy call) gets real rows only when cleared
-    (``agent_sees_real_rows``), and its result is shaped for a model's context."""
+    """Run SQL. ``for_agent`` (a canopy call) gets production rows only when cleared
+    (``agent_sees_sensitive_rows``), and its result is shaped for a model's context."""
     opps = scope.resolve(caller, opportunity_ids)
-    if not agent_sees_real_rows(for_agent, opps):
+    if not agent_sees_sensitive_rows(for_agent, opps):
         # Still tell the agent whether its SQL would run: that is what it needs to hand
         # the query to the person, and it reads no data.
         engine.validate_query(sql)
-        raise RealDataRefused()
+        raise SensitiveDataRefused()
     # Never the SQL itself: the audit log carries no PHI content (docs/AUDIT_LOGGING.md),
     # and a query can hold a name or an answer as a literal. The hash still ties an
     # event to a query the caller can produce.
@@ -302,8 +306,8 @@ def open_on_page_url(opportunity_ids, sql: str = "") -> str:
 def visits(caller: Caller, opportunity_ids, visit_ids, *, for_agent: bool = False) -> dict:
     """Whole visits by id -- every column and the full form_json -- from the caller's opportunities."""
     opps = scope.resolve(caller, opportunity_ids)
-    if not agent_sees_real_rows(for_agent, opps):
-        raise RealDataRefused()
+    if not agent_sees_sensitive_rows(for_agent, opps):
+        raise SensitiveDataRefused()
     found = engine.fetch_visits(opps, visit_ids)
     missing = sorted({str(v) for v in visit_ids} - {str(r["visit_id"]) for r in found})
     by_opp: dict[int, int] = {}

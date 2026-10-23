@@ -13,13 +13,13 @@ def save_agents(
     default: str = "ace",
     *,
     offered=(),
-    real_data=(),
+    sensitive_data=(),
     runner_requirements=(),
     acts_as_visitor: bool | None = None,
     version: str = "",
 ):
     """Put these settings in force: ``default`` and every agent in ``offered`` and
-    ``real_data`` shown; those in ``real_data`` with "Real data" ticked. Returns the row.
+    ``sensitive_data`` shown; those in ``sensitive_data`` with "Sensitive data" ticked. Returns the row.
 
     ``acts_as_visitor`` None keeps the grant as the row in force has it (off when there
     is none), as a save on the page does. ``default=""`` saves a row with no default
@@ -32,10 +32,10 @@ def save_agents(
     if acts_as_visitor is None:
         acts_as_visitor = canopy_settings.current().acts_as_visitor
 
-    real = list(dict.fromkeys(real_data))
-    slugs = list(dict.fromkeys(s for s in (default, *offered, *real) if s))
+    sensitive = list(dict.fromkeys(sensitive_data))
+    slugs = list(dict.fromkeys(s for s in (default, *offered, *sensitive) if s))
     return CanopyAgentSettings.objects.create(
-        agents=[{"slug": s, "offered": True, "real_data": s in real} for s in slugs],
+        agents=[{"slug": s, "offered": True, "sensitive_data": s in sensitive} for s in slugs],
         default_agent=default,
         runner_requirements=list(runner_requirements),
         site_agents_version=version,

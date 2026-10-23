@@ -119,7 +119,7 @@ def fake_canopy(monkeypatch):
 @pytest.fixture
 def canopy_agents(db):
     """Save labs' canopy agent settings (a ``CanopyAgentSettings`` row, as Labs Admin ›
-    Canopy agents does): ``canopy_agents("ace", offered=[...], real_data=[...],
+    Canopy agents does): ``canopy_agents("ace", offered=[...], sensitive_data=[...],
     runner_requirements=[...], acts_as_visitor=True)``. See
     ``connect_labs/testing/canopy_agents.py``."""
     from connect_labs.testing.canopy_agents import save_agents
