@@ -144,7 +144,7 @@
         },
         {
           "name": "EMBED_EXAMPLE_RESOURCES",
-          "value": "[{\"kind\": \"workflow\", \"id\": 4965, \"opportunity_id\": 10010, \"label\": \"CHC nutrition analysis (generated data)\"}]"
+          "value": "[{\"kind\": \"workflow\", \"id\": 11978, \"opportunity_id\": 10173, \"label\": \"Supply stock review (generated data)\"}]"
         }
       ],
       "mountPoints": [],
