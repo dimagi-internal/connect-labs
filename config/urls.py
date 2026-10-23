@@ -70,6 +70,8 @@ urlpatterns = [
         name="rooftop_surveys_legacy_redirect",
     ),
     path("mcp/", include("connect_labs.mcp.urls", namespace="mcp")),
+    # Other systems framing labs: token endpoint, session start, the frame (embed/).
+    path("embed/", include("connect_labs.embed.urls", namespace="embed")),
     path("labs/audit-trail/", include("connect_labs.audit_trail.urls", namespace="audit_trail")),
     path("labs/pulse/", include("connect_labs.pulse.urls", namespace="pulse")),
     path("labs/marketplace/", include("connect_labs.marketplace.urls", namespace="marketplace")),

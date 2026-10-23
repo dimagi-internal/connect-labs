@@ -62,6 +62,10 @@ _LABS_SKIP_PATH_PREFIXES = (
     # staffer opening one must not be logged out by it.
     "/labs/coach-image/",
     "/mcp/",
+    # Another system's frame (connect_labs/embed/). Its requests authenticate by the
+    # embed's own cookie, never this session, and a signed-in staffer opening one
+    # should not be logged out by it.
+    "/embed/",
     "/admin/",
     "/o/",
     "/health/",

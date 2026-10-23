@@ -1,0 +1,60 @@
+{% comment %}
+The embed frame's token handling, on the bootstrap page (waiting=True: no session yet)
+and on a drawn resource alike. Whatever token the parent hands over WINS: a token in
+the address's fragment (never sent to a server) or a postMessage from an origin the
+client registered starts a new session, replacing the one this frame had -- so when the
+person signed in to the embedding system changes, the frame changes with them.
+{% endcomment %}
+{{ embed_config|json_script:"embed-config" }}
+  <script>
+  (function () {
+    var cfg = JSON.parse(document.getElementById("embed-config").textContent);
+    var status = document.getElementById("status");
+    if (window.parent === window) {
+      // Opened on its own, not inside the system that embeds it: take no token, so a link
+      // carrying someone else's token cannot sign this browser in as them.
+      if (status) status.textContent = "This view is shown inside another system.";
+      return;
+    }
+    function tell(event, extra) {
+      var message = Object.assign({ type: "labs-embed", event: event, kind: cfg.kind, id: cfg.id }, extra || {});
+      cfg.origins.forEach(function (origin) {
+        try { window.parent.postMessage(message, origin); } catch (e) {}
+      });
+    }
+    var started = false;
+    function start(token) {
+      if (started) return;
+      started = true;
+      fetch(cfg.sessionUrl, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: token, client_id: cfg.client_id, kind: cfg.kind, id: cfg.id })
+      }).then(function (r) {
+        if (r.ok) { window.location.replace(window.location.pathname); return; }
+        return r.json().then(function (body) {
+          started = false;
+          if (status) status.textContent = (body && body.error_description) || "This view could not be opened.";
+          tell("error", { error: (body && body.error) || "error" });
+        });
+      }).catch(function () {
+        started = false;
+        if (status) status.textContent = "This view could not be opened.";
+        tell("error", { error: "network" });
+      });
+    }
+    var match = /(?:^#|&)token=([^&]+)/.exec(window.location.hash);
+    if (match) {
+      history.replaceState(null, "", window.location.pathname);
+      start(decodeURIComponent(match[1]));
+      return;
+    }
+    window.addEventListener("message", function (event) {
+      if (event.source !== window.parent || cfg.origins.indexOf(event.origin) < 0) return;
+      var data = event.data || {};
+      if (data.type === "labs-embed-token" && typeof data.token === "string") start(data.token);
+    });
+    {% if waiting %}tell("needs-token");{% else %}tell("ready");{% endif %}
+  })();
+  </script>

@@ -177,6 +177,7 @@ LOCAL_APPS = [
     "connect_labs.mopup",
     "connect_labs.pulse",
     "connect_labs.scope_config",
+    "connect_labs.embed",
     "connect_labs.solicitations",
     "connect_labs.supply_chain",
     "connect_labs.users",
@@ -237,6 +238,10 @@ MIDDLEWARE = [
     # The session never answers a sandboxed page frame (workflow/sandbox.py), whatever
     # a browser's cookie rules: Origin: null and cross-site writes are refused.
     "connect_labs.utils.sandbox_guard.SandboxOriginGuardMiddleware",
+    # Another system's frame acting as its person, on its own routes only (embed/). After
+    # the labs auth and context middlewares, which each settings module inserts right
+    # after the guard above: it replaces what they settled, for that request only.
+    "connect_labs.embed.middleware.EmbedSessionMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "connect_labs.utils.middleware.NoIndexMiddleware",
@@ -574,6 +579,10 @@ OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
 # prod and handing back a token their own server then rejects. Unset means the
 # MCP sign-in is simply not offered on this instance and it stays PAT-only.
 LABS_PUBLIC_URL = env("LABS_PUBLIC_URL", default="")
+# Other systems framing labs (connect_labs/embed/, docs/superpowers/specs/2026-10-23-
+# embedding-labs-design.md). Nothing is framable until a client is registered; this is the
+# emergency switch that turns every embed endpoint and session off at once.
+LABS_EMBED_ENABLED = env.bool("LABS_EMBED_ENABLED", default=True)
 # Pages' render code runs in a sandboxed frame (workflow/sandbox.py). An emergency switch
 # back only; there is no per-page opt-out.
 LABS_PAGE_SANDBOX = env.bool("LABS_PAGE_SANDBOX", default=True)

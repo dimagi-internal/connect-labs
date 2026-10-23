@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>Connect Labs</title>
+  {% comment %}
+  The embed frame before it has a session (embed/views.py frame_view). Data-free: no
+  user, no CSRF token, no analytics. It takes a bootstrap token from its address's
+  fragment (never sent to a server) or from its parent by postMessage -- only from an
+  origin the client registered -- trades it for a session cookie, and reloads.
+  {% endcomment %}
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; color: #44403c; background: #f5f5f4; }
+    #status { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 16px; text-align: center; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="status" role="status">Loading…</div>
+  {% include "embed/_token.html" with waiting=True %}
+</body>
+</html>
