@@ -34,7 +34,8 @@ WORKFLOW_ACTION_PREVIEW_URI = "ui://labs/workflow-action-preview"
 PMC_STATES_URI = "ui://labs/pmc-states"
 
 #: A data_query result: its rows as a table and a chart, its SQL, and a link that
-#: opens the query on the Data page.
+#: opens the query on the Data page. The rows are read from the result Labs keeps
+#: (labs-result://, ``mcp/artifacts.py``), a page at a time, as the viewer.
 DATA_RESULT_URI = "ui://labs/data-result"
 
 #: An edit an agent proposed through canopy: what would change, as a diff, and the
@@ -89,7 +90,9 @@ RESOURCES: tuple[UIResource, ...] = (
         name="data_result",
         description=(
             "A query over labs data: the rows as a table and a chart, the SQL that produced them, and a "
-            "link that opens the query on the Data page. Rows withheld from the agent are withheld here too."
+            "link that opens the query on the Data page. It reads the result Labs kept (the tool result's "
+            "labs-result:// link) as its viewer, a page at a time, and re-reads it when Labs says it changed. "
+            "Rows withheld from the agent are withheld here too."
         ),
         filename="data_result.html",
         meta={"prefersBorder": True},

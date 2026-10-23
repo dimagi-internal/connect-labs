@@ -94,11 +94,7 @@ def _data_page_grant(canopy_redeem, visitor):
     return _redeem(canopy_redeem, id_jag)
 
 
-def _query(client_creds, token, facts):
-    """Call data_query through labs' real MCP as canopy does: DPoP on every request,
-    and -- when ``facts`` -- a fresh Canopy-Execution statement on each."""
-    from config.asgi import build_application
-
+def _headers(client_creds, token, facts):
     async def add_headers(request):
         request.headers["DPoP"] = client_creds.dpop_proof(request.method, RESOURCE, access_token=token)
         if facts is not None:
@@ -110,6 +106,16 @@ def _query(client_creds, token, facts):
                 jkt=consumer.dpop_jkt(client_creds.dpop_key),
                 access_token=token,
             )
+
+    return add_headers
+
+
+def _query(client_creds, token, facts):
+    """Call data_query through labs' real MCP as canopy does: DPoP on every request,
+    and -- when ``facts`` -- a fresh Canopy-Execution statement on each."""
+    from config.asgi import build_application
+
+    add_headers = _headers(client_creds, token, facts)
 
     async def work(mcp_client):
         return await mcp_client.call_tool(
@@ -124,14 +130,38 @@ def _query(client_creds, token, facts):
         return _run_mcp(build_application(), {"Authorization": f"DPoP {token}"}, add_headers, work)
 
 
+def _read(client_creds, token, facts, uri):
+    """``resources/read`` of a kept result through labs' real MCP, as canopy's gateway
+    does: ``facts`` for an agent's ``site_read``, None for a View (no agent acting)."""
+    from fastmcp.exceptions import ClientError
+
+    from config.asgi import build_application
+
+    async def work(mcp_client):
+        try:
+            return await mcp_client.read_resource(uri)
+        except (ClientError, Exception) as e:  # noqa: BLE001 -- the refusal is the result
+            return e
+
+    return _run_mcp(
+        build_application(), {"Authorization": f"DPoP {token}"}, _headers(client_creds, token, facts), work
+    )
+
+
 @pytest.mark.django_db(transaction=True)
 def test_a_vouched_sensitive_data_call_reads_real_rows_and_is_audited(labsdata, canopy_redeem, visitor, real_visits):
     from connect_labs.mcp.models import MCPAuditLog
 
     token = _data_page_grant(canopy_redeem, visitor)
-    result = _query(labsdata, token, SENSITIVE_DECLARED).structured_content
+    called = _query(labsdata, token, SENSITIVE_DECLARED)
+    result = called.structured_content
     assert not result.get("withheld"), result
-    assert [r[0] for r in result["rows"]] == ["rv0", "rv1", "rv2"]
+    # A canopy agent gets the facts and a sample -- here the whole three rows -- and the link.
+    assert [r["visit_id"] for r in result["sample_rows"]] == ["rv0", "rv1", "rv2"]
+    assert result["row_count"] == 3 and result["sample_is_partial"] is False and "rows" not in result
+    links = [c for c in called.content if getattr(c, "type", "") == "resource_link"]
+    assert [str(link.uri) for link in links] == [result["result_uri"]]
+    assert result["result_uri"].startswith("labs-result://")
     row = MCPAuditLog.objects.filter(tool_name="data_query").latest("id")
     assert row.execution["agent"] == "labsdata"
     assert row.execution["runner"]["flags"] == ["sensitive_data"]
@@ -160,3 +190,52 @@ def test_anything_short_of_that_withholds_the_rows(labsdata, canopy_redeem, visi
     assert result["withheld"] is True and "rows" not in result
     if refused:
         assert MCPAuditLog.objects.filter(tool_name="data_query").latest("id").execution == {"refused": refused}
+
+
+def _kept(labsdata, canopy_redeem, visitor):
+    token = _data_page_grant(canopy_redeem, visitor)
+    return token, _query(labsdata, token, SENSITIVE_DECLARED).structured_content["result_uri"]
+
+
+def _rows(contents) -> list[str]:
+    import json
+
+    (content,) = contents
+    return [r[0] for r in json.loads(content.text)["rows"]]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_cleared_agent_reads_the_kept_rows_back_a_page_at_a_time(labsdata, canopy_redeem, visitor, real_visits):
+    """canopy's ``site_read``: the same visitor, the same cleared agent, a fresh statement."""
+    from connect_labs.audit_trail.models import AuditEvent
+
+    token, uri = _kept(labsdata, canopy_redeem, visitor)
+    contents = _read(labsdata, token, SENSITIVE_DECLARED, f"{uri}?page=2&page_size=2")
+    assert _rows(contents) == ["rv2"]
+    meta = contents[0].meta["canopy/artifact"]
+    assert (meta["page"], meta["pages"], meta["row_count"], meta["snapshot"]) == (2, 2, 3, True)
+    read = AuditEvent.objects.filter(resource_type="labs_result").latest("id")
+    assert (read.action, read.opportunity_id, read.record_count) == ("read", REAL.id, 1)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_persons_own_view_reads_what_the_cleared_agent_was_given(labsdata, canopy_redeem, visitor, real_visits):
+    """A View's read carries no statement: no agent is acting, the person is looking at a
+    result that already reached a cleared agent through canopy."""
+    token, uri = _kept(labsdata, canopy_redeem, visitor)
+    assert _rows(_read(labsdata, token, None, uri)) == ["rv0", "rv1", "rv2"]
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize(
+    "facts",
+    [
+        {**SENSITIVE_DECLARED, "agent": "ace"},  # an agent labs has not allowed
+        {**SENSITIVE_DECLARED, "declaration": None},  # not declared to handle sensitive data
+    ],
+    ids=["other-agent", "undeclared"],
+)
+def test_an_uncleared_agent_cannot_read_sensitive_rows_back(labsdata, canopy_redeem, visitor, real_visits, facts):
+    token, uri = _kept(labsdata, canopy_redeem, visitor)
+    refused = _read(labsdata, token, facts, uri)
+    assert isinstance(refused, Exception) and "forbidden" in str(refused) and "sensitive" in str(refused)

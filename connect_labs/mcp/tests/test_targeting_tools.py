@@ -1197,7 +1197,12 @@ class TestPmcRank:
         # The explorer link opens the page on the same deaths estimate.
         assert "deaths_basis=map" in got["explorer_path"]
 
-    def test_the_candidate_states_card_returns_its_headline_not_the_ranking_again(self, monkeypatch, settings):
+    @pytest.mark.django_db
+    def test_the_candidate_states_card_returns_its_headline_not_the_ranking_again(
+        self, monkeypatch, settings, django_user_model
+    ):
+        from canopy_sdk.django import artifacts
+
         from connect_labs.labs.indicators.emod import mortality
 
         settings.LABS_PUBLIC_URL = "https://labs.example.org"
@@ -1206,9 +1211,25 @@ class TestPmcRank:
             "Kano": {"u5_deaths": 95_000, "map_malaria_deaths": 23_000, "pfpr": 0.54, "pop_u5": 2_000_000},
         }
         monkeypatch.setattr(mortality, "registry_burden", lambda: burden)
-        got = targeting.targeting_pmc_states(None, states=["Kano", "Ondo"], cost_per_visit=0.58)
+        user = django_user_model.objects.create_user(username="pmc-card", password="x")
+        got = targeting.targeting_pmc_states(user, states=["Kano", "Ondo"], cost_per_visit=0.58)
 
         assert got["card"] == "shown to the visitor"
+        # The whole ranking is kept for the card to read back (it no longer asks again), and
+        # anyone may read it: public data.
+        kept = artifacts.read(got["result_uri"], reader=str(user.pk))
+        assert kept.kind == "pmc_states" and {s["state"] for s in kept.payload["recommendation"]["states"]}
+        assert got["_links"] == [
+            {
+                "type": "resource_link",
+                "uri": got["result_uri"],
+                "name": got["_links"][0]["name"],
+                "mimeType": "application/json",
+                "description": "2 states considered",
+            }
+        ]
+        other = django_user_model.objects.create_user(username="pmc-colleague", password="x")
+        assert artifacts.read(got["result_uri"], reader=str(other.pk)).id == kept.id
         assert "ranked" not in got and "by_design" not in got
         assert got["recommendation"]["label"] and got["recommendation"]["keep"]
         # The card opens the explorer at an absolute https address, on the visitor's price.
