@@ -320,3 +320,57 @@ class StagedEdit(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class KeptResult(models.Model):
+    """What a tool produced, kept for the person it ran as and named by ``labs-result://<id>``.
+
+    A tool that produces rows (``data_query``, ``workflow_run_indicators``) or a result a
+    View draws (``targeting_pmc_states``) keeps it here and returns a summary plus an MCP
+    ``resource_link``; any MCP client reads it back with ``resources/read``, as itself, a
+    page at a time (``mcp/kept_results.py``). It lives a day: an expired one reads as
+    ``expired`` and the hourly sweep deletes it.
+
+    ``sensitive``, ``opportunity_ids``, ``through_canopy`` and ``scope`` are what the read
+    rules ask (who else could have run it, and what a read through canopy may carry), kept
+    beside the payload rather than in it, so the payload is exactly what the tool produced.
+    """
+
+    #: The opaque, unguessable id in its URI.
+    id = models.CharField(primary_key=True, max_length=64, editable=False)
+    #: The labs user the call ran as -- the person, also when canopy called for them.
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    kind = models.CharField(max_length=100)
+    name = models.CharField(max_length=200, blank=True, default="")
+    description = models.CharField(max_length=500, blank=True, default="")
+    mime_type = models.CharField(max_length=100, default="application/json")
+    payload = models.JSONField()
+    #: The audit context's id of the call that made it (its MCPAuditLog row carries it too).
+    tool_call_id = models.CharField(max_length=255, blank=True, default="")
+    #: Whether it holds labs' sensitive data (rows from production visits). Fails closed.
+    sensitive = models.BooleanField(default=True)
+    #: The opportunities the call read.
+    opportunity_ids = models.JSONField(default=list, blank=True)
+    #: Made by a delegated call (canopy acting for the person), so it already went to an
+    #: agent Labs had cleared: what lets the person's own View read a sensitive one back.
+    through_canopy = models.BooleanField(default=False)
+    #: Anything else a read rule needs (a run's ``run_id``, ``opportunity_id``, ``program_id``).
+    scope = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        db_table = "mcp_kept_result"
+
+    def __str__(self) -> str:
+        return f"labs-result://{self.id}"
+
+    @property
+    def access(self) -> dict:
+        """What the read rules ask, in one dict."""
+        return {
+            **(self.scope or {}),
+            "opportunity_ids": list(self.opportunity_ids or []),
+            "sensitive": self.sensitive,
+            "through_canopy": self.through_canopy,
+        }

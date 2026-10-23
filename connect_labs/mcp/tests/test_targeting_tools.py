@@ -1201,9 +1201,8 @@ class TestPmcRank:
     def test_the_candidate_states_card_returns_its_headline_not_the_ranking_again(
         self, monkeypatch, settings, django_user_model
     ):
-        from canopy_sdk.django import artifacts
-
         from connect_labs.labs.indicators.emod import mortality
+        from connect_labs.mcp import kept_results
 
         settings.LABS_PUBLIC_URL = "https://labs.example.org"
         burden = {
@@ -1217,7 +1216,7 @@ class TestPmcRank:
         assert got["card"] == "shown to the visitor"
         # The whole ranking is kept for the card to read back (it no longer asks again), and
         # anyone may read it: public data.
-        kept = artifacts.read(got["result_uri"], reader=str(user.pk))
+        kept = kept_results.read(got["result_uri"], reader=user.pk)
         assert kept.kind == "pmc_states" and {s["state"] for s in kept.payload["recommendation"]["states"]}
         assert got["_links"] == [
             {
@@ -1229,7 +1228,7 @@ class TestPmcRank:
             }
         ]
         other = django_user_model.objects.create_user(username="pmc-colleague", password="x")
-        assert artifacts.read(got["result_uri"], reader=str(other.pk)).id == kept.id
+        assert kept_results.read(got["result_uri"], reader=other.pk).id == kept.id
         assert "ranked" not in got and "by_design" not in got
         assert got["recommendation"]["label"] and got["recommendation"]["keep"]
         # The card opens the explorer at an absolute https address, on the visitor's price.

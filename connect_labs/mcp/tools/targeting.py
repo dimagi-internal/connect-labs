@@ -2056,21 +2056,21 @@ def targeting_pmc_states(
     if not out.get("available"):
         return out
     reco = out.get("recommendation") or {}
-    # The whole ranking is kept (mcp/artifacts.py) and the card reads it from the link, as
+    # The whole ranking is kept (mcp/kept_results.py) and the card reads it from the link, as
     # its viewer -- it no longer asks targeting_pmc_rank the same question again. Public
     # data: any labs user may read it.
-    from .. import artifacts
+    from .. import kept_results
 
-    link = artifacts.save(
+    link = kept_results.save(
         user,
-        artifacts.KIND_PMC,
+        kept_results.KIND_PMC,
         {**out, "asked": {"states": states, "deaths_basis": deaths_basis, "ages": ages}},
         access={"sensitive": False},
         name=f"PMC candidate states: {reco.get('label') or 'ranking'}"[:200],
         description=f"{len(reco.get('states') or [])} states considered",
     )
     # The agent gets the card's headline, not the whole ranking again: it already has that.
-    return artifacts.with_link(
+    return kept_results.with_link(
         {
             "available": True,
             "card": "shown to the visitor",

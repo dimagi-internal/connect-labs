@@ -11,7 +11,7 @@
   them, and the SQL that produced them, with a link that opens the query on Labs' Data
   page.
 
-  The rows are not in the tool result. Labs keeps the result (connect_labs/mcp/artifacts.py)
+  The rows are not in the tool result. Labs keeps the result (connect_labs/mcp/kept_results.py)
   and the tool result names it with a `resource_link` (labs-result://<id>); this View reads
   it back with `resources/read`, AS ITS VIEWER, a page at a time (?page=&page_size=), and
   sorts within the page. In a sensitive conversation the host keeps nothing else of the
@@ -239,7 +239,7 @@
         var SERIES = ['--s1', '--s2', '--s3', '--s4', '--s5'];
         var MAX_BARS = 30;
         var PAGE_SIZES = [50, 100, 250, 500, 1000];
-        var META_KEY = 'canopy/artifact';
+        var META_KEY = 'labs/result';
 
         // ---------------------------------------------------------------- transport
         var nextId = 1;

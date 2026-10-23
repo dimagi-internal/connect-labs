@@ -35,7 +35,7 @@ PMC_STATES_URI = "ui://labs/pmc-states"
 
 #: A data_query result: its rows as a table and a chart, its SQL, and a link that
 #: opens the query on the Data page. The rows are read from the result Labs keeps
-#: (labs-result://, ``mcp/artifacts.py``), a page at a time, as the viewer.
+#: (labs-result://, ``mcp/kept_results.py``), a page at a time, as the viewer.
 DATA_RESULT_URI = "ui://labs/data-result"
 
 #: An edit an agent proposed through canopy: what would change, as a diff, and the

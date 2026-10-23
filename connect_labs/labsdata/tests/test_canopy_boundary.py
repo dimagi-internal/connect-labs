@@ -109,10 +109,11 @@ def test_validate_returns_no_rows_even_for_an_aggregate(real_visits):
     assert "rows" not in out
 
 
-def test_mcp_tools_apply_the_boundary_for_canopy_calls(real_visits, resolved):
+def test_mcp_tools_apply_the_boundary_for_canopy_calls(real_visits, resolved, django_user_model):
     from connect_labs.mcp.tools import labsdata as tools
 
-    user = mock.Mock(username="visitor")
+    # A real user: the withheld hand-off is kept for them (mcp/kept_results.py).
+    user = django_user_model.objects.create_user(username="visitor", password="x")
     with (
         mock.patch.object(tools, "_caller", return_value=_caller()),
         mock.patch.object(tools, "_from_canopy", return_value=True),

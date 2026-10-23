@@ -1,9 +1,9 @@
-"""Host-held results (``mcp/artifacts.py``): data_query keeps its rows as a
-``labs-result://`` artifact and returns facts plus a link; the link is read back as the
+"""Kept results (``mcp/kept_results.py``): data_query keeps its rows as a
+``labs-result://`` result and returns facts plus a link; the link is read back as the
 reader, by the owner and by whoever could run the same query, a page at a time, for a day.
 
-canopy-web spec ``2026-10-23-host-held-results-design``. Over HTTP, through canopy, with
-real DPoP and execution statements: ``test_labsdata_end_to_end.py``.
+Over HTTP, through canopy, with real DPoP and execution statements:
+``test_labsdata_end_to_end.py``.
 
 THIS REPOSITORY IS PUBLIC. Every name and value here is invented.
 """
@@ -15,9 +15,6 @@ from datetime import timedelta
 from unittest import mock
 
 import pytest
-from canopy_sdk.django import artifacts as sdk
-from canopy_sdk.django.models import Artifact as Row
-from canopy_sdk.host.artifacts import ArtifactRefused
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from fastmcp.server.auth import AccessToken
@@ -26,7 +23,9 @@ from mcp.types import ResourceLink
 from connect_labs.labs import canopy
 from connect_labs.labsdata import engine, scope
 from connect_labs.labsdata.scope import Opportunity, ScopeError
-from connect_labs.mcp import artifacts
+from connect_labs.mcp import kept_results
+from connect_labs.mcp.kept_results import Refused
+from connect_labs.mcp.models import KeptResult as Row
 from connect_labs.mcp.models import MCPAccessToken
 from connect_labs.mcp.testing import call_tool
 
@@ -80,19 +79,16 @@ def _query(user):
     )
 
 
-def test_labs_declares_its_scheme_and_its_read_rules():
+def test_labs_declares_its_scheme_and_keeps_the_results_itself():
     from canopy_sdk.django import conf
 
-    assert canopy.host_settings()["ARTIFACTS"] == {
-        "SCHEME": "labs-result",
-        "TTL": 86400,
-        "MAY_READ": "connect_labs.mcp.artifacts.may_read",
-        "ON_READ": None,
-        "READER": "connect_labs.mcp.artifacts.reader_subject",
-        "NOTIFY": True,
-    }
+    settings = canopy.host_settings()
+    # The storage is labs' own: the SDK's helper is not turned on.
+    assert "ARTIFACTS" not in settings and conf.artifacts_settings() == {}
+    assert settings["RESOURCE_SCHEMES"] == [kept_results.SCHEME] == ["labs-result"]
     # site.json declares it, so canopy keeps the links in a sensitive conversation.
     assert conf.resource_schemes() == ["labs-result"]
+    assert kept_results.TTL_SECONDS == 86400
 
 
 def test_data_query_keeps_the_rows_and_returns_a_link_owned_by_the_caller(owner, connect):
@@ -108,9 +104,11 @@ def test_data_query_keeps_the_rows_and_returns_a_link_owned_by_the_caller(owner,
     assert link.mimeType == "application/json" and link.name == f"Query over {OPP.name}"
 
     row = Row.objects.get()
-    assert row.owner == str(owner.pk) and row.kind == "data_query" and row.scheme == "labs-result"
+    assert row.owner == owner and row.kind == "data_query" and out["result_uri"] == f"labs-result://{row.id}"
     assert row.payload["rows"] == ROWS and row.payload["sql_executed"] == "SELECT worker, visits FROM visits"
-    assert row.payload["access"] == {"opportunity_ids": [OPP.id], "sensitive": True, "through_canopy": False}
+    # What the read rules ask is kept beside the payload, not in it.
+    assert "access" not in row.payload
+    assert row.access == {"opportunity_ids": [OPP.id], "sensitive": True, "through_canopy": False}
     assert row.tool_call_id.startswith("mcp:")
     assert timedelta(hours=23) < row.expires_at - timezone.now() <= timedelta(hours=24)
 
@@ -125,10 +123,10 @@ def test_canopys_agent_gets_facts_a_sample_and_the_link(owner, connect, monkeypa
     out = _query(owner)["result"]["structuredContent"]
     assert "rows" not in out
     assert out["row_count"] == 45 and out["sample_is_partial"] is True
-    assert len(out["sample_rows"]) == artifacts.INLINE_ROWS
+    assert len(out["sample_rows"]) == kept_results.INLINE_ROWS
     assert out["sample_rows"][0] == {"worker": "w000", "visits": 0}
     assert any("site_read" in n for n in out["notes"])
-    # The artifact still holds every row.
+    # The kept result still holds every row.
     assert len(Row.objects.get().payload["rows"]) == 45
 
 
@@ -151,9 +149,9 @@ def test_a_withheld_query_keeps_the_hand_off_for_the_card(owner, connect, monkey
     monkeypatch.setattr(engine, "validate_query", lambda sql: {"valid": True})
     out = _query(owner)["result"]["structuredContent"]
     assert out["withheld"] is True and out["result_uri"].startswith("labs-result://")
-    kept = sdk.read(out["result_uri"], reader=str(owner.pk))
+    kept = kept_results.read(out["result_uri"], reader=owner.pk)
     assert kept.payload["withheld"] is True and "rows" not in kept.payload
-    assert kept.payload["access"]["sensitive"] is False
+    assert kept.sensitive is False
 
 
 # --- reading ---------------------------------------------------------------------------
@@ -166,24 +164,29 @@ def _uri(owner, connect):
 
 def test_the_owner_reads_it_a_page_at_a_time(owner, connect):
     uri = _uri(owner, connect)
-    (content,) = sdk.resource_handler(f"{uri}?page=3&page_size=20", reader=str(owner.pk))
+    (content,) = kept_results.contents(f"{uri}?page=3&page_size=20", reader=owner.pk)
     body = json.loads(content["text"])
     assert body["rows"] == ROWS[40:45] and body["columns"] == COLUMNS
-    meta = content["_meta"]["canopy/artifact"]
+    meta = content["_meta"]["labs/result"]
     assert (meta["page"], meta["page_size"], meta["pages"], meta["row_count"]) == (3, 20, 3, 45)
     assert meta["snapshot"] is True and meta["kind"] == "data_query"
+    # Default page size 100; at most 1000; a page past the end is the last.
+    (content,) = kept_results.contents(uri, reader=owner.pk)
+    assert content["_meta"]["labs/result"]["page_size"] == 100 and len(json.loads(content["text"])["rows"]) == 45
+    (content,) = kept_results.contents(f"{uri}?page=9&page_size=5000", reader=owner.pk)
+    assert (content["_meta"]["labs/result"]["page_size"], content["_meta"]["labs/result"]["page"]) == (1000, 1)
 
 
 def test_a_colleague_who_holds_the_opportunities_may_read_it(owner, colleague, connect):
     uri = _uri(owner, connect)
     connect["users"].add(colleague.pk)
-    assert sdk.read(uri, reader=str(colleague.pk)).owner == str(owner.pk)
+    assert kept_results.read(uri, reader=colleague.pk).owner == owner
 
 
 def test_one_who_could_not_run_the_query_may_not(owner, colleague, connect):
     uri = _uri(owner, connect)
-    with pytest.raises(ArtifactRefused) as refused:
-        sdk.read(uri, reader=str(colleague.pk))
+    with pytest.raises(Refused) as refused:
+        kept_results.read(uri, reader=colleague.pk)
     assert refused.value.code == "forbidden"
 
 
@@ -192,36 +195,36 @@ def test_an_inactive_or_unknown_reader_may_not(owner, colleague, connect):
     connect["users"].add(colleague.pk)
     colleague.is_active = False
     colleague.save()
-    for reader in (str(colleague.pk), "999999", None):
-        with pytest.raises(ArtifactRefused) as refused:
-            sdk.read(uri, reader=reader)
+    for reader in (colleague.pk, 999999, None):
+        with pytest.raises(Refused) as refused:
+            kept_results.read(uri, reader=reader)
         assert refused.value.code == "forbidden"
 
 
 def test_an_expired_result_reads_as_expired_and_is_swept(owner, connect):
-    from connect_labs.mcp.tasks import sweep_artifacts
+    from connect_labs.mcp.tasks import sweep_kept_results
 
     uri = _uri(owner, connect)
     Row.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
-    with pytest.raises(ArtifactRefused) as refused:
-        sdk.read(uri, reader=str(owner.pk))
+    with pytest.raises(Refused) as refused:
+        kept_results.read(uri, reader=owner.pk)
     assert refused.value.code == "expired"
-    assert sweep_artifacts() == 1 and not Row.objects.exists()
-    with pytest.raises(ArtifactRefused) as gone:
-        sdk.read(uri, reader=str(owner.pk))
+    assert sweep_kept_results() == 1 and not Row.objects.exists()
+    with pytest.raises(Refused) as gone:
+        kept_results.read(uri, reader=owner.pk)
     assert gone.value.code == "not_found"
+    with pytest.raises(Refused) as bad:
+        kept_results.read("https://example.org/x", reader=owner.pk)
+    assert bad.value.code == "bad_uri"
 
 
 def test_the_sweep_is_scheduled():
     from django.conf import settings
 
-    assert (
-        settings.CELERY_BEAT_SCHEDULE["sweep-labs-result-artifacts"]["task"]
-        == "connect_labs.mcp.tasks.sweep_artifacts"
-    )
+    assert settings.CELERY_BEAT_SCHEDULE["sweep-kept-results"]["task"] == "connect_labs.mcp.tasks.sweep_kept_results"
 
 
-# --- labs' own gate, for every reader (server.ArtifactReadGate) -------------------------
+# --- labs' own gate, for every reader (kept_results.read_as) ---------------------------
 
 
 def _token(user, **claims) -> AccessToken:
@@ -235,40 +238,57 @@ def _token(user, **claims) -> AccessToken:
 
 def test_the_reader_is_the_caller_of_the_request_in_flight(owner):
     with mock.patch("connect_labs.mcp.server.get_access_token", return_value=_token(owner)):
-        assert artifacts.reader_subject() == str(owner.pk)
+        assert kept_results.reader_id() == owner.pk
     with mock.patch("connect_labs.mcp.server.get_access_token", return_value=None):
-        assert artifacts.reader_subject() is None
+        assert kept_results.reader_id() is None
 
 
 def test_a_no_user_visit_data_caller_never_reads_sensitive_rows_even_its_own(owner, connect):
     uri = _uri(owner, connect)
-    kept = artifacts.stored(uri)
-    assert artifacts.read_denial(kept, _token(owner)) is None
-    assert "user visit data" in artifacts.read_denial(kept, _token(owner, labs_restricted_user=True))
+    kept = kept_results.stored(uri)
+    assert kept_results.read_denial(kept, _token(owner)) is None
+    assert "user visit data" in kept_results.read_denial(kept, _token(owner, labs_restricted_user=True))
 
 
 def test_rows_that_are_not_sensitive_are_not_judged(owner, connect, monkeypatch):
     monkeypatch.setattr("connect_labs.labs.synthetic.provenance.all_generated", lambda ids: True)
     uri = _uri(owner, connect)
-    kept = artifacts.stored(uri)
-    assert kept.payload["access"]["sensitive"] is False
-    assert artifacts.read_denial(kept, _token(owner, labs_restricted_user=True)) is None
+    kept = kept_results.stored(uri)
+    assert kept.sensitive is False
+    assert kept_results.read_denial(kept, _token(owner, labs_restricted_user=True)) is None
 
 
 def test_stored_names_only_a_live_labs_result(owner, connect):
     uri = _uri(owner, connect)
-    assert artifacts.stored(f"{uri}?page=2").id == artifacts.stored(uri).id
-    assert artifacts.stored("labs-result://nope") is None
-    assert artifacts.stored("https://example.org/x") is None
+    assert kept_results.stored(f"{uri}?page=2").id == kept_results.stored(uri).id
+    assert kept_results.stored("labs-result://nope") is None
+    assert kept_results.stored("https://example.org/x") is None
     Row.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
-    assert artifacts.stored(uri) is None
+    assert kept_results.stored(uri) is None
 
 
 def test_every_read_is_audit_logged(owner, connect):
     from connect_labs.audit_trail.models import AuditEvent
 
     uri = _uri(owner, connect)
-    artifacts.record_read(artifacts.stored(uri), owner, f"{uri}?page=2&page_size=20")
+    kept_results.record_read(kept_results.stored(uri), owner, f"{uri}?page=2&page_size=20")
     event = AuditEvent.objects.filter(resource_type="labs_result").latest("id")
     assert (event.action, event.opportunity_id, event.record_count) == ("read", OPP.id, 20)
     assert event.metadata["kind"] == "data_query" and event.metadata["page"] == 2
+
+
+def test_the_mcp_server_lists_the_kept_result_template():
+    import asyncio
+
+    from fastmcp import Client
+
+    from connect_labs.mcp.server import mcp
+
+    async def templates():
+        async with Client(mcp) as client:
+            return await client.list_resource_templates()
+
+    listed = {t.name: t for t in asyncio.run(templates())}
+    template = listed["labs_results"]
+    assert template.uri_template == "labs-result://{id}{?page,page_size}"
+    assert template.mime_type == "application/json"

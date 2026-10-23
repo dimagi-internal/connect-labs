@@ -212,7 +212,7 @@ def test_the_cleared_agent_reads_the_kept_rows_back_a_page_at_a_time(labsdata, c
     token, uri = _kept(labsdata, canopy_redeem, visitor)
     contents = _read(labsdata, token, SENSITIVE_DECLARED, f"{uri}?page=2&page_size=2")
     assert _rows(contents) == ["rv2"]
-    meta = contents[0].meta["canopy/artifact"]
+    meta = contents[0].meta["labs/result"]
     assert (meta["page"], meta["pages"], meta["row_count"], meta["snapshot"]) == (2, 2, 3, True)
     read = AuditEvent.objects.filter(resource_type="labs_result").latest("id")
     assert (read.action, read.opportunity_id, read.record_count) == ("read", REAL.id, 1)
