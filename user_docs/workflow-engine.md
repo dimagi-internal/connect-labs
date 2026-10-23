@@ -84,6 +84,21 @@ This means each workflow appears in exactly one place. If you cannot find a work
 !!! note "Drilling into worker visits from a program-level report"
     When you open a worker's case in the worker review from a programme report created at program level, their visits now load correctly. Previously, this could show a "pipeline not found" error; this has been fixed and visit data loads as expected.
 
+### Embedded workflows
+
+Certain workflows and pages can be shown inside another system's interface — for example, inside Connect — without the person needing to sign in to Labs separately. The embedded view displays exactly the same report the person would see if they opened Labs directly, but without the Labs menus or navigation chrome.
+
+What you see is determined entirely by your own account — the embedding system cannot show you data you would not normally be able to access.
+
+!!! note "Read-only"
+    Embedded views are read-only. You cannot start a run, save changes, or trigger any action from within an embedded view. To perform those actions, open the workflow directly in Labs.
+
+!!! note "Sign-in requirement"
+    You must have signed in to Labs at least once before an embedded view will load for you. If you see a sign-in prompt inside an embedded view, open Labs in your browser, sign in, and then return to the embedding system.
+
+!!! note "For administrators"
+    Embedding is not enabled by default for any workflow. A Dimagi superuser must register the embedding system and explicitly list the workflows or pages it is permitted to show, before any embedded view will work. If a workflow you expect to see embedded is not appearing, contact Dimagi support.
+
 ### Protected (sandboxed) workflows
 
 Some workflows are designed to run inside a **protected frame** — sometimes called a sandbox. Pages and workflows on Labs are drawn directly in the page by default. To preview the sandboxed version of any page or workflow, add `?sandbox=1` to its address in your browser (or `&sandbox=1` if the address already contains a `?`).
@@ -193,18 +208,4 @@ Counts that are built by summing integer values — for example, a total number 
 
 #### Trend charts on program-level reports
 
-The trend chart on a program-level indicator report shows how a given indicator has changed across saved runs over time. When a report has a large number of saved runs — for example, 55 weekly snapshots — the chart previously drew a date label and a value label for every single point, causing them to overprint one another into an unreadable solid band.
-
-The chart now keeps the display legible regardless of how many runs exist:
-
-- Date labels are shown for at most 8 evenly spaced points, always including the first and last run.
-- Value labels are shown only for the first run, the last run, the highest value, the lowest value, and the first run that fell below the target threshold.
-- Every point still has a tooltip, so you can hover over any point to see its exact figure and date.
-
-#### Opening the worker review from a program-level report
-
-Clicking **Review** on a worker row in a program-level indicator report now opens their worker review correctly in all cases. Previously, if your current session scope was set to an organisation rather than a specific opportunity, the worker review would open with the message "Please select an opportunity from the labs context to run this workflow" instead of loading the worker's data. The link now navigates to the correct program context automatically, so the worker review opens as expected.
-
-#### Case counts and last visit date on a drilled program report
-
-When you drill
+The trend chart on a program-level indicator report shows how a given indicator has changed across saved runs over time. When a report
