@@ -16,6 +16,8 @@ Usage:
 
 import logging
 import re
+import sys
+import time
 
 import httpx
 
@@ -26,11 +28,27 @@ logger = logging.getLogger(__name__)
 _OPP_ID_RE = re.compile(r"/opportunity/(\d+)/")
 
 
+def _export_caller() -> str:
+    """``module:function`` of the code that asked for this export: the first
+    frame outside this module. With the request path (or Celery task name) the
+    audit context already records, it says what triggered a pull from Connect --
+    a visit-cache fill, a worker-name lookup, a sampler -- without each of the
+    many call sites having to name itself."""
+    frame = sys._getframe(1)
+    while frame is not None and frame.f_globals.get("__name__") == __name__:
+        frame = frame.f_back
+    if frame is None:
+        return ""
+    return f"{frame.f_globals.get('__name__', '?')}:{frame.f_code.co_name}"[:200]
+
+
 def _record_export_audit(
     endpoint: str,
     row_count: int,
     error: str | None,
     terminated_early: bool = False,
+    *,
+    cost: dict | None = None,
 ) -> None:
     """Audit one bulk PHI fetch (visit/user exports). Best-effort, lazy import
     so this module stays importable outside a configured Django context.
@@ -55,6 +73,12 @@ def _record_export_audit(
       - any export cut short (``terminated_early``) — the caller saw some of a
         larger dataset, and the record has to say the read was partial,
       - any export that returned rows.
+
+    ``cost`` is what the pull cost and who asked for it, for usage analytics:
+    ``caller`` (see ``_export_caller``), ``duration_ms``, ``pages`` (one HTTP
+    round trip each), ``bytes`` (response bodies as received), and ``params``
+    (the NAMES of the query parameters sent, e.g. a delta fetch's cursor --
+    never their values). All opaque, none of it data content.
     """
     if not error and not terminated_early and not row_count:
         return
@@ -65,7 +89,7 @@ def _record_export_audit(
 
         opp_match = _OPP_ID_RE.search(endpoint)
         resource_type = endpoint.split("?")[0].rstrip("/").rsplit("/", 1)[-1] or "export"
-        metadata = {"endpoint": endpoint.split("?")[0][:200]}
+        metadata = {"endpoint": endpoint.split("?")[0][:200], **(cost or {})}
         if error:
             metadata["error"] = error
         if terminated_early:
@@ -135,6 +159,8 @@ class ExportAPIClient:
     ):
         self.base_url = base_url.rstrip("/")
         self.access_token = access_token
+        # Response bytes this client has downloaded, for the export audit's cost.
+        self.bytes_received = 0
         # follow_redirects=True works around a production bug in dimagi/commcare-connect
         # where gunicorn strips X-Forwarded-Proto (no --forwarded-allow-ips flag), causing
         # `request.scheme` to be 'http' in pagination's get_next_link(). The server then
@@ -196,12 +222,19 @@ class ExportAPIClient:
                 - ``partial_ok=False`` (default) → an unrequested teardown, and
                   still recorded as a failure.
         """
-        rows = 0
+        rows = pages = 0
         error: str | None = None
         terminated_early = False
+        # Read here, at the generator's first step, while the consumer that
+        # asked is still on the stack (a ``finally`` run on garbage collection
+        # would see an arbitrary one).
+        caller = _export_caller()
+        started = time.monotonic()
+        bytes_before = self.bytes_received
         try:
             for page in self._paginate(endpoint, params=params):
                 rows += len(page)
+                pages += 1
                 yield page
         except GeneratorExit:
             # Consumer stopped early (`break`/`return`) *or* the request died
@@ -216,7 +249,21 @@ class ExportAPIClient:
             error = type(exc).__name__
             raise
         finally:
-            _record_export_audit(endpoint, rows, error, terminated_early=terminated_early)
+            _record_export_audit(
+                endpoint,
+                rows,
+                error,
+                terminated_early=terminated_early,
+                cost={
+                    "caller": caller,
+                    "duration_ms": round((time.monotonic() - started) * 1000),
+                    "pages": pages,
+                    # Counted per client, so two streams interleaved on ONE client
+                    # would share a figure; every caller in labs streams one at a time.
+                    "bytes": self.bytes_received - bytes_before,
+                    "params": sorted(params)[:20] if params else [],
+                },
+            )
 
     def _paginate(self, endpoint: str, params: dict | None = None):
         """
@@ -243,6 +290,9 @@ class ExportAPIClient:
         while url is not None:
             try:
                 response = self.http_client.get(url, params=request_params)
+                # Bytes on the wire (gzip as sent), not the decoded body; a response
+                # built in memory (a test transport) downloaded nothing, so its body.
+                self.bytes_received += response.num_bytes_downloaded or len(response.content)
                 response.raise_for_status()
             except httpx.HTTPStatusError as e:
                 raise ExportAPIError(_status_error_message(e.response.status_code, url)) from e

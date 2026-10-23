@@ -185,6 +185,18 @@ class MCPAuditLog(models.Model):
     #: runner and its flags, turn, session) -- or ``{"refused": code}``. See
     #: ``mcp/execution.py``.
     execution = models.JSONField(default=dict, blank=True)
+    #: The call's audit-context id ("mcp:<hex>"): the same id stamps every
+    #: ``AuditEvent`` the call caused (LabsRecord reads, exports from Connect), so
+    #: a tool call joins to what it touched.
+    request_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    #: Wall time of the whole call, gates and handler included.
+    duration_ms = models.IntegerField(null=True, blank=True)
+    #: The scope the call named, read from its arguments for EVERY call -- reads
+    #: too, whose arguments are otherwise not kept. Opaque ids only, for usage
+    #: analytics by organisation / programme / opportunity.
+    opportunity_ids = models.JSONField(default=list, blank=True)
+    program_id = models.IntegerField(null=True, blank=True, db_index=True)
+    organization_slug = models.CharField(max_length=120, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:

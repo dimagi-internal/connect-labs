@@ -95,6 +95,7 @@ class UsageView(AdminRequiredMixin, TemplateView):
                 # On a user's page every row has exactly one user: the column says nothing.
                 "show_scope_users": kind != "user",
                 "top_pages": usage.top_pages(events),
+                "export_triggers": usage.export_triggers(events),
                 "agent_tools": usage.agent_tools(scope, report["since"], hide_staff=hide_staff),
                 "recent": self._recent(events, directory) if kind != "all" else [],
                 "parent": self._parent(scope, directory),

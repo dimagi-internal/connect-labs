@@ -256,3 +256,53 @@ def test_timeout_is_distinguishable_from_an_http_status(monkeypatch, db):
     event = AuditEvent.objects.filter(outcome=Outcome.FAILURE).get()
     assert event.metadata["upstream_error"] == "ReadTimeout"
     assert "upstream_status" not in event.metadata
+
+
+@pytest.mark.django_db
+def test_export_records_what_asked_for_it_and_what_it_cost(db):
+    """Who triggered a pull from Connect and what it cost, for usage analytics:
+    the calling code, wall time, round trips, bytes on the wire, and the NAMES
+    of the parameters sent (never their values)."""
+    import json
+
+    import httpx
+
+    from connect_labs.labs.integrations.connect.export_client import ExportAPIClient
+
+    bodies = {
+        None: {
+            "results": [{"id": 1}, {"id": 2}],
+            "next": "https://example.invalid/export/opportunity/765/user_visits/?p=2",
+        },
+        "2": {"results": [{"id": 3}], "next": None},
+    }
+
+    def handler(request):
+        return httpx.Response(200, content=json.dumps(bodies[request.url.params.get("p")]).encode())
+
+    client = ExportAPIClient(base_url="https://example.invalid", access_token="t")
+    client.http_client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    rows = client.fetch_all("/export/opportunity/765/user_visits/", params={"last_id": "abc", "images": "true"})
+
+    assert len(rows) == 3
+    meta = AuditEvent.objects.get(action=Action.EXPORT).metadata
+    assert meta["caller"] == f"{__name__}:test_export_records_what_asked_for_it_and_what_it_cost"
+    assert meta["pages"] == 2
+    assert meta["bytes"] == sum(len(json.dumps(b).encode()) for b in bodies.values())
+    assert meta["params"] == ["images", "last_id"]
+    assert isinstance(meta["duration_ms"], int) and meta["duration_ms"] >= 0
+    assert "abc" not in json.dumps(meta)
+
+
+@pytest.mark.django_db
+def test_a_streamed_export_names_its_consumer(monkeypatch, db):
+    client = _three_page_client(monkeypatch)
+
+    for _page in client.paginate("/export/opportunity/765/user_visits/"):
+        pass
+
+    meta = AuditEvent.objects.get(action=Action.EXPORT).metadata
+    assert meta["caller"] == f"{__name__}:test_a_streamed_export_names_its_consumer"
+    assert meta["pages"] == 3
+    assert meta["bytes"] == 0  # the fake stream made no HTTP calls
