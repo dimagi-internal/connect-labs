@@ -234,29 +234,47 @@ session's allowlist, the request is **replaced**, never merged:
 - `request.labs_embed` is set to the session.
 
 The allowlist is the embed page itself plus whatever the kind's `allowed` names. For
-`workflow`, that is the runner's **read** endpoints for that definition and its runs:
+`workflow`, that is the sandbox host's own route table. Every page and workflow now draws in
+the sandbox (#2680), so every read a drawn workflow makes goes through
+`components/workflow/sandbox/routes.ts`, mirrored in `workflow/sandbox_routes.py` and kept
+equal to it by CI. An embed may reach a route that table gates `read`, never `own` or
+`effect`. Following the table, rather than keeping a list of its own, is what keeps embedded
+reports whole as the sandbox gains routes (images, flags, benchmarks, task history, job
+progress, boundaries...).
 
-- pipeline data, rows and streams
-- the query endpoints
-- the semantic layer
-- supply and workflow sources
-- run history and snapshots
-- workers
-- auth status
+Every id such a route names is bound to what the frame was drawn for. When it draws, the
+frame records on its session the workflow's runs, the definitions it declares it reads
+(`declared_reads.readable_definition_ids`), and the opportunities and programmes it covers
+(`views.frame_reach`):
+
+- `def` must be this definition, and `rel` this definition or one it reads;
+- `run` must be one of its runs, and `opp` / `prog` one it covers;
+- `pipe` and `job` are read as the person;
+- a kind of id the embed does not know is refused (a test fails first when the table gains one).
+
+**Only from its own frame.** Apart from the frame's own address, a session acts only for
+requests whose `Referer` is that frame. The frame sets `Referrer-Policy: same-origin`, so
+its own requests always carry it. Connect and labs are one _site_ to a browser (`dimagi.com`),
+so the partitioned cookie also rides along from the person's ordinary labs tabs; this keeps
+it from replacing their own session there. A request with no such referrer fails closed: it
+is not the embed. `Referer` only ever narrows what a request may do here; it never grants.
 
 On any other path the embed cookie is **ignored**. It carries no authority there, and the
 request is what it would have been without it (in another site's frame, anonymous). That
-includes writes, other resources, the full labs pages, admin and the MCP. If the person's
-Connect sign-in has lapsed, the embed's reads answer `401`, and the frame asks its parent to
-start over.
+includes other resources, the full labs pages, admin and the MCP. If the person's Connect
+sign-in has lapsed, the embed's reads answer `401`, and the frame asks its parent to start
+over.
 
-The three read endpoints that are POSTs (`pipeline-query`, `supply-query`, `workflow-query`)
-skip Django's CSRF check. A cross-site iframe has no CSRF cookie (it is `SameSite=Lax`). They
-require `Origin` to be labs' own origin instead, which the frame's own `fetch` always sends and
-a forged cross-site form cannot.
+The read routes that are POSTs (queries with a body) skip Django's CSRF check. A cross-site
+iframe has no CSRF cookie (it is `SameSite=Lax`). They require `Origin` to be labs' own origin
+instead, which the frame's own `fetch` always sends and a forged cross-site form cannot.
+`Origin: null` (the sandboxed frame itself) never acts as the person.
 
-Phase 1 is read-only. Workflow actions (writes) from an embed are refused, and saved state
-cannot change.
+**Read-only, said plainly.** A write from an embed frame that the sandbox table knows (run
+state, completing a run, jobs, tasks, audits) is refused with
+`403 {"error": "This embedded view is read-only."}`, whatever cookies the request carries.
+Without this it would fall through to the login page or, on a page served from labs' own
+origin (the reference example), to the person's labs session.
 
 ### 6. Audit
 

@@ -1,6 +1,6 @@
 """What can be embedded: a registry of kinds.
 
-A kind is anything labs can draw without chrome for one person. It supplies six
+A kind is anything labs can draw without chrome for one person. It supplies seven
 things and nothing else; the token endpoint, the session, the cookie, the framing
 headers, the CSRF rule and the audit trail are the embed app's and a kind cannot
 widen them:
@@ -14,7 +14,10 @@ widen them:
   closed: ``False`` when it cannot tell;
 * ``render(request, session)`` -- the chromeless view drawn in the frame;
 * ``allowed(session, method, path)`` -- the routes a session for this resource may
-  reach. The frame's own address is always allowed and is not listed here.
+  reach. The frame's own address is always allowed and is not listed here;
+* ``writes(method, path)`` -- whether a request is a write this kind's frame might make,
+  which the middleware refuses outright (an embed is read-only) rather than letting it
+  fall through to whatever else the request carries.
 
 A new embeddable thing is one subclass and one ``register`` call.
 """
@@ -22,7 +25,6 @@ A new embeddable thing is one subclass and one ``register`` call.
 from __future__ import annotations
 
 import logging
-import re
 
 from django.core.exceptions import ValidationError
 
@@ -52,6 +54,9 @@ class EmbedKind:
     def allowed(self, session, method: str, path: str) -> bool:
         raise NotImplementedError
 
+    def writes(self, method: str, path: str) -> bool:
+        return False
+
 
 _KINDS: dict[str, EmbedKind] = {}
 
@@ -79,30 +84,56 @@ def _one_scope(entry: dict) -> dict:
 
 # --- workflow (and page: a page is a workflow definition) --------------------------------
 
-#: The runner's READ endpoints for one definition (workflow/urls.py), by method. Anything
-#: that writes -- run state, worker results, completing a run, actions, render code,
-#: pipeline sources, chat -- is absent, so an embed is read-only.
-_DEF_GET = (
-    "pipeline-data/",
-    "pipeline-data/stream/",
-    "pipeline-rows/",
-    "pipeline-rows/stream/",
-    "case-states/",
-    "supply-data/",
-    "workflow-data/",
-    "semantic/",
-    "indicator-definitions/",
-    "runs/history/",
-)
-#: Reads that are POSTs because they carry a query body.
-_DEF_POST = ("pipeline-query/", "supply-query/", "workflow-query/")
-_RUN_GET = ("", "snapshot/", "snapshot/preview/")
-#: Not tied to one definition; each reads as the person, so prod decides what comes back.
-_GLOBAL_GET = ("api/workers/", "api/opportunity-flws/", "api/auth-status/")
+#: The reads a drawn workflow makes all go through the sandbox host's route table
+#: (components/workflow/sandbox/routes.ts, mirrored in workflow/sandbox_routes.py and kept
+#: equal by CI), so the embed follows that table rather than a list of its own that drifts:
+#: a session may reach a route the table gates "read", never "own" or "effect" (an embed is
+#: read-only). Every id such a route names is bound to what the frame was drawn for (its
+#: session's ``state``, recorded by views.frame_reach) -- or refused, if it is a kind of id
+#: this code does not know yet.
+#:
+#: Route groups bound by name: ``def`` (this definition), ``rel`` (a definition it declares
+#: it reads), ``run`` (its runs), ``opp`` / ``prog`` (the opportunities and programmes it
+#: covers). ``pipe`` and ``job`` are read as the person, who may read them anyway. A few
+#: routes carry an unnamed id; those that name a run or a workflow are bound here too.
+_UNNAMED = {
+    r"^/labs/workflow/api/run/(\d+)/$": "run",
+    r"^/labs/workflow/api/run/(\d+)/snapshot/(preview/)?$": "run",
+    r"^/audit/api/workflow/(\d+)/sessions/$": "rel",
+}
+_AS_THE_PERSON = frozenset({"pipe", "job"})
 
-_WORKFLOW_PREFIX = "/labs/workflow/"
-_DEF_PATH = re.compile(r"^api/(?P<id>\d+)/(?P<rest>.*)$")
-_RUN_PATH = re.compile(r"^api/run/(?P<id>\d+)/(?P<rest>.*)$")
+
+def _bound(session, name: str, value: str) -> bool:
+    state = session.state or {}
+
+    def held(key):
+        return value in {str(v) for v in state.get(key) or []}
+
+    if name == "def":
+        return value == str(session.resource_id)
+    if name == "rel":
+        return value == str(session.resource_id) or held("readable")
+    if name == "run":
+        return held("runs")
+    if name == "opp":
+        return held("opps")
+    if name == "prog":
+        return held("programs")
+    return name in _AS_THE_PERSON
+
+
+def sandbox_route(method: str, path: str):
+    """``(route, match)`` for the sandbox route that answers ``method path``, else ``None``."""
+    from connect_labs.workflow.sandbox_routes import FETCH_DENIED, compiled
+
+    if any(path.startswith(denied) for denied in FETCH_DENIED):
+        return None
+    for route, pattern in compiled():
+        match = pattern.match(path)
+        if match and method in route.methods:
+            return route, match
+    return None
 
 
 class WorkflowKind(EmbedKind):
@@ -172,22 +203,20 @@ class WorkflowKind(EmbedKind):
         return EmbedWorkflowView.as_view()(request, definition_id=int(session.resource_id))
 
     def allowed(self, session, method, path):
-        if not path.startswith(_WORKFLOW_PREFIX):
+        found = sandbox_route(method, path)
+        if found is None:
             return False
-        rest = path[len(_WORKFLOW_PREFIX) :]
-        if method in ("GET", "HEAD") and rest in _GLOBAL_GET:
-            return True
-        match = _DEF_PATH.match(rest)
-        if match and match["id"] == str(session.resource_id):
-            return (method in ("GET", "HEAD") and match["rest"] in _DEF_GET) or (
-                method == "POST" and match["rest"] in _DEF_POST
-            )
-        match = _RUN_PATH.match(rest)
-        if match and method in ("GET", "HEAD"):
-            # Only the run this frame was drawn with (views.EmbedWorkflowView records it).
-            run_id = (session.state or {}).get("run_id")
-            return run_id is not None and match["id"] == str(run_id) and match["rest"] in _RUN_GET
-        return False
+        route, match = found
+        if route.gate != "read":
+            return False
+        if not all(_bound(session, name, value) for name, value in match.groupdict().items() if value is not None):
+            return False
+        unnamed = _UNNAMED.get(route.path)
+        return unnamed is None or _bound(session, unnamed, match.group(1))
+
+    def writes(self, method, path):
+        found = sandbox_route(method, path)
+        return found is not None and found[0].gate != "read"
 
 
 register(WorkflowKind())

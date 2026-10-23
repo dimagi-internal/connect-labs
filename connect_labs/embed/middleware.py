@@ -14,6 +14,18 @@ of the request, never merged:
 On any other path the cookie is ignored: it carries no authority there, and the request
 is whatever it would have been without it (in another site's frame, anonymous).
 
+Only from its own frame: apart from the frame's own address, a session acts only for
+requests whose ``Referer`` is that frame (``_referring_frame``; the frame sets
+``Referrer-Policy: same-origin``, so its own requests always carry it). Connect and labs
+are one SITE to a browser (dimagi.com), so the partitioned cookie also rides along from
+the person's ordinary labs tabs; this keeps it from replacing their own session there.
+A request with no such referrer fails closed: it is simply not the embed.
+
+Read-only, said plainly: a write a frame's kind knows it might make (a sandbox route gated
+"own" or "effect": run state, actions, jobs) from an embed frame is refused with a 403
+saying so, rather than falling through to the login page -- or, on a page served from
+labs' own origin, to the person's labs session.
+
 Writes: a kind may allow a read that is a POST (a query with a body). Django's CSRF
 check cannot run for it (the CSRF cookie is ``SameSite=Lax``, so a cross-site frame has
 none); instead the request's ``Origin`` must be labs' own, which the frame's own
@@ -26,6 +38,7 @@ never saves, or sets a cookie for, the embed's.
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.http import JsonResponse
@@ -82,6 +95,23 @@ def _session_class():
     return EmbedRequestSession
 
 
+FRAME_PREFIX = "/embed/c/"
+
+
+def _referring_frame(request) -> tuple[str, str] | None:
+    """``(path, kind)`` of the labs embed frame that made this request, from a same-origin
+    ``Referer``; else None. Used to NARROW what a request may do, never to grant."""
+    from connect_labs.utils.sandbox_guard import allowed_origins
+
+    parts = urlsplit(request.headers.get("referer") or "")
+    if not parts.path.startswith(FRAME_PREFIX):
+        return None
+    if f"{parts.scheme}://{parts.netloc}".lower() not in allowed_origins(request):
+        return None
+    segments = parts.path[len(FRAME_PREFIX) :].strip("/").split("/")
+    return (parts.path, segments[1]) if len(segments) == 3 else None
+
+
 def _matching_session(request):
     """The live embed session among the request's cookies that authorises this path."""
     for name, value in request.COOKIES.items():
@@ -95,9 +125,19 @@ def _matching_session(request):
             continue
         if request.path == frame_path(session) and request.method in SAFE_METHODS:
             return session, kind
-        if kind.allowed(session, request.method, request.path):
+        referred = _referring_frame(request)
+        if referred and referred[0] == frame_path(session) and kind.allowed(session, request.method, request.path):
             return session, kind
     return None, None
+
+
+def _write_from_a_frame(request) -> bool:
+    """A write an embed frame's kind knows it might make, made from that frame."""
+    if request.method in SAFE_METHODS:
+        return False
+    referred = _referring_frame(request)
+    kind = get_kind(referred[1]) if referred else None
+    return bool(kind and kind.writes(request.method, request.path))
 
 
 class EmbedSessionMiddleware:
@@ -105,7 +145,11 @@ class EmbedSessionMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if not embed_enabled() or not any(k.startswith(sessions.COOKIE_PREFIX) for k in request.COOKIES):
+        if not embed_enabled():
+            return self.get_response(request)
+        if _write_from_a_frame(request):
+            return JsonResponse({"error": "This embedded view is read-only."}, status=403)
+        if not any(k.startswith(sessions.COOKIE_PREFIX) for k in request.COOKIES):
             return self.get_response(request)
         session, kind = _matching_session(request)
         if session is None:
