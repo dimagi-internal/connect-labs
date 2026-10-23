@@ -65,6 +65,13 @@ workers and stores appear on Supply → Map (#2293, #2295) and "Where it went"
   the deliveries as recorded.
 - The walkthrough persona's session is scoped to its own program. A scene on
   another program needs that program to be reachable for the persona.
+- **`--phcs 2 --procurement tracker`** lays a clone out as the programme says it
+  runs: a warehouse holding the cartons round 1 of the programme's procurement
+  tracker ordered (`clone_tracker_upstream.py`: the tracker's suppliers, outreach
+  and quotes imported from Drive, then the award, order, delivery, invoice and
+  payment that round most likely went through, each marked inferred), restocking
+  two PHCs every Monday in whole cartons, each collected from by the workers whose
+  visits are nearest it (`clone_phc.py`). Round 2 stays open, as the tracker has it.
 - **A labs deploy restarts the Celery worker and kills synthetic clone jobs in
   flight** (since #2265 the job reads "Labs restarted ... start it again"). Before
   deploying, check `/labs/synthetic/jobs/`.

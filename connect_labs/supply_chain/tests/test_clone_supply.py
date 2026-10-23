@@ -315,3 +315,117 @@ def test_a_top_up_records_the_deliveries_and_counts_due_since_once(clone):
     assert new_counts and len(first["counts_recorded"]) == len(new_counts)
     assert again["deliveries_recorded"] == [] and again["counts_recorded"] == []
     assert clone_supply.seeded_clones() == [(clone, clone)]
+
+
+# ---- the PHC layout and the tracker's procurement (demo/clone_phc.py, clone_tracker_upstream.py) ----
+
+from connect_labs.supply_chain.demo import clone_phc  # noqa: E402
+from connect_labs.supply_chain.procurement.services import tracker_import  # noqa: E402
+
+# Invented places, 0.2 degrees apart west to east: the first three workers west, the rest east.
+WEST, EAST = (12.00, 8.50), (12.00, 8.70)
+
+
+def located_visits(weeks=8):
+    visits = clone_visits(weeks)
+    for visit in visits:
+        lat, lng = WEST if WORKERS.index(visit["username"]) < 3 else EAST
+        visit["location"] = f"{lat} {lng} 0 5"
+    return visits
+
+
+def test_workers_split_between_phcs_along_their_wider_spread():
+    locations = {"a": (12.0, 8.5), "b": (12.01, 8.52), "c": (12.0, 8.7), "d": (12.02, 8.71)}
+    assert clone_phc.assign_phcs(["d", "c", "b", "a", "e"], locations, 2) == {
+        "a": 0, "b": 0, "c": 1, "d": 1, "e": 0,
+    }  # fmt: skip
+    assert clone_phc.nearest_phc((12.0, 8.69), {0: (12.0, 8.5), 1: (12.0, 8.7)}) == 1
+    assert clone_phc.nearest_phc(None, {0: (12.0, 8.5)}) == 0
+
+
+def test_a_phc_transfer_is_whole_cartons_and_covers_the_week():
+    # Three weeks of 20 a day is 420: from 100 on the shelf, 320 -> three cartons.
+    assert clone_phc.size_transfer(held=Decimal(100), pickups_this_week=Decimal(0), daily_pace=Decimal(20)) == 450
+    # A pickup round bigger than the buffer is still covered.
+    assert clone_phc.size_transfer(held=Decimal(0), pickups_this_week=Decimal(700), daily_pace=Decimal(10)) == 750
+    assert clone_phc.size_transfer(held=Decimal(900), pickups_this_week=Decimal(0), daily_pace=Decimal(10)) == 0
+
+
+def _tracker_rows():
+    """An invented two-round tracker: one complete round-1 quote, one per-sachet, one silent; a round-2 re-quote."""
+
+    def row(name, sent, price="", freight="", total="", quoted="", requote="", requote_price=""):
+        r = [""] * 20
+        r[tracker_import.NAME], r[tracker_import.TYPE], r[tracker_import.LOCATION] = name, "Manufacturer", "Nigeria"
+        r[6], r[7], r[8], r[9], r[10], r[11] = sent, "Yes" if price else "No", quoted, price, freight, total
+        r[12], r[14], r[15] = requote, "", requote_price
+        return r
+
+    return [
+        row("Supplier One", "20 April 2026", "$52.00", "$2,000.00", "$28,000.00", "18 May 2026", "9 Sep 2026"),
+        row("Supplier Two", "5 Feb 2026", "$0.46/sachet", "Not specified", "$46,000.00", "23 Feb 2026", "9 Sep 2026"),
+        row("Supplier Three", "28 Apr 2026", requote="9 Sep 2026", requote_price="$50"),
+    ]
+
+
+@pytest.fixture
+def phc_clone(db, monkeypatch):
+    monkeypatch.setattr(tracker_import, "_read_sheet", lambda _id: (_group_row(), _tracker_rows()))
+    opp = _register_clone()
+    with patch(FETCH, return_value=located_visits()):
+        yield opp
+    registry.invalidate_cache()
+
+
+def _group_row():
+    row = [""] * 20
+    row[tracker_import.TENDERS[0]["label_column"]] = "Round 1 Quote (500 cartons)"
+    row[tracker_import.TENDERS[1]["label_column"]] = "Feb Re-quote (2,000 cartons)"
+    return row
+
+
+def test_the_phc_layout_runs_warehouse_to_phcs_weekly_and_phcs_to_their_workers(phc_clone):
+    from connect_labs.supply_chain.models import Award, Contract, Receipt
+    from connect_labs.supply_chain.stock.services import ledger
+
+    opp = phc_clone
+    summary = clone_supply.seed(program_id=opp, opportunity_id=opp, today=TODAY, phcs=2, procurement="tracker")
+    assert summary["seeded"] is True
+
+    warehouse = SupplyPoint.objects.get(program_id=opp, slug="warehouse")
+    phcs = list(SupplyPoint.objects.filter(program_id=opp, kind="facility").order_by("slug"))
+    assert [p.name for p in phcs] == ["PHC 1", "PHC 2"] and all(p.parent_id == warehouse.pk for p in phcs)
+    # Each PHC serves the workers nearest it: west three, east three.
+    served = {p.name: {w.connect_username for w in p.children.filter(kind="user_held")} for p in phcs}
+    assert served == {"PHC 1": set(WORKERS[:3]), "PHC 2": set(WORKERS[3:])}
+    # Workers collect from their own PHC, never from the warehouse.
+    assert {r.supply_point_id for r in Distribution.objects.filter(program_id=opp)} == {p.pk for p in phcs}
+
+    # The warehouse restocks each PHC in whole cartons, on Mondays after the first week.
+    transfers = Movement.objects.filter(program_id=opp, kind="transfer", note=clone_phc.TRANSFER_NOTE)
+    assert transfers.exists() and all(m.from_supply_point_id == warehouse.pk for m in transfers)
+    assert all(m.quantity % clone_phc.CARTON == 0 for m in transfers)
+    first_week = min(m.occurred_on for m in transfers)
+    assert all(m.occurred_on.weekday() == 0 for m in transfers if m.occurred_on > first_week)
+
+    # Its stock is the tracker's round 1, received on the order awarded to the one complete quote.
+    award = Award.objects.get(tender__program_id=opp)
+    assert award.quote.supplier.name == "Supplier One"
+    order = Contract.objects.get(program_id=opp)
+    assert order.quantity == 500 and order.unit_price == Decimal("52.00")
+    assert Receipt.objects.get(contract=order).supply_point_id == warehouse.pk
+    item = _item(opp)
+    for point in [warehouse, *phcs]:
+        held = ledger.balance(opp, point, item=item, unit="sachet", on_date=TODAY)
+        assert held.amount >= 0, point.name
+    assert ledger.balance(opp, warehouse, item=item, unit="sachet", on_date=TODAY).amount < 500 * 150
+
+
+def test_a_top_up_keeps_the_phcs_restocked_weekly(phc_clone):
+    opp = phc_clone
+    clone_supply.seed(program_id=opp, opportunity_id=opp, today=MIDWAY, phcs=2, procurement="tracker")
+    first = clone_supply.top_up(program_id=opp, opportunity_id=opp, today=TODAY)
+    assert first["transfers_recorded"] and first["deliveries_recorded"]
+    assert {t["to"] for t in first["transfers_recorded"]} == {"PHC 1", "PHC 2"}
+    again = clone_supply.top_up(program_id=opp, opportunity_id=opp, today=TODAY)
+    assert again["transfers_recorded"] == [] and again["deliveries_recorded"] == []
