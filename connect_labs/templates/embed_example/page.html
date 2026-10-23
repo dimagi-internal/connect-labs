@@ -143,9 +143,22 @@
       }
     });
 
+    // Only ever point the frame at labs: parse the address and check its origin, rather
+    // than trusting any text from the page as a URL (a "javascript:" URL would run here).
+    function labsAddress(text) {
+      var url = new URL(text, window.location.href);
+      if (url.origin !== cfg.labsOrigin) throw new Error("not a labs address");
+      url.hash = "";
+      return url.href;
+    }
+
     document.getElementById("reload").addEventListener("click", function () {
       note("reloading the frame with no token");
-      frame.src = cfg.frameAddress;
+      try {
+        frame.src = labsAddress("{{ example_config.frameAddress|escapejs }}");
+      } catch (error) {
+        note("refused to load the frame: " + error.message);
+      }
     });
   })();
   </script>
