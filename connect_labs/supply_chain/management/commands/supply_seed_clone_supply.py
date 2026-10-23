@@ -1,6 +1,7 @@
 """Seed the RUTF supply chain behind a synthetic clone of the real RUTF opportunity.
 
     make manage CMD="supply_seed_clone_supply --program 10700 --opportunity 10100"
+    make manage CMD="supply_seed_clone_supply --program 10700 --opportunity 10100 --phcs 2 --procurement tracker"
 
 Stores, the RUTF dispensing rule on the released app's paths, a supply point per
 worker, invented fortnightly distributions to each worker (labelled as invented
@@ -30,6 +31,18 @@ class Command(BaseCommand):
         parser.add_argument("--opportunity", type=int, required=True)
         parser.add_argument("--reset", action="store_true", help="Purge this programme's supply data first.")
         parser.add_argument(
+            "--phcs",
+            type=int,
+            default=0,
+            help="Lay the network out as warehouse -> N PHCs (weekly transfers) -> workers (demo/clone_phc.py).",
+        )
+        parser.add_argument(
+            "--procurement",
+            choices=("invented", "tracker"),
+            default="invented",
+            help="Where the warehouse's stock came from: an invented upstream, or the programme's tracker.",
+        )
+        parser.add_argument(
             "--top-up", action="store_true", help="Only record the invented deliveries due since (daily on beat)."
         )
 
@@ -39,7 +52,11 @@ class Command(BaseCommand):
                 result = clone_supply.top_up(program_id=options["program"], opportunity_id=options["opportunity"])
             else:
                 result = clone_supply.seed(
-                    program_id=options["program"], opportunity_id=options["opportunity"], reset=options["reset"]
+                    program_id=options["program"],
+                    opportunity_id=options["opportunity"],
+                    reset=options["reset"],
+                    phcs=options["phcs"],
+                    procurement=options["procurement"],
                 )
         except ValueError as error:
             raise CommandError(str(error)) from None

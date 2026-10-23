@@ -388,25 +388,63 @@ def _dispensed(rule, visits) -> tuple[dict, dict]:
     return dispensed, uuids
 
 
-def _record_delivery(op, partner_id: int, opportunity_id: int, item_id: int, issue: dict) -> None:
-    op(issue["on"], 8, "distribution_record", data={
-        "supply_point_id": partner_id, "opportunity_id": opportunity_id, "commodity_slug": SLUG,
-        "distributed_on": issue["on"].isoformat(), "source": "partner_reported", "note": INVENTED,
-        "lines": [
-            {"connect_username": u, "item_id": item_id, "quantity": str(q), "quantity_unit": "sachet"}
-            for u, q in sorted(issue["lines"].items())
-        ],
+def _record_delivery(op, partner_id: int, opportunity_id: int, item_id: int, issue: dict, served_from=None) -> None:
+    """One distribution run per store the workers collect from: `served_from` is {username: store id}."""
+    by_store: dict = defaultdict(dict)
+    for username, quantity in issue["lines"].items():
+        by_store[(served_from or {}).get(username, partner_id)][username] = quantity
+    for store_id, lines in sorted(by_store.items()):
+        op(issue["on"], 8, "distribution_record", data={
+            "supply_point_id": store_id, "opportunity_id": opportunity_id, "commodity_slug": SLUG,
+            "distributed_on": issue["on"].isoformat(), "source": "partner_reported", "note": INVENTED,
+            "lines": [
+                {"connect_username": u, "item_id": item_id, "quantity": str(q), "quantity_unit": "sachet"}
+                for u, q in sorted(lines.items())
+            ],
+        })  # fmt: skip
+
+
+def _record_transfer(op, day: date, *, item_id: int, from_id: int, to_id: int, quantity: Decimal, note: str) -> None:
+    op(day, 7, "movement_record", data={
+        "commodity_slug": SLUG, "item_id": item_id, "quantity_unit": "sachet", "occurred_on": day.isoformat(),
+        "kind": "transfer", "from_supply_point_id": from_id, "to_supply_point_id": to_id,
+        "quantity": str(quantity), "source": "we_recorded", "note": note,
     })  # fmt: skip
 
 
+def _week_pickups(issues: list, served_from: dict, store_id: int, start: date, end: date) -> Decimal:
+    """Sachets the workers collect from `store_id` in deliveries dated `start` to `end`."""
+    return sum(
+        (q for issue in issues if start <= issue["on"] <= end
+         for u, q in issue["lines"].items() if served_from.get(u) == store_id),
+        Decimal(0),
+    )  # fmt: skip
+
+
 def seed(
-    *, program_id: int, opportunity_id: int, reset: bool = False, today: date | None = None, pages: bool = True
+    *,
+    program_id: int,
+    opportunity_id: int,
+    reset: bool = False,
+    today: date | None = None,
+    pages: bool = True,
+    phcs: int = 0,
+    procurement: str = "invented",
 ) -> dict:
     """Seed the clone's supply chain; idempotent unless `reset`. Server-side only.
 
     Every run, reset or not, also makes or refreshes the Supply tabs and home pages it
     is seen through (`pages`; demo/clone_pages.py).
+
+    `phcs` > 0 lays the network out as the programme says it runs (demo/clone_phc.py):
+    a warehouse, restocked weekly from nothing above it, restocking `phcs` PHCs every
+    week, each of which its nearest workers collect from. `procurement="tracker"`
+    takes the warehouse's stock from the programme's own procurement tracker
+    (demo/clone_tracker_upstream.py) instead of an invented upstream: the round it
+    ordered is what the warehouse received, and nothing is added to make it last.
     """
+    if procurement not in ("invented", "tracker"):
+        raise ValueError(f"procurement must be 'invented' or 'tracker', not {procurement!r}")
     from connect_labs.labs.access.scopes import SYSTEM
     from connect_labs.supply_chain import scopes
     from connect_labs.supply_chain.data_access import SupplyDataAccess
@@ -414,6 +452,7 @@ def seed(
     from connect_labs.supply_chain.models import DispensingRule
     from connect_labs.supply_chain.operations import call_operation
     from connect_labs.supply_chain.stock.services import visit_source
+    from connect_labs.supply_chain.stock.services.visit_reader import visit_location
     from connect_labs.supply_chain.stock.services.workers import worker_slug
 
     # Refused before anything is read: a real programme, or an opportunity not filed under this one.
@@ -472,16 +511,35 @@ def seed(
         "sku": SKU, "name": NAME, "commodity_slug": SLUG,
         "base_unit": "sachet", "pack_unit": "carton", "base_per_pack": 150,
     })  # fmt: skip
-    central = op(setup, 9, "supply_point_upsert", data={
-        "slug": "central-store", "name": "Central store", "kind": "central_store",
-        "source": "we_recorded", "min_months_of_stock": "2", "max_months_of_stock": "6",
-        "note": INVENTED,
-    })  # fmt: skip
-    partner = op(setup, 9, "supply_point_upsert", data={
-        "slug": "partner-store", "name": "Partner store", "kind": "regional_store",
-        "parent_supply_point_id": central["id"], "source": "partner_reported",
-        "min_months_of_stock": "1", "max_months_of_stock": "3", "note": INVENTED,
-    })  # fmt: skip
+    if phcs:
+        from connect_labs.supply_chain.demo import clone_phc
+
+        central = op(setup, 9, "supply_point_upsert", data={
+            "slug": "warehouse", "name": "Warehouse", "kind": "central_store",
+            "source": "we_recorded", "min_months_of_stock": "2", "max_months_of_stock": "9",
+            "note": clone_phc.PHC_NOTE,
+        })  # fmt: skip
+        stores = [
+            op(setup, 9, "supply_point_upsert", data={
+                "slug": f"phc-{n + 1}", "name": f"PHC {n + 1}", "kind": "facility",
+                "parent_supply_point_id": central["id"], "source": "partner_reported",
+                "min_months_of_stock": "0.25", "max_months_of_stock": "1", "note": clone_phc.PHC_NOTE,
+            })  # fmt: skip
+            for n in range(phcs)
+        ]
+        partner = stores[0]
+    else:
+        central = op(setup, 9, "supply_point_upsert", data={
+            "slug": "central-store", "name": "Central store", "kind": "central_store",
+            "source": "we_recorded", "min_months_of_stock": "2", "max_months_of_stock": "6",
+            "note": INVENTED,
+        })  # fmt: skip
+        partner = op(setup, 9, "supply_point_upsert", data={
+            "slug": "partner-store", "name": "Partner store", "kind": "regional_store",
+            "parent_supply_point_id": central["id"], "source": "partner_reported",
+            "min_months_of_stock": "1", "max_months_of_stock": "3", "note": INVENTED,
+        })  # fmt: skip
+        stores = [partner]
     rule = op(setup, 12, "dispensing_rule_upsert", data={
         "opportunity_id": opportunity_id, "item_id": item["id"], "resupply_point_id": partner["id"],
         "active_from": first.isoformat(), "lines": rule_lines(),
@@ -512,34 +570,74 @@ def seed(
     central_monthly = to_partner / max(Decimal((today - setup).days) / 30, Decimal(1))
     opening = _round_up(to_partner + central_monthly * CENTRAL_MONTHS, 150)
     base = {"commodity_slug": SLUG, "item_id": item["id"], "quantity_unit": "sachet", "occurred_on": setup.isoformat()}
-    # The opening stock arrives on an order: the tender, award, shipment and receipt that brought it
-    # (invented, and each says so) -- so Sourcing, Orders and "Where it went" have something upstream.
-    from connect_labs.supply_chain.demo.clone_upstream import seed_upstream
+    if procurement == "tracker":
+        # The warehouse holds what the programme's tracker says round 1 ordered -- no more.
+        from connect_labs.supply_chain.demo.clone_tracker_upstream import seed_tracker_upstream
 
-    upstream = seed_upstream(
-        op, program_id=program_id, central_id=central["id"], item=saved.item, opening_sachets=opening,
-        setup=setup, today=today,
-    )  # fmt: skip
-    op(setup, 11, "movement_record", data={
-        **base, "kind": "transfer", "from_supply_point_id": central["id"], "to_supply_point_id": partner["id"],
-        "quantity": str(to_partner), "source": "we_recorded", "note": INVENTED,
-    })  # fmt: skip
+        upstream = seed_tracker_upstream(
+            op, access, program_id=program_id, warehouse_id=central["id"], item=saved.item, today=today
+        )
+        if date.fromisoformat(upstream["received_on"]) > setup:
+            raise ValueError(
+                f"round 1 is inferred to reach the warehouse on {upstream['received_on']}, after the first "
+                f"pickups on {setup}; the clone's visits start too early for the tracker's dates"
+            )
+    else:
+        # The opening stock arrives on an order: the tender, award, shipment and receipt that brought it
+        # (invented, and each says so) -- so Sourcing, Orders and "Where it went" have something upstream.
+        from connect_labs.supply_chain.demo.clone_upstream import seed_upstream
+
+        upstream = seed_upstream(
+            op, program_id=program_id, central_id=central["id"], item=saved.item, opening_sachets=opening,
+            setup=setup, today=today,
+        )  # fmt: skip
+    if not phcs:
+        op(setup, 11, "movement_record", data={
+            **base, "kind": "transfer", "from_supply_point_id": central["id"], "to_supply_point_id": partner["id"],
+            "quantity": str(to_partner), "source": "we_recorded", "note": INVENTED,
+        })  # fmt: skip
+        served_from = {username: partner["id"] for username in uuids}
+    else:
+        locations = clone_phc.worker_locations(visits, visit_location)
+        assigned = clone_phc.assign_phcs(uuids, locations, phcs)
+        served_from = {username: stores[assigned[username]]["id"] for username in uuids}
     for username in sorted(uuids):
         op(setup, 13, "supply_point_upsert", data={
             "slug": worker_slug(opportunity_id, username), "name": username, "kind": "user_held",
             "opportunity_id": opportunity_id, "connect_username": username,
-            "connect_user_uuid": uuids[username], "parent_supply_point_id": partner["id"],
+            "connect_user_uuid": uuids[username], "parent_supply_point_id": served_from[username],
             "source": "connect_visit", "min_months_of_stock": "0.5", "max_months_of_stock": "1.5",
         })  # fmt: skip
+    phc_held = {store["id"]: Decimal(0) for store in stores}
+    transferred = Decimal(0)
 
     weeks = []
     pending = list(issues)
     monday = _monday(first)
     while monday <= today:
         until = min(monday + timedelta(days=6), today)
+        due = [issue for issue in pending if issue["on"] <= until]
+        if phcs:
+            # Each Monday the warehouse restocks every PHC for the week's pickups and a buffer,
+            # in whole cartons (the first week's transfer goes on the day of the first pickup).
+            on = min([monday] + [issue["on"] for issue in due])
+            for store in stores:
+                week = _week_pickups(due, served_from, store["id"], date.min, until)
+                daily = sum(
+                    (pace(dispensed[u], on) for u, s in served_from.items() if s == store["id"] and u in dispensed),
+                    Decimal(0),
+                )
+                quantity = clone_phc.size_transfer(
+                    held=phc_held[store["id"]], pickups_this_week=week, daily_pace=daily
+                )
+                if quantity:
+                    _record_transfer(op, on, item_id=item["id"], from_id=central["id"], to_id=store["id"],
+                                     quantity=quantity, note=clone_phc.TRANSFER_NOTE)  # fmt: skip
+                    transferred += quantity
+                phc_held[store["id"]] += quantity - week
         # This week's deliveries (the first week's also takes the one made before the first visit).
         while pending and pending[0]["on"] <= until:
-            _record_delivery(op, partner["id"], opportunity_id, item["id"], pending.pop(0))
+            _record_delivery(op, partner["id"], opportunity_id, item["id"], pending.pop(0), served_from)
         # Read each week on its Sunday evening, as far as that Sunday (today for the current week).
         report = op(until, 20, "visit_consumption_ingest", opportunity_id=opportunity_id, until=until.isoformat())
         # Each worker counts their bag on the Sunday after the week's read (invented; see COUNTED).
@@ -567,6 +665,8 @@ def seed(
         "sachets_dispensed": str(total_dispensed),
         "sachets_issued": str(total_issued),
         "distributions": len(issues),
+        "phcs": {s["id"]: sum(1 for v in served_from.values() if v == s["id"]) for s in stores} if phcs else None,
+        "sachets_transferred": str(transferred),
         "upstream": upstream,
         "weeks": weeks,
         "pages": _pages(program_id, opportunity_id, pages),
@@ -640,43 +740,105 @@ def top_up(*, program_id: int, opportunity_id: int, today: date | None = None) -
         .exclude(connect_username="")
         .values_list("connect_username", flat=True)
     )
+    from connect_labs.supply_chain.demo import clone_phc
+    from connect_labs.supply_chain.models import Movement
+    from connect_labs.supply_chain.stock.services.visit_reader import visit_location
+
+    # The PHC layout (seed(phcs=N)): workers collect from their own PHC, which the warehouse restocks weekly.
+    phc_stores = list(
+        SupplyPoint.objects.filter(program_id=program_id, kind="facility", note=clone_phc.PHC_NOTE)
+        .select_related("parent")
+        .order_by("name")
+    )
     added = []
     seen = {str(v.get("username") or "").strip() for v in every if _day(v) <= today} - {""}
-    for username in sorted(seen - known):
+    new_workers = sorted(seen - known)
+    locations = clone_phc.worker_locations(every, visit_location) if (phc_stores and new_workers) else {}
+    phc_places = {i: (s.latitude, s.longitude) for i, s in enumerate(phc_stores) if s.latitude is not None}
+    for username in new_workers:
+        parent = phc_stores[clone_phc.nearest_phc(locations.get(username), phc_places)] if phc_stores else partner
         op(today, 13, "supply_point_upsert", data={
             "slug": worker_slug(opportunity_id, username), "name": username, "kind": "user_held",
             "opportunity_id": opportunity_id, "connect_username": username,
-            "connect_user_uuid": uuids[username], "parent_supply_point_id": partner.pk,
+            "connect_user_uuid": uuids[username], "parent_supply_point_id": parent.pk,
             "source": "connect_visit", "min_months_of_stock": "0.5", "max_months_of_stock": "1.5",
         })  # fmt: skip
         added.append(username)
 
     invented = Distribution.objects.filter(
-        program_id=program_id, supply_point=partner, note__startswith=INVENTED_PREFIX
+        program_id=program_id, opportunity_id=opportunity_id, note__startswith=INVENTED_PREFIX
     ).order_by("-distributed_on")
     last = invented.values_list("distributed_on", flat=True).first()
     targets = target_days(dispensed)
     workers = {w.connect_username: w for w in _workers(program_id, opportunity_id)}
-    recorded = []
-    due = (last + timedelta(days=CADENCE_DAYS)) if last else first
-    while due <= today:
+    served_from = {u: w.parent_id for u, w in workers.items()}
+    recorded, transfers = [], []
+
+    def held_at(point, on):
+        held = ledger.balance(program_id, point, item=rule.item, unit="sachet", on_date=on)
+        return max(held.amount, Decimal(0)) if isinstance(held, Quantity) else Decimal(0)
+
+    def restock(store, on, quantity):
+        _record_transfer(op, on, item_id=rule.item_id, from_id=store.parent_id, to_id=store.pk,
+                         quantity=quantity, note=clone_phc.TRANSFER_NOTE)  # fmt: skip
+        transfers.append({"on": on.isoformat(), "to": store.name, "sachets": str(quantity)})
+
+    def weekly_restock(monday):
+        """Restock every PHC to about PHC_WEEKS of its workers' pace (seed(phcs=N) only)."""
+        for store in phc_stores:
+            daily = sum(
+                (pace(dispensed[u], monday) for u, s in served_from.items() if s == store.pk and u in dispensed),
+                Decimal(0),
+            )
+            quantity = clone_phc.size_transfer(
+                held=held_at(store, monday - timedelta(days=1)), pickups_this_week=Decimal(0), daily_pace=daily
+            )
+            if quantity:
+                restock(store, monday, quantity)
+
+    def deliver(on):
         lines = {}
         for username, by_day in sorted(dispensed.items()):
             worker = workers.get(username)
             if worker is None:
                 continue
-            held = ledger.balance(program_id, worker, item=rule.item, unit="sachet", on_date=due - timedelta(days=1))
-            held = max(held.amount, Decimal(0)) if isinstance(held, Quantity) else Decimal(0)
             target = targets.get(username)
             quantity = size_delivery(
-                by_day, on=due, held=held, known_until=known_until, days=target[0] if target else None
-            )
+                by_day, on=on, held=held_at(worker, on - timedelta(days=1)), known_until=known_until,
+                days=target[0] if target else None,
+            )  # fmt: skip
             if quantity > 0:
                 lines[username] = quantity
-        if lines:
-            _record_delivery(op, partner.pk, opportunity_id, rule.item_id, {"on": due, "lines": lines})
-            recorded.append({"on": due.isoformat(), "sachets": str(sum(lines.values()))})
+        if not lines:
+            return
+        # A PHC short of the round's pickups is restocked that morning, and the transfer says so.
+        for store in phc_stores:
+            wanted = sum((q for u, q in lines.items() if served_from.get(u) == store.pk), Decimal(0))
+            short = wanted - held_at(store, on)
+            if short > 0:
+                restock(store, on, clone_phc.to_cartons(short))
+        _record_delivery(op, partner.pk, opportunity_id, rule.item_id, {"on": on, "lines": lines}, served_from)
+        recorded.append({"on": on.isoformat(), "sachets": str(sum(lines.values()))})
+
+    # In date order, so each Monday's transfer is sized on what the PHC holds after the pickups before it.
+    events = []
+    if phc_stores:
+        last_transfer = (
+            Movement.objects.filter(program_id=program_id, kind="transfer", note=clone_phc.TRANSFER_NOTE)
+            .order_by("-occurred_on")
+            .values_list("occurred_on", flat=True)
+            .first()
+        )
+        monday = _monday(last_transfer) + timedelta(weeks=1) if last_transfer else _monday(first)
+        while monday <= today:
+            events.append((monday, 0, weekly_restock))
+            monday += timedelta(weeks=1)
+    due = (last + timedelta(days=CADENCE_DAYS)) if last else first
+    while due <= today:
+        events.append((due, 1, deliver))
         due += timedelta(days=CADENCE_DAYS)
+    for day, _, run in sorted(events, key=lambda e: (e[0], e[1])):
+        run(day)
 
     # The weekly count, for each Sunday since the last one recorded (none twice).
     counted = set(StockCount.objects.filter(program_id=program_id, note=COUNTED).values_list("counted_on", flat=True))
@@ -690,7 +852,10 @@ def top_up(*, program_id: int, opportunity_id: int, today: date | None = None) -
             )  # fmt: skip
             counts.append({"on": sunday.isoformat(), "counts": n})
         sunday += timedelta(weeks=1)
-    return {"topped_up": True, "workers_added": added, "deliveries_recorded": recorded, "counts_recorded": counts}
+    return {
+        "topped_up": True, "workers_added": added, "deliveries_recorded": recorded,
+        "transfers_recorded": transfers, "counts_recorded": counts,
+    }  # fmt: skip
 
 
 def seeded_clones() -> list[tuple[int, int]]:
