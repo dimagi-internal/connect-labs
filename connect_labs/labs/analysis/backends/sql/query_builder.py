@@ -24,6 +24,7 @@ from connect_labs.labs.analysis.config import (
     HistogramComputation,
     JoinConfig,
 )
+from connect_labs.labs.analysis.utils import parse_list_match
 
 logger = logging.getLogger(__name__)
 
@@ -141,10 +142,16 @@ def _jsonb_path_to_sql(path: str, column: str = "form_json") -> str:
     Convert a dot-notation path to PostgreSQL JSONB extraction.
 
     Example: "form.case.update.muac_cm" -> "form_json->'form'->'case'->'update'->>'muac_cm"
+
+    A segment `name[key=value]` picks an item out of a list by a key's value (see
+    `utils.parse_list_match`); such a path compiles to one jsonpath query instead.
+    Every other path compiles exactly as before.
     """
     parts = path.split(".")
     if not parts:
         return "NULL"
+    if any(parse_list_match(p) for p in parts):
+        return _jsonpath_to_sql(parts, column)
 
     sql_parts = [column]
     for i, part in enumerate(parts):
@@ -154,6 +161,41 @@ def _jsonb_path_to_sql(path: str, column: str = "form_json") -> str:
             sql_parts.append(f"->'{_sql_str(part)}'")
 
     return "".join(sql_parts)
+
+
+def _jsonpath_key(name: str) -> str:
+    """A key as a quoted jsonpath member: backslash and double quote escaped."""
+    return '"' + name.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _jsonpath_to_sql(parts: list[str], column: str) -> str:
+    """A path with `name[key=value]` segments as ONE jsonpath query, read as text.
+
+    `user_data.claim_limits[payment_unit=994].max_visits` ->
+    jsonb_path_query_first(form_json,
+        '$."user_data"."claim_limits"[*] ? (@."payment_unit" == 994 || @."payment_unit" == "994")."max_visits"')
+    #>> '{}'
+
+    A numeric value matches a JSON number or the same digits as a string, as
+    `utils.list_item_matches` does; any other value matches a string. The value and
+    key are restricted by `utils.LIST_MATCH_SEGMENT` to letters, digits, `_` and `-`,
+    and the whole literal still goes through _sql_str. `#>> '{}'` returns a scalar as
+    text and an object as its JSON text, the same as `->>` does for a key.
+    """
+    out = ["$"]
+    for part in parts:
+        match = parse_list_match(part)
+        if not match:
+            out.append("." + _jsonpath_key(part))
+            continue
+        name, key, value = match
+        member = "@." + _jsonpath_key(key)
+        if re.fullmatch(r"-?[0-9]+", value):
+            cond = f'{member} == {int(value)} || {member} == "{value}"'
+        else:
+            cond = f'{member} == "{value}"'
+        out.append(f".{_jsonpath_key(name)}[*] ? ({cond})")
+    return f"jsonb_path_query_first({column}, '{_sql_str(''.join(out))}') #>> '{{}}'"
 
 
 def _build_join_subquery(joins: list[JoinConfig], opportunity_id: int, pipeline_id: int | None) -> str:

@@ -8,6 +8,7 @@ and shared cache utilities.
 import hashlib
 import json
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -204,11 +205,50 @@ def extract_json_path(json_obj: dict | Any, path: str) -> Any:
     for part in parts:
         if not isinstance(current, dict):
             return None
-        current = current.get(part)
+        match = parse_list_match(part)
+        if match:
+            name, key, value = match
+            items = current.get(name)
+            if not isinstance(items, list):
+                return None
+            current = next(
+                (it for it in items if isinstance(it, dict) and list_item_matches(it.get(key), value)), None
+            )
+        else:
+            current = current.get(part)
         if current is None:
             return None
 
     return current
+
+
+# One path segment that picks an item out of a LIST by a key's value:
+# `claim_limits[payment_unit=994]` -> the first item of `claim_limits` whose
+# `payment_unit` is 994. Connect's user_data carries a worker's visit limits as such a
+# list, one item per payment unit in no fixed order, so a positional read is wrong
+# for some workers. The key is an identifier and the value a number or a plain word,
+# so the SQL backend can embed both in a jsonpath literal safely. A segment that does
+# not match this exactly is an ordinary key, as it always was.
+LIST_MATCH_SEGMENT = re.compile(
+    r"(?P<name>[A-Za-z0-9_@#$-]+)\[(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>[A-Za-z0-9_-]+)\]\Z"
+)
+
+
+def parse_list_match(part: str) -> tuple[str, str, str] | None:
+    """`name[key=value]` -> (name, key, value); anything else -> None."""
+    m = LIST_MATCH_SEGMENT.match(part or "")
+    return (m.group("name"), m.group("key"), m.group("value")) if m else None
+
+
+def list_item_matches(actual: Any, wanted: str) -> bool:
+    """Does an item's key value equal the segment's value? Exactly what the SQL
+    backend's jsonpath matches: an integer value matches that number or the same
+    digits as a string; any other value matches a string only."""
+    if actual is None or isinstance(actual, (bool, dict, list)):
+        return False
+    if isinstance(actual, (int, float)):
+        return bool(re.fullmatch(r"-?[0-9]+", wanted)) and float(actual) == int(wanted)
+    return str(actual) == wanted
 
 
 def extract_json_path_multi(json_obj: dict | Any, paths: list[str]) -> Any:
