@@ -100,3 +100,41 @@ class TestStartingParticipantData:
 
         assert response.status_code == 400
         started.assert_not_called()
+
+
+class TestFromASandboxedWorkflow:
+    """The host stamps X-Labs-Sandbox-For on the frame's requests: there, the
+    conversation goes only to the task's own worker (asha), whoever the code names."""
+
+    BASE = {"experiment": "bot-1", "prompt_text": "Hi"}
+
+    def _sandboxed(self, body):
+        request = RequestFactory().post(
+            "/x/", data=json.dumps(body), content_type="application/json", HTTP_X_LABS_SANDBOX_FOR="42"
+        )
+        request.user = MagicMock(is_authenticated=True, get_display_name=lambda: "Manager")
+        access = MagicMock()
+        access.get_task.return_value = _task()
+        with (
+            patch("connect_labs.tasks.views.TaskDataAccess", return_value=access),
+            patch("connect_labs.tasks.views.OCSDataAccess", return_value=MagicMock()),
+            patch("connect_labs.tasks.views.start_ai_session") as started,
+        ):
+            started.return_value = {"session_id": "1", "status": "completed", "message": "ok"}
+            response = task_initiate_ai(request, 5)
+        return response, started
+
+    def test_another_recipient_is_refused(self):
+        response, started = self._sandboxed({**self.BASE, "identifier": "someone_else"})
+        assert response.status_code == 403
+        started.assert_not_called()
+
+    def test_the_tasks_own_worker_is_messaged(self):
+        response, started = self._sandboxed({**self.BASE, "identifier": "asha"})
+        assert response.status_code == 200
+        assert started.call_args.kwargs["identifier"] == "asha"
+
+    def test_the_task_page_itself_may_still_name_a_qa_recipient(self):
+        response, started = _post({**self.BASE, "identifier": "staff_qa"})
+        assert response.status_code == 200
+        assert started.call_args.kwargs["identifier"] == "staff_qa"

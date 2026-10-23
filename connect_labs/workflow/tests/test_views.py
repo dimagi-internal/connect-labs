@@ -1451,6 +1451,44 @@ class TestReconcileGeneration:
         ada = patch("connect_labs.audit.data_access.AuditDataAccess")
         return wda, ada, sessions
 
+    def test_from_the_sandbox_only_the_workflows_own_opportunities_are_read(self, dimagi_user, rf: RequestFactory):
+        """The entries are run state the frame can write: the frame's request reads
+        only the opportunities its workflow covers."""
+        import json
+
+        program_run = SimpleNamespace(
+            data={
+                "definition_id": 42,
+                "state": {
+                    "generation": {
+                        "1973": {"opportunity_id": 1973, "run_id": 900, "status": "running"},
+                        "5555": {"opportunity_id": 5555, "run_id": 901, "status": "running"},
+                    }
+                },
+            },
+            is_completed=False,
+        )
+        opp_run = SimpleNamespace(data={"state": {"active_job": {"status": "completed"}}})
+        wda, ada, _ = self._patched(program_run, opp_run, [1])
+        request = self._request(rf, dimagi_user)
+        request.META["HTTP_X_LABS_SANDBOX_FOR"] = "42"
+        definition = SimpleNamespace(id=42, data={"opportunity_ids": [1973]}, opportunity_ids=[1973])
+
+        with (
+            wda,
+            ada as MockADA,
+            patch("connect_labs.workflow.declared_reads._reader_definition", return_value=definition),
+        ):
+            MockADA.return_value.get_sessions_by_workflow_run.return_value = [1]
+            from connect_labs.workflow.views import reconcile_generation_api
+
+            resp = reconcile_generation_api(request, run_id=50)
+
+        body = json.loads(resp.content)
+        assert body["generation"]["1973"]["status"] == "ready"
+        assert body["generation"]["5555"]["status"] == "running"
+        assert MockADA.call_count == 1
+
     def test_completed_with_audits_flips_to_ready(self, dimagi_user, rf: RequestFactory):
         import json
 

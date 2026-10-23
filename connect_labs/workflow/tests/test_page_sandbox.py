@@ -6,6 +6,7 @@ THIS REPOSITORY IS PUBLIC. Every name here is invented.
 import re
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlsplit
 
 import pytest
 from django.test import RequestFactory, override_settings
@@ -42,6 +43,11 @@ def test_the_frame_policy_is_sandboxed_and_reaches_no_labs_origin_and_no_wildcar
         assert not value.startswith(LABS), value
         assert value not in ("*", "https:", "'self'", "https://api.mapbox.com", "https://api.mapbox.com/")
     assert "https://api.mapbox.com/styles/v1/mapbox/" in d["connect-src"]
+    # Every Mapbox host is named by a path: the tiles hosts serve the whole API too.
+    for value in d["connect-src"] + d["img-src"]:
+        parts = urlsplit(value)
+        if (parts.hostname or "").endswith(".mapbox.com"):
+            assert parts.path.strip("/"), value
     # Script comes from labs' static prefix and pinned CDN files, named in full.
     assert d["script-src"][0] == f"{LABS}/static/"
     assert sandbox.BABEL_URL in d["script-src"] and "'self'" not in d["script-src"]
@@ -292,7 +298,8 @@ def _supply_tab(monkeypatch):
 
 
 @pytest.mark.django_db
-def test_a_workflow_that_is_not_a_page_runs_as_before(monkeypatch):
+@override_settings(LABS_WORKFLOW_SANDBOX="off")
+def test_a_workflow_runs_as_before_with_the_workflow_sandbox_switched_off(monkeypatch):
     from connect_labs.workflow.data_access import WorkflowRunRecord
     from connect_labs.workflow.views import WorkflowRunView
 

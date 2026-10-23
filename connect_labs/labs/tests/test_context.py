@@ -2,6 +2,8 @@
 Tests for labs context management.
 """
 
+from unittest.mock import patch
+
 import pytest
 from django.test import RequestFactory
 
@@ -241,6 +243,23 @@ class TestContextRedirect:
         LabsContextMiddleware(lambda r: None).process_request(request)
 
         assert getattr(request, "labs_context", None) is not None
+
+
+class TestTheSandboxShellHasNoContext:
+    """A sandboxed frame can navigate itself to the shell with any query: that must not
+    move the viewer's labs context (workflow/sandbox.py)."""
+
+    def test_the_shell_and_static_files_never_save_a_context(self, db):
+        user = User.objects.create_user(username="ctx-shell", password="x")
+        for path in ("/labs/sandbox/render/?opportunity_id=99", "/static/x.js?opportunity_id=99"):
+            request = RequestFactory().get(path)
+            request.user = user
+            request.session = {"labs_context": {"opportunity_id": 1488}}
+            with patch("connect_labs.labs.context.validate_context_access") as validate:
+                response = LabsContextMiddleware(lambda r: None).process_request(request)
+            assert response is None and request.labs_context == {}
+            assert request.session["labs_context"] == {"opportunity_id": 1488}
+            validate.assert_not_called()
 
 
 class TestSupplyContext:

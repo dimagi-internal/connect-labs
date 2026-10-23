@@ -94,9 +94,8 @@ ROUTES: tuple[Route, ...] = (
     Route(GET, r"^/custom_analysis/mbw_monitoring/(stream|api/oauth-status|api/snapshot)/$", "read"),
     Route(GET, r"^/custom_analysis/mbw_monitoring/api/gps/([^/]+)/$", "read"),
     # Own: this run's and this workflow's own records
-    Route(
-        POST, r"^/labs/workflow/api/run/(?<run>\d+)/(state|worker-result|flags|rename|reconcile-generation)/$", "own"
-    ),
+    Route(POST, r"^/labs/workflow/api/run/(?<run>\d+)/state/$", "own"),
+    Route(POST, r"^/labs/workflow/api/run/(?<run>\d+)/(worker-result|flags|rename|reconcile-generation)/$", "own"),
     Route(POST, r"^/labs/workflow/api/(?<def>\d+)/audit-batch-config/$", "own"),
     Route(POST, r"^/custom_analysis/mbw_monitoring/api/save-snapshot/$", "own"),
     Route(POST, r"^/labs/workflow/api/job/(?<job>[A-Za-z0-9_.:-]+)/cancel/$", "own"),

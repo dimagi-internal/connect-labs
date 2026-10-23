@@ -26,18 +26,18 @@ This module is the server half:
 ``LABS_PAGE_SANDBOX`` (default on) exists only as an emergency switch back, for
 pages and workflows alike.
 
-Phase 2 (workflows) is rolled out per workflow, because a workflow's render code
-used to reach labs directly and 40-odd templates and their live copies have to be
-checked in the frame first. ``LABS_WORKFLOW_SANDBOX`` says how far it has gone:
+Phase 2 (workflows) was rolled out per workflow, because a workflow's render code
+used to reach labs directly and 40-odd templates and their live copies had to be
+checked in the frame first. ``LABS_WORKFLOW_SANDBOX`` says how far it goes:
 
-* ``"off"`` -- no workflow is sandboxed (pages still are).
-* ``"opt_in"`` (the default) -- a workflow is sandboxed when its definition says
+* ``"off"`` -- no workflow is sandboxed (pages still are). An emergency switch back.
+* ``"opt_in"`` -- a workflow is sandboxed when its definition says
   ``config.sandbox: true`` (written on every new instance of a template that has
   been checked, since that template's DEFINITION carries it), or when its render
   FOLLOWS a deployed template that has been checked (``TEMPLATE["sandboxed"]``),
   or when the address asks for it with ``?sandbox=1`` (which can only turn the
   sandbox on, never off -- a link must not be able to take a workflow out of it).
-* ``"all"`` -- every workflow, whatever its definition says. There are no exemptions:
+* ``"all"`` (the default) -- every workflow, whatever its definition says. There are no exemptions:
   what a live workflow needs, the frame gives it through the host (routes.ts).
 
 There is no per-workflow opt-out (an author must not be able to take a workflow out of
@@ -89,8 +89,11 @@ MAPBOX_PATHS = (
     "https://api.mapbox.com/styles/v1/mapbox/",
     "https://api.mapbox.com/fonts/v1/mapbox/",
     "https://api.mapbox.com/v4/",
-    "https://*.tiles.mapbox.com",
-    "https://events.mapbox.com",
+    # The tiles hosts serve the whole Mapbox API (uploads and datasets included), so
+    # they are named by the tiles path alone, like api.mapbox.com.
+    "https://*.tiles.mapbox.com/v4/",
+    # GL's telemetry: a write nobody but Mapbox reads.
+    "https://events.mapbox.com/events/v2",
 )
 
 
@@ -102,9 +105,9 @@ WORKFLOW_SANDBOX_MODES = ("off", "opt_in", "all")
 
 
 def workflow_sandbox_mode() -> str:
-    mode = str(getattr(settings, "LABS_WORKFLOW_SANDBOX", "opt_in") or "opt_in").strip().lower()
+    mode = str(getattr(settings, "LABS_WORKFLOW_SANDBOX", "all") or "all").strip().lower()
     # An unknown value is read as the default, never as "off".
-    return mode if mode in WORKFLOW_SANDBOX_MODES else "opt_in"
+    return mode if mode in WORKFLOW_SANDBOX_MODES else "all"
 
 
 def _template_is_sandboxed(key) -> bool:

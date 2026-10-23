@@ -373,6 +373,7 @@ def test_an_unpublished_template_workflow_falls_back_to_the_stored_copy(local_re
     assert tw.render_source.endswith("(unresolved)") and tw.findings == [] and "no published version" in tw.note
 
 
+@override_settings(LABS_WORKFLOW_SANDBOX="opt_in")
 def test_seed_templates_are_scanned_apart():
     targets = {t.id: t for t in template_targets()}
     assert set(targets) == set(TEMPLATES)

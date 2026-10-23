@@ -609,3 +609,15 @@ def test_a_good_client_is_valid(client_row):
 
 def test_the_cookie_name_is_safe():
     assert sessions.cookie_name("workflow", "12;3") == "labs_embed_workflow_12-3"
+
+
+@pytest.mark.parametrize(
+    "method, path",
+    [("get", "/labs/workflow/api/123/pipeline-rows/"), ("post", "/labs/workflow/api/123/pipeline-query/")],
+)
+def test_a_request_from_an_opaque_origin_never_acts_as_the_person(live_session, method, path):
+    """The sandboxed workflow frame inside an embedded page sends Origin: null. The
+    embed cookie is SameSite=None, so this, not the browser, keeps it off the session."""
+    _, raw = live_session
+    response, seen = through_middleware(path, raw, method=method, HTTP_ORIGIN="null")
+    assert response.status_code == 403 and not seen

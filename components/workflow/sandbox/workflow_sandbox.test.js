@@ -1575,3 +1575,257 @@ describe('a sign-in start comes back to where the person was', () => {
     ).toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// The final audit before switching the sandbox on (2026-10-23)
+// ---------------------------------------------------------------------------
+
+describe('final audit fixes', () => {
+  it('a coaching conversation is asked naming its recipient, bot and opening', async () => {
+    const { d, w } = wfDispatcher();
+    await d({
+      id: 1,
+      method: 'fetch',
+      params: {
+        url: '/tasks/77/ai/initiate/',
+        method: 'POST',
+        body: JSON.stringify({
+          identifier: 'flw_001',
+          experiment: 'bot-123',
+          prompt_text: 'Hello "there"\n  friend',
+        }),
+      },
+    });
+    expect(w.ask).toHaveBeenCalledWith(
+      'This workflow wants to start an AI coaching conversation with flw_001' +
+        ' on bot "bot-123", opening with: "Hello \'there\' friend", as you.',
+    );
+  });
+
+  it('a long opening is quoted cut short', () => {
+    const c = checkFetch(
+      '/tasks/77/ai/initiate/',
+      'POST',
+      CTX,
+      JSON.stringify({
+        identifier: 'a',
+        experiment: 'b',
+        prompt_text: 'x'.repeat(500),
+      }),
+    );
+    expect(c.question).toMatch(/x{300}\.\.\."$/);
+  });
+
+  it('a job start names the job, and every opportunity its config names is bound', () => {
+    const url = '/labs/workflow/api/run/900/job/start/';
+    const body = (cfg) =>
+      JSON.stringify({
+        job_config: {
+          job_type: 'muac_picture_audit_create',
+          run_id: 900,
+          ...cfg,
+        },
+      });
+    expect(checkFetch(url, 'POST', CTX, body({})).question).toBe(
+      'start a background job "muac_picture_audit_create" that creates audits or other records',
+    );
+    expect(() =>
+      checkFetch(url, 'POST', CTX, body({ opportunities: [{ id: 99 }] })),
+    ).toThrow(/opportunity 99/);
+    expect(() =>
+      checkFetch(
+        url,
+        'POST',
+        CTX,
+        body({ flw_opportunity_ids: { flw_1: 99 } }),
+      ),
+    ).toThrow(/opportunity 99/);
+    expect(() =>
+      checkFetch(url, 'POST', CTX, body({ only_opportunity_id: 99 })),
+    ).toThrow(/opportunity 99/);
+    expect(
+      checkFetch(
+        url,
+        'POST',
+        CTX,
+        body({
+          opportunities: [{ id: 10 }, 11],
+          flw_opportunity_ids: { a: 10 },
+        }),
+      ).gate,
+    ).toBe('effect');
+    // A job type that is not a slug is not quoted.
+    expect(
+      checkFetch(url, 'POST', CTX, body({ job_type: '"><b>' })).question,
+    ).toBe('start a background job that creates audits or other records');
+  });
+
+  it('audit creation binds the per-worker opportunity map too', () => {
+    expect(() =>
+      checkFetch(
+        '/audit/api/audit/create-async/',
+        'POST',
+        CTX,
+        JSON.stringify({ opportunities: [10], flw_opportunity_ids: { f: 99 } }),
+      ),
+    ).toThrow(/opportunity 99/);
+  });
+
+  it('owning_program_id and storage_opportunity_id are bound like any scope', () => {
+    const ctx = { ...CTX, owningProgramIds: [25] };
+    // In the query of a read.
+    expect(() =>
+      checkFetch('/labs/workflow/api/run/5/?owning_program_id=99', 'GET', ctx),
+    ).toThrow(/owning_program_id=99/);
+    expect(
+      checkFetch('/labs/workflow/api/run/5/?owning_program_id=25', 'GET', ctx)
+        .gate,
+    ).toBe('read');
+    expect(
+      checkFetch('/labs/workflow/api/run/5/?owning_program_id=7', 'GET', ctx)
+        .gate,
+    ).toBe('read');
+    expect(() =>
+      checkFetch(
+        '/audit/api/5/bulk-data/?storage_opportunity_id=99',
+        'GET',
+        ctx,
+      ),
+    ).toThrow(/storage_opportunity_id=99/);
+    // In the body of a state write, this run's or another's.
+    for (const url of [
+      '/labs/workflow/api/run/900/state/',
+      '/labs/workflow/api/run/5/state/',
+    ]) {
+      expect(() =>
+        checkFetch(
+          url,
+          'POST',
+          ctx,
+          JSON.stringify({ state: {}, owning_program_id: 99 }),
+        ),
+      ).toThrow(/owning_program_id=99/);
+      expect(() =>
+        checkFetch(
+          url,
+          'POST',
+          ctx,
+          JSON.stringify({ state: {}, owning_program_id: 25 }),
+        ),
+      ).not.toThrow();
+    }
+  });
+
+  it('after a no, labs asks nothing for a moment', async () => {
+    let t = 1_000;
+    const { d, w } = wfDispatcher({
+      now: () => t,
+      w: workflowHandlers({ ask: vi.fn(async () => false) }),
+    });
+    const req = (id) => ({
+      id,
+      method: 'fetch',
+      params: { url: '/tasks/api/single-create/', method: 'POST', body: '{}' },
+    });
+    expect((await d(req(1))).error).toMatch(/said no/);
+    expect((await d(req(2))).error).toMatch(/wait a moment/);
+    expect(w.ask).toHaveBeenCalledTimes(1);
+    t += 6_000;
+    await d(req(3));
+    expect(w.ask).toHaveBeenCalledTimes(2);
+  });
+
+  it('labs asks at most a bounded number of questions a minute', async () => {
+    let t = 1_000;
+    const { d, w } = wfDispatcher({ now: () => t });
+    let refused = '';
+    for (let i = 0; i < 25; i += 1) {
+      // Each its own record, so none is covered by an earlier yes.
+      const out = await d({
+        id: i,
+        method: 'fetch',
+        params: {
+          url: `/tasks/api/${i + 1}/update/`,
+          method: 'POST',
+          body: '{}',
+        },
+      });
+      if (out.error) {
+        refused = out.error;
+        break;
+      }
+    }
+    expect(refused).toMatch(/too many questions/);
+    expect(w.ask).toHaveBeenCalledTimes(20);
+  });
+
+  it('workflow jobs have a budget of their own', async () => {
+    const { d } = wfDispatcher({ now: () => 5_000 });
+    const start = (id) =>
+      d({
+        id,
+        method: 'fetch',
+        params: {
+          url: '/labs/workflow/api/run/900/job/start/',
+          method: 'POST',
+          body: JSON.stringify({
+            job_config: { job_type: 'audit_par_rollup' },
+          }),
+        },
+      });
+    for (let i = 0; i < 6; i += 1)
+      expect((await start(i)).error).toBeUndefined();
+    expect((await start(7)).error).toMatch(/too many background jobs/);
+  });
+
+  it('reads that run a pipeline are few at once', async () => {
+    const pending = [];
+    const w = workflowHandlers({
+      fetch: vi.fn(
+        () =>
+          new Promise((resolve) =>
+            pending.push(() =>
+              resolve({
+                status: 200,
+                statusText: 'OK',
+                headers: {},
+                body: new ArrayBuffer(0),
+              }),
+            ),
+          ),
+      ),
+    });
+    const { d } = wfDispatcher({ w });
+    const read = (id) =>
+      d({
+        id,
+        method: 'fetch',
+        params: { url: '/labs/workflow/api/42/pipeline-rows/', method: 'GET' },
+      });
+    const inFlight = [0, 1, 2, 3, 4, 5].map(read);
+    expect((await read(6)).error).toMatch(/too many data reads/);
+    // Other reads are not held behind them.
+    const other = d({
+      id: 7,
+      method: 'fetch',
+      params: { url: '/audit/api/ai-agents/', method: 'GET' },
+    });
+    await Promise.resolve();
+    pending.forEach((f) => f());
+    await Promise.all([...inFlight, other]);
+  });
+});
+
+describe('proxyFetch reads an answer with a cap', () => {
+  it('refuses one too large as it arrives, not after', async () => {
+    const { readCapped } = await import('./host');
+    const big = new Response(new Uint8Array(2000));
+    await expect(readCapped(big, 1000)).rejects.toThrow(/too large/);
+    const declared = new Response('x', {
+      headers: { 'content-length': '5000' },
+    });
+    await expect(readCapped(declared, 1000)).rejects.toThrow(/too large/);
+    const ok = await readCapped(new Response('hello'), 1000);
+    expect(new TextDecoder().decode(ok)).toBe('hello');
+  });
+});

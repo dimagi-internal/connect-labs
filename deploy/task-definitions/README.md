@@ -56,14 +56,13 @@ connections would 503 real users. Context and the open policy decision are in
 
 ## `LABS_WORKFLOW_SANDBOX` — how far workflows run in the sandbox frame
 
-`web.json` pins `LABS_WORKFLOW_SANDBOX: "opt_in"`, the code default
-(`config/settings/base.py`), so the rollout stage is a reviewed value here rather than
-whatever the setting's default happens to be. `off` sandboxes no workflow (pages still
-are), `opt_in` sandboxes checked templates' followers and opted-in copies, `all`
-sandboxes every workflow except the pinned deprecated copies and the copies with a
-recorded exemption (`manage.py workflow_sandbox_exempt`). Read
-`connect_labs/workflow/sandbox.py` and run `workflow_sandbox_scan` before moving it to
-`all`. Only the web service draws workflows, and `run-labs-command.yml` runs on the web
+`web.json` pins `LABS_WORKFLOW_SANDBOX: "all"` and `LABS_PAGE_SANDBOX: "true"`, the code
+defaults (`config/settings/base.py`), so the sandbox's state is a reviewed value here
+rather than whatever the setting's default happens to be. `all` sandboxes every workflow,
+with no exemptions; `opt_in` only checked templates' followers and opted-in copies; `off`
+no workflow (pages still are). `LABS_PAGE_SANDBOX=false` switches pages and workflows
+alike back to the unsandboxed render. Both are emergency switches back, not rollout
+stages: read `connect_labs/workflow/sandbox.py` before changing either. Only the web service draws workflows, and `run-labs-command.yml` runs on the web
 task definition, so `worker.json` does not carry it.
 
 ## `TELEMETRY_SAMPLE_RATE` / `TELEMETRY_SAMPLE_PATH_PREFIX` — the unbiased sample
