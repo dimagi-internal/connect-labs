@@ -1,22 +1,33 @@
-"""Labs Admin › Canopy agents: which canopy agents labs shows, and which may read real data.
+"""Labs Admin › Canopy agents: the one place labs' side of canopy is set up.
 
 A table built from canopy's site agents API (``canopy_settings.site_agents``): one row
 per agent canopy lists for labs, plus any labs still ticks that canopy no longer lists
 (shown in red). Labs' choices are ticks; nothing is typed. Readable by anyone with Labs
-Admin; changed only by Dimagi staff (``canopy_settings.can_change``). Below the table,
-the last delegated data calls with what canopy's statement said about each.
+Admin; changed only by Dimagi staff (``canopy_settings.can_change``), who may also ask
+canopy for its list now ("Refresh from canopy"). Below the table, the last delegated
+data calls with what canopy's statement said about each.
+
+Every sentence from canopy is canopy's own; when canopy cannot be reached the page says
+so rather than putting words in its mouth.
 """
 
 from __future__ import annotations
 
-from django.conf import settings
+import logging
+import re
+from urllib.parse import quote
+
 from django.contrib import messages
 from django.shortcuts import redirect
 from django.urls import reverse
+from django.utils.html import escape, format_html
+from django.utils.safestring import SafeString, mark_safe
 from django.views.generic import TemplateView
 
-from connect_labs.labs import canopy_panel, canopy_settings
+from connect_labs.labs import canopy, canopy_panel, canopy_settings
 from connect_labs.labs.view_mixins import AdminRequiredMixin
+
+logger = logging.getLogger(__name__)
 
 #: Delegated calls whose statement decides whether an agent sees real rows.
 DATA_TOOLS = ("data_query", "data_visits", "data_describe")
@@ -24,14 +35,50 @@ DATA_TOOLS = ("data_query", "data_visits", "data_describe")
 #: Any real (non-generated) opportunity: what "over real data" means for a row's state.
 _REAL = canopy_panel.visits(None)
 
-#: What ``sensitive_data`` means, when canopy has not said (it is unreachable).
-SENSITIVE_DATA_MEANING = (
-    "a sensitive-data runner: a ZDR API key, a locked harness, egress limited to an allowlist, "
-    "nothing kept on the box"
-)
+_URL = re.compile(r"https?://[^\s<>\"']+")
 
 
-def _rows(ticks: canopy_settings.AgentSettings, listing) -> list[dict]:
+def canopy_links(listing) -> dict[str, str]:
+    """canopy's pages, by the words a problem sentence names them with, where the URL is
+    known: its tenant's Connected sites and Runners settings (the tenant is canopy's
+    answer's), else its Supervisor's Runners tab."""
+    base = canopy_settings.canopy_url()
+    if not base:
+        return {}
+    tenant = quote(getattr(listing, "tenant", "") or "", safe="") if listing is not None else ""
+    links = {canopy_settings.RUNNERS: f"{base}/supervisor?tab=runners"}
+    if tenant:
+        links[canopy_settings.CONNECTED_SITES] = f"{base}/w/{tenant}/settings/connected-apps"
+        links[canopy_settings.RUNNERS] = f"{base}/w/{tenant}/settings/topology/runners"
+    return links
+
+
+def linkify(text: str, links: dict[str, str] | None = None) -> SafeString:
+    """``text``, escaped, with every http(s) URL in it, and every phrase ``links`` names,
+    made a link (opening in a new tab)."""
+    links = links or {}
+    parts = [_URL.pattern] + [re.escape(p) for p in sorted(links, key=len, reverse=True)]
+    out, pos = [], 0
+    for m in re.finditer("|".join(parts), text or ""):
+        token, end = m.group(0), m.end()
+        if token in links:
+            href = links[token]
+        else:  # a URL: sentence punctuation after it is not part of it
+            stripped = token.rstrip(".,;:)")
+            end -= len(token) - len(stripped)
+            token = href = stripped
+        out.append(escape(text[pos : m.start()]))
+        out.append(
+            format_html(
+                '<a class="text-blue-600 underline" href="{}" target="_blank" rel="noopener">{}</a>', href, token
+            )
+        )
+        pos = end
+    out.append(escape((text or "")[pos:]))
+    return mark_safe("".join(str(o) for o in out))  # noqa: S308 -- every piece escaped or format_html'd
+
+
+def _rows(ticks: canopy_settings.AgentSettings, listing, links: dict[str, str]) -> list[dict]:
     """One row per agent canopy lists, then any labs ticks that canopy does not."""
     listed = list(listing.agents) if listing is not None else []
     slugs = [a.slug for a in listed] + [t.slug for t in ticks.agents if t.slug not in {a.slug for a in listed}]
@@ -60,16 +107,21 @@ def _rows(ticks: canopy_settings.AgentSettings, listing) -> list[dict]:
                     agent and canopy_settings.SENSITIVE_DATA in agent.flags_available
                 ),
                 "ready": bool(agent and agent.ready),
-                "problems": list(agent.problems) if agent else [],
+                "problems": [linkify(p, links) for p in agent.problems] if agent else [],
                 "offered": bool(tick and tick.offered),
                 "real_data": bool(tick and tick.real_data),
                 "default": slug == ticks.default_agent,
                 "eligible_for_real_data": eligible,
-                "why_not_real_data": why_not,
+                "why_not_real_data": why_not,  # plain, for a title attribute
+                "why_not_real_data_html": linkify(why_not, links),
                 # Ticked but held back (drift, or canopy unreachable): in red, with why.
-                "held_back": list(here.reasons) if tick and tick.offered and not here.ok else [],
+                "held_back": (
+                    [linkify(r, links) for r in here.reasons] if tick and tick.offered and not here.ok else []
+                ),
                 "real_data_held_back": (
-                    list(over_real.reasons) if tick and tick.real_data and here.ok and not over_real.ok else []
+                    [linkify(r, links) for r in over_real.reasons]
+                    if tick and tick.real_data and here.ok and not over_real.ok
+                    else []
                 ),
                 "read_only": here.read_only,
             }
@@ -91,6 +143,18 @@ def _status(listing) -> dict:
     return {"level": "ok", "text": f"canopy's signed list for {listing.site_name or 'labs'}, fetched {fetched}."}
 
 
+def _drift(ticks: canopy_settings.AgentSettings, listing) -> str:
+    """Why to review the settings, when canopy's list has changed since they were saved."""
+    if not ticks.is_set_up or listing is None or not ticks.site_agents_version:
+        return ""
+    if listing.version == ticks.site_agents_version:
+        return ""
+    return (
+        f"canopy's list changed since these settings were saved (saved against version "
+        f"{ticks.site_agents_version[:12]}, canopy now says {listing.version[:12]}) — review them and save."
+    )
+
+
 def _checks(ticks: canopy_settings.AgentSettings, listing) -> list[dict]:
     """Labs' side of "will the data agent get real rows?", each ok or not, with why."""
     agent = canopy_settings.data_agent(ticks, listing)
@@ -109,9 +173,15 @@ def _checks(ticks: canopy_settings.AgentSettings, listing) -> list[dict]:
         },
         {
             "label": "Canopy can act as the visitor here",
-            "ok": bool(getattr(settings, "CANOPY_CLIENT_ID", "")),
+            "ok": canopy.grant_on(),
             "detail": (
-                "the grant is on" if getattr(settings, "CANOPY_CLIENT_ID", "") else "CANOPY_CLIENT_ID is not set"
+                "the grant is on"
+                if canopy.grant_on()
+                else (
+                    'tick "Canopy may act as the visitor" above and save'
+                    if canopy.canopy_client_id()
+                    else "labs has no canopy (CANOPY_BASE_URL is not set)"
+                )
             ),
         },
         {
@@ -149,22 +219,26 @@ class CanopyAgentsView(AdminRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         ticks = canopy_settings.current()
         listing = canopy_settings.site_agents()
-        canopy = (getattr(settings, "CANOPY_BASE_URL", "") or "").rstrip("/")
-        # The runner flags canopy names (sensitive_data always), and what each means.
+        links = canopy_links(listing)
+        # The runner flags canopy names (sensitive_data always), and what canopy says each
+        # means -- nothing, when canopy cannot be reached.
         flags = [{"flag": f.flag, "meaning": f.meaning} for f in (listing.runner_flags if listing else ())]
         if not any(f["flag"] == canopy_settings.SENSITIVE_DATA for f in flags):
-            flags.append({"flag": canopy_settings.SENSITIVE_DATA, "meaning": SENSITIVE_DATA_MEANING})
+            flags.append({"flag": canopy_settings.SENSITIVE_DATA, "meaning": ""})
         context.update(
             current=ticks,
             listing=listing,
             status=_status(listing),
-            rows=_rows(ticks, listing),
+            drift=_drift(ticks, listing),
+            rows=_rows(ticks, listing, links),
             runner_flags=flags,
             can_change=canopy_settings.can_change(self.request.user),
             history=canopy_settings.history(),
-            checks=_checks(ticks, listing),
+            checks=[{**c, "detail": linkify(c["detail"], links)} for c in _checks(ticks, listing)],
             calls=_recent_calls(),
-            canopy_url=canopy,
+            canopy_url=canopy_settings.canopy_url(),
+            connected_sites_url=links.get(canopy_settings.CONNECTED_SITES, ""),
+            grant_available=bool(canopy.canopy_client_id()),
             admin_page=canopy_panel.ADMIN_PAGE,
         )
         return context
@@ -175,7 +249,9 @@ class CanopyAgentsView(AdminRequiredMixin, TemplateView):
             messages.error(request, "Only Dimagi staff can change which agents labs allows.")
             return redirect(here)
         try:
-            if request.POST.get("restore"):
+            if request.POST.get("refresh"):
+                self._refresh(request)
+            elif request.POST.get("restore"):
                 canopy_settings.restore(request.user, int(request.POST["restore"]))
                 messages.success(request, "Restored.")
             else:
@@ -193,6 +269,7 @@ class CanopyAgentsView(AdminRequiredMixin, TemplateView):
                     agents=agents,
                     default_agent=request.POST.get("default_agent", ""),
                     runner_requirements=request.POST.getlist("runner_requirements"),
+                    acts_as_visitor="acts_as_visitor" in request.POST,
                     listing=listing,
                     note=request.POST.get("note", ""),
                 )
@@ -200,3 +277,28 @@ class CanopyAgentsView(AdminRequiredMixin, TemplateView):
         except (canopy_settings.InvalidSettings, ValueError) as e:
             messages.error(request, str(e))
         return redirect(here)
+
+    @staticmethod
+    def _refresh(request):
+        """Ask canopy for its list now, and say what came back."""
+        from canopy_sdk.host import HostNotConfigured
+        from canopy_sdk.site_agents import SiteAgentsError
+
+        try:
+            listing = canopy_settings.refresh()
+        except SiteAgentsError as e:
+            messages.error(request, f"canopy could not be asked ({e.code}): {e.message}")
+            return
+        except HostNotConfigured as e:
+            messages.error(request, f"labs is not connected to canopy: {e}")
+            return
+        except Exception as e:  # noqa: BLE001 -- say it on the page, never a 500
+            logger.exception("Refresh from canopy failed")
+            messages.error(request, f"canopy could not be asked ({type(e).__name__}).")
+            return
+        agents = ", ".join(a.slug for a in listing.agents) or "none"
+        messages.success(
+            request,
+            f"canopy answered: {len(listing.agents)} agent(s) for {listing.site_name or 'labs'} ({agents}), "
+            f"version {listing.version[:12]}.",
+        )

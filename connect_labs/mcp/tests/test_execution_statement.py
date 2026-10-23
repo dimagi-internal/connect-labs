@@ -71,11 +71,9 @@ def sdk(monkeypatch):
 
 
 @pytest.fixture
-def labs_allows(settings):
+def labs_allows(canopy_agents):
     """Labs lets labsdata read real data ("Real data" ticked), and so requires sensitive-data runners of it."""
-    settings.CANOPY_SENSITIVE_AGENTS = ["labsdata"]
-    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"
-    settings.CANOPY_RUNNER_REQUIREMENTS = []
+    canopy_agents("ace", real_data=["labsdata"])
 
 
 def test_without_an_sdk_that_verifies_nothing_is_vouched(monkeypatch):
@@ -123,13 +121,11 @@ def test_each_condition_on_the_statement_fails_closed(labs_allows, sdk, stated, 
     assert not clearance.granted and reason in clearance.reason
 
 
-def test_labs_requires_sensitive_data_of_every_agent_it_lets_read_real_data(labs_allows, settings, sdk):
-    # No site-wide requirement and no data-agent setting: labs' own policy still holds
-    # an agent it lets read real data to sensitive-data runners (it is only ever offered on them),
-    # so the call clears -- and a statement whose conversation does not require sensitive-data runners is
-    # refused (test_each_condition_on_the_statement_fails_closed).
-    settings.CANOPY_DATA_AGENT_SLUG = ""
-    settings.CANOPY_RUNNER_REQUIREMENTS = []
+def test_labs_requires_sensitive_data_of_every_agent_it_lets_read_real_data(labs_allows, sdk):
+    # No site-wide requirement: labs' own policy still holds an agent it lets read real
+    # data to sensitive-data runners (it is only ever offered on them), so the call
+    # clears -- and a statement whose conversation does not require sensitive-data
+    # runners is refused (test_each_condition_on_the_statement_fails_closed).
     with execution.bound(execution.verify({"canopy-execution": "jwt"}, "tok")):
         assert canopy_panel.call_real_data_clearance().granted
 

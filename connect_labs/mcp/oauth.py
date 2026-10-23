@@ -179,7 +179,7 @@ def authorization_server_metadata() -> dict:
     config = _grant_config()
     if config is not None:
         # The jwt-bearer grant canopy redeems a visitor's ID-JAG with. Listed
-        # only while CANOPY_CLIENT_ID is set: advertising a disabled grant
+        # only while it is on (Labs Admin › Canopy agents): advertising a disabled grant
         # would send a client down a path that ends in unsupported_grant_type.
         from canopy_sdk.host import authorization_server_metadata as with_grant
 

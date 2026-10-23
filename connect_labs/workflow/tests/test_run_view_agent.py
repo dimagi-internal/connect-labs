@@ -61,7 +61,7 @@ SHARED = {"templateType": "indicator_programme_report", "agent": {"share": True}
 
 
 @pytest.mark.django_db
-def test_a_shared_run_hands_the_agent_its_selection_never_its_rows():
+def test_a_shared_run_hands_the_agent_its_selection_never_its_rows(canopy_default_agent):
     context = _context(SHARED)
     state = context["canopy_panel"]["page_state"]
     assert state["resource"] == "labs-workflow://47/runs/503"

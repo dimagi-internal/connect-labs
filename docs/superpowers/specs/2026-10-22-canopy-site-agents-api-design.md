@@ -8,13 +8,13 @@ in §3, with the two choices under "As built" below.
 Labs offers canopy agents on its pages and lets some of them read real visit data. Every
 fact labs uses to decide that is a copy it keeps by hand of something canopy owns:
 
-| Labs keeps                                 | Canopy owns                                                                        |
-| ------------------------------------------ | ---------------------------------------------------------------------------------- |
-| agent slugs typed into text fields         | which agents exist and are allowed on the connect-labs site                        |
-| a "data agent" role, offered read-only     | what each agent's capability does on this site                                     |
-| a list of agents "allowed over real data"  | whether the agent handles sensitive data (`data: sensitive`, set behind a passkey) |
-| `KNOWN_RUNNER_FLAGS = ("sensitive_data",)` | the runner flags canopy knows, and which runners an agent can use                  |
-| nothing                                    | whether the agent is ready (GitHub token, a ready runner, ...)                     |
+| Labs keeps                                 | Canopy owns                                                                                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| agent slugs typed into text fields         | which agents exist and are allowed on the connect-labs site                                |
+| a "data agent" role, offered read-only     | what each agent's capability does on this site                                             |
+| a list of agents "allowed over real data"  | whether the agent handles sensitive data (`data: sensitive`, set by its owner or an admin) |
+| `KNOWN_RUNNER_FLAGS = ("sensitive_data",)` | the runner flags canopy knows, and which runners an agent can use                          |
+| nothing                                    | whether the agent is ready (GitHub token, a ready runner, ...)                             |
 
 Nothing checks the copies against the originals until a visitor's call reaches labs with
 canopy's `Canopy-Execution` statement, and a mismatch then shows as an agent that silently
@@ -177,7 +177,8 @@ The model (`CanopyAgentSettings`, append-only, history + restore as today) becom
 `agents: [{slug, offered, real_data}]`, `default_agent`, `runner_requirements`,
 `site_agents_version`. A data migration maps each existing row: `site_agent` → default and
 offered; `data_agent` → offered; `phi_agents` → real_data; `offered_agents` → offered.
-The env defaults stay as the cold-start defaults.
+The env defaults stay as the cold-start defaults. (Since removed: with no saved row nothing is
+offered, and the settings page is the only source.)
 
 **One answer to "may this agent be offered here, and if not, why".**
 `canopy_agents.availability(slug, reads) -> Availability(ok, read_only, reasons)`

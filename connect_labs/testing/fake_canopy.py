@@ -1,10 +1,12 @@
 """A stand-in for canopy's site agents API (``canopy_settings.site_agents``) in tests.
 
 By default (the autouse ``fake_canopy`` fixture in ``connect_labs/conftest.py``) canopy
-agrees with labs: it lists every agent labs ticks, each ready on a sensitive-data runner,
-and declares as handling sensitive data the ones labs lets read real data and the deployment's
-``CANOPY_DATA_AGENT_SLUG`` -- so a test that is not about canopy's word reads as it did
-before the API. A test about canopy's word sets one with ``fake_canopy.set(...)``.
+agrees with labs' saved settings (the ``CanopyAgentSettings`` row in force, set in a test
+with ``connect_labs/testing/canopy_agents.py``): it lists every agent labs ticks, each
+ready on a sensitive-data runner, and declares as handling sensitive data the ones labs
+lets read real data, plus any the test names with ``fake_canopy.declare_sensitive(...)``
+(an agent canopy declares, which labs shows without "Real data"). A test about canopy's
+word sets a whole answer with ``fake_canopy.set(...)``.
 """
 
 from __future__ import annotations
@@ -49,24 +51,38 @@ def listing(*agents, version="v-test", flags=("sensitive_data",), stale=False) -
     return SiteAgents.from_claims(claims, stale=stale)
 
 
-def agreeing() -> SiteAgents:
-    """canopy agreeing with labs' ticks (the default)."""
-    from django.conf import settings
-
+def agreeing(declared_sensitive=()) -> SiteAgents:
+    """canopy agreeing with labs' ticks (the default): every agent the saved row ticks, each
+    declared to handle sensitive data when the row lets it read real data or the test
+    declared it."""
     from connect_labs.labs import canopy_settings
 
     ticks = canopy_settings.current()
-    sensitive = set(ticks.real_data_agents) | {getattr(settings, "CANOPY_DATA_AGENT_SLUG", "") or ""}
+    sensitive = set(ticks.real_data_agents) | set(declared_sensitive)
     return listing(*(agent(t.slug, handles_sensitive=t.slug in sensitive) for t in ticks.agents))
 
 
 class FakeCanopy:
     def __init__(self):
         self.answer = _AGREES
+        self.declared_sensitive: set[str] = set()
 
     def set(self, answer):
         """``answer``: a ``SiteAgents`` (``listing(...)``), or None for "canopy said nothing"."""
         self.answer = answer
 
+    def declare_sensitive(self, *slugs):
+        """canopy (agreeing) also declares ``slugs`` handle sensitive data."""
+        self.declared_sensitive.update(slugs)
+
     def __call__(self):
-        return agreeing() if self.answer is _AGREES else self.answer
+        return agreeing(self.declared_sensitive) if self.answer is _AGREES else self.answer
+
+    def refresh(self):
+        """``canopy_settings.refresh``: the same answer, or the SDK's error for none."""
+        answer = self()
+        if answer is None:
+            from canopy_sdk.site_agents import SiteAgentsError
+
+            raise SiteAgentsError("unreachable", "canopy could not be reached")
+        return answer

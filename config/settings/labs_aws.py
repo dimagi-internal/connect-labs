@@ -187,6 +187,11 @@ LOGIN_URL = "/labs/login/"
 # The origin MCP clients connect to, named in the sign-in's discovery documents.
 LABS_PUBLIC_URL = env("LABS_PUBLIC_URL", default="https://labs.connect.dimagi.com")
 
+# The canopy labs' agent panel talks to (CANOPY_APP_NAME, in base.py, is labs' site
+# name there). With these defaults the task definitions carry only the secret,
+# CANOPY_SIGNING_KEY; everything else is Labs Admin › Canopy agents.
+CANOPY_BASE_URL = env("CANOPY_BASE_URL", default="https://canopy.dimagi.com")
+
 # Prelogin Login CTA target — labs sends authenticated users into the labs app,
 # whereas the prelogin view's default ("/accounts/login/") suits prod connect.
 PRELOGIN_APP_LOGIN_URL = "/labs/overview/"

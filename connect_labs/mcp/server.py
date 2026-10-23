@@ -185,16 +185,32 @@ def dpop_gate(app):
     """Wrap the MCP app: ``Authorization: DPoP`` is verified (proof, ``ath``,
     freshness, single use) and handed on as a plain bearer; everything else
     passes through untouched. A labs with no grant configured (no signing key,
-    no ``CANOPY_CLIENT_ID``, or an unreadable key) refuses a DPoP request 401
+    the grant not ticked at Labs Admin › Canopy agents, or an unreadable key)
+    refuses a DPoP request 401
     ``invalid_dpop_proof`` — the SDK's gate, never a 500. See
     ``canopy_sdk.django.asgi.dpop_gate``."""
     from canopy_sdk.django.asgi import dpop_gate as sdk_dpop_gate
+
+    from connect_labs.labs import canopy_settings
 
     def run_sync(fn, *args):
         # thread_sensitive: the ORM's connections are per-thread.
         return sync_to_async(_closing_connections(fn), thread_sensitive=True)(*args)
 
-    return sdk_dpop_gate(app, run_sync=run_sync)
+    gate = sdk_dpop_gate(app, run_sync=run_sync)
+
+    async def with_agent_settings(scope, receive, send):
+        # The gate builds canopy's host config ON the event loop, and whether the grant
+        # is on is a saved setting (Labs Admin › Canopy agents): read it here, off the
+        # loop, once per request, and hold the request to that one reading.
+        if scope.get("type") != "http":
+            await gate(scope, receive, send)
+            return
+        ticks = await run_sync(canopy_settings.current)
+        with canopy_settings.bound(ticks):
+            await gate(scope, receive, send)
+
+    return with_agent_settings
 
 
 def _resolve_delegated_sync(raw: str, presented_jkt: str | None):

@@ -9,9 +9,10 @@
       <i class="fa-solid fa-robot text-orange-600 mr-2"></i>Canopy Agents
     </h1>
     <p class="text-gray-600 mt-1">
-      Which canopy agents labs shows in its agent panel, and which of them may read real visit data, chosen from
-      the agents canopy lists for labs. An agent gets real rows only when labs allows it here <em>and</em> canopy
-      vouches, on every call, that its author declared it handles sensitive data and it runs on a sensitive-data runner.
+      The one place labs' side of canopy is set up: which canopy agents labs shows in its agent panel, which of them
+      may read real visit data, and whether canopy may act as the visitor here, chosen from the agents canopy lists
+      for labs. An agent gets real rows only when labs allows it here <em>and</em> canopy vouches, on every call, that
+      its author declared it handles sensitive data and it runs on a sensitive-data runner.
     </p>
   </div>
 
@@ -24,11 +25,31 @@
   {% endif %}
 
   {# ── canopy's word ────────────────────────────────────────────────── #}
-  <div class="mb-4 px-4 py-2 rounded text-sm
+  <div class="mb-4 px-4 py-2 rounded text-sm flex items-center justify-between gap-3
       {% if status.level == 'error' %}bg-red-100 text-red-700{% elif status.level == 'warning' %}bg-amber-100 text-amber-800{% else %}bg-gray-100 text-gray-700{% endif %}">
-    <i class="fa-solid {% if status.level == 'ok' %}fa-circle-check text-green-600{% else %}fa-triangle-exclamation{% endif %} mr-1"></i>{{ status.text }}
-    {% if listing %}<span class="text-xs text-gray-500 ml-1">version {{ listing.version|slice:":12" }}</span>{% endif %}
+    <span>
+      <i class="fa-solid {% if status.level == 'ok' %}fa-circle-check text-green-600{% else %}fa-triangle-exclamation{% endif %} mr-1"></i>{{ status.text }}
+      {% if listing %}<span class="text-xs text-gray-500 ml-1">version {{ listing.version|slice:":12" }}</span>{% endif %}
+    </span>
+    {% if can_change %}
+    <form method="post" class="shrink-0">{% csrf_token %}
+      <button name="refresh" value="1" class="text-blue-600 text-xs font-semibold whitespace-nowrap"><i class="fa-solid fa-rotate mr-1"></i>Refresh from canopy</button>
+    </form>
+    {% endif %}
   </div>
+
+  {% if not current.is_set_up %}
+  <div class="mb-4 px-4 py-3 rounded text-sm bg-amber-100 text-amber-800" data-nothing-set-up>
+    <i class="fa-solid fa-circle-info mr-1"></i><strong>Nothing is set up yet — choose agents below.</strong>
+    Until someone saves here, labs offers no agent on any page and canopy cannot act as the visitor.
+  </div>
+  {% endif %}
+
+  {% if drift %}
+  <div class="mb-4 px-4 py-3 rounded text-sm bg-amber-100 text-amber-800" data-drift>
+    <i class="fa-solid fa-triangle-exclamation mr-1"></i>{{ drift }}
+  </div>
+  {% endif %}
 
   {# ── Settings ─────────────────────────────────────────────────────── #}
   <form method="post" class="bg-white shadow rounded-lg p-6 mb-8 space-y-5">
@@ -36,7 +57,7 @@
     <div class="flex items-baseline justify-between">
       <h2 class="text-xl font-bold text-gray-900">Agents</h2>
       <span class="text-xs text-gray-500">
-        {% if current.row_id %}In force: change #{{ current.row_id }}{% else %}In force: the deployment's defaults (nobody has saved here yet){% endif %}
+        {% if current.row_id %}In force: change #{{ current.row_id }}{% else %}Nothing is set up yet{% endif %}
       </span>
     </div>
     <p class="text-sm text-gray-600">
@@ -64,7 +85,7 @@
               {% if row.owner %}<span class="block text-xs text-gray-500">{{ row.owner }}</span>{% endif %}
             </td>
             <td class="px-3 py-2 text-gray-700 max-w-xs">
-              {% if row.listed %}{{ row.description|default:"—" }}{% else %}<span class="text-red-700">canopy no longer lists it for labs (canopy › Connected sites)</span>{% endif %}
+              {% if row.listed %}{{ row.description|default:"—" }}{% else %}<span class="text-red-700">canopy no longer lists it for labs ({% if connected_sites_url %}<a class="underline" href="{{ connected_sites_url }}" target="_blank" rel="noopener">canopy › Connected sites</a>{% else %}canopy › Connected sites{% endif %})</span>{% endif %}
               {% for reason in row.held_back %}<span class="block text-xs text-red-700"><i class="fa-solid fa-circle-exclamation mr-1"></i>Not shown: {{ reason }}</span>{% endfor %}
               {% for reason in row.real_data_held_back %}<span class="block text-xs text-red-700"><i class="fa-solid fa-circle-exclamation mr-1"></i>Not offered over real data: {{ reason }}</span>{% endfor %}
             </td>
@@ -93,7 +114,7 @@
               <input type="checkbox" name="real_data:{{ row.slug }}" data-real="{{ row.slug }}"
                      {% if row.real_data %}checked{% endif %}
                      {% if not can_change or not row.eligible_for_real_data and not row.real_data %}disabled title="{{ row.why_not_real_data }}"{% endif %}>
-              {% if not row.eligible_for_real_data and row.listed %}<span class="block text-xs text-gray-500 max-w-[10rem] mx-auto">{{ row.why_not_real_data }}</span>{% endif %}
+              {% if not row.eligible_for_real_data and row.listed %}<span class="block text-xs text-gray-500 max-w-[10rem] mx-auto">{{ row.why_not_real_data_html }}</span>{% endif %}
             </td>
             <td class="px-3 py-2 text-center">
               <input type="radio" name="default_agent" value="{{ row.slug }}" {% if row.default %}checked{% endif %}
@@ -106,11 +127,11 @@
         </tbody>
       </table>
     </div>
-    <p class="text-xs text-gray-500">The <strong>default</strong> agent is offered on every labs page that has no agent of its own (marketplace, targeting, supply), and every token names its canopy registration.</p>
+    <p class="text-xs text-gray-500">The <strong>default</strong> agent is offered on every labs page that has no agent of its own (marketplace, targeting, supply), and every token names its canopy registration (which canopy workspace labs' site is in).</p>
 
     <fieldset>
       <legend class="text-sm font-semibold text-gray-800">Every visitor conversation must run on</legend>
-      <span class="block text-xs text-gray-500 mb-1">Signed into every page token; canopy holds the conversation to runners carrying the flag. Read-only agents always require <code>sensitive_data</code> whatever this says.</span>
+      <span class="block text-xs text-gray-500 mb-1">Signed into every page token; canopy holds the conversation to runners carrying the flag. Read-only agents always require <code>sensitive_data</code> whatever this says.{% if not listing %} canopy cannot be reached, so what each flag means is not shown.{% endif %}</span>
       {% for flag in runner_flags %}
       <label class="inline-flex items-center mr-4 text-sm">
         <input type="checkbox" name="runner_requirements" value="{{ flag.flag }}" class="mr-2"
@@ -118,6 +139,18 @@
         <code>{{ flag.flag }}</code>{% if flag.meaning %}&nbsp;<span class="text-gray-500">({{ flag.meaning }})</span>{% endif %}
       </label>
       {% endfor %}
+    </fieldset>
+
+    <fieldset>
+      <legend class="text-sm font-semibold text-gray-800">Canopy acting as the visitor</legend>
+      <label class="inline-flex items-start text-sm">
+        <input type="checkbox" name="acts_as_visitor" value="1" class="mr-2 mt-1"
+               {% if current.acts_as_visitor %}checked{% endif %} {% if not can_change or not grant_available and not current.acts_as_visitor %}disabled{% endif %} />
+        <span>
+          Canopy may act as the visitor at labs' MCP
+          <span class="block text-xs text-gray-500">The jwt-bearer grant: on a page with a panel, canopy calls labs' tools as the person looking at it, limited to that page's scopes. Off, the panel still chats but its agent cannot read the page's data.{% if not grant_available %} Needs a canopy (<code>CANOPY_BASE_URL</code>).{% endif %}</span>
+        </span>
+      </label>
     </fieldset>
 
     {% if can_change %}
@@ -152,7 +185,7 @@
       {% endfor %}
     </ul>
     <p class="text-sm font-semibold text-gray-700 mb-2">Canopy's side: the Handles sensitive data, Sensitive-data runner and Ready columns above, and each call's statement below.</p>
-    {% if canopy_url %}<p class="text-sm"><a class="text-blue-600" href="{{ canopy_url }}" target="_blank" rel="noopener">Open canopy</a></p>{% endif %}
+    {% if canopy_url %}<p class="text-sm"><a class="text-blue-600" href="{{ canopy_url }}" target="_blank" rel="noopener">Open canopy</a>{% if connected_sites_url %} · <a class="text-blue-600" href="{{ connected_sites_url }}" target="_blank" rel="noopener">canopy › Connected sites</a>{% endif %}</p>{% endif %}
   </div>
 
   {# ── Recent calls ─────────────────────────────────────────────────── #}
@@ -208,7 +241,7 @@
           <td class="px-3 py-2 font-mono text-xs">
             default={{ row.default_agent }}<br>
             {% for a in row.agents %}{% if a.offered %}{{ a.slug }}{% if a.real_data %} (real data){% endif %}{% if not forloop.last %}, {% endif %}{% endif %}{% endfor %}<br>
-            runners=[{{ row.runner_requirements|join:", " }}]{% if row.site_agents_version %} · canopy {{ row.site_agents_version|slice:":8" }}{% endif %}
+            runners=[{{ row.runner_requirements|join:", " }}] · acts as visitor={{ row.acts_as_visitor|yesno:"on,off" }}{% if row.site_agents_version %} · canopy {{ row.site_agents_version|slice:":8" }}{% endif %}
           </td>
           <td class="px-3 py-2">{{ row.note }}</td>
           <td class="px-3 py-2 text-right">
@@ -221,7 +254,7 @@
       </tbody>
     </table>
     {% else %}
-    <p class="text-sm text-gray-500">No changes yet: the deployment's defaults are in force.</p>
+    <p class="text-sm text-gray-500">No changes yet: nothing is set up.</p>
     {% endif %}
   </div>
 </div>

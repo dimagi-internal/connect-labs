@@ -89,14 +89,6 @@
           "value": "labs-jj-email"
         },
         {
-          "name": "CANOPY_BASE_URL",
-          "value": "https://canopy.dimagi.com"
-        },
-        {
-          "name": "CANOPY_APP_NAME",
-          "value": "connect-labs"
-        },
-        {
           "name": "LABS_EMOD_INSTANCE_ID",
           "value": "i-0271a313a8ffb86e3"
         },

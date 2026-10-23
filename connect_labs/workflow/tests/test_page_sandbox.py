@@ -342,7 +342,7 @@ def test_a_definition_that_cannot_be_read_is_not_taken_to_be_a_workflow(monkeypa
 
 
 @pytest.mark.django_db
-def test_a_sharing_page_gets_the_panel_naming_the_page_and_page_context(member_of_acme):
+def test_a_sharing_page_gets_the_panel_naming_the_page_and_page_context(member_of_acme, canopy_default_agent):
     from connect_labs.workflow.page_views import PageView
 
     captured = {}
@@ -411,7 +411,9 @@ def test_a_page_that_does_not_share_gets_no_panel(member_of_acme):
         ("page-mode-on-a-workflow-definition", False),
     ],
 )
-def test_which_routes_give_a_sharing_page_its_panel(route, panel, sandboxed, member_of_acme, monkeypatch):
+def test_which_routes_give_a_sharing_page_its_panel(
+    route, panel, sandboxed, member_of_acme, monkeypatch, canopy_default_agent
+):
     """A panel where a page is drawn to be used; never in edit or present mode, and never
     for a workflow a route draws in page mode (page_context reads only pages)."""
     from connect_labs.workflow.page_views import PageView

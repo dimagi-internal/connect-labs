@@ -649,7 +649,7 @@ class CanopyAgentSettings(models.Model):
     """Which canopy agents labs shows, and which it lets read real data: one row per change.
 
     Append-only. The newest row is in force (``labs/canopy_settings.py``); with none,
-    the ``CANOPY_*`` environment settings are. Changed at Labs Admin › Canopy agents,
+    nothing is set up and no agent is offered. Changed at Labs Admin › Canopy agents,
     by Dimagi staff, choosing from the agents canopy lists for labs (the site agents
     API). Undo is a new row carrying an earlier row's values, so the history is never
     rewritten."""
@@ -661,6 +661,8 @@ class CanopyAgentSettings(models.Model):
     runner_requirements = models.JSONField(default=list, blank=True)
     #: The site agents ``version`` this change was made against ("" before the API).
     site_agents_version = models.CharField(max_length=100, blank=True, default="")
+    #: Whether canopy may act as the visitor at labs' MCP (the jwt-bearer grant).
+    acts_as_visitor = models.BooleanField(default=False)
     note = models.CharField(max_length=500, blank=True, default="")
     changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
     changed_at = models.DateTimeField(auto_now_add=True)

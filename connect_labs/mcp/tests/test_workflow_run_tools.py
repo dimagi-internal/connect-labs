@@ -226,7 +226,7 @@ def test_the_confirmed_call_queues_the_previewed_action_as_the_caller(actionable
     delay.assert_called_once_with(execution.pk)
 
 
-def test_a_canopy_call_is_recorded_as_canopy(user, actionable, monkeypatch):
+def test_a_canopy_call_is_recorded_as_canopy(user, actionable, monkeypatch, canopy_default_agent):
     from unittest.mock import patch
 
     monkeypatch.setattr(wa, "_delegated_token", lambda: MagicMock(client_id="canopy"))
@@ -384,8 +384,9 @@ def test_a_coaching_preview_briefs_each_worker_from_the_runs_grading(user, actio
 
 
 @pytest.fixture
-def canopy(monkeypatch):
-    """The call comes through canopy for the person looking at the View (a delegated token)."""
+def canopy(monkeypatch, canopy_default_agent):
+    """The call comes through canopy for the person looking at the View (a delegated token),
+    with labs set up to offer its default agent."""
     monkeypatch.setattr(wa, "_delegated_token", lambda: MagicMock(client_id="canopy"))
 
 
@@ -611,9 +612,10 @@ def test_the_agent_is_told_to_say_nothing_before_the_preview():
 
 
 def test_a_workflow_that_offers_the_data_agent_takes_no_actions_from_any_embedded_agent(
-    user, actionable, monkeypatch, settings
+    user, actionable, monkeypatch, canopy_agents, fake_canopy
 ):
-    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"  # shown, and handles sensitive data in canopy: read-only
+    canopy_agents("ace", offered=["labsdata"])  # shown, and handles sensitive data in canopy: read-only
+    fake_canopy.declare_sensitive("labsdata")
     definition = _definition_with_opps()
     definition.data["config"]["agent"] = {"share": True, "agent": "labsdata"}
     actionable.get_definition.return_value = definition
@@ -633,7 +635,7 @@ def test_a_workflow_that_offers_the_data_agent_takes_no_actions_from_any_embedde
 
 
 def test_a_workflow_whose_agent_is_not_available_takes_no_actions_from_any_embedded_agent(
-    user, actionable, monkeypatch, fake_canopy
+    user, actionable, monkeypatch, fake_canopy, canopy_default_agent
 ):
     fake_canopy.set(None)  # canopy has said nothing for a day: no agent anywhere
     definition = _definition_with_opps()

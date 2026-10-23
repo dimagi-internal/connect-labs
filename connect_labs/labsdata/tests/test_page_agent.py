@@ -13,14 +13,17 @@ from connect_labs.labsdata.scope import Opportunity
 OPP = Opportunity(id=951, name="Opp P", llo="LLO P")
 
 
-def test_with_no_agent_for_data_work_the_data_pages_offer_the_default_agent(settings):
-    settings.CANOPY_DATA_AGENT_SLUG = ""
+def test_with_no_agent_for_data_work_the_data_pages_offer_the_default_agent(canopy_agents):
+    canopy_agents("ace")
     here = canopy_panel.data_page_agent()
     assert here.ok and here.page_agent == canopy_panel.PageAgent()
 
 
-def test_an_agent_handling_sensitive_data_labs_shows_is_offered_on_the_data_pages_on_sensitive_data_runners(settings):
-    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"  # shown, and the fake canopy declares it handles sensitive data
+def test_an_agent_handling_sensitive_data_labs_shows_is_offered_on_the_data_pages_on_sensitive_data_runners(
+    canopy_agents, fake_canopy
+):
+    canopy_agents("ace", offered=["labsdata"])  # shown, and canopy declares it handles sensitive data
+    fake_canopy.declare_sensitive("labsdata")
     here = canopy_panel.data_page_agent()
     assert here.ok and here.read_only
     assert here.page_agent.agent == "labsdata"
@@ -28,21 +31,24 @@ def test_an_agent_handling_sensitive_data_labs_shows_is_offered_on_the_data_page
     assert here.page_agent.panel == {"mode": "docked", "width": 560, "expandable": True}
 
 
-def test_labs_sensitive_data_requirement_counts_toward_clearance_but_canopy_must_still_vouch(settings):
-    settings.CANOPY_SENSITIVE_AGENTS = ["labsdata"]
-    settings.CANOPY_RUNNER_REQUIREMENTS = []  # the site does not require sensitive-data runners; a read-only page does
-    without_page = canopy_panel.real_data_clearance("labsdata")
-    assert not without_page.granted and "sensitive-data runners" in without_page.reason
+def test_real_data_ticked_counts_toward_clearance_but_canopy_must_still_vouch(canopy_agents):
+    # The site does not require sensitive-data runners; a read-only page does, always.
+    canopy_agents("ace", real_data=["labsdata"])
     with mock.patch.object(canopy_panel, "CANOPY_EXECUTION_STATEMENTS", False):  # an SDK that cannot verify
-        with_page = canopy_panel.real_data_clearance("labsdata", ("sensitive_data",))
-    assert not with_page.granted and "vouch" in with_page.reason
+        refused = canopy_panel.real_data_clearance("labsdata")
+    assert not refused.granted and "vouch" in refused.reason
     with mock.patch.object(canopy_panel, "CANOPY_EXECUTION_STATEMENTS", True):
-        assert canopy_panel.real_data_clearance("labsdata", ("sensitive_data",)).granted
+        assert canopy_panel.real_data_clearance("labsdata").granted
         # The default agent is not cleared just because the data agent is.
-        assert not canopy_panel.real_data_clearance("ace", ("sensitive_data",)).granted
+        assert not canopy_panel.real_data_clearance("ace").granted
+        # An agent with "Real data" is only ever offered on sensitive-data runners.
+        assert canopy_panel.availability("labsdata", canopy_panel.NO_VISIT_DATA).page_agent.runner_requirements == (
+            "sensitive_data",
+        )
 
 
-def test_panel_signs_the_pages_agent_and_requirements_into_the_page():
+def test_panel_signs_the_pages_agent_and_requirements_into_the_page(canopy_agents):
+    canopy_agents("ace")
     captured = {}
 
     def fake_panel_context(request, **kwargs):
@@ -71,8 +77,9 @@ def test_no_panel_at_all_when_canopy_has_said_nothing(fake_canopy):
 
 
 @pytest.mark.django_db
-def test_the_data_page_asks_for_labsdata_when_configured(client, django_user_model, settings):
-    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"
+def test_the_data_page_asks_for_labsdata_when_configured(client, django_user_model, canopy_agents, fake_canopy):
+    canopy_agents("ace", offered=["labsdata"])
+    fake_canopy.declare_sensitive("labsdata")
     user = django_user_model.objects.create_user(username="labsdata-page-agent", password="x")
     client.force_login(user)
     seen = {}

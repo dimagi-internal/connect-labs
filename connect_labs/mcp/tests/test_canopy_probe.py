@@ -34,6 +34,7 @@ from connect_labs.mcp import oauth
 from connect_labs.mcp.models import MCPAuditLog
 from connect_labs.mcp.tests.test_delegation import BASE, ISSUER, RESOURCE, _host_key, _Labs
 from connect_labs.mcp.tool_registry import get_tool
+from connect_labs.testing.canopy_agents import CONFORMANCE_CANOPY
 from connect_labs.users.models import User
 
 PROBE_URL = f"{BASE}/labs/canopy/probe/"
@@ -49,14 +50,14 @@ def _create_probe_user():
 
 
 @pytest.fixture
-def enabled(settings, canopy_client, canopy_client_documents):
+def enabled(settings, canopy_client, canopy_client_documents, canopy_agents):
     """Labs with the grant on, trusting the conformance plugin's canopy client."""
     settings.LABS_PUBLIC_URL = BASE
     settings.ALLOWED_HOSTS = ["labs.example.org", "testserver"]
-    settings.CANOPY_BASE_URL = f"{BASE}/canopy"
+    settings.CANOPY_BASE_URL = CONFORMANCE_CANOPY  # canopy's client id is derived from it
     settings.CANOPY_APP_NAME = "connect-labs"
     settings.CANOPY_SIGNING_KEY = _host_key()
-    settings.CANOPY_CLIENT_ID = canopy_client.client_id
+    canopy_agents("ace", acts_as_visitor=True)
     cache.clear()
 
     def fetch(url, **kwargs):
@@ -143,9 +144,9 @@ def test_the_probe_is_off_until_its_user_exists(client, enabled):
 
 
 @pytest.mark.django_db
-def test_the_probe_is_off_while_the_grant_is(client, enabled, settings):
+def test_the_probe_is_off_while_the_grant_is(client, enabled, canopy_agents):
     _create_probe_user()
-    settings.CANOPY_CLIENT_ID = ""
+    canopy_agents("ace", acts_as_visitor=False)
 
     assert _ask(client, enabled).status_code == 404
 

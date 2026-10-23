@@ -11,11 +11,13 @@ Two sources, kept apart:
 * **labs' ticks** -- the ``CanopyAgentSettings`` row in force: per agent, "Show on labs"
   (``offered``) and "Real data" (``real_data``); the ``default_agent`` every labs page
   offers (and every token names); the runner flags every visitor conversation must run
-  on; and the site agents ``version`` the save was made against.
+  on; whether canopy may act as the visitor at labs' MCP (``acts_as_visitor``, the
+  jwt-bearer grant); and the site agents ``version`` the save was made against.
 
-The newest row is in force. With none, the ``CANOPY_*`` environment settings are (the
-cold-start defaults), so a deploy changes nothing until someone saves. If the database
-cannot be read, the environment settings are used too.
+The newest row is in force, and it is the ONLY source: no environment variable chooses
+an agent. With no row (or a database that cannot be read) nothing is set up (``NOTHING``):
+no agent is offered and the grant is off, until Dimagi staff save at Labs Admin › Canopy
+agents.
 
 Whether one agent may be offered on one page, and if not why, is
 ``canopy_panel.availability`` -- it reads both.
@@ -25,6 +27,8 @@ from __future__ import annotations
 
 import logging
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 
 from django.conf import settings
@@ -33,7 +37,8 @@ from connect_labs.utils.dimagi_user import is_dimagi_staff
 
 logger = logging.getLogger(__name__)
 
-#: The runner flag real data needs: a sensitive-data runner.
+#: The runner flag real data needs: a sensitive-data runner (a ZDR API key, a locked
+#: harness, egress limited to an allowlist, nothing kept on the box).
 SENSITIVE_DATA = "sensitive_data"
 
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,99}$")
@@ -63,10 +68,29 @@ def site_agents():
     return sdk.current()
 
 
+def refresh():
+    """Ask canopy for its list now (not the five-minute cache): the ``SiteAgents`` it
+    returned. Raises ``SiteAgentsError`` (with a ``code``) or ``HostNotConfigured``."""
+    from canopy_sdk.django import site_agents as sdk
+
+    return sdk.refresh()
+
+
 def unreachable_reason() -> str:
     return (
         "canopy has not said which agents labs may show (it has been unreachable for a day, or labs is not connected)"
     )
+
+
+def canopy_url(path: str = "") -> str:
+    """A page on canopy (``CANOPY_BASE_URL`` + ``path``), or "" when labs has no canopy."""
+    base = (getattr(settings, "CANOPY_BASE_URL", "") or "").rstrip("/")
+    return f"{base}{path}" if base else ""
+
+
+#: canopy's pages a problem sentence names, by the words it uses for them.
+CONNECTED_SITES = "canopy › Connected sites"
+RUNNERS = "canopy › Runners"
 
 
 def eligible_for_real_data(agent) -> tuple[bool, str]:
@@ -74,14 +98,15 @@ def eligible_for_real_data(agent) -> tuple[bool, str]:
     its author declared it handles sensitive data, and it is ready on a runner with
     ``sensitive_data``."""
     if agent is None:
-        return False, "canopy does not list it for labs (canopy › Connected sites)"
+        return False, f"canopy does not list it for labs ({CONNECTED_SITES})"
     if not agent.handles_sensitive:
         return (
             False,
-            f"{agent.slug} is not declared to handle sensitive data in canopy (its Interface, with a passkey)",
+            f"{agent.slug} is not declared to handle sensitive data in canopy "
+            "(its owner or an admin sets it on the agent's Interface)",
         )
     if not agent.ready_with_flag(SENSITIVE_DATA):
-        return False, f"{agent.slug} has no ready sensitive-data runner in canopy (canopy › Runners)"
+        return False, f"{agent.slug} has no ready sensitive-data runner in canopy ({RUNNERS})"
     return True, ""
 
 
@@ -107,10 +132,17 @@ class AgentSettings:
     agents: tuple[AgentTicks, ...]
     default_agent: str
     runner_requirements: tuple[str, ...] = ()
-    #: The site agents ``version`` the save was made against ("" for the defaults).
+    #: The site agents ``version`` the save was made against ("" before any save).
     site_agents_version: str = ""
-    #: The row in force, or None when these are the environment settings.
+    #: Whether canopy may act as the visitor at labs' MCP: the jwt-bearer grant, with
+    #: ``CLIENT_ID`` derived from ``CANOPY_BASE_URL`` (``canopy.host_settings``).
+    acts_as_visitor: bool = False
+    #: The row in force, or None when nothing is set up.
     row_id: int | None = field(default=None, compare=False)
+
+    @property
+    def is_set_up(self) -> bool:
+        return self.row_id is not None
 
     def ticks(self, slug: str) -> AgentTicks | None:
         return next((a for a in self.agents if a.slug == slug), None)
@@ -134,25 +166,16 @@ class AgentSettings:
             "default_agent": self.default_agent,
             "runner_requirements": list(self.runner_requirements),
             "site_agents_version": self.site_agents_version,
+            "acts_as_visitor": self.acts_as_visitor,
         }
+
+
+#: What is in force before anyone has saved: no agent, no runner flag, no grant.
+NOTHING = AgentSettings(agents=(), default_agent="")
 
 
 def _slugs(values) -> tuple[str, ...]:
     return tuple(dict.fromkeys(a.strip() for a in values or () if a and a.strip()))
-
-
-def from_environment() -> AgentSettings:
-    """The cold-start defaults: the ``CANOPY_*`` environment settings, read as ticks."""
-    default = getattr(settings, "CANOPY_AGENT_SLUG", "") or ""
-    data = getattr(settings, "CANOPY_DATA_AGENT_SLUG", "") or ""
-    sensitive = _slugs(getattr(settings, "CANOPY_SENSITIVE_AGENTS", ()) or ())
-    others = _slugs(getattr(settings, "CANOPY_OFFERED_AGENTS", ()) or ())
-    slugs = _slugs((default, data, *others, *sensitive))
-    return AgentSettings(
-        agents=tuple(AgentTicks(s, offered=True, real_data=s in sensitive) for s in slugs),
-        default_agent=default,
-        runner_requirements=_slugs(getattr(settings, "CANOPY_RUNNER_REQUIREMENTS", ()) or ()),
-    )
 
 
 def _from_row(row) -> AgentSettings:
@@ -166,19 +189,42 @@ def _from_row(row) -> AgentSettings:
         default_agent=row.default_agent,
         runner_requirements=tuple(row.runner_requirements or ()),
         site_agents_version=row.site_agents_version or "",
+        acts_as_visitor=bool(row.acts_as_visitor),
         row_id=row.pk,
     )
 
 
+#: The settings read for the request in hand, where the database cannot be read: the
+#: MCP's DPoP gate builds canopy's host config on the event loop (``bound``).
+_bound: ContextVar[AgentSettings | None] = ContextVar("canopy_agent_settings", default=None)
+
+
+@contextmanager
+def bound(ticks: AgentSettings):
+    """Within this block (and the sync code it calls through ``sync_to_async``, which
+    copies the context), ``current()`` is ``ticks``: read once, off the event loop, by
+    the async caller (``mcp/server.py:dpop_gate``)."""
+    token = _bound.set(ticks)
+    try:
+        yield ticks
+    finally:
+        _bound.reset(token)
+
+
 def current() -> AgentSettings:
-    """Labs' ticks in force now."""
+    """Labs' ticks in force now. On the event loop, outside ``bound``, the database
+    cannot be read and nothing is set up (fail closed)."""
     from connect_labs.labs.models import CanopyAgentSettings
+
+    pinned = _bound.get()
+    if pinned is not None:
+        return pinned
 
     try:
         row = CanopyAgentSettings.objects.order_by("-id").first()
     except Exception:  # noqa: BLE001 -- no database (settings import, a test without one)
-        return from_environment()
-    return _from_row(row) if row else from_environment()
+        return NOTHING
+    return _from_row(row) if row else NOTHING
 
 
 def history(limit: int = 50):
@@ -188,7 +234,13 @@ def history(limit: int = 50):
 
 
 def validate(
-    *, agents, default_agent, runner_requirements, listing=None, before: AgentSettings | None = None
+    *,
+    agents,
+    default_agent,
+    runner_requirements,
+    acts_as_visitor=None,
+    listing=None,
+    before: AgentSettings | None = None,
 ) -> AgentSettings:
     """What a person asked for, checked against canopy's word (``listing``).
 
@@ -196,7 +248,8 @@ def validate(
     longer lists may stay (it is shown in red, and not offered, until canopy lists it
     again). "Real data" newly ticked needs canopy's declaration that the agent handles
     sensitive data and a ready sensitive-data runner. A runner flag must be one canopy
-    names (``sensitive_data`` always may be)."""
+    names (``sensitive_data`` always may be). ``acts_as_visitor`` None keeps the grant
+    as it is."""
     before = before or current()
     listed = {a.slug: a for a in listing.agents} if listing is not None else {}
     ticks: list[AgentTicks] = []
@@ -231,10 +284,13 @@ def validate(
         default_agent=default_agent,
         runner_requirements=flags,
         site_agents_version=listing.version if listing is not None else before.site_agents_version,
+        acts_as_visitor=before.acts_as_visitor if acts_as_visitor is None else bool(acts_as_visitor),
     )
 
 
-def save(user, *, note: str = "", agents, default_agent, runner_requirements, listing=None) -> AgentSettings:
+def save(
+    user, *, note: str = "", agents, default_agent, runner_requirements, acts_as_visitor=None, listing=None
+) -> AgentSettings:
     """Put new ticks in force (a new row), attributed to ``user`` and audited."""
     from connect_labs.audit_trail.models import Action
     from connect_labs.audit_trail.service import record
@@ -247,6 +303,7 @@ def save(user, *, note: str = "", agents, default_agent, runner_requirements, li
         agents=agents,
         default_agent=default_agent,
         runner_requirements=runner_requirements,
+        acts_as_visitor=acts_as_visitor,
         listing=listing,
         before=before,
     )
@@ -288,9 +345,9 @@ def can_change(user) -> bool:
 
     Not ``is_staff`` alone: an OAuth-created labs user never gets that flag and no labs
     page grants it, so the setting could be changed by nobody. These ticks are one of
-    three locks (canopy's passkey-gated sensitive-data declaration and runner flag are the
-    others),
-    and every change is attributed, audited and restorable."""
+    three locks (the others are canopy's: the agent's sensitive-data declaration, set by
+    its owner or an admin, and the passkey-gated runner flag), and every change is
+    attributed, audited and restorable."""
     return bool(user and user.is_authenticated and is_dimagi_staff(user))
 
 

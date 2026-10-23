@@ -726,42 +726,25 @@ MCP_WRITE_RATE_LIMIT = env("MCP_WRITE_RATE_LIMIT", default="30/m")
 # the key pair lives here and never reaches a browser; canopy holds only the
 # public half. See docs/canopy-agent-panel.md.
 #
-# The panel is off unless all three are set. Fail-closed on purpose: a partly
-# configured panel is a launcher that opens on an error nobody can read from
-# the page, so it should not render at all.
+# Only WHERE labs and canopy meet, and the one secret, are settings. Everything
+# else -- which agents labs shows, which may read real data, the default agent
+# (which also names the canopy tenant), the runner flags, and whether canopy may
+# act as the visitor at labs' MCP -- is chosen at Labs Admin › Canopy agents
+# (labs/canopy_settings.py). Until someone saves there, no agent is offered.
+#
+# The panel is off unless all three below are set. Fail-closed on purpose: a
+# partly configured panel is a launcher that opens on an error nobody can read
+# from the page, so it should not render at all.
 CANOPY_BASE_URL = env("CANOPY_BASE_URL", default="")
 CANOPY_APP_NAME = env("CANOPY_APP_NAME", default="connect-labs")
-# The canopy agent this panel is for. Names the canopy TENANT on every token and
-# on the embed shell: since canopy-web #960 a site's name is unique only within
-# one canopy workspace, so the name alone is refused (409) once a second
-# workspace registers a `connect-labs`. An agent belongs to exactly one.
-CANOPY_AGENT_SLUG = env("CANOPY_AGENT_SLUG", default="ace")
 # PEM, Ed25519. Newlines survive an env var as literal "\n", which is how a
 # task definition and a .env can both carry one.
 CANOPY_SIGNING_KEY = env("CANOPY_SIGNING_KEY", default="").replace("\\n", "\n")
-# Canopy acting AS the visitor at labs' MCP (the jwt-bearer grant, served by
-# the canopy SDK). The canopy client's id — the URL of its Client ID Metadata
-# Document, e.g. https://canopy.dimagi.com/oauth/client.json.
-# Unset = the grant is off: no ID-JAG is issued, /o/token/ refuses the grant,
-# and nothing else changes. Needs LABS_PUBLIC_URL and CANOPY_SIGNING_KEY too.
-CANOPY_CLIENT_ID = env("CANOPY_CLIENT_ID", default="")
-# CANOPY_AGENT_SLUG above and the agent settings below are COLD-START DEFAULTS: labs
-# reads them, as ticks, through labs/canopy_settings.py until someone saves at Labs
-# Admin › Canopy agents, which chooses from the agents canopy lists for labs.
-# Runner flags every visitor conversation must run on (`sensitive_data`: sensitive-data
-# runners only). Signed into every visitor assertion; canopy enforces it at claim.
-CANOPY_RUNNER_REQUIREMENTS = env.list("CANOPY_RUNNER_REQUIREMENTS", default=[])
-# Agents with "Real data" ticked by default. Empty: over real data no agent panel is drawn.
-CANOPY_SENSITIVE_AGENTS = env.list("CANOPY_SENSITIVE_AGENTS", default=[])
-# An agent shown by default (labsdata). Whether it is read-only on sensitive-data runners
-# is canopy's word: an agent its author declares handles sensitive data always is.
-CANOPY_DATA_AGENT_SLUG = env("CANOPY_DATA_AGENT_SLUG", default="")
-# Further agents shown by default.
-CANOPY_OFFERED_AGENTS = env.list("CANOPY_OFFERED_AGENTS", default=[])
 # What the canopy SDK (`canopy_sdk.django`) reads. Not a second copy of the
 # values above: a callable the SDK resolves on every read, so it sees them (and
-# LABS_PUBLIC_URL, which later settings modules override) as they are NOW, plus
-# labs' page and scope registries.
+# LABS_PUBLIC_URL, which later settings modules override, and the saved agent
+# settings) as they are NOW, plus labs' page and scope registries. canopy's client
+# id (the grant) is derived from CANOPY_BASE_URL there.
 CANOPY_HOST = "connect_labs.labs.canopy.host_settings"
 
 # Audit trail (HIPAA-bar access/change logging — see docs/AUDIT_LOGGING.md)

@@ -427,7 +427,7 @@ user, audit rows attribute to them):
   "generated"). Enforced by the same `ToolScopeMiddleware` gate as canopy's scopes,
   re-checked in `_run_registry_tool_inner`. Adding a tool to those lists means
   checking what it returns; a tool that reads visits needs a resolver.
-- **Canopy acting as a visitor (off unless `CANOPY_CLIENT_ID` is set)** — labs
+- **Canopy acting as a visitor (off unless ticked at Labs Admin › Canopy agents)** — labs
   issues an ID-JAG for the person on a registered page, canopy redeems it at
   `/o/token/` (jwt-bearer + `private_key_jwt` + DPoP), and calls the MCP with
   `Authorization: DPoP`. Tools run as the visitor, limited to the scope's tools.
