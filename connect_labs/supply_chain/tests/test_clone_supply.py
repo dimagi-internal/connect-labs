@@ -410,6 +410,11 @@ def test_the_phc_layout_runs_warehouse_to_phcs_weekly_and_phcs_to_their_workers(
     first_week = min(m.occurred_on for m in transfers)
     assert all(m.occurred_on.weekday() == 0 for m in transfers if m.occurred_on > first_week)
 
+    # A clone's copy of the tracker's rounds is never listed on the market.
+    from connect_labs.supply_chain.models import Tender
+
+    assert set(Tender.objects.filter(program_id=opp).values_list("visibility", flat=True)) == {"private"}
+
     # Its stock is the tracker's round 1, received on the order awarded to the one complete quote.
     award = Award.objects.get(tender__program_id=opp)
     assert award.quote.supplier.name == "Supplier One"

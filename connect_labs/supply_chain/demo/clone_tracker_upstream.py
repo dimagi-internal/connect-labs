@@ -83,6 +83,11 @@ def seed_tracker_upstream(op, access, *, program_id: int, warehouse_id: int, ite
     if len(tenders) < 2:
         raise ValueError(f"the tracker import made {len(tenders)} tenders, expected its two rounds")
     round1, round2 = tenders[0], tenders[1]
+    # The import opens its tenders as the sheet's programme would, public on the market. On a
+    # clone that lists a copy of a real programme's open round for real suppliers to quote on,
+    # so the clone's are private.
+    for tender in (round1, round2):
+        op(today, 9, "tender_update", tender_id=tender["id"], data={"visibility": "private"})
     quote = _complete_quote(op(today, 9, "quote_list", tender_id=round1["id"]))
     if quote is None:
         raise ValueError("the tracker's round 1 has no single quote with a per-carton price and stated freight")
