@@ -58,7 +58,12 @@ class AuditTrailMiddleware:
                     status_code=403,
                 )
             if self._is_page_view(request, response):
-                service.record(Action.PAGE_VIEW, resource_type="page", status_code=response.status_code)
+                service.record(
+                    Action.PAGE_VIEW,
+                    resource_type="page",
+                    status_code=response.status_code,
+                    **self._page_scope(request),
+                )
             service.flush_buffer(ctx, status_code=response.status_code)
         finally:
             reset_audit_context(token)
@@ -82,6 +87,26 @@ class AuditTrailMiddleware:
         """
         user = getattr(request, "user", None)
         return bool(user is not None and getattr(user, "is_authenticated", False))
+
+    @staticmethod
+    def _page_scope(request) -> dict:
+        """The organisation / programme / opportunity the page was viewed in.
+
+        Read from ``request.labs_context`` (set by the context middleware, URL or
+        session), so a page view says which scope it belonged to without anyone
+        parsing its URL later. Organisation is a slug, which the integer column
+        cannot hold, so it rides in metadata. Labs usage analytics
+        (``labs/admin/usage.py``) reads all three.
+        """
+        context = getattr(request, "labs_context", None) or {}
+        scope = {}
+        for key in ("opportunity_id", "program_id"):
+            if isinstance(context.get(key), int):
+                scope[key] = context[key]
+        org = context.get("organization_id")
+        if isinstance(org, str) and org:
+            scope["metadata"] = {"organization_slug": org[:120]}
+        return scope
 
     @staticmethod
     def _is_page_view(request, response) -> bool:

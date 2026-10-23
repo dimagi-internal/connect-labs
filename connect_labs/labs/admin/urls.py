@@ -6,7 +6,7 @@ from django.urls import include, path
 
 from connect_labs.labs.analytics_views import AnalyticsDashboardView, UmamiSSOView
 
-from . import canopy_views, registry_views, views
+from . import canopy_views, registry_views, usage_views, views
 
 app_name = "labs_admin"
 
@@ -16,6 +16,9 @@ urlpatterns = [
     # Usage analytics (self-hosted Umami surfaced behind labs OAuth)
     path("analytics/", AnalyticsDashboardView.as_view(), name="analytics_dashboard"),
     path("analytics/umami/", UmamiSSOView.as_view(), name="umami_sso"),
+    # Usage by organisation / programme / opportunity / user, from the audit trail
+    path("usage/", usage_views.UsageView.as_view(), name="usage"),
+    path("usage/<str:kind>/<str:key>/", usage_views.UsageView.as_view(), name="usage_scope"),
     # Labs Record
     path("records/", views.RecordListView.as_view(), name="list"),
     path("records/<int:pk>/edit/", views.RecordEditView.as_view(), name="edit"),
