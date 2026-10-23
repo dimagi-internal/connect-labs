@@ -192,16 +192,16 @@ You do not need to do anything differently — Claude handles the checking autom
 
 ## Results Labs Keeps
 
-Tools that return a table (`data_query`, `workflow_run_indicators`) or a result a card draws (`targeting_pmc_states`) also keep that result in Labs for one day. The result carries a link to it, `result_uri`, which looks like `labs-result://<id>`. The same link is included as an MCP `resource_link`.
+Tools that return a table (`workflow_run_indicators`) or a result a card draws (`targeting_pmc_states`) also keep that result in Labs for one day. `data_query` keeps its rows only when they will be read back: always through canopy, and for any other client only when you pass `keep_result: true` (otherwise you get every row in the answer and Labs keeps no copy). A kept result carries a link to it, `result_uri`, which looks like `labs-result://<id>`. The same link is included as an MCP `resource_link`.
 
 Any MCP client can read the link back with the standard `resources/read` request. That includes Claude Code, ACE, and canopy. Labs serves it as you, one page at a time:
 
 - **Paging.** Add `?page=2&page_size=200` to the link. A page holds 100 rows unless you ask otherwise, and at most 1,000.
 - **Who can read it.** You can, and so can anyone who could run the same thing themselves (for example, someone with access to every opportunity the query read). Anyone else is refused with `forbidden`.
 - **What it shows.** Each read returns exactly the rows the tool produced. A result is never re-run, so the numbers cannot change between reads.
-- **For a day.** After a day the link returns `expired`. Run the tool again to get a new one.
+- **For a day.** After a day the link returns `expired` (the PMC ranking, which holds no visit data, lasts 30 days). Run the tool again to get a new one.
 
-Sensitive data follows the same rules as the tool that produced it. A token that cannot see user visit data cannot read a result that holds them. Through canopy, only an agent Labs has cleared for sensitive data can read one. Every read is recorded in the audit trail.
+Sensitive data follows the same rules as the tool that produced it. A token that cannot see user visit data cannot read a result that holds them. Through canopy, only an agent Labs has cleared for sensitive data can read one, and it reads long cells cut, as its query returned them. Every read is recorded in the audit trail, and so is every refused one.
 
 ## Data (formerly the SQL explorer)
 

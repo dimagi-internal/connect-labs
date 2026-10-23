@@ -73,10 +73,20 @@ def _pat(user) -> str:
     return raw
 
 
-def _query(user):
-    return call_tool(
-        _pat(user), "data_query", {"opportunity_ids": [OPP.id], "sql": "SELECT worker, visits FROM visits"}
-    )
+def _query(user, keep_result=True):
+    """A person's own client (a PAT) asking data_query to keep its result: the result a
+    canopy call keeps, without canopy."""
+    args = {"opportunity_ids": [OPP.id], "sql": "SELECT worker, visits FROM visits"}
+    return call_tool(_pat(user), "data_query", {**args, "keep_result": True} if keep_result else args)
+
+
+def test_a_client_that_will_not_read_it_back_gets_its_rows_and_nothing_is_kept(owner, connect):
+    connect["users"].add(owner.pk)
+    envelope = _query(owner, keep_result=False)["result"]
+    out = envelope["structuredContent"]
+    assert out["rows"] == ROWS and "result_uri" not in out
+    assert [c for c in envelope["content"] if isinstance(c, ResourceLink)] == []
+    assert not Row.objects.exists()
 
 
 def test_labs_declares_its_scheme_and_keeps_the_results_itself():

@@ -217,14 +217,22 @@ part of this that goes through the canopy SDK.
   `sample_rows` (`sample_is_partial` when there are more): most aggregates arrive whole,
   and a long result arrives as a sample it reads further with canopy's `site_read`, a page
   at a time. Every other caller -- Claude Code, ACE, scout-queries -- has no `site_read`
-  and parses rows, so it still gets every row inline, with the link beside them.
-  `explorer_query` (scout-queries' name) keeps nothing and is unchanged.
+  and parses rows, so it gets every row inline and **nothing is kept**: labs keeps a copy
+  of production rows only for a caller that reads it back (canopy, or a client passing
+  `keep_result: true`, which also gets the link). `explorer_query` (scout-queries' name)
+  keeps nothing and is unchanged. A result over `KEPT_RESULT_MAX_BYTES` (5 MB of JSON) is
+  not kept: the call is refused with "ask for fewer rows".
 - **Reading one back** is MCP `resources/read` on labs' MCP server (the resource template
   `labs-result://{id}{?page,page_size}`, registered by `kept_results.mount` and listed by
   `resources/templates/list`): a table pages through the URI (default 100, max 1000 rows a
   page) with `_meta["labs/result"]` saying the kind, the page, pages, row count, expiry and
   that it is the **snapshot** the agent saw (the card and the agent agree on the rows). A
   refusal is an MCP error `"<code>: <why>"`: `bad_uri`, `not_found`, `expired`, `forbidden`.
+  Who may read is decided before expiry, so someone who may not read a result never
+  learns whether it has expired. A cleared agent's page (`site_read`) is cut as its
+  query was (`labsdata.service.shape_for_agent`: 4,000 characters a cell, 200,000 a page),
+  so it cannot pull tens of megabytes of `form_json` through one read; the person's card
+  pages the rows whole.
 - **Who may read it.** The labs user the call ran as (the owner, read from the MCP
   request's token), and anyone who could run the same thing themselves (`may_read`): holds
   every opportunity the query read, can open the run the indicators came from; a public
@@ -233,18 +241,25 @@ part of this that goes through the canopy SDK.
   result holding sensitive data (`KeptResult.sensitive`) goes back through canopy only to
   an agent whose own `Canopy-Execution` statement clears it, or to the person's own card --
   a read with no statement, no agent acting -- for a result a cleared agent already
-  received (`through_canopy`). A "no user visit data" caller never reads one. Each read is
-  on the audit trail (`resource_type` `labs_result`).
-- **For a day.** Expired results read as `expired`; `connect_labs.mcp.tasks.sweep_kept_results`
-  (beat `sweep-kept-results`, hourly) deletes them.
+  received (`through_canopy`). A "no user visit data" caller never reads one. Every read,
+  and every refused read (`outcome` failure, with the refusal), is on the audit trail
+  (`resource_type` `labs_result`, `source` `mcp`, the MCP request id, `path`
+  `mcp:resources/read`, the token's `auth_method` and client, and for a canopy call the
+  `Canopy-Execution` facts).
+- **For a day** (the public PMC ranking, which holds no visit data, for 30 days). Expired
+  results read as `expired`; `connect_labs.mcp.tasks.sweep_kept_results` (beat
+  `sweep-kept-results`, hourly) deletes them. RDS snapshots and point-in-time recovery
+  keep a deleted row for the backup window (`docs/AUDIT_LOGGING.md`).
 - **Never changed.** Labs does not update a kept result, so it never sends canopy a
-  "result changed" push (the SDK's `canopy_sdk.resources.notify_updated`). A View still
-  subscribes; a future tool that edits one in place would call that push.
+  "result changed" push (the SDK's `canopy_sdk.resources.notify_updated`), and no card
+  subscribes to one. A future tool that edits one in place would send that push and make
+  its card subscribe.
 
 **The results card** (`ui://labs/data-result`) reads the link as its viewer, pages on the
-server and sorts within the page, subscribes to the link and re-reads when labs says it
-changed, and never runs the query itself. It names each refusal: expired ("ask again in
-the chat"), not yours, or sensitive data that stays in Labs (with the Data page). The PMC
+server and sorts within the page (and says "Sorted within this page only" when there are
+more pages), and never runs the query itself. It names each refusal: expired ("ask again
+in the chat" -- showing the sample the tool result carried, said plainly to be a sample,
+when it has one), not yours, or sensitive data that stays in Labs (with the Data page). The PMC
 card (`ui://labs/pmc-states`) reads its ranking the same way and re-totals ticked states
 through `targeting_pmc_rank` as the viewer. The coaching preview and the edit-confirm
 cards deliberately preview again as the viewer: their confirm token must be the viewer's

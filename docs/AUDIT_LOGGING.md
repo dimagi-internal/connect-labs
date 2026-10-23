@@ -123,6 +123,20 @@ bridge (`/labs/admin/analytics/umami/`) — labs mints the admin JWT into
 same-origin localStorage, so access rides labs OAuth, and both the summary
 page and the bridge record `read` audit events on open.
 
+## Kept MCP results classification
+
+`mcp_kept_result` (`KeptResult`, `connect_labs/mcp/kept_results.py`) holds **PHI
+content**: a `data_query` result there is production visit rows, `form_json`
+included. It is the one place labs keeps a copy of what an MCP tool returned, so:
+
+| | |
+| --- | --- |
+| **What** | the rows a tool returned (`data_query`, `workflow_run_indicators`), or a public ranking (`targeting_pmc_states`, no PHI) |
+| **When it is written** | only for a caller that can read it back by its `labs-result://` link: canopy (a delegated call, whose card and agent page through it), or a client that asks (`keep_result: true`). Any other client (Claude Code, ACE) gets its rows inline and nothing is kept |
+| **Size** | at most `KEPT_RESULT_MAX_BYTES` (5 MB) of JSON per result; a bigger one is refused with "ask for fewer rows" |
+| **Who reads it** | its owner, or a labs user who could run the same query (`may_read`); every read, and every refused read, is a `read` audit event (`resource_type = labs_result`, `source = mcp`, the MCP request id and path) |
+| **Retention** | 24 hours for rows (30 days for the public PMC ranking), then the hourly sweep deletes it. **RDS automated snapshots and point-in-time recovery retain a deleted row for the backup retention window beyond those 24 hours**: a restore can bring one back |
+
 ## Operational notes
 
 - `record()` and the middleware flush are best-effort by contract — a broken

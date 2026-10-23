@@ -506,12 +506,13 @@ def test_the_results_view_is_self_contained():
 
 def test_the_results_view_reads_the_kept_result_and_never_runs_the_query():
     """Its behaviour is tested in data_result.test.js against a stand-in host; this pins the
-    contract a reviewer reads: resources/read + subscribe on labs-result://, no tools/call."""
+    contract a reviewer reads: resources/read on labs-result://, no tools/call, and no
+    resources/subscribe -- Labs never changes a kept result, so it never says one changed."""
     doc = _Doc()
     doc.feed(_data_result_resource().html())
     script = doc.script.replace("'", '"')
-    for method in ('"resources/read"', '"resources/subscribe"', '"notifications/resources/updated"'):
-        assert method in script, method
+    assert '"resources/read"' in script
+    assert '"resources/subscribe"' not in script
     assert '"labs-result://"' in script
     assert '"tools/call"' not in script and "askAgain" not in script
     assert "ask again in the chat" in script
