@@ -26,6 +26,16 @@ and `MAPBOX_TOKEN` (a public `pk.*` token that already ships in the frontend JS)
 **Rule:** never put a secret value in `environment[]`. If you need a new secret,
 create it in Secrets Manager and add a `secrets[]` entry pointing at its ARN.
 
+## `EMBED_EXAMPLE_*` — the live reference embedder
+
+`web.json` carries the reference embedder's settings (`connect_labs/embed_example/`):
+`EMBED_EXAMPLE_PRIVATE_KEY` as a secret (`labs-jj-embed-example-private-key`, its Ed25519
+signing key) and `EMBED_EXAMPLE_RESOURCES`, the generated-data workflows it shows. After
+changing either, run `manage.py embed_example_register` (`run-labs-command.yml`) so labs'
+registration matches. Labs refuses the example anything but generated data whatever this
+list says. Rotating the key: replace the secret value and deploy. Labs fetches the
+example's JWKS, so it picks up the new key with no re-registration.
+
 ## `WEB_LIMIT_CONCURRENCY` — the web-tier overload valve (ships off)
 
 `web.json` carries `WEB_LIMIT_CONCURRENCY: "0"`, which means **off** — the
