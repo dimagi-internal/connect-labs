@@ -1,7 +1,7 @@
 """labsdata end to end: the Data page's grant, and real rows only on a call canopy vouched for.
 
 Through labs' real code and the real canopy SDK (>= 0.13): the Data page mints a grant
-for ``labsdata`` on ZDR runners, canopy redeems it at ``/o/token/`` and calls labs' MCP
+for ``labsdata`` on sensitive-data runners, canopy redeems it at ``/o/token/`` and calls labs' MCP
 as the visitor over DPoP -- and with a ``Canopy-Execution`` statement signed by canopy's
 client key (``consumer.execution_statement``) the call gets real rows; with none, or with
 one that does not clear it, the rows are withheld. canopy is stubbed only where it is
@@ -33,13 +33,17 @@ enabled = _panel_e2e.enabled
 visitor = _panel_e2e.visitor
 
 REAL = Opportunity(id=961, name="Opp Real", llo="LLO Real")
-PHI_DECLARED = {
+SENSITIVE_DECLARED = {
     "agent": "labsdata",
     "capability": "data",
-    "declaration": {"data": "phi", "capability": "data", "declared_by": "an author", "declared_at": "t"},
-    "runner": {"id": 1, "name": "zdr-box", "flags": [{"flag": "zdr", "declared_by": "a person", "declared_at": "t"}]},
-    "runner_posture": {"data_mode": "zdr", "config_hash": "h"},
-    "requirements": ["zdr"],
+    "declaration": {"data": "sensitive", "capability": "data", "declared_by": "an author", "declared_at": "t"},
+    "runner": {
+        "id": 1,
+        "name": "sensitive-data-box",
+        "flags": [{"flag": "sensitive_data", "declared_by": "a person", "declared_at": "t"}],
+    },
+    "runner_posture": {"data_mode": "sensitive_data", "config_hash": "h"},
+    "requirements": ["sensitive_data"],
     "turn": "turn-1",
     "session": "session-1",
 }
@@ -48,7 +52,7 @@ PHI_DECLARED = {
 @pytest.fixture
 def labsdata(settings, enabled):
     settings.CANOPY_DATA_AGENT_SLUG = "labsdata"
-    settings.CANOPY_PHI_AGENTS = ["labsdata"]
+    settings.CANOPY_SENSITIVE_AGENTS = ["labsdata"]
     return enabled
 
 
@@ -86,7 +90,7 @@ def _data_page_grant(canopy_redeem, visitor):
     arrival = _mint(panel, visitor)
     id_jag = arrival[contract.ARRIVAL_ID_JAG_FIELD]
     assert _scopes(id_jag) == {"data:read"}
-    # The page chose its own agent and required ZDR runners (signed into the assertion).
+    # The page chose its own agent and required sensitive-data runners (signed into the assertion).
     assert "labsdata" in str(arrival)
     return _redeem(canopy_redeem, id_jag)
 
@@ -122,16 +126,16 @@ def _query(client_creds, token, facts):
 
 
 @pytest.mark.django_db(transaction=True)
-def test_a_vouched_phi_zdr_call_reads_real_rows_and_is_audited(labsdata, canopy_redeem, visitor, real_visits):
+def test_a_vouched_sensitive_data_call_reads_real_rows_and_is_audited(labsdata, canopy_redeem, visitor, real_visits):
     from connect_labs.mcp.models import MCPAuditLog
 
     token = _data_page_grant(canopy_redeem, visitor)
-    result = _query(labsdata, token, PHI_DECLARED).structured_content
+    result = _query(labsdata, token, SENSITIVE_DECLARED).structured_content
     assert not result.get("withheld"), result
     assert [r[0] for r in result["rows"]] == ["rv0", "rv1", "rv2"]
     row = MCPAuditLog.objects.filter(tool_name="data_query").latest("id")
     assert row.execution["agent"] == "labsdata"
-    assert row.execution["runner"]["flags"] == ["zdr"]
+    assert row.execution["runner"]["flags"] == ["sensitive_data"]
     assert row.execution["declaration"]["declared_by"] == "an author"
 
 
@@ -140,11 +144,14 @@ def test_a_vouched_phi_zdr_call_reads_real_rows_and_is_audited(labsdata, canopy_
     "facts, refused",
     [
         (None, "no_statement"),
-        ({**PHI_DECLARED, "declaration": None}, None),  # not declared PHI-safe
-        ({**PHI_DECLARED, "runner": {"id": 2, "name": "plain", "flags": []}}, None),  # not a ZDR runner
-        ({**PHI_DECLARED, "agent": "ace"}, None),  # an agent labs has not allowed
+        ({**SENSITIVE_DECLARED, "declaration": None}, None),  # not declared to handle sensitive data
+        (
+            {**SENSITIVE_DECLARED, "runner": {"id": 2, "name": "plain", "flags": []}},
+            None,
+        ),  # not a sensitive-data runner
+        ({**SENSITIVE_DECLARED, "agent": "ace"}, None),  # an agent labs has not allowed
     ],
-    ids=["no-statement", "undeclared", "not-zdr", "other-agent"],
+    ids=["no-statement", "undeclared", "not-sensitive-data", "other-agent"],
 )
 def test_anything_short_of_that_withholds_the_rows(labsdata, canopy_redeem, visitor, real_visits, facts, refused):
     from connect_labs.mcp.models import MCPAuditLog

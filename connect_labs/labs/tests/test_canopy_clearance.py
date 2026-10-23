@@ -19,8 +19,8 @@ REPO_ROOT = pathlib.Path(canopy_panel.__file__).resolve().parents[1]
 def cleared(settings, monkeypatch):
     """Every clearance condition met, as it will be once canopy signs its statement."""
     settings.CANOPY_AGENT_SLUG = "workflow-agent"
-    settings.CANOPY_PHI_AGENTS = ["workflow-agent"]
-    settings.CANOPY_RUNNER_REQUIREMENTS = ["zdr"]
+    settings.CANOPY_SENSITIVE_AGENTS = ["workflow-agent"]
+    settings.CANOPY_RUNNER_REQUIREMENTS = ["sensitive_data"]
     monkeypatch.setattr(canopy_panel, "CANOPY_EXECUTION_STATEMENTS", True)
 
 
@@ -38,12 +38,12 @@ def _here(reads, agent=""):
 
 
 def test_no_visit_data_is_always_offered(settings):
-    settings.CANOPY_PHI_AGENTS = []
+    settings.CANOPY_SENSITIVE_AGENTS = []
     assert _here(canopy_panel.NO_VISIT_DATA).ok
 
 
 def test_generated_data_is_offered_to_any_agent(settings):
-    settings.CANOPY_PHI_AGENTS = []
+    settings.CANOPY_SENSITIVE_AGENTS = []
     with _generated(True):
         assert _here(canopy_panel.visits([10_101])).ok
 
@@ -61,8 +61,8 @@ def test_real_data_is_refused_without_canopys_per_call_statement(cleared, monkey
 @pytest.mark.parametrize(
     "setting, value, reason",
     [
-        ("CANOPY_PHI_AGENTS", [], 'tick "Real data"'),
-        ("CANOPY_PHI_AGENTS", ["some-other-agent"], 'tick "Real data"'),
+        ("CANOPY_SENSITIVE_AGENTS", [], 'tick "Real data"'),
+        ("CANOPY_SENSITIVE_AGENTS", ["some-other-agent"], 'tick "Real data"'),
     ],
 )
 def test_each_condition_fails_closed_on_its_own(cleared, settings, setting, value, reason):
@@ -79,10 +79,10 @@ def test_canopys_word_is_a_condition_too(cleared, fake_canopy):
     for said, why in [
         (None, "canopy has not said"),
         (listing(), "canopy does not allow workflow-agent"),
-        (listing(agent("workflow-agent", phi_safe=False)), "not declared PHI-safe"),
-        (listing(agent("workflow-agent", phi_safe=True, zdr=False)), "no ready one"),
+        (listing(agent("workflow-agent", handles_sensitive=False)), "not declared to handle sensitive data"),
+        (listing(agent("workflow-agent", handles_sensitive=True, sensitive_data=False)), "no ready one"),
         (
-            listing(agent("workflow-agent", phi_safe=True, ready=False, problems=["no GitHub token"])),
+            listing(agent("workflow-agent", handles_sensitive=True, ready=False, problems=["no GitHub token"])),
             "no GitHub token",
         ),
     ]:
@@ -95,12 +95,12 @@ def test_canopys_word_is_a_condition_too(cleared, fake_canopy):
 def test_every_condition_met_clears_real_data(cleared):
     with _generated(False):
         here = _here(canopy_panel.visits([501]))
-    assert here.ok and here.read_only and here.page_agent.runner_requirements == ("zdr",)
+    assert here.ok and here.read_only and here.page_agent.runner_requirements == ("sensitive_data",)
 
 
 @pytest.mark.parametrize("ids", [None, [], ["not-an-id"]])
 def test_a_page_that_cannot_tell_what_it_reads_counts_as_real(settings, ids):
-    settings.CANOPY_PHI_AGENTS = []
+    settings.CANOPY_SENSITIVE_AGENTS = []
     with _generated(True):
         assert not _here(canopy_panel.visits(ids)).ok
 
@@ -112,8 +112,8 @@ def test_refused_means_no_panel_and_no_page_token():
 
 
 def test_the_host_signs_labs_runner_requirements(settings):
-    settings.CANOPY_RUNNER_REQUIREMENTS = ["zdr"]
-    assert canopy.host_settings()["RUNNER_REQUIREMENTS"] == ["zdr"]
+    settings.CANOPY_RUNNER_REQUIREMENTS = ["sensitive_data"]
+    assert canopy.host_settings()["RUNNER_REQUIREMENTS"] == ["sensitive_data"]
     settings.CANOPY_RUNNER_REQUIREMENTS = []
     assert canopy.host_settings()["RUNNER_REQUIREMENTS"] == []
 
@@ -221,9 +221,9 @@ class _Vouched:
     """A verified Canopy-Execution statement that clears the call (mcp/execution.py)."""
 
     agent = "workflow-agent"
-    requirements = ("zdr",)
+    requirements = ("sensitive_data",)
 
-    def phi_clearance(self, *, agents, require=("zdr",)):
+    def sensitive_clearance(self, *, agents, require=("sensitive_data",)):
         return None if self.agent in set(agents) else "agent_not_allowed"
 
 

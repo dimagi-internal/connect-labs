@@ -335,10 +335,10 @@ def test_a_workflow_that_offers_the_data_agent_grants_it_the_runs_reads_and_edit
     arrival = _mint(panel, visitor)
     id_jag = arrival[contract.ARRIVAL_ID_JAG_FIELD]
     # The run's reads, the raw data behind it and edits confirmed in chat -- never
-    # workflow:act -- for labsdata, on ZDR.
+    # workflow:act -- for labsdata, on sensitive-data runners.
     assert _scopes(id_jag) == {"workflow:read", "data:read", "workflow:edit"}
     signed = json.dumps(unverified_claims(arrival["assertion"]))
-    assert "labsdata" in signed and "zdr" in signed
+    assert "labsdata" in signed and "sensitive_data" in signed
 
     token = _redeem(canopy_redeem, id_jag)
 
@@ -373,11 +373,11 @@ def test_asking_for_the_data_agent_with_none_configured_offers_no_agent(enabled,
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "agent, phi, expect_agent, expect_scopes",
+    "agent, sensitive, expect_agent, expect_scopes",
     [
         # Any other agent labs lists: named on the panel, the run page's usual scopes.
         ("coach-bot", [], "coach-bot", {"workflow:read", "workflow:act", "data:read"}),
-        # One allowed over real data: on ZDR, like the data agent -- reads, and edits
+        # One allowed over real data: on sensitive-data runners, like the data agent -- reads, and edits
         # a person confirms in chat, but no actions.
         ("deep-bot", ["deep-bot"], "deep-bot", {"workflow:read", "data:read", "workflow:edit"}),
         # One labs no longer lists: no panel at all, not the site's agent in its place.
@@ -385,12 +385,12 @@ def test_asking_for_the_data_agent_with_none_configured_offers_no_agent(enabled,
     ],
 )
 def test_a_workflow_offers_the_agent_it_chose_on_that_agents_terms(
-    enabled, visitor, settings, agent, phi, expect_agent, expect_scopes
+    enabled, visitor, settings, agent, sensitive, expect_agent, expect_scopes
 ):
     from connect_labs.workflow.views import WorkflowRunView
 
     settings.CANOPY_OFFERED_AGENTS = ["coach-bot", "deep-bot"]
-    settings.CANOPY_PHI_AGENTS = phi
+    settings.CANOPY_SENSITIVE_AGENTS = sensitive
     workflow = {**SHARING_WORKFLOW, "config": {"agent": {"share": True, "agent": agent}}}
     with (
         mock.patch("connect_labs.workflow.views.get_org_data", return_value={}),
@@ -409,7 +409,7 @@ def test_a_workflow_offers_the_agent_it_chose_on_that_agents_terms(
     arrival = _mint(panel, visitor)
     assert _scopes(arrival[contract.ARRIVAL_ID_JAG_FIELD]) == expect_scopes
     signed = json.dumps(unverified_claims(arrival["assertion"]))
-    assert ("zdr" in signed) == bool(phi)
+    assert ("sensitive_data" in signed) == bool(sensitive)
 
 
 @pytest.mark.django_db
@@ -420,7 +420,7 @@ def test_a_held_back_agent_is_never_silent(enabled, visitor, settings):
     from connect_labs.workflow.views import WorkflowRunView
 
     settings.CANOPY_DATA_AGENT_SLUG = "labsdata"
-    settings.CANOPY_PHI_AGENTS = []
+    settings.CANOPY_SENSITIVE_AGENTS = []
     with (
         mock.patch("connect_labs.workflow.views.get_org_data", return_value={}),
         mock.patch("connect_labs.labs.synthetic.provenance.all_generated", return_value=False),

@@ -1,4 +1,5 @@
-"""The Data page offers the agent for data work (a PHI-safe one, labsdata) read-only on ZDR
+"""The Data page offers the agent for data work (one that handles sensitive data, labsdata) read-only on
+sensitive-data
 runners; with none, the default agent. Every other page is unchanged."""
 
 from unittest import mock
@@ -18,27 +19,27 @@ def test_with_no_agent_for_data_work_the_data_pages_offer_the_default_agent(sett
     assert here.ok and here.page_agent == canopy_panel.PageAgent()
 
 
-def test_a_phi_safe_agent_labs_shows_is_offered_on_the_data_pages_on_zdr_runners(settings):
-    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"  # shown, and the fake canopy declares it PHI-safe
+def test_an_agent_handling_sensitive_data_labs_shows_is_offered_on_the_data_pages_on_sensitive_data_runners(settings):
+    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"  # shown, and the fake canopy declares it handles sensitive data
     here = canopy_panel.data_page_agent()
     assert here.ok and here.read_only
     assert here.page_agent.agent == "labsdata"
-    assert here.page_agent.runner_requirements == ("zdr",)
+    assert here.page_agent.runner_requirements == ("sensitive_data",)
     assert here.page_agent.panel == {"mode": "docked", "width": 560, "expandable": True}
 
 
-def test_labs_zdr_requirement_counts_toward_clearance_but_canopy_must_still_vouch(settings):
-    settings.CANOPY_PHI_AGENTS = ["labsdata"]
-    settings.CANOPY_RUNNER_REQUIREMENTS = []  # the site does not require ZDR; a read-only page does
+def test_labs_sensitive_data_requirement_counts_toward_clearance_but_canopy_must_still_vouch(settings):
+    settings.CANOPY_SENSITIVE_AGENTS = ["labsdata"]
+    settings.CANOPY_RUNNER_REQUIREMENTS = []  # the site does not require sensitive-data runners; a read-only page does
     without_page = canopy_panel.real_data_clearance("labsdata")
-    assert not without_page.granted and "ZDR" in without_page.reason
+    assert not without_page.granted and "sensitive-data runners" in without_page.reason
     with mock.patch.object(canopy_panel, "CANOPY_EXECUTION_STATEMENTS", False):  # an SDK that cannot verify
-        with_page = canopy_panel.real_data_clearance("labsdata", ("zdr",))
+        with_page = canopy_panel.real_data_clearance("labsdata", ("sensitive_data",))
     assert not with_page.granted and "vouch" in with_page.reason
     with mock.patch.object(canopy_panel, "CANOPY_EXECUTION_STATEMENTS", True):
-        assert canopy_panel.real_data_clearance("labsdata", ("zdr",)).granted
+        assert canopy_panel.real_data_clearance("labsdata", ("sensitive_data",)).granted
         # The default agent is not cleared just because the data agent is.
-        assert not canopy_panel.real_data_clearance("ace", ("zdr",)).granted
+        assert not canopy_panel.real_data_clearance("ace", ("sensitive_data",)).granted
 
 
 def test_panel_signs_the_pages_agent_and_requirements_into_the_page():
@@ -48,12 +49,12 @@ def test_panel_signs_the_pages_agent_and_requirements_into_the_page():
         captured.update(kwargs)
         return {"ready": True}
 
-    page = canopy_panel.PageAgent(agent="labsdata", runner_requirements=("zdr",), panel={"mode": "docked"})
+    page = canopy_panel.PageAgent(agent="labsdata", runner_requirements=("sensitive_data",), panel={"mode": "docked"})
     available = canopy_panel.Availability(True, "labsdata", True, (), page)
     with mock.patch("canopy_sdk.django.pages.panel_context", fake_panel_context):
         canopy_panel.panel(None, reads=canopy_panel.NO_VISIT_DATA, available=available, resource="labs-data://")
     assert captured["agent"] == "labsdata"
-    assert captured["runner_requirements"] == ["zdr"]
+    assert captured["runner_requirements"] == ["sensitive_data"]
     assert captured["panel"] == {"mode": "docked"}
 
     captured.clear()
@@ -86,4 +87,4 @@ def test_the_data_page_asks_for_labsdata_when_configured(client, django_user_mod
     ):
         assert client.get(f"/labs/data/?opps={OPP.id}").status_code == 200
     assert seen["available"].page_agent.agent == "labsdata"
-    assert seen["available"].page_agent.runner_requirements == ("zdr",)
+    assert seen["available"].page_agent.runner_requirements == ("sensitive_data",)

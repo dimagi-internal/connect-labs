@@ -186,7 +186,9 @@ PAGE_TITLES: dict[str, str] = {
     "marketplace:network": "The partner network",
     "marketplace:round": "A marketplace round",
     "labs:workflow:run": "A workflow run",
-    "labs:workflow:run:data": "A workflow run, read-only (a PHI-safe agent, on ZDR runners)",
+    "labs:workflow:run:data": (
+        "A workflow run, read-only (an agent that handles sensitive data, on sensitive-data runners)"
+    ),
     "labs:workflow:run:page": "A page drawn at its workflow's address",
     "labs:page_home": "An organisation's or programme's home page",
     "labs:page": "A page",
@@ -298,11 +300,12 @@ def user_claims(user) -> dict:
 
 def site_needs() -> dict:
     """What labs asks of canopy's agents, for ``site.json``: to read real data an agent
-    must be declared PHI-safe and run on ZDR runners; and which agents labs shows and
-    lets read real data now, against which site agents version they were chosen."""
+    must be declared to handle sensitive data and run on sensitive-data runners; and which
+    agents labs shows and lets read real data now, against which site agents version they
+    were chosen."""
     agents = canopy_settings.current()
     return {
-        "real_data": {"requires": {"phi_safe": True, "runner_flag": canopy_settings.ZDR}},
+        "real_data": {"requires": {"handles_sensitive": True, "runner_flag": canopy_settings.SENSITIVE_DATA}},
         "uses": {
             "agents": list(agents.offered),
             "real_data_agents": list(agents.real_data_agents),

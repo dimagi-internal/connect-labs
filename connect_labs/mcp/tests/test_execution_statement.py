@@ -20,11 +20,13 @@ from connect_labs.mcp import execution
 class FakeExecution:
     agent: str = "labsdata"
     declaration: dict | None = field(
-        default_factory=lambda: {"data": "phi", "capability": "data", "declared_by": "a person"}
+        default_factory=lambda: {"data": "sensitive", "capability": "data", "declared_by": "a person"}
     )
-    runner: dict = field(default_factory=lambda: {"id": 7, "name": "zdr-1", "flags": [{"flag": "zdr"}]})
-    runner_posture: dict = field(default_factory=lambda: {"data_mode": "zdr"})
-    requirements: tuple = ("zdr",)
+    runner: dict = field(
+        default_factory=lambda: {"id": 7, "name": "sensitive-data-1", "flags": [{"flag": "sensitive_data"}]}
+    )
+    runner_posture: dict = field(default_factory=lambda: {"data_mode": "sensitive_data"})
+    requirements: tuple = ("sensitive_data",)
     turn: str = "t1"
     session: str = "s1"
     refusal: str | None = None
@@ -33,7 +35,7 @@ class FakeExecution:
     def runner_flags(self):
         return frozenset(f["flag"] for f in self.runner["flags"])
 
-    def phi_clearance(self, *, agents, require=("zdr",)):
+    def sensitive_clearance(self, *, agents, require=("sensitive_data",)):
         if self.agent not in set(agents):
             return "agent_not_allowed"
         if self.refusal:
@@ -70,8 +72,8 @@ def sdk(monkeypatch):
 
 @pytest.fixture
 def labs_allows(settings):
-    """Labs lets labsdata read real data ("Real data" ticked), and so requires ZDR of it."""
-    settings.CANOPY_PHI_AGENTS = ["labsdata"]
+    """Labs lets labsdata read real data ("Real data" ticked), and so requires sensitive-data runners of it."""
+    settings.CANOPY_SENSITIVE_AGENTS = ["labsdata"]
     settings.CANOPY_DATA_AGENT_SLUG = "labsdata"
     settings.CANOPY_RUNNER_REQUIREMENTS = []
 
@@ -97,7 +99,7 @@ def test_outside_a_delegated_call_there_is_no_vouching(labs_allows, sdk):
     assert not clearance.granted and "no statement" in clearance.reason
 
 
-def test_a_verified_phi_declared_zdr_call_is_cleared(labs_allows, sdk):
+def test_a_verified_sensitive_call_on_a_sensitive_data_runner_is_cleared(labs_allows, sdk):
     call = execution.verify({"canopy-execution": "jwt"}, "tok")
     with execution.bound(call):
         assert canopy_panel.call_real_data_clearance().granted
@@ -121,10 +123,10 @@ def test_each_condition_on_the_statement_fails_closed(labs_allows, sdk, stated, 
     assert not clearance.granted and reason in clearance.reason
 
 
-def test_labs_requires_zdr_of_every_agent_it_lets_read_real_data(labs_allows, settings, sdk):
+def test_labs_requires_sensitive_data_of_every_agent_it_lets_read_real_data(labs_allows, settings, sdk):
     # No site-wide requirement and no data-agent setting: labs' own policy still holds
-    # an agent it lets read real data to ZDR runners (it is only ever offered on them),
-    # so the call clears -- and a statement whose conversation does not require ZDR is
+    # an agent it lets read real data to sensitive-data runners (it is only ever offered on them),
+    # so the call clears -- and a statement whose conversation does not require sensitive-data runners is
     # refused (test_each_condition_on_the_statement_fails_closed).
     settings.CANOPY_DATA_AGENT_SLUG = ""
     settings.CANOPY_RUNNER_REQUIREMENTS = []
@@ -142,8 +144,8 @@ def test_the_audit_records_who_executed_never_the_whole_claims(sdk):
     audit = execution.verify({"canopy-execution": "jwt"}, "tok").audit()
     assert audit["agent"] == "labsdata" and "agent_sha" not in audit
     assert audit["declaration"]["declared_by"] == "a person"
-    assert audit["runner"] == {"id": 7, "name": "zdr-1", "flags": ["zdr"]}
-    assert audit["runner_data_mode"] == "zdr" and audit["requirements"] == ["zdr"]
+    assert audit["runner"] == {"id": 7, "name": "sensitive-data-1", "flags": ["sensitive_data"]}
+    assert audit["runner_data_mode"] == "sensitive_data" and audit["requirements"] == ["sensitive_data"]
     assert execution.verify({}, "tok").audit() == {"refused": "no_statement"}
 
 

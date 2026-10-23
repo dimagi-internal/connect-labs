@@ -71,25 +71,27 @@ Admin table all read it, so none of them can disagree or fall silent.
 - **canopy's word** is the site agents API (`GET {canopy}/api/sites/agents`, dimagi-canopy
   0.14, `canopy_sdk.django.site_agents.current()`, read through
   `canopy_settings.site_agents()`): the agents canopy allows on labs' connected site,
-  signed with canopy's client key, each with whether its author declared it PHI-safe,
-  whether it has a ready ZDR runner, whether it is ready, and canopy's own problems.
+  signed with canopy's client key, each with whether its author declared it handles
+  sensitive data, whether it has a ready sensitive-data runner, whether it is ready, and canopy's own problems.
   Cached five minutes; when canopy is unreachable its last word is used for up to a day,
   then **no agent is shown anywhere** (fail closed).
 - **labs' ticks** (below) say which of those labs shows, which may read real data, and the
   default agent.
-- An agent canopy declares PHI-safe, or that labs lets read real data, is always offered
-  **read-only, on ZDR runners**: page key `labs:workflow:run:data` (`workflow:read`,
+- An agent canopy declares handles sensitive data, or that labs lets read real data, is
+  always offered **read-only, on sensitive-data runners**: page key `labs:workflow:run:data` (`workflow:read`,
   `data:read`, `workflow:edit`, never `workflow:act`) and a docked panel.
 
 Over real data an agent needs, failing closed on each: "Real data" ticked in labs;
-canopy's word that it is PHI-safe with a ready ZDR runner (so drift in canopy withdraws it
-at once); every conversation with it required to run on ZDR (signed into its page token);
+canopy's word that it handles sensitive data with a ready sensitive-data runner (a ZDR API
+key, a locked harness, egress limited to an allowlist, nothing kept on the box; so drift in
+canopy withdraws it at once); every conversation with it required to run on sensitive-data
+runners (signed into its page token);
 and canopy's per-call `Canopy-Execution` statement (canopy-web spec
-`2026-10-22-phi-agents-on-zdr-runners` §6). Labs verifies that statement once per
+`2026-10-22-sensitive-data-agents-design` §6). Labs verifies that statement once per
 delegated tool call (`mcp/execution.py`) and holds the call to it
 (`canopy_panel.call_real_data_clearance`): the agent it names has "Real data" ticked, is
-declared PHI-safe at the commit actually running, on a runner with `zdr` in force in ZDR
-mode, in a conversation that requires `zdr`. A call is held to the statement, never to the
+declared to handle sensitive data (`data: sensitive`), on a runner with `sensitive_data` in
+force in sensitive-data mode, in a conversation that requires `sensitive_data`. A call is held to the statement, never to the
 cached listing. Each delegated call's statement (or why there was none) is recorded on
 `MCPAuditLog.execution`. With nothing ticked (the default), **no agent is offered over
 real data** -- a sharing workflow over production opps shows its own buttons and no
@@ -97,16 +99,17 @@ launcher.
 
 **Labs' side is set in the UI**, at Labs Admin › Canopy agents
 (`/labs/admin/canopy-agents/`, `labs/canopy_settings.py`): a table with one row per agent
-canopy lists (Agent, What it does here, PHI-safe, ZDR runner, Ready -- canopy's columns --
+canopy lists (Agent, What it does here, Handles sensitive data, Sensitive-data runner, Ready -- canopy's
+columns --
 then labs' ticks: Show on labs, Real data, Default), plus the runner flags every
 conversation must run on, chosen from the flags canopy names. Nothing is typed. "Real
-data" can be ticked only when canopy says the agent is PHI-safe with a ready ZDR runner; an
+data" can be ticked only when canopy says the agent handles sensitive data with a ready sensitive-data runner; an
 agent labs still ticks that canopy no longer lists, or no longer clears, is shown in red
 with canopy's reason and is not offered. Labs Admin users can read it; Dimagi staff (a
 Dimagi sign-in, `is_dimagi_staff`) change it. Each change is a new `CanopyAgentSettings`
 row (who, when, why, the site agents `version` it was made against, audited) and any
 earlier one can be restored. The `CANOPY_AGENT_SLUG` / `CANOPY_DATA_AGENT_SLUG` /
-`CANOPY_OFFERED_AGENTS` / `CANOPY_PHI_AGENTS` / `CANOPY_RUNNER_REQUIREMENTS` environment
+`CANOPY_OFFERED_AGENTS` / `CANOPY_SENSITIVE_AGENTS` / `CANOPY_RUNNER_REQUIREMENTS` environment
 settings are only the cold-start defaults until someone saves there. The page also lists
 labs' checks for the agent for data work and the last delegated `data_*` calls with what
 canopy's statement said about each.
@@ -114,7 +117,7 @@ canopy's statement said about each.
 **Labs tells canopy what it needs**, too: `/labs/canopy/site.json` (the SDK's
 `site_document`, beside the JWKS, signed with the same key) lists labs' pages and the
 scopes each grants (`PAGE_SCOPES`, titled by `PAGE_TITLES`), what real data requires
-(`phi_safe`, runner flag `zdr`), and which agents labs shows and lets read real data
+(`handles_sensitive`, runner flag `sensitive_data`), and which agents labs shows and lets read real data
 (`canopy.site_needs`). canopy's Connected sites page reads it and shows, per agent,
 whether it meets labs' needs.
 
@@ -169,12 +172,12 @@ user sees" is the access story, and keeping it true belongs to the page.
 
 The Data page (`/labs/data/`, `connect_labs/labsdata`) offers the **agent for data work**
 (`canopy_settings.data_agent`): the first agent labs lets read real data, else the first
-shown agent canopy declares PHI-safe (`labsdata`). With none, it offers the default agent.
+shown agent canopy declares handles sensitive data (`labsdata`). With none, it offers the default agent.
 The page passes `canopy_panel.data_page_agent()` -- that agent, `runner_requirements:
-["zdr"]` and a docked, expandable panel -- and the SDK signs the agent and the requirement
+["sensitive_data"]` and a docked, expandable panel -- and the SDK signs the agent and the requirement
 into the page token. Canopy then binds the visitor's token and the host grant to that
 agent, so another agent cannot spend the `data:read` grant the Data page minted, and the
-conversation runs only on ZDR runners.
+conversation runs only on sensitive-data runners.
 
 A workflow chooses which agent its run pages offer (`config.agent.agent`, a slug, the run
 page's **Agent** box; WORKFLOW_REFERENCE.md §14) from the agents Labs Admin shows, so

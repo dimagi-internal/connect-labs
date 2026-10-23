@@ -5,7 +5,7 @@ Two sources, kept apart:
 
 * **canopy's word** -- the site agents API (``canopy_sdk.django.site_agents.current()``,
   read here through ``site_agents()``): the agents canopy allows on labs' connected site,
-  signed by canopy, with whether each one's author declared it PHI-safe, which runner
+  signed by canopy, with whether each one's author declared it handles sensitive data, which runner
   flags it can run on, and whether it is ready. Cached five minutes; when canopy cannot
   be reached its last word is used for up to a day, then None -- and labs shows no agent.
 * **labs' ticks** -- the ``CanopyAgentSettings`` row in force: per agent, "Show on labs"
@@ -33,8 +33,8 @@ from connect_labs.utils.dimagi_user import is_dimagi_staff
 
 logger = logging.getLogger(__name__)
 
-#: The runner flag real data needs (zero data retention).
-ZDR = "zdr"
+#: The runner flag real data needs: a sensitive-data runner.
+SENSITIVE_DATA = "sensitive_data"
 
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,99}$")
 
@@ -71,13 +71,17 @@ def unreachable_reason() -> str:
 
 def eligible_for_real_data(agent) -> tuple[bool, str]:
     """Whether canopy says ``agent`` (a ``SiteAgent`` or None) may read real data: listed,
-    its author declared it PHI-safe, and it is ready on a runner with ``zdr``."""
+    its author declared it handles sensitive data, and it is ready on a runner with
+    ``sensitive_data``."""
     if agent is None:
         return False, "canopy does not list it for labs (canopy › Connected sites)"
-    if not agent.phi_safe:
-        return False, f"{agent.slug} is not declared PHI-safe in canopy (its Interface, with a passkey)"
-    if not agent.ready_with_flag(ZDR):
-        return False, f"{agent.slug} has no ready ZDR runner in canopy (canopy › Runners)"
+    if not agent.handles_sensitive:
+        return (
+            False,
+            f"{agent.slug} is not declared to handle sensitive data in canopy (its Interface, with a passkey)",
+        )
+    if not agent.ready_with_flag(SENSITIVE_DATA):
+        return False, f"{agent.slug} has no ready sensitive-data runner in canopy (canopy › Runners)"
     return True, ""
 
 
@@ -141,11 +145,11 @@ def from_environment() -> AgentSettings:
     """The cold-start defaults: the ``CANOPY_*`` environment settings, read as ticks."""
     default = getattr(settings, "CANOPY_AGENT_SLUG", "") or ""
     data = getattr(settings, "CANOPY_DATA_AGENT_SLUG", "") or ""
-    phi = _slugs(getattr(settings, "CANOPY_PHI_AGENTS", ()) or ())
+    sensitive = _slugs(getattr(settings, "CANOPY_SENSITIVE_AGENTS", ()) or ())
     others = _slugs(getattr(settings, "CANOPY_OFFERED_AGENTS", ()) or ())
-    slugs = _slugs((default, data, *others, *phi))
+    slugs = _slugs((default, data, *others, *sensitive))
     return AgentSettings(
-        agents=tuple(AgentTicks(s, offered=True, real_data=s in phi) for s in slugs),
+        agents=tuple(AgentTicks(s, offered=True, real_data=s in sensitive) for s in slugs),
         default_agent=default,
         runner_requirements=_slugs(getattr(settings, "CANOPY_RUNNER_REQUIREMENTS", ()) or ()),
     )
@@ -190,8 +194,9 @@ def validate(
 
     An agent newly shown must be one canopy lists; one already shown that canopy no
     longer lists may stay (it is shown in red, and not offered, until canopy lists it
-    again). "Real data" newly ticked needs canopy's PHI-safe declaration and a ready ZDR
-    runner. A runner flag must be one canopy names (``zdr`` always may be)."""
+    again). "Real data" newly ticked needs canopy's declaration that the agent handles
+    sensitive data and a ready sensitive-data runner. A runner flag must be one canopy
+    names (``sensitive_data`` always may be)."""
     before = before or current()
     listed = {a.slug: a for a in listing.agents} if listing is not None else {}
     ticks: list[AgentTicks] = []
@@ -214,7 +219,7 @@ def validate(
     default_agent = (default_agent or "").strip()
     if not any(t.slug == default_agent and t.offered for t in ticks):
         raise InvalidSettings("The default agent must be one labs shows.")
-    known = {ZDR, *(f.flag for f in listing.runner_flags)} if listing is not None else {ZDR}
+    known = {SENSITIVE_DATA, *(f.flag for f in listing.runner_flags)} if listing is not None else {SENSITIVE_DATA}
     flags = _slugs(runner_requirements)
     unknown = [f for f in flags if f not in known and f not in before.runner_requirements]
     if unknown:
@@ -283,7 +288,8 @@ def can_change(user) -> bool:
 
     Not ``is_staff`` alone: an OAuth-created labs user never gets that flag and no labs
     page grants it, so the setting could be changed by nobody. These ticks are one of
-    three locks (canopy's passkey-gated PHI declaration and ZDR flag are the others),
+    three locks (canopy's passkey-gated sensitive-data declaration and runner flag are the
+    others),
     and every change is attributed, audited and restorable."""
     return bool(user and user.is_authenticated and is_dimagi_staff(user))
 
@@ -295,14 +301,14 @@ def can_change(user) -> bool:
 
 def data_agent(ticks: AgentSettings | None = None, listing=None) -> str:
     """The agent for data work: the first one labs lets read real data, else the first
-    shown agent canopy declares PHI-safe. "" when there is none."""
+    shown agent canopy declares handles sensitive data. "" when there is none."""
     ticks = ticks or current()
     if ticks.real_data_agents:
         return ticks.real_data_agents[0]
     if listing is not None:
         for slug in ticks.offered:
             agent = listing.agent(slug)
-            if agent is not None and agent.phi_safe:
+            if agent is not None and agent.handles_sensitive:
                 return slug
     return ""
 

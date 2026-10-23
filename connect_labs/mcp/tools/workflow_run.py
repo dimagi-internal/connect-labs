@@ -764,7 +764,7 @@ def workflow_run_action(
         from connect_labs.labs import canopy_panel
         from connect_labs.workflow.agent_sharing import agent_config
 
-        # A workflow that offers a read-only agent (PHI-safe in canopy, or allowed over
+        # A workflow that offers a read-only agent (handles sensitive data in canopy, or allowed over
         # real data) takes no agent actions, from any agent: its run page grants no
         # ``workflow:act``, and no other page's token may act on it either. A choice
         # that is not available now is treated the same way: fail closed.

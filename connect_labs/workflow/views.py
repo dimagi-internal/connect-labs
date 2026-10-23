@@ -1071,8 +1071,8 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         from connect_labs.labs import canopy, canopy_panel
 
         # The workflow's choice of agent (config.agent.agent), from those Labs Admin
-        # shows and canopy lists. A read-only one (PHI-safe in canopy, or allowed over
-        # real data) runs on ZDR runners, its token signed for the run's read scopes
+        # shows and canopy lists. A read-only one (handles sensitive data in canopy, or
+        # allowed over real data) runs on sensitive-data runners, its token signed for the run's read scopes
         # only. One that is not available here: no panel, not another agent in its place.
         reads = canopy_panel.workflow_reads(definition, run_data.get("opportunity_id"))
         available = canopy_panel.availability(offered.agent, reads)

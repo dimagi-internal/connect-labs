@@ -748,13 +748,13 @@ CANOPY_CLIENT_ID = env("CANOPY_CLIENT_ID", default="")
 # CANOPY_AGENT_SLUG above and the agent settings below are COLD-START DEFAULTS: labs
 # reads them, as ticks, through labs/canopy_settings.py until someone saves at Labs
 # Admin › Canopy agents, which chooses from the agents canopy lists for labs.
-# Runner flags every visitor conversation must run on (`zdr`: zero-data-retention
-# boxes only). Signed into every visitor assertion; canopy enforces it at claim.
+# Runner flags every visitor conversation must run on (`sensitive_data`: sensitive-data
+# runners only). Signed into every visitor assertion; canopy enforces it at claim.
 CANOPY_RUNNER_REQUIREMENTS = env.list("CANOPY_RUNNER_REQUIREMENTS", default=[])
 # Agents with "Real data" ticked by default. Empty: over real data no agent panel is drawn.
-CANOPY_PHI_AGENTS = env.list("CANOPY_PHI_AGENTS", default=[])
-# An agent shown by default (labsdata). Whether it is read-only on ZDR is canopy's word:
-# an agent its author declares PHI-safe always is.
+CANOPY_SENSITIVE_AGENTS = env.list("CANOPY_SENSITIVE_AGENTS", default=[])
+# An agent shown by default (labsdata). Whether it is read-only on sensitive-data runners
+# is canopy's word: an agent its author declares handles sensitive data always is.
 CANOPY_DATA_AGENT_SLUG = env("CANOPY_DATA_AGENT_SLUG", default="")
 # Further agents shown by default.
 CANOPY_OFFERED_AGENTS = env.list("CANOPY_OFFERED_AGENTS", default=[])
