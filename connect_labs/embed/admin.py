@@ -24,7 +24,17 @@ class EmbedClientAdmin(admin.ModelAdmin):
 
 @admin.register(EmbedSession)
 class EmbedSessionAdmin(admin.ModelAdmin):
-    list_display = ("client", "user", "kind", "resource_id", "created_at", "started_at", "expires_at", "revoked_at")
+    list_display = (
+        "client",
+        "user",
+        "kind",
+        "resource_id",
+        "created_at",
+        "started_at",
+        "drawn_at",
+        "expires_at",
+        "revoked_at",
+    )
     list_filter = ("client", "kind")
     search_fields = ("user__username", "resource_id")
     readonly_fields = [f.name for f in EmbedSession._meta.fields]
