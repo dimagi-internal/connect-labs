@@ -493,6 +493,10 @@ def _redirect_is_pointless(path: str) -> bool:
     return path.startswith(REDIRECT_EXEMPT_PREFIXES)
 
 
+#: Paths that never read, save or redirect for a labs context.
+CONTEXT_FREE_PREFIXES = ("/labs/sandbox/render/", "/static/")
+
+
 class LabsContextMiddleware(MiddlewareMixin):
     """Middleware to handle labs context selection.
 
@@ -503,6 +507,13 @@ class LabsContextMiddleware(MiddlewareMixin):
     def process_request(self, request: HttpRequest):
         """Process request to extract and validate context."""
         if not request.user.is_authenticated:
+            request.labs_context = {}
+            return None
+        # The sandbox frame's shell and static files are drawn with no scope: a
+        # sandboxed frame can navigate itself to the shell (and load a static file)
+        # with any query, and must not move the viewer's labs context with it
+        # (workflow/sandbox.py).
+        if request.path.startswith(CONTEXT_FREE_PREFIXES):
             request.labs_context = {}
             return None
 

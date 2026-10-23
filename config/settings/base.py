@@ -594,10 +594,10 @@ EMBED_EXAMPLE_RESOURCES = env.json("EMBED_EXAMPLE_RESOURCES", default=[])
 # Pages' render code runs in a sandboxed frame (workflow/sandbox.py). An emergency switch
 # back only; there is no per-page opt-out.
 LABS_PAGE_SANDBOX = env.bool("LABS_PAGE_SANDBOX", default=True)
-# Workflows' render code in the same frame (phase 2), rolled out per workflow:
-# "off" | "opt_in" (a checked template, or config.sandbox: true) | "all".
-# See workflow/sandbox.py.
-LABS_WORKFLOW_SANDBOX = env("LABS_WORKFLOW_SANDBOX", default="opt_in")
+# Workflows' render code in the same frame (phase 2): "all" (every workflow, the
+# default) | "opt_in" (a checked template, or config.sandbox: true) | "off" (the
+# emergency switch back). See workflow/sandbox.py.
+LABS_WORKFLOW_SANDBOX = env("LABS_WORKFLOW_SANDBOX", default="all")
 
 # Connect Production OAuth (for audit data extraction)
 CONNECT_PRODUCTION_URL = env("CONNECT_PRODUCTION_URL", default="https://connect.dimagi.com")

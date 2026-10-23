@@ -28,6 +28,13 @@ class _Req:
         self.GET = query or {}
 
 
+@pytest.fixture(autouse=True)
+def opt_in_rollout(settings):
+    """These tests describe the per-workflow rollout (`opt_in`); the default is `all`,
+    and the tests of `all` and `off` say so themselves."""
+    settings.LABS_WORKFLOW_SANDBOX = "opt_in"
+
+
 @pytest.fixture
 def checked_template(monkeypatch):
     """A template marked as checked in the frame, for the length of one test."""
@@ -94,8 +101,8 @@ def test_off_still_previews_a_workflow_sandboxed_on_request():
 
 @override_settings(LABS_WORKFLOW_SANDBOX="nonsense")
 def test_an_unknown_rollout_value_is_the_default_never_off():
-    assert sandbox.workflow_sandbox_mode() == "opt_in"
-    assert sandbox.should_sandbox(_definition(OPTED_IN))
+    assert sandbox.workflow_sandbox_mode() == "all"
+    assert sandbox.should_sandbox(_definition(WORKFLOW))
 
 
 @override_settings(LABS_PAGE_SANDBOX=False, LABS_WORKFLOW_SANDBOX="all")
@@ -237,3 +244,9 @@ def test_the_sandbox_flag_is_never_inherited_onto_an_older_instance():
     key = sorted(SANDBOX_CHECKED)[0]
     older = {"name": "x", "config": {}}
     assert "sandbox" not in with_inherited_config_flags(older, key)["config"]
+
+
+def test_the_default_sandboxes_every_workflow(settings):
+    del settings.LABS_WORKFLOW_SANDBOX
+    assert sandbox.workflow_sandbox_mode() == "all"
+    assert sandbox.should_sandbox(_definition(WORKFLOW))

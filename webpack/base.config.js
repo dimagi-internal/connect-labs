@@ -19,10 +19,6 @@ module.exports = {
       __dirname,
       '../connect_labs/static/js/chat-widget.tsx',
     ),
-    'code-editor': path.resolve(
-      __dirname,
-      '../connect_labs/static/js/code-editor.tsx',
-    ),
     'workflow-runner': path.resolve(
       __dirname,
       '../connect_labs/static/js/workflow-runner.tsx',

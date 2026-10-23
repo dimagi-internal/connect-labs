@@ -161,6 +161,15 @@ export const LIMITS = {
   streamOpensPerMinute: 20,
   /** Requests that start server-side work (a job, a footprints fetch), per minute. */
   jobStartsPerMinute: 30,
+  /** ...of which workflow jobs (a Celery task each, some started with no question). */
+  workflowJobStartsPerMinute: 6,
+  /** Reads that run a pipeline or registry on the server, at once (each can hold a
+   * worker for tens of seconds cold). */
+  coldReadsInFlight: 6,
+  /** Labs' own questions (an effect, a navigation with no click) per minute... */
+  questionsPerMinute: 20,
+  /** ...and none at all for this long after the person says no. */
+  quietAfterNoMs: 5_000,
   /** What one page or workflow keeps in each of localStorage and sessionStorage on
    * the host (keys plus values, in characters), and how many keys. */
   storageBytes: 512 * 1024,

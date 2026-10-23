@@ -24,6 +24,7 @@ from connect_labs.tasks.data_access import TaskDataAccess
 from connect_labs.tasks.models import TASK_REVIEW_VALUES, TaskRecord
 from connect_labs.utils.json_safe import safe_json_for_script
 from connect_labs.utils.sandbox_guard import require_same_origin
+from connect_labs.workflow import declared_reads
 
 logger = logging.getLogger(__name__)
 
@@ -893,6 +894,15 @@ def task_initiate_ai(request, task_id):
             return JsonResponse({"error": "Bot ID (experiment) is required"}, status=400)
         if not prompt_text:
             return JsonResponse({"error": "Prompt instructions are required"}, status=400)
+        # From a sandboxed workflow (the host stamps X-Labs-Sandbox-For): the
+        # conversation goes to the task's own worker, never to whoever the render code
+        # names. A QA redirect to a staff member's own app is the task page's, or a
+        # workflow action's (workflow/actions.py), never the frame's.
+        if declared_reads.reader(request) is not None and identifier != (task.task_username or ""):
+            return JsonResponse(
+                {"error": "A workflow may start a coaching conversation only with the task's own worker."},
+                status=403,
+            )
 
         ocs_client = OCSDataAccess(request)
         try:

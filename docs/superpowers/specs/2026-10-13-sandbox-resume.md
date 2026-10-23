@@ -1,10 +1,39 @@
 # Page and workflow sandbox: where it stands and how to finish it
 
-**Status (2026-10-22): ready to switch on; still switched off on labs** (PR #2489:
-`LABS_WORKFLOW_SANDBOX=off`, `LABS_PAGE_SANDBOX=false` in `deploy/task-definitions/web.json`).
-Everything below is merged and deployed. Pages and workflows draw as they did before it.
-Adding `?sandbox=1` to any address (`&sandbox=1` if it already has a `?`) previews the
-sandboxed render to whoever asks. What is left is the owner's look and word, below.
+**Status (2026-10-23): switched on by default.** `LABS_PAGE_SANDBOX` defaults to `true` and
+`LABS_WORKFLOW_SANDBOX` to `all`, in `config/settings/base.py` and pinned in
+`deploy/task-definitions/web.json`. Every page and every workflow draws in the frame;
+`LABS_WORKFLOW_SANDBOX=off` / `opt_in` and `LABS_PAGE_SANDBOX=false` remain only as switches
+back. A final audit before the switch (2026-10-23) found nothing that made the frame worse
+than the unsandboxed render, and these gaps in what it promises, all fixed in the same PR:
+
+- **Coaching** (`/tasks/<id>/ai/initiate/`): the frame named the recipient, bot and prompt and
+  the question named only the task. The server now takes a sandboxed request only for the
+  task's own worker (`tasks/views.py`), and the question names the bot and quotes the prompt.
+- **Mapbox**: `*.tiles.mapbox.com` serves the whole Mapbox API (uploads, datasets) and allowed
+  writes from `Origin: null`; it is named by `/v4/` now, and `events.mapbox.com` by its path.
+- **Scope by another name**: `owning_program_id` (query and state bodies) and
+  `storage_opportunity_id` are bound like `program_id` / `opportunity_id`;
+  `owning_program_id` may also be the one in the page's own address (the KMC drill links).
+- **Embed sessions**: `EmbedSessionMiddleware` refuses `Origin: null` on every method, as
+  `sandbox_guard.py` does for the labs session.
+- **Audit jobs**: a job's `job_config.opportunities`, `flw_opportunity_ids` and
+  `only_opportunity_id` are bound (and the audit create/preview bodies' per-worker map); the
+  question names the job type.
+- **reconcile-generation** reads only the opportunities the frame's workflow covers.
+- **Load**: workflow jobs 6 a minute, pipeline-running reads 6 at once, answers read with an
+  early cut-off (`readCapped`); labs asks at most 20 questions a minute, and none for 5 s
+  after a no.
+- **Context**: the shell and `/static/` never read, save or redirect a labs context.
+- The unused `CodeEditor.js` / `vibes.html` (a same-origin `srcDoc` frame) were deleted.
+
+Left as is: a download is saved from labs' origin with the frame's bytes (CSV formulas, a
+PDF), which is what a download is; a by-id audit save/delete names only the audit id (the
+server checks the viewer's access); a removed embed client stays in the shell's
+`frame-ancestors` for up to ~6 minutes (cache), with no data in the shell.
+
+The section below is the history of how it got here.
+
 Design and every ruling: [`docs/superpowers/specs/2026-10-12-page-sandbox-design.md`](2026-10-12-page-sandbox-design.md).
 
 ## The owner's rulings that set the finish line
@@ -24,18 +53,18 @@ Design and every ruling: [`docs/superpowers/specs/2026-10-12-page-sandbox-design
 
 ## What is merged
 
-| PR | What |
-|---|---|
-| #2449, #2451 | Phase 1: pages in the frame; review fixes |
-| #2466, #2470, #2473, #2479, #2480 | Phase 2: workflows in the frame, route table, cross-workflow reads bound, page actions |
-| #2475, #2481 | `workflow_sandbox_scan`; run-labs-command prints a whole log |
-| #2482 | Compile-time rewrites (location, confirm), bridged EventSource, routes for live copies |
-| #2492 | Every live workflow's needs supported; exemptions removed (migration 0007 drops the table) |
-| #2493 | Canopy panel on every sharing page and workflow, sandboxed or not; end-to-end test `connect_labs/mcp/tests/test_canopy_panel_end_to_end.py` |
-| #2489 | Switched off on labs; `?sandbox=1` previews |
-| #2496 | The frame's CSP allows the marker-cluster plugin (used only by MBW v1 copies; see "MBW v1" below) |
-| #2644 | localStorage / sessionStorage kept by the host per definition, across loads (the design doc's "Storage") |
-| #2495 | Pages and workflows size the same way: the frame grows to its content, the labs page scrolls (host viewport for `vh`/`h-screen`, fixed dialogs placed in view, scrolls go to the host). Matched plain vs `?sandbox=1` on 11 templates, 3 browsers, desktop and phone |
+| PR                                | What                                                                                                                                                                                                                                                                 |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #2449, #2451                      | Phase 1: pages in the frame; review fixes                                                                                                                                                                                                                            |
+| #2466, #2470, #2473, #2479, #2480 | Phase 2: workflows in the frame, route table, cross-workflow reads bound, page actions                                                                                                                                                                               |
+| #2475, #2481                      | `workflow_sandbox_scan`; run-labs-command prints a whole log                                                                                                                                                                                                         |
+| #2482                             | Compile-time rewrites (location, confirm), bridged EventSource, routes for live copies                                                                                                                                                                               |
+| #2492                             | Every live workflow's needs supported; exemptions removed (migration 0007 drops the table)                                                                                                                                                                           |
+| #2493                             | Canopy panel on every sharing page and workflow, sandboxed or not; end-to-end test `connect_labs/mcp/tests/test_canopy_panel_end_to_end.py`                                                                                                                          |
+| #2489                             | Switched off on labs; `?sandbox=1` previews                                                                                                                                                                                                                          |
+| #2496                             | The frame's CSP allows the marker-cluster plugin (used only by MBW v1 copies; see "MBW v1" below)                                                                                                                                                                    |
+| #2644                             | localStorage / sessionStorage kept by the host per definition, across loads (the design doc's "Storage")                                                                                                                                                             |
+| #2495                             | Pages and workflows size the same way: the frame grows to its content, the labs page scrolls (host viewport for `vh`/`h-screen`, fixed dialogs placed in view, scrolls go to the host). Matched plain vs `?sandbox=1` on 11 templates, 3 browsers, desktop and phone |
 
 ## Verified (2026-10-22)
 

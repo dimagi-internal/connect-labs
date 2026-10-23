@@ -120,6 +120,50 @@ function opportunitiesInBody(
   }
 }
 
+/**
+ * Every opportunity an audit-shaped body (an audit create or preview, or an audit
+ * job's `job_config`) can name: `opportunities`, the per-worker
+ * `flw_opportunity_ids` map's values, and a single `opportunity_id` /
+ * `only_opportunity_id`. Each must be this workflow's.
+ */
+function auditScopeInBody(
+  body: Record<string, unknown>,
+  ctx: RouteContext,
+): void {
+  opportunitiesInBody(body, ctx);
+  const perFlw = body.flw_opportunity_ids;
+  if (perFlw !== undefined && perFlw !== null) {
+    if (typeof perFlw !== 'object' || Array.isArray(perFlw)) {
+      refuseOpportunity(perFlw);
+    }
+    for (const o of Object.values(perFlw as object)) {
+      if (!ctx.opportunityIds.includes(Number(o))) refuseOpportunity(o);
+    }
+  }
+  for (const key of ['opportunity_id', 'only_opportunity_id']) {
+    const o = body[key];
+    if (o === undefined || o === null || o === '') continue;
+    if (!ctx.opportunityIds.includes(Number(o))) refuseOpportunity(o);
+  }
+}
+
+/** Scope a state write names in its BODY (the view reads `owning_program_id` from
+ * it, where a GET would carry it in the query): bound like the query's. */
+function scopeHintsInBody(
+  body: Record<string, unknown>,
+  ctx: RouteContext,
+): void {
+  for (const [param, name] of Object.entries(BODY_SCOPE_PARAMS)) {
+    const v = body[param];
+    if (v === undefined || v === null || v === '') continue;
+    if (!bound(name, String(v), ctx)) {
+      throw new RouteError(
+        `fetch: that request names ${param}=${String(v).slice(0, 20)}, which this workflow does not cover`,
+      );
+    }
+  }
+}
+
 /** `{"per_opp": {"<opp id>": ...}}` (audit batch config). */
 function perOppInBody(body: Record<string, unknown>, ctx: RouteContext): void {
   const per = body.per_opp;
@@ -235,22 +279,56 @@ export const COMPUTE_ONLY_JOBS = [
   'program_admin_rollup',
 ];
 
+function jobConfigOf(body: Record<string, unknown>): Record<string, unknown> {
+  return body.job_config &&
+    typeof body.job_config === 'object' &&
+    !Array.isArray(body.job_config)
+    ? (body.job_config as Record<string, unknown>)
+    : {};
+}
+
+/** A job type, as labs names it: a short slug, shown in the host's question. */
+const JOB_TYPE_RE = /^[a-z0-9_]{1,64}$/;
+
+/** The question for a job start names the job, in its own (labs') name. */
+function describeJob(body: Record<string, unknown>): string {
+  const t = jobConfigOf(body).job_type;
+  const named = typeof t === 'string' && JOB_TYPE_RE.test(t) ? ` "${t}"` : '';
+  return `start a background job${named} that creates audits or other records`;
+}
+
+/** The longest prompt the coaching question quotes. */
+export const MAX_QUOTED_PROMPT = 300;
+
+/** Starting a coaching conversation: the question says which bot, who receives it
+ * and what it opens with (the server takes it only for the task's own worker). */
+function describeCoaching(body: Record<string, unknown>): string {
+  const clean = (v: unknown, n: number) =>
+    String(v ?? '')
+      .replace(/\s+/g, ' ')
+      .replace(/"/g, "'")
+      .trim()
+      .slice(0, n);
+  const prompt = clean(body.prompt_text, MAX_QUOTED_PROMPT);
+  const more =
+    String(body.prompt_text ?? '').trim().length > MAX_QUOTED_PROMPT
+      ? '...'
+      : '';
+  return (
+    `start an AI coaching conversation with ${clean(body.identifier, 80) || 'the worker'}` +
+    ` on bot "${clean(body.experiment, 80)}", opening with: "${prompt}${more}"`
+  );
+}
+
 /** A job's own scope ids are bound like any other; then its type decides the gate. */
 function jobGate(
   body: Record<string, unknown>,
   ctx: RouteContext,
 ): Gate | null {
-  const config =
-    body.job_config && typeof body.job_config === 'object'
-      ? (body.job_config as Record<string, unknown>)
-      : {};
-  if (
-    config.opportunity_id !== undefined &&
-    config.opportunity_id !== null &&
-    !ctx.opportunityIds.includes(Number(config.opportunity_id))
-  ) {
-    refuseOpportunity(config.opportunity_id);
-  }
+  const config = jobConfigOf(body);
+  // Every opportunity the job can be told to act on (an audit job takes a list,
+  // a per-worker map and a single one), not just `opportunity_id`.
+  auditScopeInBody(config, ctx);
   // Every job handler acts on job_config.run_id: it must be THIS run (the server
   // also refuses one that is not the run in the URL).
   if (
@@ -285,6 +363,10 @@ export interface RouteContext {
   runId: number | null;
   opportunityIds: number[];
   programIds: number[];
+  /** Programs a run of ANOTHER workflow may be looked up in (`owning_program_id`):
+   * this workflow's own, and the one the page's own address names (a programme
+   * report's drill link to its companion review carries the report's program). */
+  owningProgramIds?: number[];
   /** The organisation in view (a page's scope), by slug. */
   organizationKey: string | null;
   /** The definitions whose runs this one declares it reads (itself included):
@@ -471,7 +553,7 @@ export const ROUTES: readonly Route[] = [
     methods: POST,
     gate: 'read',
     path: p(`/audit/api/audit/preview/`),
-    bodyCheck: opportunitiesInBody,
+    bodyCheck: auditScopeInBody,
   },
   {
     methods: GET,
@@ -560,8 +642,14 @@ export const ROUTES: readonly Route[] = [
   {
     methods: POST,
     gate: 'own',
+    path: p(`/labs/workflow/api/run/${RUN}/state/`),
+    bodyCheck: scopeHintsInBody,
+  },
+  {
+    methods: POST,
+    gate: 'own',
     path: p(
-      `/labs/workflow/api/run/${RUN}/(state|worker-result|flags|rename|reconcile-generation)/`,
+      `/labs/workflow/api/run/${RUN}/(worker-result|flags|rename|reconcile-generation)/`,
     ),
   },
   {
@@ -592,6 +680,7 @@ export const ROUTES: readonly Route[] = [
     path: p(`/labs/workflow/api/run/${RUN}/job/start/`),
     label: 'start a background job that creates audits or other records',
     bodyGate: jobGate,
+    describe: describeJob,
   },
   // Another workflow's run's state (a control room marking the runs it watches):
   // asked first; the server takes it only for a run of a definition this one
@@ -604,6 +693,7 @@ export const ROUTES: readonly Route[] = [
     // Asked naming the run; a yes holds a while for THAT run only.
     perRecord: true,
     recordGrant: true,
+    bodyCheck: scopeHintsInBody,
   },
   // This workflow's own data sources: asked every time, naming the change.
   {
@@ -674,6 +764,7 @@ export const ROUTES: readonly Route[] = [
     path: p(`/tasks/${REC}/ai/initiate/`),
     label: 'start an AI coaching conversation with the worker on task',
     perRecord: true,
+    describe: (body) => describeCoaching(body),
   },
   {
     methods: POST,
@@ -687,7 +778,7 @@ export const ROUTES: readonly Route[] = [
     gate: 'effect',
     path: p(`/audit/api/audit/(create|create-async)/`),
     label: 'create audits',
-    bodyCheck: opportunitiesInBody,
+    bodyCheck: auditScopeInBody,
   },
   {
     methods: POST,
@@ -732,7 +823,21 @@ const SCOPE_PARAMS = {
 
 /** Other query parameters bound like a path id (the history endpoints name the
  * workflow they read with `?definition_id=`). */
-const BOUND_PARAMS = { definition_id: 'rel', run_id: 'run' } as const;
+const BOUND_PARAMS = {
+  definition_id: 'rel',
+  run_id: 'run',
+  // Where a view looks a record up when it is not in the session's scope: a run in
+  // another program (workflow/views.py), an audit's storage opportunity
+  // (audit/views.py). Scope by another name, bound like it.
+  owning_program_id: 'owner',
+  storage_opportunity_id: 'opp',
+} as const;
+
+/** The scope hints a write's JSON body may carry (views read them there too). */
+const BODY_SCOPE_PARAMS = {
+  owning_program_id: 'owner',
+  storage_opportunity_id: 'opp',
+} as const;
 
 export class RouteError extends Error {}
 
@@ -762,6 +867,10 @@ function bound(name: string, value: string, ctx: RouteContext): boolean {
       return ctx.opportunityIds.includes(n);
     case 'prog':
       return ctx.programIds.includes(n);
+    case 'owner':
+      return (
+        ctx.programIds.includes(n) || (ctx.owningProgramIds || []).includes(n)
+      );
     default:
       return false;
   }
@@ -770,6 +879,7 @@ function bound(name: string, value: string, ctx: RouteContext): boolean {
 const NOUNS: Record<string, string> = {
   opp: 'an opportunity',
   prog: 'a program',
+  owner: 'a program',
   org: 'an organization',
   run: 'a run',
   def: 'a workflow',

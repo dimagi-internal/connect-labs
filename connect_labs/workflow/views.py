@@ -2487,6 +2487,13 @@ def reconcile_generation_api(request, run_id):
         run = pwda.get_run(run_id)
         if not run:
             return JsonResponse({"error": "Run not found"}, status=404)
+        # From the sandbox frame: its own run only, and only the opportunities its
+        # workflow covers. The entries are run state the frame can write, so they
+        # cannot be what says which opportunity is read.
+        no = declared_reads.run_refusal(request, run)
+        if no is not None:
+            return no
+        covered = declared_reads.covered_opportunity_ids(request)
         state = run.data.get("state", {}) or {}
         generation = dict(state.get("generation") or {})
         if run.is_completed:
@@ -2499,6 +2506,8 @@ def reconcile_generation_api(request, run_id):
             opp_id = entry.get("opportunity_id")
             opp_run_id = entry.get("run_id")
             if opp_id is None or opp_run_id is None:
+                continue
+            if covered is not None and _coerce_int(opp_id) not in covered:
                 continue
 
             owda = WorkflowDataAccess(access_token=access_token, opportunity_id=opp_id)

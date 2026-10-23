@@ -191,6 +191,22 @@ def readable_for(request) -> set[int] | None:
     return readable_definition_ids(definition)
 
 
+def covered_opportunity_ids(request) -> set[int] | None:
+    """The opportunities a sandboxed request's workflow covers (its
+    ``opportunity_ids`` and its own opportunity); ``None`` for a request that is not
+    the frame's. Fails closed: a reader that cannot be read covers none."""
+    r = reader(request)
+    if r is None:
+        return None
+    definition = _reader_definition(request, r) if r else None
+    if definition is None:
+        return set()
+    data = getattr(definition, "data", None) or {}
+    ids = list(getattr(definition, "opportunity_ids", None) or data.get("opportunity_ids") or [])
+    ids.append(getattr(definition, "opportunity_id", None) or data.get("opportunity_id"))
+    return {n for n in (_int(i) for i in ids) if n}
+
+
 def _names_reader_as_its_review(request, target_id: int) -> bool:
     """Whether the definition being read names the reader as its companion review
     (``config.flw_review`` / ``worker_review``): a report linking to its review with

@@ -1525,6 +1525,11 @@ function WorkflowRunner({
       runId: Number(initialData.instance.id) || null,
       opportunityIds,
       programIds,
+      // The program this page's own address looks runs up in (a programme report's
+      // drill link carries it); the frame cannot change the address's scope.
+      owningProgramIds: ids([
+        new URLSearchParams(window.location.search).get('owning_program_id'),
+      ]),
       organizationKey: scope?.organization?.slug || null,
       readableDefinitionIds: ids(sandbox?.readable_definitions || []),
       // Its own pipelines; an available-pipelines answer adds what it offers.

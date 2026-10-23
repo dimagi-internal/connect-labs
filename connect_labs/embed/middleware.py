@@ -111,6 +111,12 @@ class EmbedSessionMiddleware:
         if session is None:
             return self.get_response(request)
 
+        # The sandboxed workflow frame inside an embedded page sends `Origin: null`. Its
+        # requests never act as the person, read or write: the embed cookie is
+        # SameSite=None, so this is what keeps the frame off it whatever the browser
+        # (the same rule as utils/sandbox_guard.py for the labs session).
+        if request.headers.get("origin") == "null":
+            return JsonResponse({"error": "A request from an opaque origin does not act as you."}, status=403)
         if request.method not in SAFE_METHODS:
             from connect_labs.utils.sandbox_guard import allowed_origins
 

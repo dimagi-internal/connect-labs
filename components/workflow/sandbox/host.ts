@@ -410,6 +410,48 @@ export function checkBody(body: unknown): string | Uint8Array | undefined {
 }
 
 /**
+ * A response's body, refused as soon as it passes `max` bytes: read in chunks, so an
+ * answer too large for a workflow never sits whole in the host page's memory.
+ */
+export async function readCapped(
+  response: Response,
+  max: number,
+): Promise<ArrayBuffer> {
+  const tooLarge = () =>
+    new BridgeError('fetch: the answer is too large for a workflow');
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > max) {
+    response.body?.cancel().catch(() => undefined);
+    throw tooLarge();
+  }
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength > max) throw tooLarge();
+    return buffer;
+  }
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      reader.cancel().catch(() => undefined);
+      throw tooLarge();
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const c of chunks) {
+    out.set(c, at);
+    at += c.byteLength;
+  }
+  return out.buffer;
+}
+
+/**
  * Make a checked request as the viewer, from THIS page: labs' own CSRF token, the
  * session cookie, no redirect followed off labs. Response headers are cut down to
  * the few render code reads.
@@ -482,10 +524,7 @@ export async function proxyFetch(
       );
     }
   }
-  const buffer = await response.arrayBuffer();
-  if (buffer.byteLength > LIMITS.fetchResultBytes) {
-    throw new BridgeError('fetch: the answer is too large for a workflow');
-  }
+  const buffer = await readCapped(response, LIMITS.fetchResultBytes);
   const out: Record<string, string> = {};
   for (const name of ['content-type', 'content-disposition', 'retry-after']) {
     const v = response.headers.get(name);
@@ -767,6 +806,18 @@ export const PINNED_ADDRESS_PARAMS = [
  * the same host dialog -- workflow/actions.py `PageScope`.) */
 export const RUN_ONLY_METHODS = ['updateState', 'completeRun'];
 
+/** Reads that can run a pipeline or a registry on the server (tens of seconds cold). */
+const COLD_READ_RE =
+  /\/labs\/workflow\/api\/\d+\/(pipeline-rows|pipeline-rows\/stream|case-states|pipeline-data|pipeline-data\/stream|pipeline-query|semantic|workflow-data|workflow-query|supply-data|supply-query)\/$/;
+
+function isColdRead(checked: CheckedRequest): boolean {
+  try {
+    return COLD_READ_RE.test(new URL(checked.href).pathname);
+  } catch {
+    return false;
+  }
+}
+
 /** Methods outside the request budget (see the dispatcher). */
 const UNCOUNTED_METHODS = ['resize', 'scroll', 'reveal', 'storage'];
 
@@ -786,6 +837,10 @@ export function createDispatcher(
   const streams = new Map<string, AbortController>();
   const streamOpens: number[] = [];
   const jobStarts: number[] = [];
+  const workflowJobStarts: number[] = [];
+  const questionsAsked: number[] = [];
+  let quietUntil = 0;
+  let coldReads = 0;
   const storageWrites: number[] = [];
   let streamSeq = 0;
   let warnedTall = false;
@@ -851,13 +906,43 @@ export function createDispatcher(
       : checked.perRecord && checked.recordId
         ? `${label} ${checked.recordId}`
         : label;
-    const yes = await workflow().ask(`This ${noun} wants to ${what}, as you.`);
+    const yes = await askLabs(`This ${noun} wants to ${what}, as you.`);
     if (!yes) throw new BridgeError('not allowed: the person said no');
     if (remembered) {
       grants.set(grantKey, {
         until: now() + LIMITS.effectGrantMs,
         left: LIMITS.effectGrantWrites - 1,
       });
+    }
+  }
+
+  /**
+   * Labs' own question, budgeted: a page cannot bury the person in questions until
+   * one is allowed. At most LIMITS.questionsPerMinute, and after a no, none for
+   * LIMITS.quietAfterNoMs.
+   */
+  async function askLabs(text: string): Promise<boolean> {
+    if (now() < quietUntil) {
+      throw new BridgeError('not allowed: the person said no; wait a moment');
+    }
+    perMinute(questionsAsked, LIMITS.questionsPerMinute, 'questions');
+    const yes = await workflow().ask(text);
+    if (!yes) quietUntil = now() + LIMITS.quietAfterNoMs;
+    return yes;
+  }
+
+  /** At most LIMITS.coldReadsInFlight of the reads that run a pipeline at once. */
+  async function coldRead<T>(fn: () => Promise<T>): Promise<T> {
+    if (coldReads >= LIMITS.coldReadsInFlight) {
+      throw new BridgeError(
+        'too many data reads at once; wait for one to finish',
+      );
+    }
+    coldReads += 1;
+    try {
+      return await fn();
+    } finally {
+      coldReads -= 1;
     }
   }
 
@@ -996,7 +1081,7 @@ export function createDispatcher(
     if (!options.hasActivation()) {
       const path = new URL(href).pathname;
       const yes = await (full
-        ? workflow().ask(`This ${noun} wants to open ${path}.`)
+        ? askLabs(`This ${noun} wants to open ${path}.`)
         : Promise.resolve(false));
       if (!yes)
         throw new BridgeError('navigate needs a click on the page first');
@@ -1009,8 +1094,10 @@ export function createDispatcher(
       case 'querySupply':
       case 'queryWorkflow': {
         const a = alias(params);
-        // The query is always THIS page's: the frame cannot name a definition, an
-        // opportunity or a programme. Only `args` (a plain object) passes through.
+        // The frame cannot name a definition or a source: the alias is one this page
+        // declares. `args` (a plain object) passes through and may name an
+        // opportunity, which the server checks against the opportunities the
+        // workflow spans (supply_views.py).
         const args = isPlainObject(params.args) ? params.args : {};
         return limited(async () => {
           const result =
@@ -1145,15 +1232,26 @@ export function createDispatcher(
         }
         if (checked.startsJob) {
           perMinute(jobStarts, LIMITS.jobStartsPerMinute, 'background jobs');
+          // A workflow job (a Celery task each) has a budget of its own, far below
+          // the footprint polls': a compute job is started without a question.
+          if (/\/job\/start\/$/.test(new URL(checked.href).pathname)) {
+            perMinute(
+              workflowJobStarts,
+              LIMITS.workflowJobStartsPerMinute,
+              'background jobs',
+            );
+          }
         }
         if (checked.gate === 'effect') {
           await allowEffect(checked);
         }
-        return limited(async () => {
-          const answer = await w.fetch(checked, {
+        const read = () =>
+          w.fetch(checked, {
             headers: params.headers,
             body: params.body,
           });
+        return limited(async () => {
+          const answer = await (isColdRead(checked) ? coldRead(read) : read());
           if (checked.startsJob && answer.status < 300) rememberJob(answer);
           if (checked.remembersPipelines && answer.status < 300) {
             rememberPipelines(answer);
