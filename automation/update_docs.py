@@ -72,6 +72,17 @@ FEATURE_TO_DOC_FILE = {
     "Connect MCP & Safe Mode": "user_docs/connect-mcp.md",
 }
 
+# Developer documentation: technical pages for engineers on OTHER systems (claims, HTTP,
+# code). Written by hand in the same PR as the interface it describes. This updater writes
+# plain English for programme staff and must never rewrite one -- it would strip exactly
+# what an integrator needs. Refused in update_markdown_file and never mapped above.
+DEVELOPER_DOCS_DIR = "user_docs/developers/"
+
+
+def is_developer_doc(path) -> bool:
+    return Path(path).as_posix().startswith(DEVELOPER_DOCS_DIR)
+
+
 # The help site is served by Labs itself (connect_labs/labs/help_site.py), not GitHub Pages.
 GITHUB_PAGES_BASE = "https://labs.connect.dimagi.com/labs/docs/help"
 
@@ -201,6 +212,9 @@ def update_markdown_file(
 ) -> bool:
     """Update the GitHub Pages .md file. Returns True if file was changed."""
     doc_path = Path(FEATURE_TO_DOC_FILE[feature])
+    if is_developer_doc(doc_path):
+        print(f"  [skip] {doc_path} is developer documentation, maintained by hand")
+        return False
     if not doc_path.exists():
         print(f"  [warn] {doc_path} not found — skipping markdown update")
         return False

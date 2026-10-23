@@ -229,6 +229,8 @@ Before creating any pull request, read `.github/PULL_REQUEST_TEMPLATE.md` and fo
 - **`## Technical Summary`** — links to tickets, design decisions, rationale.
 - **`## Safety Assurance`** — how you tested it, what automated coverage exists, QA plan.
 
+**A change to something another system calls** (today the embed endpoints, frame messages and errors in `connect_labs/embed/`) updates the developer docs in `user_docs/developers/` in the same PR. Those pages are hand-written and technical; the automated updater never touches them. See [docs/DOCS_AUTOMATION.md](docs/DOCS_AUTOMATION.md#two-audiences).
+
 The `## Product Description` section drives automated documentation updates and the weekly changelog. PRs that skip it or use a different section name (e.g. `## Summary`) are invisible to that automation.
 
 ### `main` merges directly — the merge queue is OFF (since 2026-09-10)

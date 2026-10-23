@@ -39,6 +39,11 @@ nav:
       - Connect MCP: connect-mcp.md
       - Connect Safe Mode: connect-safe-mode.md
       - Embedding Labs in Other Systems: embedding-labs.md
+  # Technical pages for engineers on other systems (user_docs/developers/). Written by
+  # hand with the interface they describe; never rewritten by automation/update_docs.py.
+  - For Developers:
+      - Overview: developers/index.md
+      - "Embedding Labs: Integration Guide": developers/embedding.md
 
 markdown_extensions:
   - admonition
