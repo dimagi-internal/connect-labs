@@ -59,14 +59,14 @@ def mcp_job_housekeeping() -> dict:
 
 
 @celery_app.task
-def sweep_artifacts() -> int:
-    """Beat: delete kept tool results past their day (``mcp/artifacts.py``). An expired one
-    already reads as ``expired``; this stops it sitting in the database."""
-    from . import artifacts
+def sweep_kept_results() -> int:
+    """Beat: delete kept tool results past their day (``mcp/kept_results.py``). An expired
+    one already reads as ``expired``; this stops it sitting in the database."""
+    from . import kept_results
 
-    deleted = artifacts.sweep()
+    deleted = kept_results.sweep()
     if deleted:
-        logger.info("swept %d expired labs-result artifact(s)", deleted)
+        logger.info("swept %d expired kept result(s)", deleted)
     return deleted
 
 

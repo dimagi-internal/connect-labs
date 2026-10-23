@@ -827,10 +827,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "connect_labs.mcp.tasks.mcp_job_housekeeping",
         "schedule": crontab(minute="*/10"),
     },
-    # Kept tool results (labs-result://, connect_labs/mcp/artifacts.py) live a day; an
+    # Kept tool results (labs-result://, connect_labs/mcp/kept_results.py) live a day; an
     # expired one already reads as `expired`, so hourly is only about not keeping rows.
-    "sweep-labs-result-artifacts": {
-        "task": "connect_labs.mcp.tasks.sweep_artifacts",
+    "sweep-kept-results": {
+        "task": "connect_labs.mcp.tasks.sweep_kept_results",
         "schedule": crontab(minute=41),
     },
     "heal-dead-pmc-runs": {

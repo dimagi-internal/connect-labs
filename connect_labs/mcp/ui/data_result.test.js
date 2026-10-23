@@ -113,7 +113,7 @@ function defaultRead(uri) {
           mimeType: 'application/json',
           text: JSON.stringify(body),
           _meta: {
-            'canopy/artifact': {
+            'labs/result': {
               page,
               page_size: size,
               pages,
@@ -293,7 +293,7 @@ it('a withheld result offers the Data page and shows no rows', async () => {
               sql_executed: 'SELECT 1',
               open_on_page: 'https://labs.example/labs/data/?opps=1',
             }),
-            _meta: { 'canopy/artifact': { snapshot: true } },
+            _meta: { 'labs/result': { snapshot: true } },
           },
         ],
       },

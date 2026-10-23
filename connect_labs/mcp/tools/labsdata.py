@@ -28,7 +28,7 @@ from connect_labs.labsdata.scope import ScopeError
 from connect_labs.labsdata.validator import DEFAULT_MAX_ROWS, HARD_MAX_ROWS
 from connect_labs.labsdata.workflow_context import WorkflowNotFound, workflow_context
 
-from .. import artifacts
+from .. import kept_results
 from ..connect_token import require_connect_token
 from ..tool_registry import MCPToolError, register
 from ..ui import DATA_RESULT_URI, tool_meta
@@ -159,7 +159,7 @@ QUERY = dict(
 #: data_query only: what it keeps (explorer_query, scout-queries' name, returns rows inline).
 QUERY_KEPT = (
     " The result is kept for a day at `result_uri` (a labs-result:// resource, also a resource_link in the "
-    f"content). An agent calling through canopy gets the first {artifacts.INLINE_ROWS} rows as `sample_rows` "
+    f"content). An agent calling through canopy gets the first {kept_results.INLINE_ROWS} rows as `sample_rows` "
     "(`sample_is_partial` when there are more) and reads the rest with site_read on that URI, a page at a time "
     "(?page=N&page_size=M, up to 1000) -- never by running the query again; the person's card shows every row. "
     "Other callers get every row in `rows`."
@@ -184,15 +184,15 @@ def query(user, opportunity_ids, sql, max_rows=DEFAULT_MAX_ROWS):
             "sql_executed": sql,
             "open_on_page": service.open_on_page_url(opportunity_ids, sql),
         }
-        link = artifacts.save(
+        link = kept_results.save(
             user,
-            artifacts.KIND_QUERY,
+            kept_results.KIND_QUERY,
             withheld,
             access={"opportunity_ids": _ids(opportunity_ids), "sensitive": False},
             name="Query (rows stay in Labs)",
             description="Production rows withheld from the agent; open it on the Data page.",
         )
-        return artifacts.with_link(withheld, link)
+        return kept_results.with_link(withheld, link)
     except QueryError as e:
         raise _query_error(e) from e
     return _kept(user, out, agent)
@@ -226,32 +226,30 @@ def _ids(opportunity_ids) -> list[int]:
 
 
 def _kept(user, out: dict, agent: bool) -> dict:
-    """The query's result kept as a ``labs-result://`` artifact, and what the caller gets.
+    """The query's result kept as a ``labs-result://`` result, and what the caller gets.
 
-    The artifact holds every row the query returned (up to its row cap), unshaped: the
+    The kept result holds every row the query returned (up to its row cap), unshaped: the
     person's card pages and sorts through it, and the agent reads more of it with
     ``site_read``. A canopy agent gets the facts -- the row count, the columns, the first
-    ``artifacts.INLINE_ROWS`` rows (long cells cut, as before), the SQL, the notes -- and
+    ``kept_results.INLINE_ROWS`` rows (long cells cut, as before), the SQL, the notes -- and
     the link. Any other caller (Claude Code, ACE, scout-queries) has no ``site_read`` and
     reads ``rows``, so it gets the whole result as before, with the link beside it."""
     ids = [o["id"] for o in out.get("opportunities") or []]
     names = ", ".join(str(o.get("name") or o["id"]) for o in out.get("opportunities") or [])
-    link = artifacts.save(
+    link = kept_results.save(
         user,
-        artifacts.KIND_QUERY,
+        kept_results.KIND_QUERY,
         out,
-        access={"opportunity_ids": ids, "sensitive": artifacts.sensitive(ids)},
+        access={"opportunity_ids": ids, "sensitive": kept_results.sensitive(ids)},
         name=f"Query over {names}"[:200] if names else "Query result",
         description=f"{out['row_count']} rows, {len(out['columns'])} columns",
     )
     if not agent:
-        return artifacts.with_link(out, link)
-    from canopy_sdk.host.artifacts import summarize_rows
-
+        return kept_results.with_link(out, link)
     rows = out["rows"]
     # Long cells cut and the row-cap note added exactly as an agent's result always was.
-    shaped = service.shape_for_agent({**out, "rows": rows[: artifacts.INLINE_ROWS]})
-    summary = summarize_rows(out["columns"], rows, sample=artifacts.INLINE_ROWS)
+    shaped = service.shape_for_agent({**out, "rows": rows[: kept_results.INLINE_ROWS]})
+    summary = kept_results.summarize_rows(out["columns"], rows, sample=kept_results.INLINE_ROWS)
     summary["sample_rows"] = [dict(zip(out["columns"], r)) for r in shaped["rows"]]
     facts = {
         **{k: v for k, v in out.items() if k != "rows"},
@@ -269,7 +267,7 @@ def _kept(user, out: dict, agent: bool) -> dict:
             "shows every row. Read more with site_read on `result_uri`, a page at a time (?page=2, "
             "?page_size= up to 1000) -- do not run the query again to see them.",
         ]
-    return artifacts.with_link(facts, link)
+    return kept_results.with_link(facts, link)
 
 
 for _name, _spec, _fn in (

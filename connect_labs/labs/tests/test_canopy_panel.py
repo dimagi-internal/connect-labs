@@ -387,6 +387,8 @@ class TestTheSiteDocument:
         assert site.jwks_url == f"{BASE}/labs/canopy/jwks/"
         assert tuple(site.origins) == (BASE,)
         assert site.issuer == BASE and site.mcp_resource == f"{BASE}/mcp/"  # the grant is on
+        # Labs' kept results (mcp/kept_results.py): canopy keeps labs-result:// links.
+        assert tuple(site.resource_schemes) == ("labs-result",)
 
 
 # ---------------------------------------------------------------------------

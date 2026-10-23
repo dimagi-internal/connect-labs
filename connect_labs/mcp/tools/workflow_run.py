@@ -440,38 +440,38 @@ def _kept_indicators(r: _Run, result: dict, records: list[dict], lead, *, scope:
     """The run's indicator rows kept as a ``labs-result://`` table, and what the caller gets.
 
     Canopy's agent gets the facts (``summarize_rows`` over the table: how many rows, the
-    columns, the first ``artifacts.INLINE_ROWS``) with what it asked for and the link, and
+    columns, the first ``kept_results.INLINE_ROWS``) with what it asked for and the link, and
     reads the rest with ``site_read``. Every other caller (Claude Code, ACE) gets the
     result as before, with the link beside it."""
     from connect_labs.workflow.visit_cache import workflow_opportunity_ids
 
-    from .. import artifacts
+    from .. import kept_results
 
     columns, rows = _indicator_table(records, lead)
     opps = [int(o) for o in workflow_opportunity_ids(r.definition, getattr(r.run, "opportunity_id", None)) or []]
-    link = artifacts.save(
+    link = kept_results.save(
         r.user,
-        artifacts.KIND_INDICATORS,
+        kept_results.KIND_INDICATORS,
         {"columns": columns, "rows": rows, **{k: v for k, v in result.items() if k not in ("workers", "rows")}},
         access={
             "run_id": r.run.id,
             "opportunity_id": r.opportunity_id,
             "program_id": r.program_id,
             "opportunity_ids": opps,
-            "sensitive": artifacts.sensitive(opps),
+            "sensitive": kept_results.sensitive(opps),
         },
         name=f"{r.definition.name} -- run {r.run.id}, {scope} indicators"[:200],
         description=f"{len(rows)} {scope} rows" + (f" with a {band} indicator" if band else ""),
     )
     if not r.delegated:
-        return artifacts.with_link(result, link)
+        return kept_results.with_link(result, link)
     facts = {k: v for k, v in result.items() if k not in ("workers", "rows")}
-    facts.update(artifacts.facts(columns, rows))
+    facts.update(kept_results.facts(columns, rows))
     facts["asked"] = {"scope": scope, "band": band}
     if scope == "worker":
         # select_workers' own cut: workers past `limit` are in neither the table nor here.
         facts["workers_over_limit"] = result.get("truncated", False)
-    return artifacts.with_link(facts, link)
+    return kept_results.with_link(facts, link)
 
 
 @register(

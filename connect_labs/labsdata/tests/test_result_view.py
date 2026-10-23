@@ -55,8 +55,11 @@ def test_withheld_rows_are_withheld_from_the_view_too():
     assert "r.withheld" in html and "Sensitive data stays in Labs" in html
 
 
-def test_an_uncleared_agent_gets_a_hand_off_not_rows():
+def test_an_uncleared_agent_gets_a_hand_off_not_rows(django_user_model):
     from connect_labs.mcp.tools import labsdata as tools
+
+    # A real user: the hand-off is kept for them (mcp/kept_results.py).
+    user = django_user_model.objects.create_user(username="visitor", password="x")
 
     with (
         mock.patch.object(scope, "resolve", return_value=[OPP]),
@@ -66,10 +69,10 @@ def test_an_uncleared_agent_gets_a_hand_off_not_rows():
             canopy_panel, "call_sensitive_data_clearance", return_value=canopy_panel.Clearance(False, "no")
         ),
     ):
-        out = tools.query(mock.Mock(), [OPP.id], "SELECT COUNT(*) AS n FROM visits")
+        out = tools.query(user, [OPP.id], "SELECT COUNT(*) AS n FROM visits")
         bad = None
         try:
-            tools.query(mock.Mock(), [OPP.id], "SELECT nope FROM visits")
+            tools.query(user, [OPP.id], "SELECT nope FROM visits")
         except Exception as e:  # noqa: BLE001
             bad = e
     assert out["withheld"] is True and "rows" not in out

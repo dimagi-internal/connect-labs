@@ -201,15 +201,17 @@ offers no panel, and the Agent box says why.
 
 ## Results labs keeps: facts for the agent, the rows in labs (`labs-result://`)
 
-A tool that produces rows does not put them in its result. `data_query`,
-`workflow_run_indicators` and `targeting_pmc_states` keep what they produced as an
-**artifact** in labs' database (`connect_labs/mcp/artifacts.py`, over the canopy SDK's
-host-held results, dimagi-canopy 0.18; canopy-web spec
-`2026-10-23-host-held-results-design`) and return **facts** -- the row count, the
-columns, a sample, what was asked (the SQL) -- plus an MCP `resource_link`
+Keeping a tool's result is labs' own MCP feature, plain MCP that any client uses (Claude
+Code, ACE, canopy); canopy is one client of it. A tool that produces rows does not put
+them in its result. `data_query`, `workflow_run_indicators` and `targeting_pmc_states`
+keep what they produced as a **kept result** in labs' database (`mcp.KeptResult`, table
+`mcp_kept_result`; `connect_labs/mcp/kept_results.py`) and return **facts** -- the row
+count, the columns, a sample, what was asked (the SQL) -- plus an MCP `resource_link`
 (`labs-result://<id>`, also `result_uri` in the JSON). canopy carries the link, never the
 rows; in a sensitive conversation the link is all it stores, and `site.json` declares the
-`labs-result` scheme (`site.resource_schemes`) so canopy keeps it.
+`labs-result` scheme (`CANOPY_HOST["RESOURCE_SCHEMES"]` in `labs/canopy.py:host_settings`,
+published as `site.resource_schemes`) so canopy keeps it. That declaration is the only
+part of this that goes through the canopy SDK.
 
 - **Who gets what inline.** A canopy agent gets the first `INLINE_ROWS` (20) rows as
   `sample_rows` (`sample_is_partial` when there are more): most aggregates arrive whole,
@@ -217,23 +219,27 @@ rows; in a sensitive conversation the link is all it stores, and `site.json` dec
   at a time. Every other caller -- Claude Code, ACE, scout-queries -- has no `site_read`
   and parses rows, so it still gets every row inline, with the link beside them.
   `explorer_query` (scout-queries' name) keeps nothing and is unchanged.
-- **Reading one back** is MCP `resources/read` on labs' MCP server
-  (`labs-result://{id}{?page,page_size}`, mounted by `artifacts.mount_fastmcp`): a table
-  pages through the URI (default 100, max 1000 rows a page) with
-  `_meta["canopy/artifact"]` saying the page, pages, row count, expiry and that it is the
-  **snapshot** the agent saw (no `ON_READ`: the card and the agent agree on the rows).
-- **Who may read it.** The person the call ran as (`str(user.pk)`, read from the MCP
-  request's token -- the `READER` hook), and anyone who could run the same thing
-  themselves (`MAY_READ`): holds every opportunity the query read, can open the run the
-  indicators came from; a public PMC ranking, any labs user. Nobody else (`forbidden`).
-- **What a read through canopy may carry** (`server.ArtifactReadGate`, every reader, the
-  owner too): a result holding sensitive data goes back through canopy only to an agent
-  whose own `Canopy-Execution` statement clears it, or to the person's own card -- a read
-  with no statement, no agent acting -- for a result a cleared agent already received.
-  A "no user visit data" caller never reads one. Each read is on the audit trail
-  (`resource_type` `labs_result`).
-- **For a day.** Expired results read as `expired`; `connect_labs.mcp.tasks.sweep_artifacts`
-  (beat, hourly) deletes them.
+- **Reading one back** is MCP `resources/read` on labs' MCP server (the resource template
+  `labs-result://{id}{?page,page_size}`, registered by `kept_results.mount` and listed by
+  `resources/templates/list`): a table pages through the URI (default 100, max 1000 rows a
+  page) with `_meta["labs/result"]` saying the kind, the page, pages, row count, expiry and
+  that it is the **snapshot** the agent saw (the card and the agent agree on the rows). A
+  refusal is an MCP error `"<code>: <why>"`: `bad_uri`, `not_found`, `expired`, `forbidden`.
+- **Who may read it.** The labs user the call ran as (the owner, read from the MCP
+  request's token), and anyone who could run the same thing themselves (`may_read`): holds
+  every opportunity the query read, can open the run the indicators came from; a public
+  PMC ranking, any labs user. Nobody else (`forbidden`).
+- **What a read may carry** (`kept_results.read_denial`, every reader, the owner too): a
+  result holding sensitive data (`KeptResult.sensitive`) goes back through canopy only to
+  an agent whose own `Canopy-Execution` statement clears it, or to the person's own card --
+  a read with no statement, no agent acting -- for a result a cleared agent already
+  received (`through_canopy`). A "no user visit data" caller never reads one. Each read is
+  on the audit trail (`resource_type` `labs_result`).
+- **For a day.** Expired results read as `expired`; `connect_labs.mcp.tasks.sweep_kept_results`
+  (beat `sweep-kept-results`, hourly) deletes them.
+- **Never changed.** Labs does not update a kept result, so it never sends canopy a
+  "result changed" push (the SDK's `canopy_sdk.resources.notify_updated`). A View still
+  subscribes; a future tool that edits one in place would call that push.
 
 **The results card** (`ui://labs/data-result`) reads the link as its viewer, pages on the
 server and sorts within the page, subscribes to the link and re-reads when labs says it

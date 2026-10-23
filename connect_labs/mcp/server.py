@@ -690,7 +690,7 @@ def _run_registry_tool_inner(
     if isinstance(result, dict):
         version_before = result.get("_version_before")
         version_after = result.get("_version_after")
-        # Host-held results (mcp/artifacts.py): the resource_link(s) naming what this
+        # Kept results (mcp/kept_results.py): the resource_link(s) naming what this
         # call kept, put in the content beside the text rather than in the result.
         links = list(result.get("_links") or [])
         # Strip private keys before returning to the caller.
@@ -846,42 +846,6 @@ def _register_ui_resources(server: FastMCP) -> None:
         )(reader(resource))
 
 
-class ArtifactReadGate(Middleware):
-    """Labs' own rules on a ``resources/read`` of a kept result (``labs-result://``).
-
-    The SDK's handler (``artifacts.mount_fastmcp``) decides owner / ``MAY_READ`` /
-    expiry. Before it, labs asks ``artifacts.read_denial`` of EVERY reader, the owner
-    included: what a read through canopy may carry is the rule the call that made the
-    result was held to. After a read that succeeded, it is audit-logged."""
-
-    async def on_read_resource(self, context, call_next):
-        from . import artifacts
-
-        uri = str(getattr(context.message, "uri", "") or "")
-        if not uri.lower().startswith(f"{artifacts.SCHEME}://"):
-            return await call_next(context)
-        access_token = get_access_token()
-        artifact = await sync_to_async(_closing_connections(artifacts.stored), thread_sensitive=True)(uri)
-        if artifact is not None:
-            denied = await sync_to_async(_closing_connections(artifacts.read_denial), thread_sensitive=True)(
-                artifact, access_token
-            )
-            if denied:
-                from fastmcp.exceptions import ResourceError
-
-                raise ResourceError(f"forbidden: {denied}")
-        result = await call_next(context)
-        if artifact is not None:
-            await sync_to_async(_closing_connections(_record_artifact_read), thread_sensitive=True)(artifact, uri)
-        return result
-
-
-def _record_artifact_read(artifact, uri: str) -> None:
-    from . import artifacts
-
-    artifacts.record_read(artifact, current_user(), uri)
-
-
 class ToolScopeMiddleware(Middleware):
     """A limited token sees and calls only the tools its scopes map to.
 
@@ -908,28 +872,16 @@ def _build_server() -> FastMCP:
         "connect_labs",
         instructions=SERVER_INSTRUCTIONS,
         auth=CommCarePATVerifier(),
-        middleware=[ToolScopeMiddleware(), ArtifactReadGate(), UIExtensionMiddleware()],
+        middleware=[ToolScopeMiddleware(), UIExtensionMiddleware()],
     )
     for tool in _build_registry_tools():
         server.add_tool(tool)
     _register_ui_resources(server)
-    _register_artifacts(server)
+    # Kept results: resources/read on labs-result://{id}{?page,page_size} (mcp/kept_results.py).
+    from . import kept_results
+
+    kept_results.mount(server)
     return server
-
-
-def _register_artifacts(server: FastMCP) -> None:
-    """``resources/read`` on ``labs-result://{id}{?page,page_size}``: the results tools
-    keep (``mcp/artifacts.py``), read as the reader through the canopy SDK's handler."""
-    from canopy_sdk.django import artifacts
-
-    artifacts.mount_fastmcp(
-        server,
-        name="labs_results",
-        description=(
-            "A result a labs tool produced (a query's rows, a run's indicators), kept for a day for the person "
-            "it ran as. A table pages with ?page=N&page_size=M (default 100, max 1000)."
-        ),
-    )
 
 
 mcp = _build_server()
