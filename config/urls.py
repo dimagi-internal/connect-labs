@@ -1,3 +1,4 @@
+from canopy_sdk.django import views as canopy_site_views
 from canopy_sdk.django.views import jwt_bearer_view
 from django.conf import settings
 from django.conf.urls.static import static
@@ -28,6 +29,9 @@ urlpatterns = [
     path("health/", views.health_check, name="health_check"),
     path("robots.txt", views.robots_txt, name="robots_txt"),
     path(".well-known/assetlinks.json", views.assetlinks_json, name="assetlinks_json"),
+    # canopy's "Fill from the site" reads labs' signed site document here (the canopy
+    # SDK's view, canopy_sdk.site.WELL_KNOWN_PATH); it is also at /labs/canopy/site.json.
+    path(".well-known/canopy-site.json", canopy_site_views.site_document, name="canopy_site_well_known"),
     # MCP dynamic client registration (RFC 7591): the one endpoint the standard
     # MCP sign-in needs that django-oauth-toolkit does not ship. Listed before the
     # "o/" include so it is matched first.

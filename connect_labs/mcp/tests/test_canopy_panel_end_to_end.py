@@ -32,6 +32,7 @@ from django.test import Client, RequestFactory, override_settings
 from django.urls import resolve
 
 from connect_labs.mcp.tests.test_delegation import BASE, ISSUER, RESOURCE, TOKEN_ENDPOINT, _host_key, _run_mcp
+from connect_labs.testing.canopy_agents import CONFORMANCE_CANOPY
 from connect_labs.workflow.tests.test_page_mode import ORG_DATA, PAGE, _definition
 
 SHARING_PAGE = {**PAGE, "config": {"agent": {"share": True}}}
@@ -43,17 +44,17 @@ SHARING_WORKFLOW = {
 
 
 @pytest.fixture
-def enabled(settings, canopy_client, canopy_client_documents):
+def enabled(settings, canopy_client, canopy_client_documents, canopy_agents):
     """Labs with the grant on, trusting the conformance plugin's canopy client (as in
     test_delegation): canopy's client documents answer from the plugin."""
     from django.core.cache import cache
 
     settings.LABS_PUBLIC_URL = BASE
     settings.ALLOWED_HOSTS = ["labs.example.org", "testserver"]
-    settings.CANOPY_BASE_URL = f"{BASE}/canopy"
+    settings.CANOPY_BASE_URL = CONFORMANCE_CANOPY  # canopy's client id is derived from it
     settings.CANOPY_APP_NAME = "connect-labs"
     settings.CANOPY_SIGNING_KEY = _host_key()
-    settings.CANOPY_CLIENT_ID = canopy_client.client_id
+    canopy_agents("ace", acts_as_visitor=True)
     cache.clear()
     with mock.patch("canopy_sdk.fetch.get_json", side_effect=lambda url, **kw: canopy_client_documents[url]):
         yield canopy_client
@@ -205,7 +206,7 @@ def test_a_pages_agent_reads_the_page_as_the_visitor(enabled, canopy_redeem, vis
     if sandboxed:
         # Enforced on the host page: the frame may be navigated only to its shell and
         # the panel's own embed path (so the widget's iframe loads).
-        assert response["Content-Security-Policy"].endswith(" https://labs.example.org/canopy/embed/chat")
+        assert response["Content-Security-Policy"].endswith(f" {CONFORMANCE_CANOPY}/embed/chat")
 
     # 2. The token URL mints an arrival whose ID-JAG is page:read alone, wherever the
     # page is drawn (the run URL's own registration would grant the run scopes).
@@ -312,12 +313,13 @@ DATA_AGENT_WORKFLOW = {**SHARING_WORKFLOW, "config": {"agent": {"share": True, "
 
 @pytest.mark.django_db(transaction=True)
 def test_a_workflow_that_offers_the_data_agent_grants_it_the_runs_reads_and_edits_and_no_actions(
-    enabled, canopy_redeem, visitor, settings
+    enabled, canopy_redeem, visitor, canopy_agents, fake_canopy
 ):
     from config.asgi import build_application
     from connect_labs.workflow.views import WorkflowRunView
 
-    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"
+    canopy_agents("ace", offered=["labsdata"])
+    fake_canopy.declare_sensitive("labsdata")
     path = "/labs/workflow/47/run/?run_id=503&program_id=25"
     with (
         mock.patch("connect_labs.workflow.views.get_org_data", return_value={}),
@@ -354,10 +356,9 @@ def test_a_workflow_that_offers_the_data_agent_grants_it_the_runs_reads_and_edit
 
 
 @pytest.mark.django_db
-def test_asking_for_the_data_agent_with_none_configured_offers_no_agent(enabled, visitor, settings):
+def test_asking_for_the_data_agent_with_none_configured_offers_no_agent(enabled, visitor):
     from connect_labs.workflow.views import WorkflowRunView
 
-    settings.CANOPY_DATA_AGENT_SLUG = ""
     with (
         mock.patch("connect_labs.workflow.views.get_org_data", return_value={}),
         mock.patch("connect_labs.labs.synthetic.provenance.all_generated", return_value=True),
@@ -385,12 +386,11 @@ def test_asking_for_the_data_agent_with_none_configured_offers_no_agent(enabled,
     ],
 )
 def test_a_workflow_offers_the_agent_it_chose_on_that_agents_terms(
-    enabled, visitor, settings, agent, sensitive, expect_agent, expect_scopes
+    enabled, visitor, canopy_agents, agent, sensitive, expect_agent, expect_scopes
 ):
     from connect_labs.workflow.views import WorkflowRunView
 
-    settings.CANOPY_OFFERED_AGENTS = ["coach-bot", "deep-bot"]
-    settings.CANOPY_SENSITIVE_AGENTS = sensitive
+    canopy_agents("ace", offered=["coach-bot", "deep-bot"], real_data=sensitive)
     workflow = {**SHARING_WORKFLOW, "config": {"agent": {"share": True, "agent": agent}}}
     with (
         mock.patch("connect_labs.workflow.views.get_org_data", return_value={}),
@@ -413,14 +413,14 @@ def test_a_workflow_offers_the_agent_it_chose_on_that_agents_terms(
 
 
 @pytest.mark.django_db
-def test_a_held_back_agent_is_never_silent(enabled, visitor, settings):
+def test_a_held_back_agent_is_never_silent(enabled, visitor, canopy_agents, fake_canopy):
     """Owner, 2026-10-22: labsdata was set up everywhere but one labs field, and the KMC
     report drew no panel and said nothing. Now the Agent box says why, and the choice is
     shown greyed with the same reason."""
     from connect_labs.workflow.views import WorkflowRunView
 
-    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"
-    settings.CANOPY_SENSITIVE_AGENTS = []
+    canopy_agents("ace", offered=["labsdata"])
+    fake_canopy.declare_sensitive("labsdata")
     with (
         mock.patch("connect_labs.workflow.views.get_org_data", return_value={}),
         mock.patch("connect_labs.labs.synthetic.provenance.all_generated", return_value=False),

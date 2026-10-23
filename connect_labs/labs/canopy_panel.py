@@ -59,11 +59,6 @@ def _execution_statements_supported() -> bool:
 #: still held to its own verified statement (``call_real_data_clearance``).
 CANOPY_EXECUTION_STATEMENTS = _execution_statements_supported()
 
-#: The runner flag every conversation over real data must require: a sensitive-data
-#: runner (a ZDR API key, a locked harness, egress limited to an allowlist, nothing kept
-#: on the box).
-SENSITIVE_DATA = "sensitive_data"
-
 #: Where labs' side of every refusal is fixed.
 ADMIN_PAGE = "Labs Admin › Canopy agents"
 
@@ -101,27 +96,21 @@ class Clearance:
     reason: str = ""
 
 
-def real_data_clearance(agent: str = "", runner_requirements=()) -> Clearance:
+def real_data_clearance(agent: str = "") -> Clearance:
     """Labs' own side of letting ``agent`` (default: the default agent) work over real
-    (non-generated) data: "Real data" ticked, conversations held to sensitive-data runners,
-    and an SDK that
-    verifies canopy's per-call statement. Canopy's side is ``canopy_real_data`` (a page)
-    or the call's statement (``call_real_data_clearance``).
+    (non-generated) data: "Real data" ticked, and an SDK that verifies canopy's per-call
+    statement. Canopy's side is ``canopy_real_data`` (a page) or the call's statement
+    (``call_real_data_clearance``).
 
-    ``runner_requirements`` are the page's own, which add to the site's (canopy SDK
-    0.11: a page can raise the floor, never lower it).
+    Its conversations are held to sensitive-data runners by construction, not by a
+    setting: an agent with "Real data" ticked is offered only read-only, with
+    ``sensitive_data`` signed into its page token (``availability``), and a call is
+    cleared only when its statement shows that requirement (``call_real_data_clearance``).
     """
     ticks = canopy_settings.current()
     agent = agent or ticks.default_agent
     if agent not in ticks.real_data_agents:
         return Clearance(False, f'{agent} is not allowed over real data: tick "Real data" for it in {ADMIN_PAGE}')
-    required = set(ticks.runner_requirements) | set(runner_requirements or ())
-    if SENSITIVE_DATA not in required:
-        return Clearance(
-            False,
-            f"conversations with {agent} here are not held to sensitive-data runners: "
-            f"tick {SENSITIVE_DATA} under the runner requirements in {ADMIN_PAGE}",
-        )
     if not CANOPY_EXECUTION_STATEMENTS:
         return Clearance(False, "canopy does not yet vouch for the agent's declaration and its runner on each call")
     return Clearance(True)
@@ -152,15 +141,15 @@ def call_real_data_clearance() -> Clearance:
         return Clearance(False, f"canopy did not vouch for this call ({why})")
     stated = call.execution
     # Labs' own policy for the agent the statement names -- from labs' ticks, never from
-    # the statement. An agent allowed over real data is only ever offered on sensitive-data runners
-    # (its page token requires them), so that is its requirement here too. The
-    # statement is then checked against it, separately, below.
-    labs_side = real_data_clearance(stated.agent, (SENSITIVE_DATA,))
+    # the statement. An agent allowed over real data is only ever offered on sensitive-data
+    # runners (its page token requires them), so that is its requirement here too, and the
+    # statement is checked against it below.
+    labs_side = real_data_clearance(stated.agent)
     if not labs_side.granted:
         return labs_side
     refusal = stated.sensitive_clearance(
         agents=set(canopy_settings.current().real_data_agents),
-        require=(SENSITIVE_DATA,),
+        require=(canopy_settings.SENSITIVE_DATA,),
     )
     if refusal:
         return Clearance(False, f"canopy's statement does not clear this call for real data ({refusal})")
@@ -221,6 +210,8 @@ def availability(choice: str, reads: Reads, *, ticks=None, listing=_UNSET) -> Av
     only when both sides clear it (``real_data_clearance``, ``canopy_real_data``)."""
     ticks = ticks or canopy_settings.current()
     listing = canopy_settings.site_agents() if listing is _UNSET else listing
+    if not ticks.agents:
+        return Availability(False, reasons=(f"nothing is set up yet: choose agents in {ADMIN_PAGE}",))
     slug = canopy_settings.resolve_choice(choice, ticks, listing)
     if not slug:
         return Availability(False, reasons=(f"no agent for data work is shown: tick one in {ADMIN_PAGE}",))
@@ -232,27 +223,32 @@ def availability(choice: str, reads: Reads, *, ticks=None, listing=_UNSET) -> Av
     agent = listing.agent(slug)
     if agent is None:
         return Availability(
-            False, slug, reasons=(f"canopy does not allow {slug} on labs' site: canopy › Connected sites",)
+            False, slug, reasons=(f"canopy does not allow {slug} on labs' site: {canopy_settings.CONNECTED_SITES}",)
         )
     if not agent.ready:
         return Availability(False, slug, reasons=agent.problems or (f"{slug} is not ready in canopy",))
     read_only = tick.real_data or agent.handles_sensitive
     if read_only:
-        if not agent.ready_with_flag(SENSITIVE_DATA):
+        if not agent.ready_with_flag(canopy_settings.SENSITIVE_DATA):
             return Availability(
                 False,
                 slug,
                 True,
-                (f"{slug} runs only on sensitive-data runners, and has no ready one in canopy (canopy › Runners)",),
+                (
+                    f"{slug} runs only on sensitive-data runners, and has no ready one in canopy "
+                    f"({canopy_settings.RUNNERS})",
+                ),
             )
-        page_agent = PageAgent(agent=slug, runner_requirements=(SENSITIVE_DATA,), panel=dict(DATA_PANEL))
+        page_agent = PageAgent(
+            agent=slug, runner_requirements=(canopy_settings.SENSITIVE_DATA,), panel=dict(DATA_PANEL)
+        )
     elif slug == ticks.default_agent:
         page_agent = PageAgent()
     else:
         page_agent = PageAgent(agent=slug, runner_requirements=tuple(ticks.runner_requirements))
     if is_real(reads):
         for clearance in (
-            real_data_clearance(slug, page_agent.runner_requirements),
+            real_data_clearance(slug),
             canopy_real_data(slug, listing),
         ):
             if not clearance.granted:

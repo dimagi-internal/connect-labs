@@ -111,4 +111,24 @@ def fake_canopy(monkeypatch):
 
     fake = FakeCanopy()
     monkeypatch.setattr(canopy_settings, "site_agents", fake)
+    monkeypatch.setattr(canopy_settings, "refresh", fake.refresh)
+    monkeypatch.setattr(canopy_settings, "last_error", fake.last_error)
     return fake
+
+
+@pytest.fixture
+def canopy_agents(db):
+    """Save labs' canopy agent settings (a ``CanopyAgentSettings`` row, as Labs Admin ›
+    Canopy agents does): ``canopy_agents("ace", offered=[...], real_data=[...],
+    runner_requirements=[...], acts_as_visitor=True)``. See
+    ``connect_labs/testing/canopy_agents.py``."""
+    from connect_labs.testing.canopy_agents import save_agents
+
+    return save_agents
+
+
+@pytest.fixture
+def canopy_default_agent(canopy_agents):
+    """Labs set up as production is: ``ace`` the default agent, nothing else ticked.
+    For a test about a page's panel, not about which agent it offers."""
+    return canopy_agents("ace")

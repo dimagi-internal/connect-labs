@@ -27,7 +27,7 @@ def test_every_supply_read_tool_is_a_registered_read_operation():
 
 
 @pytest.mark.django_db
-def test_the_panel_names_the_tender_and_its_quotes_not_their_figures(django_user_model):
+def test_the_panel_names_the_tender_and_its_quotes_not_their_figures(django_user_model, canopy_default_agent):
     request = RequestFactory().get("/supply/procurement/tenders/7/compare/?program_id=10690")
     request.user = django_user_model.objects.create_user(username="sophie", password="x")
     with (

@@ -32,6 +32,7 @@ from connect_labs.mcp import oauth
 from connect_labs.mcp.models import MCPAccessToken, MCPAuditLog
 from connect_labs.mcp.server import _verify_bearer_sync
 from connect_labs.mcp.tool_registry import get_tool
+from connect_labs.testing.canopy_agents import CONFORMANCE_CANOPY
 from connect_labs.users.models import User
 
 BASE = "https://labs.example.org"
@@ -48,7 +49,7 @@ def _host_key() -> str:
 
 
 @pytest.fixture
-def enabled(settings, canopy_client, canopy_client_documents):
+def enabled(settings, canopy_client, canopy_client_documents, canopy_agents):
     """Labs with the grant on, trusting the conformance plugin's canopy client.
 
     Labs fetches canopy's metadata document and JWKS through the SDK's SSRF-safe
@@ -56,10 +57,10 @@ def enabled(settings, canopy_client, canopy_client_documents):
     """
     settings.LABS_PUBLIC_URL = BASE
     settings.ALLOWED_HOSTS = ["labs.example.org", "testserver"]
-    settings.CANOPY_BASE_URL = f"{BASE}/canopy"
+    settings.CANOPY_BASE_URL = CONFORMANCE_CANOPY  # canopy's client id is derived from it
     settings.CANOPY_APP_NAME = "connect-labs"
     settings.CANOPY_SIGNING_KEY = _host_key()
-    settings.CANOPY_CLIENT_ID = canopy_client.client_id
+    canopy_agents("ace", acts_as_visitor=True)
     cache.clear()
 
     def fetch(url, **kwargs):
@@ -181,9 +182,9 @@ def test_the_token_is_not_in_the_toolkits_table(client, enabled, canopy_redeem, 
 
 
 @pytest.mark.django_db
-def test_the_grant_is_off_until_a_canopy_client_is_configured(client, enabled, canopy_redeem, visitor, settings):
+def test_the_grant_is_off_until_labs_admin_turns_it_on(client, enabled, canopy_redeem, visitor, canopy_agents):
     form, proof = canopy_redeem(_id_jag(visitor), TOKEN_ENDPOINT, RESOURCE, ISSUER)
-    settings.CANOPY_CLIENT_ID = ""
+    canopy_agents("ace", acts_as_visitor=False)
 
     response = client.post("/o/token/", form, headers={"DPoP": proof})
 
@@ -219,16 +220,17 @@ def test_other_grant_types_still_reach_the_toolkit(client, enabled):
 # ---------------------------------------------------------------------------
 
 
-def test_metadata_advertises_the_grant_only_when_it_is_on(settings):
+def test_metadata_advertises_the_grant_only_when_it_is_on(settings, canopy_agents):
     settings.LABS_PUBLIC_URL = BASE
+    settings.CANOPY_BASE_URL = f"{BASE}/canopy"
     settings.CANOPY_SIGNING_KEY = _host_key()
-    settings.CANOPY_CLIENT_ID = ""
+    canopy_agents("ace", acts_as_visitor=False)
     off = oauth.authorization_server_metadata()
     assert contract.JWT_BEARER_GRANT not in off["grant_types_supported"]
     assert "dpop_signing_alg_values_supported" not in off
     assert "dpop_signing_alg_values_supported" not in oauth.protected_resource_metadata()
 
-    settings.CANOPY_CLIENT_ID = f"{BASE}/canopy/oauth/client.json"
+    canopy_agents("ace", acts_as_visitor=True)
     on = oauth.authorization_server_metadata()
     assert on["grant_types_supported"] == ["authorization_code", "refresh_token", contract.JWT_BEARER_GRANT]
     assert on["token_endpoint_auth_methods_supported"] == ["none", "private_key_jwt"]
@@ -255,7 +257,7 @@ def test_metadata_advertises_the_grant_only_when_it_is_on(settings):
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("restricted", [False, True])
-def test_a_client_can_register_for_every_scope_the_resource_advertises(client, settings, restricted):
+def test_a_client_can_register_for_every_scope_the_resource_advertises(client, settings, restricted, canopy_agents):
     """A spec-following client (Claude Code) registers for the PRM's scopes_supported.
 
     With the grant on, the SDK added the grant's tool scopes there, and
@@ -263,8 +265,9 @@ def test_a_client_can_register_for_every_scope_the_resource_advertises(client, s
     "The scopes available are 'mcp', 'mcp:no-uservisit-data'".
     """
     settings.LABS_PUBLIC_URL = BASE
+    settings.CANOPY_BASE_URL = f"{BASE}/canopy"
     settings.CANOPY_SIGNING_KEY = _host_key()
-    settings.CANOPY_CLIENT_ID = f"{BASE}/canopy/oauth/client.json"
+    canopy_agents("ace", acts_as_visitor=True)
     cache.clear()
 
     scopes = oauth.protected_resource_metadata(restricted=restricted)["scopes_supported"]
@@ -284,9 +287,10 @@ def test_a_client_can_register_for_every_scope_the_resource_advertises(client, s
     assert resp.status_code == 201, resp.content
 
 
-def test_no_signing_key_means_no_grant_is_advertised(settings):
+def test_no_signing_key_means_no_grant_is_advertised(settings, canopy_agents):
     settings.LABS_PUBLIC_URL = BASE
-    settings.CANOPY_CLIENT_ID = f"{BASE}/canopy/oauth/client.json"
+    settings.CANOPY_BASE_URL = f"{BASE}/canopy"
+    canopy_agents("ace", acts_as_visitor=True)
     settings.CANOPY_SIGNING_KEY = ""
 
     assert contract.JWT_BEARER_GRANT not in oauth.authorization_server_metadata()["grant_types_supported"]

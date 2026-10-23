@@ -108,11 +108,15 @@ agent labs still ticks that canopy no longer lists, or no longer clears, is show
 with canopy's reason and is not offered. Labs Admin users can read it; Dimagi staff (a
 Dimagi sign-in, `is_dimagi_staff`) change it. Each change is a new `CanopyAgentSettings`
 row (who, when, why, the site agents `version` it was made against, audited) and any
-earlier one can be restored. The `CANOPY_AGENT_SLUG` / `CANOPY_DATA_AGENT_SLUG` /
-`CANOPY_OFFERED_AGENTS` / `CANOPY_SENSITIVE_AGENTS` / `CANOPY_RUNNER_REQUIREMENTS` environment
-settings are only the cold-start defaults until someone saves there. The page also lists
-labs' checks for the agent for data work and the last delegated `data_*` calls with what
-canopy's statement said about each.
+earlier one can be restored. No environment variable chooses an agent: until someone
+saves there, **nothing is set up** -- no agent is offered on any page -- and the page
+says so. It also holds the switch for [canopy acting as the
+visitor](#letting-canopy-act-as-the-visitor-off-by-default), a **Refresh from canopy**
+button (asks canopy for its list now instead of waiting out the five-minute cache, and
+says what came back), and a warning when canopy's list has changed since the settings
+were saved (its `version` differs from the saved one). canopy's problem sentences are
+shown with their links. The page also lists labs' checks for the agent for data work and
+the last delegated `data_*` calls with what canopy's statement said about each.
 
 **Labs tells canopy what it needs**, too: `/labs/canopy/site.json` (the SDK's
 `site_document`, beside the JWKS, signed with the same key) lists labs' pages and the
@@ -223,7 +227,7 @@ Two things a capability cannot fix, learned the same way: a confined turn has no
 `AskUserQuestion`, so an agent must ask in the chat; and a Drive write needs a
 `parentFolderId` the agent can actually discover.
 
-**Who the agent reads as.** With the delegated grant on (`CANOPY_CLIENT_ID`,
+**Who the agent reads as.** With the delegated grant on (ticked at Labs Admin › Canopy agents,
 [below](#letting-canopy-act-as-the-visitor-off-by-default)), a registered page's
 tools run **as the visitor**, limited to that page's scopes. Without it they run
 with the agent's own labs credential, so the ids in the page state narrow what it
@@ -342,22 +346,22 @@ ID-JAG's scopes, the redeem at `/o/token/`, and the MCP call as the visitor.
 
 ## Setting it up on a deployment
 
-Steps 1–2 are one-off per environment.
+Labs Admin › Canopy agents (`/labs/admin/canopy-agents/`) is the one place labs' side is
+set up. Besides it, a deployment needs one secret and, in canopy, the site.
 
-**1. Connect the site in canopy**, as a workspace owner, at
-`/canopy/w/<workspace>/settings/connected-apps`:
+**1. Register the site in canopy**, as a workspace owner, at canopy › Connected sites
+(`https://canopy.dimagi.com/w/<workspace>/settings/connected-apps`): type labs' address
+(`https://labs.connect.dimagi.com`), press **Fill from the site**, check what it filled
+in, and confirm. canopy reads labs' signed site document at
+`/.well-known/canopy-site.json` (also at `/labs/canopy/site.json`): its name
+(`connect-labs`, `CANOPY_APP_NAME`), its origins (`LABS_PUBLIC_URL`), where its keys are
+(`/labs/canopy/jwks/`), and, while the grant is on, its issuer and MCP server. Then
+choose the agents canopy may offer on labs; they are what labs' settings page chooses
+from. (A local labs at `http://localhost:8000` is added as another site URL by hand.)
 
-| Field                              | Value                                                             |
-| ---------------------------------- | ----------------------------------------------------------------- |
-| Name                               | `connect-labs` (matches `CANOPY_APP_NAME`)                        |
-| Site URLs                          | `https://labs.connect.dimagi.com` **and** `http://localhost:8000` |
-| Agents it may offer                | ACE and Eva                                                       |
-| Where your site publishes its keys | `https://labs.connect.dimagi.com/labs/canopy/jwks/`               |
-
-All three fail closed, which is why "nothing happens" is almost always a missing
-one rather than something broken.
-
-**2. Generate a key pair.** The private half never leaves labs' server:
+**2. Generate a key pair** and put the private half in Secrets Manager as
+`CANOPY_SIGNING_KEY` (already referenced by `deploy/task-definitions/*.json`). It
+never leaves labs' server:
 
 ```bash
 openssl genpkey -algorithm ed25519 -out canopy-signing.pem
@@ -378,20 +382,33 @@ of redirects and under 64 KiB.
 and behaves identically — the only difference is that each rotation means going
 back there.)
 
-**3. Set three env vars** (`deploy/task-definitions/*.json` for AWS — env vars
-are wiped on deploy unless pinned there; see the `aws-env-update` skill):
+Newlines survive an env var as literal `\n`; the settings module unescapes them.
 
-```
-CANOPY_BASE_URL=https://canopy.dimagi.com
-CANOPY_APP_NAME=connect-labs
-CANOPY_SIGNING_KEY=<the private PEM>      # Secrets Manager, never a plain env var
-```
+**3. Choose the agents** at Labs Admin › Canopy agents, as Dimagi staff: tick the agents
+labs shows, which may read real data, the default agent, the runner flags, and whether
+canopy may act as the visitor; then Save. Until then no agent is offered.
 
-Newlines survive as literal `\n`; the settings module unescapes them.
+The page also shows the **canopy workspace** labs' site is registered in. Labs learns it
+from canopy's first answer (and records it on every save) and sends it as
+`CANOPY_HOST["WORKSPACE"]`, so deleting or moving the default agent cannot break
+canopy's list; until it is known the default agent names the workspace. If canopy moves
+the site and refuses the stored one (`workspace_mismatch`), the page offers to ask by
+the default agent again. When canopy says nothing, the page shows canopy's own reason
+(the SDK's `last_error()`: `unreachable`, `unknown_issuer`, `workspace_mismatch`, …), and
+canopy's problem sentences link to the canopy page that fixes each. Restoring an earlier
+change is checked against canopy's list like a save, and refused when canopy no longer
+lists its default agent.
 
-The panel does not render at all unless all three are set. That is deliberate: a
-launcher that opens onto an error the page cannot explain is worse than no
-launcher.
+The only environment variable is the secret, `CANOPY_SIGNING_KEY`. `CANOPY_BASE_URL` defaults to
+`https://canopy.dimagi.com` on AWS (`config/settings/labs_aws.py`) and `CANOPY_APP_NAME`
+to `connect-labs`; set either only to point labs at another canopy or site name (locally,
+`CANOPY_BASE_URL` has no default, so the panel is off). canopy's OAuth client id is
+derived from `CANOPY_BASE_URL` (`<base>/oauth/client.json`). The tenant on every token is
+the saved default agent's.
+
+The panel does not render at all unless the signing key, `CANOPY_BASE_URL` and
+`CANOPY_APP_NAME` are all set. That is deliberate: a launcher that opens onto an error the
+page cannot explain is worse than no launcher.
 
 ## Letting canopy act as the visitor (off by default)
 
@@ -422,15 +439,15 @@ and design: canopy-web PR #985
 
 PATs and ordinary MCP OAuth sign-ins never touch any of this.
 
-**To turn it on**, set one more env var (with the three above and
-`LABS_PUBLIC_URL`, which every JWT here names as issuer):
+**To turn it on**, tick "Canopy may act as the visitor at labs' MCP" at Labs Admin ›
+Canopy agents and save (it also needs `LABS_PUBLIC_URL`, which every JWT here names as
+issuer, and the signing key). canopy's client id is then derived from `CANOPY_BASE_URL`
+(`https://canopy.dimagi.com/oauth/client.json`). The MCP's DPoP gate reads the switch
+once per request, off the event loop (`mcp.server.dpop_gate`).
 
-```
-CANOPY_CLIENT_ID=https://canopy.dimagi.com/oauth/client.json
-```
-
-Unset, nothing changes: no ID-JAG is issued, `/o/token/` answers the grant with
-`unsupported_grant_type`, and the metadata does not advertise it.
+Off, nothing else changes: no ID-JAG is issued, `/o/token/` answers the grant with
+`unsupported_grant_type`, the metadata does not advertise it, and delegated tokens issued
+while it was on are refused.
 
 ### canopy's live probe (on with the grant)
 
@@ -455,7 +472,7 @@ proof is refused.
 
 All of it is in `connect_labs/labs/canopy.py` (`PROBE_*`, `probe_subject`), and
 none of it is a secret. It is **on wherever the grant is** and needs no env var
-of its own: without `CANOPY_CLIENT_ID` the endpoint 404s, and it 404s too until
+of its own: with the grant off the endpoint 404s, and it 404s too until
 the probe user exists. MCP calls made with a probe token land in `MCPAuditLog` as
 `canopy:probe`, with canopy's client id. To stop it, deactivate the user (canopy
 then reports a refused probe rather than an unconfigured one).
@@ -464,7 +481,7 @@ then reports a refused probe rather than an unconfigured one).
 
 | Symptom                                           | Cause                                                                                                                                                    |
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No launcher at all                                | one of the three settings is unset — the include renders nothing                                                                                         |
+| No launcher at all                                | nothing is saved at Labs Admin › Canopy agents, or the signing key is unset — the include renders nothing                                                |
 | Every mint 401s with `bad_signature`              | canopy cannot reach `/labs/canopy/jwks/`, or it is serving `{"keys": []}` because `CANOPY_SIGNING_KEY` is not a readable PEM                             |
 | Launcher, then a token error                      | the mint 403'd (CSRF binding), 502'd (canopy unreachable) or 401'd (signature). Labs logs canopy's own words; the browser deliberately does not get them |
 | Blank panel, console says a frame refused to load | labs' origin is not in the site's **Site URLs**                                                                                                          |

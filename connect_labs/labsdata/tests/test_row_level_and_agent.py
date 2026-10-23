@@ -140,12 +140,10 @@ def test_real_rows_reach_an_agent_only_when_labs_has_cleared_it(cache, resolved,
     assert visits["visits"][0]["visit_id"] == f"v{OPP.id}-1"
 
 
-def test_no_call_is_cleared_without_canopys_statement(settings):
+def test_no_call_is_cleared_without_canopys_statement(canopy_agents):
     # Labs fully configured for labsdata, but outside a call canopy vouched for, the data
     # tools never see real rows (mcp/execution.py; test_execution_statement.py).
-    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"
-    settings.CANOPY_SENSITIVE_AGENTS = ["labsdata"]
-    settings.CANOPY_RUNNER_REQUIREMENTS = ["sensitive_data"]
+    canopy_agents("ace", real_data=["labsdata"], runner_requirements=["sensitive_data"])
     assert canopy_panel.call_real_data_clearance().granted is False
     assert service.agent_sees_real_rows(True, [OPP]) is False
 

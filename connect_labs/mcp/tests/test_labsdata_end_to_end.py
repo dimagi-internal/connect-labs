@@ -50,9 +50,8 @@ SENSITIVE_DECLARED = {
 
 
 @pytest.fixture
-def labsdata(settings, enabled):
-    settings.CANOPY_DATA_AGENT_SLUG = "labsdata"
-    settings.CANOPY_SENSITIVE_AGENTS = ["labsdata"]
+def labsdata(enabled, canopy_agents):
+    canopy_agents("ace", real_data=["labsdata"])
     return enabled
 
 

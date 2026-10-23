@@ -2,7 +2,8 @@
 
 Signing, the page token and the mint view are the SDK's (``canopy_sdk``) and are
 tested there. What is tested HERE is labs' side of them, through labs' real
-URLs and pages: ``CANOPY_HOST`` is built from labs' existing settings, the mint
+URLs and pages: ``CANOPY_HOST`` is built from labs' settings and the saved agent
+settings (Labs Admin › Canopy agents), the mint
 at ``/labs/canopy/token/`` vouches for the SESSION's user with labs' claims and
 labs' page scopes, the key canopy fetches is still at ``/labs/canopy/jwks/``,
 and the panel renders on the marketplace pages exactly as it did.
@@ -32,13 +33,12 @@ CLIENT_ID = f"{CANOPY}/oauth/client.json"
 
 
 @pytest.fixture
-def configured(settings):
+def configured(settings, canopy_agents):
     settings.LABS_PUBLIC_URL = BASE
     settings.CANOPY_BASE_URL = CANOPY
     settings.CANOPY_APP_NAME = "connect-labs"
-    settings.CANOPY_AGENT_SLUG = "ace"
     settings.CANOPY_SIGNING_KEY = private_pem(generate_private_key("EdDSA"))
-    settings.CANOPY_CLIENT_ID = CLIENT_ID
+    canopy_agents("ace", acts_as_visitor=True)
 
 
 @pytest.fixture
@@ -125,12 +125,12 @@ def _rendered_page_token(client, name="marketplace:network", args=()):
 
 
 # ---------------------------------------------------------------------------
-# CANOPY_HOST, from labs' existing settings
+# CANOPY_HOST, from labs' settings and the saved agent settings
 # ---------------------------------------------------------------------------
 
 
 class TestSettings:
-    def test_canopy_host_reads_labs_settings_live(self, configured, settings):
+    def test_canopy_host_reads_labs_settings_live(self, configured, canopy_agents):
         from canopy_sdk.django import conf
 
         host = conf.raw()
@@ -145,8 +145,8 @@ class TestSettings:
         assert host["PANEL_TOKEN_URL_NAME"] == "labs:canopy_token"
         assert host["PAGE_SCOPES"] is canopy.PAGE_SCOPES
 
-        settings.CANOPY_CLIENT_ID = ""
-        assert conf.raw()["CLIENT_ID"] == "", "an override applies without a rebuild"
+        canopy_agents("ace", acts_as_visitor=False)
+        assert conf.raw()["CLIENT_ID"] == "", "a save applies without a rebuild"
 
     def test_no_public_origin_means_no_grant(self, configured, settings):
         settings.LABS_PUBLIC_URL = ""
@@ -277,10 +277,10 @@ class TestTheIdJag:
 
         assert set(canopy_stub.sent) == {"assertion", "agent_slug"}
 
-    def test_the_grant_switched_off_means_no_id_jag(self, client, user, configured, settings):
+    def test_the_grant_switched_off_means_no_id_jag(self, client, user, configured, canopy_agents):
         client.force_login(user)
         token = _rendered_page_token(client)
-        settings.CANOPY_CLIENT_ID = ""
+        canopy_agents("ace", acts_as_visitor=False)
 
         _, canopy_stub = _mint(client, f"?page={token}")
 
@@ -362,10 +362,10 @@ class TestTheSiteDocument:
     def test_it_sits_beside_the_jwks(self):
         assert reverse("labs:canopy_site") == "/labs/canopy/site.json"
 
-    def test_it_is_signed_and_says_what_labs_asks_and_uses(self, client, configured, settings):
+    def test_it_is_signed_and_says_what_labs_asks_and_uses(self, client, configured, settings, canopy_agents):
         from canopy_sdk.site import verify_site_document
 
-        settings.CANOPY_SENSITIVE_AGENTS = ["labsdata"]
+        canopy_agents("ace", real_data=["labsdata"])
         response = client.get(reverse("labs:canopy_site"))
         assert response.status_code == 200 and response["Content-Type"] == "application/jose"
         needs = verify_site_document(
@@ -376,6 +376,17 @@ class TestTheSiteDocument:
         pages = {p.key: p for p in needs.pages}
         assert tuple(pages["labs:workflow:run:data"].scopes) == ("workflow:read", "data:read", "workflow:edit")
         assert pages["labs:workflow:run"].title == "A workflow run"
+
+    def test_it_is_also_at_the_well_known_path_with_labs_own_facts(self, client, configured):
+        from canopy_sdk.site import WELL_KNOWN_PATH, verify_site_document
+
+        response = client.get(WELL_KNOWN_PATH)
+        assert response.status_code == 200
+        needs = verify_site_document(response.content.decode(), [_published_key(client)], site_name="connect-labs")
+        site = needs.site
+        assert site.jwks_url == f"{BASE}/labs/canopy/jwks/"
+        assert tuple(site.origins) == (BASE,)
+        assert site.issuer == BASE and site.mcp_resource == f"{BASE}/mcp/"  # the grant is on
 
 
 # ---------------------------------------------------------------------------

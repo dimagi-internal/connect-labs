@@ -284,14 +284,15 @@ class TestThePage:
         assert got["costs"]["cost_per_visit"] == DEFAULTS["cost_per_visit"]
         assert got["costs"]["platform_fee"] == DEFAULTS["platform_fee"]
 
-    def test_the_agent_panel_declares_the_pmc_resource(self, client, django_user_model, settings, nigeria):
+    def test_the_agent_panel_declares_the_pmc_resource(
+        self, client, django_user_model, settings, nigeria, canopy_agents
+    ):
         base = "https://labs.example.org"
         settings.LABS_PUBLIC_URL = base
         settings.CANOPY_BASE_URL = f"{base}/canopy"
         settings.CANOPY_APP_NAME = "connect-labs"
-        settings.CANOPY_AGENT_SLUG = "ace"
         settings.CANOPY_SIGNING_KEY = private_pem(generate_private_key("EdDSA"))
-        settings.CANOPY_CLIENT_ID = f"{base}/canopy/oauth/client.json"
+        canopy_agents("ace", acts_as_visitor=True)
         client.force_login(django_user_model.objects.create_user(username="pm2", password="x"))
 
         body = client.get(

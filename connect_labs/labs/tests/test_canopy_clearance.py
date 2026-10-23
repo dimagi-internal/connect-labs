@@ -16,11 +16,9 @@ REPO_ROOT = pathlib.Path(canopy_panel.__file__).resolve().parents[1]
 
 
 @pytest.fixture
-def cleared(settings, monkeypatch):
+def cleared(canopy_agents, monkeypatch):
     """Every clearance condition met, as it will be once canopy signs its statement."""
-    settings.CANOPY_AGENT_SLUG = "workflow-agent"
-    settings.CANOPY_SENSITIVE_AGENTS = ["workflow-agent"]
-    settings.CANOPY_RUNNER_REQUIREMENTS = ["sensitive_data"]
+    canopy_agents("workflow-agent", real_data=["workflow-agent"], runner_requirements=["sensitive_data"])
     monkeypatch.setattr(canopy_panel, "CANOPY_EXECUTION_STATEMENTS", True)
 
 
@@ -37,13 +35,13 @@ def _here(reads, agent=""):
     return canopy_panel.availability(agent, reads)
 
 
-def test_no_visit_data_is_always_offered(settings):
-    settings.CANOPY_SENSITIVE_AGENTS = []
+def test_no_visit_data_is_always_offered(canopy_agents):
+    canopy_agents("ace")
     assert _here(canopy_panel.NO_VISIT_DATA).ok
 
 
-def test_generated_data_is_offered_to_any_agent(settings):
-    settings.CANOPY_SENSITIVE_AGENTS = []
+def test_generated_data_is_offered_to_any_agent(canopy_agents):
+    canopy_agents("ace")
     with _generated(True):
         assert _here(canopy_panel.visits([10_101])).ok
 
@@ -59,14 +57,14 @@ def test_real_data_is_refused_without_canopys_per_call_statement(cleared, monkey
 
 
 @pytest.mark.parametrize(
-    "setting, value, reason",
+    "real_data, reason",
     [
-        ("CANOPY_SENSITIVE_AGENTS", [], 'tick "Real data"'),
-        ("CANOPY_SENSITIVE_AGENTS", ["some-other-agent"], 'tick "Real data"'),
+        ([], 'tick "Real data"'),
+        (["some-other-agent"], 'tick "Real data"'),
     ],
 )
-def test_each_condition_fails_closed_on_its_own(cleared, settings, setting, value, reason):
-    setattr(settings, setting, value)
+def test_each_condition_fails_closed_on_its_own(cleared, canopy_agents, real_data, reason):
+    canopy_agents("workflow-agent", real_data=real_data, runner_requirements=["sensitive_data"])
     with _generated(False):
         here = _here(canopy_panel.visits([501]))
     assert not here.ok
@@ -99,22 +97,23 @@ def test_every_condition_met_clears_real_data(cleared):
 
 
 @pytest.mark.parametrize("ids", [None, [], ["not-an-id"]])
-def test_a_page_that_cannot_tell_what_it_reads_counts_as_real(settings, ids):
-    settings.CANOPY_SENSITIVE_AGENTS = []
+def test_a_page_that_cannot_tell_what_it_reads_counts_as_real(canopy_agents, ids):
+    canopy_agents("ace")
     with _generated(True):
         assert not _here(canopy_panel.visits(ids)).ok
 
 
-def test_refused_means_no_panel_and_no_page_token():
+def test_refused_means_no_panel_and_no_page_token(canopy_agents):
+    canopy_agents("ace")
     with patch("canopy_sdk.django.pages.panel_context") as sdk, _generated(False):
         assert canopy_panel.panel(MagicMock(), reads=canopy_panel.visits([501]), resource="x") is None
     sdk.assert_not_called()
 
 
-def test_the_host_signs_labs_runner_requirements(settings):
-    settings.CANOPY_RUNNER_REQUIREMENTS = ["sensitive_data"]
+def test_the_host_signs_labs_runner_requirements(canopy_agents):
+    canopy_agents("ace", runner_requirements=["sensitive_data"])
     assert canopy.host_settings()["RUNNER_REQUIREMENTS"] == ["sensitive_data"]
-    settings.CANOPY_RUNNER_REQUIREMENTS = []
+    canopy_agents("ace")
     assert canopy.host_settings()["RUNNER_REQUIREMENTS"] == []
 
 

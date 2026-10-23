@@ -17,9 +17,10 @@ can decide:
   real ID-JAG for, so it can walk the whole grant chain on a schedule with no
   visitor at the keyboard;
 * ``host_settings`` — ``settings.CANOPY_HOST`` (the SDK resolves a callable
-  on every read), built from labs' existing ``CANOPY_*`` settings and
-  ``LABS_PUBLIC_URL``, so no environment variable was renamed and the task
-  definitions did not change.
+  on every read), built from where labs and canopy meet (``CANOPY_BASE_URL``,
+  ``CANOPY_APP_NAME``, ``LABS_PUBLIC_URL``), the one secret
+  (``CANOPY_SIGNING_KEY``), and everything else from Labs Admin › Canopy agents
+  (``canopy_settings.current()``).
 
 Two rules the SDK keeps and labs relies on: ``sub`` is labs' OWN id for the
 signed-in user (``str(user.pk)``), never anything the browser sent; and a page's
@@ -320,20 +321,29 @@ def host_settings() -> dict:
     ``settings.CANOPY_HOST`` is this function, and the SDK calls it on every
     read rather than freezing it at settings import: ``LABS_PUBLIC_URL`` is
     overridden per environment AFTER ``base.py`` (local, test, labs_aws), and
-    tests override the individual ``CANOPY_*`` settings. A callable (not a
-    ``Mapping``) also keeps the signing key off Django's debug page, which shows
-    a callable by name. The grant needs a public
-    origin — every URL it names is absolute — so without one it is off, exactly
-    as before.
+    the agent settings change when staff save at Labs Admin › Canopy agents. A
+    callable (not a ``Mapping``) also keeps the signing key off Django's debug
+    page, which shows a callable by name. The grant needs a public
+    origin — every URL it names is absolute — so without one it is off.
+
+    ``AGENT_SLUG`` is the saved default agent and nothing else ("" until someone
+    saves); ``WORKSPACE`` the tenant canopy named for labs' site ("" until learnt,
+    when ``AGENT_SLUG`` names it). ``CLIENT_ID`` turns the jwt-bearer grant on: it is canopy's client
+    id, derived from ``CANOPY_BASE_URL``, while the saved settings say canopy
+    may act as the visitor, and "" (the grant off) otherwise.
     """
     public = (getattr(settings, "LABS_PUBLIC_URL", "") or "").rstrip("/")
-    agents = canopy_settings.current()  # Labs Admin › Canopy agents, over the CANOPY_* defaults
+    base = getattr(settings, "CANOPY_BASE_URL", "") or ""
+    agents = canopy_settings.current()  # Labs Admin › Canopy agents
     config = {
         "SIGNING_KEY": getattr(settings, "CANOPY_SIGNING_KEY", ""),
-        "CANOPY_BASE_URL": getattr(settings, "CANOPY_BASE_URL", ""),
+        "CANOPY_BASE_URL": base,
         "APP_NAME": getattr(settings, "CANOPY_APP_NAME", ""),
         "AGENT_SLUG": agents.default_agent,
-        "CLIENT_ID": getattr(settings, "CANOPY_CLIENT_ID", ""),
+        # The tenant labs' site is registered in (dimagi-canopy 0.16). While it is not
+        # yet known, AGENT_SLUG names it.
+        "WORKSPACE": agents.workspace,
+        "CLIENT_ID": canopy_client_id() if agents.acts_as_visitor else "",
         "ISSUER": public,
         "RESOURCE": f"{public}/mcp/" if public else "",
         "TOKEN_ENDPOINT": f"{public}/o/token/" if public else "",
@@ -349,8 +359,12 @@ def host_settings() -> dict:
         "PANEL": PANEL,
     }
     if public:
+        # site.json's ``site`` block: labs' key is at its own long-standing URL, not the
+        # SDK's default route (the origins default to ISSUER's).
+        config["JWKS_URL"] = f"{public}/labs/canopy/jwks/"
+    if public:
         # Configured wherever the grant can be. The SDK runs the probe only on
-        # top of a working grant (CANOPY_CLIENT_ID set), and ``probe_subject``
+        # top of a working grant (CLIENT_ID set), and ``probe_subject``
         # keeps it off until the probe user exists. ENDPOINT must be the public
         # URL exactly: a DPoP proof's ``htu`` is compared to it.
         config["PROBE"] = {
@@ -363,6 +377,21 @@ def host_settings() -> dict:
             "PAGE": PROBE_PAGE,
         }
     return config
+
+
+def canopy_client_id() -> str:
+    """canopy's OAuth client id: the URL of its client metadata document, under
+    ``CANOPY_BASE_URL`` (``https://canopy.dimagi.com/oauth/client.json``). "" without
+    a canopy."""
+    from canopy_sdk.contract import client_id_for
+
+    base = getattr(settings, "CANOPY_BASE_URL", "") or ""
+    return client_id_for(base) if base else ""
+
+
+def grant_on() -> bool:
+    """Whether canopy may act as the visitor here: the saved switch, over a canopy."""
+    return bool(canopy_settings.current().acts_as_visitor and canopy_client_id())
 
 
 def host_config():
