@@ -71,7 +71,7 @@ export function hasValue(e: Cell | null | undefined): boolean {
 
 /**
  * A graded value as its unit says to print it. A `%` value is a fraction
- * (0.705 -> "70.5%"); a count carries separators, a mean keeps one decimal.
+ * (0.705 -> "70.5%"); a count (or a whole `n`) carries separators, a mean keeps one decimal.
  */
 export function fmtValue(m: Measure | null | undefined, v: unknown): string {
   if (v === null || v === undefined || v === '') return '—';
@@ -82,6 +82,11 @@ export function fmtValue(m: Measure | null | undefined, v: unknown): string {
   if (unit === 'g') return nCount(num);
   if (unit === 'wks') return String(Math.round(num * 10) / 10);
   if ((m && m.kind) === 'count') return nCount(num);
+  // A whole-number count (unit `n`) whose numerator sums integer properties
+  // reaches here with kind `sumratio`, not `count`, and printed as "359.0".
+  // A mean keeps its decimal even when it happens to be whole.
+  if (unit === 'n' && (m && m.kind) !== 'mean' && Number.isInteger(num))
+    return nCount(num);
   return num.toFixed(1);
 }
 

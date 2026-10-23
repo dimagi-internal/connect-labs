@@ -1755,6 +1755,111 @@ class TestWorkflowRunViewRecoversAProgramOwnedDefinition:
         assert response.status_code != 302
 
 
+class TestWorkflowRunViewRecoversAProgramFromAnOrganisationContext:
+    """The same program-report link opened while the session holds an ORGANISATION
+    context (no opportunity, no program): opportunity recovery finds nothing for a
+    private program-owned definition, and the page asked the user to "select an
+    opportunity" for a link that names its program. The view now looks in the
+    program the link names and redirects there."""
+
+    def _get(self, rf, user, url, *, in_program):
+        from connect_labs.workflow.views import WorkflowRunView
+
+        request = rf.get(url)
+        request.user = user
+        request.labs_context = {"organization_id": 7}
+        request.session = {"labs_oauth": {"access_token": "t"}}
+        program_def = MagicMock(program_id=60, opportunity_id=None)
+
+        def access(*args, program_id=None, **kwargs):
+            wda = MagicMock()
+            wda.get_definition.return_value = program_def if (in_program and program_id == 60) else None
+            return wda
+
+        with (
+            patch("connect_labs.workflow.views.WorkflowDataAccess", side_effect=access),
+            patch("connect_labs.workflow.views.get_org_data", return_value={}),
+        ):
+            view = WorkflowRunView()
+            view.setup(request, definition_id=26679)
+            return view.get(request, definition_id=26679)
+
+    def test_a_link_naming_the_owning_program_redirects_to_it(self, dimagi_user, rf: RequestFactory):
+        response = self._get(
+            rf, dimagi_user, "/labs/workflow/26679/run/?run_id=26681&owning_program_id=60", in_program=True
+        )
+        assert response.status_code == 302
+        assert "program_id=60" in response["Location"]
+        assert "run_id=26681" in response["Location"]
+
+    def test_no_redirect_when_the_named_program_does_not_own_it(self, dimagi_user, rf: RequestFactory):
+        with patch("connect_labs.workflow.views.WorkflowRunView.get_context_data", return_value={}):
+            response = self._get(
+                rf, dimagi_user, "/labs/workflow/26679/run/?run_id=26681&owning_program_id=60", in_program=False
+            )
+        assert response.status_code != 302
+
+    def test_no_redirect_loop_when_program_already_in_the_url(self, dimagi_user, rf: RequestFactory):
+        with patch("connect_labs.workflow.views.WorkflowRunView.get_context_data", return_value={}):
+            response = self._get(
+                rf,
+                dimagi_user,
+                "/labs/workflow/26679/run/?run_id=26681&owning_program_id=60&program_id=60",
+                in_program=True,
+            )
+        assert response.status_code != 302
+
+
+class TestRunHistoryReadsAtTheHintedProgram:
+    """The trend's history read from a session scoped to an ORGANISATION (another
+    tab moved it): it found no program-owned runs and the trend went blank. With
+    the page's owning_program_id hint it reads at that program."""
+
+    def _get(self, rf, user, url, labs_context):
+        from connect_labs.workflow import views as views_mod
+
+        request = rf.get(url)
+        request.user = user
+        request.labs_context = labs_context
+        request.session = {"labs_oauth": {"access_token": "t"}}
+        made = []
+
+        def access(*args, **kwargs):
+            made.append(kwargs)
+            wda = MagicMock()
+            wda.list_runs.return_value = []
+            return wda
+
+        with (
+            patch("connect_labs.workflow.views.WorkflowDataAccess", side_effect=access),
+            patch("connect_labs.workflow.views.declared_reads.refusal", return_value=None),
+            patch("connect_labs.workflow.history_cache.get", return_value=None),
+            patch("connect_labs.workflow.history_cache.store"),
+        ):
+            response = views_mod.run_history_api(request, definition_id=26677)
+        return response, made
+
+    def test_organisation_scope_reads_at_the_hinted_program(self, dimagi_user, rf: RequestFactory):
+        response, made = self._get(
+            rf,
+            dimagi_user,
+            "/labs/workflow/api/26677/runs/history/?keys=snapshot.meta&owning_program_id=60",
+            {"organization_id": 7},
+        )
+        assert response.status_code == 200
+        assert made and made[0].get("program_id") == 60
+
+    def test_an_opportunity_scope_is_left_as_it_is(self, dimagi_user, rf: RequestFactory):
+        response, made = self._get(
+            rf,
+            dimagi_user,
+            "/labs/workflow/api/26677/runs/history/?keys=snapshot.meta&owning_program_id=60",
+            {"opportunity_id": 765},
+        )
+        assert response.status_code == 200
+        assert made and "program_id" not in made[0]
+
+
 class TestUpdateAgentConfigView:
     def _post(self, rf, dimagi_user, body, existing):
         import json

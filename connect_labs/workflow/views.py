@@ -842,6 +842,24 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 params = request.GET.copy()
                 params["opportunity_id"] = str(recovered)
                 return HttpResponseRedirect(f"{request.path}?{params.urlencode()}")
+            if not recovered:
+                # No opportunity to recover and no program in context -- an
+                # organisation context, or none. A program report's drill links
+                # name their program (`owning_program_id`), so a program-owned
+                # definition is still found there: redirect into its program
+                # rather than asking for an opportunity it does not have. The
+                # URL check stops a loop if the middleware refuses the program.
+                definition = self._definition_in_hinted_program(request, definition_id)
+                def_program_id = getattr(definition, "program_id", None) if definition else None
+                if (
+                    def_program_id
+                    and not getattr(definition, "opportunity_id", None)
+                    and (request.GET.get("program_id") or "") != str(def_program_id)
+                ):
+                    params = request.GET.copy()
+                    params.pop("opportunity_id", None)
+                    params["program_id"] = str(def_program_id)
+                    return HttpResponseRedirect(f"{request.path}?{params.urlencode()}")
         elif labs_context.get("opportunity_id"):
             # LabsContextMiddleware stamps whatever context the session last
             # held onto a bare workflow URL (no opportunity_id/program_id of
@@ -3200,12 +3218,20 @@ def run_history_api(request, definition_id):
     labs_context = getattr(request, "labs_context", {}) or {}
     opp = labs_context.get("opportunity_id") or request.GET.get("opportunity_id")
     program = labs_context.get("program_id") or request.GET.get("program_id")
+    scope_kwargs = {}
+    hint = _run_program_hint(request)
+    if not opp and not program and hint is not None:
+        # An organisation (or empty) session scope, set by another tab, reads no
+        # program-owned runs at all, so the trend went blank. The program report
+        # names its owner as owning_program_id; read the history there.
+        program = hint
+        scope_kwargs = {"program_id": hint}
     scope_key = f"opp{opp}" if opp else (f"prog{program}" if program else "none")
     try:
         cached = history_cache.get(definition_id, scope_key, keys)
         if cached is not None:
             return JsonResponse({"runs": cached, "cached": True})
-        wf_access = WorkflowDataAccess(request=request)
+        wf_access = WorkflowDataAccess(request=request, **scope_kwargs)
         try:
             runs = wf_access.list_runs(definition_id=definition_id)
         finally:

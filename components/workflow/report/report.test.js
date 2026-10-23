@@ -56,6 +56,11 @@ describe('formatting', () => {
   test('a count carries separators and a mean keeps a decimal', () => {
     expect(R.fmtValue({ unit: 'n', kind: 'count' }, 37853)).toBe('37,853');
     expect(R.fmtValue({ unit: 'n' }, 3.14)).toBe('3.1');
+    // A whole count summed from integer properties (kind sumratio) prints as a count.
+    expect(R.fmtValue({ unit: 'n', kind: 'sumratio' }, 1332)).toBe('1,332');
+    expect(R.fmtValue({ unit: 'n' }, 359)).toBe('359');
+    // A mean keeps its decimal even when whole.
+    expect(R.fmtValue({ unit: 'n', kind: 'mean' }, 4)).toBe('4.0');
   });
   test('grams and weeks', () => {
     expect(R.fmtValue({ unit: 'g' }, 1834.4)).toBe('1,834');

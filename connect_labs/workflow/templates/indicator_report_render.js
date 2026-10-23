@@ -44,6 +44,24 @@ function WorkflowUI({
   var OPP_MODE =
     cfg.templateType === 'indicator_opp_report' || cfg.multi_opp === false;
   var FLW_SEP = '::';
+  // The most date ticks a wide trend draws.
+  var WIDE_TICKS = 8;
+  // The indexes 0..count-1 thinned to at most `max`, evenly spaced, always the
+  // first and the last.
+  function thinTicks(count, max) {
+    if (count <= 0) return [];
+    if (count <= max) {
+      var all = [];
+      for (var i = 0; i < count; i++) all.push(i);
+      return all;
+    }
+    var out = [];
+    for (var k = 0; k < max; k++) {
+      var idx = Math.round((k * (count - 1)) / (max - 1));
+      if (out[out.length - 1] !== idx) out.push(idx);
+    }
+    return out;
+  }
   var search = String(window.location.search || '');
 
   function scopeParams() {
@@ -53,9 +71,15 @@ function WorkflowUI({
     else if (instance && instance.opportunity_id)
       out.push('opportunity_id=' + instance.opportunity_id);
     var pgm = search.match(/[?&]owning_program_id=(\d+)/);
+    var pgu = search.match(/[?&]program_id=(\d+)/);
     if (pgm) out.push('owning_program_id=' + pgm[1]);
     else if (instance && instance.program_id)
       out.push('owning_program_id=' + instance.program_id);
+    // The page opened at ?program_id=<p> (a program report's own URL) names its
+    // owner too. Forwarded as the read-only hint, never as program_id, which
+    // would rewrite the session scope: without it a session moved to another
+    // scope by another tab read the program-owned definition as "not found".
+    else if (pgu) out.push('owning_program_id=' + pgu[1]);
     return out.length ? '?' + out.join('&') : '';
   }
   function withParams(url, extra) {
@@ -289,6 +313,17 @@ function WorkflowUI({
         if (!out.opp[o] || d > out.opp[o]) out.opp[o] = d;
         if (g && (!out.org[g] || d > out.org[g])) out.org[g] = d;
       });
+      // A programme run stores no case list (case_index.embed false), but the
+      // builder carries each scope's latest visit on its own row (`lastVisit`,
+      // semantic/snapshot.py _activity). Read it where the cases are absent.
+      (P.byOpp || []).forEach(function (o) {
+        var d = String(o.lastVisit || '').slice(0, 10);
+        if (d && !out.opp[String(o.opp)]) out.opp[String(o.opp)] = d;
+      });
+      (P.byLLO || []).forEach(function (l) {
+        var d = String(l.lastVisit || '').slice(0, 10);
+        if (d && l.llo && !out.org[l.llo]) out.org[l.llo] = d;
+      });
       out.doneOf = function (kind, key) {
         return !!out.n[kind][key] && !out.open[kind][key];
       };
@@ -320,7 +355,8 @@ function WorkflowUI({
           yellows: f.yellows || 0,
           cases: rows,
           n: rows.length || f.n || 0,
-          last: last,
+          // No case list on a programme run: the worker's own row carries it.
+          last: last || String(f.lastVisit || '').slice(0, 10),
           done: rows.length > 0 && rows.every(isDone),
           startMonth: f.startMonth || null,
           caseload: f.caseloadLabel || null,
@@ -799,10 +835,11 @@ function WorkflowUI({
       var b = u[u.length - 1];
       var bi = l.lastIndexOf(b);
       var ticks = [lo, (lo + hi) / 2, hi];
+      // Wide: at most WIDE_TICKS evenly spaced dates, always the first and the
+      // last. A tick per saved report overprinted into an unreadable band once
+      // a history ran past a dozen weeks (55 weekly reports on one axis).
       var xt = W
-        ? l.map(function (x, i) {
-            return i;
-          })
+        ? thinTicks(s, WIDE_TICKS)
         : [0, Math.floor((s - 1) / 2), s - 1];
       var col = R.bandColour(b.e.band);
       body = (
@@ -883,16 +920,23 @@ function WorkflowUI({
           })}
           {W
             ? (function () {
-                // Wide only: a small value label above each point so a still
-                // frame reads the series. Always keep the first, the first
-                // point below target and the last; skip any other label that
-                // would collide with one already placed.
+                // Wide only: value labels where a still frame needs them -- the
+                // first point, the first point below target, the last, and the
+                // series' highest and lowest. A label on every point crowded a
+                // long history into noise; the tooltip still gives each value.
                 var fb = -1;
                 if (a)
                   l.forEach(function (x, i) {
                     if (x && fb < 0 && x.v < o) fb = i;
                   });
                 var fi = l.indexOf(u[0]);
+                var imax = -1,
+                  imin = -1;
+                l.forEach(function (x, i) {
+                  if (!x) return;
+                  if (imax < 0 || x.v > l[imax].v) imax = i;
+                  if (imin < 0 || x.v < l[imin].v) imin = i;
+                });
                 var cand = [];
                 l.forEach(function (x, i) {
                   if (!x) return;
@@ -927,6 +971,7 @@ function WorkflowUI({
                     x1: x0 + w,
                     y: y,
                     must: i === fi || i === fb || i === bi,
+                    extreme: i === imax || i === imin,
                   });
                 });
                 var placed = [];
@@ -943,7 +988,7 @@ function WorkflowUI({
                   if (c.must) placed.push(c);
                 });
                 cand.forEach(function (c) {
-                  if (!c.must && fits(c)) placed.push(c);
+                  if (!c.must && c.extreme && fits(c)) placed.push(c);
                 });
                 return placed.map(function (c) {
                   return (
@@ -1498,7 +1543,11 @@ function WorkflowUI({
     if (!cs.length)
       return (
         <div className="text-xs text-gray-500">
-          {'No ' + ENT.plural + ' in this report.'}
+          {caseIndex.length
+            ? 'No ' + ENT.plural + ' in this report.'
+            : "This report does not store each worker's " +
+              ENT.plural +
+              "; they are listed on the opportunity's own report."}
         </div>
       );
     return (
@@ -2855,11 +2904,17 @@ function WorkflowUI({
     if (selOrg) return (org || orgOf(opp)) === selOrg;
     return true;
   }
-  var scopeCases = DRILLED
-    ? caseIndex.filter(function (c) {
-        return inScope(c.opportunity_id, c.llo);
-      }).length
-    : meta.cases;
+  // Without a stored case list (a programme run), count from the opportunity
+  // rows, which carry their case count (`n`), rather than read zero.
+  var scopeCases = !DRILLED
+    ? meta.cases
+    : caseIndex.length
+      ? caseIndex.filter(function (c) {
+          return inScope(c.opportunity_id, c.llo);
+        }).length
+      : (P.byOpp || []).reduce(function (a, o) {
+          return inScope(o.opp, o.llo) ? a + (Number(o.n) || 0) : a;
+        }, 0);
   var scopeWeeks = (P.weekly || {})[scopeKey];
   var scopeVisits = !DRILLED
     ? meta.visits
