@@ -1251,6 +1251,16 @@ class WorkflowDataAccess(BaseDataAccess):
                     return run
 
         if program_hint is not None and self.program_id is None:
+            # The hint is untrusted, and a LABS-ONLY program has no downstream
+            # per-user check (it reads the local records backend, filtered by scope
+            # only). Refuse one this user cannot reach, as the context middleware
+            # does for a program_id on a URL, before reading anything there.
+            from connect_labs.labs.synthetic.access import labs_only_scope_denied_reason
+
+            denied = labs_only_scope_denied_reason(getattr(self.request, "user", None), program_id=program_hint)
+            if denied:
+                logger.warning("get_run: ignoring program hint: %s", denied)
+                return None
             # Full get_run, not _get_run_direct: the hinted program may not own the
             # run either. A program's runs can be owned by any ONE of its member
             # opportunities, and the page is scoped to a DIFFERENT member -- so a

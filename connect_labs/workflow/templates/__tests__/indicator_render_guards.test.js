@@ -300,6 +300,178 @@ describe('what the ported fixes do', () => {
   });
 });
 
+// A programme run that stores no case list (case_index.embed false): what the
+// page reads off the scope rows instead.
+function noCaseProps() {
+  const p = programmeProps();
+  const snap = JSON.parse(JSON.stringify(PAYLOAD));
+  delete snap.cases;
+  snap.byFLW.forEach((f) => {
+    f.rows = [];
+  });
+  p.view = { isCompleted: true, state: { snapshot: snap } };
+  return p;
+}
+
+// `n` saved weekly reports for the trend, each a little different, so a wide
+// chart has many points and a distinct highest and lowest.
+function historyRuns(n) {
+  const runs = [];
+  for (let i = 0; i < n; i++) {
+    const d = new Date(Date.UTC(2026, 3, 5 + 7 * i)).toISOString().slice(0, 10);
+    const bump = (ind) => {
+      const out = {};
+      Object.keys(ind || {}).forEach((k) => {
+        const c = ind[k];
+        out[k] =
+          c && typeof c.value === 'number'
+            ? { ...c, value: c.value * (1 + ((i * 7) % 11) / 100) }
+            : c;
+      });
+      return out;
+    };
+    runs.push({
+      period_end: d,
+      state: {
+        'snapshot.meta': { ...PAYLOAD.meta, as_of: d },
+        'snapshot.programInd': bump(PAYLOAD.programInd),
+        'snapshot.byLLO': PAYLOAD.byLLO.map((l) => ({
+          ...l,
+          ind: bump(l.ind),
+        })),
+        'snapshot.byOpp': PAYLOAD.byOpp.map((o) => ({
+          ...o,
+          ind: bump(o.ind),
+        })),
+      },
+    });
+  }
+  return { runs };
+}
+
+describe('a programme run without a stored case list', () => {
+  test('the drilled header counts cases from the opportunity rows, not zero', async () => {
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/1/run/?program_id=1&run_id=11',
+      props: noCaseProps(),
+      routes: {},
+    });
+    await click(byText(el, 'div', 'Partner A').closest('tr'));
+    const want = PAYLOAD.byOpp
+      .filter((o) => o.llo === 'Partner A')
+      .reduce((a, o) => a + o.n, 0);
+    expect(want).toBeGreaterThan(0);
+    expect(el.textContent).toContain(want + ' communities');
+    expect(el.textContent).not.toMatch(/(^|\D)0 communities/);
+  });
+
+  test('last visit comes from the stored scope rows', async () => {
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/1/run/?program_id=1&run_id=11',
+      props: noCaseProps(),
+      routes: {},
+    });
+    const row = byText(el, 'div', 'Partner A').closest('tr');
+    const stored = PAYLOAD.byLLO.find((l) => l.llo === 'Partner A').lastVisit;
+    const label = window.LabsReport.dateLbl(stored);
+    expect(row.textContent).toContain(label);
+  });
+
+  test('an opened worker says where its cases are listed', async () => {
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/1/run/?program_id=1&run_id=11',
+      props: noCaseProps(),
+      routes: {},
+    });
+    await click(byText(el, 'div', 'Partner A').closest('tr'));
+    const w = PAYLOAD.byFLW.find((f) => f.llo === 'Partner A');
+    const link = Array.from(el.querySelectorAll('tr')).find((tr) =>
+      (tr.textContent || '').includes(w.name || w.flw),
+    );
+    await click(link);
+    expect(el.textContent).toContain("listed on the opportunity's own report");
+    expect(el.textContent).not.toContain('No communities in this report.');
+  });
+});
+
+describe('an opportunity report that stores an empty case list', () => {
+  test('an opened worker says there are none, not that they are elsewhere', async () => {
+    const p = oppProps();
+    const snap = JSON.parse(JSON.stringify(PAYLOAD));
+    snap.cases = [];
+    snap.byFLW.forEach((f) => {
+      f.rows = [];
+    });
+    p.view = { isCompleted: true, state: { snapshot: snap } };
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/2/run/?opportunity_id=10097&run_id=12',
+      props: p,
+      routes: {},
+    });
+    const w = PAYLOAD.byFLW.find((f) => f.opp === 10097);
+    const row = Array.from(el.querySelectorAll('tr')).find((tr) =>
+      (tr.textContent || '').includes(w.name || w.flw),
+    );
+    await click(row);
+    expect(el.textContent).toContain('No communities in this report.');
+    expect(el.textContent).not.toContain(
+      "listed on the opportunity's own report",
+    );
+  });
+});
+
+describe('a program report opened at ?program_id', () => {
+  test('its reads carry the owner as owning_program_id when the run does not', async () => {
+    const props = programmeProps();
+    delete props.instance.program_id;
+    const seen = [];
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/1/run/?run_id=11&program_id=1',
+      props,
+      routes: {},
+    });
+    const orig = window.fetch;
+    globalThis.fetch = window.fetch = async function (u) {
+      seen.push(String(u));
+      return orig(u);
+    };
+    // The definitions popup, the read that 404'd in an organisation scope.
+    const head = Array.from(el.querySelectorAll('button')).find((b) =>
+      (b.textContent || '').includes('Meeting regularity'),
+    );
+    await click(head);
+    const defs = seen.filter((u) => u.indexOf('/indicator-definitions/') >= 0);
+    expect(defs.length).toBeGreaterThan(0);
+    defs.forEach((u) => expect(u).toContain('owning_program_id=1'));
+    defs.forEach((u) => expect(u).not.toMatch(/[?&]program_id=/));
+  });
+});
+
+describe('a wide trend over a long history', () => {
+  test('draws at most 8 dates and a few value labels', async () => {
+    const el = await mount('indicator_report_render.js', {
+      url: '/labs/workflow/1/run/?program_id=1&run_id=11',
+      props: programmeProps(),
+      routes: { '/runs/history/': historyRuns(30) },
+    });
+    await click(byText(el, 'div', 'Partner A').closest('tr'));
+    const wide = Array.from(el.querySelectorAll('svg')).find(
+      (s) => s.getAttribute('viewBox') === '0 0 960 184',
+    );
+    expect(wide, 'a wide trend for the flagged indicator').toBeTruthy();
+    const dates = Array.from(wide.querySelectorAll('text')).filter(
+      (t) => t.getAttribute('y') === '180',
+    );
+    expect(dates.length).toBeGreaterThan(1);
+    expect(dates.length).toBeLessThanOrEqual(8);
+    const values = Array.from(wide.querySelectorAll('text')).filter(
+      (t) => t.getAttribute('font-size') === '10.5',
+    );
+    expect(values.length).toBeGreaterThan(0);
+    expect(values.length).toBeLessThanOrEqual(5);
+  });
+});
+
 // ── The worker review ───────────────────────────────────────────────────────
 
 const WORKER = PAYLOAD.byFLW.find((f) => f.yellows || f.reds);

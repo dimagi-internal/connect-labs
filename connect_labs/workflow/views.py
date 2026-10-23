@@ -26,7 +26,7 @@ from connect_labs.audit.data_access import AuditDataAccess
 from connect_labs.flags.data_access import FlagsDataAccess
 from connect_labs.labs import s3_export
 from connect_labs.labs.analysis.sse_streaming import AnalysisPipelineSSEMixin, BaseSSEStreamView
-from connect_labs.labs.context import get_org_data
+from connect_labs.labs.context import get_org_data, validate_context_access
 from connect_labs.labs.integrations.connect.api_client import LabsAPIError
 from connect_labs.labs.presentation import is_present_mode
 from connect_labs.tasks.data_access import TaskDataAccess
@@ -99,8 +99,62 @@ def _run_program_hint(request) -> int | None:
     it is a hint, not an authorization. The retry still goes out with the caller's
     own token and the server still runs its per-user check, so a wrong value costs
     one request and a forged one buys nothing. Anything unparseable is dropped.
+
+    Except where there is no server-side check: a LABS-ONLY program routes to the
+    local records backend, which filters by scope, never by user. So the hint is
+    put through the same validation the middleware applies to a program_id on a
+    URL (``validate_context_access``, which refuses another tenant's labs-only
+    program) and dropped when that refuses it.
     """
-    return _coerce_int(request.POST.get("owning_program_id") or request.GET.get("owning_program_id"))
+    return _validated_program_id(
+        request, _coerce_int(request.POST.get("owning_program_id") or request.GET.get("owning_program_id"))
+    )
+
+
+def _validated_program_id(request, program_id: int | None) -> int | None:
+    """``program_id`` if this user may scope to it, as the context middleware decides
+    for a URL param (a program in their OAuth data, or a pass-through to a real
+    Connect program the downstream API then checks), else None. A labs-only program
+    the user cannot reach is refused here, because nothing downstream would."""
+    if program_id is None:
+        return None
+    try:
+        validated = validate_context_access(request, {"program_id": program_id})
+    except Exception:  # noqa: BLE001 -- unvalidated means unused, never trusted
+        logger.warning("Could not validate program scope %s", program_id, exc_info=True)
+        return None
+    return program_id if validated.get("program_id") == program_id else None
+
+
+def _program_in_oauth_data(request, program_id: int | None) -> bool:
+    """Whether ``program_id`` is one of the user's own programs in their cached OAuth
+    data -- the only scope proven for this user without a downstream call. A
+    validated pass-through id is NOT: the records API checks it on read, but a
+    shared cache would answer before that read."""
+    if program_id is None:
+        return False
+    programs = (get_org_data(request) or {}).get("programs", []) or []
+    return any(p.get("id") == program_id for p in programs)
+
+
+def _opportunity_in_oauth_data(request, opportunity_id: int | None) -> bool:
+    """The opportunity equivalent of ``_program_in_oauth_data``."""
+    if opportunity_id is None:
+        return False
+    opportunities = (get_org_data(request) or {}).get("opportunities", []) or []
+    return any(o.get("id") == opportunity_id for o in opportunities)
+
+
+def _validated_opportunity_id(request, opportunity_id: int | None) -> int | None:
+    """The same validation as ``_validated_program_id``, for an opportunity id."""
+    if opportunity_id is None:
+        return None
+    try:
+        validated = validate_context_access(request, {"opportunity_id": opportunity_id})
+    except Exception:  # noqa: BLE001 -- unvalidated means unused, never trusted
+        logger.warning("Could not validate opportunity scope %s", opportunity_id, exc_info=True)
+        return None
+    return opportunity_id if validated.get("opportunity_id") == opportunity_id else None
 
 
 def _resolve_pipeline_definition(pipeline_access, pipeline_id, opp_ids=None, request=None, access_token=None):
@@ -842,6 +896,24 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 params = request.GET.copy()
                 params["opportunity_id"] = str(recovered)
                 return HttpResponseRedirect(f"{request.path}?{params.urlencode()}")
+            if not recovered:
+                # No opportunity to recover and no program in context -- an
+                # organisation context, or none. A program report's drill links
+                # name their program (`owning_program_id`), so a program-owned
+                # definition is still found there: redirect into its program
+                # rather than asking for an opportunity it does not have. The
+                # URL check stops a loop if the middleware refuses the program.
+                definition = self._definition_in_hinted_program(request, definition_id)
+                def_program_id = getattr(definition, "program_id", None) if definition else None
+                if (
+                    def_program_id
+                    and not getattr(definition, "opportunity_id", None)
+                    and (request.GET.get("program_id") or "") != str(def_program_id)
+                ):
+                    params = request.GET.copy()
+                    params.pop("opportunity_id", None)
+                    params["program_id"] = str(def_program_id)
+                    return HttpResponseRedirect(f"{request.path}?{params.urlencode()}")
         elif labs_context.get("opportunity_id"):
             # LabsContextMiddleware stamps whatever context the session last
             # held onto a bare workflow URL (no opportunity_id/program_id of
@@ -938,8 +1010,13 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         hint = request.GET.get("program_id") or request.GET.get("owning_program_id") or ""
         if not re.fullmatch(r"\d+", hint.strip()):
             return None
+        # A labs-only program reads from a backend with no per-user check: only a
+        # program this user may scope to is looked in (see _validated_program_id).
+        program_id = _validated_program_id(request, int(hint))
+        if program_id is None:
+            return None
         try:
-            return WorkflowDataAccess(request=request, program_id=int(hint)).get_definition(definition_id)
+            return WorkflowDataAccess(request=request, program_id=program_id).get_definition(definition_id)
         except Exception:
             logger.info("Scope recovery: definition %s not found in program %s", definition_id, hint)
             return None
@@ -3198,14 +3275,34 @@ def run_history_api(request, definition_id):
     # The answer depends on the scope it was read in (list_runs fans out differently
     # for a program), so that is part of the key.
     labs_context = getattr(request, "labs_context", {}) or {}
-    opp = labs_context.get("opportunity_id") or request.GET.get("opportunity_id")
-    program = labs_context.get("program_id") or request.GET.get("program_id")
+    # Every scope that keys the cache or reads runs is a VALIDATED one: the context
+    # middleware already validated labs_context; a raw URL param or the hint is put
+    # through the same check here, so an unvalidated id (a labs-only program the
+    # user cannot reach) never selects a read.
+    opp = labs_context.get("opportunity_id")
+    program = labs_context.get("program_id")
+    if not opp and not program:
+        opp = _validated_opportunity_id(request, _coerce_int(request.GET.get("opportunity_id")))
+        program = _validated_program_id(request, _coerce_int(request.GET.get("program_id")))
+    if not opp and not program:
+        # An organisation (or empty) session scope, set by another tab, reads no
+        # program-owned runs at all, so the trend went blank. The program report
+        # names its owner as owning_program_id; read the history there.
+        program = _run_program_hint(request)
+    # The read uses the scope the answer is keyed by, whichever source gave it.
+    scope_kwargs = {"opportunity_id": opp} if opp else ({"program_id": program} if program else {})
+    # The cached answer is shared by everyone reading that scope and is served
+    # before any records-API check. "Validated" is not enough for that: the
+    # middleware passes a REAL Connect program or opportunity the user's OAuth data
+    # does not list straight through, for the API to check on read. So the cache is
+    # used only for a scope in the user's own OAuth data; anything else is read live.
+    use_cache = _opportunity_in_oauth_data(request, opp) if opp else _program_in_oauth_data(request, program)
     scope_key = f"opp{opp}" if opp else (f"prog{program}" if program else "none")
     try:
-        cached = history_cache.get(definition_id, scope_key, keys)
+        cached = history_cache.get(definition_id, scope_key, keys) if use_cache else None
         if cached is not None:
             return JsonResponse({"runs": cached, "cached": True})
-        wf_access = WorkflowDataAccess(request=request)
+        wf_access = WorkflowDataAccess(request=request, **scope_kwargs)
         try:
             runs = wf_access.list_runs(definition_id=definition_id)
         finally:
@@ -3229,7 +3326,8 @@ def run_history_api(request, definition_id):
                 }
             )
         out.sort(key=lambda r: (str(r["period_end"] or ""), str(r["completed_at"] or "")))
-        history_cache.store(definition_id, scope_key, keys, out)
+        if use_cache:
+            history_cache.store(definition_id, scope_key, keys, out)
         return JsonResponse({"runs": out})
     except Exception:
         logger.exception("Failed to build run history for definition %s", definition_id)

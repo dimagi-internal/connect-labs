@@ -51,10 +51,19 @@ def _request(**params):
     return request
 
 
+# The shared cache is used only for a scope in the user's own OAuth data (a scope
+# the context middleware merely passed through is read live), so the test user
+# holds the opportunities these tests read.
+OWN_ORG_DATA = {"opportunities": [{"id": 523}, {"id": 10042}], "programs": []}
+
+
 def _call(dao, **params):
     from connect_labs.workflow.views import run_history_api
 
-    with patch("connect_labs.workflow.views.WorkflowDataAccess", return_value=dao):
+    with (
+        patch("connect_labs.workflow.views.WorkflowDataAccess", return_value=dao),
+        patch("connect_labs.workflow.views.get_org_data", return_value=OWN_ORG_DATA),
+    ):
         response = run_history_api(_request(**params), 19778)
     import json
 
