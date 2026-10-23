@@ -318,3 +318,49 @@ def test_forbidden_for_non_dimagi(client, partner):
     client.force_login(partner)
     assert client.get(reverse("labs_admin:usage")).status_code == 403
     assert client.get(reverse("labs_admin:usage_scope", args=["org", "acme"])).status_code == 403
+
+
+@pytest.mark.django_db
+def test_export_triggers_group_by_caller_and_add_up_cost(partner, directory):
+    fill = {"caller": "connect_labs.labs.analysis.backends.sql.backend:_fill", "endpoint": "/x/"}
+    for ms, size in ((1200, 50_000), (800, 30_000)):
+        event(
+            partner,
+            Action.EXPORT,
+            opportunity_id=812,
+            resource_type="user_visits",
+            record_count=100,
+            metadata={**fill, "duration_ms": ms, "bytes": size, "pages": 2},
+        )
+    event(partner, Action.EXPORT, opportunity_id=812, resource_type="user_data", record_count=5)  # an older row
+
+    triggers = usage.export_triggers(usage.activity_events(timezone.now() - timedelta(days=1)))
+
+    first, second = triggers
+    assert (first["caller"], first["endpoint"], first["n"], first["rows"]) == (fill["caller"], "user_visits", 2, 200)
+    assert (first["ms"], first["bytes"], first["round_trips"], first["top_path"]) == (
+        2000,
+        80_000,
+        4,
+        "/labs/workflow/",
+    )
+    assert (second["caller"], second["recorded"], second["rows"]) == (usage.UNRECORDED_CALLER, False, 5)
+
+
+@override_settings(**LABS_SETTINGS)
+@pytest.mark.django_db
+def test_export_triggers_panel_renders(client, staff, partner, directory):
+    event(
+        partner,
+        Action.EXPORT,
+        opportunity_id=812,
+        resource_type="user_visits",
+        record_count=10,
+        metadata={"caller": "pkg.mod:fill", "duration_ms": 65_000, "bytes": 2_000_000, "pages": 1},
+    )
+    client.force_login(staff)
+
+    content = client.get(reverse("labs_admin:usage")).content.decode()
+
+    assert "Exports from Connect: what triggers them" in content
+    assert "pkg.mod:fill" in content and "1.1 min" in content and "1.9\xa0MB" in content

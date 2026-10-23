@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load usage_tags %}
 
 {% block content %}
 <div class="container mx-auto px-4 py-8 max-w-7xl">
@@ -92,7 +93,7 @@
       <div class="text-2xl font-bold text-gray-900">{{ totals.changes }}</div><div class="text-xs text-gray-500 mt-1">Changes</div>
     </div>
     <div class="bg-white rounded-lg shadow-sm p-4 border-l-4 border-amber-500">
-      <div class="text-2xl font-bold text-gray-900">{{ totals.exports }}</div><div class="text-xs text-gray-500 mt-1">Exports</div>
+      <div class="text-2xl font-bold text-gray-900">{{ totals.exports }}</div><div class="text-xs text-gray-500 mt-1">Exports from Connect</div>
     </div>
     <div class="bg-white rounded-lg shadow-sm p-4 border-l-4 border-purple-500">
       <div class="text-2xl font-bold text-gray-900">{{ totals.agent }}</div><div class="text-xs text-gray-500 mt-1">Agent calls</div>
@@ -178,6 +179,48 @@
     </div>
   </div>
 
+  {# ── Exports from Connect: what triggers them, and what they cost ───── #}
+  <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+    <div class="text-sm font-semibold text-gray-700 mb-1">Exports from Connect: what triggers them</div>
+    <div class="text-xs text-gray-400 mb-3">
+      Each is one bulk pull from Connect's export API (visits, workers, payments...) that a person's page or agent call
+      set off, most often a workflow or dashboard filling its visit cache. Sorted by time spent waiting on Connect.
+      Exports from before triggers and cost were recorded show as "(not recorded)".
+    </div>
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="text-xs text-gray-500 uppercase">
+          <tr class="border-b border-gray-200">
+            <th class="py-2 pr-3 text-left font-medium">Triggered by (code)</th>
+            <th class="py-2 px-2 text-left font-medium">Pulled</th>
+            <th class="py-2 px-2 text-left font-medium">Mostly from page</th>
+            <th class="py-2 px-2 text-right font-medium">Exports</th>
+            <th class="py-2 px-2 text-right font-medium">Rows</th>
+            <th class="py-2 px-2 text-right font-medium">Round trips</th>
+            <th class="py-2 px-2 text-right font-medium">Waiting on Connect</th>
+            <th class="py-2 pl-2 text-right font-medium">Downloaded</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for t in export_triggers %}
+          <tr>
+            <td class="py-1.5 pr-3 font-mono text-xs {% if t.recorded %}text-gray-800{% else %}text-gray-400 italic{% endif %}">{{ t.caller }}</td>
+            <td class="py-1.5 px-2 font-mono text-xs text-gray-700">{{ t.endpoint }}</td>
+            <td class="py-1.5 px-2 font-mono text-xs text-gray-500 truncate" style="max-width: 260px" title="{{ t.top_path }}">{{ t.top_path }}</td>
+            <td class="py-1.5 px-2 text-right font-semibold text-gray-900">{{ t.n }}{% if t.failures %} <span class="text-xs text-red-600" title="failed">({{ t.failures }} failed)</span>{% endif %}</td>
+            <td class="py-1.5 px-2 text-right text-gray-700">{{ t.rows }}</td>
+            <td class="py-1.5 px-2 text-right text-gray-700">{% if t.recorded %}{{ t.round_trips }}{% else %}–{% endif %}</td>
+            <td class="py-1.5 px-2 text-right text-gray-700 whitespace-nowrap">{% if t.recorded %}{{ t.ms|usage_duration }}{% else %}–{% endif %}</td>
+            <td class="py-1.5 pl-2 text-right text-gray-700 whitespace-nowrap">{% if t.recorded %}{{ t.bytes|filesizeformat }}{% else %}–{% endif %}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="8" class="py-4 text-gray-400 text-xs">No exports from Connect in this window.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
   {# ── Recent activity (drill-downs only) ─────────────────────────────── #}
   {% if scope.kind != "all" %}
   <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
@@ -238,7 +281,7 @@
     const datasets = [
       bar('Page views', s.views, 'rgba(59, 130, 246, 0.55)'),
       bar('Changes', s.changes, 'rgba(16, 185, 129, 0.7)'),
-      bar('Exports', s.exports, 'rgba(245, 158, 11, 0.7)'),
+      bar('Exports from Connect', s.exports, 'rgba(245, 158, 11, 0.7)'),
       bar('Agent calls', s.agent, 'rgba(147, 51, 234, 0.6)'),
       line('Active users', s.users, 'rgb(30, 64, 175)'),
     ];

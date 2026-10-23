@@ -35,9 +35,11 @@ The module exposes:
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import functools
 import json
 import logging
+import time
 import traceback
 import uuid
 from typing import Any
@@ -382,6 +384,42 @@ def current_user():
 # ---------------------------------------------------------------------------
 
 
+#: When the tool call in progress started (``time.monotonic()``), for its log row's duration.
+_call_started: contextvars.ContextVar[float | None] = contextvars.ContextVar("mcp_call_started", default=None)
+
+
+def _scope_ids(arguments: dict) -> dict:
+    """The organisation / programme / opportunity a call's arguments name.
+
+    Read from the top-level arguments every tool uses for scope; anything that
+    is not a plain id (a string that is not digits, a nested object) is ignored,
+    so nothing but opaque ids reaches the log.
+    """
+
+    def as_int(value):
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value if 0 < value < 2**31 else None
+        if isinstance(value, str) and value.isdigit() and len(value) <= 9:
+            return int(value)
+        return None
+
+    arguments = arguments if isinstance(arguments, dict) else {}
+    opps = []
+    raw = arguments.get("opportunity_ids")
+    for value in [arguments.get("opportunity_id"), *(raw if isinstance(raw, list) else [])]:
+        opp = as_int(value)
+        if opp is not None and opp not in opps:
+            opps.append(opp)
+    org = arguments.get("organization_id") or arguments.get("organization_slug") or ""
+    return {
+        "opportunity_ids": opps[:50],
+        "program_id": as_int(arguments.get("program_id")),
+        "organization_slug": org[:120] if isinstance(org, str) else "",
+    }
+
+
 def _write_audit(
     user,
     tool_name: str,
@@ -402,7 +440,12 @@ def _write_audit(
     ``client_id`` / ``actor`` are set only for a delegated call (canopy acting
     for the visitor, who is ``user``)."""
     try:
+        ctx = get_audit_context()
+        started = _call_started.get()
         MCPAuditLog.objects.create(
+            request_id=(ctx.request_id if ctx is not None else "")[:64],
+            duration_ms=round((time.monotonic() - started) * 1000) if started is not None else None,
+            **_scope_ids(arguments),
             client_id=(client_id or "")[:255],
             actor=(actor or "")[:100],
             execution=execution or {},
@@ -481,7 +524,11 @@ def _run_registry_tool(
         # this call (it is single-use) and keep it for every check the call makes.
         execution.bound(_call_execution()),
     ):
-        return _run_registry_tool_inner(spec, arguments, user, progress, actor_header)
+        started = _call_started.set(time.monotonic())
+        try:
+            return _run_registry_tool_inner(spec, arguments, user, progress, actor_header)
+        finally:
+            _call_started.reset(started)
 
 
 def _call_execution():

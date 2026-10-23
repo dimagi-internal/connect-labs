@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 from django.contrib.auth import get_user_model
-from django.db.models import Case, CharField, Count, F, Func, IntegerField, Max, Q, Value, When
+from django.db.models import BigIntegerField, Case, CharField, Count, F, Func, IntegerField, Max, Q, Sum, Value, When
 from django.db.models.fields.json import KeyTextTransform
 from django.db.models.functions import Cast, Coalesce, NullIf, TruncDate
 from django.utils import timezone
@@ -63,7 +63,7 @@ VIEW, READ, CHANGE, EXPORT, AGENT = "view", "read", "change", "export", "agent"
 KIND_LABELS = {
     VIEW: "Page views",
     CHANGE: "Changes",
-    EXPORT: "Exports",
+    EXPORT: "Exports from Connect",
     AGENT: "Agent calls",
     READ: "Data reads",
 }
@@ -504,6 +504,74 @@ def build_report(scope: Scope, *, days: int = DEFAULT_WINDOW, hide_staff: bool =
         "areas": area_rows,
         "events": events,
     }
+
+
+UNRECORDED_CALLER = "(not recorded)"
+
+
+def export_triggers(events, limit: int = 20) -> list[dict]:
+    """Pulls from Connect's export API, by the code that asked and the endpoint.
+
+    ``caller`` / ``duration_ms`` / ``pages`` / ``bytes`` ride in each export
+    event's metadata (``export_client._record_export_audit``) from the release
+    that added them; earlier exports group under ``UNRECORDED_CALLER`` with no
+    cost. The page column is the most frequent one each trigger fired from.
+    """
+
+    def meta_int(key):
+        return Cast(KeyTextTransform(key, "metadata"), BigIntegerField())
+
+    grouped = (
+        events.filter(action=Action.EXPORT)
+        .annotate(
+            caller=Coalesce(KeyTextTransform("caller", "metadata"), Value(UNRECORDED_CALLER), output_field=CharField())
+        )
+        .values("caller", "resource_type", "path")
+        .annotate(
+            n=Count("id"),
+            users=Count("user_id", distinct=True),
+            rows=Sum("record_count"),
+            ms=Sum(meta_int("duration_ms")),
+            bytes=Sum(meta_int("bytes")),
+            pages=Sum(meta_int("pages")),
+            failures=Count("id", filter=Q(outcome="failure")),
+        )
+    )
+    out: dict[tuple, dict] = {}
+    for g in grouped:
+        key = (g["caller"], g["resource_type"])
+        row = out.setdefault(
+            key,
+            {
+                "caller": g["caller"],
+                "endpoint": g["resource_type"],
+                "n": 0,
+                "rows": 0,
+                "ms": 0,
+                "bytes": 0,
+                "round_trips": 0,
+                "failures": 0,
+                "users": 0,
+                "_paths": defaultdict(int),
+            },
+        )
+        for field_name, value in (
+            ("n", g["n"]),
+            ("rows", g["rows"]),
+            ("ms", g["ms"]),
+            ("bytes", g["bytes"]),
+            ("round_trips", g["pages"]),
+            ("failures", g["failures"]),
+        ):
+            row[field_name] += value or 0
+        row["users"] = max(row["users"], g["users"])  # a floor: users are counted per page
+        row["_paths"][g["path"]] += g["n"]
+    rows = sorted(out.values(), key=lambda r: (-r["ms"], -r["n"]))[:limit]
+    for row in rows:
+        paths = row.pop("_paths")
+        row["top_path"] = max(paths.items(), key=lambda kv: kv[1])[0] if paths else ""
+        row["recorded"] = row["caller"] != UNRECORDED_CALLER
+    return rows
 
 
 def top_pages(events, limit: int = 15) -> list[dict]:
