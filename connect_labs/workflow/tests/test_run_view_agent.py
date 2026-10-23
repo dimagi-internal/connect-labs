@@ -116,43 +116,45 @@ def test_a_presentation_link_offers_no_actions_and_no_agent():
 # The "Ask an agent" launcher is a fixed bubble the canopy widget draws 16px from
 # the bottom edge, 48px tall (canopy-widget chrome.ts `.dock` / `.launcher`), in a
 # shadow root labs cannot reach. It covered report content (connect-labs#2578), so
-# a page with a ready panel reserves a band of its own at the bottom of the viewport.
+# a page with a ready panel pads its end by the launcher's height so the last row
+# can scroll clear of it.
 LAUNCHER_INSET_PX, LAUNCHER_HEIGHT_PX = 16, 48
 
 
-def _reserve(canopy_panel, present_mode=False):
+def _reserve(canopy_panel):
     from django.template.loader import render_to_string
 
-    return render_to_string(
-        "workflow/_agent_launcher_reserve.html",
-        {"canopy_panel": canopy_panel, "present_mode": present_mode},
-    )
+    return render_to_string("workflow/_agent_launcher_reserve.html", {"canopy_panel": canopy_panel})
 
 
-def test_a_ready_panel_reserves_the_launchers_band_and_pads_the_page_by_it():
+def test_a_ready_panel_pads_the_end_of_the_page_by_the_launcher():
     import re
 
     html = _reserve({"ready": True})
     assert "data-agent-launcher-reserve" in html
     reserve = int(re.search(r"--agent-launcher-reserve:\s*(\d+)px", html).group(1))
     assert reserve >= LAUNCHER_INSET_PX + LAUNCHER_HEIGHT_PX
-    # The band, the end-of-page padding and the scroll padding are all that height.
-    assert "height: var(--agent-launcher-reserve)" in html
     assert "#content { padding-bottom: var(--agent-launcher-reserve); }" in html
     assert "scroll-padding-bottom: var(--agent-launcher-reserve)" in html
-    # Beside the sidenav, like the fixed header, unless the shell is hidden.
-    assert "md:left-16" in html
-    assert "md:left-16" not in _reserve({"ready": True}, present_mode=True)
 
 
-def test_no_launcher_no_reserved_band():
+def test_the_reserve_draws_nothing_over_the_page():
+    # A fixed band at the bottom of the viewport blanked the end of the window at
+    # every scroll position, so every report with a launcher looked cut off at a
+    # fixed height. The reserve is padding only: no element, nothing fixed.
+    html = _reserve({"ready": True})
+    assert "<div" not in html
+    assert "fixed" not in html
+
+
+def test_no_launcher_no_reserve():
     # A panel the SDK could not configure draws no launcher (panel.html renders
     # nothing), so the page keeps its full height.
     assert "data-agent-launcher-reserve" not in _reserve({"ready": False})
     assert "data-agent-launcher-reserve" not in _reserve(None)
 
 
-def test_both_pages_that_draw_the_panel_reserve_its_band():
+def test_both_pages_that_draw_the_panel_reserve_room_for_its_launcher():
     from pathlib import Path
 
     from django.conf import settings

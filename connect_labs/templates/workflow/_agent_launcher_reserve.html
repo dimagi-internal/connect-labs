@@ -1,26 +1,25 @@
 {% comment %}
-Space reserved for the canopy agent panel's launcher ("Ask an agent").
+Room at the end of the page for the canopy agent panel's launcher ("Ask an agent").
 
 The launcher is a FIXED bubble the canopy widget draws bottom-right (48px tall,
 16px from the bottom edge: canopy-web frontend/packages/canopy-widget/src/chrome.ts,
-`.dock` / `.launcher`). It lives in a shadow root, so labs cannot move it -- and,
-fixed, it covered whatever report content scrolled under it (a trend card's plot
-in the ACE demo render, connect-labs#2578). So the page gives it a strip of its
-own, as it gives the fixed header one at the top: a band at the bottom of the
-viewport that content scrolls out of view behind instead of under the bubble,
-plus the same padding at the end of the page so the last row can scroll clear,
-and scroll padding so a row brought into view lands above the band.
+`.dock` / `.launcher`). It lives in a shadow root, so labs cannot move it, and,
+fixed, it covered the last of a report (a trend card's plot in the ACE demo render,
+connect-labs#2578). So the page pads its end by the launcher's height, so the last
+row can scroll clear, and sets scroll padding so a row brought into view lands
+above it.
+
+No fixed band at the bottom of the viewport: one was tried, and blanking the
+bottom of the window at every scroll position made every report with a launcher
+look cut off at a fixed height. Mid-scroll, the bubble floats over the content
+like any chat launcher.
 
 Rendered only with a ready panel: a page with no launcher keeps its full height.
 {% endcomment %}
 {% if canopy_panel.ready %}
-<style>
+<style data-agent-launcher-reserve>
   :root { --agent-launcher-reserve: 80px; } /* 16px inset + 48px launcher + 16px clearance */
   html { scroll-padding-bottom: var(--agent-launcher-reserve); }
   #content { padding-bottom: var(--agent-launcher-reserve); }
 </style>
-{# Placed and layered like layouts/header.html, its counterpart at the top. #}
-<div data-agent-launcher-reserve aria-hidden="true"
-     class="fixed bottom-0 left-0 {% if not present_mode %}md:left-16 {% endif %}right-0 bg-gray-100 z-30"
-     style="height: var(--agent-launcher-reserve)"></div>
 {% endif %}
