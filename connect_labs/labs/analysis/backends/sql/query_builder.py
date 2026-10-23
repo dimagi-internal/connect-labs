@@ -168,40 +168,55 @@ def _jsonpath_key(name: str) -> str:
     return '"' + name.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+def _jsonpath_query(column: str, path: str) -> str:
+    """jsonb_path_query_first over a strict jsonpath, errors silenced (see below)."""
+    return f"jsonb_path_query_first({column}, '{_sql_str(path)}', '{{}}', true)"
+
+
 def _jsonpath_to_sql(parts: list[str], column: str) -> str:
-    """A path with `name[key=value]` segments as ONE jsonpath query, read as text.
+    """A path with `name[key=value]` segments as jsonpath queries, read as text.
 
     `user_data.claim_limits[payment_unit=994].max_visits` ->
-    jsonb_path_query_first(form_json,
-        'strict $."user_data"."claim_limits"[*] ? (@."payment_unit" == 994 || @."payment_unit" == "994")."max_visits"',
-        '{}', true)
+    jsonb_path_query_first(
+        jsonb_path_query_first(form_json,
+            'strict $."user_data"."claim_limits"[*] ? (@."payment_unit" == 994 || @."payment_unit" == "994")',
+            '{}', true),
+        'strict $."max_visits"', '{}', true)
     #>> '{}'
+
+    The ITEM is selected first and the rest of the path is read from it, so the
+    first matching item is the one read, as `extract_json_path` does: one query over
+    the whole path would return the first COMPLETE result, skipping a matching item
+    that lacks the later field and reading a later one.
 
     A numeric value matches a JSON number or the same digits as a string, as
     `utils.list_item_matches` does; any other value matches a string. The value and
     key are restricted by `utils.LIST_MATCH_SEGMENT` to letters, digits, `_` and `-`,
-    and the whole literal still goes through _sql_str. `#>> '{}'` returns a scalar as
+    and every literal still goes through _sql_str. `#>> '{}'` returns a scalar as
     text and an object as its JSON text, the same as `->>` does for a key.
 
-    STRICT, with errors silenced (the `true`): lax mode wraps a non-list in a list and
-    unwraps a list under a key, so it would read a value where `extract_json_path`
-    walks only dicts and lists and returns None. Strict raises on any such shape
-    mismatch, and silent turns that into NULL -- the same answer the Python side gives.
+    STRICT, with errors silenced (the `true`): lax mode wraps a non-list in a list,
+    unwraps a list under a key and compares inside a list-valued key, so it would
+    read a value where `extract_json_path` walks only dicts and lists and returns
+    None. Strict raises on any such shape mismatch, and silent turns that into NULL
+    -- the same answer the Python side gives.
     """
-    out = ["strict $"]
-    for part in parts:
-        match = parse_list_match(part)
-        if not match:
-            out.append("." + _jsonpath_key(part))
-            continue
-        name, key, value = match
-        member = "@." + _jsonpath_key(key)
-        if re.fullmatch(r"-?[0-9]+", value):
-            cond = f'{member} == {int(value)} || {member} == "{value}"'
-        else:
-            cond = f'{member} == "{value}"'
-        out.append(f".{_jsonpath_key(name)}[*] ? ({cond})")
-    return f"jsonb_path_query_first({column}, '{_sql_str(''.join(out))}', '{{}}', true) #>> '{{}}'"
+    at = next((i for i, part in enumerate(parts) if parse_list_match(part)), None)
+    if at is None:
+        path = "strict $" + "".join("." + _jsonpath_key(part) for part in parts)
+        return f"{_jsonpath_query(column, path)} #>> '{{}}'"
+    name, key, value = parse_list_match(parts[at])
+    member = "@." + _jsonpath_key(key)
+    if re.fullmatch(r"-?[0-9]+", value):
+        cond = f'{member} == {int(value)} || {member} == "{value}"'
+    else:
+        cond = f'{member} == "{value}"'
+    prefix = "".join("." + _jsonpath_key(part) for part in parts[:at])
+    item = _jsonpath_query(column, f"strict ${prefix}.{_jsonpath_key(name)}[*] ? ({cond})")
+    rest = parts[at + 1 :]
+    if not rest:
+        return f"{item} #>> '{{}}'"
+    return _jsonpath_to_sql(rest, item)
 
 
 def _build_join_subquery(joins: list[JoinConfig], opportunity_id: int, pipeline_id: int | None) -> str:

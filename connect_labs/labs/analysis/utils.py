@@ -247,7 +247,9 @@ def list_item_matches(actual: Any, wanted: str) -> bool:
     if actual is None or isinstance(actual, (bool, dict, list)):
         return False
     if isinstance(actual, (int, float)):
-        return bool(re.fullmatch(r"-?[0-9]+", wanted)) and float(actual) == int(wanted)
+        # Compared exactly, as jsonb's numeric does: through float, 2**53 + 1 and 2**53
+        # would be equal. Python compares an int with a float exactly (994.0 == 994).
+        return bool(re.fullmatch(r"-?[0-9]+", wanted)) and actual == int(wanted)
     return str(actual) == wanted
 
 

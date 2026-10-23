@@ -102,12 +102,12 @@ def test_a_plain_path_compiles_byte_for_byte_as_before():
     assert _jsonb_path_to_sql("form.it's", "rv.form_json") == "rv.form_json->'form'->>'it''s'"
 
 
-def test_a_list_match_path_compiles_to_one_jsonpath_query():
+def test_a_list_match_path_selects_the_item_then_reads_the_rest():
     sql = _jsonb_path_to_sql(PATH)
     assert sql == (
-        "jsonb_path_query_first(form_json, "
-        '\'strict $."user_data"."claim_limits"[*] ? (@."payment_unit" == 994 || @."payment_unit" == "994")'
-        ".\"max_visits\"', '{}', true) #>> '{}'"
+        "jsonb_path_query_first(jsonb_path_query_first(form_json, "
+        '\'strict $."user_data"."claim_limits"[*] ? (@."payment_unit" == 994 || @."payment_unit" == "994")\', '
+        "'{}', true), 'strict $.\"max_visits\"', '{}', true) #>> '{}'"
     )
 
 
@@ -150,11 +150,41 @@ def test_postgres_agrees_with_python_on_strings_and_misses():
         {"user_data": [{"claim_limits": [{"max_visits": 5, "payment_unit": 994}]}]},
         # A matched item without the field asked for.
         {"user_data": {"claim_limits": [{"payment_unit": 994}]}},
+        # A list-valued key: lax compares inside the list and matches 994.
+        {"user_data": {"claim_limits": [{"max_visits": 5, "payment_unit": [994]}]}},
+        # The FIRST matching item lacks the field: it is the one read, not the next match.
+        {"user_data": {"claim_limits": [{"payment_unit": 994}, {"max_visits": 5, "payment_unit": 994}]}},
     ],
 )
 def test_postgres_reads_nothing_where_python_reads_nothing(record):
     assert extract_json_path(record, PATH) is None
     assert _run(_jsonb_path_to_sql(PATH), record) is None
+
+
+@pytest.mark.django_db
+def test_the_first_matching_item_is_read_when_keys_repeat():
+    record = {"l": [{"k": 1, "v": "first"}, {"k": 1, "v": "second"}]}
+    assert extract_json_path(record, "l[k=1].v") == "first"
+    assert _run(_jsonb_path_to_sql("l[k=1].v"), record) == "first"
+
+
+@pytest.mark.django_db
+def test_two_list_segments_in_one_path():
+    record = {"a": [{"k": "x", "b": [{"j": 2, "v": "deep"}]}]}
+    path = "a[k=x].b[j=2].v"
+    assert extract_json_path(record, path) == "deep"
+    assert _run(_jsonb_path_to_sql(path), record) == "deep"
+
+
+@pytest.mark.django_db
+def test_integers_are_compared_exactly():
+    """Through float, 2**53 + 1 and 2**53 compare equal and the wrong item is read."""
+    big = 2**53 + 1
+    record = {"l": [{"k": big, "v": "big"}]}
+    path = f"l[k={big - 1}].v"
+    assert extract_json_path(record, path) is None
+    assert _run(_jsonb_path_to_sql(path), record) is None
+    assert extract_json_path(record, f"l[k={big}].v") == "big"
 
 
 @pytest.mark.django_db
