@@ -138,6 +138,15 @@ When you open a workflow or page in the sandbox, it looks and scrolls exactly li
 
 One deliberate difference from the normal page: a header row set to stay fixed at the top of the report sticks just below the Labs header, where it remains visible as you scroll. On the normal page, that same sticky header can slide underneath the Labs header and become hidden.
 
+#### Dialogs in the sandbox
+
+When you open a dialog inside a sandboxed workflow or page — such as a detail panel, an image viewer, a confirmation box, or any other modal — it now covers the entire window, including the Labs header and side menu, exactly as it does on a regular run page:
+
+- The dimmed background extends over the Labs header and navigation, so they are no longer left bright behind an open dialog.
+- The dialog is centred in the full window and can use its full height, so a tall dialog opened near the top of a page will no longer have its title and close button cut off above the report area.
+
+Closing the dialog returns the page to its normal state. Nothing changes when no dialog is open.
+
 #### Saved filters in the sandbox
 
 Dashboards that remember your filter choices — for example, the Ward Progress Tracker's ward and period filters, the KMC audit dashboard's filters, or a status filter that is kept across a CommCare sign-in — continue to remember those choices after a page reload when the sandbox is switched on. The behaviour matches what you already experience without the sandbox.
@@ -197,12 +206,4 @@ In KMC reports (program, opportunity, and worker review) and the generic indicat
 - The **underlying query** sits below a divider and wraps onto multiple lines, so long queries are no longer cut off at the right edge of the popup.
 
 !!! note "Indicator definition popup on program-level reports"
-    If another browser tab had moved your session to a different opportunity or scope, clicking an indicator name on a program-level report could previously show "Could not read the definition: Workflow not found". The popup now correctly resolves the indicator's definition at program scope regardless of where your other tabs are, so this error should no longer appear. If it does, try refreshing the report page.
-
-### Indicator reports
-
-The generic indicator reports (and KMC reports that use the shared tiles) have four display improvements.
-
-#### Headline tile labels
-
-Long indicator names in the headline tiles now wrap onto as many lines as needed. Previously, names could be cut off (for example, "TRANSFER …" or "SHORT VISI…") because a **lower is better** chip sat on the same line and forced the name to truncate. The chip now moves to its own line when the name and chip do not fit side by side, and every tile's figure stays at the same height regardless of name length
+    If another browser tab had moved your session to a different opportunity or scope, clicking an indicator name on a program-level report could previously show "Could not read the definition: Workflow not found". The popup now correctly resolves the indicator's definition
