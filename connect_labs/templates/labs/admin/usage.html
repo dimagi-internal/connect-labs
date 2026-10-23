@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-7xl">
+
+  {# ── Header ─────────────────────────────────────────────────────────── #}
+  <div class="mb-6">
+    <nav class="text-xs text-gray-500 mb-2">
+      <a href="{% url 'labs_admin:index' %}" class="hover:underline">Labs Admin</a>
+      <span class="mx-1">/</span>
+      <a href="{% url 'labs_admin:usage' %}{% if query %}?{{ query }}{% endif %}" class="hover:underline">Usage</a>
+      {% for crumb in parent %}
+        <span class="mx-1">/</span>
+        <a href="{% url 'labs_admin:usage_scope' crumb.kind crumb.key %}{% if query %}?{{ query }}{% endif %}" class="hover:underline">{{ crumb.label }}</a>
+      {% endfor %}
+    </nav>
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <h1 class="text-3xl font-bold text-gray-900">
+          <i class="fa-solid fa-chart-column text-blue-600 mr-2"></i>{{ title }}
+        </h1>
+        <p class="text-gray-600 mt-1">
+          {% if scope.kind == "all" %}
+            How people use labs, by organisation, programme, opportunity and user. Click any row to drill in.
+          {% else %}
+            {{ scope_kind_label }} {% if scope.kind != "org" %}#{% endif %}{{ scope.key }}: who uses labs here, and for what.
+          {% endif %}
+        </p>
+      </div>
+      <form method="get" class="flex items-center gap-3 text-sm">
+        <label class="text-gray-600">Window
+          <select name="days" onchange="this.form.submit()" class="ml-1 border border-gray-300 rounded-md px-2 py-1">
+            {% for d in window_choices %}<option value="{{ d }}" {% if d == days %}selected{% endif %}>Last {{ d }} days</option>{% endfor %}
+          </select>
+        </label>
+        <label class="text-gray-600 flex items-center gap-1">
+          <input type="checkbox" name="staff" value="hide" onchange="this.form.submit()" {% if hide_staff %}checked{% endif %}>
+          Hide Dimagi staff
+        </label>
+      </form>
+    </div>
+  </div>
+
+  {# ── KPI cards ──────────────────────────────────────────────────────── #}
+  <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
+    {% if scope.kind != "user" %}
+    <div class="bg-white rounded-lg shadow-sm p-4 border-l-4 border-blue-500">
+      <div class="text-2xl font-bold text-gray-900">{{ totals.users }}</div><div class="text-xs text-gray-500 mt-1">Active users</div>
+    </div>
+    {% endif %}
+    {% if scope.kind == "all" or scope.kind == "user" %}
+    <div class="bg-white rounded-lg shadow-sm p-4 border-l-4 border-indigo-500">
+      <div class="text-2xl font-bold text-gray-900">{{ totals.orgs }}</div><div class="text-xs text-gray-500 mt-1">Organisations</div>
+    </div>
+    {% endif %}
+    {% if scope.kind != "program" and scope.kind != "opp" %}
+    <div class="bg-white rounded-lg shadow-sm p-4 border-l-4 border-indigo-300">
+      <div class="text-2xl font-bold text-gray-900">{{ totals.programs }}</div><div class="text-xs text-gray-500 mt-1">Programmes</div>
+    </div>
+    {% endif %}
+    {% if scope.kind != "opp" %}
+    <div class="bg-white rounded-lg shadow-sm p-4 border-l-4 border-indigo-200">
+      <div class="text-2xl font-bold text-gray-900">{{ totals.opps }}</div><div class="text-xs text-gray-500 mt-1">Opportunities</div>
+    </div>
+    {% endif %}
+    <div class="bg-white rounded-lg shadow-sm p-4 border-l-4 border-gray-300">
+      <div class="text-2xl font-bold text-gray-900">{{ totals.views }}</div><div class="text-xs text-gray-500 mt-1">Page views</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm p-4 border-l-4 border-emerald-500">
+      <div class="text-2xl font-bold text-gray-900">{{ totals.changes }}</div><div class="text-xs text-gray-500 mt-1">Changes</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm p-4 border-l-4 border-amber-500">
+      <div class="text-2xl font-bold text-gray-900">{{ totals.exports }}</div><div class="text-xs text-gray-500 mt-1">Exports</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm p-4 border-l-4 border-purple-500">
+      <div class="text-2xl font-bold text-gray-900">{{ totals.agent }}</div><div class="text-xs text-gray-500 mt-1">Agent calls</div>
+    </div>
+  </div>
+
+  {# ── Activity over time ─────────────────────────────────────────────── #}
+  <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+    <div class="text-sm font-semibold text-gray-700 mb-4">Activity per {% if weekly %}week{% else %}day{% endif %}</div>
+    <div style="height: 280px"><canvas id="usage-chart"></canvas></div>
+  </div>
+
+  {% if scope.kind == "all" or scope.kind == "user" %}
+    {% include "labs/admin/_usage_table.html" with rows=orgs heading="Organisations" noun="organisation" show_users=show_scope_users %}
+  {% endif %}
+  {% if scope.kind == "all" or scope.kind == "org" or scope.kind == "user" %}
+    {% include "labs/admin/_usage_table.html" with rows=programs heading="Programmes" noun="programme" show_users=show_scope_users %}
+  {% endif %}
+  {% if scope.kind != "opp" %}
+    {% include "labs/admin/_usage_table.html" with rows=opps heading="Opportunities" noun="opportunity" show_users=show_scope_users %}
+  {% endif %}
+  {% if scope.kind != "user" %}
+    {% include "labs/admin/_usage_table.html" with rows=users heading="Users" noun="user" show_users=False %}
+  {% endif %}
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+    {# ── Feature areas ─────────────────────────────────────────────────── #}
+    <div class="bg-white rounded-lg shadow-sm p-6">
+      <div class="text-sm font-semibold text-gray-700 mb-3">What they use</div>
+      <table class="min-w-full text-sm">
+        <thead class="text-xs text-gray-500 uppercase"><tr><th class="text-left font-medium pb-1">Area</th><th class="text-right font-medium pb-1">Users</th><th class="text-right font-medium pb-1">Actions</th></tr></thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for row in areas %}
+          <tr><td class="py-1.5 text-gray-700">{{ row.area }}</td><td class="py-1.5 text-right text-gray-700">{{ row.users }}</td><td class="py-1.5 text-right font-semibold text-gray-900">{{ row.n }}</td></tr>
+          {% empty %}
+          <tr><td colspan="3" class="py-4 text-gray-400 text-xs">No activity in this window.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# ── Top pages ─────────────────────────────────────────────────────── #}
+    <div class="bg-white rounded-lg shadow-sm p-6">
+      <div class="text-sm font-semibold text-gray-700 mb-3">Top pages</div>
+      <table class="min-w-full text-sm">
+        <tbody class="divide-y divide-gray-100">
+          {% for row in top_pages %}
+          <tr>
+            <td class="py-1.5 pr-2 font-mono text-xs text-gray-700 truncate" style="max-width: 220px" title="{{ row.path }}">{{ row.path }}</td>
+            <td class="py-1.5 text-right text-xs text-gray-400 whitespace-nowrap">{{ row.users }} user{{ row.users|pluralize }}</td>
+            <td class="py-1.5 pl-2 text-right font-semibold text-gray-900">{{ row.n }}</td>
+          </tr>
+          {% empty %}
+          <tr><td class="py-4 text-gray-400 text-xs">No page views in this window.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# ── Agent tools ───────────────────────────────────────────────────── #}
+    <div class="bg-white rounded-lg shadow-sm p-6">
+      <div class="text-sm font-semibold text-gray-700 mb-1">Agent tools (MCP)</div>
+      {% if scope.kind == "all" or scope.kind == "user" %}
+      <table class="min-w-full text-sm mt-2">
+        <tbody class="divide-y divide-gray-100">
+          {% for row in agent_tools %}
+          <tr>
+            <td class="py-1.5 pr-2 font-mono text-xs text-gray-700">{{ row.tool_name }}</td>
+            <td class="py-1.5 text-right text-xs text-gray-400 whitespace-nowrap">{% if scope.kind == "all" %}{{ row.users }} user{{ row.users|pluralize }}{% endif %}{% if row.writes %} · {{ row.writes }} write{{ row.writes|pluralize }}{% endif %}</td>
+            <td class="py-1.5 pl-2 text-right font-semibold text-gray-900">{{ row.n }}</td>
+          </tr>
+          {% empty %}
+          <tr><td class="py-4 text-gray-400 text-xs">No MCP tool calls in this window.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-xs text-gray-400 mt-2">
+        A read tool call's log names no opportunity, so agent tools are listed for all of labs or per user.
+        Agent calls that touched data here are counted above.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Recent activity (drill-downs only) ─────────────────────────────── #}
+  {% if scope.kind != "all" %}
+  <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+    <div class="flex items-baseline justify-between mb-3">
+      <div class="text-sm font-semibold text-gray-700">Recent activity</div>
+      <a href="{% url 'audit_trail:dashboard' %}" class="text-xs text-blue-600 hover:underline">Full trail in the Audit Trail</a>
+    </div>
+    <div class="overflow-x-auto max-h-[32rem] overflow-y-auto">
+      <table class="min-w-full text-sm">
+        <thead class="text-xs text-gray-500 uppercase sticky top-0 bg-white">
+          <tr class="border-b border-gray-200">
+            <th class="py-2 pr-3 text-left font-medium">When (UTC)</th>
+            {% if scope.kind != "user" %}<th class="py-2 px-2 text-left font-medium">User</th>{% endif %}
+            <th class="py-2 px-2 text-left font-medium">Area</th>
+            <th class="py-2 px-2 text-left font-medium">What</th>
+            {% if scope.kind != "opp" %}<th class="py-2 pl-2 text-left font-medium">Scope</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for r in recent %}
+          <tr>
+            <td class="py-1 pr-3 text-xs text-gray-500 whitespace-nowrap">{{ r.occurred_at|date:"Y-m-d H:i" }}</td>
+            {% if scope.kind != "user" %}<td class="py-1 px-2 text-xs"><a href="{% url 'labs_admin:usage_scope' 'user' r.user_id %}{% if query %}?{{ query }}{% endif %}" class="text-blue-600 hover:underline">{{ r.username }}</a></td>{% endif %}
+            <td class="py-1 px-2 text-xs text-gray-500 whitespace-nowrap">{{ r.area }}</td>
+            <td class="py-1 px-2 font-mono text-xs text-gray-700 truncate" style="max-width: 520px" title="{{ r.what }}">{{ r.what }}</td>
+            {% if scope.kind != "opp" %}<td class="py-1 pl-2 text-xs text-gray-500 truncate" style="max-width: 220px">{{ r.scope_label }}</td>{% endif %}
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="py-4 text-gray-400 text-xs">No activity in this window.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <p class="text-xs text-gray-400">
+    From the audit trail: people only (web and MCP), never background jobs. Page views before the
+    context middleware stamped scope are attributed from their URL parameters; organisation comes from
+    the opportunity's or programme's owner in Pulse. Activity with no organisation, programme or
+    opportunity in view is listed as such. Data reads behind a page are not counted separately.
+  </p>
+
+  {{ series|json_script:"usage-series" }}
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    const s = JSON.parse(document.getElementById('usage-series').textContent);
+    const bar = (label, data, color) => ({ type: 'bar', label, data, backgroundColor: color, stack: 'activity', yAxisID: 'y' });
+    const line = (label, data, color) => ({
+      type: 'line', label, data, borderColor: color, backgroundColor: color,
+      tension: 0.25, pointRadius: 2, yAxisID: 'y1',
+    });
+    const datasets = [
+      bar('Page views', s.views, 'rgba(59, 130, 246, 0.55)'),
+      bar('Changes', s.changes, 'rgba(16, 185, 129, 0.7)'),
+      bar('Exports', s.exports, 'rgba(245, 158, 11, 0.7)'),
+      bar('Agent calls', s.agent, 'rgba(147, 51, 234, 0.6)'),
+      line('Active users', s.users, 'rgb(30, 64, 175)'),
+    ];
+    {% if scope.kind == "all" or scope.kind == "user" %}
+    datasets.push(line('Active organisations', s.orgs, 'rgb(219, 39, 119)'));
+    {% endif %}
+    new Chart(document.getElementById('usage-chart'), {
+      data: { labels: s.labels, datasets },
+      options: {
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          y: { stacked: true, beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: 'Actions' } },
+          y1: { position: 'right', beginAtZero: true, ticks: { precision: 0 }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Active' } },
+          x: { stacked: true },
+        },
+        plugins: { legend: { position: 'bottom' } },
+      },
+    });
+  });
+</script>
+{% endblock %}

@@ -129,3 +129,21 @@ def test_context_reset_after_request(rf, user):
     request.user = user
     AuditTrailMiddleware(view)(request)
     assert get_audit_context() is None
+
+
+@pytest.mark.django_db
+def test_page_view_carries_the_labs_context_it_was_viewed_in(rf, user):
+    """Usage analytics attributes a page view to its scope from these columns;
+    the organisation is a slug, so it rides in metadata."""
+
+    def view(request):
+        request.labs_context = {"opportunity_id": 812, "program_id": 25, "organization_id": "acme"}
+        return HttpResponse("ok")
+
+    request = rf.get("/labs/workflow/")
+    request.user = user
+    AuditTrailMiddleware(view)(request)
+
+    event = AuditEvent.objects.get(action=Action.PAGE_VIEW)
+    assert (event.opportunity_id, event.program_id) == (812, 25)
+    assert event.metadata == {"organization_slug": "acme"}
