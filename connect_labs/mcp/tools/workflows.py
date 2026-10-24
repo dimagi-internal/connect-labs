@@ -235,6 +235,10 @@ def workflow_get(
         # while edits went to a record that only the synthetic workflow was bound
         # to. Stated here so the question "which registry is this?" has an answer.
         "registry": registry_binding(definition),
+        # The opportunities a multi-opp workflow reads, and -- when they follow its
+        # program (workflow/program_opportunities.py) -- the rule that resolved them.
+        "opportunity_ids": definition.data.get("opportunity_ids") or [],
+        "opportunity_source": definition.data.get("opportunity_source"),
     }
 
     # Saved-runs metadata — resolved the same way completion resolves it: the
@@ -370,6 +374,9 @@ _DEFINITION_PATCH_ALLOWED = {
     "page",
     "workflow_sources",
     "config_reads",
+    # {program_id[, exclude_opportunity_ids]}: read every opportunity of that program
+    # the viewer can access, resolved on each read (workflow/program_opportunities.py).
+    "opportunity_source",
 }
 
 _SNAPSHOT_INPUTS_ALLOWED_KEYS = {"pipelines", "workers", "state_keys", "supply"}
@@ -546,6 +553,31 @@ def _validate_registry_source(value, wda, *, opportunity_id=None, program_id=Non
             access.close()
 
 
+def _resolved_program_opportunities(source: dict, token: str, user) -> list[int]:
+    from connect_labs.workflow.program_opportunities import program_opportunity_ids
+
+    data = fetch_user_organization_data(token, owner=getattr(user, "username", None))
+    return program_opportunity_ids(data, source["program_id"], source.get("exclude_opportunity_ids"))
+
+
+def _validate_opportunity_source(value, token: str, user) -> None:
+    """A well-formed source naming a program with opportunities the caller can see.
+
+    A typo'd program id would otherwise leave the workflow silently on its stored list."""
+    if value is None:
+        return
+    from connect_labs.workflow.program_opportunities import source_problem
+
+    problem = source_problem(value)
+    if problem:
+        raise MCPToolError("INVALID_SCHEMA", problem)
+    if not _resolved_program_opportunities(value, token, user):
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            f"You can see no opportunities under program {value['program_id']} (after exclusions).",
+        )
+
+
 def _validate_snapshot_inputs(value) -> None:
     """Validate an instance snapshot manifest. Raises MCPToolError on junk —
     a typo'd manifest would otherwise silently change what completed runs
@@ -595,6 +627,10 @@ def _validate_snapshot_inputs(value) -> None:
         "render_source, supply_sources, and for pages (workflow/page_mode.py) kind ('page' or null), page "
         "({slug}), workflow_sources ([{alias, workflow, read: latest_run|saved_runs|summary, <owner scope>}]) "
         "and config_reads ([settings namespaces]) -- each replaced wholesale, null removes. "
+        "`opportunity_source: {program_id: <int>, exclude_opportunity_ids?: [<int>]}` makes a multi-opp "
+        "workflow read EVERY opportunity of that program the viewer can access, resolved on each load, so "
+        "opportunities added to the program later appear with no edit (null goes back to the stored "
+        "opportunity_ids). "
         "FASTER: to change a report that several workflows show without a deploy, make them "
         "follow a template workflow (workflow_template_create + workflow_follow_template) and edit/publish that. "
         "`render_source: {template: <this workflow's template key>}` makes the "
@@ -675,6 +711,8 @@ def workflow_update_definition(
             raise MCPToolError("INVALID_SCHEMA", "; ".join(problems))
 
     token = require_connect_token(user)
+    if "opportunity_source" in patch:
+        _validate_opportunity_source(patch["opportunity_source"], token, user)
     wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
     try:
         current = wda.get_definition(workflow_id)
@@ -700,6 +738,14 @@ def workflow_update_definition(
             new_data["statuses"] = patch["statuses"]  # replace wholesale
         if "supply_sources" in patch:
             new_data["supply_sources"] = patch["supply_sources"]  # replace wholesale
+        if "opportunity_source" in patch:
+            if patch["opportunity_source"] is None:
+                new_data.pop("opportunity_source", None)
+            else:
+                new_data["opportunity_source"] = patch["opportunity_source"]
+                # Stored too, as the list a reader falls back on when the viewer's
+                # tree cannot be had.
+                new_data["opportunity_ids"] = _resolved_program_opportunities(patch["opportunity_source"], token, user)
         for key in ("kind", "page", "workflow_sources", "config_reads"):
             if key in patch:
                 if patch[key] is None:
@@ -1050,6 +1096,15 @@ def workflow_update_opportunity_ids(
                 f"workflow definition is at version {current_version}, not {expected_version}. "
                 "Call workflow_get to re-read and retry.",
                 details={"server_version": current_version, "expected": expected_version},
+            )
+        if current.data.get("opportunity_source"):
+            # The list is resolved from the program on every read; a written one
+            # would be replaced at the next load without a word.
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                "this workflow reads its program's opportunities (opportunity_source); narrow it with "
+                "opportunity_source.exclude_opportunity_ids, or set opportunity_source to null first "
+                "(workflow_update_definition).",
             )
 
         # Build the updated payload. update_opportunity_ids() preserves other
