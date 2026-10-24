@@ -1,6 +1,6 @@
 # Overture data labs owns: one snapshot per release, switched by a manifest
 
-**Status:** phase 1 built and live (2026-10-24): labs reads its own `2026-10-21.0` snapshot, switched by `CURRENT.json`. Timings are under [Measurements](#measurements). The design as built differs from the first draft in three places, each noted where it applies: divisions are not tiled, a failed barrier read raises but grouping still degrades (now logged), and the refresh copies with boto3 rather than `aws s3 sync`.
+**Status:** phases 1 and 4 built and live (2026-10-24): labs reads its own `2026-10-21.0` snapshot, switched by `CURRENT.json`, with tiles over all of Africa. Timings are under [Measurements](#measurements). The design as built differs from the first draft in three places, each noted where it applies: divisions are not tiled, a failed barrier read raises but grouping still degrades (now logged), and the refresh copies with boto3 rather than `aws s3 sync`.
 
 ## The problem
 
@@ -299,6 +299,21 @@ What it means:
   it argues for phase 4.
 - **Divisions do not need tiles.** Name lookups take seconds and are cached
   for 30 days.
+
+### After phase 4 (the Africa grid)
+
+Same task size and method, 2026-10-24, on the grid (#2715):
+
+| Read | Grid | Before phase 4 |
+|---|---|---|
+| Buildings, Kano (28,439) | 9.4 s | 10.0 s (country tiles) |
+| Buildings, Accra (1,510) | 4.3 s | 155 s (raw snapshot) |
+| Buildings, Nigeria-Benin border at Idiroko (5,457) | 4.0 s | raw: in neither country's rectangle |
+| Barriers, Kano (952 lines) | 2.6 s | 2.7 s (country tiles) |
+| Barriers, Accra (925 lines) | 2.3 s | raw |
+
+Every count matches the earlier reads. The grid holds 46.8 GB across the three
+kinds, a little under $1.10 a month.
 
 ## Costs
 
