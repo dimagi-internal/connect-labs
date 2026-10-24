@@ -178,7 +178,9 @@ QUERY = dict(
         "data_describe; form fields via form_json #>> '{form,...}'). WITH / JOIN / UNION / window and jsonb "
         "functions work; no other tables. Results are capped (default "
         f"{DEFAULT_MAX_ROWS}, max {HARD_MAX_ROWS} rows) and time out after 20s, so aggregate. Returns columns, "
-        "rows, row_count, truncated, the SQL actually executed, `notes` to read before answering and "
+        "column_types (integer, numeric, date, timestamp, text, bool, json), rows, row_count, truncated (and "
+        "row_cap: the limit and whether it was the default, your max_rows or the hard cap), "
+        "the SQL actually executed, `notes` to read before answering and "
         "`open_on_page` (the query on the Data page). Errors carry category / retryable / recovery_action. Every "
         "query is audit-logged. An agent calling through canopy that Labs has not cleared for sensitive data gets "
         "production rows withheld: `withheld: true`, the SQL checked, and `open_on_page` for the person to run it."
@@ -240,14 +242,18 @@ QUERY_KEPT_SCHEMA = {
 }
 
 
-def query(
-    user, opportunity_ids=None, sql="", max_rows=DEFAULT_MAX_ROWS, keep_result=False, program_ids=None, workflow=None
-):
+def query(user, opportunity_ids=None, sql="", max_rows=None, keep_result=False, program_ids=None, workflow=None):
     agent = _from_canopy()
     selection = {"program_ids": program_ids, "workflow": workflow}
     try:
         out = service.query(
-            _caller(user), opportunity_ids, sql, max_rows=int(max_rows), for_agent=agent, shaped=False, **selection
+            _caller(user),
+            opportunity_ids,
+            sql,
+            max_rows=_max_rows(max_rows),
+            for_agent=agent,
+            shaped=False,
+            **selection,
         )
     except ScopeError as e:
         raise _scope_error(e) from e
@@ -283,12 +289,14 @@ def query(
     return _kept(user, out, agent)
 
 
-def explorer_query(user, opportunity_ids, sql, max_rows=DEFAULT_MAX_ROWS):
+def explorer_query(user, opportunity_ids, sql, max_rows=None):
     """scout-queries' ``explorer_query``: the result whole and inline, nothing kept.
     Its caller is Claude Code reading ``content[0].text``; it has no View and no
     ``site_read``, so it keeps exactly the shape it was built against."""
     try:
-        return service.query(_caller(user), opportunity_ids, sql, max_rows=int(max_rows), for_agent=_from_canopy())
+        return service.query(
+            _caller(user), opportunity_ids, sql, max_rows=_max_rows(max_rows), for_agent=_from_canopy()
+        )
     except ScopeError as e:
         raise _scope_error(e) from e
     except service.SensitiveDataRefused as e:
@@ -301,6 +309,12 @@ def explorer_query(user, opportunity_ids, sql, max_rows=DEFAULT_MAX_ROWS):
         }
     except QueryError as e:
         raise _query_error(e) from e
+
+
+def _max_rows(max_rows) -> int | None:
+    """None when the caller left it out: the default cap, which (unlike a cap the caller
+    chose) is a result being cut off (``engine.run_query``'s ``row_cap``)."""
+    return None if max_rows is None else int(max_rows)
 
 
 def _ids(opportunity_ids) -> list[int]:
@@ -354,6 +368,13 @@ def _kept(user, out: dict, agent: bool) -> dict:
             "shows every row. Read more with site_read on `result_uri`, a page at a time (?page=2, "
             "?page_size= up to 1000) -- do not run the query again to see them.",
         ]
+    # The card beside the reply shows the person every row: the reply is for what the
+    # rows mean, not a second copy of them.
+    facts["notes"] = [
+        *facts["notes"],
+        "The person sees every row of this result in a card beside your reply. Give the takeaway and its "
+        "provenance (what was counted, the filters, the opportunities) -- not a markdown table of the rows.",
+    ]
     return kept_results.with_link(facts, link)
 
 

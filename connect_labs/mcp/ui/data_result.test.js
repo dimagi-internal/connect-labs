@@ -33,7 +33,7 @@ async function settle() {
 
 // A host: answers ui/initialize, resources/read (paging like the canopy SDK) and
 // resources/subscribe, and records every request the View makes.
-function mount({ read } = {}) {
+function mount({ read, hostContext } = {}) {
   const window = new Window();
   const document = window.document;
   document.body.innerHTML = '<div id="app"></div>';
@@ -51,7 +51,7 @@ function mount({ read } = {}) {
               serverTools: {},
               serverResources: { subscribe: true },
             },
-            hostContext: {},
+            hostContext: hostContext || {},
           },
         };
       } else if (msg.method === 'resources/read') {
@@ -425,4 +425,268 @@ it('a result that fits on one page shows no paging controls', async () => {
   // Sorting a single page needs no "within this page" caveat either.
   view.click('th[data-sort="1"]');
   expect(view.text()).not.toContain('Sorted within this page only');
+});
+
+// A host whose kept result is `body` (one page).
+function holding(body) {
+  return (uri) => ({
+    result: {
+      contents: [
+        {
+          uri,
+          mimeType: 'application/json',
+          text: JSON.stringify(body),
+          _meta: {
+            'labs/result': {
+              page: 1,
+              page_size: 100,
+              pages: 1,
+              row_count: (body.rows || []).length,
+              snapshot: true,
+            },
+          },
+        },
+      ],
+    },
+  });
+}
+
+async function showing(body, options = {}) {
+  const view = mount({ read: holding(body), ...options });
+  await settle();
+  view.notify('ui/notifications/tool-input', {
+    arguments: { opportunity_ids: [1], sql: 'SELECT 1' },
+  });
+  view.notify('ui/notifications/tool-result', SENSITIVE_RESULT);
+  await settle();
+  return view;
+}
+
+const cells = (view, row = 0) => [
+  ...view.document.querySelectorAll('tbody tr')[row].querySelectorAll('td'),
+];
+
+describe('cells are formatted by what their column holds', () => {
+  const TYPED = {
+    columns: [
+      'opportunity_id',
+      'visits',
+      'approval_rate',
+      'first_visit',
+      'read_at',
+      'form',
+      'llo',
+    ],
+    column_types: [
+      'integer',
+      'integer',
+      'numeric',
+      'date',
+      'timestamp',
+      'json',
+      'text',
+    ],
+    rows: [
+      [
+        10234,
+        12345,
+        0.123456,
+        '2026-03-05',
+        '2026-03-05T14:30:00+00:00',
+        { a: 1, b: 2 },
+        null,
+      ],
+    ],
+  };
+
+  it('an id is plain and left-aligned; counts get separators; decimals 1-2 places', async () => {
+    const view = await showing(TYPED);
+    const [id, visits, rate] = cells(view);
+    expect(id.textContent).toBe('10234');
+    expect(id.className).toBe('');
+    expect(visits.textContent).toBe('12,345');
+    expect(visits.className).toBe('num');
+    expect(rate.textContent).toBe('0.12');
+    const heads = view.document.querySelectorAll('th');
+    expect(heads[0].className).toBe('');
+    expect(heads[1].className).toBe('num');
+  });
+
+  it('dates and timestamps in a short form, null as a muted dash', async () => {
+    const view = await showing(TYPED);
+    const [, , , date, stamp, , empty] = cells(view);
+    expect(date.textContent).not.toBe('2026-03-05');
+    expect(date.textContent).toMatch(/2026/);
+    expect(date.textContent).toMatch(/Mar/);
+    expect(stamp.textContent).not.toContain('T14');
+    expect(empty.textContent).toBe('—');
+    expect(empty.className).toBe('null');
+  });
+
+  it('JSON is a chip that opens the whole value', async () => {
+    const view = await showing(TYPED);
+    const chip = view.document.querySelector('.chip');
+    expect(chip.textContent).toBe('{2 keys}');
+    view.click('.chip');
+    expect(view.document.querySelector('.json-panel pre').textContent).toBe(
+      JSON.stringify({ a: 1, b: 2 }, null, 2),
+    );
+    view.click('#json-close');
+    expect(view.document.querySelector('.json-panel')).toBeNull();
+  });
+
+  it('without column_types an id is still read from its name', async () => {
+    const view = await showing({
+      columns: ['flw_id', 'visits'],
+      rows: [[10234, 10234]],
+    });
+    const [id, visits] = cells(view);
+    expect(id.textContent).toBe('10234');
+    expect(visits.textContent).toBe('10,234');
+  });
+});
+
+it('headers read as words, with the column name as the tooltip', async () => {
+  const view = await showing({
+    columns: ['pct_first_fu_0_3d', 'llo_name'],
+    rows: [[0.5, 'A']],
+  });
+  const heads = view.document.querySelectorAll('th');
+  expect(heads[0].querySelector('.label').textContent).toBe(
+    'Pct first FU 0–3d',
+  );
+  expect(heads[0].getAttribute('title')).toContain('pct_first_fu_0_3d');
+  expect(heads[1].textContent).toBe('LLO name');
+});
+
+it('shows none of the notes written for the agent', async () => {
+  const view = await showing({
+    columns: COLUMNS,
+    rows: [['w1', 1]],
+    notes: ['Read more with site_read on `result_uri`.'],
+  });
+  expect(view.text()).not.toContain('site_read');
+  expect(view.document.querySelector('.notes')).toBeNull();
+});
+
+describe('a result cut at a row cap', () => {
+  const rows = [['w1', 1]];
+  it('says so when the default or hard cap cut it', async () => {
+    for (const source of ['default', 'hard']) {
+      const view = await showing({
+        columns: COLUMNS,
+        rows,
+        truncated: true,
+        row_cap: { limit: 500, source },
+      });
+      expect(view.text()).toContain('cut at the row cap');
+    }
+  });
+
+  it('does not, when the query asked for that many', async () => {
+    const view = await showing({
+      columns: COLUMNS,
+      rows,
+      truncated: true,
+      row_cap: { limit: 50, source: 'requested' },
+    });
+    expect(view.text()).not.toContain('cut at the row cap');
+    expect(view.text()).toContain('the first 50, as asked');
+  });
+});
+
+it('no rows: says so, and the SQL is still there', async () => {
+  const view = await showing({
+    columns: COLUMNS,
+    rows: [],
+    sql_executed: 'SELECT worker FROM visits WHERE false',
+  });
+  expect(view.text()).toContain('The query returned no rows');
+  expect(view.document.querySelector('table')).toBeNull();
+  view.click('[data-tab="sql"]');
+  expect(view.document.querySelector('pre').textContent).toBe(
+    'SELECT worker FROM visits WHERE false',
+  );
+});
+
+it('a failed query shows its code, what to do, and the SQL it tried', async () => {
+  const view = mount();
+  await settle();
+  view.notify('ui/notifications/tool-input', {
+    arguments: { opportunity_ids: [1], sql: 'SELECT * FROM visits' },
+  });
+  view.notify('ui/notifications/tool-result', {
+    isError: true,
+    content: [
+      {
+        type: 'text',
+        text:
+          'The query ran past 20s. Filter by date or opportunity, or aggregate.\n' +
+          JSON.stringify({
+            code: 'INVALID_SCHEMA',
+            error: 'timeout',
+            category: 'capacity',
+            retryable: false,
+            recovery_action: 'narrow_or_aggregate',
+          }),
+      },
+    ],
+  });
+  await settle();
+  expect(view.text()).toContain('The query could not run');
+  expect(view.text()).toContain('timeout');
+  expect(view.text()).toContain('The query ran past 20s');
+  expect(view.text()).toContain('narrowed');
+  expect(view.document.querySelector('pre').textContent).toBe(
+    'SELECT * FROM visits',
+  );
+  expect(view.text()).not.toContain('recovery_action');
+});
+
+it('an expired result offers the Data page and to ask again in the chat', async () => {
+  const view = mount({
+    read: () => ({
+      error: { code: -32603, message: 'gone', data: { code: 'expired' } },
+    }),
+  });
+  await settle();
+  view.notify('ui/notifications/tool-result', {
+    content: [LINK],
+    structuredContent: {
+      open_on_page: 'https://labs.example/labs/data/?opps=1',
+    },
+  });
+  await settle();
+  expect(view.text()).toContain('This result has expired');
+  expect(view.document.getElementById('open')).not.toBeNull();
+  view.click('#ask');
+  await settle();
+  const [ask] = view.requests('ui/message');
+  expect(ask.params.role).toBe('user');
+  expect(ask.params.content.type).toBe('text');
+  expect(ask.params.content.text).toMatch(/run the query again/);
+  expect(view.requests('tools/call')).toEqual([]);
+});
+
+describe('the host decides how big the card may be', () => {
+  it('no Expand unless the host offers full screen', async () => {
+    const plain = await showing({ columns: COLUMNS, rows: [['w1', 1]] });
+    expect(plain.document.getElementById('expand')).toBeNull();
+    const roomy = await showing(
+      { columns: COLUMNS, rows: [['w1', 1]] },
+      { hostContext: { availableDisplayModes: ['inline', 'fullscreen'] } },
+    );
+    expect(roomy.document.getElementById('expand')).not.toBeNull();
+  });
+
+  it("caps the table in px from the host's maxHeight, not vh", async () => {
+    const view = await showing(
+      { columns: COLUMNS, rows: [['w1', 1]] },
+      { hostContext: { containerDimensions: { maxHeight: 900 } } },
+    );
+    expect(
+      view.document.documentElement.style.getPropertyValue('--table-max'),
+    ).toBe('790px');
+    expect(HTML).not.toMatch(/max-height:\s*\d+vh/);
+  });
 });

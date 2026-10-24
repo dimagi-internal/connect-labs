@@ -39,8 +39,13 @@
         --color-text-warning: light-dark(#7a5300, #f3c969);
         --color-border-primary: light-dark(#d9dde3, #3a3d42);
         --color-border-secondary: light-dark(#eceff3, #2c2f33);
-        --brand: light-dark(#16006d, #a99bff);
-        --brand-soft: light-dark(#eef2ff, #24204a);
+        /* The host's accent when it sends one (MCP Apps has no "brand"; canopy sends
+           its accent as the info colours), else Labs' own. */
+        --brand: var(--color-text-info, light-dark(#16006d, #a99bff));
+        --brand-soft: var(
+          --color-background-info,
+          light-dark(#eef2ff, #24204a)
+        );
         --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
         --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
         --s1: light-dark(#3f4fa0, #9aa8ff);
@@ -85,7 +90,7 @@
         color: var(--color-text-warning);
       }
       .err {
-        color: #b42318;
+        color: var(--color-text-danger, #b42318);
       }
       .spacer {
         flex: 1;
@@ -130,7 +135,7 @@
          table a few rows tall. Full screen has the whole surface. */
       .wrap {
         overflow: auto;
-        max-height: 440px;
+        max-height: var(--table-max, 440px);
         border: 1px solid var(--color-border-secondary);
         border-radius: 6px;
       }
@@ -152,8 +157,17 @@
         /* A shadow, not a border: a collapsed border scrolls away from a sticky
            header and lets the rows show through beneath it. */
         box-shadow: inset 0 -1px 0 var(--color-border-primary);
-        white-space: nowrap;
+        vertical-align: bottom;
+        min-width: 4em;
+        max-width: 14em;
         z-index: 1;
+      }
+      /* A label wraps to two lines at most; the column's own name is its tooltip. */
+      th .label {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
       }
       th.num {
         text-align: right;
@@ -174,6 +188,50 @@
       td.null {
         color: var(--color-text-secondary);
       }
+      .chip {
+        font: 11px/1.4 var(--font-mono);
+        padding: 0 6px;
+        border-radius: 4px;
+        border: 1px solid var(--color-border-primary);
+        background: var(--color-background-secondary);
+        color: var(--color-text-secondary);
+        cursor: pointer;
+      }
+      .json-panel {
+        margin-top: 6px;
+        border: 1px solid var(--color-border-secondary);
+        border-radius: 6px;
+      }
+      .json-panel .bar {
+        margin: 0;
+        padding: 4px 8px;
+        font-size: 12px;
+      }
+      .json-panel pre {
+        max-height: 240px;
+        overflow: auto;
+        border-radius: 0 0 6px 6px;
+      }
+      .empty {
+        padding: 18px 12px;
+        text-align: center;
+        color: var(--color-text-secondary);
+        border: 1px dashed var(--color-border-primary);
+        border-radius: 6px;
+      }
+      .problem .title {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .problem .code {
+        font: 11px var(--font-mono);
+        color: var(--color-text-secondary);
+        margin-left: 6px;
+        font-weight: 400;
+      }
+      .problem pre {
+        margin-top: 8px;
+      }
       pre {
         margin: 0;
         padding: 10px;
@@ -182,12 +240,6 @@
         word-break: break-word;
         background: var(--color-background-secondary);
         border-radius: 6px;
-      }
-      .notes {
-        margin: 8px 0 0;
-        padding-left: 18px;
-        color: var(--color-text-secondary);
-        font-size: 12px;
       }
       .chart-controls {
         display: flex;
@@ -332,6 +384,11 @@
           x: null,
           ys: [],
           error: '',
+          problem: null, // the query failed: {message, code, hint}
+          json: null, // the JSON cell open below the table: {row, col}
+          modes: [], // the host's availableDisplayModes
+          displayMode: 'inline',
+          asked: false, // "Ask again" was sent
           sensitive: false, // the refusal was labs keeping sensitive data in Labs
           expired: false, // the full result expired; what is on screen is the facts' sample
           loading: false,
@@ -373,6 +430,175 @@
         function looksLikeDate(v) {
           return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v);
         }
+        // ------------------------------------------------------------ formatting
+        // What each column holds: Labs' own column_types when the result carries them,
+        // else read from the name and the values. An id is never "10,234".
+        var ID_NAME = /(^|_)(id|ids|uuid|year)$|^(id|ids|uuid|year)$/i;
+        var TYPED = {
+          integer: 1,
+          numeric: 1,
+          date: 1,
+          timestamp: 1,
+          text: 1,
+          bool: 1,
+          json: 1,
+        };
+        function columnKinds(r) {
+          var types =
+            Array.isArray(r.column_types) &&
+            r.column_types.length === r.columns.length
+              ? r.column_types
+              : null;
+          return r.columns.map(function (c, i) {
+            if (ID_NAME.test(String(c))) return 'id';
+            if (types && TYPED[types[i]]) return types[i];
+            var seen = r.rows
+              .map(function (row) {
+                return row[i];
+              })
+              .filter(function (v) {
+                return v !== null && v !== undefined;
+              });
+            function all(test) {
+              return seen.length > 0 && seen.every(test);
+            }
+            if (all(isNum))
+              return all(Number.isInteger) ? 'integer' : 'numeric';
+            if (
+              all(function (v) {
+                return typeof v === 'boolean';
+              })
+            )
+              return 'bool';
+            if (
+              all(function (v) {
+                return typeof v === 'object';
+              })
+            )
+              return 'json';
+            if (
+              all(function (v) {
+                return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+              })
+            )
+              return 'date';
+            if (
+              all(function (v) {
+                return (
+                  typeof v === 'string' &&
+                  /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(v)
+                );
+              })
+            )
+              return 'timestamp';
+            return 'text';
+          });
+        }
+        function isNumeric(kind) {
+          return kind === 'integer' || kind === 'numeric';
+        }
+        function shortDate(v) {
+          var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v));
+          if (!m) return String(v);
+          return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString(
+            undefined,
+            {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+              timeZone: 'UTC',
+            },
+          );
+        }
+        function shortTimestamp(v) {
+          var d = new Date(String(v));
+          if (isNaN(d.getTime())) return String(v);
+          return d.toLocaleString(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+        }
+        // A cell as the person reads it: {text, cls}, or {chip} for JSON.
+        function display(v, kind) {
+          if (v === null || v === undefined) return { text: '—', cls: 'null' };
+          if (kind === 'json' || (typeof v === 'object' && kind !== 'id')) {
+            if (typeof v !== 'object') return { text: String(v), cls: '' };
+            return {
+              chip: Array.isArray(v)
+                ? '[' + v.length + (v.length === 1 ? ' item]' : ' items]')
+                : '{' +
+                  Object.keys(v).length +
+                  (Object.keys(v).length === 1 ? ' key}' : ' keys}'),
+            };
+          }
+          if (kind === 'id')
+            return {
+              text: typeof v === 'object' ? JSON.stringify(v) : String(v),
+              cls: '',
+            };
+          if (isNumeric(kind) && (isNum(v) || (v !== '' && isFinite(v)))) {
+            var n = Number(v);
+            var places = kind === 'integer' ? 0 : Math.abs(n) >= 100 ? 1 : 2;
+            return {
+              text: n.toLocaleString(undefined, {
+                maximumFractionDigits: places,
+              }),
+              cls: 'num',
+            };
+          }
+          if (kind === 'date') return { text: shortDate(v), cls: '' };
+          if (kind === 'timestamp') return { text: shortTimestamp(v), cls: '' };
+          return { text: cellText(v), cls: isNum(v) ? 'num' : '' };
+        }
+        // snake_case as words: "pct_first_fu_0_3d" reads "Pct first FU 0–3d".
+        var ACRONYMS = {
+          id: 'ID',
+          ids: 'IDs',
+          flw: 'FLW',
+          flws: 'FLWs',
+          llo: 'LLO',
+          llos: 'LLOs',
+          fu: 'FU',
+          url: 'URL',
+          sql: 'SQL',
+          gps: 'GPS',
+          muac: 'MUAC',
+          dhs: 'DHS',
+          uuid: 'UUID',
+          anc: 'ANC',
+          pnc: 'PNC',
+          kmc: 'KMC',
+          lbw: 'LBW',
+          pmc: 'PMC',
+        };
+        function label(name) {
+          var words = String(name)
+            .split(/[_\s]+/)
+            .filter(Boolean);
+          var out = [];
+          for (var i = 0; i < words.length; i++) {
+            var w = words[i];
+            if (
+              /^\d+$/.test(w) &&
+              i + 1 < words.length &&
+              /^\d+[a-z]*$/i.test(words[i + 1])
+            ) {
+              out.push(w + '–' + words[i + 1]);
+              i++;
+              continue;
+            }
+            var lower = w.toLowerCase();
+            if (ACRONYMS[lower]) out.push(ACRONYMS[lower]);
+            else if (!out.length && w === lower)
+              out.push(lower.charAt(0).toUpperCase() + lower.slice(1));
+            else out.push(w);
+          }
+          return out.join(' ') || String(name);
+        }
+
         function hasRows(r) {
           return r && Array.isArray(r.columns) && Array.isArray(r.rows);
         }
@@ -500,6 +726,7 @@
                 return;
               }
               state.error = refusal(err);
+              state.expired = code === 'expired' || code === 'not_found';
               render();
             },
           );
@@ -793,47 +1020,56 @@
         // ---------------------------------------------------------------- render
         function table() {
           var r = state.result;
-          var numeric = r.columns.map(function (_c, i) {
-            var any = false;
-            var all = r.rows.every(function (row) {
-              if (row[i] === null || row[i] === undefined) return true;
-              any = true;
-              return isNum(row[i]);
-            });
-            return any && all;
-          });
+          if (!r.rows.length)
+            return '<div class="empty">The query returned no rows.</div>';
+          var kinds = columnKinds(r);
           var head = r.columns
             .map(function (c, i) {
               var dir =
                 state.sort.col === i ? (state.sort.dir > 0 ? '▲' : '▼') : '';
               return (
                 '<th' +
-                (numeric[i] ? ' class="num"' : '') +
+                (isNumeric(kinds[i]) ? ' class="num"' : '') +
                 ' data-sort="' +
                 i +
-                '" title="Sort the rows on this page by ' +
+                '" title="' +
                 esc(c) +
-                '">' +
-                esc(c) +
+                ' · sort the rows on this page">' +
+                '<span class="label">' +
+                esc(label(c)) +
                 (dir ? '<span class="dir">' + dir + '</span>' : '') +
-                '</th>'
+                '</span></th>'
               );
             })
             .join('');
-          var body = sortedRows()
-            .map(function (row) {
+          var rows = sortedRows();
+          state.shown = rows;
+          var body = rows
+            .map(function (row, ri) {
               return (
                 '<tr>' +
                 row
-                  .map(function (v) {
-                    var cls = v === null ? 'null' : isNum(v) ? 'num' : '';
+                  .map(function (v, ci) {
+                    var d = display(v, kinds[ci]);
+                    if (d.chip)
+                      return (
+                        '<td><button class="chip" data-json="' +
+                        ri +
+                        ',' +
+                        ci +
+                        '" title="Show the whole value">' +
+                        esc(d.chip) +
+                        '</button></td>'
+                      );
                     return (
                       '<td class="' +
-                      cls +
+                      d.cls +
                       '" title="' +
-                      esc(cellText(v)) +
+                      esc(
+                        v === null || v === undefined ? 'null' : cellText(v),
+                      ) +
                       '">' +
-                      esc(cellText(v)) +
+                      esc(d.text) +
                       '</td>'
                     );
                   })
@@ -847,7 +1083,24 @@
             head +
             '</tr></thead><tbody>' +
             body +
-            '</tbody></table></div>'
+            '</tbody></table></div>' +
+            jsonPanel()
+          );
+        }
+        // The whole value of the JSON cell the person opened, below the table.
+        function jsonPanel() {
+          var j = state.json;
+          var row = j && state.shown && state.shown[j.row];
+          if (!row) return '';
+          return (
+            '<div class="json-panel"><div class="bar"><span class="title">' +
+            esc(label(state.result.columns[j.col])) +
+            '</span><span class="sub">row ' +
+            (j.row + 1) +
+            '</span><span class="spacer"></span>' +
+            '<button class="btn" id="json-close">Close</button></div><pre>' +
+            esc(JSON.stringify(row[j.col], null, 2)) +
+            '</pre></div>'
           );
         }
         function pager() {
@@ -859,7 +1112,11 @@
               p.page_size +
               ' of ' +
               p.row_count.toLocaleString() +
-              ' rows the query returned to the chat — ask again in the chat for every row.</div>'
+              ' rows the query returned to the chat.</div>' +
+              '<div class="bar" style="margin-top:6px">' +
+              askAgain() +
+              openButton(false) +
+              '</div>'
             );
           if (p.sample)
             return (
@@ -895,6 +1152,64 @@
             '</div>'
           );
         }
+        function askAgain() {
+          return state.asked
+            ? '<span class="sub">Asked in the chat.</span>'
+            : '<button class="btn primary" id="ask">Ask again</button>';
+        }
+        // What a failed query's recovery_action asks of the person.
+        var HINTS = {
+          fix_query: 'The SQL needs fixing: ask the agent to correct it.',
+          narrow_or_aggregate:
+            'The query was too slow or too large: ask for it narrowed (fewer opportunities, a shorter date range) or aggregated.',
+          retry_once_then_stop:
+            'Labs could not run it this time: ask once more, and stop if it fails again.',
+          use_allowed_relations: 'Only the visits relation can be queried.',
+          choose_opportunities: 'Choose which opportunities to query.',
+          check_visit_ids: 'Check the visit ids.',
+        };
+        // A failed call's error: Labs sends its message, then its details
+        // (error, category, retryable, recovery_action) as a JSON line.
+        function problemOf(params, sc) {
+          var text = ((params && params.content) || [])
+            .map(function (c) {
+              return c && c.type === 'text' ? c.text : '';
+            })
+            .join('\n')
+            .trim();
+          var lines = text.split('\n');
+          var details = null;
+          try {
+            details = JSON.parse(lines[lines.length - 1]);
+          } catch (e) {
+            details = null;
+          }
+          var message = '';
+          if (details && typeof details === 'object' && lines.length > 1) {
+            message = lines.slice(0, -1).join('\n');
+          } else {
+            details =
+              sc && sc.error && typeof sc.error === 'object'
+                ? sc.error
+                : sc && sc.category
+                  ? sc
+                  : null;
+            message = text;
+          }
+          details = details || {};
+          message =
+            message ||
+            details.message ||
+            (sc && sc.message) ||
+            'The query failed.';
+          return {
+            message: message,
+            code: typeof details.error === 'string' ? details.error : '',
+            hint:
+              HINTS[details.recovery_action] ||
+              (details.retryable ? 'Ask once more.' : ''),
+          };
+        }
         function openButton(primary) {
           return openUrl()
             ? '<button class="btn' +
@@ -914,10 +1229,27 @@
         function render() {
           var app = document.getElementById('app');
           var r = state.result;
+          if (state.problem) {
+            var pr = state.problem;
+            var sql = (state.args && state.args.sql) || '';
+            app.innerHTML =
+              '<div class="problem"><span class="title">The query could not run' +
+              (pr.code
+                ? '<span class="code">' + esc(pr.code) + '</span>'
+                : '') +
+              '</span><div class="sub err">' +
+              esc(pr.message) +
+              '</div>' +
+              (pr.hint ? '<div class="sub">' + esc(pr.hint) + '</div>' : '') +
+              (sql ? '<pre>' + esc(sql) + '</pre>' : '') +
+              '</div>';
+            return reportSize();
+          }
           if (state.error) {
+            var gone = state.expired;
             app.innerHTML =
               '<div class="sub' +
-              (state.sensitive ? '' : ' err') +
+              (state.sensitive || gone ? '' : ' err') +
               '">' +
               esc(state.error) +
               '</div>' +
@@ -925,7 +1257,12 @@
                 ? '<div class="bar" style="margin-top:8px">' +
                   openButton(true) +
                   '</div>'
-                : '');
+                : gone
+                  ? '<div class="bar" style="margin-top:8px">' +
+                    askAgain() +
+                    openButton(false) +
+                    '</div>'
+                  : '');
             return reportSize();
           }
           if (!r) {
@@ -952,12 +1289,22 @@
             return reportSize();
           }
           var total = state.paging ? state.paging.row_count : r.rows.length;
+          // Cut off only by the default or the hard cap: a query that asked for its
+          // own limit got the rows it asked for.
+          var cap =
+            r.row_cap && typeof r.row_cap === 'object' ? r.row_cap : null;
+          var asked = cap && cap.source === 'requested';
           var summary =
             total.toLocaleString() +
             ' row' +
             (total === 1 ? '' : 's') +
-            (r.truncated
+            (r.truncated && !asked
               ? ' <span class="warn">(cut at the row cap)</span>'
+              : '') +
+            (r.truncated && asked
+              ? ' · the first ' +
+                Number(cap.limit).toLocaleString() +
+                ', as asked'
               : '') +
             (r.elapsed_ms != null ? ' · ' + r.elapsed_ms + ' ms' : '') +
             (r.opportunities && r.opportunities.length
@@ -986,32 +1333,32 @@
               })
               .join('') +
             '</span>';
+          var empty = !r.rows.length && !total;
           var body =
-            state.tab === 'chart'
-              ? chart() + pager()
-              : state.tab === 'sql'
-                ? '<pre>' + esc(sqlText()) + '</pre>'
-                : table() + pager();
-          var notes = (r.notes || []).length
-            ? '<ul class="notes">' +
-              r.notes
-                .map(function (n) {
-                  return '<li>' + esc(n) + '</li>';
-                })
-                .join('') +
-              '</ul>'
-            : '';
+            state.tab === 'sql'
+              ? '<pre>' + esc(sqlText()) + '</pre>'
+              : empty
+                ? '<div class="empty">The query returned no rows.</div>'
+                : state.tab === 'chart'
+                  ? chart() + pager()
+                  : table() + pager();
+          // `notes` are written for the agent ("read more with site_read"); the card
+          // shows none of them.
+          var canExpand =
+            state.modes.indexOf('fullscreen') >= 0 &&
+            state.displayMode !== 'fullscreen';
           app.innerHTML =
             '<div class="bar">' +
             tabs +
             '<span class="sub">' +
             summary +
             '</span><span class="spacer"></span>' +
-            '<button class="btn" id="expand" title="Show larger">Expand</button>' +
+            (canExpand
+              ? '<button class="btn" id="expand" title="Show larger">Expand</button>'
+              : '') +
             openButton(false) +
             '</div>' +
-            body +
-            notes;
+            body;
           reportSize();
         }
 
@@ -1020,15 +1367,44 @@
           if (!(t instanceof Element)) return;
           var tab = t.closest('[data-tab]');
           var th = t.closest('[data-sort]');
+          var chip = t.closest('[data-json]');
           if (tab) {
             state.tab = tab.getAttribute('data-tab');
+            state.json = null;
             render();
+          } else if (chip) {
+            var at = chip.getAttribute('data-json').split(',');
+            var next = { row: Number(at[0]), col: Number(at[1]) };
+            state.json =
+              state.json &&
+              state.json.row === next.row &&
+              state.json.col === next.col
+                ? null
+                : next;
+            render();
+          } else if (t.closest('#json-close')) {
+            state.json = null;
+            render();
+          } else if (t.closest('#ask')) {
+            state.asked = true;
+            render();
+            request('ui/message', {
+              role: 'user',
+              content: {
+                type: 'text',
+                text: 'That query result has expired — please run the query again.',
+              },
+            }).catch(function () {
+              state.asked = false;
+              render();
+            });
           } else if (th) {
             var col = Number(th.getAttribute('data-sort'));
             state.sort =
               state.sort.col === col
                 ? { col: col, dir: -state.sort.dir }
                 : { col: col, dir: 1 };
+            state.json = null;
             render();
           } else if (t.closest('#prev')) {
             if (state.paging && state.paging.page > 1)
@@ -1076,12 +1452,27 @@
             });
           if (ctx.theme === 'light' || ctx.theme === 'dark')
             root.style.colorScheme = ctx.theme;
-          if (ctx.displayMode)
+          if (ctx.displayMode) {
+            state.displayMode = ctx.displayMode;
             document.body.classList.toggle(
               'fullscreen',
               ctx.displayMode === 'fullscreen',
             );
-          if (ctx.displayMode && state.result && state.tab === 'chart')
+          }
+          if (Array.isArray(ctx.availableDisplayModes))
+            state.modes = ctx.availableDisplayModes;
+          // The table's cap is the host's room for this View less the card's own
+          // chrome -- in px, never vh (vh is this frame, which grows with the table).
+          var dims = ctx.containerDimensions;
+          if (dims && isNum(dims.maxHeight))
+            root.style.setProperty(
+              '--table-max',
+              Math.max(160, Math.round(dims.maxHeight - 110)) + 'px',
+            );
+          if (
+            state.initialized &&
+            (ctx.displayMode || ctx.availableDisplayModes)
+          )
             render();
         }
         var lastSize = '';
@@ -1112,9 +1503,7 @@
             var withheld = !!(params._meta && params._meta['canopy/withheld']);
             if (sc && !withheld) state.facts = sc;
             if (params.isError) {
-              state.error =
-                (sc && (sc.message || (sc.error && sc.error.message))) ||
-                'The query failed.';
+              state.problem = problemOf(params, sc);
               return render();
             }
             var uri = resultLink(params);

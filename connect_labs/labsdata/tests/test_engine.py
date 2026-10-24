@@ -192,3 +192,39 @@ def test_bad_sql_is_reported_not_raised_raw(cache):
 def test_no_opportunities_refused():
     with pytest.raises(QueryError):
         run_query([], "SELECT 1 FROM visits")
+
+
+def test_each_column_says_what_it_holds(cache):
+    result = run_query(
+        [HELD],
+        "SELECT visit_id, COUNT(*) AS n, AVG((form_json #>> '{form,weight}')::numeric) AS mean_weight, "
+        "MIN(visit_date) AS first_visit, NOW() AS read_at, BOOL_OR(status = 'approved') AS any_approved, "
+        "MIN(form_json::text)::jsonb AS a_form, ARRAY_AGG(username) AS workers "
+        "FROM visits GROUP BY visit_id LIMIT 1",
+    )
+    assert dict(zip(result.columns, result.column_types)) == {
+        "visit_id": "text",
+        "n": "integer",
+        "mean_weight": "numeric",
+        "first_visit": "date",
+        "read_at": "timestamp",
+        "any_approved": "bool",
+        "a_form": "json",
+        "workers": "json",
+    }
+    assert set(result.column_types) <= set(engine.COLUMN_TYPES)
+    assert result.as_dict()["column_types"] == result.column_types
+
+
+def test_the_row_cap_says_where_it_came_from(cache):
+    # Left out: the default cap -- a result cut by it is cut off.
+    assert run_query([HELD], "SELECT visit_id FROM visits").row_cap == {
+        "limit": engine.DEFAULT_MAX_ROWS,
+        "source": "default",
+    }
+    # The caller's own limit: it got the rows it asked for.
+    asked = run_query([HELD], "SELECT visit_id FROM visits", max_rows=5)
+    assert asked.truncated and asked.row_cap == {"limit": 5, "source": "requested"}
+    # More than labs allows: held to the hard cap.
+    held = run_query([HELD], "SELECT visit_id FROM visits", max_rows=engine.HARD_MAX_ROWS + 1)
+    assert held.row_cap == {"limit": engine.HARD_MAX_ROWS, "source": "hard"}

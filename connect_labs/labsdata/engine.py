@@ -34,7 +34,7 @@ import json
 import logging
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from django.db import DatabaseError, connection, transaction
 from django.utils import timezone
@@ -123,6 +123,34 @@ class QueryError(Exception):
         }
 
 
+#: What a result column holds, from its Postgres type: the card formats a cell by it
+#: (an integer id is not "10,234", a timestamp is not ISO text) and an agent reads it.
+COLUMN_TYPES = ("integer", "numeric", "date", "timestamp", "text", "bool", "json")
+
+_TYPE_OF_OID = {
+    **dict.fromkeys((20, 21, 23, 26), "integer"),  # int8, int2, int4, oid
+    **dict.fromkeys((700, 701, 790, 1700), "numeric"),  # float4, float8, money, numeric
+    1082: "date",
+    **dict.fromkeys((1114, 1184), "timestamp"),  # timestamp, timestamptz
+    16: "bool",
+    **dict.fromkeys((114, 3802), "json"),
+}
+#: Postgres arrays arrive as lists, which the card shows as JSON.
+_ARRAY_OIDS = frozenset({1000, 1005, 1007, 1016, 1009, 1015, 1021, 1022, 1231, 1182, 1115, 1185, 199, 3807, 2951})
+
+
+def column_type(type_code) -> str:
+    if type_code in _ARRAY_OIDS:
+        return "json"
+    return _TYPE_OF_OID.get(type_code, "text")
+
+
+#: Where a result's row cap came from: the default, the caller's own `max_rows`, or the
+#: hard cap a larger `max_rows` was held to. Only the default and the hard cap are a
+#: result being cut off; a caller that asked for 50 rows got the 50 it asked for.
+CAP_DEFAULT, CAP_REQUESTED, CAP_HARD = "default", "requested", "hard"
+
+
 @dataclass
 class QueryResult:
     columns: list[str]
@@ -131,10 +159,14 @@ class QueryResult:
     truncated: bool
     sql_executed: str
     elapsed_ms: int
+    column_types: list[str] = field(default_factory=list)
+    row_cap: dict = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return {
             "columns": self.columns,
+            "column_types": self.column_types,
+            "row_cap": self.row_cap,
             "rows": self.rows,
             "row_count": self.row_count,
             "truncated": self.truncated,
@@ -343,17 +375,23 @@ def pipeline_grants(opps: list[Opportunity], relations) -> list[tuple[int, int]]
 
 
 def run_query(
-    opps: list[Opportunity], sql: str, max_rows: int = DEFAULT_MAX_ROWS, relations=(), *, field_opps=None
+    opps: list[Opportunity], sql: str, max_rows: int | None = None, relations=(), *, field_opps=None
 ) -> QueryResult:
     """Validate ``sql`` and run it over ``opps`` (already authorised by ``scope.resolve``),
     with ``relations`` -- a workflow's pipelines (``pipelines.workflow_selection``) -- beside
     ``visits``.
 
     Fetches one row past the cap, as Scout does, so a result that fills the cap
-    exactly is not reported as cut off and one that overflows always is.
+    exactly is not reported as cut off and one that overflows always is. ``max_rows``
+    None is the default cap; ``row_cap`` says which cap applied.
     """
     relations = list(relations or [])
-    cap = max(1, min(int(max_rows), HARD_MAX_ROWS))
+    if max_rows is None:
+        cap, source = DEFAULT_MAX_ROWS, CAP_DEFAULT
+    elif int(max_rows) > HARD_MAX_ROWS:
+        cap, source = HARD_MAX_ROWS, CAP_HARD
+    else:
+        cap, source = max(1, int(max_rows)), CAP_REQUESTED
     check = ExplorerValidator(
         schema="explorer",
         allowed_schemas=[],
@@ -383,10 +421,12 @@ def run_query(
     # LIKE '%term%' as a placeholder.
     final_sql = f"WITH {cte_sql}\nSELECT * FROM (\n{user_sql.replace('%', '%%')}\n) AS explorer_result"
 
-    columns, rows = _execute(final_sql, params, visit_grants(opps) + pipeline_grants(opps, relations))
+    columns, types, rows = _execute_typed(final_sql, params, visit_grants(opps) + pipeline_grants(opps, relations))
     truncated = len(rows) > cap
     return QueryResult(
         columns=columns,
+        column_types=types,
+        row_cap={"limit": cap, "source": source},
         rows=rows[:cap],
         row_count=min(len(rows), cap),
         truncated=truncated,
@@ -422,6 +462,14 @@ def _lock(cursor, grants: list[tuple[int, int]]) -> None:
 def _execute(final_sql: str, params: list, grants: list[tuple[int, int]]) -> tuple[list[str], list[list]]:
     """Run one statement locked down: as the reader role, over only ``grants``,
     read-only, time-boxed, no search path, rolled back."""
+    columns, _types, rows = _execute_typed(final_sql, params, grants)
+    return columns, rows
+
+
+def _execute_typed(
+    final_sql: str, params: list, grants: list[tuple[int, int]]
+) -> tuple[list[str], list[str], list[list]]:
+    """``_execute``, and each column's type (``COLUMN_TYPES``) from the cursor."""
     try:
         with transaction.atomic():
             with connection.cursor() as cursor:
@@ -434,6 +482,7 @@ def _execute(final_sql: str, params: list, grants: list[tuple[int, int]]) -> tup
                 cursor.execute(final_sql, params)
                 description = cursor.description or []
                 columns = [d[0] for d in description]
+                types = [column_type(getattr(d, "type_code", None)) for d in description]
                 # Django leaves json/jsonb as text (its JSONField decodes them itself);
                 # here they are decoded so form_json arrives as the form, not a string.
                 is_json = [getattr(d, "type_code", None) in _JSON_OIDS for d in description]
@@ -445,7 +494,7 @@ def _execute(final_sql: str, params: list, grants: list[tuple[int, int]]) -> tup
             transaction.set_rollback(True)
     except DatabaseError as e:
         raise _classify(e) from e
-    return columns, rows
+    return columns, types, rows
 
 
 #: Postgres type OIDs of json and jsonb.

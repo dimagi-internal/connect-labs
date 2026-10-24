@@ -77,6 +77,15 @@ SERVER_INSTRUCTIONS = (
 # ---------------------------------------------------------------------------
 
 
+def _tool_error(e: MCPToolError) -> ToolError:
+    """The error a client receives: the message, and -- when the tool gave them -- its
+    details (a query's ``category`` / ``retryable`` / ``recovery_action``) as a JSON line
+    after it, so an agent and a View can act on them rather than parse prose."""
+    if not e.details:
+        return ToolError(e.message)
+    return ToolError(f"{e.message}\n{json.dumps({'code': e.code, **e.details}, default=str)}")
+
+
 def _closing_connections(fn):
     """Wrap a sync callable so it closes this thread's DB connections on exit.
 
@@ -631,7 +640,7 @@ def _run_registry_tool_inner(
             enforce_write_limit(user)
         except MCPToolError as e:
             audit(user, spec.name, arguments, success=False, error_code=e.code, is_write=True)
-            raise ToolError(e.message) from e
+            raise _tool_error(e) from e
 
     if spec.long_running:
         # Every gate above has passed; the work itself runs as a durable job (jobs.py),
@@ -654,7 +663,7 @@ def _run_registry_tool_inner(
             )
         except MCPToolError as e:
             audit(user, spec.name, arguments, success=False, error_code=e.code, is_write=spec.is_write)
-            raise ToolError(e.message) from e
+            raise _tool_error(e) from e
         audit(user, spec.name, arguments, success=True, is_write=spec.is_write)
         return ToolResult(
             content=[{"type": "text", "text": json.dumps(result, default=str)}], structured_content=result
@@ -671,7 +680,7 @@ def _run_registry_tool_inner(
         result = spec.handler(user=user, **handler_kwargs)
     except MCPToolError as e:
         audit(user, spec.name, arguments, success=False, error_code=e.code, is_write=spec.is_write)
-        raise ToolError(e.message) from e
+        raise _tool_error(e) from e
     except Exception as e:  # noqa: BLE001
         audit(user, spec.name, arguments, success=False, error_code="UPSTREAM_ERROR", is_write=spec.is_write)
         # Surface the full traceback inline — same diagnostic choice the old
