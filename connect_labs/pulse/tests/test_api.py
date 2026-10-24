@@ -924,6 +924,59 @@ class TestSummaryCache:
         client.get(reverse("pulse:api_summary") + "?costs=spread")
         assert calls == [], "a warmed cache means the first viewer never computes, in either view"
 
+    def test_unwatched_warmer_does_not_recompute_every_beat(self, populated, settings, monkeypatch):
+        # The regression this pins: 4 variants x ~13s on a 60s beat kept a DB
+        # core busy around the clock for a summary nobody had requested.
+        from django.core.cache import cache
+
+        from connect_labs.pulse import tasks
+
+        settings.PULSE_SUMMARY_CACHE_SECONDS = 60
+        settings.PULSE_SUMMARY_IDLE_WARM_SECONDS = 900
+        cache.clear()
+        assert tasks.warm_summary_cache() == 4, "the first warm still fills the cache"
+
+        calls = self._spy(monkeypatch)
+        for _ in range(5):
+            assert tasks.warm_summary_cache() == 0
+        assert calls == [], "with nobody watching, the next beats must not touch the event table"
+
+    def test_idle_warm_outlives_its_gap_so_a_cold_link_still_hits(self, populated, settings, client, monkeypatch):
+        from django.core.cache import cache
+
+        from connect_labs.pulse import tasks
+
+        settings.PULSE_SUMMARY_CACHE_SECONDS = 60
+        settings.PULSE_SUMMARY_IDLE_WARM_SECONDS = 900
+        cache.clear()
+        ttls = []
+        orig_set = cache.set
+
+        def spy_set(key, value, timeout=None, *a, **kw):
+            if str(key).startswith("pulse:summary:") and len(str(key)) > 30:
+                ttls.append(timeout)
+            return orig_set(key, value, timeout, *a, **kw)
+
+        monkeypatch.setattr(cache, "set", spy_set)
+        tasks.warm_summary_cache()
+        assert ttls and min(ttls) > 900, "an idle entry must not expire before the next idle warm"
+
+    def test_a_viewer_puts_the_warmer_back_on_every_beat(self, populated, settings, client, monkeypatch):
+        from django.core.cache import cache
+
+        from connect_labs.pulse import tasks
+
+        settings.PULSE_SUMMARY_CACHE_SECONDS = 60
+        settings.PULSE_SUMMARY_IDLE_WARM_SECONDS = 900
+        cache.clear()
+        tasks.warm_summary_cache()
+        client.get(reverse("pulse:api_summary"))  # a viewer arrives
+
+        calls = self._spy(monkeypatch)
+        assert tasks.warm_summary_cache() == 4
+        assert tasks.warm_summary_cache() == 4
+        assert len(calls) == 8, "while watched, every beat refreshes every variant"
+
 
 @pytest.mark.django_db
 class TestTrendSeries:

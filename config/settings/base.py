@@ -950,6 +950,12 @@ CELERY_BEAT_SCHEDULE = {
 # refreshes every 60s, so viewers see data at most ~1 minute older than the
 # poller has; 0 disables caching entirely (tests).
 PULSE_SUMMARY_CACHE_SECONDS = env.int("PULSE_SUMMARY_CACHE_SECONDS", default=180)
+# The 60s warm cadence is only for while someone is watching (a summary request
+# in the last WATCHED seconds). Unwatched, the warmer refreshes every IDLE
+# seconds -- it was ~80% of the shared database's CPU warming for nobody.
+# 0 restores the unconditional 60s warm.
+PULSE_SUMMARY_WATCHED_SECONDS = env.int("PULSE_SUMMARY_WATCHED_SECONDS", default=900)
+PULSE_SUMMARY_IDLE_WARM_SECONDS = env.int("PULSE_SUMMARY_IDLE_WARM_SECONDS", default=900)
 
 # Seconds to wait between pages of a history backfill. A full walk is ~1.6M rows
 # off a production export endpoint that serialises every visit's form JSON, so

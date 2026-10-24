@@ -1012,6 +1012,9 @@ def _weekly_series(sc):
     return out
 
 
+SUMMARY_WATCHED_KEY = "pulse:summary:watched:v1"
+
+
 class SummaryView(View):
     """Scalars, rollups, scope and ingest health — everything a card needs at load.
 
@@ -1024,20 +1027,26 @@ class SummaryView(View):
     pays the cold cost interactively. The key carries the full query string and
     the caller's naming entitlement, so scoped and anonymised variants can
     never serve each other.
+
+    Every viewer's request also marks the summary as WATCHED. The warmer only
+    keeps its 60s cadence while that mark is fresh; with nobody watching it
+    refreshes rarely and writes a TTL that outlives the gap (``warm_summary_cache``).
     """
 
-    def get(self, request, refresh=False):
+    def get(self, request, refresh=False, ttl=None):
         import hashlib
         from urllib.parse import urlencode
 
         from django.core.cache import cache
 
-        ttl = getattr(settings, "PULSE_SUMMARY_CACHE_SECONDS", 180)
+        if ttl is None:
+            ttl = getattr(settings, "PULSE_SUMMARY_CACHE_SECONDS", 180)
         key = None
         if ttl:
             raw = urlencode(sorted(request.GET.items())) + f"|names={int(_partner_names_allowed(request))}"
             key = "pulse:summary:" + hashlib.md5(raw.encode()).hexdigest()
             if not refresh:
+                cache.set(SUMMARY_WATCHED_KEY, 1, getattr(settings, "PULSE_SUMMARY_WATCHED_SECONDS", 900))
                 hit = cache.get(key)
                 if hit is not None:
                     return HttpResponse(hit, content_type="application/json")
