@@ -9,7 +9,10 @@ the one labs reads. See docs/superpowers/specs/2026-10-24-overture-mirror-design
     s3://<EXTRACT_BUCKET>/overture/
       CURRENT.json                               {"release": R, "previous": P, ...}
       snapshots/<R>/raw/theme=.../type=.../*      byte-for-byte copy of Overture's release/<R>/
-      snapshots/<R>/tiles/<kind>/<region>/tx=/ty= our 1-degree tiles, the fast path
+      snapshots/<R>/tiles/cells.json              the coverage: every 1-degree cell over Africa
+      snapshots/<R>/tiles/<kind>/grid/tx=/ty=     our 1-degree tiles of those cells, the fast path
+      snapshots/<R>/tiles/<kind>/blocks/<x>.json  one finished strip of the cut
+      snapshots/<R>/tiles/<kind>/<region>/        the per-country tiles before the grid (going)
       snapshots/<R>/READY.json                    written last: which tiles exist, and the checks
 
 Why: Overture PRUNES old releases. When the code pinned a release and read it
@@ -72,6 +75,29 @@ REGIONS: dict[str, dict] = {
     "mozambique": {"iso2": "MZ", "bbox": (30.1, -27.0, 40.9, -10.4), "sample": (32.56, -25.99, 32.60, -25.95)},
     "malawi": {"iso2": "MW", "bbox": (32.6, -17.2, 36.0, -9.3), "sample": (33.77, -13.98, 33.81, -13.94)},
     "sierra_leone": {"iso2": "SL", "bbox": (-13.4, 6.8, -10.2, 10.1), "sample": (-13.25, 8.46, -13.21, 8.50)},
+}
+
+# Coverage, as the refresh cuts it: one 1-degree grid over every cell that touches
+# one of these countries' Overture outlines (``overture_refresh --steps plan``
+# writes the cell list per release). One grid, not a rectangle per country:
+# neighbouring rectangles overlap, so a border area was stored twice, and an area
+# straddling two of them fit in neither and fell to the raw read (2.5 minutes,
+# measured). Overture's divisions codes are ISO 3166-1 alpha-2: the 54 African
+# states, Western Sahara, and the African territories Overture lists apart.
+COVERAGE_COUNTRIES = (
+    "DZ AO BJ BW BF BI CV CM CF TD KM CG CD CI DJ EG GQ ER SZ ET GA GM GH GN GW KE LS LR LY MG "
+    "MW ML MR MU MA MZ NA NE NG RW ST SN SC SL SO ZA SS SD TZ TG TN UG ZM ZW EH RE YT SH"
+).split()
+# The grid is cut in north-south strips this many degrees wide, one Fargate task
+# each, so a strip is the unit a cut resumes from.
+BLOCK_DEGREES = 2
+
+# What the refresh's check samples each release: a city per country (so buildings
+# and roads are certain to be there), and the country's code in Overture's
+# divisions. The first 11 are the countries labs serves boundaries for.
+SAMPLES: dict[str, dict] = {
+    **{name: {"iso2": meta["iso2"], "sample": meta["sample"]} for name, meta in REGIONS.items()},
+    "ghana": {"iso2": "GH", "sample": (-0.22, 5.54, -0.18, 5.58)},
 }
 
 # What gets tiled. Divisions are read from the raw snapshot instead: their reads
@@ -176,6 +202,47 @@ def tile_prefix(kind: str, region: str, release: str | None = None) -> str:
 def tile_glob(kind: str, region: str, release: str | None = None) -> str:
     """The hive-partitioned (tx/ty) tile glob for one kind in one region."""
     return f"{tile_prefix(kind, region, release)}/**/*.parquet"
+
+
+def grid_prefix(kind: str, release: str | None = None) -> str:
+    """The continental grid of one kind: ``<prefix>/tx=<lon>/ty=<lat>/*.parquet``."""
+    return f"{snapshot_base(release)}/tiles/{kind}/grid"
+
+
+def cell_glob(kind: str, tx: int, ty: int, release: str | None = None) -> str:
+    return f"{grid_prefix(kind, release)}/tx={tx}/ty={ty}/*.parquet"
+
+
+def block_of(tx: int) -> int:
+    """The strip a grid column is cut in: its west edge, a multiple of BLOCK_DEGREES."""
+    return (tx // BLOCK_DEGREES) * BLOCK_DEGREES
+
+
+def cells_touching(bounds: tuple[float, float, float, float]) -> list[tuple[int, int]]:
+    """Every 1-degree cell a bbox touches: the cells a read has to open."""
+    import math
+
+    minx, miny, maxx, maxy = bounds
+    return [
+        (tx, ty)
+        for tx in range(math.floor(minx), math.floor(maxx) + 1)
+        for ty in range(math.floor(miny), math.floor(maxy) + 1)
+    ]
+
+
+def cell_files(con, kind: str, cells, release: str | None = None) -> list[str]:
+    """The Parquet files the grid holds for these cells.
+
+    Listed rather than globbed into ``read_parquet``: a covered cell can hold
+    nothing (open sea, empty desert), and a glob that matches no file is an
+    error, where an empty cell is a true answer of "nothing here".
+    """
+    files = []
+    for tx, ty in cells:
+        files += [
+            row[0] for row in con.execute("SELECT file FROM glob(?)", [cell_glob(kind, tx, ty, release)]).fetchall()
+        ]
+    return files
 
 
 def tile_route(

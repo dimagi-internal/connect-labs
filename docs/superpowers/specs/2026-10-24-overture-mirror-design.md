@@ -237,6 +237,40 @@ previous release, and the newest release Overture has published.
    raw-snapshot read outside the 11 countries takes 2.5 minutes, too long for
    a planner to wait.
 
+## Phase 4: one grid over Africa
+
+Covering all of Africa changes how coverage is shaped, not just how big it is.
+A rectangle per country does not scale to 58: neighbours' rectangles overlap,
+so a border area is stored twice, and an area straddling two of them fits in
+neither and falls to the 2.5-minute raw read. So the tiles become **one 1-degree
+grid**:
+
+```
+snapshots/<R>/tiles/cells.json               every cell touching an African country's outline
+snapshots/<R>/tiles/<kind>/grid/tx=/ty=/     the tiles, each feature stored once per cell it touches
+snapshots/<R>/tiles/<kind>/blocks/<x>.json   one finished strip of the cut
+```
+
+- **Coverage** is `overture.COVERAGE_COUNTRIES` (the 54 states, Western Sahara
+  and the African territories Overture lists apart). A new `plan` step reads
+  their outlines from the release's own divisions and writes the cell list, so
+  coverage follows Overture's borders rather than numbers typed into code.
+- **The cut runs in strips** `BLOCK_DEGREES` (2) wide, one Fargate task each,
+  each with its own marker, so a strip is the unit a cut resumes from and a
+  whole release cuts in parallel.
+- **A read uses the tiles when every cell it touches is in the plan** and the
+  kind's grid is complete under the current filters. No region edges, so no
+  straddling.
+- **A covered cell can be empty** (sea, desert). Readers list a cell's files
+  rather than globbing them, so empty means "nothing here", not an error.
+- **The check** samples a city per country in `overture.SAMPLES` (the 11, plus
+  Accra) and fails if any planned strip is missing a kind.
+
+It ships in two steps so no read is slowed in between. First the refresh learns
+to cut the grid, and `READY.json` lists it beside the per-country tiles that
+today's readers route on. Then, once the grid is cut and checked, the readers
+move to it and the per-country tiles are deleted.
+
 ## Measurements
 
 Run 2026-10-24 on prod, on a Fargate task the size of the worker (1 vCPU, 8 GB),
