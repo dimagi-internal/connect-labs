@@ -189,26 +189,4 @@ The **Actions** column (containing the Award control) is pinned to the right edg
 
 #### Blind Scoring
 
-Scoring is always blind. The responses list shows each submission only as **Response #[number]**, and its **Score** link opens the scoring page, which shows no name, email or organisation. Reviewers judge the content of the application, not who submitted it.
-
-The responding organisation's name is revealed at the award step, so you can confirm you are awarding the response you meant to. Where it is active, the **Rubric locked before publishing** badge on the responses list also confirms that scoring conditions were set before any applications were received.
-
-#### Demonstration Reviews and Awards
-
-Labs supports a **demonstration award**: a review and award of an invented, owner-entered response on an unlisted call, carried out by a member of the call's own organisation. This exists so that end-to-end testing of a call can run to completion without needing a separate responding organisation.
-
-A demonstration award is clearly labelled as one on the award page. It sends no email and allocates no funds. It has no effect on real procurement records.
-
-Demonstration responses can only be created by the call's owner, only on unlisted calls, and only at the time the response is submitted — they cannot be converted to or from a real response later.
-
-!!! warning "Demonstration awards are not real awards"
-Nothing about a demonstration review or award reflects a genuine procurement decision. If you see a **Demonstration award** label on the award page, you are looking at test data, not a live process. Real responses — submitted by outside organisations — are never affected by this feature, and the normal rule still applies: you cannot review or award a response from your own organisation in a real procurement.
-
-#### Reading Round Responses with ACE
-
-Dimagi's members (including associates) and platform support can ask ACE to summarise the submissions to any past EOI/RFP round and recommend a shortlist. ACE reads each applicant's answers and the directory organisation it matched, then returns a structured summary.
-
-!!! info "Contact details are not included by default"
-ACE leaves out the contact person's name, email, phone number and signature unless you explicitly ask for them. If you need that information for a specific applicant, ask ACE to include it in your follow-up question.
-
-Everyone
+Scoring is always blind. The responses list shows each submission only as **Response #[number]**, and its **Score
