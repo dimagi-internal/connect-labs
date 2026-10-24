@@ -20,6 +20,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Count, Q
 from django.http import Http404, JsonResponse
+from django.middleware.csrf import get_token
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -27,7 +28,7 @@ from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
 
 from connect_labs.microplans.core.solicitation_snapshot import build_plan_snapshot
-from connect_labs.solicitations import access, demo, evidence, past_calls, vocabulary
+from connect_labs.solicitations import access, demo, evidence, past_calls, service_areas, vocabulary
 from connect_labs.solicitations.data_access import AlreadyAwarded, SolicitationsDataAccess, by_public_id
 from connect_labs.solicitations.forms import NEW_ORG, ReviewForm, SolicitationForm, SolicitationResponseForm
 from connect_labs.solicitations.local_models import (
@@ -134,6 +135,11 @@ def _round_reading_context(solicitation, response) -> dict:
     }
 
 
+def _picks_areas(solicitation) -> bool:
+    """Whether responding to this call asks where you would work, as admin areas (not plans)."""
+    return service_areas.area_mode(solicitation) != service_areas.AREA_MODE_PLANS and not _is_round(solicitation)
+
+
 def _is_round(solicitation) -> bool:
     """A marketplace EOI round: answered on its Google Form, never here."""
     return solicitation.source == SOURCE_DIRECTORY
@@ -201,6 +207,50 @@ def _with_response_counts(calls):
     return calls
 
 
+def _area_picker(request, name, *, initial=(), limits=(), input_id="", empty_text=""):
+    """One service-area map for `_service_area_picker.html`.
+
+    With `input_id` it is a picker writing to that hidden input, searching and
+    fetching boundaries through the sign-in-only microplans endpoints; without
+    one it only draws `initial` (picked areas) and `limits` (dashed).
+    """
+    picker = {
+        "id": name,
+        "script_id": f"sap-config-{name}",
+        "token": settings.MAPBOX_TOKEN or "",
+        "initial": list(initial or []),
+        "limits": list(limits or []),
+        "level_labels": service_areas.level_labels(),
+        "empty_text": empty_text,
+    }
+    if input_id and not limits:
+        from connect_labs.microplans.core import iso
+
+        # No limits: the person says which country they mean before searching it.
+        picker["countries"] = iso.all_countries()
+    if input_id:
+        picker.update(
+            {
+                "input_id": input_id,
+                "csrf": get_token(request),
+                "urls": {
+                    "viewport": reverse("microplans:boundary_viewport"),
+                    "areas": reverse("microplans:boundary_areas"),
+                    "geometry": reverse("microplans:boundary_geometry"),
+                },
+            }
+        )
+    return picker
+
+
+def _posted_areas(raw) -> list[dict]:
+    """Areas a form posted, resolved again so a re-rendered map can draw them ([] if they no longer resolve)."""
+    try:
+        return service_areas.normalise(raw, field="service_areas")
+    except ValidationError:
+        return []
+
+
 def _sections(solicitation, show_scope):
     """The detail page's sections, for the "On this page" index."""
     sections = [("description", "Description")]
@@ -208,6 +258,8 @@ def _sections(solicitation, show_scope):
         sections.append(("scope", "Scope of work"))
     if solicitation.plans:
         sections.append(("coverage", "Coverage areas"))
+    elif solicitation.service_area_limits:
+        sections.append(("coverage", "Where the work happens"))
     if solicitation.questions:
         sections.append(("questions", "Application questions"))
     if solicitation.evaluation_criteria:
@@ -580,6 +632,11 @@ class PublicSolicitationDetailView(SolicitationsPage):
                 "show_section_nav": len(sections) >= 3 or length > LONG_CALL_CHARS,
                 "can_manage": da.can_manage(solicitation),
                 "is_demo": demo.is_demo_org(solicitation.owner_org),
+                "limits_map": (
+                    _area_picker(self.request, "limits", limits=solicitation.service_area_limits)
+                    if solicitation.service_area_limits
+                    else None
+                ),
             }
         )
         return ctx
@@ -774,8 +831,17 @@ class SolicitationCreateView(SignedInPage):
             )
             ctx["snapshot_plans"] = snapshot["plans"]
         else:
-            ctx.setdefault("form", SolicitationForm())
+            ctx.setdefault("form", SolicitationForm(initial={"area_mode": service_areas.AREA_MODE_ANY}))
             ctx.setdefault("snapshot_plans", [])
+        if not ctx["snapshot_plans"]:
+            posted = self.request.POST.get("service_area_limits") if self.request.method == "POST" else ""
+            ctx["area_picker"] = _area_picker(
+                self.request,
+                "limits",
+                initial=_posted_areas(posted),
+                input_id="id_service_area_limits",
+                empty_text="No areas chosen yet.",
+            )
         return ctx
 
     def _snapshot_from_query(self):
@@ -856,6 +922,17 @@ class SolicitationEditView(SignedInPage):
                 "snapshot_plans": [],
             }
         )
+        if not solicitation.plans:
+            limits = solicitation.service_area_limits or []
+            if self.request.method == "POST":
+                limits = _posted_areas(self.request.POST.get("service_area_limits"))
+            ctx["area_picker"] = _area_picker(
+                self.request,
+                "limits",
+                initial=limits,
+                input_id="id_service_area_limits",
+                empty_text="No areas chosen yet.",
+            )
         ctx.setdefault(
             "form",
             SolicitationForm(
@@ -871,6 +948,14 @@ class SolicitationEditView(SignedInPage):
                     "expected_end_date": solicitation.expected_end_date,
                     "estimated_scale": solicitation.estimated_scale,
                     "contact_email": solicitation.contact_email,
+                    "area_mode": (
+                        service_areas.AREA_MODE_WITHIN
+                        if solicitation.service_area_limits
+                        else service_areas.AREA_MODE_ANY
+                    ),
+                    "service_area_limits": json.dumps(
+                        service_areas.without_geometry(solicitation.service_area_limits)
+                    ),
                 }
             ),
         )
@@ -964,10 +1049,13 @@ class RespondView(SignedInPage):
                 initial.update({"org": NEW_ORG, "new_org_name": my_response.org_name})
             if my_response.selected_plan_ids:
                 initial["select_plans"] = [str(i) for i in my_response.selected_plan_ids]
+            if my_response.service_areas:
+                initial["service_areas"] = json.dumps(service_areas.without_geometry(my_response.service_areas))
         return SolicitationResponseForm(
             questions=solicitation.questions,
             plans=solicitation.plans,
             org_choices=[(o.slug, o.name) for o in orgs],
+            pick_areas=_picks_areas(solicitation),
             data=data,
             initial=initial,
         )
@@ -1002,9 +1090,29 @@ class RespondView(SignedInPage):
             question_fields=question_fields,
             mapbox_token=settings.MAPBOX_TOKEN or "",
             is_demo=demo.is_demo_org(solicitation.owner_org),
+            area_picker=self._area_picker(solicitation, my_response, form),
             **extra,
         )
         return ctx
+
+    def _area_picker(self, solicitation, my_response, form):
+        """The map for picking where you would work, when this call asks (and is open)."""
+        if "service_areas" not in form.fields or _is_round(solicitation) or not solicitation.can_accept_responses:
+            return None
+        if form.is_bound:
+            initial = _posted_areas(form.data.get("service_areas"))
+        elif my_response is not None and my_response.status == "draft":
+            initial = my_response.service_areas or []
+        else:
+            initial = []
+        return _area_picker(
+            self.request,
+            "respond",
+            initial=initial,
+            limits=solicitation.service_area_limits,
+            input_id="id_service_areas",
+            empty_text="No areas picked yet.",
+        )
 
     def get(self, request, *args, **kwargs):
         solicitation, my_response, orgs = self._load(kwargs["pk"])
@@ -1041,6 +1149,8 @@ class RespondView(SignedInPage):
             if solicitation.plans:
                 data["selected_plan_ids"] = selected_ids
                 data["selected_plan_names"] = selected_names
+            elif "service_areas" in form.fields and "service_areas" in request.POST:
+                data["service_areas"] = form.cleaned_data.get("service_areas") or []
             try:
                 self.da().create_response(solicitation.public_id, llo_entity_id=org_slug, data=data)
             except ValidationError as e:
@@ -1130,6 +1240,16 @@ class ResponseDetailView(SignedInPage):
                 "is_respondent": access.is_respondent(da.caller, response),
                 "can_review": access.can_review(da.caller, response),
                 "can_edit": access.can_edit_response(da.caller, response) and bool(solicitation.can_accept_responses),
+                "areas_map": (
+                    _area_picker(
+                        self.request,
+                        "response",
+                        initial=response.service_areas,
+                        limits=solicitation.service_area_limits,
+                    )
+                    if response.service_areas
+                    else None
+                ),
                 "qa_pairs": [
                     {"question": q.get("text", ""), "answer": (response.responses or {}).get(q.get("id", ""), "")}
                     for q in (past_calls.form_questions(solicitation) if is_round else solicitation.questions or [])
@@ -1150,7 +1270,7 @@ class AwardView(SignedInPage):
     def _summary(self, da, response, solicitation):
         reviews = da.get_reviews_for_response(response.pk)
         scores = [r.score for r in reviews if r.score is not None]
-        coverage = list(response.selected_plan_names or [])
+        coverage = response.coverage_names
         if not coverage and solicitation.plans:
             coverage = [p.get("name", "") for p in solicitation.plans if p.get("name")]
         return {

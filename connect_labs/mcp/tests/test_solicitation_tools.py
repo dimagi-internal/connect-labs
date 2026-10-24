@@ -509,3 +509,76 @@ def test_demonstration_award_refused_for_a_real_or_listed_response(world):
         {"solicitation_id": listed.pk, "llo_entity_id": "winner-org", "synthetic": True},
     )
     assert envelope["result"]["isError"] is True
+
+
+# --- where the work happens -------------------------------------------------------
+
+
+def _square(x0, y0, x1, y1):
+    return {"type": "Polygon", "coordinates": [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]]}
+
+
+@pytest.fixture
+def boundaries(monkeypatch):
+    """Two invented areas, Kano (a state) and Gwale (a ward in it), from search and from geometry."""
+    from connect_labs.microplans.core import admin_boundaries
+    from connect_labs.microplans.core.admin_boundaries import AdminArea
+
+    shapes = {"Kano": _square(8, 11, 9, 12), "Gwale": _square(8.4, 11.4, 8.5, 11.5)}
+
+    class Resolver:
+        def list_areas(self, country, level, *, name_contains=None, limit=25, **kw):
+            rows = {1: "Kano", 3: "Gwale"}
+            name = rows.get(level)
+            if not name or (name_contains or "").lower() not in name.lower():
+                return []
+            return [AdminArea(name=name, level=level, source="labs", country=country, ref={"boundary_id": name})]
+
+        def geometry(self, area):
+            return shapes.get(area.name)
+
+    monkeypatch.setattr(admin_boundaries, "get_resolver", lambda: Resolver())
+
+
+def test_area_search_is_a_read_on_the_restricted_endpoint():
+    from connect_labs.mcp.token_scopes import RESTRICTED_TOOLS
+
+    assert get_tool("solicitation_area_search").is_write is False
+    assert "solicitation_area_search" in RESTRICTED_TOOLS
+
+
+@pytest.mark.django_db
+def test_an_agent_finds_a_state_limits_a_call_to_it_and_a_firm_picks_a_ward_inside(world, boundaries):
+    [kano] = ok(call_tool(world["owner_pat"], "solicitation_area_search", {"country": "NG", "q": "kan"}))["areas"]
+    assert kano["level_label"] == "State" and kano["country"] == "NGA"
+    call = ok(
+        call_tool(
+            world["owner_pat"],
+            "create_solicitation",
+            {
+                "org_slug": "owner-org",
+                "title": "Survey in Kano",
+                "description": "d",
+                "solicitation_type": "rfp",
+                "status": "active",
+                "is_public": True,
+                "service_area_limits": [kano],
+            },
+        )
+    )
+    # Names and levels come back; outlines are for maps and stay out of the tool's answer.
+    assert [a["name"] for a in call["service_area_limits"]] == ["Kano"]
+    assert "geometry" not in call["service_area_limits"][0]
+
+    [gwale] = ok(call_tool(world["applicant_pat"], "solicitation_area_search", {"country": "NGA", "q": "gwa"}))[
+        "areas"
+    ]
+    response = ok(
+        call_tool(
+            world["applicant_pat"],
+            "create_response",
+            {"solicitation_id": call["id"], "llo_entity_id": "firm-org", "service_areas": [gwale]},
+        )
+    )
+    assert [a["name"] for a in response["service_areas"]] == ["Gwale"]
+    assert "geometry" not in response["service_areas"][0]

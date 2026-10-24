@@ -19,6 +19,7 @@ from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClien
 from connect_labs.solicitations import access
 from connect_labs.solicitations.data_access import AlreadyAwarded, HasResponses, SolicitationsDataAccess
 from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
+from connect_labs.solicitations.service_areas import without_geometry
 from connect_labs.solicitations.validation import (
     QUESTION_TYPES,
     VALID_SOLICITATION_TYPES,
@@ -32,14 +33,39 @@ from .funds import FUND_TYPE, _add_allocation_to_fund
 logger = logging.getLogger(__name__)
 
 
+def _without_outlines(record: dict, field: str) -> dict:
+    """The record with its areas' outlines left out: names and levels say where; outlines are for maps."""
+    if record.get(field):
+        record[field] = without_geometry(record[field])
+    return record
+
+
 def _serialize_record(record) -> dict:
     """The flat envelope + data dict every solicitation tool has always returned."""
-    return record.to_record_dict()
+    return _without_outlines(record.to_record_dict(), "service_area_limits")
 
 
 def _serialize_response(record, user) -> dict:
     """A response, with the owner's working fields only for someone who manages its call."""
-    return record.to_record_dict(owner_view=access.can_manage(user, record.solicitation))
+    return _without_outlines(
+        record.to_record_dict(owner_view=access.can_manage(user, record.solicitation)), "service_areas"
+    )
+
+
+_AREA_DESCRIPTOR = {
+    "type": "object",
+    "description": "An admin area exactly as solicitation_area_search returns it.",
+    "properties": {
+        "name": {"type": "string"},
+        "level": {"type": "integer"},
+        "source": {"type": "string"},
+        "country": {"type": "string"},
+        "region": {"type": "string"},
+        "parent_name": {"type": "string"},
+        "ref": {"type": "object"},
+    },
+    "required": ["name", "level", "source", "country"],
+}
 
 
 def _da(user, program_id=None, organization_id=None, access_token=None) -> SolicitationsDataAccess:
@@ -129,6 +155,47 @@ def list_solicitations(
         include_listed=True,
     )
     return {"solicitations": [_serialize_record(r) for r in records]}
+
+
+@register(
+    name="solicitation_area_search",
+    description=(
+        "Find admin areas by name, for a solicitation's service_area_limits or a response's service_areas. "
+        "Levels: 1 = region/state, 2 = county/district/LGA, 3 = locality/ward (each country's own word "
+        "comes back as level_label). Pass each returned area through unchanged."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "country": {"type": "string", "description": "ISO country code, alpha-2 or alpha-3 (e.g. NGA)."},
+            "q": {"type": "string", "description": "Part of the area's name."},
+            "level": {
+                "type": "integer",
+                "enum": [1, 2, 3],
+                "description": "Only this level; omit to search all three.",
+            },
+        },
+        "required": ["country", "q"],
+        "additionalProperties": False,
+    },
+)
+def solicitation_area_search(user, country: str, q: str, level: int | None = None) -> dict:
+    from connect_labs.microplans.core import iso
+    from connect_labs.microplans.core.admin_boundaries import get_resolver
+
+    a3 = iso.to_alpha3(country) or country.upper()
+    resolver = get_resolver()
+    areas = []
+    for lvl in [int(level)] if level else [1, 2, 3]:
+        for area in resolver.list_areas(a3, lvl, name_contains=q, limit=25):
+            row = area.to_json()
+            areas.append(
+                {
+                    k: row[k]
+                    for k in ("name", "level", "level_label", "source", "country", "region", "parent_name", "ref")
+                }
+            )
+    return {"areas": areas}
 
 
 @register(
@@ -341,6 +408,15 @@ _CANONICAL_FIELD_PROPERTIES = {
             "additionalProperties": False,
         },
     },
+    "service_area_limits": {
+        "type": "array",
+        "description": (
+            "Admin areas the work must be inside (e.g. one or more states), from solicitation_area_search. "
+            "Respondents then pick areas inside them, at any level. [] = respondents may pick any area. "
+            "Not allowed together with `plans`."
+        ),
+        "items": _AREA_DESCRIPTOR,
+    },
     "source_group_id": {
         "type": "integer",
         "description": "Micro-plan study-group id this solicitation was created from.",
@@ -513,6 +589,15 @@ def create_solicitation(
             },
             "selected_plan_ids": {"type": "array", "items": {"type": ["integer", "string"]}},
             "selected_plan_names": {"type": "array", "items": {"type": "string"}},
+            "service_areas": {
+                "type": "array",
+                "description": (
+                    "Where the firm would work, as admin areas at any level (a state, a district, wards), "
+                    "from solicitation_area_search. For a call without micro-plan plans; on a call limited to "
+                    "some areas they must lie inside those, and at least one is needed to submit."
+                ),
+                "items": _AREA_DESCRIPTOR,
+            },
             "synthetic": {
                 "type": "boolean",
                 "default": False,
@@ -545,6 +630,7 @@ def create_response(
     submission_date: str = "",
     selected_plan_ids: list | None = None,
     selected_plan_names: list | None = None,
+    service_areas: list | None = None,
     synthetic: bool = False,
 ) -> dict:
     data = {
@@ -560,6 +646,8 @@ def create_response(
         data["selected_plan_ids"] = selected_plan_ids
     if selected_plan_names:
         data["selected_plan_names"] = selected_plan_names
+    if service_areas:
+        data["service_areas"] = service_areas
     if synthetic:
         data["synthetic"] = True
     da = _da(user)

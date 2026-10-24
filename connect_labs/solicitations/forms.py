@@ -10,7 +10,7 @@ import json
 
 from django import forms
 
-from connect_labs.solicitations import vocabulary
+from connect_labs.solicitations import service_areas, vocabulary
 from connect_labs.solicitations.local_models import OUTCOMES, STANCES
 from connect_labs.solicitations.validation import SOLICITATION_TYPE_CHOICES, STATUS_CHOICES
 
@@ -30,6 +30,21 @@ _SELECT_CLASSES = "base-dropdown"
 # SOLICITATION_TYPE_CHOICES and STATUS_CHOICES are the canonical source in
 # solicitations.validation; imported above so the form's ChoiceFields and the
 # validator stay in lockstep.
+
+AREA_MODE_CHOICES = [
+    (service_areas.AREA_MODE_ANY, "Anywhere: respondents say where they would work"),
+    (service_areas.AREA_MODE_WITHIN, "Only inside areas I choose"),
+]
+
+
+def _json_list(raw) -> list:
+    """A JSON list from a hidden input, or [] for anything else."""
+    try:
+        value = json.loads(raw) if raw else []
+    except (json.JSONDecodeError, TypeError):
+        return []
+    return value if isinstance(value, list) else []
+
 
 # The respond form's "an organisation not listed here" choice.
 NEW_ORG = "__new__"
@@ -167,6 +182,31 @@ class SolicitationForm(forms.Form):
         widget=forms.HiddenInput(),
     )
 
+    # Where the work happens, on a call that has no micro-plan attached: anywhere
+    # (respondents pick any areas), or only inside the areas picked on the map.
+    area_mode = forms.ChoiceField(
+        choices=AREA_MODE_CHOICES,
+        required=False,
+        label="Where the work happens",
+        widget=forms.RadioSelect(),
+    )
+
+    # Descriptors from the map (service_area_picker.js); data_access resolves them.
+    service_area_limits = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("area_mode") == service_areas.AREA_MODE_WITHIN and not _json_list(
+            cleaned.get("service_area_limits")
+        ):
+            self.add_error(
+                "service_area_limits", "Pick at least one area the work must be inside, or choose Anywhere."
+            )
+        return cleaned
+
     def to_data_dict(self) -> dict:
         """Convert cleaned form data to a dict for the data access layer.
 
@@ -218,10 +258,20 @@ class SolicitationForm(forms.Form):
             if parsed_ids:
                 data["source_plan_ids"] = parsed_ids
 
+        # Where the work happens: sent only when the form showed the choice (a
+        # call with a micro-plan attached never does).
+        area_mode = data.pop("area_mode", "")
+        raw_limits = data.pop("service_area_limits", "")
+
         plain_fields = {name for name in self.fields if not name.endswith("_json") and not name.startswith("source_")}
         for name in plain_fields - {"is_public"}:
             if name not in sent:
                 data.pop(name, None)
+
+        if area_mode == service_areas.AREA_MODE_ANY:
+            data["service_area_limits"] = []
+        elif area_mode == service_areas.AREA_MODE_WITHIN:
+            data["service_area_limits"] = _json_list(raw_limits)
         return data
 
 
@@ -238,7 +288,7 @@ class SolicitationResponseForm(forms.Form):
     and dynamically creates form fields based on each question's type.
     """
 
-    def __init__(self, questions=None, plans=None, *args, org_choices=None, **kwargs):
+    def __init__(self, questions=None, plans=None, *args, org_choices=None, pick_areas=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.questions = questions or []
         self.plans = plans or []
@@ -273,6 +323,10 @@ class SolicitationResponseForm(forms.Form):
                 choices=[(str(p["plan_id"]), p["name"]) for p in self.plans],
                 widget=forms.CheckboxSelectMultiple(),
             )
+        elif pick_areas:
+            # Where they would work, as admin areas picked on the map
+            # (service_area_picker.js); data_access resolves and checks them.
+            self.fields["service_areas"] = forms.CharField(required=False, widget=forms.HiddenInput())
 
         for question in self.questions:
             q_id = question.get("id", "")

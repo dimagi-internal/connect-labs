@@ -166,6 +166,10 @@ class Solicitation(models.Model):
     # shows the call's own currency, never an assumed one.
     currency = models.CharField(max_length=8, blank=True, default="")
     plans = models.JSONField(default=list, blank=True)
+    # The admin areas the work must be inside (a state, an LGA ...), as resolved
+    # boundaries (`service_areas.normalise`). Empty with no `plans` means a
+    # respondent may offer to work anywhere. Never set together with `plans`.
+    service_area_limits = models.JSONField(default=list, blank=True)
     source_program_id = models.IntegerField(null=True, blank=True)
     source_group_id = models.IntegerField(null=True, blank=True)
     source_plan_ids = models.JSONField(default=list, blank=True)
@@ -277,6 +281,20 @@ class Solicitation(models.Model):
         return self.criteria_locked_at is not None
 
     @property
+    def area_mode(self) -> str:
+        """ "plans", "within" or "any": how the call limits where the work happens (`service_areas`)."""
+        from connect_labs.solicitations.service_areas import area_mode
+
+        return area_mode(self)
+
+    @property
+    def area_limit_names(self) -> list[str]:
+        """The areas the work must be inside, one line each ("Kano (State)")."""
+        from connect_labs.solicitations.service_areas import describe
+
+        return describe(self.service_area_limits)
+
+    @property
     def owner_name(self) -> str:
         return self.owner_org.name if self.owner_org_id else ""
 
@@ -325,6 +343,7 @@ class Solicitation(models.Model):
             "evaluation_criteria": self.evaluation_criteria or [],
             "created_by": self.created_by_username,
             "plans": self.plans or [],
+            "service_area_limits": self.service_area_limits or [],
             "source_program_id": self.source_program_id,
             "source_group_id": self.source_group_id,
             "source_plan_ids": self.source_plan_ids or [],
@@ -401,6 +420,10 @@ class SolicitationResponse(models.Model):
     )
     selected_plan_ids = models.JSONField(default=list, blank=True)
     selected_plan_names = models.JSONField(default=list, blank=True)
+    # The admin areas the respondent offers to work in, at whatever level suits
+    # them (a whole state, or a few wards), resolved and checked against the
+    # call's limits by `service_areas`. Not used on a call that offers plans.
+    service_areas = models.JSONField(default=list, blank=True)
     # Invented by the call's owner to exercise the call end to end (an agent's
     # test run): never a real firm's answer. Set only when the owner enters the
     # response on an unlisted call, at creation, and never changed after. Only
@@ -474,6 +497,15 @@ class SolicitationResponse(models.Model):
     def __str__(self) -> str:
         return f"{self.org_name or self.llo_entity_name or 'a submission'} → {self.solicitation.slug}"
 
+    @property
+    def coverage_names(self) -> list[str]:
+        """Where the respondent offers to work, one line each: the plans they picked, or their areas."""
+        if self.selected_plan_names:
+            return list(self.selected_plan_names)
+        from connect_labs.solicitations.service_areas import describe
+
+        return describe(self.service_areas)
+
     # --- the names the prod proxy (ResponseRecord) exposed ---
 
     @property
@@ -535,6 +567,7 @@ class SolicitationResponse(models.Model):
             "submission_date": _iso(self.submission_date),
             "selected_plan_ids": self.selected_plan_ids or [],
             "selected_plan_names": self.selected_plan_names or [],
+            "service_areas": self.service_areas or [],
             "reward_budget": self.reward_budget,
             "award_stage": self.award_stage,
             "awarded_at": _iso(self.awarded_at),

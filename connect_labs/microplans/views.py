@@ -453,7 +453,7 @@ class CountriesView(LoginRequiredMixin, View):
         return JsonResponse({"status": "ok", "countries": iso.all_countries(), "bespoke": bespoke})
 
 
-class AdminAreasView(_ProgramScopeMixin, LoginRequiredMixin, View):
+def _admin_areas_response(request):
     """List admin areas for a country/level via the boundary resolver.
 
     POST body: {country, level, q?, parent?, source?}. `parent` is an AdminArea
@@ -462,71 +462,98 @@ class AdminAreasView(_ProgramScopeMixin, LoginRequiredMixin, View):
     serve the level). Response reports the source used + the pickable sources so
     the UI can offer a source dropdown.
     """
+    from connect_labs.microplans.core import iso as iso_codes
+    from connect_labs.microplans.core.admin_boundaries import SOURCE_LABELS, AdminArea, get_resolver
+
+    try:
+        payload = json.loads(request.body)
+        # Accept alpha-2 or alpha-3 (the place-search flow supplies alpha-2 from
+        # a geocode result); the resolver keys on alpha-3.
+        country = iso_codes.to_alpha3(payload["country"]) or payload["country"]
+        level = int(payload["level"])
+    except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+        return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+    parent = AdminArea.from_json(payload["parent"]) if isinstance(payload.get("parent"), dict) else None
+    prefer = payload.get("source") or None
+    resolver = get_resolver()
+    try:
+        areas = resolver.list_areas(
+            country,
+            level,
+            name_contains=(payload.get("q") or None),
+            parent=parent,
+            source=prefer,
+            limit=int(payload.get("limit", 500)),
+        )
+        used = resolver.source_for(country, level, prefer=prefer).name
+        available = resolver.sources_for(country, level)
+    except Exception:  # noqa: BLE001
+        logger.exception("microplans admin areas lookup failed (country=%s level=%s)", country, level)
+        return JsonResponse({"status": "error", "detail": "Boundary lookup failed. Check server logs."}, status=502)
+
+    return JsonResponse(
+        {
+            "status": "ok",
+            "source": used,
+            "available_sources": available,
+            "source_labels": {n: SOURCE_LABELS.get(n, n) for n in available},
+            "areas": [a.to_json() for a in areas],
+        }
+    )
+
+
+def _admin_area_geometry_response(request):
+    """Resolve one chosen admin area to its GeoJSON geometry."""
+    from connect_labs.microplans.core.admin_boundaries import AdminArea, get_resolver
+
+    try:
+        area = AdminArea.from_json(json.loads(request.body)["area"])
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+    try:
+        geom = get_resolver().geometry(area)
+    except Exception:  # noqa: BLE001
+        logger.exception("microplans admin area geometry failed (%s/%s)", area.country, area.name)
+        return JsonResponse({"status": "error", "detail": "Boundary geometry lookup failed."}, status=502)
+
+    if not geom:
+        return JsonResponse({"status": "error", "detail": "Area not found."}, status=404)
+    return JsonResponse({"status": "ok", "name": area.name, "geometry": geom})
+
+
+class AdminAreasView(_ProgramScopeMixin, LoginRequiredMixin, View):
+    """Admin areas for a country/level, on an opportunity's planning pages (`_admin_areas_response`)."""
 
     def post(self, request, opp_id):
-        from connect_labs.microplans.core import iso as iso_codes
-        from connect_labs.microplans.core.admin_boundaries import SOURCE_LABELS, AdminArea, get_resolver
-
-        try:
-            payload = json.loads(request.body)
-            # Accept alpha-2 or alpha-3 (the place-search flow supplies alpha-2 from
-            # a geocode result); the resolver keys on alpha-3.
-            country = iso_codes.to_alpha3(payload["country"]) or payload["country"]
-            level = int(payload["level"])
-        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
-            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
-
-        parent = AdminArea.from_json(payload["parent"]) if isinstance(payload.get("parent"), dict) else None
-        prefer = payload.get("source") or None
-        resolver = get_resolver()
-        try:
-            areas = resolver.list_areas(
-                country,
-                level,
-                name_contains=(payload.get("q") or None),
-                parent=parent,
-                source=prefer,
-                limit=int(payload.get("limit", 500)),
-            )
-            used = resolver.source_for(country, level, prefer=prefer).name
-            available = resolver.sources_for(country, level)
-        except Exception:  # noqa: BLE001
-            logger.exception("microplans admin areas lookup failed (country=%s level=%s)", country, level)
-            return JsonResponse(
-                {"status": "error", "detail": "Boundary lookup failed. Check server logs."}, status=502
-            )
-
-        return JsonResponse(
-            {
-                "status": "ok",
-                "source": used,
-                "available_sources": available,
-                "source_labels": {n: SOURCE_LABELS.get(n, n) for n in available},
-                "areas": [a.to_json() for a in areas],
-            }
-        )
+        return _admin_areas_response(request)
 
 
 class AdminAreaGeometryView(_ProgramScopeMixin, LoginRequiredMixin, View):
     """Resolve one chosen admin area to its GeoJSON geometry (the sampling boundary)."""
 
     def post(self, request, opp_id):
-        from connect_labs.microplans.core.admin_boundaries import AdminArea, get_resolver
+        return _admin_area_geometry_response(request)
 
-        try:
-            area = AdminArea.from_json(json.loads(request.body)["area"])
-        except (json.JSONDecodeError, KeyError, TypeError) as e:
-            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        try:
-            geom = get_resolver().geometry(area)
-        except Exception:  # noqa: BLE001
-            logger.exception("microplans admin area geometry failed (%s/%s)", area.country, area.name)
-            return JsonResponse({"status": "error", "detail": "Boundary geometry lookup failed."}, status=502)
+class BoundaryAreasView(LoginRequiredMixin, View):
+    """Admin areas for a country/level, for any signed-in page that picks areas.
 
-        if not geom:
-            return JsonResponse({"status": "error", "detail": "Area not found."}, status=404)
-        return JsonResponse({"status": "ok", "name": area.name, "geometry": geom})
+    Admin boundaries are public geography, not program data, so like the
+    viewport endpoint this needs only a login. Solicitations use it: a call's
+    owner and its respondents pick areas with no opportunity in hand.
+    """
+
+    def post(self, request):
+        return _admin_areas_response(request)
+
+
+class BoundaryGeometryView(LoginRequiredMixin, View):
+    """One admin area's geometry, for any signed-in page that picks areas (see `BoundaryAreasView`)."""
+
+    def post(self, request):
+        return _admin_area_geometry_response(request)
 
 
 class PopulationByNameView(_ProgramScopeMixin, LoginRequiredMixin, View):

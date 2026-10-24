@@ -26,7 +26,7 @@ from django.db.models import Q
 from django.http import HttpRequest
 from django.utils import timezone
 
-from connect_labs.solicitations import access, demo, vocabulary
+from connect_labs.solicitations import access, demo, service_areas, vocabulary
 from connect_labs.solicitations.local_models import (
     AWARD_STAGES,
     OUTCOMES,
@@ -60,7 +60,7 @@ _TEXT_FIELDS = (
     "program_name",
     "currency",
 )
-_JSON_LIST_FIELDS = ("questions", "evaluation_criteria", "plans", "source_plan_ids")
+_JSON_LIST_FIELDS = ("questions", "evaluation_criteria", "plans", "source_plan_ids", "service_area_limits")
 _DATE_FIELDS = ("application_deadline", "expected_start_date", "expected_end_date")
 _INT_FIELDS = ("connect_opportunity_id", "fund_id", "source_program_id", "source_group_id")
 # Not data fields: who owns a call and where it is listed travel beside the payload.
@@ -74,6 +74,7 @@ _RESPONDENT_FIELDS = (
     "llo_entity_name",
     "selected_plan_ids",
     "selected_plan_names",
+    "service_areas",
 )
 _RESPONDENT_STATUSES = ("draft", "submitted")
 _OWNER_RESPONSE_STATUSES = ("submitted", "under_review", "rejected")
@@ -116,6 +117,21 @@ def _clean_criteria(criteria) -> list[dict]:
     if cleaned and abs(total - 100) > 0.5:
         raise ValidationError({"criteria": f"Weights add up to {total:g}, not 100."})
     return cleaned
+
+
+def _resolve_limits(payload: dict) -> None:
+    """Turn sent service_area_limits descriptors into resolved boundaries, in place."""
+    if "service_area_limits" in payload:
+        payload["service_area_limits"] = service_areas.normalise(
+            payload["service_area_limits"], field="service_area_limits"
+        )
+
+
+def _require_areas_to_submit(response) -> None:
+    """A call limited to some areas asks where in them you would work: one area at least, to submit."""
+    solicitation = response.solicitation
+    if service_areas.area_mode(solicitation) == service_areas.AREA_MODE_WITHIN and not response.service_areas:
+        raise ValidationError({"service_areas": "Pick at least one area you would work in to submit."})
 
 
 def _parse_date(value):
@@ -438,6 +454,7 @@ class SolicitationsDataAccess:
             f"You are not a member of {owner.name}, so you cannot create a call for it.",
         )
         payload = {k: v for k, v in data.items() if k not in _ENVELOPE_KEYS}
+        _resolve_limits(payload)
         validate_solicitation_payload(payload)
 
         solicitation = Solicitation(
@@ -475,6 +492,7 @@ class SolicitationsDataAccess:
             if "criteria_locked" in payload and not payload["criteria_locked"]:
                 raise ValidationError({"criteria_locked": "the rubric is locked and cannot be unlocked"})
 
+        _resolve_limits(payload)
         merged = {k: v for k, v in solicitation.to_data().items() if k != "created_by"}
         merged.update(payload)
         validate_solicitation_payload(merged, partial=True)
@@ -651,6 +669,8 @@ class SolicitationsDataAccess:
                             response.org_id = str(data["org_id"])
                         if synthetic:
                             response.synthetic = True
+                    if status == "submitted":
+                        _require_areas_to_submit(response)
                     response.status = status
                     if status == "submitted" or data.get("submission_date"):
                         response.submission_date = _parse_datetime(data.get("submission_date")) or timezone.now()
@@ -707,6 +727,8 @@ class SolicitationsDataAccess:
                 )
                 self._refuse_second_response(response.solicitation, exclude_pk=response.pk)
             self._apply_respondent_fields(response, data, data.get("llo_entity_id"), on_behalf=False)
+            if status == "submitted":
+                _require_areas_to_submit(response)
             response.status = status
             if status == "submitted":
                 response.submission_date = timezone.now()
@@ -750,6 +772,9 @@ class SolicitationsDataAccess:
                     value = value or {}
                 elif name in ("selected_plan_ids", "selected_plan_names"):
                     value = list(value or [])
+                elif name == "service_areas":
+                    value = service_areas.normalise(value, field="service_areas")
+                    service_areas.check_response_areas(response.solicitation, value)
                 else:
                     value = (value or "").strip()
                 setattr(response, name, value)

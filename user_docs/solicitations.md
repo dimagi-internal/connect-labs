@@ -127,6 +127,30 @@ The coverage areas are displayed on the public solicitation page — both as a m
 !!! info "Plans are captured as a snapshot"
 Because coverage areas are fixed at the time the solicitation is created, any changes you make to a micro-plan after that point will not be reflected in the solicitation. If your plans change significantly before the deadline, you will need to update the solicitation's coverage areas manually or create a new solicitation.
 
+### Choosing Where the Work Happens
+
+A call that is not started from a micro-plan has a **Where the work happens** section on its form, with two choices:
+
+- **Anywhere** (the default): respondents say where they would work, anywhere.
+- **Only inside areas I choose**: pick one or more areas on the map, such as a state or a few districts. Respondents can then pick only areas inside them.
+
+To choose an area, pick the country, then click the area on the map, or search for it by name in the map's panel. Clicking picks the smallest area under your pointer (usually a ward). To take the larger area around it, use **Select parent** in the panel's **Inspect** tab.
+
+The call's page shows these areas on a map, as a dashed outline, so applicants know where the work is before they start.
+
+A call started from a micro-plan offers its plans instead, as described above. A call offers one or the other, never both.
+
+### Saying Where You Would Work
+
+When you respond to a call that is not tied to a micro-plan, the response form has a **Where would you do this work?** map. Pick the areas you would work in, at whatever level fits your organisation: a whole state, a district, or a handful of wards. Each area you pick appears below the map with its level (for example "Kano · State" or "Gwale · Ward"), and you can remove it with ×.
+
+- If the call is limited to certain areas, the map shows them as a dashed outline and you can pick only areas inside them. You must pick at least one area to submit, though a draft can be saved without one.
+- If the call is open to anywhere, choose the country first. Picking areas is optional.
+
+If you pick a state and also a ward inside that state, only the state is kept, because it already covers the ward.
+
+The call's owner sees the areas you picked on the responses list, on the scoring page, on a map in your response, and on the award page.
+
 ### Reading the Coverage Map Legend
 
 Wherever a coverage map appears — on the solicitation page, the response submission form, and the responses review pages — a small legend is displayed on the map showing how areas are colour-coded:

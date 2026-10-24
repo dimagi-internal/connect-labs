@@ -67,6 +67,8 @@ ALLOWED_FIELDS: frozenset[str] = frozenset(
         "evaluation_criteria",
         "created_by",
         "plans",
+        # Admin areas the work must be inside; never together with plans.
+        "service_area_limits",
         "source_program_id",
         "source_group_id",
         "source_plan_ids",
@@ -258,6 +260,18 @@ def _validate_plans(plans) -> None:
                     raise ValidationError({f"{bprefix}.geometry": "must be a GeoJSON geometry object"})
 
 
+def _validate_area_limits(limits) -> None:
+    """The stored shape of service_area_limits[] (resolved by `service_areas.normalise`)."""
+    if not isinstance(limits, list):
+        raise ValidationError({"service_area_limits": "must be a list"})
+    for i, lim in enumerate(limits):
+        if not isinstance(lim, dict) or not isinstance(lim.get("name"), str) or not lim["name"]:
+            raise ValidationError({f"service_area_limits[{i}]": "must be an area with a name"})
+        geom = lim.get("geometry")
+        if not isinstance(geom, dict) or "type" not in geom or "coordinates" not in geom:
+            raise ValidationError({f"service_area_limits[{i}].geometry": "must be a GeoJSON geometry object"})
+
+
 # =========================================================================
 # Public entry point
 # =========================================================================
@@ -352,6 +366,17 @@ def validate_solicitation_payload(data, *, partial: bool = False) -> None:
     plans = data.get("plans")
     if plans is not None:
         _validate_plans(plans)
+
+    limits = data.get("service_area_limits")
+    if limits is not None:
+        _validate_area_limits(limits)
+        if limits and plans:
+            raise ValidationError(
+                {
+                    "service_area_limits": "a call offers either its micro-plan's study areas or areas to work "
+                    "within, not both"
+                }
+            )
 
     questions = data.get("questions")
     question_ids = _validate_questions(questions) if questions is not None else set()
