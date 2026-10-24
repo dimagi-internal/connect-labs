@@ -211,12 +211,10 @@ The Data page at [labs.connect.dimagi.com/labs/data/](https://labs.connect.dimag
 
 ### How it works
 
-Select one or more opportunities from the list, then use the two panels on the page:
+Use the **Querying** box at the top to choose what you want to query. Type to add a program or an opportunity; each appears as a chip you can remove. Adding a program means every opportunity belonging to it that you have access to — including any added to the program later. The page opens on whatever is already chosen in the Labs context (an opportunity or a program).
 
-- **Field browser.** Lists every question in the submitted forms for the opportunities you selected, shows how often each field is filled in, and displays the answer choices for multiple-choice questions. Use the search box to find fields quickly (for example, type "birth" to find all birth-related questions). Click any field to insert it directly into your query.
-- **SQL editor.** Write a query against the `visits` table — one row per visit — which contains the opportunity, its LLO, the worker, the case, the visit status, the review and flag details, the rejection reason, location, justification, completed work, image references, and the full form data. Run your query and view results as a table. Download results as a CSV file.
-- **Whole visits.** Click any `visit_id` in a result to open that visit with every field and the complete submitted form, so you can check a number against the visits behind it.
+Once you have chosen your scope, use the two panels on the page:
 
-You can also ask the agent on the page to write a query for you from a plain-English question (for example, "hospital vs home births by LLO"). On production opportunities, whose visit data is sensitive, the agent writes the SQL and places it in the editor for you to review and run — **it does not receive your program's visit data** — unless Labs has cleared it for sensitive data. On synthetic (demo) opportunities it can run queries and read results directly, and shows the output as a table and a chart in the chat, along with the SQL and a link that opens the query on the Data page.
-
-The chat card
+- **Tables card.** Lists every table you can query and its columns. Click a table or column name to insert it into the editor. The `visits` table is always available; if you have chosen a workflow (see below), its pipeline tables appear here too.
+- **SQL editor.** Write a query against the available tables. The `visits` table has one row per visit and contains the opportunity, its LLO, the worker, the case, the visit status, the review and flag details, the rejection reason, location, justification, completed work, image references, and the full form data. Run your query and view results as a table. Download results as a CSV file.
+- **Whole
