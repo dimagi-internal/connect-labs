@@ -6,10 +6,14 @@
 #   docker build -f Dockerfile.base -t labs-base .
 # Or trigger via .github/workflows/build-base.yml
 
+# Both stages start from the Docker Official Image copied into GHCR weekly by
+# mirror-ci-images.yml: public.ecr.aws rate-limits anonymous pulls from GitHub
+# runners (it failed Build Node Image all afternoon on 2026-10-23).
+
 # ---------------------------------------------------------------------------
 # Stage 1: Build Python wheels
 # ---------------------------------------------------------------------------
-FROM public.ecr.aws/docker/library/python:3.13-slim-bookworm AS build-python
+FROM ghcr.io/dimagi-internal/connect-labs-mirror-python:3.13-slim-bookworm AS build-python
 
 RUN apt-get update \
   && apt-get install -y \
@@ -29,7 +33,7 @@ RUN pip wheel --no-cache-dir --wheel-dir /wheels -r /requirements/base.txt
 # ---------------------------------------------------------------------------
 # Stage 2: Final base image
 # ---------------------------------------------------------------------------
-FROM public.ecr.aws/docker/library/python:3.13-slim-bookworm
+FROM ghcr.io/dimagi-internal/connect-labs-mirror-python:3.13-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1
 ENV DEBUG=0

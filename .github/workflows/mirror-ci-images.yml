@@ -1,6 +1,7 @@
 name: Mirror CI images
 
-# Copies the Docker Hub images CI's service containers need into GHCR, so a pytest run
+# Copies the Docker Hub images CI's service containers need, and the build images'
+# FROM images, into GHCR, so a pytest run
 # never depends on Docker Hub's anonymous pull limit. Before this, `pytest` failed
 # outright with "toomanyrequests: Data limit exceeded" several times a day (2026-10-14:
 # three failures in one afternoon, one of them blocking a merge).
@@ -38,6 +39,14 @@ jobs:
           # (2026-10-15), and splitting pytest into three slices triples the pulls.
           - source: public.ecr.aws/docker/library/redis:6
             target: ghcr.io/dimagi-internal/connect-labs-ci-redis:6
+          # The FROM images of Dockerfile.node and Dockerfile.base. Build Node Image
+          # failed on every frontend merge for an afternoon pulling node from
+          # public.ecr.aws (2026-10-23, "Data limit exceeded"), and a failed node
+          # build ships the previous bundles without saying so.
+          - source: public.ecr.aws/docker/library/node:24-bookworm
+            target: ghcr.io/dimagi-internal/connect-labs-mirror-node:24-bookworm
+          - source: public.ecr.aws/docker/library/python:3.13-slim-bookworm
+            target: ghcr.io/dimagi-internal/connect-labs-mirror-python:3.13-slim-bookworm
     steps:
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
