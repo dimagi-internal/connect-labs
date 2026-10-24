@@ -52,8 +52,8 @@ def _schema_fields(schema: dict) -> list[dict]:
     return [{k: f[k] for k in keep if k in f} for f in (schema or {}).get("fields") or [] if isinstance(f, dict)]
 
 
-def _pipeline(source: dict, token: str, owner: dict) -> dict:
-    """What one pipeline source reads and how, read where its record lives.
+def read_pipeline(source: dict, token: str, owner: dict) -> tuple[dict, object | None]:
+    """What one pipeline source reads and how, read where its record lives, and its config.
 
     Read exactly as the workflow's run page reads it (``PipelineDataAccess.use_sources``),
     with the caller's own Connect token: in the source's ``home_scope`` when it names one
@@ -61,8 +61,11 @@ def _pipeline(source: dict, token: str, owner: dict) -> dict:
     pipeline its owner shared -- else in the workflow's own scope. So a pipeline the
     workflow references is readable here exactly when the caller could open it in Labs,
     and Connect's record ACL is what decides. Only the workflow's own sources are read.
+
+    Returns the description and the pipeline's ``AnalysisPipelineConfig`` -- None, with
+    ``error`` in the description, when the caller cannot read it. ``visits_source`` says
+    whether its rows come from Connect visits (and so derive from ``visits``).
     """
-    from connect_labs.labs.analysis.backends.sql.query_builder import generate_sql_preview
     from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT, raw_cache_slot
     from connect_labs.workflow.data_access import PipelineDataAccess, pipeline_homes_for
 
@@ -80,27 +83,38 @@ def _pipeline(source: dict, token: str, owner: dict) -> dict:
             return {
                 **entry,
                 "error": f"pipeline not readable by this person {where}: Connect did not return it to them",
-            }
+            }, None
         schema = definition.schema or {}
         config = pda._schema_to_config(schema, pipeline_id)
     except Exception as e:  # noqa: BLE001 -- one unreadable pipeline must not cost the rest
         logger.info("labsdata: pipeline %s unreadable", pipeline_id, exc_info=True)
-        return {**entry, "error": f"pipeline could not be read: {str(e)[:200]}"}
+        return {**entry, "error": f"pipeline could not be read: {str(e)[:200]}"}, None
     finally:
         pda.close()
 
-    source_type = getattr(config.data_source, "type", None)
     entry.update(
         {
             "name": getattr(definition, "name", ""),
-            "data_source": source_type,
+            "data_source": getattr(config.data_source, "type", None),
             "grouping_key": schema.get("grouping_key"),
             "terminal_stage": schema.get("terminal_stage"),
             "filters": schema.get("filters") or {},
             "fields": _schema_fields(schema),
+            "visits_source": raw_cache_slot(pipeline_id, getattr(config.data_source, "type", None), config.data_source)
+            == USER_VISITS_RAW_SLOT,
         }
     )
-    if raw_cache_slot(pipeline_id, source_type, config.data_source) != USER_VISITS_RAW_SLOT:
+    return entry, config
+
+
+def _pipeline(source: dict, token: str, owner: dict) -> dict:
+    """``read_pipeline``, plus ``visits_sql``: the pipeline's per-visit extraction over ``visits``."""
+    from connect_labs.labs.analysis.backends.sql.query_builder import generate_sql_preview
+
+    entry, config = read_pipeline(source, token, owner)
+    if config is None:
+        return entry
+    if not entry.pop("visits_source"):
         entry["visits_sql"] = None
         entry["note"] = (
             "This pipeline reads another source (not Connect visits), so its rows are not in `visits`. "
@@ -120,6 +134,30 @@ def _pipeline(source: dict, token: str, owner: dict) -> dict:
     return entry
 
 
+def read_workflow(caller: Caller, definition_id: int, *, opportunity_id: int | None, program_id: int | None):
+    """A workflow definition read as the caller in the scope they name, with the opportunities it spans.
+
+    Returns ``(definition, token, owner, opportunity_ids)``. The read goes through the
+    caller's own Connect token, so a workflow they could not open in Labs is not found.
+    """
+    from connect_labs.labsdata.service import _token
+    from connect_labs.workflow.data_access import WorkflowDataAccess
+    from connect_labs.workflow.visit_cache import workflow_opportunity_ids
+
+    if (opportunity_id is None) == (program_id is None):
+        raise scope.ScopeError("bad_scope", "give exactly one of opportunity_id or program_id")
+    owner = {"opportunity_id": int(opportunity_id)} if opportunity_id is not None else {"program_id": int(program_id)}
+    token = _token(caller)
+    wda = WorkflowDataAccess(access_token=token, **owner)
+    try:
+        definition = wda.get_definition(int(definition_id))
+    finally:
+        wda.close()
+    if definition is None:
+        raise WorkflowNotFound(f"No workflow {definition_id} readable in that scope.")
+    return definition, token, owner, workflow_opportunity_ids(definition, owner.get("opportunity_id"))
+
+
 def workflow_context(
     caller: Caller, definition_id: int, *, opportunity_id: int | None = None, program_id: int | None = None
 ) -> dict:
@@ -129,24 +167,11 @@ def workflow_context(
     opportunities it names are checked against what the caller holds before any
     pipeline is read.
     """
-    from connect_labs.labsdata.service import _token
     from connect_labs.workflow.agent_sharing import agent_config
-    from connect_labs.workflow.data_access import WorkflowDataAccess
-    from connect_labs.workflow.visit_cache import workflow_opportunity_ids
 
-    owner = {"opportunity_id": opportunity_id} if opportunity_id is not None else {"program_id": program_id}
-    if (opportunity_id is None) == (program_id is None):
-        raise scope.ScopeError("bad_scope", "give exactly one of opportunity_id or program_id")
-    token = _token(caller)
-    wda = WorkflowDataAccess(access_token=token, **owner)
-    try:
-        definition = wda.get_definition(int(definition_id))
-    finally:
-        wda.close()
-    if definition is None:
-        raise WorkflowNotFound(f"No workflow {definition_id} readable in that scope.")
-
-    opp_ids = workflow_opportunity_ids(definition, opportunity_id)
+    definition, token, owner, opp_ids = read_workflow(
+        caller, definition_id, opportunity_id=opportunity_id, program_id=program_id
+    )
     held = scope.resolve(caller, opp_ids[: scope.MAX_OPPORTUNITIES]) if opp_ids else []
     pipelines = [
         _pipeline(s, token, owner)

@@ -37,6 +37,7 @@ import uuid
 from dataclasses import dataclass
 
 from django.db import DatabaseError, connection, transaction
+from django.utils import timezone
 
 from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
 
@@ -207,14 +208,157 @@ def _classify(exc: DatabaseError) -> QueryError:
     return QueryError("query_failed", "The query could not be run.")
 
 
-def run_query(opps: list[Opportunity], sql: str, max_rows: int = DEFAULT_MAX_ROWS) -> QueryResult:
-    """Validate ``sql`` and run it over ``opps`` (already authorised by ``scope.resolve``).
+def _quote(name: str) -> str:
+    return '"' + str(name).replace('"', '""') + '"'
+
+
+#: The most of a pipeline's fields that become columns.
+MAX_PIPELINE_FIELDS = 300
+#: How many stored rows are looked at to decide each field's column type.
+FIELD_TYPE_SAMPLE = 500
+
+
+def _current_rows(rel, alias: str, params: list, opp_ids: list[int], now) -> str:
+    """Conditions picking ``rel``'s current rows: its pipeline, its configuration, unexpired."""
+    params += [rel.pipeline_id, rel.config_hash, opp_ids, now]
+    return (
+        f"{alias}.pipeline_id = %s AND {alias}.config_hash = %s AND {alias}.opportunity_id = ANY(%s) "
+        f"AND {alias}.expires_at > %s"
+    )
+
+
+def pipeline_fields(opps: list[Opportunity], relations) -> dict[str, list[tuple[str, str]]]:
+    """Each relation's field columns and their types, from what its rows hold now.
+
+    A pipeline's fields live in one JSON column; each becomes a column of the type
+    its stored values have (number, boolean, text, or JSON when mixed with objects),
+    so ``WHERE score > 3`` works without a cast. Read as the reader role, over the
+    same grants as the query.
+    """
+    if not relations:
+        return {}
+    now = timezone.now()
+    opp_ids = [o.id for o in opps]
+    parts, params = [], []
+    for rel in relations:
+        params.append(rel.name)
+        where = _current_rows(rel, "c", params, opp_ids, now)
+        params.append(FIELD_TYPE_SAMPLE)
+        parts.append(
+            f"SELECT %s AS rel, f.key, jsonb_typeof(f.value) AS kind, COUNT(*) AS n "
+            f"FROM (SELECT c.{rel.fields_column} AS j FROM public.{rel.table} c WHERE {where} LIMIT %s) s, "
+            f"jsonb_each(s.j) f GROUP BY 1, 2, 3"
+        )
+    _columns, rows = _execute(" UNION ALL ".join(parts), params, pipeline_grants(opps, relations))
+    kinds: dict[str, dict[str, set]] = {}
+    for rel_name, key, kind, _n in rows:
+        kinds.setdefault(rel_name, {}).setdefault(key, set()).add(kind)
+    out = {}
+    for rel in relations:
+        seen = kinds.get(rel.name, {})
+        reserved = {name for name, _t in rel.base_columns}
+        order = [f for f in rel.field_names if f in seen] + sorted(k for k in seen if k not in rel.field_names)
+        columns = []
+        for key in order:
+            if key in reserved:
+                continue
+            present = seen[key] - {"null"}
+            if present <= {"number"} and present:
+                kind = "numeric"
+            elif present <= {"boolean"} and present:
+                kind = "boolean"
+            elif present & {"object", "array"}:
+                kind = "jsonb"
+            else:
+                kind = "text"
+            columns.append((key, kind))
+        out[rel.name] = columns[:MAX_PIPELINE_FIELDS]
+    return out
+
+
+def _field_expr(column: str, key: str, kind: str, params: list) -> str:
+    params += [key] * (2 if kind in {"numeric", "boolean"} else 1)
+    if kind == "numeric":
+        return f"CASE WHEN jsonb_typeof(c.{column} -> %s) = 'number' THEN (c.{column} ->> %s)::numeric END"
+    if kind == "boolean":
+        return f"CASE WHEN jsonb_typeof(c.{column} -> %s) = 'boolean' THEN (c.{column} ->> %s)::boolean END"
+    if kind == "jsonb":
+        return f"c.{column} -> %s"
+    return f"c.{column} ->> %s"
+
+
+def pipeline_cte(rel, index: int, fields: list[tuple[str, str]], opps: list[Opportunity], now) -> tuple[str, list]:
+    """``rel`` as a relation: its current rows for ``opps``, one generation per opportunity
+    (as ``visits``), with the opportunity's name and LLO and each field as a column."""
+    params: list = []
+    gen = f"explorer_pipeline_{index}_generations"
+    gen_where = _current_rows(rel, "c", params, [o.id for o in opps], now)
+    selects = ["c.opportunity_id", "o.opportunity_name", "o.llo"]
+    selects += [f"c.{name}" for name, _t in rel.stage_columns]
+    selects += [f"{_field_expr(rel.fields_column, key, kind, params)} AS {_quote(key)}" for key, kind in fields]
+    body_where = _current_rows(rel, "c", params, [o.id for o in opps], now)
+    sql = f"""
+{gen} AS (
+    SELECT c.opportunity_id, MAX(c.visit_count) AS visit_count
+    FROM public.{rel.table} c WHERE {gen_where}
+    GROUP BY c.opportunity_id
+),
+{rel.name} AS (
+    SELECT {", ".join(selects)}
+    FROM public.{rel.table} c
+    JOIN {gen} g ON g.opportunity_id = c.opportunity_id AND g.visit_count = c.visit_count
+    JOIN explorer_opportunities o ON o.opportunity_id = c.opportunity_id
+    WHERE {body_where}
+)"""
+    return sql, params
+
+
+def pipeline_status(opps: list[Opportunity], relations) -> dict[str, dict[int, int]]:
+    """How many current rows each pipeline relation holds per opportunity (0: none stored
+    for its current configuration -- the workflow has not been run since it changed)."""
+    if not relations:
+        return {}
+    now = timezone.now()
+    parts, params = [], []
+    for rel in relations:
+        params.append(rel.name)
+        where = _current_rows(rel, "c", params, [o.id for o in opps], now)
+        # One generation per opportunity, as the relation serves (``pipeline_cte``).
+        parts.append(
+            f"SELECT rel, opportunity_id, COUNT(*) FROM (SELECT %s AS rel, c.opportunity_id, c.visit_count, "
+            f"MAX(c.visit_count) OVER (PARTITION BY c.opportunity_id) AS served FROM public.{rel.table} c "
+            f"WHERE {where}) s WHERE visit_count = served GROUP BY 1, 2"
+        )
+    _columns, rows = _execute(" UNION ALL ".join(parts), params, pipeline_grants(opps, relations))
+    out = {rel.name: {o.id: 0 for o in opps} for rel in relations}
+    for rel_name, opp_id, count in rows:
+        out[rel_name][opp_id] = count
+    return out
+
+
+def pipeline_grants(opps: list[Opportunity], relations) -> list[tuple[int, int]]:
+    """The cache rows the pipeline relations may read: each pipeline, on each opportunity."""
+    return [(o.id, rel.pipeline_id) for rel in relations for o in opps]
+
+
+def run_query(
+    opps: list[Opportunity], sql: str, max_rows: int = DEFAULT_MAX_ROWS, relations=(), *, field_opps=None
+) -> QueryResult:
+    """Validate ``sql`` and run it over ``opps`` (already authorised by ``scope.resolve``),
+    with ``relations`` -- a workflow's pipelines (``pipelines.workflow_selection``) -- beside
+    ``visits``.
 
     Fetches one row past the cap, as Scout does, so a result that fills the cap
     exactly is not reported as cut off and one that overflows always is.
     """
+    relations = list(relations or [])
     cap = max(1, min(int(max_rows), HARD_MAX_ROWS))
-    check = ExplorerValidator(schema="explorer", allowed_schemas=[], max_limit=cap + 1)
+    check = ExplorerValidator(
+        schema="explorer",
+        allowed_schemas=[],
+        max_limit=cap + 1,
+        relations=frozenset({"visits", *(r.name for r in relations)}),
+    )
     try:
         statement = check.validate(sql)
         user_sql = check.inject_limit(statement).sql(dialect=check.dialect)
@@ -223,13 +367,22 @@ def run_query(opps: list[Opportunity], sql: str, max_rows: int = DEFAULT_MAX_ROW
     except Exception as e:  # noqa: BLE001 -- sqlglot can parse what it cannot render
         raise QueryError("invalid_sql", "Could not parse that as PostgreSQL. Simplify the query and retry.") from e
 
+    started = time.monotonic()
     cte_sql, params = visits_cte(opps)
+    if relations:
+        # ``field_opps``: whose stored rows decide the pipeline columns, when that is not
+        # ``opps`` -- validation runs over no data but must see the real columns.
+        fields = pipeline_fields(field_opps or opps, relations)
+        now = timezone.now()
+        for i, rel in enumerate(relations):
+            rel_sql, rel_params = pipeline_cte(rel, i, fields.get(rel.name, []), opps, now)
+            cte_sql += "," + rel_sql
+            params += rel_params
     # The user's SQL carries no parameters; double its % so the driver does not read
     # LIKE '%term%' as a placeholder.
     final_sql = f"WITH {cte_sql}\nSELECT * FROM (\n{user_sql.replace('%', '%%')}\n) AS explorer_result"
 
-    started = time.monotonic()
-    columns, rows = _execute(final_sql, params, visit_grants(opps))
+    columns, rows = _execute(final_sql, params, visit_grants(opps) + pipeline_grants(opps, relations))
     truncated = len(rows) > cap
     return QueryResult(
         columns=columns,
@@ -332,14 +485,15 @@ def fetch_visits(opps: list[Opportunity], visit_ids) -> list[dict]:
 NO_DATA = Opportunity(id=-1, name="(no data)", llo="(no data)")
 
 
-def validate_query(sql: str) -> dict:
+def validate_query(sql: str, relations=(), field_opps=None) -> dict:
     """Check ``sql`` completely -- validator, then Postgres -- WITHOUT touching data.
 
     It runs through the same path as a real query, over a ``visits`` relation that
     holds zero rows, so Postgres still resolves every column, type and function and
     reports what is wrong; the only thing that comes back is the result's column
     names. This is how an agent that may not see sensitive data can still write SQL that
-    will run.
+    will run. With a workflow's ``relations``, their columns come from ``field_opps``'
+    stored rows (names and types only); the rows queried are still none.
     """
-    result = run_query([NO_DATA], sql)
+    result = run_query([NO_DATA], sql, relations=relations, field_opps=field_opps)
     return {"valid": True, "columns": result.columns, "sql_executed": result.sql_executed}

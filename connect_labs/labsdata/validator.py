@@ -13,20 +13,26 @@ somehow missed fails at execution instead of resolving to a real table.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from sqlglot import exp
 
 from .sql_validator import SQLValidationError, SQLValidator
 
-#: The relations a query may read. Each is a CTE the engine builds, already
-#: filtered to the caller's opportunities.
+#: The relation every query may read: a CTE the engine builds, already filtered to
+#: the caller's opportunities. A workflow adds its pipelines' relations
+#: (``pipelines.py``), each built and filtered the same way.
 RELATIONS: frozenset[str] = frozenset({"visits"})
 
 DEFAULT_MAX_ROWS = 500
 HARD_MAX_ROWS = 5000
 
 
+@dataclass
 class ExplorerValidator(SQLValidator):
-    """Scout's checks, with table access narrowed to ``RELATIONS``."""
+    """Scout's checks, with table access narrowed to ``relations``."""
+
+    relations: frozenset[str] = RELATIONS
 
     def _validate_table_access(self, statement: exp.Expression, sql: str) -> None:
         for table in statement.find_all(exp.Table):
@@ -37,16 +43,16 @@ class ExplorerValidator(SQLValidator):
             if table.db or table.catalog:
                 raise SQLValidationError(
                     f"'{table.sql(dialect='postgres')}' is qualified. Query the explorer's relations by "
-                    f"bare name: {', '.join(sorted(RELATIONS))}.",
+                    f"bare name: {', '.join(sorted(self.relations))}.",
                     sql=sql,
                     error_type="schema_not_allowed",
                 )
             if self._is_cte_reference(table):
                 continue
             name = table.name if table.this.quoted else table.name.lower()
-            if name not in RELATIONS:
+            if name not in self.relations:
                 raise SQLValidationError(
-                    f"Unknown table '{table.name}'. The explorer can read: {', '.join(sorted(RELATIONS))} "
+                    f"Unknown table '{table.name}'. The explorer can read: {', '.join(sorted(self.relations))} "
                     "(plus CTEs you define).",
                     sql=sql,
                     error_type="table_not_allowed",

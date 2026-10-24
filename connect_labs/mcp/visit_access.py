@@ -48,6 +48,39 @@ def _opportunity_ids(user, arguments: dict) -> list[int] | None:
     return _ints(arguments.get("opportunity_ids") or []) or None
 
 
+def _data_selection(user, arguments: dict) -> list[int] | None:
+    """A labs data call's selection: its opportunities, every opportunity of each program
+    (labs-only programs only -- any other is refused), and a workflow's opportunities.
+
+    Every part must resolve, or the whole call is refused: a selection that passed on
+    its generated opportunities while also naming a production program or workflow
+    would read that production data.
+    """
+    read: set[int] = set()
+    opportunity_ids = arguments.get("opportunity_ids") or []
+    if opportunity_ids:
+        ids = _ints(opportunity_ids)
+        if ids is None:
+            return None
+        read.update(ids)
+    for program_id in arguments.get("program_ids") or []:
+        ids = _program_opportunity_ids(program_id)
+        if not ids:
+            return None
+        read.update(ids)
+    workflow = arguments.get("workflow")
+    if workflow:
+        if not isinstance(workflow, dict):
+            return None
+        ids = _workflow("id")(
+            user, {k: workflow.get(k) for k in ("id", "opportunity_id", "program_id") if workflow.get(k) is not None}
+        )
+        if not ids:
+            return None
+        read.update(ids)
+    return sorted(read) or None
+
+
 def _pipeline_preview(user, arguments: dict) -> list[int] | None:
     return _ints([arguments.get("opportunity_id"), *(arguments.get("opportunity_ids") or [])])
 
@@ -133,10 +166,10 @@ def _read_definition(user, key: str, arguments: dict, opportunity_id, program_id
 RESOLVERS: dict[str, Resolver] = {
     "pipeline_preview": _pipeline_preview,
     "custom_analysis_run": _opportunity_id,
-    "explorer_describe": _opportunity_ids,
-    "explorer_query": _opportunity_ids,
-    "data_describe": _opportunity_ids,
-    "data_query": _opportunity_ids,
+    "explorer_describe": _data_selection,
+    "explorer_query": _data_selection,
+    "data_describe": _data_selection,
+    "data_query": _data_selection,
     "data_visits": _opportunity_ids,
     "synthetic_local_record_dump": _opportunity_id,
     "synthetic_reload_fixtures": _opportunity_id,

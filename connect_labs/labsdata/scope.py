@@ -36,7 +36,9 @@ class Opportunity:
     program_name: str = ""
 
 
-MAX_OPPORTUNITIES = 25
+#: The most opportunities one query reads. A program is expanded into its
+#: opportunities before this applies, and over it the query is refused, never cut.
+MAX_OPPORTUNITIES = 100
 
 
 def _org_tree(caller: scopes.Caller) -> dict:
@@ -140,3 +142,56 @@ def resolve(caller: scopes.Caller, requested) -> list[Opportunity]:
         )
     names = directory(caller)
     return [names.get(i) or Opportunity(id=i, name=f"Opportunity {i}", llo="") for i in ids]
+
+
+def expand(caller: scopes.Caller, opportunity_ids=(), program_ids=()) -> tuple[list[Opportunity], list[dict]]:
+    """Programs and opportunities, as the opportunities a query reads -- each one held.
+
+    A program is the opportunities of it the caller holds, resolved now, so one
+    added to it later is included without anyone choosing it. Asking for a program
+    the caller does not hold is refused, like an opportunity. Returns the
+    opportunities (via ``resolve``, so every id is checked again) and the programs,
+    with what each expanded to.
+    """
+    try:
+        wanted_programs = sorted({int(p) for p in (program_ids or [])})
+    except (TypeError, ValueError) as e:
+        raise ScopeError("bad_program_ids", "program_ids must be integers") from e
+    try:
+        ids = {int(i) for i in (opportunity_ids or [])}
+    except (TypeError, ValueError) as e:
+        raise ScopeError("bad_opportunity_ids", "opportunity_ids must be integers") from e
+    programs = []
+    if wanted_programs:
+        try:
+            held_programs = scopes.program_ids(caller)
+            held_opps = scopes.opportunity_ids(caller)
+        except scopes.ScopesUnavailable as e:
+            raise ScopeError("scopes_unavailable", scopes.UNKNOWABLE) from e
+        missing = [p for p in wanted_programs if p not in held_programs]
+        if missing:
+            raise ScopeError(
+                "not_held",
+                f"you do not have access to program{'' if len(missing) == 1 else 's'} {', '.join(map(str, missing))}",
+            )
+        seen = directory(caller)
+        for pid in wanted_programs:
+            members = sorted(o.id for o in seen.values() if o.program_id == pid and o.id in held_opps)
+            name = next((o.program_name for o in seen.values() if o.program_id == pid and o.program_name), "")
+            if not members:
+                raise ScopeError("no_opportunities", f"you hold no opportunities in program {name or pid}")
+            programs.append({"id": pid, "name": name or f"Program {pid}", "opportunity_ids": members})
+            ids.update(members)
+    return resolve(caller, sorted(ids)), programs
+
+
+def programs(caller: scopes.Caller) -> list[dict]:
+    """The programs the caller holds opportunities in, for choosing one: id, name, how many."""
+    by_program: dict[int, dict] = {}
+    for o in directory(caller).values():
+        if o.program_id is None:
+            continue
+        entry = by_program.setdefault(o.program_id, {"id": o.program_id, "name": o.program_name, "opportunities": 0})
+        entry["opportunities"] += 1
+        entry["name"] = entry["name"] or o.program_name
+    return sorted(by_program.values(), key=lambda p: (p["name"] or "").lower())

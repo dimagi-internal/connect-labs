@@ -1,17 +1,49 @@
-// The Data page (/labs/data/). Talks to /labs/data/api/{describe,query,visits}/ --
-// the same service the data_* MCP tools call -- and keeps the canopy panel's page
-// state on the selected opportunities so the agent works on what you see.
+// The Data page (/labs/data/). Talks to /labs/data/api/{describe,query,visits,workflows}/
+// -- the same service the data_* MCP tools call -- and keeps the canopy panel's page
+// state on the selection so the agent works on what you see.
+//
+// The selection is programs and opportunities, or one workflow (which brings its own
+// opportunities and its pipelines as tables). Only ids live here: the server checks
+// every one, every time, against what the person holds.
 (function () {
   'use strict';
   const cfg = window.LABSDATA;
+  const options = JSON.parse(
+    document.getElementById('labsdata-options').textContent,
+  );
   const $ = (id) => document.getElementById(id);
   let lastResult = null;
   let described = null;
+  const opportunityById = new Map(options.opportunities.map((o) => [o.id, o]));
+  const programById = new Map(options.programs.map((p) => [p.id, p]));
+  const state = {
+    programs: [...(options.initial.program_ids || [])],
+    opps: [...(options.initial.opportunity_ids || [])],
+    workflow: options.initial.workflow || null, // {id, opportunity_id|program_id, name?}
+  };
 
-  function selected() {
-    return Array.from(document.querySelectorAll('#ex-opps input:checked')).map(
-      (el) => Number(el.value),
+  // What the server needs to resolve the selection.
+  function selectionBody() {
+    if (state.workflow) {
+      const { id, opportunity_id, program_id } = state.workflow;
+      return {
+        workflow: opportunity_id ? { id, opportunity_id } : { id, program_id },
+      };
+    }
+    return { opportunity_ids: state.opps, program_ids: state.programs };
+  }
+
+  function hasSelection() {
+    return (
+      !!state.workflow || state.opps.length > 0 || state.programs.length > 0
     );
+  }
+
+  // The opportunities the last describe resolved the selection to.
+  function selected() {
+    return described
+      ? described.opportunities.map((o) => o.opportunity_id)
+      : [];
   }
 
   function el(tag, attrs, ...children) {
@@ -46,25 +78,271 @@
     return data;
   }
 
+  function workflowParam(w) {
+    return w.opportunity_id
+      ? `${w.id}:opp:${w.opportunity_id}`
+      : `${w.id}:program:${w.program_id}`;
+  }
+
   function syncUrlAndPanel() {
-    const ids = selected();
     const url = new URL(window.location.href);
-    if (ids.length) url.searchParams.set('opps', ids.join(','));
-    else url.searchParams.delete('opps');
+    ['opps', 'programs', 'workflow'].forEach((k) => url.searchParams.delete(k));
+    if (state.workflow)
+      url.searchParams.set('workflow', workflowParam(state.workflow));
+    if (state.programs.length)
+      url.searchParams.set('programs', state.programs.join(','));
+    if (state.opps.length) url.searchParams.set('opps', state.opps.join(','));
     window.history.replaceState(null, '', url);
+    const ids = selected();
     if (window.canopyHost && window.canopyHost.updatePageState) {
       window.canopyHost.updatePageState({
         resource: 'labs-data://opportunities/' + ids.join(','),
         visible_ids: ids,
-        filters: { opportunity_ids: ids },
+        filters: { opportunity_ids: ids, ...selectionBody() },
       });
     }
+  }
+
+  // ---- the selection: chips, the add picker, the workflow list -------------
+
+  function chip(label, sub, onRemove, extraClass) {
+    return el(
+      'span',
+      { class: 'ex-chip' + (extraClass ? ' ' + extraClass : '') },
+      label,
+      sub ? el('small', {}, sub) : '',
+      el(
+        'button',
+        {
+          type: 'button',
+          title: 'Remove',
+          'aria-label': `Remove ${label}`,
+          onclick: onRemove,
+        },
+        '×',
+      ),
+    );
+  }
+
+  function renderChips() {
+    const box = $('ex-chips');
+    box.replaceChildren();
+    if (state.workflow) {
+      const w = state.workflow;
+      const n = described && described.workflow ? selected().length : null;
+      box.append(
+        chip(
+          `Workflow: ${w.name || '#' + w.id}`,
+          n ? `${n} opp${n === 1 ? '' : 's'}` : '',
+          () => {
+            state.workflow = null;
+            changed();
+          },
+          'wf',
+        ),
+      );
+    }
+    state.programs.forEach((pid) => {
+      const p = programById.get(pid);
+      box.append(
+        chip(p ? p.name : `Program ${pid}`, 'program', () => {
+          state.programs = state.programs.filter((x) => x !== pid);
+          changed();
+        }),
+      );
+    });
+    state.opps.forEach((oid) => {
+      const o = opportunityById.get(oid);
+      box.append(
+        chip(o ? o.name : `Opportunity ${oid}`, `#${oid}`, () => {
+          state.opps = state.opps.filter((x) => x !== oid);
+          changed();
+        }),
+      );
+    });
+    if (!box.childNodes.length)
+      box.append(
+        el('span', { class: 'ex-muted text-sm' }, 'Nothing chosen yet.'),
+      );
+    $('ex-add').disabled = !!state.workflow;
+    $('ex-add').placeholder = state.workflow
+      ? 'a workflow brings its own opportunities'
+      : 'add a program or opportunity…';
+    $('ex-wf-btn').hidden = !!state.workflow;
+    $('ex-wf-hint').textContent = state.workflow
+      ? ''
+      : hasSelection()
+        ? 'from the programs and opportunities chosen'
+        : 'choose a program or opportunity first';
+    $('ex-wf-btn').disabled = !hasSelection();
+  }
+
+  function renderPicker() {
+    const box = $('ex-add-results');
+    const q = $('ex-add').value.trim().toLowerCase();
+    box.replaceChildren();
+    const hit = (text) => !q || text.toLowerCase().includes(q);
+    const programs = options.programs
+      .filter((p) => !state.programs.includes(p.id) && hit(`${p.name} ${p.id}`))
+      .slice(0, 30);
+    const opps = options.opportunities
+      .filter(
+        (o) => !state.opps.includes(o.id) && hit(`${o.name} ${o.llo} ${o.id}`),
+      )
+      .slice(0, 60);
+    programs.forEach((p) =>
+      box.append(
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'ex-option',
+            onclick: () => {
+              state.programs.push(p.id);
+              closePicker();
+              changed();
+            },
+          },
+          el('span', { class: 'kind' }, 'Program'),
+          p.name || `Program ${p.id}`,
+          el(
+            'small',
+            {},
+            `${p.opportunities} opportunit${p.opportunities === 1 ? 'y' : 'ies'} you hold`,
+          ),
+        ),
+      ),
+    );
+    opps.forEach((o) =>
+      box.append(
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'ex-option',
+            onclick: () => {
+              state.opps.push(o.id);
+              closePicker();
+              changed();
+            },
+          },
+          el('span', { class: 'kind' }, 'Opp'),
+          o.name,
+          el('small', {}, `${o.llo || '—'} · #${o.id}`),
+        ),
+      ),
+    );
+    if (!box.childNodes.length)
+      box.append(el('p', { class: 'px-3 py-2 text-sm ex-muted' }, 'No match.'));
+    box.hidden = false;
+  }
+
+  function closePicker() {
+    $('ex-add').value = '';
+    $('ex-add-results').hidden = true;
+  }
+
+  async function showWorkflows() {
+    const box = $('ex-wf-list');
+    box.hidden = false;
+    box.replaceChildren(
+      el('p', { class: 'px-3 py-2 text-sm ex-muted' }, 'Finding workflows…'),
+    );
+    try {
+      const data = await post(cfg.workflowsUrl, {
+        opportunity_ids: state.opps,
+        program_ids: state.programs,
+      });
+      box.replaceChildren();
+      const list = el('div');
+      if (data.workflows.length > 8) {
+        const filter = el('input', {
+          class: 'ex-search',
+          placeholder: 'filter workflows',
+          'aria-label': 'Filter workflows',
+        });
+        filter.addEventListener('input', () => {
+          const q = filter.value.trim().toLowerCase();
+          list.querySelectorAll('.ex-option').forEach((b) => {
+            b.hidden = !!q && !b.textContent.toLowerCase().includes(q);
+          });
+        });
+        box.append(el('div', { class: 'p-2' }, filter));
+        setTimeout(() => filter.focus());
+      }
+      box.append(list);
+      data.workflows.forEach((w) =>
+        list.append(
+          el(
+            'button',
+            {
+              type: 'button',
+              class: 'ex-option',
+              onclick: () => {
+                state.workflow = { id: w.id, name: w.name, ...w.scope };
+                state.opps = [];
+                state.programs = [];
+                box.hidden = true;
+                changed();
+              },
+            },
+            w.name || `Workflow ${w.id}`,
+            el(
+              'small',
+              {},
+              `#${w.id} · ${w.pipelines} pipeline${w.pipelines === 1 ? '' : 's'}`,
+            ),
+          ),
+        ),
+      );
+      if (!data.workflows.length)
+        box.append(
+          el(
+            'p',
+            { class: 'px-3 py-2 text-sm ex-muted' },
+            'No workflows in these programs or opportunities.',
+          ),
+        );
+      if (data.scopes_not_searched.length)
+        box.append(
+          el(
+            'p',
+            { class: 'px-3 py-2 text-xs ex-muted' },
+            `Searched the first ${data.scopes_searched.length} programs and opportunities only; narrow the selection to see the rest.`,
+          ),
+        );
+    } catch (e) {
+      box.replaceChildren(
+        el(
+          'div',
+          { class: 'ex-error' },
+          e.message || 'Could not list workflows.',
+        ),
+      );
+    }
+  }
+
+  function changed() {
+    $('ex-wf-list').hidden = true;
+    described = null;
+    renderChips();
+    describe(false);
   }
 
   function renderCache(opps, loaded) {
     const box = $('ex-cache');
     box.replaceChildren();
-    opps.forEach((o) => {
+    const total = opps.reduce((n, o) => n + (o.cached_visits || 0), 0);
+    if (opps.length > 1)
+      box.append(
+        el(
+          'div',
+          { class: 'mb-1' },
+          el('b', {}, `${opps.length} opportunities`),
+          ` — ${total.toLocaleString()} visits cached`,
+        ),
+      );
+    opps.slice(0, opps.length > 6 ? 0 : 6).forEach((o) => {
       const line = el(
         'div',
         {},
@@ -106,63 +384,90 @@
     ta.selectionStart = ta.selectionEnd = start + text.length;
   }
 
-  // Search filters the index already loaded -- no round trip per keystroke.
-  function matching(fields) {
-    const q = $('ex-field-search').value.trim().toLowerCase();
-    if (!q) return fields;
-    return fields.filter(
-      (f) =>
-        f.path.toLowerCase().includes(q) ||
-        (f.values || []).some((v) => String(v.value).toLowerCase().includes(q)),
+  // The relations the selection can query: visits, and a workflow's pipelines. A
+  // name inserts the relation, a column inserts the column.
+  function renderTables(data) {
+    const box = $('ex-tables');
+    box.replaceChildren();
+    const rels = Object.entries(data.relations || {});
+    rels.forEach(([name, rel], i) => {
+      const cols = rel.columns.map((c) =>
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'ex-col',
+            title: `${c.type}${c.means ? ' — ' + c.means : ''}`,
+            onclick: () => insertAtCursor(c.name),
+          },
+          c.name,
+        ),
+      );
+      const head = el(
+        'summary',
+        {},
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'ex-name',
+            onclick: (e) => {
+              e.preventDefault();
+              insertAtCursor(name);
+            },
+          },
+          name,
+        ),
+        el(
+          'span',
+          { class: 'meta' },
+          ` ${rel.pipeline ? rel.pipeline.name + ' · ' : ''}${rel.grain}`,
+        ),
+      );
+      const stale = (rel.stale_opportunities || []).length;
+      box.append(
+        el(
+          'details',
+          {
+            class: 'ex-table-entry',
+            ...(i === 0 && rels.length === 1 ? { open: '' } : {}),
+          },
+          head,
+          el('div', { class: 'mt-1' }, cols),
+          stale
+            ? el(
+                'div',
+                { class: 'ex-warn' },
+                `No current results for ${stale} of ${Object.keys(rel.rows_by_opportunity).length} opportunities: ` +
+                  'the workflow has not been run since its pipeline changed. Open the workflow to compute them.',
+              )
+            : '',
+        ),
+      );
+    });
+    (data.pipelines_not_offered || []).forEach((p) =>
+      box.append(
+        el(
+          'div',
+          { class: 'ex-table-entry ex-muted' },
+          `${p.name || p.alias || '#' + p.pipeline_id}: not offered — ${p.reason}`,
+        ),
+      ),
+    );
+    const names = rels.map(([n]) => n);
+    $('ex-tables-hint').replaceChildren(
+      'Query ',
+      ...names.flatMap((n, i) => [i ? ', ' : '', el('code', {}, n)]),
+      '.',
     );
   }
 
-  function renderFields(data) {
-    const box = $('ex-fields');
-    box.replaceChildren();
-    $('ex-sampled').textContent = data.sampled_visits
-      ? `· ${data.sampled_visits} visits sampled`
-      : '';
-    data = { ...data, fields: matching(data.fields) };
-    if (!data.fields.length) {
-      box.append(
-        el(
-          'p',
-          { class: 'px-3 pb-3 text-sm ex-muted' },
-          data.sampled_visits ? 'No matching fields.' : 'No visits cached yet.',
-        ),
-      );
-      return;
-    }
-    data.fields.slice(0, 300).forEach((f) => {
-      const accessor = f.sql.includes('--')
-        ? f.sql.split(' AS item')[0]
-        : f.sql;
-      const row = el(
-        'div',
-        {
-          class: 'ex-field',
-          title: f.sql,
-          onclick: () => insertAtCursor(accessor),
-        },
-        el('code', {}, f.path),
-        el('div', { class: 'meta' }, `${f.type} · filled ${f.filled_pct}%`),
-        (f.values || [])
-          .slice(0, 8)
-          .map((v) =>
-            el('span', { class: 'ex-chip' }, `${v.value} (${v.count})`),
-          ),
-      );
-      box.append(row);
-    });
-  }
-
   async function describe(loadMissing) {
-    const ids = selected();
     syncUrlAndPanel();
-    if (!ids.length) {
-      $('ex-cache').textContent = 'Pick opportunities to load their fields.';
-      $('ex-fields').replaceChildren(
+    if (!hasSelection()) {
+      $('ex-cache').textContent =
+        'Choose programs, opportunities or a workflow.';
+      $('ex-tables').replaceChildren(
         el('p', { class: 'px-3 pb-3 text-sm ex-muted' }, '—'),
       );
       return;
@@ -172,17 +477,21 @@
       : 'Reading…';
     try {
       described = await post(cfg.describeUrl, {
-        opportunity_ids: ids,
+        ...selectionBody(),
         load_missing: !!loadMissing,
       });
+      if (described.workflow && state.workflow)
+        state.workflow.name = described.workflow.name;
+      renderChips();
+      syncUrlAndPanel();
       renderCache(described.opportunities, described.loaded);
-      renderFields(described);
+      renderTables(described);
     } catch (e) {
       $('ex-cache').replaceChildren(
         el(
           'div',
           { class: 'ex-error' },
-          e.message || 'Could not read these opportunities.',
+          e.message || 'Could not read this selection.',
         ),
       );
     }
@@ -242,7 +551,12 @@
       ),
     );
     table.append(tbody);
-    const opps = data.opportunities.map((o) => o.name).join(', ');
+    const n = data.opportunities.length;
+    const opps = data.workflow
+      ? `${data.workflow.name} (${n} opportunit${n === 1 ? 'y' : 'ies'})`
+      : data.opportunities.length > 3
+        ? `${data.opportunities.length} opportunities`
+        : data.opportunities.map((o) => o.name).join(', ');
     box.append(
       el(
         'div',
@@ -311,10 +625,13 @@
   }
 
   async function run() {
-    const ids = selected();
-    if (!ids.length) {
+    if (!hasSelection()) {
       $('ex-result').replaceChildren(
-        el('div', { class: 'ex-error' }, 'Pick at least one opportunity.'),
+        el(
+          'div',
+          { class: 'ex-error' },
+          'Choose a program, an opportunity or a workflow.',
+        ),
       );
       return;
     }
@@ -324,7 +641,7 @@
     );
     try {
       lastResult = await post(cfg.queryUrl, {
-        opportunity_ids: ids,
+        ...selectionBody(),
         sql: $('ex-sql').value,
         max_rows: Number($('ex-max').value) || 500,
       });
@@ -366,16 +683,15 @@
     a.click();
   }
 
-  $('ex-opps').addEventListener('change', () => describe(false));
-  $('ex-opp-filter').addEventListener('input', (e) => {
-    const q = e.target.value.toLowerCase();
-    document.querySelectorAll('#ex-opps .ex-opp').forEach((row) => {
-      row.style.display = row.dataset.text.includes(q) ? '' : 'none';
-    });
+  $('ex-add').addEventListener('input', renderPicker);
+  $('ex-add').addEventListener('focus', renderPicker);
+  $('ex-add').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closePicker();
   });
-  $('ex-field-search').addEventListener('input', () => {
-    if (described) renderFields(described);
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.ex-picker')) $('ex-add-results').hidden = true;
   });
+  $('ex-wf-btn').addEventListener('click', showWorkflows);
   $('ex-run').addEventListener('click', run);
   $('ex-csv').addEventListener('click', csv);
   $('ex-sql').addEventListener('keydown', (e) => {
@@ -384,7 +700,8 @@
       run();
     }
   });
-  if (selected().length) describe(false);
+  renderChips();
+  if (hasSelection()) describe(false);
 
   // The agent's way to hand SQL back to Labs. canopy turns this into the agent tool
   // `page_data_set_query`; the callback runs in THIS tab. It returns only an
@@ -394,14 +711,29 @@
     if (!host || !host.widget || !host.widget.registerAction) return;
     host.widget.registerAction(
       'data_set_query',
-      async ({ sql, opportunity_ids, run: runIt }) => {
+      async ({ sql, opportunity_ids, program_ids, workflow, run: runIt }) => {
         if (typeof sql !== 'string' || !sql.trim())
           throw new Error('sql is required');
-        if (Array.isArray(opportunity_ids) && opportunity_ids.length) {
-          const wanted = new Set(opportunity_ids.map(Number));
-          document.querySelectorAll('#ex-opps input').forEach((box) => {
-            box.checked = wanted.has(Number(box.value));
-          });
+        const ids = (xs) =>
+          Array.isArray(xs) ? xs.map(Number).filter(Number.isFinite) : [];
+        if (workflow && workflow.id) {
+          state.workflow = {
+            id: Number(workflow.id),
+            ...(workflow.opportunity_id
+              ? { opportunity_id: Number(workflow.opportunity_id) }
+              : { program_id: Number(workflow.program_id) }),
+          };
+          state.opps = [];
+          state.programs = [];
+          described = null;
+          renderChips();
+          await describe(false);
+        } else if (ids(opportunity_ids).length || ids(program_ids).length) {
+          state.workflow = null;
+          state.opps = ids(opportunity_ids);
+          state.programs = ids(program_ids);
+          described = null;
+          renderChips();
           await describe(false);
         }
         $('ex-sql').value = sql;
@@ -417,7 +749,7 @@
       },
       {
         description:
-          'Put a SQL query into the Data page editor for the person (and optionally run it in their browser). ' +
+          'Put a SQL query into the Data page editor for the person, over the selection you give (and optionally run it in their browser). ' +
           'Returns only an acknowledgement: the result is shown to the person, never returned to you.',
         parameters: {
           type: 'object',
@@ -431,7 +763,24 @@
               type: 'array',
               items: { type: 'integer' },
               description:
-                'Optional: select these opportunities on the page (only ones it lists).',
+                'Optional: query these opportunities (the person must hold them).',
+            },
+            program_ids: {
+              type: 'array',
+              items: { type: 'integer' },
+              description:
+                'Optional: query these programs -- every opportunity of each the person holds.',
+            },
+            workflow: {
+              type: 'object',
+              description:
+                'Optional, instead of opportunities and programs: a workflow, as {id, opportunity_id} or {id, program_id} (the scope it lives in). Its pipelines become tables p_<alias>.',
+              properties: {
+                id: { type: 'integer' },
+                opportunity_id: { type: 'integer' },
+                program_id: { type: 'integer' },
+              },
+              required: ['id'],
             },
             run: {
               type: 'boolean',

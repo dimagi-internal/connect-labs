@@ -62,7 +62,9 @@ def connect(monkeypatch):
     monkeypatch.setattr(
         engine,
         "run_query",
-        lambda opps, sql, max_rows: engine.QueryResult(COLUMNS, [list(r) for r in ROWS], len(ROWS), False, sql, 3),
+        lambda opps, sql, max_rows, **kw: engine.QueryResult(
+            COLUMNS, [list(r) for r in ROWS], len(ROWS), False, sql, 3
+        ),
     )
     monkeypatch.setattr("connect_labs.labs.synthetic.provenance.all_generated", lambda ids: False)
     return held
@@ -158,7 +160,7 @@ def test_a_withheld_query_keeps_the_hand_off_for_the_card(owner, connect, monkey
     connect["users"].add(owner.pk)
     monkeypatch.setattr(tools, "_from_canopy", lambda: True)
     monkeypatch.setattr(canopy_panel, "call_sensitive_data_clearance", lambda: canopy_panel.Clearance(False, "no"))
-    monkeypatch.setattr(engine, "validate_query", lambda sql: {"valid": True})
+    monkeypatch.setattr(engine, "validate_query", lambda sql, **kw: {"valid": True})
     out = _query(owner)["result"]["structuredContent"]
     assert out["withheld"] is True and out["result_uri"].startswith("labs-result://")
     kept = kept_results.read(out["result_uri"], reader=owner.pk)

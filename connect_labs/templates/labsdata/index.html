@@ -10,20 +10,30 @@
     @media (max-width: 900px) { .ex-grid { grid-template-columns: 1fr; } }
     .ex-card { background: #fff; border: 1px solid #e7e5e4; border-radius: 10px; }
     .ex-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #78716c; }
-    .ex-opps { max-height: 260px; overflow: auto; }
-    .ex-opp { display: flex; gap: 8px; align-items: flex-start; padding: 5px 12px; font-size: 13px; color: #1c1917; cursor: pointer; }
-    .ex-opp:hover { background: #fafaf9; }
-    .ex-opp small { display: block; color: #78716c; font-size: 11px; }
-    .ex-fields { max-height: 420px; overflow: auto; }
-    .ex-field { padding: 6px 12px; border-top: 1px solid #f5f5f4; cursor: pointer; font-size: 12px; }
-    .ex-field:hover { background: #eef2ff; }
-    .ex-field code { font-size: 12px; color: #16006d; word-break: break-all; }
-    .ex-field .meta { color: #78716c; font-size: 11px; }
-    .ex-chip { display: inline-block; font-size: 11px; padding: 0 6px; margin: 2px 3px 0 0; border-radius: 999px; background: #f5f5f4; color: #44403c; }
+    .ex-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 4px 2px 8px; border-radius: 999px; background: #eef2ff; color: #16006d; }
+    .ex-chip.wf { background: #16006d; color: #fff; }
+    .ex-chip small { opacity: .7; }
+    .ex-chip button { border-radius: 999px; width: 18px; height: 18px; line-height: 16px; }
+    .ex-chip button:hover { background: rgba(0,0,0,.08); }
+    .ex-picker { position: relative; }
+    .ex-menu { position: absolute; z-index: 20; left: 0; right: 0; margin-top: 2px; max-height: 300px; overflow: auto; background: #fff; border: 1px solid #e7e5e4; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.08); }
+    .ex-menu-inline { position: static; box-shadow: none; }
+    .ex-option { display: block; width: 100%; text-align: left; padding: 6px 10px; font-size: 13px; color: #1c1917; }
+    .ex-option:hover, .ex-option:focus { background: #eef2ff; outline: none; }
+    .ex-option small { display: block; color: #78716c; font-size: 11px; }
+    .ex-option .kind { font-size: 10px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: #78716c; margin-right: 6px; }
+    .ex-tables { max-height: 460px; overflow: auto; }
+    .ex-table-entry { border-top: 1px solid #f5f5f4; padding: 6px 12px; font-size: 12px; }
+    .ex-table-entry summary { cursor: pointer; }
+    .ex-table-entry .meta { color: #78716c; font-size: 11px; }
+    .ex-col { display: inline-block; margin: 2px 4px 0 0; padding: 0 6px; border-radius: 4px; background: #f5f5f4; color: #44403c; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .ex-col:hover, .ex-name:hover { background: #eef2ff; color: #16006d; }
+    .ex-name { font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: #16006d; border-radius: 4px; padding: 0 2px; }
+    .ex-warn { color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 4px 8px; font-size: 11px; margin-top: 4px; }
     .ex-editor { width: 100%; min-height: 170px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; border: 0; padding: 12px 14px; resize: vertical; border-radius: 10px 10px 0 0; }
     .ex-editor:focus { outline: none; }
     .ex-bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px 12px; border-top: 1px solid #f5f5f4; font-size: 13px; color: #57534e; }
-    .ex-btn { background: #16006d; color: #fff; font-weight: 600; font-size: 13px; padding: 6px 14px; border-radius: 6px; }
+    .ex-btn { white-space: nowrap; background: #16006d; color: #fff; font-weight: 600; font-size: 13px; padding: 6px 14px; border-radius: 6px; }
     .ex-btn:disabled { opacity: .5; }
     .ex-btn.ghost { background: #fff; color: #16006d; border: 1px solid #c7d2fe; }
     .ex-table-wrap { overflow: auto; max-height: 60vh; }
@@ -45,36 +55,32 @@
   <div class="flex items-baseline justify-between mb-4">
     <div>
       <h1 class="text-2xl font-semibold text-stone-900">Data</h1>
-      <p class="text-sm text-stone-500">Query the visits of the opportunities you hold, down to each submitted form. Click a visit id to open the whole visit. Read-only, audit-logged. Ask the agent to write the SQL for you.</p>
+      <p class="text-sm text-stone-500">Query the visits of the programs and opportunities you hold, down to each submitted form, or a workflow's pipelines. Click a visit id to open the whole visit. Read-only, audit-logged. Ask the agent to write the SQL for you.</p>
     </div>
   </div>
 
   <div class="ex-grid">
     <aside class="flex flex-col gap-4">
       <div class="ex-card">
-        <div class="px-3 pt-3 pb-2 flex items-center justify-between">
-          <span class="ex-label">Opportunities</span>
-          <input id="ex-opp-filter" class="ex-search" style="width: 140px" placeholder="filter">
+        <div class="px-3 pt-3 pb-2">
+          <div class="ex-label mb-2">Querying</div>
+          <div id="ex-chips" class="flex flex-wrap gap-1"></div>
+          <div class="ex-picker mt-2">
+            <input id="ex-add" class="ex-search" placeholder="add a program or opportunity…" autocomplete="off">
+            <div id="ex-add-results" class="ex-menu" hidden></div>
+          </div>
+          <div class="mt-2 flex items-center gap-2">
+            <button class="ex-btn ghost whitespace-nowrap" id="ex-wf-btn" type="button">Use a workflow…</button>
+            <span class="ex-muted text-xs" id="ex-wf-hint"></span>
+          </div>
+          <div id="ex-wf-list" class="ex-menu ex-menu-inline mt-2" hidden></div>
         </div>
-        <div class="ex-opps" id="ex-opps">
-          {% for o in opportunities %}
-            <label class="ex-opp" data-text="{{ o.name|lower }} {{ o.llo|lower }} {{ o.id }}">
-              <input type="checkbox" value="{{ o.id }}" {% if o.id in selected %}checked{% endif %}>
-              <span>{{ o.name }}<small>{{ o.llo|default:"—" }} · #{{ o.id }}</small></span>
-            </label>
-          {% empty %}
-            <p class="px-3 pb-3 text-sm ex-muted">You hold no opportunities.</p>
-          {% endfor %}
-        </div>
-        <div class="ex-status" id="ex-cache">Pick opportunities to load their fields.</div>
+        <div class="ex-status" id="ex-cache">Choose programs, opportunities or a workflow.</div>
       </div>
 
       <div class="ex-card">
-        <div class="px-3 pt-3 pb-2">
-          <div class="ex-label mb-2">Form fields <span id="ex-sampled" class="ex-muted normal-case tracking-normal font-normal"></span></div>
-          <input id="ex-field-search" class="ex-search" placeholder="search fields or values, e.g. birth">
-        </div>
-        <div class="ex-fields" id="ex-fields"><p class="px-3 pb-3 text-sm ex-muted">—</p></div>
+        <div class="px-3 pt-3 pb-1"><span class="ex-label">Tables</span> <span class="ex-muted text-xs">click a name to insert it</span></div>
+        <div id="ex-tables" class="ex-tables"><p class="px-3 pb-3 text-sm ex-muted">—</p></div>
       </div>
     </aside>
 
@@ -84,7 +90,7 @@
         <div class="ex-bar">
           <button class="ex-btn" id="ex-run">Run ⌘↵</button>
           <label>max rows <input id="ex-max" type="number" min="1" max="5000" value="{{ default_max_rows }}" class="ex-search" style="width: 80px"></label>
-          <span class="ex-muted">The only table is <code>visits</code>. Click a field to insert it.</span>
+          <span class="ex-muted" id="ex-tables-hint">Query <code>visits</code>.</span>
           <span class="flex-1"></span>
           <button class="ex-btn ghost" id="ex-csv" disabled>Download CSV</button>
         </div>
@@ -98,9 +104,11 @@
 
 {% block inline_javascript %}
   {{ block.super }}
+  {{ labsdata_options|json_script:"labsdata-options" }}
   <script>
     window.LABSDATA = {
       describeUrl: "{% url 'labsdata:describe' %}",
+      workflowsUrl: "{% url 'labsdata:workflows' %}",
       queryUrl: "{% url 'labsdata:query' %}",
       visitsUrl: "{% url 'labsdata:visits' %}",
       csrf: "{{ csrf_token }}",

@@ -11,4 +11,5 @@ urlpatterns = [
     path("api/describe/", views.DescribeView.as_view(), name="describe"),
     path("api/query/", views.QueryView.as_view(), name="query"),
     path("api/visits/", views.VisitsView.as_view(), name="visits"),
+    path("api/workflows/", views.WorkflowsView.as_view(), name="workflows"),
 ]
