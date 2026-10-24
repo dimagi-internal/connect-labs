@@ -30,7 +30,7 @@
   over postMessage. The chart is drawn here, as SVG, so no library has to load.
 -->
     <style>
-      <style > :root {
+      :root {
         color-scheme: light dark;
         --color-background-primary: light-dark(#ffffff, #171717);
         --color-background-secondary: light-dark(#f6f7f9, #222326);
@@ -125,11 +125,17 @@
         border-color: var(--brand);
         color: var(--color-background-primary);
       }
+      /* A fixed height, not vh: inside the host's frame vh is the frame's own
+         height, which grows with what this View reports -- a loop that left the
+         table a few rows tall. Full screen has the whole surface. */
       .wrap {
         overflow: auto;
-        max-height: 70vh;
+        max-height: 440px;
         border: 1px solid var(--color-border-secondary);
         border-radius: 6px;
+      }
+      body.fullscreen .wrap {
+        max-height: calc(100vh - 90px);
       }
       table {
         border-collapse: collapse;
@@ -143,14 +149,20 @@
         text-align: left;
         font-weight: 600;
         padding: 5px 8px;
-        border-bottom: 1px solid var(--color-border-primary);
+        /* A shadow, not a border: a collapsed border scrolls away from a sticky
+           header and lets the rows show through beneath it. */
+        box-shadow: inset 0 -1px 0 var(--color-border-primary);
         white-space: nowrap;
+        z-index: 1;
+      }
+      th.num {
+        text-align: right;
       }
       td {
         padding: 4px 8px;
         border-bottom: 1px solid var(--color-border-secondary);
         vertical-align: top;
-        max-width: 360px;
+        max-width: 200px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -212,7 +224,8 @@
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        gap: 6px 10px;
+        justify-content: flex-end;
+        gap: 4px 8px;
         margin-top: 6px;
         font-size: 12px;
         color: var(--color-text-secondary);
@@ -224,6 +237,10 @@
       th[data-sort] {
         cursor: pointer;
         user-select: none;
+      }
+      .pager .btn {
+        padding: 1px 8px;
+        line-height: 1.3;
       }
       th .dir {
         color: var(--brand);
@@ -241,7 +258,7 @@
         var SCHEME = 'labs-result://';
         var SERIES = ['--s1', '--s2', '--s3', '--s4', '--s5'];
         var MAX_BARS = 30;
-        var PAGE_SIZES = [50, 100, 250, 500, 1000];
+        var PAGE_SIZE = 100;
         var META_KEY = 'labs/result';
 
         // ---------------------------------------------------------------- transport
@@ -309,7 +326,7 @@
           uri: '', // the kept result: labs-result://<id>, without a page
           result: null, // the page on screen: {columns, rows, sql_executed, ...} or a withheld note
           paging: null, // {page, pages, page_size, row_count}
-          pageSize: 100,
+          pageSize: PAGE_SIZE,
           sort: { col: -1, dir: 1 }, // within the page
           tab: 'table',
           x: null,
@@ -776,12 +793,23 @@
         // ---------------------------------------------------------------- render
         function table() {
           var r = state.result;
+          var numeric = r.columns.map(function (_c, i) {
+            var any = false;
+            var all = r.rows.every(function (row) {
+              if (row[i] === null || row[i] === undefined) return true;
+              any = true;
+              return isNum(row[i]);
+            });
+            return any && all;
+          });
           var head = r.columns
             .map(function (c, i) {
               var dir =
                 state.sort.col === i ? (state.sort.dir > 0 ? '▲' : '▼') : '';
               return (
-                '<th data-sort="' +
+                '<th' +
+                (numeric[i] ? ' class="num"' : '') +
+                ' data-sort="' +
                 i +
                 '" title="Sort the rows on this page by ' +
                 esc(c) +
@@ -841,45 +869,29 @@
               p.row_count.toLocaleString() +
               ' rows.</div>'
             );
+          // One page holds the whole result: nothing to page through, so no controls.
+          if (p.pages <= 1) return '';
           var from = p.row_count ? (p.page - 1) * p.page_size + 1 : 0;
           var to = Math.min(p.row_count, p.page * p.page_size);
-          var sizes = PAGE_SIZES.map(function (n) {
-            return (
-              '<option value="' +
-              n +
-              '"' +
-              (n === state.pageSize ? ' selected' : '') +
-              '>' +
-              n +
-              '</option>'
-            );
-          }).join('');
           return (
             '<div class="pager">' +
-            '<button class="btn" id="prev"' +
-            (p.page <= 1 || state.loading ? ' disabled' : '') +
-            '>Previous</button>' +
+            (state.sort.col >= 0
+              ? '<span class="sub">Sorted within this page only ·</span>'
+              : '') +
+            (state.loading ? '<span>Loading…</span>' : '') +
             '<span>Rows ' +
             from.toLocaleString() +
             '–' +
             to.toLocaleString() +
             ' of ' +
             p.row_count.toLocaleString() +
-            ' · page ' +
-            p.page +
-            ' of ' +
-            p.pages +
             '</span>' +
-            '<button class="btn" id="next"' +
+            '<button class="btn" id="prev" aria-label="Previous page" title="Previous page"' +
+            (p.page <= 1 || state.loading ? ' disabled' : '') +
+            '>‹</button>' +
+            '<button class="btn" id="next" aria-label="Next page" title="Next page"' +
             (p.page >= p.pages || state.loading ? ' disabled' : '') +
-            '>Next</button>' +
-            '<label>Rows per page <select id="size">' +
-            sizes +
-            '</select></label>' +
-            (state.sort.col >= 0 && p.pages > 1
-              ? '<span class="sub">Sorted within this page only</span>'
-              : '') +
-            (state.loading ? '<span>Loading…</span>' : '') +
+            '>›</button>' +
             '</div>'
           );
         }
@@ -1035,10 +1047,7 @@
         document.addEventListener('change', function (e) {
           var t = e.target;
           if (!(t instanceof Element)) return;
-          if (t.id === 'size') {
-            state.pageSize = Number(t.value) || 100;
-            read(1);
-          } else if (t.id === 'x') {
+          if (t.id === 'x') {
             state.x = Number(t.value);
             state.ys = state.ys.filter(function (i) {
               return i !== state.x;
@@ -1067,21 +1076,28 @@
             });
           if (ctx.theme === 'light' || ctx.theme === 'dark')
             root.style.colorScheme = ctx.theme;
+          if (ctx.displayMode)
+            document.body.classList.toggle(
+              'fullscreen',
+              ctx.displayMode === 'fullscreen',
+            );
           if (ctx.displayMode && state.result && state.tab === 'chart')
             render();
         }
         var lastSize = '';
         function reportSize() {
           if (!state.initialized) return;
+          // The content's own height: the document's scrollHeight is never less
+          // than the frame, so a card that should shrink could only ever grow.
           var w = Math.ceil(document.documentElement.scrollWidth);
-          var hgt = Math.ceil(document.documentElement.scrollHeight);
+          var hgt = Math.ceil(document.body.getBoundingClientRect().height);
           var key = w + 'x' + hgt;
           if (key === lastSize) return;
           lastSize = key;
           notify('ui/notifications/size-changed', { width: w, height: hgt });
         }
         if (typeof ResizeObserver === 'function')
-          new ResizeObserver(reportSize).observe(document.documentElement);
+          new ResizeObserver(reportSize).observe(document.body);
 
         // ---------------------------------------------------------------- lifecycle
         // The result is read from the link the tool result carries, never from the rows
