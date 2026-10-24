@@ -344,9 +344,9 @@
                                 <div class="text-xs text-gray-400">Identity hidden for scoring</div>
                             </td>
                             <td class="px-3 py-4">
-                                {% if response.selected_plan_names %}
+                                {% if response.coverage_names %}
                                 <div class="flex flex-wrap items-center gap-1">
-                                  {% for name in response.selected_plan_names %}
+                                  {% for name in response.coverage_names %}
                                   <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
                                     <i class="fa-solid fa-location-dot mr-1 text-emerald-500"></i>{{ name }}
                                   </span>

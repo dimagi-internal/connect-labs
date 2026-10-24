@@ -151,6 +151,18 @@
               </div>
               {{ form.select_plans.errors }}
             </fieldset>
+            {% elif area_picker %}
+            <fieldset class="mb-6">
+              <legend class="text-sm font-semibold text-gray-800 mb-1">Where would you do this work?</legend>
+              {% if solicitation.service_area_limits %}
+              <p class="text-xs text-gray-500 mb-3">This call covers {{ solicitation.area_limit_names|join:", " }} (the dashed outline). Pick the areas inside it where you would work: all of it, or a district or a few wards. Click an area on the map, use <strong>Select parent</strong> in the map's panel for the larger area around it, or search by name. Required to submit.</p>
+              {% else %}
+              <p class="text-xs text-gray-500 mb-3">Pick the areas where you would work, at whatever level fits: a whole state, a district, or a few wards. Click an area on the map, use <strong>Select parent</strong> in the map's panel for the larger area around it, or search by name.</p>
+              {% endif %}
+              {% include "solicitations/_service_area_picker.html" with picker=area_picker %}
+              {{ form.service_areas }}
+              {% for err in form.service_areas.errors %}<p class="mt-2 text-sm text-red-600">{{ err }}</p>{% endfor %}
+            </fieldset>
             {% endif %}
 
             {% include "solicitations/_respond_questions.html" %}
@@ -350,6 +362,7 @@
   {{ block.super }}
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
   <script src="{% static 'solicitations/coverage_map.js' %}"></script>
+  {% if area_picker %}{% include "solicitations/_service_area_scripts.html" %}{% endif %}
 {% endblock javascript %}
 
 {% block inline_javascript %}

@@ -33,8 +33,8 @@
             <h2 class="text-lg font-semibold text-green-900">Response submitted</h2>
             <p class="text-sm text-green-800 mt-0.5">
                 Thanks — your response to <strong>{{ solicitation.title }}</strong> has been received.
-                {% if my_response.selected_plan_names %}
-                    You committed to cover <strong>{{ my_response.selected_plan_names|join:", " }}</strong>.
+                {% if my_response.coverage_names %}
+                    You committed to cover <strong>{{ my_response.coverage_names|join:", " }}</strong>.
                 {% endif %}
             </p>
             <p class="text-sm text-green-700 mt-2">
@@ -48,8 +48,8 @@
         <i class="fa-solid fa-circle-check text-blue-600"></i>
         <p class="text-sm text-blue-800 flex-1 min-w-0">
             You responded to this call. Status: <strong>{{ my_response.get_status_display }}</strong>.
-            {% if my_response.selected_plan_names %}
-                Coverage committed: <strong>{{ my_response.selected_plan_names|join:", " }}</strong>.
+            {% if my_response.coverage_names %}
+                Coverage committed: <strong>{{ my_response.coverage_names|join:", " }}</strong>.
             {% endif %}
         </p>
         <a href="{% url 'solicitations:response_detail' pk=my_response.pk %}" class="text-sm text-blue-800 font-medium hover:underline">View your response</a>
@@ -169,6 +169,16 @@
               </li>
               {% endfor %}
             </ul>
+        </div>
+        {% elif limits_map %}
+        <div id="coverage" class="bg-white rounded-xl shadow-sm p-5 sm:p-8 scroll-mt-20">
+            <h2 class="text-lg font-semibold text-brand-deep-purple mb-2 pb-3 border-b border-gray-100">
+                <i class="fa-solid fa-map-location-dot mr-2 text-brand-cornflower-blue"></i>Where the work happens
+            </h2>
+            <p class="text-sm text-gray-600 mb-4">
+                The work is inside {{ solicitation.area_limit_names|join:", " }}. When you respond, you pick the areas inside it where you would work.
+            </p>
+            {% include "solicitations/_service_area_picker.html" with picker=limits_map height="h-80" %}
         </div>
         {% endif %}
 
@@ -315,6 +325,7 @@
   {{ block.super }}
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
   <script src="{% static 'solicitations/coverage_map.js' %}"></script>
+  {% if limits_map %}{% include "solicitations/_service_area_scripts.html" %}{% endif %}
 {% endblock javascript %}
 
 {% block inline_javascript %}

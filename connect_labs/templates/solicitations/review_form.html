@@ -80,6 +80,19 @@
     <form method="post" class="space-y-6">
         {% csrf_token %}
 
+        {% if response.coverage_names %}
+        <div class="bg-white rounded-xl shadow-sm p-4 sm:p-6">
+            <p class="text-sm font-medium text-gray-700 mb-2">Where they would work</p>
+            <div class="flex flex-wrap gap-1.5">
+                {% for name in response.coverage_names %}
+                <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <i class="fa-solid fa-location-dot mr-1 text-emerald-500"></i>{{ name }}
+                </span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Q&A Pairs with inline criteria scoring -->
         {% for qa in qa_pairs %}
         <div class="bg-white rounded-xl shadow-sm p-4 sm:p-6">

@@ -126,6 +126,8 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         # Solicitations, responses, reviews and funds.
         "list_solicitations",
         "get_solicitation",
+        # Admin boundary names and levels: public geography, no visits.
+        "solicitation_area_search",
         "list_responses",
         "get_response",
         "list_reviews",

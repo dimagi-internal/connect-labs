@@ -1,5 +1,10 @@
 {% extends "base.html" %}
 
+{% block css %}
+  {{ block.super }}
+  {% if areas_map %}<link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">{% endif %}
+{% endblock css %}
+
 {% block title %}{% if is_owner %}{{ response.display_name|default:response.blind_label }}{% else %}Your response{% endif %} · {{ solicitation.title }}{% endblock %}
 
 {% block content %}
@@ -90,6 +95,11 @@
     <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8 mb-6">
           <h4 class="text-sm font-semibold text-gray-700">Selected coverage areas</h4>
           <p class="text-sm text-gray-600">{{ response.selected_plan_names|join:", " }}</p>
+    </div>
+    {% elif areas_map %}
+    <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8 mb-6">
+          <h4 class="text-sm font-semibold text-gray-700 mb-3">Where {% if is_respondent %}you{% else %}they{% endif %} would work</h4>
+          {% include "solicitations/_service_area_picker.html" with picker=areas_map height="h-72" %}
     </div>
     {% endif %}
 
@@ -258,3 +268,11 @@
 
 </div>
 {% endblock %}
+
+{% block javascript %}
+  {{ block.super }}
+  {% if areas_map %}
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+  {% include "solicitations/_service_area_scripts.html" %}
+  {% endif %}
+{% endblock javascript %}

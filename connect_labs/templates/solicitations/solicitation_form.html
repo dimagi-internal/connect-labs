@@ -312,6 +312,44 @@
         </div>
         {% endif %}
 
+        {% if area_picker %}
+        <!-- Where the work happens: anywhere, or only inside chosen admin areas -->
+        <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8" id="where-card"
+             x-data="{ mode: '{{ form.area_mode.value|default:'any'|escapejs }}' }">
+            <h2 class="text-xl font-semibold text-brand-deep-purple mb-6 pb-2 border-b border-gray-200">
+                <i class="fa-solid fa-map-location-dot mr-2"></i>
+                Where the work happens
+            </h2>
+            <p class="text-sm text-gray-600 mb-4">
+                Respondents pick the areas they would work in, at whatever level suits them: a whole state, a district, or a few wards.
+                You can leave that open, or keep it inside areas you choose.
+            </p>
+            <fieldset class="space-y-2 mb-4">
+                <legend class="sr-only">{{ form.area_mode.label }}</legend>
+                {% for choice in form.area_mode %}
+                <label class="flex items-center gap-2 text-sm text-gray-800">
+                    <input type="radio" name="{{ choice.data.name }}" value="{{ choice.data.value }}" x-model="mode"
+                           @change="$nextTick(() => window.dispatchEvent(new Event('resize')))"
+                           {% if choice.data.selected %}checked{% endif %}>
+                    {{ choice.choice_label }}
+                </label>
+                {% endfor %}
+            </fieldset>
+            <div x-show="mode === 'within'" x-cloak>
+                <p class="text-sm text-gray-600 mb-3">
+                    Click an area on the map to choose it (use <strong>Select parent</strong> in the panel to choose the state or district around it),
+                    or search for it by name in the map's panel. Respondents can then pick only areas inside these.
+                </p>
+                {% include "solicitations/_service_area_picker.html" with picker=area_picker %}
+                {% for err in form.service_area_limits.errors %}<p class="mt-2 text-sm text-red-600">{{ err }}</p>{% endfor %}
+            </div>
+            {{ form.service_area_limits }}
+            <p class="text-xs text-gray-500 mt-4">
+                To offer specific study areas instead, start the call from a micro-plan: respondents then pick from its plans.
+            </p>
+        </div>
+        {% endif %}
+
         <!-- Evaluation Criteria Builder -->
         <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8"
              x-data="criteriaBuilder()">
@@ -458,6 +496,7 @@
   <script src="{% static 'bundles/js/solicitation-chat-bundle.js' %}" defer></script>
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
   <script src="{% static 'solicitations/coverage_map.js' %}"></script>
+  {% if area_picker %}{% include "solicitations/_service_area_scripts.html" %}{% endif %}
 {% endblock javascript %}
 
 {% block inline_javascript %}

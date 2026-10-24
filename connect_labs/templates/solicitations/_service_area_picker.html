@@ -1,0 +1,10 @@
+{% comment %}
+  One service-area map (solicitations/service_area_picker.js). `picker` comes
+  from views._area_picker: with an input it is a picker, without one a
+  read-only map of the areas.
+{% endcomment %}
+<div id="sap-{{ picker.id }}-wrap" class="relative w-full {{ height|default:'h-96' }} rounded-lg overflow-hidden border border-gray-200 mb-3">
+  <div id="sap-{{ picker.id }}-map" class="w-full h-full"></div>
+</div>
+<div id="sap-{{ picker.id }}-list" aria-live="polite"></div>
+{{ picker|json_script:picker.script_id }}
