@@ -947,7 +947,7 @@ def _activity_strip(sc, hours: int = 24 * 30) -> list:
     ]
 
 
-def _weekly_series(sc):
+def _weekly_rows(sc):
     """Weekly delivery and money for the current scope, from the works spine.
 
     **Not from the rollups.** Rollups aggregate ``PulseEvent``, which is capped
@@ -963,6 +963,9 @@ def _weekly_series(sc):
     Returns whole weeks only, oldest first. The current partial week is included
     and flagged, because dropping it makes a live trend look like it stopped and
     keeping it unmarked makes every trend look like it just fell off a cliff.
+
+    Each row carries its fixed-cost share unapplied, as ``_fixed``, so one
+    query serves both cost views; ``_weekly_series`` applies the scope's.
     """
     from django.db.models.functions import TruncWeek
 
@@ -990,18 +993,15 @@ def _weekly_series(sc):
         worker = float(r["usd"] or 0)
         org = float(r["usd_org"] or 0)
         out.append(
-            costs.apply_view(
-                {
-                    "t": int(r["bucket"].timestamp()),
-                    "works": r["works"],
-                    "approved": r["approved"],
-                    "usd": worker,
-                    "usd_org": org,
-                    "usd_total": worker + org,
-                },
-                fixed_by_week.get(r["bucket"], 0.0),
-                sc["costs_view"],
-            )
+            {
+                "t": int(r["bucket"].timestamp()),
+                "works": r["works"],
+                "approved": r["approved"],
+                "usd": worker,
+                "usd_org": org,
+                "usd_total": worker + org,
+                "_fixed": fixed_by_week.get(r["bucket"], 0.0),
+            }
         )
     # Flag the trailing partial week rather than letting it read as a collapse.
     if out:
@@ -1012,7 +1012,27 @@ def _weekly_series(sc):
     return out
 
 
+def _weekly_series(sc):
+    """``_weekly_rows`` in the scope's view of fixed costs."""
+    return [_apply_fixed(row, sc["costs_view"]) for row in _weekly_rows(sc)]
+
+
+def _apply_fixed(row: dict, view: str, **kw) -> dict:
+    """Stamp a row carrying its unapplied fixed share (``_fixed``) in ``view``."""
+    return costs.apply_view(row, row.pop("_fixed"), view, **kw)
+
+
 SUMMARY_WATCHED_KEY = "pulse:summary:watched:v1"
+
+
+def _shared_key(request, sc) -> str:
+    """What makes two summary requests the same scope: the query, minus the
+    cost view, and minus ``org`` when it was not honoured (an anonymised
+    caller's ``?org=`` is the unscoped view, see ``_program_scope``)."""
+    from urllib.parse import urlencode
+
+    drop = {"costs"} | ({"org"} if sc["org"] is None else set())
+    return urlencode(sorted((k, v) for k, v in request.GET.items() if k not in drop))
 
 
 class SummaryView(View):
@@ -1031,9 +1051,13 @@ class SummaryView(View):
     Every viewer's request also marks the summary as WATCHED. The warmer only
     keeps its 60s cadence while that mark is fresh; with nobody watching it
     refreshes rarely and writes a TTL that outlives the gap (``warm_summary_cache``).
+
+    ``shared`` is a dict the caller owns for building several variants of one
+    scope: the full-history aggregates are computed once per scope into it and
+    each variant only adds what differs (``_build``).
     """
 
-    def get(self, request, refresh=False, ttl=None):
+    def get(self, request, refresh=False, ttl=None, shared=None):
         import hashlib
         from urllib.parse import urlencode
 
@@ -1051,16 +1075,72 @@ class SummaryView(View):
                 if hit is not None:
                     return HttpResponse(hit, content_type="application/json")
 
-        response = self._build(request)
+        response = self._build(request, shared)
         if key is not None and response.status_code == 200:
             cache.set(key, response.content, ttl)
         return response
 
-    def _build(self, request):
+    def _build(self, request, shared=None):
+        """The payload: the scope's aggregates, then what this variant changes.
+
+        Variants of one scope differ only in the partner-name entitlement
+        (``orgs`` and the ``org`` block) and the view of fixed costs (the money
+        and weekly figures). Everything else -- every full-history scan,
+        including the connectivity window pass that was ~26% of the database's
+        active time on its own -- is the same, so ``_scope_payload`` computes it
+        once per scope and ``shared`` hands it to the next variant. Warming four
+        variants used to run every scan four times (~54s a warm).
+        """
+        import copy
+
+        sc = _program_scope(request)
+        key = _shared_key(request, sc)
+        base = shared.get(key) if shared is not None else None
+        if base is None:
+            base = self._scope_payload(request, sc)
+            if shared is not None:
+                shared[key] = base
+        payload = copy.deepcopy(base)
+
+        view = sc["costs_view"]
+        money = payload["money"]
+        for row in money["by_service"]:
+            _apply_fixed(row, view, rate="total_rate", units=row["approved"])
+        money["by_service"].sort(key=lambda r: -r["usd_total"])
+        money["by_service"] = money["by_service"][:12]
+        for row in money["by_country"]:
+            _apply_fixed(row, view)
+        if view == costs.VIEW_SPREAD:
+            money["total_paid"] += money["fixed_costs"]
+        approved_works = money["approved_works"]
+        money["total_per_approved_work"] = money["total_paid"] / approved_works if approved_works else 0
+        money["costs_view"] = view
+        payload["weekly"] = [_apply_fixed(row, view) for row in payload["weekly"]]
+
+        payload["ingest"] = _ingest_state()
+        payload["orgs"] = _org_menu(request)
+        payload["org"] = (
+            {
+                "slug": sc["org"].slug,
+                "name": sc["org"].display_name,
+                "named": bool(getattr(sc["org"], "named", False)),
+                "funder": sc["org"].funder_slug,
+            }
+            if sc["org"] is not None
+            else None
+        )
+        return JsonResponse(payload)
+
+    def _scope_payload(self, request, sc):
+        """Everything in the summary that depends only on the scope.
+
+        Money rows carry their fixed-cost share unapplied (``_fixed``) and the
+        service breakdown is neither sorted nor cut: both depend on the cost
+        view, which ``_build`` applies per variant.
+        """
         window_hours = min(int(request.GET.get("hours", 72)), 24 * 30)
         since = timezone.now() - timedelta(hours=window_hours)
 
-        sc = _program_scope(request)
         program = sc["program"]
         off_map = PulseScalar.objects.filter(key="off_map_points").first()
 
@@ -1206,111 +1286,84 @@ class SummaryView(View):
         ]
         # Fixed costs (custom invoices, costs entered in labs): the slice's
         # share by approved units, shown alongside per-service pay or spread
-        # into it, per `?costs=`. See pulse/costs.py.
-        view = sc["costs_view"]
+        # into it, per `?costs=`. See pulse/costs.py. Applied per variant in
+        # `_build`; here each row only carries its share.
         fixed_total = costs.fixed_for(sc["works"])
         fixed_by_service = costs.fixed_for(sc["works"], "service_slug")
         for row in money_by_service:
-            costs.apply_view(
-                row, fixed_by_service.get(row["service"], 0.0), view, rate="total_rate", units=row["approved"]
-            )
+            row["_fixed"] = fixed_by_service.get(row["service"], 0.0)
         fixed_by_country = costs.fixed_for(sc["works"], "country")
         for row in money_by_country:
-            costs.apply_view(row, fixed_by_country.get(row["country"], 0.0), view)
-        money_by_service.sort(key=lambda r: -r["usd_total"])
-        money_by_service = money_by_service[:12]
-        per_service_paid = total_paid
-        if view == costs.VIEW_SPREAD:
-            total_paid += fixed_total
+            row["_fixed"] = fixed_by_country.get(row["country"], 0.0)
 
         # One window-function pass serves both the weekly connectivity trend
         # and the lifetime distribution across workers.
         conn_rows = connectivity.worker_weeks(sc["events"])
 
-        return JsonResponse(
-            {
-                "generated_at": timezone.now().isoformat(),
-                "ingest": _ingest_state(),
-                "scope": _scope_for(sc),
-                "program": (
-                    {
-                        "id": program.program_id,
-                        "name": program.name,
-                        "delivery_type": program.delivery_type,
-                        "service_label": service_label(program.delivery_type),
-                    }
-                    if program
-                    else None
+        return {
+            "generated_at": timezone.now().isoformat(),
+            "scope": _scope_for(sc),
+            "program": (
+                {
+                    "id": program.program_id,
+                    "name": program.name,
+                    "delivery_type": program.delivery_type,
+                    "service_label": service_label(program.delivery_type),
+                }
+                if program
+                else None
+            ),
+            "service": ({"slug": sc["service"], "name": service_label(sc["service"])} if sc["service"] else None),
+            "programs": _program_menu(),
+            "services": _service_menu(),
+            "weekly": _weekly_rows(sc),
+            "trends": _trend_series(sc, conn_rows),
+            "connectivity": connectivity.distribution(connectivity.per_worker(conn_rows)),
+            "activity": _activity_strip(sc),
+            "retention_days": getattr(settings, "PULSE_EVENT_RETENTION_DAYS", 30),
+            "money": {
+                "to_workers": float(money["to_workers"] or 0),
+                "to_orgs": float(money["to_orgs"] or 0),
+                # Per-service until `_build` applies the cost view, which
+                # also sets `total_per_approved_work` and `costs_view`.
+                "total_paid": total_paid,
+                "works": money["works"] or 0,
+                "approved_works": approved_works,
+                "usd_per_approved_work": (float(money["to_workers"] or 0) / approved_works if approved_works else 0),
+                # The parts either view needs to say what the other would.
+                "per_service_paid": total_paid,
+                "fixed_costs": fixed_total,
+                # Fixed costs on opportunities with no approved work have
+                # nothing to spread over; only the unscoped view reports them.
+                "fixed_unallocated": (
+                    float(costs.fixed_rates()["unallocated"])
+                    if sc["program"] is None and sc["org"] is None and not sc["service"] and sc["opportunity"] is None
+                    else 0.0
                 ),
-                "org": (
-                    {
-                        "slug": sc["org"].slug,
-                        "name": sc["org"].display_name,
-                        "named": bool(getattr(sc["org"], "named", False)),
-                        "funder": sc["org"].funder_slug,
-                    }
-                    if sc["org"] is not None
-                    else None
-                ),
-                "service": ({"slug": sc["service"], "name": service_label(sc["service"])} if sc["service"] else None),
-                "programs": _program_menu(),
-                "services": _service_menu(),
-                "orgs": _org_menu(request),
-                "weekly": _weekly_series(sc),
-                "trends": _trend_series(sc, conn_rows),
-                "connectivity": connectivity.distribution(connectivity.per_worker(conn_rows)),
-                "activity": _activity_strip(sc),
-                "retention_days": getattr(settings, "PULSE_EVENT_RETENTION_DAYS", 30),
-                "money": {
-                    "to_workers": float(money["to_workers"] or 0),
-                    "to_orgs": float(money["to_orgs"] or 0),
-                    "total_paid": total_paid,
-                    "works": money["works"] or 0,
-                    "approved_works": approved_works,
-                    "usd_per_approved_work": (
-                        float(money["to_workers"] or 0) / approved_works if approved_works else 0
-                    ),
-                    "total_per_approved_work": (total_paid / approved_works if approved_works else 0),
-                    # Which view the totals above are in, and the parts either
-                    # view needs to say what the other would.
-                    "costs_view": view,
-                    "per_service_paid": per_service_paid,
-                    "fixed_costs": fixed_total,
-                    # Fixed costs on opportunities with no approved work have
-                    # nothing to spread over; only the unscoped view reports them.
-                    "fixed_unallocated": (
-                        float(costs.fixed_rates()["unallocated"])
-                        if sc["program"] is None
-                        and sc["org"] is None
-                        and not sc["service"]
-                        and sc["opportunity"] is None
-                        else 0.0
-                    ),
-                    "by_work_status": by_work_status,
-                    "by_country": money_by_country,
-                    "by_country_unattributed": money_country_unattributed,
-                    "by_service": money_by_service,
-                },
-                "stored": {
-                    "events": agg["n"] or 0,
-                    "flagged": agg["flagged"] or 0,
-                    "usd_to_workers": float(agg["usd"] or 0),
-                    "off_map_points": (off_map.value.get("count", 0) if off_map else 0),
-                },
-                "by_status": by_status,
-                "by_flag": by_flag,
-                "by_country": by_country,
-                "hourly": [
-                    {"t": int(r["bucket_hour"].timestamp()), "n": r["n"], "usd": float(r["usd"] or 0)} for r in hourly
-                ],
-                "opportunities": opps,
-                "labels": {
-                    "countries": COUNTRY_NAMES,
-                    "flags": FLAG_LABELS,
-                    "services": SERVICE_LABELS,
-                },
-            }
-        )
+                "by_work_status": by_work_status,
+                "by_country": money_by_country,
+                "by_country_unattributed": money_country_unattributed,
+                "by_service": money_by_service,
+            },
+            "stored": {
+                "events": agg["n"] or 0,
+                "flagged": agg["flagged"] or 0,
+                "usd_to_workers": float(agg["usd"] or 0),
+                "off_map_points": (off_map.value.get("count", 0) if off_map else 0),
+            },
+            "by_status": by_status,
+            "by_flag": by_flag,
+            "by_country": by_country,
+            "hourly": [
+                {"t": int(r["bucket_hour"].timestamp()), "n": r["n"], "usd": float(r["usd"] or 0)} for r in hourly
+            ],
+            "opportunities": opps,
+            "labels": {
+                "countries": COUNTRY_NAMES,
+                "flags": FLAG_LABELS,
+                "services": SERVICE_LABELS,
+            },
+        }
 
 
 def _grid_for(sc):

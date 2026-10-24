@@ -304,6 +304,35 @@ class TestTheTwoViews:
         assert chc["usd_total"] == 500
         assert chc["total_rate"] == pytest.approx(500 / 2)  # two approved works
 
+    def test_variants_built_from_one_scan_match_building_each_alone(self, portfolio):
+        # The warmer builds all four variants from one shared scope payload.
+        # Each must be exactly what building it on its own gives, money and all.
+        import json
+
+        from django.contrib.auth.models import AnonymousUser
+        from django.http import QueryDict
+
+        from connect_labs.pulse.api import SummaryView
+
+        class _Req:
+            def __init__(self, user, query):
+                self.GET = QueryDict(query)
+                self.user = user
+
+        def body(response):
+            payload = json.loads(response.content)
+            payload.pop("generated_at")
+            return payload
+
+        shared = {}
+        for user in (portfolio, AnonymousUser()):
+            for query in ("", "costs=spread"):
+                alone = body(SummaryView()._build(_Req(user, query)))
+                together = body(SummaryView()._build(_Req(user, query), shared))
+                assert together == alone, (user, query)
+        assert len(shared) == 1, "names and cost view are one scope"
+        assert body(SummaryView()._build(_Req(portfolio, "costs=spread"), shared))["money"]["total_paid"] == 500
+
     def test_a_window_carries_only_its_share(self, client, portfolio):
         m = client.get(reverse("pulse:api_summary") + "?costs=spread&from=2026-04-01&to=2026-04-30").json()["money"]
         assert m["per_service_paid"] == 50
