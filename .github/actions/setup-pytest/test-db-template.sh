@@ -50,6 +50,10 @@ restore_dump() {
   wait_for_postgres || return 1
   start=$(date +%s%3N)
   psql -c "DROP DATABASE IF EXISTS \"$template\"" -c "CREATE DATABASE \"$template\"" || return 1
+  # Roles live in the cluster, not the dump, and the dump grants to and writes
+  # policies for labs_data_reader (labs migration 0039). A fresh service container
+  # has no such role, so without this every restore fails and migrates cold.
+  psql -c "DO \$\$ BEGIN CREATE ROLE labs_data_reader NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END \$\$" || return 1
   # --single-transaction: all of it or none of it. A half-restored template
   # would be trusted by --reuse-db and cloned into every worker.
   if docker exec -i "$container" pg_restore -U postgres -d "$template" \

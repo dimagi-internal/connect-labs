@@ -131,6 +131,51 @@ def test_a_table_the_validator_missed_still_does_not_resolve(cache, monkeypatch)
     assert "does not exist" in e.value.message
 
 
+def _without_the_validator(monkeypatch):
+    """Switch the relation allow-list off, as if the validator had a bug."""
+    from connect_labs.labsdata.validator import ExplorerValidator
+
+    monkeypatch.setattr(ExplorerValidator, "_validate_table_access", lambda self, statement, sql: None)
+
+
+def test_a_qualified_cache_read_past_the_validator_sees_only_granted_opportunities(cache, monkeypatch):
+    # The database is the second boundary: even naming the shared cache table
+    # directly, the reader role sees the rows of the opportunities it was granted
+    # (901's served slot) and not the other opportunity's 7 or the other slots.
+    _without_the_validator(monkeypatch)
+    sql = "SELECT opportunity_id, pipeline_id, COUNT(*) FROM public.labs_raw_visit_cache GROUP BY 1, 2 ORDER BY 1, 2"
+    rows = run_query([HELD], sql).rows
+    assert rows == [[901, USER_VISITS_RAW_SLOT, 49]]  # 9 served + 20 stale + 20 pending, all 901 slot -1
+
+
+def test_any_other_table_past_the_validator_is_permission_denied(cache, monkeypatch):
+    _without_the_validator(monkeypatch)
+    with pytest.raises(QueryError) as e:
+        run_query([HELD], "SELECT COUNT(*) FROM public.django_migrations")
+    assert e.value.code == "invalid_sql"
+    assert "permission denied" in e.value.message
+
+
+def test_grants_and_role_never_outlive_the_query(cache):
+    def state():
+        with connection.cursor() as c:
+            c.execute("SELECT current_user, (SELECT COUNT(*) FROM public.labsdata_scope_grant)")
+            return c.fetchone()
+
+    before = state()
+    assert before[1] == 0
+    run_query([HELD, ALSO_HELD], "SELECT COUNT(*) FROM visits")
+    assert state() == before
+
+
+def test_without_the_reader_role_nothing_runs(cache, monkeypatch):
+    # Fail closed: a missing role is a refusal, never a fallback to the app's own role.
+    monkeypatch.setattr(engine, "READER_ROLE", "labs_data_reader_missing")
+    with pytest.raises(QueryError) as e:
+        run_query([HELD], "SELECT COUNT(*) FROM visits")
+    assert e.value.code == "query_failed"
+
+
 def test_timeout(cache, monkeypatch):
     monkeypatch.setattr(engine, "STATEMENT_TIMEOUT_MS", 50)
     with pytest.raises(QueryError) as e:
