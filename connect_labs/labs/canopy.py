@@ -179,6 +179,9 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "targeting:index": ("targeting:read",),
     "targeting:pmc": ("targeting:read",),
     "labsdata:index": ("data:read",),
+    # A data space's page: the same scope; the data_* tools read the space only through
+    # labsdata.spaces.open, as the visitor.
+    "labsdata:space": ("data:read",),
     "supply_chain:procurement_tender_detail": ("supply:read",),
     "supply_chain:procurement_comparison": ("supply:read",),
 }
@@ -199,6 +202,7 @@ PAGE_TITLES: dict[str, str] = {
     "targeting:index": "Targeting",
     "targeting:pmc": "Targeting: malaria PMC",
     "labsdata:index": "Data",
+    "labsdata:space": "A data space (a named set of sources on the Data page)",
     "supply_chain:procurement_tender_detail": "A tender",
     "supply_chain:procurement_comparison": "A tender's quote comparison",
 }

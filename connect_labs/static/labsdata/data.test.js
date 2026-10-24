@@ -1,6 +1,8 @@
 // The Data page (/labs/data/): its CSV export guards against formula injection and
 // opens in Excel as UTF-8, and a link from a result card (?run=1&download=1) runs the
-// query once and highlights Download CSV -- never downloading by itself.
+// query once and highlights Download CSV -- never downloading by itself. On a data
+// space's page every call sends the space alone, and the agent's page actions switch
+// the canvas, as the person, returning no rows.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { Window } from 'happy-dom';
@@ -11,7 +13,45 @@ function tick() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function mount({ intent = {}, selected = true, result, saved } = {}) {
+async function settle() {
+  for (let i = 0; i < 12; i++) await tick();
+}
+
+const SPACE = {
+  id: 42,
+  name: 'Team space',
+  description: '',
+  sources: {
+    programs: [],
+    opportunities: [{ id: 7, name: 'Opp', llo: 'LLO', program_id: null }],
+    workflow: null,
+  },
+  opportunity_ids: [7],
+  program_ids: [],
+  workflow: null,
+  new_in_programs: [],
+  changed: null,
+};
+
+const RESULT = {
+  columns: ['name', 'n'],
+  rows: [['=cmd', 1]],
+  row_count: 1,
+  truncated: false,
+  elapsed_ms: 2,
+  opportunities: [{ id: 7, name: 'Opp' }],
+};
+
+function mount({
+  intent = {},
+  selected = true,
+  result,
+  saved,
+  space = null,
+  groups = [],
+  items = [],
+  queryFails = false,
+} = {}) {
   const window = new Window({ url: 'https://labs.example/labs/data/' });
   const document = window.document;
   const options = {
@@ -19,61 +59,79 @@ function mount({ intent = {}, selected = true, result, saved } = {}) {
     programs: [],
     initial: {
       workflow: null,
-      opportunity_ids: selected ? [7] : [],
+      opportunity_ids: selected && !space ? [7] : [],
       program_ids: [],
     },
+    space,
   };
   document.body.innerHTML = `
     <script type="application/json" id="labsdata-options">${JSON.stringify(options)}</script>
+    <select id="ex-space-switch"></select><button id="ex-space-new">New</button>
+    <button id="ex-space-archive">Archive</button><div id="ex-space-notice"></div>
     <div id="ex-chips"></div><div class="ex-picker"><input id="ex-add"><div id="ex-add-results"></div></div>
     <button id="ex-wf-btn">Workflow</button><span id="ex-wf-hint"></span><div id="ex-wf-list"></div>
+    <button id="ex-sources-edit" hidden>Update</button><button id="ex-sources-save" hidden>Save</button>
+    <button id="ex-sources-cancel" hidden>Cancel</button>
     <div id="ex-cache"></div><div id="ex-tables"></div><span id="ex-tables-hint"></span>
-    <textarea id="ex-sql">SELECT 1</textarea>
-    <button id="ex-run">Run</button><input id="ex-max" value="500">
-    <button id="ex-save" class="ex-btn ghost">Save query</button><div id="ex-saved"></div>
-    <button id="ex-csv" class="ex-btn ghost" disabled>Download CSV</button>
-    <div id="ex-result"></div><div id="ex-visit"></div>
+    <div id="ex-space-items"></div><div id="ex-saved"></div>
+    <div id="ex-tabs"></div>
+    <div id="ex-panes"><div id="ex-pane-editor" data-tab="editor">
+      <textarea id="ex-sql">SELECT 1</textarea>
+      <button id="ex-run">Run</button><input id="ex-max" value="500">
+      <button id="ex-save" class="ex-btn ghost">Save query</button>
+      <button id="ex-csv" class="ex-btn ghost" disabled>Download CSV</button>
+      <div id="ex-result"></div>
+    </div></div>
+    <div id="ex-save-dialog" hidden><input id="ex-save-name"><select id="ex-save-target"></select>
+      <pre id="ex-save-sql"></pre><div id="ex-save-error" hidden></div>
+      <button id="ex-save-cancel">Cancel</button><button id="ex-save-confirm">Save</button></div>
     <script type="application/json" id="ex-open-intent">${JSON.stringify(intent)}</script>`;
   const posts = [];
+  const gets = [];
   window.LABSDATA = {
     describeUrl: '/d',
     queryUrl: '/q',
     visitsUrl: '/v',
     savedUrl: '/s/',
+    indexUrl: '/labs/data/',
+    spacesUrl: '/sp/',
+    spacePageUrl: '/labs/data/space/0/',
+    spaceApiUrl: '/sp/0/',
     csrf: 't',
   };
+  const ok = (body) => ({ ok: true, status: 200, json: async () => body });
   window.fetch = async (url, init) => {
-    if (!init || !init.body)
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ saved: saved || [] }),
-      };
+    if (!init || !init.body) {
+      gets.push(url);
+      if (url === '/sp/') return ok({ groups });
+      if (url === '/sp/42/items/') return ok({ space_id: 42, items });
+      return ok({ saved: saved || [] });
+    }
     posts.push({ url, body: JSON.parse(init.body) });
-    if (url === '/s/')
+    if (url === '/s/' || url.endsWith('/items/'))
+      return ok({ saved: { id: 1, version: 2 } });
+    if (url === '/q' && queryFails)
       return {
-        ok: true,
-        status: 200,
-        json: async () => ({ saved: { id: 1, version: 2 } }),
+        ok: false,
+        status: 400,
+        json: async () => ({
+          error: 'sql',
+          message: 'invalid input syntax for type numeric: "a secret"',
+        }),
       };
+    if (url === '/v')
+      return ok({ visits: [{ visit_id: 'v1' }], not_found: [] });
     const body =
       url === '/q'
-        ? result || {
-            columns: ['name', 'n'],
-            rows: [['=cmd', 1]],
-            row_count: 1,
-            truncated: false,
-            elapsed_ms: 2,
-            opportunities: [{ id: 7, name: 'Opp' }],
-          }
+        ? result || RESULT
         : {
-            opportunities: [],
+            opportunities: [{ opportunity_id: 7, cached_visits: 3 }],
             loaded: [],
             relations: {},
             fields: [],
             sampled_visits: 0,
           };
-    return { ok: true, status: 200, json: async () => body };
+    return ok(body);
   };
   const clicks = [];
   window.URL.createObjectURL = () => 'blob:x';
@@ -81,7 +139,7 @@ function mount({ intent = {}, selected = true, result, saved } = {}) {
     clicks.push(this.getAttribute('download'));
   };
   window.eval(SCRIPT);
-  return { window, document, posts, clicks };
+  return { window, document, posts, gets, clicks };
 }
 
 describe('the CSV export', () => {
@@ -114,7 +172,7 @@ describe('a link from a result card', () => {
     const { document, posts, clicks } = mount({
       intent: { run: true, download: true },
     });
-    for (let i = 0; i < 8; i++) await tick();
+    await settle();
     const runs = posts.filter((p) => p.url === '/q');
     expect(runs).toHaveLength(1);
     expect(runs[0].body).toMatchObject({
@@ -133,24 +191,25 @@ describe('a link from a result card', () => {
 
   it('runs nothing without the run hint', async () => {
     const { posts } = mount({ intent: { run: false, download: true } });
-    for (let i = 0; i < 8; i++) await tick();
+    await settle();
     expect(posts.filter((p) => p.url === '/q')).toHaveLength(0);
   });
 });
 
 describe('saving a query', () => {
-  it('a card link highlights Save and saves nothing until the person names it', async () => {
+  it('a card link opens the Save dialog and saves nothing until the person names it', async () => {
     const display = { columns: { n: { label: 'Visits' } } };
-    const { window, document, posts } = mount({
+    const { document, posts } = mount({
       intent: { save: true, display },
     });
-    for (let i = 0; i < 8; i++) await tick();
+    await settle();
     const button = document.getElementById('ex-save');
     expect(button.classList.contains('ready')).toBe(true);
+    expect(document.getElementById('ex-save-dialog').hidden).toBe(false);
     expect(posts.filter((p) => p.url === '/s/')).toHaveLength(0);
-    window.prompt = () => 'Visits by place';
-    button.click();
-    for (let i = 0; i < 8; i++) await tick();
+    document.getElementById('ex-save-name').value = 'Visits by place';
+    document.getElementById('ex-save-confirm').click();
+    await settle();
     const saves = posts.filter((p) => p.url === '/s/');
     expect(saves).toHaveLength(1);
     // The query, its opportunities, row cap and display -- never rows.
@@ -161,6 +220,40 @@ describe('saving a query', () => {
       program_ids: [],
       max_rows: 500,
       display,
+    });
+  });
+
+  it('a card link defaults to the space whose sources match its selection', async () => {
+    const { document, posts } = mount({
+      intent: { save: true },
+      groups: [
+        {
+          key: 'opportunity:7',
+          label: 'Opportunity: Opp',
+          spaces: [
+            {
+              id: 42,
+              name: 'Team space',
+              opportunity_ids: [7],
+              program_ids: [],
+              workflow: null,
+            },
+          ],
+        },
+      ],
+    });
+    await settle();
+    expect(document.getElementById('ex-save-target').value).toBe('42');
+    document.getElementById('ex-save-name').value = 'Into the space';
+    document.getElementById('ex-save-confirm').click();
+    await settle();
+    const saves = posts.filter((p) => p.url === '/sp/42/items/');
+    expect(saves).toHaveLength(1);
+    expect(saves[0].body).toEqual({
+      name: 'Into the space',
+      sql: 'SELECT 1',
+      max_rows: 500,
+      display: null,
     });
   });
 
@@ -187,9 +280,9 @@ describe('saving a query', () => {
         opportunities: [{ id: 7, name: 'Opp' }],
       },
     });
-    for (let i = 0; i < 8; i++) await tick();
+    await settle();
     document.querySelector('#ex-saved button.open').click();
-    for (let i = 0; i < 8; i++) await tick();
+    await settle();
     const runs = posts.filter((p) => p.url === '/q');
     expect(runs).toHaveLength(1);
     expect(runs[0].body).toEqual({
@@ -201,5 +294,177 @@ describe('saving a query', () => {
     const th = document.querySelectorAll('#ex-result th');
     expect(th[1].textContent).toBe('Visits');
     expect(th[1].getAttribute('title')).toBe('n');
+  });
+});
+
+describe('a data space page', () => {
+  it('reads the space alone: every call sends space_id, and its sources are locked', async () => {
+    const { document, posts } = mount({ space: SPACE });
+    await settle();
+    const described = posts.filter((p) => p.url === '/d');
+    expect(described[0].body).toEqual({ space_id: 42, load_missing: false });
+    document.getElementById('ex-run').click();
+    await settle();
+    const run = posts.find((p) => p.url === '/q');
+    expect(run.body).toEqual({ space_id: 42, sql: 'SELECT 1', max_rows: 500 });
+    // A source chip has no remove button; Update sources is offered instead.
+    expect(document.querySelector('#ex-chips button')).toBeNull();
+    expect(document.getElementById('ex-sources-edit').hidden).toBe(false);
+    expect(document.querySelector('.ex-picker').hidden).toBe(true);
+  });
+
+  it('Update sources asks before changing them, and sends the confirm', async () => {
+    const { window, document, posts } = mount({ space: SPACE });
+    await settle();
+    document.getElementById('ex-sources-edit').click();
+    await settle();
+    // Editing: chips can be removed, and the describe reads the edited selection.
+    expect(document.querySelector('#ex-chips button')).not.toBeNull();
+    window.confirm = () => false;
+    document.getElementById('ex-sources-save').click();
+    await settle();
+    expect(posts.filter((p) => p.url.endsWith('/sources/'))).toHaveLength(0);
+    window.confirm = () => true;
+    window.location.reload = () => {};
+    document.getElementById('ex-sources-save').click();
+    await settle();
+    const changed = posts.filter((p) => p.url === '/sp/42/sources/');
+    expect(changed).toHaveLength(1);
+    expect(changed[0].body).toEqual({
+      confirm: true,
+      opportunity_ids: [7],
+      program_ids: [],
+    });
+  });
+});
+
+describe('page actions (the agent switching the canvas)', () => {
+  it('showQuery runs the query in a new tab as the person and returns no rows', async () => {
+    const { window, document, posts } = mount({ space: SPACE });
+    await settle();
+    const ack = await window.LABSDATA_ACTIONS.showQuery({
+      sql: 'SELECT 2',
+      title: 'Two',
+      display: { columns: { n: { label: 'Visits' } } },
+    });
+    expect(ack).toMatchObject({
+      ok: true,
+      shown: true,
+      outcome: 'shown_to_person',
+    });
+    expect(JSON.stringify(ack)).not.toContain('=cmd');
+    const run = posts.filter((p) => p.url === '/q').pop();
+    expect(run.body).toEqual({ space_id: 42, sql: 'SELECT 2', max_rows: 500 });
+    // The editor is untouched; the result is in the new tab.
+    expect(document.getElementById('ex-sql').value).toBe('SELECT 1');
+    const tabs = document.querySelectorAll('#ex-tabs .ex-tab');
+    expect(tabs).toHaveLength(2);
+    expect(tabs[1].getAttribute('aria-selected')).toBe('true');
+    expect(document.getElementById('ex-pane-editor').hidden).toBe(true);
+    const pane = document.querySelector(`#ex-panes [data-tab="${ack.tab}"]`);
+    expect(pane.querySelectorAll('th')[1].textContent).toBe('Visits');
+  });
+
+  it('a failed showQuery tells the agent only the error code, never the message', async () => {
+    const { window } = mount({ space: SPACE, queryFails: true });
+    await settle();
+    const ack = await window.LABSDATA_ACTIONS.showQuery({
+      sql: 'SELECT x::numeric',
+    });
+    expect(ack.outcome).toBe('error_shown_to_person');
+    expect(ack.error).toBe('sql');
+    expect(JSON.stringify(ack)).not.toContain('a secret');
+  });
+
+  it('refuses bad input by throwing', async () => {
+    const { window } = mount({ space: SPACE });
+    await settle();
+    const a = window.LABSDATA_ACTIONS;
+    await expect(a.showQuery({ sql: '  ' })).rejects.toThrow(/sql/);
+    await expect(
+      a.showQuery({ sql: 'SELECT 1', display: 'x' }),
+    ).rejects.toThrow(/display/);
+    await expect(a.openItem({ kind: 'artifact', id: 1 })).rejects.toThrow(
+      /Artifacts/,
+    );
+    await expect(a.openItem({ kind: 'query', id: 999 })).rejects.toThrow(
+      /No such/,
+    );
+    await expect(a.showVisit({ visit_id: '../x' })).rejects.toThrow(/visit_id/);
+    await expect(a.proposeSave({ sql: 'SELECT 1' })).rejects.toThrow(/name/);
+    // On a space's page the sources are fixed.
+    await expect(
+      a.data_set_query({ sql: 'SELECT 1', opportunity_ids: [8] }),
+    ).rejects.toThrow(/data space/);
+  });
+
+  it('proposeSave fills the dialog for this space and saves nothing', async () => {
+    const { window, document, posts } = mount({ space: SPACE });
+    await settle();
+    const ack = await window.LABSDATA_ACTIONS.proposeSave({
+      name: 'Weekly visits',
+      sql: 'SELECT 3',
+    });
+    expect(ack).toMatchObject({ ok: true, proposed: true, saved: false });
+    expect(document.getElementById('ex-save-dialog').hidden).toBe(false);
+    expect(document.getElementById('ex-save-name').value).toBe('Weekly visits');
+    expect(document.getElementById('ex-save-target').value).toBe('42');
+    expect(posts.filter((p) => p.url.endsWith('/items/'))).toHaveLength(0);
+  });
+
+  it('openItem opens a space query in a tab; showVisit opens a visit over the space', async () => {
+    const { window, posts } = mount({
+      space: SPACE,
+      items: [
+        {
+          id: 5,
+          name: 'Kept',
+          sql: 'SELECT 5',
+          max_rows: 20,
+          display: null,
+          version: 2,
+          versions: [
+            { id: 5, version: 2, sql: 'SELECT 5', max_rows: 20, display: null },
+            { id: 4, version: 1, sql: 'SELECT 4', max_rows: 20, display: null },
+          ],
+        },
+      ],
+    });
+    await settle();
+    const ack = await window.LABSDATA_ACTIONS.openItem({
+      kind: 'query',
+      id: 4,
+    });
+    expect(ack).toMatchObject({ ok: true, opened: true });
+    expect(posts.filter((p) => p.url === '/q').pop().body).toEqual({
+      space_id: 42,
+      sql: 'SELECT 4',
+      max_rows: 20,
+    });
+    const visit = await window.LABSDATA_ACTIONS.showVisit({ visit_id: 'v1' });
+    expect(visit).toMatchObject({ ok: true, shown: true });
+    expect(JSON.stringify(visit)).not.toContain('visit_id');
+    expect(posts.filter((p) => p.url === '/v').pop().body).toEqual({
+      space_id: 42,
+      visit_ids: ['v1'],
+    });
+  });
+
+  it('registers every action with canopy', async () => {
+    const { window, document } = mount({ space: SPACE });
+    const names = [];
+    const host = { widget: { registerAction: (name) => names.push(name) } };
+    document.dispatchEvent(
+      new window.CustomEvent('canopy:ready', { detail: host }),
+    );
+    expect(names.sort()).toEqual(
+      [
+        'data_set_query',
+        'openItem',
+        'proposeSave',
+        'showQuery',
+        'showVisit',
+      ].sort(),
+    );
   });
 });

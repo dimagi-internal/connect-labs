@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from connect_labs.labs.access.scopes import Caller
 from connect_labs.labsdata import display as result_display
-from connect_labs.labsdata import service
+from connect_labs.labsdata import guidance, service, spaces
 from connect_labs.labsdata.engine import MAX_VISITS_PER_READ, QueryError
 from connect_labs.labsdata.scope import ScopeError
 from connect_labs.labsdata.validator import DEFAULT_MAX_ROWS, HARD_MAX_ROWS
@@ -68,8 +68,54 @@ _SELECTION = {
 }
 
 
+#: Every data_* tool's ``space_id``: a data space on the Data page (its page state's
+#: ``filters.space_id``). The space brings its own selection.
+_SPACE = {
+    "space_id": {
+        "type": "integer",
+        "description": (
+            "A data space (the Data page's page state says `filters.space_id` when one is open). When given, "
+            "the call reads exactly the space's sources -- opened as the person, refused as not found unless "
+            "they hold every one -- and any opportunity_ids / program_ids / workflow you also pass must name "
+            "the same sources, or the call is refused. On a space's page, always pass it."
+        ),
+    }
+}
+
+
 def _caller(user) -> Caller:
     return Caller(user=user, access_token=require_connect_token(user))
+
+
+def _open_space(caller: Caller, space_id, opportunity_ids=None, program_ids=None, workflow=None):
+    """The space, opened through ``spaces.open`` (the one gate), and the selection the call
+    reads: the space's. Anything else the call names must be the space's own sources -- an
+    agent held to a space cannot widen or swap what it reads by passing a selection too."""
+    try:
+        opened = spaces.open(caller, space_id)
+    except spaces.SpaceNotFound as e:
+        raise MCPToolError("NOT_FOUND", e.message, {"reason": e.code}) from e
+    except spaces.SpaceChanged as e:
+        raise MCPToolError("INVALID_SCHEMA", e.message, {"reason": e.code}) from e
+    except ScopeError as e:
+        raise _scope_error(e) from e
+    space = opened.space
+    outside = (
+        (opportunity_ids and set(_ids(opportunity_ids)) != {int(o) for o in space.opportunity_ids})
+        or (program_ids and set(_ids(program_ids)) != {int(p) for p in space.program_ids})
+        or (
+            workflow
+            and (not isinstance(workflow, dict) or _ids([workflow.get("id")]) != _ids([space.workflow.get("id")]))
+        )
+    )
+    if outside:
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            "This call is held to data space "
+            f"{opened.id}: it reads only the space's sources. Pass space_id alone (or the space's own sources).",
+            {"reason": "outside_space", "space_id": opened.id},
+        )
+    return opened
 
 
 def _from_canopy() -> bool:
@@ -110,6 +156,7 @@ DESCRIBE = dict(
         "type": "object",
         "properties": {
             **_SELECTION,
+            **_SPACE,
             "field_search": {
                 "type": "string",
                 "description": "Only fields whose path or a value contains this text.",
@@ -128,17 +175,29 @@ DESCRIBE_OPPORTUNITIES_ONLY = {
         **DESCRIBE["input_schema"],
         "properties": {
             "opportunity_ids": _OPPS,
-            **{k: v for k, v in DESCRIBE["input_schema"]["properties"].items() if k not in _SELECTION},
+            **{
+                k: v
+                for k, v in DESCRIBE["input_schema"]["properties"].items()
+                if k not in _SELECTION and k not in _SPACE
+            },
         },
         "required": ["opportunity_ids"],
     },
 }
 
 
-def describe(user, opportunity_ids=None, field_search=None, load_missing=False, program_ids=None, workflow=None):
+def describe(
+    user, opportunity_ids=None, field_search=None, load_missing=False, program_ids=None, workflow=None, space_id=None
+):
+    caller = _caller(user)
+    opened = None
+    if space_id is not None:
+        opened = _open_space(caller, space_id, opportunity_ids, program_ids, workflow)
+        reads = opened.selection_args()
+        opportunity_ids, program_ids, workflow = reads["opportunity_ids"], reads["program_ids"], reads["workflow"]
     try:
-        return service.describe(
-            _caller(user),
+        out = service.describe(
+            caller,
             opportunity_ids,
             field_search=field_search,
             load_missing=bool(load_missing),
@@ -148,6 +207,18 @@ def describe(user, opportunity_ids=None, field_search=None, load_missing=False, 
         )
     except ScopeError as e:
         raise _scope_error(e) from e
+    if opened is not None:
+        out["space"] = {
+            "id": opened.id,
+            "name": opened.space.name,
+            "description": opened.space.description,
+            "program_ids": list(opened.space.program_ids),
+            "rules": guidance.SPACE_RULES,
+        }
+    if _from_canopy():
+        # Only canopy's panel has the Data page's page actions (page_showQuery, ...).
+        out["page_actions"] = guidance.PAGE_ACTIONS
+    return out
 
 
 VALIDATE = dict(
@@ -165,8 +236,20 @@ VALIDATE = dict(
 )
 
 
-def validate(user, sql):
+#: data_validate (not scout-queries' explorer_validate): over a space's sources too.
+VALIDATE_IN_SPACE = {
+    **VALIDATE,
+    "description": VALIDATE["description"]
+    + " With `space_id`, checks it over the space's sources (a workflow space's pipelines are tables too).",
+    "input_schema": {**VALIDATE["input_schema"], "properties": {**VALIDATE["input_schema"]["properties"], **_SPACE}},
+}
+
+
+def validate(user, sql, space_id=None):
     try:
+        if space_id is not None:
+            opened = _open_space(_caller(user), space_id)
+            return service.validate_selected(sql, opened.selection)
         return service.validate(sql)
     except QueryError as e:
         return {"valid": False, **e.as_dict()}
@@ -231,6 +314,7 @@ QUERY_KEPT_SCHEMA = {
     "properties": {
         **QUERY["input_schema"]["properties"],
         **_SELECTION,
+        **_SPACE,
         "sql": {
             "type": "string",
             "description": "One SELECT. The relations are `visits` and, with a workflow, its pipelines `p_<alias>`.",
@@ -250,9 +334,24 @@ QUERY_KEPT_SCHEMA = {
 
 
 def query(
-    user, opportunity_ids=None, sql="", max_rows=None, keep_result=False, program_ids=None, workflow=None, display=None
+    user,
+    opportunity_ids=None,
+    sql="",
+    max_rows=None,
+    keep_result=False,
+    program_ids=None,
+    workflow=None,
+    display=None,
+    space_id=None,
 ):
     agent = _from_canopy()
+    caller = _caller(user)
+    in_space, space_opps = {}, []
+    if space_id is not None:
+        opened = _open_space(caller, space_id, opportunity_ids, program_ids, workflow)
+        reads = opened.selection_args()
+        opportunity_ids, program_ids, workflow = reads["opportunity_ids"], reads["program_ids"], reads["workflow"]
+        in_space, space_opps = {"space_id": opened.id}, list(opened.selection.ids)
     selection = {"program_ids": program_ids, "workflow": workflow}
     try:
         # Checked before the query runs (all but which columns exist), so a bad display
@@ -262,13 +361,14 @@ def query(
         raise MCPToolError("INVALID_SCHEMA", str(e), {"reason": "bad_display"}) from e
     try:
         out = service.query(
-            _caller(user),
+            caller,
             opportunity_ids,
             sql,
             max_rows=_max_rows(max_rows),
             for_agent=agent,
             shaped=False,
             **selection,
+            **in_space,
         )
     except ScopeError as e:
         raise _scope_error(e) from e
@@ -283,7 +383,8 @@ def query(
             "message": e.message,
             "sql_executed": sql,
             "sql_formatted": service.format_sql(sql),
-            "open_on_page": service.open_on_page_url(opportunity_ids, sql, max_rows=max_rows, **selection),
+            "open_on_page": service.open_on_page_url(opportunity_ids, sql, max_rows=max_rows, **selection, **in_space),
+            **in_space,
         }
         if not (agent or keep_result):
             # Nobody will read it back (and only canopy's agent is ever refused rows).
@@ -292,7 +393,7 @@ def query(
             user,
             kept_results.KIND_QUERY,
             withheld,
-            access={"opportunity_ids": _ids(opportunity_ids), "sensitive": False},
+            access={"opportunity_ids": _ids(opportunity_ids) or space_opps, "sensitive": False},
             name="Query (rows stay in Labs)",
             description="Production rows withheld from the agent; open it on the Data page.",
         )
@@ -420,7 +521,7 @@ def _kept(user, out: dict, agent: bool) -> dict:
 
 for _name, _spec, _fn in (
     ("data_describe", DESCRIBE, describe),
-    ("data_validate", VALIDATE, validate),
+    ("data_validate", VALIDATE_IN_SPACE, validate),
     (
         "data_query",
         {
@@ -446,12 +547,14 @@ for _name, _spec, _fn in (
         f"given opportunities' cached visits. Up to {MAX_VISITS_PER_READ} visits per call. Use it to check a "
         "number at row level -- the visits behind it -- or to see exactly what a worker submitted. Returns "
         "{visits, not_found, notes}. Audit-logged. An agent calling through canopy that Labs has not cleared "
-        "for sensitive data reads only SYNTHETIC opportunities."
+        "for sensitive data reads only SYNTHETIC opportunities. In a data space pass `space_id` instead of "
+        "opportunity_ids."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "opportunity_ids": _OPPS,
+            **_SPACE,
             "visit_ids": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -460,13 +563,16 @@ for _name, _spec, _fn in (
                 "description": "Connect visit ids (the `visit_id` column).",
             },
         },
-        "required": ["opportunity_ids", "visit_ids"],
+        "required": ["visit_ids"],
         "additionalProperties": False,
     },
 )
-def data_visits(user, opportunity_ids, visit_ids):
+def data_visits(user, visit_ids, opportunity_ids=None, space_id=None):
+    caller = _caller(user)
+    if space_id is not None:
+        opportunity_ids = _open_space(caller, space_id, opportunity_ids).selection.ids
     try:
-        return service.visits(_caller(user), opportunity_ids, visit_ids, for_agent=_from_canopy())
+        return service.visits(caller, opportunity_ids, visit_ids, for_agent=_from_canopy())
     except ScopeError as e:
         raise _scope_error(e) from e
     except service.SensitiveDataRefused as e:
@@ -483,7 +589,8 @@ def data_visits(user, opportunity_ids, visit_ids):
         "grouping key and row filters, plus `visits_sql` -- a ready, validated query over `visits` that "
         "extracts the pipeline's fields per visit with the pipeline's own expressions. Use it to check that a "
         "workflow is right: recompute its numbers from `visits` and read the visits that disagree with "
-        "data_visits. Definitions only, no visit rows. Give the workflow's opportunity_id OR program_id."
+        "data_visits. Definitions only, no visit rows. Give the workflow's opportunity_id OR program_id. In a "
+        "data space with a workflow, pass `space_id` alone: it reads the space's workflow."
     ),
     input_schema={
         "type": "object",
@@ -491,16 +598,31 @@ def data_visits(user, opportunity_ids, visit_ids):
             "definition_id": {"type": "integer", "description": "The workflow (definition) id."},
             "opportunity_id": {"type": "integer"},
             "program_id": {"type": "integer"},
+            **_SPACE,
         },
-        "required": ["definition_id"],
         "additionalProperties": False,
     },
 )
-def data_workflow_context(user, definition_id, opportunity_id=None, program_id=None):
+def data_workflow_context(user, definition_id=None, opportunity_id=None, program_id=None, space_id=None):
+    caller = _caller(user)
+    if space_id is not None:
+        opened = _open_space(caller, space_id)
+        w = opened.space.workflow or {}
+        if not w:
+            raise MCPToolError(
+                "NOT_FOUND", f"Data space {opened.id} has no workflow.", {"reason": "no_workflow_in_space"}
+            )
+        if definition_id is not None and _ids([definition_id]) != _ids([w.get("id")]):
+            raise MCPToolError(
+                "PERMISSION_DENIED",
+                f"This call is held to data space {opened.id}, whose workflow is {w.get('id')}.",
+                {"reason": "outside_space", "space_id": opened.id},
+            )
+        definition_id, opportunity_id, program_id = w["id"], w.get("opportunity_id"), w.get("program_id")
+    if definition_id is None:
+        raise MCPToolError("INVALID_SCHEMA", "Give definition_id (or space_id).", {"reason": "definition_required"})
     try:
-        return workflow_context(
-            _caller(user), int(definition_id), opportunity_id=opportunity_id, program_id=program_id
-        )
+        return workflow_context(caller, int(definition_id), opportunity_id=opportunity_id, program_id=program_id)
     except ScopeError as e:
         raise _scope_error(e) from e
     except WorkflowNotFound as e:
