@@ -27,6 +27,9 @@ ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 # persistent connections for any path to hoard. Override via env if a future
 # pooled setup (e.g. pgbouncer) makes persistence safe again.
 DATABASES["default"]["CONN_MAX_AGE"] = env.int("CONN_MAX_AGE", default=0)  # noqa: F405
+# On AWS the Data page's SQL only ever runs as the reader's own login: without its
+# password it refuses rather than falling back to SET ROLE (labsdata/reader_login.py).
+LABSDATA_READER_LOGIN_REQUIRED = True
 
 # SECURITY
 # ------------------------------------------------------------------------------

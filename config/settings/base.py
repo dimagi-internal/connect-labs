@@ -108,6 +108,12 @@ if env("SECONDARY_DATABASE_URL", default=None):
 
 DATABASES["default"]["ATOMIC_REQUESTS"] = True
 
+# The Data page's SQL logs in as its own Postgres role, labs_data_reader, with this
+# password (connect_labs/labsdata/reader_login.py). Unset, it switches to that role
+# from the app's login instead (development and tests).
+LABSDATA_READER_PASSWORD = env("LABSDATA_READER_PASSWORD", default="")
+LABSDATA_READER_LOGIN_REQUIRED = False
+
 
 # URLS
 # ------------------------------------------------------------------------------
