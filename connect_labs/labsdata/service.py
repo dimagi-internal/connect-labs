@@ -234,8 +234,8 @@ class SensitiveDataRefused(Exception):
     message = (
         "Production visit data is sensitive: it reaches an agent only when Labs has cleared it for sensitive "
         "data, and this one is not. "
-        "Validate the SQL with data_validate, try it on a synthetic opportunity, then give the person the "
-        "SQL to run on the Data page (/labs/data/) -- they see the result there."
+        "Validate the SQL with data_validate, try it on a synthetic opportunity, then show it to the person: "
+        "on the Data page with page_showQuery (it runs there, as them), elsewhere as SQL to run at /labs/data/."
     )
 
 
@@ -412,6 +412,7 @@ def query(
     shaped: bool = True,
     program_ids=None,
     workflow: dict | None = None,
+    space_id: int | None = None,
 ) -> dict:
     """Run SQL. ``for_agent`` (a canopy call) gets production rows only when cleared
     (``agent_sees_sensitive_rows``), and its result is shaped for a model's context --
@@ -466,8 +467,9 @@ def query(
         "sql_formatted": format_sql(result.sql_executed),
         "drill": drillable(sql),
         "open_on_page": open_on_page_url(
-            opportunity_ids, sql, program_ids=program_ids, workflow=workflow, max_rows=max_rows
+            opportunity_ids, sql, program_ids=program_ids, workflow=workflow, max_rows=max_rows, space_id=space_id
         ),
+        **({"space_id": space_id} if space_id is not None else {}),
     }
     return shape_for_agent(out) if (for_agent and shaped) else out
 
@@ -537,17 +539,33 @@ def format_sql(sql: str) -> str:
 
 
 def open_on_page_url(
-    opportunity_ids, sql: str = "", *, program_ids=None, workflow: dict | None = None, max_rows: int | None = None
+    opportunity_ids,
+    sql: str = "",
+    *,
+    program_ids=None,
+    workflow: dict | None = None,
+    max_rows: int | None = None,
+    space_id: int | None = None,
 ) -> str:
     """The Data page with this selection, this SQL in the editor and its row cap set:
     everything it takes to run the same query again (the page runs it only when the link
-    asks, ``&run=1``, and the person is signed in: ``views.DataView``)."""
+    asks, ``&run=1``, and the person is signed in: ``views.DataView``). A query over a data
+    space opens on the space's page (``/labs/data/space/<id>/``), which brings its own
+    selection -- and is a 404 to anyone who may not open it."""
     from urllib.parse import urlencode
 
     from django.conf import settings
     from django.urls import reverse
 
     params = {}
+    if space_id is not None:
+        if sql:
+            params["sql"] = sql
+        if max_rows is not None:
+            params["max_rows"] = str(max(1, min(int(max_rows), HARD_MAX_ROWS)))
+        base = (getattr(settings, "LABS_PUBLIC_URL", "") or "").rstrip("/")
+        path = reverse("labsdata:space", args=[int(space_id)])
+        return f"{base}{path}?{urlencode(params)}" if params else f"{base}{path}"
     if workflow:
         owner = workflow.get("opportunity_id") or workflow.get("program_id")
         kind = "opp" if workflow.get("opportunity_id") else "program"

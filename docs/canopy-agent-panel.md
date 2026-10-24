@@ -305,8 +305,43 @@ least 5 times), never a min or max of text.
 **Saved queries** (`labsdata.models.SavedQuery`) are the Data page's own: the SQL, the
 opportunities, the row cap and the display, never rows. Saving is the person's write in
 their own session (CSRF), over opportunities they hold now, with SQL that passes the
-checks; saving a name again adds a version. Only the owner lists, opens or deletes one,
-and opening one runs it again as them. The kept result's 24-hour life is unchanged.
+checks; saving a name again adds a version. A personal one ("My queries") is listed,
+opened and deleted only by its owner; one saved into a **data space** belongs to the space
+(below). Opening one runs it again as the person. The kept result's 24-hour life is
+unchanged. A card's Save lands on the Data page with the Save dialog open on the space whose
+sources match the card's selection (or My queries); a query run over a space links to the
+space's page (`/labs/data/space/<id>/`).
+
+## Data spaces on the Data page
+
+A **data space** (`labsdata.models.DataSpace`, `labsdata/spaces.py`; design:
+`docs/superpowers/specs/2026-10-24-data-spaces-design.md`) is a named, fixed set of sources --
+opportunities, programs frozen to the opportunities they had when added, or one workflow -- and
+the saved queries kept on it. Who may open one is decided on every read by `spaces.open`, the one
+gate (`labsdata/tests/test_spaces_gate.py` fails if a view or `data_*` tool takes a `space_id`
+without it): every program AND every frozen opportunity held now, else `not_found` (the same
+answer as no such space). No membership table and no grant: a teammate holding the same sources
+sees it; losing one opportunity loses the whole space. Changing its sources is the person's own
+click after a warning (`POST .../sources/` with `confirm: true`; no tool, no page action), audited.
+
+Its page (`/labs/data/space/<id>/`, page key `labsdata:space`, `data:read`) is the Data page in
+three regions: the left rail (space switcher and "New space from this selection", source chips
+with Update sources, tables, the space's queries with versions, My queries), a canvas with a tab
+strip (the editor and the last few things shown), and the docked panel (`DATA_PANEL`; the
+widget's own pin snaps it into the page, its expand control grows it). The panel's resource is
+`labs-data-space://<id>` and its page state `filters.space_id`; every `data_*` tool takes
+`space_id`, reads exactly the space's sources, and refuses any other selection beside it
+(`outside_space`). The real-row rules (`agent_sees_sensitive_rows`, `Canopy-Execution`) are
+unchanged.
+
+**Page actions** (registered by `static/labsdata/data.js`, so the agent sees `page_<name>`; each
+runs in the person's tab, as them, checks its input and throws to refuse, and returns an
+acknowledgement only -- never rows, counts or a query's error text):
+`showQuery {sql, title, display}` runs a query in a new canvas tab; `openItem {kind: "query", id}`
+opens a saved query of the space (any version) or of the person's own; `proposeSave {name, sql,
+display}` fills the Save dialog, saving nothing; `showVisit {visit_id}` opens a visit; the older
+`data_set_query` still puts SQL in the editor. `data_describe` teaches a canopy agent these
+(`guidance.PAGE_ACTIONS`, and `guidance.SPACE_RULES` with a `space_id`).
 
 The PMC
 card (`ui://labs/pmc-states`) reads its ranking the same way and re-totals ticked states

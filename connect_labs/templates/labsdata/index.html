@@ -58,23 +58,61 @@
     .ex-saved-row small { color: #78716c; font-size: 11px; }
     .ex-saved-row button.del { color: #a8a29e; font-size: 12px; }
     .ex-search { box-sizing: border-box; width: 100%; font-size: 13px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 5px 8px; }
+    .ex-chip.locked { padding-right: 8px; }
+    .ex-notice { color: #1e3a8a; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 6px 8px; font-size: 12px; margin-top: 6px; }
+    .ex-versions { padding: 0 12px 6px 24px; font-size: 12px; color: #57534e; }
+    .ex-versions button { color: #16006d; }
+    .ex-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid #e7e5e4; }
+    .ex-tab { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 6px 10px; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; color: #57534e; max-width: 260px; }
+    .ex-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ex-tab[aria-selected="true"] { background: #fff; border-color: #e7e5e4; color: #16006d; font-weight: 600; margin-bottom: -1px; }
+    .ex-tab .x { color: #a8a29e; font-weight: 400; }
+    .ex-tab .kind { font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: #78716c; font-weight: 600; }
+    .ex-pane-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid #f5f5f4; }
+    .ex-pane-head h2 { font-size: 14px; font-weight: 600; color: #1c1917; margin-right: auto; }
+    .ex-pane-sql { margin: 0; padding: 8px 12px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; background: #fafaf9; color: #44403c; }
+    .ex-modal { position: fixed; inset: 0; z-index: 50; background: rgba(28,25,23,.35); display: flex; align-items: center; justify-content: center; }
+    .ex-modal[hidden] { display: none; }
+    .ex-modal-box { background: #fff; border-radius: 10px; width: min(560px, 92vw); padding: 16px; box-shadow: 0 10px 40px rgba(0,0,0,.2); display: flex; flex-direction: column; gap: 10px; }
+    .ex-modal-box pre { max-height: 180px; overflow: auto; }
   </style>
 {% endblock %}
 
 {% block content %}
-<div class="px-6 py-5 max-w-[1500px] mx-auto">
+{# Three regions: the left rail (#ex-rail) holds everything about the space or selection; #}
+{# the canvas (#ex-canvas) shows one thing at a time, with a tab strip keeping the last few; #}
+{# the chat is canopy's docked panel (canopy_host/panel.html), beside the page. #}
+<div class="px-6 py-5 max-w-[1500px] mx-auto" id="ex-page" data-space-id="{{ space.pk|default:'' }}">
   <div class="flex items-baseline justify-between mb-4">
     <div>
-      <h1 class="text-2xl font-semibold text-stone-900">Data</h1>
-      <p class="text-sm text-stone-500">Query the visits of the programs and opportunities you hold, down to each submitted form, or a workflow's pipelines. Click a visit id to open the whole visit. Read-only, audit-logged. Ask the agent to write the SQL for you.</p>
+      <h1 class="text-2xl font-semibold text-stone-900">{% if space %}<a href="{% url 'labsdata:index' %}" class="text-stone-500 font-normal">Data</a> / <span id="ex-space-name">{{ space.name }}</span>{% else %}Data{% endif %}</h1>
+      {% if space %}
+        <p class="text-sm text-stone-500">{% if space.description %}{{ space.description }} · {% endif %}A data space: anyone who holds every one of its sources sees it and its saved queries. Read-only, audit-logged; nothing here stores rows.</p>
+      {% else %}
+        <p class="text-sm text-stone-500">Query the visits of the programs and opportunities you hold, down to each submitted form, or a workflow's pipelines. Click a visit id to open the whole visit. Read-only, audit-logged. Ask the agent to write the SQL for you.</p>
+      {% endif %}
     </div>
   </div>
 
   <div class="ex-grid">
-    <aside class="flex flex-col gap-4">
-      <div class="ex-card">
+    <aside class="flex flex-col gap-4" id="ex-rail">
+      <div class="ex-card" id="ex-space-card">
+        <div class="px-3 pt-3 pb-3">
+          <label class="ex-label mb-2 block" for="ex-space-switch">Space</label>
+          <select id="ex-space-switch" class="ex-search" aria-label="Open a data space">
+            <option value="">{% if space %}{{ space.name }}{% else %}No space: my own selection{% endif %}</option>
+          </select>
+          <div class="mt-2 flex flex-wrap items-center gap-2">
+            <button class="ex-btn ghost" id="ex-space-new" type="button" {% if space %}hidden{% endif %}>New space from this selection</button>
+            <button class="ex-btn ghost" id="ex-space-archive" type="button" {% if not space %}hidden{% endif %}>Archive space</button>
+          </div>
+          <div id="ex-space-notice"></div>
+        </div>
+      </div>
+
+      <div class="ex-card" id="ex-sources-card">
         <div class="px-3 pt-3 pb-2">
-          <div class="ex-label mb-2">Querying</div>
+          <div class="ex-label mb-2" id="ex-sources-label">{% if space %}Sources{% else %}Querying{% endif %}</div>
           <div id="ex-chips" class="flex flex-wrap gap-1"></div>
           <div class="ex-picker mt-2">
             <input id="ex-add" class="ex-search" placeholder="add a program or opportunity…" autocomplete="off">
@@ -85,6 +123,11 @@
             <span class="ex-muted text-xs" id="ex-wf-hint"></span>
           </div>
           <div id="ex-wf-list" class="ex-menu ex-menu-inline mt-2" hidden></div>
+          <div class="mt-2 flex flex-wrap items-center gap-2">
+            <button class="ex-btn ghost" id="ex-sources-edit" type="button" hidden>Update sources</button>
+            <button class="ex-btn" id="ex-sources-save" type="button" hidden>Save sources</button>
+            <button class="ex-btn ghost" id="ex-sources-cancel" type="button" hidden>Cancel</button>
+          </div>
         </div>
         <div class="ex-status" id="ex-cache">Choose programs, opportunities or a workflow.</div>
       </div>
@@ -94,27 +137,51 @@
         <div id="ex-tables" class="ex-tables"><p class="px-3 pb-3 text-sm ex-muted">—</p></div>
       </div>
 
+      <div class="ex-card" id="ex-space-items-card" {% if not space %}hidden{% endif %}>
+        <div class="px-3 pt-3 pb-2"><span class="ex-label">In this space</span></div>
+        <div id="ex-space-items" class="ex-saved"><p class="px-3 pb-3 text-sm ex-muted">—</p></div>
+      </div>
+
       <div class="ex-card">
-        <div class="px-3 pt-3 pb-2"><span class="ex-label">Saved queries</span></div>
+        <div class="px-3 pt-3 pb-2"><span class="ex-label">My queries</span></div>
         <div id="ex-saved" class="ex-saved"><p class="px-3 pb-3 text-sm ex-muted">—</p></div>
       </div>
     </aside>
 
-    <section class="flex flex-col gap-4">
-      <div class="ex-card">
-        <textarea id="ex-sql" class="ex-editor" spellcheck="false">{{ example_sql }}</textarea>
-        <div class="ex-bar">
-          <button class="ex-btn" id="ex-run">Run ⌘↵</button>
-          <label>max rows <input id="ex-max" type="number" min="1" max="{{ hard_max_rows }}" value="{{ default_max_rows }}" class="ex-search" style="width: 80px"></label>
-          <span class="ex-muted" id="ex-tables-hint">Query <code>visits</code>.</span>
-          <span class="flex-1"></span>
-          <button class="ex-btn ghost" id="ex-save" title="Save this query (not its rows) to run again">Save query</button>
-          <button class="ex-btn ghost" id="ex-csv" disabled>Download CSV</button>
+    <section class="flex flex-col gap-3" id="ex-canvas">
+      <div id="ex-tabs" class="ex-tabs" role="tablist" aria-label="Canvas"></div>
+      <div id="ex-panes">
+        <div class="ex-pane flex flex-col gap-4" data-tab="editor" id="ex-pane-editor">
+          <div class="ex-card">
+            <textarea id="ex-sql" class="ex-editor" spellcheck="false">{{ example_sql }}</textarea>
+            <div class="ex-bar">
+              <button class="ex-btn" id="ex-run">Run ⌘↵</button>
+              <label>max rows <input id="ex-max" type="number" min="1" max="{{ hard_max_rows }}" value="{{ default_max_rows }}" class="ex-search" style="width: 80px"></label>
+              <span class="ex-muted" id="ex-tables-hint">Query <code>visits</code>.</span>
+              <span class="flex-1"></span>
+              <button class="ex-btn ghost" id="ex-save" title="Save this query (not its rows) to run again">Save query</button>
+              <button class="ex-btn ghost" id="ex-csv" disabled>Download CSV</button>
+            </div>
+          </div>
+          <div id="ex-result"></div>
         </div>
       </div>
-      <div id="ex-result"></div>
-      <div id="ex-visit" class="ex-card" hidden></div>
     </section>
+  </div>
+
+  <div class="ex-modal" id="ex-save-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="ex-save-title">
+    <div class="ex-modal-box">
+      <h2 class="text-lg font-semibold text-stone-900" id="ex-save-title">Save query</h2>
+      <label class="text-sm text-stone-600">Name <input id="ex-save-name" class="ex-search mt-1" maxlength="200" autocomplete="off"></label>
+      <label class="text-sm text-stone-600">Save to <select id="ex-save-target" class="ex-search mt-1"></select></label>
+      <p class="text-xs ex-muted" id="ex-save-hint">The query is saved, never its rows: opening it runs it again, as whoever opens it.</p>
+      <pre class="ex-pane-sql" id="ex-save-sql"></pre>
+      <div class="ex-error" id="ex-save-error" hidden></div>
+      <div class="flex justify-end gap-2">
+        <button class="ex-btn ghost" id="ex-save-cancel" type="button">Cancel</button>
+        <button class="ex-btn" id="ex-save-confirm" type="button">Save</button>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -130,6 +197,11 @@
       queryUrl: "{% url 'labsdata:query' %}",
       visitsUrl: "{% url 'labsdata:visits' %}",
       savedUrl: "{% url 'labsdata:saved' %}",
+      indexUrl: "{% url 'labsdata:index' %}",
+      spacesUrl: "{% url 'labsdata:spaces' %}",
+      // Ends in "/0/": the page swaps the 0 for a space's id.
+      spacePageUrl: "{% url 'labsdata:space' 0 %}",
+      spaceApiUrl: "{% url 'labsdata:space_detail' 0 %}",
       csrf: "{{ csrf_token }}",
     };
   </script>

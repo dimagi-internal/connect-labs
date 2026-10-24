@@ -58,6 +58,8 @@ You are answering questions about live CommCare Connect program data for the opp
       {type: bar, x: <category>, y: [...]} (the card sorts bars largest first); one headline number ->
       {type: stat, y: [<column>]}; detailed or many-row results -> no chart. At most five series, and never a
       percent beside a count on one chart. Never chart an id or a year as a measure.
+16. On the Data page, show the person a result in the page itself with page_showQuery (see `page_actions`)
+    rather than handing SQL back in the chat; the canvas runs it as them.
 """
 
 #: For an agent (a canopy call) over PRODUCTION opportunities that labs has not cleared it
@@ -78,9 +80,39 @@ sees the result there.
    Say which. State whether rejected visits are excluded (`status`).
 4. "By LLO" means GROUP BY llo; "by opportunity" means GROUP BY opportunity_name.
 5. Before handing it over, run data_validate on the SQL: it checks it end to end over zero rows.
-6. On the Data page, hand it over with page_data_set_query (sql, and run: true to run it for them);
-   elsewhere, give the person the SQL to run at /labs/data/. Then tell the person, in plain words, what the
-   query counts, what it filters and how to read the result. You will not see the numbers; do not guess them.
+6. On the Data page, SHOW it with page_showQuery (sql, a plain-words title, and the `display` you would give
+   data_query): the page runs it in the person's browser, as them, and shows the result in its canvas. Do not
+   paste SQL into the chat for the person to copy. Elsewhere, give the person the SQL to run at /labs/data/.
+   Then tell the person, in plain words, what the query counts, what it filters and how to read the result.
+   You will not see the numbers; do not guess them.
+"""
+
+#: The Data page's page actions (registered by static/labsdata/data.js; canopy names them
+#: page_<name>). Returned by data_describe to an agent calling through canopy, which is the
+#: only caller that has them.
+PAGE_ACTIONS = """\
+On the Data page (/labs/data/, and a data space's page /labs/data/space/<id>/) you can change what the person
+sees. Each runs in their browser, as them, and returns only an acknowledgement -- never rows or numbers.
+- page_showQuery {sql, title, display}: put a query in the page's canvas and run it there as the person. Use it
+  whenever you would otherwise hand SQL back or describe a result the person should look at: validate the SQL
+  with data_validate first, give a short title ("Visits per worker, last 30 days") and the same `display`
+  (labels, formats, chart) you would give data_query. The page keeps the person's own editor untouched.
+- page_openItem {kind: "query", id}: open one of this space's saved queries (or one of the person's own) in the
+  canvas; ids come from the page's left rail (the person can tell you which).
+- page_proposeSave {name, sql, display}: fill the page's Save dialog so the person can save a useful query into
+  this space with one click. Nothing is saved until they click Save. Propose, do not insist.
+- page_showVisit {visit_id}: open one visit, form and all, in the canvas.
+If an action is refused (it throws), read the reason and do not retry the same input.
+"""
+
+#: Returned by data_describe with ``space_id``: what being held to a space means.
+SPACE_RULES = """\
+You are working in a data space: a named, fixed set of sources (`space`) a team keeps its queries on. Pass
+`space_id` to every data_* call (data_describe, data_query, data_validate, data_visits, data_workflow_context);
+the call then reads exactly the space's sources and nothing else, and refuses any other opportunities, programs
+or workflow. Do not try to read outside the space; if the person asks about data the space does not hold, say
+so and suggest they open or make a space with it. You cannot change a space's sources -- only the person can,
+on the page. Useful queries are kept by proposing a save (page_proposeSave), never by copying results.
 """
 
 #: How to check that a workflow shows what it should. Returned by data_describe and

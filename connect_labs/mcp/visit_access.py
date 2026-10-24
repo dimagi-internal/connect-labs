@@ -57,6 +57,15 @@ def _data_selection(user, arguments: dict) -> list[int] | None:
     would read that production data.
     """
     read: set[int] = set()
+    if arguments.get("space_id") is not None:
+        # A data space reads its frozen opportunities (the tool opens it through
+        # labsdata.spaces.open; this only checks their provenance).
+        from connect_labs.labsdata.spaces import reads
+
+        ids = reads(arguments["space_id"])
+        if not ids:
+            return None
+        read.update(ids)
     opportunity_ids = arguments.get("opportunity_ids") or []
     if opportunity_ids:
         ids = _ints(opportunity_ids)
@@ -170,7 +179,7 @@ RESOLVERS: dict[str, Resolver] = {
     "explorer_query": _data_selection,
     "data_describe": _data_selection,
     "data_query": _data_selection,
-    "data_visits": _opportunity_ids,
+    "data_visits": _data_selection,
     "synthetic_local_record_dump": _opportunity_id,
     "synthetic_reload_fixtures": _opportunity_id,
     "synthetic_disable": _opportunity_id,
