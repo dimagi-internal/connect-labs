@@ -199,7 +199,7 @@ Any MCP client can read the link back with the standard `resources/read` request
 - **Paging.** Add `?page=2&page_size=200` to the link. A page holds 100 rows unless you ask otherwise, and at most 1,000.
 - **Who can read it.** You can, and so can anyone who could run the same thing themselves (for example, someone with access to every opportunity the query read). Anyone else is refused with `forbidden`.
 - **What it shows.** Each read returns exactly the rows the tool produced. A result is never re-run, so the numbers cannot change between reads.
-- **For a day.** After a day the link returns `expired` (the PMC ranking, which holds no visit data, lasts 30 days). Run the tool again to get a new one.
+- **For a day.** After a day the link returns `expired` (the PMC ranking lasts 30 days instead). Run the tool again to get a new one.
 
 Sensitive data follows the same rules as the tool that produced it. A token that cannot see user visit data cannot read a result that holds them. Through canopy, only an agent Labs has cleared for sensitive data can read one, and it reads long cells cut, as its query returned them. Every read is recorded in the audit trail, and so is every refused one.
 
@@ -217,17 +217,4 @@ Select one or more opportunities from the list, then use the two panels on the p
 
 You can also ask the agent on the page to write a query for you from a plain-English question (for example, "hospital vs home births by LLO"). On production opportunities, whose visit data is sensitive, the agent writes the SQL and places it in the editor for you to review and run — **it does not receive your program's visit data** — unless Labs has cleared it for sensitive data. On synthetic (demo) opportunities it can run queries and read results directly, and shows the output as a table and a chart in the chat, along with the SQL and a link that opens the query on the Data page.
 
-The chat card reads the result from Labs as you, a page at a time — use Previous/Next and the rows-per-page menu, and click a column heading to sort the page. The card shows the rows the agent actually reasoned on, so there is no risk of a re-run producing different numbers. Labs keeps each result for a day; after that the card says "This result has expired — ask again in the chat". The card also tells you if a result isn't yours to see, or if it holds sensitive data that stays in Labs (in which case a button lets you open the query on the Data page). The PMC states card reads its ranking the same way.
-
-An agent that Labs has cleared for sensitive data (the **Sensitive data** tick in Labs Admin › Canopy agents), running on a sensitive-data runner (a zero-data-retention, locked-down machine), can read production rows too; the data stays in Labs and that runner.
-
-!!! note "How much the agent sees"
-    In a canopy chat, the agent receives a short summary plus the first 20 rows of a result, and reads further rows only when it needs them. Claude Code, ACE, and scripts calling Labs directly still receive every row, as before.
-
-### Editing workflows from the agent on a workflow's page
-
-The agent embedded in a workflow's run page runs on sensitive-data runners, reads the run and the data behind it, and can propose edits to the workflow and its pipelines for you to confirm. Those edits stay in Labs. It runs none of the workflow's actions.
-
-The agent **never saves anything on its own.** When it has a change to propose, it presents a card in the chat showing exactly what would change, with the old version and the new version side by side. Nothing is written until you decide:
-
-- **Confirm and save** — saves the change straight to the workflow. The workflow's version history is your undo if you change
+The chat card
