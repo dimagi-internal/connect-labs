@@ -100,12 +100,6 @@ def _block_key(kind: str, block: int, release: str) -> str:
     return f"{_tiles_key(release)}/{kind}/blocks/{block}.json"
 
 
-def _legacy_marker(kind: str, region: str, release: str) -> str:
-    """A per-country tile set from before the grid. Only READY's ``tiles`` lists
-    them, for readers that have not moved to the grid yet."""
-    return f"{_tiles_key(release)}/{kind}/{region}/_DONE.json"
-
-
 def _plan_sql(release: str) -> str:
     """The cells whose 1x1-degree square touches a covered country's outline."""
     codes = ", ".join(f"'{c}'" for c in overture.COVERAGE_COUNTRIES)  # constant list, safe to inline
@@ -478,21 +472,11 @@ class Command(BaseCommand):
             "block_degrees": overture.BLOCK_DEGREES,
             "kinds": grid_kinds,
         }
-        # The per-country tile sets cut before the grid, for readers that still
-        # route by region. Goes when they read the grid.
-        tiles = {}
-        for kind in overture.TILE_KINDS:
-            tiles[kind] = {}
-            for region in overture.REGIONS:
-                done = _get_json(self.dst, _legacy_marker(kind, region, self.release))
-                if done and done["rows"] and done.get("filters") == _filters(kind):
-                    tiles[kind][region] = done["bbox"]
         ready = {
             "release": self.release,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "raw": raw,
             "grid": grid,
-            "tiles": tiles,
             "filters": {k: f for k in overture.TILE_KINDS if (f := _filters(k)) is not None},
             "checks": self.checks,
         }

@@ -198,17 +198,17 @@ def fetch_buildings(
 def _query_overture(area: BaseGeometry, min_confidence: float | None) -> pd.DataFrame:
     """Fetch buildings for an area from labs' snapshot of the active release.
 
-    An area fully inside a region whose building tiles the snapshot holds reads
-    those 1-degree tiles (a few seconds). Anything else reads the snapshot's raw
-    copy of the planet-scale theme, which is slower but still data labs holds.
+    An area inside the snapshot's grid (all of Africa) reads the few 1-degree
+    tiles it touches (seconds). Anything else reads the snapshot's raw copy of
+    the planet-scale theme, which is far slower but still data labs holds.
     The result is the same either way; only the speed differs. There is no
     fallback to Overture's own bucket: if labs' data cannot be read, the read
     raises rather than quietly reaching for a release Overture may have pruned.
     The caller (``fetch_buildings``) persists whatever this returns.
     """
-    region = overture.tile_route(area.bounds, "buildings")
-    if region is not None:
-        return _query_tiles(area, region, min_confidence)
+    cells = overture.tile_cells(area.bounds, "buildings")
+    if cells is not None:
+        return _query_tiles(area, cells, min_confidence)
     return _query_raw(area, min_confidence)
 
 
@@ -221,32 +221,21 @@ def _parse_geom_json(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _query_tiles(area: BaseGeometry, region: str, min_confidence: float | None) -> pd.DataFrame:
-    """Read buildings from a region's tiles in the snapshot.
+def _query_tiles(area: BaseGeometry, cells: list[tuple[int, int]], min_confidence: float | None) -> pd.DataFrame:
+    """Read buildings from the snapshot's grid: only the cells the area touches.
 
-    The tiles are one Parquet per 1-degree tile, hive-partitioned by ``tx``/``ty``.
-    We bound the read to the tiles the area's bbox spans (partition pruning), then
-    apply the same bbox + centroid-in-area filter as the raw read.
+    Each building is stored in the cell its centroid falls in, so the cells a
+    bbox touches hold every building whose centroid can be inside it. Then the
+    same bbox + centroid-in-area filter as the raw read.
     """
-    import math
-
     minx, miny, maxx, maxy = area.bounds
-    wkt = area.wkt
     con = overture.connect()
-    glob = overture.tile_glob("buildings", region)
+    files = overture.cell_files(con, "buildings", cells)
+    if not files:  # covered, and nothing there
+        return pd.DataFrame(columns=["lon", "lat", "area_m2", "confidence", "dataset", "geom_json"])
 
     conf_clause = ""
-    params = [
-        math.floor(minx),
-        math.floor(maxx),
-        math.floor(miny),
-        math.floor(maxy),
-        minx,
-        maxx,
-        miny,
-        maxy,
-        wkt,
-    ]
+    params = [minx, maxx, miny, maxy, area.wkt]
     if min_confidence is not None:
         conf_clause = "AND confidence >= ?"
         params.append(float(min_confidence))
@@ -254,9 +243,8 @@ def _query_tiles(area: BaseGeometry, region: str, min_confidence: float | None) 
     query = f"""
         SELECT lon, lat, area_m2, confidence, dataset,
                ST_AsGeoJSON(ST_GeomFromWKB(geom_wkb)) AS geom_json
-        FROM read_parquet('{glob}', hive_partitioning=true)
-        WHERE tx BETWEEN ? AND ? AND ty BETWEEN ? AND ?
-          AND bbox.xmin >= ? AND bbox.xmax <= ?
+        FROM read_parquet({files!r})
+        WHERE bbox.xmin >= ? AND bbox.xmax <= ?
           AND bbox.ymin >= ? AND bbox.ymax <= ?
           AND ST_Within(ST_Point(lon, lat), ST_GeomFromText(?))
           {conf_clause}

@@ -266,6 +266,11 @@ snapshots/<R>/tiles/<kind>/blocks/<x>.json   one finished strip of the cut
 - **The check** samples a city per country in `overture.SAMPLES` (the 11, plus
   Accra) and fails if any planned strip is missing a kind.
 
+Built 2026-10-24: the plan put 2,898 cells in 42 strips; the 42 strips cut in
+parallel in under 6 minutes each (483M buildings, 1.6M road and rail segments,
+321k water features); every sample matched the per-country tiles exactly.
+Réunion is not covered: Overture's divisions file it under France.
+
 It ships in two steps so no read is slowed in between. First the refresh learns
 to cut the grid, and `READY.json` lists it beside the per-country tiles that
 today's readers route on. Then, once the grid is cut and checked, the readers

@@ -169,7 +169,7 @@ def _count_reads(monkeypatch):
     monkeypatch.setattr(
         footprints,
         "_query_tiles",
-        lambda a, r, mc: (calls.__setitem__("tiles", calls["tiles"] + 1), _fake_buildings())[1],
+        lambda a, cells, mc: (calls.__setitem__("tiles", calls["tiles"] + 1), _fake_buildings())[1],
     )
     monkeypatch.setattr(
         footprints,
@@ -179,22 +179,38 @@ def _count_reads(monkeypatch):
     return calls
 
 
-def test_an_area_inside_a_tiled_region_reads_its_tiles(monkeypatch):
+GRID = {"grid": {"cells": [[8, 11], [8, 12]], "kinds": {"buildings": {"rows": 9, "filters": None}}}}
+
+
+def test_an_area_inside_the_grid_reads_its_tiles(monkeypatch):
     calls = _count_reads(monkeypatch)
-    monkeypatch.setattr(
-        overture, "ready", lambda release=None: {"tiles": {"buildings": {"nigeria": (2.6, 4.2, 14.7, 13.9)}}}
-    )
+    monkeypatch.setattr(overture, "ready", lambda release=None: GRID)
     footprints._query_overture(box(8.282, 11.770, 8.288, 11.775), None)  # Madobi, Nigeria
     assert calls == {"tiles": 1, "raw": 0}
 
 
-def test_an_area_outside_every_tiled_region_reads_the_raw_snapshot(monkeypatch):
+def test_an_area_outside_the_grid_reads_the_raw_snapshot(monkeypatch):
     calls = _count_reads(monkeypatch)
-    monkeypatch.setattr(
-        overture, "ready", lambda release=None: {"tiles": {"buildings": {"nigeria": (2.6, 4.2, 14.7, 13.9)}}}
-    )
+    monkeypatch.setattr(overture, "ready", lambda release=None: GRID)
     footprints._query_overture(box(77.20, 28.60, 77.21, 28.61), None)  # Delhi
     assert calls == {"tiles": 0, "raw": 1}
+
+
+def test_a_covered_cell_with_no_buildings_is_an_empty_answer_not_an_error(monkeypatch):
+    """Open sea or empty desert inside the coverage holds no tile file. A glob over
+    it would raise; it must read as "no buildings here"."""
+
+    class Con:
+        def execute(self, sql, params=None):
+            assert "glob(" in sql, "nothing but the listing should run"
+            return self
+
+        def fetchall(self):
+            return []
+
+    monkeypatch.setattr(overture, "connect", lambda: Con())
+    df = footprints._query_tiles(box(8.282, 11.770, 8.288, 11.775), [(8, 11)], None)
+    assert len(df) == 0 and "geom_json" in df.columns
 
 
 def test_a_snapshot_with_no_ready_file_never_reads_tiles(monkeypatch):
@@ -213,16 +229,19 @@ def test_the_raw_read_is_labs_snapshot_never_overtures_bucket(monkeypatch):
 
     class Con:
         def execute(self, sql, params=None):
-            seen.append(sql)
+            seen.append(f"{sql} {params}")
             return self
+
+        def fetchall(self):  # the grid's listing of a cell
+            return [(overture.cell_glob("buildings", 8, 11, "R").replace("*.parquet", "data_0.parquet"),)]
 
         def df(self):
             return pd.DataFrame(columns=["lon", "lat", "area_m2", "confidence", "dataset", "geom_json"])
 
     monkeypatch.setattr(overture, "connect", lambda: Con())
     footprints._query_raw(box(77.20, 28.60, 77.21, 28.61), None)
-    footprints._query_tiles(box(8.282, 11.770, 8.288, 11.775), "nigeria", None)
-    assert len(seen) == 2
+    footprints._query_tiles(box(8.282, 11.770, 8.288, 11.775), [(8, 11)], None)
+    assert len(seen) == 3
     for sql in seen:
         assert overture.EXTRACT_BUCKET in sql
         assert overture.SOURCE_BUCKET not in sql

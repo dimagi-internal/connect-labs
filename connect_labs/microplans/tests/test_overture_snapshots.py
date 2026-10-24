@@ -19,7 +19,6 @@ from shapely.geometry import box
 from connect_labs.microplans.core import barriers, overture
 from connect_labs.microplans.management.commands import overture_refresh
 
-NIGERIA = (2.6, 4.2, 14.7, 13.9)
 MADOBI = (8.282, 11.770, 8.288, 11.775)
 
 
@@ -74,52 +73,44 @@ def test_a_switch_reaches_a_reader_once_its_cache_expires(s3_json):
 # The tile router
 
 
-def _ready(**over):
-    info = {
-        "tiles": {"buildings": {"nigeria": NIGERIA}, "segments": {"nigeria": NIGERIA}},
-        "filters": {"segments": barriers.segment_filters()},
+def _ready(kinds=("buildings", "segments")):
+    return {
+        "grid": {
+            "cells": [[8, 11], [8, 12], [9, 11]],
+            "kinds": {k: {"rows": 9, "filters": overture_refresh._filters(k)} for k in kinds},
+        }
     }
-    info.update(over)
-    return info
 
 
-def test_an_area_inside_a_region_routes_to_its_tiles(monkeypatch):
+def test_an_area_inside_the_grid_reads_the_cells_it_touches(monkeypatch):
     monkeypatch.setattr(overture, "ready", lambda release=None: _ready())
-    assert overture.tile_route(MADOBI, "buildings") == "nigeria"
+    assert overture.tile_cells(MADOBI, "buildings") == [(8, 11)]
+    assert overture.tile_cells((8.9, 11.5, 9.1, 11.6), "buildings") == [(8, 11), (9, 11)]
 
 
-def test_an_area_straddling_a_region_edge_reads_raw_not_a_partial_tile_set(monkeypatch):
+def test_an_area_reaching_past_the_coverage_reads_raw_not_a_partial_answer(monkeypatch):
     monkeypatch.setattr(overture, "ready", lambda release=None: _ready())
-    assert overture.tile_route((14.6, 10.0, 14.9, 10.2), "buildings") is None
+    assert overture.tile_cells((9.5, 11.5, 10.1, 11.6), "buildings") is None  # (10, 11) is not planned
 
 
-def test_a_kind_with_no_tiles_reads_raw(monkeypatch):
+def test_a_kind_not_yet_cut_everywhere_reads_raw(monkeypatch):
     monkeypatch.setattr(overture, "ready", lambda release=None: _ready())
-    assert overture.tile_route(MADOBI, "water") is None
+    assert overture.tile_cells(MADOBI, "water") is None
+    monkeypatch.setattr(overture, "ready", lambda release=None: None)
+    assert overture.tile_cells(MADOBI, "buildings") is None
 
 
 def test_tiles_cut_under_other_road_classes_are_not_used(monkeypatch):
     """Changing ROAD_CLASSES must not keep serving tiles that left the new classes out."""
     monkeypatch.setattr(overture, "ready", lambda release=None: _ready())
-    assert overture.tile_route(MADOBI, "segments", filters=barriers.segment_filters()) == "nigeria"
+    assert overture.tile_cells(MADOBI, "segments", filters=barriers.segment_filters()) == [(8, 11)]
     other = {"road_classes": ["motorway"], "rail": True}
-    assert overture.tile_route(MADOBI, "segments", filters=other) is None
-
-
-def test_every_region_has_a_sane_bbox_and_a_sample_inside_it():
-    """A bad bbox silently cuts the wrong ground; a sample outside it checks nothing."""
-    for name, meta in overture.REGIONS.items():
-        x0, y0, x1, y1 = meta["bbox"]
-        assert x0 < x1 and y0 < y1 and -180 <= x0 and x1 <= 180 and -90 <= y0 and y1 <= 90, name
-        sx0, sy0, sx1, sy1 = meta["sample"]
-        assert x0 <= sx0 < sx1 <= x1 and y0 <= sy0 < sy1 <= y1, f"{name} sample is outside its bbox"
-        assert len(meta["iso2"]) == 2, name
+    assert overture.tile_cells(MADOBI, "segments", filters=other) is None
 
 
 def test_every_sample_is_a_small_box_in_a_covered_country():
     """The check samples each country; one the plan does not cover would fail
     every refresh, and a typo'd code would check nothing."""
-    assert set(overture.REGIONS) <= set(overture.SAMPLES)
     for name, meta in overture.SAMPLES.items():
         x0, y0, x1, y1 = meta["sample"]
         assert x0 < x1 <= x0 + 1 and y0 < y1 <= y0 + 1, name
@@ -138,29 +129,28 @@ class _Con:
     def execute(self, sql, params=None):
         if self.fail:
             raise RuntimeError("No files found that match the pattern")
-        self.sql.append(sql)
+        self.listing = "glob(" in sql
+        if self.listing:  # the grid's listing of a cell: one file
+            self.file = params[0].replace("*.parquet", "data_0.parquet")
+        else:
+            self.sql.append(sql)
         return self
 
     def fetchall(self):
+        if self.listing:
+            return [(self.file,)]
         return [('{"type":"LineString","coordinates":[[8.28,11.77],[8.29,11.78]]}',)]
 
     def close(self):
         pass
 
 
-def test_barriers_read_tiles_inside_a_region_and_raw_outside(monkeypatch):
-    monkeypatch.setattr(
-        overture,
-        "ready",
-        lambda release=None: _ready(
-            tiles={"segments": {"nigeria": NIGERIA}, "water": {"nigeria": NIGERIA}},
-            filters={"segments": barriers.segment_filters(), "water": barriers.water_filters()},
-        ),
-    )
+def test_barriers_read_tiles_inside_the_grid_and_raw_outside(monkeypatch):
+    monkeypatch.setattr(overture, "ready", lambda release=None: _ready(kinds=("segments", "water")))
     con = _Con()
     monkeypatch.setattr(overture, "connect", lambda: con)
     assert barriers._query_barriers(box(*MADOBI)) is not None
-    assert all("/tiles/" in sql for sql in con.sql) and len(con.sql) == 2
+    assert all("/tiles/" in sql and "/grid/" in sql for sql in con.sql) and len(con.sql) == 2
 
     con.sql.clear()
     barriers._query_barriers(box(77.20, 28.60, 77.21, 28.61))  # Delhi
@@ -301,20 +291,6 @@ def test_ready_lists_a_kind_only_when_every_strip_was_cut_under_the_current_filt
     assert grid["cells"] == [[8, 11], [8, 12], [10, 11]]
     assert grid["kinds"]["buildings"] == {"rows": 10, "filters": None}
     assert sorted(grid["kinds"]) == ["buildings", "water"]
-
-
-def test_ready_still_lists_the_per_country_tiles_for_readers_not_yet_on_the_grid():
-    fake = _FakeS3({"overture/snapshots/R/raw/theme=buildings/x.parquet": b"x"})
-    _planned(fake, "R", [[8, 11]])
-    fake.objects["overture/snapshots/R/tiles/buildings/nigeria/_DONE.json"] = json.dumps(
-        {"rows": 5, "filters": None, "bbox": list(NIGERIA)}
-    ).encode()
-    cmd, _ = _refresh(fake, "R")
-    cmd.checks = {}
-    cmd._ready([], [])
-    assert json.loads(fake.objects["overture/snapshots/R/READY.json"])["tiles"]["buildings"] == {
-        "nigeria": list(NIGERIA)
-    }
 
 
 def test_the_plan_and_cut_read_labs_raw_copy_not_overtures_bucket():
