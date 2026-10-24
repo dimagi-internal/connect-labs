@@ -132,9 +132,9 @@ included. It is the one place labs keeps a copy of what an MCP tool returned, so
 | | |
 | --- | --- |
 | **What** | the rows a tool returned (`data_query`, `workflow_run_indicators`), or a public ranking (`targeting_pmc_states`, no PHI) |
-| **When it is written** | `data_query` rows only for a caller that can read them back by the `labs-result://` link: canopy (a delegated call, whose card and agent page through it), or a client that asks (`keep_result: true`); any other client (Claude Code, ACE) gets its rows inline and nothing is kept. `workflow_run_indicators` (a run's indicator table) and `targeting_pmc_states` are kept for every caller |
+| **When it is written** | `data_query` rows only for a caller that can read them back by the `labs-result://` link: canopy (a delegated call, whose card and agent page through it), or a client that asks (`keep_result: true`); any other client (Claude Code, ACE) gets its rows inline and nothing is kept. `workflow_run_indicators` (a run's indicator table) the same way. `targeting_pmc_states` (public data) is kept for every caller |
 | **Size** | at most `KEPT_RESULT_MAX_BYTES` (5 MB) of JSON per result; a bigger one is refused with "ask for fewer rows" |
-| **Who reads it** | its owner, or a labs user who could run the same query (`may_read`); every read, and every refused read, is a `read` audit event (`resource_type = labs_result`, `source = mcp`, the MCP request id and path) |
+| **Who reads it** | its owner, or a labs user who could run the same query (`may_read`); every read, and every refused read, is a `read` audit event (`resource_type = labs_result`, `source = mcp`, the MCP request id and path); a refused one still names the opportunities and programme the result was for, read without its rows |
 | **Retention** | 24 hours for rows (30 days for the public PMC ranking), then the hourly sweep deletes it. **RDS automated snapshots and point-in-time recovery retain a deleted row for the backup retention window beyond those 24 hours**: a restore can bring one back |
 
 ## Operational notes

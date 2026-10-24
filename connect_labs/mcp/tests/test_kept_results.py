@@ -98,6 +98,8 @@ def test_labs_declares_its_scheme_and_keeps_the_results_itself():
     assert settings["RESOURCE_SCHEMES"] == [kept_results.SCHEME] == ["labs-result"]
     # site.json declares it, so canopy keeps the links in a sensitive conversation.
     assert conf.resource_schemes() == ["labs-result"]
+    # ...and how long its ids are, so canopy keeps nothing but `labs-result://<that id>`.
+    assert conf.resource_id_lengths() == {"labs-result": 24} == settings["RESOURCE_ID_LENGTHS"]
     assert kept_results.TTL_SECONDS == 86400
 
 
@@ -288,8 +290,12 @@ def test_every_read_is_audit_logged_through_the_real_resources_read(owner, colle
     event = AuditEvent.objects.filter(resource_type="labs_result", outcome="failure").latest("id")
     assert event.user_id == colleague.pk and event.source == "mcp" and event.path == "mcp:resources/read"
     assert event.metadata["refused"] == "forbidden" and event.resource_id == uri.split("://")[1]
+    # ...for which opportunity: refused before the result was judged, its access still named.
+    assert event.opportunity_id == OPP.id
+    # The refusal is structured: a View decides on `data.code`, never on the message's words.
+    assert refused.error.data == {"code": "forbidden"}
     missing = read_resource(_pat(owner), "labs-result://nope")
-    assert "not_found" in str(missing)
+    assert "not_found" in str(missing) and missing.error.data == {"code": "not_found"}
     assert AuditEvent.objects.filter(resource_type="labs_result", outcome="failure", resource_id="nope").exists()
 
 
@@ -385,8 +391,8 @@ def test_a_yes_is_kept_a_minute_so_paging_does_not_ask_connect_each_time(owner, 
 def test_read_as_judges_once(owner, connect, monkeypatch):
     uri = _uri(owner, connect)
     calls = []
-    real = kept_results.may_read
-    monkeypatch.setattr(kept_results, "may_read", lambda *a: calls.append(1) or real(*a))
+    real = kept_results.read_verdict
+    monkeypatch.setattr(kept_results, "read_verdict", lambda *a: calls.append(1) or real(*a))
     kept_results.read_as(uri, owner.pk, _token(owner))
     assert len(calls) == 1
 
@@ -414,3 +420,68 @@ def test_a_deactivated_persons_pat_opens_nothing(owner):
     owner.is_active = False
     owner.save(update_fields=["is_active"])
     assert MCPAccessToken.verify(raw) is None and _verify_pat_sync(raw) is None
+
+
+@pytest.mark.django_db(transaction=True)
+def test_an_expired_result_says_so_in_its_errors_data(owner, connect):
+    uri = _uri(owner, connect)
+    Row.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
+    refused = read_resource(_pat(owner), uri)
+    assert refused.error.data == {"code": "expired"} and str(refused).startswith("expired: ")
+
+
+def test_when_connect_cannot_answer_the_owner_is_told_so_not_that_it_is_not_theirs(owner, connect, monkeypatch):
+    from django.core.cache import cache
+
+    from connect_labs.audit_trail.models import AuditEvent
+
+    uri = _uri(owner, connect)
+    cache.clear()
+
+    def down(caller, ids):
+        raise ScopeError("scopes_unavailable", "Connect did not answer")
+
+    monkeypatch.setattr(scope, "resolve", down)
+    with pytest.raises(Refused) as refused:
+        kept_results.read_as(uri, owner.pk, _token(owner))
+    assert refused.value.code == "unavailable" and refused.value.message == kept_results.UNAVAILABLE
+    assert "not yours" not in str(refused.value)
+    event = AuditEvent.objects.filter(resource_type="labs_result", outcome="failure").latest("id")
+    assert event.metadata["refused"] == "unavailable" and event.opportunity_id == OPP.id
+    # Still refused, and not remembered: the next read asks again.
+    assert kept_results.read_verdict(owner.pk, Row.objects.get()) == "unavailable"
+    # Any other failure to ask counts the same; a "not held" is a no.
+    monkeypatch.setattr(scope, "resolve", lambda caller, ids: (_ for _ in ()).throw(ConnectionError("reset")))
+    assert kept_results.read_verdict(owner.pk, Row.objects.get()) == "unavailable"
+    monkeypatch.setattr(scope, "resolve", lambda caller, ids: (_ for _ in ()).throw(ScopeError("not_held", "no")))
+    assert kept_results.read_verdict(owner.pk, Row.objects.get()) == "forbidden"
+
+
+def test_a_delegated_read_that_is_not_a_verified_view_counts_as_an_agent(owner, connect, monkeypatch):
+    """Not only a read carrying `Canopy-Execution`: a delegated read with no statement, or
+    a View statement that does not verify, is an agent's read -- for its page and its audit."""
+    from connect_labs.mcp import execution
+
+    monkeypatch.setattr("connect_labs.labs.synthetic.provenance.all_generated", lambda ids: True)
+    uri = _uri(owner, connect)
+    kept = Row.objects.get()
+    assert kept.sensitive is False
+    delegated = _token(owner, auth_method="delegated")
+    for view in (execution.CallView(refused="no_statement"), execution.CallView(refused="bad_signature")):
+        monkeypatch.setattr(execution, "view_for_this_request", lambda *a, _v=view, **k: _v)
+        denied, stated = kept_results.read_judgement(kept, delegated, uri)
+        assert denied is None and stated["agent"] is True and stated["view"] == view.audit()
+    # A person's own client (not delegated) is nobody's agent.
+    assert kept_results.read_judgement(kept, _token(owner), uri) == (None, {})
+
+
+def test_every_link_labs_returns_is_one_canopy_keeps_in_a_sensitive_conversation(owner):
+    """The id is exactly the declared length, the mimeType one canopy allows, so the
+    links survive canopy's check (`canopy_sdk.resources.validate_link`) -- and nothing longer would."""
+    from canopy_sdk import resources
+    from canopy_sdk.django import conf
+
+    for _ in range(50):
+        link = kept_results.save(owner, kept_results.KIND_PMC, {"x": 1}, access={"sensitive": False}, name="r")
+        assert resources.validate_link(link, conf.resource_id_lengths(), keep_name=False) is not None
+    assert resources.validate_link({**link, "uri": link["uri"] + "x"}, conf.resource_id_lengths()) is None

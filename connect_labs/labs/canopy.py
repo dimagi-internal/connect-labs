@@ -322,6 +322,11 @@ def site_needs() -> dict:
 #: ``labs-result://``, the results labs keeps (connect_labs/mcp/kept_results.py, which
 #: needs the app registry; this module must not).
 RESOURCE_SCHEMES = ["labs-result"]
+#: How long a ``labs-result://`` id is (``secrets.token_urlsafe(18)``: 24 url-safe
+#: characters), declared in ``site.json`` (``site.resource_id_lengths``) so canopy keeps
+#: a labs link only as ``labs-result://`` and exactly that id -- an address with no room
+#: for anything else. ``kept_results`` checks its own ids against it.
+RESOURCE_ID_LENGTHS = {"labs-result": 24}
 
 
 def host_settings() -> dict:
@@ -369,6 +374,7 @@ def host_settings() -> dict:
         # Labs' own kept results (connect_labs/mcp/kept_results.py): site.json declares the
         # scheme, so canopy keeps the links. Storage and reads are labs', not the SDK's.
         "RESOURCE_SCHEMES": list(RESOURCE_SCHEMES),
+        "RESOURCE_ID_LENGTHS": dict(RESOURCE_ID_LENGTHS),
     }
     if public:
         # site.json's ``site`` block: labs' key is at its own long-standing URL, not the

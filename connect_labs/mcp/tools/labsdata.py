@@ -203,6 +203,9 @@ def query(user, opportunity_ids, sql, max_rows=DEFAULT_MAX_ROWS, keep_result=Fal
             "sql_executed": sql,
             "open_on_page": service.open_on_page_url(opportunity_ids, sql),
         }
+        if not (agent or keep_result):
+            # Nobody will read it back (and only canopy's agent is ever refused rows).
+            return withheld
         link = kept_results.save(
             user,
             kept_results.KIND_QUERY,
