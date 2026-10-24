@@ -206,6 +206,8 @@ def test_nothing_in_a_space_is_rows(people):
         "audience",
         "managers",
         "queries",
+        # Pointers to canopy conversations: never a transcript (test_no_transcript_is_ever_stored).
+        "conversations",
     }
     assert not {"rows", "columns", "result", "row_count"} & {f.name for f in SavedQuery._meta.get_fields()}
     stored = SavedQuery.objects.get(space_id=sid)
@@ -530,3 +532,123 @@ def test_a_labs_admin_makes_someone_who_can_open_it_a_manager(people, monkeypatc
     DataSpace.objects.filter(pk=sid).update(audience="private")
     assert _post(admin, url, {"person": "space-bob"}).json()["error"] == "not_eligible"
     assert views._is_labs_admin(staff) is True
+
+
+# --- saved conversations: pointers to canopy chat sessions (spaces.save_conversation) -----
+
+SESSION = "0f8fad5b-d9cb-469f-a165-70867728950e"
+OTHER_SESSION = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+
+
+def _conversations(sid) -> str:
+    return f"/labs/data/api/spaces/{sid}/conversations/"
+
+
+def _save_conversation(client, sid, session=SESSION, **extra):
+    body = {"session_id": session, "resource": f"labs-data-space://{sid}", **extra}
+    return _post(client, _conversations(sid), body)
+
+
+def test_a_saved_conversation_is_a_pointer_its_space_s_people_see(people):
+    """Any member saves one; everyone who can open the space sees it; the label is the
+    saver's own words, or "Conversation, <date>" -- never anything from canopy."""
+    from connect_labs.labsdata.models import SpaceConversation
+
+    sid = _program_space(people)
+    bob = _client(people["bob"])
+    saved = _save_conversation(bob, sid, label="  Why O2 dipped  ")
+    assert saved.status_code == 200, saved.content
+    assert saved.json()["conversation"]["label"] == "Why O2 dipped"
+    plain = _save_conversation(bob, sid, session=OTHER_SESSION)
+    assert plain.json()["conversation"]["label"].startswith("Conversation, ")
+
+    listed = _client(people["alice"]).get(_conversations(sid)).json()["conversations"]
+    assert {(c["session_id"], c["saved_by"]) for c in listed} == {
+        (SESSION, "space-bob"),
+        (OTHER_SESSION, "space-bob"),
+    }
+    assert SpaceConversation.objects.filter(space_id=sid).count() == 2
+    again = _save_conversation(bob, sid)
+    assert again.status_code == 409 and again.json()["error"] == "already_saved"
+
+
+def test_no_transcript_is_ever_stored(people):
+    """A pointer holds the session id, a label, who and when -- nothing the conversation
+    said. A body carrying a title or messages is not read."""
+    from connect_labs.labsdata.models import SpaceConversation
+
+    fields = {f.name for f in SpaceConversation._meta.get_fields()}
+    assert fields == {"id", "space", "session_id", "label", "saved_by", "created_at"}
+    sid = _program_space(people)
+    res = _save_conversation(
+        _client(people["bob"]),
+        sid,
+        title="Patient Ada's visits",
+        transcript=[{"role": "user", "text": "secret"}],
+        messages=["secret"],
+    )
+    assert res.status_code == 200, res.content
+    row = SpaceConversation.objects.get(space_id=sid)
+    assert "secret" not in json.dumps(res.json()) and "Ada" not in row.label
+
+
+def test_only_a_conversation_started_on_this_space_s_page_is_saved_here(people):
+    sid = _program_space(people)
+    other = _post(_client(people["alice"]), "/labs/data/api/spaces/", {"name": "Other", "opportunity_ids": [O3.id]})
+    bob = _client(people["bob"])
+    for resource in (f"labs-data-space://{other.json()['space']['id']}", "labs-data://opportunities/9711", "", None):
+        res = _post(bob, _conversations(sid), {"session_id": SESSION, "resource": resource})
+        assert res.status_code == 400 and res.json()["error"] == "not_this_space", resource
+    bad = _post(bob, _conversations(sid), {"session_id": "../me", "resource": f"labs-data-space://{sid}"})
+    assert bad.status_code == 400 and bad.json()["error"] == "bad_conversation"
+
+
+@pytest.mark.parametrize("who", ["carol", "dave"])
+def test_a_saved_conversation_inherits_the_space_s_rules(people, who):
+    """Someone who may not open the space can neither list nor save its conversations:
+    the same not_found as no such space."""
+    sid = _program_space(people)
+    _save_conversation(_client(people["bob"]), sid)
+    c = _client(people[who])
+    assert c.get(_conversations(sid)).status_code == 404
+    assert _save_conversation(c, sid, session=OTHER_SESSION).status_code == 404
+
+
+def test_a_private_space_s_conversations_are_its_managers_alone(people):
+    sid = _program_space(people)
+    _save_conversation(_client(people["alice"]), sid)
+    assert (
+        _post(_client(people["alice"]), f"/labs/data/api/spaces/{sid}/audience/", {"audience": "private"}).status_code
+        == 200
+    )
+    assert _client(people["bob"]).get(_conversations(sid)).status_code == 404
+
+
+def test_a_member_deletes_their_own_pointer_and_a_manager_any(people):
+    sid = _program_space(people)
+    alice, bob = _client(people["alice"]), _client(people["bob"])
+    mine = _save_conversation(bob, sid).json()["conversation"]["id"]
+    hers = _save_conversation(alice, sid, session=OTHER_SESSION).json()["conversation"]["id"]
+    flags = {c["id"]: c["can_delete"] for c in bob.get(_conversations(sid)).json()["conversations"]}
+    assert flags == {mine: True, hers: False}
+
+    refused = _post(bob, f"{_conversations(sid)}{hers}/delete/", {})
+    assert refused.status_code == 403 and refused.json()["error"] == "not_manager"
+    assert _post(bob, f"{_conversations(sid)}{mine}/delete/", {}).status_code == 200
+    # Alice manages the space: she may delete anyone's (here, her own; bob's is gone).
+    again = _save_conversation(bob, sid).json()["conversation"]["id"]
+    assert _post(alice, f"{_conversations(sid)}{again}/delete/", {}).status_code == 200
+    assert [c["id"] for c in alice.get(_conversations(sid)).json()["conversations"]] == [hers]
+
+
+def test_saving_and_deleting_a_conversation_is_audited_without_its_words(people, monkeypatch):
+    recorded = []
+    monkeypatch.setattr("connect_labs.audit_trail.service.record", lambda action, **kw: recorded.append((action, kw)))
+    sid = _program_space(people)
+    recorded.clear()
+    pk = _save_conversation(_client(people["bob"]), sid, label="mine").json()["conversation"]["id"]
+    _post(_client(people["bob"]), f"{_conversations(sid)}{pk}/delete/", {})
+    mine = [(a, kw) for a, kw in recorded if kw.get("resource_type") == "labsdata_space_conversation"]
+    # One event per opportunity the space reads, for the save and for the delete.
+    assert sorted(kw["opportunity_id"] for _, kw in mine) == sorted([O1.id, O2.id] * 2)
+    assert all(kw["metadata"] == {"space_id": sid, "session_id": SESSION} for _, kw in mine)

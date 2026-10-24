@@ -364,6 +364,19 @@ CSRF, audited with before and after; **no `data_*` tool and no page action names
 (`test_spaces_gate.py` pins that, and that every such route makes the checked write). The left
 rail's "Who can open" card shows a manager the controls and a member the same facts read-only.
 
+**Saved conversations** (design doc's "Saved conversations"; `models.SpaceConversation`) are
+pointers to canopy chat sessions kept in a space: canopy's session id, a label the saver typed
+(default "Conversation, <date>", never canopy's title), who saved it and when. No transcript is
+stored. They follow the space's rules (`spaces.open`; any member saves, a member deletes their
+own, a manager any) and a pointer grants nothing: clicking one in the rail's "Conversations" card
+calls `canopyHost.openSession(id)`, and canopy opens it as the person under its own session ACL
+(someone not in a private one is offered to ask to join). "Save this conversation" saves the
+conversation the panel reports open (`canopy:session` / `canopyHost.session()`, dimagi-canopy
+0.22.1; `{id, resource, private}`), only when its `resource` (where canopy says it was started)
+is this space's `labs-data-space://<id>` (`not_this_space` otherwise). Routes:
+`GET|POST /labs/data/api/spaces/<id>/conversations/`, `POST .../conversations/<pk>/delete/`. No
+`data_*` tool and no page action reaches them.
+
 Its page (`/labs/data/space/<id>/`, page key `labsdata:space`, `data:read`) is the Data page in
 three regions: the left rail (space switcher and "Save as a space", source chips
 with Update sources, tables, the space's queries with versions, My queries), a canvas with a tab

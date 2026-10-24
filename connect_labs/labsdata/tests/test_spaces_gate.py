@@ -59,6 +59,7 @@ MANAGEMENT = {
     "remove_manager": "require_manager",
     "archive": "require_manager",
     "delete_item": "may_delete",
+    "delete_conversation": "may_delete_conversation",
     "admin_add_manager": "is_dimagi_staff",
 }
 #: Words a tool or page action that changed sources, audience or managers would carry.
@@ -284,6 +285,31 @@ def test_every_management_route_calls_the_manager_check():
         checked += 1
     assert checked >= 6, "fewer management routes than expected; did the check stop finding them?"
     assert get_resolver()  # the urlconf loads
+
+
+def test_saved_conversations_go_through_the_gate_and_no_agent_surface_saves_one():
+    """A conversation pointer is listed, saved and deleted only by a view that opens the
+    space (``spaces.open``), and deleting one checks the role; no ``data_*`` tool and no
+    page action saves or deletes one -- the person's own click does."""
+    from connect_labs.labsdata import urls
+
+    views_tree = _tree(LABSDATA / "views.py")
+    classes = {n.name: n for n in ast.walk(views_tree) if isinstance(n, ast.ClassDef)}
+    routes = [p for p in urls.urlpatterns if "conversations" in str(p.pattern)]
+    assert len(routes) == 2
+    for p in routes:
+        view = classes[p.callback.view_class.__name__]
+        assert _calls_open(view), f"{p.pattern} does not open the space through spaces.open"
+    delete = next(p for p in routes if "delete" in str(p.pattern))
+    assert "delete_conversation" in _spaces_calls(classes[delete.callback.view_class.__name__])
+    tree = _tree(SPACES)
+    save = _fn(tree, "save_conversation")
+    assert "NotThisSpace" in _called_names(save), "save_conversation must refuse another page's conversation"
+    assert not _spaces_calls(_tree(TOOLS)) & {"save_conversation", "delete_conversation", "conversations"}
+    assert "conversations/" not in TOOLS.read_text()
+    js = DATA_JS.read_text()
+    actions = js[js.index("const ACTIONS = {") : js.index("window.LABSDATA_ACTIONS")]
+    assert "conversation" not in actions.lower(), "a page action reaches saved conversations"
 
 
 def test_no_agent_surface_can_change_sources_audience_or_managers():

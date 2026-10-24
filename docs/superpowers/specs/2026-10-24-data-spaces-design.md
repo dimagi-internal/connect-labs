@@ -188,3 +188,42 @@ CSRF, audited (`SettingChange`-style before/after in the audit trail).
 
 **No per-item permissions.** Items inherit their space. A thing that needs a different
 audience goes in a different space.
+
+## Saved conversations
+
+Jonathan, 2026-10-24: "We should also be able to save pointers to canopy sessions in the data
+space that we can load later."
+
+- **A space item of kind "conversation" is a POINTER, never a transcript**
+  (`models.SpaceConversation`): canopy's session id, a label the saver types (default
+  "Conversation, <date>"), `saved_by`, `created_at`. Nothing the conversation said is ever
+  stored in labs: not its words, not canopy's title, not its opening. A private conversation's
+  words are sealed to its people (canopy itself cannot decrypt them), and labs is not one of
+  them; a title or opening copied into a label would be a copy labs must not hold.
+- **It inherits the space's ACL.** Listed, saved and deleted only through `spaces.open` (the
+  data rule, then the audience). Any member saves one; a member deletes their own; a manager
+  deletes any (`spaces.may_delete_conversation`). No agent surface saves or deletes one: no
+  `data_*` tool, no page action (`test_spaces_gate.py`).
+- **A pointer grants nothing.** Opening it asks canopy to open that session in the space's
+  panel (`canopyHost.openSession(id)`, the widget's `openSession`), and the panel reads it as
+  the person, so canopy's session ACL (`apps/canopy_sessions/access.py`) decides. Someone not in
+  a private conversation sees canopy's own interstitial, which offers to ask its people to add
+  them (canopy-web's join requests). A private conversation stays readable only by its people.
+- **Only a conversation started on this space's page may be saved to it.** The widget reports
+  the conversation open in the panel as `{id, resource, private}` (canopy-web's embedding guide
+  §5e), where `resource` is canopy's record of the page it was started on: the first `resource`
+  its page declared (`Session.origin_resource`). Labs refuses a save unless that is
+  `labs-data-space://<id>` for this space (`not_this_space`). canopy has no signed attestation of
+  this. The report is relayed by the person's own browser, so the check stands as the person's
+  own write, behind CSRF and the space's rules. Faking it would let a member point at a
+  conversation from elsewhere, which grants nobody anything.
+- **The page.** A "Conversations" card in the left rail lists the space's pointers (label,
+  who saved it, when). Clicking one opens it in the panel. "Save this conversation" saves the
+  conversation the panel has open, with the label typed beside it. The button says why when it
+  cannot save: no conversation is open, it was started on another page, or it is already saved.
+  The SDK's panel relays the widget's report as a `canopy:session` event and
+  `canopyHost.session()` (dimagi-canopy 0.22.1). An older panel is asked on demand
+  (`canopyHost.widget.currentSession()`).
+- Routes: `GET|POST /labs/data/api/spaces/<id>/conversations/`,
+  `POST /labs/data/api/spaces/<id>/conversations/<pk>/delete/`. Saves and deletes are audited
+  per opportunity with the space and session ids only.

@@ -228,8 +228,10 @@ class _JsonView(LoginRequiredMixin, View):
             return JsonResponse({"error": e.code, "message": e.message}, status=403)
         except spaces.LastManager as e:
             return JsonResponse({"error": e.code, "message": e.message}, status=409)
-        except (spaces.NotEligible, spaces.BadAudience) as e:
+        except (spaces.NotEligible, spaces.BadAudience, spaces.NotThisSpace, spaces.BadConversation) as e:
             return JsonResponse({"error": e.code, "message": e.message}, status=400)
+        except spaces.AlreadySaved as e:
+            return JsonResponse({"error": e.code, "message": e.message}, status=409)
         except spaces.SpaceChanged as e:
             return JsonResponse(
                 {"error": e.code, "message": e.message, "added": e.added, "removed": e.removed}, status=409
@@ -649,6 +651,58 @@ class SpaceItemDeleteView(_JsonView):
         deleted = spaces.delete_item(opened, saved)
         _audit_space(Action.DELETE, opened, "labsdata_space_query", saved.pk, request.user, {"space_id": opened.id})
         return {"deleted": deleted}
+
+
+class SpaceConversationsView(_JsonView):
+    """Saved conversations: POINTERS to canopy chat sessions kept in the space.
+
+    GET: the space's pointers (label, who saved it, when, whether this person may delete it).
+    POST ``{session_id, label, resource}``: keep a pointer to the conversation open in the
+    page's panel. ``resource`` is where canopy says it was started (the widget's report,
+    relayed by this person's browser) and must be this space's page; ``label`` is their own
+    words. Nothing of the conversation is sent here or kept: no title, no transcript. Any
+    member may save; the space's rules (``spaces.open``) apply as to every read."""
+
+    def read(self, request):
+        opened = spaces.open(_caller(request), self.kwargs["space_id"], allow_changed=True)
+        items = []
+        for item in spaces.conversations(opened):
+            out = item.as_dict()
+            # Managers delete any pointer; a member, one they saved.
+            out["can_delete"] = spaces.may_delete_conversation(opened, item)
+            items.append(out)
+        return {"space_id": opened.id, "conversations": items}
+
+    def handle(self, request, body):
+        from connect_labs.audit_trail.models import Action
+
+        opened = spaces.open(_caller(request), self.kwargs["space_id"], allow_changed=True)
+        item = spaces.save_conversation(
+            opened, request.user, body.get("session_id"), body.get("label"), body.get("resource")
+        )
+        metadata = {"space_id": opened.id, "session_id": str(item.session_id)}
+        _audit_space(Action.CREATE, opened, "labsdata_space_conversation", item.pk, request.user, metadata)
+        out = item.as_dict()
+        out["can_delete"] = True
+        return {"conversation": out}
+
+
+class SpaceConversationDeleteView(_JsonView):
+    """POST: delete a saved conversation's pointer (never the conversation, which is canopy's):
+    a manager, or the member who saved it (``spaces.delete_conversation``)."""
+
+    def handle(self, request, body):
+        from connect_labs.audit_trail.models import Action
+
+        opened = spaces.open(_caller(request), self.kwargs["space_id"], allow_changed=True)
+        item = spaces.conversation_item(opened, self.kwargs.get("pk"))
+        if item is None:
+            raise _Invalid("not_found", "There is no such conversation in this space.", status=404)
+        pk, session_id = item.pk, str(item.session_id)
+        spaces.delete_conversation(opened, item)
+        metadata = {"space_id": opened.id, "session_id": session_id}
+        _audit_space(Action.DELETE, opened, "labsdata_space_conversation", pk, request.user, metadata)
+        return {"deleted": pk}
 
 
 # --- who can open a space, and who manages it (spaces.AUDIENCES, DataSpace.managers) -----

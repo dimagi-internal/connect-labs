@@ -33,6 +33,15 @@ urlpatterns = [
         views.SpaceItemDeleteView.as_view(),
         name="space_item_delete",
     ),
+    # Saved conversations: pointers to canopy chat sessions (never a transcript).
+    path(
+        "api/spaces/<int:space_id>/conversations/", views.SpaceConversationsView.as_view(), name="space_conversations"
+    ),
+    path(
+        "api/spaces/<int:space_id>/conversations/<int:pk>/delete/",
+        views.SpaceConversationDeleteView.as_view(),
+        name="space_conversation_delete",
+    ),
     path("api/describe/", views.DescribeView.as_view(), name="describe"),
     # The plain page's selection, as the person changes it: what its agent may read.
     path("api/page-holds/", views.PageHoldsView.as_view(), name="page_holds"),

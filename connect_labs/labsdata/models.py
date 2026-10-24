@@ -129,6 +129,49 @@ class SavedQuery(models.Model):
         }
 
 
+class SpaceConversation(models.Model):
+    """A POINTER to a canopy chat session, kept in a data space ("Saved conversations").
+
+    Exactly what it says and nothing more: canopy's session id, a label the saver typed,
+    who saved it and when. **No transcript, title or words of the conversation are ever
+    stored here** -- a private conversation's words are sealed to its people (canopy
+    itself cannot read them) and labs is not one of them. The default label is
+    "Conversation, <date>", never canopy's title.
+
+    It belongs to the space and inherits the space's rules: listed and saved only through
+    ``spaces.open`` (the data rule, then the audience); any member saves one, a member
+    deletes their own, a manager any. A pointer grants nothing: opening it asks canopy to
+    open the session in the panel, as the person, and canopy's session ACL decides.
+    """
+
+    space = models.ForeignKey(DataSpace, on_delete=models.CASCADE, related_name="conversations")
+    #: canopy's id for the chat session.
+    session_id = models.UUIDField()
+    label = models.CharField(max_length=200)
+    saved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="saved_space_conversations"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["space", "session_id"], name="labsdata_space_conversation_once"),
+        ]
+
+    def __str__(self) -> str:
+        return self.label
+
+    def as_dict(self) -> dict:
+        return {
+            "id": self.pk,
+            "session_id": str(self.session_id),
+            "label": self.label,
+            "saved_by": getattr(self.saved_by, "username", "") or "",
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class PageHold(models.Model):
     """What one drawn page lets its agent read: the page's own selection (``page_holds``).
 
