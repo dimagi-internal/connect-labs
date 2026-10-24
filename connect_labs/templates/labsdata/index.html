@@ -51,6 +51,12 @@
     .ex-status b { color: #1c1917; }
     .ex-link { color: #16006d; text-decoration: underline; text-underline-offset: 2px; font: inherit; }
     .ex-json { margin: 0; padding: 12px 14px; max-height: 60vh; overflow: auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+    .ex-btn.ghost.ready { background: #16006d; color: #fff; border-color: #16006d; box-shadow: 0 0 0 3px #c7d2fe; }
+    .ex-saved { max-height: 220px; overflow: auto; }
+    .ex-saved-row { display: flex; gap: 6px; align-items: baseline; padding: 5px 12px; border-top: 1px solid #f5f5f4; font-size: 13px; }
+    .ex-saved-row button.open { flex: 1; text-align: left; color: #16006d; }
+    .ex-saved-row small { color: #78716c; font-size: 11px; }
+    .ex-saved-row button.del { color: #a8a29e; font-size: 12px; }
     .ex-search { box-sizing: border-box; width: 100%; font-size: 13px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 5px 8px; }
   </style>
 {% endblock %}
@@ -87,6 +93,11 @@
         <div class="px-3 pt-3 pb-1"><span class="ex-label">Tables</span> <span class="ex-muted text-xs">click a name to insert it</span></div>
         <div id="ex-tables" class="ex-tables"><p class="px-3 pb-3 text-sm ex-muted">—</p></div>
       </div>
+
+      <div class="ex-card">
+        <div class="px-3 pt-3 pb-2"><span class="ex-label">Saved queries</span></div>
+        <div id="ex-saved" class="ex-saved"><p class="px-3 pb-3 text-sm ex-muted">—</p></div>
+      </div>
     </aside>
 
     <section class="flex flex-col gap-4">
@@ -94,9 +105,10 @@
         <textarea id="ex-sql" class="ex-editor" spellcheck="false">{{ example_sql }}</textarea>
         <div class="ex-bar">
           <button class="ex-btn" id="ex-run">Run ⌘↵</button>
-          <label>max rows <input id="ex-max" type="number" min="1" max="5000" value="{{ default_max_rows }}" class="ex-search" style="width: 80px"></label>
+          <label>max rows <input id="ex-max" type="number" min="1" max="{{ hard_max_rows }}" value="{{ default_max_rows }}" class="ex-search" style="width: 80px"></label>
           <span class="ex-muted" id="ex-tables-hint">Query <code>visits</code>.</span>
           <span class="flex-1"></span>
+          <button class="ex-btn ghost" id="ex-save" title="Save this query (not its rows) to run again">Save query</button>
           <button class="ex-btn ghost" id="ex-csv" disabled>Download CSV</button>
         </div>
       </div>
@@ -117,9 +129,11 @@
       drillUrl: "{% url 'labsdata:drill' %}",
       queryUrl: "{% url 'labsdata:query' %}",
       visitsUrl: "{% url 'labsdata:visits' %}",
+      savedUrl: "{% url 'labsdata:saved' %}",
       csrf: "{{ csrf_token }}",
     };
   </script>
+  {{ open_intent|json_script:"ex-open-intent" }}
   <script src="{% static 'labsdata/data.js' %}"></script>
   {% if canopy_panel %}{% include "canopy_host/panel.html" %}{% endif %}
 {% endblock %}

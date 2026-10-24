@@ -226,7 +226,7 @@ part of this that goes through the canopy SDK.
   keeps nothing and is unchanged. A result over `KEPT_RESULT_MAX_BYTES` (5 MB of JSON) is
   not kept: the call is refused with "ask for fewer rows".
 - **Reading one back** is MCP `resources/read` on labs' MCP server (the resource template
-  `labs-result://{id}{?page,page_size}`, registered by `kept_results.mount` and listed by
+  `labs-result://{id}{?page,page_size,sort,dir}`, registered by `kept_results.mount` and listed by
   `resources/templates/list`): a table pages through the URI (default 100, max 1000 rows a
   page) with `_meta["labs/result"]` saying the kind, the page, pages, row count, expiry and
   that it is the **snapshot** the agent saw (the card and the agent agree on the rows). A
@@ -263,12 +263,52 @@ part of this that goes through the canopy SDK.
   its card subscribe.
 
 **The results card** (`ui://labs/data-result`) reads the link as its viewer, pages on the
-server and sorts within the page (and says "Sorted within this page only" when there are
-more pages), and never runs the query itself. It names each refusal: expired ("ask again
+server, and never runs the query itself. Sorting a column of a result with more than one
+page asks Labs for the whole result in that order (`?sort=<column>&dir=asc|desc`,
+checked against the result's columns, done in SQL over the stored JSON before the page is
+cut: `kept_results.page_of`); a one-page result sorts in the card. It names each refusal:
+expired ("ask again
 in the chat" -- showing the sample the tool result carried, said plainly to be a sample,
 when it has one), not yours, Connect could not confirm access (try again), or sensitive
 data that stays in Labs (with the Data page), deciding on the refusal's `data.code` (or,
-from a host that passes only the message, the code at the head of Labs' message). The PMC
+from a host that passes only the message, the code at the head of Labs' message).
+
+What else the card shows comes from the kept result, never from the tool input (a
+sensitive conversation may keep none):
+
+- **The agent's display** (`data_query`'s `display`, `labsdata/display.py`): plain-text
+  column labels (the raw name on hover), number formats from an allowlist
+  (`number_N`, `percent_N` over a fraction, `currency_N`, `compact_N`, `date`) and a chart
+  (`bar`, sorted largest first; `line`; `stat`, one headline number). Checked strictly --
+  every column named must be in the result -- and refused with what is wrong.
+- **Provenance**: the SQL laid out to read (`sql_formatted`, sqlglot's pretty printer;
+  `sql_executed` stays as it ran) and "Data as of 3 h ago" from each opportunity's
+  `cached_at` (the oldest when there are several, the rest on hover).
+- **Charts it picks itself** when the agent gave none: no id- or year-like column as a
+  measure, never a percent beside a count, bars largest first, at most five series.
+- **Download CSV** and **Save** open the Data page (`service.open_on_page_url`: the exact
+  SQL, the opportunities and the row cap) with `ui/open-link`, in a new tab under the
+  person's own Labs session. The page runs the query again there, live, as the person
+  (`&run=1`), and highlights Download CSV (`&download=1`) or Save query (`&save=1`, with
+  the display); nothing downloads or saves without a click. So a download is current data,
+  not the 24-hour snapshot, and no download or save path exists outside the Data page:
+  no URL an agent could use, and no way around the sensitive-data clearance. The page's
+  CSV guards against formula injection and starts with a BOM for Excel.
+
+The agent's facts carry `column_stats` per column (type, nulls, distinct count capped at
+1,000, min/max/mean of a number, min/max of a date, and the top five values of a
+categorical text column), under the rule its sample follows: an agent that is not
+cleared for sensitive data gets no rows and so no statistics, and a text column's values
+are named only as `data_describe` names them (at most 12 distinct values, each seen at
+least 5 times), never a min or max of text.
+
+**Saved queries** (`labsdata.models.SavedQuery`) are the Data page's own: the SQL, the
+opportunities, the row cap and the display, never rows. Saving is the person's write in
+their own session (CSRF), over opportunities they hold now, with SQL that passes the
+checks; saving a name again adds a version. Only the owner lists, opens or deletes one,
+and opening one runs it again as them. The kept result's 24-hour life is unchanged.
+
+The PMC
 card (`ui://labs/pmc-states`) reads its ranking the same way and re-totals ticked states
 through `targeting_pmc_rank` as the viewer. The coaching preview and the edit-confirm
 cards deliberately preview again as the viewer: their confirm token must be the viewer's

@@ -22,6 +22,7 @@ canopy acting as a visitor gets production rows only for an agent labs has clear
 from __future__ import annotations
 
 from connect_labs.labs.access.scopes import Caller
+from connect_labs.labsdata import display as result_display
 from connect_labs.labsdata import service
 from connect_labs.labsdata.engine import MAX_VISITS_PER_READ, QueryError
 from connect_labs.labsdata.scope import ScopeError
@@ -213,7 +214,12 @@ QUERY_KEPT = (
     f"resource_link in the content): the agent gets the first {kept_results.INLINE_ROWS} rows as `sample_rows` "
     "(`sample_is_partial` when there are more) and reads the rest with site_read on that URI, a page at a time "
     "(?page=N&page_size=M, up to 1000) -- never by running the query again; the person's card shows every row. "
-    "Other callers get every row in `rows`, and nothing is kept unless they pass keep_result."
+    "Other callers get every row in `rows`, and nothing is kept unless they pass keep_result. "
+    "Pass `display` to say how the card shows the result: plain-text column labels, formats (counts number_0, "
+    "rates percent_1 over a FRACTION, money currency_N, big numbers compact_N, dates date) and a chart (a value "
+    "over time: line; categories: bar, which the card sorts largest first; one headline number: stat; at most "
+    "five series, never a percent beside a count). The agent's facts carry `column_stats` per column (type, "
+    "nulls, distinct, min/max/mean, and the common values of a categorical column)."
 )
 
 
@@ -229,6 +235,7 @@ QUERY_KEPT_SCHEMA = {
             "type": "string",
             "description": "One SELECT. The relations are `visits` and, with a workflow, its pipelines `p_<alias>`.",
         },
+        "display": result_display.SCHEMA,
         "keep_result": {
             "type": "boolean",
             "default": False,
@@ -242,9 +249,17 @@ QUERY_KEPT_SCHEMA = {
 }
 
 
-def query(user, opportunity_ids=None, sql="", max_rows=None, keep_result=False, program_ids=None, workflow=None):
+def query(
+    user, opportunity_ids=None, sql="", max_rows=None, keep_result=False, program_ids=None, workflow=None, display=None
+):
     agent = _from_canopy()
     selection = {"program_ids": program_ids, "workflow": workflow}
+    try:
+        # Checked before the query runs (all but which columns exist), so a bad display
+        # costs no query.
+        shown = result_display.validate(display)
+    except result_display.DisplayError as e:
+        raise MCPToolError("INVALID_SCHEMA", str(e), {"reason": "bad_display"}) from e
     try:
         out = service.query(
             _caller(user),
@@ -267,7 +282,8 @@ def query(user, opportunity_ids=None, sql="", max_rows=None, keep_result=False, 
             "reason": e.code,
             "message": e.message,
             "sql_executed": sql,
-            "open_on_page": service.open_on_page_url(opportunity_ids, sql, **selection),
+            "sql_formatted": service.format_sql(sql),
+            "open_on_page": service.open_on_page_url(opportunity_ids, sql, max_rows=max_rows, **selection),
         }
         if not (agent or keep_result):
             # Nobody will read it back (and only canopy's agent is ever refused rows).
@@ -283,6 +299,14 @@ def query(user, opportunity_ids=None, sql="", max_rows=None, keep_result=False, 
         return kept_results.with_link(withheld, link)
     except QueryError as e:
         raise _query_error(e) from e
+    try:
+        shown = result_display.check_columns(shown, out["columns"])
+    except result_display.DisplayError as e:
+        raise MCPToolError("INVALID_SCHEMA", str(e), {"reason": "bad_display"}) from e
+    if shown:
+        # In the result itself, so the card reads it from the kept result: a sensitive
+        # conversation may keep no tool input.
+        out["display"] = shown
     if not (agent or keep_result):
         # Nobody will read it back: the rows go inline, and labs keeps no copy of them.
         return out
@@ -305,7 +329,7 @@ def explorer_query(user, opportunity_ids, sql, max_rows=None):
             "reason": e.code,
             "message": e.message,
             "sql_executed": sql,
-            "open_on_page": service.open_on_page_url(opportunity_ids, sql),
+            "open_on_page": service.open_on_page_url(opportunity_ids, sql, max_rows=max_rows),
         }
     except QueryError as e:
         raise _query_error(e) from e
@@ -315,6 +339,16 @@ def _max_rows(max_rows) -> int | None:
     """None when the caller left it out: the default cap, which (unlike a cap the caller
     chose) is a result being cut off (``engine.run_query``'s ``row_cap``)."""
     return None if max_rows is None else int(max_rows)
+
+
+def _opps(out: dict) -> list:
+    """The opportunities a query result read, as ``service.agent_sees_sensitive_rows`` takes them."""
+    from connect_labs.labsdata.scope import Opportunity
+
+    return [
+        Opportunity(id=o["id"], name=o.get("name") or "", llo=o.get("llo") or "")
+        for o in out.get("opportunities") or []
+    ]
 
 
 def _ids(opportunity_ids) -> list[int]:
@@ -353,9 +387,15 @@ def _kept(user, out: dict, agent: bool) -> dict:
     summary = kept_results.summarize_rows(out["columns"], rows, sample=kept_results.INLINE_ROWS)
     summary["sample_rows"] = [dict(zip(out["columns"], r)) for r in shaped["rows"]]
     facts = {
-        **{k: v for k, v in out.items() if k != "rows"},
+        **{k: v for k, v in out.items() if k not in ("rows", "sql_formatted")},
         "row_count": summary["row_count"],
         "sample_rows": summary["sample_rows"],
+        # Every row reached this agent's sample under the same rule (it ran: service.query
+        # refuses an agent labs has not cleared for sensitive rows), so the statistics
+        # follow it too; reveal stays explicit so the rule is in one place to read.
+        "column_stats": kept_results.column_stats(
+            out["columns"], rows, out.get("column_types"), reveal=service.agent_sees_sensitive_rows(agent, _opps(out))
+        ),
         # summarize_rows' `truncated` (the sample is not every row). `truncated` stays the
         # query's own: the row cap was hit.
         "sample_is_partial": summary["truncated"],

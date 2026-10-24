@@ -48,7 +48,16 @@ You are answering questions about live CommCare Connect program data for the opp
 14. A result is kept for a day at `result_uri` (labs-result://). Through canopy you get its first rows as
     `sample_rows` (`sample_is_partial` when there are more); read the rest with site_read on that URI, a page
     at a time (?page=2, ?page_size= up to 1000), instead of running the query again. The person's card shows
-    every row.
+    every row. Its `column_stats` give each column's type, nulls, distinct count, min/max/mean and the
+    common values of a categorical column: read them before paging through rows.
+15. Say how the card should show the result with data_query's `display` (Scout's chart grammar):
+    - Label each column in plain words ({"visits_per_worker": {"label": "Visits per worker"}}).
+    - Formats: counts `number_0`; averages and amounts `number_1`; rates `percent_1`, and compute the rate as
+      a FRACTION (0.253, not 25.3); money `currency_2` with `currency`; large totals `compact_1`; dates `date`.
+    - Chart from the comparison: a value over time -> {type: line, x: <date>, y: [...]}; categories ->
+      {type: bar, x: <category>, y: [...]} (the card sorts bars largest first); one headline number ->
+      {type: stat, y: [<column>]}; detailed or many-row results -> no chart. At most five series, and never a
+      percent beside a count on one chart. Never chart an id or a year as a measure.
 """
 
 #: For an agent (a canopy call) over PRODUCTION opportunities that labs has not cleared it
