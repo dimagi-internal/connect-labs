@@ -147,3 +147,29 @@ def text_content(envelope: dict) -> str:
         if text is not None:
             return text
     return json.dumps(envelope["result"].get("structuredContent"))
+
+
+def read_resource(raw_pat: str | None, uri: str):
+    """``resources/read`` of ``uri`` through the real FastMCP server (its resource
+    templates, ``kept_results.mount``'s handler), in memory, as the PAT's user. Returns the
+    contents, or the exception the client raised for a refusal.
+
+    The handler moves to a worker thread (``sync_to_async``), so a test that reads seeded
+    rows needs ``django_db(transaction=True)``."""
+    import asyncio
+
+    from fastmcp import Client
+
+    from .server import mcp
+
+    access = _verify(raw_pat)
+
+    async def read():
+        async with Client(mcp) as client:
+            try:
+                return await client.read_resource(uri)
+            except Exception as e:  # noqa: BLE001 -- the refusal is the answer
+                return e
+
+    with _as_authenticated(access):
+        return asyncio.run(read())

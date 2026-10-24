@@ -254,6 +254,10 @@ def test_the_cleared_agent_reads_the_kept_rows_back_a_page_at_a_time(labsdata, c
     assert (meta["page"], meta["pages"], meta["row_count"], meta["snapshot"]) == (2, 2, 3, True)
     read = AuditEvent.objects.filter(resource_type="labs_result").latest("id")
     assert (read.action, read.opportunity_id, read.record_count) == ("read", REAL.id, 1)
+    # Through the real resources/read: its own MCP context, the credential and canopy's statement.
+    assert read.source == "mcp" and read.path == "mcp:resources/read" and read.request_id.startswith("mcp:")
+    assert read.metadata["auth_method"] == "delegated" and read.metadata["agent"] is True
+    assert read.metadata["execution"]["agent"] == "labsdata"
 
 
 @pytest.mark.django_db(transaction=True)
@@ -269,6 +273,10 @@ def test_the_persons_own_view_reads_what_the_cleared_agent_was_given(labsdata, c
     assert _rows(_read(labsdata, token, None, paged, view={"subject": visitor.pk, "uri": uri})) == ["rv2"]
     read = AuditEvent.objects.filter(resource_type="labs_result").latest("id")
     assert (read.action, read.opportunity_id, read.record_count) == ("read", REAL.id, 1)
+    # The person, not an agent: canopy's View statement is what the audit trail records.
+    assert read.source == "mcp" and read.path == "mcp:resources/read"
+    assert read.metadata["auth_method"] == "delegated" and read.metadata["agent"] is False
+    assert read.metadata["execution"] == {"refused": "no_statement"} and "refused" not in read.metadata["view"]
 
 
 @pytest.mark.django_db(transaction=True)

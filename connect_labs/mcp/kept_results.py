@@ -25,7 +25,12 @@ a private conversation.
   (``execution.view_for_this_request``) -- of a result a cleared agent already received
   through canopy. A delegated read with no statement is refused: an absence is never
   taken for "the person is looking". A "no user visit data" caller never reads one.
-  Every read is audit-logged.
+  Every read, and every refused read, is audit-logged (``source=mcp``, the request's
+  own id and path, how the token signed in, and what canopy stated).
+* **Only for a reader.** ``data_query`` keeps rows only for a caller that reads them back
+  (canopy, or a client passing ``keep_result``); everyone else gets them inline and labs
+  keeps no copy. At most ``KEPT_RESULT_MAX_BYTES`` (5 MB) of JSON per result. An agent's
+  read is cut as its query was (``labsdata.service.shape_for_agent``).
 * **Snapshot, not fresh.** A read serves what the tool produced: the View and the agent
   must agree on the rows the agent reasoned on. Paging is over that snapshot. Labs never
   changes a kept result, so it never sends canopy a "result changed" push.
@@ -50,6 +55,11 @@ SCHEME = "labs-result"
 #: A day: long enough to come back to a conversation, short enough that a result does not
 #: become a standing copy of production rows.
 TTL_SECONDS = 24 * 60 * 60
+#: A public result (``PUBLIC_KINDS``: the PMC ranking, no visit data) lasts a month, so a
+#: card drawn from one does not die with the day.
+PUBLIC_TTL_SECONDS = 30 * 24 * 60 * 60
+#: When ``settings.KEPT_RESULT_MAX_BYTES`` is not set.
+DEFAULT_MAX_BYTES = 5 * 1024 * 1024
 MIME_TYPE = "application/json"
 
 #: Rows per page of a table result, unless the reader asks for another size.
@@ -158,15 +168,28 @@ def save(user, kind: str, payload: dict, *, access: dict, name: str, description
     Whether this call was canopy's is recorded too: a sensitive result made through
     canopy went to an agent labs had cleared, which is what lets the person's own View
     read it back (``read_denial``). The payload is stored as JSON holds it (a date as its
-    ISO string), so what is stored is exactly what every reader gets back."""
+    ISO string), so what is stored is exactly what every reader gets back. A payload over
+    ``KEPT_RESULT_MAX_BYTES`` is refused (``MCPToolError``), not kept."""
+    from django.conf import settings
     from django.utils import timezone
 
     from connect_labs.audit_trail.context import get_audit_context
 
     from .models import KeptResult
+    from .tool_registry import MCPToolError
 
     if user is None or getattr(user, "pk", None) is None:
         raise ValueError("a kept result needs its owner: the labs user the call ran as")
+    text = json.dumps(payload, default=str)
+    limit = int(getattr(settings, "KEPT_RESULT_MAX_BYTES", DEFAULT_MAX_BYTES) or DEFAULT_MAX_BYTES)
+    size = len(text.encode())
+    if size > limit:
+        raise MCPToolError(
+            "INVALID_SCHEMA",
+            f"This result is {size / 1e6:.1f} MB, more than Labs keeps ({limit / 1e6:.0f} MB): ask for fewer "
+            "rows or columns (aggregate, filter, or select fields from form_json instead of all of it).",
+            {"reason": "result_too_large", "bytes": size, "max_bytes": limit},
+        )
     access = dict(access or {})
     opportunity_ids = [i for i in (access.pop("opportunity_ids", None) or [])]
     is_sensitive = bool(access.pop("sensitive", True))
@@ -178,7 +201,7 @@ def save(user, kind: str, payload: dict, *, access: dict, name: str, description
         kind=str(kind)[:100],
         name=str(name or kind or "result")[:200],
         description=str(description or "")[:500],
-        payload=json.loads(json.dumps(payload, default=str)),
+        payload=json.loads(text),
         # The audit context's id: the same one this call's MCPAuditLog row, audit-trail
         # events and any error report carry.
         tool_call_id=((ctx.request_id if ctx is not None else "") or "")[:255],
@@ -187,7 +210,7 @@ def save(user, kind: str, payload: dict, *, access: dict, name: str, description
         through_canopy=delegated(),
         scope=access,
         created_at=now,
-        expires_at=now + timedelta(seconds=TTL_SECONDS),
+        expires_at=now + timedelta(seconds=PUBLIC_TTL_SECONDS if kind in PUBLIC_KINDS else TTL_SECONDS),
     )
     return resource_link(f"{SCHEME}://{row.id}", row.name, description=row.description, mime_type=row.mime_type)
 
@@ -263,35 +286,23 @@ def _expired(result) -> bool:
     return result.expires_at <= timezone.now()
 
 
-def stored(uri: str):
-    """The live kept result ``uri`` names (any page of it), or None for one that is not
-    labs', unknown or expired."""
-    from .models import KeptResult
-
-    try:
-        result_id, _ = parse(uri)
-    except Refused:
-        return None
-    result = KeptResult.objects.filter(pk=result_id).first()
-    if result is None or _expired(result):
-        return None
-    return result
-
-
 def read(uri: str, reader: int | None):
     """The kept result ``uri`` names, as ``reader`` (a labs user id) may see it, or a
     named ``Refused``. ``may_read`` decides for everyone, its owner included: an owner who
-    has since lost the opportunities a query read no longer reads its rows."""
+    has since lost the opportunities a query read no longer reads its rows. It decides
+    BEFORE expiry, so someone who may not read a result never learns whether it expired.
+
+    The payload is not loaded (``contents_of`` reads only the page it serves)."""
     from .models import KeptResult
 
     result_id, _ = parse(uri)
-    result = KeptResult.objects.filter(pk=result_id).first()
+    result = KeptResult.objects.defer("payload").filter(pk=result_id).first()
     if result is None:
         raise Refused("not_found", "there is no such result here")
-    if _expired(result):
-        raise Refused("expired", "this result has expired; run the query again")
     if not may_read(reader, result):
         raise Refused("forbidden", "this result is not yours to read")
+    if _expired(result):
+        raise Refused("expired", "this result has expired; run the query again")
     return result
 
 
@@ -322,10 +333,46 @@ def contents(uri: str, reader: int | None) -> list[dict]:
     return contents_of(read(uri, reader), uri)
 
 
-def contents_of(result, uri: str) -> list[dict]:
-    """``contents`` for a result already loaded and judged (``read``)."""
+def page_of(result, query: Mapping[str, str]) -> tuple[object, dict]:
+    """``page(result.payload, query)``, reading only that page's rows from the database
+    when the payload is a table: a page of a 5 MB result moves one page, not the result."""
+    from django.db import connection
+
+    if connection.vendor != "postgresql" or "payload" in result.__dict__:
+        return page(result.payload, query)
+    table = "mcp_kept_result"
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT CASE WHEN jsonb_typeof(payload->'rows') = 'array' THEN jsonb_array_length(payload->'rows') END "
+            f"FROM {table} WHERE id = %s",
+            [result.id],
+        )
+        (count,) = cursor.fetchone() or (None,)
+    if count is None:
+        return page(result.payload, query)
+    # The page arithmetic is `page`'s own, over a stand-in of the right length.
+    _, paging = page({"rows": [None] * count}, query)
+    start = (paging["page"] - 1) * paging["page_size"]
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT payload - 'rows', COALESCE((SELECT jsonb_agg(e ORDER BY i) FROM "
+            f"jsonb_array_elements(payload->'rows') WITH ORDINALITY AS t(e, i) WHERE i > %s AND i <= %s), "
+            f"'[]'::jsonb) FROM {table} WHERE id = %s",
+            [start, start + paging["page_size"], result.id],
+        )
+        head, rows = cursor.fetchone()
+    head = json.loads(head) if isinstance(head, str) else head
+    rows = json.loads(rows) if isinstance(rows, str) else rows
+    return {**head, "rows": rows}, paging
+
+
+def contents_of(result, uri: str, *, for_agent: bool = False, paged=None) -> list[dict]:
+    """``contents`` for a result already loaded and judged (``read``). ``for_agent`` cuts
+    long cells and the page as an agent's query result is cut (``shape_for_agent``)."""
     _, query = parse(uri)
-    body, paging = page(result.payload, query)
+    body, paging = paged if paged is not None else page_of(result, query)
+    if for_agent and paging and isinstance(body, dict):
+        body = _shaped(body, paging)
     meta = {
         "kind": result.kind,
         "tool_call_id": result.tool_call_id,
@@ -429,8 +476,19 @@ def _names(uri: str, result) -> bool:
 
 
 def read_denial(result, access_token, uri: str = "") -> str | None:
-    """Why this read of ``uri`` may not carry this result, or None. Asked of every reader,
-    the owner too.
+    """Why this read of ``uri`` may not carry this result, or None (``read_judgement``)."""
+    return read_judgement(result, access_token, uri)[0]
+
+
+def read_judgement(result, access_token, uri: str = "") -> tuple[str | None, dict]:
+    """``(why this read of uri may not carry this result or None, what canopy stated)``.
+    Asked of every reader, the owner too.
+
+    The second half is for the audit trail: for a delegated read, ``execution`` (the
+    verified ``Canopy-Execution``, or why not), ``view`` when the person's View was asked
+    about, and ``agent`` -- true when an agent's statement came with the read, whose
+    page is then cut as its query was. The statement is verified once, here, whatever
+    the result holds.
 
     Only a result holding sensitive data is judged. A restricted ("no user visit data")
     call never reads one. A delegated call (canopy) reads one only when canopy says who is
@@ -443,50 +501,83 @@ def read_denial(result, access_token, uri: str = "") -> str | None:
     from . import execution
     from .server import restricted_call
 
-    if not result.sensitive:
-        return None
-    if restricted_call(access_token):
-        return "this result holds user visit data, which this token may not read"
     claims = getattr(access_token, "claims", None) or {}
-    if claims.get("auth_method") != "delegated":
-        return None
-    from connect_labs.labs import canopy_panel
-
+    delegated_read = claims.get("auth_method") == "delegated"
+    if not result.sensitive and not delegated_read:
+        return None, {}
+    if result.sensitive and restricted_call(access_token):
+        return "this result holds user visit data, which this token may not read", {}
+    if not delegated_read:
+        return None, {}
     read_uri = uri or f"{SCHEME}://{result.id}"
     call = execution.for_this_request(access_token, rpc=("resources/read", {"uri": read_uri}))
+    stated = {"execution": call.audit(), "agent": call.refused != "no_statement"}
+    if not result.sensitive:
+        return None, stated
+    from connect_labs.labs import canopy_panel
+
     with execution.bound(call):
         clearance = canopy_panel.call_sensitive_data_clearance()
     if clearance.granted:
-        return None
+        return None, stated
     if call.execution is None and result.through_canopy:
         # No agent's statement verified: only canopy's word that the person is looking
         # admits it -- never the absence of a statement.
-        view = execution.view_for_this_request(
-            access_token, uri=uri or f"{SCHEME}://{result.id}", subject=_subject(access_token)
-        )
+        view = execution.view_for_this_request(access_token, uri=read_uri, subject=_subject(access_token))
+        stated["view"] = view.audit()
         if view.view is not None and _names(view.view.uri, result):
-            return None
+            return None, stated
         why = f"{clearance.reason}; not the person's own View ({view.refused or 'another result'})"
     else:
         why = clearance.reason
     return (
         "this result holds sensitive data, which reaches an agent through canopy only when Labs has cleared it, "
         f"and the person's View only when canopy says it is theirs ({why}); open it on the Data page instead"
-    )
+    ), stated
 
 
-def record_read(result, reader_user, uri: str) -> None:
+def _shaped(body: dict, paging: dict) -> dict:
+    """A page as an agent reads it: long cells cut and the page capped, with the notes the
+    agent's query result carries (``labsdata.service.shape_for_agent``)."""
+    from connect_labs.labsdata import service
+
+    # The row-cap note was the query's to give, once: never again on every page.
+    shaped = service.shape_for_agent({**body, "row_count": paging.get("row_count"), "truncated": False})
+    shaped.pop("rows_returned", None)
+    for key in ("row_count", "truncated"):
+        if key in body:
+            shaped[key] = body[key]
+        else:
+            shaped.pop(key, None)
+    return shaped
+
+
+def token_facts(access_token) -> dict:
+    """What the audit trail records about the credential behind a read: how it signed in
+    and the client (canopy's client id for a delegated grant). Never the token."""
+    claims = getattr(access_token, "claims", None) or {}
+    out = {"auth_method": str(claims.get("auth_method") or "")}
+    client = getattr(access_token, "client_id", None)
+    if client:
+        out["client_id"] = str(client)[:255]
+    return out
+
+
+def record_read(
+    result, reader_user, uri: str, *, facts: dict | None = None, count: int | None = None, paging: dict | None = None
+) -> None:
     """Audit-trail a read of a kept result, like the read that made it. Never raises."""
     from connect_labs.audit_trail.models import Action
     from connect_labs.audit_trail.service import record
 
     access = result.access
-    try:
-        _, query = parse(uri)
-        body, paging = page(result.payload, query)
-    except Exception:  # noqa: BLE001
-        body, paging = None, {}
-    count = len(body.get("rows") or []) if paging and isinstance(body, dict) else None
+    if paging is None:
+        try:
+            _, query = parse(uri)
+            body, paging = page_of(result, query)
+            count = len(body.get("rows") or []) if paging and isinstance(body, dict) else None
+        except Exception:  # noqa: BLE001
+            paging = {}
     opps = [o for o in (access.get("opportunity_ids") or []) if o is not None] or [None]
     for oid in opps:
         record(
@@ -496,20 +587,59 @@ def record_read(result, reader_user, uri: str) -> None:
             opportunity_id=oid,
             program_id=access.get("program_id"),
             record_count=count,
-            metadata={"kind": result.kind, "owner": str(result.owner_id), **paging},
+            metadata={"kind": result.kind, "owner": str(result.owner_id), **paging, **(facts or {})},
+            user=reader_user,
+        )
+
+
+def record_refused(result, reader_user, uri: str, refused: Refused, *, facts: dict | None = None) -> None:
+    """Audit-trail a refused read (``outcome`` failure): who asked, for what, and why. Never raises."""
+    from connect_labs.audit_trail.models import Action, Outcome
+    from connect_labs.audit_trail.service import record
+
+    try:
+        result_id = parse(uri)[0]
+    except Refused:
+        result_id = str(uri or "")[:100]
+    access = getattr(result, "access", None) or {}
+    opps = [o for o in (access.get("opportunity_ids") or []) if o is not None] or [None]
+    for oid in opps:
+        record(
+            Action.READ,
+            resource_type=RESOURCE_TYPE,
+            resource_id=result_id,
+            opportunity_id=oid,
+            program_id=access.get("program_id"),
+            outcome=Outcome.FAILURE,
+            metadata={"refused": refused.code, "why": refused.message[:300], **(facts or {})},
             user=reader_user,
         )
 
 
 def read_as(uri: str, reader: int | None, access_token) -> list[dict]:
     """A whole ``resources/read`` of a kept result, as ``reader``: the owner / ``may_read``
-    / expiry check, labs' ``read_denial`` for this token, the page, and the audit record."""
-    result = read(uri, reader)
-    denied = scope_denial(result, access_token) or read_denial(result, access_token, uri)
-    if denied:
-        raise Refused("forbidden", denied)
-    out = contents_of(result, uri)
-    record_read(result, _active_user(reader) if reader is not None else None, uri)
+    / expiry check, labs' ``read_denial`` for this token, the page (cut for an agent), and
+    the audit record -- of the read, or of its refusal."""
+    reader_user = _active_user(reader) if reader is not None else None
+    facts = token_facts(access_token)
+    result = None
+    try:
+        result = read(uri, reader)
+        denied = scope_denial(result, access_token)
+        stated: dict = {}
+        if not denied:
+            denied, stated = read_judgement(result, access_token, uri)
+        facts.update(stated)
+        if denied:
+            raise Refused("forbidden", denied)
+        _, query = parse(uri)
+        body, paging = page_of(result, query)
+        count = len(body.get("rows") or []) if paging and isinstance(body, dict) else None
+        out = contents_of(result, uri, for_agent=bool(stated.get("agent")), paged=(body, paging))
+    except Refused as exc:
+        record_refused(result, reader_user, uri, exc, facts=facts)
+        raise
+    record_read(result, reader_user, uri, facts=facts, count=count, paging=paging)
     return out
 
 
@@ -524,6 +654,19 @@ def sweep() -> int:
 
 
 # --- the MCP resource -----------------------------------------------------------------
+
+
+def read_resource(uri: str, reader: int | None, access_token) -> list[dict]:
+    """``read_as`` as an MCP ``resources/read`` runs it: in its own audit context
+    (``source=mcp``, a request id, ``path`` ``mcp:resources/read``), as a tool call is, so
+    the read's audit events say who, from where and through what."""
+    import uuid
+
+    from connect_labs.audit_trail.context import audit_context
+
+    user = _active_user(reader) if reader is not None else None
+    with audit_context(user=user, source="mcp", request_id=f"mcp:{uuid.uuid4().hex}", path="mcp:resources/read"):
+        return read_as(uri, reader, access_token)
 
 
 def mount(server) -> object:
@@ -543,7 +686,9 @@ def mount(server) -> object:
         access_token = _access_token()
         reader = reader_id()
         try:
-            out = await sync_to_async(_closing_connections(read_as), thread_sensitive=True)(uri, reader, access_token)
+            out = await sync_to_async(_closing_connections(read_resource), thread_sensitive=True)(
+                uri, reader, access_token
+            )
         except Refused as exc:
             raise ResourceError(str(exc)) from None
         return ResourceResult(

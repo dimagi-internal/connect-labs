@@ -634,6 +634,9 @@ SYNTHETIC_ECS_MAX_RUNTIME_SECONDS = env.int("SYNTHETIC_ECS_MAX_RUNTIME_SECONDS",
 # job_runner="standalone" and runs on a Fargate task of its own, which is available
 # wherever synthetic jobs' is (the worker task definition sets SYNTHETIC_JOBS_ON_ECS).
 MCP_JOBS_RUN_INLINE = env.bool("MCP_JOBS_RUN_INLINE", default=False)
+# The most JSON one kept MCP result (`mcp_kept_result`, connect_labs/mcp/kept_results.py)
+# may hold; a bigger one is refused ("ask for fewer rows") rather than kept.
+KEPT_RESULT_MAX_BYTES = env.int("KEPT_RESULT_MAX_BYTES", default=5 * 1024 * 1024)
 MCP_JOBS_ON_ECS = env.bool("MCP_JOBS_ON_ECS", default=SYNTHETIC_JOBS_ON_ECS)
 MCP_JOB_SOFT_TIME_LIMIT = env.int("MCP_JOB_SOFT_TIME_LIMIT", default=45 * 60)
 MCP_JOB_WAIT_SECONDS = env.float("MCP_JOB_WAIT_SECONDS", default=30)
