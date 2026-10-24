@@ -342,10 +342,10 @@ def _pipeline_relations(selection, withheld: bool) -> dict:
     return out
 
 
-def _refill_pipelines(caller: Caller, space: OpenSpace) -> dict | None:
+def _refill_pipelines(caller: Caller, selection) -> dict | None:
     """With ``load_missing`` on a workflow: rebuild the pipelines' stored output on every
-    opportunity that has none current (a few per call; ``pipelines.refill``)."""
-    selection = space.selection
+    opportunity of ``selection`` (the space's ``Selection``) that has none current (a few per
+    call; ``pipelines.refill``)."""
     if not selection.relations:
         return None
     status = engine.pipeline_status(selection.opportunities, selection.relations)

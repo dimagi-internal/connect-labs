@@ -122,3 +122,33 @@ def test_a_failing_opportunity_does_not_cost_the_rest():
     ):
         report = pipelines.refill(mock.Mock(), selection, [1, 2])
     assert report["rebuilt"] == [2] and report["failed"][0]["opportunity_id"] == 1
+
+
+def test_describe_with_load_missing_rebuilds_through_the_selection():
+    """Through ``service.describe`` itself, as data_describe calls it (the harness caught
+    this path broken where the helpers alone passed)."""
+    from connect_labs.labsdata import service
+
+    opps = [SimpleNamespace(id=1, name="One", llo="L")]
+    selection = SimpleNamespace(
+        opportunities=opps,
+        relations=[REL],
+        workflow={"id": 9027, "name": "KMC", "scope": {"program_id": 10121}},
+        as_dict=lambda: {},
+    )
+    space = SimpleNamespace(selection=selection)
+    with (
+        mock.patch.object(service, "_held", return_value=space),
+        mock.patch.object(service, "warm", return_value=[]),
+        mock.patch.object(service, "related_registries", return_value=[]),
+        mock.patch.object(service.fields, "cache_status", return_value=[]),
+        mock.patch.object(service.engine, "pipeline_fields", return_value={}),
+        mock.patch.object(service.engine, "pipeline_status", return_value={"p_children": {1: 0}}),
+        mock.patch.object(
+            service.pipelines, "refill", return_value={"rebuilt": [1], "failed": [], "pending": []}
+        ) as refill,
+    ):
+        out = service.describe(mock.Mock(), space, load_missing=True, include_fields=False, include_registries=False)
+    refill.assert_called_once()
+    assert refill.call_args.args[1] is selection and refill.call_args.args[2] == [1]
+    assert out["pipelines_rebuilt"]["rebuilt"] == [1]
