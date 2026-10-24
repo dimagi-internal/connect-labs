@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from dataclasses import dataclass, field
 
 from connect_labs.audit_trail.models import Action, Outcome
 from connect_labs.audit_trail.service import record
@@ -35,6 +36,124 @@ logger = logging.getLogger(__name__)
 
 RESOURCE_TYPE = "explorer_query"
 VISITS_RESOURCE_TYPE = "labsdata_visits"
+
+
+@dataclass
+class Selection:
+    """What one call reads: opportunities (each held), the programs they came from, and
+    -- when a workflow was chosen -- the workflow and its pipelines' relations."""
+
+    opportunities: list
+    programs: list[dict] = field(default_factory=list)
+    workflow: dict | None = None
+    relations: list = field(default_factory=list)
+    not_offered: list[dict] = field(default_factory=list)
+
+    @property
+    def ids(self) -> list[int]:
+        return [o.id for o in self.opportunities]
+
+    def as_dict(self) -> dict:
+        return {
+            "opportunities": [{"id": o.id, "name": o.name, "llo": o.llo} for o in self.opportunities],
+            "programs": self.programs,
+            "workflow": self.workflow,
+            "pipelines": [
+                {
+                    "relation": r.name,
+                    "alias": r.alias,
+                    "pipeline_id": r.pipeline_id,
+                    "name": r.pipeline_name,
+                    "stage": r.stage,
+                }
+                for r in self.relations
+            ],
+            "pipelines_not_offered": self.not_offered,
+        }
+
+
+def select(caller: Caller, opportunity_ids=None, *, program_ids=None, workflow: dict | None = None) -> Selection:
+    """Resolve what a call reads, refusing anything the caller does not hold.
+
+    Either programs and/or opportunities (a program is the opportunities of it the
+    caller holds), or one workflow -- whose opportunities are the ones it reads,
+    every one held, plus its pipelines as relations. Not both: a workflow's pipeline
+    relations cover only its own opportunities, and ``visits`` beside them over a
+    different set would answer a different question without saying so.
+    """
+    if workflow:
+        if opportunity_ids or program_ids:
+            raise scope.ScopeError(
+                "bad_scope", "choose a workflow, or programs and opportunities -- a workflow brings its own"
+            )
+        from .pipelines import workflow_selection
+
+        try:
+            chosen = workflow_selection(
+                caller,
+                int(workflow["id"]),
+                opportunity_id=workflow.get("opportunity_id"),
+                program_id=workflow.get("program_id"),
+            )
+        except (KeyError, TypeError, ValueError) as e:
+            raise scope.ScopeError("bad_scope", "workflow needs an id and its opportunity_id or program_id") from e
+        return Selection(
+            opportunities=chosen.opportunities,
+            workflow=chosen.workflow,
+            relations=chosen.relations,
+            not_offered=chosen.not_offered,
+        )
+    opps, programs = scope.expand(caller, opportunity_ids or [], program_ids or [])
+    return Selection(opportunities=opps, programs=programs)
+
+
+#: The most scopes (opportunities and programs) searched for workflows in one call.
+MAX_WORKFLOW_SCOPES = 12
+
+
+def workflows(caller: Caller, *, opportunity_ids=None, program_ids=None) -> dict:
+    """Workflows readable, as the caller, in the programs and opportunities chosen.
+
+    Each comes with the scope it was found in -- the scope it is then read in, so a
+    workflow is only ever opened where the caller's own token can reach it. Pages
+    (workflows with no runs) are left out: they have no pipelines to query.
+    """
+    from connect_labs.workflow.data_access import WorkflowDataAccess
+    from connect_labs.workflow.page_mode import is_page
+
+    opps, programs = scope.expand(caller, opportunity_ids or [], program_ids or [])
+    scopes_ = [{"program_id": p["id"]} for p in programs] + [{"opportunity_id": o.id} for o in opps]
+    token = _token(caller)
+    found, seen, unreadable = [], set(), []
+    for owner in scopes_[:MAX_WORKFLOW_SCOPES]:
+        access = WorkflowDataAccess(access_token=token, **owner)
+        try:
+            records = access.list_definitions()
+        except Exception:  # noqa: BLE001 -- one scope Connect will not list must not cost the rest
+            logger.info("labsdata: could not list workflows in %s", owner, exc_info=True)
+            unreadable.append(owner)
+            continue
+        finally:
+            access.close()
+        for r in records:
+            if r.id in seen or is_page(r):
+                continue
+            seen.add(r.id)
+            found.append(
+                {
+                    "id": r.id,
+                    "name": r.name,
+                    "scope": owner,
+                    "opportunities": len(r.opportunity_ids or []) or 1,
+                    "pipelines": len([s for s in r.pipeline_sources or [] if isinstance(s, dict)]),
+                }
+            )
+    return {
+        "workflows": sorted(found, key=lambda w: (w["name"] or "").lower()),
+        "scopes_searched": scopes_[:MAX_WORKFLOW_SCOPES],
+        "scopes_not_searched": scopes_[MAX_WORKFLOW_SCOPES:],
+        "scopes_unreadable": unreadable,
+    }
 
 
 def _token(caller: Caller) -> str | None:
@@ -195,6 +314,9 @@ def describe(
     load_missing: bool = False,
     include_registries: bool = True,
     for_agent: bool = False,
+    include_fields: bool = True,
+    program_ids=None,
+    workflow: dict | None = None,
 ) -> dict:
     """What can be queried, and how to answer from it.
 
@@ -203,10 +325,15 @@ def describe(
     unless every opportunity is synthetic or labs has cleared the agent for sensitive data.
     The person on the page gets everything.
     """
-    opps = scope.resolve(caller, opportunity_ids)
+    selection = select(caller, opportunity_ids, program_ids=program_ids, workflow=workflow)
+    opps = selection.opportunities
     withheld = not agent_sees_sensitive_rows(for_agent, opps)
     loaded = warm(caller, opps) if load_missing and not withheld else []
-    described = fields.search_fields(fields.describe_fields(opps), field_search)
+    described = (
+        fields.search_fields(fields.describe_fields(opps), field_search)
+        if include_fields
+        else {"fields": [], "sampled_visits": None}
+    )
     status = fields.cache_status(opps)
     if withheld:
         described["fields"] = [_structure_only(f) for f in described["fields"]]
@@ -215,6 +342,7 @@ def describe(
             for s in status
         ]
     return {
+        **selection.as_dict(),
         "opportunities": status,
         "sensitive_data_visible_to_you": not withheld,
         "loaded": loaded,
@@ -222,7 +350,8 @@ def describe(
             "visits": {
                 "grain": "one row per Connect visit",
                 "columns": [{"name": n, "type": t, "means": m} for n, t, m in engine.VISIT_COLUMNS],
-            }
+            },
+            **_pipeline_relations(selection, withheld),
         },
         "fields": described["fields"],
         "sampled_visits": None if withheld else described["sampled_visits"],
@@ -235,8 +364,36 @@ def describe(
     }
 
 
+def _pipeline_relations(selection: Selection, withheld: bool) -> dict:
+    """Each pipeline relation: its grain, its columns (names and types, read from what is
+    stored), and -- for a person -- how many current rows each opportunity has."""
+    from .pipelines import STAGES
+
+    if not selection.relations:
+        return {}
+    columns = engine.pipeline_fields(selection.opportunities, selection.relations)
+    status = {} if withheld else engine.pipeline_status(selection.opportunities, selection.relations)
+    out = {}
+    for rel in selection.relations:
+        entry = {
+            "grain": STAGES[rel.stage]["grain"],
+            "pipeline": {"id": rel.pipeline_id, "alias": rel.alias, "name": rel.pipeline_name},
+            "columns": [{"name": n, "type": t} for n, t in rel.base_columns]
+            + [{"name": n, "type": t, "pipeline_field": True} for n, t in columns.get(rel.name, [])],
+        }
+        if not withheld:
+            counts = status.get(rel.name, {})
+            entry["rows_by_opportunity"] = counts
+            entry["stale_opportunities"] = sorted(o for o, n in counts.items() if not n)
+        out[rel.name] = entry
+    return out
+
+
 def validate(sql: str) -> dict:
-    """Check SQL end to end over zero rows. Touches no data, so it needs no scope."""
+    """Check SQL end to end over zero rows. Touches no data, so it needs no scope.
+
+    Over ``visits`` only; a query naming a workflow's pipelines is checked by running
+    it with that workflow chosen."""
     return engine.validate_query(sql)
 
 
@@ -248,16 +405,19 @@ def query(
     *,
     for_agent: bool = False,
     shaped: bool = True,
+    program_ids=None,
+    workflow: dict | None = None,
 ) -> dict:
     """Run SQL. ``for_agent`` (a canopy call) gets production rows only when cleared
     (``agent_sees_sensitive_rows``), and its result is shaped for a model's context --
     unless ``shaped`` is False: the caller keeps the whole result and shapes what it
     hands the model itself (the MCP tool, which keeps the rows as a result to read back)."""
-    opps = scope.resolve(caller, opportunity_ids)
+    selection = select(caller, opportunity_ids, program_ids=program_ids, workflow=workflow)
+    opps = selection.opportunities
     if not agent_sees_sensitive_rows(for_agent, opps):
         # Still tell the agent whether its SQL would run: that is what it needs to hand
         # the query to the person, and it reads no data.
-        engine.validate_query(sql)
+        engine.validate_query(sql, relations=selection.relations, field_opps=opps)
         raise SensitiveDataRefused()
     # Never the SQL itself: the audit log carries no PHI content (docs/AUDIT_LOGGING.md),
     # and a query can hold a name or an answer as a literal. The hash still ties an
@@ -267,9 +427,11 @@ def query(
         "opportunity_ids": [o.id for o in opps],
         "sql_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
         "sql_length": len(text),
+        **({"workflow_id": selection.workflow["id"]} if selection.workflow else {}),
+        **({"program_ids": [p["id"] for p in selection.programs]} if selection.programs else {}),
     }
     try:
-        result = engine.run_query(opps, sql, max_rows=max_rows)
+        result = engine.run_query(opps, sql, max_rows=max_rows, relations=selection.relations)
     except engine.QueryError as e:
         record(
             Action.LIST,
@@ -291,20 +453,28 @@ def query(
         )
     out = {
         **result.as_dict(),
-        "opportunities": [{"id": o.id, "name": o.name, "llo": o.llo} for o in opps],
-        "open_on_page": open_on_page_url([o.id for o in opps], sql),
+        **selection.as_dict(),
+        "open_on_page": open_on_page_url(opportunity_ids, sql, program_ids=program_ids, workflow=workflow),
     }
     return shape_for_agent(out) if (for_agent and shaped) else out
 
 
-def open_on_page_url(opportunity_ids, sql: str = "") -> str:
-    """The Data page with these opportunities selected and this SQL in the editor (not run)."""
+def open_on_page_url(opportunity_ids, sql: str = "", *, program_ids=None, workflow: dict | None = None) -> str:
+    """The Data page with this selection and this SQL in the editor (not run)."""
     from urllib.parse import urlencode
 
     from django.conf import settings
     from django.urls import reverse
 
-    params = {"opps": ",".join(str(int(o)) for o in opportunity_ids or [])}
+    params = {}
+    if workflow:
+        owner = workflow.get("opportunity_id") or workflow.get("program_id")
+        kind = "opp" if workflow.get("opportunity_id") else "program"
+        params["workflow"] = f"{int(workflow['id'])}:{kind}:{int(owner)}"
+    if program_ids:
+        params["programs"] = ",".join(str(int(p)) for p in program_ids)
+    if opportunity_ids:
+        params["opps"] = ",".join(str(int(o)) for o in opportunity_ids)
     if sql:
         params["sql"] = sql
     base = (getattr(settings, "LABS_PUBLIC_URL", "") or "").rstrip("/")

@@ -37,7 +37,33 @@ _OPPS = {
     "type": "array",
     "items": {"type": "integer"},
     "minItems": 1,
-    "description": "Opportunities to read (labs_context lists the ones you hold). Up to 25.",
+    "description": "Opportunities to read (labs_context lists the ones you hold). Up to 100.",
+}
+
+#: The selection data_describe and data_query take: opportunities and/or programs, or a workflow.
+_SELECTION = {
+    "opportunity_ids": {**_OPPS, "minItems": 0},
+    "program_ids": {
+        "type": "array",
+        "items": {"type": "integer"},
+        "description": "Programs to read: every opportunity of each that the person holds, resolved now.",
+    },
+    "workflow": {
+        "type": "object",
+        "description": (
+            "Instead of opportunities and programs: a workflow, with the scope it lives in -- "
+            "{id, opportunity_id} or {id, program_id}. Reads its opportunities, and adds each of its "
+            "pipelines (computed from Connect visits) as a relation p_<alias>: the stored rows the workflow "
+            "draws, one per visit, worker or case. data_describe lists their columns."
+        ),
+        "properties": {
+            "id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
+            "program_id": {"type": "integer"},
+        },
+        "required": ["id"],
+        "additionalProperties": False,
+    },
 }
 
 
@@ -82,20 +108,33 @@ DESCRIBE = dict(
     input_schema={
         "type": "object",
         "properties": {
-            "opportunity_ids": _OPPS,
+            **_SELECTION,
             "field_search": {
                 "type": "string",
                 "description": "Only fields whose path or a value contains this text.",
             },
             "load_missing": {"type": "boolean", "default": False},
         },
-        "required": ["opportunity_ids"],
         "additionalProperties": False,
     },
 )
 
 
-def describe(user, opportunity_ids, field_search=None, load_missing=False):
+#: scout-queries' explorer_describe: the shape it was built against, opportunities only.
+DESCRIBE_OPPORTUNITIES_ONLY = {
+    **DESCRIBE,
+    "input_schema": {
+        **DESCRIBE["input_schema"],
+        "properties": {
+            "opportunity_ids": _OPPS,
+            **{k: v for k, v in DESCRIBE["input_schema"]["properties"].items() if k not in _SELECTION},
+        },
+        "required": ["opportunity_ids"],
+    },
+}
+
+
+def describe(user, opportunity_ids=None, field_search=None, load_missing=False, program_ids=None, workflow=None):
     try:
         return service.describe(
             _caller(user),
@@ -103,6 +142,8 @@ def describe(user, opportunity_ids, field_search=None, load_missing=False):
             field_search=field_search,
             load_missing=bool(load_missing),
             for_agent=_from_canopy(),
+            program_ids=program_ids,
+            workflow=workflow,
         )
     except ScopeError as e:
         raise _scope_error(e) from e
@@ -156,6 +197,14 @@ QUERY = dict(
 )
 
 
+#: data_query only: what it can read besides opportunities.
+QUERY_SELECTION = (
+    " Instead of `opportunity_ids` you may pass `program_ids` (every opportunity of each program the person "
+    "holds) or a `workflow` -- then its pipelines are relations too, `p_<alias>`: the stored rows the workflow "
+    "draws, one per visit, worker or case, each pipeline field a typed column (data_describe lists them)."
+)
+
+
 #: data_query only: what it keeps (explorer_query, scout-queries' name, returns rows inline).
 QUERY_KEPT = (
     " Through canopy the result is kept for a day at `result_uri` (a labs-result:// resource, also a "
@@ -170,8 +219,14 @@ QUERY_KEPT = (
 #: that is not canopy.
 QUERY_KEPT_SCHEMA = {
     **QUERY["input_schema"],
+    "required": ["sql"],
     "properties": {
         **QUERY["input_schema"]["properties"],
+        **_SELECTION,
+        "sql": {
+            "type": "string",
+            "description": "One SELECT. The relations are `visits` and, with a workflow, its pipelines `p_<alias>`.",
+        },
         "keep_result": {
             "type": "boolean",
             "default": False,
@@ -185,10 +240,15 @@ QUERY_KEPT_SCHEMA = {
 }
 
 
-def query(user, opportunity_ids, sql, max_rows=DEFAULT_MAX_ROWS, keep_result=False):
+def query(
+    user, opportunity_ids=None, sql="", max_rows=DEFAULT_MAX_ROWS, keep_result=False, program_ids=None, workflow=None
+):
     agent = _from_canopy()
+    selection = {"program_ids": program_ids, "workflow": workflow}
     try:
-        out = service.query(_caller(user), opportunity_ids, sql, max_rows=int(max_rows), for_agent=agent, shaped=False)
+        out = service.query(
+            _caller(user), opportunity_ids, sql, max_rows=int(max_rows), for_agent=agent, shaped=False, **selection
+        )
     except ScopeError as e:
         raise _scope_error(e) from e
     except service.SensitiveDataRefused as e:
@@ -201,7 +261,7 @@ def query(user, opportunity_ids, sql, max_rows=DEFAULT_MAX_ROWS, keep_result=Fal
             "reason": e.code,
             "message": e.message,
             "sql_executed": sql,
-            "open_on_page": service.open_on_page_url(opportunity_ids, sql),
+            "open_on_page": service.open_on_page_url(opportunity_ids, sql, **selection),
         }
         if not (agent or keep_result):
             # Nobody will read it back (and only canopy's agent is ever refused rows).
@@ -302,12 +362,16 @@ for _name, _spec, _fn in (
     ("data_validate", VALIDATE, validate),
     (
         "data_query",
-        {**QUERY, "description": QUERY["description"] + QUERY_KEPT, "input_schema": QUERY_KEPT_SCHEMA},
+        {
+            **QUERY,
+            "description": QUERY["description"] + QUERY_SELECTION + QUERY_KEPT,
+            "input_schema": QUERY_KEPT_SCHEMA,
+        },
         query,
     ),
     # scout-queries' names for the same three (see the module docstring), without the
     # result View: they are called from Claude Code, not drawn in canopy.
-    ("explorer_describe", DESCRIBE, describe),
+    ("explorer_describe", DESCRIBE_OPPORTUNITIES_ONLY, describe),
     ("explorer_validate", VALIDATE, validate),
     ("explorer_query", {k: v for k, v in QUERY.items() if k != "meta"}, explorer_query),
 ):
