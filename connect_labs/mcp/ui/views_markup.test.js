@@ -29,8 +29,11 @@ describe.each(VIEWS)('%s', (name) => {
   });
 
   it('declares its custom properties on :root, and the browser keeps them', () => {
+    // The View's stylesheet alone, in an empty page: none of its script runs.
     const window = new Window();
-    window.document.write(html.replace(/<script\b[\s\S]*?<\/script>/gi, ''));
+    const style = window.document.createElement('style');
+    style.textContent = blocks(html, 'style').join('\n');
+    window.document.head.appendChild(style);
     const root = window.getComputedStyle(window.document.documentElement);
     expect(root.getPropertyValue('--font-sans')).toMatch(/sans-serif/);
     expect(window.getComputedStyle(window.document.body).fontFamily).toMatch(
