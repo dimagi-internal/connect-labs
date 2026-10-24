@@ -217,13 +217,4 @@ Use the **Querying** box at the top to choose what you want to query. Type to ad
 Once you have chosen your scope, use the two panels on the page:
 
 - **Tables card.** Lists every table you can query and its columns. Click a table or column name to insert it into the editor. The `visits` table is always available; if you have chosen a workflow (see below), its pipeline tables appear here too.
-- **SQL editor.** Write a query against the available tables. The `visits` table has one row per visit and contains the opportunity, its LLO, the worker, the case, the visit status, the review and flag details, the rejection reason, location, justification, completed work, image references, and the full form data. Run your query and view results as a table. Download results as a CSV file.
-- **Whole visits.** Click any `visit_id` in a result to open that visit with every field and the complete submitted form, so you can check a number against the visits behind it.
-- **The rows behind a number.** Click a count in a result to see the visits it counted, and the SQL that selects them.
-- **Saved queries.** Click **Save query** to keep a query (its SQL, what it queries and its row limit, never its results) under a name. Saved queries are listed on the left; click one to run it again with today's data. Saving the same name again keeps the earlier version. Only you can see your saved queries.
-- **CSV downloads** open correctly in Excel, including names in any script, and a cell that starts like a spreadsheet formula is written so it is never run as one.
-
-The chat card shows every row of the agent's result, one page at a time. It uses the agent's names for the columns (hover a heading to see the column's own name) and formats numbers, percentages and dates the way the agent chose. Clicking a heading sorts the whole result, not only the page you are looking at. Beside the row count it says how fresh the data is, for example "Data as of 3 h ago"; with several opportunities it shows the oldest, and the others on hover. The SQL tab shows the query laid out to read.
-
-- **Download CSV** opens the query on the Data page in a new tab, runs it again there with your own access, and highlights the Download CSV button. The download is today's data, which can differ from what the card showed if Connect has new visits since.
-- **Save** opens the query on the Data page with the Save query button highlighted, so you can keep it under a name and run it again later.
+- **SQL editor.** Write a query against the available tables. The `visits` table has one row per visit and contains the opportunity, its LLO, the worker, the case, the visit status, the review and flag details, the rejection
