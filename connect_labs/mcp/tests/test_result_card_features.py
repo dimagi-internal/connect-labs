@@ -161,6 +161,9 @@ def test_the_answering_rules_keep_the_cards_rows_and_sql_out_of_the_reply_and_na
     assert "never paste the SQL" in rules and "Never re-print the card's rows" in rules
     # One silent reading of an ambiguous question is the failure (count-total, ambiguous-dropout).
     assert "never pick a meaning silently" in rules and "62 distinct usernames" in rules
+    assert "one person across opportunities" in rules
+    # Pointing at the card still names the figures asked about (monthly-chart, after the fix).
+    assert "never a range in their place" in rules
     # Rows are labelled by name, not id.
     assert "never by an id alone" in rules
     # The Data page's actions are taught where they apply.

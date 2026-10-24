@@ -976,6 +976,24 @@ describe('provenance', () => {
   });
 });
 
+describe('which opportunities a result read', () => {
+  it('names up to three; more read as a count, the names on hover', async () => {
+    const few = await shown(BY_LLO);
+    expect(few.text()).toContain('Opp One, Opp Two');
+    const many = await shown({
+      ...BY_LLO,
+      opportunities: Array.from({ length: 12 }, (_, i) => ({
+        id: i,
+        name: `Opp ${i}`,
+      })),
+    });
+    const scope = many.document.querySelector('.scope');
+    expect(scope.textContent).toBe('12 opportunities');
+    expect(scope.getAttribute('title')).toContain('Opp 11');
+    expect(many.text()).not.toContain('Opp 0, Opp 1');
+  });
+});
+
 describe('download and save go through the Data page', () => {
   it('Download CSV opens the query there to run again and offer the CSV', async () => {
     const view = await shown(BY_LLO);

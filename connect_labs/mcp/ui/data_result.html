@@ -1203,6 +1203,22 @@
           return cell(row[state.x], columnKinds(r)[state.x], r.columns[state.x])
             .text;
         }
+        // The opportunities a result read: up to three by name; more as a count, the
+        // names on hover, so a programme-wide result does not push the data down.
+        function scope(opps) {
+          if (!opps || !opps.length) return '';
+          var names = opps.map(function (o) {
+            return o.name;
+          });
+          if (names.length <= 3) return ' · ' + esc(names.join(', '));
+          return (
+            ' · <span class="scope" title="' +
+            esc(names.join(', ')) +
+            '">' +
+            names.length +
+            ' opportunities</span>'
+          );
+        }
         function chart() {
           var r = state.result;
           if (state.chartType === 'stat' && hasRows(r) && state.ys.length)
@@ -1781,16 +1797,7 @@
               : '') +
             freshness(r) +
             (r.elapsed_ms != null ? ' · ' + r.elapsed_ms + ' ms' : '') +
-            (r.opportunities && r.opportunities.length
-              ? ' · ' +
-                esc(
-                  r.opportunities
-                    .map(function (o) {
-                      return o.name;
-                    })
-                    .join(', '),
-                )
-              : '');
+            scope(r.opportunities);
           var tabs =
             '<span class="tabs" role="tablist">' +
             ['table', 'chart', 'sql']
