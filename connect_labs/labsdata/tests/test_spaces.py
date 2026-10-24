@@ -203,6 +203,8 @@ def test_nothing_in_a_space_is_rows(people):
         "created_at",
         "updated_at",
         "archived_at",
+        "audience",
+        "managers",
         "queries",
     }
     assert not {"rows", "columns", "result", "row_count"} & {f.name for f in SavedQuery._meta.get_fields()}
@@ -214,8 +216,9 @@ def test_nothing_in_a_space_is_rows(people):
 
 def test_an_archived_space_is_gone_for_everyone(people):
     sid = _program_space(people)
-    assert _post(_client(people["bob"]), f"/labs/data/api/spaces/{sid}/archive/", {}).status_code == 200
+    assert _post(_client(people["alice"]), f"/labs/data/api/spaces/{sid}/archive/", {}).status_code == 200
     assert _client(people["alice"]).get(f"/labs/data/api/spaces/{sid}/").status_code == 404
+    assert _client(people["bob"]).get(f"/labs/data/api/spaces/{sid}/").status_code == 404
     assert SavedQuery.objects.filter(space_id=sid).count() == 0  # none were saved; it keeps any it had
 
 
@@ -295,3 +298,235 @@ def test_saving_keeps_exactly_the_space_the_selection_generated(people):
     assert spaces.open(alice, kept.pk).selection.ids == generated.selection.ids
     with pytest.raises(ValueError):
         spaces.save(alice, spaces.open(alice, kept.pk), "Again")
+
+
+# --- who can open a space, and who can change it (the ACL) -------------------------------
+# The data rule (every source held now) is fixed; the audience narrows it; managers change
+# sources, audience and managers; members run, save and delete their own items.
+
+
+def _space_of(client, sid):
+    return client.get(f"/labs/data/api/spaces/{sid}/").json()["space"]
+
+
+def test_a_new_space_is_open_to_every_holder_and_its_creator_manages_it(people):
+    sid = _program_space(people)
+    space = DataSpace.objects.get(pk=sid)
+    assert space.audience == DataSpace.HOLDERS
+    assert list(space.managers.values_list("username", flat=True)) == ["space-alice"]
+    mine, bobs = _space_of(_client(people["alice"]), sid), _space_of(_client(people["bob"]), sid)
+    assert (mine["audience"], mine["is_manager"], [m["username"] for m in mine["managers"]]) == (
+        "holders",
+        True,
+        ["space-alice"],
+    )
+    # Bob sees the audience and who manages it, read-only.
+    assert (bobs["is_manager"], [m["username"] for m in bobs["managers"]]) == (False, ["space-alice"])
+
+
+def test_existing_spaces_are_backfilled_holders_with_their_creator_managing():
+    """Migration 0004 (run by the test database): every existing space ends up as a new
+    one starts -- audience holders, its creator its manager."""
+    import importlib
+
+    from django.apps import apps as django_apps
+
+    migration = importlib.import_module("connect_labs.labsdata.migrations.0004_data_space_audience_managers")
+    User = get_user_model()
+    maker = User.objects.create_user(username="space-maker", password="x")
+    old = DataSpace.objects.create(name="Old", opportunity_ids=[O1.id], created_by=maker)
+    orphan = DataSpace.objects.create(name="Orphan", opportunity_ids=[O1.id])
+    migration.creators_manage(django_apps, None)
+    assert old.audience == "holders" and list(old.managers.all()) == [maker]
+    assert not orphan.managers.exists()
+
+
+def test_a_private_space_is_not_found_for_non_managers_who_hold_every_source(people, connect):
+    sid = _program_space(people)
+    alice, bob = _client(people["alice"]), _client(people["bob"])
+    done = _post(alice, f"/labs/data/api/spaces/{sid}/audience/", {"audience": "private"})
+    assert done.status_code == 200 and done.json()["space"]["audience"] == "private"
+    missing = bob.get("/labs/data/api/spaces/999999/").json()
+    # Bob holds every source, but the audience narrows past him: exactly a missing space.
+    for res in (
+        bob.get(f"/labs/data/api/spaces/{sid}/"),
+        bob.get(f"/labs/data/api/spaces/{sid}/items/"),
+        _post(bob, "/labs/data/api/query/", {"space_id": sid, "sql": "SELECT 1"}),
+        _post(bob, f"/labs/data/api/spaces/{sid}/items/", {"name": "x", "sql": "SELECT 1"}),
+    ):
+        assert res.status_code == 404 and res.json() == missing
+    assert bob.get(f"/labs/data/space/{sid}/").status_code == 404
+    assert bob.get("/labs/data/api/spaces/").json() == {"groups": []}
+    assert connect == []
+    with pytest.raises(MCPToolError) as hidden:
+        from connect_labs.mcp.tools import labsdata as tools
+
+        tools.query(people["bob"], space_id=sid, sql="SELECT 1")
+    assert hidden.value.code == "NOT_FOUND"
+    # Alice, its manager, still opens it, and lists it; back to holders, Bob is back.
+    assert alice.get(f"/labs/data/api/spaces/{sid}/").status_code == 200
+    assert [s["id"] for g in alice.get("/labs/data/api/spaces/").json()["groups"] for s in g["spaces"]] == [sid]
+    _post(alice, f"/labs/data/api/spaces/{sid}/audience/", {"audience": "holders"})
+    assert bob.get(f"/labs/data/api/spaces/{sid}/").status_code == 200
+
+
+def test_an_unknown_audience_is_refused_and_admits_nobody(people, monkeypatch):
+    sid = _program_space(people)
+    alice = _client(people["alice"])
+    bad = _post(alice, f"/labs/data/api/spaces/{sid}/audience/", {"audience": "everyone"})
+    assert bad.status_code == 400 and bad.json()["error"] == "bad_audience"
+    # A stored audience the registry does not know fails closed, even for a manager.
+    monkeypatch.delitem(spaces.AUDIENCES, DataSpace.HOLDERS)
+    assert alice.get(f"/labs/data/api/spaces/{sid}/").status_code == 404
+
+
+def test_the_audience_cannot_widen_the_data_rule(people, monkeypatch):
+    """A manager who lacks a source still cannot open the space -- holders or private --
+    and an audience that admits everyone admits nobody who does not hold the sources."""
+    sid = _program_space(people)
+    space = DataSpace.objects.get(pk=sid)
+    space.managers.add(people["carol"])  # carol holds only part of the program
+    monkeypatch.setitem(spaces.AUDIENCES, "everyone", lambda space, user: True)
+    for audience in ("holders", "private", "everyone"):
+        DataSpace.objects.filter(pk=sid).update(audience=audience)
+        for who in ("carol", "dave"):
+            assert _client(people[who]).get(f"/labs/data/api/spaces/{sid}/").status_code == 404, (audience, who)
+            with pytest.raises(spaces.SpaceNotFound):
+                spaces.open(scopes.Caller(user=people[who]), sid)
+            assert spaces.openable(scopes.Caller(user=people[who])) == []
+
+
+def test_the_audience_is_asked_only_after_the_data_rule(people, monkeypatch):
+    sid = _program_space(people)
+    asked = []
+    monkeypatch.setitem(spaces.AUDIENCES, "holders", lambda space, user: asked.append(user.username) or True)
+    with pytest.raises(spaces.SpaceNotFound):
+        spaces.open(scopes.Caller(user=people["carol"]), sid)
+    spaces.openable(scopes.Caller(user=people["dave"]))
+    assert asked == []
+    spaces.open(scopes.Caller(user=people["bob"]), sid)
+    assert asked == ["space-bob"]
+
+
+def test_a_member_saves_and_deletes_their_own_items_but_manages_nothing(people):
+    sid = _program_space(people)
+    alice, bob = _client(people["alice"]), _client(people["bob"])
+    _post(alice, f"/labs/data/api/spaces/{sid}/items/", {"name": "Alices", "sql": "SELECT 1"})
+    mine = _post(bob, f"/labs/data/api/spaces/{sid}/items/", {"name": "Bobs", "sql": "SELECT 2"})
+    assert mine.status_code == 200
+    # A new version of someone else's item is a save, which members may make.
+    assert _post(bob, f"/labs/data/api/spaces/{sid}/items/", {"name": "Alices", "sql": "SELECT 3"}).status_code == 200
+    items = {i["name"]: i for i in bob.get(f"/labs/data/api/spaces/{sid}/items/").json()["items"]}
+    assert (items["Bobs"]["can_delete"], items["Alices"]["can_delete"]) == (True, False)
+    alices = SavedQuery.objects.filter(space_id=sid, name="Alices").first()
+    refused = _post(bob, f"/labs/data/api/spaces/{sid}/items/{alices.pk}/delete/", {})
+    assert refused.status_code == 403 and refused.json()["error"] == "not_manager"
+    assert SavedQuery.objects.filter(space_id=sid, name="Alices").count() == 2
+    ok = _post(bob, f"/labs/data/api/spaces/{sid}/items/{mine.json()['saved']['id']}/delete/", {})
+    assert ok.status_code == 200 and not SavedQuery.objects.filter(space_id=sid, name="Bobs").exists()
+    # Nor sources, audience, managers or archive.
+    for url, body in (
+        (f"/labs/data/api/spaces/{sid}/sources/", {"confirm": True, "program_ids": [PROGRAM]}),
+        (f"/labs/data/api/spaces/{sid}/audience/", {"audience": "private"}),
+        (f"/labs/data/api/spaces/{sid}/managers/", {"person": "space-bob"}),
+        (f"/labs/data/api/spaces/{sid}/managers/{people['alice'].pk}/remove/", {}),
+        (f"/labs/data/api/spaces/{sid}/archive/", {}),
+    ):
+        res = _post(bob, url, body)
+        assert res.status_code == 403 and res.json()["error"] == "not_manager", url
+    space = DataSpace.objects.get(pk=sid)
+    assert (space.audience, space.archived_at, list(space.managers.all())) == ("holders", None, [people["alice"]])
+    # A manager deletes anyone's item.
+    assert _post(alice, f"/labs/data/api/spaces/{sid}/items/{alices.pk}/delete/", {}).status_code == 200
+
+
+def test_managers_add_people_who_hold_every_source_and_never_the_last_one_leaves(people):
+    from connect_labs.audit_trail.models import AuditEvent
+
+    sid = _program_space(people)
+    alice, bob = _client(people["alice"]), _client(people["bob"])
+    # Carol does not hold every source; nobody is called "nobody"; alice is already herself.
+    # One answer whatever the reason.
+    for person in ("space-carol", "nobody", "space-alice", ""):
+        res = _post(alice, f"/labs/data/api/spaces/{sid}/managers/", {"person": person})
+        assert res.status_code == 400 and res.json()["error"] == "not_eligible", person
+    last = _post(alice, f"/labs/data/api/spaces/{sid}/managers/{people['alice'].pk}/remove/", {})
+    assert last.status_code == 409 and last.json()["error"] == "last_manager"
+    people["bob"].email = "bob@invented.example"
+    people["bob"].save()
+    added = _post(alice, f"/labs/data/api/spaces/{sid}/managers/", {"person": "BOB@invented.example"})
+    assert added.status_code == 200, added.content
+    assert [m["username"] for m in added.json()["space"]["managers"]] == ["space-alice", "space-bob"]
+    assert _space_of(bob, sid)["is_manager"] is True
+    # Bob, now a manager, removes Alice; then he is the last.
+    assert _post(bob, f"/labs/data/api/spaces/{sid}/managers/{people['alice'].pk}/remove/", {}).status_code == 200
+    assert _space_of(alice, sid)["is_manager"] is False
+    assert _post(bob, f"/labs/data/api/spaces/{sid}/managers/{people['bob'].pk}/remove/", {}).status_code == 409
+    changes = [
+        e.metadata
+        for e in AuditEvent.objects.filter(resource_type="labsdata_space", action="update").order_by("pk")
+        if e.metadata.get("field") == "managers"
+    ]
+    # One event per opportunity the space reads (two), each with before and after.
+    assert [(c["before"], c["after"]) for c in changes[::2]] == [
+        (["space-alice"], ["space-alice", "space-bob"]),
+        (["space-alice", "space-bob"], ["space-bob"]),
+    ]
+
+
+def test_audience_and_source_changes_are_audited_before_and_after(people):
+    from connect_labs.audit_trail.models import AuditEvent
+
+    sid = _program_space(people)
+    alice = _client(people["alice"])
+    _post(alice, f"/labs/data/api/spaces/{sid}/audience/", {"audience": "private"})
+    _post(alice, f"/labs/data/api/spaces/{sid}/sources/", {"confirm": True, "opportunity_ids": [O3.id]})
+    meta = [e.metadata for e in AuditEvent.objects.filter(resource_type="labsdata_space", action="update")]
+    audience = next(m for m in meta if m.get("field") == "audience")
+    sources = next(m for m in meta if m.get("field") == "sources")
+    assert (audience["before"], audience["after"]) == ("holders", "private")
+    assert sources["before"]["opportunity_ids"] == [O1.id, O2.id] and sources["after"]["opportunity_ids"] == [O3.id]
+
+
+def test_a_manager_who_loses_a_source_cannot_open_or_manage_the_space(people, monkeypatch):
+    sid = _program_space(people)
+    monkeypatch.setitem(HOLDS, "alice", ({PROGRAM}, {O1.id, O3.id}))  # lost O2
+    alice = _client(people["alice"])
+    for url, body in (
+        (f"/labs/data/api/spaces/{sid}/audience/", {"audience": "private"}),
+        (f"/labs/data/api/spaces/{sid}/managers/", {"person": "space-bob"}),
+        (f"/labs/data/api/spaces/{sid}/sources/", {"confirm": True, "opportunity_ids": [O3.id]}),
+        (f"/labs/data/api/spaces/{sid}/archive/", {}),
+    ):
+        assert _post(alice, url, body).status_code == 404, url
+    # The space keeps working for its members.
+    assert _client(people["bob"]).get(f"/labs/data/api/spaces/{sid}/").status_code == 200
+    assert DataSpace.objects.get(pk=sid).audience == "holders"
+
+
+def test_a_labs_admin_makes_someone_who_can_open_it_a_manager(people, monkeypatch):
+    from connect_labs.labsdata import views
+    from connect_labs.utils import dimagi_user
+
+    sid = _program_space(people)
+    staff = get_user_model().objects.create_user(username="space-staff", password="x")
+    monkeypatch.setattr(dimagi_user, "is_dimagi_staff", lambda user: user.username == "space-staff")
+    url = f"/labs/data/api/spaces/{sid}/admin/managers/"
+    # Not staff: refused, even a manager.
+    refused = _post(_client(people["alice"]), url, {"person": "space-bob"})
+    assert refused.status_code == 403 and refused.json()["error"] == "not_admin"
+    admin = _client(staff)
+    # Someone who cannot open it, an unknown name, or the admin themselves: one answer.
+    for person in ("space-carol", "nobody", "space-staff"):
+        res = _post(admin, url, {"person": person})
+        assert res.status_code == 400 and res.json()["error"] == "not_eligible", person
+    # The admin holds nothing of the space and still assigns Bob, who can open it.
+    ok = _post(admin, url, {"person": "space-bob"})
+    assert ok.status_code == 200 and ok.json()["managers"] == ["space-alice", "space-bob"]
+    assert _space_of(_client(people["bob"]), sid)["is_manager"] is True
+    # A private space with no manager who can open it stays closed: Dave (not a holder of
+    # the program) can't be made one, and nor can Bob once he is not a manager of it.
+    DataSpace.objects.get(pk=sid).managers.remove(people["bob"])
+    DataSpace.objects.filter(pk=sid).update(audience="private")
+    assert _post(admin, url, {"person": "space-bob"}).json()["error"] == "not_eligible"
+    assert views._is_labs_admin(staff) is True

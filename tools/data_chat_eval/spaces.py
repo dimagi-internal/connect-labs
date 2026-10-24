@@ -6,6 +6,10 @@ A space scenario (``spaces:`` in a suite) walks one space's life, checking each 
    scenario's sources.
 2. **open** -- ``/labs/data/space/<id>/`` draws the space (``#ex-page[data-space-id]``) and
    tells the panel (``canopyHost.pageState().filters.space_id``).
+2b. **who can open it** -- ace made the space, so ace manages it: the space says so
+   (``is_manager``, ``audience: holders``, ace among ``managers``), the rail shows the
+   "Who can open" control, and ace can set it ``private`` (still opens, as its manager, on
+   the page and through ``data_query``) and back to ``holders``.
 3. **held to the space (MCP, ace's PAT)** -- ``data_query`` with ``space_id`` answers the
    ground truth; with another opportunity beside it is refused ``outside_space``; SQL naming
    an opportunity outside the space reads nothing.
@@ -17,7 +21,8 @@ A space scenario (``spaces:`` in a suite) walks one space's life, checking each 
 6. **the agent in the space** -- one chat turn in the space's panel; the canvas should switch.
 7. **archive** -- ``POST .../archive/``; the space's page then answers 404.
 
-Teammate and lock-out rules need a second synthetic person; not covered yet.
+Teammate and lock-out rules (a member's view, private hiding a non-manager) need a second
+synthetic person; not covered yet -- the unit tests pin them (``labsdata/tests/test_spaces.py``).
 """
 
 from __future__ import annotations
@@ -84,6 +89,7 @@ class _Steps:
 ROUTE_SPACE = "data spaces: connect_labs/labsdata/spaces.py + views.py (Space*View)"
 ROUTE_MCP = "space-held data_* tools: connect_labs/mcp/tools/labsdata.py (_space / outside_space)"
 ROUTE_PAGE = "the Data page's canvas and page actions: connect_labs/static/labsdata/data.js (ACTIONS)"
+ROUTE_ACL = "who can open a space: connect_labs/labsdata/spaces.py (AUDIENCES, set_audience) + views.SpaceAudienceView"
 
 
 def run(sc: SpaceScenario, mcp, out_dir: Path, args) -> dict:
@@ -154,6 +160,7 @@ def run(sc: SpaceScenario, mcp, out_dir: Path, args) -> dict:
                 "the space page's panel state: connect_labs/labsdata/views.py (DataView canopy_panel filters)",
             )
             page.screenshot(path=str(out_dir / "step2-space.png"))
+            _audience(page, steps, mcp, sc, space_id, space_url, want, out_dir)
 
             # 3. held to the space (MCP as ace)
             try:
@@ -349,6 +356,66 @@ def run(sc: SpaceScenario, mcp, out_dir: Path, args) -> dict:
                 _post(page, f"{API}/spaces/{space_id}/archive/", {})  # never leave a test space behind
             browser.close()
     return entry
+
+
+def _audience(page, steps: _Steps, mcp, sc: SpaceScenario, space_id, space_url: str, want, out_dir: Path) -> None:
+    """Step 2b: ace, the space's creator, manages it -- sets it private and back."""
+    got = _get(page, f"{API}/spaces/{space_id}/")
+    space = (got.get("body") or {}).get("space") or {}
+    managers = [m.get("username") for m in space.get("managers") or []]
+    steps.add(
+        2,
+        "the creator manages the space (holders by default)",
+        space.get("is_manager") is True and space.get("audience") == "holders" and len(managers) == 1,
+        f"is_manager={space.get('is_manager')}, audience={space.get('audience')!r}, managers={managers}",
+        ROUTE_ACL,
+    )
+    control = page.evaluate(
+        "() => { const e = document.querySelector('#ex-audience');"
+        " return e ? {hidden: e.hidden, value: e.value} : null }"
+    )
+    steps.add(
+        2,
+        "the rail offers 'Who can open' to its manager",
+        bool(control) and control.get("hidden") is False and control.get("value") == "holders",
+        f"#ex-audience: {control}",
+        "the rail's access card: connect_labs/static/labsdata/data.js (renderAccess)",
+    )
+    private = _post(page, f"{API}/spaces/{space_id}/audience/", {"audience": "private"})
+    after = ((private.get("body") or {}).get("space") or {}).get("audience")
+    steps.add(
+        2,
+        "manager sets it private",
+        private["status"] == 200 and after == "private",
+        f"HTTP {private['status']}: {after!r}",
+        ROUTE_ACL,
+    )
+    opened = page.request.get(space_url)
+    steps.add(
+        2, "a private space still opens for its manager", opened.status == 200, f"page {opened.status}", ROUTE_ACL
+    )
+    try:
+        r = mcp.call("data_query", {"space_id": space_id, "sql": sc.truth_sql, "max_rows": 5})
+        got_n = dict(zip(r["columns"], r["rows"][0])).get(sc.truth_column) if r.get("rows") else None
+        steps.add(
+            2,
+            "data_query on the private space, as its manager",
+            got_n == want,
+            f"expected {want}, got {got_n}",
+            ROUTE_ACL,
+        )
+    except Exception as e:  # noqa: BLE001
+        steps.add(2, "data_query on the private space, as its manager", False, str(e)[:300], ROUTE_ACL)
+    back = _post(page, f"{API}/spaces/{space_id}/audience/", {"audience": "holders"})
+    after = ((back.get("body") or {}).get("space") or {}).get("audience")
+    steps.add(
+        2,
+        "manager sets it back to holders",
+        back["status"] == 200 and after == "holders",
+        f"HTTP {back['status']}: {after!r}",
+        ROUTE_ACL,
+    )
+    page.screenshot(path=str(out_dir / "step2b-audience.png"))
 
 
 def _agent_save(page, steps: _Steps, turn, sc: SpaceScenario, space_id, out_dir: Path) -> None:

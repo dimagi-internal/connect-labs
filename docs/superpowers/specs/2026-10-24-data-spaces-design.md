@@ -152,3 +152,39 @@ experience can be improved in a loop. Lives in connect-labs under `tools/data_ch
 
 Space memory/notes the agent writes (would hold PHI), scheduled refreshes, sharing a space
 outside the people who hold its sources, any stored result rows.
+
+## Who can open a space, and who can change it (the ACL)
+
+Jonathan, 2026-10-24: "the default mode is that the creator of the space sets it to anyone
+with permission to the underlying objects, checked on loading of the space. But we might
+want alternatives later."
+
+Access to a space is **two rules, both required, checked together on every load and every
+read** (`spaces.open`):
+
+1. **The data rule -- fixed, never configurable.** You hold every source of the space now
+   (rules 1-2 above). No setting, role or audience can get round it.
+2. **The audience -- chosen by the space's managers, and it can only narrow.** Who, among the
+   people who pass the data rule, may open the space. Today:
+   - `holders` (the default): anyone who passes the data rule.
+   - `private`: only the space's managers.
+   Later audiences (named people, an organisation's members, a program team) are each one
+   function in one registry (`spaces.AUDIENCES`), asked only after the data rule passes, so
+   adding one can never let anyone see data they do not hold.
+
+**Roles inside a space.** *Managers* (the creator, and anyone a manager adds) change the
+sources, the audience and the managers, archive the space, and delete any item. *Members*
+(anyone else who can open it) run everything, save new queries and new versions, and delete
+items they saved. A manager is held to both rules like anyone else: a manager who loses a
+source cannot open, or manage, the space.
+
+**When no manager can open it.** The space keeps working for its members (an empty
+`private` space is closed to everyone). A labs admin (Dimagi staff, Labs Admin) can make
+someone who can open it a manager. Nobody can make themselves a manager.
+
+**Agents.** An agent in a space acts as the visitor, with the visitor's access, and can
+never change sources, audience or managers -- those are person-session writes only, behind
+CSRF, audited (`SettingChange`-style before/after in the audit trail).
+
+**No per-item permissions.** Items inherit their space. A thing that needs a different
+audience goes in a different space.

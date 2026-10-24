@@ -87,7 +87,7 @@
     <div>
       <h1 class="text-2xl font-semibold text-stone-900">{% if space %}<a href="{% url 'labsdata:index' %}" class="text-stone-500 font-normal">Data</a> / <span id="ex-space-name">{{ space.name }}</span>{% else %}Data{% endif %}</h1>
       {% if space %}
-        <p class="text-sm text-stone-500">{% if space.description %}{{ space.description }} · {% endif %}A data space: anyone who holds every one of its sources sees it and its saved queries. Read-only, audit-logged; nothing here stores rows.</p>
+        <p class="text-sm text-stone-500">{% if space.description %}{{ space.description }} · {% endif %}A data space: {% if space.audience == "private" %}only its managers can open it, and only while they hold every one of its sources{% else %}anyone who holds every one of its sources sees it and its saved queries{% endif %}. Read-only, audit-logged; nothing here stores rows.</p>
       {% else %}
         <p class="text-sm text-stone-500">Query the visits of the programs and opportunities you hold, down to each submitted form, or a workflow's pipelines. Click a visit id to open the whole visit. Read-only, audit-logged. Ask the agent to write the SQL for you.</p>
       {% endif %}
@@ -104,11 +104,38 @@
           </select>
           <div class="mt-2 flex flex-wrap items-center gap-2">
             <button class="ex-btn ghost" id="ex-space-new" type="button" {% if space %}hidden{% endif %}>Save as a space</button>
-            <button class="ex-btn ghost" id="ex-space-archive" type="button" {% if not space %}hidden{% endif %}>Archive space</button>
+            <button class="ex-btn ghost" id="ex-space-archive" type="button" hidden>Archive space</button>
           </div>
           <div id="ex-space-notice"></div>
         </div>
       </div>
+
+      {% if space %}
+      {# Who can open the space, and who manages it (spaces.AUDIENCES, DataSpace.managers). #}
+      {# Managers change both; members see them read-only. Filled by data.js (renderAccess). #}
+      <div class="ex-card" id="ex-access-card">
+        <div class="px-3 pt-3 pb-3 flex flex-col gap-2">
+          <label class="ex-label block" for="ex-audience">Who can open</label>
+          <select id="ex-audience" class="ex-search" hidden>
+            <option value="holders">Anyone with access to the sources</option>
+            <option value="private">Only managers</option>
+          </select>
+          <p id="ex-audience-text" class="text-sm text-stone-700"></p>
+          <p class="text-xs ex-muted">Only people who hold every source can ever open it; this can narrow that, never widen it.</p>
+          <div class="ex-label mt-1">Managers</div>
+          <div id="ex-managers" class="flex flex-col gap-1 text-sm"></div>
+          <div id="ex-manager-add" class="flex gap-2" hidden>
+            <input id="ex-manager-person" class="ex-search" placeholder="username or email" autocomplete="off">
+            <button class="ex-btn ghost" id="ex-manager-add-btn" type="button">Add</button>
+          </div>
+          <div id="ex-manager-admin" class="flex gap-2" hidden>
+            <input id="ex-manager-admin-person" class="ex-search" placeholder="labs admin: make a manager" autocomplete="off">
+            <button class="ex-btn ghost" id="ex-manager-admin-btn" type="button">Assign</button>
+          </div>
+          <div class="ex-error" id="ex-access-error" hidden></div>
+        </div>
+      </div>
+      {% endif %}
 
       <div class="ex-card" id="ex-sources-card">
         <div class="px-3 pt-3 pb-2">
