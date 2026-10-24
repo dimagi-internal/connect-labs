@@ -166,6 +166,7 @@ LOCAL_APPS = [
     "connect_labs.labs.admin_boundaries",
     "connect_labs.labs.indicators",
     "connect_labs.labs.synthetic",
+    "connect_labs.labsdata",
     "connect_labs.marketplace",
     "connect_labs.mcp",
     "connect_labs.multidb",

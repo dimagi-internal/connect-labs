@@ -389,6 +389,11 @@ def _pipeline_relations(selection: Selection, withheld: bool) -> dict:
     return out
 
 
+def validate_selected(sql: str, selection: Selection) -> dict:
+    """``validate`` over a resolved selection: a workflow's pipelines are tables too."""
+    return engine.validate_query(sql, relations=selection.relations, field_opps=selection.opportunities)
+
+
 def validate(sql: str) -> dict:
     """Check SQL end to end over zero rows. Touches no data, so it needs no scope.
 
@@ -451,11 +456,18 @@ def query(
             metadata=meta,
             user=caller.user,
         )
+    freshness = fields.cached_at(opps)
     out = {
         **result.as_dict(),
         **selection.as_dict(),
+        # When each opportunity's visits were loaded from Connect: how fresh the answer is.
+        "opportunities": [{"id": o.id, "name": o.name, "llo": o.llo, "cached_at": freshness.get(o.id)} for o in opps],
+        # The SQL laid out to read (the card's SQL tab); `sql_executed` stays as it ran.
+        "sql_formatted": format_sql(result.sql_executed),
         "drill": drillable(sql),
-        "open_on_page": open_on_page_url(opportunity_ids, sql, program_ids=program_ids, workflow=workflow),
+        "open_on_page": open_on_page_url(
+            opportunity_ids, sql, program_ids=program_ids, workflow=workflow, max_rows=max_rows
+        ),
     }
     return shape_for_agent(out) if (for_agent and shaped) else out
 
@@ -509,8 +521,27 @@ def drill_into(
     }
 
 
-def open_on_page_url(opportunity_ids, sql: str = "", *, program_ids=None, workflow: dict | None = None) -> str:
-    """The Data page with this selection and this SQL in the editor (not run)."""
+def format_sql(sql: str) -> str:
+    """``sql`` laid out to read (sqlglot's pretty printer, Postgres dialect), or as it is
+    when it cannot be parsed. For showing only: what runs is always ``sql`` itself."""
+    import sqlglot
+
+    text = sql or ""
+    if not text.strip():
+        return text
+    try:
+        out = sqlglot.transpile(text, read="postgres", write="postgres", pretty=True)
+    except Exception:  # noqa: BLE001 -- a layout failure must never fail the query
+        return text
+    return out[0] if len(out) == 1 and out[0].strip() else text
+
+
+def open_on_page_url(
+    opportunity_ids, sql: str = "", *, program_ids=None, workflow: dict | None = None, max_rows: int | None = None
+) -> str:
+    """The Data page with this selection, this SQL in the editor and its row cap set:
+    everything it takes to run the same query again (the page runs it only when the link
+    asks, ``&run=1``, and the person is signed in: ``views.DataView``)."""
     from urllib.parse import urlencode
 
     from django.conf import settings
@@ -527,6 +558,8 @@ def open_on_page_url(opportunity_ids, sql: str = "", *, program_ids=None, workfl
         params["opps"] = ",".join(str(int(o)) for o in opportunity_ids)
     if sql:
         params["sql"] = sql
+    if max_rows is not None:
+        params["max_rows"] = str(max(1, min(int(max_rows), HARD_MAX_ROWS)))
     base = (getattr(settings, "LABS_PUBLIC_URL", "") or "").rstrip("/")
     return f"{base}{reverse('labsdata:index')}?{urlencode(params)}"
 

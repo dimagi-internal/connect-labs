@@ -99,9 +99,19 @@ function defaultRead(uri) {
   const size = Number(url.searchParams.get('page_size') || 100);
   const pages = Math.ceil(ROWS.length / size);
   const page = Math.min(pages, Number(url.searchParams.get('page') || 1));
+  // Labs sorts the whole result before the page is cut (?sort=&dir=).
+  let rows = ROWS;
+  const sort = url.searchParams.get('sort');
+  if (sort) {
+    const i = COLUMNS.indexOf(sort);
+    const dir = url.searchParams.get('dir') === 'desc' ? -1 : 1;
+    rows = ROWS.slice().sort((a, b) =>
+      a[i] < b[i] ? -dir : a[i] > b[i] ? dir : 0,
+    );
+  }
   const body = {
     columns: COLUMNS,
-    rows: ROWS.slice((page - 1) * size, page * size),
+    rows: rows.slice((page - 1) * size, page * size),
     sql_executed: 'SELECT worker, visits FROM visits',
     open_on_page: 'https://labs.example/labs/data/?opps=1',
   };
@@ -188,22 +198,34 @@ describe('the results View reads the kept result', () => {
     expect(heads[1].className).toBe('num');
   });
 
-  it('sorts within the page', () => {
-    view.click('th[data-sort="1"]');
+  it('sorts every row, not just the page, when there are more pages', async () => {
     const first = () =>
       Number(
         view.document.querySelector('tbody tr td:nth-child(2)').textContent,
       );
+    view.click('th[data-sort="1"]');
+    await settle();
+    let reads = view.requests('resources/read');
+    expect(reads[reads.length - 1].params.uri).toBe(
+      `${URI}?page=1&page_size=100&sort=visits&dir=asc`,
+    );
     expect(first()).toBe(0);
     view.click('th[data-sort="1"]');
+    await settle();
+    reads = view.requests('resources/read');
+    expect(reads[reads.length - 1].params.uri).toContain(
+      '&sort=visits&dir=desc',
+    );
+    // The page Labs sorted, largest first.
     expect(first()).toBe(49);
-    expect(view.requests('resources/read').length).toBe(1);
-  });
-
-  it('says the sort is within the page when there are more pages', () => {
+    // Paging keeps the sort.
+    view.click('#next');
+    await settle();
+    reads = view.requests('resources/read');
+    expect(reads[reads.length - 1].params.uri).toBe(
+      `${URI}?page=2&page_size=100&sort=visits&dir=desc`,
+    );
     expect(view.text()).not.toContain('Sorted within this page only');
-    view.click('th[data-sort="1"]');
-    expect(view.text()).toContain('Sorted within this page only');
   });
 
   it('does not subscribe: Labs never changes a kept result', async () => {
@@ -499,14 +521,15 @@ describe('cells are formatted by what their column holds', () => {
     ],
   };
 
-  it('an id is plain and left-aligned; counts get separators; decimals 1-2 places', async () => {
+  it('an id is plain and left-aligned; counts get separators; a rate is a percent', async () => {
     const view = await showing(TYPED);
     const [id, visits, rate] = cells(view);
     expect(id.textContent).toBe('10234');
     expect(id.className).toBe('');
     expect(visits.textContent).toBe('12,345');
     expect(visits.className).toBe('num');
-    expect(rate.textContent).toBe('0.12');
+    // `approval_rate`, a fraction: a percent with no hint from the agent.
+    expect(rate.textContent).toBe('12.3%');
     const heads = view.document.querySelectorAll('th');
     expect(heads[0].className).toBe('');
     expect(heads[1].className).toBe('num');
@@ -688,5 +711,243 @@ describe('the host decides how big the card may be', () => {
       view.document.documentElement.style.getPropertyValue('--table-max'),
     ).toBe('790px');
     expect(HTML).not.toMatch(/max-height:\s*\d+vh/);
+  });
+});
+
+// A kept result of one page, as Labs keeps it: with the agent's display, the SQL laid
+// out to read and each opportunity's freshness.
+function onePage(body) {
+  return () => ({
+    result: {
+      contents: [
+        {
+          uri: URI,
+          mimeType: 'application/json',
+          text: JSON.stringify(body),
+          _meta: {
+            'labs/result': {
+              page: 1,
+              page_size: 100,
+              pages: 1,
+              row_count: (body.rows || []).length,
+              snapshot: true,
+            },
+          },
+        },
+      ],
+    },
+  });
+}
+async function shown(body) {
+  const view = mount({ read: onePage(body) });
+  await settle();
+  view.notify('ui/notifications/tool-result', SENSITIVE_RESULT);
+  await settle();
+  return view;
+}
+const HOURS = 3600 * 1000;
+const BY_LLO = {
+  columns: ['llo', 'flw_id', 'visit_year', 'visits', 'cases', 'approval_rate'],
+  column_types: ['text', 'integer', 'integer', 'integer', 'integer', 'numeric'],
+  rows: [
+    ['North', 100230, 2026, 1200, 300, 0.913],
+    ['South', 100247, 2026, 4800, 900, 0.72],
+    ['East', 100264, 2026, 2500, 610, 0.85],
+  ],
+  sql_executed: 'select llo, count(*) as visits from visits group by llo',
+  sql_formatted:
+    'SELECT\n  llo,\n  COUNT(*) AS visits\nFROM visits\nGROUP BY\n  llo',
+  open_on_page:
+    'https://labs.example/labs/data/?opps=1%2C2&sql=select+1&max_rows=500',
+  opportunities: [
+    {
+      id: 1,
+      name: 'Opp One',
+      cached_at: new Date(Date.now() - 3 * HOURS).toISOString(),
+    },
+    {
+      id: 2,
+      name: 'Opp Two',
+      cached_at: new Date(Date.now() - 0.5 * HOURS).toISOString(),
+    },
+  ],
+};
+
+describe("the agent's display", () => {
+  const DISPLAY = {
+    columns: {
+      visits: { label: 'Visits <b>', format: 'number_0' },
+      approval_rate: { label: 'Approval rate', format: 'percent_1' },
+      cases: { format: 'compact_1' },
+    },
+  };
+
+  it('labels the columns, raw name on hover, as plain text', async () => {
+    const view = await shown({ ...BY_LLO, display: DISPLAY });
+    const th = [...view.document.querySelectorAll('th')];
+    const visits = th[3];
+    expect(visits.textContent).toBe('Visits <b>');
+    expect(visits.querySelector('b')).toBe(null);
+    expect(visits.getAttribute('title')).toContain('visits');
+    // A column with no label reads as its own name in words.
+    expect(th[0].textContent).toBe('LLO');
+  });
+
+  it('applies the formats', async () => {
+    const view = await shown({ ...BY_LLO, display: DISPLAY });
+    const cells = [
+      ...view.document.querySelectorAll('tbody tr'),
+    ][1].querySelectorAll('td');
+    expect(cells[3].textContent).toBe('4,800');
+    expect(cells[5].textContent).toBe('72.0%');
+    expect(cells[4].textContent).toBe('900');
+  });
+
+  it('draws the chart the agent asked for', async () => {
+    const view = await shown({
+      ...BY_LLO,
+      display: { chart: { type: 'line', x: 'llo', y: ['cases'] } },
+    });
+    view.click('[data-tab="chart"]');
+    expect(view.document.querySelectorAll('polyline').length).toBe(1);
+    expect(view.document.querySelectorAll('rect').length).toBe(0);
+  });
+
+  it('a stat shows one headline number', async () => {
+    const view = await shown({
+      columns: ['total'],
+      rows: [[48213]],
+      display: {
+        columns: {
+          total: { label: 'Visits this quarter', format: 'number_0' },
+        },
+        chart: { type: 'stat', y: ['total'] },
+      },
+    });
+    view.click('[data-tab="chart"]');
+    expect(view.document.querySelector('.stat-value').textContent).toBe(
+      '48,213',
+    );
+    expect(view.document.querySelector('.stat').textContent).toContain(
+      'Visits this quarter',
+    );
+  });
+});
+
+describe('a chart the card picks itself', () => {
+  it('leaves out ids and years, and never mixes a rate with a count', async () => {
+    const view = await shown(BY_LLO);
+    view.click('[data-tab="chart"]');
+    const legend = view.document.querySelector('.legend').textContent;
+    expect(legend).toContain('Visits');
+    expect(legend).toContain('Cases');
+    expect(legend).not.toMatch(/FLW ID|year|Approval/i);
+  });
+
+  it('a rate alone is charted on a percent axis', async () => {
+    const view = await shown({
+      columns: ['llo', 'approval_rate'],
+      rows: [
+        ['North', 0.9],
+        ['South', 0.5],
+      ],
+    });
+    view.click('[data-tab="chart"]');
+    const ticks = [...view.document.querySelectorAll('svg text')].map(
+      (t) => t.textContent,
+    );
+    expect(ticks.some((t) => /%$/.test(t))).toBe(true);
+  });
+
+  it('sorts bars largest first', async () => {
+    const view = await shown(BY_LLO);
+    view.click('[data-tab="chart"]');
+    const labels = [
+      ...view.document.querySelectorAll('svg text[transform]'),
+    ].map((t) => t.textContent);
+    expect(labels).toEqual(['South', 'East', 'North']);
+  });
+
+  it('caps the series at five', async () => {
+    const cols = ['k', 'a', 'b', 'c', 'd', 'e', 'f', 'g'];
+    const view = await shown({
+      columns: cols,
+      rows: [['x', 1, 2, 3, 4, 5, 6, 7]],
+    });
+    view.click('[data-tab="chart"]');
+    expect(view.document.querySelectorAll('.legend span').length).toBe(5);
+  });
+});
+
+describe('provenance', () => {
+  it('says how fresh the data is: the oldest, the rest on hover', async () => {
+    const view = await shown(BY_LLO);
+    const fresh = view.document.querySelector('.fresh');
+    expect(fresh.textContent).toBe('Data as of 3 h ago (oldest)');
+    expect(fresh.getAttribute('title')).toContain(
+      'Opp Two: data as of 30 min ago',
+    );
+  });
+
+  it('shows the SQL laid out to read', async () => {
+    const view = await shown(BY_LLO);
+    view.click('[data-tab="sql"]');
+    expect(view.document.querySelector('pre').textContent).toBe(
+      BY_LLO.sql_formatted,
+    );
+  });
+});
+
+describe('download and save go through the Data page', () => {
+  it('Download CSV opens the query there to run again and offer the CSV', async () => {
+    const view = await shown(BY_LLO);
+    view.click('#download');
+    await settle();
+    const [open] = view.requests('ui/open-link');
+    expect(open.params.url).toBe(`${BY_LLO.open_on_page}&run=1&download=1`);
+    // Never a download from inside the frame, and no tool call.
+    expect(view.requests('tools/call')).toEqual([]);
+  });
+
+  it('Save opens the page with the Save button highlighted and the display', async () => {
+    const display = { columns: { visits: { label: 'Visits' } } };
+    const view = await shown({ ...BY_LLO, display });
+    view.click('#save');
+    await settle();
+    const url = new URL(view.requests('ui/open-link')[0].params.url);
+    expect(url.searchParams.get('save')).toBe('1');
+    expect(url.searchParams.get('run')).toBe('1');
+    expect(JSON.parse(url.searchParams.get('display'))).toEqual(display);
+    expect(url.searchParams.get('sql')).toBe('select 1');
+  });
+
+  it('a withheld result still offers Save (its SQL), not a download', async () => {
+    const view = await shown({
+      withheld: true,
+      message: 'Production rows stay in Labs.',
+      sql_executed: 'select 1',
+      open_on_page: 'https://labs.example/labs/data/?opps=1&sql=select+1',
+    });
+    expect(view.document.getElementById('save')).not.toBe(null);
+    expect(view.document.getElementById('download')).toBe(null);
+  });
+});
+
+describe('a percent column with no hint', () => {
+  it('reads 0-100 values named pct_* as percentages, and leaves other numbers alone', async () => {
+    const view = await shown({
+      columns: ['llo', 'pct_first_fu_0_3d', 'visits', 'pct_over'],
+      rows: [
+        ['North', 70, 12, 150],
+        ['South', 42.5, 9, 20],
+      ],
+    });
+    const cells = view.document.querySelectorAll('tbody tr:first-child td');
+    expect(cells[1].textContent).toBe('70%');
+    expect(cells[2].textContent).toBe('12');
+    // Outside 0-100 it is not a percentage, whatever it is called.
+    expect(cells[3].textContent).toBe('150');
+    const second = view.document.querySelectorAll('tbody tr:nth-child(2) td');
+    expect(second[1].textContent).toBe('42.5%');
   });
 });

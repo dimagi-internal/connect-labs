@@ -892,7 +892,7 @@ def _build_server() -> FastMCP:
     for tool in _build_registry_tools():
         server.add_tool(tool)
     _register_ui_resources(server)
-    # Kept results: resources/read on labs-result://{id}{?page,page_size} (mcp/kept_results.py).
+    # Kept results: resources/read on labs-result://{id}{?page,page_size,sort,dir} (mcp/kept_results.py).
     from . import kept_results
 
     kept_results.mount(server)

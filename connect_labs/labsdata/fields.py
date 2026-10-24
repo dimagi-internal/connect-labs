@@ -60,6 +60,16 @@ def cache_status(opps: list[Opportunity]) -> list[dict]:
     return out
 
 
+def cached_at(opps: list[Opportunity]) -> dict[int, str | None]:
+    """When each opportunity's cached visits were loaded (ISO), or None when nothing is:
+    how fresh a query over them is. ``cache_status`` without the counts."""
+    out = {}
+    for o in opps:
+        when = _current_rows(o.id).aggregate(at=Max("created_at"))["at"]
+        out[o.id] = when.isoformat() if when else None
+    return out
+
+
 def _walk(node, path: tuple, out: list):
     if isinstance(node, dict):
         for key, value in node.items():

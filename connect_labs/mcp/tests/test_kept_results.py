@@ -421,7 +421,7 @@ def test_the_mcp_server_lists_the_kept_result_template():
 
     listed = {t.name: t for t in asyncio.run(templates())}
     template = listed["labs_results"]
-    assert template.uri_template == "labs-result://{id}{?page,page_size}"
+    assert template.uri_template == "labs-result://{id}{?page,page_size,sort,dir}"
     assert template.mime_type == "application/json"
 
 

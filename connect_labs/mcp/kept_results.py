@@ -274,10 +274,97 @@ def summarize_rows(columns: Sequence, rows: Sequence, sample: int = 5) -> dict:
     }
 
 
-def facts(columns, rows) -> dict:
+#: Column statistics (``column_stats``): how many columns get them, the cap on a
+#: distinct count, and how many of a categorical column's values are named.
+STATS_MAX_COLUMNS = 40
+STATS_DISTINCT_CAP = 1000
+STATS_TOP_VALUES = 5
+
+
+def _value_type(values: list) -> str:
+    """A column's type from its non-null values, when the query did not say."""
+    if not values:
+        return "text"
+    if all(isinstance(v, bool) for v in values):
+        return "bool"
+    if all(isinstance(v, int) and not isinstance(v, bool) for v in values):
+        return "integer"
+    if all(isinstance(v, int | float) and not isinstance(v, bool) for v in values):
+        return "numeric"
+    if all(isinstance(v, dict | list) for v in values):
+        return "json"
+    if all(isinstance(v, str) and len(v) >= 10 and v[4:5] == "-" and v[7:8] == "-" for v in values):
+        return "timestamp" if any(len(v) > 10 for v in values) else "date"
+    return "text"
+
+
+def _hashable(v):
+    return json.dumps(v, sort_keys=True, default=str) if isinstance(v, dict | list) else v
+
+
+def column_stats(columns: Sequence, rows: Sequence, column_types: Sequence | None = None, *, reveal: bool) -> list:
+    """Per column, what an agent needs to read a result without its rows: ``type``,
+    ``nulls``, ``distinct`` (capped at ``STATS_DISTINCT_CAP``, ``distinct_capped`` past
+    it), ``min``/``max``/``mean`` for a numeric column, ``min``/``max`` for a date, and
+    ``top_values`` for a categorical text column.
+
+    ``reveal`` is the rule every sample follows (``labsdata.service.agent_sees_sensitive_rows``):
+    False -- an agent labs has not cleared, over sensitive data -- gives each column's
+    name and type only, no counts and no values, as ``data_describe`` gives such an agent
+    structure only. Even when True, a text column's values are named only as
+    ``data_describe`` names them (``labsdata.fields``): when it holds at most
+    ``MAX_CATEGORIES`` distinct values, each seen at least ``MIN_VALUE_COUNT`` times --
+    which admits "hospital / home / clinic" and never a name, a phone number or free
+    text -- and a text column never gets a min or max, which would be two of its values.
+    At most ``STATS_MAX_COLUMNS`` columns, so the facts stay within their budget."""
+    from connect_labs.labsdata.fields import MAX_CATEGORIES, MAX_VALUE_LENGTH, MIN_VALUE_COUNT
+
+    names = _column_names(columns)[:STATS_MAX_COLUMNS]
+    types = list(column_types or [])
+    rows = [r if not isinstance(r, Mapping) else [r.get(n) for n in names] for r in (rows or ())]
+    out = []
+    for i, name in enumerate(names):
+        values = [r[i] if i < len(r) else None for r in rows]
+        present = [v for v in values if v is not None]
+        kind = types[i] if i < len(types) and types[i] else _value_type(present)
+        stat: dict = {"name": name, "type": kind}
+        if not reveal:
+            out.append(stat)
+            continue
+        stat["nulls"] = len(values) - len(present)
+        counts: dict = {}
+        capped = False
+        for v in present:
+            key = _hashable(v)
+            if key in counts or len(counts) < STATS_DISTINCT_CAP:
+                counts[key] = counts.get(key, 0) + 1
+            else:
+                capped = True
+        stat["distinct"] = len(counts)
+        if capped:
+            stat["distinct_capped"] = True
+        numbers = [v for v in present if isinstance(v, int | float) and not isinstance(v, bool)]
+        if kind in ("integer", "numeric") and numbers:
+            stat["min"], stat["max"] = min(numbers), max(numbers)
+            stat["mean"] = round(sum(numbers) / len(numbers), 4)
+        elif kind in ("date", "timestamp") and present:
+            texts = [str(v) for v in present]
+            stat["min"], stat["max"] = min(texts), max(texts)
+        elif kind == "text" and counts:
+            categorical = len(counts) <= MAX_CATEGORIES and min(counts.values()) >= MIN_VALUE_COUNT
+            if categorical and all(isinstance(k, str) and len(k) <= MAX_VALUE_LENGTH for k in counts):
+                top = sorted(counts.items(), key=lambda kv: (-kv[1], str(kv[0])))[:STATS_TOP_VALUES]
+                stat["top_values"] = [{"value": k, "count": c} for k, c in top]
+        out.append(stat)
+    return out
+
+
+def facts(columns, rows, column_types=None, *, reveal: bool = True) -> dict:
     """What a canopy agent is told about a table instead of the table: ``summarize_rows``
-    (the first ``INLINE_ROWS`` rows) and, when that is not every row, how to read the rest."""
+    (the first ``INLINE_ROWS`` rows), ``column_stats`` and, when that is not every row,
+    how to read the rest."""
     out = summarize_rows(columns, rows, sample=INLINE_ROWS)
+    out["column_stats"] = column_stats(columns, rows, column_types, reveal=reveal)
     if out["truncated"]:
         out["read_more"] = (
             f"Only the first {INLINE_ROWS} of {out['row_count']} rows are here. Every row is kept at "
@@ -327,12 +414,58 @@ def read(uri: str, reader: int | None):
     return result
 
 
+def sort_of(columns, query: Mapping[str, str]) -> tuple[int, str] | None:
+    """``(column index, "asc" | "desc")`` the query asks the rows sorted by (``sort``,
+    ``dir``), or None for the order the tool gave. ``sort`` must name one of the result's
+    ``columns`` and ``dir`` be asc or desc (default asc); anything else is
+    ``Refused("bad_uri")``."""
+    name = query.get("sort")
+    direction = (query.get("dir") or "asc").lower()
+    if not name:
+        if query.get("dir"):
+            raise Refused("bad_uri", "dir needs sort: name the column to sort by")
+        return None
+    names = _column_names(columns)
+    if name not in names:
+        raise Refused("bad_uri", f"sort {name[:100]!r} is not one of this result's columns")
+    if direction not in ("asc", "desc"):
+        raise Refused("bad_uri", "dir must be asc or desc")
+    return names.index(name), direction
+
+
+def _sort_key(value):
+    """How a cell sorts: numbers by value, then text, nulls kept apart (always last)."""
+    if isinstance(value, bool):
+        return (1, "", str(value))
+    if isinstance(value, int | float):
+        return (0, value, "")
+    if isinstance(value, dict | list):
+        return (1, "", json.dumps(value, sort_keys=True, default=str))
+    return (1, "", str(value))
+
+
+def sorted_rows(rows: list, order: tuple[int, str] | None) -> list:
+    """``rows`` in the ``order`` ``sort_of`` read (stable; nulls last either way)."""
+    if order is None:
+        return rows
+    col, direction = order
+
+    def cell(row):
+        return row[col] if isinstance(row, list | tuple) and col < len(row) else None
+
+    present = [r for r in rows if cell(r) is not None]
+    nulls = [r for r in rows if cell(r) is None]
+    return sorted(present, key=lambda r: _sort_key(cell(r)), reverse=direction == "desc") + nulls
+
+
 def page(payload, query: Mapping[str, str]) -> tuple[object, dict]:
-    """``(body, paging meta)``: a table payload's rows sliced to the page the query asks
-    for (``page``, ``page_size``: default 100, at most 1000); anything else whole."""
+    """``(body, paging meta)``: a table payload's rows sorted as the query asks (``sort``,
+    ``dir``: ``sort_of``) and sliced to the page it asks for (``page``, ``page_size``:
+    default 100, at most 1000); anything else whole."""
     if not (isinstance(payload, Mapping) and isinstance(payload.get("rows"), list)):
         return payload, {}
-    rows = payload["rows"]
+    order = sort_of(payload.get("columns"), query)
+    rows = sorted_rows(payload["rows"], order)
 
     def number(key: str, default: int) -> int:
         try:
@@ -344,7 +477,10 @@ def page(payload, query: Mapping[str, str]) -> tuple[object, dict]:
     pages = max(1, math.ceil(len(rows) / size))
     current = max(1, min(pages, number("page", 1)))
     body = {**payload, "rows": rows[(current - 1) * size : current * size]}
-    return body, {"page": current, "page_size": size, "pages": pages, "row_count": len(rows)}
+    paging = {"page": current, "page_size": size, "pages": pages, "row_count": len(rows)}
+    if order is not None:
+        paging["sort"] = {"column": _column_names(payload.get("columns"))[order[0]], "dir": order[1]}
+    return body, paging
 
 
 def contents(uri: str, reader: int | None) -> list[dict]:
@@ -356,7 +492,9 @@ def contents(uri: str, reader: int | None) -> list[dict]:
 
 def page_of(result, query: Mapping[str, str]) -> tuple[object, dict]:
     """``page(result.payload, query)``, reading only that page's rows from the database
-    when the payload is a table: a page of a 5 MB result moves one page, not the result."""
+    when the payload is a table: a page of a 5 MB result moves one page, not the result.
+    A sort (``sort_of``) is done there too, in SQL over the stored JSON, before the slice:
+    every page is a page of the whole result in that order."""
     from django.db import connection
 
     if connection.vendor != "postgresql" or "payload" in result.__dict__:
@@ -364,22 +502,38 @@ def page_of(result, query: Mapping[str, str]) -> tuple[object, dict]:
     table = "mcp_kept_result"
     with connection.cursor() as cursor:
         cursor.execute(
-            f"SELECT CASE WHEN jsonb_typeof(payload->'rows') = 'array' THEN jsonb_array_length(payload->'rows') END "
-            f"FROM {table} WHERE id = %s",
+            f"SELECT CASE WHEN jsonb_typeof(payload->'rows') = 'array' THEN jsonb_array_length(payload->'rows') END, "
+            f"payload->'columns' FROM {table} WHERE id = %s",
             [result.id],
         )
-        (count,) = cursor.fetchone() or (None,)
+        count, columns = cursor.fetchone() or (None, None)
     if count is None:
         return page(result.payload, query)
-    # The page arithmetic is `page`'s own, over a stand-in of the right length.
-    _, paging = page({"rows": [None] * count}, query)
+    columns = json.loads(columns) if isinstance(columns, str) else columns
+    # The page arithmetic, and the sort's checks, are `page`'s own, over a stand-in.
+    _, paging = page({"columns": columns, "rows": [None] * count}, query)
+    order = sort_of(columns, query)
     start = (paging["page"] - 1) * paging["page_size"]
+    if order is None:
+        ordering, params = "i", []
+    else:
+        # Nulls last whichever way; numbers by value before text (as `sorted_rows`); the
+        # stored order breaks ties, so paging is stable. The column is a bound index.
+        direction = "DESC" if order[1] == "desc" else "ASC"
+        ordering = (
+            "(e->%s IS NULL OR e->%s = 'null'::jsonb), "
+            f"CASE WHEN jsonb_typeof(e->%s) = 'number' THEN 0 ELSE 1 END {direction}, "
+            f"CASE WHEN jsonb_typeof(e->%s) = 'number' THEN (e->>%s)::numeric END {direction}, "
+            f"e->>%s {direction}, i"
+        )
+        params = [order[0]] * 6
     with connection.cursor() as cursor:
         cursor.execute(
-            f"SELECT payload - 'rows', COALESCE((SELECT jsonb_agg(e ORDER BY i) FROM "
-            f"jsonb_array_elements(payload->'rows') WITH ORDINALITY AS t(e, i) WHERE i > %s AND i <= %s), "
-            f"'[]'::jsonb) FROM {table} WHERE id = %s",
-            [start, start + paging["page_size"], result.id],
+            f"SELECT payload - 'rows', COALESCE((SELECT jsonb_agg(e ORDER BY n) FROM ("
+            f"SELECT e, row_number() OVER (ORDER BY {ordering}) AS n "
+            f"FROM jsonb_array_elements(payload->'rows') WITH ORDINALITY AS t(e, i)) AS s "
+            f"WHERE n > %s AND n <= %s), '[]'::jsonb) FROM {table} WHERE id = %s",
+            [*params, start, start + paging["page_size"], result.id],
         )
         head, rows = cursor.fetchone()
     head = json.loads(head) if isinstance(head, str) else head
@@ -761,7 +915,7 @@ _ERROR_CODES = {"not_found": -32002, "bad_uri": -32602}
 
 
 def mount(server) -> object:
-    """Register ``labs-result://{id}{?page,page_size}`` on the FastMCP server: answers
+    """Register ``labs-result://{id}{?page,page_size,sort,dir}`` on the FastMCP server: answers
     ``resources/read`` as the reader (``read_as``), each refusal an MCP error whose message
     is ``"<code>: <why>"`` and whose ``data`` is ``{"code": <one of REFUSALS>}`` (plus
     ``"sensitive": true`` for labs' sensitive-data rule); also listed by
@@ -772,8 +926,12 @@ def mount(server) -> object:
 
     from .server import _closing_connections
 
-    async def labs_result(id: str, page: str = "", page_size: str = ""):
-        query = "&".join(f"{k}={v}" for k, v in (("page", page), ("page_size", page_size)) if v)
+    async def labs_result(id: str, page: str = "", page_size: str = "", sort: str = "", dir: str = ""):
+        from urllib.parse import urlencode
+
+        query = urlencode(
+            [(k, v) for k, v in (("page", page), ("page_size", page_size), ("sort", sort), ("dir", dir)) if v]
+        )
         uri = f"{SCHEME}://{id}" + (f"?{query}" if query else "")
         # Read on the event loop: the request's token, before the work moves to a thread.
         access_token = _access_token()
@@ -791,11 +949,12 @@ def mount(server) -> object:
         )
 
     return server.resource(
-        f"{SCHEME}://{{id}}{{?page,page_size}}",
+        f"{SCHEME}://{{id}}{{?page,page_size,sort,dir}}",
         name="labs_results",
         mime_type=MIME_TYPE,
         description=(
             "A result a labs tool produced (a query's rows, a run's indicators), kept for a day for the person "
-            f"it ran as. A table pages with ?page=N&page_size=M (default {DEFAULT_PAGE_SIZE}, max {MAX_PAGE_SIZE})."
+            f"it ran as. A table pages with ?page=N&page_size=M (default {DEFAULT_PAGE_SIZE}, max {MAX_PAGE_SIZE}), "
+            "and sorts the whole result before paging with &sort=<column>&dir=asc|desc."
         ),
     )(labs_result)

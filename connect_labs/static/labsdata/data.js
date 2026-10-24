@@ -70,6 +70,14 @@
     return node;
   }
 
+  // How a result is shown: the labels a result card (or a saved query) brought with it
+  // (`labsdata/display.py`). The raw column name stays on hover.
+  let display = null;
+  function columnLabel(c) {
+    const spec = display && display.columns && display.columns[c];
+    return (spec && spec.label) || c;
+  }
+
   async function post(url, body) {
     const res = await fetch(url, {
       method: 'POST',
@@ -513,7 +521,10 @@
         el(
           'tr',
           {},
-          data.columns.map((c) => el('th', {}, c)),
+          data.columns.map((c) => {
+            const label = columnLabel(c);
+            return el('th', label === c ? {} : { title: c }, label);
+          }),
         ),
       ),
     );
@@ -771,32 +782,161 @@
     }
   }
 
+  // A cell as Excel and Sheets will read it (OWASP CSV injection, as Scout's
+  // frontend/src/lib/csv.ts): form answers are typed by field workers, and a text cell
+  // starting with = + - @, a tab or a CR -- or their fullwidth forms, which some CJK
+  // spreadsheets also treat as formulas -- would run as a formula, so it gets a leading
+  // '. A number, or text that is only a number, cannot be a formula and is left alone.
+  const FORMULA_PREFIX = /^[=+\-@\t\r]/;
+  const PLAIN_NUMBER = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
+  function csvCell(v) {
+    if (v === null || v === undefined) return '';
+    let s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+    const numeric = typeof v === 'number' || PLAIN_NUMBER.test(s);
+    if (!numeric && FORMULA_PREFIX.test(s.normalize('NFKC'))) s = `'${s}`;
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }
+  function toCsv(columns, rows) {
+    return (
+      [columns, ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n') +
+      '\r\n'
+    );
+  }
   function csv() {
     if (!lastResult) return;
-    const esc = (v) => {
-      let s =
-        v === null || v === undefined
-          ? ''
-          : typeof v === 'object'
-            ? JSON.stringify(v)
-            : String(v);
-      // Form answers are typed by field workers; a text cell starting with a formula
-      // character would run when the CSV is opened in Excel or Sheets.
-      if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-    const lines = [lastResult.columns.map(esc).join(',')].concat(
-      lastResult.rows.map((r) => r.map(esc).join(',')),
-    );
+    const stamp = new Date()
+      .toISOString()
+      .slice(0, 19)
+      .replace(/[-:]/g, '')
+      .replace('T', '-');
     const a = el('a', {
       href: URL.createObjectURL(
-        new Blob([lines.join('\n')], { type: 'text/csv' }),
+        // The BOM makes Excel read the file as UTF-8 (names and answers in any script).
+        new Blob(['\ufeff', toCsv(lastResult.columns, lastResult.rows)], {
+          type: 'text/csv;charset=utf-8',
+        }),
       ),
-      download: 'labs-data.csv',
+      download: `labs-data-${stamp}.csv`,
     });
     a.click();
   }
+  window.LABSDATA_CSV = { csvCell, toCsv };
 
+  // Saved queries (labsdata/models.py): the query, never its rows. Opening one runs it
+  // again, live, as you -- what you may see now.
+  async function loadSaved() {
+    if (!cfg.savedUrl) return;
+    const box = $('ex-saved');
+    try {
+      const res = await fetch(cfg.savedUrl, {
+        headers: { Accept: 'application/json' },
+      });
+      const data = await res.json();
+      box.replaceChildren();
+      if (!data.saved || !data.saved.length) {
+        box.append(
+          el(
+            'p',
+            { class: 'px-3 pb-3 text-sm ex-muted' },
+            'None yet. Save a query to run it again.',
+          ),
+        );
+        return;
+      }
+      data.saved.forEach((q) =>
+        box.append(
+          el(
+            'div',
+            { class: 'ex-saved-row' },
+            el(
+              'button',
+              { class: 'open', title: q.sql, onclick: () => openSaved(q) },
+              q.name,
+              q.version > 1 ? el('small', {}, ` v${q.version}`) : '',
+            ),
+            el(
+              'button',
+              {
+                class: 'del',
+                title: 'Delete this saved query',
+                onclick: () => deleteSaved(q),
+              },
+              '✕',
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      box.replaceChildren(
+        el(
+          'p',
+          { class: 'px-3 pb-3 text-sm ex-muted' },
+          'Could not load saved queries.',
+        ),
+      );
+    }
+  }
+  async function openSaved(q) {
+    const sel = q.selection || {};
+    state.workflow = sel.workflow || null;
+    state.opps = state.workflow ? [] : [...(sel.opportunity_ids || [])];
+    state.programs = state.workflow ? [] : [...(sel.program_ids || [])];
+    $('ex-sql').value = q.sql;
+    $('ex-max').value = q.max_rows;
+    display = q.display || null;
+    renderChips();
+    await describe(false);
+    await run();
+  }
+  async function deleteSaved(q) {
+    if (!window.confirm(`Delete the saved query “${q.name}”?`)) return;
+    try {
+      await post(`${cfg.savedUrl}${q.id}/delete/`, {});
+    } finally {
+      loadSaved();
+    }
+  }
+  async function save() {
+    if (!hasSelection()) {
+      $('ex-result').replaceChildren(
+        el(
+          'div',
+          { class: 'ex-error' },
+          'Choose a program, an opportunity or a workflow to save the query over.',
+        ),
+      );
+      return;
+    }
+    const name = window.prompt('Save this query as:', '');
+    if (!name || !name.trim()) return;
+    $('ex-save').disabled = true;
+    try {
+      const out = await post(cfg.savedUrl, {
+        name: name.trim(),
+        ...selectionBody(),
+        sql: $('ex-sql').value,
+        max_rows: Number($('ex-max').value) || 500,
+        display: display,
+      });
+      $('ex-save').classList.remove('ready');
+      $('ex-save').textContent =
+        out.saved.version > 1 ? `Saved (v${out.saved.version})` : 'Saved';
+      setTimeout(() => ($('ex-save').textContent = 'Save query'), 2500);
+      loadSaved();
+    } catch (e) {
+      $('ex-result').replaceChildren(
+        el(
+          'div',
+          { class: 'ex-error' },
+          e.message || 'Could not save the query.',
+        ),
+      );
+    } finally {
+      $('ex-save').disabled = false;
+    }
+  }
+
+  $('ex-save').addEventListener('click', save);
   $('ex-add').addEventListener('input', renderPicker);
   $('ex-add').addEventListener('focus', renderPicker);
   $('ex-add').addEventListener('keydown', (e) => {
@@ -815,7 +955,33 @@
     }
   });
   renderChips();
+  // Opened from a result card (`service.open_on_page_url`): the query, its selection
+  // and its row cap are already in place. `run` runs it as the person, once;
+  // `download` then highlights Download CSV. Nothing downloads without a click.
+  const intent = (() => {
+    try {
+      return JSON.parse($('ex-open-intent').textContent) || {};
+    } catch (e) {
+      return {};
+    }
+  })();
+  display = intent.display || null;
   if (hasSelection()) describe(false);
+  loadSaved();
+  if (intent.save) {
+    $('ex-save').classList.add('ready');
+    $('ex-save').focus();
+  }
+  if (intent.run && hasSelection()) {
+    run().then(() => {
+      if (intent.download && lastResult && lastResult.rows.length) {
+        $('ex-csv').classList.add('ready');
+        $('ex-csv').focus();
+      }
+    });
+  } else if (intent.download) {
+    $('ex-run').focus();
+  }
 
   // The agent's way to hand SQL back to Labs. canopy turns this into the agent tool
   // `page_data_set_query`; the callback runs in THIS tab. It returns only an
