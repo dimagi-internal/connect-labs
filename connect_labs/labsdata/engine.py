@@ -14,6 +14,13 @@
    so a relation the validator somehow let through fails to resolve instead of
    reading a real table. The CTE names its table schema-qualified, which is the
    only way anything resolves.
+5. **Let Postgres contain it** (``labs/migrations/0039_labs_data_reader_role.py``).
+   The statement runs as ``labs_data_reader``, a role that may read the caches and
+   nothing else, and row-level security shows that role only the
+   ``(opportunity_id, pipeline_id)`` pairs this query was granted -- grants written
+   inside the same rolled-back transaction, so no other session ever sees them. A
+   query that got past every check above still cannot read another table, or
+   another opportunity's rows in the caches. If the role is missing, nothing runs.
 
 What the user writes is placed in a subquery after labs' WITH, so their own WITH,
 UNION, ORDER BY and LIMIT keep working unchanged.
@@ -222,7 +229,7 @@ def run_query(opps: list[Opportunity], sql: str, max_rows: int = DEFAULT_MAX_ROW
     final_sql = f"WITH {cte_sql}\nSELECT * FROM (\n{user_sql.replace('%', '%%')}\n) AS explorer_result"
 
     started = time.monotonic()
-    columns, rows = _execute(final_sql, params)
+    columns, rows = _execute(final_sql, params, visit_grants(opps))
     truncated = len(rows) > cap
     return QueryResult(
         columns=columns,
@@ -234,14 +241,42 @@ def run_query(opps: list[Opportunity], sql: str, max_rows: int = DEFAULT_MAX_ROW
     )
 
 
-def _execute(final_sql: str, params: list) -> tuple[list[str], list[list]]:
-    """Run one statement locked down: read-only, time-boxed, no search path, rolled back."""
+#: The role every Data statement runs as (created by labs migration 0039).
+READER_ROLE = "labs_data_reader"
+
+
+def visit_grants(opps: list[Opportunity]) -> list[tuple[int, int]]:
+    """The cache rows ``visits`` over ``opps`` may read: each opportunity's raw visit slot."""
+    return [(o.id, USER_VISITS_RAW_SLOT) for o in opps]
+
+
+def _lock(cursor, grants: list[tuple[int, int]]) -> None:
+    """Grant exactly these cache rows, then become the reader role: from here on the
+    database, not only the validator, decides what the statement can read."""
+    if grants:
+        values = ", ".join(["(%s, %s)"] * len(grants))
+        cursor.execute(
+            f"INSERT INTO public.labsdata_scope_grant (opportunity_id, pipeline_id) VALUES {values}",
+            [v for pair in grants for v in pair],
+        )
+    cursor.execute(f"SET LOCAL ROLE {READER_ROLE}")
+    cursor.execute("SET LOCAL transaction_read_only = on")
+    cursor.execute(f"SET LOCAL statement_timeout = {int(STATEMENT_TIMEOUT_MS)}")
+    cursor.execute(f"SET LOCAL search_path = {EMPTY_SEARCH_PATH}")
+
+
+def _execute(final_sql: str, params: list, grants: list[tuple[int, int]]) -> tuple[list[str], list[list]]:
+    """Run one statement locked down: as the reader role, over only ``grants``,
+    read-only, time-boxed, no search path, rolled back."""
     try:
         with transaction.atomic():
             with connection.cursor() as cursor:
-                cursor.execute("SET LOCAL transaction_read_only = on")
-                cursor.execute(f"SET LOCAL statement_timeout = {int(STATEMENT_TIMEOUT_MS)}")
-                cursor.execute(f"SET LOCAL search_path = {EMPTY_SEARCH_PATH}")
+                try:
+                    _lock(cursor, grants)
+                except DatabaseError as e:
+                    # Fail closed: without the role and its grants there is no boundary.
+                    logger.error("labsdata: could not lock the session; refusing to run", exc_info=e)
+                    raise QueryError("query_failed", "The Data page is not available right now.") from e
                 cursor.execute(final_sql, params)
                 description = cursor.description or []
                 columns = [d[0] for d in description]
@@ -289,7 +324,7 @@ def fetch_visits(opps: list[Opportunity], visit_ids) -> list[dict]:
         raise QueryError("unknown_visits", f"At most {MAX_VISITS_PER_READ} visits per read.")
     cte_sql, params = visits_cte(opps)
     final_sql = f"WITH {cte_sql}\nSELECT * FROM visits WHERE visit_id = ANY(%s) ORDER BY opportunity_id, visit_id"
-    columns, rows = _execute(final_sql, params + [ids])
+    columns, rows = _execute(final_sql, params + [ids], visit_grants(opps))
     return [dict(zip(columns, row)) for row in rows]
 
 
