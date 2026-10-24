@@ -1219,6 +1219,49 @@
             ' opportunities</span>'
           );
         }
+        // Axis labels that tell the bars apart. A prefix every label shares ("[Synthetic]
+        // KMC - ") is said once under the chart instead of on every bar, and a long label
+        // is cut in the MIDDLE, so its end -- often the part that differs -- still shows.
+        // The whole label is each bar's tooltip.
+        var AXIS_LABEL_MAX = 18;
+        function middleCut(t, max) {
+          t = String(t).trim();
+          if (t.length <= max) return t;
+          var head = Math.ceil((max - 1) / 2);
+          return (
+            t.slice(0, head) + '\u2026' + t.slice(t.length - (max - 1 - head))
+          );
+        }
+        function sharedPrefix(texts) {
+          if (texts.length < 2) return '';
+          var p = texts[0];
+          texts.forEach(function (t) {
+            while (p && t.indexOf(p) !== 0) p = p.slice(0, -1);
+          });
+          // Back to the last word boundary, so no label starts mid-word.
+          var m = p.match(/^[\s\S]*[\s\-\u2013\u2014:\u00b7|\/]/);
+          p = m ? m[0] : '';
+          if (p.trim().length < 3) return '';
+          var keeps = texts.every(function (t) {
+            return t.slice(p.length).trim();
+          });
+          return keeps ? p : '';
+        }
+        // The x position of the bucket that is this calendar month (UTC), when x is a
+        // column of month buckets: its figure is the month so far, not a whole month.
+        function partialMonthIndex(rows) {
+          var r = state.result;
+          if (!monthly(r.columns[state.x])) return -1;
+          var now = new Date();
+          var current =
+            now.getUTCFullYear() +
+            '-' +
+            String(now.getUTCMonth() + 1).padStart(2, '0');
+          for (var i = 0; i < rows.length; i++) {
+            if (String(rows[i][state.x]).slice(0, 7) === current) return i;
+          }
+          return -1;
+        }
         function chart() {
           var r = state.result;
           if (state.chartType === 'stat' && hasRows(r) && state.ys.length)
@@ -1316,20 +1359,60 @@
             );
           }
           var n = rows.length;
+          var notes = [];
           if (line) {
+            var partial = partialMonthIndex(rows);
             state.ys.forEach(function (col, s) {
               var pts = rows.map(function (row, i) {
                 var px = pad.l + (n === 1 ? iw / 2 : (iw * i) / (n - 1));
                 return px.toFixed(1) + ',' + yPos(row[col]).toFixed(1);
               });
+              // This month so far: its segment dashed and its point hollow, so a fall at
+              // the end of the line is not read as a fall in the work.
+              var solid = pts;
+              var dashed = null;
+              if (partial === n - 1 && n > 1) {
+                solid = pts.slice(0, n - 1);
+                dashed = pts.slice(n - 2);
+              } else if (partial === 0 && n > 1) {
+                solid = pts.slice(1);
+                dashed = pts.slice(0, 2);
+              }
               out.push(
                 '<polyline fill="none" stroke-width="2" stroke="var(' +
                   SERIES[s] +
                   ')" points="' +
-                  pts.join(' ') +
+                  solid.join(' ') +
                   '"/>',
               );
+              if (dashed)
+                out.push(
+                  '<polyline class="partial" fill="none" stroke-width="2" stroke-dasharray="4 3" stroke="var(' +
+                    SERIES[s] +
+                    ')" points="' +
+                    dashed.join(' ') +
+                    '"/>',
+                );
+              if (partial >= 0) {
+                var xy = pts[partial].split(',');
+                out.push(
+                  '<circle class="partial" cx="' +
+                    xy[0] +
+                    '" cy="' +
+                    xy[1] +
+                    '" r="3.5" fill="var(--color-background-primary, #fff)" stroke-width="2" stroke="var(' +
+                    SERIES[s] +
+                    ')"><title>' +
+                    esc(xText(rows[partial]) + ': this month so far') +
+                    '</title></circle>',
+                );
+              }
             });
+            if (partial >= 0)
+              notes.push(
+                esc(xText(rows[partial])) +
+                  ' is this month: its figure is the month so far (dashed), not a whole month.',
+              );
             [0, Math.floor((n - 1) / 2), n - 1].forEach(function (i, k, all) {
               if (k && i === all[k - 1]) return;
               var px = pad.l + (n === 1 ? iw / 2 : (iw * i) / (n - 1));
@@ -1339,13 +1422,21 @@
                   '" y="' +
                   (h - 10) +
                   '" text-anchor="middle">' +
-                  esc(xText(rows[i]).slice(0, 18)) +
+                  esc(middleCut(xText(rows[i]), AXIS_LABEL_MAX)) +
                   '</text>',
               );
             });
           } else {
             var band = iw / n;
             var bw = Math.max(2, (band * 0.8) / state.ys.length);
+            var fullLabels = rows.map(xText);
+            var prefix = sharedPrefix(fullLabels);
+            if (prefix)
+              notes.push(
+                'Every label starts \u201c' +
+                  esc(prefix.trim()) +
+                  '\u201d, left off the axis.',
+              );
             rows.forEach(function (row, i) {
               state.ys.forEach(function (col, s) {
                 var bx = pad.l + band * i + band * 0.1 + bw * s;
@@ -1374,13 +1465,20 @@
               });
               var lx = pad.l + band * i + band / 2;
               out.push(
-                '<text transform="translate(' +
+                '<g><title>' +
+                  esc(fullLabels[i]) +
+                  '</title><text transform="translate(' +
                   lx.toFixed(1) +
                   ',' +
                   (pad.t + ih + 10) +
                   ') rotate(40)" text-anchor="start">' +
-                  esc(xText(row).slice(0, 18)) +
-                  '</text>',
+                  esc(
+                    middleCut(
+                      fullLabels[i].slice(prefix.length),
+                      AXIS_LABEL_MAX,
+                    ),
+                  ) +
+                  '</text></g>',
               );
             });
           }
@@ -1402,6 +1500,11 @@
                 rows.length +
                 ' rows.</div>'
               : '';
+          cut += notes
+            .map(function (t) {
+              return '<div class="sub chart-note">' + t + '</div>';
+            })
+            .join('');
           return (
             controls() +
             out.join('') +

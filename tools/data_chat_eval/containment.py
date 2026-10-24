@@ -381,6 +381,9 @@ def _correctness(sc, mcp, steps, entry) -> None:
         f"visits has {sorted(held)}; selected {opps}",
         ROUTE_RLS,
     )
+    # The pipelines' stored output lives an hour; rebuild it first so the pipeline checks
+    # below read real rows (and RLS on the pipeline caches is exercised).
+    _rebuild(mcp, steps, sc.workflow)
     wf = _q(mcp, steps, "workflow selection", by_opp_sql, workflow=sc.workflow)
     wf_counts = count(wf) or {}
     wf_described = steps.keep(
@@ -429,16 +432,50 @@ def _correctness(sc, mcp, steps, entry) -> None:
         )
         empty = sorted(o for o, n in stored.items() if not n)
         if empty:
+            why = rel.get("why_no_rows") or {}
             steps.add(
                 1,
                 f"pipeline relation {name}: every opportunity has current rows",
                 False,
-                f"no CURRENT rows for opportunities {empty}: the pipeline's cache rows are expired or were never "
-                "computed, so the relation reads nothing -- and data_describe says only 0, not why"
+                f"no CURRENT rows for opportunities {empty} even after rebuilding: "
+                + (", ".join(sorted({w.get("state", "?") for w in why.values()})) or "no reason given")
                 + ("; RLS on the pipeline caches is NOT exercised by this run" if len(empty) == len(stored) else ""),
                 ROUTE_SCOPE,
                 gate=False,
             )
+            steps.add(
+                1,
+                f"pipeline relation {name}: data_describe says why it has no rows",
+                all(str(o) in why for o in empty) and bool(rel.get("note")),
+                rel.get("note") or f"why_no_rows names {sorted(why)}; empty {empty}",
+                ROUTE_SCOPE,
+            )
+
+
+def _rebuild(mcp, steps, workflow, *, calls: int = 20) -> None:
+    """data_describe(workflow, load_missing) until no pipeline output is pending (a few
+    opportunities per call, as labs paces it)."""
+    pending, rebuilt, failed = None, [], []
+    for _ in range(calls):
+        reply = call(mcp, "data_describe", {"workflow": workflow, "load_missing": True})
+        done = (reply.data or {}).get("pipelines_rebuilt") or {}
+        rebuilt += done.get("rebuilt") or []
+        failed += done.get("failed") or []
+        pending = done.get("pending") or []
+        if not reply.ok or not pending:
+            break
+    steps.keep(f"rebuild workflow {workflow['id']}", {"workflow": workflow}, reply)
+    steps.add(
+        1,
+        f"workflow {workflow['id']}: load_missing rebuilds its pipelines' stored output",
+        reply.ok and not pending and not failed,
+        (
+            f"rebuilt {sorted(set(rebuilt))}; pending {pending}; failed {failed}"
+            if (rebuilt or failed or pending)
+            else "nothing to rebuild (current)"
+        ),
+        ROUTE_SCOPE,
+    )
 
 
 def _refused(steps, step, label, reply: Reply, expect: set[str], sql: str = "", route=ROUTE_RLS) -> None:
@@ -576,9 +613,41 @@ def _containment(sc, mcp, steps) -> None:
             ROUTE_SCOPE,
         )
     if sc.other_workflow:
+        _rebuild(mcp, steps, sc.other_workflow)
         other = call(mcp, "data_describe", {"workflow": sc.other_workflow})
         theirs = sorted(k for k in ((other.data or {}).get("relations") or {}) if k != "visits") if other.ok else []
         foreign = [n for n in theirs if n not in mine]
+        # Same names, different pipelines: each workflow's relation reads its OWN pipeline's
+        # rows (RLS grants are per opportunity and pipeline), never the other's.
+        mine_rel = (described.data or {}).get("relations") or {}
+        their_rel = (other.data or {}).get("relations") or {}
+        for name in sorted(set(mine) & set(theirs)):
+            a, b = mine_rel[name], their_rel[name]
+            if (a.get("pipeline") or {}).get("id") == (b.get("pipeline") or {}).get("id"):
+                continue
+            for label, wf, rel in (("this", sc.workflow, a), ("the other", sc.other_workflow, b)):
+                stored = {int(k): v for k, v in (rel.get("rows_by_opportunity") or {}).items()}
+                read = (
+                    count(
+                        _q(
+                            mcp,
+                            steps,
+                            f"{label} {name}",
+                            f"select opportunity_id, count(*) from {name} group by 1",
+                            workflow=wf,
+                        )
+                    )
+                    or {}
+                )
+                diff = {o: (read.get(o, 0), n) for o, n in stored.items() if read.get(o, 0) != n}
+                steps.add(
+                    4,
+                    f"{label} workflow's {name} reads its own pipeline ({(rel.get('pipeline') or {}).get('id')}) only",
+                    not diff and sum(stored.values()) > 0,
+                    (f"read vs stored differ: {diff}" if diff else f"{sum(read.values())} rows, as stored")
+                    + ("" if sum(stored.values()) else "; nothing stored, so RLS is not exercised"),
+                    ROUTE_RLS,
+                )
         steps.add(
             4,
             "the other workflow has a relation of its own to probe",

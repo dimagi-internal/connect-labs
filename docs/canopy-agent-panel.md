@@ -191,6 +191,23 @@ into the page token. Canopy then binds the visitor's token and the host grant to
 agent, so another agent cannot spend the `data:read` grant the Data page minted, and the
 conversation runs only on sensitive-data runners.
 
+**The agent on a page reads only what the page shows** (`labsdata/page_holds.py`). A
+`data:read` grant would otherwise let the `data_*` tools read anything the visitor holds (the
+harness caught the agent on a KMC run page reading another programme and offering a combined
+sum). So every `data_*` call under a page grant is held to that page's selection: a workflow
+run page to the workflow's opportunities and its pipelines, a data space's page to its space,
+the plain Data page to the selection on screen. A call outside it is refused
+`PERMISSION_DENIED` with `reason: outside_page` and a message telling the agent to send the
+person to the Data page. Where it comes from is labs, never the agent: `canopy_panel.panel(...,
+holds=)` signs the selection onto the panel's token URL (bound to that page token and person);
+labs' mint view (`labs/canopy_token.py`, the SDK's `panel_token` plus this record) stores a
+`PageHold` for the page and a `PageGrant` for the ID-JAG's `jti`; the delegated token canopy
+redeems keeps that `jti` (`grant_jti`), so the MCP finds the call's page from its own token
+(`mcp/server.py` puts it in the claims). On the plain Data page the person changes the
+selection in place, and the page reports it in their own session (`/labs/data/api/page-holds/`,
+CSRF, every source resolved as them). A delegated call whose grant has no hold reads nothing.
+A person's own PAT or OAuth sign-in has no page and is not held.
+
 A workflow chooses which agent its run pages offer (`config.agent.agent`, a slug, the run
 page's **Agent** box; WORKFLOW_REFERENCE.md §14) from the agents Labs Admin shows, so
 different workflows can offer different agents. An agent that works with sensitive data

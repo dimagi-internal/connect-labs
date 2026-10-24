@@ -282,7 +282,23 @@ def _resolve_delegated_sync(raw: str, presented_jkt: str | None):
             "act": {"sub": principal.actor},
             "cnf": {"jkt": principal.cnf_jkt},
             "expires_at": int(principal.expires_at),
+            # The ID-JAG this token was redeemed from: which page it was granted on, for
+            # the tools that hold a call to its page (labsdata/page_holds.py).
+            "grant_jti": _grant_jti(raw),
         },
+    )
+
+
+def _grant_jti(raw: str) -> str:
+    """The ``jti`` of the ID-JAG a live delegated token was redeemed from ("" if unknown)."""
+    from canopy_sdk import contract
+    from canopy_sdk.django.models import DelegatedToken
+
+    return (
+        DelegatedToken.objects.filter(token_checksum=contract.token_checksum(raw))
+        .values_list("grant_jti", flat=True)
+        .first()
+        or ""
     )
 
 

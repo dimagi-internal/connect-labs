@@ -17,7 +17,7 @@ from django.views.generic import TemplateView
 
 from connect_labs.labs.access.scopes import Caller
 
-from . import display, scope, service, spaces
+from . import display, page_holds, scope, service, spaces
 from .engine import QueryError
 from .scope import ScopeError
 from .validator import DEFAULT_MAX_ROWS, HARD_MAX_ROWS
@@ -157,14 +157,19 @@ class DataView(LoginRequiredMixin, TemplateView):
             # and those calls read the space's sources through spaces.open and nothing else.
             resource = f"labs-data-space://{opened.id}"
             filters = {"space_id": opened.id}
+            holds = page_holds.for_space(opened)
         else:
             resource = "labs-data://opportunities/" + ",".join(map(str, selected)) if selected else "labs-data://"
             filters = {"opportunity_ids": selected}
+            # What the page opens on; the page reports each change the person makes (PageHoldsView).
+            holds = page_holds.for_selection(initial, {o.id: o for o in opps})
         ctx["canopy_panel"] = canopy_panel.panel(
             self.request,
             reads=canopy_panel.NO_VISIT_DATA,
             # The agent for data work (labsdata), read-only on sensitive-data runners; else the default agent.
             available=canopy_panel.data_page_agent(),
+            # The agent's data reads are held to what this page shows (labsdata/page_holds.py).
+            holds=holds,
             resource=resource,
             backing_tool="data_describe",
             visible_ids=selected,
@@ -248,6 +253,31 @@ class DescribeView(_JsonView):
         if space.saved:
             out["space"] = {"id": space.id, "name": space.space.name}
         return out
+
+
+class PageHoldsView(_JsonView):
+    """The person changed the plain Data page's selection: hold the page's agent to it.
+
+    In the person's own session (CSRF), for their own Data page token only, with every
+    source resolved as them (``spaces.generate``, which refuses anything not held). The
+    agent has no tool or page action that reaches this (``page_holds``)."""
+
+    def handle(self, request, body):
+        page_token = body.get("page_token") or ""
+        workflow = body.get("workflow") or None
+        opportunity_ids = body.get("opportunity_ids") or []
+        program_ids = body.get("program_ids") or []
+        ids, chosen_workflow = [], None
+        if workflow or opportunity_ids or program_ids:
+            generated = spaces.generate(_caller(request), opportunity_ids, program_ids=program_ids, workflow=workflow)
+            ids, chosen_workflow = generated.selection.ids, generated.requested.get("workflow") or None
+        # Nothing chosen: the agent reads nothing until the person chooses.
+        try:
+            return page_holds.update_from_page(
+                request.user, page_token, body.get("page_holds") or "", ids, chosen_workflow
+            )
+        except ValueError as e:
+            raise _Invalid("not_this_page", "This is not your Data page's panel.", status=403) from e
 
 
 class QueryView(_JsonView):

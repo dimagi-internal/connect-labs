@@ -47,9 +47,9 @@ ROUTES = {
     "tool": "tool choice: data_* tool descriptions (connect_labs/mcp/tools/labsdata.py) and the agent's skill",
     "no_rows_repeated": "guidance.py rule 10 (with a card, give the takeaway, not the rows) and the agent's skill",
     "asks_or_states": "guidance.py rule 9 (ask when ambiguous) and the agent's skill",
-    "reads_none_of": "what a page's agent may read: labs' page grant lets data_* read anything the visitor "
-    "holds, not just the page's selection (labs canopy.py page grants / mcp/tools/labsdata.py); and the "
-    "agent's guidance for run pages (guidance.py, the agent's skill)",
+    "reads_none_of": "what a page's agent may read: data_* under a page grant are held to the page's selection "
+    "(labsdata/page_holds.py, recorded at the mint by labs/canopy_token.py); if a read got through, the hold "
+    "is missing or too wide there. The agent's side: guidance.py PAGE_RULES and the agent's skill",
     "refuses": "what the agent may read from a page: canopy's page grant (labs canopy.py SCOPE_TOOLS), "
     "labsdata/scope.py, and the agent's guidance (guidance.py / the agent's skill)",
     "no_errors": "the failing tool (connect_labs/mcp/tools/) or the panel/page (canopy widget, labs canopy_panel.py)",
@@ -260,7 +260,7 @@ def check_no_errors(args, turn, truth) -> Result:
 
 #: A labs refusal in a tool result: the call was outside what the caller may read.
 _REFUSAL = re.compile(
-    r"not_held|outside_space|table_not_allowed|schema_not_allowed|PERMISSION_DENIED|do not have access"
+    r"not_held|outside_space|outside_page|table_not_allowed|schema_not_allowed|PERMISSION_DENIED|do not have access"
 )
 _REFUSES = re.compile(
     r"\b(can(?:no|')t|unable to|not able to|won't|will not|don't have access|do not have access|no access|"

@@ -189,3 +189,122 @@ def workflow_selection(
         relations=relations,
         not_offered=not_offered,
     )
+
+
+#: Why a pipeline relation has no current rows on an opportunity, and what rebuilds it.
+REBUILD = (
+    "A pipeline's stored output lasts about an hour after the pipeline runs (it runs when the workflow's live "
+    "page loads, or here): call data_describe again with this workflow and load_missing: true to rebuild it, a "
+    "few opportunities per call. A saved run's page shows its saved snapshot and does not rebuild it."
+)
+
+
+def _cache_model(stage: str):
+    from connect_labs.labs.analysis.backends.sql import models
+
+    return {
+        "visit_level": models.ComputedVisitCache,
+        "aggregated": models.ComputedFLWCache,
+        "entity": models.ComputedEntityCache,
+    }[stage]
+
+
+def stale_reasons(stale: dict[str, list[int]], relations, now=None) -> dict[str, dict[int, dict]]:
+    """For each relation's opportunities with no current rows (``stale``: relation name ->
+    opportunity ids), why: its stored output EXPIRED (when), was built for an EARLIER version
+    of the pipeline, or is NOT BUILT. Bookkeeping only -- counts and dates of the cache rows,
+    never their values -- read as labs itself, as ``fields.cache_status`` reads the visits'."""
+    from django.db.models import Max
+    from django.utils import timezone
+
+    now = now or timezone.now()
+    by_name = {rel.name: rel for rel in relations}
+    out: dict[str, dict[int, dict]] = {}
+    for name, opp_ids in stale.items():
+        rel = by_name.get(name)
+        if rel is None or not opp_ids:
+            continue
+        rows = (
+            _cache_model(rel.stage)
+            .objects.filter(pipeline_id=rel.pipeline_id, opportunity_id__in=list(opp_ids))
+            .values("opportunity_id", "config_hash")
+            .annotate(last=Max("expires_at"))
+        )
+        seen: dict[int, dict[str, object]] = {}
+        for row in rows:
+            seen.setdefault(row["opportunity_id"], {})[row["config_hash"]] = row["last"]
+        reasons = {}
+        for oid in opp_ids:
+            hashes = seen.get(oid, {})
+            if rel.config_hash in hashes and hashes[rel.config_hash] <= now:
+                when = hashes[rel.config_hash]
+                reasons[oid] = {
+                    "state": "expired",
+                    "expired_at": when.isoformat(),
+                    "why": f"its stored output expired on {when:%-d %b %Y at %H:%M} UTC",
+                }
+            elif hashes:
+                reasons[oid] = {
+                    "state": "outdated",
+                    "why": "its stored output was built for an earlier version of the pipeline",
+                }
+            else:
+                reasons[oid] = {
+                    "state": "not_built",
+                    "why": (
+                        "the pipeline has no stored output for it (never run since it changed, or expired and cleared)"
+                    ),
+                }
+        out[name] = reasons
+    return out
+
+
+#: How long one data_describe call spends rebuilding pipelines before it reports the rest
+#: as pending (a whole programme in one call would outlive the load balancer).
+REFILL_BUDGET_SECONDS = 25
+
+
+def refill(caller: Caller, selection, opp_ids: list[int], *, budget_seconds: float = REFILL_BUDGET_SECONDS) -> dict:
+    """Rebuild the stored output of ``selection``'s pipeline relations on ``opp_ids`` (the
+    opportunities that have none current), as the caller: the visits fetched through the
+    backend's own path, then each pipeline run for the opportunity -- what the workflow's live
+    page does. One opportunity at a time until ``budget_seconds`` is spent; the rest are
+    reported as ``pending``. Reports, never raises."""
+    import logging
+    import time
+
+    from connect_labs.workflow.visit_cache import _default_slot
+
+    report: dict = {"rebuilt": [], "failed": [], "pending": []}
+    if not selection.relations or not opp_ids or not selection.workflow:
+        return report
+    started = time.monotonic()
+    try:
+        definition, token, owner, _ids = read_workflow(
+            caller,
+            int(selection.workflow["id"]),
+            opportunity_id=(selection.workflow.get("scope") or {}).get("opportunity_id"),
+            program_id=(selection.workflow.get("scope") or {}).get("program_id"),
+        )
+        sources = getattr(definition, "pipeline_sources", None) or (definition.data or {}).get("pipeline_sources")
+        _manager, fetch_raw, run_pipeline = _default_slot(token, owner, sources or [])
+    except Exception as e:  # noqa: BLE001 -- a report, never a failed describe
+        logging.getLogger(__name__).warning("pipeline refill could not start", exc_info=True)
+        return {**report, "failed": [{"opportunity_ids": list(opp_ids), "error": str(e)[:200]}]}
+    pipeline_ids = sorted({rel.pipeline_id for rel in selection.relations})
+    for index, oid in enumerate(opp_ids):
+        if index and time.monotonic() - started > budget_seconds:
+            report["pending"] = list(opp_ids[index:])
+            break
+        try:
+            for pid in pipeline_ids:
+                fetch_raw(oid, pid)
+                result = run_pipeline(oid, pid) or {}
+                error = (result.get("metadata") or {}).get("error")
+                if error:
+                    raise RuntimeError(f"pipeline {pid}: {error}")
+            report["rebuilt"].append(oid)
+        except Exception as e:  # noqa: BLE001 -- one opportunity must not cost the rest
+            logging.getLogger(__name__).warning("pipeline refill failed for opp %s", oid, exc_info=True)
+            report["failed"].append({"opportunity_id": oid, "error": str(e)[:200]})
+    return report

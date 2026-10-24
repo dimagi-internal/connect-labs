@@ -81,3 +81,10 @@ def test_limit_injected_and_capped():
     assert "LIMIT 25" in _ok("SELECT * FROM visits LIMIT 1000", max_rows=25)
     assert "LIMIT 10" in _ok("SELECT * FROM visits LIMIT 10", max_rows=25)
     assert f"LIMIT {HARD_MAX_ROWS}" in _ok("SELECT * FROM visits", max_rows=10**9)
+
+
+def test_a_catalog_refusal_points_at_labs_own_schema_tool():
+    # Scout's message named its describe_table / list_tables tools, which labs does not have.
+    message = str(_refused("SELECT relname FROM pg_class"))
+    assert "data_describe" in message
+    assert "describe_table" not in message and "list_tables" not in message

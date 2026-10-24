@@ -43,7 +43,8 @@ query, each artifact, the agent's conversation on it -- reads only those sources
    everyone who does not hold it; the page says who loses access is not knowable to us,
    and asks for a confirm. Only a person in their own session can change sources (no
    agent tool, no page action). Audited.
-5. **The agent in a space is held to the space.** The panel's page state carries the
+5. **The agent in a space is held to the space** (since generalised: the agent on any page is
+   held to that page's selection, from what labs recorded at the mint -- `labsdata/page_holds.py`). The panel's page state carries the
    space id; every `data_*` call made with a `space_id` resolves the selection from the
    space (rule 1) and refuses SQL naming anything else. The existing real-row rules
    (`agent_sees_sensitive_rows`, `Canopy-Execution` clearance) are unchanged: an uncleared
