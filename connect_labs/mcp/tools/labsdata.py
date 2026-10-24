@@ -242,14 +242,18 @@ QUERY_KEPT_SCHEMA = {
 }
 
 
-def query(
-    user, opportunity_ids=None, sql="", max_rows=None, keep_result=False, program_ids=None, workflow=None
-):
+def query(user, opportunity_ids=None, sql="", max_rows=None, keep_result=False, program_ids=None, workflow=None):
     agent = _from_canopy()
     selection = {"program_ids": program_ids, "workflow": workflow}
     try:
         out = service.query(
-            _caller(user), opportunity_ids, sql, max_rows=_max_rows(max_rows), for_agent=agent, shaped=False, **selection
+            _caller(user),
+            opportunity_ids,
+            sql,
+            max_rows=_max_rows(max_rows),
+            for_agent=agent,
+            shaped=False,
+            **selection,
         )
     except ScopeError as e:
         raise _scope_error(e) from e

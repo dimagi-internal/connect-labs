@@ -150,7 +150,7 @@ def test_canopys_agent_gets_column_types_and_is_told_the_card_shows_the_rows(own
 
     asked = {}
 
-    def run_query(opps, sql, max_rows):
+    def run_query(opps, sql, max_rows=None, relations=(), **_):
         asked["max_rows"] = max_rows
         return engine.QueryResult(
             COLUMNS,
@@ -179,7 +179,7 @@ def test_canopys_agent_gets_column_types_and_is_told_the_card_shows_the_rows(own
 
 
 def test_a_query_error_reaches_the_client_with_its_category_and_recovery(owner, connect, monkeypatch):
-    def run_query(opps, sql, max_rows):
+    def run_query(opps, sql, max_rows=None, relations=(), **_):
         raise engine.QueryError("timeout", "The query ran past 20s. Aggregate or narrow it.")
 
     connect["users"].add(owner.pk)
