@@ -773,3 +773,5 @@ def test_the_run_context_says_what_the_runs_page_reads(user, wda):
     assert scope["workflow_id"] == wda.get_definition.return_value.id
     assert isinstance(scope["opportunity_ids"], list)
     assert "Data page" in scope["rule"] and "never give a sum" in scope["rule"]
+    # The agent may start with the indicators instead (it did, on the run page).
+    assert _call("workflow_run_indicators", user, run_id=70, program_id=25)["page_scope"]["rule"] == scope["rule"]
