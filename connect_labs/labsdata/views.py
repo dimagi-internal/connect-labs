@@ -88,6 +88,13 @@ def _display(raw) -> dict | None:
         return None
 
 
+def _is_labs_admin(user) -> bool:
+    """Dimagi staff, as Labs Admin (``canopy_settings.can_change`` uses the same test)."""
+    from connect_labs.utils.dimagi_user import is_dimagi_staff
+
+    return bool(user and user.is_authenticated and is_dimagi_staff(user))
+
+
 class DataView(LoginRequiredMixin, TemplateView):
     template_name = "labsdata/index.html"
 
@@ -121,8 +128,11 @@ class DataView(LoginRequiredMixin, TemplateView):
                     ],
                     "programs": scope.programs(caller),
                     "initial": initial,
-                    # The space this page is (ids and names only; its queries load by API).
+                    # The space this page is (ids and names only; its queries load by API),
+                    # with its audience, its managers and whether this person is one.
                     "space": opened.as_dict() if opened is not None else None,
+                    # Dimagi staff may make someone a manager of a space (spaces.admin_add_manager).
+                    "can_admin_assign": _is_labs_admin(self.request.user),
                 },
                 "space": opened.space if opened is not None else None,
                 # A link from the agent's result View opens the page on its query; it is
@@ -213,6 +223,12 @@ class _JsonView(LoginRequiredMixin, View):
         except spaces.SpaceNotFound as e:
             return JsonResponse({"error": e.code, "message": e.message}, status=404)
         except spaces.OutsideSpace as e:
+            return JsonResponse({"error": e.code, "message": e.message}, status=400)
+        except spaces.NotManager as e:
+            return JsonResponse({"error": e.code, "message": e.message}, status=403)
+        except spaces.LastManager as e:
+            return JsonResponse({"error": e.code, "message": e.message}, status=409)
+        except (spaces.NotEligible, spaces.BadAudience) as e:
             return JsonResponse({"error": e.code, "message": e.message}, status=400)
         except spaces.SpaceChanged as e:
             return JsonResponse(
@@ -522,10 +538,10 @@ class SpaceView(_JsonView):
 
 
 class SpaceSourcesView(_JsonView):
-    """POST: change a space's sources -- the one dangerous write. The person's own session
-    only (no MCP tool, no page action), behind CSRF and an explicit ``confirm: true`` the
-    page asks for after warning that anyone who does not hold a new source loses the space,
-    and that who that is cannot be known here. Audited over the old and new sources."""
+    """POST: change a space's sources -- the one dangerous write. A manager, in their own
+    session only (no MCP tool, no page action), behind CSRF and an explicit ``confirm: true``
+    the page asks for after warning that anyone who does not hold a new source loses the
+    space, and that who that is cannot be known here. Audited with the sources before and after."""
 
     def handle(self, request, body):
         from connect_labs.audit_trail.models import Action
@@ -537,22 +553,29 @@ class SpaceSourcesView(_JsonView):
             )
         caller = _caller(request)
         opened = spaces.open(caller, self.kwargs["space_id"], allow_changed=True)
-        before = list(opened.space.opportunity_ids)
+        spaces.require_manager(opened)  # before any work; update_sources checks it again
         generated = spaces.generate(
             caller,
             body.get("opportunity_ids"),
             program_ids=body.get("program_ids") or None,
             workflow=body.get("workflow") or None,
         )
-        space = spaces.update_sources(opened, generated)
-        metadata = {"sources": _source_counts(space), "before_opportunities": len(before)}
-        touched = sorted({int(i) for i in before} | {int(i) for i in space.opportunity_ids})
+        before, after = spaces.update_sources(opened, generated)
+        space = opened.space
+        metadata = {
+            "field": "sources",
+            "sources": _source_counts(space),
+            "before_opportunities": len(before["opportunity_ids"]),
+            "before": before,
+            "after": after,
+        }
+        touched = sorted({int(i) for i in before["opportunity_ids"]} | {int(i) for i in space.opportunity_ids})
         _audit_space(Action.UPDATE, touched, "labsdata_space", opened.id, request.user, metadata)
         return {"space": spaces.open(caller, opened.id, allow_changed=True).as_dict()}
 
 
 class SpaceArchiveView(_JsonView):
-    """POST: archive a space (anyone who may open it). It stops being listed or opened; its
+    """POST: archive a space (its managers only). It stops being listed or opened; its
     saved queries stay with it."""
 
     def handle(self, request, body):
@@ -572,7 +595,12 @@ class SpaceItemsView(_JsonView):
 
     def read(self, request):
         opened = spaces.open(_caller(request), self.kwargs["space_id"], allow_changed=True)
-        return {"space_id": opened.id, "items": _latest(spaces.queries(opened), versions=True)}
+        items = _latest(spaces.queries(opened), versions=True)
+        by_id = {q.pk: q for q in spaces.queries(opened).filter(pk__in=[i["id"] for i in items])}
+        for item in items:
+            # Managers delete any item; a member, only one they saved (spaces.may_delete).
+            item["can_delete"] = spaces.may_delete(opened, by_id[item["id"]])
+        return {"space_id": opened.id, "items": items}
 
     def handle(self, request, body):
         from django.db import IntegrityError, transaction
@@ -608,7 +636,8 @@ class SpaceItemsView(_JsonView):
 
 
 class SpaceItemDeleteView(_JsonView):
-    """POST: delete a saved query from the space, every version of its name."""
+    """POST: delete a saved query from the space, every version of its name: a manager, or
+    the member who saved every version of it (``spaces.delete_item``)."""
 
     def handle(self, request, body):
         from connect_labs.audit_trail.models import Action
@@ -617,6 +646,74 @@ class SpaceItemDeleteView(_JsonView):
         saved = spaces.query_item(opened, self.kwargs.get("pk"))
         if saved is None:
             raise _Invalid("not_found", "There is no such query in this space.", status=404)
-        deleted, _ = spaces.queries(opened).filter(name=saved.name).delete()
+        deleted = spaces.delete_item(opened, saved)
         _audit_space(Action.DELETE, opened, "labsdata_space_query", saved.pk, request.user, {"space_id": opened.id})
         return {"deleted": deleted}
+
+
+# --- who can open a space, and who manages it (spaces.AUDIENCES, DataSpace.managers) -----
+# Person-session writes only, behind CSRF: no MCP tool and no page action reaches these
+# (tests/test_spaces_gate.py). Each is a manager's (spaces.require_manager), audited with
+# before and after.
+
+
+class SpaceAudienceView(_JsonView):
+    """POST ``{audience}``: who, among the people who hold every source, may open the space
+    (``holders`` or ``private``). It can only narrow the data rule, never widen it."""
+
+    def handle(self, request, body):
+        from connect_labs.audit_trail.models import Action
+
+        opened = spaces.open(_caller(request), self.kwargs["space_id"], allow_changed=True)
+        before, after = spaces.set_audience(opened, body.get("audience"))
+        metadata = {"field": "audience", "before": before, "after": after}
+        _audit_space(Action.UPDATE, opened, "labsdata_space", opened.id, request.user, metadata)
+        return {"space": opened.as_dict()}
+
+
+class SpaceManagersView(_JsonView):
+    """POST ``{person}`` (a username or email): make them a manager too. They must hold every
+    source now; any refusal is one ``not_eligible``, whatever the reason."""
+
+    def handle(self, request, body):
+        from connect_labs.audit_trail.models import Action
+
+        opened = spaces.open(_caller(request), self.kwargs["space_id"], allow_changed=True)
+        spaces.require_manager(opened)  # before looking anyone up
+        before, after = spaces.add_manager(opened, spaces.find_person(body.get("person")))
+        metadata = {"field": "managers", "before": before, "after": after}
+        _audit_space(Action.UPDATE, opened, "labsdata_space", opened.id, request.user, metadata)
+        return {"space": opened.as_dict()}
+
+
+class SpaceManagerRemoveView(_JsonView):
+    """POST: stop someone being a manager (yourself included), never the last one."""
+
+    def handle(self, request, body):
+        from connect_labs.audit_trail.models import Action
+
+        opened = spaces.open(_caller(request), self.kwargs["space_id"], allow_changed=True)
+        before, after = spaces.remove_manager(opened, self.kwargs["user_id"])
+        metadata = {"field": "managers", "before": before, "after": after}
+        _audit_space(Action.UPDATE, opened, "labsdata_space", opened.id, request.user, metadata)
+        # They may have removed themselves: say what they are now.
+        return {"space": spaces.open(_caller(request), opened.id, allow_changed=True).as_dict()}
+
+
+class SpaceAdminManagerView(_JsonView):
+    """POST ``{person}``: a labs admin (Dimagi staff) makes someone who can open the space a
+    manager -- for a space none of whose managers can open it any more. The admin need not
+    hold the space; nothing of it is read or shown. Nobody can make themselves a manager."""
+
+    def handle(self, request, body):
+        from connect_labs.audit_trail.models import Action
+
+        try:
+            opportunity_ids, before, after = spaces.admin_add_manager(
+                request.user, self.kwargs["space_id"], spaces.find_person(body.get("person"))
+            )
+        except PermissionError as e:
+            raise _Invalid("not_admin", str(e), status=403) from e
+        metadata = {"field": "managers", "before": before, "after": after, "by_labs_admin": True}
+        _audit_space(Action.UPDATE, opportunity_ids, "labsdata_space", self.kwargs["space_id"], request.user, metadata)
+        return {"managers": after}

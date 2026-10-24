@@ -31,7 +31,12 @@ const SPACE = {
   workflow: null,
   new_in_programs: [],
   changed: null,
+  audience: 'holders',
+  managers: [{ id: 3, username: 'ana' }],
+  is_manager: true,
 };
+// The same space as one of its members (not a manager) sees it.
+const MEMBER_SPACE = { ...SPACE, is_manager: false };
 
 const RESULT = {
   columns: ['name', 'n'],
@@ -52,6 +57,7 @@ function mount({
   items = [],
   queryFails = false,
   panel = false,
+  canAdminAssign = false,
 } = {}) {
   const window = new Window({ url: 'https://labs.example/labs/data/' });
   const document = window.document;
@@ -64,6 +70,7 @@ function mount({
       program_ids: [],
     },
     space,
+    can_admin_assign: canAdminAssign,
   };
   document.body.innerHTML = `
     <script type="application/json" id="labsdata-options">${JSON.stringify(options)}</script>
@@ -75,6 +82,12 @@ function mount({
     <button id="ex-sources-cancel" hidden>Cancel</button>
     <div id="ex-cache"></div><div id="ex-tables"></div><span id="ex-tables-hint"></span>
     <div id="ex-space-items"></div><div id="ex-saved"></div>
+    <div id="ex-access-card"><select id="ex-audience" hidden><option value="holders"></option>
+      <option value="private"></option></select><p id="ex-audience-text"></p>
+      <div id="ex-managers"></div>
+      <div id="ex-manager-add" hidden><input id="ex-manager-person"><button id="ex-manager-add-btn">Add</button></div>
+      <div id="ex-manager-admin" hidden><input id="ex-manager-admin-person"><button id="ex-manager-admin-btn">Assign</button></div>
+      <div id="ex-access-error" hidden></div></div>
     <div id="ex-tabs"></div>
     <div id="ex-panes"><div id="ex-pane-editor" data-tab="editor">
       <textarea id="ex-sql">SELECT 1</textarea>
@@ -370,6 +383,80 @@ describe('a data space page', () => {
       opportunity_ids: [7],
       program_ids: [],
     });
+  });
+});
+
+describe('who can open a space, and its managers', () => {
+  it('a member sees the audience and managers read-only, and no management buttons', async () => {
+    const { document } = mount({
+      space: MEMBER_SPACE,
+      items: [
+        {
+          id: 5,
+          name: 'Mine',
+          sql: 'SELECT 1',
+          can_delete: true,
+          versions: [],
+        },
+        {
+          id: 6,
+          name: 'Theirs',
+          sql: 'SELECT 1',
+          can_delete: false,
+          versions: [],
+        },
+      ],
+    });
+    await settle();
+    expect(document.getElementById('ex-audience').hidden).toBe(true);
+    expect(document.getElementById('ex-audience-text').textContent).toBe(
+      'Anyone with access to the sources',
+    );
+    expect(document.getElementById('ex-managers').textContent).toContain('ana');
+    expect(document.querySelector('#ex-managers button')).toBeNull();
+    expect(document.getElementById('ex-manager-add').hidden).toBe(true);
+    expect(document.getElementById('ex-manager-admin').hidden).toBe(true);
+    expect(document.getElementById('ex-space-archive').hidden).toBe(true);
+    expect(document.getElementById('ex-sources-edit').hidden).toBe(true);
+    // Delete only on the item they saved.
+    const rows = document.querySelectorAll('#ex-space-items .ex-saved-row');
+    expect(rows[0].querySelector('.del')).not.toBeNull();
+    expect(rows[1].querySelector('.del')).toBeNull();
+  });
+
+  it('a labs admin who is not a manager is offered Assign', async () => {
+    const { document } = mount({ space: MEMBER_SPACE, canAdminAssign: true });
+    await settle();
+    expect(document.getElementById('ex-manager-admin').hidden).toBe(false);
+  });
+
+  it('a manager sets the audience (after a confirm) and adds and removes managers', async () => {
+    const { window, document, posts } = mount({ space: SPACE });
+    await settle();
+    expect(document.getElementById('ex-audience').hidden).toBe(false);
+    expect(document.getElementById('ex-space-archive').hidden).toBe(false);
+    const audience = document.getElementById('ex-audience');
+    window.confirm = () => false;
+    audience.value = 'private';
+    audience.dispatchEvent(new window.Event('change'));
+    await settle();
+    expect(posts.filter((p) => p.url.endsWith('/audience/'))).toHaveLength(0);
+    window.confirm = () => true;
+    audience.value = 'private';
+    audience.dispatchEvent(new window.Event('change'));
+    await settle();
+    expect(posts.find((p) => p.url === '/sp/42/audience/').body).toEqual({
+      audience: 'private',
+    });
+    document.getElementById('ex-manager-person').value = 'bo@invented.example';
+    document.getElementById('ex-manager-add-btn').click();
+    await settle();
+    expect(posts.find((p) => p.url === '/sp/42/managers/').body).toEqual({
+      person: 'bo@invented.example',
+    });
+    document.querySelector('#ex-managers button').click();
+    await settle();
+    expect(posts.some((p) => p.url === '/sp/42/managers/3/remove/')).toBe(true);
   });
 });
 

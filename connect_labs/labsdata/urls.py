@@ -14,6 +14,19 @@ urlpatterns = [
     path("api/spaces/<int:space_id>/", views.SpaceView.as_view(), name="space_detail"),
     path("api/spaces/<int:space_id>/sources/", views.SpaceSourcesView.as_view(), name="space_sources"),
     path("api/spaces/<int:space_id>/archive/", views.SpaceArchiveView.as_view(), name="space_archive"),
+    path("api/spaces/<int:space_id>/audience/", views.SpaceAudienceView.as_view(), name="space_audience"),
+    path("api/spaces/<int:space_id>/managers/", views.SpaceManagersView.as_view(), name="space_managers"),
+    path(
+        "api/spaces/<int:space_id>/managers/<int:user_id>/remove/",
+        views.SpaceManagerRemoveView.as_view(),
+        name="space_manager_remove",
+    ),
+    # Labs admin (Dimagi staff): make someone who can open the space a manager.
+    path(
+        "api/spaces/<int:space_id>/admin/managers/",
+        views.SpaceAdminManagerView.as_view(),
+        name="space_admin_managers",
+    ),
     path("api/spaces/<int:space_id>/items/", views.SpaceItemsView.as_view(), name="space_items"),
     path(
         "api/spaces/<int:space_id>/items/<int:pk>/delete/",

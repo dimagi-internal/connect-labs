@@ -109,6 +109,11 @@
       : [];
   }
 
+  // Whether the person is one of this space's managers (the server decides every write).
+  function isManager() {
+    return !!space && !!space.is_manager;
+  }
+
   function el(tag, attrs, ...children) {
     const node = document.createElement(tag);
     Object.entries(attrs || {}).forEach(([k, v]) => {
@@ -301,7 +306,9 @@
     // A space's sources are fixed until the person chooses Update sources.
     const picker = $('ex-add').closest('.ex-picker');
     if (picker) picker.hidden = locked;
-    show('ex-sources-edit', !!space && !state.editingSources);
+    // Only a space's managers change its sources (spaces.require_manager decides; this
+    // only hides what a member could not do).
+    show('ex-sources-edit', isManager() && !state.editingSources);
     show('ex-sources-save', !!space && state.editingSources);
     show('ex-sources-cancel', !!space && state.editingSources);
     $('ex-add').disabled = !!state.workflow;
@@ -1153,15 +1160,19 @@
         q.version > 1 ? el('small', {}, ` v${q.version}`) : '',
         q.saved_by ? el('small', {}, ` · ${q.saved_by}`) : '',
       ),
-      el(
-        'button',
-        {
-          class: 'del',
-          title: 'Delete this saved query (every version)',
-          onclick: () => onDelete(q),
-        },
-        '✕',
-      ),
+      // A space's item says whether this person may delete it (managers: any; members:
+      // their own). A personal query is always the person's own.
+      q.can_delete === false
+        ? ''
+        : el(
+            'button',
+            {
+              class: 'del',
+              title: 'Delete this saved query (every version)',
+              onclick: () => onDelete(q),
+            },
+            '✕',
+          ),
     );
     if (!versions || versions.length < 2) return row;
     return el(
@@ -1449,6 +1460,123 @@
     }
   }
 
+  // ---- who can open the space, and its managers ------------------------------
+  // Managers' own clicks, in their own session (CSRF), audited server-side. No page action
+  // reaches any of these (tests/test_spaces_gate.py): an agent can never change who can
+  // open a space or who manages it.
+  const AUDIENCE_TEXT = {
+    holders: 'Anyone with access to the sources',
+    private: 'Only managers',
+  };
+
+  function accessError(e) {
+    const box = $('ex-access-error');
+    if (!box) return;
+    box.hidden = !e;
+    box.textContent = e ? e.message || 'That did not work.' : '';
+  }
+
+  function renderAccess() {
+    if (!space || !$('ex-access-card')) return;
+    const manager = isManager();
+    show('ex-space-archive', manager);
+    show('ex-audience', manager);
+    show('ex-audience-text', !manager);
+    $('ex-audience').value = space.audience;
+    $('ex-audience-text').textContent =
+      AUDIENCE_TEXT[space.audience] || space.audience;
+    const box = $('ex-managers');
+    box.replaceChildren(
+      ...(space.managers || []).map((m) =>
+        el(
+          'div',
+          { class: 'flex items-center justify-between gap-2' },
+          el('span', {}, m.username),
+          manager
+            ? el(
+                'button',
+                {
+                  class: 'ex-btn ghost',
+                  type: 'button',
+                  title: 'Stop being a manager of this space',
+                  onclick: () => manageRemoveManager(m),
+                },
+                'Remove',
+              )
+            : '',
+        ),
+      ),
+    );
+    if (!(space.managers || []).length)
+      box.append(
+        el(
+          'span',
+          { class: 'ex-muted' },
+          'No managers. A labs admin can add one.',
+        ),
+      );
+    show('ex-manager-add', manager);
+    show('ex-manager-admin', !manager && !!options.can_admin_assign);
+  }
+
+  function manageDone(out) {
+    if (out && out.space) Object.assign(space, out.space);
+    accessError(null);
+    renderAccess();
+    renderChips();
+  }
+
+  async function manageSetAudience(audience) {
+    if (
+      audience === 'private' &&
+      !window.confirm(
+        'Only this space’s managers will be able to open it. Everyone else loses it and everything saved in it.',
+      )
+    ) {
+      renderAccess();
+      return;
+    }
+    try {
+      manageDone(await post(spaceApi(space.id, 'audience/'), { audience }));
+    } catch (e) {
+      accessError(e);
+      renderAccess();
+    }
+  }
+
+  async function manageAddManager() {
+    const person = $('ex-manager-person').value.trim();
+    if (!person) return;
+    try {
+      manageDone(await post(spaceApi(space.id, 'managers/'), { person }));
+      $('ex-manager-person').value = '';
+    } catch (e) {
+      accessError(e);
+    }
+  }
+
+  async function manageRemoveManager(m) {
+    if (!window.confirm(`Stop ${m.username} managing this space?`)) return;
+    try {
+      manageDone(
+        await post(spaceApi(space.id, `managers/${m.id}/remove/`), {}),
+      );
+    } catch (e) {
+      accessError(e);
+    }
+  }
+
+  async function manageAdminAddManager() {
+    const person = $('ex-manager-admin-person').value.trim();
+    if (!person) return;
+    try {
+      await post(spaceApi(space.id, 'admin/managers/'), { person });
+      window.location.reload();
+    } catch (e) {
+      accessError(e);
+    }
+  }
+
   // What the space says about itself: a program that has gained opportunities, or a
   // workflow that moved under it.
   function renderSpaceNotice() {
@@ -1612,6 +1740,12 @@
   on('ex-sources-edit', 'click', startEditingSources);
   on('ex-sources-cancel', 'click', cancelEditingSources);
   on('ex-sources-save', 'click', saveSources);
+  on('ex-audience', 'change', (e) => manageSetAudience(e.target.value));
+  on('ex-manager-add-btn', 'click', manageAddManager);
+  on('ex-manager-person', 'keydown', (e) => {
+    if (e.key === 'Enter') manageAddManager();
+  });
+  on('ex-manager-admin-btn', 'click', manageAdminAddManager);
   $('ex-add').addEventListener('input', renderPicker);
   $('ex-add').addEventListener('focus', renderPicker);
   $('ex-add').addEventListener('keydown', (e) => {
@@ -1640,6 +1774,7 @@
   }
   renderChips();
   renderSpaceNotice();
+  renderAccess();
   // Opened from a result card (`service.open_on_page_url`): the query, its selection
   // and its row cap are already in place. `run` runs it as the person, once;
   // `download` then highlights Download CSV. Nothing downloads without a click.

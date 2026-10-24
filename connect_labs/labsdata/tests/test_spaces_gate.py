@@ -20,6 +20,12 @@ arguments. So this reads the code itself (the shape of supply_chain's
    ``scope.resolve`` / ``scope.expand`` or makes an ``OpenSpace``, and ``service``'s reads
    refuse anything that is not one.
 
+5. **Who can open a space, and who changes it** (the ACL). ``open`` and ``openable`` ask
+   the audience only after the data rule. Every management write in ``spaces.py`` (sources,
+   audience, managers, archive, deleting an item) checks the role itself; every route that
+   makes one goes through it; and no ``data_*`` tool and no page action names any of them --
+   an agent acts as the visitor and can never change sources, audience or managers.
+
 A static check on purpose: it runs on code nobody has written yet.
 """
 
@@ -27,6 +33,7 @@ from __future__ import annotations
 
 import ast
 import pathlib
+import re
 
 import pytest
 
@@ -40,8 +47,24 @@ SPACES = LABSDATA / "spaces.py"
 DOORS = (LABSDATA / "views.py", LABS / "mcp" / "tools" / "labsdata.py")
 #: The modules a read of visit data passes through.
 READ_PATH = (*DOORS, LABSDATA / "service.py", LABSDATA / "engine.py", LABSDATA / "drill.py", LABSDATA / "fields.py")
-#: The gate's own calls: a function making one of these is a gate.
-GATES = {"open", "from_request"}
+#: The gate's own calls: a function making one of these is a gate. ``admin_add_manager``
+#: opens the space as the person being made a manager (pinned below).
+GATES = {"open", "from_request", "admin_add_manager"}
+#: The writes that change who can open a space or what it is: managers only (or, for
+#: ``admin_add_manager``, Dimagi staff), never an agent.
+MANAGEMENT = {
+    "update_sources": "require_manager",
+    "set_audience": "require_manager",
+    "add_manager": "require_manager",
+    "remove_manager": "require_manager",
+    "archive": "require_manager",
+    "delete_item": "may_delete",
+    "admin_add_manager": "is_dimagi_staff",
+}
+#: Words a tool or page action that changed sources, audience or managers would carry.
+MANAGEMENT_WORDS = ("source", "audience", "manager", "archive")
+DATA_JS = LABS / "static" / "labsdata" / "data.js"
+TOOLS = LABS / "mcp" / "tools" / "labsdata.py"
 
 
 def _tree(path: pathlib.Path) -> ast.Module:
@@ -125,9 +148,11 @@ def test_every_door_that_takes_a_space_id_opens_it_through_the_gate():
 
 def test_the_gate_resolves_sources_itself_and_runs_nothing_itself():
     tree = _tree(SPACES)
-    for name in ("open", "generate"):
+    for name in ("_data_rule", "generate"):
         fn = next(f for f in _functions(tree) if f.name == name)
         assert "_resolve" in _called_names(fn), f"spaces.{name} must resolve the space's sources through _resolve"
+    opened = next(f for f in _functions(tree) if f.name == "open")
+    assert "_data_rule" in _called_names(opened), "spaces.open must apply the data rule (_data_rule)"
     for n in ast.walk(tree):
         if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id == "engine":
             raise AssertionError(f"spaces.py:{n.lineno} runs engine.{n.attr} itself; go through service")
@@ -184,3 +209,115 @@ def test_sources_are_resolved_only_in_spaces():
 def test_service_reads_refuse_anything_but_a_space(call):
     with pytest.raises(TypeError, match="data space"):
         call()
+
+
+def _fn(tree, name):
+    return next(f for f in _functions(tree) if f.name == name)
+
+
+def test_the_audience_is_asked_after_the_data_rule_and_only_there():
+    """``open``: the data rule's call comes before the audience's, in source order; and
+    ``openable`` filters on ``_holds(...) and _admits(...)`` -- short-circuit, data rule first."""
+    tree = _tree(SPACES)
+    opened = _fn(tree, "open")
+    lines = {}
+    for n in ast.walk(opened):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name):
+            lines.setdefault(n.func.id, n.lineno)
+    assert lines["_data_rule"] < lines["_admits"], "open asks the audience before the data rule"
+    listed = _fn(tree, "openable")
+    ands = [n for n in ast.walk(listed) if isinstance(n, ast.BoolOp) and isinstance(n.op, ast.And)]
+    assert any(
+        [getattr(v.func, "id", None) for v in n.values if isinstance(v, ast.Call)][:2] == ["_holds", "_admits"]
+        for n in ands
+    ), "openable must filter on _holds(...) and _admits(...), in that order"
+    # Nothing else asks an audience.
+    offenders = []
+    for path in LABS.rglob("*.py"):
+        if "tests" in path.parts or path == SPACES:
+            continue
+        for n in ast.walk(_tree(path)):
+            if (isinstance(n, ast.Name) and n.id in {"AUDIENCES", "_admits"}) or (
+                isinstance(n, ast.Attribute) and n.attr in {"AUDIENCES", "_admits"}
+            ):
+                offenders.append(f"{path.relative_to(LABS)}:{n.lineno}")
+    assert not offenders, "Only spaces.py asks a space's audience: " + ", ".join(offenders)
+
+
+def test_every_management_write_checks_the_role_itself():
+    tree = _tree(SPACES)
+    for name, check in MANAGEMENT.items():
+        assert check in _called_names(_fn(tree, name)), f"spaces.{name} must call {check}"
+    assert "open" in _called_names(_fn(tree, "admin_add_manager")), "admin_add_manager opens as the person"
+    assert "is_manager" in ast.unparse(_fn(tree, "require_manager"))
+
+
+def _spaces_calls(node) -> set[str]:
+    return {
+        n.func.attr
+        for n in ast.walk(node)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and isinstance(n.func.value, ast.Name)
+        and n.func.value.id == "spaces"
+    }
+
+
+def test_every_management_route_calls_the_manager_check():
+    """Each URL that changes sources, audience, managers, archive or deletes an item routes
+    to a view that makes the matching ``spaces`` write (which checks the role itself)."""
+    from django.urls import get_resolver
+
+    from connect_labs.labsdata import urls
+
+    views_tree = _tree(LABSDATA / "views.py")
+    classes = {n.name: n for n in ast.walk(views_tree) if isinstance(n, ast.ClassDef)}
+    management_routes = [
+        p for p in urls.urlpatterns if any(w in str(p.pattern) for w in (*MANAGEMENT_WORDS, "delete"))
+    ]
+    checked = 0
+    for p in management_routes:
+        view = p.callback.view_class.__name__
+        if view == "SavedQueryDeleteView":  # a personal query, owner-only, no space
+            continue
+        assert _spaces_calls(classes[view]) & set(MANAGEMENT), f"{p.pattern} ({view}) makes no spaces management write"
+        checked += 1
+    assert checked >= 6, "fewer management routes than expected; did the check stop finding them?"
+    assert get_resolver()  # the urlconf loads
+
+
+def test_no_agent_surface_can_change_sources_audience_or_managers():
+    """No ``data_*`` tool and no page action names a management write: an agent acts as
+    the visitor and only reads, runs and proposes. Those writes are person-session JSON
+    views behind CSRF."""
+    import connect_labs.mcp.tools.labsdata  # noqa: F401 -- registers the data_* tools
+    from connect_labs.mcp.tool_registry import list_tools
+
+    data_tools = [t["name"] for t in list_tools() if t["name"].startswith(("data_", "explorer_"))]
+    assert data_tools, "no data_* tools registered"
+    for name in data_tools:
+        assert not any(w in name for w in MANAGEMENT_WORDS), f"tool {name} names a management write"
+    calls = _spaces_calls(_tree(TOOLS))
+    assert not calls & (set(MANAGEMENT) | {"require_manager", "save"}), f"data_* tools call {calls & set(MANAGEMENT)}"
+    tools_src = TOOLS.read_text()
+    for url in ("/sources/", "/audience/", "/managers/", "/archive/"):
+        assert url not in tools_src
+
+    js = DATA_JS.read_text()
+    start, end = js.index("const ACTIONS = {"), js.index("window.LABSDATA_ACTIONS")
+    actions = js[start:end]
+    names = re.findall(r"^    (\w+): \[", actions, flags=re.M)
+    assert {"showQuery", "openItem", "proposeSave", "showVisit"} <= set(names)
+    for name in names:
+        assert not any(w in name.lower() for w in MANAGEMENT_WORDS), f"page action {name} names a management write"
+    for forbidden in (
+        "'sources/'",
+        "'audience/'",
+        "'managers/'",
+        "admin/managers/",
+        "'archive/'",
+        "saveSources",
+        "archiveSpace",
+        "manage",
+    ):
+        assert forbidden not in actions, f"a page action reaches {forbidden}"

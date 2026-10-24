@@ -342,8 +342,27 @@ read by `spaces.open`, the one
 gate (`labsdata/tests/test_spaces_gate.py` fails if a view or `data_*` tool takes a `space_id`
 without it): every program AND every frozen opportunity held now, else `not_found` (the same
 answer as no such space). No membership table and no grant: a teammate holding the same sources
-sees it; losing one opportunity loses the whole space. Changing its sources is the person's own
-click after a warning (`POST .../sources/` with `confirm: true`; no tool, no page action), audited.
+sees it; losing one opportunity loses the whole space.
+
+**Who can open it, and who changes it** (the ACL; design doc's last section). Access is two
+rules, both checked by `spaces.open` on every load and read: the data rule above (fixed), then
+the space's `audience`, chosen by its managers, which can only narrow it -- `holders` (default:
+anyone who passes the data rule) or `private` (only its managers). Each audience is one function
+in `spaces.AUDIENCES`, asked only after the data rule; refused by it is the same `not_found`, and
+`openable` lists only spaces passing both. **Managers** (the creator, and anyone a manager adds,
+`DataSpace.managers`) change the sources, audience and managers, archive the space and delete
+any item; **members** (anyone else who can open it) run, save new items and versions, and delete
+items they saved. `spaces.py` checks the role itself (`require_manager` → 403 `not_manager`), and
+a manager is held to both rules like anyone else, so one who loses a source cannot manage either.
+A manager adds someone by username or email, who must pass the data rule (asked as them); any
+refusal is one `not_eligible`, and the last manager cannot be removed (`last_manager`). A labs
+admin (Dimagi staff, `is_dimagi_staff`) can make someone who can open the space a manager
+(`POST /labs/data/api/spaces/<id>/admin/managers/ {person}`) without holding it; nobody can make
+themselves one. Sources (`.../sources/`, with `confirm: true`), audience (`.../audience/`) and
+managers (`.../managers/`, `.../managers/<user_id>/remove/`) are person-session JSON views behind
+CSRF, audited with before and after; **no `data_*` tool and no page action names any of them**
+(`test_spaces_gate.py` pins that, and that every such route makes the checked write). The left
+rail's "Who can open" card shows a manager the controls and a member the same facts read-only.
 
 Its page (`/labs/data/space/<id>/`, page key `labsdata:space`, `data:read`) is the Data page in
 three regions: the left rail (space switcher and "Save as a space", source chips

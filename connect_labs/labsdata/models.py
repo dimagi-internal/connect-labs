@@ -16,8 +16,10 @@ are a named, FIXED set of sources -- opportunities, programs frozen to the oppor
 had when added, or one workflow -- and the saved queries built on them. A saved query with a
 ``space`` belongs to the space: anyone who may open the space sees it and may save a new
 version of it; without one it is personal and owner-only, as before. Who may open a space is
-decided on every read by ``spaces.open`` and nothing else -- there is no membership table and
-no grant stored here.
+decided on every read by ``spaces.open`` and nothing else: the data rule (every source held
+now), then the space's ``audience``, which can only narrow it. ``managers`` are a role inside
+the space (who may change its sources, audience and managers), never a grant: a manager is
+held to both rules like anyone else.
 """
 
 from __future__ import annotations
@@ -29,6 +31,14 @@ from .validator import DEFAULT_MAX_ROWS
 
 
 class DataSpace(models.Model):
+    #: Who, among the people who hold every source, may open the space (``spaces.AUDIENCES``).
+    HOLDERS = "holders"
+    PRIVATE = "private"
+    AUDIENCE_CHOICES = [
+        (HOLDERS, "Anyone with access to the sources"),
+        (PRIVATE, "Only managers"),
+    ]
+
     """A named, fixed set of sources and the things built on them. Never rows.
 
     ``opportunity_ids`` is the frozen union of every source's opportunities: a program
@@ -50,6 +60,11 @@ class DataSpace(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     archived_at = models.DateTimeField(null=True, blank=True)
+    #: Narrows who may open the space, after the data rule; it can never widen it.
+    audience = models.CharField(max_length=20, choices=AUDIENCE_CHOICES, default=HOLDERS)
+    #: Who may change the sources, audience and managers and archive the space. A role, not
+    #: a grant: ``spaces.open`` holds a manager to the data rule like anyone else.
+    managers = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True, related_name="managed_data_spaces")
 
     class Meta:
         ordering = ["name"]

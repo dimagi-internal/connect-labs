@@ -37,14 +37,25 @@ module keeps them:
    exist, so its name does not leak. Only "we could not find out what you hold"
    (``scopes_unavailable``) is said as itself: that is a fact about Connect, not the space.
 
-Changing a saved space's sources is the one dangerous write; ``update_sources`` takes only
-an already-opened space.
+4. **The audience can only narrow** (the ACL section of the design). After the data rule
+   passes, ``open`` asks the space's audience (``AUDIENCES``: ``holders`` lets everyone who
+   passed in, ``private`` only the space's managers). Refused by the audience is the same
+   ``not_found``. A new audience is one function in ``AUDIENCES``, asked only after the data
+   rule, so adding one can never let anyone see data they do not hold.
+
+**Roles.** Managers (the creator, and anyone a manager adds) change the sources, the audience
+and the managers, archive the space and delete any item; members (anyone else who can open
+it) run, save, and delete items they saved. Each of those writes takes an already-opened
+space and checks the role here (``NotManager``), so no door can skip it. None of them is
+reachable by an agent: no ``data_*`` tool and no page action names one
+(``tests/test_spaces_gate.py``).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from connect_labs.labs.access import scopes
@@ -62,6 +73,39 @@ class SpaceNotFound(Exception):
 
     code = "not_found"
     message = "There is no such data space, or you do not hold every one of its sources."
+
+
+class NotManager(Exception):
+    """The caller may open the space but is not one of its managers (or, deleting an item,
+    did not save it). Said as itself: they can see the space, so nothing leaks."""
+
+    code = "not_manager"
+    message = "Only this space's managers can do that."
+
+
+class LastManager(Exception):
+    code = "last_manager"
+    message = "A space needs at least one manager. Add another before removing this one."
+
+
+class NotEligible(Exception):
+    """The person named cannot be made a manager. Deliberately one answer whatever the reason
+    (no such person, does not hold every source, cannot be asked, is you): why would say what
+    someone else holds."""
+
+    code = "not_eligible"
+    message = "That person cannot be made a manager of this space."
+
+
+class BadAudience(Exception):
+    code = "bad_audience"
+
+    def __init__(self):
+        super().__init__(self.message)
+
+    @property
+    def message(self) -> str:
+        return "The audience must be one of: " + ", ".join(sorted(AUDIENCES)) + "."
 
 
 class OutsideSpace(Exception):
@@ -190,6 +234,10 @@ class OpenSpace:
     #: A generated space's selection as asked for -- programs as programs, so a link back
     #: to the page (or a personal saved query) asks again rather than for today's freeze.
     requested: dict = field(default_factory=dict)
+    #: Whether the person who opened it is one of its managers (``open`` sets it).
+    is_manager: bool = False
+    #: Who opened it: the id of the user whose rules it passed.
+    viewer_id: int | None = None
 
     @property
     def saved(self) -> bool:
@@ -229,6 +277,9 @@ class OpenSpace:
             "workflow": dict(s.workflow) or None,
             "new_in_programs": self.new_in_programs,
             "changed": self.changed,
+            "audience": s.audience,
+            "managers": _managers(s) if self.saved else [],
+            "is_manager": self.is_manager,
             "created_by": getattr(s.created_by, "username", None),
             "created_at": s.created_at.isoformat() if s.created_at else None,
             "updated_at": s.updated_at.isoformat() if s.updated_at else None,
@@ -244,6 +295,38 @@ def _program_names(opps, program_ids) -> dict[int, str]:
     return {pid: names.get(pid, "") for pid in program_ids or []}
 
 
+def _managers(space: DataSpace) -> list[dict]:
+    return sorted(
+        ({"id": u.pk, "username": u.username} for u in space.managers.all()), key=lambda m: m["username"].lower()
+    )
+
+
+def _manager_ids(space: DataSpace) -> set[int]:
+    return {u.pk for u in space.managers.all()}
+
+
+def _user(caller: Caller):
+    return caller.user if caller.user is not None else getattr(caller.request, "user", None)
+
+
+def _is_manager(space: DataSpace, user) -> bool:
+    return bool(user is not None and getattr(user, "pk", None) is not None and user.pk in _manager_ids(space))
+
+
+#: Who, among the people who pass the data rule, may open a space: audience -> (space, user)
+#: -> bool. Asked by ``open`` and ``openable`` ONLY after the data rule passes, so an audience
+#: can only narrow. An audience missing here admits nobody.
+AUDIENCES = {
+    DataSpace.HOLDERS: lambda space, user: True,
+    DataSpace.PRIVATE: _is_manager,
+}
+
+
+def _admits(space: DataSpace, user) -> bool:
+    audience = AUDIENCES.get(space.audience)
+    return bool(audience and audience(space, user))
+
+
 def _holds(space: DataSpace, held: scopes.Holdings) -> bool:
     """Rules 1 and 2 over what the caller holds: every program and every frozen opportunity."""
     return all(int(p) in held.program_ids for p in space.program_ids or []) and all(
@@ -251,21 +334,12 @@ def _holds(space: DataSpace, held: scopes.Holdings) -> bool:
     )
 
 
-def open(caller: Caller, space_id, *, allow_changed: bool = False) -> OpenSpace:  # noqa: A001 -- the one gate
-    """The saved space, if the caller holds every one of its sources now; else ``SpaceNotFound``.
+def _data_rule(caller: Caller, space: DataSpace):
+    """Rules 1 and 2 for this caller: ``(frozen, selection, held)``, else ``SpaceNotFound``.
 
     Raises ``scope.ScopeError("scopes_unavailable")`` when what the caller holds cannot be
-    established (never read as "they hold nothing"), and ``SpaceChanged`` when they hold
-    everything but the space's workflow has moved under it -- unless ``allow_changed``
-    (showing the space and updating its sources, never running a query), which returns it
-    with ``changed`` set.
-    """
-    try:
-        pk = int(space_id)
-    except (TypeError, ValueError) as e:
-        raise SpaceNotFound() from e
-    space = DataSpace.objects.select_related("created_by").filter(pk=pk, archived_at__isnull=True).first()
-    if space is None or not space.opportunity_ids:
+    established (never read as "they hold nothing")."""
+    if not space.opportunity_ids:
         raise SpaceNotFound()
     try:
         held = scopes.holdings(caller)
@@ -284,6 +358,41 @@ def open(caller: Caller, space_id, *, allow_changed: bool = False) -> OpenSpace:
         if e.code in _NOT_YOURS:
             raise SpaceNotFound() from e
         raise
+    return frozen, selection, held
+
+
+def _row(space_id) -> DataSpace:
+    try:
+        pk = int(space_id)
+    except (TypeError, ValueError) as e:
+        raise SpaceNotFound() from e
+    space = (
+        DataSpace.objects.select_related("created_by")
+        .prefetch_related("managers")
+        .filter(pk=pk, archived_at__isnull=True)
+        .first()
+    )
+    if space is None:
+        raise SpaceNotFound()
+    return space
+
+
+def open(caller: Caller, space_id, *, allow_changed: bool = False) -> OpenSpace:  # noqa: A001 -- the one gate
+    """The saved space, if the caller passes both rules now; else ``SpaceNotFound``.
+
+    The data rule first (every source held now), then -- only if it passed -- the space's
+    audience (``AUDIENCES``), which can only narrow it. Raises
+    ``scope.ScopeError("scopes_unavailable")`` when what the caller holds cannot be
+    established, and ``SpaceChanged`` when they may open it but the space's workflow has
+    moved under it -- unless ``allow_changed`` (showing the space and updating its sources,
+    never running a query), which returns it with ``changed`` set.
+    """
+    space = _row(space_id)
+    frozen, selection, held = _data_rule(caller, space)
+    user = _user(caller)
+    if not _admits(space, user):
+        raise SpaceNotFound()
+    role = {"is_manager": _is_manager(space, user), "viewer_id": getattr(user, "pk", None)}
     if space.workflow:
         now, then = set(selection.ids), {int(o) for o in space.opportunity_ids}
         if now != then:
@@ -291,8 +400,8 @@ def open(caller: Caller, space_id, *, allow_changed: bool = False) -> OpenSpace:
             if not allow_changed:
                 raise moved
             changed = {"added": moved.added, "removed": moved.removed, "message": moved.message}
-            return OpenSpace(space=space, selection=frozen, changed=changed)
-    return OpenSpace(space=space, selection=selection, new_in_programs=_new_in_programs(caller, space, held))
+            return OpenSpace(space=space, selection=frozen, changed=changed, **role)
+    return OpenSpace(space=space, selection=selection, new_in_programs=_new_in_programs(caller, space, held), **role)
 
 
 def _ints(values) -> list[int]:
@@ -385,13 +494,16 @@ def openable(caller: Caller) -> list[dict]:
     """Every saved space the caller may open, grouped by program or opportunity, for the switcher.
 
     Rules 1 and 2 over one resolution of what the caller holds (``_holds``, which ``open``
-    applies too). A workflow space is listed on its frozen sources; opening it also checks
+    applies too), then the space's audience. A workflow space is listed on its frozen sources; opening it also checks
     the workflow, so one whose workflow moved says so when opened."""
     try:
         held = scopes.holdings(caller)
     except scopes.ScopesUnavailable as e:
         raise scope.ScopeError("scopes_unavailable", scopes.UNKNOWABLE) from e
-    spaces = [s for s in DataSpace.objects.filter(archived_at__isnull=True).order_by("name") if _holds(s, held)]
+    user = _user(caller)
+    rows = DataSpace.objects.filter(archived_at__isnull=True).prefetch_related("managers").order_by("name")
+    # Both rules, the data rule first: the audience is asked only of spaces that passed it.
+    spaces = [s for s in rows if _holds(s, held) and _admits(s, user)]
     if not spaces:
         return []
     names = scope.directory(caller)
@@ -432,22 +544,154 @@ def _sources(generated: OpenSpace) -> dict:
 
 
 def save(caller: Caller, generated: OpenSpace, name: str, description: str = "") -> DataSpace:
-    """Keep a generated space: its frozen sources, under a name, for everyone who holds them."""
-    return DataSpace.objects.create(name=name, description=description, created_by=caller.user, **_sources(generated))
-
-
-def update_sources(opened: OpenSpace, generated: OpenSpace) -> DataSpace:
-    """Re-freeze an OPEN saved space to a generated space's sources. Callers: the person's
-    own session only, after a confirm -- adding a source locks out everyone who does not
-    hold it, and who that is cannot be known here."""
-    space = opened.space
-    for key, value in _sources(generated).items():
-        setattr(space, key, value)
-    space.save(update_fields=["opportunity_ids", "program_ids", "workflow", "updated_at"])
+    """Keep a generated space: its frozen sources, under a name, for everyone who holds them.
+    Its creator is its first manager."""
+    space = DataSpace.objects.create(name=name, description=description, created_by=caller.user, **_sources(generated))
+    if caller.user is not None:
+        space.managers.add(caller.user)
     return space
 
 
+def require_manager(opened: OpenSpace) -> None:
+    """Refuse unless the person who opened this saved space is one of its managers. ``open``
+    has already held them to both rules, so a manager who lost a source never gets here."""
+    if not (opened.saved and opened.is_manager):
+        raise NotManager()
+
+
+def _source_dict(space: DataSpace) -> dict:
+    return {
+        "opportunity_ids": list(space.opportunity_ids),
+        "program_ids": list(space.program_ids),
+        "workflow": dict(space.workflow),
+    }
+
+
+def update_sources(opened: OpenSpace, generated: OpenSpace) -> tuple[dict, dict]:
+    """Re-freeze an OPEN saved space to a generated space's sources; ``(before, after)``.
+    Managers only, from their own session after a confirm -- adding a source locks out
+    everyone who does not hold it, and who that is cannot be known here."""
+    require_manager(opened)
+    space = opened.space
+    before = _source_dict(space)
+    for key, value in _sources(generated).items():
+        setattr(space, key, value)
+    space.save(update_fields=["opportunity_ids", "program_ids", "workflow", "updated_at"])
+    return before, _source_dict(space)
+
+
+def set_audience(opened: OpenSpace, audience) -> tuple[str, str]:
+    """Managers only: who, among the people who hold every source, may open it; ``(before, after)``."""
+    require_manager(opened)
+    if audience not in AUDIENCES:
+        raise BadAudience()
+    space = opened.space
+    before = space.audience
+    space.audience = audience
+    space.save(update_fields=["audience", "updated_at"])
+    return before, audience
+
+
+def _names(space: DataSpace) -> list[str]:
+    return [m["username"] for m in _managers(space)]
+
+
+def find_person(handle) -> object | None:
+    """A labs user by username or email, for "add a manager". None when there is no one
+    (or more than one) -- the caller answers ``NotEligible`` either way."""
+    handle = str(handle or "").strip()
+    if not handle:
+        return None
+    User = get_user_model()
+    found = list(User.objects.filter(username__iexact=handle)[:2]) or list(
+        User.objects.filter(email__iexact=handle)[:2]
+    )
+    return found[0] if len(found) == 1 else None
+
+
+def _passes_data_rule(space: DataSpace, user) -> bool:
+    """Whether ``user`` holds every source of ``space`` now, asked as them (their own Connect
+    token). False when it cannot be established: nobody is made a manager on a guess."""
+    if user is None or not getattr(user, "is_active", False):
+        return False
+    caller = Caller(user=user, access_token=scopes._token_for(user))
+    try:
+        _data_rule(caller, space)
+    except (SpaceNotFound, scope.ScopeError):
+        return False
+    return True
+
+
+def add_manager(opened: OpenSpace, person) -> tuple[list[str], list[str]]:
+    """Managers only: make ``person`` a manager too; ``(before, after)`` usernames.
+
+    They must hold every source of the space now (the data rule, asked as them), and
+    nobody can make themselves a manager. Any refusal is ``NotEligible``, whatever the
+    reason, so it says nothing about what someone else holds."""
+    require_manager(opened)
+    space = opened.space
+    if person is None or person.pk == opened.viewer_id or not _passes_data_rule(space, person):
+        raise NotEligible()
+    before = _names(space)
+    space.managers.add(person)
+    space = _refresh(space)
+    opened.space = space
+    return before, _names(space)
+
+
+def remove_manager(opened: OpenSpace, user_id) -> tuple[list[str], list[str]]:
+    """Managers only: stop ``user_id`` being a manager (yourself included), never the last one."""
+    require_manager(opened)
+    space = opened.space
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError) as e:
+        raise NotEligible() from e
+    ids = _manager_ids(space)
+    if uid not in ids:
+        raise NotEligible()
+    if ids == {uid}:
+        raise LastManager()
+    before = _names(space)
+    space.managers.remove(uid)
+    space = _refresh(space)
+    opened.space = space
+    return before, _names(space)
+
+
+def _refresh(space: DataSpace) -> DataSpace:
+    return DataSpace.objects.select_related("created_by").prefetch_related("managers").get(pk=space.pk)
+
+
+def admin_add_manager(admin, space_id, person) -> tuple[list[int], list[str], list[str]]:
+    """A labs admin (Dimagi staff, as Labs Admin) makes ``person`` a manager of a space they can
+    open -- for a space none of whose managers can open it any more. ``(opportunity_ids,
+    before, after)``.
+
+    The admin need not hold the space: this reads nothing of it and shows nothing of it. The
+    person must pass BOTH rules now, asked as them, through ``open`` (so a ``private``
+    space with no manager who can open it stays closed). Nobody, an admin included, can make
+    themselves a manager. ``PermissionError`` for a non-admin; ``NotEligible`` for every
+    refusal about the person or the space, whatever the reason."""
+    from connect_labs.utils.dimagi_user import is_dimagi_staff
+
+    if not (admin is not None and admin.is_authenticated and is_dimagi_staff(admin)):
+        raise PermissionError("Only a labs admin can do this.")
+    if person is None or not getattr(person, "is_active", False) or person.pk == admin.pk:
+        raise NotEligible()
+    try:
+        opened = open(Caller(user=person, access_token=scopes._token_for(person)), space_id, allow_changed=True)
+    except (SpaceNotFound, scope.ScopeError) as e:
+        raise NotEligible() from e
+    space = opened.space
+    before = _names(space)
+    space.managers.add(person)
+    return list(space.opportunity_ids), before, _names(_refresh(space))
+
+
 def archive(opened: OpenSpace) -> DataSpace:
+    """Managers only."""
+    require_manager(opened)
     space = opened.space
     space.archived_at = timezone.now()
     space.save(update_fields=["archived_at", "updated_at"])
@@ -464,6 +708,25 @@ def query_item(opened: OpenSpace, pk) -> SavedQuery | None:
         return queries(opened).filter(pk=int(pk)).first()
     except (TypeError, ValueError):
         return None
+
+
+def may_delete(opened: OpenSpace, item: SavedQuery) -> bool:
+    """A manager may delete any item; a member only one every version of which they saved."""
+    if opened.is_manager:
+        return True
+    if opened.viewer_id is None:
+        return False
+    owners = set(queries(opened).filter(name=item.name).values_list("owner_id", flat=True))
+    return owners == {opened.viewer_id}
+
+
+def delete_item(opened: OpenSpace, item: SavedQuery) -> int:
+    """Delete an item of the space, every version of its name: a manager, or a member who
+    saved every version of it (``NotManager`` otherwise)."""
+    if not may_delete(opened, item):
+        raise NotManager()
+    deleted, _ = queries(opened).filter(name=item.name).delete()
+    return deleted
 
 
 def reads(space_id) -> list[int] | None:
