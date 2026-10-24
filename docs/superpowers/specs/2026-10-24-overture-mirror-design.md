@@ -1,6 +1,6 @@
 # Overture data labs owns: one snapshot per release, switched by a manifest
 
-**Status:** phase 1 built (2026-10-24). The design as built differs from the first draft in three places, each noted where it applies: divisions are not tiled, a failed barrier read raises but grouping still degrades (now logged), and the refresh copies with boto3 rather than `aws s3 sync`.
+**Status:** phase 1 built and live (2026-10-24): labs reads its own `2026-10-21.0` snapshot, switched by `CURRENT.json`. Timings are under [Measurements](#measurements). The design as built differs from the first draft in three places, each noted where it applies: divisions are not tiled, a failed barrier read raises but grouping still degrades (now logged), and the refresh copies with boto3 rather than `aws s3 sync`.
 
 ## The problem
 
@@ -88,8 +88,8 @@ read the raw snapshot, which is still data labs holds, in our own region.
 We keep tiles alongside the raw layer because the raw layer, even in our own
 region, is organised for the whole planet. A read scans about 512 planet-wide
 files and prunes them by their footer statistics. A tile read opens the two or
-three files for the place: 2 to 5 s today, against about 20 s cold for a live
-read.
+three files for the place. Measured on the worker, a tile read is 16 to 20
+times faster than the raw snapshot (see [Measurements](#measurements)).
 
 Each theme's tiles keep only the columns its reader uses:
 
@@ -130,7 +130,7 @@ calls, or a switch would not reach a long-running worker.
 theme read for area A:
   R = active_release()
   if A is inside READY(R).coverage -> tiles/R/<theme>/   (sub-second to a few seconds)
-  else                             -> raw/R/             (same region, about 5-20 s, unmeasured)
+  else                             -> raw/R/             (same region; 50-165 s measured, see below)
   no fallback to Overture's bucket at read time.
 ```
 
@@ -233,8 +233,33 @@ previous release, and the newest release Overture has published.
    mid to late November). Fix whatever it finds.
 3. **Daily trigger, staleness alarm and the Labs Admin line**, once phase 2 has
    run cleanly.
-4. **Coverage to all of Africa** for every theme, if phase 1's raw-snapshot
-   timings leave planners waiting outside the 11 countries.
+4. **Coverage to all of Africa** for every theme. The measurements say yes: a
+   raw-snapshot read outside the 11 countries takes 2.5 minutes, too long for
+   a planner to wait.
+
+## Measurements
+
+Run 2026-10-24 on prod, on a Fargate task the size of the worker (1 vCPU, 8 GB),
+each read cold (no cache), one after another. Every path returned the same rows.
+
+| Read | Tiles | Raw snapshot (labs, us-east-1) | Overture public (us-west-2, the old path) |
+|---|---|---|---|
+| Buildings, Kano (2 km box, 28,439 buildings) | 10.0 s | 163 s | 337 s |
+| Buildings, Accra (1 km box, outside coverage, 1,510 buildings) | n/a | 155 s | 360 s |
+| Barriers, Kano (4 km box, 952 lines) | 2.7 s | 53 s | 125 s |
+| Divisions, Ghana (by name) | n/a | 5.5 s | 7.0 s |
+
+What it means:
+
+- **Inside the 11 countries the tiles do their job:** 16 to 20 times faster
+  than the raw snapshot.
+- **Outside them, the raw snapshot is too slow for a page.** At 2.5 minutes for
+  a 1 km box, the "about 5-20 s" this doc assumed was wrong by an order of
+  magnitude on one vCPU: a raw read scans the planet-wide files' footers.
+  It is still twice as fast as the old public path, and it never breaks, but
+  it argues for phase 4.
+- **Divisions do not need tiles.** Name lookups take seconds and are cached
+  for 30 days.
 
 ## Costs
 
