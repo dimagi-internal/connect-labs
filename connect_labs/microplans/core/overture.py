@@ -27,9 +27,14 @@ _S3_BASE = f"s3://overturemaps-us-west-2/release/{OVERTURE_RELEASE}"
 logger = logging.getLogger(__name__)
 
 
-def theme_path(theme: str, type_: str) -> str:
-    """S3 glob for an Overture theme/type, e.g. theme_path('buildings', 'building')."""
-    return f"{_S3_BASE}/theme={theme}/type={type_}/*"
+def theme_path(theme: str, type_: str, release: str | None = None) -> str:
+    """S3 glob for an Overture theme/type, e.g. theme_path('buildings', 'building').
+
+    ``release`` defaults to the pin; naming another lets an extract be cut onto the
+    next release before the pin moves to it.
+    """
+    base = f"s3://overturemaps-us-west-2/release/{release}" if release else _S3_BASE
+    return f"{base}/theme={theme}/type={type_}/*"
 
 
 # ---------------------------------------------------------------------------

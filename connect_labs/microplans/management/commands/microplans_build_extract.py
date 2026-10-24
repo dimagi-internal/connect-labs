@@ -1,4 +1,4 @@
-"""Cut a same-region Overture country extract onto the CURRENT pinned release.
+"""Cut a same-region Overture country extract onto a release (the pinned one by default).
 
 Why this exists: the extract was originally cut by hand. When Overture pruned
 the release we were pinned to (2026-05-20.0) and the pin moved to 2026-08-19.0,
@@ -14,9 +14,15 @@ shape `_query_extract` reads back.
 
     manage.py microplans_build_extract nigeria
     manage.py microplans_build_extract nigeria --dry-run
+    manage.py microplans_build_extract nigeria --release 2026-10-21.0
 
 After it finishes, point EXTRACT_REGIONS at the new release — the command
 prints the one-line edit — and the router picks it up on the next fetch.
+
+``--release`` cuts onto a release other than the pin. That is how a pin moves
+without a slow window: cut every region onto the next release first (each into
+its own release prefix, so nothing being read changes), then move the pin and
+every region's release together in one deploy.
 """
 
 from __future__ import annotations
@@ -32,13 +38,18 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("regions", nargs="+", help="region name(s) from EXTRACT_REGIONS, e.g. nigeria")
         parser.add_argument(
+            "--release",
+            default=None,
+            help="the Overture release to cut (default: the pinned OVERTURE_RELEASE)",
+        )
+        parser.add_argument(
             "--dry-run",
             action="store_true",
             help="print the plan and the SQL without reading or writing anything",
         )
 
     def handle(self, *args, **opts):
-        release = overture.OVERTURE_RELEASE
+        release = opts["release"] or overture.OVERTURE_RELEASE
         for region in opts["regions"]:
             meta = overture.EXTRACT_REGIONS.get(region)
             if meta is None:
@@ -71,7 +82,7 @@ class Command(BaseCommand):
                         bbox,
                         FLOOR(ST_X(ST_Centroid(geometry)))::INT AS tx,
                         FLOOR(ST_Y(ST_Centroid(geometry)))::INT AS ty
-                    FROM read_parquet('{overture.theme_path("buildings", "building")}',
+                    FROM read_parquet('{overture.theme_path("buildings", "building", release)}',
                                       filename=false, hive_partitioning=true)
                     WHERE bbox.xmin >= {bbox[0]} AND bbox.xmax <= {bbox[2]}
                       AND bbox.ymin >= {bbox[1]} AND bbox.ymax <= {bbox[3]}
