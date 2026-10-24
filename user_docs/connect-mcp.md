@@ -212,9 +212,10 @@ The Data page at [labs.connect.dimagi.com/labs/data/](https://labs.connect.dimag
 
 ### How it works
 
-Use the **Querying** box at the top to choose what you want to query. Type to add a program or an opportunity; each appears as a chip you can remove. Adding a program means every opportunity belonging to it that you have access to — including any added to the program later. The page opens on whatever is already chosen in the Labs context (an opportunity or a program).
+The page is arranged in three regions: a **left rail**, a **canvas** in the centre, and an **agent panel** docked on the right.
 
-Once you have chosen your scope, use the two panels on the page:
+- **Left rail.** Contains the Space switcher, the current space's sources and tables, the queries saved in the space, and your personal saved queries under **My queries**.
+- **Canvas.** A tabbed workspace. Each tab holds an open query editor or a saved query you have opened. The last few things you opened stay as tabs so you can switch between them quickly.
+- **Agent panel.** The AI assistant for the Data page. It can open a query in a new canvas tab and run it there as you, open a saved query, open a visit, or fill in the Save dialog for you to confirm. It never gets rows back from the page — it can only act on the page on your behalf.
 
-- **Tables card.** Lists every table you can query and its columns. Click a table or column name to insert it into the editor. The `visits` table is always available; if you have chosen a workflow (see below), its pipeline tables appear here too.
-- **SQL editor.** Write a query against the available tables. The `visits` table has one row per visit and contains the opportunity, its LLO, the worker, the case, the visit status, the review and flag details, the rejection
+Use the **Querying** box (in the left rail, under **Sources
