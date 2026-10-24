@@ -170,18 +170,22 @@ describe('the results View reads the kept result', () => {
       `${URI}?page=2&page_size=100`,
     );
     expect(view.document.querySelector('tbody td').textContent).toBe('w100');
-    expect(view.text()).toContain('page 2 of 3');
+    expect(view.text()).toContain('Rows 101–200 of 250');
   });
 
-  it('changes the page size', async () => {
-    const select = view.document.getElementById('size');
-    select.value = '250';
-    select.dispatchEvent(new view.window.Event('change', { bubbles: true }));
-    await settle();
-    expect(view.requests('resources/read').at(-1).params.uri).toBe(
-      `${URI}?page=1&page_size=250`,
-    );
-    expect(view.document.querySelectorAll('tbody tr').length).toBe(250);
+  it('pages with a compact Rows … of … and ‹ ›, and no page-size picker', () => {
+    const pager = view.document.querySelector('.pager');
+    expect(pager.textContent).toContain('Rows 1–100 of 250');
+    expect(view.document.getElementById('prev').disabled).toBe(true);
+    expect(view.document.getElementById('next').disabled).toBe(false);
+    expect(view.document.getElementById('size')).toBeNull();
+    expect(view.document.querySelector('select')).toBeNull();
+  });
+
+  it('right-aligns a numeric column header with its numbers', () => {
+    const heads = view.document.querySelectorAll('th');
+    expect(heads[0].className).toBe('');
+    expect(heads[1].className).toBe('num');
   });
 
   it('sorts within the page', () => {
@@ -385,4 +389,40 @@ it('a withheld result offers the Data page and shows no rows', async () => {
   expect(view.text()).toContain('Sensitive data stays in Labs');
   expect(view.document.querySelector('table')).toBeNull();
   expect(view.document.getElementById('open')).not.toBeNull();
+});
+
+it('a result that fits on one page shows no paging controls', async () => {
+  const rows = ROWS.slice(0, 27);
+  const view = mount({
+    read: (uri) => ({
+      result: {
+        contents: [
+          {
+            uri,
+            mimeType: 'application/json',
+            text: JSON.stringify({ columns: COLUMNS, rows }),
+            _meta: {
+              'labs/result': {
+                page: 1,
+                page_size: 100,
+                pages: 1,
+                row_count: 27,
+                snapshot: true,
+              },
+            },
+          },
+        ],
+      },
+    }),
+  });
+  await settle();
+  view.notify('ui/notifications/tool-result', SENSITIVE_RESULT);
+  await settle();
+  expect(view.document.querySelectorAll('tbody tr').length).toBe(27);
+  expect(view.text()).toContain('27 rows');
+  expect(view.document.querySelector('.pager')).toBeNull();
+  expect(view.document.getElementById('prev')).toBeNull();
+  // Sorting a single page needs no "within this page" caveat either.
+  view.click('th[data-sort="1"]');
+  expect(view.text()).not.toContain('Sorted within this page only');
 });
