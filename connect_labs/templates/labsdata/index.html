@@ -40,6 +40,11 @@
     table.ex-table { border-collapse: collapse; width: 100%; font-size: 13px; }
     .ex-table th { position: sticky; top: 0; background: #fafaf9; text-align: left; font-weight: 600; color: #44403c; padding: 6px 10px; border-bottom: 1px solid #e7e5e4; white-space: nowrap; }
     .ex-table td { padding: 5px 10px; border-bottom: 1px solid #f5f5f4; font-variant-numeric: tabular-nums; vertical-align: top; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ex-table td.ex-drill { cursor: pointer; }
+    .ex-table td.ex-drill:hover { background: #eef2ff; color: #16006d; text-decoration: underline; text-underline-offset: 2px; }
+    .ex-trail { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; padding: 8px 12px; font-size: 13px; color: #1c1917; background: #eef2ff; border-bottom: 1px solid #e0e7ff; border-radius: 10px 10px 0 0; }
+    .ex-trail .ok { color: #166534; font-weight: 600; }
+    .ex-trail .off { color: #991b1b; font-weight: 600; }
     .ex-error { color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 12px; font-size: 13px; }
     .ex-muted { color: #a8a29e; }
     .ex-status { font-size: 12px; color: #57534e; padding: 8px 12px; border-top: 1px solid #f5f5f4; }
@@ -109,6 +114,7 @@
     window.LABSDATA = {
       describeUrl: "{% url 'labsdata:describe' %}",
       workflowsUrl: "{% url 'labsdata:workflows' %}",
+      drillUrl: "{% url 'labsdata:drill' %}",
       queryUrl: "{% url 'labsdata:query' %}",
       visitsUrl: "{% url 'labsdata:visits' %}",
       csrf: "{{ csrf_token }}",

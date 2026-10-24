@@ -13,7 +13,12 @@
   );
   const $ = (id) => document.getElementById(id);
   let lastResult = null;
+  let lastSql = '';
   let described = null;
+  // Clicking a cell opens the rows behind it; ``trail`` is how to get back. Each
+  // entry is a result as it was shown: its SQL, its rows, and the line above it.
+  const trail = [];
+  let banner = null;
   const opportunityById = new Map(options.opportunities.map((o) => [o.id, o]));
   const programById = new Map(options.programs.map((p) => [p.id, p]));
   const state = {
@@ -514,6 +519,7 @@
     );
     const tbody = el('tbody');
     const visitCol = data.columns.indexOf('visit_id');
+    const drillable = (data.drill && data.drill.columns) || [];
     data.rows.forEach((r) =>
       tbody.append(
         el(
@@ -522,12 +528,19 @@
           r.map((v, i) =>
             el(
               'td',
-              {
-                title:
-                  typeof v === 'object' && v !== null
-                    ? JSON.stringify(v)
-                    : String(v ?? ''),
-              },
+              drillable[i] && i !== visitCol
+                ? {
+                    class: 'ex-drill',
+                    title:
+                      'See the rows behind this, and the SQL that selects them',
+                    onclick: () => drillInto(r, i, data.columns[i]),
+                  }
+                : {
+                    title:
+                      typeof v === 'object' && v !== null
+                        ? JSON.stringify(v)
+                        : String(v ?? ''),
+                  },
               v === null
                 ? el('span', { class: 'ex-muted' }, 'null')
                 : i === visitCol
@@ -561,6 +574,7 @@
       el(
         'div',
         { class: 'ex-card' },
+        renderTrail(),
         el('div', { class: 'ex-table-wrap' }, table),
         el(
           'div',
@@ -568,10 +582,103 @@
           el('b', {}, `${data.row_count.toLocaleString()} rows`),
           data.truncated ? ' (truncated — raise max rows or aggregate)' : '',
           ` · ${data.elapsed_ms} ms · over ${opps}`,
+          drillable.some(Boolean)
+            ? ' · click a number to see the rows behind it'
+            : '',
         ),
       ),
     );
     $('ex-csv').disabled = !data.rows.length;
+  }
+
+  // What the shown result is, when it was reached by clicking a cell, and the way back.
+  function renderTrail() {
+    if (!banner && !trail.length) return '';
+    const parts = [];
+    if (trail.length)
+      parts.push(
+        el(
+          'button',
+          { type: 'button', class: 'ex-link', onclick: back },
+          '← Back to your query',
+        ),
+      );
+    if (banner) {
+      parts.push(
+        el(
+          'span',
+          {},
+          `Rows behind ${banner.column} = `,
+          el('b', {}, formatCell(banner.value)),
+          banner.group ? ` for ${banner.group}` : '',
+          `: ${banner.rows_behind.toLocaleString()} row${banner.rows_behind === 1 ? '' : 's'}`,
+        ),
+      );
+      if (banner.matches === true)
+        parts.push(el('span', { class: 'ok' }, '✓ matches the cell'));
+      else if (banner.matches === false)
+        parts.push(
+          el(
+            'span',
+            { class: 'off' },
+            `✗ the cell says ${formatCell(banner.value)} — check the query's conditions`,
+          ),
+        );
+      else
+        parts.push(
+          el('span', { class: 'ex-muted' }, `(${banner.description})`),
+        );
+    }
+    return el('div', { class: 'ex-trail' }, parts);
+  }
+
+  function formatCell(v) {
+    if (v === null || v === undefined) return 'null';
+    return typeof v === 'number' ? v.toLocaleString() : String(v);
+  }
+
+  async function drillInto(row, column, columnName) {
+    try {
+      const d = await post(cfg.drillUrl, {
+        ...selectionBody(),
+        sql: lastSql,
+        row,
+        column,
+      });
+      const groupCols = (lastResult.drill.kinds || [])
+        .map((kind, i) => (kind === 'group' && i !== column ? i : -1))
+        .filter((i) => i >= 0)
+        .map((i) => `${lastResult.columns[i]} = ${formatCell(row[i])}`);
+      trail.push({ sql: lastSql, result: lastResult, banner });
+      banner = {
+        column: columnName,
+        value: row[column],
+        group: groupCols.join(', '),
+        rows_behind: d.rows_behind,
+        matches: d.matches,
+        description: d.description,
+      };
+      $('ex-sql').value = d.sql;
+      await run({ keepTrail: true });
+    } catch (e) {
+      $('ex-result').prepend(
+        el(
+          'div',
+          { class: 'ex-error mb-2' },
+          e.message || 'Could not open the rows behind that cell.',
+        ),
+      );
+    }
+  }
+
+  function back() {
+    const prev = trail.pop();
+    if (!prev) return;
+    banner = prev.banner;
+    lastSql = prev.sql;
+    lastResult = prev.result;
+    $('ex-sql').value = prev.sql;
+    renderResult(prev.result);
   }
 
   // Row level: the whole visit -- every column and the full submitted form -- so a
@@ -624,7 +731,12 @@
     }
   }
 
-  async function run() {
+  async function run({ keepTrail = false } = {}) {
+    if (!keepTrail) {
+      // A query of the person's own starts a new trail.
+      trail.length = 0;
+      banner = null;
+    }
     if (!hasSelection()) {
       $('ex-result').replaceChildren(
         el(
@@ -640,11 +752,13 @@
       el('p', { class: 'text-sm ex-muted' }, 'Running…'),
     );
     try {
+      const sql = $('ex-sql').value;
       lastResult = await post(cfg.queryUrl, {
         ...selectionBody(),
-        sql: $('ex-sql').value,
+        sql,
         max_rows: Number($('ex-max').value) || 500,
       });
+      lastSql = sql;
       renderResult(lastResult);
     } catch (e) {
       lastResult = null;
@@ -692,7 +806,7 @@
     if (!e.target.closest('.ex-picker')) $('ex-add-results').hidden = true;
   });
   $('ex-wf-btn').addEventListener('click', showWorkflows);
-  $('ex-run').addEventListener('click', run);
+  $('ex-run').addEventListener('click', () => run());
   $('ex-csv').addEventListener('click', csv);
   $('ex-sql').addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {

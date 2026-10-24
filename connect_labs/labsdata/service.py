@@ -454,9 +454,59 @@ def query(
     out = {
         **result.as_dict(),
         **selection.as_dict(),
+        "drill": drillable(sql),
         "open_on_page": open_on_page_url(opportunity_ids, sql, program_ids=program_ids, workflow=workflow),
     }
     return shape_for_agent(out) if (for_agent and shaped) else out
+
+
+def drillable(sql: str) -> dict:
+    """Which result columns can be clicked through to the rows behind them, or why none can."""
+    from . import drill
+
+    try:
+        kinds = drill.shape(sql).kinds
+        return {"columns": [kind is not None for kind in kinds], "kinds": kinds}
+    except drill.NotDrillable as e:
+        return {"columns": [], "reason": str(e)}
+
+
+def drill_into(
+    caller: Caller, opportunity_ids, sql: str, row: list, column: int, *, program_ids=None, workflow=None
+) -> dict:
+    """The SQL selecting the rows behind one cell of ``sql``'s result, and how many there are.
+
+    The SQL is written from the query alone (``drill.py``); the count is a query of its
+    own, scoped, checked and audit-logged like any other. For a cell that counts rows
+    (``COUNT(*)``, ``COUNT(*) FILTER``, ``SUM(CASE WHEN .. THEN 1)``) the count should
+    equal the cell, and ``matches`` says whether it does.
+    """
+    from . import drill
+
+    try:
+        found = drill.drill(sql, list(row or []), int(column))
+    except drill.NotDrillable as e:
+        raise engine.QueryError("not_drillable", str(e)) from e
+    counted = query(
+        caller,
+        opportunity_ids,
+        f"SELECT COUNT(*) AS rows_behind FROM (\n{found.sql}\n) AS behind",
+        max_rows=1,
+        program_ids=program_ids,
+        workflow=workflow,
+    )
+    rows_behind = counted["rows"][0][0] if counted["rows"] else 0
+    cell = row[int(column)]
+    matches = None
+    if found.kind == drill.COUNTING and isinstance(cell, int | float) and not isinstance(cell, bool):
+        matches = int(cell) == rows_behind
+    return {
+        "sql": found.sql,
+        "kind": found.kind,
+        "description": found.description,
+        "rows_behind": rows_behind,
+        "matches": matches,
+    }
 
 
 def open_on_page_url(opportunity_ids, sql: str = "", *, program_ids=None, workflow: dict | None = None) -> str:
