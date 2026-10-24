@@ -39,7 +39,8 @@ jobs:
           # public.ecr.aws's anonymous pulls are rate-limited too: a pytest slice
           # failed on "toomanyrequests: Data limit exceeded" pulling redis there
           # (2026-10-15), and splitting pytest into three slices triples the pulls.
-          - source: public.ecr.aws/docker/library/redis:6
+          - source: docker.io/library/redis:6
+            fallback: public.ecr.aws/docker/library/redis:6
             target: ghcr.io/dimagi-internal/connect-labs-ci-redis:6
           # The FROM images of Dockerfile.node and Dockerfile.base. Build Node Image
           # failed on every frontend merge for an afternoon pulling node from
