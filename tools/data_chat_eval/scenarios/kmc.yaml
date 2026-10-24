@@ -330,6 +330,32 @@ scenarios:
         checks:
           - number: { value: ke_ghi.n, label: KE GHI approved visits }
 
+  - id: data-show-on-canvas
+    title: Data page -- the agent shows its query on the canvas (page_showQuery)
+    covers: the agent putting a query in the Data page's canvas, run there as the person
+    page: kmc_data
+    truth:
+      top: >-
+        select username, count(*) as n from visits where opportunity_id = 10132 and status = 'approved'
+        group by username order by n desc, username limit 1
+    turns:
+      - say: Show me approved visits per worker in the Kikapu opportunity (KMC - KE - Kikapu) on the canvas.
+        checks:
+          - canvas: { switched: true }
+          - text: { any_of: [top.username], gate: false }
+
+  - id: data-propose-save
+    title: Data page -- the agent proposes saving a query (page_proposeSave)
+    covers: filling the Save dialog for the person; nothing saved until they click
+    page: kmc_data
+    turns:
+      - say: >-
+          Write a query for approved visits per opportunity, show it on the canvas, and set it up for me to
+          save as "Approved visits per opportunity".
+        checks:
+          - canvas: { switched: true }
+          - canvas: { save_proposed: true }
+
 # ---- data spaces (the Data page's shared places; tools/data_chat_eval/spaces.py) ----
 # Each walks one space's life on synthetic data: create, open, held to its sources (MCP),
 # the agent's page actions (showQuery, proposeSave + the person's Save click), one chat turn
@@ -345,7 +371,10 @@ spaces:
       group by username order by approved_visits desc, username
     truth_sql: select count(*) as approved_visits from visits where status = 'approved'
     truth_column: approved_visits
-    ask: How many approved visits does this space have in total? Show the per-worker breakdown on the canvas.
+    ask: >-
+      How many approved visits does this space have in total? Show the approved visits per worker on the
+      canvas, and propose saving that query as "Approved visits per worker".
+    save_as: Approved visits per worker
 
 # ---- containment (tools/data_chat_eval/containment.py) --------------------------------
 # labs' data_* tools called DIRECTLY as ace (PAT, no chat): correctness under the reader

@@ -147,6 +147,10 @@ def main(argv=None) -> int:
         "preflight": problems,
     }
     md, js = report.write(run_dir, meta, entries)
+    from . import vault
+
+    if vault.scrub_dir(run_dir):  # the vault values must never reach a file; say so if they tried
+        print("note: vault values were scrubbed from the run's files", file=sys.stderr)
     print(md.read_text())
     print(f"\nreport: {md}\n        {js}")
     return 0 if all(e["status"] == "PASS" for e in entries) else 1
@@ -238,12 +242,55 @@ def run_one(scenario, run_dir: Path, args) -> dict:
                 except ValueError as e:
                     r = checks.Result(str(c), False, f"bad check: {e}")
                 entry["checks"].append({"turn": i, **r.__dict__})
+        if cap.sensitive and cap.turns:
+            entry["sensitive"] = True
+            entry["history"] = cap.history
+            entry["checks"] += sealed_checks(cap, len(cap.turns))
         (out / "reply.md").write_text(
             "\n\n".join(f"## Turn {i}\n\n> {t.say}\n\n{t.reply}" for i, t in enumerate(cap.turns, 1))
         )
     print(f"[{scenario.id}] done: {'BLOCKED ' + cap.blocked if cap.blocked else 'captured'}", flush=True)
     entry["_capture"] = cap
     return entry
+
+
+ROUTE_SEALED = (
+    "canopy-web: a private conversation in the embedded panel (frontend/src/vault/sealedChat.ts, "
+    "useSealedConversation, the panel's sealed banner and unlock form)"
+)
+
+
+def sealed_checks(cap, last: int) -> list[dict]:
+    """A private (sealed) conversation: live turns needed no unlock, and after a reload the
+    panel offers it again, ace's vault key opens it, and the last reply reads again."""
+    h = cap.history or {}
+    banners = [i for i, t in enumerate(cap.turns, 1) if (t.unlock or {}).get("banner")]
+    out = [
+        ("live replies need no unlock", not banners, f"sealed banner during turn(s) {banners}" if banners else "none"),
+        ("sealed conversation reopens after a reload", h.get("reopened"), h.get("error") or str(h)),
+        (
+            "ace's vault key unlocks it",
+            h.get("unlocked") or (h.get("reopened") and not h.get("banner")),
+            h.get("error")
+            or ("unlocked" if h.get("unlocked") else "no banner shown" if not h.get("banner") else "locked"),
+        ),
+        (
+            "the last reply reads again",
+            h.get("reply_visible"),
+            "visible" if h.get("reply_visible") else "not found in the panel",
+        ),
+    ]
+    return [
+        {
+            "turn": last,
+            "name": name,
+            "passed": bool(ok),
+            "detail": str(detail)[:300],
+            "gate": True,
+            "route": ROUTE_SEALED,
+        }
+        for name, ok, detail in out
+    ]
 
 
 def judge_one(scenario, entry, run_dir: Path, args) -> dict:
