@@ -140,9 +140,8 @@ def preflight(mcp, canopy) -> tuple[list[str], str]:
         problems.append(f"FATAL {SESSION_FILE} missing; run the ace plugin's /ace:labs-login")
     else:
         cookies = json.loads(SESSION_FILE.read_text()).get("cookies", [])
-        labs = [
-            c for c in cookies if c.get("domain", "").endswith("labs.connect.dimagi.com") and c["name"] == "sessionid"
-        ]
+        host = "labs.connect.dimagi.com"
+        labs = [c for c in cookies if c.get("domain", "").lstrip(".") == host and c["name"] == "sessionid"]
         if not labs or max(c.get("expires", 0) for c in labs) < time.time():
             problems.append("FATAL ace's labs session cookie has expired; run the ace plugin's /ace:labs-login")
     if not canopy.enabled or not canopy.me():
