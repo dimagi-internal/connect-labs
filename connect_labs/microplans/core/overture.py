@@ -1,108 +1,219 @@
-"""Shared Overture Maps access via DuckDB over the public S3 Parquet.
+"""Overture Maps data that labs holds, read with DuckDB.
 
-Both building footprints (footprints.py) and admin boundaries (boundaries.py)
-query Overture the same way: DuckDB with the spatial + httpfs extensions,
-pointed at a writable extension dir (the labs container runs with
-HOME=/nonexistent, so DuckDB can't use the default ~/.duckdb).
+Microplans reads four Overture themes: buildings (footprints.py), admin
+divisions (boundaries.py), and major roads + water (barriers.py). Labs never
+reads them from Overture's public bucket at request time. Each Overture release
+we use is copied into labs' own bucket as a **snapshot**, and a manifest names
+the one labs reads. See docs/superpowers/specs/2026-10-24-overture-mirror-design.md.
+
+    s3://<EXTRACT_BUCKET>/overture/
+      CURRENT.json                               {"release": R, "previous": P, ...}
+      snapshots/<R>/raw/theme=.../type=.../*      byte-for-byte copy of Overture's release/<R>/
+      snapshots/<R>/tiles/<kind>/<region>/tx=/ty= our 1-degree tiles, the fast path
+      snapshots/<R>/READY.json                    written last: which tiles exist, and the checks
+
+Why: Overture PRUNES old releases. When the code pinned a release and read it
+from Overture's bucket, the pin was a timer — in October 2026 it ran out, every
+live read died on `No files found that match the pattern`, and barriers
+swallowed the error, so grouping ran without roads or rivers. Now a release
+only stops being readable when labs deletes it, and a failed refresh leaves
+labs reading the snapshot it already holds: stale, never broken.
+
+The refresh (copy -> cut -> check -> READY -> switch) is
+``manage.py overture_refresh``. Everything that reads Overture goes through
+``active_release()`` / ``theme_path()`` / ``tile_route()`` here.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import tempfile
 
-# Overture release. Bump as Overture cuts monthly releases; the S3 layout is stable.
-#
-# Overture PRUNES old releases from the bucket — they are not kept forever. A pin
-# left behind long enough stops resolving, and the failure is not obvious: the
-# extract path keeps working for a country that has one (Nigeria), while every
-# other country's live read dies on `No files found that match the pattern`,
-# which reads like a query bug rather than an expired pin. `verify_release()`
-# turns that into a sentence naming what is actually available.
-OVERTURE_RELEASE = "2026-10-21.0"
-_S3_BASE = f"s3://overturemaps-us-west-2/release/{OVERTURE_RELEASE}"
-
+from django.conf import settings
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
+# The release read when there is no manifest at all: a cold cache with S3
+# unreadable, or a test run. NOT the normal pin — CURRENT.json is. Keep it on a
+# release labs holds a snapshot of, or a cold start reads nothing.
+OVERTURE_RELEASE = "2026-10-21.0"
 
-def theme_path(theme: str, type_: str, release: str | None = None) -> str:
-    """S3 glob for an Overture theme/type, e.g. theme_path('buildings', 'building').
+SOURCE_BUCKET = "overturemaps-us-west-2"
+EXTRACT_BUCKET = "labs-jj-exports-dev-858923557655-us-east-1-an"
+OVERTURE_PREFIX = "overture"
+MANIFEST_KEY = f"{OVERTURE_PREFIX}/CURRENT.json"
 
-    ``release`` defaults to the pin; naming another lets an extract be cut onto the
-    next release before the pin moves to it.
-    """
-    base = f"s3://overturemaps-us-west-2/release/{release}" if release else _S3_BASE
-    return f"{base}/theme={theme}/type={type_}/*"
+# How long a read trusts the manifest before asking S3 again. A switch reaches
+# every process within this; a rollback too.
+MANIFEST_TTL_SECONDS = 600
+_CACHE_KEY = "microplans:overture:json:{}"
+_LAST_GOOD_KEY = "microplans:overture:last-good:{}"
+
+# Coverage: the countries the refresh cuts tiles for — every country we hold
+# admin boundaries for, so a planner can never pick an area that lands on the
+# slower raw read. bbox is the Extent() of OUR OWN AdminBoundary geometry per
+# iso_code, padded 0.1deg. ``sample`` is a small box the refresh checks every
+# release (a city, so buildings and roads are certain to be there); ``iso2`` is
+# the Overture divisions country code the check resolves.
+REGIONS: dict[str, dict] = {
+    "nigeria": {"iso2": "NG", "bbox": (2.6, 4.2, 14.7, 13.9), "sample": (8.50, 11.98, 8.54, 12.02)},
+    # The next five hold, with Nigeria, 91% of every boundary row we serve.
+    "liberia": {"iso2": "LR", "bbox": (-11.6, 4.3, -7.3, 8.7), "sample": (-10.81, 6.28, -10.77, 6.32)},
+    "drc": {"iso2": "CD", "bbox": (12.1, -13.6, 31.4, 5.5), "sample": (15.29, -4.34, 15.33, -4.30)},
+    "kenya": {"iso2": "KE", "bbox": (33.8, -4.8, 42.0, 5.5), "sample": (36.80, -1.31, 36.84, -1.27)},
+    "zambia": {"iso2": "ZM", "bbox": (21.9, -18.2, 33.8, -8.2), "sample": (28.26, -15.44, 28.30, -15.40)},
+    "ethiopia": {"iso2": "ET", "bbox": (32.9, 3.3, 48.1, 15.0), "sample": (38.74, 9.01, 38.78, 9.05)},
+    # The rest of the countries with a configured boundary source.
+    "tanzania": {"iso2": "TZ", "bbox": (29.2, -11.9, 40.5, -0.9), "sample": (39.26, -6.81, 39.30, -6.77)},
+    "cote_divoire": {"iso2": "CI", "bbox": (-8.7, 4.2, -2.4, 10.8), "sample": (-4.03, 5.33, -3.99, 5.37)},
+    "mozambique": {"iso2": "MZ", "bbox": (30.1, -27.0, 40.9, -10.4), "sample": (32.56, -25.99, 32.60, -25.95)},
+    "malawi": {"iso2": "MW", "bbox": (32.6, -17.2, 36.0, -9.3), "sample": (33.77, -13.98, 33.81, -13.94)},
+    "sierra_leone": {"iso2": "SL", "bbox": (-13.4, 6.8, -10.2, 10.1), "sample": (-13.25, 8.46, -13.21, 8.50)},
+}
+
+# What gets tiled. Divisions are read from the raw snapshot instead: their reads
+# are by country/name/id rather than by area (so a tile router has nothing to
+# route on), they are cached for 30 days, and the whole theme is a few GB.
+TILE_KINDS = ("buildings", "segments", "water")
 
 
 # ---------------------------------------------------------------------------
-# Same-region (us-east-1) full-country building extracts.
-#
-# Reading the planet-scale Overture release lives in us-west-2; the labs worker
-# is in us-east-1, and the cross-region parallel footer reads don't overlap, so a
-# first-seen area costs ~4-8 min. We pre-extract whole countries into the labs
-# us-east-1 bucket (one Parquet per 1-degree tile, carrying lon/lat/area_m2/
-# dataset/confidence/bbox/geom_wkb). An area fully inside a listed region — and on
-# the matching Overture release — is served from a couple of same-region tiles in
-# well under a second; anything else falls back to the live Overture read. Because
-# we cache the *source* (the whole country), every first-seen ward inside it is
-# already fast — there is nothing to pre-warm per area.
-#
-# Refresh per Overture release: re-run the extract into a new
-# `<bucket>/overture/<region>/<release>/` prefix and bump the release here.
-EXTRACT_BUCKET = "labs-jj-exports-dev-858923557655-us-east-1-an"
-_EXTRACT_BASE = f"s3://{EXTRACT_BUCKET}/overture"
+# Manifest
 
-# region name -> (release, bbox as (minx, miny, maxx, maxy)).
-# Same-region country extracts. A country listed here whose ``release`` matches
-# OVERTURE_RELEASE is read from our own us-east-1 copy (sub-second) instead of
-# the cross-region public bucket (~6 min cold on the worker).
-#
-# The release must match to be used, so bumping OVERTURE_RELEASE without
-# re-extracting degrades to the live read rather than serving stale buildings —
-# safe, but it silently gives up the speedup. So the pin never moves alone: cut
-# every region onto the next release first (`microplans_build_extract <region>
-# --release <next>`, into its own prefix), read each back, then move the pin and
-# every region below in one change.
-# Every country we hold admin boundaries for, so a planner can never pick an area
-# that lands on the slow cross-region live read. bbox values are the Extent() of
-# OUR OWN AdminBoundary geometry per iso_code, padded 0.1deg for float noise —
-# derived rather than copied off a map, so an extract covers exactly what is
-# pickable and nothing more.
-#
-# ``release`` is the Overture release the extract was CUT from:
-#   a matching release  -> read our us-east-1 copy (sub-second)
-#   a different release -> STALE; bypassed, and warned about on every fetch
-#   None                -> declared but never cut yet; bypassed, NOT warned
-# The None case is the difference between "someone needs to re-cut this" and
-# "we have not got to this country yet", which are not the same problem.
-EXTRACT_REGIONS: dict[str, dict] = {
-    "nigeria": {"release": "2026-10-21.0", "bbox": (2.6, 4.2, 14.7, 13.9)},
-    # The next five hold, with Nigeria, 91% of every boundary row we serve.
-    "liberia": {"release": "2026-10-21.0", "bbox": (-11.6, 4.3, -7.3, 8.7)},
-    "drc": {"release": "2026-10-21.0", "bbox": (12.1, -13.6, 31.4, 5.5)},
-    "kenya": {"release": "2026-10-21.0", "bbox": (33.8, -4.8, 42.0, 5.5)},
-    "zambia": {"release": "2026-10-21.0", "bbox": (21.9, -18.2, 33.8, -8.2)},
-    "ethiopia": {"release": "2026-10-21.0", "bbox": (32.9, 3.3, 48.1, 15.0)},
-    # The rest of the countries with a configured boundary source.
-    "tanzania": {"release": "2026-10-21.0", "bbox": (29.2, -11.9, 40.5, -0.9)},
-    "cote_divoire": {"release": "2026-10-21.0", "bbox": (-8.7, 4.2, -2.4, 10.8)},
-    "mozambique": {"release": "2026-10-21.0", "bbox": (30.1, -27.0, 40.9, -10.4)},
-    "malawi": {"release": "2026-10-21.0", "bbox": (32.6, -17.2, 36.0, -9.3)},
-    "sierra_leone": {"release": "2026-10-21.0", "bbox": (-13.4, 6.8, -10.2, 10.1)},
-}
+
+def _read_json(key: str) -> dict | None:
+    """One JSON object from labs' bucket, or None if it is absent or unreadable."""
+    import boto3
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    try:
+        body = boto3.client("s3", region_name="us-east-1").get_object(Bucket=EXTRACT_BUCKET, Key=key)["Body"]
+        return json.loads(body.read())
+    except (BotoCoreError, ClientError, ValueError) as exc:
+        logger.info("overture: could not read s3://%s/%s (%s)", EXTRACT_BUCKET, key, exc)
+        return None
+
+
+def _cached_json(key: str) -> dict | None:
+    """``_read_json`` behind the cache, keeping the last good value through an S3 outage.
+
+    A manifest read that fails must not change what labs reads: the last value
+    any process saw is kept with no expiry and used until S3 answers again.
+    """
+    if not getattr(settings, "OVERTURE_SNAPSHOTS_READ_MANIFEST", True):
+        return None
+    hit = cache.get(_CACHE_KEY.format(key))
+    if hit is not None:
+        return hit or None  # {} caches "absent"
+    value = _read_json(key)
+    if value is None:
+        last = cache.get(_LAST_GOOD_KEY.format(key))
+        if last is not None:
+            return last
+    cache.set(_CACHE_KEY.format(key), value or {}, MANIFEST_TTL_SECONDS)
+    if value:
+        cache.set(_LAST_GOOD_KEY.format(key), value, None)
+    return value
+
+
+def manifest() -> dict:
+    """CURRENT.json: ``{"release", "previous", "switched_at", ...}``, or {}."""
+    return _cached_json(MANIFEST_KEY) or {}
+
+
+def active_release() -> str:
+    """The release labs reads now: the manifest's, else the floor."""
+    return manifest().get("release") or OVERTURE_RELEASE
+
+
+def ready(release: str | None = None) -> dict | None:
+    """A snapshot's READY.json (which tiles exist, and the checks it passed), or None."""
+    release = release or active_release()
+    return _cached_json(f"{snapshot_prefix(release)}/READY.json")
+
+
+def forget_cached_manifest(release: str | None = None) -> None:
+    """Drop the cached manifest (and a release's READY) so the next read asks S3."""
+    keys = [MANIFEST_KEY] + ([f"{snapshot_prefix(release)}/READY.json"] if release else [])
+    for key in keys:
+        cache.delete(_CACHE_KEY.format(key))
+
+
+# ---------------------------------------------------------------------------
+# Paths
+
+
+def snapshot_prefix(release: str) -> str:
+    """Key prefix (no bucket) of one release's snapshot."""
+    return f"{OVERTURE_PREFIX}/snapshots/{release}"
+
+
+def snapshot_base(release: str | None = None) -> str:
+    return f"s3://{EXTRACT_BUCKET}/{snapshot_prefix(release or active_release())}"
+
+
+def theme_path(theme: str, type_: str, release: str | None = None) -> str:
+    """S3 glob for an Overture theme/type in labs' raw snapshot.
+
+    ``release`` defaults to the active one; the refresh names the release it is
+    building so it can read a snapshot before labs switches to it.
+    """
+    return f"{snapshot_base(release)}/raw/theme={theme}/type={type_}/*"
+
+
+def source_path(theme: str, type_: str, release: str) -> str:
+    """The same glob in Overture's own bucket. Only the refresh reads this."""
+    return f"s3://{SOURCE_BUCKET}/release/{release}/theme={theme}/type={type_}/*"
+
+
+def tile_prefix(kind: str, region: str, release: str | None = None) -> str:
+    return f"{snapshot_base(release)}/tiles/{kind}/{region}"
+
+
+def tile_glob(kind: str, region: str, release: str | None = None) -> str:
+    """The hive-partitioned (tx/ty) tile glob for one kind in one region."""
+    return f"{tile_prefix(kind, region, release)}/**/*.parquet"
+
+
+def tile_route(
+    bounds: tuple[float, float, float, float],
+    kind: str,
+    release: str | None = None,
+    filters: dict | None = None,
+) -> str | None:
+    """The region whose tiles of ``kind`` fully contain ``bounds``, else None.
+
+    Only tiles READY.json lists count, so a region the refresh has not cut (or a
+    snapshot with no READY at all) routes to the raw read rather than to tiles
+    that may be partial. Full containment, not intersection: an area straddling
+    the edge of a region's rectangle would otherwise get a PARTIAL answer.
+
+    ``filters`` is what the reader would select (e.g. the road classes). Tiles
+    cut under a different selection are not used: changing ``ROAD_CLASSES``
+    must not keep serving tiles that left the new classes out.
+    """
+    info = ready(release) or {}
+    if filters is not None and (info.get("filters") or {}).get(kind) != filters:
+        return None
+    minx, miny, maxx, maxy = bounds
+    for name, bbox in (info.get("tiles", {}).get(kind) or {}).items():
+        bx0, by0, bx1, by1 = bbox
+        if minx >= bx0 and miny >= by0 and maxx <= bx1 and maxy <= by1:
+            return name
+    return None
 
 
 def available_releases(con=None) -> list[str]:
-    """Release ids currently present in the public Overture bucket, newest first."""
+    """Release ids currently published in Overture's bucket, newest first."""
     own = con is None
     con = con or connect()
     try:
         rows = con.execute(
-            "SELECT DISTINCT regexp_extract(file, 'release/([^/]+)/', 1) AS r "
-            "FROM glob('s3://overturemaps-us-west-2/release/*/theme=buildings/type=building/*.parquet') "
+            f"SELECT DISTINCT regexp_extract(file, 'release/([^/]+)/', 1) AS r "
+            f"FROM glob('s3://{SOURCE_BUCKET}/release/*/theme=buildings/type=building/*.parquet') "
             "ORDER BY r DESC"
         ).fetchall()
         return [r[0] for r in rows if r[0]]
@@ -111,103 +222,17 @@ def available_releases(con=None) -> list[str]:
             con.close()
 
 
-def stale_extracts() -> list[str]:
-    """Extract regions cut from a release we are no longer pinned to.
-
-    A stale extract is not an error — the router degrades to the live read, which
-    is correct. It is a silent loss of the whole point of the extract (Nigeria:
-    ~5s becomes ~350s), so it is worth being able to see rather than rediscover
-    from a user complaining that sampling got slow.
-    """
-    return [
-        name
-        for name, meta in EXTRACT_REGIONS.items()
-        if meta["release"] is not None and meta["release"] != OVERTURE_RELEASE
-    ]
-
-
-def uncut_regions() -> list[str]:
-    """Regions declared but never extracted (``release is None``).
-
-    Not an error and deliberately NOT part of ``stale_extracts()``: a country we
-    have not cut yet is a backlog item, while a country cut from a release we no
-    longer read is a regression someone introduced. Warning about both on every
-    fetch would bury the second in the first.
-    """
-    return [name for name, meta in EXTRACT_REGIONS.items() if meta["release"] is None]
-
-
-def verify_release_quietly() -> None:
-    """The stale-extract half of :func:`verify_release`, with no bucket listing.
-
-    ``verify_release`` also probes the public bucket to name what is available,
-    which is a network round-trip and can raise. That is right for a CLI and
-    wrong for a hot fetch path, so the cheap local check lives here and gets
-    called on every fetch — a warning that never runs is not a warning.
-    """
-    stale = stale_extracts()
-    if stale:
-        logger.warning(
-            "Overture extracts %s are cut from an older release than the pinned %s, so they are "
-            "bypassed for the slow live read (~350s vs ~5s per uncached area). "
-            "Re-cut them: manage.py microplans_build_extract %s",
-            ", ".join(stale),
-            OVERTURE_RELEASE,
-            " ".join(stale),
-        )
-
-
-def verify_release(con=None) -> None:
-    """Raise if the pinned release is no longer published.
-
-    Cheap enough to call before a long fetch, and the only thing that makes an
-    expired pin legible: the raw DuckDB error names a glob, not the cause.
-    """
-    stale = stale_extracts()
-    if stale:
-        logger.warning(
-            "Overture extracts %s were cut from an older release than the pinned %s, so they "
-            "are being bypassed for the slow live read. Re-extract them onto %s.",
-            ", ".join(stale),
-            OVERTURE_RELEASE,
-            OVERTURE_RELEASE,
-        )
-
-    releases = available_releases(con)
-    if releases and OVERTURE_RELEASE not in releases:
-        raise RuntimeError(
-            f"Overture release {OVERTURE_RELEASE!r} is no longer published — it has been "
-            f"pruned from the bucket. Available: {', '.join(releases[:4])}. "
-            "Bump OVERTURE_RELEASE, and re-extract any EXTRACT_REGIONS country onto the "
-            "new release or it silently falls back to the slow live read."
-        )
-
-
-def extract_glob(region_name: str) -> str:
-    """The hive-partitioned tile glob for a region's same-region extract."""
-    rel = EXTRACT_REGIONS[region_name]["release"]
-    return f"{_EXTRACT_BASE}/{region_name}/{rel}/**/*.parquet"
-
-
-def covering_region(bounds: tuple[float, float, float, float]) -> str | None:
-    """Name of the extract region whose bbox fully contains `bounds`
-    (minx, miny, maxx, maxy) on the active Overture release, else None.
-
-    The release check means bumping ``OVERTURE_RELEASE`` without re-extracting
-    safely falls back to the live read rather than serving stale buildings.
-    """
-    minx, miny, maxx, maxy = bounds
-    for name, meta in EXTRACT_REGIONS.items():
-        if meta["release"] != OVERTURE_RELEASE:
-            continue
-        bx0, by0, bx1, by1 = meta["bbox"]
-        if minx >= bx0 and miny >= by0 and maxx <= bx1 and maxy <= by1:
-            return name
-    return None
+# ---------------------------------------------------------------------------
+# DuckDB
 
 
 def connect():
-    """Return a DuckDB connection with spatial + httpfs loaded and a writable home."""
+    """Return a DuckDB connection with spatial + httpfs loaded and a writable home.
+
+    Labs' bucket (snapshots) is read with the AWS credential chain in us-east-1;
+    Overture's public bucket, which only the refresh reads, needs no credentials
+    and lives in us-west-2.
+    """
     import duckdb
 
     ext_dir = os.path.join(tempfile.gettempdir(), "duckdb_ext")
@@ -217,33 +242,25 @@ def connect():
     con.execute(f"SET extension_directory='{ext_dir}';")
     con.execute("INSTALL spatial; LOAD spatial; INSTALL httpfs; LOAD httpfs;")
     con.execute("SET s3_region='us-west-2';")
-    # Credentials for the private same-region extract bucket (us-east-1). Scoped so
-    # only those reads use these creds + region; the public Overture release reads
-    # keep the global us-west-2 region above. credential_chain resolves to the AWS
-    # env/profile locally and the Fargate task role on the worker.
-    # Best-effort: the extract is an optimization, and the public Overture bucket
-    # needs no credentials at all. DuckDB validates a credential_chain secret at
-    # CREATE time, so on a machine with no default AWS credential this raised and
-    # took the whole connection down with it — killing the public read that would
-    # have worked. A missing credential now costs the fast path, nothing more.
+    # Scoped so only reads of labs' bucket use these credentials + region.
+    # Best-effort: DuckDB validates a credential_chain secret at CREATE time, so on
+    # a machine with no AWS credential this raises; the connection must survive it
+    # (a test, or a laptop reading only Overture's public bucket).
     try:
         con.execute(
-            "CREATE OR REPLACE SECRET labs_extract "
+            "CREATE OR REPLACE SECRET labs_overture "
             "(TYPE s3, PROVIDER credential_chain, REGION 'us-east-1', "
             f"SCOPE 's3://{EXTRACT_BUCKET}');"
         )
     except Exception as exc:  # noqa: BLE001 — any credential failure degrades the same way
-        logger.info("Overture extract credentials unavailable (%s); using the public read only", exc)
-    # A footprint/boundary read globs the planet-scale Overture release (~512 Parquet
-    # files) and prunes row groups by the bbox column statistics — work dominated by
-    # reading each file's footer over S3 (network I/O), not CPU. The labs worker runs
-    # on 1 vCPU, so DuckDB defaults its thread pool to a single thread and reads those
-    # 512 footers sequentially, cross-region (worker us-east-1 -> bucket us-west-2):
-    # a cold Madobi-scale area takes ~4-8 min. Because the reads are I/O-bound, extra
-    # threads overlap the network waits even on a single core, so we raise the pool
-    # explicitly — measured: the same cold query drops from ~230s (threads=1) to ~20s.
-    # http_metadata_cache lets the second arm in a two-arm generate reuse the first
-    # arm's already-read Parquet footers within the same connection.
+        logger.info("overture: labs bucket credentials unavailable (%s)", exc)
+    # A raw read globs a planet-scale theme (~500 Parquet files) and prunes row
+    # groups by the bbox column statistics: work dominated by reading each file's
+    # footer over S3, not CPU. The labs worker has 1 vCPU, so DuckDB would default
+    # to one thread and read those footers one after another; because the reads
+    # are I/O-bound, more threads overlap the waits even on one core (measured
+    # cross-region: ~230s at threads=1, ~20s at 8). The metadata cache lets a
+    # second query on the same connection reuse footers already read.
     con.execute("SET threads TO 8;")
     con.execute("SET enable_http_metadata_cache=true;")
     return con

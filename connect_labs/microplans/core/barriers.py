@@ -1,11 +1,17 @@
 """Physical barriers (major roads, railways, water) for barrier-aware WAG grouping.
 
 A work-area group should never require crossing a river or a major road, so the
-barrier-aware grouper needs the *lines* of those features. We fetch them from
-Overture (transportation/segment for roads + rail; base/water for rivers/lakes)
-with the same DuckDB pipeline as buildings, and cache the merged line geometry per
-area (durable Postgres cache, keyed by geometry hash) — the read is a cold live
-planet-scale query the first time, then instant.
+barrier-aware grouper needs the *lines* of those features. We read them from
+labs' Overture snapshot (transportation/segment for roads + rail; base/water for
+rivers/lakes; overture.py) with the same DuckDB pipeline as buildings, and cache
+the merged line geometry per area (durable Postgres cache, keyed by geometry
+hash) — tiles or the raw snapshot the first time, then instant.
+
+A failed read RAISES. It used to be caught and logged here, which returned "no
+barriers" — and fetch_barriers then cached that as the area's answer. That is
+how October 2026's expired Overture release made grouping run without roads or
+rivers with nothing visible anywhere. Callers that choose to degrade to plain
+grouping do so themselves, and log it.
 
 Only MAJOR roads split groups (motorway/trunk/primary/secondary). Minor/residential
 streets are deliberately excluded — splitting on them would fragment every block.
@@ -36,7 +42,7 @@ _MAX_ROWS = 200_000
 
 def _area_hash(wkt: str) -> str:
     # `barrier1` namespaces the key; bump if the barrier query/definition changes.
-    return hashlib.sha256(f"barrier1|{overture.OVERTURE_RELEASE}|{wkt}".encode()).hexdigest()
+    return hashlib.sha256(f"barrier1|{overture.active_release()}|{wkt}".encode()).hexdigest()
 
 
 def fetch_barriers(area: BaseGeometry, allow_remote: bool = True) -> BaseGeometry | None:
@@ -62,7 +68,7 @@ def fetch_barriers(area: BaseGeometry, allow_remote: bool = True) -> BaseGeometr
         with transaction.atomic():
             BarrierArea.objects.create(
                 area_hash=h,
-                overture_release=overture.OVERTURE_RELEASE,
+                overture_release=overture.active_release(),
                 n_features=n,
                 geom_json=(mapping(geom) if geom is not None else None),
             )
@@ -85,11 +91,7 @@ def barriers_for_areas(areas: list[dict] | None, allow_remote: bool = True) -> B
             g = resolve_area(a)
         except Exception:  # noqa: BLE001
             continue
-        try:
-            bg = fetch_barriers(g, allow_remote=allow_remote)
-        except Exception:  # noqa: BLE001
-            logger.warning("microplans barriers: per-area fetch failed", exc_info=True)
-            continue
+        bg = fetch_barriers(g, allow_remote=allow_remote)
         if bg is not None and not bg.is_empty:
             geoms.append(bg)
     if not geoms:
@@ -117,45 +119,79 @@ def _lines_from_rows(rows) -> list:
     return out
 
 
+def segment_filters() -> dict:
+    """What the barrier read selects from transportation/segment. Tiles record it."""
+    return {"road_classes": list(ROAD_CLASSES), "rail": True}
+
+
+def water_filters() -> dict:
+    """What the barrier read selects from base/water. Tiles record it."""
+    return {"water_classes": list(WATER_CLASSES)}
+
+
+# bbox OVERLAP pruning (not containment): a through-road's bbox extends past the
+# ward, so containment would wrongly drop exactly the barriers we want.
+_BBOX_OVERLAP = "bbox.xmin <= ? AND bbox.xmax >= ? AND bbox.ymin <= ? AND bbox.ymax >= ?"
+
+
+def _tile_sql(kind: str, region: str) -> str:
+    """Lines of one kind from a region's tiles. A feature is written to every tile
+    its bbox touches, so it is read once per tile it spans: DISTINCT on its id."""
+    return f"""
+        SELECT ST_AsGeoJSON(ST_GeomFromWKB(any_value(geom_wkb))) AS g
+        FROM read_parquet('{overture.tile_glob(kind, region)}', hive_partitioning=true)
+        WHERE tx BETWEEN ? AND ? AND ty BETWEEN ? AND ?
+          AND {_BBOX_OVERLAP}
+          AND ST_Intersects(ST_GeomFromWKB(geom_wkb), ST_GeomFromText(?))
+        GROUP BY id
+        LIMIT {_MAX_ROWS}
+    """
+
+
 def _query_barriers(area: BaseGeometry) -> BaseGeometry | None:
-    """Live Overture read (bbox-pruned) for major roads + rail + water in the area."""
+    """Major roads + rail + water in the area, from labs' snapshot (tiles, else raw)."""
+    import math
+
     minx, miny, maxx, maxy = area.bounds
     wkt = area.wkt
     con = overture.connect()
-    # bbox OVERLAP pruning (not containment): a through-road's bbox extends past the
-    # ward, so containment would wrongly drop exactly the barriers we want.
-    bbox_overlap = "bbox.xmin <= ? AND bbox.xmax >= ? AND bbox.ymin <= ? AND bbox.ymax >= ?"
+    overlap = [maxx, minx, maxy, miny]
+    tiles = [math.floor(minx), math.floor(maxx), math.floor(miny), math.floor(maxy)]
     lines = []
 
-    road_in = ", ".join(f"'{c}'" for c in ROAD_CLASSES)  # constant whitelist, safe to inline
-    roads_sql = f"""
-        SELECT ST_AsGeoJSON(geometry) AS g
-        FROM read_parquet('{overture.theme_path('transportation', 'segment')}',
-                          filename=false, hive_partitioning=true)
-        WHERE {bbox_overlap}
-          AND ST_Intersects(geometry, ST_GeomFromText(?))
-          AND ((subtype = 'road' AND class IN ({road_in})) OR subtype = 'rail')
-        LIMIT {_MAX_ROWS}
-    """
-    try:
-        lines += _lines_from_rows(con.execute(roads_sql, [maxx, minx, maxy, miny, wkt]).fetchall())
-    except Exception:  # noqa: BLE001
-        logger.warning("microplans barriers: roads/rail query failed", exc_info=True)
+    region = overture.tile_route(area.bounds, "segments", filters=segment_filters())
+    if region is not None:
+        roads_sql, roads_params = _tile_sql("segments", region), [*tiles, *overlap, wkt]
+    else:
+        road_in = ", ".join(f"'{c}'" for c in ROAD_CLASSES)  # constant whitelist, safe to inline
+        roads_sql = f"""
+            SELECT ST_AsGeoJSON(geometry) AS g
+            FROM read_parquet('{overture.theme_path('transportation', 'segment')}',
+                              filename=false, hive_partitioning=true)
+            WHERE {_BBOX_OVERLAP}
+              AND ST_Intersects(geometry, ST_GeomFromText(?))
+              AND ((subtype = 'road' AND class IN ({road_in})) OR subtype = 'rail')
+            LIMIT {_MAX_ROWS}
+        """
+        roads_params = [*overlap, wkt]
+    lines += _lines_from_rows(con.execute(roads_sql, roads_params).fetchall())
 
-    water_in = ", ".join(f"'{c}'" for c in WATER_CLASSES)
-    water_sql = f"""
-        SELECT ST_AsGeoJSON(geometry) AS g
-        FROM read_parquet('{overture.theme_path('base', 'water')}',
-                          filename=false, hive_partitioning=true)
-        WHERE {bbox_overlap}
-          AND ST_Intersects(geometry, ST_GeomFromText(?))
-          AND class IN ({water_in})
-        LIMIT {_MAX_ROWS}
-    """
-    try:
-        lines += _lines_from_rows(con.execute(water_sql, [maxx, minx, maxy, miny, wkt]).fetchall())
-    except Exception:  # noqa: BLE001
-        logger.warning("microplans barriers: water query failed", exc_info=True)
+    region = overture.tile_route(area.bounds, "water", filters=water_filters())
+    if region is not None:
+        water_sql, water_params = _tile_sql("water", region), [*tiles, *overlap, wkt]
+    else:
+        water_in = ", ".join(f"'{c}'" for c in WATER_CLASSES)
+        water_sql = f"""
+            SELECT ST_AsGeoJSON(geometry) AS g
+            FROM read_parquet('{overture.theme_path('base', 'water')}',
+                              filename=false, hive_partitioning=true)
+            WHERE {_BBOX_OVERLAP}
+              AND ST_Intersects(geometry, ST_GeomFromText(?))
+              AND class IN ({water_in})
+            LIMIT {_MAX_ROWS}
+        """
+        water_params = [*overlap, wkt]
+    lines += _lines_from_rows(con.execute(water_sql, water_params).fetchall())
 
     if not lines:
         return None

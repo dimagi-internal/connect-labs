@@ -1,0 +1,51 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Labs' Overture snapshots -- the one permission their refresh needs beyond what
+# the task role already has.
+#
+# Microplans reads Overture Maps only from labs' own copy of a release, under
+# overture/snapshots/<release>/ in the exports bucket, and `manage.py
+# overture_refresh` builds the next one and switches to it (see
+# connect_labs/microplans/core/overture.py). Get/Put on overture/* and the
+# bucket's ListBucket are already granted by the out-of-band
+# `labs-s3-exports-dev` inline policy. What is missing is Delete: the refresh
+# prunes every snapshot that is neither the current release nor the previous one
+# (the rollback), about 620 GB each, so without it they would accumulate.
+#
+# Scoped to overture/snapshots/* only: CURRENT.json (overture/CURRENT.json) is
+# overwritten, never deleted, and nothing else under the bucket is the refresh's
+# to remove.
+#
+# Owns: one inline IAM policy on the existing ECS task role.
+# References, does NOT own: the task role, the exports bucket.
+#
+# Deploy (needs CAPABILITY_NAMED_IAM):
+#
+#   aws cloudformation deploy \
+#     --region us-east-1 --profile labs \
+#     --stack-name labs-jj-overture \
+#     --template-file infra/labs-overture.yml \
+#     --capabilities CAPABILITY_NAMED_IAM
+
+Parameters:
+  TaskRoleName:
+    Type: String
+    Default: labs-jj-ecs-task-role
+    Description: Existing ECS task role (app runtime permissions), web and worker.
+  ExportsBucketName:
+    Type: String
+    Default: labs-jj-exports-dev-858923557655-us-east-1-an
+    Description: Existing private labs bucket that holds overture/snapshots/.
+
+Resources:
+  TaskRoleOverturePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: labs-overture-snapshots
+      Roles: [!Ref TaskRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: ['s3:DeleteObject']
+            Resource: !Sub 'arn:aws:s3:::${ExportsBucketName}/overture/snapshots/*'

@@ -7,6 +7,7 @@ BaseDataAccess.labs_api.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from django.core.exceptions import PermissionDenied
@@ -15,6 +16,8 @@ from django.http import Http404
 from connect_labs.microplans.core import plan as plan_lib
 from connect_labs.microplans.core.models import TYPE_PLAN, TYPE_PLAN_GROUP, PlanGroupRecord, PlanRecord
 from connect_labs.workflow.data_access import BaseDataAccess
+
+logger = logging.getLogger(__name__)
 
 # Bump when the `microplan_plan` `data` shape changes, so readers can branch on
 # schema_version instead of guessing (cheap migration insurance).
@@ -33,6 +36,7 @@ def _barriers_if_needed(grouping: dict | None, input_areas, allow_remote: bool):
 
         return barriers_for_areas(input_areas or [], allow_remote=allow_remote)
     except Exception:  # noqa: BLE001
+        logger.warning("microplans: barriers unavailable, grouping without them", exc_info=True)
         return None
 
 

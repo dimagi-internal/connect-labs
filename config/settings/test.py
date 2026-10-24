@@ -80,3 +80,8 @@ CACHES = {
 # Long-running MCP tools run their job in the calling thread (connect_labs/mcp/jobs.py),
 # through the same claim/run/record path the worker uses, with no broker.
 MCP_JOBS_RUN_INLINE = True
+
+# Overture: tests never read the snapshot manifest from S3 (overture.py). With it
+# off, active_release() is the code floor and no tiles are listed, which is what a
+# test that wants a manifest sets up itself.
+OVERTURE_SNAPSHOTS_READ_MANIFEST = False
