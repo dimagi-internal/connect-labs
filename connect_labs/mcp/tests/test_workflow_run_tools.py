@@ -729,3 +729,37 @@ def test_a_colleague_who_can_open_the_run_may_read_its_indicators(user, wda):
     # Nor does the owner: they are held to the same rule, now, not when they ran it.
     with pytest.raises(kept_results.Refused):
         kept_results.read(out["result_uri"], reader=user.pk)
+
+
+def test_the_run_tools_carry_the_totals_the_pages_header_shows(user, wda):
+    # The KMC page's header reads '10,450 babies · 45,598 visits · 6 organizations · 12
+    # opportunities · figures as of 11 Oct': the agent answers from those numbers, not an
+    # estimate of its own (data_chat_eval page-read).
+    payload = {
+        **PAYLOAD,
+        "programInd": {"total_cases": {"n": 10450}},
+        "byLLO": [{"llo": f"Org {i}"} for i in range(6)],
+        "meta": {"cases": 9999, "visits": 45598, "opportunities": 12, "as_of": "2026-10-11"},
+        "display": {"entity": {"name": "baby", "plural": "babies"}, "worker": "community health worker"},
+    }
+    run = _completed_run()
+    run.data["snapshot"] = {"state": {"snapshot": payload}, "pipelines": {}, "workers": []}
+    wda.get_run.return_value = run
+    head = _call("workflow_run_context", user, run_id=70, program_id=25)["headline"]
+    assert {k: head[k] for k in ("cases", "visits", "organisations", "opportunities", "workers", "as_of")} == {
+        "cases": 10450,
+        "visits": 45598,
+        "organisations": 6,
+        "opportunities": 12,
+        "workers": 2,
+        "as_of": "2026-10-11",
+    }
+    assert head["cases_noun"] == "babies" and "header" in head["note"]
+    out = _call("workflow_run_indicators", user, run_id=70, program_id=25, scope="programme")
+    assert out["headline"]["visits"] == 45598
+
+
+def test_canopys_agent_is_told_no_card_shows_the_indicator_rows(user, wda, monkeypatch):
+    monkeypatch.setattr(wa, "_delegated_token", lambda: MagicMock(client_id="canopy"))
+    out = _call("workflow_run_indicators", user, run_id=70, program_id=25)
+    assert any("markdown table" in n for n in out["notes"])

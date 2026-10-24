@@ -458,7 +458,11 @@
           // (`server`: resources/read ?sort=&dir=); with one, the card sorts it here.
           sort: { col: -1, dir: 1, server: false },
           chartType: '', // bar, line or stat: the agent's chart, else picked from the rows
+          // The tab on screen: the chart when the agent's display asked for one (it
+          // is what they meant the person to see), else the table. Once the person
+          // picks a tab (`tabPicked`) a later read never moves them off it.
           tab: 'table',
+          tabPicked: false,
           x: null,
           ys: [],
           error: '',
@@ -588,6 +592,17 @@
             },
           );
         }
+        // A month bucket (date_trunc('month', ...)) as the person reads it: "Jan 2026".
+        var MONTH_START =
+          /^(\d{4})-(\d{2})-01(?:[T ]00:00(?::00(?:\.0+)?)?(?:Z|[+-]00(?::?00)?)?)?$/;
+        function monthLabel(v) {
+          var m = MONTH_START.exec(String(v));
+          if (!m) return null;
+          return new Date(Date.UTC(+m[1], +m[2] - 1, 1)).toLocaleDateString(
+            undefined,
+            { year: 'numeric', month: 'short', timeZone: 'UTC' },
+          );
+        }
         function shortTimestamp(v) {
           var d = new Date(String(v));
           if (isNaN(d.getTime())) return String(v);
@@ -703,6 +718,10 @@
         // number format on text): the cell then reads as its type says.
         function formatted(v, format) {
           if (v === null || v === undefined || !format) return null;
+          if (format === 'month') {
+            var ml = monthLabel(String(v).slice(0, 10));
+            return ml ? { text: ml, cls: '' } : null;
+          }
           if (format === 'date') {
             if (/^\d{4}-\d{2}-\d{2}$/.test(String(v)))
               return { text: shortDate(v), cls: '' };
@@ -768,8 +787,43 @@
           r._pct[name] = scale;
           return scale;
         }
+        // A date column of month buckets: every value the first of a month at midnight,
+        // and more than one month (or a column called a month). Read once per column.
+        var MONTH_NAME = /month|(^|_)mon$/i;
+        function monthly(name) {
+          var r = state.result;
+          if (!r) return false;
+          r._month = r._month || {};
+          if (name in r._month) return r._month[name];
+          var i = r.columns.indexOf(name);
+          var vals = (r.rows || [])
+            .map(function (row) {
+              return row[i];
+            })
+            .filter(function (v) {
+              return v !== null && v !== undefined;
+            });
+          var all =
+            vals.length > 0 &&
+            vals.every(function (v) {
+              return typeof v === 'string' && MONTH_START.test(v);
+            });
+          var distinct = {};
+          vals.forEach(function (v) {
+            distinct[String(v).slice(0, 7)] = 1;
+          });
+          r._month[name] =
+            all &&
+            (Object.keys(distinct).length > 1 || MONTH_NAME.test(String(name)));
+          return r._month[name];
+        }
         function cell(v, kind, name) {
-          var own = formatted(v, spec(name).format);
+          var fmt = spec(name).format;
+          if ((!fmt || fmt === 'date') && v != null && monthly(name)) {
+            var asMonth = formatted(v, 'month');
+            if (asMonth) return asMonth;
+          }
+          var own = formatted(v, fmt);
           if (own) return own;
           var scale = !spec(name).format && percentScale(name);
           var n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v;
@@ -1046,7 +1100,18 @@
               return !years;
             });
         }
+        // The axes, then the tab: when the agent's display asked for a chart and
+        // there is one to draw, the card opens on it (the table is one click away).
         function pickAxes() {
+          chooseAxes();
+          var hint = shownAs() && shownAs().chart;
+          if (!state.tabPicked)
+            state.tab =
+              hint && typeof hint === 'object' && state.ys.length
+                ? 'chart'
+                : 'table';
+        }
+        function chooseAxes() {
           var r = state.result;
           state.x = null;
           state.ys = [];
@@ -1132,6 +1197,12 @@
         }
 
         // ---------------------------------------------------------------- chart (SVG)
+        // A row's x value as its cell reads (a month bucket as "Jan 2026").
+        function xText(row) {
+          var r = state.result;
+          return cell(row[state.x], columnKinds(r)[state.x], r.columns[state.x])
+            .text;
+        }
         function chart() {
           var r = state.result;
           if (state.chartType === 'stat' && hasRows(r) && state.ys.length)
@@ -1252,7 +1323,7 @@
                   '" y="' +
                   (h - 10) +
                   '" text-anchor="middle">' +
-                  esc(String(rows[i][state.x]).slice(0, 10)) +
+                  esc(xText(rows[i]).slice(0, 18)) +
                   '</text>',
               );
             });
@@ -1276,7 +1347,7 @@
                     SERIES[s] +
                     ')"><title>' +
                     esc(
-                      cellText(row[state.x]) +
+                      xText(row) +
                         ' · ' +
                         heading(r.columns[col]) +
                         ': ' +
@@ -1292,7 +1363,7 @@
                   ',' +
                   (pad.t + ih + 10) +
                   ') rotate(40)" text-anchor="start">' +
-                  esc(cellText(row[state.x]).slice(0, 18)) +
+                  esc(xText(row).slice(0, 18)) +
                   '</text>',
               );
             });
@@ -1774,6 +1845,7 @@
           var chip = t.closest('[data-json]');
           if (tab) {
             state.tab = tab.getAttribute('data-tab');
+            state.tabPicked = true;
             state.json = null;
             render();
           } else if (chip) {

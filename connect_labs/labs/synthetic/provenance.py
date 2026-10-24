@@ -57,6 +57,9 @@ def all_generated(opportunity_ids: Iterable) -> bool:
 def replays_real_cases(manifest) -> bool:
     """True when ``manifest`` carries a transplant pool that holds real cases' series.
 
+    A pool marked ``numbers: "authored"`` was written by its caller, series by series,
+    from no real case (``LongitudinalSpec.numbers``), in either mode: it does not.
+
     Old mirror profiles replay each real case's series with small noise (±3% per
     case, a 1-14 day shift, categorical answers verbatim), so data generated from one
     is a near-copy of real cases, not invented data, and must never count as
@@ -71,6 +74,8 @@ def replays_real_cases(manifest) -> bool:
 
     def _walk(node) -> bool:
         if isinstance(node, dict):
+            if node.get("mode") in ("mirror", "modelled") and node.get("numbers") == "authored":
+                return any(_walk(v) for k, v in node.items() if k != "transplant_pool")
             if node.get("mode") == "mirror":
                 return True
             if node.get("mode") == "modelled" and node.get("numbers") != "modelled":

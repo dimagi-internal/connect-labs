@@ -172,7 +172,9 @@ def test_canopys_agent_gets_column_types_and_is_told_the_card_shows_the_rows(own
     assert asked["max_rows"] is None
     assert out["column_types"] == ["text", "integer"]
     assert out["row_cap"] == {"limit": 500, "source": "default"}
-    assert any("not a markdown table" in n for n in out["notes"])
+    # The reply points at the card: no second copy of its rows, and no SQL (the card has it).
+    card_note = next(n for n in out["notes"] if "card beside your reply" in n)
+    assert "markdown table" in card_note and "do NOT paste the SQL" in card_note
     # The card reads the types (and the cap) from the kept result.
     payload = Row.objects.get().payload
     assert payload["column_types"] == ["text", "integer"] and payload["row_cap"]["source"] == "default"

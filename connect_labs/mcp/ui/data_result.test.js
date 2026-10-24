@@ -834,6 +834,84 @@ describe("the agent's display", () => {
   });
 });
 
+describe('the tab the card opens on', () => {
+  it("opens on the chart the agent's display asked for, the table one click away", async () => {
+    const view = await shown({
+      ...BY_LLO,
+      display: { chart: { type: 'bar', x: 'llo', y: ['visits'] } },
+    });
+    expect(
+      view.document
+        .querySelector('[data-tab="chart"]')
+        .getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(view.document.querySelectorAll('rect').length).toBe(3);
+    view.click('[data-tab="table"]');
+    expect(view.document.querySelectorAll('tbody tr').length).toBe(3);
+  });
+
+  it('opens on the table when the agent asked for no chart', async () => {
+    const view = await shown(BY_LLO);
+    expect(
+      view.document
+        .querySelector('[data-tab="table"]')
+        .getAttribute('aria-selected'),
+    ).toBe('true');
+  });
+});
+
+describe('month buckets read as months', () => {
+  const MONTHLY = {
+    columns: ['month', 'approved_visits'],
+    column_types: ['date', 'integer'],
+    rows: [
+      ['2026-01-01', 1862],
+      ['2026-02-01', 2565],
+      ['2026-03-01', 4047],
+    ],
+  };
+
+  it('a date_trunc month column shows "Jan 2026", even with format date', async () => {
+    const view = await shown({
+      ...MONTHLY,
+      display: { columns: { month: { label: 'Month', format: 'date' } } },
+    });
+    expect(cells(view, 0)[0].textContent).toMatch(/^Jan\.? 2026$/);
+    expect(cells(view, 0)[0].textContent).not.toMatch(/1,/);
+  });
+
+  it('timestamps at the start of each month too, and on the chart axis', async () => {
+    const view = await shown({
+      columns: ['month', 'approved_visits'],
+      rows: [
+        ['2026-01-01T00:00:00+00:00', 1862],
+        ['2026-02-01T00:00:00+00:00', 2565],
+        ['2026-03-01T00:00:00+00:00', 4047],
+      ],
+      display: { chart: { type: 'line', x: 'month', y: ['approved_visits'] } },
+    });
+    const ticks = [...view.document.querySelectorAll('svg text')].map(
+      (t) => t.textContent,
+    );
+    expect(ticks.some((t) => /^Jan\.? 2026$/.test(t))).toBe(true);
+    expect(ticks.some((t) => /T00/.test(t))).toBe(false);
+  });
+
+  it('a column of ordinary dates keeps its day', async () => {
+    const view = await shown({
+      columns: ['visit_date', 'visits'],
+      column_types: ['date', 'integer'],
+      rows: [
+        ['2026-01-01', 1],
+        ['2026-01-02', 2],
+      ],
+    });
+    expect(cells(view, 0)[0].textContent).toMatch(/Jan/);
+    expect(cells(view, 0)[0].textContent).not.toMatch(/^Jan\.? 2026$/);
+    expect(cells(view, 1)[0].textContent).toMatch(/\b2\b/);
+  });
+});
+
 describe('a chart the card picks itself', () => {
   it('leaves out ids and years, and never mixes a rate with a count', async () => {
     const view = await shown(BY_LLO);

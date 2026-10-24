@@ -288,7 +288,9 @@ def _action_error(e) -> MCPToolError:
 @register(
     name="workflow_run_context",
     description=(
-        "Start here for a workflow run. What the run is, the indicators it is graded on "
+        "Start here for a workflow run. What the run is, `headline` -- the run-wide totals the page's header "
+        "shows the person (cases, visits, workers, organisations, opportunities, as-of date; quote these for "
+        "'what does this report say') -- the indicators it is graded on "
         "(label, plain meaning, direction, thresholds, target, unit -- the thresholds these "
         "bands were computed with), what each band means, and the ACTIONS the workflow offers "
         "(the same ones its buttons run) with their argument schemas and defaults. On a run "
@@ -307,13 +309,14 @@ def workflow_run_context(user, *, run_id: int, opportunity_id=None, program_id=N
             graded = r.graded()
             indicators = indicator_catalog(graded)
             display = graded.get("display") or {}
+            headline = graded.get("headline") or {}
             grading = {
                 "source": graded["source"],
                 "generated_at": graded.get("generated_at"),
                 "cache": graded["cache"],
             }
         except MCPToolError as e:
-            indicators, display, grading = None, {}, {"unavailable": e.message}
+            indicators, display, grading, headline = None, {}, {"unavailable": e.message}, {}
         return {
             "workflow": {
                 "id": r.definition.id,
@@ -329,6 +332,7 @@ def workflow_run_context(user, *, run_id: int, opportunity_id=None, program_id=N
                 "completed_at": run.completed_at,
             },
             "page_url": r.page_url,
+            "headline": headline,
             "nouns": {k: display.get(k) for k in ("entity", "worker", "organisation") if display.get(k)},
             "indicators": indicators,
             "bands": BAND_MEANING,
@@ -347,7 +351,9 @@ def workflow_run_context(user, *, run_id: int, opportunity_id=None, program_id=N
         "if given) and names them in `matched`, most-matched first. Bands come from the "
         "server's grading; never infer them from values. scope='organisation' | 'opportunity' "
         "| 'programme' returns those rows instead. `cache.cold` true means the live figures "
-        "are all zero because no visits are loaded -- say so rather than reporting zeros."
+        "are all zero because no visits are loaded -- say so rather than reporting zeros. `headline` is the "
+        "run-wide totals the page's header shows (cases, visits, workers, ...): answer from it, never from an "
+        "estimate."
     ),
     input_schema={
         "type": "object",
@@ -411,6 +417,7 @@ def workflow_run_indicators(
             "source": graded["source"],
             "generated_at": graded.get("generated_at"),
             "cache": graded["cache"],
+            "headline": graded.get("headline") or {},
             "legend": BAND_MEANING,
         }
         try:
@@ -485,6 +492,12 @@ def _kept_indicators(
     facts = {k: v for k, v in result.items() if k not in ("workers", "rows")}
     facts.update(kept_results.facts(columns, rows))
     facts["asked"] = {"scope": scope, "band": band}
+    # No card draws these rows beside the reply (the run page itself shows them).
+    facts["notes"] = [
+        "No card shows these rows to the person: the run page they are on does. Answer with the headline figure "
+        "and the two or three rows that matter; never paste a breakdown of more than five rows as a markdown "
+        "table -- point at the page's table, or draw it with data_query for a card."
+    ]
     if scope == "worker":
         # select_workers' own cut: workers past `limit` are in neither the table nor here.
         facts["workers_over_limit"] = result.get("truncated", False)

@@ -48,6 +48,45 @@ def is_semantic_report(definition) -> bool:
     return bool(contract.get("ok")) and (contract.get("snapshot_inputs") or {}).get("builder") == "semantic_snapshot"
 
 
+#: What ``headline`` is, for the agent reading it.
+HEADLINE_NOTE = (
+    "The totals the run page's header shows the person (e.g. '10,450 babies · 45,598 visits · 6 organizations · "
+    "12 opportunities · figures as of 11 Oct'), for the whole run. Quote these when asked what the report says; "
+    "never estimate a figure the header already shows."
+)
+
+
+def headline(payload: dict) -> dict:
+    """The run-wide totals the run page's header draws, read the way the report renders
+    read them (``kmc_programme_metrics_render.js`` / ``indicator_report_render.js``
+    subtitle): cases from the programme's ``total_cases`` cell, else ``meta.cases``;
+    visits, opportunities and the as-of date from ``meta``; workers and organisations
+    from the graded rows. A key the payload cannot answer is left out, not guessed."""
+    meta = payload.get("meta") or {}
+    total = (payload.get("programInd") or {}).get("total_cases")
+    cases = total.get("n") if isinstance(total, dict) else None
+    if cases is None:
+        cases = meta.get("cases")
+    by_llo = payload.get("byLLO") or []
+    out = {
+        "cases": cases,
+        "visits": meta.get("visits"),
+        "workers": len(payload.get("byFLW") or []) or None,
+        "organisations": len(by_llo) or None,
+        "opportunities": meta.get("opportunities") or len(payload.get("byOpp") or []) or None,
+        "as_of": meta.get("as_of") or (str(payload.get("generated_at") or "")[:10] or None),
+    }
+    noun = ((payload.get("display") or {}).get("entity") or {}) if isinstance(payload.get("display"), dict) else {}
+    if isinstance(noun, dict) and noun.get("plural"):
+        out["cases_noun"] = noun["plural"]
+    elif isinstance(noun, str) and noun:
+        out["cases_noun"] = noun
+    out = {k: v for k, v in out.items() if v is not None}
+    if out:
+        out["note"] = HEADLINE_NOTE
+    return out
+
+
 def slim(payload: dict) -> dict:
     """The graded payload without its case records: every cell and catalog, none of
     the rows behind them (``byFLW[].rows`` indexes a case list that can be MBs)."""
@@ -62,6 +101,7 @@ def slim(payload: dict) -> dict:
         "cMeasures": payload.get("cMeasures") or [],
         "display": payload.get("display") or {},
         "generated_at": payload.get("generated_at"),
+        "headline": headline(payload),
         "opportunity_labels": (payload.get("deployment") or {}).get("opportunity_labels") or {},
     }
 

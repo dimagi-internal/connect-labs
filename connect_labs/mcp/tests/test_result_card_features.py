@@ -146,6 +146,27 @@ def test_labels_are_cut_and_cleaned():
     assert display.validate({"columns": {"a": {"label": "\x01\x02"}}}) is None
 
 
+def test_a_month_bucket_has_its_own_format():
+    # date_trunc('month', ...) reads "Jan 2026" on the card, not "Jan 1, 2026".
+    shown = display.validate({"columns": {"month": {"label": "Month", "format": "month"}}})
+    assert shown["columns"]["month"]["format"] == "month"
+    assert "month" in display.SCHEMA["properties"]["columns"]["additionalProperties"]["properties"]["format"]["enum"]
+
+
+def test_the_answering_rules_keep_the_cards_rows_and_sql_out_of_the_reply_and_name_the_definition():
+    from connect_labs.labsdata import guidance
+
+    rules = guidance.ANSWERING_RULES
+    # A card carries every row and the SQL: the reply points at it (data_chat_eval monthly-chart).
+    assert "never paste the SQL" in rules and "Never re-print the card's rows" in rules
+    # One silent reading of an ambiguous question is the failure (count-total, ambiguous-dropout).
+    assert "never pick a meaning silently" in rules and "62 distinct usernames" in rules
+    # Rows are labelled by name, not id.
+    assert "never by an id alone" in rules
+    # The Data page's actions are taught where they apply.
+    assert "page_proposeSave" in rules and "page_showVisit" in rules
+
+
 # --- provenance ------------------------------------------------------------------------
 
 

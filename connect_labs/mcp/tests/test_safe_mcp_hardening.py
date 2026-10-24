@@ -220,6 +220,24 @@ def test_a_retired_mirror_manifest_is_recognised_and_a_modelled_one_is_not():
     assert not replays_real_cases({"entities": [{"longitudinal": {"mode": "synthetic", "transplant_pool": []}}]})
 
 
+def test_a_pool_its_caller_wrote_is_generated_in_either_mode():
+    # ACE's programme cascade writes one series per case from a PDD and replays it in
+    # mirror mode (for its per-case constants). Marked authored, it holds no real case:
+    # the run pages over it (Kaduna, Bednet, Newborn care) may offer the agent panel.
+    for mode in ("mirror", "modelled"):
+        authored = {"longitudinal": {"mode": mode, "numbers": "authored", "transplant_pool": [{}]}}
+        assert not replays_real_cases({"beneficiary_cohorts": [authored]})
+    # The mark covers its own pool only: a second, unmarked mirror cohort still replays.
+    assert replays_real_cases(
+        {
+            "beneficiary_cohorts": [
+                {"longitudinal": {"mode": "mirror", "numbers": "authored", "transplant_pool": [{}]}},
+                {"longitudinal": {"mode": "mirror", "transplant_pool": [{}]}},
+            ]
+        }
+    )
+
+
 @pytest.mark.django_db
 def test_a_retired_mirror_manifest_is_refused_and_a_modelled_one_is_not():
     import yaml
@@ -248,6 +266,9 @@ def test_a_retired_mirror_manifest_is_refused_and_a_modelled_one_is_not():
 
     assert reason(retired)
     assert reason(modelled) is None
+    authored = yaml.safe_load(yaml.safe_dump(retired))
+    authored["beneficiary_cohorts"][0]["longitudinal"]["numbers"] = "authored"
+    assert reason(authored) is None
 
 
 @pytest.mark.django_db
