@@ -134,34 +134,35 @@ def water_filters() -> dict:
 _BBOX_OVERLAP = "bbox.xmin <= ? AND bbox.xmax >= ? AND bbox.ymin <= ? AND bbox.ymax >= ?"
 
 
-def _tile_sql(kind: str, region: str) -> str:
-    """Lines of one kind from a region's tiles. A feature is written to every tile
-    its bbox touches, so it is read once per tile it spans: DISTINCT on its id."""
-    return f"""
+def _tile_lines(con, kind: str, cells, overlap: list[float], wkt: str) -> list:
+    """Lines of one kind from the grid cells the area touches. A feature is written
+    to every cell its bbox touches, so it is read once per cell it spans: one row
+    per id."""
+    files = overture.cell_files(con, kind, cells)
+    if not files:  # covered, and nothing there
+        return []
+    sql = f"""
         SELECT ST_AsGeoJSON(ST_GeomFromWKB(any_value(geom_wkb))) AS g
-        FROM read_parquet('{overture.tile_glob(kind, region)}', hive_partitioning=true)
-        WHERE tx BETWEEN ? AND ? AND ty BETWEEN ? AND ?
-          AND {_BBOX_OVERLAP}
+        FROM read_parquet({files!r})
+        WHERE {_BBOX_OVERLAP}
           AND ST_Intersects(ST_GeomFromWKB(geom_wkb), ST_GeomFromText(?))
         GROUP BY id
         LIMIT {_MAX_ROWS}
     """
+    return _lines_from_rows(con.execute(sql, [*overlap, wkt]).fetchall())
 
 
 def _query_barriers(area: BaseGeometry) -> BaseGeometry | None:
     """Major roads + rail + water in the area, from labs' snapshot (tiles, else raw)."""
-    import math
-
     minx, miny, maxx, maxy = area.bounds
     wkt = area.wkt
     con = overture.connect()
     overlap = [maxx, minx, maxy, miny]
-    tiles = [math.floor(minx), math.floor(maxx), math.floor(miny), math.floor(maxy)]
     lines = []
 
-    region = overture.tile_route(area.bounds, "segments", filters=segment_filters())
-    if region is not None:
-        roads_sql, roads_params = _tile_sql("segments", region), [*tiles, *overlap, wkt]
+    cells = overture.tile_cells(area.bounds, "segments", filters=segment_filters())
+    if cells is not None:
+        lines += _tile_lines(con, "segments", cells, overlap, wkt)
     else:
         road_in = ", ".join(f"'{c}'" for c in ROAD_CLASSES)  # constant whitelist, safe to inline
         roads_sql = f"""
@@ -173,12 +174,11 @@ def _query_barriers(area: BaseGeometry) -> BaseGeometry | None:
               AND ((subtype = 'road' AND class IN ({road_in})) OR subtype = 'rail')
             LIMIT {_MAX_ROWS}
         """
-        roads_params = [*overlap, wkt]
-    lines += _lines_from_rows(con.execute(roads_sql, roads_params).fetchall())
+        lines += _lines_from_rows(con.execute(roads_sql, [*overlap, wkt]).fetchall())
 
-    region = overture.tile_route(area.bounds, "water", filters=water_filters())
-    if region is not None:
-        water_sql, water_params = _tile_sql("water", region), [*tiles, *overlap, wkt]
+    cells = overture.tile_cells(area.bounds, "water", filters=water_filters())
+    if cells is not None:
+        lines += _tile_lines(con, "water", cells, overlap, wkt)
     else:
         water_in = ", ".join(f"'{c}'" for c in WATER_CLASSES)
         water_sql = f"""
@@ -190,8 +190,7 @@ def _query_barriers(area: BaseGeometry) -> BaseGeometry | None:
               AND class IN ({water_in})
             LIMIT {_MAX_ROWS}
         """
-        water_params = [*overlap, wkt]
-    lines += _lines_from_rows(con.execute(water_sql, water_params).fetchall())
+        lines += _lines_from_rows(con.execute(water_sql, [*overlap, wkt]).fetchall())
 
     if not lines:
         return None
