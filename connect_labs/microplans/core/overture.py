@@ -20,7 +20,7 @@ import tempfile
 # other country's live read dies on `No files found that match the pattern`,
 # which reads like a query bug rather than an expired pin. `verify_release()`
 # turns that into a sentence naming what is actually available.
-OVERTURE_RELEASE = "2026-08-19.0"
+OVERTURE_RELEASE = "2026-10-21.0"
 _S3_BASE = f"s3://overturemaps-us-west-2/release/{OVERTURE_RELEASE}"
 
 
@@ -62,9 +62,10 @@ _EXTRACT_BASE = f"s3://{EXTRACT_BUCKET}/overture"
 #
 # The release must match to be used, so bumping OVERTURE_RELEASE without
 # re-extracting degrades to the live read rather than serving stale buildings —
-# safe, but it silently gives up the speedup. Nigeria is on 2026-05-20.0 and so
-# is currently NOT being used; re-extract it onto the current release to restore
-# the fast path (see the module docstring in the extract runbook).
+# safe, but it silently gives up the speedup. So the pin never moves alone: cut
+# every region onto the next release first (`microplans_build_extract <region>
+# --release <next>`, into its own prefix), read each back, then move the pin and
+# every region below in one change.
 # Every country we hold admin boundaries for, so a planner can never pick an area
 # that lands on the slow cross-region live read. bbox values are the Extent() of
 # OUR OWN AdminBoundary geometry per iso_code, padded 0.1deg for float noise —
@@ -78,19 +79,19 @@ _EXTRACT_BASE = f"s3://{EXTRACT_BUCKET}/overture"
 # The None case is the difference between "someone needs to re-cut this" and
 # "we have not got to this country yet", which are not the same problem.
 EXTRACT_REGIONS: dict[str, dict] = {
-    "nigeria": {"release": "2026-08-19.0", "bbox": (2.6, 4.2, 14.7, 13.9)},
+    "nigeria": {"release": "2026-10-21.0", "bbox": (2.6, 4.2, 14.7, 13.9)},
     # The next five hold, with Nigeria, 91% of every boundary row we serve.
-    "liberia": {"release": "2026-08-19.0", "bbox": (-11.6, 4.3, -7.3, 8.7)},
-    "drc": {"release": "2026-08-19.0", "bbox": (12.1, -13.6, 31.4, 5.5)},
-    "kenya": {"release": "2026-08-19.0", "bbox": (33.8, -4.8, 42.0, 5.5)},
-    "zambia": {"release": "2026-08-19.0", "bbox": (21.9, -18.2, 33.8, -8.2)},
-    "ethiopia": {"release": "2026-08-19.0", "bbox": (32.9, 3.3, 48.1, 15.0)},
+    "liberia": {"release": "2026-10-21.0", "bbox": (-11.6, 4.3, -7.3, 8.7)},
+    "drc": {"release": "2026-10-21.0", "bbox": (12.1, -13.6, 31.4, 5.5)},
+    "kenya": {"release": "2026-10-21.0", "bbox": (33.8, -4.8, 42.0, 5.5)},
+    "zambia": {"release": "2026-10-21.0", "bbox": (21.9, -18.2, 33.8, -8.2)},
+    "ethiopia": {"release": "2026-10-21.0", "bbox": (32.9, 3.3, 48.1, 15.0)},
     # The rest of the countries with a configured boundary source.
-    "tanzania": {"release": "2026-08-19.0", "bbox": (29.2, -11.9, 40.5, -0.9)},
-    "cote_divoire": {"release": "2026-08-19.0", "bbox": (-8.7, 4.2, -2.4, 10.8)},
-    "mozambique": {"release": "2026-08-19.0", "bbox": (30.1, -27.0, 40.9, -10.4)},
-    "malawi": {"release": "2026-08-19.0", "bbox": (32.6, -17.2, 36.0, -9.3)},
-    "sierra_leone": {"release": "2026-08-19.0", "bbox": (-13.4, 6.8, -10.2, 10.1)},
+    "tanzania": {"release": "2026-10-21.0", "bbox": (29.2, -11.9, 40.5, -0.9)},
+    "cote_divoire": {"release": "2026-10-21.0", "bbox": (-8.7, 4.2, -2.4, 10.8)},
+    "mozambique": {"release": "2026-10-21.0", "bbox": (30.1, -27.0, 40.9, -10.4)},
+    "malawi": {"release": "2026-10-21.0", "bbox": (32.6, -17.2, 36.0, -9.3)},
+    "sierra_leone": {"release": "2026-10-21.0", "bbox": (-13.4, 6.8, -10.2, 10.1)},
 }
 
 
