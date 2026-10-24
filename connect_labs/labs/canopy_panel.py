@@ -275,15 +275,23 @@ def data_page_agent(reads: Reads = None) -> Availability:
 
 
 def panel(
-    request, *, reads: Reads, available: Availability | None = None, page_key: str = "", **panel_kwargs
+    request,
+    *,
+    reads: Reads,
+    available: Availability | None = None,
+    page_key: str = "",
+    holds=None,
+    **panel_kwargs,
 ) -> dict | None:
     """The SDK's panel context for this page, or None when no agent may be offered here.
 
     ``available`` is the page's own agent (``availability``); default: the default agent.
     ``panel_kwargs`` are the SDK's ``panel_context`` arguments (resource, backing_tool,
     visible_ids, filters, path). ``page_key`` signs the page token for a ``PAGE_SCOPES``
-    key other than the route's (narrower scopes on the same URL). None renders nothing:
-    the include is skipped and no page token is issued.
+    key other than the route's (narrower scopes on the same URL). ``holds``
+    (``labsdata.page_holds.Holds``) is what the page shows: signed onto the token URL, it is
+    what the agent's ``data_*`` reads are held to (a page granting ``data:read`` without it
+    reads nothing). None renders nothing: the include is skipped and no page token is issued.
     """
     available = available or availability("", reads)
     if not available.ok:
@@ -296,7 +304,12 @@ def panel(
     if page_agent.panel:
         panel_kwargs["panel"] = page_agent.panel
     context = panel_context(request, **panel_kwargs)
-    return _signed_for(request, context, page_key, page_agent) if page_key else context
+    context = _signed_for(request, context, page_key, page_agent) if page_key else context
+    if holds is not None:
+        from connect_labs.labsdata import page_holds
+
+        context = page_holds.attach(request, context, holds)
+    return context
 
 
 def _signed_for(request, context: dict, page_key: str, page_agent: PageAgent) -> dict:

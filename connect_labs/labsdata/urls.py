@@ -21,6 +21,8 @@ urlpatterns = [
         name="space_item_delete",
     ),
     path("api/describe/", views.DescribeView.as_view(), name="describe"),
+    # The plain page's selection, as the person changes it: what its agent may read.
+    path("api/page-holds/", views.PageHoldsView.as_view(), name="page_holds"),
     path("api/query/", views.QueryView.as_view(), name="query"),
     path("api/visits/", views.VisitsView.as_view(), name="visits"),
     path("api/workflows/", views.WorkflowsView.as_view(), name="workflows"),

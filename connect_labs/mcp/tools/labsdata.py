@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from connect_labs.labs.access.scopes import Caller
 from connect_labs.labsdata import display as result_display
-from connect_labs.labsdata import guidance, service, spaces
+from connect_labs.labsdata import guidance, page_holds, service, spaces
 from connect_labs.labsdata.engine import MAX_VISITS_PER_READ, QueryError
 from connect_labs.labsdata.scope import ScopeError
 from connect_labs.labsdata.validator import DEFAULT_MAX_ROWS, HARD_MAX_ROWS
@@ -93,13 +93,18 @@ def _space(caller: Caller, space_id=None, opportunity_ids=None, program_ids=None
     so an agent held to a space cannot widen or swap what it reads -- or one generated from
     the selection. Its errors as tool errors."""
     try:
-        return spaces.from_request(
+        opened = spaces.from_request(
             caller,
             space_id=space_id,
             opportunity_ids=opportunity_ids,
             program_ids=program_ids,
             workflow=workflow,
         )
+        # Canopy on a page: only what that page shows, as labs recorded it (never the arguments).
+        page_holds.hold_to_page(opened, caller=caller)
+        return opened
+    except page_holds.OutsidePage as e:
+        raise _outside_page(e) from e
     except spaces.SpaceNotFound as e:
         raise MCPToolError("NOT_FOUND", e.message, {"reason": e.code}) from e
     except spaces.SpaceChanged as e:
@@ -108,6 +113,10 @@ def _space(caller: Caller, space_id=None, opportunity_ids=None, program_ids=None
         raise MCPToolError("PERMISSION_DENIED", e.message, {"reason": e.code, "space_id": e.space_id}) from e
     except ScopeError as e:
         raise _scope_error(e) from e
+
+
+def _outside_page(e) -> MCPToolError:
+    return MCPToolError("PERMISSION_DENIED", e.message, e.as_dict())
 
 
 def _from_canopy() -> bool:
@@ -140,9 +149,11 @@ DESCRIBE = dict(
         "submitted form fields (path, fill rate, type, the SQL that reads it, and the values of categorical "
         "fields), the semantic registries that cover these opportunities, and the rules for answering. "
         "Use `field_search` to find a field ('birth', 'delivery', 'weight'). Set `load_missing` to fetch "
-        "opportunities that have nothing cached (can take a minute). An agent calling through canopy that "
-        "Labs has not cleared for sensitive data gets structure only on PRODUCTION opportunities (no values, fill "
-        "rates or counts)."
+        "opportunities that have nothing cached (can take a minute) and, with a `workflow`, to rebuild its "
+        "pipelines' stored output where it has expired (a pipeline relation with no rows says why in "
+        "`why_no_rows`; a few opportunities per call -- call again while `pipelines_rebuilt.pending`). "
+        "An agent calling through canopy that Labs has not cleared for sensitive data gets structure only on "
+        "PRODUCTION opportunities (no values, fill rates or counts)."
     ),
     input_schema={
         "type": "object",
@@ -204,6 +215,10 @@ def describe(
     if _from_canopy():
         # Only canopy's panel has the Data page's page actions (page_showQuery, ...).
         out["page_actions"] = guidance.PAGE_ACTIONS
+    page = page_holds.current_page()
+    if page is not None:
+        # The page this agent is on, and that it reads nothing beyond it.
+        out["page"] = {**page, "rules": guidance.PAGE_RULES}
     return out
 
 
@@ -594,6 +609,11 @@ def data_workflow_context(user, definition_id=None, opportunity_id=None, program
         definition_id, opportunity_id, program_id = w["id"], w.get("opportunity_id"), w.get("program_id")
     if definition_id is None:
         raise MCPToolError("INVALID_SCHEMA", "Give definition_id (or space_id).", {"reason": "definition_required"})
+    try:
+        # Canopy on a page: only that page's workflow.
+        page_holds.hold_workflow(definition_id)
+    except page_holds.OutsidePage as e:
+        raise _outside_page(e) from e
     try:
         return workflow_context(caller, int(definition_id), opportunity_id=opportunity_id, program_id=program_id)
     except ScopeError as e:

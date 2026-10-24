@@ -112,3 +112,45 @@ class SavedQuery(models.Model):
             "saved_by": getattr(self.owner, "username", "") if self.space_id else None,
             "created_at": self.created_at.isoformat(),
         }
+
+
+class PageHold(models.Model):
+    """What one drawn page lets its agent read: the page's own selection (``page_holds``).
+
+    Written when the canopy panel on that page mints a grant, from what labs signed into the
+    panel's token URL when it drew the page -- never from anything the agent sends -- and, on
+    the plain Data page, when the person changes the selection in their own session. Keyed by
+    one drawing of the page (a SHA-256 of its page token and the selection signed beside it:
+    ``page_holds.drawing``), so it belongs to one drawing of one page for one person.
+    Ids only, never rows.
+    """
+
+    page_token_checksum = models.CharField(max_length=64, unique=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    #: The page key the token was signed for (``labs.canopy.PAGE_SCOPES``).
+    page_key = models.CharField(max_length=100)
+    #: A data space's page: the space it is.
+    space_id = models.IntegerField(null=True, blank=True)
+    #: A workflow run page (or a Data page on a workflow): ``{id, opportunity_id | program_id}``.
+    workflow = models.JSONField(default=dict, blank=True)
+    #: The opportunities the page reads, resolved as the person; ``None`` only for a Data
+    #: page on a workflow, whose opportunities are the workflow's own (resolved per call).
+    opportunity_ids = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"{self.page_key} for user {self.user_id}"
+
+
+class PageGrant(models.Model):
+    """One grant canopy was given on a page: the ID-JAG's ``jti``, which the delegated token
+    it is redeemed for keeps as ``grant_jti`` (the canopy SDK's ``DelegatedToken``). The MCP
+    looks the call's page up through it."""
+
+    grant_jti = models.CharField(max_length=64, unique=True)
+    hold = models.ForeignKey(PageHold, on_delete=models.CASCADE, related_name="grants")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f"grant {self.grant_jti[:8]} on {self.hold_id}"

@@ -164,8 +164,27 @@
         url.searchParams.set('programs', state.programs.join(','));
       if (state.opps.length) url.searchParams.set('opps', state.opps.join(','));
       window.history.replaceState(null, '', url);
+      reportSelection();
     }
     pushPageState();
+  }
+
+  // Tell labs what the plain page now shows, in the person's own session: the page's agent
+  // reads only that (labsdata/page_holds.py). Only the latest change matters.
+  let reported = '';
+  function reportSelection() {
+    if (!cfg.pageHoldsUrl || !cfg.panelPageToken) return;
+    const body = {
+      page_token: cfg.panelPageToken,
+      page_holds: cfg.panelHolds,
+      ...selectionBody(),
+    };
+    const key = JSON.stringify(body);
+    if (key === reported) return;
+    reported = key;
+    post(cfg.pageHoldsUrl, body).catch(() => {
+      reported = '';
+    });
   }
 
   // The panel's page state: what the person is looking at, as ids. On a space's page

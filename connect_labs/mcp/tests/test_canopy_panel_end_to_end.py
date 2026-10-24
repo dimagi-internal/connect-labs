@@ -121,8 +121,10 @@ def _mint(panel, user) -> dict:
     url = panel["options"]["tokenUrl"]
     request = RequestFactory().post(url)
     request.user = user
+    # The view the URL routes to: labs' mint (labs/canopy_token.py), which records the page.
+    view = resolve(url.split("?")[0]).func
     with mock.patch.object(sdk_views, "mint_contact_token", mint):
-        response = sdk_views.panel_token(request)
+        response = view(request)
     assert response.status_code == 200, response.content
     assert json.loads(response.content)["token"] == "canopy-contact-token"
     return sent
@@ -341,6 +343,13 @@ def test_a_workflow_that_offers_the_data_agent_grants_it_the_runs_reads_and_edit
     assert _scopes(id_jag) == {"workflow:read", "data:read", "workflow:edit"}
     signed = json.dumps(unverified_claims(arrival["assertion"]))
     assert "labsdata" in signed and "sensitive_data" in signed
+    # The grant is recorded against the page it was given on: this workflow, in its scope, and
+    # the opportunities it reads -- what the agent's data_* reads are held to (page_holds).
+    from connect_labs.labsdata.models import PageGrant
+
+    hold = PageGrant.objects.get(grant_jti=unverified_claims(id_jag)["jti"]).hold
+    assert hold.workflow == {"id": 47, "program_id": 25} and hold.user_id == visitor.pk
+    assert hold.page_key == "labs:workflow:run:data" and hold.space_id is None
 
     token = _redeem(canopy_redeem, id_jag)
 

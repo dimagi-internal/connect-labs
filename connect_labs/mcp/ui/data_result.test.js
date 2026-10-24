@@ -957,6 +957,82 @@ describe('a chart the card picks itself', () => {
   });
 });
 
+describe('axis labels and the month so far', () => {
+  it('leaves a prefix every bar shares off the axis, says it once, and keeps each full name on hover', async () => {
+    const view = await shown({
+      columns: ['opportunity_name', 'avg_weight'],
+      rows: [
+        ['[Synthetic] KMC - KE - Kikapu - P1 - May 26', 2100],
+        ['[Synthetic] KMC - UG - NAMA - P1 - Apr 26', 1900],
+        ['[Synthetic] KMC - NG - EHA - P1 - Mar 26', 1800],
+      ],
+      display: {
+        chart: { type: 'bar', x: 'opportunity_name', y: ['avg_weight'] },
+      },
+    });
+    const labels = [
+      ...view.document.querySelectorAll('svg text[transform]'),
+    ].map((t) => t.textContent);
+    expect(labels.every((l) => !l.startsWith('[Synthetic]'))).toBe(true);
+    expect(new Set(labels).size).toBe(3);
+    expect(labels[0]).toMatch(/^KE - Kik/);
+    // Cut in the middle: the end, which tells the opportunities apart, still shows.
+    expect(labels.every((l) => l.length <= 18)).toBe(true);
+    expect(labels[0]).toMatch(/May 26$/);
+    const titles = [...view.document.querySelectorAll('svg g > title')].map(
+      (t) => t.textContent,
+    );
+    expect(titles).toContain('[Synthetic] KMC - KE - Kikapu - P1 - May 26');
+    expect(view.document.querySelector('.chart-note').textContent).toContain(
+      '[Synthetic] KMC -',
+    );
+  });
+
+  it('labels that share nothing are drawn as they are', async () => {
+    const view = await shown(BY_LLO);
+    view.click('[data-tab="chart"]');
+    expect(view.document.querySelector('.chart-note')).toBeNull();
+  });
+
+  it("marks this month's point as the month so far", async () => {
+    const now = new Date();
+    const month = (back) => {
+      const d = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1),
+      );
+      return d.toISOString().slice(0, 10);
+    };
+    const view = await shown({
+      columns: ['month', 'approved_visits'],
+      column_types: ['date', 'integer'],
+      rows: [
+        [month(2), 3203],
+        [month(1), 3349],
+        [month(0), 610],
+      ],
+      display: { chart: { type: 'line', x: 'month', y: ['approved_visits'] } },
+    });
+    expect(view.document.querySelector('polyline.partial')).not.toBeNull();
+    expect(view.document.querySelector('circle.partial')).not.toBeNull();
+    expect(view.document.querySelector('.chart-note').textContent).toMatch(
+      /so far/,
+    );
+  });
+
+  it('a series of past months has no partial mark', async () => {
+    const view = await shown({
+      columns: ['month', 'approved_visits'],
+      column_types: ['date', 'integer'],
+      rows: [
+        ['2026-01-01', 1862],
+        ['2026-02-01', 2565],
+      ],
+      display: { chart: { type: 'line', x: 'month', y: ['approved_visits'] } },
+    });
+    expect(view.document.querySelector('.partial')).toBeNull();
+  });
+});
+
 describe('provenance', () => {
   it('says how fresh the data is: the oldest, the rest on hover', async () => {
     const view = await shown(BY_LLO);

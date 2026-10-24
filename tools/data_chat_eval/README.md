@@ -124,7 +124,10 @@ security on the caches (`labsdata/engine.py`, `labs/migrations/0039`):
 - **correctness under RLS**: each opportunity's count matches `data_describe`'s `cached_visits`
   (an app-role read); a program equals the sum of its opportunities, the workflow selection
   and a data space on the program; `visits` holds exactly the selection; a pipeline
-  relation's rows per opportunity match what it stores;
+  relation's rows per opportunity match what it stores (each workflow's pipelines are rebuilt
+  first with `data_describe(workflow, load_missing)`, since stored pipeline output lives an
+  hour, and an empty relation must say why); and, where another workflow's relation has the
+  same name but another pipeline, each reads only its own pipeline's rows;
 - **containment**: the caches and the grants table by name (bare, qualified, quoted),
   Django's tables, the catalogs, functions that run a string as SQL or reach the server,
   role changes, several statements, writes, a pipeline relation without its workflow,
@@ -137,7 +140,9 @@ security on the caches (`labsdata/engine.py`, `labs/migrations/0039`):
 Every raw response goes to `<run>/<id>/probes.json`. `--surface containment` runs only this
 set, and `--no-containment` skips it. It costs no agent turns. The chat scenario
 `outside-selection` asks the run-page agent to add opportunities outside the page's
-selection and checks that it refuses cleanly (`refuses`, `no_errors: {allow_refused: true}`).
+selection and checks that it refuses cleanly (`refuses`, `no_errors: {allow_refused: true}`) and
+that no data call read them (`reads_none_of`): labs refuses such a call with `outside_page`
+(`labsdata/page_holds.py`).
 
 Adding a programme: pick a labs-only synthetic one whose data is GENERATED
 (`labs/synthetic/provenance.py`; a workflow over anything else shows no panel to an agent

@@ -1166,11 +1166,15 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         )
         # Over sensitive data (non-generated visits) no agent is offered unless labs has
         # cleared it for sensitive data (labs/canopy_panel.py): no panel, no page token, no grant.
+        from connect_labs.labsdata import page_holds
+
         panel = canopy_panel.panel(
             self.request,
             reads=reads,
             available=available,
             page_key=page_key,
+            # The agent's data reads are held to this: the workflow's opportunities and pipelines.
+            holds=page_holds.for_workflow(definition.id, scope, reads.opportunity_ids),
             resource=f"labs-workflow://{definition.id}/runs/{run_id}",
             backing_tool="workflow_run_indicators",
             visible_ids=[worker_key(w.get("opportunity_id"), w.get("username")) for w in workers if w.get("username")],

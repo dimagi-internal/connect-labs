@@ -203,6 +203,11 @@
       spacePageUrl: "{% url 'labsdata:space' 0 %}",
       spaceApiUrl: "{% url 'labsdata:space_detail' 0 %}",
       csrf: "{{ csrf_token }}",
+      // The plain page reports each change of selection here, so its agent reads what is on
+      // screen and nothing else (labsdata/page_holds.py). The token names this drawing of the page.
+      pageHoldsUrl: "{% url 'labsdata:page_holds' %}",
+      panelPageToken: "{{ canopy_panel.page_token|default:''|escapejs }}",
+      panelHolds: "{{ canopy_panel.page_holds|default:''|escapejs }}",
     };
   </script>
   {{ open_intent|json_script:"ex-open-intent" }}

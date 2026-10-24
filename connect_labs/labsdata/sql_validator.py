@@ -760,7 +760,7 @@ class SQLValidator:
             if table.name.lower().startswith(SYSTEM_CATALOG_PREFIX):
                 raise SQLValidationError(
                     f"Access to system catalog '{table.name}' is not permitted. "
-                    "Use the describe_table and list_tables tools to inspect schema.",
+                    "Use data_describe to see the relations and columns you can query.",
                     sql=sql,
                     error_type="system_catalog_not_allowed",
                 )

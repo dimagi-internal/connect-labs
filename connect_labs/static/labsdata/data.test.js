@@ -51,6 +51,7 @@ function mount({
   groups = [],
   items = [],
   queryFails = false,
+  panel = false,
 } = {}) {
   const window = new Window({ url: 'https://labs.example/labs/data/' });
   const document = window.document;
@@ -98,6 +99,13 @@ function mount({
     spacePageUrl: '/labs/data/space/0/',
     spaceApiUrl: '/sp/0/',
     csrf: 't',
+    ...(panel
+      ? {
+          pageHoldsUrl: '/ph',
+          panelPageToken: 'page-token',
+          panelHolds: 'signed',
+        }
+      : {}),
   };
   const ok = (body) => ({ ok: true, status: 200, json: async () => body });
   window.fetch = async (url, init) => {
@@ -294,6 +302,33 @@ describe('saving a query', () => {
     const th = document.querySelectorAll('#ex-result th');
     expect(th[1].textContent).toBe('Visits');
     expect(th[1].getAttribute('title')).toBe('n');
+  });
+});
+
+describe("the page's agent reads what is on screen", () => {
+  it('the plain page tells labs its selection, in the person own session', async () => {
+    const { posts } = mount({ panel: true });
+    await settle();
+    const told = posts.filter((p) => p.url === '/ph');
+    expect(told.length).toBe(1);
+    expect(told[0].body).toEqual({
+      page_token: 'page-token',
+      page_holds: 'signed',
+      opportunity_ids: [7],
+      program_ids: [],
+    });
+  });
+
+  it('a space page never does: its selection is the space', async () => {
+    const { posts } = mount({ panel: true, space: SPACE });
+    await settle();
+    expect(posts.filter((p) => p.url === '/ph')).toEqual([]);
+  });
+
+  it('without a panel there is nothing to tell', async () => {
+    const { posts } = mount();
+    await settle();
+    expect(posts.filter((p) => p.url === '/ph')).toEqual([]);
   });
 });
 

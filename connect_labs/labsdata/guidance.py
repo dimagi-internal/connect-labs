@@ -133,6 +133,18 @@ so and suggest they open or make a space with it. You cannot change a space's so
 on the page. Useful queries are kept by proposing a save (page_proposeSave), never by copying results.
 """
 
+#: Returned by data_describe to an agent on a page (a canopy page grant): the reads are held
+#: to the page (``page_holds``).
+PAGE_RULES = """\
+You are the agent on a page, and the data tools read only what that page shows (`page`): a workflow run page
+reads its workflow's opportunities and its pipelines, a data space's page its space, the Data page the
+selection on screen. A call naming anything else is refused with `outside_page` -- a rule, not an error to
+work around. When the person asks about data outside the page: do not try other ids, programs or workflows,
+do not load or count them, and never offer a sum or comparison with them. Say in one line what this page
+covers and that you cannot read beyond it here, and suggest they open the Data page (/labs/data/) and choose
+what to read there (on the Data page itself: add it to the selection).
+"""
+
 #: How to check that a workflow shows what it should. Returned by data_describe and
 #: data_workflow_context, because "is this workflow right?" is what this is mostly for.
 VERIFYING_A_WORKFLOW = """\

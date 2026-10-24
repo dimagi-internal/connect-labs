@@ -30,7 +30,7 @@ from connect_labs.audit_trail.service import record
 from connect_labs.labs.access.scopes import Caller
 from connect_labs.labs.synthetic.provenance import all_generated
 
-from . import engine, fields, guidance, scope
+from . import engine, fields, guidance, pipelines, scope
 from .spaces import OpenSpace
 from .validator import DEFAULT_MAX_ROWS, HARD_MAX_ROWS
 
@@ -269,6 +269,7 @@ def describe(
     opps = selection.opportunities
     withheld = not agent_sees_sensitive_rows(for_agent, opps)
     loaded = warm(caller, opps) if load_missing and not withheld else []
+    rebuilt = _refill_pipelines(caller, selection) if load_missing and not withheld else None
     described = (
         fields.search_fields(fields.describe_fields(opps), field_search)
         if include_fields
@@ -286,6 +287,7 @@ def describe(
         "opportunities": status,
         "sensitive_data_visible_to_you": not withheld,
         "loaded": loaded,
+        **({"pipelines_rebuilt": rebuilt} if rebuilt else {}),
         "relations": {
             "visits": {
                 "grain": "one row per Connect visit",
@@ -326,7 +328,31 @@ def _pipeline_relations(selection, withheld: bool) -> dict:
             entry["rows_by_opportunity"] = counts
             entry["stale_opportunities"] = sorted(o for o, n in counts.items() if not n)
         out[rel.name] = entry
+    if not withheld:
+        # Never a silent 0: say why each one has no rows, and how to rebuild them.
+        stale = {name: e["stale_opportunities"] for name, e in out.items() if e.get("stale_opportunities")}
+        reasons = pipelines.stale_reasons(stale, selection.relations)
+        for name, by_opp in reasons.items():
+            out[name]["why_no_rows"] = {str(oid): r for oid, r in by_opp.items()}
+            states = sorted({r["state"] for r in by_opp.values()})
+            out[name]["note"] = (
+                f"No current rows on {len(by_opp)} of {len(out[name]['rows_by_opportunity'])} opportunities "
+                f"({', '.join(states)}): queries over {name} leave them out. {pipelines.REBUILD}"
+            )
     return out
+
+
+def _refill_pipelines(caller: Caller, space: OpenSpace) -> dict | None:
+    """With ``load_missing`` on a workflow: rebuild the pipelines' stored output on every
+    opportunity that has none current (a few per call; ``pipelines.refill``)."""
+    selection = space.selection
+    if not selection.relations:
+        return None
+    status = engine.pipeline_status(selection.opportunities, selection.relations)
+    stale = sorted({oid for counts in status.values() for oid, n in counts.items() if not n})
+    if not stale:
+        return None
+    return pipelines.refill(caller, selection, stale)
 
 
 def validate_selected(sql: str, space: OpenSpace) -> dict:
