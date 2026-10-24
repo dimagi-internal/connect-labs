@@ -39,8 +39,13 @@
         --color-text-warning: light-dark(#7a5300, #f3c969);
         --color-border-primary: light-dark(#d9dde3, #3a3d42);
         --color-border-secondary: light-dark(#eceff3, #2c2f33);
-        --brand: light-dark(#16006d, #a99bff);
-        --brand-soft: light-dark(#eef2ff, #24204a);
+        /* The host's accent when it sends one (MCP Apps has no "brand"; canopy sends
+           its accent as the info colours), else Labs' own. */
+        --brand: var(--color-text-info, light-dark(#16006d, #a99bff));
+        --brand-soft: var(
+          --color-background-info,
+          light-dark(#eef2ff, #24204a)
+        );
         --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
         --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
         --s1: light-dark(#3f4fa0, #9aa8ff);
@@ -85,7 +90,7 @@
         color: var(--color-text-warning);
       }
       .err {
-        color: #b42318;
+        color: var(--color-text-danger, #b42318);
       }
       .spacer {
         flex: 1;
