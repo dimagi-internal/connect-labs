@@ -74,6 +74,16 @@ def _get_json(dst, key: str) -> dict | None:
         return None
 
 
+def _delete_prefix(dst, prefix: str) -> int:
+    keys = list(_listing(dst, overture.EXTRACT_BUCKET, prefix))
+    for i in range(0, len(keys), 1000):
+        dst.delete_objects(
+            Bucket=overture.EXTRACT_BUCKET,
+            Delete={"Objects": [{"Key": prefix + k} for k in keys[i : i + 1000]], "Quiet": True},
+        )
+    return len(keys)
+
+
 def _tile_key_prefix(kind: str, region: str, release: str) -> str:
     return f"{overture.snapshot_prefix(release)}/tiles/{kind}/{region}"
 
@@ -239,6 +249,11 @@ class Command(BaseCommand):
                 if _get_json(self.dst, marker) is not None:
                     self.stdout.write(f"  cut {kind}/{region}: already done")
                     continue
+                # No marker means no finished cut, but possibly a half-written one
+                # (a killed task). COPY ... OVERWRITE_OR_IGNORE replaces same-named
+                # files and keeps the rest, so clear the prefix first or a partial
+                # cut's extra files would be read alongside the new ones.
+                _delete_prefix(self.dst, f"{_tile_key_prefix(kind, region, self.release)}/")
                 t0 = time.time()
                 con = overture.connect()
                 try:
@@ -386,10 +401,5 @@ class Command(BaseCommand):
         ):
             held |= {p["Prefix"][len(base) :].rstrip("/") for p in page.get("CommonPrefixes", [])}
         for release in sorted(held - keep):
-            keys = list(_listing(self.dst, overture.EXTRACT_BUCKET, f"{base}{release}/"))
-            for i in range(0, len(keys), 1000):
-                self.dst.delete_objects(
-                    Bucket=overture.EXTRACT_BUCKET,
-                    Delete={"Objects": [{"Key": f"{base}{release}/{k}"} for k in keys[i : i + 1000]], "Quiet": True},
-                )
-            self.stdout.write(f"  prune: deleted snapshot {release} ({len(keys)} objects)")
+            n = _delete_prefix(self.dst, f"{base}{release}/")
+            self.stdout.write(f"  prune: deleted snapshot {release} ({n} objects)")

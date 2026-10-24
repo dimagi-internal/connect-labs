@@ -291,3 +291,26 @@ def test_the_cut_reads_labs_raw_copy_not_overtures_bucket():
 def test_unknown_steps_are_refused_before_anything_runs():
     with pytest.raises(CommandError, match="unknown step"):
         call_command("overture_refresh", "2099-01-01.0", "--steps", "copy,bump", "--dry-run")
+
+
+def test_a_cut_clears_a_half_written_region_before_cutting_it_again(monkeypatch):
+    """A killed cut leaves files and no _DONE marker. DuckDB's OVERWRITE_OR_IGNORE
+    keeps files it does not rewrite, so those would be read alongside the new cut."""
+    prefix = "overture/snapshots/R/tiles/segments/nigeria/"
+    fake = _FakeS3({prefix + "tx=7/ty=11/data_9.parquet": b"partial"})
+
+    class Con:
+        def execute(self, sql, params=None):
+            return self
+
+        def fetchone(self):
+            return (42,)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(overture, "connect", lambda: Con())
+    cmd, _ = _refresh(fake, "R")
+    cmd._cut(["segments"], ["nigeria"])
+    assert prefix + "tx=7/ty=11/data_9.parquet" not in fake.objects
+    assert json.loads(fake.objects[prefix + "_DONE.json"])["rows"] == 42
