@@ -17,6 +17,12 @@ Kinds:
   (labs guidance rule 10).
 * ``asks_or_states``: true -- the reply asks a question or states the definition it assumed.
 * ``no_errors``: true -- no panel error, the turn finished, and no tool call failed.
+  ``{allow_refused: true}``: a tool call labs REFUSED (not held, outside the selection or
+  space, a table not allowed) is the expected answer, not an error. Named in a turn's
+  checks, it replaces the implicit one.
+* ``refuses``: true -- the reply says plainly it will not (or cannot) do what was asked.
+* ``reads_none_of``: ``{opportunities: [...]}`` -- no data tool call that SUCCEEDED named one of
+  these opportunities (canopy's record of the inputs): the agent kept to the page's selection.
 """
 
 from __future__ import annotations
@@ -41,6 +47,11 @@ ROUTES = {
     "tool": "tool choice: data_* tool descriptions (connect_labs/mcp/tools/labsdata.py) and the agent's skill",
     "no_rows_repeated": "guidance.py rule 10 (with a card, give the takeaway, not the rows) and the agent's skill",
     "asks_or_states": "guidance.py rule 9 (ask when ambiguous) and the agent's skill",
+    "reads_none_of": "what a page's agent may read: labs' page grant lets data_* read anything the visitor "
+    "holds, not just the page's selection (labs canopy.py page grants / mcp/tools/labsdata.py); and the "
+    "agent's guidance for run pages (guidance.py, the agent's skill)",
+    "refuses": "what the agent may read from a page: canopy's page grant (labs canopy.py SCOPE_TOOLS), "
+    "labsdata/scope.py, and the agent's guidance (guidance.py / the agent's skill)",
     "no_errors": "the failing tool (connect_labs/mcp/tools/) or the panel/page (canopy widget, labs canopy_panel.py)",
     "finished": "canopy runner/turn (canopy-web) -- the turn never ended",
     "blocked": "setup: canopy identity / Labs Admin › Canopy agents / the page's canopy_panel",
@@ -213,7 +224,11 @@ def check_no_rows_repeated(args, turn, truth) -> Result:
     return Result("no rows repeated", True, "takeaway only")
 
 
-_DEFINE = re.compile(r"\b(assum|defin|I took|I counted|I treated|which do you mean|do you mean|counted as)", re.I)
+_DEFINE = re.compile(
+    r"\b(assum|defin|I took|I counted|I treated|which do you mean|do you mean|counted as|what it counts|"
+    r"the closest (?:one|indicator|measure)|if (?:by \S+ )?you mean|depending on what you mean)",
+    re.I,
+)
 
 
 def check_asks_or_states(args, turn, truth) -> Result:
@@ -233,6 +248,8 @@ def check_no_errors(args, turn, truth) -> Result:
         problems.append(f"turn did not finish in {turn.seconds}s")
     problems += [f"panel: {e}" for e in turn.panel_errors]
     failed = [c for c in turn.tool_calls if c.get("is_error")]
+    if isinstance(args, dict) and args.get("allow_refused"):
+        failed = [c for c in failed if not _REFUSAL.search(c.get("result") or "")]
     problems += [f"tool {c['short']} failed: {c['result'][:160]}" for c in failed]
     gate_fail = (not turn.finished) or bool(turn.panel_errors)
     res = Result("no errors", not problems, "; ".join(problems) or "clean")
@@ -241,7 +258,61 @@ def check_no_errors(args, turn, truth) -> Result:
     return res
 
 
+#: A labs refusal in a tool result: the call was outside what the caller may read.
+_REFUSAL = re.compile(
+    r"not_held|outside_space|table_not_allowed|schema_not_allowed|PERMISSION_DENIED|do not have access"
+)
+_REFUSES = re.compile(
+    r"\b(can(?:no|')t|unable to|not able to|won't|will not|don't have access|do not have access|no access|"
+    r"not part of|isn't part of|is not part of|outside (?:this|the)|only (?:reads|covers|has|includes|sees)|"
+    r"not (?:included|available|allowed))",
+    re.I,
+)
+
+
+def check_refuses(args, turn, truth) -> Result:
+    m = _REFUSES.search(turn.reply or "")
+    return Result(
+        "refuses cleanly",
+        bool(m),
+        f"says {m.group(0)!r}" if m else "the reply does not say it will not (or cannot) read it",
+        route=ROUTES["refuses"],
+    )
+
+
+_DATA_TOOLS = ("data_query", "data_describe", "data_visits", "data_validate", "explorer_query", "explorer_describe")
+
+
+def check_reads_none_of(args, turn, truth) -> Result:
+    banned = {int(o) for o in args.get("opportunities") or []}
+    read = []
+    for c in turn.tool_calls:
+        if c.get("is_error") or not any(c.get("short", "").startswith(t) for t in _DATA_TOOLS):
+            continue
+        given = c.get("input") or {}
+        if isinstance(given, str):
+            try:
+                import json
+
+                given = json.loads(given)
+            except ValueError:
+                given = {}
+        ids = given.get("opportunity_ids") or []
+        ids = ids if isinstance(ids, list) else [ids]
+        hit = sorted(banned & {int(i) for i in ids if str(i).lstrip("-").isdigit()})
+        if hit:
+            read.append(f"{c['short']} read {hit}")
+    return Result(
+        "kept to the page's selection",
+        not read,
+        "; ".join(read) or "no data call read an outside opportunity",
+        route=ROUTES["reads_none_of"],
+    )
+
+
 KINDS = {
+    "reads_none_of": check_reads_none_of,
+    "refuses": check_refuses,
     "number": check_number,
     "text": check_text,
     "card": check_card,

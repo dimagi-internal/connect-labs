@@ -86,6 +86,30 @@ def _tool_error(e: MCPToolError) -> ToolError:
     return ToolError(f"{e.message}\n{json.dumps({'code': e.code, **e.details}, default=str)}")
 
 
+@functools.cache
+def _handler_params(handler) -> frozenset[str] | None:
+    """The keyword arguments ``handler`` accepts, or None when it takes ``**kwargs``."""
+    import inspect
+
+    try:
+        params = inspect.signature(handler).parameters.values()
+    except (TypeError, ValueError):
+        return None
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params):
+        return None
+    return frozenset(p.name for p in params if p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY))
+
+
+def _unknown_arguments(spec, arguments: dict) -> list[str]:
+    """Arguments neither the handler nor its declared schema takes (``wait`` and
+    ``progress`` are the server's own)."""
+    accepted = _handler_params(spec.handler)
+    if accepted is None:
+        return []
+    declared = set((spec.input_schema or {}).get("properties") or {})
+    return sorted(k for k in arguments if k not in accepted and k not in declared and k not in ("wait", "progress"))
+
+
 def _closing_connections(fn):
     """Wrap a sync callable so it closes this thread's DB connections on exit.
 
@@ -629,6 +653,19 @@ def _run_registry_tool_inner(
         except jsonschema.ValidationError as e:
             audit(user, spec.name, arguments, success=False, error_code="INVALID_SCHEMA", is_write=spec.is_write)
             raise ToolError(f"Invalid arguments for {spec.name}: {e.message}") from e
+    unknown = _unknown_arguments(spec, arguments)
+    if unknown:
+        # An argument the tool does not take reached the handler as a TypeError and came
+        # back as a traceback; say plainly what it takes instead (data_chat_eval: an agent
+        # passed data_query's `workflow` to data_workflow_context).
+        audit(user, spec.name, arguments, success=False, error_code="INVALID_SCHEMA", is_write=spec.is_write)
+        takes = sorted((spec.input_schema or {}).get("properties") or {})
+        err = MCPToolError(
+            "INVALID_SCHEMA",
+            f"{spec.name} does not take {', '.join(map(repr, unknown))}. It takes: {', '.join(takes)}.",
+            {"reason": "unknown_argument", "unknown": unknown, "takes": takes},
+        )
+        raise _tool_error(err) from err
     delegated = (getattr(access_token, "claims", None) or {}).get("auth_method") == "delegated"
     denied = policy_denial(spec.name, arguments, user, restricted, delegated=delegated)
     if denied:

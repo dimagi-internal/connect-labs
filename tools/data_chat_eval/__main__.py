@@ -26,7 +26,9 @@ def main(argv=None) -> int:
     ap.add_argument("--suite", type=Path, default=DEFAULT_SUITE)
     ap.add_argument("--only", nargs="*", help="scenario ids (or prefixes) to run")
     ap.add_argument(
-        "--surface", choices=["workflow_run", "data_page", "data_space"], help="only scenarios on this surface"
+        "--surface",
+        choices=["workflow_run", "data_page", "data_space", "containment"],
+        help="only scenarios on this surface",
     )
     ap.add_argument("--parallel", type=int, default=2, help="scenarios at once (each is its own conversation)")
     ap.add_argument("--no-judge", action="store_true", help="skip the LLM judge")
@@ -36,26 +38,33 @@ def main(argv=None) -> int:
     ap.add_argument("--skip-prepare", action="store_true", help="do not (re)load the visit cache")
     ap.add_argument("--out", type=Path, default=None, help="run directory (default runs/<timestamp>)")
     ap.add_argument("--no-spaces", action="store_true", help="skip the data space scenarios")
+    ap.add_argument("--no-containment", action="store_true", help="skip the direct-MCP containment probes")
     args = ap.parse_args(argv)
 
     import yaml
 
-    from . import canopy_api, labs_mcp, spaces, suite
+    from . import canopy_api, containment, labs_mcp, spaces, suite
 
     mcp = labs_mcp.LabsMCP()
     scenarios = suite.load(args.suite, mcp)
-    space_scenarios = [] if args.no_spaces else spaces.load(yaml.safe_load(args.suite.read_text()))
+    raw_suite = yaml.safe_load(args.suite.read_text())
+    space_scenarios = [] if args.no_spaces else spaces.load(raw_suite)
+    probe_scenarios = [] if args.no_containment else containment.load(raw_suite)
     if args.only:
         scenarios = [s for s in scenarios if any(s.id == o or s.id.startswith(o) for o in args.only)]
         space_scenarios = [s for s in space_scenarios if any(s.id == o or s.id.startswith(o) for o in args.only)]
+        probe_scenarios = [s for s in probe_scenarios if any(s.id == o or s.id.startswith(o) for o in args.only)]
     if args.surface:
         scenarios = [s for s in scenarios if s.page.surface == args.surface]
         space_scenarios = space_scenarios if args.surface == "data_space" else []
+        probe_scenarios = probe_scenarios if args.surface == "containment" else []
     if args.command == "list":
         for s in scenarios:
             print(f"{s.id:28} {s.page.surface:13} {len(s.turns)} turn(s)  {s.title}\n{'':28} {s.page.url}")
         for s in space_scenarios:
             print(f"{s.id:28} {'data_space':13} 7 steps     {s.title}\n{'':28} sources {s.sources}")
+        for s in probe_scenarios:
+            print(f"{s.id:28} {'containment':13} probes      {s.title}\n{'':28} program {s.program_id}")
         return 0
 
     problems, who = preflight(mcp, canopy_api.CanopyAPI())
@@ -104,6 +113,23 @@ def main(argv=None) -> int:
                     "id": sc.id,
                     "title": sc.title,
                     "surface": "data_space",
+                    "url": "",
+                    "checks": [],
+                    "turns": [],
+                    "truth_error": f"{type(e).__name__}: {e}",
+                }
+            )
+
+    for sc in probe_scenarios:
+        print(f"[{sc.id}] containment probes on program {sc.program_id}", flush=True)
+        try:
+            entries.append(containment.run(sc, mcp, run_dir / sc.id, args))
+        except Exception as e:  # noqa: BLE001 -- reported as an errored scenario
+            entries.append(
+                {
+                    "id": sc.id,
+                    "title": sc.title,
+                    "surface": "containment",
                     "url": "",
                     "checks": [],
                     "turns": [],
@@ -204,7 +230,8 @@ def run_one(scenario, run_dir: Path, args) -> dict:
     )
     if not cap.blocked:
         for i, (spec, turn) in enumerate(zip(scenario.turns, cap.turns), 1):
-            implicit = [{"no_errors": True}]
+            # A turn that names its own no_errors (e.g. allow_refused) replaces the implicit one.
+            implicit = [] if any("no_errors" in c for c in spec.checks) else [{"no_errors": True}]
             for c in implicit + spec.checks:
                 try:
                     r = checks.run(c, turn, scenario.truth)
