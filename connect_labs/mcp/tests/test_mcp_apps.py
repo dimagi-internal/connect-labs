@@ -514,5 +514,8 @@ def test_the_results_view_reads_the_kept_result_and_never_runs_the_query():
     assert '"resources/read"' in script
     assert '"resources/subscribe"' not in script
     assert '"labs-result://"' in script
-    assert '"tools/call"' not in script and "askAgain" not in script
+    # It never runs the query itself: an expired result's "Ask again" asks the agent in
+    # the chat (ui/message), which decides whether to run it again.
+    assert '"tools/call"' not in script
+    assert '"ui/message"' in script
     assert "ask again in the chat" in script

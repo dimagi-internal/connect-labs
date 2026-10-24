@@ -401,7 +401,7 @@ def query(
     caller: Caller,
     opportunity_ids,
     sql: str,
-    max_rows: int = DEFAULT_MAX_ROWS,
+    max_rows: int | None = None,
     *,
     for_agent: bool = False,
     shaped: bool = True,

@@ -144,6 +144,62 @@ def test_canopys_agent_gets_facts_a_sample_and_the_link(owner, connect, monkeypa
     assert len(Row.objects.get().payload["rows"]) == 45
 
 
+def test_canopys_agent_gets_column_types_and_is_told_the_card_shows_the_rows(owner, connect, monkeypatch):
+    from connect_labs.labs import canopy_panel
+    from connect_labs.mcp.tools import labsdata as tools
+
+    asked = {}
+
+    def run_query(opps, sql, max_rows):
+        asked["max_rows"] = max_rows
+        return engine.QueryResult(
+            COLUMNS,
+            [list(r) for r in ROWS],
+            len(ROWS),
+            False,
+            sql,
+            3,
+            column_types=["text", "integer"],
+            row_cap={"limit": 500, "source": "default"},
+        )
+
+    connect["users"].add(owner.pk)
+    monkeypatch.setattr(engine, "run_query", run_query)
+    monkeypatch.setattr(tools, "_from_canopy", lambda: True)
+    monkeypatch.setattr(canopy_panel, "call_sensitive_data_clearance", lambda: canopy_panel.Clearance(True))
+    out = _query(owner)["result"]["structuredContent"]
+    # max_rows left out reaches the engine as "the default", not as a number the caller chose.
+    assert asked["max_rows"] is None
+    assert out["column_types"] == ["text", "integer"]
+    assert out["row_cap"] == {"limit": 500, "source": "default"}
+    assert any("not a markdown table" in n for n in out["notes"])
+    # The card reads the types (and the cap) from the kept result.
+    payload = Row.objects.get().payload
+    assert payload["column_types"] == ["text", "integer"] and payload["row_cap"]["source"] == "default"
+
+
+def test_a_query_error_reaches_the_client_with_its_category_and_recovery(owner, connect, monkeypatch):
+    def run_query(opps, sql, max_rows):
+        raise engine.QueryError("timeout", "The query ran past 20s. Aggregate or narrow it.")
+
+    connect["users"].add(owner.pk)
+    monkeypatch.setattr(engine, "run_query", run_query)
+    result = _query(owner)["result"]
+    assert result["isError"] is True
+    # The error text a client receives: the message, then its details as one JSON line.
+    message = result["structuredContent"]["error"]["message"]
+    first, last = message.split("\n")[0], message.split("\n")[-1]
+    assert first == "The query ran past 20s. Aggregate or narrow it."
+    assert json.loads(last) == {
+        "code": "INVALID_SCHEMA",
+        "error": "timeout",
+        "message": "The query ran past 20s. Aggregate or narrow it.",
+        "category": "capacity",
+        "retryable": False,
+        "recovery_action": "narrow_or_aggregate",
+    }
+
+
 def test_explorer_query_stays_inline_and_keeps_nothing(owner, connect):
     connect["users"].add(owner.pk)
     out = call_tool(
