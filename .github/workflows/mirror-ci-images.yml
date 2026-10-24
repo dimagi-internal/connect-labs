@@ -30,6 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
+      # One image hitting a pull limit must not cancel the others' copies.
+      fail-fast: false
       matrix:
         include:
           - source: docker.io/postgis/postgis:17-3.5
@@ -42,10 +44,13 @@ jobs:
           # The FROM images of Dockerfile.node and Dockerfile.base. Build Node Image
           # failed on every frontend merge for an afternoon pulling node from
           # public.ecr.aws (2026-10-23, "Data limit exceeded"), and a failed node
-          # build ships the previous bundles without saying so.
-          - source: public.ecr.aws/docker/library/node:24-bookworm
+          # build ships the previous bundles without saying so. Docker Hub first,
+          # public.ecr.aws (the same image, a separate limit) if it refuses.
+          - source: docker.io/library/node:24-bookworm
+            fallback: public.ecr.aws/docker/library/node:24-bookworm
             target: ghcr.io/dimagi-internal/connect-labs-mirror-node:24-bookworm
-          - source: public.ecr.aws/docker/library/python:3.13-slim-bookworm
+          - source: docker.io/library/python:3.13-slim-bookworm
+            fallback: public.ecr.aws/docker/library/python:3.13-slim-bookworm
             target: ghcr.io/dimagi-internal/connect-labs-mirror-python:3.13-slim-bookworm
     steps:
       - name: Log in to GHCR
@@ -53,7 +58,17 @@ jobs:
 
       - name: Copy ${{ matrix.source }} -> ${{ matrix.target }}
         # imagetools copies every platform of the manifest list registry-to-registry,
-        # without pulling layers onto the runner.
+        # without pulling layers onto the runner. Each source is tried three times,
+        # a minute apart, so one refused pull does not fail the week's copy.
         run: |
-          docker buildx imagetools create --tag "${{ matrix.target }}" "${{ matrix.source }}"
-          docker buildx imagetools inspect "${{ matrix.target }}"
+          for attempt in 1 2 3; do
+            for src in "${{ matrix.source }}" ${{ matrix.fallback }}; do
+              if docker buildx imagetools create --tag "${{ matrix.target }}" "$src"; then
+                echo "copied from $src"
+                docker buildx imagetools inspect "${{ matrix.target }}"
+                exit 0
+              fi
+            done
+            [ "$attempt" = 3 ] || sleep 60
+          done
+          exit 1
