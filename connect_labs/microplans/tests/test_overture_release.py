@@ -158,3 +158,24 @@ def test_an_uncut_region_never_routes_to_an_extract():
         bb = overture.EXTRACT_REGIONS[name]["bbox"]
         inside = (bb[0] + 0.2, bb[1] + 0.2, bb[0] + 0.3, bb[1] + 0.3)
         assert overture.covering_region(inside) != name
+
+
+def test_an_extract_can_be_cut_onto_the_next_release_before_the_pin_moves():
+    """The pin moves without a slow window only if every region can be cut onto
+    the next release first: read from that release, written to its own prefix."""
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    out = StringIO()
+    call_command("microplans_build_extract", "nigeria", "--release", "2099-01-01.0", "--dry-run", stdout=out)
+    plan = out.getvalue()
+    assert "release/2099-01-01.0/theme=buildings/type=building" in plan
+    assert "overture/nigeria/2099-01-01.0'" in plan
+    assert overture.OVERTURE_RELEASE not in plan.split("dest")[-1]
+
+
+def test_without_a_release_the_cut_reads_the_pin():
+    assert overture.theme_path("buildings", "building") == (
+        f"s3://overturemaps-us-west-2/release/{overture.OVERTURE_RELEASE}/theme=buildings/type=building/*"
+    )
