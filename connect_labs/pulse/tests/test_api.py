@@ -870,12 +870,32 @@ class TestSummaryCache:
         calls = []
         orig = api.SummaryView._build
 
-        def spy(self, request):
+        def spy(self, request, *a, **kw):
             calls.append(1)
-            return orig(self, request)
+            return orig(self, request, *a, **kw)
 
         monkeypatch.setattr(api.SummaryView, "_build", spy)
         return calls
+
+    def test_one_warm_scans_the_history_once_for_all_four_variants(self, populated, settings, monkeypatch):
+        # The four variants differ only in names and cost view; building each
+        # from scratch ran every full-history scan four times (~54s a warm).
+        from django.core.cache import cache
+
+        from connect_labs.pulse import api, tasks
+
+        settings.PULSE_SUMMARY_CACHE_SECONDS = 60
+        cache.clear()
+        scans = []
+        orig = api.SummaryView._scope_payload
+
+        def spy(self, request, sc):
+            scans.append(1)
+            return orig(self, request, sc)
+
+        monkeypatch.setattr(api.SummaryView, "_scope_payload", spy)
+        assert tasks.warm_summary_cache() == 4
+        assert len(scans) == 1
 
     def test_repeat_loads_hit_the_cache(self, client, populated, settings, monkeypatch):
         from django.core.cache import cache

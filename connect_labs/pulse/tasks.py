@@ -529,9 +529,11 @@ def warm_summary_cache() -> int:
 
     warmed = 0
     # Both views of fixed costs: the wall opens in either, per the viewer's toggle.
+    # The four are one scope, so `shared` scans the history once for all of them.
+    shared = {}
     for user in (_User(), _Anon()):
         for query in ("", "costs=spread"):
-            SummaryView().get(_Req(user, query), refresh=True, ttl=ttl)
+            SummaryView().get(_Req(user, query), refresh=True, ttl=ttl, shared=shared)
             warmed += 1
     cache.set(_SUMMARY_LAST_WARM_KEY, time.time(), None)
     return warmed
