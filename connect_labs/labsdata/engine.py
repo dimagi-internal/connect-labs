@@ -21,6 +21,10 @@
    inside the same rolled-back transaction, so no other session ever sees them. A
    query that got past every check above still cannot read another table, or
    another opportunity's rows in the caches. If the role is missing, nothing runs.
+   Where ``LABSDATA_READER_PASSWORD`` is set (labs on AWS) the statement runs on a
+   connection that LOGS IN as that role (``reader_login``, migration 0040), so it
+   has no app role to switch back to either: the database alone decides what it
+   can read, even if every check above failed.
 
 What the user writes is placed in a subquery after labs' WITH, so their own WITH,
 UNION, ORDER BY and LIMIT keep working unchanged.
@@ -32,15 +36,18 @@ import datetime as dt
 import decimal
 import json
 import logging
+import secrets
 import time
 import uuid
 from dataclasses import dataclass, field
 
+import psycopg2
 from django.db import DatabaseError, connection, transaction
 from django.utils import timezone
 
 from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
 
+from . import reader_login
 from .scope import Opportunity
 from .sql_validator import SQLValidationError
 from .validator import DEFAULT_MAX_ROWS, HARD_MAX_ROWS, ExplorerValidator
@@ -220,7 +227,7 @@ def _jsonable(value):
     return value
 
 
-def _classify(exc: DatabaseError) -> QueryError:
+def _classify(exc: DatabaseError | psycopg2.Error) -> QueryError:
     cause = exc.__cause__ or exc
     code = getattr(cause, "pgcode", None) or ""
     if code == "57014":
@@ -447,12 +454,15 @@ def visit_grants(opps: list[Opportunity]) -> list[tuple[int, int]]:
 def _lock(cursor, grants: list[tuple[int, int]]) -> None:
     """Grant exactly these cache rows, then become the reader role: from here on the
     database, not only the validator, decides what the statement can read."""
+    token = secrets.token_hex(32)
     if grants:
-        values = ", ".join(["(%s, %s)"] * len(grants))
+        values = ", ".join(["(%s, %s, %s, now() + interval '1 hour')"] * len(grants))
         cursor.execute(
-            f"INSERT INTO public.labsdata_scope_grant (opportunity_id, pipeline_id) VALUES {values}",
-            [v for pair in grants for v in pair],
+            "INSERT INTO public.labsdata_scope_grant (opportunity_id, pipeline_id, token, expires_at) "
+            f"VALUES {values}",
+            [v for opp, pipeline in grants for v in (opp, pipeline, token)],
         )
+    cursor.execute("SELECT set_config('labsdata.token', %s, true)", [token])
     cursor.execute(f"SET LOCAL ROLE {READER_ROLE}")
     cursor.execute("SET LOCAL transaction_read_only = on")
     cursor.execute(f"SET LOCAL statement_timeout = {int(STATEMENT_TIMEOUT_MS)}")
@@ -466,10 +476,32 @@ def _execute(final_sql: str, params: list, grants: list[tuple[int, int]]) -> tup
     return columns, rows
 
 
+def _read(cursor, final_sql: str, params: list) -> tuple[list[str], list[str], list[list]]:
+    cursor.execute(final_sql, params)
+    description = cursor.description or []
+    columns = [d[0] for d in description]
+    types = [column_type(getattr(d, "type_code", None)) for d in description]
+    # Django leaves json/jsonb as text (its JSONField decodes them itself), and so does
+    # the reader login's connection; here they are decoded so form_json arrives as the
+    # form, not a string.
+    is_json = [getattr(d, "type_code", None) in _JSON_OIDS for d in description]
+    rows = [[_decode_json(v) if j else _jsonable(v) for v, j in zip(row, is_json)] for row in cursor.fetchall()]
+    return columns, types, rows
+
+
 def _execute_typed(
     final_sql: str, params: list, grants: list[tuple[int, int]]
 ) -> tuple[list[str], list[str], list[list]]:
     """``_execute``, and each column's type (``COLUMN_TYPES``) from the cursor."""
+    if reader_login.configured():
+        try:
+            return reader_login.run(final_sql, params, grants, _read, STATEMENT_TIMEOUT_MS, EMPTY_SEARCH_PATH)
+        except psycopg2.Error as e:
+            raise _classify(e) from e
+    if reader_login.required():
+        # Fail closed: where the login is the boundary, never fall back to SET ROLE.
+        logger.error("labsdata: LABSDATA_READER_PASSWORD is not set; refusing to run")
+        raise QueryError("query_failed", "The Data page is not available right now.")
     try:
         with transaction.atomic():
             with connection.cursor() as cursor:
@@ -479,16 +511,7 @@ def _execute_typed(
                     # Fail closed: without the role and its grants there is no boundary.
                     logger.error("labsdata: could not lock the session; refusing to run", exc_info=e)
                     raise QueryError("query_failed", "The Data page is not available right now.") from e
-                cursor.execute(final_sql, params)
-                description = cursor.description or []
-                columns = [d[0] for d in description]
-                types = [column_type(getattr(d, "type_code", None)) for d in description]
-                # Django leaves json/jsonb as text (its JSONField decodes them itself);
-                # here they are decoded so form_json arrives as the form, not a string.
-                is_json = [getattr(d, "type_code", None) in _JSON_OIDS for d in description]
-                rows = [
-                    [_decode_json(v) if j else _jsonable(v) for v, j in zip(row, is_json)] for row in cursor.fetchall()
-                ]
+                columns, types, rows = _read(cursor, final_sql, params)
             # Nothing to keep, and rolling back is what undoes the SET LOCALs when this
             # runs inside an outer transaction.
             transaction.set_rollback(True)

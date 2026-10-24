@@ -163,6 +163,10 @@
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-database-url-adP4GQ"
         },
         {
+          "name": "LABSDATA_READER_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-labsdata-reader-password-K5EGeo"
+        },
+        {
           "name": "CONNECT_OAUTH_CLIENT_ID",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-connect-oauth-client-id-9obT8Q"
         },

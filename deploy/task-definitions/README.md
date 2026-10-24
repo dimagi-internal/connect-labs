@@ -36,6 +36,17 @@ registration matches. Labs refuses the example anything but generated data whate
 list says. Rotating the key: replace the secret value and deploy. Labs fetches the
 example's JWKS, so it picks up the new key with no re-registration.
 
+## `LABSDATA_READER_PASSWORD` — the Data page's own database login
+
+The password of `labs_data_reader`, the Postgres role every Data page / `data_*`
+statement logs in as (`labs-jj-labsdata-reader-password`, in both files: MCP tools
+and agents run on either). Labs sets it on the role itself the first time the reader
+cannot log in (`connect_labs/labsdata/reader_login.py`), so there is no step after
+creating or rotating it but a deploy. During the rollout of a rotation old and new
+tasks each re-set their own password on a failed login, so queries keep working.
+`labs_aws` refuses Data queries outright without it, never falling back to the
+weaker `SET ROLE`.
+
 ## `WEB_LIMIT_CONCURRENCY` — the web-tier overload valve (ships off)
 
 `web.json` carries `WEB_LIMIT_CONCURRENCY: "0"`, which means **off** — the

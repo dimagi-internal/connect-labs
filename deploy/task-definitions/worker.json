@@ -113,6 +113,10 @@
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-database-url-adP4GQ"
         },
         {
+          "name": "LABSDATA_READER_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-labsdata-reader-password-K5EGeo"
+        },
+        {
           "name": "OPENAI_API_KEY",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-openai-api-key-tjvcF2"
         },
