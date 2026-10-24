@@ -116,6 +116,17 @@ def test_every_region_has_a_sane_bbox_and_a_sample_inside_it():
         assert len(meta["iso2"]) == 2, name
 
 
+def test_every_sample_is_a_small_box_in_a_covered_country():
+    """The check samples each country; one the plan does not cover would fail
+    every refresh, and a typo'd code would check nothing."""
+    assert set(overture.REGIONS) <= set(overture.SAMPLES)
+    for name, meta in overture.SAMPLES.items():
+        x0, y0, x1, y1 = meta["sample"]
+        assert x0 < x1 <= x0 + 1 and y0 < y1 <= y0 + 1, name
+        assert meta["iso2"] in overture.COVERAGE_COUNTRIES, name
+    assert len(set(overture.COVERAGE_COUNTRIES)) == len(overture.COVERAGE_COUNTRIES)
+
+
 # ---------------------------------------------------------------------------
 # Barriers
 
@@ -132,6 +143,9 @@ class _Con:
 
     def fetchall(self):
         return [('{"type":"LineString","coordinates":[[8.28,11.77],[8.29,11.78]]}',)]
+
+    def close(self):
+        pass
 
 
 def test_barriers_read_tiles_inside_a_region_and_raw_outside(monkeypatch):
@@ -256,36 +270,94 @@ def test_prune_deletes_only_snapshots_that_are_neither_current_nor_previous():
     assert sorted(k.split("/")[2] for k in fake.objects if k.startswith("overture/snapshots/")) == ["B", "C"]
 
 
-def test_ready_lists_only_tiles_cut_under_the_current_filters():
-    """A region whose segments were cut with other road classes must not be listed,
-    or the reader would serve roads the grouper no longer asks for."""
-    marker = "overture/snapshots/R/tiles/{}/{}/_DONE.json"
-    stale = {"rows": 9, "filters": {"road_classes": ["motorway"], "rail": True}, "bbox": list(NIGERIA)}
-    fake = _FakeS3(
-        {
-            "overture/snapshots/R/raw/theme=buildings/x.parquet": b"x",
-            marker.format("buildings", "nigeria"): json.dumps(
-                {"rows": 5, "filters": None, "bbox": list(NIGERIA)}
-            ).encode(),
-            marker.format("segments", "nigeria"): json.dumps(stale).encode(),
-        }
-    )
+def _planned(fake, release, cells):
+    fake.objects[f"overture/snapshots/{release}/tiles/cells.json"] = json.dumps(
+        {"cells": cells, "block_degrees": overture.BLOCK_DEGREES}
+    ).encode()
+
+
+def _block(fake, release, kind, block, rows=5, filters="current"):
+    filters = overture_refresh._filters(kind) if filters == "current" else filters
+    fake.objects[f"overture/snapshots/{release}/tiles/{kind}/blocks/{block}.json"] = json.dumps(
+        {"rows": rows, "filters": filters}
+    ).encode()
+
+
+def test_ready_lists_a_kind_only_when_every_strip_was_cut_under_the_current_filters():
+    """One strip of segments cut with other road classes must keep the whole kind
+    off the grid, or the reader would serve roads the grouper no longer asks for
+    (or "no roads" for a strip that was never cut)."""
+    fake = _FakeS3({"overture/snapshots/R/raw/theme=buildings/x.parquet": b"x"})
+    _planned(fake, "R", [[8, 11], [8, 12], [10, 11]])
+    for block in (8, 10):
+        _block(fake, "R", "buildings", block)
+        _block(fake, "R", "water", block)
+    _block(fake, "R", "segments", 8)
+    _block(fake, "R", "segments", 10, filters={"road_classes": ["motorway"], "rail": True})
     cmd, _ = _refresh(fake, "R")
     cmd.checks = {}
     cmd._ready([], [])
-    ready = json.loads(fake.objects["overture/snapshots/R/READY.json"])
-    assert ready["tiles"]["buildings"] == {"nigeria": list(NIGERIA)}
-    assert ready["tiles"]["segments"] == {}
+    grid = json.loads(fake.objects["overture/snapshots/R/READY.json"])["grid"]
+    assert grid["cells"] == [[8, 11], [8, 12], [10, 11]]
+    assert grid["kinds"]["buildings"] == {"rows": 10, "filters": None}
+    assert sorted(grid["kinds"]) == ["buildings", "water"]
 
 
-def test_the_cut_reads_labs_raw_copy_not_overtures_bucket():
+def test_ready_still_lists_the_per_country_tiles_for_readers_not_yet_on_the_grid():
+    fake = _FakeS3({"overture/snapshots/R/raw/theme=buildings/x.parquet": b"x"})
+    _planned(fake, "R", [[8, 11]])
+    fake.objects["overture/snapshots/R/tiles/buildings/nigeria/_DONE.json"] = json.dumps(
+        {"rows": 5, "filters": None, "bbox": list(NIGERIA)}
+    ).encode()
+    cmd, _ = _refresh(fake, "R")
+    cmd.checks = {}
+    cmd._ready([], [])
+    assert json.loads(fake.objects["overture/snapshots/R/READY.json"])["tiles"]["buildings"] == {
+        "nigeria": list(NIGERIA)
+    }
+
+
+def test_the_plan_and_cut_read_labs_raw_copy_not_overtures_bucket():
     out = StringIO()
-    call_command("overture_refresh", "2099-01-01.0", "--steps", "cut", "--regions", "nigeria", "--dry-run", stdout=out)
+    call_command("overture_refresh", "2099-01-01.0", "--steps", "plan,cut", "--blocks", "8", "--dry-run", stdout=out)
     plan = out.getvalue()
+    assert "overture/snapshots/2099-01-01.0/raw/theme=divisions/type=division_area" in plan
     assert "overture/snapshots/2099-01-01.0/raw/theme=buildings/type=building" in plan
     assert "overture/snapshots/2099-01-01.0/raw/theme=transportation/type=segment" in plan
-    assert "overture/snapshots/2099-01-01.0/tiles/water/nigeria" in plan
+    assert "overture/snapshots/2099-01-01.0/tiles/water/grid" in plan
     assert overture.SOURCE_BUCKET not in plan
+
+
+def test_a_strip_that_does_not_start_on_the_grid_is_refused():
+    with pytest.raises(CommandError, match="multiple of"):
+        call_command("overture_refresh", "2099-01-01.0", "--steps", "cut", "--blocks", "9", "--dry-run")
+
+
+def test_strips_group_the_planned_cells_by_their_west_edge():
+    assert overture_refresh._blocks([(8, 11), (9, 12), (10, 11), (-1, 5)]) == {
+        -2: [(-1, 5)],
+        8: [(8, 11), (9, 12)],
+        10: [(10, 11)],
+    }
+    assert overture.cells_touching((8.9, 11.5, 9.1, 11.6)) == [(8, 11), (9, 11)]
+
+
+def test_a_cut_needs_a_plan():
+    cmd, _ = _refresh(_FakeS3(), "R")
+    with pytest.raises(CommandError, match="run --steps plan first"):
+        cmd._cut(["segments"], [])
+
+
+def test_check_fails_when_a_planned_strip_was_never_cut(monkeypatch):
+    fake = _FakeS3()
+    _planned(fake, "R", [[8, 11], [10, 11]])
+    for kind in overture.TILE_KINDS:
+        _block(fake, "R", kind, 8)
+    monkeypatch.setattr(overture, "SAMPLES", {})
+    monkeypatch.setattr(overture, "connect", lambda: _Con())
+    cmd, _ = _refresh(fake, "R")
+    with pytest.raises(CommandError, match="strip 10: no buildings tiles"):
+        cmd._check([], [])
 
 
 def test_unknown_steps_are_refused_before_anything_runs():
@@ -293,11 +365,13 @@ def test_unknown_steps_are_refused_before_anything_runs():
         call_command("overture_refresh", "2099-01-01.0", "--steps", "copy,bump", "--dry-run")
 
 
-def test_a_cut_clears_a_half_written_region_before_cutting_it_again(monkeypatch):
-    """A killed cut leaves files and no _DONE marker. DuckDB's OVERWRITE_OR_IGNORE
-    keeps files it does not rewrite, so those would be read alongside the new cut."""
-    prefix = "overture/snapshots/R/tiles/segments/nigeria/"
-    fake = _FakeS3({prefix + "tx=7/ty=11/data_9.parquet": b"partial"})
+def test_a_cut_clears_a_half_written_strip_before_cutting_it_again(monkeypatch):
+    """A killed cut leaves files and no marker. DuckDB's OVERWRITE_OR_IGNORE keeps
+    files it does not rewrite, so those would be read alongside the new cut. Only
+    the strip's own columns are cleared: other strips may be cutting in parallel."""
+    grid = "overture/snapshots/R/tiles/segments/grid/"
+    fake = _FakeS3({grid + "tx=9/ty=11/data_9.parquet": b"partial", grid + "tx=10/ty=11/data_0.parquet": b"other"})
+    _planned(fake, "R", [[8, 11], [9, 11], [10, 11]])
 
     class Con:
         def execute(self, sql, params=None):
@@ -311,6 +385,8 @@ def test_a_cut_clears_a_half_written_region_before_cutting_it_again(monkeypatch)
 
     monkeypatch.setattr(overture, "connect", lambda: Con())
     cmd, _ = _refresh(fake, "R")
-    cmd._cut(["segments"], ["nigeria"])
-    assert prefix + "tx=7/ty=11/data_9.parquet" not in fake.objects
-    assert json.loads(fake.objects[prefix + "_DONE.json"])["rows"] == 42
+    cmd._cut(["segments"], [8])
+    assert grid + "tx=9/ty=11/data_9.parquet" not in fake.objects
+    assert grid + "tx=10/ty=11/data_0.parquet" in fake.objects
+    marker = json.loads(fake.objects["overture/snapshots/R/tiles/segments/blocks/8.json"])
+    assert marker["rows"] == 42 and marker["cells"] == 2
