@@ -2,8 +2,8 @@
 
 The existing `labs.admin_boundaries` app is a curated ~14-country library
 (geoBoundaries/OSM/GRID3 per-country configs). Overture's divisions theme is
-global and queryable through the same DuckDB+S3 path we already use for
-buildings, so the rooftop area-picker can offer "pick an admin area" for any
+global and queryable through the same DuckDB path, over labs' own snapshot
+(overture.py), that we use for buildings, so the rooftop area-picker can offer "pick an admin area" for any
 country with no new infrastructure.
 
 Subtype hierarchy (Overture): country → region (state/province) → county
@@ -27,7 +27,13 @@ from connect_labs.microplans.core import overture
 
 logger = logging.getLogger(__name__)
 
-DIVISION_AREA = overture.theme_path("divisions", "division_area")
+
+def _division_area() -> str:
+    """The divisions glob in the active snapshot (a call, so a release switch
+    reaches a long-running worker without a restart)."""
+    return overture.theme_path("divisions", "division_area")
+
+
 CACHE_TTL_SECONDS = 60 * 60 * 24 * 30  # 30 days — admin boundaries are stable.
 
 # Overture subtypes that make sense as a sampling-area choice, coarse → fine.
@@ -35,7 +41,7 @@ PICKABLE_SUBTYPES = ("region", "county", "locality")
 
 
 def _key(prefix: str, *parts) -> str:
-    h = hashlib.sha256("|".join([overture.OVERTURE_RELEASE, *map(str, parts)]).encode()).hexdigest()[:24]
+    h = hashlib.sha256("|".join([overture.active_release(), *map(str, parts)]).encode()).hexdigest()[:24]
     return f"rooftop:boundaries:{prefix}:{h}"
 
 
@@ -79,7 +85,7 @@ def list_admin_areas(
         f"""
         SELECT names.primary AS name, subtype, region,
                round(ST_Area_Spheroid(geometry)/1e6, 1) AS area_km2
-        FROM read_parquet('{DIVISION_AREA}', filename=false, hive_partitioning=true)
+        FROM read_parquet('{_division_area()}', filename=false, hive_partitioning=true)
         WHERE {' AND '.join(where)} AND names.primary IS NOT NULL
         ORDER BY subtype, name
         LIMIT {int(limit)}
@@ -109,7 +115,7 @@ def get_admin_area_geojson(country_iso2: str, name: str, subtype: str, region: s
     rows = con.execute(
         f"""
         SELECT ST_AsGeoJSON(geometry) AS geojson
-        FROM read_parquet('{DIVISION_AREA}', filename=false, hive_partitioning=true)
+        FROM read_parquet('{_division_area()}', filename=false, hive_partitioning=true)
         WHERE {' AND '.join(where)}
         LIMIT 1
         """,
@@ -163,7 +169,7 @@ def list_admin_areas_in_bbox(
         SELECT names.primary AS name, subtype, region,
                round(ST_Area_Spheroid(geometry)/1e6, 1) AS area_km2,
                {geom_sql}
-        FROM read_parquet('{DIVISION_AREA}', filename=false, hive_partitioning=true)
+        FROM read_parquet('{_division_area()}', filename=false, hive_partitioning=true)
         WHERE {' AND '.join(where)} AND names.primary IS NOT NULL
         ORDER BY area_km2 DESC
         LIMIT {int(limit)}

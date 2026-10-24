@@ -164,53 +164,74 @@ def test_oversized_area_rejected_before_any_fetch(monkeypatch):
     assert calls["n"] == 0 and FootprintArea.objects.count() == 0
 
 
-def test_query_overture_routes_to_same_region_extract_inside_nigeria(monkeypatch):
-    """An area inside an extracted region reads the same-region extract, not live."""
-    calls = {"extract": 0, "live": 0}
+def _count_reads(monkeypatch):
+    calls = {"tiles": 0, "raw": 0}
     monkeypatch.setattr(
         footprints,
-        "_query_extract",
-        lambda a, r, mc: (calls.__setitem__("extract", calls["extract"] + 1), _fake_buildings())[1],
+        "_query_tiles",
+        lambda a, r, mc: (calls.__setitem__("tiles", calls["tiles"] + 1), _fake_buildings())[1],
     )
     monkeypatch.setattr(
         footprints,
-        "_query_overture_live",
-        lambda a, mc: (calls.__setitem__("live", calls["live"] + 1), _fake_buildings())[1],
+        "_query_raw",
+        lambda a, mc: (calls.__setitem__("raw", calls["raw"] + 1), _fake_buildings())[1],
     )
-    # Pin the extract to the active release: the assertion is about ROUTING, not
-    # about whether Nigeria's extract happens to be current today.
-    monkeypatch.setitem(overture.EXTRACT_REGIONS["nigeria"], "release", overture.OVERTURE_RELEASE)
+    return calls
+
+
+def test_an_area_inside_a_tiled_region_reads_its_tiles(monkeypatch):
+    calls = _count_reads(monkeypatch)
+    monkeypatch.setattr(
+        overture, "ready", lambda release=None: {"tiles": {"buildings": {"nigeria": (2.6, 4.2, 14.7, 13.9)}}}
+    )
     footprints._query_overture(box(8.282, 11.770, 8.288, 11.775), None)  # Madobi, Nigeria
-    assert calls == {"extract": 1, "live": 0}
+    assert calls == {"tiles": 1, "raw": 0}
 
 
-def test_query_overture_falls_back_to_live_outside_extracted_region(monkeypatch):
-    """An area with no same-region extract still works via the live Overture read."""
-    calls = {"extract": 0, "live": 0}
+def test_an_area_outside_every_tiled_region_reads_the_raw_snapshot(monkeypatch):
+    calls = _count_reads(monkeypatch)
     monkeypatch.setattr(
-        footprints,
-        "_query_extract",
-        lambda a, r, mc: (calls.__setitem__("extract", calls["extract"] + 1), _fake_buildings())[1],
+        overture, "ready", lambda release=None: {"tiles": {"buildings": {"nigeria": (2.6, 4.2, 14.7, 13.9)}}}
     )
-    monkeypatch.setattr(
-        footprints,
-        "_query_overture_live",
-        lambda a, mc: (calls.__setitem__("live", calls["live"] + 1), _fake_buildings())[1],
-    )
-    footprints._query_overture(box(77.20, 28.60, 77.21, 28.61), None)  # Delhi — no extract anywhere near
-    assert calls == {"extract": 0, "live": 1}
+    footprints._query_overture(box(77.20, 28.60, 77.21, 28.61), None)  # Delhi
+    assert calls == {"tiles": 0, "raw": 1}
 
 
-def test_extract_release_guard_falls_back_when_release_bumped(monkeypatch):
-    """If the active Overture release no longer matches the extract, fall back to
-    live rather than serving stale buildings."""
-    from connect_labs.microplans.core import overture
+def test_a_snapshot_with_no_ready_file_never_reads_tiles(monkeypatch):
+    """Tiles a refresh is still cutting may be partial; until READY.json lists
+    them, even an area deep inside Nigeria reads the raw snapshot."""
+    calls = _count_reads(monkeypatch)
+    monkeypatch.setattr(overture, "ready", lambda release=None: None)
+    footprints._query_overture(box(8.282, 11.770, 8.288, 11.775), None)
+    assert calls == {"tiles": 0, "raw": 1}
 
-    madobi = (8.282, 11.770, 8.288, 11.775)
-    monkeypatch.setitem(overture.EXTRACT_REGIONS["nigeria"], "release", overture.OVERTURE_RELEASE)
-    assert overture.covering_region(madobi) == "nigeria"
 
-    monkeypatch.setattr(overture, "OVERTURE_RELEASE", "9999-99-99.0")
-    assert overture.covering_region(madobi) is None
-    # And the mismatch is reportable, not just silently routed around.
-    assert "nigeria" in overture.stale_extracts()
+def test_the_raw_read_is_labs_snapshot_never_overtures_bucket(monkeypatch):
+    """The October failure mode: a read pointed at Overture's bucket dies when
+    Overture prunes the release. Every read path must name labs' bucket."""
+    seen = []
+
+    class Con:
+        def execute(self, sql, params=None):
+            seen.append(sql)
+            return self
+
+        def df(self):
+            return pd.DataFrame(columns=["lon", "lat", "area_m2", "confidence", "dataset", "geom_json"])
+
+    monkeypatch.setattr(overture, "connect", lambda: Con())
+    footprints._query_raw(box(77.20, 28.60, 77.21, 28.61), None)
+    footprints._query_tiles(box(8.282, 11.770, 8.288, 11.775), "nigeria", None)
+    assert len(seen) == 2
+    for sql in seen:
+        assert overture.EXTRACT_BUCKET in sql
+        assert overture.SOURCE_BUCKET not in sql
+
+
+def test_a_release_switch_misses_the_old_cache(monkeypatch):
+    """The footprint cache key carries the release, so a switch re-reads an area
+    from the new snapshot instead of serving last release's buildings."""
+    monkeypatch.setattr(overture, "active_release", lambda: "2026-10-21.0")
+    before = footprints._area_cache_key("POLYGON((0 0,1 0,1 1,0 0))")
+    monkeypatch.setattr(overture, "active_release", lambda: "2026-11-18.0")
+    assert footprints._area_cache_key("POLYGON((0 0,1 0,1 1,0 0))") != before

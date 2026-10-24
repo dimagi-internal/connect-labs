@@ -27,7 +27,6 @@ from connect_labs.microplans.core import overture
 
 logger = logging.getLogger(__name__)
 
-OVERTURE_BUILDINGS = overture.theme_path("buildings", "building")
 _COLUMNS = ["lon", "lat", "area_m2", "confidence", "dataset"]
 _COLUMNS_WITH_GEOM = ["lon", "lat", "area_m2", "confidence", "dataset", "geom_json"]
 
@@ -69,7 +68,7 @@ def _area_cache_key(wkt: str) -> str:
     # any source/confidence combination for both sampling and coverage. The `fp2`
     # token versions the stored schema — bumped when `dataset` capture was added so
     # pre-source-aware cache entries re-fetch instead of returning sourceless rows.
-    return hashlib.sha256(f"{overture.OVERTURE_RELEASE}|fp2|{wkt}".encode()).hexdigest()
+    return hashlib.sha256(f"{overture.active_release()}|fp2|{wkt}".encode()).hexdigest()
 
 
 def _apply_filters(
@@ -170,7 +169,7 @@ def fetch_buildings(
     try:
         with transaction.atomic():
             fa = FootprintArea.objects.create(
-                area_hash=area_hash, overture_release=overture.OVERTURE_RELEASE, n_buildings=len(df_all)
+                area_hash=area_hash, overture_release=overture.active_release(), n_buildings=len(df_all)
             )
             FootprintBuilding.objects.bulk_create(
                 [
@@ -197,38 +196,20 @@ def fetch_buildings(
 
 
 def _query_overture(area: BaseGeometry, min_confidence: float | None) -> pd.DataFrame:
-    """Fetch buildings for an area from the fastest available source.
+    """Fetch buildings for an area from labs' snapshot of the active release.
 
-    If the area sits fully inside a pre-extracted same-region country
-    (``overture.EXTRACT_REGIONS``) on the matching release, read those local
-    us-east-1 tiles — sub-second. Otherwise fall back to the live planet-scale
-    Overture read, which costs minutes for a first-seen area on the labs worker
-    (us-east-1 -> us-west-2 cross-region). The result is identical either way; only
-    the read source and speed differ. The caller (``fetch_buildings``) still
-    persists whatever this returns to the per-area Postgres cache.
+    An area fully inside a region whose building tiles the snapshot holds reads
+    those 1-degree tiles (a few seconds). Anything else reads the snapshot's raw
+    copy of the planet-scale theme, which is slower but still data labs holds.
+    The result is the same either way; only the speed differs. There is no
+    fallback to Overture's own bucket: if labs' data cannot be read, the read
+    raises rather than quietly reaching for a release Overture may have pruned.
+    The caller (``fetch_buildings``) persists whatever this returns.
     """
-    # Say it out loud when an extract exists but is pinned to a release we no
-    # longer read. The router degrades correctly, so nothing fails — it just
-    # silently costs ~350s instead of ~5s per uncached ward, which is how a
-    # walkthrough that worked in September stalled in October with no error
-    # anywhere. verify_release() existed for exactly this and nothing called it.
-    overture.verify_release_quietly()
-
-    region = overture.covering_region(area.bounds)
+    region = overture.tile_route(area.bounds, "buildings")
     if region is not None:
-        try:
-            return _query_extract(area, region, min_confidence)
-        except Exception:
-            # The extract is an optimization, never a hard dependency. If it can't
-            # be read (IAM on the extract bucket, a missing tile, a transient S3
-            # error), degrade to the live Overture read rather than failing the
-            # whole sample.
-            logger.warning(
-                "same-region extract read failed (region=%s); falling back to live Overture",
-                region,
-                exc_info=True,
-            )
-    return _query_overture_live(area, min_confidence)
+        return _query_tiles(area, region, min_confidence)
+    return _query_raw(area, min_confidence)
 
 
 def _parse_geom_json(df: pd.DataFrame) -> pd.DataFrame:
@@ -240,19 +221,19 @@ def _parse_geom_json(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _query_extract(area: BaseGeometry, region: str, min_confidence: float | None) -> pd.DataFrame:
-    """Read buildings from a same-region country extract.
+def _query_tiles(area: BaseGeometry, region: str, min_confidence: float | None) -> pd.DataFrame:
+    """Read buildings from a region's tiles in the snapshot.
 
-    The extract is one Parquet per 1-degree tile, hive-partitioned by ``tx``/``ty``.
+    The tiles are one Parquet per 1-degree tile, hive-partitioned by ``tx``/``ty``.
     We bound the read to the tiles the area's bbox spans (partition pruning), then
-    apply the same bbox + centroid-in-area filter as the live read.
+    apply the same bbox + centroid-in-area filter as the raw read.
     """
     import math
 
     minx, miny, maxx, maxy = area.bounds
     wkt = area.wkt
     con = overture.connect()
-    glob = overture.extract_glob(region)
+    glob = overture.tile_glob("buildings", region)
 
     conf_clause = ""
     params = [
@@ -284,21 +265,22 @@ def _query_extract(area: BaseGeometry, region: str, min_confidence: float | None
     df = con.execute(query, params).df()
     if len(df) >= MAX_BUILDING_ROWS:
         logger.warning(
-            "overture extract hit the %d-row cap (bbox=%s) — footprints may be truncated",
+            "overture tiles hit the %d-row cap (bbox=%s) — footprints may be truncated",
             MAX_BUILDING_ROWS,
             (minx, miny, maxx, maxy),
         )
     return _parse_geom_json(df)
 
 
-def _query_overture_live(area: BaseGeometry, min_confidence: float | None) -> pd.DataFrame:
+def _query_raw(area: BaseGeometry, min_confidence: float | None) -> pd.DataFrame:
+    """Read buildings from the snapshot's raw (planet-scale) building theme."""
     minx, miny, maxx, maxy = area.bounds
     wkt = area.wkt
 
     con = overture.connect()
 
     # Parameterized: all caller-derived values bind as `?` (no string interpolation
-    # of user-drawn geometry into SQL). The read_parquet path is a constant.
+    # of user-drawn geometry into SQL). The read_parquet path is ours, not the caller's.
     conf_clause = ""
     params = [minx, maxx, miny, maxy, wkt]
     if min_confidence is not None:
@@ -313,7 +295,7 @@ def _query_overture_live(area: BaseGeometry, min_confidence: float | None) -> pd
             sources[1].confidence       AS confidence,
             sources[1].dataset          AS dataset,
             ST_AsGeoJSON(geometry)      AS geom_json
-        FROM read_parquet('{OVERTURE_BUILDINGS}', filename=false, hive_partitioning=true)
+        FROM read_parquet('{overture.theme_path("buildings", "building")}', filename=false, hive_partitioning=true)
         WHERE bbox.xmin >= ? AND bbox.xmax <= ?
           AND bbox.ymin >= ? AND bbox.ymax <= ?
           AND ST_Within(ST_Centroid(geometry), ST_GeomFromText(?))
