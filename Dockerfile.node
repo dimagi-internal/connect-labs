@@ -6,10 +6,11 @@
 #   docker build -f Dockerfile.node -t labs-node .
 # Or trigger via .github/workflows/build-node.yml
 
-# The same Docker Official Image, pulled from AWS's public mirror: Docker Hub's
-# anonymous pull limit (429 Too Many Requests) failed this build twice in a row
-# on 2026-10-09, and every frontend change waits on it.
-FROM public.ecr.aws/docker/library/node:24-bookworm
+# The Docker Official Image, copied into GHCR weekly by mirror-ci-images.yml.
+# Docker Hub's anonymous pull limit failed this build on 2026-10-09, and
+# public.ecr.aws's on 2026-10-23 ("Data limit exceeded", every frontend merge
+# for an afternoon); GHCR pulls are authenticated as the repo.
+FROM ghcr.io/dimagi-internal/connect-labs-mirror-node:24-bookworm
 WORKDIR /app
 
 # Install npm deps first (layer cache on package files)
