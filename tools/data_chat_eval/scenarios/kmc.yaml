@@ -1,0 +1,319 @@
+# The data chat suite on the synthetic KMC programme (labs-only, generated data).
+#
+# Program 10121 "KMC (Synthetic) Oct 2026": 12 opportunities, ~47,000 visits.
+# Its programme report, "KMC Program Metrics" (workflow 9027), shares its run with the agent
+# (config.agent.share), so its run page carries the canopy panel. The Data page offers the
+# agent for data work (labsdata).
+#
+# Ground truth is SQL run by the harness through labs' data_query, as ace, over the page's
+# opportunities. Each truth query returns ONE row; checks name its cells as <truth>.<column>.
+# Check kinds: tools/data_chat_eval/checks.py. Every turn also gets an implicit no_errors.
+
+opportunity_sets:
+  kmc:
+    [
+      10122,
+      10123,
+      10124,
+      10125,
+      10126,
+      10127,
+      10128,
+      10129,
+      10130,
+      10131,
+      10132,
+      10133,
+    ]
+
+pages:
+  kmc_run:
+    describe: KMC Program Metrics run page (programme report)
+    workflow: { id: 9027, program_id: 10121, run: latest }
+    opportunities: kmc
+  kmc_data:
+    describe: the Data page on the KMC programme
+    data: { programs: [10121] }
+    opportunities: kmc
+
+scenarios:
+  # ---- 1. simple count ----------------------------------------------------
+  - id: count-total
+    title: Simple count -- visits and workers
+    covers: a plain count from the raw visits, with who counted what
+    page: kmc_run
+    truth:
+      total: select count(*) as n, count(distinct username) as workers from visits
+      kept: select count(*) as n from visits where status <> 'rejected'
+    turns:
+      - say: How many visits has this programme recorded in total, across all its opportunities, and by how many field workers? Count them from the raw visit data.
+        checks:
+          - number: { any_of: [total.n, kept.n], label: total visits }
+          - number: { value: total.workers, label: workers }
+          - tool: { any_of: [data_query] }
+
+  # ---- 2. rate over time, as a chart --------------------------------------
+  - id: monthly-chart
+    title: Rate over time -- approved visits per month, charted
+    covers: a time series the card should draw as a line chart
+    page: kmc_run
+    truth:
+      aug: select count(*) as n from visits where status = 'approved' and visit_date >= '2026-08-01' and visit_date < '2026-09-01'
+      sep: select count(*) as n from visits where status = 'approved' and visit_date >= '2026-09-01' and visit_date < '2026-10-01'
+    turns:
+      - say: Chart approved visits per month for 2026 across the whole programme.
+        checks:
+          - card: { min: 1, chart: true }
+          - number: { value: sep.n, label: September 2026 approved visits }
+          - number:
+              { value: aug.n, label: August 2026 approved visits, gate: false }
+          - no_rows_repeated: true
+            gate: false
+
+  # ---- 3. per-FLW breakdown -----------------------------------------------
+  - id: top-workers
+    title: Per-FLW breakdown -- top workers in one opportunity
+    covers: GROUP BY username in one named opportunity
+    page: kmc_run
+    truth:
+      top: select username, count(*) as n from visits where opportunity_id = 10132 and status = 'approved' group by username order by n desc, username limit 1
+      fifth: select username, count(*) as n from visits where opportunity_id = 10132 and status = 'approved' group by username order by n desc, username offset 4 limit 1
+    turns:
+      - say: In the Kikapu opportunity (KMC - KE - Kikapu), which five field workers recorded the most approved visits, and how many each?
+        checks:
+          - text: { any_of: [top.username] }
+          - number: { value: top.n, label: top worker's approved visits }
+          - number: { value: fifth.n, label: fifth worker's approved visits }
+          - card: { min: 1 }
+
+  # ---- 4. drill into a visit ----------------------------------------------
+  - id: drill-visit
+    title: Drill into one visit
+    covers: reading a whole visit (data_visits) and a form field from it
+    page: kmc_run
+    truth:
+      visit: >-
+        select visit_id, username, visit_date::text as visit_date,
+        (form_json #>> '{form,anthropometric,child_weight_visit}')::numeric as weight
+        from visits where opportunity_id = 10132
+        and form_json #>> '{form,anthropometric,child_weight_visit}' is not null
+        order by visit_date desc, visit_id limit 1
+    turns:
+      - say: Open visit {visit.visit_id} and tell me which worker did it, on what date, and what weight was recorded for the baby at that visit.
+        checks:
+          - text: { any_of: [visit.username] }
+          - number: { value: visit.weight, label: weight recorded }
+          - text: { any_of: [visit.visit_date], gate: false }
+          - tool: { any_of: [data_visits, data_query] }
+
+  # ---- 5. a question that needs form_json fields ---------------------------
+  - id: form-field-weight
+    title: Form field -- average weight per opportunity
+    covers: finding a form_json field (field index) and aggregating it; noticing implausible values
+    page: kmc_run
+    rubric: >-
+      One opportunity (Nama Wellness - Kangaroo Mother Care) has implausible weights (its average is
+      in the hundreds of thousands of grams). A good answer flags it as a data problem rather than
+      reporting it as a baby weight, and says which form field it read.
+    truth:
+      # Block scalars: in a plain YAML scalar ` #` starts a comment and would cut the SQL at `#>>`.
+      kikapu: >-
+        select round(avg((form_json #>> '{form,anthropometric,child_weight_visit}')::numeric)) as avg_g
+        from visits where status = 'approved' and opportunity_id = 10132
+      ke_ghi: >-
+        select round(avg((form_json #>> '{form,anthropometric,child_weight_visit}')::numeric)) as avg_g
+        from visits where status = 'approved' and opportunity_id = 10128
+    turns:
+      - say: What is the average baby weight recorded at visits, per opportunity? Approved visits only.
+        checks:
+          - number:
+              {
+                value: kikapu.avg_g,
+                rel_tolerance: 0.01,
+                label: Kikapu average weight (g),
+              }
+          - number:
+              {
+                value: ke_ghi.avg_g,
+                rel_tolerance: 0.01,
+                label: KE GHI average weight (g),
+              }
+          - text:
+              {
+                any_of:
+                  [
+                    implausib,
+                    outlier,
+                    unrealistic,
+                    impossible,
+                    data quality,
+                    data-quality,
+                    entry error,
+                    data entry,
+                    suspicious,
+                    error in the data,
+                  ],
+                gate: false,
+              }
+          - card: { min: 1 }
+
+  # ---- 6. ambiguous: should ask or say what it assumed ---------------------
+  - id: ambiguous-dropout
+    title: Ambiguous question -- dropout rate
+    covers: a question with no single definition; it should ask, or state the definition it used
+    page: kmc_run
+    rubric: >-
+      "Dropout" has no single definition here (babies who stopped being visited before discharge,
+      workers who stopped working, ...). Good: asks which, or picks one, says so plainly and gives
+      the number. Bad: a number with no definition.
+    turns:
+      - say: What's the dropout rate?
+        checks:
+          - asks_or_states: true
+
+  # ---- 7. a follow-up that refines the previous turn -----------------------
+  - id: followup-refine
+    title: Follow-up refines the previous answer
+    covers: a second turn that narrows and extends the first, without restating it
+    page: kmc_run
+    truth:
+      kikapu: select count(*) as n, count(distinct entity_id) as babies from visits where status = 'approved' and opportunity_id = 10132
+      ke_ghi: select count(*) as n, count(distinct entity_id) as babies from visits where status = 'approved' and opportunity_id = 10128
+      share: >-
+        select round(sum(case when opportunity_id = 10128 then 1 else 0 end)::numeric / count(*), 4) as ke_ghi,
+        round(sum(case when opportunity_id = 10132 then 1 else 0 end)::numeric / count(*), 4) as kikapu
+        from visits where status = 'approved'
+    turns:
+      - say: How many approved visits and how many distinct babies does each opportunity have?
+        checks:
+          - number: { value: kikapu.n, label: Kikapu approved visits }
+          - number: { value: kikapu.babies, label: Kikapu babies }
+          - card: { min: 1 }
+      - say: Now just the two Kenyan (KE) opportunities, and add each one's share of the programme's approved visits.
+        checks:
+          - number: { value: ke_ghi.n, label: KE GHI approved visits }
+          - number: { value: kikapu.n, label: Kikapu approved visits }
+          - number:
+              {
+                value: share.ke_ghi,
+                scale: 100,
+                tolerance: 0.1,
+                label: KE GHI share (%),
+              }
+          - text: { any_of: [Kikapu], in: either }
+
+  # ---- 8. the workflow page: does this number match the raw data? -----------
+  - id: header-matches-raw
+    title: Workflow page -- does the report's number match the raw data?
+    covers: reconciling a number on the run page with the visits behind it
+    page: kmc_run
+    rubric: >-
+      The header's 45,598 visits are the visits on or before the run's period end (11 Oct 2026)
+      that are approved or over_limit -- rejected and pending visits are left out, and the raw data
+      has visits after 11 Oct. A good answer reproduces 45,598 from the raw visits and explains the
+      gap to the raw total in those terms.
+    truth:
+      header: select count(*) as n from visits where visit_date <= '2026-10-11' and status not in ('rejected', 'pending')
+      raw_all: select count(*) as n from visits
+      raw_cut: select count(*) as n from visits where visit_date <= '2026-10-11'
+    turns:
+      - say: The header of this report says 45,598 visits. Does that match the raw visit data? Check it against the visits themselves and tell me what explains any difference.
+        checks:
+          - number: { any_of: [raw_all.n, raw_cut.n], label: a raw visit total }
+          - text:
+              {
+                any_of: [pending, rejected, over_limit, over limit],
+                label: names the statuses left out,
+              }
+          - text:
+              {
+                any_of:
+                  [
+                    11 Oct,
+                    Oct 11,
+                    October 11,
+                    11 October,
+                    2026-10-11,
+                    period end,
+                    cut-off,
+                    cutoff,
+                  ],
+                gate: false,
+              }
+          - tool: { any_of: [data_query] }
+
+  # ---- 9. read the page it is on --------------------------------------------
+  - id: page-read
+    title: Read the page -- a number shown on screen
+    covers: answering from what the run page itself shows
+    page: kmc_run
+    truth:
+      header: select count(*) as n from visits where visit_date <= '2026-10-11' and status not in ('rejected', 'pending')
+    turns:
+      - say: How many visits does this report say the programme has? One sentence.
+        checks:
+          - number:
+              value: header.n
+              label: the header's visit count
+              route: >-
+                the run's agent tools: workflow_run_indicators / workflow_run_context (connect_labs/workflow/agent_sharing.py)
+                do not carry the headline totals the page draws (visits, babies), and the page state names none
+
+  # ---- the Data page (same questions; spaces will add more) ----------------
+  - id: data-count-total
+    title: Data page -- simple count
+    covers: the Data page chat on a programme selection
+    page: kmc_data
+    truth:
+      total: select count(*) as n, count(distinct username) as workers from visits
+      kept: select count(*) as n from visits where status <> 'rejected'
+    turns:
+      - say: How many visits does this programme have in total, and by how many field workers?
+        checks:
+          - number: { any_of: [total.n, kept.n], label: total visits }
+          - number: { value: total.workers, label: workers }
+          - tool: { any_of: [data_query, data_describe] }
+
+  - id: data-monthly-chart
+    title: Data page -- approved visits per month, charted
+    covers: a chart on the Data page chat
+    page: kmc_data
+    truth:
+      sep: select count(*) as n from visits where status = 'approved' and visit_date >= '2026-09-01' and visit_date < '2026-10-01'
+    turns:
+      - say: Chart approved visits per month for 2026.
+        checks:
+          - card: { min: 1, chart: true }
+          - number: { value: sep.n, label: September 2026 approved visits }
+
+  - id: data-followup
+    title: Data page -- follow-up refines the previous answer
+    covers: a two-turn conversation on the Data page
+    page: kmc_data
+    truth:
+      kikapu: select count(*) as n, count(distinct entity_id) as babies from visits where status = 'approved' and opportunity_id = 10132
+      ke_ghi: select count(*) as n from visits where status = 'approved' and opportunity_id = 10128
+    turns:
+      - say: How many approved visits and distinct babies does each opportunity have?
+        checks:
+          - number: { value: kikapu.n, label: Kikapu approved visits }
+      - say: Now only the Kenyan (KE) ones.
+        checks:
+          - number: { value: ke_ghi.n, label: KE GHI approved visits }
+
+# ---- data spaces (the Data page's shared places; tools/data_chat_eval/spaces.py) ----
+# Each walks one space's life on synthetic data: create, open, held to its sources (MCP),
+# the agent's page actions (showQuery, proposeSave + the person's Save click), one chat turn
+# in the space, archive. The space is archived at the end whatever happens.
+spaces:
+  - id: space-kikapu
+    title: A space on one synthetic opportunity (Kikapu)
+    covers: create, open, space-held data_query, showQuery switches the canvas, proposeSave + Save, the agent in a space, archive
+    sources: { opportunity_ids: [10132] }
+    outside_opportunity: 10128
+    sql: >-
+      select username, count(*) as approved_visits from visits where status = 'approved'
+      group by username order by approved_visits desc, username
+    truth_sql: select count(*) as approved_visits from visits where status = 'approved'
+    truth_column: approved_visits
+    ask: How many approved visits does this space have in total? Show the per-worker breakdown on the canvas.
