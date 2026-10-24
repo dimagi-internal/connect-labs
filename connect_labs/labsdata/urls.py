@@ -12,4 +12,5 @@ urlpatterns = [
     path("api/query/", views.QueryView.as_view(), name="query"),
     path("api/visits/", views.VisitsView.as_view(), name="visits"),
     path("api/workflows/", views.WorkflowsView.as_view(), name="workflows"),
+    path("api/drill/", views.DrillView.as_view(), name="drill"),
 ]

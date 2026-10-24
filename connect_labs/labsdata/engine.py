@@ -102,6 +102,7 @@ ERROR_GUIDE: dict[str, tuple[str, bool, str]] = {
     "query_failed": ("internal", True, "retry_once_then_stop"),
     "no_opportunities": ("scope", False, "choose_opportunities"),
     "unknown_visits": ("scope", False, "check_visit_ids"),
+    "not_drillable": ("sql", False, "fix_query"),
 }
 
 

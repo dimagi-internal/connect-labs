@@ -161,6 +161,20 @@ class QueryView(_JsonView):
         )
 
 
+class DrillView(_JsonView):
+    """The rows behind one cell of a result: their SQL, and how many there are."""
+
+    def handle(self, request, body):
+        return service.drill_into(
+            _caller(request),
+            body.get("opportunity_ids"),
+            body.get("sql") or "",
+            body.get("row") or [],
+            int(body.get("column") or 0),
+            **_selection(body),
+        )
+
+
 class WorkflowsView(_JsonView):
     """Workflows to choose from: those readable, as the person, in the selection's scopes."""
 
