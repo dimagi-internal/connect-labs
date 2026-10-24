@@ -137,6 +137,52 @@ class TestAiFlagsByLabel:
         assert stats["ai_flags_unlabeled"] == 2
 
 
+class TestAiFlagsConfirmedByLabel:
+    """Of each label's AI flags, how many still carry a failing verdict -- what
+    the FLW audit-flags report shows as the reviewed MUAC-misreading count."""
+
+    def _flagged(self, result, notes):
+        return {"result": result, "question_id": "group/muac_photo", "ai_result": "no_match", "ai_notes": notes}
+
+    def test_overturned_flags_are_not_confirmed(self):
+        session = _make_session(
+            {
+                "v1": {
+                    "assessments": {
+                        "a": self._flagged("fail", "MUAC Mismatch (strict tolerance)"),
+                        "b": self._flagged("pass", "MUAC Mismatch (strict tolerance)"),
+                        "c": self._flagged("duplicate_fake", "Potential Duplicate"),
+                        "d": self._flagged(None, "Hyperzoomed"),
+                    }
+                },
+            }
+        )
+        stats = session.get_assessment_stats()
+        assert stats["ai_flags_by_label"] == {
+            "MUAC Mismatch (strict tolerance)": 2,
+            "Potential Duplicate": 1,
+            "Hyperzoomed": 1,
+        }
+        assert stats["ai_flags_confirmed_by_label"] == {
+            "MUAC Mismatch (strict tolerance)": 1,
+            "Potential Duplicate": 1,
+        }
+
+    def test_one_failed_image_confirms_every_label_on_it(self):
+        session = _make_session(
+            {"v1": {"assessments": {"a": self._flagged("fail", "Hyperzoomed; MUAC Mismatch (strict tolerance)")}}},
+        )
+        stats = session.get_assessment_stats()
+        assert stats["ai_flags_confirmed_by_label"] == {"Hyperzoomed": 1, "MUAC Mismatch (strict tolerance)": 1}
+
+    def test_by_question_buckets_carry_it_too(self):
+        session = _make_session(
+            {"v1": {"assessments": {"a": self._flagged("fail", "MUAC Mismatch (strict tolerance)")}}},
+        )
+        bucket = session.get_assessment_stats_by_question()["group/muac_photo"]
+        assert bucket["ai_flags_confirmed_by_label"] == {"MUAC Mismatch (strict tolerance)": 1}
+
+
 class TestGetAssessmentStatsByQuestion:
     def test_duplicate_fake_bucketed_separately_per_question(self):
         session = _make_session(
