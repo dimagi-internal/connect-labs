@@ -514,9 +514,10 @@ def _kept(user, out: dict, agent: bool) -> dict:
     facts["notes"] = [
         *facts["notes"],
         "The person sees every row of this result -- and its SQL, on the card's SQL tab -- in a card beside your "
-        "reply. Point at the card and give the answer and its takeaway in two to four sentences, with one line "
-        "of provenance (what was counted, the filters, the opportunities). Do NOT re-print the rows as a "
-        "markdown table and do NOT paste the SQL: both are already on the card.",
+        "reply. Point at the card and give the answer and its takeaway in two to four sentences -- quoting the "
+        "exact figures the question turns on, never a range -- with one line of provenance (what was counted, "
+        "the filters, the opportunities). Do NOT re-print the rows as a markdown table and do NOT paste the SQL: "
+        "both are already on the card.",
     ]
     return kept_results.with_link(facts, link)
 
