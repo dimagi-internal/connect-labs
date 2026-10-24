@@ -158,15 +158,34 @@ QUERY = dict(
 
 #: data_query only: what it keeps (explorer_query, scout-queries' name, returns rows inline).
 QUERY_KEPT = (
-    " The result is kept for a day at `result_uri` (a labs-result:// resource, also a resource_link in the "
-    f"content). An agent calling through canopy gets the first {kept_results.INLINE_ROWS} rows as `sample_rows` "
+    " Through canopy the result is kept for a day at `result_uri` (a labs-result:// resource, also a "
+    f"resource_link in the content): the agent gets the first {kept_results.INLINE_ROWS} rows as `sample_rows` "
     "(`sample_is_partial` when there are more) and reads the rest with site_read on that URI, a page at a time "
     "(?page=N&page_size=M, up to 1000) -- never by running the query again; the person's card shows every row. "
-    "Other callers get every row in `rows`."
+    "Other callers get every row in `rows`, and nothing is kept unless they pass keep_result."
 )
 
 
-def query(user, opportunity_ids, sql, max_rows=DEFAULT_MAX_ROWS):
+#: data_query's arguments: explorer_query's, and whether to keep the result for a client
+#: that is not canopy.
+QUERY_KEPT_SCHEMA = {
+    **QUERY["input_schema"],
+    "properties": {
+        **QUERY["input_schema"]["properties"],
+        "keep_result": {
+            "type": "boolean",
+            "default": False,
+            "description": (
+                "Also keep the result for a day at a labs-result:// link you will read back with "
+                "resources/read. Only when you will; you get every row inline either way. (Through "
+                "canopy the result is always kept.)"
+            ),
+        },
+    },
+}
+
+
+def query(user, opportunity_ids, sql, max_rows=DEFAULT_MAX_ROWS, keep_result=False):
     agent = _from_canopy()
     try:
         out = service.query(_caller(user), opportunity_ids, sql, max_rows=int(max_rows), for_agent=agent, shaped=False)
@@ -195,6 +214,9 @@ def query(user, opportunity_ids, sql, max_rows=DEFAULT_MAX_ROWS):
         return kept_results.with_link(withheld, link)
     except QueryError as e:
         raise _query_error(e) from e
+    if not (agent or keep_result):
+        # Nobody will read it back: the rows go inline, and labs keeps no copy of them.
+        return out
     return _kept(user, out, agent)
 
 
@@ -228,12 +250,14 @@ def _ids(opportunity_ids) -> list[int]:
 def _kept(user, out: dict, agent: bool) -> dict:
     """The query's result kept as a ``labs-result://`` result, and what the caller gets.
 
-    The kept result holds every row the query returned (up to its row cap), unshaped: the
-    person's card pages and sorts through it, and the agent reads more of it with
-    ``site_read``. A canopy agent gets the facts -- the row count, the columns, the first
-    ``kept_results.INLINE_ROWS`` rows (long cells cut, as before), the SQL, the notes -- and
-    the link. Any other caller (Claude Code, ACE, scout-queries) has no ``site_read`` and
-    reads ``rows``, so it gets the whole result as before, with the link beside it."""
+    Kept only for a caller that reads it back (``query``): canopy, whose card pages and
+    sorts through it and whose agent reads more with ``site_read``, or a client that passed
+    ``keep_result``. Every other caller (Claude Code, ACE, scout-queries) gets every row
+    inline and labs keeps no copy of production rows for it. The kept result holds every
+    row the query returned (up to its row cap), unshaped. A canopy agent gets the facts --
+    the row count, the columns, the first ``kept_results.INLINE_ROWS`` rows (long cells
+    cut, as before), the SQL, the notes -- and the link; a client that asked gets the whole
+    result with the link beside it."""
     ids = [o["id"] for o in out.get("opportunities") or []]
     names = ", ".join(str(o.get("name") or o["id"]) for o in out.get("opportunities") or [])
     link = kept_results.save(
@@ -273,7 +297,11 @@ def _kept(user, out: dict, agent: bool) -> dict:
 for _name, _spec, _fn in (
     ("data_describe", DESCRIBE, describe),
     ("data_validate", VALIDATE, validate),
-    ("data_query", {**QUERY, "description": QUERY["description"] + QUERY_KEPT}, query),
+    (
+        "data_query",
+        {**QUERY, "description": QUERY["description"] + QUERY_KEPT, "input_schema": QUERY_KEPT_SCHEMA},
+        query,
+    ),
     # scout-queries' names for the same three (see the module docstring), without the
     # result View: they are called from Claude Code, not drawn in canopy.
     ("explorer_describe", DESCRIBE, describe),

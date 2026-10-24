@@ -1,7 +1,7 @@
 // The data_query results View (ui://labs/data-result) against a stand-in MCP Apps host:
 // it reads the kept result from the tool result's resource_link (labs-result://) as its
-// viewer, pages and sorts through it, re-reads when the host says it changed, names each
-// refusal -- and never runs the query again (no tools/call).
+// viewer, pages and sorts through it (saying the sort is per page), never subscribes,
+// names each refusal (an expired one falls back on the facts' sample) -- and never runs the query again (no tools/call).
 // Spec: canopy-web docs/superpowers/specs/2026-10-23-host-held-results-design.md.
 import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -196,16 +196,16 @@ describe('the results View reads the kept result', () => {
     expect(view.requests('resources/read').length).toBe(1);
   });
 
-  it('subscribes, and reads again when the host says it changed', async () => {
-    expect(
-      view.requests('resources/subscribe').map((m) => m.params.uri),
-    ).toEqual([URI]);
+  it('says the sort is within the page when there are more pages', () => {
+    expect(view.text()).not.toContain('Sorted within this page only');
+    view.click('th[data-sort="1"]');
+    expect(view.text()).toContain('Sorted within this page only');
+  });
+
+  it('does not subscribe: Labs never changes a kept result', async () => {
+    expect(view.requests('resources/subscribe')).toEqual([]);
+    // A host that relays an update anyway still gets a fresh read.
     view.notify('notifications/resources/updated', { uri: URI });
-    await settle();
-    expect(view.requests('resources/read').length).toBe(2);
-    view.notify('notifications/resources/updated', {
-      uri: 'labs-result://someone-else',
-    });
     await settle();
     expect(view.requests('resources/read').length).toBe(2);
   });
@@ -227,6 +227,35 @@ describe('a read the host refuses says why', () => {
     expect(view.text()).toContain(
       'This result has expired — ask again in the chat.',
     );
+    expect(view.requests('tools/call')).toEqual([]);
+  });
+
+  it('expired, with the sample the tool result carried, said to be a sample', async () => {
+    const view = mount({
+      read: () => ({
+        error: {
+          code: -32603,
+          message:
+            'host_refused: labs refused: expired: this result has expired; run the query again',
+        },
+      }),
+    });
+    await settle();
+    view.notify('ui/notifications/tool-result', {
+      content: [LINK],
+      structuredContent: {
+        row_count: 250,
+        columns: COLUMNS,
+        sample_rows: ROWS.slice(0, 20).map(([worker, visits]) => ({
+          worker,
+          visits,
+        })),
+      },
+    });
+    await settle();
+    expect(view.document.querySelectorAll('tbody tr').length).toBe(20);
+    expect(view.text()).toContain('The full result has expired');
+    expect(view.text()).toContain('only the sample of 20 of 250 rows');
     expect(view.requests('tools/call')).toEqual([]);
   });
 

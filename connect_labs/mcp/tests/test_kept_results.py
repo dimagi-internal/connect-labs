@@ -27,7 +27,7 @@ from connect_labs.mcp import kept_results
 from connect_labs.mcp.kept_results import Refused
 from connect_labs.mcp.models import KeptResult as Row
 from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.testing import call_tool, read_resource
 
 pytestmark = pytest.mark.django_db
 
@@ -73,10 +73,20 @@ def _pat(user) -> str:
     return raw
 
 
-def _query(user):
-    return call_tool(
-        _pat(user), "data_query", {"opportunity_ids": [OPP.id], "sql": "SELECT worker, visits FROM visits"}
-    )
+def _query(user, keep_result=True):
+    """A person's own client (a PAT) asking data_query to keep its result: the result a
+    canopy call keeps, without canopy."""
+    args = {"opportunity_ids": [OPP.id], "sql": "SELECT worker, visits FROM visits"}
+    return call_tool(_pat(user), "data_query", {**args, "keep_result": True} if keep_result else args)
+
+
+def test_a_client_that_will_not_read_it_back_gets_its_rows_and_nothing_is_kept(owner, connect):
+    connect["users"].add(owner.pk)
+    envelope = _query(owner, keep_result=False)["result"]
+    out = envelope["structuredContent"]
+    assert out["rows"] == ROWS and "result_uri" not in out
+    assert [c for c in envelope["content"] if isinstance(c, ResourceLink)] == []
+    assert not Row.objects.exists()
 
 
 def test_labs_declares_its_scheme_and_keeps_the_results_itself():
@@ -244,37 +254,94 @@ def test_the_reader_is_the_caller_of_the_request_in_flight(owner):
 
 
 def test_a_no_user_visit_data_caller_never_reads_sensitive_rows_even_its_own(owner, connect):
-    uri = _uri(owner, connect)
-    kept = kept_results.stored(uri)
+    _uri(owner, connect)
+    kept = Row.objects.get()
     assert kept_results.read_denial(kept, _token(owner)) is None
     assert "user visit data" in kept_results.read_denial(kept, _token(owner, labs_restricted_user=True))
 
 
 def test_rows_that_are_not_sensitive_are_not_judged(owner, connect, monkeypatch):
     monkeypatch.setattr("connect_labs.labs.synthetic.provenance.all_generated", lambda ids: True)
-    uri = _uri(owner, connect)
-    kept = kept_results.stored(uri)
+    _uri(owner, connect)
+    kept = Row.objects.get()
     assert kept.sensitive is False
     assert kept_results.read_denial(kept, _token(owner, labs_restricted_user=True)) is None
 
 
-def test_stored_names_only_a_live_labs_result(owner, connect):
-    uri = _uri(owner, connect)
-    assert kept_results.stored(f"{uri}?page=2").id == kept_results.stored(uri).id
-    assert kept_results.stored("labs-result://nope") is None
-    assert kept_results.stored("https://example.org/x") is None
-    Row.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
-    assert kept_results.stored(uri) is None
-
-
-def test_every_read_is_audit_logged(owner, connect):
+@pytest.mark.django_db(transaction=True)
+def test_every_read_is_audit_logged_through_the_real_resources_read(owner, colleague, connect):
     from connect_labs.audit_trail.models import AuditEvent
 
     uri = _uri(owner, connect)
-    kept_results.record_read(kept_results.stored(uri), owner, f"{uri}?page=2&page_size=20")
-    event = AuditEvent.objects.filter(resource_type="labs_result").latest("id")
+    contents = read_resource(_pat(owner), f"{uri}?page=2&page_size=20")
+    assert len(json.loads(contents[0].text)["rows"]) == 20
+    event = AuditEvent.objects.filter(resource_type="labs_result", outcome="success").latest("id")
     assert (event.action, event.opportunity_id, event.record_count) == ("read", OPP.id, 20)
+    assert event.source == "mcp" and event.path == "mcp:resources/read" and event.request_id.startswith("mcp:")
+    assert event.user_id == owner.pk
     assert event.metadata["kind"] == "data_query" and event.metadata["page"] == 2
+    assert event.metadata["auth_method"] == "pat" and event.metadata["client_id"] == str(owner.pk)
+
+    # A refused read is recorded too: who asked, for what, and why.
+    refused = read_resource(_pat(colleague), uri)
+    assert isinstance(refused, Exception) and "forbidden" in str(refused)
+    event = AuditEvent.objects.filter(resource_type="labs_result", outcome="failure").latest("id")
+    assert event.user_id == colleague.pk and event.source == "mcp" and event.path == "mcp:resources/read"
+    assert event.metadata["refused"] == "forbidden" and event.resource_id == uri.split("://")[1]
+    missing = read_resource(_pat(owner), "labs-result://nope")
+    assert "not_found" in str(missing)
+    assert AuditEvent.objects.filter(resource_type="labs_result", outcome="failure", resource_id="nope").exists()
+
+
+def test_someone_who_may_not_read_it_never_learns_it_expired(owner, colleague, connect):
+    uri = _uri(owner, connect)
+    Row.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
+    with pytest.raises(Refused) as refused:
+        kept_results.read(uri, reader=colleague.pk)
+    assert refused.value.code == "forbidden"
+    with pytest.raises(Refused) as own:
+        kept_results.read(uri, reader=owner.pk)
+    assert own.value.code == "expired"
+
+
+def test_a_result_too_large_to_keep_is_refused(owner, connect, settings):
+    connect["users"].add(owner.pk)
+    settings.KEPT_RESULT_MAX_BYTES = 500
+    out = _query(owner)["result"]
+    assert out["isError"] is True and "ask for fewer rows" in out["structuredContent"]["error"]["message"]
+    assert not Row.objects.exists()
+
+
+def test_a_page_is_read_without_loading_the_whole_payload(owner, connect):
+    uri = _uri(owner, connect)
+    kept = kept_results.read(uri, reader=owner.pk)
+    assert "payload" not in kept.__dict__  # deferred for the ACL check
+    body, paging = kept_results.page_of(kept, {"page": "3", "page_size": "20"})
+    assert body["rows"] == ROWS[40:45] and body["columns"] == COLUMNS
+    assert paging == {"page": 3, "page_size": 20, "pages": 3, "row_count": 45}
+    assert "payload" not in kept.__dict__
+
+
+def test_an_agents_page_is_cut_as_its_query_was(owner, connect):
+    from connect_labs.labsdata import service
+
+    uri = _uri(owner, connect)
+    kept = kept_results.read(uri, reader=owner.pk)
+    big = "x" * (service.AGENT_CELL_CHARS + 50)
+    body = {"columns": COLUMNS, "rows": [[big, 1]], "truncated": True}
+    shaped = kept_results._shaped(body, {"row_count": 1})
+    assert "[cut:" in shaped["rows"][0][0] and shaped["truncated"] is True
+    assert any("cut at" in n for n in shaped["notes"])
+    (content,) = kept_results.contents_of(kept, uri, for_agent=True, paged=(body, {"row_count": 1, "page": 1}))
+    assert "[cut:" in json.loads(content["text"])["rows"][0][0]
+
+
+def test_the_public_pmc_ranking_lasts_a_month(owner):
+    link = kept_results.save(
+        owner, kept_results.KIND_PMC, {"recommendation": {}}, access={"sensitive": False}, name="PMC"
+    )
+    row = Row.objects.get(pk=link["uri"].split("://")[1])
+    assert row.expires_at - row.created_at == timedelta(seconds=kept_results.PUBLIC_TTL_SECONDS)
 
 
 def test_the_mcp_server_lists_the_kept_result_template():
@@ -328,7 +395,7 @@ def test_a_token_reads_back_only_what_a_tool_in_its_scope_keeps(owner, connect, 
     from connect_labs.mcp import server
 
     uri = _uri(owner, connect)
-    kept = kept_results.stored(uri)
+    kept = Row.objects.get()
     monkeypatch.setattr(server, "allowed_tools", lambda token: frozenset({"marketplace_orgs_get"}))
     assert "data_query" in kept_results.scope_denial(kept, _token(owner))
     with pytest.raises(Refused):

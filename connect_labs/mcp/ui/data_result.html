@@ -14,12 +14,14 @@
   The rows are not in the tool result. Labs keeps the result (connect_labs/mcp/kept_results.py)
   and the tool result names it with a `resource_link` (labs-result://<id>); this View reads
   it back with `resources/read`, AS ITS VIEWER, a page at a time (?page=&page_size=), and
-  sorts within the page. In a sensitive conversation the host keeps nothing else of the
-  result (`_meta["canopy/withheld"]`), and the link is all this View needs. It subscribes
-  to the link and reads again when Labs says it changed. It never runs the query itself.
+  sorts within the page (and says so). In a sensitive conversation the host keeps nothing
+  else of the result (`_meta["canopy/withheld"]`), and the link is all this View needs. A
+  kept result is a snapshot Labs never changes, so the View does not subscribe to it. It
+  never runs the query itself.
 
-  A refused read says why: expired (ask again in the chat), not yours to see, or sensitive
-  data that stays in Labs. When Labs withheld production rows from the agent, the kept
+  A refused read says why: expired (ask again in the chat -- with the sample the tool
+  result carried, said plainly to be a sample, when there is one), not yours to see, or
+  sensitive data that stays in Labs. When Labs withheld production rows from the agent, the kept
   result holds none either and the View offers the Data page, where the person runs the
   query inside Labs.
 
@@ -300,7 +302,6 @@
         var state = {
           initialized: false,
           canRead: false, // the host reads resources for this View (hostCapabilities.serverResources)
-          canSubscribe: false,
           args: null, // the agent's arguments: opportunity_ids, sql, max_rows
           facts: null, // what the tool result said, when the host passed it on
           uri: '', // the kept result: labs-result://<id>, without a page
@@ -313,8 +314,8 @@
           ys: [],
           error: '',
           sensitive: false, // the refusal was labs keeping sensitive data in Labs
+          expired: false, // the full result expired; what is on screen is the facts' sample
           loading: false,
-          subscribed: false,
         };
 
         function esc(v) {
@@ -436,18 +437,38 @@
                 : null;
               state.error = '';
               if (first || state.x === null) pickAxes();
+              // No resources/subscribe: Labs never changes a kept result and never sends
+              // "it changed" (add one here when it does).
               render();
-              subscribe();
             },
             function (err) {
               state.loading = false;
-              state.error = refusal(err && err.message);
+              var message = String((err && err.message) || '');
+              // The full result is gone, but the tool result carried a sample of it:
+              // show that, and say plainly that it is only a sample.
+              if (
+                /\b(expired|not_found)\b/.test(message) &&
+                !state.result &&
+                sampleOf(state.facts)
+              ) {
+                state.expired = true;
+                showSample();
+                return;
+              }
+              state.error = refusal(message);
               render();
             },
           );
         }
         // A host that cannot read resources still gets the facts' sample (an ordinary
         // conversation passes the tool result on).
+        function sampleOf(f) {
+          return (
+            f &&
+            Array.isArray(f.columns) &&
+            (Array.isArray(f.rows) || Array.isArray(f.sample_rows))
+          );
+        }
         function showSample() {
           var f = state.facts;
           if (!f || !Array.isArray(f.columns)) {
@@ -473,13 +494,6 @@
           };
           pickAxes();
           render();
-        }
-        function subscribe() {
-          if (state.subscribed || !state.canSubscribe || !state.uri) return;
-          state.subscribed = true;
-          request('resources/subscribe', { uri: state.uri }).catch(function () {
-            state.subscribed = false;
-          });
         }
         function pickAxes() {
           var r = state.result;
@@ -742,7 +756,7 @@
               return (
                 '<th data-sort="' +
                 i +
-                '" title="Sort this page by ' +
+                '" title="Sort the rows on this page by ' +
                 esc(c) +
                 '">' +
                 esc(c) +
@@ -784,6 +798,14 @@
         function pager() {
           var p = state.paging;
           if (!p) return '';
+          if (state.expired)
+            return (
+              '<div class="pager warn">The full result has expired. This is only the sample of ' +
+              p.page_size +
+              ' of ' +
+              p.row_count.toLocaleString() +
+              ' rows the query returned to the chat — ask again in the chat for every row.</div>'
+            );
           if (p.sample)
             return (
               '<div class="pager">Showing the first ' +
@@ -827,6 +849,9 @@
             '<label>Rows per page <select id="size">' +
             sizes +
             '</select></label>' +
+            (state.sort.col >= 0 && p.pages > 1
+              ? '<span class="sub">Sorted within this page only</span>'
+              : '') +
             (state.loading ? '<span>Loading…</span>' : '') +
             '</div>'
           );
@@ -1096,9 +1121,6 @@
             applyHostContext(result.hostContext || {});
             var caps = result.hostCapabilities || {};
             state.canRead = !!caps.serverResources;
-            state.canSubscribe = !!(
-              caps.serverResources && caps.serverResources.subscribe
-            );
             notify('ui/notifications/initialized', {});
             state.initialized = true;
             // A link that arrived before the host answered is read now.
