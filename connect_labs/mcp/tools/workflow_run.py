@@ -437,6 +437,8 @@ def workflow_run_indicators(
             "generated_at": graded.get("generated_at"),
             "cache": graded["cache"],
             "headline": graded.get("headline") or {},
+            # As workflow_run_context: an agent may start here, so it hears the page's scope here too.
+            "page_scope": _page_scope(r),
             "legend": BAND_MEANING,
         }
         try:

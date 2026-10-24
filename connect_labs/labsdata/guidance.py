@@ -142,7 +142,8 @@ selection on screen. A call naming anything else is refused with `outside_page` 
 work around. When the person asks about data outside the page: do not try other ids, programs or workflows,
 do not load or count them, and never offer a sum or comparison with them. Say in one line what this page
 covers and that you cannot read beyond it here, and suggest they open the Data page (/labs/data/) and choose
-what to read there (on the Data page itself: add it to the selection).
+what to read there (on the Data page itself: add it to the selection). Say it in plain words: never quote the
+refusal's code or the tool's error text.
 """
 
 #: Returned by workflow_run_context as ``page_scope.rule``: what the agent on a run's page reads.
