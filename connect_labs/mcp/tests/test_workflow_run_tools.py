@@ -763,3 +763,13 @@ def test_canopys_agent_is_told_no_card_shows_the_indicator_rows(user, wda, monke
     monkeypatch.setattr(wa, "_delegated_token", lambda: MagicMock(client_id="canopy"))
     out = _call("workflow_run_indicators", user, run_id=70, program_id=25)
     assert any("markdown table" in n for n in out["notes"])
+
+
+def test_the_run_context_says_what_the_runs_page_reads(user, wda):
+    # data_chat_eval outside-selection: the agent on a run page read another programme the
+    # visitor held and offered a combined sum. The run context names what the page reads and
+    # that its agent keeps to it (labs enforces it for the page's grant: labsdata/page_holds.py).
+    scope = _call("workflow_run_context", user, run_id=70, program_id=25)["page_scope"]
+    assert scope["workflow_id"] == wda.get_definition.return_value.id
+    assert isinstance(scope["opportunity_ids"], list)
+    assert "Data page" in scope["rule"] and "never give a sum" in scope["rule"]

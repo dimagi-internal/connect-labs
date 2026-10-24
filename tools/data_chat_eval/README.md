@@ -172,6 +172,14 @@ dialog, so `page_showQuery` and `page_proposeSave` are checked from what the per
 
 ## Known limits
 
+- **On the run page ace visits as its own owner, so its turn is FULL, not confined**, and it reads
+  labs through its own plugin connector (ace's PAT), not canopy's page grant (`site_call`). Labs'
+  page hold (`labsdata/page_holds.py`) enforces the page's selection on the grant only -- a
+  person's (or agent's) own credentials are their own direct use. So `outside-selection` there
+  tests the agent's behaviour (`workflow_run_context`'s `page_scope`, the agent's skill), and
+  `data-outside-selection` tests labs' enforcement: the Data page's agent runs confined for
+  everyone (its capability handles sensitive data), so it reads only through the grant.
+
 - Spaces' teammate and lock-out rules need a second synthetic person (one who holds the
   sources, one who misses one); not covered yet.
 

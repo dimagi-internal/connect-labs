@@ -145,6 +145,15 @@ covers and that you cannot read beyond it here, and suggest they open the Data p
 what to read there (on the Data page itself: add it to the selection).
 """
 
+#: Returned by workflow_run_context as ``page_scope.rule``: what the agent on a run's page reads.
+RUN_PAGE_SCOPE = """\
+This run reads only `opportunity_ids` (and its workflow's own pipelines). If you are the agent in this run's
+page panel, keep to them: when asked about any other opportunity, programme or workflow, do not read, load or
+count it -- not even one you could read -- and never give a sum or comparison that includes it. Say in one line
+that this page covers only this run's opportunities, and suggest the person open the Data page (/labs/data/)
+and choose what to read there.
+"""
+
 #: How to check that a workflow shows what it should. Returned by data_describe and
 #: data_workflow_context, because "is this workflow right?" is what this is mostly for.
 VERIFYING_A_WORKFLOW = """\

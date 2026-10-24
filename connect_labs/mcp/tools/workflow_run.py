@@ -285,6 +285,21 @@ def _action_error(e) -> MCPToolError:
 # ---------------------------------------------------------------------------
 
 
+def _page_scope(r) -> dict:
+    from connect_labs.labsdata.guidance import RUN_PAGE_SCOPE
+    from connect_labs.workflow.visit_cache import workflow_opportunity_ids
+
+    try:
+        ids = workflow_opportunity_ids(r.definition, getattr(r.run, "opportunity_id", None))
+    except Exception:  # noqa: BLE001 -- a note, never a failed read
+        ids = []
+    return {
+        "workflow_id": r.definition.id,
+        "opportunity_ids": sorted({int(i) for i in ids or []}),
+        "rule": RUN_PAGE_SCOPE,
+    }
+
+
 @register(
     name="workflow_run_context",
     description=(
@@ -333,6 +348,10 @@ def workflow_run_context(user, *, run_id: int, opportunity_id=None, program_id=N
             },
             "page_url": r.page_url,
             "headline": headline,
+            # What this run reads, and that the agent on its page keeps to it. Labs enforces it
+            # for the page's grant (labsdata/page_holds.py); an agent on its own credentials is
+            # told here, in the tool every run-page conversation starts with.
+            "page_scope": _page_scope(r),
             "nouns": {k: display.get(k) for k in ("entity", "worker", "organisation") if display.get(k)},
             "indicators": indicators,
             "bands": BAND_MEANING,
