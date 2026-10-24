@@ -210,7 +210,9 @@ count, the columns, a sample, what was asked (the SQL) -- plus an MCP `resource_
 (`labs-result://<id>`, also `result_uri` in the JSON). canopy carries the link, never the
 rows; in a sensitive conversation the link is all it stores, and `site.json` declares the
 `labs-result` scheme (`CANOPY_HOST["RESOURCE_SCHEMES"]` in `labs/canopy.py:host_settings`,
-published as `site.resource_schemes`) so canopy keeps it. That declaration is the only
+published as `site.resource_schemes`) and its 24-character ids (`RESOURCE_ID_LENGTHS`,
+`site.resource_id_lengths`, SDK 0.22+) so canopy keeps it -- as `labs-result://` and
+exactly such an id, nothing longer. That declaration is the only
 part of this that goes through the canopy SDK.
 
 - **Who gets what inline.** A canopy agent gets the first `INLINE_ROWS` (20) rows as
@@ -219,7 +221,8 @@ part of this that goes through the canopy SDK.
   at a time. Every other caller -- Claude Code, ACE, scout-queries -- has no `site_read`
   and parses rows, so it gets every row inline and **nothing is kept**: labs keeps a copy
   of production rows only for a caller that reads it back (canopy, or a client passing
-  `keep_result: true`, which also gets the link). `explorer_query` (scout-queries' name)
+  `keep_result: true`, which also gets the link) -- `data_query`'s and
+  `workflow_run_indicators`' alike. `explorer_query` (scout-queries' name)
   keeps nothing and is unchanged. A result over `KEPT_RESULT_MAX_BYTES` (5 MB of JSON) is
   not kept: the call is refused with "ask for fewer rows".
 - **Reading one back** is MCP `resources/read` on labs' MCP server (the resource template
@@ -227,7 +230,10 @@ part of this that goes through the canopy SDK.
   `resources/templates/list`): a table pages through the URI (default 100, max 1000 rows a
   page) with `_meta["labs/result"]` saying the kind, the page, pages, row count, expiry and
   that it is the **snapshot** the agent saw (the card and the agent agree on the rows). A
-  refusal is an MCP error `"<code>: <why>"`: `bad_uri`, `not_found`, `expired`, `forbidden`.
+  refusal is an MCP error `"<code>: <why>"` whose `data` is `{"code": ...}` (`kept_results.REFUSALS`:
+  `bad_uri`, `not_found`, `expired`, `forbidden`, and `unavailable` when Connect could not
+  say whether the reader may -- still refused, but not "not yours"; `"sensitive": true` on
+  labs' sensitive-data rule).
   Who may read is decided before expiry, so someone who may not read a result never
   learns whether it has expired. A cleared agent's page (`site_read`) is cut as its
   query was (`labsdata.service.shape_for_agent`: 4,000 characters a cell, 200,000 a page),
@@ -240,8 +246,9 @@ part of this that goes through the canopy SDK.
 - **What a read may carry** (`kept_results.read_denial`, every reader, the owner too): a
   result holding sensitive data (`KeptResult.sensitive`) goes back through canopy only to
   an agent whose own `Canopy-Execution` statement clears it, or to the person's own card --
-  a read with no statement, no agent acting -- for a result a cleared agent already
-  received (`through_canopy`). A "no user visit data" caller never reads one. Every read,
+  which canopy states with a verified `Canopy-View` for this result and this person -- for
+  a result a cleared agent already received (`through_canopy`). Any delegated read that
+  is not a verified View is an agent's: cleared, cut and audited as one. A "no user visit data" caller never reads one. Every read,
   and every refused read (`outcome` failure, with the refusal), is on the audit trail
   (`resource_type` `labs_result`, `source` `mcp`, the MCP request id, `path`
   `mcp:resources/read`, the token's `auth_method` and client, and for a canopy call the
@@ -259,7 +266,9 @@ part of this that goes through the canopy SDK.
 server and sorts within the page (and says "Sorted within this page only" when there are
 more pages), and never runs the query itself. It names each refusal: expired ("ask again
 in the chat" -- showing the sample the tool result carried, said plainly to be a sample,
-when it has one), not yours, or sensitive data that stays in Labs (with the Data page). The PMC
+when it has one), not yours, Connect could not confirm access (try again), or sensitive
+data that stays in Labs (with the Data page), deciding on the refusal's `data.code` (or,
+from a host that passes only the message, the code at the head of Labs' message). The PMC
 card (`ui://labs/pmc-states`) reads its ranking the same way and re-totals ticked states
 through `targeting_pmc_rank` as the viewer. The coaching preview and the edit-confirm
 cards deliberately preview again as the viewer: their confirm token must be the viewer's

@@ -24,13 +24,16 @@ a private conversation.
   -- which canopy STATES with a signed ``Canopy-View`` for this resource and this person
   (``execution.view_for_this_request``) -- of a result a cleared agent already received
   through canopy. A delegated read with no statement is refused: an absence is never
-  taken for "the person is looking". A "no user visit data" caller never reads one.
-  Every read, and every refused read, is audit-logged (``source=mcp``, the request's
+  taken for "the person is looking". Any delegated read that is not a verified View counts
+  as an agent's, for its clearance, its page and its audit record. A "no user visit
+  data" caller never reads one. Every read, and every refused read, is audit-logged (``source=mcp``, the request's
   own id and path, how the token signed in, and what canopy stated).
-* **Only for a reader.** ``data_query`` keeps rows only for a caller that reads them back
-  (canopy, or a client passing ``keep_result``); everyone else gets them inline and labs
-  keeps no copy. At most ``KEPT_RESULT_MAX_BYTES`` (5 MB) of JSON per result. An agent's
-  read is cut as its query was (``labsdata.service.shape_for_agent``).
+* **Only for a reader.** ``data_query`` and ``workflow_run_indicators`` keep rows only for
+  a caller that reads them back (canopy, or a client passing ``keep_result``); everyone
+  else gets them inline and labs keeps no copy. ``targeting_pmc_states`` keeps its
+  ranking for every caller: it is public data, and its View reads it on any host. At
+  most ``KEPT_RESULT_MAX_BYTES`` (5 MB) of JSON per result. An agent's read is cut as
+  its query was (``labsdata.service.shape_for_agent``).
 * **Snapshot, not fresh.** A read serves what the tool produced: the View and the agent
   must agree on the rows the agent reasoned on. Paging is over that snapshot. Labs never
   changes a kept result, so it never sends canopy a "result changed" push.
@@ -87,15 +90,30 @@ PUBLIC_KINDS = frozenset({KIND_PMC})
 _ID_BYTES = 18
 
 
-class Refused(Exception):
-    """Why a read is refused. ``code``: ``bad_uri`` (not a kept result's URI),
-    ``not_found``, ``expired`` or ``forbidden``. ``str()`` is ``"<code>: <why>"``, the
-    MCP error message a client gets."""
+#: Every refusal a read gives, as the MCP error's ``data.code`` (``mount``): what a View
+#: decides on, never the words of the message.
+REFUSALS = ("bad_uri", "not_found", "expired", "forbidden", "unavailable")
+#: Why a read is refused when Connect could not say whether the reader may (``unavailable``).
+UNAVAILABLE = "Connect couldn't confirm your access right now; try again"
 
-    def __init__(self, code: str, message: str):
+
+class Refused(Exception):
+    """Why a read is refused. ``code`` (one of ``REFUSALS``): ``bad_uri`` (not a kept
+    result's URI), ``not_found``, ``expired``, ``forbidden`` or ``unavailable`` (Connect
+    could not answer whether the reader may: still refused, for a reason that will pass).
+    ``sensitive``: a ``forbidden`` that is labs' sensitive-data rule. ``str()`` is
+    ``"<code>: <why>"``, the MCP error message a client gets; ``data`` the error's
+    structured ``data``."""
+
+    def __init__(self, code: str, message: str, *, sensitive: bool = False):
         super().__init__(f"{code}: {message}")
         self.code = code
         self.message = message
+        self.sensitive = sensitive
+
+    @property
+    def data(self) -> dict:
+        return {"code": self.code, **({"sensitive": True} if self.sensitive else {})}
 
 
 # --- who is asking --------------------------------------------------------------------
@@ -299,7 +317,10 @@ def read(uri: str, reader: int | None):
     result = KeptResult.objects.defer("payload").filter(pk=result_id).first()
     if result is None:
         raise Refused("not_found", "there is no such result here")
-    if not may_read(reader, result):
+    verdict = read_verdict(reader, result)
+    if verdict == "unavailable":
+        raise Refused("unavailable", UNAVAILABLE)
+    if verdict is not None:
         raise Refused("forbidden", "this result is not yours to read")
     if _expired(result):
         raise Refused("expired", "this result has expired; run the query again")
@@ -390,29 +411,58 @@ def contents_of(result, uri: str, *, for_agent: bool = False, paged=None) -> lis
 ACL_CACHE_SECONDS = 60
 
 
+class _Unanswered(Exception):
+    """Connect (or labs' own copy of what Connect says) could not answer whether a reader
+    may run something: not a no, but not a yes either."""
+
+
 def may_read(reader: int | None, result) -> bool:
-    """Could ``reader`` (an active labs user; the owner too) run it themselves? A yes is
-    kept ``ACL_CACHE_SECONDS`` per (reader, result); a no is asked again."""
+    """Could ``reader`` (an active labs user; the owner too) run it themselves?"""
+    return read_verdict(reader, result) is None
+
+
+def read_verdict(reader: int | None, result) -> str | None:
+    """None when ``reader`` (an active labs user; the owner too) could run it themselves;
+    ``"forbidden"`` when they could not; ``"unavailable"`` when Connect could not say.
+    Both refuse. A yes is kept ``ACL_CACHE_SECONDS`` per (reader, result); neither no is."""
     from django.core.cache import cache
 
     user = _active_user(reader) if reader is not None else None
     if user is None:
-        return False
+        return "forbidden"
     key = f"labs-result-acl:{user.pk}:{result.id}"
     if cache.get(key):
-        return True
+        return None
     try:
-        ok = _could_run(user, result) is None
-    except Exception:  # noqa: BLE001 -- a check that cannot answer says no
-        logger.info("kept result ACL check failed for %s", getattr(result, "kind", ""), exc_info=True)
-        return False
-    if ok:
+        why = _could_run(user, result)
+    except Exception:  # noqa: BLE001 -- a check that cannot answer says no, and says why
+        logger.info("kept result ACL check could not answer for %s", getattr(result, "kind", ""), exc_info=True)
+        return "unavailable"
+    if why is None:
         cache.set(key, True, ACL_CACHE_SECONDS)
-    return ok
+        return None
+    return "forbidden"
+
+
+def _unanswered(exc: Exception) -> bool:
+    """Whether ``exc`` (raised checking a reader) means "could not tell" rather than "no":
+    labs could not read the reader's scopes from Connect, Connect's API failed or was
+    rate limited, or the reader's Connect sign-in could not be used. A refusal that names
+    the reader (not held, not found in their scope, not shared) is a no."""
+    from connect_labs.labsdata.scope import ScopeError
+
+    from .tool_registry import MCPToolError
+
+    if isinstance(exc, ScopeError):
+        return exc.code == "scopes_unavailable"
+    if isinstance(exc, MCPToolError):
+        return exc.code in ("UPSTREAM_ERROR", "RATE_LIMITED")
+    return True
 
 
 def _could_run(user, result) -> str | None:
-    """Why ``user`` could not have produced ``result`` themselves, or None."""
+    """Why ``user`` could not have produced ``result`` themselves, or None. Raises
+    ``_Unanswered`` when Connect could not say (``_unanswered``)."""
     access = result.access
     kind = result.kind
     if kind in PUBLIC_KINDS:
@@ -425,6 +475,8 @@ def _could_run(user, result) -> str | None:
         try:
             scope.resolve(Caller(user=user, access_token=get_valid_access_token(user)), access["opportunity_ids"])
         except Exception as e:  # noqa: BLE001 -- ScopeError, no Connect token, ...
+            if _unanswered(e):
+                raise _Unanswered(str(e) or type(e).__name__) from e
             return str(e) or type(e).__name__
         return None
     if kind == KIND_INDICATORS:
@@ -434,6 +486,8 @@ def _could_run(user, result) -> str | None:
             with _Run(user, int(access["run_id"]), access.get("opportunity_id"), access.get("program_id")):
                 return None
         except Exception as e:  # noqa: BLE001 -- MCPToolError, no Connect token, ...
+            if _unanswered(e):
+                raise _Unanswered(str(e) or type(e).__name__) from e
             return str(e) or type(e).__name__
     return f"no read rule for {kind!r} results"
 
@@ -511,7 +565,17 @@ def read_judgement(result, access_token, uri: str = "") -> tuple[str | None, dic
         return None, {}
     read_uri = uri or f"{SCHEME}://{result.id}"
     call = execution.for_this_request(access_token, rpc=("resources/read", {"uri": read_uri}))
-    stated = {"execution": call.audit(), "agent": call.refused != "no_statement"}
+    # A delegated read is the person's own View only when canopy SAYS so, for this result
+    # and this person (a verified ``Canopy-View``). Anything else -- an agent's statement,
+    # a bad one, none at all -- is an agent's read: cut as an agent's page is, audited as
+    # an agent's, and cleared for sensitive data only as an agent is.
+    view = None
+    if call.execution is None:
+        view = execution.view_for_this_request(access_token, uri=read_uri, subject=_subject(access_token))
+    is_view = view is not None and view.view is not None and _names(view.view.uri, result)
+    stated = {"execution": call.audit(), "agent": not is_view}
+    if view is not None:
+        stated["view"] = view.audit()
     if not result.sensitive:
         return None, stated
     from connect_labs.labs import canopy_panel
@@ -520,13 +584,10 @@ def read_judgement(result, access_token, uri: str = "") -> tuple[str | None, dic
         clearance = canopy_panel.call_sensitive_data_clearance()
     if clearance.granted:
         return None, stated
-    if call.execution is None and result.through_canopy:
-        # No agent's statement verified: only canopy's word that the person is looking
-        # admits it -- never the absence of a statement.
-        view = execution.view_for_this_request(access_token, uri=read_uri, subject=_subject(access_token))
-        stated["view"] = view.audit()
-        if view.view is not None and _names(view.view.uri, result):
-            return None, stated
+    if is_view and result.through_canopy:
+        # canopy's word that the person is looking admits it -- never the absence of a statement.
+        return None, stated
+    if view is not None:
         why = f"{clearance.reason}; not the person's own View ({view.refused or 'another result'})"
     else:
         why = clearance.reason
@@ -616,6 +677,25 @@ def record_refused(result, reader_user, uri: str, refused: Refused, *, facts: di
         )
 
 
+def _access_only(uri: str):
+    """The kept result ``uri`` names with only what an audit record needs (its id, kind
+    and ``access``: opportunities, programme), never its payload; None when there is none."""
+    from .models import KeptResult
+
+    try:
+        result_id, _ = parse(uri)
+    except Refused:
+        return None
+    try:
+        return (
+            KeptResult.objects.only("id", "kind", "opportunity_ids", "scope", "sensitive", "through_canopy")
+            .filter(pk=result_id)
+            .first()
+        )
+    except Exception:  # noqa: BLE001 -- the audit record must not fail the refusal
+        return None
+
+
 def read_as(uri: str, reader: int | None, access_token) -> list[dict]:
     """A whole ``resources/read`` of a kept result, as ``reader``: the owner / ``may_read``
     / expiry check, labs' ``read_denial`` for this token, the page (cut for an agent), and
@@ -627,17 +707,21 @@ def read_as(uri: str, reader: int | None, access_token) -> list[dict]:
         result = read(uri, reader)
         denied = scope_denial(result, access_token)
         stated: dict = {}
+        sensitive_rule = False
         if not denied:
             denied, stated = read_judgement(result, access_token, uri)
+            sensitive_rule = bool(denied)  # read_judgement refuses only a sensitive result
         facts.update(stated)
         if denied:
-            raise Refused("forbidden", denied)
+            raise Refused("forbidden", denied, sensitive=sensitive_rule)
         _, query = parse(uri)
         body, paging = page_of(result, query)
         count = len(body.get("rows") or []) if paging and isinstance(body, dict) else None
         out = contents_of(result, uri, for_agent=bool(stated.get("agent")), paged=(body, paging))
     except Refused as exc:
-        record_refused(result, reader_user, uri, exc, facts=facts)
+        # A refusal before the result was judged (not hers to read, expired, Connect
+        # unavailable) still says which opportunities and programme it was for.
+        record_refused(result if result is not None else _access_only(uri), reader_user, uri, exc, facts=facts)
         raise
     record_read(result, reader_user, uri, facts=facts, count=count, paging=paging)
     return out
@@ -669,13 +753,22 @@ def read_resource(uri: str, reader: int | None, access_token) -> list[dict]:
         return read_as(uri, reader, access_token)
 
 
+#: The JSON-RPC error code of each refusal: MCP's "resource not found" (-32002) for a
+#: result that is not there, invalid params for a URI that is not one; the rest are
+#: refusals of a resource that exists.
+INTERNAL_ERROR = -32603
+_ERROR_CODES = {"not_found": -32002, "bad_uri": -32602}
+
+
 def mount(server) -> object:
     """Register ``labs-result://{id}{?page,page_size}`` on the FastMCP server: answers
     ``resources/read`` as the reader (``read_as``), each refusal an MCP error whose message
-    is ``"<code>: <why>"``; also listed by ``resources/templates/list``."""
+    is ``"<code>: <why>"`` and whose ``data`` is ``{"code": <one of REFUSALS>}`` (plus
+    ``"sensitive": true`` for labs' sensitive-data rule); also listed by
+    ``resources/templates/list``."""
     from asgiref.sync import sync_to_async
-    from fastmcp.exceptions import ResourceError
     from fastmcp.resources import ResourceContent, ResourceResult
+    from mcp.shared.exceptions import MCPError
 
     from .server import _closing_connections
 
@@ -690,7 +783,9 @@ def mount(server) -> object:
                 uri, reader, access_token
             )
         except Refused as exc:
-            raise ResourceError(str(exc)) from None
+            # The refusal's code is structured (`data.code`) for a View to decide on; the
+            # message keeps "<code>: <why>" for a host that passes on only the message.
+            raise MCPError(_ERROR_CODES.get(exc.code, INTERNAL_ERROR), str(exc), exc.data) from None
         return ResourceResult(
             contents=[ResourceContent(content=c["text"], mime_type=c["mimeType"], meta=c.get("_meta")) for c in out]
         )

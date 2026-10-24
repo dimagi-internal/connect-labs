@@ -19,11 +19,12 @@
   kept result is a snapshot Labs never changes, so the View does not subscribe to it. It
   never runs the query itself.
 
-  A refused read says why: expired (ask again in the chat -- with the sample the tool
-  result carried, said plainly to be a sample, when there is one), not yours to see, or
-  sensitive data that stays in Labs. When Labs withheld production rows from the agent, the kept
-  result holds none either and the View offers the Data page, where the person runs the
-  query inside Labs.
+  A refused read says why, from Labs' structured refusal (`error.data.code`): expired (ask
+  again in the chat -- with the sample the tool result carried, said plainly to be a
+  sample, when there is one), not yours to see, Connect could not confirm access right
+  now (try again), or sensitive data that stays in Labs. When Labs withheld production
+  rows from the agent, the kept result holds none either and the View offers the Data
+  page, where the person runs the query inside Labs.
 
   Self-contained on purpose: no network load of any kind. Every call goes to the host
   over postMessage. The chart is drawn here, as SVG, so no library has to load.
@@ -275,11 +276,12 @@
           ) {
             var p = pending[msg.id];
             delete pending[msg.id];
-            if (msg.error)
-              p.reject(
-                new Error((msg.error && msg.error.message) || 'Request failed'),
-              );
-            else p.resolve(msg.result);
+            if (msg.error) {
+              var failure = new Error(msg.error.message || 'Request failed');
+              // Labs' refusal, structured (`data.code`), when the host passes it on.
+              failure.data = msg.error.data;
+              p.reject(failure);
+            } else p.resolve(msg.result);
             return;
           }
           if (typeof msg.method !== 'string') return;
@@ -377,23 +379,48 @@
           });
           return links.length ? links[0].uri.split('?')[0] : '';
         }
-        // Why a read was refused, as the person should read it. Labs names its refusals
-        // (`expired`, `forbidden`, `not_found`); the host passes them on (`host_refused: …`).
-        function refusal(message) {
-          var m = String(message || '');
+        // Why a read was refused: Labs' structured code (`error.data.code`: expired,
+        // not_found, forbidden, unavailable, bad_uri; `data.sensitive` for its
+        // sensitive-data rule). A host that passes on only the message (canopy:
+        // `host_refused: <site> refused: <code>: <why>`) still carries the code at the
+        // head of Labs' own message, so it is read from there -- never by searching the
+        // words of the reason.
+        function refusalOf(err) {
+          var data = err && err.data;
+          if (data && typeof data === 'object' && typeof data.code === 'string')
+            return { code: data.code, sensitive: data.sensitive === true };
+          var m = String((err && err.message) || '');
+          var hit =
+            /(?:^|refused: )(expired|not_found|forbidden|unavailable|bad_uri): (.*)$/.exec(
+              m,
+            );
+          if (!hit) return { code: '', sensitive: false };
+          return {
+            code: hit[1],
+            sensitive:
+              hit[1] === 'forbidden' &&
+              /^this result holds sensitive data/.test(hit[2]),
+          };
+        }
+        function refusal(err) {
+          var r = refusalOf(err);
           state.sensitive = false;
-          if (/\bexpired\b/.test(m))
+          if (r.code === 'expired')
             return 'This result has expired — ask again in the chat.';
-          if (/\bnot_found\b/.test(m))
+          if (r.code === 'not_found')
             return 'This result is no longer kept — ask again in the chat.';
-          if (/\bforbidden\b/.test(m)) {
-            if (/sensitive/i.test(m)) {
+          if (r.code === 'unavailable')
+            return 'Connect couldn’t confirm your access right now — try again in a moment.';
+          if (r.code === 'forbidden') {
+            if (r.sensitive) {
               state.sensitive = true;
               return 'This result holds sensitive data, which stays in Labs. Open the query on the Data page to see it there.';
             }
             return 'This result is not yours to see: only the person it was run for, and people who could run the same query themselves, can read it.';
           }
-          return 'Could not read the result: ' + m;
+          return (
+            'Could not read the result: ' + String((err && err.message) || '')
+          );
         }
         function read(page) {
           if (!state.uri || !state.initialized) return;
@@ -443,11 +470,11 @@
             },
             function (err) {
               state.loading = false;
-              var message = String((err && err.message) || '');
+              var code = refusalOf(err).code;
               // The full result is gone, but the tool result carried a sample of it:
               // show that, and say plainly that it is only a sample.
               if (
-                /\b(expired|not_found)\b/.test(message) &&
+                (code === 'expired' || code === 'not_found') &&
                 !state.result &&
                 sampleOf(state.facts)
               ) {
@@ -455,7 +482,7 @@
                 showSample();
                 return;
               }
-              state.error = refusal(message);
+              state.error = refusal(err);
               render();
             },
           );

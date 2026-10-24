@@ -212,8 +212,10 @@ describe('the results View reads the kept result', () => {
 });
 
 describe('a read the host refuses says why', () => {
-  async function refused(message) {
-    const view = mount({ read: () => ({ error: { code: -32603, message } }) });
+  async function refused(message, data) {
+    const view = mount({
+      read: () => ({ error: { code: -32603, message, data } }),
+    });
     await settle();
     view.notify('ui/notifications/tool-result', SENSITIVE_RESULT);
     await settle();
@@ -257,6 +259,55 @@ describe('a read the host refuses says why', () => {
     expect(view.text()).toContain('The full result has expired');
     expect(view.text()).toContain('only the sample of 20 of 250 rows');
     expect(view.requests('tools/call')).toEqual([]);
+  });
+
+  it('decides on the structured code, never the words of the reason', async () => {
+    const view = await refused(
+      'forbidden: this result expired for you long ago, not_found anywhere',
+      { code: 'forbidden' },
+    );
+    expect(view.text()).toContain('This result is not yours to see');
+    expect(view.text()).not.toContain('expired');
+  });
+
+  it('expired, from the structured code', async () => {
+    const view = await refused('gone', { code: 'expired' });
+    expect(view.text()).toContain(
+      'This result has expired — ask again in the chat.',
+    );
+  });
+
+  it('sensitive, from the structured code', async () => {
+    const view = await refused('forbidden: no', {
+      code: 'forbidden',
+      sensitive: true,
+    });
+    expect(view.text()).toContain('sensitive data, which stays in Labs');
+  });
+
+  it('Connect could not confirm access: try again, not "not yours"', async () => {
+    for (const [message, data] of [
+      [
+        "unavailable: Connect couldn't confirm your access right now; try again",
+        { code: 'unavailable' },
+      ],
+      [
+        "host_refused: labs refused: unavailable: Connect couldn't confirm your access right now; try again",
+      ],
+    ]) {
+      const view = await refused(message, data);
+      expect(view.text()).toContain(
+        'Connect couldn’t confirm your access right now',
+      );
+      expect(view.text()).not.toContain('not yours');
+    }
+  });
+
+  it('a message-only host: the code is read from the head of Labs’ message', async () => {
+    const view = await refused(
+      'host_refused: labs refused: forbidden: this result is not yours to read; it expired',
+    );
+    expect(view.text()).toContain('This result is not yours to see');
   });
 
   it('not yours', async () => {

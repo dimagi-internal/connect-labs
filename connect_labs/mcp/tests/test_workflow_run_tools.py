@@ -659,10 +659,19 @@ def test_a_workflow_whose_agent_is_not_available_takes_no_actions_from_any_embed
 # ---------------------------------------------------------------------------
 
 
-def test_a_persons_own_client_gets_every_worker_and_the_kept_table(user, wda):
-    from connect_labs.mcp import kept_results
+def test_a_persons_own_client_gets_every_worker_and_nothing_is_kept(user, wda):
+    from connect_labs.mcp.models import KeptResult
 
     out = _call("workflow_run_indicators", user, run_id=70, program_id=25)
+    assert [w["key"] for w in out["workers"]] == ["10::asha", "10::binta"]
+    assert "result_uri" not in out and "_links" not in out
+    assert not KeptResult.objects.exists()
+
+
+def test_a_client_that_asks_gets_every_worker_and_the_kept_table(user, wda):
+    from connect_labs.mcp import kept_results
+
+    out = _call("workflow_run_indicators", user, run_id=70, program_id=25, keep_result=True)
     assert [w["key"] for w in out["workers"]] == ["10::asha", "10::binta"]
     assert out["_links"][0]["uri"] == out["result_uri"]
     kept = kept_results.read(out["result_uri"], reader=user.pk)
@@ -705,7 +714,7 @@ def test_canopys_agent_gets_the_facts_and_the_link(user, wda, monkeypatch):
 def test_a_colleague_who_can_open_the_run_may_read_its_indicators(user, wda):
     from connect_labs.mcp import kept_results
 
-    out = _call("workflow_run_indicators", user, run_id=70, program_id=25)
+    out = _call("workflow_run_indicators", user, run_id=70, program_id=25, keep_result=True)
     colleague = get_user_model().objects.create_user(username="colleague", password="p")
     assert kept_results.read(out["result_uri"], reader=colleague.pk).kind == "workflow_run_indicators"
     # One who cannot open the run (labs' API does not show it to them) may not -- once the

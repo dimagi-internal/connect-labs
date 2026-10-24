@@ -371,6 +371,15 @@ def workflow_run_context(user, *, run_id: int, opportunity_id=None, program_id=N
             "indicators": {"type": "array", "items": {"type": "string"}},
             "worker_keys": {"type": "array", "items": {"type": "string"}},
             "limit": {"type": "integer", "minimum": 1, "maximum": 500},
+            "keep_result": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Also keep the rows for a day at a labs-result:// link you will read back with "
+                    "resources/read. Only when you will; you get every row inline either way. (Through "
+                    "canopy they are always kept.)"
+                ),
+            },
         },
         "required": ["run_id"],
         "additionalProperties": False,
@@ -387,6 +396,7 @@ def workflow_run_indicators(
     indicators: list[str] | None = None,
     worker_keys: list[str] | None = None,
     limit: int = 200,
+    keep_result: bool = False,
 ) -> dict[str, Any]:
     from connect_labs.workflow.agent_sharing import BAND_MEANING, GradingError, scope_rows, select_workers
 
@@ -416,7 +426,7 @@ def workflow_run_indicators(
                 records, lead = rows, _SCOPE_COLUMNS
         except GradingError as e:
             raise MCPToolError("INVALID_SCHEMA", str(e)) from e
-        return _kept_indicators(r, result, records, lead, scope=scope, band=band)
+        return _kept_indicators(r, result, records, lead, scope=scope, band=band, keep=keep_result)
 
 
 #: The leading columns of a kept indicators table, before one column per indicator.
@@ -436,13 +446,20 @@ def _indicator_table(records: list[dict], lead: tuple[str, ...]) -> tuple[list[s
     return present + indicator_ids, rows
 
 
-def _kept_indicators(r: _Run, result: dict, records: list[dict], lead, *, scope: str, band: str | None) -> dict:
+def _kept_indicators(
+    r: _Run, result: dict, records: list[dict], lead, *, scope: str, band: str | None, keep: bool = False
+) -> dict:
     """The run's indicator rows kept as a ``labs-result://`` table, and what the caller gets.
 
-    Canopy's agent gets the facts (``summarize_rows`` over the table: how many rows, the
-    columns, the first ``kept_results.INLINE_ROWS``) with what it asked for and the link, and
-    reads the rest with ``site_read``. Every other caller (Claude Code, ACE) gets the
-    result as before, with the link beside it."""
+    Kept only for a caller that reads them back, as ``data_query``'s rows are: canopy
+    (delegated), whose agent gets the facts (``summarize_rows`` over the table: how many
+    rows, the columns, the first ``kept_results.INLINE_ROWS``) with what it asked for and
+    the link and reads the rest with ``site_read``, or a client that passed ``keep_result``
+    (the result as before, with the link beside it). Every other caller (Claude Code, ACE)
+    gets every row inline and labs keeps no copy of them."""
+    if not (r.delegated or keep):
+        return result
+
     from connect_labs.workflow.visit_cache import workflow_opportunity_ids
 
     from .. import kept_results
