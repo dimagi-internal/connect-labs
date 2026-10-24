@@ -48,6 +48,20 @@ def get_config_hash(config) -> str:
         # under the old one for the life of the cache.
         for when_path, values, cond_paths in field.conditional_entries():
             parts.append(f"cond:{field.name}:{when_path}={'|'.join(values)}:{','.join(cond_paths)}")
+        # A field's FILTER clause and its two-pass collapse decide which rows it
+        # aggregates and how, exactly as its paths do. Left out, adding a status filter
+        # or a pre_aggregate_by kept serving the old aggregate for the life of the cache.
+        # Appended only when set, so a field without them keeps its existing hash.
+        if field.filter_path or field.filter_paths:
+            parts.append(
+                f"filter:{field.name}:{field.filter_path}:{','.join(field.filter_paths or [])}:"
+                f"{field.filter_op}={field.filter_value}"
+            )
+        if field.pre_aggregate_by:
+            parts.append(
+                f"pre_agg:{field.name}:{field.pre_aggregate_by}:{field.pre_aggregation}:"
+                f"{field.pre_aggregate_attribute_to}"
+            )
         # Include transform function bytecode if present (detects lambda changes)
         if field.transform:
             try:
