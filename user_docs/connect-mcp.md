@@ -218,4 +218,4 @@ The page is arranged in three regions: a **left rail**, a **canvas** in the cent
 - **Canvas.** A tabbed workspace. Each tab holds an open query editor or a saved query you have opened. The last few things you opened stay as tabs so you can switch between them quickly.
 - **Agent panel.** The AI assistant for the Data page. It can open a query in a new canvas tab and run it there as you, open a saved query, open a visit, or fill in the Save dialog for you to confirm. It never gets rows back from the page — it can only act on the page on your behalf.
 
-Use the **Querying** box (in the left rail, under **Sources
+Every query on the Data page runs inside a **data space** — a named set
