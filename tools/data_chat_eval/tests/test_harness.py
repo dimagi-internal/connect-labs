@@ -148,3 +148,66 @@ def test_a_space_whose_chat_is_blocked_reports_blocked_with_one_blocker():
     }
     assert report.status(entry) == "BLOCKED"
     assert [f["severity"] for f in report.findings([entry])] == ["blocker", "advisory"]
+
+
+def test_refuses_and_allow_refused():
+    from tools.data_chat_eval import checks as c
+
+    said = turn("I can't add opportunity 1: it is not part of this programme, and I don't have access to it.")
+    assert c.run({"refuses": True}, said, {}).passed
+    assert not c.run({"refuses": True}, turn("The combined total is 48,000 visits."), {}).passed
+    refused = turn("No.", tools=["data_query"])
+    refused.tool_calls[0].update(is_error=True, result='{"code": "PERMISSION_DENIED", "reason": "not_held"}')
+    assert not c.run({"no_errors": True}, refused, {}).passed
+    assert c.run({"no_errors": {"allow_refused": True}}, refused, {}).passed
+    broken = turn("No.", tools=["data_query"])
+    broken.tool_calls[0].update(is_error=True, result="UPSTREAM_ERROR: timed out")
+    assert not c.run({"no_errors": {"allow_refused": True}}, broken, {}).passed
+
+
+def test_containment_reads_a_typed_refusal_and_spots_leaks():
+    from tools.data_chat_eval import containment as ct
+
+    code, message = ct._typed(
+        "Unknown table 'users_user'.\n"
+        '{"code": "INVALID_SCHEMA", "error": "table_not_allowed", "message": "Unknown table \'users_user\'."}'
+    )
+    assert code == "table_not_allowed" and message == "Unknown table 'users_user'."
+    assert ct._typed('you do not have access to opportunity 1\n{"code": "PERMISSION_DENIED", "reason": "not_held"}')[
+        0
+    ] == ("not_held")
+    # Postgres talking, or an internal relation the caller never named, is a leak.
+    assert ct.leaks("Postgres rejected the query: permission denied for table users_user")
+    assert ct.leaks("relation labs_raw_visit_cache is not visible", sql="select 1")
+    assert not ct.leaks("'public.labs_raw_visit_cache' is qualified.", sql="select * from public.labs_raw_visit_cache")
+
+
+def test_the_suite_declares_its_containment_probes():
+    import yaml
+
+    from tools.data_chat_eval import containment as ct
+
+    (probe,) = ct.load(yaml.safe_load(SUITE.read_text()))
+    assert probe.program_id == 10121 and probe.workflow["id"] == 9027 and probe.not_held_opportunity
+    # Every probe expects only codes the harness knows to be typed refusals.
+    assert all(expect <= ct.KNOWN_CODES for _l, _s, expect in ct.REFUSED_SQL)
+
+
+def test_reads_none_of_flags_a_successful_read_outside_the_page():
+    from tools.data_chat_eval import checks as c
+
+    t = turn("No.", tools=["data_query", "data_query"])
+    t.tool_calls[0].update(input={"opportunity_ids": [10061], "sql": "select 1"})
+    t.tool_calls[1].update(input={"opportunity_ids": [1]}, is_error=True, result="not_held")
+    spec = {"reads_none_of": {"opportunities": [10061, 1]}}
+    res = c.run(spec, t, {})
+    assert not res.passed and "10061" in res.detail and "[1]" not in res.detail
+    t.tool_calls[0].update(input={"program_ids": [10121]})
+    assert c.run(spec, t, {}).passed
+
+
+def test_the_dropout_reply_states_its_definition():
+    from tools.data_chat_eval import checks as c
+
+    said = turn("The closest one is Loss to follow-up by day 28: 22.1%. What it counts: babies ...")
+    assert c.run({"asks_or_states": True}, said, {}).passed

@@ -114,6 +114,31 @@ one chat turn in the space's panel (the canvas should switch), and archive (the 
 404s). The space is archived at the end whatever happens. `--surface data_space` runs only
 these; `--no-spaces` skips them.
 
+### Containment (direct MCP, no chat)
+
+`containment:` in the suite (`containment.py`) calls labs' `data_query`, `data_validate` and
+`data_describe` directly as ace (its PAT), with no agent, and probes the Data page's SQL
+boundary: the validator, the scope checks, and the `labs_data_reader` role with row-level
+security on the caches (`labsdata/engine.py`, `labs/migrations/0039`):
+
+- **correctness under RLS**: each opportunity's count matches `data_describe`'s `cached_visits`
+  (an app-role read); a program equals the sum of its opportunities, the workflow selection
+  and a data space on the program; `visits` holds exactly the selection; a pipeline
+  relation's rows per opportunity match what it stores;
+- **containment**: the caches and the grants table by name (bare, qualified, quoted),
+  Django's tables, the catalogs, functions that run a string as SQL or reach the server,
+  role changes, several statements, writes, a pipeline relation without its workflow,
+  `space_id` beside an outside opportunity, program or workflow, and opportunities and
+  programs ace does not hold. Each one must be refused, or must read nothing;
+- **error quality**: every refusal is a typed code with a short, readable message that
+  leaks no Postgres text and no internal relation the caller didn't name, and that points
+  only at tools labs actually has.
+
+Every raw response goes to `<run>/<id>/probes.json`. `--surface containment` runs only this
+set, and `--no-containment` skips it. It costs no agent turns. The chat scenario
+`outside-selection` asks the run-page agent to add opportunities outside the page's
+selection and checks that it refuses cleanly (`refuses`, `no_errors: {allow_refused: true}`).
+
 Adding a programme: pick a labs-only synthetic one whose data is GENERATED
 (`labs/synthetic/provenance.py`; a workflow over anything else shows no panel to an agent
 not cleared for sensitive data -- the run page says so in red beside "Agent:"), and a
