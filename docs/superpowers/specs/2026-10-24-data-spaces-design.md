@@ -1,6 +1,8 @@
 # Data spaces: a shared place on the Data page, and a way to keep its chat honest
 
-Status: approved for build (Jonathan, 2026-10-24: "just build it out then we can improve";
+Status: built (#2714). Since then every read goes through a space, saved or generated: see
+`2026-10-24-one-path-through-data-spaces.md` (where this doc says `service.select`, read
+`spaces._resolve`). Originally: approved for build (Jonathan, 2026-10-24: "just build it out then we can improve";
 "we should create a data model to ensure 100% security for any given set of data. Something
 like a data space"). Builds on `labsdata` (the Data page, `service.select`, `SavedQuery`,
 `display.py`) and the canopy agent panel (`labs/canopy_panel.py`, page actions).

@@ -3,9 +3,11 @@
 ``describe`` tells a person or an agent what they can query and how to answer
 from it; ``query`` runs SQL; ``visits`` reads whole visits down to their form
 JSON; ``workflow_context`` explains how a workflow turns those visits into what
-it shows. Each starts at ``scope.resolve``, so no surface can forget the access
-check, and every read is written to the audit trail with the opportunities it
-read (and, for SQL, a hash of the statement).
+it shows. Each reads over a DATA SPACE and nothing else (``spaces.OpenSpace``:
+saved and opened, or generated for the call from a selection -- ``spaces.from_request``),
+so the sources were resolved as the caller by ``spaces`` before anything here runs, and
+no surface can pass ids that skipped the access check. Every read is written to the audit
+trail with the opportunities it read (and, for SQL, a hash of the statement).
 
 **Who sees production rows.** A person (the page, their own MCP sign-in) sees everything
 they hold. An agent calling through canopy as a visitor (``for_agent``) sees production
@@ -22,7 +24,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from dataclasses import dataclass, field
 
 from connect_labs.audit_trail.models import Action, Outcome
 from connect_labs.audit_trail.service import record
@@ -30,6 +31,7 @@ from connect_labs.labs.access.scopes import Caller
 from connect_labs.labs.synthetic.provenance import all_generated
 
 from . import engine, fields, guidance, scope
+from .spaces import OpenSpace
 from .validator import DEFAULT_MAX_ROWS, HARD_MAX_ROWS
 
 logger = logging.getLogger(__name__)
@@ -38,81 +40,20 @@ RESOURCE_TYPE = "explorer_query"
 VISITS_RESOURCE_TYPE = "labsdata_visits"
 
 
-@dataclass
-class Selection:
-    """What one call reads: opportunities (each held), the programs they came from, and
-    -- when a workflow was chosen -- the workflow and its pipelines' relations."""
-
-    opportunities: list
-    programs: list[dict] = field(default_factory=list)
-    workflow: dict | None = None
-    relations: list = field(default_factory=list)
-    not_offered: list[dict] = field(default_factory=list)
-
-    @property
-    def ids(self) -> list[int]:
-        return [o.id for o in self.opportunities]
-
-    def as_dict(self) -> dict:
-        return {
-            "opportunities": [{"id": o.id, "name": o.name, "llo": o.llo} for o in self.opportunities],
-            "programs": self.programs,
-            "workflow": self.workflow,
-            "pipelines": [
-                {
-                    "relation": r.name,
-                    "alias": r.alias,
-                    "pipeline_id": r.pipeline_id,
-                    "name": r.pipeline_name,
-                    "stage": r.stage,
-                }
-                for r in self.relations
-            ],
-            "pipelines_not_offered": self.not_offered,
-        }
-
-
-def select(caller: Caller, opportunity_ids=None, *, program_ids=None, workflow: dict | None = None) -> Selection:
-    """Resolve what a call reads, refusing anything the caller does not hold.
-
-    Either programs and/or opportunities (a program is the opportunities of it the
-    caller holds), or one workflow -- whose opportunities are the ones it reads,
-    every one held, plus its pipelines as relations. Not both: a workflow's pipeline
-    relations cover only its own opportunities, and ``visits`` beside them over a
-    different set would answer a different question without saying so.
-    """
-    if workflow:
-        if opportunity_ids or program_ids:
-            raise scope.ScopeError(
-                "bad_scope", "choose a workflow, or programs and opportunities -- a workflow brings its own"
-            )
-        from .pipelines import workflow_selection
-
-        try:
-            chosen = workflow_selection(
-                caller,
-                int(workflow["id"]),
-                opportunity_id=workflow.get("opportunity_id"),
-                program_id=workflow.get("program_id"),
-            )
-        except (KeyError, TypeError, ValueError) as e:
-            raise scope.ScopeError("bad_scope", "workflow needs an id and its opportunity_id or program_id") from e
-        return Selection(
-            opportunities=chosen.opportunities,
-            workflow=chosen.workflow,
-            relations=chosen.relations,
-            not_offered=chosen.not_offered,
-        )
-    opps, programs = scope.expand(caller, opportunity_ids or [], program_ids or [])
-    return Selection(opportunities=opps, programs=programs)
+def _held(space) -> OpenSpace:
+    """The space a read runs over -- refusing anything else, so ids that never went
+    through ``spaces`` (generate / open) cannot reach the engine."""
+    if not isinstance(space, OpenSpace):
+        raise TypeError("labsdata reads take a data space (spaces.from_request / generate / open), not ids")
+    return space
 
 
 #: The most scopes (opportunities and programs) searched for workflows in one call.
 MAX_WORKFLOW_SCOPES = 12
 
 
-def workflows(caller: Caller, *, opportunity_ids=None, program_ids=None) -> dict:
-    """Workflows readable, as the caller, in the programs and opportunities chosen.
+def workflows(caller: Caller, space: OpenSpace) -> dict:
+    """Workflows readable, as the caller, in a space's programs and opportunities.
 
     Each comes with the scope it was found in -- the scope it is then read in, so a
     workflow is only ever opened where the caller's own token can reach it. Pages
@@ -121,7 +62,8 @@ def workflows(caller: Caller, *, opportunity_ids=None, program_ids=None) -> dict
     from connect_labs.workflow.data_access import WorkflowDataAccess
     from connect_labs.workflow.page_mode import is_page
 
-    opps, programs = scope.expand(caller, opportunity_ids or [], program_ids or [])
+    selection = _held(space).selection
+    opps, programs = selection.opportunities, selection.programs
     scopes_ = [{"program_id": p["id"]} for p in programs] + [{"opportunity_id": o.id} for o in opps]
     token = _token(caller)
     found, seen, unreadable = [], set(), []
@@ -308,15 +250,13 @@ def _structure_only(field: dict) -> dict:
 
 def describe(
     caller: Caller,
-    opportunity_ids,
+    space: OpenSpace,
     *,
     field_search: str | None = None,
     load_missing: bool = False,
     include_registries: bool = True,
     for_agent: bool = False,
     include_fields: bool = True,
-    program_ids=None,
-    workflow: dict | None = None,
 ) -> dict:
     """What can be queried, and how to answer from it.
 
@@ -325,7 +265,7 @@ def describe(
     unless every opportunity is synthetic or labs has cleared the agent for sensitive data.
     The person on the page gets everything.
     """
-    selection = select(caller, opportunity_ids, program_ids=program_ids, workflow=workflow)
+    selection = _held(space).selection
     opps = selection.opportunities
     withheld = not agent_sees_sensitive_rows(for_agent, opps)
     loaded = warm(caller, opps) if load_missing and not withheld else []
@@ -364,7 +304,7 @@ def describe(
     }
 
 
-def _pipeline_relations(selection: Selection, withheld: bool) -> dict:
+def _pipeline_relations(selection, withheld: bool) -> dict:
     """Each pipeline relation: its grain, its columns (names and types, read from what is
     stored), and -- for a person -- how many current rows each opportunity has."""
     from .pipelines import STAGES
@@ -389,8 +329,9 @@ def _pipeline_relations(selection: Selection, withheld: bool) -> dict:
     return out
 
 
-def validate_selected(sql: str, selection: Selection) -> dict:
-    """``validate`` over a resolved selection: a workflow's pipelines are tables too."""
+def validate_selected(sql: str, space: OpenSpace) -> dict:
+    """``validate`` over a space: a workflow's pipelines are tables too."""
+    selection = _held(space).selection
     return engine.validate_query(sql, relations=selection.relations, field_opps=selection.opportunities)
 
 
@@ -404,21 +345,18 @@ def validate(sql: str) -> dict:
 
 def query(
     caller: Caller,
-    opportunity_ids,
+    space: OpenSpace,
     sql: str,
     max_rows: int | None = None,
     *,
     for_agent: bool = False,
     shaped: bool = True,
-    program_ids=None,
-    workflow: dict | None = None,
-    space_id: int | None = None,
 ) -> dict:
     """Run SQL. ``for_agent`` (a canopy call) gets production rows only when cleared
     (``agent_sees_sensitive_rows``), and its result is shaped for a model's context --
     unless ``shaped`` is False: the caller keeps the whole result and shapes what it
     hands the model itself (the MCP tool, which keeps the rows as a result to read back)."""
-    selection = select(caller, opportunity_ids, program_ids=program_ids, workflow=workflow)
+    selection = _held(space).selection
     opps = selection.opportunities
     if not agent_sees_sensitive_rows(for_agent, opps):
         # Still tell the agent whether its SQL would run: that is what it needs to hand
@@ -435,6 +373,7 @@ def query(
         "sql_length": len(text),
         **({"workflow_id": selection.workflow["id"]} if selection.workflow else {}),
         **({"program_ids": [p["id"] for p in selection.programs]} if selection.programs else {}),
+        **({"space_id": space.id} if space.saved else {}),
     }
     try:
         result = engine.run_query(opps, sql, max_rows=max_rows, relations=selection.relations)
@@ -466,10 +405,8 @@ def query(
         # The SQL laid out to read (the card's SQL tab); `sql_executed` stays as it ran.
         "sql_formatted": format_sql(result.sql_executed),
         "drill": drillable(sql),
-        "open_on_page": open_on_page_url(
-            opportunity_ids, sql, program_ids=program_ids, workflow=workflow, max_rows=max_rows, space_id=space_id
-        ),
-        **({"space_id": space_id} if space_id is not None else {}),
+        "open_on_page": open_on_page_url(space, sql, max_rows=max_rows),
+        **({"space_id": space.id} if space.saved else {}),
     }
     return shape_for_agent(out) if (for_agent and shaped) else out
 
@@ -485,9 +422,7 @@ def drillable(sql: str) -> dict:
         return {"columns": [], "reason": str(e)}
 
 
-def drill_into(
-    caller: Caller, opportunity_ids, sql: str, row: list, column: int, *, program_ids=None, workflow=None
-) -> dict:
+def drill_into(caller: Caller, space: OpenSpace, sql: str, row: list, column: int) -> dict:
     """The SQL selecting the rows behind one cell of ``sql``'s result, and how many there are.
 
     The SQL is written from the query alone (``drill.py``); the count is a query of its
@@ -497,18 +432,12 @@ def drill_into(
     """
     from . import drill
 
+    _held(space)
     try:
         found = drill.drill(sql, list(row or []), int(column))
     except drill.NotDrillable as e:
         raise engine.QueryError("not_drillable", str(e)) from e
-    counted = query(
-        caller,
-        opportunity_ids,
-        f"SELECT COUNT(*) AS rows_behind FROM (\n{found.sql}\n) AS behind",
-        max_rows=1,
-        program_ids=program_ids,
-        workflow=workflow,
-    )
+    counted = query(caller, space, f"SELECT COUNT(*) AS rows_behind FROM (\n{found.sql}\n) AS behind", max_rows=1)
     rows_behind = counted["rows"][0][0] if counted["rows"] else 0
     cell = row[int(column)]
     matches = None
@@ -538,53 +467,43 @@ def format_sql(sql: str) -> str:
     return out[0] if len(out) == 1 and out[0].strip() else text
 
 
-def open_on_page_url(
-    opportunity_ids,
-    sql: str = "",
-    *,
-    program_ids=None,
-    workflow: dict | None = None,
-    max_rows: int | None = None,
-    space_id: int | None = None,
-) -> str:
-    """The Data page with this selection, this SQL in the editor and its row cap set:
-    everything it takes to run the same query again (the page runs it only when the link
-    asks, ``&run=1``, and the person is signed in: ``views.DataView``). A query over a data
-    space opens on the space's page (``/labs/data/space/<id>/``), which brings its own
-    selection -- and is a 404 to anyone who may not open it."""
+def open_on_page_url(space: OpenSpace, sql: str = "", *, max_rows: int | None = None) -> str:
+    """The Data page on this space, this SQL in the editor and its row cap set: everything
+    it takes to run the same query again (the page runs it only when the link asks,
+    ``&run=1``, and the person is signed in: ``views.DataView``). A saved space opens on
+    its own page (``/labs/data/space/<id>/``) -- a 404 to anyone who may not open it; a
+    generated one on the selection it was made from, which the page generates again."""
     from urllib.parse import urlencode
 
     from django.conf import settings
     from django.urls import reverse
 
     params = {}
-    if space_id is not None:
-        if sql:
-            params["sql"] = sql
-        if max_rows is not None:
-            params["max_rows"] = str(max(1, min(int(max_rows), HARD_MAX_ROWS)))
-        base = (getattr(settings, "LABS_PUBLIC_URL", "") or "").rstrip("/")
-        path = reverse("labsdata:space", args=[int(space_id)])
-        return f"{base}{path}?{urlencode(params)}" if params else f"{base}{path}"
-    if workflow:
-        owner = workflow.get("opportunity_id") or workflow.get("program_id")
-        kind = "opp" if workflow.get("opportunity_id") else "program"
-        params["workflow"] = f"{int(workflow['id'])}:{kind}:{int(owner)}"
-    if program_ids:
-        params["programs"] = ",".join(str(int(p)) for p in program_ids)
-    if opportunity_ids:
-        params["opps"] = ",".join(str(int(o)) for o in opportunity_ids)
+    base = (getattr(settings, "LABS_PUBLIC_URL", "") or "").rstrip("/")
+    if _held(space).saved:
+        path = reverse("labsdata:space", args=[int(space.id)])
+    else:
+        path = reverse("labsdata:index")
+        asked = space.requested
+        workflow = asked.get("workflow")
+        if workflow:
+            owner = workflow.get("opportunity_id") or workflow.get("program_id")
+            kind = "opp" if workflow.get("opportunity_id") else "program"
+            params["workflow"] = f"{int(workflow['id'])}:{kind}:{int(owner)}"
+        if asked.get("program_ids"):
+            params["programs"] = ",".join(str(int(p)) for p in asked["program_ids"])
+        if asked.get("opportunity_ids"):
+            params["opps"] = ",".join(str(int(o)) for o in asked["opportunity_ids"])
     if sql:
         params["sql"] = sql
     if max_rows is not None:
         params["max_rows"] = str(max(1, min(int(max_rows), HARD_MAX_ROWS)))
-    base = (getattr(settings, "LABS_PUBLIC_URL", "") or "").rstrip("/")
-    return f"{base}{reverse('labsdata:index')}?{urlencode(params)}"
+    return f"{base}{path}?{urlencode(params)}" if params else f"{base}{path}"
 
 
-def visits(caller: Caller, opportunity_ids, visit_ids, *, for_agent: bool = False) -> dict:
-    """Whole visits by id -- every column and the full form_json -- from the caller's opportunities."""
-    opps = scope.resolve(caller, opportunity_ids)
+def visits(caller: Caller, space: OpenSpace, visit_ids, *, for_agent: bool = False) -> dict:
+    """Whole visits by id -- every column and the full form_json -- from a space's opportunities."""
+    opps = _held(space).selection.opportunities
     if not agent_sees_sensitive_rows(for_agent, opps):
         raise SensitiveDataRefused()
     found = engine.fetch_visits(opps, visit_ids)

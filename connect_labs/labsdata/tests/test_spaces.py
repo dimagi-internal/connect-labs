@@ -7,7 +7,7 @@ as no such space); changing the sources locks out whoever does not hold the new 
 nothing in a space is rows.
 
 Holdings are faked at ``scopes.holdings`` -- the one place labs learns what a person holds
--- so the real ``service.select`` / ``scope.resolve`` path runs on top of it.
+-- so the real ``spaces._resolve`` / ``scope.resolve`` path runs on top of it.
 
 THIS REPOSITORY IS PUBLIC. Every name and value here is invented.
 """
@@ -121,13 +121,14 @@ def test_queries_over_a_space_read_its_frozen_opportunities(people, connect):
     assert res.status_code == 200, res.content
     assert connect == [[O1.id, O2.id]]
     assert res.json()["open_on_page"].endswith(f"/labs/data/space/{sid}/?sql=SELECT+1+AS+n+FROM+visits&max_rows=500")
-    # A space brings its own selection: naming another one beside it is refused.
+    # A space brings its own selection: naming another one beside it is refused, as the
+    # data_* tools refuse it.
     mixed = _post(
         _client(people["bob"]),
         "/labs/data/api/query/",
         {"space_id": sid, "opportunity_ids": [O1.id], "sql": "SELECT 1"},
     )
-    assert mixed.status_code == 400 and mixed.json()["error"] == "space_brings_its_selection"
+    assert mixed.status_code == 400 and mixed.json()["error"] == "outside_space"
 
 
 @pytest.mark.parametrize("who", ["carol", "dave"])
@@ -262,3 +263,35 @@ def test_personal_saved_queries_keep_working_beside_spaces(people, monkeypatch):
     assert _post(alice, f"/labs/data/api/saved/{space_q.pk}/delete/", {}).status_code == 404
     personal = SavedQuery.objects.get(space__isnull=True)
     assert _post(alice, f"/labs/data/api/spaces/{sid}/items/{personal.pk}/delete/", {}).status_code == 404
+
+
+def test_with_no_space_open_the_page_reads_an_unsaved_space_generated_as_the_person(people, connect):
+    """No space open: the selection is a space generated for the call -- the program resolved
+    to what this person holds of it, nothing written -- and its link back asks again for the
+    program, not for that call's freeze."""
+    res = _post(
+        _client(people["bob"]),
+        "/labs/data/api/query/",
+        {"program_ids": [PROGRAM], "opportunity_ids": [O1.id], "sql": "SELECT 1 AS n FROM visits"},
+    )
+    assert res.status_code == 200, res.content
+    assert connect == [[O1.id, O2.id]]
+    assert "space_id" not in res.json()
+    assert res.json()["open_on_page"].endswith(
+        f"/labs/data/?programs={PROGRAM}&opps={O1.id}&sql=SELECT+1+AS+n+FROM+visits&max_rows=500"
+    )
+    assert not DataSpace.objects.exists()
+    # Carol holds only part of the program: her generated space is only her part.
+    _post(_client(people["carol"]), "/labs/data/api/query/", {"program_ids": [PROGRAM], "sql": "SELECT 1 FROM visits"})
+    assert connect[-1] == [O1.id]
+
+
+def test_saving_keeps_exactly_the_space_the_selection_generated(people):
+    alice = scopes.Caller(user=people["alice"])
+    generated = spaces.generate(alice, [O3.id], program_ids=[PROGRAM])
+    assert not generated.saved and generated.id is None
+    kept = spaces.save(alice, generated, "Kept")
+    assert (kept.program_ids, kept.opportunity_ids) == ([PROGRAM], [O1.id, O2.id, O3.id])
+    assert spaces.open(alice, kept.pk).selection.ids == generated.selection.ids
+    with pytest.raises(ValueError):
+        spaces.save(alice, spaces.open(alice, kept.pk), "Again")

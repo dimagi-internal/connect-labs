@@ -100,10 +100,10 @@
         <div class="px-3 pt-3 pb-3">
           <label class="ex-label mb-2 block" for="ex-space-switch">Space</label>
           <select id="ex-space-switch" class="ex-search" aria-label="Open a data space">
-            <option value="">{% if space %}{{ space.name }}{% else %}No space: my own selection{% endif %}</option>
+            <option value="">{% if space %}{{ space.name }}{% else %}Unsaved space: this selection{% endif %}</option>
           </select>
           <div class="mt-2 flex flex-wrap items-center gap-2">
-            <button class="ex-btn ghost" id="ex-space-new" type="button" {% if space %}hidden{% endif %}>New space from this selection</button>
+            <button class="ex-btn ghost" id="ex-space-new" type="button" {% if space %}hidden{% endif %}>Save as a space</button>
             <button class="ex-btn ghost" id="ex-space-archive" type="button" {% if not space %}hidden{% endif %}>Archive space</button>
           </div>
           <div id="ex-space-notice"></div>

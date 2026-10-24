@@ -14,7 +14,7 @@ from django.utils import timezone
 from connect_labs.labs.access import scopes
 from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
 from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
-from connect_labs.labsdata import guidance, scope, service
+from connect_labs.labsdata import guidance, scope, service, spaces
 from connect_labs.labsdata.engine import QueryError, validate_query
 from connect_labs.labsdata.scope import Opportunity
 
@@ -55,22 +55,26 @@ def resolved():
 
 def test_agent_query_on_sensitive_data_is_refused(real_visits, resolved):
     with pytest.raises(service.SensitiveDataRefused):
-        service.query(_caller(), [REAL.id], "SELECT COUNT(*) FROM visits", for_agent=True)
+        service.query(_caller(), spaces.generate(_caller(), [REAL.id]), "SELECT COUNT(*) FROM visits", for_agent=True)
 
 
 def test_agent_query_on_synthetic_data_runs(real_visits, resolved):
     with mock.patch.object(service, "all_generated", return_value=True):
-        out = service.query(_caller(), [REAL.id], "SELECT COUNT(*) FROM visits", for_agent=True)
+        out = service.query(
+            _caller(), spaces.generate(_caller(), [REAL.id]), "SELECT COUNT(*) FROM visits", for_agent=True
+        )
     assert out["rows"] == [[30]]
 
 
 def test_the_person_still_gets_real_results(real_visits, resolved):
-    assert service.query(_caller(), [REAL.id], "SELECT COUNT(*) FROM visits")["rows"] == [[30]]
+    assert service.query(_caller(), spaces.generate(_caller(), [REAL.id]), "SELECT COUNT(*) FROM visits")["rows"] == [
+        [30]
+    ]
 
 
 def test_agent_describe_on_sensitive_data_is_structure_only(real_visits, resolved):
     with mock.patch.object(service, "related_registries", return_value=[]):
-        out = service.describe(_caller(), [REAL.id], for_agent=True)
+        out = service.describe(_caller(), spaces.generate(_caller(), [REAL.id]), for_agent=True)
     place = next(f for f in out["fields"] if f["path"] == "form.birth.place")
     assert set(place) >= {"path", "sql", "type"}
     assert not {"values", "filled_pct", "distinct_in_sample"} & set(place)
@@ -82,13 +86,13 @@ def test_agent_describe_on_sensitive_data_is_structure_only(real_visits, resolve
 
 def test_agent_describe_does_not_load_sensitive_data(real_visits, resolved):
     with mock.patch.object(service, "warm") as warm, mock.patch.object(service, "related_registries", return_value=[]):
-        service.describe(_caller(), [REAL.id], load_missing=True, for_agent=True)
+        service.describe(_caller(), spaces.generate(_caller(), [REAL.id]), load_missing=True, for_agent=True)
     warm.assert_not_called()
 
 
 def test_the_person_describe_keeps_values(real_visits, resolved):
     with mock.patch.object(service, "related_registries", return_value=[]):
-        out = service.describe(_caller(), [REAL.id])
+        out = service.describe(_caller(), spaces.generate(_caller(), [REAL.id]))
     place = next(f for f in out["fields"] if f["path"] == "form.birth.place")
     assert {v["value"] for v in place["values"]} == {"hospital", "home"}
 

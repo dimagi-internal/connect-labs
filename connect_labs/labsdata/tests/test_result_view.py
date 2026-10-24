@@ -8,7 +8,7 @@ import pytest
 
 from connect_labs.labs import canopy_panel
 from connect_labs.labs.access import scopes
-from connect_labs.labsdata import scope, service
+from connect_labs.labsdata import scope, service, spaces
 from connect_labs.labsdata.scope import Opportunity
 from connect_labs.mcp.tool_registry import get_tool
 from connect_labs.mcp.ui import DATA_RESULT_URI, RESOURCES
@@ -85,7 +85,11 @@ def test_an_uncleared_agent_gets_a_hand_off_not_rows(django_user_model):
 
 def test_a_person_gets_rows_and_the_link(monkeypatch):
     monkeypatch.setattr(scope, "resolve", lambda caller, ids: [OPP])
-    out = service.query(scopes.Caller(access_token="t"), [OPP.id], "SELECT 1 AS one FROM visits")
+    out = service.query(
+        scopes.Caller(access_token="t"),
+        spaces.generate(scopes.Caller(access_token="t"), [OPP.id]),
+        "SELECT 1 AS one FROM visits",
+    )
     assert out["open_on_page"].endswith(f"/labs/data/?opps={OPP.id}&sql=SELECT+1+AS+one+FROM+visits")
 
 

@@ -15,7 +15,7 @@ from connect_labs.labs import canopy_panel
 from connect_labs.labs.access import scopes
 from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
 from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
-from connect_labs.labsdata import engine, scope, service, workflow_context
+from connect_labs.labsdata import engine, scope, service, spaces, workflow_context
 from connect_labs.labsdata.engine import QueryError, fetch_visits, run_query
 from connect_labs.labsdata.scope import Opportunity
 
@@ -130,12 +130,16 @@ def test_real_rows_reach_an_agent_only_when_labs_has_cleared_it(cache, resolved,
     with mock.patch.object(canopy_panel, "call_sensitive_data_clearance", return_value=clearance):
         if not granted:
             with pytest.raises(service.SensitiveDataRefused):
-                service.query(_caller(), [OPP.id], "SELECT COUNT(*) FROM visits", for_agent=True)
+                service.query(
+                    _caller(), spaces.generate(_caller(), [OPP.id]), "SELECT COUNT(*) FROM visits", for_agent=True
+                )
             with pytest.raises(service.SensitiveDataRefused):
-                service.visits(_caller(), [OPP.id], [f"v{OPP.id}-1"], for_agent=True)
+                service.visits(_caller(), spaces.generate(_caller(), [OPP.id]), [f"v{OPP.id}-1"], for_agent=True)
             return
-        out = service.query(_caller(), [OPP.id], "SELECT visit_id, form_json FROM visits", for_agent=True)
-        visits = service.visits(_caller(), [OPP.id], [f"v{OPP.id}-1"], for_agent=True)
+        out = service.query(
+            _caller(), spaces.generate(_caller(), [OPP.id]), "SELECT visit_id, form_json FROM visits", for_agent=True
+        )
+        visits = service.visits(_caller(), spaces.generate(_caller(), [OPP.id]), [f"v{OPP.id}-1"], for_agent=True)
     assert out["rows_returned"] == 6 and "notes" in out
     assert visits["visits"][0]["visit_id"] == f"v{OPP.id}-1"
 
@@ -149,7 +153,7 @@ def test_no_call_is_cleared_without_canopys_statement(canopy_agents):
 
 
 def test_a_person_reads_whole_visits_and_it_is_audited(cache, resolved):
-    out = service.visits(_caller(), [OPP.id], [f"v{OPP.id}-2", "nope"])
+    out = service.visits(_caller(), spaces.generate(_caller(), [OPP.id]), [f"v{OPP.id}-2", "nope"])
     assert [v["visit_id"] for v in out["visits"]] == [f"v{OPP.id}-2"]
     assert out["not_found"] == ["nope"]
     event = AuditEvent.objects.filter(resource_type=service.VISITS_RESOURCE_TYPE).latest("id")

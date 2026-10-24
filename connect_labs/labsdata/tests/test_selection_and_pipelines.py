@@ -19,7 +19,7 @@ from django.utils import timezone
 
 from connect_labs.labs.access import scopes
 from connect_labs.labs.analysis.backends.sql.models import ComputedFLWCache, ComputedVisitCache
-from connect_labs.labsdata import engine, pipelines, scope, service
+from connect_labs.labsdata import engine, pipelines, scope, spaces
 from connect_labs.labsdata.engine import QueryError, run_query
 from connect_labs.labsdata.pipelines import PipelineRelation
 from connect_labs.labsdata.scope import Opportunity, ScopeError
@@ -248,7 +248,7 @@ def test_a_workflow_spanning_an_opportunity_the_person_does_not_hold_is_refused_
 
 def test_a_workflow_is_chosen_instead_of_opportunities_not_beside_them():
     with pytest.raises(ScopeError) as e:
-        service.select(scopes.Caller(access_token="t"), [901], workflow={"id": 12, "opportunity_id": 901})
+        spaces.generate(scopes.Caller(access_token="t"), [901], workflow={"id": 12, "opportunity_id": 901})
     assert e.value.code == "bad_scope"
 
 

@@ -11,7 +11,7 @@ from django.utils import timezone
 from connect_labs.labs.access import scopes
 from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
 from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
-from connect_labs.labsdata import fields, scope, service
+from connect_labs.labsdata import fields, scope, service, spaces
 from connect_labs.labsdata.scope import Opportunity, ScopeError
 
 pytestmark = pytest.mark.django_db
@@ -137,7 +137,7 @@ def test_query_writes_the_audit_trail(forms):
     from connect_labs.audit_trail.models import AuditEvent
 
     with mock.patch.object(scope, "resolve", return_value=[OPP]):
-        out = service.query(_caller(), [OPP.id], "SELECT COUNT(*) FROM visits")
+        out = service.query(_caller(), spaces.generate(_caller(), [OPP.id]), "SELECT COUNT(*) FROM visits")
     assert out["rows"] == [[40]]
     event = AuditEvent.objects.filter(resource_type=service.RESOURCE_TYPE).latest("id")
     assert event.opportunity_id == OPP.id and event.record_count == 1
