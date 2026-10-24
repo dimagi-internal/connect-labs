@@ -18,7 +18,9 @@ Shape (every key optional)::
   ``chart.y`` too (checked once the query has run: ``check_columns``).
 * ``format`` comes from ``FORMATS``: ``number_N``, ``percent_N`` (the value is a
   fraction: 0.253 is 25.3%), ``currency_N`` (in ``currency``, an ISO 4217 code,
-  default USD), ``compact_N`` (12.3K) or ``date``; N is 0-4 decimal places.
+  default USD), ``compact_N`` (12.3K), ``date``, or ``month`` (a month bucket such as
+  ``date_trunc('month', visit_date)`` read as "Jan 2026"); N is 0-4 decimal places. The
+  card reads a column of month starts as months even under ``date``.
 * A label is plain text: control characters are dropped, whitespace collapsed, and it
   is cut at ``MAX_LABEL``. The card escapes it like any other text.
 * ``chart.y`` holds at most ``MAX_SERIES`` columns; ``stat`` needs exactly one ``y``
@@ -36,7 +38,7 @@ from collections.abc import Mapping, Sequence
 #: The formats a column may take. ``_N`` is the number of decimal places, 0-4.
 FORMAT_KINDS = ("number", "percent", "currency", "compact")
 MAX_DECIMALS = 4
-FORMATS = tuple(f"{k}_{n}" for k in FORMAT_KINDS for n in range(MAX_DECIMALS + 1)) + ("date",)
+FORMATS = tuple(f"{k}_{n}" for k in FORMAT_KINDS for n in range(MAX_DECIMALS + 1)) + ("date", "month")
 CHART_TYPES = ("bar", "line", "stat")
 MAX_LABEL = 60
 MAX_SERIES = 5
@@ -44,7 +46,7 @@ MAX_SERIES = 5
 MAX_COLUMNS = 100
 DEFAULT_CURRENCY = "USD"
 
-_FORMAT = re.compile(r"^(?:(?:number|percent|currency|compact)_[0-4]|date)$")
+_FORMAT = re.compile(r"^(?:(?:number|percent|currency|compact)_[0-4]|date|month)$")
 _CURRENCY = re.compile(r"^[A-Z]{3}$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f​-‏ -‮⁦-⁩]")
 
@@ -56,8 +58,10 @@ SCHEMA = {
         "Optional: how the person's card shows the result. `columns` maps a result column to "
         f"{{label, format}}: a plain-text label (max {MAX_LABEL} chars) and a format -- number_N for "
         "counts and amounts (counts: number_0), percent_N for rates (the value must be a FRACTION, 0.253 -> "
-        "25.3%), currency_N (in `currency`, ISO 4217, default USD), compact_N (12.3K) or date; N is 0-4 "
-        "decimals. `chart` picks the chart: {type: line, x: <date column>, y: [...]} for a value over time; "
+        "25.3%), currency_N (in `currency`, ISO 4217, default USD), compact_N (12.3K), date, or month (a "
+        "date_trunc('month', ...) bucket, shown 'Jan 2026'); N is 0-4 decimals. Label an opportunity, worker or "
+        "organisation by its NAME column, never its id. `chart` picks the chart: "
+        "{type: line, x: <date column>, y: [...]} for a value over time; "
         "{type: bar, x: <category>, y: [...]} for categories (the card sorts bars largest first); "
         f"{{type: stat, y: [<column>]}} for one headline number. At most {MAX_SERIES} series; never mix a "
         "percent with a count in one chart. Every column named must be in the result."
@@ -144,7 +148,7 @@ def validate(display) -> dict | None:
                 if not isinstance(fmt, str) or not _FORMAT.match(fmt):
                     raise DisplayError(
                         f"display.columns[{name!r}].format {fmt!r} is not one of: number_N, percent_N, "
-                        "currency_N, compact_N (N = 0-4 decimals) or date"
+                        "currency_N, compact_N (N = 0-4 decimals), date or month"
                     )
                 entry["format"] = fmt
             if entry:

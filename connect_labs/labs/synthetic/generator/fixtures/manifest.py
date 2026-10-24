@@ -270,7 +270,12 @@ class LongitudinalSpec(BaseModel):
     # 2026-10-15 replayed each real case's numbers into a "modelled" pool and carry no
     # such mark, so a "modelled" pool without it is treated as replaying real cases
     # (provenance.replays_real_cases): re-profile it.
-    numbers: Literal["modelled"] | None = None
+    # "authored": a pool whose every series the caller WROTE (a demo's story -- ACE's
+    # programme cascade writes one series per case from a PDD), copied from no real
+    # case. It replays like any pool, in either mode (mirror keeps its per-case
+    # constants overlay), and its data counts as generated. The same kind of claim as
+    # "modelled": the caller's word on where the numbers came from.
+    numbers: Literal["modelled", "authored"] | None = None
     # Transplant jitter as a fraction of each field's range, applied at replay time.
     jitter_frac: float = Field(ge=0, default=0.03)
     transplant_pool: list[dict[str, Any]] = Field(default_factory=list)

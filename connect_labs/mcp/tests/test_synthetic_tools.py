@@ -166,6 +166,8 @@ def test_synthetic_generate_from_manifest_creates_folder_and_row(user, monkeypat
     assert result["folder_url"] == f"https://drive.google.com/drive/folders/{result['folder_id']}"
     assert "user_visits" in result["record_counts"]
     assert SyntheticOpportunity.objects.get(opportunity_id=4242).enabled is True
+    # A parametric cohort replays no case: the caller is told the data counts as generated.
+    assert result["generated"] is True and "not_generated_because" not in result
 
 
 @pytest.mark.django_db

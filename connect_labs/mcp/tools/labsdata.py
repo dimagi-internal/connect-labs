@@ -513,8 +513,10 @@ def _kept(user, out: dict, agent: bool) -> dict:
     # rows mean, not a second copy of them.
     facts["notes"] = [
         *facts["notes"],
-        "The person sees every row of this result in a card beside your reply. Give the takeaway and its "
-        "provenance (what was counted, the filters, the opportunities) -- not a markdown table of the rows.",
+        "The person sees every row of this result -- and its SQL, on the card's SQL tab -- in a card beside your "
+        "reply. Point at the card and give the answer and its takeaway in two to four sentences, with one line "
+        "of provenance (what was counted, the filters, the opportunities). Do NOT re-print the rows as a "
+        "markdown table and do NOT paste the SQL: both are already on the card.",
     ]
     return kept_results.with_link(facts, link)
 

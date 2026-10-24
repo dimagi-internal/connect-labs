@@ -771,7 +771,10 @@ def _load_app_structure_for_opp(opportunity_id: int, user) -> dict:
         "Generate the five fixture JSON files from a YAML manifest, upload "
         "them to a fresh GDrive folder, and register the opportunity as "
         "synthetic. Returns the new folder_id, a human-openable folder_url, "
-        "and per-endpoint record counts so callers can verify the upload."
+        "per-endpoint record counts so callers can verify the upload, and `generated`: whether labs counts "
+        "the data as generated (agents read it without sensitive-data clearance). A transplant pool you "
+        "wrote yourself (not profiled from an opportunity) must say so -- longitudinal `numbers: authored` -- "
+        "or a mirror pool counts as replaying real cases and the data is NOT generated."
     ),
     input_schema={
         "type": "object",
@@ -829,7 +832,7 @@ def synthetic_generate_from_manifest(
         opportunity_id=opportunity_id,
         opportunity_name=manifest.opportunity_name,
         fixtures=fixtures,
-        replays_real_cases=replays_real_cases(manifest),
+        replays_real_cases=(replays := replays_real_cases(manifest)),
     )
 
     task_records = fixtures.get("task_records", [])
@@ -892,6 +895,21 @@ def synthetic_generate_from_manifest(
         "form_schema_questions": len(form_schema.questions),
         "tasks_created": tasks_created,
         "image_stats": image_stats,
+        # Whether labs counts this opp's data as GENERATED (provenance.py): only then may an
+        # agent read it without sensitive-data clearance -- a run page over it shows the
+        # canopy panel, data_query answers it. Said here so a caller sees at once when not.
+        "generated": not replays,
+        **(
+            {
+                "not_generated_because": (
+                    "the manifest's transplant pool is a mirror pool (or a modelled one without numbers: modelled), "
+                    "which labs treats as replaying real cases. If you wrote every series yourself, mark the "
+                    "cohort's longitudinal block numbers: authored and generate again."
+                )
+            }
+            if replays
+            else {}
+        ),
     }
 
 
