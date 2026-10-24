@@ -4,7 +4,7 @@ A saved query is the QUERY, never its rows (Scout: "never store query result row
 its SQL, what it reads (the page's selection: programs and opportunities, or a
 workflow), its row cap and how its result is shown (the agent's ``display``:
 ``labsdata.display``). Opening one runs it again, live, as the person opening it
-(``service.query``, which resolves the selection as them), so it shows
+(over a space ``spaces`` generates from its selection, as them), so it shows
 what they may see now. A result card's Save opens the Data page on its query to save
 it there (``views.DataView``): the kept result's 24-hour life is untouched.
 

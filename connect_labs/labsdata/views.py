@@ -1,8 +1,9 @@
 """The Data page at /labs/data/ and its JSON endpoints.
 
-The endpoints are thin: they build a ``Caller`` from the request and call the
-same ``service`` functions the MCP tools call, so the page, the in-page agent and
-an MCP client can never disagree about what a person may read.
+The endpoints are thin: they build a ``Caller`` from the request, get the data space the
+call reads from ``spaces.from_request`` -- the saved space it names, or one generated from
+its selection -- and call the same ``service`` functions the MCP tools call, so the page,
+the in-page agent and an MCP client can never disagree about what a person may read.
 """
 
 from __future__ import annotations
@@ -206,6 +207,8 @@ class _JsonView(LoginRequiredMixin, View):
             return JsonResponse({"error": e.code, "message": e.message}, status=status)
         except spaces.SpaceNotFound as e:
             return JsonResponse({"error": e.code, "message": e.message}, status=404)
+        except spaces.OutsideSpace as e:
+            return JsonResponse({"error": e.code, "message": e.message}, status=400)
         except spaces.SpaceChanged as e:
             return JsonResponse(
                 {"error": e.code, "message": e.message, "added": e.added, "removed": e.removed}, status=409
@@ -216,56 +219,41 @@ class _JsonView(LoginRequiredMixin, View):
             return JsonResponse({"error": e.code, "message": e.message}, status=e.status)
 
 
-def _selection(body: dict) -> dict:
-    return {"program_ids": body.get("program_ids") or None, "workflow": body.get("workflow") or None}
-
-
-def _reads(request, body: dict) -> tuple[dict, spaces.OpenSpace | None]:
-    """What a read covers: the body's own selection, or -- when it names a ``space_id`` --
-    the space's, opened through ``spaces.open`` as the person. A space brings its own
-    selection, so a body naming a space AND opportunities, programs or a workflow is
-    refused rather than one of them silently winning."""
-    space_id = body.get("space_id")
-    if space_id in (None, ""):
-        return {"opportunity_ids": body.get("opportunity_ids"), **_selection(body)}, None
-    if body.get("opportunity_ids") or body.get("program_ids") or body.get("workflow"):
-        raise _Invalid(
-            "space_brings_its_selection",
-            "A space brings its own sources: send space_id alone, without opportunities, programs or a workflow.",
-        )
-    opened = spaces.open(_caller(request), space_id)
-    return opened.selection_args(), opened
+def _space(request, body: dict) -> spaces.OpenSpace:
+    """The space a call reads: the saved space the body names (``space_id``), opened as the
+    person -- with any selection beside it the space's own, else ``outside_space`` -- or one
+    generated from the body's selection."""
+    return spaces.from_request(
+        _caller(request),
+        space_id=body.get("space_id"),
+        opportunity_ids=body.get("opportunity_ids"),
+        program_ids=body.get("program_ids") or None,
+        workflow=body.get("workflow") or None,
+    )
 
 
 class DescribeView(_JsonView):
     def handle(self, request, body):
-        reads, opened = _reads(request, body)
+        space = _space(request, body)
         out = service.describe(
             _caller(request),
-            reads.pop("opportunity_ids"),
+            space,
             load_missing=bool(body.get("load_missing")),
             # The page shows no registries and no form-field index; skip both. The
             # agent's data_describe keeps them -- they are how it finds fields and
             # governed measures.
             include_registries=False,
             include_fields=False,
-            **reads,
         )
-        if opened is not None:
-            out["space"] = {"id": opened.id, "name": opened.space.name}
+        if space.saved:
+            out["space"] = {"id": space.id, "name": space.space.name}
         return out
 
 
 class QueryView(_JsonView):
     def handle(self, request, body):
-        reads, opened = _reads(request, body)
         return service.query(
-            _caller(request),
-            reads.pop("opportunity_ids"),
-            body.get("sql") or "",
-            int(body.get("max_rows") or 500),
-            space_id=opened.id if opened is not None else None,
-            **reads,
+            _caller(request), _space(request, body), body.get("sql") or "", int(body.get("max_rows") or 500)
         )
 
 
@@ -273,14 +261,12 @@ class DrillView(_JsonView):
     """The rows behind one cell of a result: their SQL, and how many there are."""
 
     def handle(self, request, body):
-        reads, _opened = _reads(request, body)
         return service.drill_into(
             _caller(request),
-            reads.pop("opportunity_ids"),
+            _space(request, body),
             body.get("sql") or "",
             body.get("row") or [],
             int(body.get("column") or 0),
-            **reads,
         )
 
 
@@ -288,21 +274,16 @@ class WorkflowsView(_JsonView):
     """Workflows to choose from: those readable, as the person, in the selection's scopes."""
 
     def handle(self, request, body):
-        return service.workflows(
-            _caller(request), opportunity_ids=body.get("opportunity_ids"), program_ids=body.get("program_ids")
-        )
+        # The programs and opportunities chosen, as a space generated for this call (a
+        # workflow is what is being chosen, so none is passed).
+        caller = _caller(request)
+        space = spaces.generate(caller, body.get("opportunity_ids"), program_ids=body.get("program_ids") or None)
+        return service.workflows(caller, space)
 
 
 class VisitsView(_JsonView):
     def handle(self, request, body):
-        if body.get("space_id") not in (None, ""):
-            if body.get("opportunity_ids"):
-                raise _Invalid(
-                    "space_brings_its_selection", "A space brings its own opportunities: send space_id alone."
-                )
-            opened = spaces.open(_caller(request), body["space_id"])
-            return service.visits(_caller(request), opened.selection.ids, body.get("visit_ids") or [])
-        return service.visits(_caller(request), body.get("opportunity_ids"), body.get("visit_ids") or [])
+        return service.visits(_caller(request), _space(request, body), body.get("visit_ids") or [])
 
 
 # --- saved queries (models.SavedQuery) ---------------------------------------------------
@@ -311,10 +292,11 @@ class VisitsView(_JsonView):
 class SavedQueriesView(_JsonView):
     """GET: the person's saved queries, the latest version of each name. POST: save one.
 
-    A save holds the query, never rows. It is checked as a run would be -- the person must
-    hold every opportunity now (``scope.resolve``) and the SQL must pass the same checks
-    over zero rows (``service.validate``) -- and its ``display`` as the agent's was. It is
-    the person's own write, in their own session, behind Django's CSRF check."""
+    A save holds the query, never rows: its SQL and the selection it reads, which opening
+    it generates a space from again, as whoever opens it. It is checked as a run would be --
+    over a space generated now (refusing anything the person does not hold), the SQL through
+    the same checks over zero rows -- and its ``display`` as the agent's was. It is the
+    person's own write, in their own session, behind Django's CSRF check."""
 
     def read(self, request):
         from .models import SavedQuery
@@ -331,12 +313,17 @@ class SavedQueriesView(_JsonView):
         from .models import SavedQuery
 
         name, sql, shown, max_rows = _query_fields(body)
-        # The selection as a run resolves it (programs and opportunities, or one workflow
-        # with its pipelines), refusing anything the person does not hold now; the SQL
-        # checked as it would run over that selection, over zero rows.
-        selection = service.select(_caller(request), body.get("opportunity_ids"), **_selection(body))
-        opps = selection.opportunities
-        service.validate_selected(sql, selection)
+        # The space a run would read (programs and opportunities, or one workflow with its
+        # pipelines), generated as the person now; the SQL checked over it, over zero rows.
+        # A personal query keeps the selection as asked, not the space's freeze.
+        space = spaces.generate(
+            _caller(request),
+            body.get("opportunity_ids"),
+            program_ids=body.get("program_ids") or None,
+            workflow=body.get("workflow") or None,
+        )
+        opps = space.selection.opportunities
+        service.validate_selected(sql, space)
         with transaction.atomic():
             previous = (
                 SavedQuery.objects.select_for_update()
@@ -349,9 +336,9 @@ class SavedQueriesView(_JsonView):
                     owner=request.user,
                     name=name,
                     sql=sql,
-                    opportunity_ids=[] if selection.workflow else _ints(body.get("opportunity_ids")),
-                    program_ids=[] if selection.workflow else _ints(body.get("program_ids")),
-                    workflow=_workflow_of(body) if selection.workflow else {},
+                    opportunity_ids=space.requested["opportunity_ids"],
+                    program_ids=space.requested["program_ids"],
+                    workflow=space.requested["workflow"],
                     max_rows=max_rows,
                     display=shown or {},
                     version=(previous.version + 1) if previous else 1,
@@ -417,24 +404,6 @@ def _latest(queryset, *, versions: bool = False) -> list[dict]:
     return out
 
 
-def _ints(values) -> list[int]:
-    try:
-        return sorted({int(v) for v in values or []})
-    except (TypeError, ValueError):
-        return []
-
-
-def _workflow_of(body: dict) -> dict:
-    """The workflow the page chose (``{id, opportunity_id | program_id}``), once
-    ``service.select`` has resolved it as the person."""
-    w = body.get("workflow") or {}
-    out = {"id": int(w["id"])}
-    for key in ("opportunity_id", "program_id"):
-        if w.get(key):
-            out[key] = int(w[key])
-    return out
-
-
 class SavedQueryDeleteView(_JsonView):
     """POST: delete one of the person's saved queries, every version of its name."""
 
@@ -478,18 +447,19 @@ def _space_name(body: dict) -> tuple[str, str]:
     return name, display.clean_text(body.get("description"), 2000) or ""
 
 
-def _source_counts(sources: dict) -> dict:
+def _source_counts(space) -> dict:
     return {
-        "opportunities": len(sources["opportunity_ids"]),
-        "programs": len(sources["program_ids"]),
-        "workflow": bool(sources["workflow"]),
+        "opportunities": len(space.opportunity_ids),
+        "programs": len(space.program_ids),
+        "workflow": bool(space.workflow),
     }
 
 
 class SpacesView(_JsonView):
     """GET: the spaces the person may open now, grouped by program or opportunity.
-    POST: a new space from a selection (``{name, description, opportunity_ids, program_ids}``
-    or ``{name, workflow}``), each source resolved as the person and frozen."""
+    POST: save a space from a selection (``{name, description, opportunity_ids, program_ids}``
+    or ``{name, workflow}``): the space that selection generates, kept -- each source
+    resolved as the person and frozen."""
 
     def read(self, request):
         return {"groups": spaces.openable(_caller(request))}
@@ -499,13 +469,16 @@ class SpacesView(_JsonView):
 
         name, description = _space_name(body)
         caller = _caller(request)
-        sources = spaces.frozen_sources(
-            caller, body.get("opportunity_ids"), program_ids=body.get("program_ids"), workflow=body.get("workflow")
+        generated = spaces.generate(
+            caller,
+            body.get("opportunity_ids"),
+            program_ids=body.get("program_ids") or None,
+            workflow=body.get("workflow") or None,
         )
-        space = spaces.create(caller, name, description, sources)
+        space = spaces.save(caller, generated, name, description)
         opened = spaces.open(caller, space.pk, allow_changed=True)
         _audit_space(
-            Action.CREATE, opened, "labsdata_space", space.pk, request.user, {"sources": _source_counts(sources)}
+            Action.CREATE, opened, "labsdata_space", space.pk, request.user, {"sources": _source_counts(space)}
         )
         return {"space": opened.as_dict()}
 
@@ -535,12 +508,15 @@ class SpaceSourcesView(_JsonView):
         caller = _caller(request)
         opened = spaces.open(caller, self.kwargs["space_id"], allow_changed=True)
         before = list(opened.space.opportunity_ids)
-        sources = spaces.frozen_sources(
-            caller, body.get("opportunity_ids"), program_ids=body.get("program_ids"), workflow=body.get("workflow")
+        generated = spaces.generate(
+            caller,
+            body.get("opportunity_ids"),
+            program_ids=body.get("program_ids") or None,
+            workflow=body.get("workflow") or None,
         )
-        spaces.update_sources(opened, sources)
-        metadata = {"sources": _source_counts(sources), "before_opportunities": len(before)}
-        touched = sorted({int(i) for i in before} | set(sources["opportunity_ids"]))
+        space = spaces.update_sources(opened, generated)
+        metadata = {"sources": _source_counts(space), "before_opportunities": len(before)}
+        touched = sorted({int(i) for i in before} | {int(i) for i in space.opportunity_ids})
         _audit_space(Action.UPDATE, touched, "labsdata_space", opened.id, request.user, metadata)
         return {"space": spaces.open(caller, opened.id, allow_changed=True).as_dict()}
 
@@ -577,7 +553,7 @@ class SpaceItemsView(_JsonView):
 
         opened = spaces.open(_caller(request), self.kwargs["space_id"])
         name, sql, shown, max_rows = _query_fields(body)
-        service.validate_selected(sql, opened.selection)
+        service.validate_selected(sql, opened)
         with transaction.atomic():
             previous = spaces.queries(opened).select_for_update().filter(name=name).order_by("-version").first()
             try:

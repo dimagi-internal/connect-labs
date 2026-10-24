@@ -14,7 +14,7 @@ from django.contrib.auth import get_user_model
 from django.test import Client
 
 from connect_labs.labs import canopy_panel
-from connect_labs.labsdata import scope, service
+from connect_labs.labsdata import scope, service, spaces
 from connect_labs.labsdata.engine import QueryError
 from connect_labs.labsdata.models import SavedQuery
 from connect_labs.labsdata.scope import Opportunity, ScopeError
@@ -46,18 +46,18 @@ def other():
 def connect(monkeypatch, owner):
     seen = {}
 
-    def select(caller, opportunity_ids=None, *, program_ids=None, workflow=None):
+    def resolve(caller, opportunity_ids=None, *, program_ids=None, workflow=None):
         if caller.user is None or caller.user.pk != owner.pk:
             raise ScopeError("not_held", f"you do not have access to opportunity {OPP.id}")
         seen["selection"] = {"opportunity_ids": opportunity_ids, "program_ids": program_ids, "workflow": workflow}
-        return service.Selection(opportunities=[OPP], workflow={"id": 5, "name": "W"} if workflow else None)
+        return spaces.Selection(opportunities=[OPP], workflow={"id": 5, "name": "W"} if workflow else None)
 
-    def validate_selected(sql, selection):
+    def validate_selected(sql, space):
         if "nope" in sql:
             raise QueryError("sql", "column nope does not exist")
         return {"valid": True}
 
-    monkeypatch.setattr(service, "select", select)
+    monkeypatch.setattr(spaces, "_resolve", resolve)
     monkeypatch.setattr(service, "validate_selected", validate_selected)
     return seen
 

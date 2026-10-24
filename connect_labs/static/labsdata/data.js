@@ -1330,8 +1330,8 @@
           'option',
           { value: '' },
           space
-            ? 'Leave this space (my own selection)'
-            : 'No space: my own selection',
+            ? 'Leave this space (an unsaved one from my selection)'
+            : 'Unsaved space: this selection',
         ),
         ...(data.groups || []).map((g) =>
           el(

@@ -315,9 +315,13 @@ space's page (`/labs/data/space/<id>/`).
 ## Data spaces on the Data page
 
 A **data space** (`labsdata.models.DataSpace`, `labsdata/spaces.py`; design:
-`docs/superpowers/specs/2026-10-24-data-spaces-design.md`) is a named, fixed set of sources --
+`docs/superpowers/specs/2026-10-24-data-spaces-design.md` and
+`docs/superpowers/specs/2026-10-24-one-path-through-data-spaces.md`) is a fixed set of sources --
 opportunities, programs frozen to the opportunities they had when added, or one workflow -- and
-the saved queries kept on it. Who may open one is decided on every read by `spaces.open`, the one
+the saved queries kept on it. Every read on the Data page and through the `data_*` tools is over
+one: with no space open, the page's selection is an unsaved space generated for each call
+(`spaces.generate`), and "Save as a space" keeps it. Who may open a saved one is decided on every
+read by `spaces.open`, the one
 gate (`labsdata/tests/test_spaces_gate.py` fails if a view or `data_*` tool takes a `space_id`
 without it): every program AND every frozen opportunity held now, else `not_found` (the same
 answer as no such space). No membership table and no grant: a teammate holding the same sources
@@ -325,7 +329,7 @@ sees it; losing one opportunity loses the whole space. Changing its sources is t
 click after a warning (`POST .../sources/` with `confirm: true`; no tool, no page action), audited.
 
 Its page (`/labs/data/space/<id>/`, page key `labsdata:space`, `data:read`) is the Data page in
-three regions: the left rail (space switcher and "New space from this selection", source chips
+three regions: the left rail (space switcher and "Save as a space", source chips
 with Update sources, tables, the space's queries with versions, My queries), a canvas with a tab
 strip (the editor and the last few things shown), and the docked panel (`DATA_PANEL`; the
 widget's own pin snaps it into the page, its expand control grows it). The panel's resource is

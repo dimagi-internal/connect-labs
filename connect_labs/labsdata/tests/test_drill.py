@@ -15,7 +15,7 @@ from django.utils import timezone
 from connect_labs.labs.access.scopes import Caller
 from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
 from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
-from connect_labs.labsdata import drill, scope, service
+from connect_labs.labsdata import drill, scope, service, spaces
 from connect_labs.labsdata.engine import QueryError
 from connect_labs.labsdata.scope import Opportunity
 
@@ -103,18 +103,18 @@ def visits(db):
 def test_every_counting_cell_drills_to_exactly_that_many_rows(visits):
     caller = Caller(access_token="t")
     with mock.patch.object(scope, "resolve", return_value=[OPP]):
-        result = service.query(caller, [OPP.id], REPORT)
+        result = service.query(caller, spaces.generate(caller, [OPP.id]), REPORT)
         assert result["drill"]["columns"] == [True] * 8
         checked = 0
         for row in result["rows"]:
             for column, kind in enumerate(result["drill"]["kinds"]):
                 if kind != "aggregate":
                     continue
-                out = service.drill_into(caller, [OPP.id], REPORT, row, column)
+                out = service.drill_into(caller, spaces.generate(caller, [OPP.id]), REPORT, row, column)
                 if out["kind"] == drill.COUNTING:
                     assert out["matches"] is True, (result["columns"][column], row, out)
                     checked += 1
         with pytest.raises(QueryError) as e:
-            service.drill_into(caller, [OPP.id], "SELECT * FROM visits", ["x"], 0)
+            service.drill_into(caller, spaces.generate(caller, [OPP.id]), "SELECT * FROM visits", ["x"], 0)
     assert checked == 2 * 5  # two groups, five counting columns each
     assert e.value.code == "not_drillable"

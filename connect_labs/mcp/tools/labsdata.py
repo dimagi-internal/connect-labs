@@ -87,35 +87,27 @@ def _caller(user) -> Caller:
     return Caller(user=user, access_token=require_connect_token(user))
 
 
-def _open_space(caller: Caller, space_id, opportunity_ids=None, program_ids=None, workflow=None):
-    """The space, opened through ``spaces.open`` (the one gate), and the selection the call
-    reads: the space's. Anything else the call names must be the space's own sources -- an
-    agent held to a space cannot widen or swap what it reads by passing a selection too."""
+def _space(caller: Caller, space_id=None, opportunity_ids=None, program_ids=None, workflow=None):
+    """The data space a call reads, through ``spaces.from_request`` (the one door): the saved
+    space ``space_id`` names -- anything else the call names must be the space's own sources,
+    so an agent held to a space cannot widen or swap what it reads -- or one generated from
+    the selection. Its errors as tool errors."""
     try:
-        opened = spaces.open(caller, space_id)
+        return spaces.from_request(
+            caller,
+            space_id=space_id,
+            opportunity_ids=opportunity_ids,
+            program_ids=program_ids,
+            workflow=workflow,
+        )
     except spaces.SpaceNotFound as e:
         raise MCPToolError("NOT_FOUND", e.message, {"reason": e.code}) from e
     except spaces.SpaceChanged as e:
         raise MCPToolError("INVALID_SCHEMA", e.message, {"reason": e.code}) from e
+    except spaces.OutsideSpace as e:
+        raise MCPToolError("PERMISSION_DENIED", e.message, {"reason": e.code, "space_id": e.space_id}) from e
     except ScopeError as e:
         raise _scope_error(e) from e
-    space = opened.space
-    outside = (
-        (opportunity_ids and set(_ids(opportunity_ids)) != {int(o) for o in space.opportunity_ids})
-        or (program_ids and set(_ids(program_ids)) != {int(p) for p in space.program_ids})
-        or (
-            workflow
-            and (not isinstance(workflow, dict) or _ids([workflow.get("id")]) != _ids([space.workflow.get("id")]))
-        )
-    )
-    if outside:
-        raise MCPToolError(
-            "PERMISSION_DENIED",
-            "This call is held to data space "
-            f"{opened.id}: it reads only the space's sources. Pass space_id alone (or the space's own sources).",
-            {"reason": "outside_space", "space_id": opened.id},
-        )
-    return opened
 
 
 def _from_canopy() -> bool:
@@ -190,24 +182,18 @@ def describe(
     user, opportunity_ids=None, field_search=None, load_missing=False, program_ids=None, workflow=None, space_id=None
 ):
     caller = _caller(user)
-    opened = None
-    if space_id is not None:
-        opened = _open_space(caller, space_id, opportunity_ids, program_ids, workflow)
-        reads = opened.selection_args()
-        opportunity_ids, program_ids, workflow = reads["opportunity_ids"], reads["program_ids"], reads["workflow"]
+    opened = _space(caller, space_id, opportunity_ids, program_ids, workflow)
     try:
         out = service.describe(
             caller,
-            opportunity_ids,
+            opened,
             field_search=field_search,
             load_missing=bool(load_missing),
             for_agent=_from_canopy(),
-            program_ids=program_ids,
-            workflow=workflow,
         )
     except ScopeError as e:
         raise _scope_error(e) from e
-    if opened is not None:
+    if opened.saved:
         out["space"] = {
             "id": opened.id,
             "name": opened.space.name,
@@ -248,8 +234,7 @@ VALIDATE_IN_SPACE = {
 def validate(user, sql, space_id=None):
     try:
         if space_id is not None:
-            opened = _open_space(_caller(user), space_id)
-            return service.validate_selected(sql, opened.selection)
+            return service.validate_selected(sql, _space(_caller(user), space_id))
         return service.validate(sql)
     except QueryError as e:
         return {"valid": False, **e.as_dict()}
@@ -346,13 +331,8 @@ def query(
 ):
     agent = _from_canopy()
     caller = _caller(user)
-    in_space, space_opps = {}, []
-    if space_id is not None:
-        opened = _open_space(caller, space_id, opportunity_ids, program_ids, workflow)
-        reads = opened.selection_args()
-        opportunity_ids, program_ids, workflow = reads["opportunity_ids"], reads["program_ids"], reads["workflow"]
-        in_space, space_opps = {"space_id": opened.id}, list(opened.selection.ids)
-    selection = {"program_ids": program_ids, "workflow": workflow}
+    space = _space(caller, space_id, opportunity_ids, program_ids, workflow)
+    in_space = {"space_id": space.id} if space.saved else {}
     try:
         # Checked before the query runs (all but which columns exist), so a bad display
         # costs no query.
@@ -360,16 +340,7 @@ def query(
     except result_display.DisplayError as e:
         raise MCPToolError("INVALID_SCHEMA", str(e), {"reason": "bad_display"}) from e
     try:
-        out = service.query(
-            caller,
-            opportunity_ids,
-            sql,
-            max_rows=_max_rows(max_rows),
-            for_agent=agent,
-            shaped=False,
-            **selection,
-            **in_space,
-        )
+        out = service.query(caller, space, sql, max_rows=_max_rows(max_rows), for_agent=agent, shaped=False)
     except ScopeError as e:
         raise _scope_error(e) from e
     except service.SensitiveDataRefused as e:
@@ -383,7 +354,7 @@ def query(
             "message": e.message,
             "sql_executed": sql,
             "sql_formatted": service.format_sql(sql),
-            "open_on_page": service.open_on_page_url(opportunity_ids, sql, max_rows=max_rows, **selection, **in_space),
+            "open_on_page": service.open_on_page_url(space, sql, max_rows=max_rows),
             **in_space,
         }
         if not (agent or keep_result):
@@ -393,7 +364,7 @@ def query(
             user,
             kept_results.KIND_QUERY,
             withheld,
-            access={"opportunity_ids": _ids(opportunity_ids) or space_opps, "sensitive": False},
+            access={"opportunity_ids": list(space.selection.ids), "sensitive": False},
             name="Query (rows stay in Labs)",
             description="Production rows withheld from the agent; open it on the Data page.",
         )
@@ -418,10 +389,10 @@ def explorer_query(user, opportunity_ids, sql, max_rows=None):
     """scout-queries' ``explorer_query``: the result whole and inline, nothing kept.
     Its caller is Claude Code reading ``content[0].text``; it has no View and no
     ``site_read``, so it keeps exactly the shape it was built against."""
+    caller = _caller(user)
+    space = _space(caller, opportunity_ids=opportunity_ids)
     try:
-        return service.query(
-            _caller(user), opportunity_ids, sql, max_rows=_max_rows(max_rows), for_agent=_from_canopy()
-        )
+        return service.query(caller, space, sql, max_rows=_max_rows(max_rows), for_agent=_from_canopy())
     except ScopeError as e:
         raise _scope_error(e) from e
     except service.SensitiveDataRefused as e:
@@ -430,7 +401,7 @@ def explorer_query(user, opportunity_ids, sql, max_rows=None):
             "reason": e.code,
             "message": e.message,
             "sql_executed": sql,
-            "open_on_page": service.open_on_page_url(opportunity_ids, sql, max_rows=max_rows),
+            "open_on_page": service.open_on_page_url(space, sql, max_rows=max_rows),
         }
     except QueryError as e:
         raise _query_error(e) from e
@@ -572,10 +543,9 @@ for _name, _spec, _fn in (
 )
 def data_visits(user, visit_ids, opportunity_ids=None, space_id=None):
     caller = _caller(user)
-    if space_id is not None:
-        opportunity_ids = _open_space(caller, space_id, opportunity_ids).selection.ids
+    space = _space(caller, space_id, opportunity_ids)
     try:
-        return service.visits(caller, opportunity_ids, visit_ids, for_agent=_from_canopy())
+        return service.visits(caller, space, visit_ids, for_agent=_from_canopy())
     except ScopeError as e:
         raise _scope_error(e) from e
     except service.SensitiveDataRefused as e:
@@ -609,7 +579,7 @@ def data_visits(user, visit_ids, opportunity_ids=None, space_id=None):
 def data_workflow_context(user, definition_id=None, opportunity_id=None, program_id=None, space_id=None):
     caller = _caller(user)
     if space_id is not None:
-        opened = _open_space(caller, space_id)
+        opened = _space(caller, space_id)
         w = opened.space.workflow or {}
         if not w:
             raise MCPToolError(
