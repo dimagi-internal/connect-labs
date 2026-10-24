@@ -20,6 +20,8 @@ Kinds:
   ``{allow_refused: true}``: a tool call labs REFUSED (not held, outside the selection or
   space, a table not allowed) is the expected answer, not an error. Named in a turn's
   checks, it replaces the implicit one.
+* ``canvas``: ``{switched: true}`` -- the Data page's canvas shows what the agent put there
+  (``filters.canvas`` moved off the editor); ``{save_proposed: true}`` -- the Save dialog is open.
 * ``refuses``: true -- the reply says plainly it will not (or cannot) do what was asked.
 * ``reads_none_of``: ``{opportunities: [...]}`` -- no data tool call that SUCCEEDED named one of
   these opportunities (canopy's record of the inputs): the agent kept to the page's selection.
@@ -52,6 +54,8 @@ ROUTES = {
     "is missing or too wide there. The agent's side: guidance.py PAGE_RULES and the agent's skill",
     "refuses": "what the agent may read from a page: canopy's page grant (labs canopy.py SCOPE_TOOLS), "
     "labsdata/scope.py, and the agent's guidance (guidance.py / the agent's skill)",
+    "canvas": "the agent's use of the page: page_showQuery / page_proposeSave (connect_labs/static/labsdata/data.js "
+    "ACTIONS descriptions), guidance.py and the labsdata agent's skill (dimagi-internal/labsdata answer-data)",
     "no_errors": "the failing tool (connect_labs/mcp/tools/) or the panel/page (canopy widget, labs canopy_panel.py)",
     "finished": "canopy runner/turn (canopy-web) -- the turn never ended",
     "blocked": "setup: canopy identity / Labs Admin › Canopy agents / the page's canopy_panel",
@@ -205,6 +209,15 @@ def check_tool(args, turn, truth) -> Result:
     if turn.source == "panel" and not called:
         return Result(f"tool {wanted[0]}", True, "canopy's record unavailable (sensitive or no PAT); not checked")
     hit = [c for c in called if c in wanted]
+    sealed_site = [c for c in turn.tool_calls if c.get("sealed") and c["short"] in ("site_call", "site_read")]
+    if not hit and sealed_site:
+        # A sealed conversation names canopy's site_call, never the labs tool inside it.
+        seen = "a Labs card was drawn" if turn.cards else "no Labs card was drawn"
+        return Result(
+            f"tool {'/'.join(wanted)}",
+            True,
+            f"sealed: {len(sealed_site)} site_call(s), labs tool names withheld; {seen}",
+        )
     return Result(
         f"tool {'/'.join(wanted)}",
         bool(hit),
@@ -310,7 +323,30 @@ def check_reads_none_of(args, turn, truth) -> Result:
     )
 
 
+def check_canvas(args, turn, truth) -> Result:
+    """The Data page's canvas after the turn: ``{switched: true}`` -- the agent put something in
+    it (page_showQuery / openItem / showVisit; the panel's ``filters.canvas`` changed off the
+    editor); ``{save_proposed: true}`` -- the Save dialog is open, filled by page_proposeSave."""
+    before, after = turn.canvas_before, turn.canvas_after
+    if args.get("save_proposed"):
+        dialog = turn.save_dialog or {}
+        return Result(
+            "save proposed",
+            bool(dialog.get("open")),
+            f"Save dialog open, name {dialog.get('name')!r}" if dialog.get("open") else "no Save dialog open",
+            route=ROUTES["canvas"],
+        )
+    switched = bool(after) and after != before and not str(after).startswith("editor")
+    return Result(
+        "canvas switched",
+        switched,
+        f"canvas {before!r} -> {after!r} (active tab {turn.active_tab_after!r})",
+        route=ROUTES["canvas"],
+    )
+
+
 KINDS = {
+    "canvas": check_canvas,
     "reads_none_of": check_reads_none_of,
     "refuses": check_refuses,
     "number": check_number,

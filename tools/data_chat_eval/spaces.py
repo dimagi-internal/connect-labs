@@ -43,6 +43,9 @@ class SpaceScenario:
     truth_column: str
     outside_opportunity: int
     ask: str = ""
+    #: When set, the ask also asks the agent to propose saving the query under this name; the
+    #: harness then clicks Save as the person and checks the item lands in the space.
+    save_as: str = ""
     covers: str = ""
     truth: dict = field(default_factory=dict)
 
@@ -60,6 +63,7 @@ def load(data: dict) -> list[SpaceScenario]:
                 truth_column=raw["truth_column"],
                 outside_opportunity=int(raw["outside_opportunity"]),
                 ask=raw.get("ask", ""),
+                save_as=raw.get("save_as", ""),
                 covers=raw.get("covers", ""),
             )
         )
@@ -301,9 +305,6 @@ def run(sc: SpaceScenario, mcp, out_dir: Path, args) -> dict:
                             gate=False,
                         )
                     else:
-                        after = (
-                            (page.evaluate("() => window.canopyHost.pageState()") or {}).get("filters") or {}
-                        ).get("canvas")
                         steps.add(
                             6,
                             "agent answered",
@@ -314,10 +315,12 @@ def run(sc: SpaceScenario, mcp, out_dir: Path, args) -> dict:
                         steps.add(
                             6,
                             "agent switched the canvas",
-                            after != before,
-                            f"canvas {before!r} -> {after!r}",
-                            checks.ROUTES["tool"],
+                            bool(turn.canvas_after) and turn.canvas_after != before,
+                            f"canvas {before!r} -> {turn.canvas_after!r} (tab {turn.active_tab_after!r})",
+                            checks.ROUTES["canvas"],
                         )
+                        if sc.save_as:
+                            _agent_save(page, steps, turn, sc, space_id, out_dir)
                         if want is not None:
                             r = checks.run({"number": {"value": want}}, turn, {})
                             steps.add(6, "agent's answer has the truth", r.passed, r.detail, r.route, gate=False)
@@ -346,6 +349,41 @@ def run(sc: SpaceScenario, mcp, out_dir: Path, args) -> dict:
                 _post(page, f"{API}/spaces/{space_id}/archive/", {})  # never leave a test space behind
             browser.close()
     return entry
+
+
+def _agent_save(page, steps: _Steps, turn, sc: SpaceScenario, space_id, out_dir: Path) -> None:
+    """The agent proposed a save (page_proposeSave): the dialog is open; the person clicks Save."""
+    dialog = turn.save_dialog or {}
+    if not steps.add(
+        6,
+        "agent proposed the save",
+        bool(dialog.get("open")),
+        f"Save dialog open, name {dialog.get('name')!r}" if dialog.get("open") else "no Save dialog open",
+        checks.ROUTES["canvas"],
+    ):
+        return
+    page.locator("#ex-save-confirm").click()
+    page.wait_for_timeout(4000)
+    name = dialog.get("name") or ""
+    rail = page.evaluate("() => { const e = document.querySelector('#ex-space-items'); return e ? e.innerText : '' }")
+    items = _get(page, f"{API}/spaces/{space_id}/items/")
+    names = [i.get("name") for i in (items.get("body") or {}).get("items", [])]
+    steps.add(
+        6,
+        "the agent's proposal, saved by the person, is in the space",
+        name in names and name in rail,
+        f"saved {name!r}; items {names}",
+        ROUTE_PAGE,
+    )
+    steps.add(
+        6,
+        "the agent named it as asked",
+        sc.save_as.lower() in name.lower(),
+        f"name {name!r}",
+        checks.ROUTES["canvas"],
+        gate=False,
+    )
+    page.screenshot(path=str(out_dir / "step6-agent-saved.png"))
 
 
 def _post(page, url: str, body: dict) -> dict:

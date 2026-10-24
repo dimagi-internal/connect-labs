@@ -56,30 +56,43 @@ class CanopyAPI:
         return resp.json() if resp.status_code == 200 else None
 
 
-def turn_finished(session: dict, user_text: str) -> bool:
-    """Whether the turn that answers ``user_text`` (the latest such message) is over."""
+def _asked_at(session: dict, user_text: str, ordinal: int | None) -> int | None:
+    """Index of the message that asked ``user_text``: by its words, or -- in a sealed
+    conversation, whose words canopy does not return -- by its place among the person's
+    messages (``ordinal``, 0-based)."""
     messages = session.get("messages") or []
-    asked = [
-        m for m in messages if m.get("role") == "user" and (m.get("plaintext") or "").strip() == user_text.strip()
-    ]
-    if not asked and not session.get("sensitive"):
+    found = None
+    for i, m in enumerate(messages):
+        if m.get("role") == "user" and (m.get("plaintext") or "").strip() == user_text.strip():
+            found = i
+    if found is None and ordinal is not None and session.get("sensitive"):
+        asked = [i for i, m in enumerate(messages) if m.get("role") == "user" and _human(m)]
+        found = asked[ordinal] if ordinal < len(asked) else None
+    return found
+
+
+def _human(m: dict) -> bool:
+    origin = ((m.get("content") or {}).get("record") or {}).get("turn_origin")
+    return origin in (None, "human")
+
+
+def turn_finished(session: dict, user_text: str, ordinal: int | None = None) -> bool:
+    """Whether the turn that answers ``user_text`` (the latest such message) is over."""
+    if _asked_at(session, user_text, ordinal) is None:
         return False  # our message has not landed yet
     status = session.get("turn_status") or {}
     return status.get("state") in TERMINAL and bool(status.get("settled", True)) and not session.get("running")
 
 
-def turn_slice(session: dict, user_text: str) -> list[dict]:
+def turn_slice(session: dict, user_text: str, ordinal: int | None = None) -> list[dict]:
     """The messages of the turn that answers ``user_text``: everything after it."""
     messages = session.get("messages") or []
-    start = None
-    for i, m in enumerate(messages):
-        if m.get("role") == "user" and (m.get("plaintext") or "").strip() == user_text.strip():
-            start = i
+    start = _asked_at(session, user_text, ordinal)
     if start is None:
         return []
     out = []
     for m in messages[start + 1 :]:
-        if m.get("role") == "user" and (m.get("content") or {}).get("record", {}).get("turn_origin") == "human":
+        if m.get("role") == "user" and _human(m):
             break
         out.append(m)
     return out
@@ -101,6 +114,8 @@ def tool_calls(turn: list[dict]) -> list[dict]:
         is_error, result = results.get(content.get("id"), (False, ""))
         calls.append(
             {
+                # A sealed conversation keeps the tool's name, never its input or result.
+                "sealed": content.get("redacted") == "sensitive",
                 "name": name,
                 "short": name.rsplit("__", 1)[-1],
                 "input": content.get("input"),

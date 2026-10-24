@@ -211,3 +211,48 @@ def test_the_dropout_reply_states_its_definition():
 
     said = turn("The closest one is Loss to follow-up by day 28: 22.1%. What it counts: babies ...")
     assert c.run({"asks_or_states": True}, said, {}).passed
+
+
+def test_scrub_replaces_the_vault_values(monkeypatch, tmp_path):
+    from tools.data_chat_eval import vault
+
+    monkeypatch.setattr(vault, "ENV_FILES", ())
+    monkeypatch.setenv("ACE_CANOPY_TEST_VAULT_PASSPHRASE", "pass-phrase-xyz")
+    monkeypatch.setenv("ACE_CANOPY_TEST_VAULT_SECRET_KEY", "A3-SECRET-KEY")
+    (tmp_path / "a.json").write_text('{"x": "pass-phrase-xyz and A3-SECRET-KEY"}')
+    assert vault.scrub_dir(tmp_path) == 1
+    assert "pass-phrase" not in (tmp_path / "a.json").read_text()
+    assert vault.REDACTED in (tmp_path / "a.json").read_text()
+
+
+def test_sealed_conversation_is_sliced_by_the_persons_messages():
+    from tools.data_chat_eval import canopy_api
+
+    sealed = {"redacted": "sensitive"}
+    session = {
+        "sensitive": True,
+        "turn_status": {"state": "done", "settled": True},
+        "messages": [
+            {"role": "user", "plaintext": "", "content": sealed},
+            {"role": "tool_use", "content": {"id": "t1", "name": "mcp__x__site_call", "redacted": "sensitive"}},
+            {"role": "assistant", "plaintext": "", "content": sealed},
+            {"role": "user", "plaintext": "", "content": sealed},
+            {"role": "assistant", "plaintext": "", "content": sealed},
+        ],
+    }
+    assert canopy_api.turn_finished(session, "q2", 1)
+    assert not canopy_api.turn_finished(session, "q3", 2)
+    first = canopy_api.turn_slice(session, "q1", 0)
+    assert [m["role"] for m in first] == ["tool_use", "assistant"]
+    calls = canopy_api.tool_calls(first)
+    assert calls[0]["sealed"] and calls[0]["short"] == "site_call"
+
+
+def test_canvas_check():
+    t = turn()
+    t.canvas_before, t.canvas_after = "editor: Editor", "query: Visits per worker"
+    assert checks.run({"canvas": {"switched": True}}, t, {}).passed
+    t.canvas_after = "editor: Editor"
+    assert not checks.run({"canvas": {"switched": True}}, t, {}).passed
+    t.save_dialog = {"open": True, "name": "x"}
+    assert checks.run({"canvas": {"save_proposed": True}}, t, {}).passed

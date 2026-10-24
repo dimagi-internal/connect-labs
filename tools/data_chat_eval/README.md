@@ -29,12 +29,13 @@ passes. A run of the whole suite takes 10-15 minutes and costs real agent turns.
 
 ## What it needs (ace's own credentials, nothing new)
 
-| What                       | Where                                                  | Fix when missing                                                                                                    |
-| -------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| ace's labs browser session | `~/.ace/labs-session.json` (Playwright storage state)  | ace plugin `/ace:labs-login` (headless OAuth via CommCare HQ with `ACE_HQ_USERNAME/PASSWORD`). Expires after ~a day |
-| ace's labs MCP PAT         | `LABS_MCP_TOKEN` in `~/.ace/.env` (or the environment) | `/ace:labs-token-mint`                                                                                              |
-| ace's canopy PAT           | `CANOPY_WEB_PAT` in `~/.ace/.env`                      | optional: without it a turn's end and its tool calls are read from the panel only                                   |
-| the `claude` CLI           | on `PATH`                                              | optional: the judge is skipped                                                                                      |
+| What                        | Where                                                                                   | Fix when missing                                                                                                    |
+| --------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| ace's labs browser session  | `~/.ace/labs-session.json` (Playwright storage state)                                   | ace plugin `/ace:labs-login` (headless OAuth via CommCare HQ with `ACE_HQ_USERNAME/PASSWORD`). Expires after ~a day |
+| ace's labs MCP PAT          | `LABS_MCP_TOKEN` in `~/.ace/.env` (or the environment)                                  | `/ace:labs-token-mint`                                                                                              |
+| ace's canopy PAT            | `CANOPY_WEB_PAT` in `~/.ace/.env`                                                       | optional: without it a turn's end and its tool calls are read from the panel only                                   |
+| ace's canopy test vault key | `ACE_CANOPY_TEST_VAULT_PASSPHRASE`, `ACE_CANOPY_TEST_VAULT_SECRET_KEY` in `~/.ace/.env` | needed to read a private (Data page) conversation back; canopy-web's agent "test vault key"                         |
+| the `claude` CLI            | on `PATH`                                                                               | optional: the judge is skipped                                                                                      |
 
 `preflight` checks the first three before any agent turn is spent.
 
@@ -149,18 +150,30 @@ Adding a programme: pick a labs-only synthetic one whose data is GENERATED
 not cleared for sensitive data -- the run page says so in red beside "Agent:"), and a
 workflow on it with `config.agent.share`.
 
+## Private conversations (the Data page)
+
+The Data page's agent runs on sensitive-data runners, so canopy seals the conversation to its
+people; ace holds a passphrase-only vault key for this (canopy-web's agent "test vault key").
+Starting and sending need nothing, and live replies arrive in the clear. `vault.py` unlocks
+the panel when it shows its locked banner (`[data-testid="sealed-banner"]` → the unlock form,
+inside canopy's `/embed/chat` frame), and after the last turn the driver reloads the page,
+reopens the conversation from the panel's list ("Private conversation", newest first) and
+checks it unlocks and the last reply reads again (`sealed_checks`). The two vault values are
+read from `~/.ace/.env`, typed only into canopy's form, cleared from it before any
+screenshot, and scrubbed from every file in the run (`vault.scrub_dir`). Because the reopen
+picks the newest private conversation, run Data page scenarios one at a time
+(`--surface data_page --parallel 1`).
+
+canopy's API returns a sealed conversation's tool names but never their input, result or
+words: replies come from the panel, and a labs call shows as canopy's `site_call` (the
+`tool` check passes on it with "sealed" in its detail, and notes whether a Labs card was
+drawn). The `canvas` check reads the panel's own page state (`filters.canvas`) and the Save
+dialog, so `page_showQuery` and `page_proposeSave` are checked from what the person sees.
+
 ## Known limits
 
-- **The Data page's chat needs a canopy vault key for the visitor.** Its agent (labsdata)
-  runs on sensitive-data runners, so canopy seals the conversation to its people, and a
-  person with no vault key is refused ("a sensitive conversation needs a canopy account with
-  a vault key"). ace's canopy account has none, so the `data-*` scenarios report BLOCKED
-  until it does. They are kept so they start running the day it does.
-- Sensitive conversations are sealed: canopy's API returns no words for them, so the reply
-  and tool calls fall back to the panel's text (`source: panel` in `capture.json`).
 - Spaces' teammate and lock-out rules need a second synthetic person (one who holds the
-  sources, one who misses one); not covered yet. The space's chat step is BLOCKED by the
-  vault key above, like the other `data-*` scenarios.
+  sources, one who misses one); not covered yet.
 
 ## Tests
 

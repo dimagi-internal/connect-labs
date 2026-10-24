@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import canopy_api
+from . import canopy_api, vault
 
 SESSION_FILE = Path.home() / ".ace" / "labs-session.json"
 CHAT_FRAME = "canopy.dimagi.com/embed/chat"
@@ -55,6 +55,12 @@ class TurnCapture:
     panel_errors: list[str] = field(default_factory=list)
     screenshots: dict = field(default_factory=dict)
     source: str = "api"  # where reply/tool calls came from: api | panel
+    # The Data page's canvas (filters.canvas in the panel's page state) before and after the turn.
+    canvas_before: str | None = None
+    canvas_after: str | None = None
+    active_tab_after: str | None = None
+    save_dialog: dict = field(default_factory=dict)
+    unlock: dict = field(default_factory=dict)  # a sealed banner seen this turn, and the unlock
 
 
 @dataclass
@@ -68,6 +74,9 @@ class ScenarioCapture:
     turns: list[TurnCapture] = field(default_factory=list)
     transcript: dict | None = None
     console_errors: list[str] = field(default_factory=list)
+    sensitive: bool = False
+    # A sealed conversation reopened after a reload: banner, unlock, and whether the last reply reads again.
+    history: dict = field(default_factory=dict)
 
 
 class PanelDriver:
@@ -100,6 +109,9 @@ class PanelDriver:
                         break
                 if cap.session_id:
                     cap.transcript = self.canopy.session(cap.session_id)
+                    cap.sensitive = bool((cap.transcript or {}).get("sensitive"))
+                if cap.sensitive and cap.turns and not cap.blocked:
+                    cap.history = self._history(page, cap)
             except Blocked as b:
                 cap.blocked = str(b)
                 page.screenshot(path=str(self.out_dir / "blocked.png"))
@@ -157,6 +169,7 @@ class PanelDriver:
 
     def _turn(self, page, frame, text: str, index: int, sessions: list[str], cap: ScenarioCapture) -> TurnCapture:
         turn = TurnCapture(say=text)
+        turn.canvas_before = _canvas(page).get("canvas")
         cards_before = len(self._card_frames(page))
         box = frame.locator("textarea").first
         box.fill(text)
@@ -187,7 +200,7 @@ class PanelDriver:
                 continue
             if cap.session_id and self.canopy.enabled:
                 session = self.canopy.session(cap.session_id)
-                if session and canopy_api.turn_finished(session, text):
+                if session and canopy_api.turn_finished(session, text, index):
                     turn.finished, turn.status = True, session.get("turn_status") or {}
                     break
             else:
@@ -213,15 +226,65 @@ class PanelDriver:
         turn.cards = [self._card(f) for f in self._card_frames(page)[cards_before:]]
         if cap.session_id and self.canopy.enabled:
             session = self.canopy.session(cap.session_id) or {}
-            sliced = canopy_api.turn_slice(session, text)
+            sliced = canopy_api.turn_slice(session, text, index)
             turn.reply = canopy_api.reply_text(sliced)
             turn.tool_calls = canopy_api.tool_calls(sliced)
             if not turn.status:
                 turn.status = session.get("turn_status") or {}
         if not turn.reply and cap.session_id:
             turn.reply, turn.source = _panel_reply(turn.panel_text, text), "panel"
+        turn.unlock = vault.unlock(frame, page)  # live replies need none; a banner here is a finding
+        state = _canvas(page)
+        turn.canvas_after, turn.active_tab_after, turn.save_dialog = (
+            state.get("canvas"),
+            state.get("tab"),
+            state.get("dialog") or {},
+        )
         turn.screenshots = self._shots(page, frame, index)
         return turn
+
+    def _history(self, page, cap: ScenarioCapture) -> dict:
+        """Reload, reopen the panel, and read the sealed conversation back: does the panel
+        offer it again, does ace's vault key unlock it, and does the last reply read again."""
+        out = {"reopened": False, "banner": False, "unlocked": False, "reply_visible": False, "error": ""}
+        try:
+            page.reload(wait_until="load", timeout=120_000)
+            page.wait_for_timeout(6000)
+            frame = self._chat_frame(page)
+            if frame is None or not frame.locator("textarea").first.is_visible():
+                page.get_by_text("Ask an agent").first.click()
+                page.wait_for_timeout(6000)
+                frame = self._chat_frame(page)
+            if frame is None:
+                out["error"] = "no panel after reload"
+                return out
+            if not frame.locator("[data-turn-index]").count():
+                # Not restored: pick it from the panel's list of earlier conversations. A private
+                # one is listed as "Private conversation" (its title is sealed too), newest first.
+                listed = frame.get_by_role("button", name="All conversations")
+                if listed.count():
+                    listed.first.click()
+                    page.wait_for_timeout(2000)
+                title = cap.turns[0].say[:40]
+                for label in (title, "Private conversation"):
+                    hit = frame.get_by_text(label, exact=False)
+                    if hit.count():
+                        out["picked_from_list"] = label
+                        hit.first.click()
+                        page.wait_for_timeout(6000)
+                        break
+            out["reopened"] = frame.locator("[data-turn-index]").count() > 0
+            page.screenshot(path=str(self.out_dir / "history-locked.png"))
+            unlocked = vault.unlock(frame, page)
+            out.update(banner=unlocked["banner"], unlocked=unlocked["unlocked"], error=unlocked["error"])
+            page.wait_for_timeout(4000)
+            text = frame.evaluate("() => document.body.innerText")
+            needle = _needle(cap.turns[-1].reply)
+            out["reply_visible"] = bool(needle) and needle in text
+            page.screenshot(path=str(self.out_dir / "history-unlocked.png"))
+        except Exception as e:  # noqa: BLE001
+            out["error"] = vault.scrub(f"{type(e).__name__}: {e}")[:300]
+        return out
 
     def _card_frames(self, page):
         """Each Labs view's innermost frame (the app's own document), in page order."""
@@ -259,6 +322,37 @@ class PanelDriver:
         except Exception as e:  # noqa: BLE001 -- a missing screenshot is noted, never fatal
             shots["error"] = str(e)[:200]
         return shots
+
+
+def _canvas(page) -> dict:
+    """The Data page's canvas as the panel is told it, its active tab, and the Save dialog."""
+    return (
+        _safe(
+            lambda: page.evaluate("""() => {
+                    const st = window.canopyHost ? window.canopyHost.pageState() : null;
+                    const tab = document.querySelector('.ex-tab[aria-selected="true"]');
+                    const dlg = document.querySelector('#ex-save-dialog');
+                    const name = document.querySelector('#ex-save-name');
+                    const open = !!dlg && (dlg.open || (dlg.offsetParent !== null && !dlg.hidden));
+                    return {
+                        canvas: st && st.filters ? (st.filters.canvas || null) : null,
+                        tab: tab ? tab.textContent.trim() : null,
+                        dialog: {open: open, name: name ? name.value : null},
+                    };
+                }"""),
+            {},
+        )
+        or {}
+    )
+
+
+def _needle(reply: str) -> str:
+    """A stretch of the reply's first line that will appear verbatim in the panel."""
+    for line in (reply or "").splitlines():
+        words = line.replace("*", "").replace("`", "").split()
+        if len(words) >= 4:
+            return " ".join(words[:6])
+    return ""
 
 
 _CARD_JS = """() => ({
