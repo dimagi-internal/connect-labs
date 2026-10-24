@@ -71,9 +71,10 @@ def headline(payload: dict) -> dict:
     out = {
         "cases": cases,
         "visits": meta.get("visits"),
-        "workers": len(payload.get("byFLW") or []) or None,
-        "organisations": len(by_llo) or None,
-        "opportunities": meta.get("opportunities") or len(payload.get("byOpp") or []) or None,
+        # A zero is a figure the header shows ("0 organizations"), not a gap.
+        "workers": len(payload.get("byFLW") or []),
+        "organisations": len(by_llo),
+        "opportunities": meta.get("opportunities") or len(payload.get("byOpp") or []),
         "as_of": meta.get("as_of") or (str(payload.get("generated_at") or "")[:10] or None),
     }
     noun = ((payload.get("display") or {}).get("entity") or {}) if isinstance(payload.get("display"), dict) else {}
