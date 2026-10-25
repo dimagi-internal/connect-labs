@@ -395,6 +395,11 @@ spaces:
       How many approved visits does this space have in total? Show the approved visits per worker on the
       canvas, and propose saving that query as "Approved visits per worker".
     save_as: Approved visits per worker
+    artifact_ask: >-
+      Make me a small dashboard for this space: approved visits per month as a chart, with the total
+      as a headline number above it. Draw it here on the canvas, then propose saving it as
+      "Approved visits dashboard".
+    artifact_as: Approved visits dashboard
 
 # ---- containment (tools/data_chat_eval/containment.py) --------------------------------
 # labs' data_* tools called DIRECTLY as ace (PAT, no chat): correctness under the reader
