@@ -15,9 +15,11 @@ import logging
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import Http404, HttpResponseBadRequest, HttpResponseRedirect
+from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView
 
 from connect_labs.labs.access.scopes import Caller
+from connect_labs.labs.chrome import NOT_USED, page_chrome
 from connect_labs.scope_config import service
 from connect_labs.scope_config.merge import diff_patch
 from connect_labs.scope_config.namespaces import all_namespaces
@@ -195,6 +197,11 @@ def _set_home(request, scope, choice: str, version: int) -> None:
     page_manager.set_home(request, scope, owner, int(page_id), label=label, version=version)
 
 
+# Settings are for the scope named in the URL, not the labs context (labs/chrome.py).
+CONTEXT_NOT_USED = method_decorator(page_chrome(labs_context=NOT_USED), name="dispatch")
+
+
+@CONTEXT_NOT_USED
 class SettingsView(LoginRequiredMixin, TemplateView):
     template_name = "scope_config/settings.html"
 

@@ -11,9 +11,11 @@ from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Count
 from django.http import HttpResponse, JsonResponse
+from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.generic import TemplateView
 
+from connect_labs.labs.chrome import NOT_USED, page_chrome
 from connect_labs.labs.indicators import availability
 from connect_labs.labs.indicators import boundaries as boundary_set
 from connect_labs.labs.indicators import export, interventions, measures, methods
@@ -270,6 +272,11 @@ def _selection_for(request):
     )
 
 
+# Targeting reads Africa-wide indicators, never the labs context (labs/chrome.py).
+CONTEXT_NOT_USED = method_decorator(page_chrome(labs_context=NOT_USED), name="dispatch")
+
+
+@CONTEXT_NOT_USED
 class TargetingView(OpenLocallyMixin, TemplateView):
     """The map page."""
 
@@ -930,6 +937,7 @@ def pmc_fixed_assumptions() -> dict:
     }
 
 
+@CONTEXT_NOT_USED
 class PmcView(OpenLocallyMixin, TemplateView):
     """PMC schedule explorer: IDM's EMOD schedule comparison beside Nigeria's states."""
 

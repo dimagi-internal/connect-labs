@@ -195,3 +195,42 @@ def test_page_and_api(client, django_user_model, forms):
             "/labs/data/api/describe/", json.dumps({"opportunity_ids": [1]}), content_type="application/json"
         )
     assert denied.status_code == 403
+
+
+class TestTheHeaderOnTheDataPage:
+    """The labs context selector says honestly whether this page used it (labs/chrome.py)."""
+
+    def _request(self, query="", context=None):
+        from django.test import RequestFactory
+
+        request = RequestFactory().get(f"/labs/data/{query}")
+        request.labs_context = context or {}
+        return request
+
+    def test_a_space_does_not_use_the_context(self):
+        from connect_labs.labs.chrome import NOT_USED
+        from connect_labs.labsdata.views import header_chrome
+
+        chrome = header_chrome(self._request(context={"opportunity_id": 2166}), space=True)
+        assert chrome.labs_context == NOT_USED
+
+    def test_a_url_selection_does_not_use_the_context(self):
+        from connect_labs.labs.chrome import NOT_USED
+        from connect_labs.labsdata.views import header_chrome
+
+        chrome = header_chrome(self._request("?opps=911", context={"opportunity_id": 2166}), space=False)
+        assert chrome.labs_context == NOT_USED
+
+    def test_no_url_selection_starts_from_the_context(self):
+        from connect_labs.labs.chrome import NOT_USED, STARTED_FROM
+        from connect_labs.labsdata.views import header_chrome
+
+        assert header_chrome(self._request(context={"program_id": 7}), space=False).labs_context == STARTED_FROM
+        assert header_chrome(self._request(), space=False).labs_context == NOT_USED
+
+    def test_the_page_renders_the_muted_header(self, client, django_user_model):
+        client.force_login(django_user_model.objects.create_user(username="header-test", password="x"))
+        with mock.patch.object(scope, "directory", return_value={OPP.id: OPP}):
+            page = client.get(f"/labs/data/?opps={OPP.id}")
+        assert page.status_code == 200
+        assert b'data-testid="context-not-used"' in page.content
