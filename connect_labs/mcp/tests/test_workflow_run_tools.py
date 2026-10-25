@@ -755,8 +755,23 @@ def test_the_run_tools_carry_the_totals_the_pages_header_shows(user, wda):
         "as_of": "2026-10-11",
     }
     assert head["cases_noun"] == "babies" and "header" in head["note"]
+    assert "worker_accounts" not in head  # one account each: nothing to tell apart
     out = _call("workflow_run_indicators", user, run_id=70, program_id=25, scope="programme")
     assert out["headline"]["visits"] == 45598
+
+
+def test_the_headline_counts_people_and_gives_the_accounts_beside_them(user, wda):
+    # data_chat_eval count-total: the headline's "workers" was the workers table's rows, one per
+    # (opportunity, username) account -- 306 -- while the agent's card counted 62 distinct
+    # usernames. The headline counts people, as the card does; the accounts come beside it.
+    asha_again = {**PAYLOAD["byFLW"][0], "key": "11::asha", "opp": 11}
+    payload = {**PAYLOAD, "byFLW": [*PAYLOAD["byFLW"], asha_again]}
+    run = _completed_run()
+    run.data["snapshot"] = {"state": {"snapshot": payload}, "pipelines": {}, "workers": []}
+    wda.get_run.return_value = run
+    head = _call("workflow_run_context", user, run_id=70, program_id=25)["headline"]
+    assert head["workers"] == 2 and head["worker_accounts"] == 3
+    assert "DISTINCT username" in head["note"]
 
 
 def test_canopys_agent_is_told_no_card_shows_the_indicator_rows(user, wda, monkeypatch):
