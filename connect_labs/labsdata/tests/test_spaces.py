@@ -357,7 +357,12 @@ def test_a_private_space_is_not_found_for_non_managers_who_hold_every_source(peo
         _post(bob, f"/labs/data/api/spaces/{sid}/items/", {"name": "x", "sql": "SELECT 1"}),
     ):
         assert res.status_code == 404 and res.json() == missing
-    assert bob.get(f"/labs/data/space/{sid}/").status_code == 404
+    page = bob.get(f"/labs/data/space/{sid}/")
+    assert page.status_code == 404
+    # The same page as a space that does not exist, and one Bob can act on: a way back.
+    absent = bob.get("/labs/data/space/999999/")
+    assert absent.status_code == 404 and absent.context["message"] == page.context["message"]
+    assert b'href="/labs/data/"' in page.content and b"no such data space" in page.content
     assert bob.get("/labs/data/api/spaces/").json() == {"groups": []}
     assert connect == []
     with pytest.raises(MCPToolError) as hidden:

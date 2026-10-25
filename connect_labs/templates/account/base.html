@@ -19,8 +19,9 @@
   <body class="flex flex-col justify-center md:pl-16 overflow-x-hidden bg-stone-100 font-work-sans">
     <div class="container relative flex items-center justify-center h-screen mx-auto md:max-w-screen-md">
       <div class="relative w-full h-fit">
-        <div class="grid grid-cols-2 gap-2 p-2 bg-gray-100 rounded-lg shadow-sm h-fit">
-          <div class="flex flex-col gap-2">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 p-2 bg-gray-100 rounded-lg shadow-sm h-fit">
+          {# The brand column is decoration: on a phone it would squeeze the sign-in card to a sliver. #}
+          <div class="hidden md:flex flex-col gap-2">
             <div class="flex flex-col items-end justify-between flex-1 w-full p-2 rounded-lg bg-brand-cornflower-blue">
               <img src="{% static 'images/logo-full.svg' %}" alt="Compact Logo" class="w-48 pt-4 pr-6" />
               <img src="{% static 'images/onboarding-graphics.svg' %}" alt="Compact Logo" class="w-full" />
