@@ -385,11 +385,19 @@ def _canvas(page) -> dict:
     )
 
 
+#: The panel's own chrome at the top of a turn, read off the screen with the reply when
+#: canopy's API cannot return a sealed conversation's words. "Worked for 1m 16s" is the
+#: turn's duration: live it is timed from the send, on a reload it is measured from the
+#: transcript, so the two differ by seconds and can never be a needle.
+_TURN_CHROME = re.compile(r"^(worked|thought|working|thinking)\b.*\bfor\b", re.IGNORECASE)
+
+
 def _needle(reply: str) -> str:
-    """A stretch of the reply's first line that will appear verbatim in the panel."""
+    """A stretch of the reply's first line of WORDS that will appear verbatim in the panel
+    (not the turn's duration chip, which is re-measured on a reload)."""
     for line in (reply or "").splitlines():
         words = line.replace("*", "").replace("`", "").split()
-        if len(words) >= 4:
+        if len(words) >= 4 and not _TURN_CHROME.match(" ".join(words)):
             return " ".join(words[:6])
     return ""
 

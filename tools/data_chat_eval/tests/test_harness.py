@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from tools.data_chat_eval import checks, report, suite
-from tools.data_chat_eval.driver import TurnCapture, _panel_reply
+from tools.data_chat_eval.driver import TurnCapture, _needle, _panel_reply
 
 SUITE = Path(__file__).resolve().parents[1] / "scenarios" / "kmc.yaml"
 
@@ -304,3 +304,13 @@ def test_refuses_takes_a_cases_own_phrases():
     t = turn("That one belongs to another programme; here is this one's total: 46,987.")
     assert not checks.run({"refuses": True}, t, {}).passed
     assert checks.run({"refuses": {"any_of": ["belongs to another programme"]}}, t, {}).passed
+
+
+def test_needle_skips_the_turn_duration_chip():
+    # A sealed reply is read off the panel, chrome and all. The duration chip is re-measured
+    # from the transcript on a reload (1m 16s live, 1m 8s reopened), so it cannot be a needle.
+    reply = (
+        "Worked for 1m 16s\nfrom Labs\nData query\n\nThis space has 484 approved visits out of 646 visits in total."
+    )
+    assert _needle(reply) == "This space has 484 approved visits"
+    assert _needle("Thought for 12s\nThe answer is forty two today.") == "The answer is forty two today."
