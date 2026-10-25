@@ -9,6 +9,7 @@ the in-page agent and an MCP client can never disagree about what a person may r
 from __future__ import annotations
 
 import json
+import logging
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse, JsonResponse
@@ -23,6 +24,8 @@ from . import display, page_holds, scope, service, spaces
 from .engine import QueryError
 from .scope import ScopeError
 from .validator import DEFAULT_MAX_ROWS, HARD_MAX_ROWS
+
+logger = logging.getLogger(__name__)
 
 EXAMPLE_SQL = """SELECT llo, opportunity_name, COUNT(*) AS visits, COUNT(DISTINCT entity_id) AS cases
 FROM visits
@@ -136,6 +139,15 @@ def space_to_save_in(caller: Caller, request) -> str | None:
     asked = _url_selection(request)
     if asked is None:
         return None
+    try:
+        return _space_to_save_in(caller, request, asked)
+    except Exception:  # noqa: BLE001 -- a convenience: whatever stops it, the page opens as asked
+        # (on the selection, where the page's own calls say plainly what is refused).
+        logger.info("labsdata: no space to save a card's query in", exc_info=True)
+        return None
+
+
+def _space_to_save_in(caller: Caller, request, asked: dict) -> str | None:
     workflow = asked["workflow"] or {}
     generated = spaces.generate(
         caller, asked["opportunity_ids"], program_ids=asked["program_ids"] or None, workflow=workflow or None
@@ -143,8 +155,13 @@ def space_to_save_in(caller: Caller, request) -> str | None:
     programs = {int(p) for p in ([workflow["program_id"]] if workflow.get("program_id") else asked["program_ids"])}
     opps = set(generated.selection.ids)
 
+    def same_workflow(ref) -> bool:
+        # The workflow read in the same scope: its id AND its opportunity or programme.
+        keys = ("id", "opportunity_id", "program_id")
+        return all(int((ref or {}).get(k) or 0) == int(workflow.get(k) or 0) for k in keys)
+
     def rank(s) -> int | None:
-        if workflow and s["workflow"] and int(s["workflow"].get("id") or 0) == int(workflow["id"]):
+        if workflow and s["workflow"] and same_workflow(s["workflow"]):
             return 0
         if s["workflow"]:
             return None
@@ -164,7 +181,8 @@ def space_to_save_in(caller: Caller, request) -> str | None:
 
         from django.urls import reverse
 
-        keep = {k: request.GET[k] for k in ("sql", "display", "max_rows", "run", "save") if request.GET.get(k)}
+        keep = {k: request.GET[k] for k in ("display", "max_rows", "run", "save") if request.GET.get(k)}
+        keep = {"sql": sql, **keep}
         return reverse("labsdata:space", args=[opened.id]) + "?" + urlencode(keep)
     return None
 
@@ -174,7 +192,8 @@ class DataView(LoginRequiredMixin, TemplateView):
 
     def get(self, request, *args, **kwargs):
         try:
-            if self.kwargs.get("space_id") is None:
+            # Off a space's own page only (/labs/data/ itself).
+            if not self.kwargs:
                 kept_in = space_to_save_in(_caller(request), request)
                 if kept_in is not None:
                     return redirect(kept_in)

@@ -57,8 +57,39 @@ def test_exactly_its_opportunities_is_a_match_too(people):
 def test_a_space_the_person_cannot_open_is_never_chosen(people, who):
     _program_space(people)
     res = _client(people[who]).get(CARD.format(p=PROGRAM))
-    # Not redirected to it (nor told of it): the page on the selection, refused as ever.
-    assert res.status_code != 302
+    # Not redirected to it (nor told of it): the page on the selection, refused as ever by
+    # the page's own calls -- and the Save dialog still offered.
+    assert res.status_code == 200
+    assert res.context["open_intent"]["save"] is True
+
+
+def test_a_workflow_space_is_the_one_read_in_the_same_scope(people, monkeypatch):
+    from connect_labs.labsdata import spaces, views
+
+    found = [
+        {
+            "spaces": [
+                {"id": 1, "workflow": {"id": 9, "program_id": 77}, "program_ids": [], "opportunity_ids": [O1.id]}
+            ]
+        },
+        {
+            "spaces": [
+                {
+                    "id": 2,
+                    "workflow": {"id": 9, "opportunity_id": O1.id},
+                    "program_ids": [],
+                    "opportunity_ids": [O1.id],
+                }
+            ]
+        },
+    ]
+    monkeypatch.setattr(spaces, "openable", lambda caller: found)
+    monkeypatch.setattr(
+        spaces, "generate", lambda *a, **k: type("G", (), {"selection": type("S", (), {"ids": [O1.id]})()})()
+    )
+    monkeypatch.setattr(spaces, "open", lambda caller, sid: type("O", (), {"id": sid})())
+    req = type("R", (), {"GET": {"save": "1", "sql": "SELECT 1", "workflow": f"9:opp:{O1.id}"}})()
+    assert views.space_to_save_in(None, req) == "/labs/data/space/2/?sql=SELECT+1&save=1"
 
 
 def test_a_query_that_does_not_run_in_the_space_is_not_sent_there(people, monkeypatch):

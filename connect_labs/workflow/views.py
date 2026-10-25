@@ -1193,6 +1193,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         )
         if panel is not None:
             context["canopy_panel"] = panel
+        if panel is not None and (scope.get("opportunity_id") or scope.get("program_id")):
             # page_showQuery here opens the Data page on this workflow in a new tab
             # (static/labsdata/run_page_actions.js); ids only, and the Data page reads them
             # again as the person.

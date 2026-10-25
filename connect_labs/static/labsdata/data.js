@@ -2403,7 +2403,11 @@
     return (
       openable.find((s) =>
         state.workflow
-          ? s.workflow && Number(s.workflow.id) === Number(state.workflow.id)
+          ? s.workflow &&
+            ['id', 'opportunity_id', 'program_id'].every(
+              (k) =>
+                Number(s.workflow[k] || 0) === Number(state.workflow[k] || 0),
+            )
           : !s.workflow &&
             same(s.opportunity_ids, opps) &&
             same(s.program_ids, new Set(state.programs)),
@@ -2458,6 +2462,7 @@
         : '';
     showNewSpaceName();
     $('ex-save-name').value = name;
+    if ($('ex-save-space-name')) $('ex-save-space-name').value = '';
     $('ex-save-sql').textContent = sql;
     $('ex-save-error').hidden = true;
     $('ex-save-dialog').hidden = false;
@@ -2559,6 +2564,11 @@
           name: spaceName,
           ...selectionBody(),
         });
+        // The space exists now: a retry saves into it, never makes a second one.
+        openable.push({ id: made.space.id, name: spaceName });
+        renderSaveTargets();
+        $('ex-save-target').value = String(made.space.id);
+        showNewSpaceName();
         await post(spaceApi(made.space.id, 'items/'), body);
         closeSaveDialog();
         goToSpace(made.space.id);
