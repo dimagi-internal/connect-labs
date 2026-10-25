@@ -24,13 +24,14 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 
 from connect_labs.audit_trail.models import Action, Outcome
 from connect_labs.audit_trail.service import record
 from connect_labs.labs.access.scopes import Caller
 from connect_labs.labs.synthetic.provenance import all_generated
 
-from . import engine, fields, guidance, pipelines, scope
+from . import engine, fields, guidance, pipelines, scope, spaces
 from .spaces import OpenSpace
 from .validator import DEFAULT_MAX_ROWS, HARD_MAX_ROWS
 
@@ -558,3 +559,114 @@ def visits(caller: Caller, space: OpenSpace, visit_ids, *, for_agent: bool = Fal
             else []
         ),
     }
+
+
+# --- artifacts (models.SpaceArtifact): render code and the named queries it reads ---------
+# Drawn only in the workflow sandbox's frame. The Data page (the host) runs the queries
+# here, as the person opening the artifact, and hands the frame their rows as the render's
+# `pipelines` -- the frame asks for nothing else, and nothing is kept.
+
+#: The most named queries one artifact reads.
+ARTIFACT_MAX_QUERIES = 8
+#: A query's name: how render code reads its rows (``pipelines.<name>.rows``).
+_QUERY_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+#: A query is ``{name, sql, max_rows}``. It may also name sources, but only the space's own
+#: (``spaces.held_to``): an artifact reads its space and nothing else.
+_QUERY_KEYS = frozenset({"name", "sql", "max_rows"})
+_SOURCE_KEYS = ("space_id", "opportunity_ids", "program_ids", "workflow")
+
+
+class ArtifactError(Exception):
+    """An artifact that cannot be kept or drawn as given: said as itself (a shape, never data)."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code, self.message = code, message
+
+
+def artifact_code(code) -> str:
+    """The artifact's JSX, checked as a workflow's render_code is when it is written."""
+    from connect_labs.workflow.render_code_lint import render_code_problem
+
+    problem = render_code_problem(code)
+    if problem:
+        raise ArtifactError("bad_code", problem.replace("render_code", "The artifact's code"))
+    return code
+
+
+def _artifact_query(space: OpenSpace, q) -> dict:
+    """One named query's shape, and that it names no source but the space's own."""
+    if not isinstance(q, dict):
+        raise ArtifactError("bad_queries", "Each query is an object: {name, sql, max_rows}.")
+    unknown = set(q) - _QUERY_KEYS - set(_SOURCE_KEYS)
+    if unknown:
+        raise ArtifactError("bad_queries", f"A query is {{name, sql, max_rows}}; it cannot carry {sorted(unknown)}.")
+    # The same refusal a call naming a saved space and another selection gets.
+    spaces.held_to(space, **{k: q.get(k) for k in _SOURCE_KEYS})
+    name, sql = q.get("name"), q.get("sql")
+    if not isinstance(name, str) or not _QUERY_NAME.match(name):
+        raise ArtifactError(
+            "bad_queries",
+            "A query's name is how the code reads it (pipelines.<name>): letters, digits and _, "
+            "not starting with a digit, at most 64.",
+        )
+    if not isinstance(sql, str) or not sql.strip() or len(sql) > 20000:
+        raise ArtifactError("bad_queries", f"Query {name} needs one SELECT (at most 20,000 characters).")
+    try:
+        max_rows = max(1, min(int(q.get("max_rows") or DEFAULT_MAX_ROWS), HARD_MAX_ROWS))
+    except (TypeError, ValueError):
+        max_rows = DEFAULT_MAX_ROWS
+    return {"name": name, "sql": sql, "max_rows": max_rows}
+
+
+def _artifact_shape(space: OpenSpace, queries) -> list[dict]:
+    _held(space)
+    if not isinstance(queries, list) or not queries:
+        raise ArtifactError("bad_queries", "An artifact reads at least one named query: [{name, sql, max_rows}].")
+    if len(queries) > ARTIFACT_MAX_QUERIES:
+        raise ArtifactError("bad_queries", f"An artifact reads at most {ARTIFACT_MAX_QUERIES} named queries.")
+    out = [_artifact_query(space, q) for q in queries]
+    names = [q["name"] for q in out]
+    if len(set(names)) != len(names):
+        raise ArtifactError("bad_queries", "Each query needs its own name.")
+    return out
+
+
+def artifact_queries(space: OpenSpace, queries) -> list[dict]:
+    """An artifact's named queries, each checked against the space exactly as a run over it
+    would be -- any source it names must be the space's own (``outside_space``), and its SQL
+    is validated over the space's relations (``validate_selected``: the validator, then
+    Postgres resolving every column, over zero rows) -- as they are kept:
+    ``[{name, sql, max_rows}]``. ``engine.QueryError`` names the query that failed."""
+    checked = _artifact_shape(space, queries)
+    for q in checked:
+        try:
+            validate_selected(q["sql"], space)
+        except engine.QueryError as e:
+            raise engine.QueryError(e.code, f"Query {q['name']}: {e.message}") from e
+    return checked
+
+
+def run_artifact(caller: Caller, space: OpenSpace, queries) -> dict:
+    """Run an artifact's named queries over the space, as the caller (the person opening it),
+    for the host to hand the frame: ``{name: {columns, column_types, rows, row_count,
+    truncated, row_cap}}``. Each is checked again first, as at its save (a source outside the
+    space refuses the whole artifact), then run through ``query`` -- scoped to the space,
+    validated, audited. A query whose SQL fails carries ``error`` and the others still run.
+    Nothing is kept."""
+    out = {}
+    for q in _artifact_shape(space, queries):
+        try:
+            result = query(caller, space, q["sql"], q["max_rows"])
+        except engine.QueryError as e:
+            out[q["name"]] = {
+                "columns": [],
+                "rows": [],
+                "row_count": 0,
+                "error": {"code": e.code, "message": e.message},
+            }
+            continue
+        out[q["name"]] = {
+            k: result.get(k) for k in ("columns", "column_types", "rows", "row_count", "truncated", "row_cap")
+        }
+    return out

@@ -20,6 +20,13 @@ arguments. So this reads the code itself (the shape of supply_chain's
    ``scope.resolve`` / ``scope.expand`` or makes an ``OpenSpace``, and ``service``'s reads
    refuse anything that is not one.
 
+6. **Artifacts** (``models.SpaceArtifact``) are read only through the gate: named only by
+   ``spaces.py``, ``models.py`` and the view that creates one (inside a function that opens
+   the space); every view and tool that reads one opens the space first; every artifact
+   route goes through the gate; each of an artifact's queries is held to the space
+   (``spaces.held_to``) and runs or is validated only through ``service``; and no tool or
+   page action saves one or returns its rows.
+
 5. **Who can open a space, and who changes it** (the ACL). ``open`` and ``openable`` ask
    the audience only after the data rule. Every management write in ``spaces.py`` (sources,
    audience, managers, archive, deleting an item) checks the role itself; every route that
@@ -59,6 +66,7 @@ MANAGEMENT = {
     "remove_manager": "require_manager",
     "archive": "require_manager",
     "delete_item": "may_delete",
+    "delete_artifact": "may_delete_artifact",
     "delete_conversation": "may_delete_conversation",
     "admin_add_manager": "is_dimagi_staff",
 }
@@ -346,4 +354,131 @@ def test_no_agent_surface_can_change_sources_audience_or_managers():
         "archiveSpace",
         "manage",
     ):
+        assert forbidden not in actions, f"a page action reaches {forbidden}"
+
+
+# --- artifacts ------------------------------------------------------------------------
+
+
+def _module_gates(tree) -> set[str]:
+    """The module's own functions that open a space through the gate (``_space`` and the like)."""
+    return {f.name for f in _functions(tree) if _calls_open(f)}
+
+
+def _names_artifact_model(node) -> bool:
+    return any(
+        (isinstance(n, ast.Name) and n.id == "SpaceArtifact")
+        or (isinstance(n, ast.Attribute) and n.attr == "SpaceArtifact")
+        for n in ast.walk(node)
+    )
+
+
+def test_artifacts_are_named_only_by_the_gate_module_and_the_view_that_creates_one():
+    allowed = {SPACES, LABSDATA / "models.py", LABSDATA / "views.py"}
+    offenders = []
+    for path in LABS.rglob("*.py"):
+        parts = set(path.relative_to(LABS).parts)
+        if "tests" in parts or "migrations" in parts or path in allowed:
+            continue
+        tree = _tree(path)
+        if _names_artifact_model(tree) or any(
+            isinstance(n, ast.ImportFrom) and any(a.name == "SpaceArtifact" for a in n.names) for n in ast.walk(tree)
+        ):
+            offenders.append(str(path.relative_to(LABS)))
+    assert not offenders, "Read an artifact only through labsdata.spaces: " + ", ".join(offenders)
+    # In the views, only to create one, in a function that opened the space first.
+    tree = _tree(LABSDATA / "views.py")
+    for fn in _functions(tree):
+        if not _names_artifact_model(fn):
+            continue
+        assert _calls_open(fn), f"views.py:{fn.lineno} {fn.name} names SpaceArtifact without spaces.open"
+        uses = [
+            n
+            for n in ast.walk(fn)
+            if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id == "SpaceArtifact"
+        ]
+        assert all(u.attr == "objects" for u in uses)
+        reads = [
+            n.func.attr
+            for n in ast.walk(fn)
+            if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and isinstance(n.func.value, ast.Attribute)
+            and n.func.value.attr == "objects"
+            and isinstance(n.func.value.value, ast.Name)
+            and n.func.value.value.id == "SpaceArtifact"
+        ]
+        assert reads == ["create"], f"views.py:{fn.lineno} reads SpaceArtifact directly: {reads}"
+
+
+def test_every_door_that_reads_an_artifact_opens_the_space_first():
+    """A reader opens the space itself, or is a helper handed an already-open space by
+    callers that each opened it (``_space_items(opened)``)."""
+    readers = {"artifacts", "artifact_item", "may_delete_artifact", "delete_artifact"}
+    found = 0
+    for path in DOORS:
+        tree = _tree(path)
+        gates = _module_gates(tree)
+        functions = _functions(tree)
+        for fn in functions:
+            if not (_spaces_calls(fn) & readers):
+                continue
+            found += 1
+            if _called_names(fn) & (gates | GATES):
+                continue
+            callers = [f for f in functions if f is not fn and fn.name in _called_names(f)]
+            assert callers and all(
+                _called_names(c) & (gates | GATES) for c in callers
+            ), f"{path.name}:{fn.lineno} {fn.name} reads an artifact without the space opened first"
+    assert found >= 5, "fewer artifact readers than expected; did the check stop finding them?"
+
+
+def test_every_artifact_route_goes_through_the_gate():
+    from connect_labs.labsdata import urls
+
+    tree = _tree(LABSDATA / "views.py")
+    gates = _module_gates(tree)
+    classes = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
+    routes = [p for p in urls.urlpatterns if "artifact" in str(p.pattern)]
+    assert len(routes) == 4
+    for p in routes:
+        view = classes[p.callback.view_class.__name__]
+        assert _called_names(view) & (gates | GATES), f"{p.pattern} does not open a space through the gate"
+
+
+def test_an_artifacts_queries_are_held_to_the_space_and_run_only_through_service():
+    tree = _tree(LABSDATA / "service.py")
+    one = _fn(tree, "_artifact_query")
+    assert "held_to" in _spaces_calls(one), "each artifact query must be held to the space (spaces.held_to)"
+    shape = _fn(tree, "_artifact_shape")
+    assert {"_held", "_artifact_query"} <= _called_names(shape)
+    assert {"_artifact_shape", "validate_selected"} <= _called_names(_fn(tree, "artifact_queries"))
+    run = _fn(tree, "run_artifact")
+    assert {"_artifact_shape", "query"} <= _called_names(run), "run_artifact checks again, then runs through query"
+    for fn in (shape, one, run, _fn(tree, "artifact_queries")):
+        assert not any(
+            isinstance(n, ast.Attribute)
+            and isinstance(n.value, ast.Name)
+            and n.value.id == "engine"
+            and n.attr != "QueryError"
+            for n in ast.walk(fn)
+        ), f"service.{fn.name} reaches the engine itself"
+    # Saving one checks it the same way, and opening one runs it the same way.
+    views = {n.name: n for n in ast.walk(_tree(LABSDATA / "views.py")) if isinstance(n, ast.ClassDef)}
+    assert "artifact_queries" in _called_names(views["SpaceArtifactsView"])
+    for name in ("SpaceArtifactRunView", "ArtifactDraftRunView"):
+        assert "run_artifact" in _called_names(views[name])
+
+
+def test_no_agent_surface_saves_an_artifact_or_reads_its_rows():
+    """The agent drafts (the page draws it) and proposes (the person saves); it reads an
+    artifact's code and SQL, never its rows."""
+    tools = _tree(TOOLS)
+    tool = _fn(tools, "data_artifact")
+    assert not _called_names(tool) & {"query", "run_artifact", "visits", "validate_selected"}
+    assert "artifacts/" not in TOOLS.read_text()
+    js = DATA_JS.read_text()
+    actions = js[js.index("const ACTIONS = {") : js.index("window.LABSDATA_ACTIONS")]
+    assert {"showArtifactDraft", "proposeSave", "openItem"} <= set(re.findall(r"^    (\w+): \[", actions, flags=re.M))
+    for forbidden in ("post(", "'artifacts/'", "confirmSave", "fetch("):
         assert forbidden not in actions, f"a page action reaches {forbidden}"

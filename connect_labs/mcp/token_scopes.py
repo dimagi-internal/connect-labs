@@ -102,6 +102,8 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "data_validate",
         # Workflow and pipeline definitions and the pipelines' SQL: no visit rows.
         "data_workflow_context",
+        # A data space artifact's code and its queries' SQL (through spaces.open): no rows.
+        "data_artifact",
         # Workflow definitions: config, statuses, render code, pipeline wiring.
         "workflow_list",
         "workflow_get",

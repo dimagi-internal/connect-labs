@@ -70,6 +70,11 @@ function mount({
   cachedAfterLoad = 3,
   // Hold a load from Connect until the test releases it (mount returns releaseLoad).
   holdLoad = false,
+  // The space's artifacts (GET artifacts/), and whether a draft's data is all synthetic.
+  artifacts = [],
+  draftGenerated = true,
+  // The workflow sandbox host (static/js/space-artifact.tsx), or none (switched off).
+  sandbox = { src: '/labs/sandbox/render/', origin: 'https://labs.example' },
 } = {}) {
   const window = new Window({ url: 'https://labs.example/labs/data/' });
   const document = window.document;
@@ -95,7 +100,7 @@ function mount({
     <div id="ex-sources-card"></div><button id="ex-sources-save" hidden>Save</button>
     <button id="ex-sources-cancel" hidden>Cancel</button>
     <div id="ex-cache"></div><div id="ex-tables"></div><span id="ex-tables-hint"></span>
-    <div id="ex-space-items"></div><div id="ex-saved-card"${space ? ' hidden' : ''}><div id="ex-saved"></div></div>
+    <div id="ex-space-items"></div><div id="ex-artifacts"></div><div id="ex-saved-card"${space ? ' hidden' : ''}><div id="ex-saved"></div></div>
     <div id="ex-conversations-card"><div id="ex-conversations"></div>
       <input id="ex-conversation-label"><button id="ex-conversation-save" disabled>Save this conversation</button>
       <p id="ex-conversation-hint"></p><div id="ex-conversation-error" hidden></div></div>
@@ -113,7 +118,7 @@ function mount({
       <button id="ex-csv" class="ex-btn ghost" disabled>Download CSV</button>
       <div id="ex-result"></div>
     </div></div>
-    <div id="ex-save-dialog" hidden><input id="ex-save-name"><select id="ex-save-target"></select>
+    <div id="ex-save-dialog" hidden><h2 id="ex-save-title">Save query</h2><p id="ex-save-hint">The query is saved.</p><input id="ex-save-name"><select id="ex-save-target"></select>
       <pre id="ex-save-sql"></pre><div id="ex-save-error" hidden></div>
       <button id="ex-save-cancel">Cancel</button><button id="ex-save-confirm">Save</button></div>
     <script type="application/json" id="ex-open-intent">${JSON.stringify(intent)}</script>`;
@@ -129,6 +134,8 @@ function mount({
     spacesUrl: '/sp/',
     spacePageUrl: '/labs/data/space/0/',
     spaceApiUrl: '/sp/0/',
+    artifactDraftUrl: '/draft',
+    sandbox,
     csrf: 't',
     ...(panel
       ? {
@@ -146,6 +153,7 @@ function mount({
       if (url === '/sp/42/items/') return ok({ space_id: 42, items });
       if (url === '/sp/42/conversations/')
         return ok({ space_id: 42, conversations });
+      if (url === '/sp/42/artifacts/') return ok({ space_id: 42, artifacts });
       return ok({ saved: saved || [] });
     }
     posts.push({ url, body: JSON.parse(init.body) });
@@ -155,8 +163,24 @@ function mount({
       return ok({
         conversation: { id: 9, session_id: JSON.parse(init.body).session_id },
       });
-    if (url === '/s/' || url.endsWith('/items/'))
+    if (url === '/s/' || url.endsWith('/items/') || url.endsWith('/artifacts/'))
       return ok({ saved: { id: 1, version: 2 } });
+    if (url === '/draft')
+      return ok({
+        results: { by_month: { columns: ['n'], rows: [[3]] } },
+        all_generated: draftGenerated,
+      });
+    if (/\/artifacts\/\d+\/run\/$/.test(url))
+      return ok({
+        artifact: {
+          id: 6,
+          name: 'Saved art',
+          version: 1,
+          code: 'function A() { return <b>saved</b>; }',
+          queries: [{ name: 'by_month', sql: 'SELECT 6', max_rows: 50 }],
+        },
+        results: { by_month: { columns: ['n'], rows: [[6]] } },
+      });
     if (url === '/q' && queryFails)
       return {
         ok: false,
@@ -193,6 +217,14 @@ function mount({
   window.HTMLAnchorElement.prototype.click = function () {
     clicks.push(this.getAttribute('download'));
   };
+  // The sandbox host the space-artifact bundle publishes: what it was asked to draw.
+  const drawn = [];
+  window.LabsArtifact = {
+    mount: (container, input) => {
+      drawn.push({ container, input });
+      return { update() {}, destroy() {} };
+    },
+  };
   window.eval(CHART);
   window.eval(SCRIPT);
   return {
@@ -201,6 +233,7 @@ function mount({
     posts,
     gets,
     clicks,
+    drawn,
     releaseLoad: () => releaseLoad && releaseLoad(),
   };
 }
@@ -635,7 +668,7 @@ describe('page actions (the agent switching the canvas)', () => {
       a.showQuery({ sql: 'SELECT 1', display: 'x' }),
     ).rejects.toThrow(/display/);
     await expect(a.openItem({ kind: 'artifact', id: 1 })).rejects.toThrow(
-      /Artifacts/,
+      /No such artifact/,
     );
     await expect(a.openItem({ kind: 'query', id: 999 })).rejects.toThrow(
       /No such/,
@@ -712,6 +745,7 @@ describe('page actions (the agent switching the canvas)', () => {
         'data_set_query',
         'openItem',
         'proposeSave',
+        'showArtifactDraft',
         'showQuery',
         'showVisit',
       ].sort(),
@@ -1004,5 +1038,200 @@ describe("a space's rail", () => {
       'Not saved — save this selection as a space',
     );
     expect(document.getElementById('ex-saved-card').hidden).toBe(false);
+  });
+});
+
+describe('artifacts', () => {
+  const CODE =
+    'function A({ pipelines }) { return <b>{pipelines.by_month.rows.length}</b>; }';
+  const QUERIES = [{ name: 'by_month', sql: 'SELECT 3' }];
+  const ARTIFACTS = [
+    {
+      id: 6,
+      name: 'Saved art',
+      version: 2,
+      queries: [{ name: 'by_month', sql: 'SELECT 6', max_rows: 50 }],
+      saved_by: 'ana',
+      can_delete: true,
+      versions: [
+        { id: 6, version: 2, queries: ['by_month'] },
+        { id: 5, version: 1, queries: ['by_month'] },
+      ],
+    },
+  ];
+
+  it('showArtifactDraft runs its queries over the space and hands the frame code and rows', async () => {
+    const { window, document, posts, drawn } = mount({ space: SPACE });
+    await settle();
+    const ack = await window.LABSDATA_ACTIONS.showArtifactDraft({
+      name: 'Visits per month',
+      code: CODE,
+      queries: QUERIES,
+    });
+    expect(ack).toMatchObject({
+      ok: true,
+      shown: true,
+      saved: false,
+      outcome: 'shown_to_person',
+    });
+    // An acknowledgement only: no rows, no numbers.
+    expect(JSON.stringify(ack)).not.toContain('rows');
+    expect(posts.filter((p) => p.url === '/draft').pop().body).toEqual({
+      space_id: 42,
+      queries: QUERIES,
+    });
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0].input.artifact).toMatchObject({ code: CODE, draft: true });
+    expect(drawn[0].input.results.by_month.rows).toEqual([[3]]);
+    expect(drawn[0].input.labsOrigin).toBe('https://labs.example');
+    // The code never went to labs, and nothing was saved.
+    expect(
+      posts.some((p) => JSON.stringify(p.body).includes('pipelines')),
+    ).toBe(false);
+    expect(posts.filter((p) => p.url.endsWith('/artifacts/'))).toHaveLength(0);
+    expect(
+      document.querySelector('[data-tab].ex-tab[aria-selected="true"]')
+        .textContent,
+    ).toContain('Visits per month');
+  });
+
+  it('over data that is not synthetic, the person draws the agent’s draft', async () => {
+    const { window, document, drawn } = mount({
+      space: SPACE,
+      draftGenerated: false,
+    });
+    await settle();
+    const ack = await window.LABSDATA_ACTIONS.showArtifactDraft({
+      name: 'Visits per month',
+      code: CODE,
+      queries: QUERIES,
+    });
+    expect(ack).toMatchObject({
+      ok: true,
+      shown: false,
+      outcome: 'waiting_for_person',
+    });
+    expect(drawn).toHaveLength(0);
+    document.querySelector('[data-testid="artifact-draw"]').click();
+    await settle();
+    expect(drawn).toHaveLength(1);
+  });
+
+  it('refuses a draft that is not an artifact, or names sources of its own', async () => {
+    const { window, posts } = mount({ space: SPACE });
+    await settle();
+    const a = window.LABSDATA_ACTIONS;
+    const ok = { name: 'A', code: CODE, queries: QUERIES };
+    await expect(a.showArtifactDraft({ ...ok, code: ' ' })).rejects.toThrow(
+      /code/,
+    );
+    await expect(a.showArtifactDraft({ ...ok, queries: [] })).rejects.toThrow(
+      /queries/,
+    );
+    await expect(
+      a.showArtifactDraft({
+        ...ok,
+        queries: [{ name: '1x', sql: 'SELECT 1' }],
+      }),
+    ).rejects.toThrow(/name/);
+    await expect(
+      a.showArtifactDraft({
+        ...ok,
+        queries: [{ ...QUERIES[0], opportunity_ids: [8] }],
+      }),
+    ).rejects.toThrow(/opportunity_ids/);
+    await expect(
+      a.showArtifactDraft({ ...ok, queries: [QUERIES[0], QUERIES[0]] }),
+    ).rejects.toThrow(/two queries/);
+    expect(posts.filter((p) => p.url === '/draft')).toHaveLength(0);
+  });
+
+  it('is never drawn when the sandbox is off', async () => {
+    const { window, drawn } = mount({ space: SPACE, sandbox: null });
+    await settle();
+    await expect(
+      window.LABSDATA_ACTIONS.showArtifactDraft({
+        name: 'A',
+        code: CODE,
+        queries: QUERIES,
+      }),
+    ).rejects.toThrow(/sandbox/);
+    expect(drawn).toHaveLength(0);
+  });
+
+  it('proposeSave with kind artifact fills the dialog; only the person’s click saves it', async () => {
+    const { window, document, posts } = mount({ space: SPACE });
+    await settle();
+    const ack = await window.LABSDATA_ACTIONS.proposeSave({
+      kind: 'artifact',
+      name: 'Visits per month',
+      code: CODE,
+      queries: QUERIES,
+    });
+    expect(ack).toMatchObject({
+      ok: true,
+      proposed: true,
+      saved: false,
+      target: 'space 42',
+    });
+    expect(document.getElementById('ex-save-dialog').hidden).toBe(false);
+    expect(document.getElementById('ex-save-target').disabled).toBe(true);
+    expect(document.getElementById('ex-save-sql').textContent).toContain(
+      'SELECT 3',
+    );
+    expect(posts.filter((p) => p.url.endsWith('/artifacts/'))).toHaveLength(0);
+    document.getElementById('ex-save-confirm').click();
+    await settle();
+    expect(
+      posts.filter((p) => p.url === '/sp/42/artifacts/').pop().body,
+    ).toEqual({
+      name: 'Visits per month',
+      code: CODE,
+      queries: QUERIES,
+    });
+    expect(document.getElementById('ex-save-dialog').hidden).toBe(true);
+    // A query's save afterwards is a query's dialog again.
+    await window.LABSDATA_ACTIONS.proposeSave({ name: 'Q', sql: 'SELECT 1' });
+    expect(document.getElementById('ex-save-target').disabled).toBe(false);
+  });
+
+  it('an artifact is kept only in a space', async () => {
+    const { window } = mount();
+    await settle();
+    await expect(
+      window.LABSDATA_ACTIONS.proposeSave({
+        kind: 'artifact',
+        name: 'A',
+        code: CODE,
+        queries: QUERIES,
+      }),
+    ).rejects.toThrow(/data space/);
+  });
+
+  it('the rail lists the space’s artifacts; openItem and a click draw one, run as the person', async () => {
+    const { window, document, posts, drawn } = mount({
+      space: SPACE,
+      artifacts: ARTIFACTS,
+    });
+    await settle();
+    const rows = document.querySelectorAll('#ex-artifacts .ex-saved-row');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toContain('Saved art');
+    const ack = await window.LABSDATA_ACTIONS.openItem({
+      kind: 'artifact',
+      id: 5,
+    });
+    expect(ack).toMatchObject({
+      ok: true,
+      opened: true,
+      outcome: 'shown_to_person',
+    });
+    expect(posts.pop().url).toBe('/sp/42/artifacts/5/run/');
+    expect(drawn[0].input.artifact.code).toContain('saved');
+    expect(drawn[0].input.results.by_month.rows).toEqual([[6]]);
+    document.querySelector('#ex-artifacts button.open').click();
+    await settle();
+    expect(posts.pop().url).toBe('/sp/42/artifacts/6/run/');
+    expect(drawn).toHaveLength(2);
   });
 });

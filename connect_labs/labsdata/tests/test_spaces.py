@@ -208,8 +208,15 @@ def test_nothing_in_a_space_is_rows(people):
         "queries",
         # Pointers to canopy conversations: never a transcript (test_no_transcript_is_ever_stored).
         "conversations",
+        # Render code and the named queries it reads: never rows (test_artifacts).
+        "artifacts",
     }
     assert not {"rows", "columns", "result", "row_count"} & {f.name for f in SavedQuery._meta.get_fields()}
+    from connect_labs.labsdata.models import SpaceArtifact
+
+    assert not {"rows", "columns", "result", "results", "row_count"} & {
+        f.name for f in SpaceArtifact._meta.get_fields()
+    }
     stored = SavedQuery.objects.get(space_id=sid)
     assert (stored.sql, stored.display, stored.opportunity_ids) == ("SELECT 1 AS n FROM visits", {}, [O1.id, O2.id])
     # Running a query over the space stored nothing new.

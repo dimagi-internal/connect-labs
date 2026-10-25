@@ -33,6 +33,18 @@ urlpatterns = [
         views.SpaceItemDeleteView.as_view(),
         name="space_item_delete",
     ),
+    # Artifacts: render code and its named queries, drawn only in the workflow sandbox.
+    path("api/spaces/<int:space_id>/artifacts/", views.SpaceArtifactsView.as_view(), name="space_artifacts"),
+    path(
+        "api/spaces/<int:space_id>/artifacts/<int:pk>/run/",
+        views.SpaceArtifactRunView.as_view(),
+        name="space_artifact_run",
+    ),
+    path(
+        "api/spaces/<int:space_id>/artifacts/<int:pk>/delete/",
+        views.SpaceArtifactDeleteView.as_view(),
+        name="space_artifact_delete",
+    ),
     # Saved conversations: pointers to canopy chat sessions (never a transcript).
     path(
         "api/spaces/<int:space_id>/conversations/", views.SpaceConversationsView.as_view(), name="space_conversations"
@@ -46,6 +58,8 @@ urlpatterns = [
     # The plain page's selection, as the person changes it: what its agent may read.
     path("api/page-holds/", views.PageHoldsView.as_view(), name="page_holds"),
     path("api/query/", views.QueryView.as_view(), name="query"),
+    # A draft artifact's named queries, run as the person for the page's sandboxed frame.
+    path("api/artifact-draft/run/", views.ArtifactDraftRunView.as_view(), name="artifact_draft_run"),
     path("api/visits/", views.VisitsView.as_view(), name="visits"),
     path("api/workflows/", views.WorkflowsView.as_view(), name="workflows"),
     path("api/drill/", views.DrillView.as_view(), name="drill"),

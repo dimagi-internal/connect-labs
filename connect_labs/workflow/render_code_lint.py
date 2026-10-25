@@ -201,6 +201,25 @@ def find_unresolved_classes(source: str, bundle_dir: Path | None = None) -> list
     return sorted(token for token in extract_class_candidates(source) if token not in known)
 
 
+#: The most render code labs keeps for one workflow, page or data-space artifact.
+MAX_RENDER_CODE_BYTES = 512 * 1024  # 512 KB
+
+
+def render_code_problem(source) -> str | None:
+    """Why ``source`` cannot be kept as render code, or None. The write-time check every
+    render shares (a workflow's, a page's, a data space artifact's): only the obvious
+    non-submissions, empty or oversized. The browser's Babel is the syntax check, in the
+    frame that draws it, with a clearer error than anything here could give."""
+    if not isinstance(source, str) or not source.strip():
+        return "render_code is empty"
+    if len(source.encode("utf-8")) > MAX_RENDER_CODE_BYTES:
+        return (
+            f"render_code exceeds {MAX_RENDER_CODE_BYTES // 1024} KB. Split it into helper "
+            "workflows or move data to pipelines."
+        )
+    return None
+
+
 def render_code_warning(source: str, bundle_dir: Path | None = None) -> dict | None:
     """A write-response warning payload, or None when there is nothing to say."""
     unresolved = find_unresolved_classes(source, bundle_dir=bundle_dir)

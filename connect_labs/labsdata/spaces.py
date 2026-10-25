@@ -62,7 +62,7 @@ from connect_labs.labs.access import scopes
 from connect_labs.labs.access.scopes import Caller
 
 from . import scope
-from .models import DataSpace, SavedQuery, SpaceConversation
+from .models import DataSpace, SavedQuery, SpaceArtifact, SpaceConversation
 
 #: The ScopeError codes that mean "not yours" (or not a well-formed space): all not_found.
 _NOT_YOURS = {"not_held", "no_opportunities", "bad_opportunity_ids", "bad_program_ids", "bad_scope"}
@@ -138,6 +138,8 @@ class OutsideSpace(Exception):
 
     @property
     def message(self) -> str:
+        if self.space_id is None:
+            return "This reads the page's selection and nothing else: it cannot name other sources."
         return (
             f"This call is held to data space {self.space_id}: it reads only the space's sources. "
             "Pass space_id alone (or the space's own sources)."
@@ -487,10 +489,21 @@ def from_request(caller: Caller, *, space_id=None, opportunity_ids=None, program
     cannot widen or swap what it reads. Without one: a space generated from the selection."""
     if space_id not in (None, ""):
         opened = open(caller, space_id)
-        if _names_other_sources(opened.space, opportunity_ids, program_ids, workflow):
-            raise OutsideSpace(opened.id)
+        held_to(opened, opportunity_ids=opportunity_ids, program_ids=program_ids, workflow=workflow)
         return opened
     return generate(caller, opportunity_ids, program_ids=program_ids, workflow=workflow)
+
+
+def held_to(opened: OpenSpace, *, space_id=None, opportunity_ids=None, program_ids=None, workflow=None) -> None:
+    """Refuse (``OutsideSpace``) a selection that is not the open space's own sources.
+
+    What ``from_request`` asks of a call naming a saved space, asked of anything else that
+    reads over an already-opened space and carries ids of its own: each of an artifact's
+    named queries, at save and at every run (``service.artifact_queries``). A space brings
+    its own sources; nothing read over it can widen or swap them."""
+    other_space = space_id not in (None, "") and _ints([space_id]) != _ints([opened.id] if opened.saved else [])
+    if other_space or _names_other_sources(opened.space, opportunity_ids, program_ids, workflow):
+        raise OutsideSpace(opened.id)
 
 
 def _new_in_programs(caller: Caller, space: DataSpace, held: scopes.Holdings) -> list[dict]:
@@ -744,6 +757,45 @@ def delete_item(opened: OpenSpace, item: SavedQuery) -> int:
     if not may_delete(opened, item):
         raise NotManager()
     deleted, _ = queries(opened).filter(name=item.name).delete()
+    return deleted
+
+
+# --- artifacts: small labs pages kept in a space (models.SpaceArtifact) ---------------------
+# Render code and the named queries it reads, never rows. Each function takes an
+# already-opened space (both rules passed), so an artifact is listed, opened, saved and
+# deleted only by someone who may open the space now. Running its queries is service's
+# (``service.artifact_queries`` / ``run_artifact``): this module runs nothing.
+
+
+def artifacts(opened: OpenSpace):
+    """The saved space's artifacts (every version)."""
+    return SpaceArtifact.objects.select_related("saved_by").filter(space=opened.space)
+
+
+def artifact_item(opened: OpenSpace, pk) -> SpaceArtifact | None:
+    try:
+        return artifacts(opened).filter(pk=int(pk)).first()
+    except (TypeError, ValueError):
+        return None
+
+
+def may_delete_artifact(opened: OpenSpace, item: SpaceArtifact) -> bool:
+    """As ``may_delete`` for a saved query: a manager any; a member only one every version
+    of which they saved."""
+    if opened.is_manager:
+        return True
+    if opened.viewer_id is None:
+        return False
+    savers = set(artifacts(opened).filter(name=item.name).values_list("saved_by_id", flat=True))
+    return savers == {opened.viewer_id}
+
+
+def delete_artifact(opened: OpenSpace, item: SpaceArtifact) -> int:
+    """Delete an artifact of the space, every version of its name: a manager, or a member who
+    saved every version of it (``NotManager`` otherwise)."""
+    if not may_delete_artifact(opened, item):
+        raise NotManager()
+    deleted, _ = artifacts(opened).filter(name=item.name).delete()
     return deleted
 
 

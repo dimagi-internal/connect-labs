@@ -116,6 +116,7 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
             "data_query",
             "data_visits",
             "data_workflow_context",
+            "data_artifact",
             "workflow_get",
             "pipeline_get",
             "pipeline_sql",
