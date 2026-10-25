@@ -1810,8 +1810,13 @@
               class: 'ex-btn ghost ml-2',
               'data-testid': 'artifact-draw',
               onclick: (e) => {
-                e.currentTarget.disabled = true;
-                draw().then((drawn) => out.onDrawn && drawn && out.onDrawn());
+                const button = e.currentTarget;
+                button.disabled = true;
+                draw().then((drawn) => {
+                  if (drawn && out.onDrawn) out.onDrawn();
+                  // Not drawn (the sandbox did not load): the person may try again.
+                  if (!drawn) button.disabled = false;
+                });
               },
             },
             'Draw it',

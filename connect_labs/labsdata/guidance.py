@@ -143,7 +143,8 @@ and come back to; for one number or one chart, page_showQuery is enough. How:
    is named with its error code -- fix it with data_validate and draft again. Over data that is not synthetic the
    person draws your draft with a click (`waiting_for_person`): say so, and do not draft it again.
 4. If it is what they wanted, offer to keep it: page_proposeSave {kind: "artifact", name, code, queries} -- exactly
-   the code and queries of a draft the person has seen drawn (anything else is refused). Only on a data space's
+   the code and queries of a draft the person has seen drawn (anything else is refused; after a reload of the
+   page, draw it again first). Only on a data space's
    page (artifacts live in a space); on the plain Data page suggest they save the selection as a
    space first. To change a saved artifact, read it with data_artifact, draft the new version, propose it under the
    same name (a new version).
