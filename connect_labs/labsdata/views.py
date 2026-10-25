@@ -12,7 +12,7 @@ import json
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.views import View
 from django.views.generic import TemplateView
 
@@ -121,11 +121,63 @@ def _is_labs_admin(user) -> bool:
     return bool(user and user.is_authenticated and is_dimagi_staff(user))
 
 
+def space_to_save_in(caller: Caller, request) -> str | None:
+    """A results card's "Save to a space" (``?save=1`` with its selection and SQL): the Data
+    page of the saved space that holds it, if the person may open one -- else None, and the
+    page offers to make one from the selection.
+
+    The space of the selection's workflow, else of its programme, else of exactly its
+    opportunities, in that order; each opened as the person (``spaces.open``) and taken only
+    when the query validates over it (a query over a workflow's pipelines runs only in a
+    space with that workflow). Nothing is saved here: the space's page opens with the Save
+    dialog filled, and the person clicks Save."""
+    if request.GET.get("save") != "1" or not request.GET.get("sql"):
+        return None
+    asked = _url_selection(request)
+    if asked is None:
+        return None
+    workflow = asked["workflow"] or {}
+    generated = spaces.generate(
+        caller, asked["opportunity_ids"], program_ids=asked["program_ids"] or None, workflow=workflow or None
+    )
+    programs = {int(p) for p in ([workflow["program_id"]] if workflow.get("program_id") else asked["program_ids"])}
+    opps = set(generated.selection.ids)
+
+    def rank(s) -> int | None:
+        if workflow and s["workflow"] and int(s["workflow"].get("id") or 0) == int(workflow["id"]):
+            return 0
+        if s["workflow"]:
+            return None
+        if programs and {int(p) for p in s["program_ids"]} == programs:
+            return 1
+        return 2 if {int(o) for o in s["opportunity_ids"]} == opps else None
+
+    found = [(rank(s), s["id"]) for g in spaces.openable(caller) for s in g["spaces"]]
+    sql = request.GET["sql"][:20000]
+    for _, sid in sorted(f for f in found if f[0] is not None):
+        try:
+            opened = spaces.open(caller, sid)
+            service.validate_selected(sql, opened)
+        except (spaces.SpaceNotFound, spaces.SpaceChanged, ScopeError, QueryError):
+            continue
+        from urllib.parse import urlencode
+
+        from django.urls import reverse
+
+        keep = {k: request.GET[k] for k in ("sql", "display", "max_rows", "run", "save") if request.GET.get(k)}
+        return reverse("labsdata:space", args=[opened.id]) + "?" + urlencode(keep)
+    return None
+
+
 class DataView(LoginRequiredMixin, TemplateView):
     template_name = "labsdata/index.html"
 
     def get(self, request, *args, **kwargs):
         try:
+            if self.kwargs.get("space_id") is None:
+                kept_in = space_to_save_in(_caller(request), request)
+                if kept_in is not None:
+                    return redirect(kept_in)
             return super().get(request, *args, **kwargs)
         except ScopeError as e:  # what the person holds cannot be established right now
             return HttpResponse(e.message, status=503, content_type="text/plain")

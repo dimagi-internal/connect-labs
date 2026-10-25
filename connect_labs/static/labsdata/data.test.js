@@ -119,6 +119,7 @@ function mount({
       <div id="ex-result"></div>
     </div></div>
     <div id="ex-save-dialog" hidden><h2 id="ex-save-title">Save query</h2><p id="ex-save-hint">The query is saved.</p><input id="ex-save-name"><select id="ex-save-target"></select>
+      <label id="ex-save-space" hidden><input id="ex-save-space-name"></label>
       <pre id="ex-save-sql"></pre><div id="ex-save-error" hidden></div>
       <button id="ex-save-cancel">Cancel</button><button id="ex-save-confirm">Save</button></div>
     <script type="application/json" id="ex-open-intent">${JSON.stringify(intent)}</script>`;
@@ -163,6 +164,7 @@ function mount({
       return ok({
         conversation: { id: 9, session_id: JSON.parse(init.body).session_id },
       });
+    if (url === '/sp/') return ok({ space: { id: 77 } });
     if (url === '/s/' || url.endsWith('/items/') || url.endsWith('/artifacts/'))
       return ok({ saved: { id: 1, version: 2 } });
     if (url === '/draft')
@@ -304,6 +306,11 @@ describe('saving a query', () => {
     expect(button.classList.contains('ready')).toBe(true);
     expect(document.getElementById('ex-save-dialog').hidden).toBe(false);
     expect(posts.filter((p) => p.url === '/s/')).toHaveLength(0);
+    // No space holds this selection: the dialog offers to make one; the person keeps it
+    // in their own queries instead.
+    expect(document.getElementById('ex-save-target').value).toBe('new');
+    expect(document.getElementById('ex-save-space').hidden).toBe(false);
+    document.getElementById('ex-save-target').value = '';
     document.getElementById('ex-save-name').value = 'Visits by place';
     document.getElementById('ex-save-confirm').click();
     await settle();
@@ -318,6 +325,36 @@ describe('saving a query', () => {
       max_rows: 500,
       display,
     });
+  });
+
+  it('a card link with no space for its selection makes one, then saves the query in it', async () => {
+    const { window, document, posts } = mount({ intent: { save: true } });
+    await settle();
+    const assigned = [];
+    window.location.assign = (u) => assigned.push(u);
+    document.getElementById('ex-save-name').value = 'Visits by place';
+    document.getElementById('ex-save-confirm').click();
+    await settle();
+    // Unnamed, nothing is made.
+    expect(document.getElementById('ex-save-error').textContent).toMatch(
+      /Name the new space/,
+    );
+    expect(posts.filter((p) => p.url === '/sp/')).toHaveLength(0);
+    document.getElementById('ex-save-space-name').value = 'My programme';
+    document.getElementById('ex-save-confirm').click();
+    await settle();
+    expect(posts.filter((p) => p.url === '/sp/').pop().body).toEqual({
+      name: 'My programme',
+      opportunity_ids: [7],
+      program_ids: [],
+    });
+    expect(
+      posts.filter((p) => p.url === '/sp/77/items/').pop().body,
+    ).toMatchObject({
+      name: 'Visits by place',
+      sql: 'SELECT 1',
+    });
+    expect(assigned).toEqual(['/labs/data/space/77/']);
   });
 
   it('a card link defaults to the space whose sources match its selection', async () => {

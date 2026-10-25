@@ -1193,6 +1193,21 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         )
         if panel is not None:
             context["canopy_panel"] = panel
+            # page_showQuery here opens the Data page on this workflow in a new tab
+            # (static/labsdata/run_page_actions.js); ids only, and the Data page reads them
+            # again as the person.
+            from urllib.parse import urlencode
+
+            from django.urls import reverse
+
+            kind, owner = (
+                ("opp", scope["opportunity_id"]) if scope.get("opportunity_id") else ("program", scope["program_id"])
+            )
+            context["labsdata_run_page"] = {
+                "dataPageUrl": reverse("labsdata:index")
+                + "?"
+                + urlencode({"workflow": f"{int(definition.id)}:{kind}:{int(owner)}"})
+            }
 
     def _add_agent_settings(self, context, definition, run_data):
         """What the run page's "Agent" box shows and saves (``UpdateAgentConfigView``):

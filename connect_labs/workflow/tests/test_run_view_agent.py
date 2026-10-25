@@ -77,6 +77,15 @@ def test_a_shared_run_hands_the_agent_its_selection_never_its_rows(canopy_defaul
 
 
 @pytest.mark.django_db
+def test_a_shared_run_opens_the_data_page_on_its_workflow_for_page_show_query(canopy_default_agent):
+    """page_showQuery on a run page opens the Data page on THIS workflow in a new tab
+    (static/labsdata/run_page_actions.js): the page carries that address, ids only."""
+    context = _context(SHARED)
+    assert context["labsdata_run_page"] == {"dataPageUrl": "/labs/data/?workflow=47%3Aprogram%3A25"}
+    assert "labsdata_run_page" not in _context({"agent": {"share": False}})
+
+
+@pytest.mark.django_db
 def test_a_workflows_actions_reach_its_buttons_whether_or_not_it_shares():
     for config in (SHARED, {"actions": [COACH]}):
         data = _context(config)["workflow_data"]

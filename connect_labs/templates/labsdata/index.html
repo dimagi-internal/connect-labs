@@ -258,6 +258,8 @@
       <h2 class="text-lg font-semibold text-stone-900" id="ex-save-title">Save query</h2>
       <label class="text-sm text-stone-600">Name <input id="ex-save-name" class="ex-search mt-1" maxlength="200" autocomplete="off"></label>
       <label class="text-sm text-stone-600">Save to <select id="ex-save-target" class="ex-search mt-1"></select></label>
+      {# "A new space from this selection": the space is made, then the query saved in it -- both the person's clicks. #}
+      <label class="text-sm text-stone-600" id="ex-save-space" hidden>Name the new space <input id="ex-save-space-name" class="ex-search mt-1" maxlength="200" autocomplete="off" placeholder="e.g. KMC programme"><small class="block ex-muted mt-1">Everyone who holds every one of these sources will see it and what is saved in it.</small></label>
       <p class="text-xs ex-muted" id="ex-save-hint">The query is saved, never its rows: opening it runs it again, as whoever opens it.</p>
       <pre class="ex-pane-sql" id="ex-save-sql"></pre>
       <div class="ex-error" id="ex-save-error" hidden></div>
