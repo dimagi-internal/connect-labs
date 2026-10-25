@@ -482,3 +482,7 @@ def test_no_agent_surface_saves_an_artifact_or_reads_its_rows():
     assert {"showArtifactDraft", "proposeSave", "openItem"} <= set(re.findall(r"^    (\w+): \[", actions, flags=re.M))
     for forbidden in ("post(", "'artifacts/'", "confirmSave", "fetch("):
         assert forbidden not in actions, f"a page action reaches {forbidden}"
+    # Anywhere on the page, the one write of an artifact is the person's Save click.
+    for m in re.finditer(r"post\(\s*spaceApi\([^)]*'artifacts/'\)", js):
+        enclosing = re.findall(r"function (\w+)\(", js[: m.start()])[-1]
+        assert enclosing == "confirmSave", f"data.js saves an artifact from {enclosing}"

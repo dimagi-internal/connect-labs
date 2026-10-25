@@ -180,6 +180,7 @@ function mount({
           queries: [{ name: 'by_month', sql: 'SELECT 6', max_rows: 50 }],
         },
         results: { by_month: { columns: ['n'], rows: [[6]] } },
+        all_generated: draftGenerated,
       });
     if (url === '/q' && queryFails)
       return {
@@ -1162,6 +1163,29 @@ describe('artifacts', () => {
   it('proposeSave with kind artifact fills the dialog; only the person’s click saves it', async () => {
     const { window, document, posts } = mount({ space: SPACE });
     await settle();
+    // Only a draft the person has seen drawn may be proposed.
+    await expect(
+      window.LABSDATA_ACTIONS.proposeSave({
+        kind: 'artifact',
+        name: 'Visits per month',
+        code: CODE,
+        queries: QUERIES,
+      }),
+    ).rejects.toThrow(/page_showArtifactDraft first/);
+    await window.LABSDATA_ACTIONS.showArtifactDraft({
+      name: 'Visits per month',
+      code: CODE,
+      queries: QUERIES,
+    });
+    // A different code than the one drawn is refused too.
+    await expect(
+      window.LABSDATA_ACTIONS.proposeSave({
+        kind: 'artifact',
+        name: 'Visits per month',
+        code: CODE + ' ',
+        queries: QUERIES,
+      }),
+    ).rejects.toThrow(/drawn/);
     const ack = await window.LABSDATA_ACTIONS.proposeSave({
       kind: 'artifact',
       name: 'Visits per month',
@@ -1179,6 +1203,8 @@ describe('artifacts', () => {
     expect(document.getElementById('ex-save-sql').textContent).toContain(
       'SELECT 3',
     );
+    // The person sees the code that will be kept, not only the SQL.
+    expect(document.getElementById('ex-save-sql').textContent).toContain(CODE);
     expect(posts.filter((p) => p.url.endsWith('/artifacts/'))).toHaveLength(0);
     document.getElementById('ex-save-confirm').click();
     await settle();
@@ -1233,5 +1259,69 @@ describe('artifacts', () => {
     await settle();
     expect(posts.pop().url).toBe('/sp/42/artifacts/6/run/');
     expect(drawn).toHaveLength(2);
+  });
+});
+
+describe('artifacts over data that is not synthetic', () => {
+  const CODE = 'function WorkflowUI() { return <b>x</b>; }';
+  const QUERIES = [{ name: 'by_month', sql: 'SELECT 3' }];
+  const ARTIFACTS = [
+    { id: 6, name: 'Saved art', version: 1, queries: QUERIES, versions: [] },
+  ];
+
+  it('one the agent opens waits for the person; one the person clicks draws at once', async () => {
+    const { window, document, drawn } = mount({
+      space: SPACE,
+      artifacts: ARTIFACTS,
+      draftGenerated: false,
+    });
+    await settle();
+    const ack = await window.LABSDATA_ACTIONS.openItem({
+      kind: 'artifact',
+      id: 6,
+    });
+    expect(ack).toMatchObject({ ok: true, outcome: 'waiting_for_person' });
+    expect(drawn).toHaveLength(0);
+    const draw = document.querySelector('[data-testid="artifact-draw"]');
+    draw.click();
+    draw.click(); // a double click draws it once
+    await settle();
+    expect(drawn).toHaveLength(1);
+    document.querySelector('#ex-artifacts button.open').click();
+    await settle();
+    expect(drawn).toHaveLength(2);
+  });
+
+  it('a draft the person has not drawn cannot be proposed; once drawn, it can', async () => {
+    const { window, document } = mount({ space: SPACE, draftGenerated: false });
+    await settle();
+    const a = window.LABSDATA_ACTIONS;
+    const draft = { name: 'D', code: CODE, queries: QUERIES };
+    await a.showArtifactDraft(draft);
+    await expect(a.proposeSave({ kind: 'artifact', ...draft })).rejects.toThrow(
+      /drawn/,
+    );
+    document.querySelector('[data-testid="artifact-draw"]').click();
+    await settle();
+    expect(await a.proposeSave({ kind: 'artifact', ...draft })).toMatchObject({
+      proposed: true,
+    });
+  });
+
+  it('closing its tab tears the frame down', async () => {
+    const { window, document, drawn } = mount({ space: SPACE });
+    await settle();
+    let destroyed = 0;
+    window.LabsArtifact.mount = (container, input) => {
+      drawn.push({ container, input });
+      return { update() {}, destroy: () => destroyed++ };
+    };
+    await window.LABSDATA_ACTIONS.showArtifactDraft({
+      name: 'D',
+      code: CODE,
+      queries: QUERIES,
+    });
+    document.querySelector('.ex-tab[aria-selected="true"] button.x').click();
+    expect(destroyed).toBe(1);
   });
 });

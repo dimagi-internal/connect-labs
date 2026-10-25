@@ -1161,17 +1161,23 @@
     tabs.push(tab);
     while (tabs.length > MAX_TABS + 1) {
       const oldest = tabs.findIndex((t) => t.kind !== 'editor');
-      tabs[oldest].pane.remove();
+      dropTab(tabs[oldest]);
       tabs.splice(oldest, 1);
     }
     showTab(id);
     return tab;
   }
 
+  // A tab's pane goes, and whatever it drew with it (an artifact's sandboxed frame).
+  function dropTab(tab) {
+    if (tab.destroy) tab.destroy();
+    tab.pane.remove();
+  }
+
   function closeTab(id) {
     const i = tabs.findIndex((t) => t.id === id && t.kind !== 'editor');
     if (i < 0) return;
-    tabs[i].pane.remove();
+    dropTab(tabs[i]);
     tabs.splice(i, 1);
     if (activeTab === id) showTab('editor');
     else renderTabs();
@@ -1599,8 +1605,14 @@
   // labs to run the queries over the space, as the person, and hands the frame the rows.
 
   let spaceArtifacts = [];
+  let artifactsLoading = Promise.resolve();
 
-  async function loadSpaceArtifacts() {
+  function loadSpaceArtifacts() {
+    artifactsLoading = fetchSpaceArtifacts();
+    return artifactsLoading;
+  }
+
+  async function fetchSpaceArtifacts() {
     const box = $('ex-artifacts');
     if (!space || !box) return;
     try {
@@ -1645,23 +1657,35 @@
     return null;
   }
 
-  // The sandbox host, once its bundle has loaded (deferred).
+  // The sandbox host, once its bundle has loaded (deferred); refused when it never does.
+  const HOST_WAIT_MS = 20000;
   let artifactHost = null;
   function whenArtifactHost() {
     if (window.LabsArtifact) return Promise.resolve(window.LabsArtifact);
     if (!artifactHost)
-      artifactHost = new Promise((resolve) =>
+      artifactHost = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          artifactHost = null;
+          reject(
+            new Error(
+              'The sandbox that draws artifacts did not load. Reload the page.',
+            ),
+          );
+        }, HOST_WAIT_MS);
         document.addEventListener(
           'labs-artifact:ready',
-          () => resolve(window.LabsArtifact),
+          () => {
+            clearTimeout(timer);
+            resolve(window.LabsArtifact);
+          },
           { once: true },
-        ),
-      );
+        );
+      });
     return artifactHost;
   }
 
   // Draw an artifact into `box` in the sandbox's frame: its code and its rows, nothing else.
-  async function drawArtifact(box, artifact, results) {
+  async function drawArtifact(tab, box, artifact, results) {
     if (!cfg.sandbox) {
       box.replaceChildren(
         el(
@@ -1672,15 +1696,23 @@
       );
       return false;
     }
-    const host = await whenArtifactHost();
+    let host;
+    try {
+      host = await whenArtifactHost();
+    } catch (e) {
+      box.replaceChildren(el('div', { class: 'ex-error' }, e.message));
+      return false;
+    }
+    if (!box.isConnected) return false; // its tab was closed meanwhile
     box.replaceChildren();
-    host.mount(box, {
+    const mounted = host.mount(box, {
       labsOrigin: cfg.sandbox.origin || window.location.origin,
       artifact,
       results,
       space: space ? { id: space.id, name: space.name } : null,
       pageUrl: window.location.href,
     });
+    tab.destroy = () => mounted.destroy();
     return true;
   }
 
@@ -1760,7 +1792,7 @@
           `${failed.map((f) => f.query).join(', ')} could not run; the artifact shows what it can.`,
         ),
       );
-    const draw = () => drawArtifact(box, out.artifact, out.results);
+    const draw = () => drawArtifact(tab, box, out.artifact, out.results);
     if (out.consent) {
       // An agent's draft over production data: its code is the agent's, and what the
       // frame is handed can leave it (the sandbox's stated residual risk), so the person
@@ -1777,7 +1809,10 @@
               type: 'button',
               class: 'ex-btn ghost ml-2',
               'data-testid': 'artifact-draw',
-              onclick: () => draw(),
+              onclick: (e) => {
+                e.currentTarget.disabled = true;
+                draw().then((drawn) => out.onDrawn && drawn && out.onDrawn());
+              },
             },
             'Draw it',
           ),
@@ -1786,19 +1821,43 @@
       return { ok: true, tab: tab.id, waiting: true, failed };
     }
     const drawn = await draw();
+    if (drawn && out.onDrawn) out.onDrawn();
     return { ok: drawn, tab: tab.id, failed };
   }
 
+  // What the frame is handed can leave it (the sandbox's stated residual risk), so over
+  // data that is not synthetic an artifact's code reaches the person's rows only on THEIR
+  // click: a draft the agent shows waits for "Draw it", one the agent opens does too, and the
+  // agent may propose saving only a draft the person drew (`drawnDrafts`).
+  const CONSENT =
+    'The agent opened this. Its code runs in the sandbox over your data, which is not synthetic.';
+  const drawnDrafts = new Set();
+  function draftKey({ code, queries }) {
+    return JSON.stringify([
+      code,
+      queries.map((q) => [q.name, q.sql, q.max_rows || null]),
+    ]);
+  }
+
   // A saved artifact (any version): its code and its queries' rows, run over the space as
-  // the person, checked again as at its save.
-  function openSpaceArtifact(id) {
+  // the person, checked again as at its save. `byAgent`: the agent asked (page_openItem).
+  function openSpaceArtifact(id, { byAgent = false } = {}) {
     const a = findSpaceArtifact(Number(id));
     if (!a) return Promise.resolve({ ok: false, error: 'not_found' });
     return openArtifactTab({
       kind: 'artifact',
       title: a.version > 1 ? `${a.name} (v${a.version})` : a.name,
       queries: [],
-      run: () => post(spaceApi(space.id, `artifacts/${Number(id)}/run/`), {}),
+      run: async () => {
+        const out = await post(
+          spaceApi(space.id, `artifacts/${Number(id)}/run/`),
+          {},
+        );
+        return {
+          ...out,
+          consent: byAgent && !out.all_generated ? CONSENT : null,
+        };
+      },
     });
   }
 
@@ -1821,6 +1880,7 @@
           consent: data.all_generated
             ? null
             : 'The agent drafted this artifact. Its code runs in the sandbox over your data, which is not synthetic.',
+          onDrawn: () => drawnDrafts.add(draftKey({ code, queries })),
         };
       },
     });
@@ -2413,9 +2473,10 @@
     $('ex-save-target').value = String(space.id);
     saveDialogFor('artifact');
     $('ex-save-name').value = name;
-    $('ex-save-sql').textContent = queries
-      .map((q) => `-- ${q.name}\n${q.sql}`)
-      .join('\n\n');
+    // Everything that will be kept: the queries, then the code the frame will run.
+    $('ex-save-sql').textContent =
+      queries.map((q) => `-- ${q.name}\n${q.sql}`).join('\n\n') +
+      `\n\n// code\n${code}`;
     $('ex-save-error').hidden = true;
     $('ex-save-dialog').hidden = false;
     $('ex-save-name').focus();
@@ -2437,7 +2498,10 @@
     if (!pendingSave) return;
     const name = $('ex-save-name').value.trim();
     if (!name) {
-      $('ex-save-error').textContent = 'Give the query a name.';
+      $('ex-save-error').textContent =
+        pendingSave.kind === 'artifact'
+          ? 'Give the artifact a name.'
+          : 'Give the query a name.';
       $('ex-save-error').hidden = false;
       return;
     }
@@ -2766,18 +2830,23 @@
         if (!Number.isInteger(n) || n <= 0)
           throw new Error(`id must be a saved ${kind} id`);
         if (kind === 'artifact') {
+          await artifactsLoading;
           if (!space || !findSpaceArtifact(n))
             throw new Error(
               space
                 ? 'No such artifact in this space.'
                 : 'Artifacts are kept in a data space; this page has none open.',
             );
-          const out = await openSpaceArtifact(n);
+          const out = await openSpaceArtifact(n, { byAgent: true });
           return {
             ok: true,
             opened: true,
             tab: out.tab,
-            outcome: out.ok ? 'shown_to_person' : 'error_shown_to_person',
+            outcome: out.waiting
+              ? 'waiting_for_person'
+              : out.ok
+                ? 'shown_to_person'
+                : 'error_shown_to_person',
             ...(out.failed && out.failed.length
               ? { queries_failed: out.failed }
               : {}),
@@ -2920,6 +2989,11 @@
           if (!space)
             throw new Error(
               'An artifact is kept in a data space, and this page has none open: the person can save this selection as a space first.',
+            );
+          // Only what the person has seen drawn: the same code and queries, as a draft.
+          if (!drawnDrafts.has(draftKey(artifact)))
+            throw new Error(
+              'Propose saving only a draft the person has seen drawn: show exactly this code and these queries with page_showArtifactDraft first (over data that is not synthetic, the person draws it).',
             );
           openArtifactSaveDialog(artifact);
           return {

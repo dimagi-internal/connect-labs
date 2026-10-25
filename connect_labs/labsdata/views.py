@@ -814,7 +814,14 @@ class SpaceArtifactRunView(_JsonView):
         artifact = spaces.artifact_item(opened, self.kwargs.get("pk"))
         if artifact is None:
             raise _Invalid("not_found", "There is no such artifact in this space.", status=404)
-        return {"artifact": artifact.as_dict(), "results": service.run_artifact(caller, opened, artifact.queries)}
+        from connect_labs.labs.synthetic.provenance import all_generated
+
+        return {
+            "artifact": artifact.as_dict(),
+            "results": service.run_artifact(caller, opened, artifact.queries),
+            # The page asks the person before drawing one the AGENT opened over production data.
+            "all_generated": all_generated(opened.selection.ids),
+        }
 
 
 class SpaceArtifactDeleteView(_JsonView):
@@ -829,7 +836,8 @@ class SpaceArtifactDeleteView(_JsonView):
         if artifact is None:
             raise _Invalid("not_found", "There is no such artifact in this space.", status=404)
         deleted = spaces.delete_artifact(opened, artifact)
-        metadata = {"space_id": opened.id}
+        # Every version of the name goes: say how many (never the name: the log keeps no words).
+        metadata = {"space_id": opened.id, "versions_deleted": deleted}
         _audit_space(Action.DELETE, opened, "labsdata_space_artifact", artifact.pk, request.user, metadata)
         return {"deleted": deleted}
 

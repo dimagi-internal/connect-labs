@@ -75,9 +75,28 @@ def test_opening_runs_its_queries_over_the_space_as_the_person_and_keeps_nothing
     out = res.json()
     assert out["artifact"]["code"] == CODE
     assert out["results"]["by_month"]["columns"] == ["n"] and out["results"]["by_month"]["rows"] == [[3]]
+    # Invented opportunities are not generated data: one the agent opens waits for the person.
+    assert out["all_generated"] is False
     # Over the space's frozen opportunities, and nothing else.
     assert connect == [[O1.id, O2.id]]
     assert SpaceArtifact.objects.get(pk=pk).queries == QUERIES  # no rows kept anywhere on it
+
+
+def test_an_artifact_is_read_only_through_its_own_space(people):
+    """An artifact id under another space's address is not found there."""
+    one = _program_space(people)
+    other = _post(
+        _client(people["alice"]), "/labs/data/api/spaces/", {"name": "Other", "opportunity_ids": [O1.id]}
+    ).json()["space"]["id"]
+    pk = _save(_client(people["alice"]), one).json()["saved"]["id"]
+    for url in (
+        f"/labs/data/api/spaces/{other}/artifacts/{pk}/run/",
+        f"/labs/data/api/spaces/{other}/artifacts/{pk}/delete/",
+    ):
+        res = _post(_client(people["alice"]), url, {})
+        assert res.status_code == 404 and res.json()["error"] == "not_found"
+    assert _client(people["alice"]).get(_artifacts(other)).json()["artifacts"] == []
+    assert SpaceArtifact.objects.filter(pk=pk).exists()
 
 
 def test_a_query_naming_an_opportunity_outside_the_space_is_refused_at_save(people):
