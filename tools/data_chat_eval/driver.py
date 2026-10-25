@@ -333,7 +333,9 @@ def _canvas(page) -> dict:
                     const tab = document.querySelector('.ex-tab[aria-selected="true"]');
                     const dlg = document.querySelector('#ex-save-dialog');
                     const name = document.querySelector('#ex-save-name');
-                    const open = !!dlg && (dlg.open || (dlg.offsetParent !== null && !dlg.hidden));
+                    // The dialog is position: fixed, so its offsetParent is always null: read
+                    // whether it is shown from `hidden` and its computed display instead.
+                    const open = !!dlg && (dlg.open || (!dlg.hidden && getComputedStyle(dlg).display !== 'none'));
                     return {
                         canvas: st && st.filters ? (st.filters.canvas || null) : null,
                         tab: tab ? tab.textContent.trim() : null,
