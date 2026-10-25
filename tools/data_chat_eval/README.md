@@ -46,7 +46,9 @@ passes. A run of the whole suite takes 10-15 minutes and costs real agent turns.
    call outlives the load balancer).
 2. **Ground truth.** Each scenario's `truth` SQL runs through labs' `data_query` as ace
    (its PAT), over the page's opportunities -- the same engine and the same person as the
-   chat, so number checks are exact.
+   chat, so the truth is exact. A number check allows a count of 100 or more to be one
+   off (a rounding or a boundary), a smaller count none; a case sets its own allowance with
+   `tolerance` / `rel_tolerance`, or `exact: true`.
 3. **Drive.** Per scenario: a fresh browser context with ace's labs cookies, the page, the
    panel (launcher "Ask an agent"), a NEW conversation. Each turn is typed into the
    composer; its end comes from canopy's session API (`turn_status`, read with ace's canopy
@@ -54,7 +56,7 @@ passes. A run of the whole suite takes 10-15 minutes and costs real agent turns.
    reply, the tool calls, every Labs results card drawn that turn (each MCP Apps view's own
    frame: text, headers, chart) and screenshots.
 4. **Check.** Deterministic checks per turn (`checks.py`): the reply or a card states the
-   ground-truth number; a card was drawn, with a chart, with plain-word headers; the right
+   ground-truth number; a refusal is put plainly (any of the ways `checks.REFUSALS` knows); a card was drawn, with a chart, with plain-word headers; the right
    tool was called; the rows were not pasted under a card; an ambiguous question was asked
    back or its definition stated; and, on every turn, no errors (finished, no panel error,
    no failed tool call). Gates decide PASS/FAIL; `gate: false` checks are advisory.

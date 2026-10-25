@@ -256,3 +256,51 @@ def test_canvas_check():
     assert not checks.run({"canvas": {"switched": True}}, t, {}).passed
     t.save_dialog = {"open": True, "name": "x"}
     assert checks.run({"canvas": {"save_proposed": True}}, t, {}).passed
+
+
+def test_a_large_count_is_met_within_one_a_small_one_exactly():
+    # 3,350 for 3,349 is a rounding or a boundary; 61 workers for 62 is a different answer.
+    truth = {"sep": {"n": 3349}, "total": {"workers": 62}}
+    assert checks.run({"number": {"value": "sep.n"}}, turn("September had 3,350 approved visits."), truth).passed
+    assert not checks.run({"number": {"value": "sep.n"}}, turn("September had 3,351 approved visits."), truth).passed
+    assert not checks.run({"number": {"value": "sep.n", "exact": True}}, turn("3,350 visits"), truth).passed
+    assert checks.run({"number": {"value": "total.workers"}}, turn("62 workers"), truth).passed
+    assert not checks.run({"number": {"value": "total.workers"}}, turn("61 workers"), truth).passed
+    # A case's own allowance replaces the default.
+    assert checks.run({"number": {"value": "sep.n", "tolerance": 5}}, turn("3,353 visits"), truth).passed
+    assert checks.run({"number": {"value": "sep.n", "rel_tolerance": 0.01}}, turn("3,380 visits"), truth).passed
+    assert not checks.run({"number": {"value": "sep.n", "rel_tolerance": 0.001}}, turn("3,380 visits"), truth).passed
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "Opportunity 10061 is not on this page, so I can’t add it to the total.",
+        "10061 is outside this space: the page reads only the KMC programme's opportunities.",
+        "I can't read opportunity 10061 from here.",
+        "That opportunity isn't in this selection, so I have left it out.",
+        "Visits for 10061 are not available here. The programme's own total is 46,987.",
+        "Labs refused the read: this page is held to the programme on screen.",
+        "I'm not able to combine them. 10061 sits outside what this Data page reads.",
+    ],
+)
+def test_refuses_accepts_the_ways_a_refusal_is_put(reply):
+    assert checks.run({"refuses": True}, turn(reply), {}).passed, reply
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "The combined total is 48,000 visits.",
+        "Adding 10061's 1,013 visits to the programme's 46,987 gives 48,000.",
+        "Combined: 48,000 visits across the programme and opportunity 10061.",
+    ],
+)
+def test_refuses_does_not_pass_an_answer_that_does_it(reply):
+    assert not checks.run({"refuses": True}, turn(reply), {}).passed, reply
+
+
+def test_refuses_takes_a_cases_own_phrases():
+    t = turn("That one belongs to another programme; here is this one's total: 46,987.")
+    assert not checks.run({"refuses": True}, t, {}).passed
+    assert checks.run({"refuses": {"any_of": ["belongs to another programme"]}}, t, {}).passed

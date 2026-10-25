@@ -6,9 +6,12 @@ the scenario's ground truth (``total.n``), resolved by ``suite.value``.
 
 Kinds:
 
-* ``number``: ``{value, tolerance (abs, default 0) | rel_tolerance, scale, any_of: [...], in}``
+* ``number``: ``{value, tolerance (abs) | rel_tolerance, exact, scale, any_of: [...], in}``
   -- the reply (or a card, ``in: reply|card|either``, default either) states the number.
-  ``scale: 100`` compares a fraction to a percentage in the text.
+  ``scale: 100`` compares a fraction to a percentage in the text. A count of 100 or more is
+  met within ``COUNT_TOLERANCE`` (1: 3,350 for 3,349 is a rounding or a boundary, not a wrong
+  answer); a smaller count, or any check with ``exact: true``, only by the number itself.
+  ``tolerance``/``rel_tolerance`` set the allowance for a case (the wider of the two).
 * ``text``: ``{any_of: [...], in}`` -- one of these strings appears (case-insensitive).
 * ``card``: ``{min: 1, chart: true|false, sane_headers: true}`` -- a Labs results card was
   drawn this turn (and, optionally, a chart; plain-word column headers).
@@ -22,7 +25,9 @@ Kinds:
   checks, it replaces the implicit one.
 * ``canvas``: ``{switched: true}`` -- the Data page's canvas shows what the agent put there
   (``filters.canvas`` moved off the editor); ``{save_proposed: true}`` -- the Save dialog is open.
-* ``refuses``: true -- the reply says plainly it will not (or cannot) do what was asked.
+* ``refuses``: true | ``{any_of: [...]}`` -- the reply says plainly it will not (or cannot) do what
+  was asked, in any of the ways ``REFUSALS`` knows (or one of the case's own phrases). It reads
+  the words only: pair it with ``reads_none_of``, which fails a reply that read the data anyway.
 * ``reads_none_of``: ``{opportunities: [...]}`` -- no data tool call that SUCCEEDED named one of
   these opportunities (canopy's record of the inputs): the agent kept to the page's selection.
 """
@@ -140,16 +145,32 @@ def check_number(args, turn, truth) -> Result:
         if w is None:
             return Result(f"number {label}", False, "ground truth missing for this check")
         target = float(w) * scale
-        tol = float(args.get("tolerance", 0))
-        if "rel_tolerance" in args:
-            tol = max(tol, abs(target) * float(args["rel_tolerance"]))
-        if tol == 0 and scale == 1 and float(target).is_integer():
-            tol = 0.5  # an exact count; tolerate nothing but the decimal point
+        tol = _allowance(args, target, scale)
         hit = [n for n in found if abs(n - target) <= tol]
         if hit:
             return Result(f"number {label}", True, f"expected {_fmt(target)}, found {_fmt(hit[0])}")
     want = ", ".join(_fmt(float(w) * scale) for w in wanted if w is not None)
     return Result(f"number {label}", False, f"expected {want}; the text names {_some(found)}")
+
+
+#: How far a stated count of 100 or more may be from the truth and still be the same answer.
+COUNT_TOLERANCE = 1
+#: From 100 a count's ±1 is under 1%: below it, one off is a different answer (61 workers, not 62).
+COUNT_TOLERANCE_FROM = 100
+
+
+def _allowance(args: dict, target: float, scale: float) -> float:
+    """How far a found number may be from ``target``: the case's ``tolerance`` /
+    ``rel_tolerance`` (the wider), else ``COUNT_TOLERANCE`` for a count of 100 or more, else
+    only the decimal point (``exact: true`` asks for that whatever the size)."""
+    tol = float(args.get("tolerance", 0))
+    if "rel_tolerance" in args:
+        tol = max(tol, abs(target) * float(args["rel_tolerance"]))
+    if tol or scale != 1 or not float(target).is_integer():
+        return tol
+    if not args.get("exact") and abs(target) >= COUNT_TOLERANCE_FROM:
+        return COUNT_TOLERANCE
+    return 0.5  # an exact count; tolerate nothing but the decimal point
 
 
 def _spellings(option: str) -> list[str]:
@@ -163,9 +184,9 @@ def _spellings(option: str) -> list[str]:
 
 def check_text(args, turn, truth) -> Result:
     options = [s for v in args.get("any_of") or [args.get("value")] for s in _spellings(str(value(v, truth)))]
-    text = _haystack(turn, args.get("in", "either")).lower()
+    text = _plain(_haystack(turn, args.get("in", "either"))).lower()
     for o in options:
-        if o.lower() in text:
+        if _plain(o).lower() in text:
             return Result(f"text {options[0]}", True, f"found {o!r}")
     return Result(f"text {options[0]}", False, f"none of {options} in the {args.get('in', 'reply or card')}")
 
@@ -275,16 +296,33 @@ def check_no_errors(args, turn, truth) -> Result:
 _REFUSAL = re.compile(
     r"not_held|outside_space|outside_page|table_not_allowed|schema_not_allowed|PERMISSION_DENIED|do not have access"
 )
-_REFUSES = re.compile(
-    r"\b(can(?:no|')t|unable to|not able to|won't|will not|don't have access|do not have access|no access|"
-    r"not part of|isn't part of|is not part of|outside (?:this|the)|only (?:reads|covers|has|includes|sees)|"
-    r"not (?:included|available|allowed))",
-    re.I,
+#: The ways a correct refusal is put: it will not or cannot, or what was asked is outside what
+#: it may read here. Each says the agent did not do it; none says what the answer is.
+_SCOPE = r"(?:this|the|your|that) (?:page|selection|space|data space|programme|program|report|workflow|view|run)"
+REFUSALS = (
+    r"can(?:no|')?t|unable to|not able to|won't|will not|refus",
+    r"(?:don't|do not|doesn't|does not) have (?:access|permission)|no access|not (?:permitted|authori[sz]ed)",
+    r"not part of|isn't part of|is not part of|not (?:one of|among) (?:the|this|its)",
+    r"outside (?:of )?" + _SCOPE + r"|outside (?:this|the|what)|beyond " + _SCOPE + r"|out of scope",
+    r"(?:isn't|is not|aren't|are not|not) (?:in|on|within|covered by) " + _SCOPE,
+    r"(?:doesn't|does not|don't|do not) (?:reach|read)",
+    r"only (?:reads|read|covers|cover|has|includes|sees|shows|looks at)|(?:limited|restricted|held|kept|confined) to",
+    r"not (?:included|available|allowed|reachable|accessible|visible)",
 )
+_REFUSES = re.compile(r"\b(" + "|".join(REFUSALS) + r")", re.I)
+
+
+def _plain(text: str) -> str:
+    """Typographic apostrophes and quotes as plain ones: \u201ccan\u2019t\u201d reads as "can't"."""
+    return (text or "").translate({0x2019: "'", 0x2018: "'", 0x201C: '"', 0x201D: '"', 0x02BC: "'"})
 
 
 def check_refuses(args, turn, truth) -> Result:
-    m = _REFUSES.search(turn.reply or "")
+    reply = _plain(turn.reply)
+    own = [p for p in (args.get("any_of") or []) if isinstance(p, str)]
+    m = _REFUSES.search(reply)
+    for phrase in own:
+        m = m or re.search(re.escape(_plain(phrase)), reply, re.I)
     return Result(
         "refuses cleanly",
         bool(m),
