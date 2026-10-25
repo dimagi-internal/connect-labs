@@ -992,6 +992,54 @@ describe('axis labels and the month so far', () => {
     );
   });
 
+  it('leaves room for every turned bar label, below and to the right', async () => {
+    // 6.5px a character at 11px, turned 40 degrees: what the chart reserves room by.
+    const reach = (t) => t.length * 6.5;
+    const view = await shown({
+      columns: ['username', 'visits'],
+      rows: [
+        ['amina.wanjiru.ke', 300],
+        ['brian_otieno_long_username', 280],
+        ['hassan.abdullahi.ibrahim', 100],
+      ],
+      display: { chart: { type: 'bar', x: 'username', y: ['visits'] } },
+    });
+    const svg = view.document.querySelector('svg');
+    const [, , w, h] = svg.getAttribute('viewBox').split(' ').map(Number);
+    for (const t of svg.querySelectorAll('text[transform]')) {
+      const [x, y] = /translate\(([\d.]+),([\d.]+)\)/
+        .exec(t.getAttribute('transform'))
+        .slice(1)
+        .map(Number);
+      const len = reach(t.textContent);
+      expect(x + Math.cos((40 * Math.PI) / 180) * len).toBeLessThanOrEqual(w);
+      expect(y + Math.sin((40 * Math.PI) / 180) * len).toBeLessThanOrEqual(h);
+    }
+  });
+
+  it("keeps a line chart's first and last dates inside the chart", async () => {
+    const view = await shown({
+      columns: ['visit_date', 'visits'],
+      column_types: ['date', 'integer'],
+      rows: [
+        ['2026-09-21', 120],
+        ['2026-10-05', 90],
+        ['2026-10-20', 140],
+      ],
+      display: { chart: { type: 'line', x: 'visit_date', y: ['visits'] } },
+    });
+    const svg = view.document.querySelector('svg');
+    const w = Number(svg.getAttribute('width'));
+    const dates = [...svg.querySelectorAll('text[text-anchor="middle"]')].map(
+      (t) => [Number(t.getAttribute('x')), t.textContent.length * 6.5],
+    );
+    expect(dates.length).toBe(3);
+    for (const [x, len] of dates) {
+      expect(x - len / 2).toBeGreaterThanOrEqual(0);
+      expect(x + len / 2).toBeLessThanOrEqual(w);
+    }
+  });
+
   it('labels that share nothing are drawn as they are', async () => {
     const view = await shown(BY_LLO);
     view.click('[data-tab="chart"]');
