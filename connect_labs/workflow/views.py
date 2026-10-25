@@ -1174,7 +1174,17 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             available=available,
             page_key=page_key,
             # The agent's data reads are held to this: the workflow's opportunities and pipelines.
-            holds=page_holds.for_workflow(definition.id, scope, reads.opportunity_ids),
+            holds=page_holds.for_workflow(
+                definition.id,
+                scope,
+                reads.opportunity_ids,
+                run_id=run_id,
+                pipeline_ids=[
+                    src.get("pipeline_id")
+                    for src in (getattr(definition, "pipeline_sources", None) or [])
+                    if isinstance(src, dict) and src.get("pipeline_id") is not None
+                ],
+            ),
             resource=f"labs-workflow://{definition.id}/runs/{run_id}",
             backing_tool="workflow_run_indicators",
             visible_ids=[worker_key(w.get("opportunity_id"), w.get("username")) for w in workers if w.get("username")],

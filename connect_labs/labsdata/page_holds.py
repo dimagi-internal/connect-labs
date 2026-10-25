@@ -81,9 +81,11 @@ def _workflow_ref(workflow) -> dict | None:
         return None
     try:
         out = {"id": int(workflow["id"])}
-        for key in ("opportunity_id", "program_id"):
+        for key in ("opportunity_id", "program_id", "run_id"):
             if workflow.get(key) not in (None, ""):
                 out[key] = int(workflow[key])
+        if workflow.get("pipeline_ids"):
+            out["pipeline_ids"] = list(_ints(workflow["pipeline_ids"]))
     except (TypeError, ValueError):
         return None
     return out
@@ -95,11 +97,11 @@ def for_space(opened) -> Holds:
     return Holds(space_id=opened.id, workflow=workflow, opportunity_ids=_ints(opened.space.opportunity_ids))
 
 
-def for_workflow(definition_id: int, owner: dict, opportunity_ids) -> Holds:
-    """A workflow run page: the workflow (in the scope it lives in) and the opportunities it reads."""
-    return Holds(
-        workflow=_workflow_ref({"id": definition_id, **(owner or {})}), opportunity_ids=_ints(opportunity_ids)
-    )
+def for_workflow(definition_id: int, owner: dict, opportunity_ids, *, run_id=None, pipeline_ids=()) -> Holds:
+    """A workflow run page: the workflow (in the scope it lives in), the run it shows, the
+    pipelines it reads and the opportunities it reads."""
+    ref = {"id": definition_id, **(owner or {}), "run_id": run_id, "pipeline_ids": list(pipeline_ids or ())}
+    return Holds(workflow=_workflow_ref(ref), opportunity_ids=_ints(opportunity_ids))
 
 
 def for_selection(initial: dict, held: dict) -> Holds:
@@ -323,7 +325,12 @@ def _what(hold) -> str:
     if hold.page_key == DATA_PAGE:
         return "the selection on the Data page"
     if hold.workflow:
-        return f"workflow {hold.workflow.get('id')} (its opportunities and its pipelines)"
+        run = hold.workflow.get("run_id")
+        return (
+            f"workflow {hold.workflow.get('id')}"
+            + (f", run {run}" if run else "")
+            + (" (its opportunities and its pipelines)")
+        )
     return "this page's selection"
 
 
@@ -413,3 +420,79 @@ def hold_workflow(definition_id) -> None:
             f"Workflow {definition_id} is not this page's"
             + (f" (it shows workflow {page_workflow})." if page_workflow else " (it shows no workflow)."),
         )
+
+
+# ---------------------------------------------------------------------------
+# The run page's own tools: its run, its workflow
+# ---------------------------------------------------------------------------
+
+#: Tools that act on a run, by its ``run_id``: a run page's grant reaches only its own run.
+RUN_TOOLS = frozenset(
+    {
+        "workflow_run_context",
+        "workflow_run_indicators",
+        "workflow_indicator_explain",
+        "workflow_run_cases",
+        "workflow_action_status",
+        "workflow_run_action",
+        "workflow_action_preview_view",
+    }
+)
+#: Proposable edit tools that name the workflow they change (``workflow_id``).
+WORKFLOW_EDIT_TOOLS = frozenset(
+    {
+        "workflow_update_definition",
+        "workflow_update_render_code",
+        "workflow_patch_render_code",
+        "workflow_add_pipeline_source",
+        "workflow_remove_pipeline_source",
+    }
+)
+
+
+def _asked_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def run_denial(tool_name: str, arguments: dict) -> OutsidePage | None:
+    """Why a run page's tool may not make this delegated call, or None.
+
+    ``RUN_TOOLS`` must name the page's own run (and, when given, its scope); an edit the
+    agent proposes (``workflow_edit_propose``) must change the page's own workflow, or one
+    of the pipelines that workflow reads. Off a page (PAT, OAuth): None. A delegated call
+    whose grant recorded no page: refused."""
+    arguments = arguments or {}
+    if tool_name not in RUN_TOOLS and tool_name != "workflow_edit_propose":
+        return None
+    hold = current()
+    if hold is None:
+        return None
+    if hold is _NO_HOLD:
+        return _no_hold()
+    page = hold.workflow or {}
+    if tool_name in RUN_TOOLS:
+        run_id = page.get("run_id")
+        asked = _asked_int(arguments.get("run_id"))
+        if run_id is None or asked != run_id:
+            return _refuse(
+                hold,
+                f"Run {arguments.get('run_id')} is not the run this page shows"
+                + (f" (run {run_id})." if run_id is not None else "."),
+            )
+        for key in ("opportunity_id", "program_id"):
+            if arguments.get(key) not in (None, "") and _asked_int(arguments[key]) != page.get(key):
+                return _refuse(hold, f"That {key.replace('_', ' ')} is not this run's scope.")
+        return None
+    # workflow_edit_propose {tool, arguments}
+    tool = (arguments.get("tool") or "").strip()
+    inner = arguments.get("arguments") if isinstance(arguments.get("arguments"), dict) else {}
+    if tool in WORKFLOW_EDIT_TOOLS:
+        if page.get("id") is None or _asked_int(inner.get("workflow_id")) != page.get("id"):
+            return _refuse(hold, f"Workflow {inner.get('workflow_id')} is not the workflow this page shows.")
+    elif tool == "pipeline_update_schema":
+        if _asked_int(inner.get("pipeline_id")) not in set(page.get("pipeline_ids") or ()):
+            return _refuse(hold, f"Pipeline {inner.get('pipeline_id')} is not one this page's workflow reads.")
+    return None
