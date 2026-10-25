@@ -992,7 +992,7 @@
     if (!strip || typeof strip.getBoundingClientRect !== 'function') return;
     const r = strip.getBoundingClientRect();
     if (r.top < 0 || r.top > window.innerHeight * 0.6)
-      strip.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      strip.scrollIntoView({ block: 'start' });
   }
 
   // A query shown in its own tab: run here, as the person, over the page's selection
@@ -1007,7 +1007,6 @@
     selection = null,
   }) {
     const tab = openTab(kind, title || 'Query');
-    revealCanvas();
     const rows = Number(max_rows) || Number($('ex-max').value) || 500;
     const body = { ...(selection || selectionBody()), sql, max_rows: rows };
     const out = el(
@@ -1063,10 +1062,13 @@
       ),
       out,
     );
+    revealCanvas();
     try {
       const data = await post(cfg.queryUrl, body);
       out.replaceChildren();
       appendResultCard(out, data, resultTable(data, { labels: shown }), {});
+      // Layout above the canvas can still move while the query runs; look again.
+      revealCanvas();
       return { ok: true, tab: tab.id };
     } catch (e) {
       out.replaceChildren(
