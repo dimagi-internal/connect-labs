@@ -258,22 +258,36 @@ class PanelDriver:
             if frame is None:
                 out["error"] = "no panel after reload"
                 return out
-            if not frame.locator("[data-turn-index]").count():
-                # Not restored: pick it from the panel's list of earlier conversations. A private
-                # one is listed as "Private conversation" (its title is sealed too), newest first.
+            if not frame.locator("[data-turn-index]").count() or _panel_session(page) != cap.session_id:
+                # Not restored (or another conversation was): pick THIS one from the panel's
+                # list of earlier conversations. Every private one is listed as "Private
+                # conversation" (its title is sealed too), newest first -- and the newest is
+                # not ours whenever ace is chatting elsewhere at the same time (another run,
+                # another tab) -- so the row is chosen by its conversation id, by label only
+                # on a panel too old to say.
                 listed = frame.get_by_role("button", name="All conversations")
                 if listed.count():
                     listed.first.click()
                     page.wait_for_timeout(2000)
-                title = cap.turns[0].say[:40]
-                for label in (title, "Private conversation"):
-                    hit = frame.get_by_text(label, exact=False)
-                    if hit.count():
-                        out["picked_from_list"] = label
-                        hit.first.click()
-                        page.wait_for_timeout(6000)
-                        break
-            out["reopened"] = frame.locator("[data-turn-index]").count() > 0
+                row = frame.locator(f'[data-session-id="{cap.session_id}"]')
+                if cap.session_id and _wait(lambda: row.count() > 0, 10):
+                    out["picked_from_list"] = "by id"
+                    row.first.click()
+                    page.wait_for_timeout(6000)
+                else:
+                    title = cap.turns[0].say[:40]
+                    for label in (title, "Private conversation"):
+                        hit = frame.get_by_text(label, exact=False)
+                        if hit.count():
+                            out["picked_from_list"] = label
+                            hit.first.click()
+                            page.wait_for_timeout(6000)
+                            break
+            out["session"] = _panel_session(page)
+            out["reopened"] = frame.locator("[data-turn-index]").count() > 0 and out["session"] in (
+                cap.session_id,
+                None,  # a panel too old to report its conversation
+            )
             page.screenshot(path=str(self.out_dir / "history-locked.png"))
             unlocked = vault.unlock(frame, page)
             out.update(banner=unlocked["banner"], unlocked=unlocked["unlocked"], error=unlocked["error"])
@@ -322,6 +336,29 @@ class PanelDriver:
         except Exception as e:  # noqa: BLE001 -- a missing screenshot is noted, never fatal
             shots["error"] = str(e)[:200]
         return shots
+
+
+_PANEL_SESSION_JS = """() => {
+    const h = window.canopyHost;
+    if (!h) return null;
+    const s = typeof h.session === 'function' ? h.session()
+        : (h.widget && typeof h.widget.currentSession === 'function' ? h.widget.currentSession() : null);
+    return s && s.id ? s.id : null;
+}"""
+
+
+def _panel_session(page) -> str | None:
+    """The conversation the panel says it has open, or None when it cannot say."""
+    return _safe(lambda: page.evaluate(_PANEL_SESSION_JS), None)
+
+
+def _wait(fn, seconds: float) -> bool:
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if _safe(fn, False):
+            return True
+        time.sleep(0.5)
+    return False
 
 
 def _canvas(page) -> dict:
