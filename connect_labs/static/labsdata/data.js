@@ -16,6 +16,15 @@
 (function () {
   'use strict';
   const cfg = window.LABSDATA;
+  // The workflow sandbox artifacts are drawn in ({src, origin, mode}), or null when it is off.
+  if (cfg.sandbox === undefined) {
+    const node = document.getElementById('ex-artifact-sandbox');
+    try {
+      cfg.sandbox = node ? JSON.parse(node.textContent) : null;
+    } catch (e) {
+      cfg.sandbox = null;
+    }
+  }
   const options = JSON.parse(
     document.getElementById('labsdata-options').textContent,
   );
@@ -1152,17 +1161,23 @@
     tabs.push(tab);
     while (tabs.length > MAX_TABS + 1) {
       const oldest = tabs.findIndex((t) => t.kind !== 'editor');
-      tabs[oldest].pane.remove();
+      dropTab(tabs[oldest]);
       tabs.splice(oldest, 1);
     }
     showTab(id);
     return tab;
   }
 
+  // A tab's pane goes, and whatever it drew with it (an artifact's sandboxed frame).
+  function dropTab(tab) {
+    if (tab.destroy) tab.destroy();
+    tab.pane.remove();
+  }
+
   function closeTab(id) {
     const i = tabs.findIndex((t) => t.id === id && t.kind !== 'editor');
     if (i < 0) return;
-    tabs[i].pane.remove();
+    dropTab(tabs[i]);
     tabs.splice(i, 1);
     if (activeTab === id) showTab('editor');
     else renderTabs();
@@ -1409,13 +1424,24 @@
   // The query, never its rows (labsdata/models.py). Opening one runs it again, live, as
   // the person -- what they may see now.
 
-  function savedRow(q, { onOpen, onDelete, versions }) {
+  function savedRow(
+    q,
+    {
+      onOpen,
+      onDelete,
+      versions,
+      onOpenVersion = openSpaceItem,
+      title = q.sql,
+      what = 'saved query',
+      idAttr = 'data-query-id',
+    },
+  ) {
     const row = el(
       'div',
-      { class: 'ex-saved-row', 'data-query-id': q.id },
+      { class: 'ex-saved-row', [idAttr]: q.id },
       el(
         'button',
-        { class: 'open', title: q.sql, onclick: () => onOpen(q) },
+        { class: 'open', title, onclick: () => onOpen(q) },
         q.name,
         q.version > 1 ? el('small', {}, ` v${q.version}`) : '',
         q.saved_by ? el('small', {}, ` · ${q.saved_by}`) : '',
@@ -1428,7 +1454,7 @@
             'button',
             {
               class: 'del',
-              title: 'Delete this saved query (every version)',
+              title: `Delete this ${what} (every version)`,
               onclick: () => onDelete(q),
             },
             '✕',
@@ -1451,7 +1477,7 @@
               'button',
               {
                 type: 'button',
-                onclick: () => openSpaceItem(v.id),
+                onclick: () => onOpenVersion(v.id),
               },
               `v${v.version}`,
             ),
@@ -1568,6 +1594,309 @@
       );
     } catch (e) {
       box.replaceChildren(emptyLine(e.message || 'Could not load this space.'));
+    }
+  }
+
+  // ---- artifacts: small labs pages kept in the space ---------------------------
+  // JSX render code and the named queries it reads (labsdata/models.py SpaceArtifact),
+  // drawn ONLY in the workflow sandbox: the opaque-origin frame workflows and pages draw
+  // in (components/workflow/sandbox/artifact.tsx, published by the space-artifact bundle
+  // as window.LabsArtifact). This page never compiles or runs an artifact's code: it asks
+  // labs to run the queries over the space, as the person, and hands the frame the rows.
+
+  let spaceArtifacts = [];
+  let artifactsLoading = Promise.resolve();
+
+  function loadSpaceArtifacts() {
+    artifactsLoading = fetchSpaceArtifacts();
+    return artifactsLoading;
+  }
+
+  async function fetchSpaceArtifacts() {
+    const box = $('ex-artifacts');
+    if (!space || !box) return;
+    try {
+      const data = await getJson(spaceApi(space.id, 'artifacts/'));
+      spaceArtifacts = data.artifacts || [];
+      box.replaceChildren();
+      if (!spaceArtifacts.length) {
+        box.append(
+          emptyLine(
+            'None yet. Ask the agent for a small dashboard over this space, then save it here.',
+          ),
+        );
+        return;
+      }
+      spaceArtifacts.forEach((a) =>
+        box.append(
+          savedRow(a, {
+            onOpen: (item) => openSpaceArtifact(item.id),
+            onDelete: deleteSpaceArtifact,
+            versions: a.versions,
+            onOpenVersion: openSpaceArtifact,
+            title: `Reads ${(a.queries || []).map((q) => q.name).join(', ')}`,
+            what: 'artifact',
+            idAttr: 'data-artifact-id',
+          }),
+        ),
+      );
+    } catch (e) {
+      box.replaceChildren(
+        emptyLine(e.message || 'Could not load the artifacts.'),
+      );
+    }
+  }
+
+  // An artifact of this space, any version: {id, name, version}.
+  function findSpaceArtifact(id) {
+    for (const a of spaceArtifacts) {
+      const v = (a.versions || []).find((x) => x.id === id);
+      if (v) return { ...v, name: a.name };
+      if (a.id === id) return a;
+    }
+    return null;
+  }
+
+  // The sandbox host, once its bundle has loaded (deferred); refused when it never does.
+  const HOST_WAIT_MS = 20000;
+  let artifactHost = null;
+  function whenArtifactHost() {
+    if (window.LabsArtifact) return Promise.resolve(window.LabsArtifact);
+    if (!artifactHost)
+      artifactHost = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          artifactHost = null;
+          reject(
+            new Error(
+              'The sandbox that draws artifacts did not load. Reload the page.',
+            ),
+          );
+        }, HOST_WAIT_MS);
+        document.addEventListener(
+          'labs-artifact:ready',
+          () => {
+            clearTimeout(timer);
+            resolve(window.LabsArtifact);
+          },
+          { once: true },
+        );
+      });
+    return artifactHost;
+  }
+
+  // Draw an artifact into `box` in the sandbox's frame: its code and its rows, nothing else.
+  async function drawArtifact(tab, box, artifact, results) {
+    if (!cfg.sandbox) {
+      box.replaceChildren(
+        el(
+          'div',
+          { class: 'ex-error' },
+          'Artifacts are drawn only in the page sandbox, which is switched off on this server.',
+        ),
+      );
+      return false;
+    }
+    let host;
+    try {
+      host = await whenArtifactHost();
+    } catch (e) {
+      box.replaceChildren(el('div', { class: 'ex-error' }, e.message));
+      return false;
+    }
+    if (!box.isConnected) return false; // its tab was closed meanwhile
+    box.replaceChildren();
+    const mounted = host.mount(box, {
+      labsOrigin: cfg.sandbox.origin || window.location.origin,
+      artifact,
+      results,
+      space: space ? { id: space.id, name: space.name } : null,
+      pageUrl: window.location.href,
+    });
+    tab.destroy = () => mounted.destroy();
+    return true;
+  }
+
+  // What failed, by query name and code only: a database error can quote a value.
+  function failedQueries(results) {
+    return Object.entries(results || {})
+      .filter(([, r]) => r && r.error)
+      .map(([name, r]) => ({ query: name, error: r.error.code || 'failed' }));
+  }
+
+  // A tab for an artifact: its head (name, the queries it reads, Save for a draft), then
+  // the frame. `run` fetches {artifact, results}; `consent`, when set, is a question the
+  // person answers before the frame is drawn.
+  async function openArtifactTab({ kind, title, queries, run, onSave }) {
+    const tab = openTab(kind, title);
+    const reads = el('details', {});
+    const showQueries = (list) =>
+      reads.replaceChildren(
+        el(
+          'summary',
+          { class: 'px-3 py-1 text-xs ex-muted' },
+          `Reads ${list.map((q) => q.name).join(', ') || '…'}`,
+        ),
+        ...list.map((q) =>
+          el('pre', { class: 'ex-pane-sql' }, `-- ${q.name}\n${q.sql}`),
+        ),
+      );
+    const box = el(
+      'div',
+      { class: 'ex-artifact-frame' },
+      el('p', { class: 'text-sm ex-muted px-3 py-2' }, 'Running its queries…'),
+    );
+    tab.pane.append(
+      el(
+        'div',
+        { class: 'ex-card' },
+        el(
+          'div',
+          { class: 'ex-pane-head' },
+          el('h2', {}, tab.title),
+          onSave
+            ? el(
+                'button',
+                { type: 'button', class: 'ex-btn ghost', onclick: onSave },
+                'Save…',
+              )
+            : '',
+        ),
+        reads,
+        box,
+      ),
+    );
+    showQueries(queries);
+    revealCanvas();
+    let out;
+    try {
+      out = await run();
+      // A saved version says what it reads itself.
+      if (out.artifact && Array.isArray(out.artifact.queries))
+        showQueries(out.artifact.queries);
+    } catch (e) {
+      box.replaceChildren(
+        el(
+          'div',
+          { class: 'ex-error' },
+          e.message || 'Its queries could not run.',
+        ),
+      );
+      return { ok: false, tab: tab.id, error: e.error || 'artifact_failed' };
+    }
+    const failed = failedQueries(out.results);
+    if (failed.length)
+      tab.pane.firstChild.append(
+        el(
+          'div',
+          { class: 'ex-warn mx-3 mb-2' },
+          `${failed.map((f) => f.query).join(', ')} could not run; the artifact shows what it can.`,
+        ),
+      );
+    const draw = () => drawArtifact(tab, box, out.artifact, out.results);
+    if (out.consent) {
+      // An agent's draft over production data: its code is the agent's, and what the
+      // frame is handed can leave it (the sandbox's stated residual risk), so the person
+      // draws it, not the agent.
+      box.replaceChildren(
+        el(
+          'div',
+          { class: 'ex-notice mx-3 my-2' },
+          out.consent,
+          ' ',
+          el(
+            'button',
+            {
+              type: 'button',
+              class: 'ex-btn ghost ml-2',
+              'data-testid': 'artifact-draw',
+              onclick: (e) => {
+                e.currentTarget.disabled = true;
+                draw().then((drawn) => out.onDrawn && drawn && out.onDrawn());
+              },
+            },
+            'Draw it',
+          ),
+        ),
+      );
+      return { ok: true, tab: tab.id, waiting: true, failed };
+    }
+    const drawn = await draw();
+    if (drawn && out.onDrawn) out.onDrawn();
+    return { ok: drawn, tab: tab.id, failed };
+  }
+
+  // What the frame is handed can leave it (the sandbox's stated residual risk), so over
+  // data that is not synthetic an artifact's code reaches the person's rows only on THEIR
+  // click: a draft the agent shows waits for "Draw it", one the agent opens does too, and the
+  // agent may propose saving only a draft the person drew (`drawnDrafts`).
+  const CONSENT =
+    'The agent opened this. Its code runs in the sandbox over your data, which is not synthetic.';
+  const drawnDrafts = new Set();
+  function draftKey({ code, queries }) {
+    return JSON.stringify([
+      code,
+      queries.map((q) => [q.name, q.sql, q.max_rows || null]),
+    ]);
+  }
+
+  // A saved artifact (any version): its code and its queries' rows, run over the space as
+  // the person, checked again as at its save. `byAgent`: the agent asked (page_openItem).
+  function openSpaceArtifact(id, { byAgent = false } = {}) {
+    const a = findSpaceArtifact(Number(id));
+    if (!a) return Promise.resolve({ ok: false, error: 'not_found' });
+    return openArtifactTab({
+      kind: 'artifact',
+      title: a.version > 1 ? `${a.name} (v${a.version})` : a.name,
+      queries: [],
+      run: async () => {
+        const out = await post(
+          spaceApi(space.id, `artifacts/${Number(id)}/run/`),
+          {},
+        );
+        return {
+          ...out,
+          consent: byAgent && !out.all_generated ? CONSENT : null,
+        };
+      },
+    });
+  }
+
+  // An agent's draft: never saved. Its queries run over what the page reads, as the person;
+  // its code goes from here straight into the frame.
+  function openArtifactDraft({ name, code, queries }) {
+    return openArtifactTab({
+      kind: 'draft',
+      title: name,
+      queries,
+      onSave: () => openArtifactSaveDialog({ name, code, queries }),
+      run: async () => {
+        const data = await post(cfg.artifactDraftUrl, {
+          ...selectionBody(),
+          queries,
+        });
+        return {
+          artifact: { name, code, draft: true },
+          results: data.results,
+          consent: data.all_generated
+            ? null
+            : 'The agent drafted this artifact. Its code runs in the sandbox over your data, which is not synthetic.',
+          onDrawn: () => drawnDrafts.add(draftKey({ code, queries })),
+        };
+      },
+    });
+  }
+
+  async function deleteSpaceArtifact(a) {
+    if (
+      !window.confirm(
+        `Delete the artifact “${a.name}” from this space, every version? Everyone who can open the space loses it.`,
+      )
+    )
+      return;
+    try {
+      await post(spaceApi(space.id, `artifacts/${a.id}/delete/`), {});
+    } finally {
+      loadSpaceArtifacts();
     }
   }
 
@@ -2101,6 +2430,7 @@
       max_rows: Number(max_rows) || Number($('ex-max').value) || 500,
     };
     renderSaveTargets();
+    saveDialogFor('query');
     const target = matchingSpace();
     $('ex-save-target').value = target ? String(target.id) : '';
     $('ex-save-name').value = name;
@@ -2114,6 +2444,43 @@
   function closeSaveDialog() {
     $('ex-save-dialog').hidden = true;
     pendingSave = null;
+    saveDialogFor('query');
+  }
+
+  // The dialog's words: a query's (most of the time) or an artifact's.
+  const SAVE_QUERY_HINT = $('ex-save-hint')
+    ? $('ex-save-hint').textContent
+    : '';
+  function saveDialogFor(kind) {
+    const artifact = kind === 'artifact';
+    if ($('ex-save-title'))
+      $('ex-save-title').textContent = artifact
+        ? 'Save artifact'
+        : 'Save query';
+    if ($('ex-save-hint'))
+      $('ex-save-hint').textContent = artifact
+        ? 'The artifact is saved, never its rows: opening it runs its queries again, as whoever opens it, and draws it in the sandbox.'
+        : SAVE_QUERY_HINT;
+    $('ex-save-target').disabled = artifact;
+  }
+
+  // The same dialog for an artifact: its code and named queries, kept in THIS space (an
+  // artifact belongs to a space). Nothing is saved until the person clicks Save.
+  function openArtifactSaveDialog({ name = '', code, queries }) {
+    if (!space) return null;
+    pendingSave = { kind: 'artifact', code, queries };
+    renderSaveTargets();
+    $('ex-save-target').value = String(space.id);
+    saveDialogFor('artifact');
+    $('ex-save-name').value = name;
+    // Everything that will be kept: the queries, then the code the frame will run.
+    $('ex-save-sql').textContent =
+      queries.map((q) => `-- ${q.name}\n${q.sql}`).join('\n\n') +
+      `\n\n// code\n${code}`;
+    $('ex-save-error').hidden = true;
+    $('ex-save-dialog').hidden = false;
+    $('ex-save-name').focus();
+    return space;
   }
 
   // A personal query keeps the selection it ran over: the space's sources when saved
@@ -2131,12 +2498,30 @@
     if (!pendingSave) return;
     const name = $('ex-save-name').value.trim();
     if (!name) {
-      $('ex-save-error').textContent = 'Give the query a name.';
+      $('ex-save-error').textContent =
+        pendingSave.kind === 'artifact'
+          ? 'Give the artifact a name.'
+          : 'Give the query a name.';
       $('ex-save-error').hidden = false;
       return;
     }
     const target = $('ex-save-target').value;
     $('ex-save-confirm').disabled = true;
+    if (pendingSave.kind === 'artifact') {
+      try {
+        const { code, queries } = pendingSave;
+        await post(spaceApi(space.id, 'artifacts/'), { name, code, queries });
+        closeSaveDialog();
+        loadSpaceArtifacts();
+      } catch (e) {
+        $('ex-save-error').textContent =
+          e.message || 'Could not save the artifact.';
+        $('ex-save-error').hidden = false;
+      } finally {
+        $('ex-save-confirm').disabled = false;
+      }
+      return;
+    }
     try {
       const body = { name, ...pendingSave };
       const out = target
@@ -2258,6 +2643,7 @@
   describedReady.then(loadMissingOnOpen);
   loadSaved();
   loadSpaceItems();
+  loadSpaceArtifacts();
   loadConversations();
   // A card's Save: highlight Save and, once the spaces are known, open the dialog on
   // the space matching the card's selection (or My queries). Nothing saves by itself.
@@ -2331,6 +2717,58 @@
     return value;
   }
 
+  // An artifact as an agent hands it over (page_showArtifactDraft, page_proposeSave):
+  // {name, code, queries: [{name, sql, max_rows}]}. Its shape here; labs checks every query
+  // against the space again when it runs or is saved, and the frame compiles the code.
+  const MAX_CODE = 512 * 1024;
+  const MAX_ARTIFACT_QUERIES = 8;
+  const QUERY_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+
+  function checkArtifact({ name, code, queries } = {}) {
+    const label = checkText(name, 'name', 200, true);
+    if (typeof code !== 'string' || !code.trim())
+      throw new Error(
+        'code is required: JSX render code, as a workflow’s render_code',
+      );
+    if (new Blob([code]).size > MAX_CODE)
+      throw new Error('code is longer than 512 KB');
+    if (!Array.isArray(queries) || !queries.length)
+      throw new Error(
+        'queries is required: [{name, sql, max_rows}], each read as pipelines.<name>.rows',
+      );
+    if (queries.length > MAX_ARTIFACT_QUERIES)
+      throw new Error(`at most ${MAX_ARTIFACT_QUERIES} queries`);
+    const seen = new Set();
+    const checked = queries.map((q) => {
+      if (!q || typeof q !== 'object' || Array.isArray(q))
+        throw new Error('each query is {name, sql, max_rows}');
+      const extra = Object.keys(q).filter(
+        (k) => !['name', 'sql', 'max_rows'].includes(k),
+      );
+      // An artifact reads its space: a query names no sources of its own.
+      if (extra.length)
+        throw new Error(
+          `a query is {name, sql, max_rows}; it cannot carry ${extra.join(', ')}`,
+        );
+      if (typeof q.name !== 'string' || !QUERY_NAME.test(q.name))
+        throw new Error(
+          'a query’s name is how the code reads it (pipelines.<name>): letters, digits and _',
+        );
+      if (seen.has(q.name)) throw new Error(`two queries are named ${q.name}`);
+      seen.add(q.name);
+      checkSql(q.sql);
+      const rows = q.max_rows === undefined ? undefined : Number(q.max_rows);
+      if (rows !== undefined && !(Number.isInteger(rows) && rows > 0))
+        throw new Error('max_rows must be a positive integer');
+      return {
+        name: q.name,
+        sql: q.sql,
+        ...(rows ? { max_rows: rows } : {}),
+      };
+    });
+    return { name: label, code, queries: checked };
+  }
+
   const ACTIONS = {
     showQuery: [
       async ({ sql, display: shown, title } = {}) => {
@@ -2386,14 +2824,34 @@
     ],
     openItem: [
       async ({ kind, id } = {}) => {
-        if (kind === 'artifact')
-          throw new Error(
-            'Artifacts are not on this page yet: open a saved query (kind "query").',
-          );
-        if (kind !== 'query') throw new Error('kind must be "query"');
+        if (kind !== 'query' && kind !== 'artifact')
+          throw new Error('kind must be "query" or "artifact"');
         const n = Number(id);
         if (!Number.isInteger(n) || n <= 0)
-          throw new Error('id must be a saved query id');
+          throw new Error(`id must be a saved ${kind} id`);
+        if (kind === 'artifact') {
+          await artifactsLoading;
+          if (!space || !findSpaceArtifact(n))
+            throw new Error(
+              space
+                ? 'No such artifact in this space.'
+                : 'Artifacts are kept in a data space; this page has none open.',
+            );
+          const out = await openSpaceArtifact(n, { byAgent: true });
+          return {
+            ok: true,
+            opened: true,
+            tab: out.tab,
+            outcome: out.waiting
+              ? 'waiting_for_person'
+              : out.ok
+                ? 'shown_to_person'
+                : 'error_shown_to_person',
+            ...(out.failed && out.failed.length
+              ? { queries_failed: out.failed }
+              : {}),
+          };
+        }
         if (space && findSpaceItem(n)) {
           const out = await openSpaceItem(n);
           return {
@@ -2419,28 +2877,133 @@
       },
       {
         description:
-          'Open a saved query in the Data page canvas and run it as the person: one of this space’s queries (any version) or ' +
-          'one of the person’s own ("My queries"). Returns only an acknowledgement.',
+          'Open a saved query or an artifact in the Data page canvas, run as the person: one of this space’s queries (any ' +
+          'version) or one of the person’s own ("My queries"), or one of this space’s artifacts (any version), drawn in the ' +
+          'sandbox. Returns only an acknowledgement.',
         parameters: {
           type: 'object',
           properties: {
             kind: {
               type: 'string',
-              enum: ['query'],
-              description: 'What to open. Only "query" today.',
+              enum: ['query', 'artifact'],
+              description: 'What to open: a saved query, or an artifact.',
             },
             id: {
               type: 'integer',
               description:
-                'The saved query id (or a version’s id), from the page’s left rail.',
+                'The saved query’s or artifact’s id (or a version’s id): data_describe with space_id lists them under space.items.',
             },
           },
           required: ['kind', 'id'],
         },
       },
     ],
+    showArtifactDraft: [
+      async (input = {}) => {
+        const draft = checkArtifact(input);
+        if (!cfg.sandbox)
+          throw new Error(
+            'Artifacts are drawn only in the page sandbox, which is off on this server.',
+          );
+        const out = await openArtifactDraft(draft);
+        return {
+          ok: true,
+          shown: !out.waiting && out.ok,
+          tab: out.tab,
+          saved: false,
+          outcome: out.waiting
+            ? 'waiting_for_person'
+            : out.ok
+              ? 'shown_to_person'
+              : 'error_shown_to_person',
+          ...(out.waiting
+            ? {
+                note: 'This data is not synthetic: the person draws your draft with a click, so its code never runs over their data unasked.',
+              }
+            : {}),
+          ...(out.error ? { error: out.error } : {}),
+          ...(out.failed && out.failed.length
+            ? {
+                queries_failed: out.failed,
+                hint: 'Check each query with data_validate (pass space_id on a space) and draft again.',
+              }
+            : {}),
+        };
+      },
+      {
+        description:
+          'Draw a DRAFT artifact -- a small dashboard: JSX render code plus the named queries it reads -- in the Data page ' +
+          'canvas, in the workflow sandbox, over this page’s data, as the person. Nothing is saved. The code is written as a ' +
+          'workflow’s render code (function WorkflowUI({ pipelines }), with React, window.LabsReport and Chart.js available) and reads each ' +
+          'query’s rows as pipelines.<name>.rows (objects keyed by column). Validate each SQL with data_validate first. ' +
+          'Returns only an acknowledgement, never rows; offer to keep it with page_proposeSave (kind "artifact").',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description:
+                'A short plain-words name, e.g. "Visits per month by opportunity".',
+            },
+            code: {
+              type: 'string',
+              description:
+                'JSX render code, as a workflow’s: function WorkflowUI({ pipelines }) { ... } reading pipelines.<query name>.rows.',
+            },
+            queries: {
+              type: 'array',
+              description:
+                'The named queries it reads, at most 8: one SELECT each over the page’s data (as data_query takes it).',
+              items: {
+                type: 'object',
+                properties: {
+                  name: {
+                    type: 'string',
+                    description:
+                      'How the code reads it: pipelines.<name>.rows. Letters, digits and _.',
+                  },
+                  sql: { type: 'string' },
+                  max_rows: { type: 'integer' },
+                },
+                required: ['name', 'sql'],
+              },
+            },
+          },
+          required: ['name', 'code', 'queries'],
+        },
+      },
+    ],
     proposeSave: [
-      async ({ name, sql, display: shown } = {}) => {
+      async ({
+        kind = 'query',
+        name,
+        sql,
+        display: shown,
+        code,
+        queries,
+      } = {}) => {
+        if (kind !== 'query' && kind !== 'artifact')
+          throw new Error('kind must be "query" or "artifact"');
+        if (kind === 'artifact') {
+          const artifact = checkArtifact({ name, code, queries });
+          if (!space)
+            throw new Error(
+              'An artifact is kept in a data space, and this page has none open: the person can save this selection as a space first.',
+            );
+          // Only what the person has seen drawn: the same code and queries, as a draft.
+          if (!drawnDrafts.has(draftKey(artifact)))
+            throw new Error(
+              'Propose saving only a draft the person has seen drawn: show exactly this code and these queries with page_showArtifactDraft first (over data that is not synthetic, the person draws it).',
+            );
+          openArtifactSaveDialog(artifact);
+          return {
+            ok: true,
+            proposed: true,
+            saved: false,
+            target: `space ${space.id}`,
+            note: 'Nothing is saved until the person clicks Save.',
+          };
+        }
         const label = checkText(name, 'name', 200, true);
         checkSql(sql);
         const target = openSaveDialog({
@@ -2459,25 +3022,44 @@
       },
       {
         description:
-          'Fill the Data page’s Save dialog with a query for the person to keep (in this space, by default). Nothing is saved ' +
-          'until they click Save; they can rename it or choose where it goes. The query is kept, never its rows.',
+          'Fill the Data page’s Save dialog for the person to keep a query (in this space, by default) or, with kind ' +
+          '"artifact", an artifact in this space (its name, code and queries, as page_showArtifactDraft takes them). Nothing ' +
+          'is saved until they click Save; they can rename it. The query or artifact is kept, never its rows.',
         parameters: {
           type: 'object',
           properties: {
+            kind: {
+              type: 'string',
+              enum: ['query', 'artifact'],
+              description:
+                'What to save: a query (the default) or an artifact.',
+            },
             name: {
               type: 'string',
-              description: 'A name for the saved query.',
+              description: 'A name for the saved query or artifact.',
             },
             sql: {
               type: 'string',
-              description: 'The SELECT to save (validated again when saved).',
+              description:
+                'A query: the SELECT to save (validated again when saved).',
             },
             display: {
               type: 'object',
-              description: 'How to show its result, as data_query’s `display`.',
+              description:
+                'A query: how to show its result, as data_query’s `display`.',
+            },
+            code: {
+              type: 'string',
+              description: 'An artifact: its JSX render code.',
+            },
+            queries: {
+              type: 'array',
+              description:
+                'An artifact: its named queries, [{name, sql, max_rows}].',
+              items: { type: 'object' },
             },
           },
-          required: ['name', 'sql'],
+          required: ['name'],
         },
       },
     ],

@@ -77,7 +77,8 @@ You are answering questions about live CommCare Connect program data for the opp
       percent beside a count on one chart. Never chart an id or a year as a measure.
 16. On the Data page, show the person a result in the page itself with page_showQuery (see `page_actions`)
     rather than handing SQL back in the chat; the canvas runs it as them. Offer a useful query for keeping
-    with page_proposeSave, and open a visit the person asks about with page_showVisit.
+    with page_proposeSave, and open a visit the person asks about with page_showVisit. Asked for a dashboard
+    (several charts to keep), draft an artifact with page_showArtifactDraft (see `page_actions`).
 """
 
 #: For an agent (a canopy call) over PRODUCTION opportunities that labs has not cleared it
@@ -117,12 +118,35 @@ sees. Each runs in their browser, as them, and returns only an acknowledgement -
   whenever you would otherwise hand SQL back or describe a result the person should look at: validate the SQL
   with data_validate first, give a short title ("Visits per worker, last 30 days") and the same `display`
   (labels, formats, chart) you would give data_query. The page keeps the person's own editor untouched.
-- page_openItem {kind: "query", id}: open one of this space's saved queries (or one of the person's own) in the
-  canvas; ids come from the page's left rail (the person can tell you which).
-- page_proposeSave {name, sql, display}: fill the page's Save dialog so the person can save a useful query into
-  this space with one click. Nothing is saved until they click Save. Propose, do not insist.
+- page_openItem {kind: "query" | "artifact", id}: open one of this space's saved queries (or one of the person's
+  own) or one of its artifacts in the canvas; data_describe with space_id lists them under `space.items`.
+- page_showArtifactDraft {name, code, queries}: draw a DRAFT artifact in the canvas (below). Nothing is saved.
+- page_proposeSave {name, sql, display} for a query, or {kind: "artifact", name, code, queries} for an artifact:
+  fill the page's Save dialog so the person can keep it in this space with one click. Nothing is saved until they
+  click Save. Propose, do not insist.
 - page_showVisit {visit_id}: open one visit, form and all, in the canvas.
 If an action is refused (it throws), read the reason and do not retry the same input.
+
+Artifacts: a small dashboard kept in a data space -- several charts, tiles or tables over the space, that a team
+reopens next week. Draft one when the person asks for a dashboard, a set of charts together, or something to keep
+and come back to; for one number or one chart, page_showQuery is enough. How:
+1. Write each query as you would for data_query (one SELECT over the space's data) and check it with
+   data_validate, passing space_id. Give each a name the code reads it by: letters, digits and _ (at most 8).
+2. Write the code exactly as a workflow's render code: a React function component named WorkflowUI, e.g.
+   function WorkflowUI({ pipelines }) { const rows = pipelines.by_month.rows; ... }
+   (React is in scope: React.useState, React.useEffect, React.useRef.)
+   Each query's rows are pipelines.<name>.rows -- objects keyed by column -- and pipelines.<name>.metadata says
+   row_count, truncated and any error. React, window.LabsReport (its charts, tiles and tables) and Chart.js are
+   there, with labs' Tailwind classes; nothing else is. It runs in the workflow sandbox: no fetch, no network, no
+   labs session -- the page runs the queries as the person and hands it the rows; the code asks for nothing.
+3. page_showArtifactDraft {name, code, queries}. It returns only an acknowledgement (never rows); a failed query
+   is named with its error code -- fix it with data_validate and draft again. Over data that is not synthetic the
+   person draws your draft with a click (`waiting_for_person`): say so, and do not draft it again.
+4. If it is what they wanted, offer to keep it: page_proposeSave {kind: "artifact", name, code, queries} -- exactly
+   the code and queries of a draft the person has seen drawn (anything else is refused). Only on a data space's
+   page (artifacts live in a space); on the plain Data page suggest they save the selection as a
+   space first. To change a saved artifact, read it with data_artifact, draft the new version, propose it under the
+   same name (a new version).
 """
 
 #: Returned by data_describe with ``space_id``: what being held to a space means.
@@ -132,7 +156,9 @@ You are working in a data space: a named, fixed set of sources (`space`) a team 
 the call then reads exactly the space's sources and nothing else, and refuses any other opportunities, programs
 or workflow. Do not try to read outside the space; if the person asks about data the space does not hold, say
 so and suggest they open or make a space with it. You cannot change a space's sources -- only the person can,
-on the page. Useful queries are kept by proposing a save (page_proposeSave), never by copying results.
+on the page. Useful queries and artifacts are kept by proposing a save (page_proposeSave), never by copying results.
+`space.items` lists what is kept in it (saved queries and artifacts, by id); data_artifact reads an artifact's
+code and queries -- never its rows, which only the page draws, for the person.
 """
 
 #: Returned by data_describe to an agent on a page (a canopy page grant): the reads are held

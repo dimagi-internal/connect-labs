@@ -29,6 +29,12 @@ module.exports = {
       __dirname,
       '../connect_labs/static/js/workflow-sandbox.tsx',
     ),
+    // A data space's artifacts on the Data page (labsdata): the same sandbox host, for the
+    // page's own script to mount (components/workflow/sandbox/artifact.tsx).
+    'space-artifact': path.resolve(
+      __dirname,
+      '../connect_labs/static/js/space-artifact.tsx',
+    ),
     'pipeline-editor': path.resolve(
       __dirname,
       '../connect_labs/static/js/pipeline-editor.tsx',

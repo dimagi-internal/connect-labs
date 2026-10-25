@@ -93,6 +93,7 @@
     .ex-chart .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
     .ex-chart .sub { font-size: 12px; color: #78716c; }
     .ex-chart .stat { padding: 18px 8px 10px; }
+    .ex-artifact-frame { min-height: 80px; }
     .ex-chart .stat-value { font-size: 34px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; color: #1c1917; }
   </style>
 {% endblock %}
@@ -142,6 +143,15 @@
         <div class="px-3 pt-3 pb-2"><span class="ex-label">In this space</span> <span class="ex-muted text-xs">click one to run it</span></div>
         <div id="ex-space-items" class="ex-saved"><p class="px-3 pb-3 text-sm ex-muted">—</p></div>
       </div>
+
+      {% if space %}
+      {# Artifacts: small labs pages (JSX render code and the named queries it reads), drawn in #}
+      {# the canvas by the workflow sandbox -- never on this page itself. data.js fills it. #}
+      <div class="ex-card" id="ex-artifacts-card">
+        <div class="px-3 pt-3 pb-2"><span class="ex-label">Artifacts</span> <span class="ex-muted text-xs">click one to draw it</span></div>
+        <div id="ex-artifacts" class="ex-saved"><p class="px-3 pb-3 text-sm ex-muted">—</p></div>
+      </div>
+      {% endif %}
 
       {% if space %}
       {# Saved conversations: pointers to canopy chat sessions begun on this space's page -- #}
@@ -269,6 +279,9 @@
       workflowsUrl: "{% url 'labsdata:workflows' %}",
       drillUrl: "{% url 'labsdata:drill' %}",
       queryUrl: "{% url 'labsdata:query' %}",
+      // A draft artifact's queries, run as the person; its code never leaves this page but
+      // for the sandbox's frame.
+      artifactDraftUrl: "{% url 'labsdata:artifact_draft_run' %}",
       visitsUrl: "{% url 'labsdata:visits' %}",
       savedUrl: "{% url 'labsdata:saved' %}",
       indexUrl: "{% url 'labsdata:index' %}",
@@ -284,8 +297,11 @@
       panelHolds: "{{ canopy_panel.page_holds|default:''|escapejs }}",
     };
   </script>
+  {# The workflow sandbox's host and frame draw artifacts (workflow/sandbox.py); null when it is switched off. #}
+  {{ artifact_sandbox|json_script:"ex-artifact-sandbox" }}
   {{ open_intent|json_script:"ex-open-intent" }}
   <script src="{% static 'labsdata/result_chart.js' %}"></script>
   <script src="{% static 'labsdata/data.js' %}"></script>
+  {% if artifact_sandbox %}<script src="{% static 'bundles/js/space-artifact-bundle.js' %}" defer></script>{% endif %}
   {% if canopy_panel %}{% include "canopy_host/panel.html" %}{% endif %}
 {% endblock %}

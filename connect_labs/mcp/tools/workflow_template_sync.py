@@ -98,8 +98,9 @@ def workflow_sync_from_template_file(
 
     # Mirror the size cap enforced by workflow_update_render_code so the sync
     # path can't smuggle in a payload that the dedicated update tool would
-    # refuse. 512 KB matches workflows._MAX_RENDER_CODE_BYTES.
-    _MAX_RENDER_CODE_BYTES = 512 * 1024
+    # refuse: the cap every render shares (render_code_lint.MAX_RENDER_CODE_BYTES).
+    from connect_labs.workflow.render_code_lint import MAX_RENDER_CODE_BYTES as _MAX_RENDER_CODE_BYTES
+
     if not parsed.render_code.strip():
         raise MCPToolError("INVALID_TEMPLATE", "RENDER_CODE is empty after parsing")
     if len(parsed.render_code.encode("utf-8")) > _MAX_RENDER_CODE_BYTES:

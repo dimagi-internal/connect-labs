@@ -184,6 +184,12 @@ class DataView(LoginRequiredMixin, TemplateView):
                 },
             }
         )
+        from connect_labs.workflow.sandbox import host_payload, sandbox_enabled
+
+        # A space's artifacts are drawn ONLY in the workflow sandbox's frame (its shell, its
+        # enforced CSP, its bridge): the page passes the frame the rows and runs nothing.
+        # Switched off (LABS_PAGE_SANDBOX), they are not drawn at all -- never unsandboxed.
+        ctx["artifact_sandbox"] = host_payload(self.request) if sandbox_enabled() else None
         from connect_labs.labs import canopy_panel
 
         # Ids, never rows: the agent reads data itself through the data_* tools, as
@@ -216,6 +222,18 @@ class DataView(LoginRequiredMixin, TemplateView):
             path=self.request.path,
         )
         return ctx
+
+    def render_to_response(self, context, **response_kwargs):
+        response = super().render_to_response(context, **response_kwargs)
+        if context.get("artifact_sandbox"):
+            # The workflow sandbox's second, enforced policy, as on a run page: the frame may
+            # be navigated only to its shell (and the canopy panel's embed), so an artifact
+            # cannot leave with rows in a URL.
+            from connect_labs.workflow.sandbox import host_frame_src, labs_origin
+
+            response["Content-Security-Policy"] = host_frame_src(labs_origin(self.request))
+            response.csp_extra_policy = True
+        return response
 
 
 class _Invalid(Exception):
@@ -267,6 +285,8 @@ class _JsonView(LoginRequiredMixin, View):
             )
         except QueryError as e:
             return JsonResponse(e.as_dict(), status=400)
+        except service.ArtifactError as e:
+            return JsonResponse({"error": e.code, "message": e.message}, status=400)
         except _Invalid as e:
             return JsonResponse({"error": e.code, "message": e.message}, status=e.status)
 
@@ -454,30 +474,43 @@ def _query_fields(body: dict) -> tuple[str, str, dict | None, int]:
     return name, sql, shown, max_rows
 
 
-def _latest(queryset, *, versions: bool = False) -> list[dict]:
+def _query_version(q) -> dict:
+    return {
+        "id": q.pk,
+        "version": q.version,
+        "sql": q.sql,
+        "max_rows": q.max_rows,
+        "display": q.display or None,
+        "saved_by": getattr(q.owner, "username", ""),
+        "created_at": q.created_at.isoformat(),
+    }
+
+
+def _artifact_version(a) -> dict:
+    # What the rail lists: never the code (opening a version fetches it, through the gate).
+    return {
+        "id": a.pk,
+        "version": a.version,
+        "queries": [q.get("name") for q in a.queries or []],
+        "saved_by": getattr(a.saved_by, "username", "") or "",
+        "created_at": a.created_at.isoformat(),
+    }
+
+
+def _latest(queryset, *, versions: bool = False, related="owner", item=None, version_of=_query_version) -> list[dict]:
     """The latest version of each name, newest first; with ``versions``, each carries the
-    list of its versions (id, version, saved by, when)."""
+    list of its versions (id, version, saved by, when). Saved queries and artifacts alike
+    (``item`` and ``version_of`` say how each is shown)."""
     by_name: dict[str, list] = {}
-    for q in queryset.select_related("owner").order_by("name", "-version"):
+    for q in queryset.select_related(related).order_by("name", "-version"):
         by_name.setdefault(q.name, []).append(q)
     rows = sorted(by_name.values(), key=lambda qs: qs[0].created_at, reverse=True)
     out = []
     for qs in rows:
-        item = qs[0].as_dict()
+        entry = item(qs[0]) if item else qs[0].as_dict()
         if versions:
-            item["versions"] = [
-                {
-                    "id": q.pk,
-                    "version": q.version,
-                    "sql": q.sql,
-                    "max_rows": q.max_rows,
-                    "display": q.display or None,
-                    "saved_by": getattr(q.owner, "username", ""),
-                    "created_at": q.created_at.isoformat(),
-                }
-                for q in qs
-            ]
-        out.append(item)
+            entry["versions"] = [version_of(q) for q in qs]
+        out.append(entry)
     return out
 
 
@@ -679,6 +712,133 @@ class SpaceItemDeleteView(_JsonView):
             raise _Invalid("not_found", "There is no such query in this space.", status=404)
         deleted = spaces.delete_item(opened, saved)
         _audit_space(Action.DELETE, opened, "labsdata_space_query", saved.pk, request.user, {"space_id": opened.id})
+        return {"deleted": deleted}
+
+
+class ArtifactDraftRunView(_JsonView):
+    """POST ``{space_id | selection, queries}``: run a DRAFT artifact's named queries over the
+    space the call reads, as the person, for the page to hand its sandboxed frame
+    (``page_showArtifactDraft``). The same checks and the same run as a saved artifact's
+    (``service.run_artifact``); nothing is saved. The draft's code never comes here: it goes
+    from the page straight into the frame."""
+
+    def handle(self, request, body):
+        from connect_labs.labs.synthetic.provenance import all_generated
+
+        space = _space(request, body)
+        return {
+            "results": service.run_artifact(_caller(request), space, body.get("queries")),
+            # Over production data the page asks the person before it hands the frame these
+            # rows: the draft's code is an agent's, and what a frame is given can leave it
+            # (the sandbox's stated residual risk). Synthetic data draws at once.
+            "all_generated": all_generated(space.selection.ids),
+        }
+
+
+class SpaceArtifactsView(_JsonView):
+    """GET: the space's artifacts, the latest of each name with its versions (never their
+    code). POST ``{name, code, queries}``: keep an artifact in the space -- its JSX checked
+    as a workflow's render_code is, each named query checked against the space as a run
+    would be (``service.artifact_queries``) -- versioned per (space, name): any of the
+    space's people may add a version. The person's own write, behind CSRF."""
+
+    def read(self, request):
+        opened = spaces.open(_caller(request), self.kwargs["space_id"], allow_changed=True)
+        items = _latest(
+            spaces.artifacts(opened),
+            versions=True,
+            related="saved_by",
+            item=lambda a: a.as_dict(code=False),
+            version_of=_artifact_version,
+        )
+        by_id = {a.pk: a for a in spaces.artifacts(opened).filter(pk__in=[i["id"] for i in items])}
+        for item in items:
+            item["can_delete"] = spaces.may_delete_artifact(opened, by_id[item["id"]])
+        return {"space_id": opened.id, "artifacts": items}
+
+    def handle(self, request, body):
+        from django.db import IntegrityError, transaction
+
+        from connect_labs.audit_trail.models import Action
+        from connect_labs.workflow.render_code_lint import render_code_warning
+
+        from .models import SpaceArtifact
+
+        opened = spaces.open(_caller(request), self.kwargs["space_id"])
+        name = display.clean_text(body.get("name"), 200)
+        if not name:
+            raise _Invalid("name_required", "Give the artifact a name.")
+        code = service.artifact_code(body.get("code"))
+        queries = service.artifact_queries(opened, body.get("queries"))
+        with transaction.atomic():
+            # select_related(None): FOR UPDATE refuses the nullable saved_by join.
+            previous = (
+                spaces.artifacts(opened)
+                .select_related(None)
+                .select_for_update()
+                .filter(name=name)
+                .order_by("-version")
+                .first()
+            )
+            try:
+                saved = SpaceArtifact.objects.create(
+                    space=opened.space,
+                    name=name,
+                    code=code,
+                    queries=queries,
+                    saved_by=request.user,
+                    version=(previous.version + 1) if previous else 1,
+                    parent=previous,
+                )
+            except IntegrityError as e:
+                raise _Invalid("conflict", "That name was just saved; save again.") from e
+        metadata = {"space_id": opened.id, "version": saved.version, "code_length": len(code), "queries": len(queries)}
+        _audit_space(Action.CREATE, opened, "labsdata_space_artifact", saved.pk, request.user, metadata)
+        out = {"saved": saved.as_dict(code=False)}
+        # As a workflow's render_code write: a class no stylesheet defines draws as nothing.
+        warning = render_code_warning(code)
+        if warning:
+            out["warning"] = warning
+        return out
+
+
+class SpaceArtifactRunView(_JsonView):
+    """POST: open one version of an artifact -- its code and named queries, and its queries
+    run over the space as the person (``service.run_artifact``, checked again as at its
+    save), for the page to hand its sandboxed frame. Never anything else: the frame gets
+    these rows and asks for nothing."""
+
+    def handle(self, request, body):
+        caller = _caller(request)
+        opened = spaces.open(caller, self.kwargs["space_id"])
+        artifact = spaces.artifact_item(opened, self.kwargs.get("pk"))
+        if artifact is None:
+            raise _Invalid("not_found", "There is no such artifact in this space.", status=404)
+        from connect_labs.labs.synthetic.provenance import all_generated
+
+        return {
+            "artifact": artifact.as_dict(),
+            "results": service.run_artifact(caller, opened, artifact.queries),
+            # The page asks the person before drawing one the AGENT opened over production data.
+            "all_generated": all_generated(opened.selection.ids),
+        }
+
+
+class SpaceArtifactDeleteView(_JsonView):
+    """POST: delete an artifact from the space, every version of its name: a manager, or the
+    member who saved every version of it (``spaces.delete_artifact``)."""
+
+    def handle(self, request, body):
+        from connect_labs.audit_trail.models import Action
+
+        opened = spaces.open(_caller(request), self.kwargs["space_id"], allow_changed=True)
+        artifact = spaces.artifact_item(opened, self.kwargs.get("pk"))
+        if artifact is None:
+            raise _Invalid("not_found", "There is no such artifact in this space.", status=404)
+        deleted = spaces.delete_artifact(opened, artifact)
+        # Every version of the name goes: say how many (never the name: the log keeps no words).
+        metadata = {"space_id": opened.id, "versions_deleted": deleted}
+        _audit_space(Action.DELETE, opened, "labsdata_space_artifact", artifact.pk, request.user, metadata)
         return {"deleted": deleted}
 
 

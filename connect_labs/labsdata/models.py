@@ -129,6 +129,62 @@ class SavedQuery(models.Model):
         }
 
 
+class SpaceArtifact(models.Model):
+    """A small labs page kept in a data space: render code and the named queries it reads.
+
+    ``code`` is JSX render code, stored as a workflow's ``render_code`` is (the source text,
+    nothing compiled), and drawn ONLY by the workflow sandbox (the opaque-origin frame,
+    ``workflow/sandbox.py``, ``components/workflow/sandbox/``) -- never on the Data page
+    itself. ``queries`` is ``[{name, sql, max_rows}]``: each checked against the space as a
+    run would be when it is saved (``service.artifact_queries``) and again every time the
+    artifact is opened, when the host runs them over the space, as the person opening it,
+    and hands the frame their rows as the render's ``pipelines`` (the same prop a workflow's
+    render code reads). **No rows are stored**: opening an artifact runs it again, live.
+
+    It belongs to the space and inherits the space's rules, as a saved query does: listed,
+    opened, saved and deleted only through ``spaces.open``; any member may add a version
+    (per space and name, like ``SavedQuery``), a member deletes one whose every version they
+    saved, a manager any.
+    """
+
+    space = models.ForeignKey(DataSpace, on_delete=models.CASCADE, related_name="artifacts")
+    name = models.CharField(max_length=200)
+    version = models.PositiveIntegerField(default=1)
+    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="next_versions")
+    #: JSX render code, as a workflow's render_code.
+    code = models.TextField()
+    #: ``[{name, sql, max_rows}]``: what the render code reads, as ``pipelines[name]``.
+    queries = models.JSONField(default=list)
+    saved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="saved_space_artifacts"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["space", "name", "version"], name="labsdata_space_artifact_version"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} (v{self.version})"
+
+    def as_dict(self, *, code: bool = True) -> dict:
+        out = {
+            "id": self.pk,
+            "kind": "artifact",
+            "name": self.name,
+            "version": self.version,
+            "queries": [dict(q) for q in self.queries or []],
+            "space_id": self.space_id,
+            "saved_by": getattr(self.saved_by, "username", "") or "",
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+        if code:
+            out["code"] = self.code
+        return out
+
+
 class SpaceConversation(models.Model):
     """A POINTER to a canopy chat session, kept in a data space ("Saved conversations").
 

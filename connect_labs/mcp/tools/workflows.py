@@ -307,9 +307,6 @@ def workflow_get(
     return out
 
 
-_MAX_RENDER_CODE_BYTES = 512 * 1024  # 512 KB
-
-
 def _validate_render_code(jsx: str) -> None:
     """Minimal validation for render_code. The browser runs the real syntax
     check via Babel standalone at render time, so the server's job is just
@@ -317,16 +314,14 @@ def _validate_render_code(jsx: str) -> None:
     else through. Policy constraints like `var`-only or naming conventions
     used to live here but were removed — they block valid modern JS (``let``,
     ``const``, arrow-function components) and give no benefit the client
-    can't provide at render time with a clearer error.
+    can't provide at render time with a clearer error. The check is shared with
+    a data space's artifacts (``render_code_lint.render_code_problem``).
     """
-    if not jsx or not jsx.strip():
-        raise MCPToolError("INVALID_JSX", "render_code is empty")
-    if len(jsx.encode("utf-8")) > _MAX_RENDER_CODE_BYTES:
-        raise MCPToolError(
-            "INVALID_JSX",
-            f"render_code exceeds {_MAX_RENDER_CODE_BYTES // 1024} KB. Split it into helper "
-            "workflows or move data to pipelines.",
-        )
+    from connect_labs.workflow.render_code_lint import render_code_problem
+
+    problem = render_code_problem(jsx)
+    if problem:
+        raise MCPToolError("INVALID_JSX", problem)
 
 
 def _attach_render_code_warning(result: dict, jsx: str) -> dict:

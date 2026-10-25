@@ -210,6 +210,9 @@ def describe(
             "name": opened.space.name,
             "description": opened.space.description,
             "program_ids": list(opened.space.program_ids),
+            # What is kept in it, by name and id (page_openItem opens one; data_artifact
+            # reads an artifact's code). Never a row.
+            "items": _space_items(opened),
             "rules": guidance.SPACE_RULES,
         }
     if _from_canopy():
@@ -220,6 +223,25 @@ def describe(
         # The page this agent is on, and that it reads nothing beyond it.
         out["page"] = {**page, "rules": guidance.PAGE_RULES}
     return out
+
+
+def _space_items(opened) -> dict:
+    """The latest version of each saved query and artifact in an open space: ids, names,
+    versions and an artifact's query names. Definitions, never rows."""
+
+    def latest(rows):
+        seen = {}
+        for r in rows.order_by("name", "-version"):
+            seen.setdefault(r.name, r)
+        return sorted(seen.values(), key=lambda r: r.name.lower())
+
+    return {
+        "queries": [{"id": q.pk, "name": q.name, "version": q.version} for q in latest(spaces.queries(opened))],
+        "artifacts": [
+            {"id": a.pk, "name": a.name, "version": a.version, "queries": [q.get("name") for q in a.queries or []]}
+            for a in latest(spaces.artifacts(opened))
+        ],
+    }
 
 
 VALIDATE = dict(
@@ -620,3 +642,41 @@ def data_workflow_context(user, definition_id=None, opportunity_id=None, program
         raise _scope_error(e) from e
     except WorkflowNotFound as e:
         raise MCPToolError("NOT_FOUND", str(e), {"reason": e.code}) from e
+
+
+@register(
+    name="data_artifact",
+    description=(
+        "Read one artifact kept in a data space: its JSX code and its named queries ({name, sql, max_rows}), and "
+        "its versions. An artifact is a small labs page -- render code drawn in the workflow sandbox on the Data "
+        "page, reading its queries' rows as `pipelines.<name>.rows`, exactly as a workflow's render code reads "
+        "its pipelines. Definitions only: never rows (the page runs the queries for the person, as them, and "
+        "only the page draws them). data_describe with `space_id` lists a space's artifacts under "
+        "`space.items.artifacts`. To change one, draft a new version with page_showArtifactDraft and propose it "
+        "with page_proposeSave."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "space_id": {**_SPACE["space_id"], "description": "The data space the artifact is kept in."},
+            "artifact_id": {"type": "integer", "description": "The artifact (or one version's) id."},
+        },
+        "required": ["space_id", "artifact_id"],
+        "additionalProperties": False,
+    },
+)
+def data_artifact(user, space_id, artifact_id):
+    opened = _space(_caller(user), space_id)
+    artifact = spaces.artifact_item(opened, artifact_id)
+    if artifact is None:
+        raise MCPToolError(
+            "NOT_FOUND", f"Data space {opened.id} has no artifact {artifact_id}.", {"reason": "no_such_artifact"}
+        )
+    versions = spaces.artifacts(opened).filter(name=artifact.name).order_by("-version")
+    return {
+        **artifact.as_dict(),
+        "versions": [
+            {"id": v.pk, "version": v.version, "saved_by": getattr(v.saved_by, "username", "") or ""} for v in versions
+        ],
+        "space_id": opened.id,
+    }
