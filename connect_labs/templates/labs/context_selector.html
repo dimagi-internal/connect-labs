@@ -25,16 +25,36 @@ Desktop is unchanged. Plain CSS, so the header does not wait on a stylesheet reb
 </style>
 {# Button only - no wrapper #}
 <div x-data="labsContextSelector()" class="relative min-w-0">
-  {% if request.labs_context.organization or request.labs_context.program or request.labs_context.opportunity %}
+  {% comment %}
+  A page that reads its data from somewhere else declares it (labs/chrome.py, NOT_USED):
+  the selector then says it is not used here rather than showing a selection that looks
+  applied. The saved context is left alone and the menu still opens -- what is applied
+  there is kept for the pages that use it.
+  {% endcomment %}
+  {% with ctx=request.labs_context %}
+  {% firstof ctx.program.name ctx.opportunity.name ctx.organization.name as saved_name %}
+  {% if page_chrome.labs_context_not_used %}
+    <button @click="open = !open"
+            class="ctx-button flex items-center space-x-2 px-4 py-2 bg-gray-50 border border-dashed border-gray-300 rounded-lg hover:bg-white transition"
+            type="button" data-testid="context-not-used"
+            title="This page chooses its own data; your selection{% if saved_name %} ({{ saved_name }}){% endif %} is kept for other pages.">
+      <span class="ctx-short text-sm text-gray-400">Not used</span>
+      <span class="ctx-full text-sm text-gray-400">Labs context: <span class="italic">not used on this page</span></span>
+      <svg class="ctx-chevron w-4 h-4 text-gray-300" :class="{'rotate-180': open}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+      </svg>
+    </button>
+  {% elif ctx.organization or ctx.program or ctx.opportunity %}
     {# Context is selected - show in order: org, program, opp #}
     <button @click="open = !open"
             class="ctx-button flex items-center space-x-2 px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition"
-            type="button" data-testid="context-button">
-      {% with ctx=request.labs_context %}
-        {% firstof ctx.program.name ctx.opportunity.name ctx.organization.name as short_name %}
-        <span class="ctx-short text-sm text-gray-900" title="{{ short_name }}" data-testid="context-short">{{ short_name }}</span>
-      {% endwith %}
+            type="button" data-testid="context-button"
+            {% if page_chrome.labs_context_started_from %}title="This page opened on your labs context and chooses its own data from there; changing what the page shows leaves your context as it is."{% endif %}>
+      <span class="ctx-short text-sm text-gray-900" title="{{ saved_name }}" data-testid="context-short">{{ saved_name }}</span>
       <div class="ctx-full flex items-center space-x-2 text-sm">
+        {% if page_chrome.labs_context_started_from %}
+          <span class="text-xs italic text-gray-500" data-testid="context-started-from">Used to start this page's selection:</span>
+        {% endif %}
         {% if request.labs_context.organization %}
           <span class="font-medium text-gray-700">Org:</span>
           <span class="text-gray-900">{{ request.labs_context.organization.name }}</span>
@@ -65,6 +85,7 @@ Desktop is unchanged. Plain CSS, so the header does not wait on a stylesheet reb
       <span class="font-medium"><span class="ctx-full">Select Context</span><span class="ctx-short">Context</span></span>
     </button>
   {% endif %}
+  {% endwith %}
 
   {# Full-width dropdown menu - positioned fixed, completely outside header flow #}
   <div x-show="open"
@@ -79,6 +100,11 @@ Desktop is unchanged. Plain CSS, so the header does not wait on a stylesheet reb
        style="display: none;">
 
     <div class="p-4">
+      {% if page_chrome.labs_context_not_used %}
+        <p class="mb-3 text-sm text-gray-500" data-testid="context-not-used-note">
+          This page doesn't use the labs context -- it chooses its own data. What you apply here is kept for the pages that do.
+        </p>
+      {% endif %}
       <div class="mb-4">
         {% include "labs/_picker_columns.html" %}
       </div>

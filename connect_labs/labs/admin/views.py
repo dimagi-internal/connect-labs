@@ -11,6 +11,7 @@ from django.db import connection, transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
+from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.generic import TemplateView
 from django_tables2 import SingleTableView
@@ -43,6 +44,7 @@ from connect_labs.labs.admin.utils import (
 )
 from connect_labs.labs.analysis.pipeline import AnalysisPipeline
 from connect_labs.labs.analysis.sse_streaming import AnalysisPipelineSSEMixin, BaseSSEStreamView, send_sse_event
+from connect_labs.labs.chrome import NOT_USED, page_chrome
 from connect_labs.labs.view_mixins import AdminRequiredMixin
 
 logger = logging.getLogger(__name__)
@@ -54,6 +56,11 @@ class AdminIndexView(AdminRequiredMixin, TemplateView):
     template_name = "labs/admin/index.html"
 
 
+# The tracker spans every org Pulse can see, never the labs context (labs/chrome.py).
+CONTEXT_NOT_USED = method_decorator(page_chrome(labs_context=NOT_USED), name="dispatch")
+
+
+@CONTEXT_NOT_USED
 class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
     """Cross-workspace opportunity dashboard, reading Pulse's local mirror.
 

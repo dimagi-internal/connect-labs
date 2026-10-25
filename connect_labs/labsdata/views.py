@@ -17,6 +17,7 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from connect_labs.labs.access.scopes import Caller
+from connect_labs.labs.chrome import NOT_USED, STARTED_FROM, PageChrome
 
 from . import display, page_holds, scope, service, spaces
 from .engine import QueryError
@@ -51,9 +52,8 @@ def _workflow_param(raw: str | None) -> dict | None:
     return {"id": int(parts[0]), key: int(parts[2])}
 
 
-def initial_selection(request) -> dict:
-    """What the page opens on: the URL's selection, else the labs context (an opportunity
-    or a program), else nothing. Only ids -- every one is checked when it is read."""
+def _url_selection(request) -> dict | None:
+    """The selection the URL names (``workflow``, ``opps``, ``programs``), else None."""
     workflow = _workflow_param(request.GET.get("workflow"))
     opps, programs = _selected(request), _ids(request.GET.get("programs"))
     if workflow or opps or programs:
@@ -62,12 +62,37 @@ def initial_selection(request) -> dict:
             "opportunity_ids": [] if workflow else opps,
             "program_ids": [] if workflow else programs,
         }
+    return None
+
+
+def _context_selection(request) -> dict | None:
+    """The labs context's opportunity, else its program, as a selection; else None."""
     context = getattr(request, "labs_context", None) or {}
     if context.get("opportunity_id"):
         return {"workflow": None, "opportunity_ids": [int(context["opportunity_id"])], "program_ids": []}
     if context.get("program_id"):
         return {"workflow": None, "opportunity_ids": [], "program_ids": [int(context["program_id"])]}
-    return {"workflow": None, "opportunity_ids": [], "program_ids": []}
+    return None
+
+
+def initial_selection(request) -> dict:
+    """What the page opens on: the URL's selection, else the labs context (an opportunity
+    or a program), else nothing. Only ids -- every one is checked when it is read."""
+    return (
+        _url_selection(request)
+        or _context_selection(request)
+        or {"workflow": None, "opportunity_ids": [], "program_ids": []}
+    )
+
+
+def header_chrome(request, *, space: bool) -> PageChrome:
+    """How the header's labs context selector reads on this page (labs/chrome.py).
+
+    A space reads its own sources, and a URL names its own selection: the context is
+    not used. With neither, the page opened on the context and chooses from there."""
+    if space or _url_selection(request) is not None or _context_selection(request) is None:
+        return PageChrome(labs_context=NOT_USED)
+    return PageChrome(labs_context=STARTED_FROM)
 
 
 def _max_rows(request) -> int:
@@ -124,6 +149,8 @@ class DataView(LoginRequiredMixin, TemplateView):
         selected = opened.selection.ids if opened is not None else initial["opportunity_ids"]
         ctx.update(
             {
+                # View context beats the context processor (labs/chrome.py).
+                "page_chrome": header_chrome(self.request, space=opened is not None),
                 "labsdata_options": {
                     "opportunities": [
                         {"id": o.id, "name": o.name, "llo": o.llo, "program_id": o.program_id} for o in opps

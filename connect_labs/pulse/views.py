@@ -18,8 +18,10 @@ from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.decorators import method_decorator
 from django.views import View
 
+from connect_labs.labs.chrome import NOT_USED, page_chrome
 from connect_labs.marketplace.directory import DIRECTORY_ID
 from connect_labs.pulse.models import (
     PulseOppGroup,
@@ -72,6 +74,11 @@ def _display_context(layout: str, *, public: bool, show_partner_names: bool = Tr
     }
 
 
+# Pulse spans every programme it mirrors, never the labs context (labs/chrome.py).
+CONTEXT_NOT_USED = method_decorator(page_chrome(labs_context=NOT_USED), name="dispatch")
+
+
+@CONTEXT_NOT_USED
 class PulseIndexView(LoginRequiredMixin, View):
     """Layout picker plus ingest status and link management.
 
@@ -356,6 +363,7 @@ def _report_scope(report: PulseReport, costs_view: str | None = None):
     return _program_scope(req)
 
 
+@CONTEXT_NOT_USED
 class PulseReportListView(LoginRequiredMixin, View):
     """Index of donor reports, and the place new ones are started."""
 
@@ -386,6 +394,7 @@ class PulseReportListView(LoginRequiredMixin, View):
         return redirect("pulse:report_edit", slug=report.slug)
 
 
+@CONTEXT_NOT_USED
 class PulseReportEditView(LoginRequiredMixin, View):
     """The editor: derived figures shown read-only, manual copy editable."""
 
@@ -549,6 +558,7 @@ class PulseConnectivityView(LoginRequiredMixin, View):
         )
 
 
+@CONTEXT_NOT_USED
 class PulseCostsView(LoginRequiredMixin, View):
     """Cost data worth fixing: what labs corrected, and what needs a person.
 
