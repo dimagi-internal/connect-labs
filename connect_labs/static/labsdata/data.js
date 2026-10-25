@@ -1810,8 +1810,13 @@
               class: 'ex-btn ghost ml-2',
               'data-testid': 'artifact-draw',
               onclick: (e) => {
-                e.currentTarget.disabled = true;
-                draw().then((drawn) => out.onDrawn && drawn && out.onDrawn());
+                const button = e.currentTarget;
+                button.disabled = true;
+                draw().then((drawn) => {
+                  if (drawn && out.onDrawn) out.onDrawn();
+                  // Not drawn (the sandbox did not load): the person may try again.
+                  if (!drawn) button.disabled = false;
+                });
               },
             },
             'Draw it',
@@ -2398,7 +2403,11 @@
     return (
       openable.find((s) =>
         state.workflow
-          ? s.workflow && Number(s.workflow.id) === Number(state.workflow.id)
+          ? s.workflow &&
+            ['id', 'opportunity_id', 'program_id'].every(
+              (k) =>
+                Number(s.workflow[k] || 0) === Number(state.workflow[k] || 0),
+            )
           : !s.workflow &&
             same(s.opportunity_ids, opps) &&
             same(s.program_ids, new Set(state.programs)),
@@ -2415,12 +2424,25 @@
       ...openable.map((s) =>
         el('option', { value: String(s.id) }, `Space: ${s.name}`),
       ),
+      // Off a space's page: a space made from this selection, then the query saved in it.
+      ...(space
+        ? []
+        : [el('option', { value: 'new' }, 'A new space from this selection…')]),
     );
     if (space && !openable.some((s) => s.id === space.id))
       select.append(
         el('option', { value: String(space.id) }, `Space: ${space.name}`),
       );
     if (current) select.value = current;
+  }
+
+  // Set when the page came from a results card's Save (`?save=1`): the dialog offers a new
+  // space when none holds the selection.
+  let offerSpace = false;
+
+  function showNewSpaceName() {
+    const box = $('ex-save-space');
+    if (box) box.hidden = $('ex-save-target').value !== 'new';
   }
 
   function openSaveDialog({ name = '', sql, display: shown = null, max_rows }) {
@@ -2432,8 +2454,15 @@
     renderSaveTargets();
     saveDialogFor('query');
     const target = matchingSpace();
-    $('ex-save-target').value = target ? String(target.id) : '';
+    // A card's "Save to a space" with no space holding its selection: offer to make one.
+    $('ex-save-target').value = target
+      ? String(target.id)
+      : offerSpace && hasSelection()
+        ? 'new'
+        : '';
+    showNewSpaceName();
     $('ex-save-name').value = name;
+    if ($('ex-save-space-name')) $('ex-save-space-name').value = '';
     $('ex-save-sql').textContent = sql;
     $('ex-save-error').hidden = true;
     $('ex-save-dialog').hidden = false;
@@ -2524,6 +2553,27 @@
     }
     try {
       const body = { name, ...pendingSave };
+      if (target === 'new') {
+        // The person's own two writes: the space from this selection, then the query in it.
+        const spaceName = (
+          ($('ex-save-space-name') && $('ex-save-space-name').value) ||
+          ''
+        ).trim();
+        if (!spaceName) throw { message: 'Name the new space.' };
+        const made = await post(cfg.spacesUrl, {
+          name: spaceName,
+          ...selectionBody(),
+        });
+        // The space exists now: a retry saves into it, never makes a second one.
+        openable.push({ id: made.space.id, name: spaceName });
+        renderSaveTargets();
+        $('ex-save-target').value = String(made.space.id);
+        showNewSpaceName();
+        await post(spaceApi(made.space.id, 'items/'), body);
+        closeSaveDialog();
+        goToSpace(made.space.id);
+        return;
+      }
       const out = target
         ? await post(spaceApi(target, 'items/'), body)
         : await post(cfg.savedUrl, { ...body, ...personalSelection() });
@@ -2570,6 +2620,7 @@
   on('ex-save', 'click', save);
   on('ex-save-confirm', 'click', confirmSave);
   on('ex-save-cancel', 'click', closeSaveDialog);
+  on('ex-save-target', 'change', showNewSpaceName);
   on('ex-save-name', 'keydown', (e) => {
     if (e.key === 'Enter') confirmSave();
     if (e.key === 'Escape') closeSaveDialog();
@@ -2649,6 +2700,7 @@
   // the space matching the card's selection (or My queries). Nothing saves by itself.
   const spacesLoaded = loadSpaces();
   if (intent.save) {
+    offerSpace = !space;
     $('ex-save').classList.add('ready');
     $('ex-save').focus();
     if ($('ex-save-dialog'))

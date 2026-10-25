@@ -323,4 +323,9 @@ END of the body, not in `javascript`: that block renders inside <head>, where
 {% block inline_javascript %}
 {{ block.super }}
 {% if canopy_panel %}{% include "workflow/_agent_launcher_reserve.html" %}{% include "canopy_host/panel.html" %}{% endif %}
+{% if canopy_panel and labsdata_run_page %}
+{# The Data page's page_showQuery: here it opens the Data page on this workflow in a new tab. #}
+{{ labsdata_run_page|json_script:"labsdata-run-page" }}
+<script src="{% static 'labsdata/run_page_actions.js' %}"></script>
+{% endif %}
 {% endblock inline_javascript %}

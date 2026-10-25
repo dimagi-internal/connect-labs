@@ -56,6 +56,10 @@ class SpaceScenario:
     #: When set, the ask also asks the agent to propose saving the query under this name; the
     #: harness then clicks Save as the person and checks the item lands in the space.
     save_as: str = ""
+    #: Step 6c: asked for a small dashboard, the agent drafts an artifact
+    #: (page_showArtifactDraft) and proposes keeping it under ``artifact_as``.
+    artifact_ask: str = ""
+    artifact_as: str = ""
     covers: str = ""
     truth: dict = field(default_factory=dict)
 
@@ -74,6 +78,8 @@ def load(data: dict) -> list[SpaceScenario]:
                 outside_opportunity=int(raw["outside_opportunity"]),
                 ask=raw.get("ask", ""),
                 save_as=raw.get("save_as", ""),
+                artifact_ask=raw.get("artifact_ask", ""),
+                artifact_as=raw.get("artifact_as", ""),
                 covers=raw.get("covers", ""),
             )
         )
@@ -354,6 +360,10 @@ def run(sc: SpaceScenario, mcp, out_dir: Path, args) -> dict:
                         checks.ROUTES["blocked"],
                     )
 
+            # 6c. the agent drafts an artifact
+            if sc.artifact_ask:
+                _agent_artifact(page, steps, sc, space_id, space_url, out_dir, args, entry)
+
             # 7. archive
             arch = _post(page, f"{API}/spaces/{space_id}/archive/", {})
             gone = page.request.get(space_url)
@@ -465,6 +475,133 @@ def _agent_save(page, steps: _Steps, turn, sc: SpaceScenario, space_id, out_dir:
         gate=False,
     )
     page.screenshot(path=str(out_dir / "step6-agent-saved.png"))
+
+
+ROUTE_ARTIFACT = (
+    "artifacts: connect_labs/static/labsdata/data.js (showArtifactDraft, openArtifactTab) +"
+    " components/workflow/sandbox/artifact.tsx; the agent's how-to: connect_labs/labsdata/guidance.py PAGE_ACTIONS"
+)
+
+_ARTIFACT_STATE_JS = """() => {
+    const tab = document.querySelector('.ex-tab[aria-selected="true"]');
+    const pane = [...document.querySelectorAll('#ex-panes > .ex-pane')].find((p) => !p.hidden);
+    const frame = pane && pane.querySelector('iframe');
+    const title = document.getElementById('ex-save-title');
+    return {
+        tab: tab ? tab.innerText : null,
+        frame: frame ? {sandbox: frame.getAttribute('sandbox'), src: frame.getAttribute('src')} : null,
+        waiting: !!(pane && pane.querySelector('[data-testid="artifact-draw"]')),
+        dialog: !document.getElementById('ex-save-dialog').hidden,
+        dialog_title: title ? title.textContent : null,
+        name: document.getElementById('ex-save-name').value,
+    };
+}"""
+
+
+def _artifact_frame_text(page) -> str:
+    for f in page.frames:
+        if "/labs/sandbox/render/" in f.url:
+            try:
+                text = f.inner_text("body", timeout=5000)
+            except Exception:  # noqa: BLE001
+                continue
+            if text.strip():
+                return text
+    return ""
+
+
+def _agent_artifact(page, steps: _Steps, sc: SpaceScenario, space_id, space_url: str, out_dir: Path, args, entry):
+    """Step 6c: asked for a small dashboard, the agent drafts an artifact in the canvas
+    (page_showArtifactDraft) -- drawn by the workflow sandbox -- and proposes keeping it; the
+    person clicks Save; it is in the rail, and opens from it."""
+    from .driver import PanelDriver, ScenarioCapture
+
+    driver = PanelDriver(out_dir, turn_timeout=args.turn_timeout)
+    cap = ScenarioCapture(url=space_url)
+    sessions: list[str] = []
+    page.on("request", lambda r: _note(r.url, sessions))
+    try:
+        page.goto(space_url, wait_until="load", timeout=120_000)
+        driver._open(page, space_url, cap)
+        frame = driver._open_panel(page, cap)
+        turn = driver._turn(page, frame, sc.artifact_ask, 1, sessions, cap)
+        entry["turns"] = [*entry.get("turns", []), _turn_dict(turn)]
+        steps.add(
+            6,
+            "agent answered the dashboard ask",
+            turn.finished and bool(turn.reply),
+            turn.reply[:200] or "no reply",
+            checks.ROUTES["finished"],
+        )
+        state = page.evaluate(_ARTIFACT_STATE_JS) or {}
+        if state.get("waiting"):
+            page.locator('[data-testid="artifact-draw"]').first.click()
+            page.wait_for_timeout(4000)
+            state = page.evaluate(_ARTIFACT_STATE_JS) or {}
+        fr = state.get("frame") or {}
+        steps.add(
+            6,
+            "agent drafted an artifact in the canvas",
+            "draft" in str(state.get("tab") or "").lower() and bool(fr),
+            f"tab {state.get('tab')!r}, frame {fr}",
+            ROUTE_ARTIFACT,
+        )
+        steps.add(
+            6,
+            "the draft draws in the workflow sandbox (opaque origin)",
+            fr.get("sandbox") == "allow-scripts" and str(fr.get("src") or "").startswith("/labs/sandbox/render/"),
+            f"iframe sandbox={fr.get('sandbox')!r} src={fr.get('src')!r}",
+            ROUTE_ARTIFACT,
+        )
+        _wait_for(page, lambda: _artifact_frame_text(page), timeout_s=30)
+        drawn = _artifact_frame_text(page)
+        steps.add(6, "the draft drew something", bool(drawn.strip()), f"frame text: {drawn[:200]!r}", ROUTE_ARTIFACT)
+        page.screenshot(path=str(out_dir / "step6c-draft.png"), full_page=True)
+        if not steps.add(
+            6,
+            "agent proposed saving the artifact",
+            bool(state.get("dialog")) and state.get("dialog_title") == "Save artifact",
+            f"dialog open={state.get('dialog')}, title={state.get('dialog_title')!r}, name={state.get('name')!r}",
+            ROUTE_ARTIFACT,
+        ):
+            return
+        page.locator("#ex-save-confirm").click()
+        page.wait_for_timeout(4000)
+        got = _get(page, f"{API}/spaces/{space_id}/artifacts/")
+        names = [a.get("name") for a in (got.get("body") or {}).get("artifacts", [])]
+        rail = page.evaluate(
+            "() => { const e = document.querySelector('#ex-artifacts'); return e ? e.innerText : '' }"
+        )
+        name = state.get("name") or ""
+        steps.add(
+            6,
+            "the person's Save kept it in the space",
+            name in names and name in rail,
+            f"saved {name!r}; artifacts {names}",
+            ROUTE_ARTIFACT,
+        )
+        steps.add(
+            6,
+            "the agent named it as asked",
+            sc.artifact_as.lower() in name.lower(),
+            f"name {name!r}",
+            ROUTE_ARTIFACT,
+            gate=False,
+        )
+        page.locator("#ex-artifacts button.open").first.click()
+        page.wait_for_timeout(6000)
+        opened = page.evaluate(_ARTIFACT_STATE_JS) or {}
+        drawn = _artifact_frame_text(page)
+        steps.add(
+            6,
+            "it opens from the rail, in the sandbox",
+            (opened.get("frame") or {}).get("sandbox") == "allow-scripts" and bool(drawn.strip()),
+            f"tab {opened.get('tab')!r}, frame {opened.get('frame')}",
+            ROUTE_ARTIFACT,
+        )
+        page.screenshot(path=str(out_dir / "step6c-saved-artifact.png"), full_page=True)
+    except Exception as e:  # noqa: BLE001
+        steps.add(6, "agent drafts an artifact", False, f"{type(e).__name__}: {e}"[:300], checks.ROUTES["blocked"])
 
 
 _PANEL_SESSION_JS = """() => {

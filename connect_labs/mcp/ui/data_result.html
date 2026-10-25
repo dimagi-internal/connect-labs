@@ -1079,13 +1079,21 @@
           }
           return url;
         }
+        // A result read over a workflow (a run page's chat) is kept in a data space, saved
+        // on the Data page as the person: the space of the workflow's programme or
+        // opportunity, or a new one from it (labsdata/views.py DataView, `save`).
+        function fromWorkflow() {
+          return /[?&]workflow=/.test(openUrl());
+        }
         function actions(withRows) {
           if (!openUrl()) return '';
           return (
             (withRows
               ? '<button class="btn" id="download" title="Opens the query on the Data page, runs it again with your access (current data) and offers the CSV there">Download CSV</button>'
               : '') +
-            '<button class="btn" id="save" title="Opens the query on the Data page to save it (the query, not the rows)">Save</button>'
+            (fromWorkflow()
+              ? '<button class="btn" id="save" title="Opens the Data page on the space of this workflow\'s programme or opportunity, with the Save dialog filled (the query, not the rows). With no such space, it offers to make one.">Save to a space</button>'
+              : '<button class="btn" id="save" title="Opens the query on the Data page to save it (the query, not the rows)">Save</button>')
           );
         }
         function openButton(primary) {

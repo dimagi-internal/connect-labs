@@ -1145,6 +1145,26 @@ describe('download and save go through the Data page', () => {
     expect(url.searchParams.get('sql')).toBe('select 1');
   });
 
+  it('a workflow’s result offers Save to a space, through the Data page', async () => {
+    const view = await shown({
+      ...BY_LLO,
+      open_on_page:
+        'https://labs.example/labs/data/?workflow=9%3Aprogram%3A3&sql=select+1',
+    });
+    expect(view.document.getElementById('save').textContent).toBe(
+      'Save to a space',
+    );
+    view.click('#save');
+    await settle();
+    const url = new URL(view.requests('ui/open-link')[0].params.url);
+    expect(url.pathname).toBe('/labs/data/');
+    expect(url.searchParams.get('workflow')).toBe('9:program:3');
+    expect(url.searchParams.get('save')).toBe('1');
+    // Off a workflow it is the plain Save.
+    const plain = await shown(BY_LLO);
+    expect(plain.document.getElementById('save').textContent).toBe('Save');
+  });
+
   it('a withheld result still offers Save (its SQL), not a download', async () => {
     const view = await shown({
       withheld: true,
