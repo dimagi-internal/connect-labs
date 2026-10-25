@@ -76,6 +76,24 @@
     .ex-modal[hidden] { display: none; }
     .ex-modal-box { background: #fff; border-radius: 10px; width: min(560px, 92vw); padding: 16px; box-shadow: 0 10px 40px rgba(0,0,0,.2); display: flex; flex-direction: column; gap: 10px; }
     .ex-modal-box pre { max-height: 180px; overflow: auto; }
+    .ex-more { position: relative; }
+    .ex-more summary { list-style: none; cursor: pointer; padding: 2px 4px; }
+    .ex-more summary::-webkit-details-marker { display: none; }
+    .ex-more summary::after { content: " ▾"; }
+    .ex-more-menu { position: absolute; z-index: 20; left: 0; margin-top: 4px; min-width: 240px; background: #fff; border: 1px solid #e7e5e4; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.08); padding: 4px 0; }
+    /* A saved query's chart: drawn by result_chart.js, the results card's own module, so the
+       colours are the card's series colours. */
+    .ex-viewtabs { display: flex; gap: 4px; padding: 8px 12px 0; }
+    .ex-viewtabs button { font-size: 12px; padding: 3px 10px; border-radius: 999px; color: #57534e; border: 1px solid transparent; }
+    .ex-viewtabs button[aria-selected="true"] { background: #eef2ff; color: #16006d; font-weight: 600; border-color: #c7d2fe; }
+    .ex-chart { padding: 8px 12px; --s1: #3f4fa0; --s2: #c26a1e; --s3: #1d6b3a; --s4: #9b2c6f; --s5: #5b6470; --color-border-secondary: #eceff3; --color-background-primary: #fff; }
+    .ex-chart svg { display: block; max-width: 100%; height: auto; }
+    .ex-chart svg text { fill: #5b6470; font-size: 11px; }
+    .ex-chart .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; margin-top: 4px; color: #44403c; }
+    .ex-chart .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+    .ex-chart .sub { font-size: 12px; color: #78716c; }
+    .ex-chart .stat { padding: 18px 8px 10px; }
+    .ex-chart .stat-value { font-size: 34px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; color: #1c1917; }
   </style>
 {% endblock %}
 
@@ -101,11 +119,19 @@
         <div class="px-3 pt-3 pb-3">
           <label class="ex-label mb-2 block" for="ex-space-switch">Space</label>
           <select id="ex-space-switch" class="ex-search" aria-label="Open a data space">
-            <option value="">{% if space %}{{ space.name }}{% else %}Unsaved space: this selection{% endif %}</option>
+            <option value="">{% if space %}{{ space.name }}{% else %}Not saved — save this selection as a space{% endif %}</option>
           </select>
           <div class="mt-2 flex flex-wrap items-center gap-2">
             <button class="ex-btn ghost" id="ex-space-new" type="button" {% if space %}hidden{% endif %}>Save as a space</button>
-            <button class="ex-btn ghost" id="ex-space-archive" type="button" hidden>Archive space</button>
+            {# A manager's rare actions, out of the way: the page's own actions are Run and Save. #}
+            {# data.js shows it to managers only (spaces.py decides every write). #}
+            <details class="ex-more" id="ex-space-more" hidden>
+              <summary class="ex-link text-sm">More</summary>
+              <div class="ex-more-menu" role="menu">
+                <button class="ex-option" id="ex-sources-edit" type="button" role="menuitem">Update sources…<small>Change what the space reads; may lock people out</small></button>
+                <button class="ex-option" id="ex-space-archive" type="button" role="menuitem">Archive space…<small>It disappears for everyone who can open it</small></button>
+              </div>
+            </details>
           </div>
           <div id="ex-space-notice"></div>
         </div>
@@ -176,7 +202,6 @@
           </div>
           <div id="ex-wf-list" class="ex-menu ex-menu-inline mt-2" hidden></div>
           <div class="mt-2 flex flex-wrap items-center gap-2">
-            <button class="ex-btn ghost" id="ex-sources-edit" type="button" hidden>Update sources</button>
             <button class="ex-btn" id="ex-sources-save" type="button" hidden>Save sources</button>
             <button class="ex-btn ghost" id="ex-sources-cancel" type="button" hidden>Cancel</button>
           </div>
@@ -189,7 +214,9 @@
         <div id="ex-tables" class="ex-tables"><p class="px-3 pb-3 text-sm ex-muted">—</p></div>
       </div>
 
-      <div class="ex-card">
+      {# On a space's page only when the person has some: an empty "My queries" there reads #}
+      {# as if the space had nothing in it (data.js loadSaved). #}
+      <div class="ex-card" id="ex-saved-card" {% if space %}hidden{% endif %}>
         <div class="px-3 pt-3 pb-2"><span class="ex-label">My queries</span></div>
         <div id="ex-saved" class="ex-saved"><p class="px-3 pb-3 text-sm ex-muted">—</p></div>
       </div>
@@ -258,6 +285,7 @@
     };
   </script>
   {{ open_intent|json_script:"ex-open-intent" }}
+  <script src="{% static 'labsdata/result_chart.js' %}"></script>
   <script src="{% static 'labsdata/data.js' %}"></script>
   {% if canopy_panel %}{% include "canopy_host/panel.html" %}{% endif %}
 {% endblock %}

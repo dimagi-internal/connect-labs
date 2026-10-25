@@ -8,6 +8,7 @@ Stores tokens in session instead of database.
 import datetime
 import hashlib
 import logging
+import re
 import secrets
 from base64 import urlsafe_b64encode
 from urllib.parse import urlencode
@@ -49,9 +50,16 @@ def labs_login_page(request: HttpRequest) -> HttpResponse:
     context = {
         "next": next_url,
         "user_profile": user_profile,
+        # A link to a data space says so on the sign-in page -- never which space: its name
+        # is for the people who hold its sources, and this visitor is not signed in yet.
+        "sent_a_data_space": bool(_DATA_SPACE_PATH.match(next_url)),
     }
 
     return render(request, "labs/login.html", context)
+
+
+#: A data space's page (labsdata `space`), as a `next=` path.
+_DATA_SPACE_PATH = re.compile(r"^/labs/data/space/\d+/")
 
 
 def labs_oauth_login(request: HttpRequest) -> HttpResponse:

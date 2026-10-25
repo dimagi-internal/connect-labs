@@ -86,6 +86,9 @@
 
   {% else %}
     <!-- Not Logged In -->
+    {% if sent_a_data_space %}
+      <p class="text-base font-semibold text-gray-900" id="sent-a-data-space">Sign in to open the data space you were sent.</p>
+    {% endif %}
     <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
       <p class="text-sm font-semibold text-blue-800 mb-2">
         <i class="fa-solid fa-flask mr-1"></i> Labs Mode - Experimental Environment

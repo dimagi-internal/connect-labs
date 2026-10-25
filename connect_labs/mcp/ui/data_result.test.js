@@ -7,9 +7,13 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { Window } from 'happy-dom';
 
+// As Labs serves it (connect_labs/mcp/ui/__init__.py): the shared chart module inlined
+// at its @include marker.
 const HTML = readFileSync(
   new URL('./data_result.html', import.meta.url),
   'utf8',
+).replace(/\/\*@include:([a-z0-9_]+\/[a-z0-9_]+\.js)\*\//g, (_, path) =>
+  readFileSync(new URL(`../../static/${path}`, import.meta.url), 'utf8'),
 );
 const SCRIPT = HTML.slice(
   HTML.indexOf('<script>') + '<script>'.length,

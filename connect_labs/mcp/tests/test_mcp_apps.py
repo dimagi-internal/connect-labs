@@ -504,6 +504,18 @@ def test_the_results_view_is_self_contained():
         assert banned not in doc.script, banned
 
 
+def test_the_results_view_carries_the_chart_module_the_data_page_draws_with():
+    """One chart module, two places: the card has it inlined where it is served (it may
+    load nothing), the Data page loads the same file as a script."""
+    from pathlib import Path
+
+    html = _data_result_resource().html()
+    module = (Path(__file__).resolve().parents[2] / "static/labsdata/result_chart.js").read_text()
+    assert "/*@include:" not in html
+    assert module in html
+    assert "var LabsResultChart" in html
+
+
 def test_the_results_view_reads_the_kept_result_and_never_runs_the_query():
     """Its behaviour is tested in data_result.test.js against a stand-in host; this pins the
     contract a reviewer reads: resources/read on labs-result://, no tools/call, and no

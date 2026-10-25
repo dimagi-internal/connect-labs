@@ -8,6 +8,11 @@ import { readFileSync } from 'node:fs';
 import { Window } from 'happy-dom';
 
 const SCRIPT = readFileSync(new URL('./data.js', import.meta.url), 'utf8');
+// The chart module the page loads before data.js (the results card's own, inlined there).
+const CHART = readFileSync(
+  new URL('./result_chart.js', import.meta.url),
+  'utf8',
+);
 
 function tick() {
   return new Promise((resolve) => setTimeout(resolve, 0));
@@ -59,6 +64,12 @@ function mount({
   panel = false,
   canAdminAssign = false,
   conversations = [],
+  // The opportunities' cached visit counts, as describe reports them: before a load from
+  // Connect, and after one.
+  cached = 3,
+  cachedAfterLoad = 3,
+  // Hold a load from Connect until the test releases it (mount returns releaseLoad).
+  holdLoad = false,
 } = {}) {
   const window = new Window({ url: 'https://labs.example/labs/data/' });
   const document = window.document;
@@ -76,13 +87,15 @@ function mount({
   document.body.innerHTML = `
     <script type="application/json" id="labsdata-options">${JSON.stringify(options)}</script>
     <select id="ex-space-switch"></select><button id="ex-space-new">New</button>
-    <button id="ex-space-archive">Archive</button><div id="ex-space-notice"></div>
+    <details id="ex-space-more" class="ex-more" hidden><summary>More</summary>
+      <button id="ex-sources-edit">Update</button><button id="ex-space-archive">Archive</button></details>
+    <div id="ex-space-notice"></div>
     <div id="ex-chips"></div><div class="ex-picker"><input id="ex-add"><div id="ex-add-results"></div></div>
     <button id="ex-wf-btn">Workflow</button><span id="ex-wf-hint"></span><div id="ex-wf-list"></div>
-    <button id="ex-sources-edit" hidden>Update</button><button id="ex-sources-save" hidden>Save</button>
+    <div id="ex-sources-card"></div><button id="ex-sources-save" hidden>Save</button>
     <button id="ex-sources-cancel" hidden>Cancel</button>
     <div id="ex-cache"></div><div id="ex-tables"></div><span id="ex-tables-hint"></span>
-    <div id="ex-space-items"></div><div id="ex-saved"></div>
+    <div id="ex-space-items"></div><div id="ex-saved-card"${space ? ' hidden' : ''}><div id="ex-saved"></div></div>
     <div id="ex-conversations-card"><div id="ex-conversations"></div>
       <input id="ex-conversation-label"><button id="ex-conversation-save" disabled>Save this conversation</button>
       <p id="ex-conversation-hint"></p><div id="ex-conversation-error" hidden></div></div>
@@ -106,6 +119,7 @@ function mount({
     <script type="application/json" id="ex-open-intent">${JSON.stringify(intent)}</script>`;
   const posts = [];
   const gets = [];
+  let releaseLoad = null;
   window.LABSDATA = {
     describeUrl: '/d',
     queryUrl: '/q',
@@ -135,6 +149,8 @@ function mount({
       return ok({ saved: saved || [] });
     }
     posts.push({ url, body: JSON.parse(init.body) });
+    if (holdLoad && url === '/d' && JSON.parse(init.body).load_missing)
+      await new Promise((resolve) => (releaseLoad = resolve));
     if (url.endsWith('/conversations/'))
       return ok({
         conversation: { id: 9, session_id: JSON.parse(init.body).session_id },
@@ -156,7 +172,15 @@ function mount({
       url === '/q'
         ? result || RESULT
         : {
-            opportunities: [{ opportunity_id: 7, cached_visits: 3 }],
+            opportunities: [
+              {
+                opportunity_id: 7,
+                opportunity_name: 'Opp',
+                cached_visits: JSON.parse(init.body).load_missing
+                  ? cachedAfterLoad
+                  : cached,
+              },
+            ],
             loaded: [],
             relations: {},
             fields: [],
@@ -169,8 +193,16 @@ function mount({
   window.HTMLAnchorElement.prototype.click = function () {
     clicks.push(this.getAttribute('download'));
   };
+  window.eval(CHART);
   window.eval(SCRIPT);
-  return { window, document, posts, gets, clicks };
+  return {
+    window,
+    document,
+    posts,
+    gets,
+    clicks,
+    releaseLoad: () => releaseLoad && releaseLoad(),
+  };
 }
 
 describe('the CSV export', () => {
@@ -803,5 +835,174 @@ describe('saved conversations (pointers to canopy chat sessions)', () => {
     expect(
       document.getElementById('ex-conversation-hint').textContent,
     ).toContain('is saved here');
+  });
+});
+
+describe("a saved query's chart, on the canvas", () => {
+  const MONTHS = {
+    columns: ['opp', 'visits'],
+    rows: [
+      ['North', 30],
+      ['South', 10],
+      ['East', 20],
+    ],
+    row_count: 3,
+    truncated: false,
+    elapsed_ms: 1,
+    opportunities: [{ id: 7, name: 'Opp' }],
+  };
+  const item = (display) => ({
+    id: 5,
+    name: 'Visits by opp',
+    sql: 'SELECT opp, visits FROM x',
+    max_rows: 50,
+    display,
+    version: 1,
+    versions: [],
+  });
+
+  it('opens on the chart its display asked for, drawn as the card draws it, the table one click away', async () => {
+    const { document } = mount({
+      space: SPACE,
+      result: MONTHS,
+      items: [
+        item({
+          columns: { visits: { label: 'Visits' } },
+          chart: { type: 'bar', x: 'opp', y: ['visits'] },
+        }),
+      ],
+    });
+    await settle();
+    document.querySelector('#ex-space-items button.open').click();
+    await settle();
+    const pane = document.querySelector('.ex-pane[data-tab="t1"]');
+    const tabs = [...pane.querySelectorAll('.ex-viewtabs button')];
+    expect(tabs.map((b) => b.textContent)).toEqual(['Chart', 'Table']);
+    expect(tabs[0].getAttribute('aria-selected')).toBe('true');
+    const chart = pane.querySelector('.ex-chart');
+    expect(chart.hidden).toBe(false);
+    // One bar per row, largest first, as the results card draws them.
+    expect(chart.querySelectorAll('rect').length).toBe(3);
+    expect(chart.querySelector('rect title').textContent).toContain('North');
+    expect(chart.querySelector('.legend').textContent).toBe('Visits');
+    expect(pane.querySelector('.ex-table-wrap').hidden).toBe(true);
+    tabs[1].click();
+    expect(pane.querySelector('.ex-table-wrap').hidden).toBe(false);
+    expect(chart.hidden).toBe(true);
+    expect(tabs[1].getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('draws a line for a line chart, and nothing for a query saved without one', async () => {
+    const line = mount({
+      space: SPACE,
+      result: MONTHS,
+      items: [item({ chart: { type: 'line', x: 'opp', y: ['visits'] } })],
+    });
+    await settle();
+    line.document.querySelector('#ex-space-items button.open').click();
+    await settle();
+    expect(line.document.querySelectorAll('.ex-chart polyline').length).toBe(1);
+
+    const plain = mount({ space: SPACE, result: MONTHS, items: [item(null)] });
+    await settle();
+    plain.document.querySelector('#ex-space-items button.open').click();
+    await settle();
+    expect(plain.document.querySelector('.ex-viewtabs')).toBeNull();
+    expect(plain.document.querySelector('.ex-chart')).toBeNull();
+    expect(plain.document.querySelector('.ex-table-wrap').hidden).toBe(false);
+  });
+});
+
+describe('opening a space loads what its sources have not loaded', () => {
+  const UNLOADED = {
+    ...RESULT,
+    columns: ['n'],
+    rows: [[0]],
+    opportunities: [{ id: 7, name: 'Opp', cached_at: null }],
+  };
+
+  it('loads them once, as the person, without holding the page up, and says so', async () => {
+    const { document, posts, releaseLoad } = mount({
+      space: SPACE,
+      cached: 0,
+      cachedAfterLoad: 40,
+      holdLoad: true,
+      result: UNLOADED,
+    });
+    await settle();
+    const described = posts.filter((p) => p.url === '/d');
+    expect(described.map((p) => p.body)).toEqual([
+      { space_id: 42, load_missing: false },
+      { space_id: 42, load_missing: true },
+    ]);
+    expect(document.getElementById('ex-cache').textContent).toContain(
+      'Loading 1 opportunity from Connect',
+    );
+    // The page works meanwhile; a result run now says it is not a real zero.
+    document.getElementById('ex-run').click();
+    await settle();
+    const warn = document.querySelector('#ex-result .ex-warn');
+    expect(warn.textContent).toContain('not a real zero');
+    expect(warn.textContent).toContain('loading from Connect now');
+    releaseLoad();
+    await settle();
+    expect(document.getElementById('ex-cache').textContent).toContain(
+      '40 visits cached',
+    );
+    expect(warn.textContent).toContain('They have loaded now');
+    const runs = posts.filter((p) => p.url === '/q').length;
+    warn.querySelector('button').click();
+    await settle();
+    expect(posts.filter((p) => p.url === '/q').length).toBe(runs + 1);
+    // Once: nothing more is loaded.
+    expect(
+      posts.filter((p) => p.url === '/d' && p.body.load_missing),
+    ).toHaveLength(1);
+  });
+
+  it('a space whose sources are loaded loads nothing', async () => {
+    const { posts } = mount({ space: SPACE });
+    await settle();
+    expect(posts.filter((p) => p.url === '/d')).toHaveLength(1);
+  });
+
+  it('the plain page never loads by itself', async () => {
+    const { posts } = mount({ cached: 0 });
+    await settle();
+    const described = posts.filter((p) => p.url === '/d');
+    expect(described).toHaveLength(1);
+    expect(described[0].body.load_missing).toBe(false);
+  });
+});
+
+describe("a space's rail", () => {
+  it("keeps a manager's rare actions in More, and shows no More to a member", async () => {
+    const manager = mount({ space: SPACE });
+    await settle();
+    expect(manager.document.getElementById('ex-space-more').hidden).toBe(false);
+    const member = mount({ space: MEMBER_SPACE });
+    await settle();
+    expect(member.document.getElementById('ex-space-more').hidden).toBe(true);
+  });
+
+  it('shows "My queries" only when the person has some', async () => {
+    const empty = mount({ space: SPACE, saved: [] });
+    await settle();
+    expect(empty.document.getElementById('ex-saved-card').hidden).toBe(true);
+    const some = mount({
+      space: SPACE,
+      saved: [{ id: 1, name: 'Mine', sql: 'SELECT 1', version: 1 }],
+    });
+    await settle();
+    expect(some.document.getElementById('ex-saved-card').hidden).toBe(false);
+  });
+
+  it('off a space, the switcher says in plain words that the selection is not saved', async () => {
+    const { document } = mount();
+    await settle();
+    expect(document.querySelector('#ex-space-switch option').textContent).toBe(
+      'Not saved — save this selection as a space',
+    );
+    expect(document.getElementById('ex-saved-card').hidden).toBe(false);
   });
 });
