@@ -118,6 +118,10 @@
 
       pathSupports(filter) {
         if (this._scope) return this._scope.includes(filter.replace(/s$/, ''));
+        // A page that does not use the context (labs/chrome.py NOT_USED / STARTED_FROM)
+        // still lets the person set it for other pages: every filter applies, so Apply
+        // sets the context instead of falling through to clearing it.
+        if (config.anyPath) return true;
         for (const [path, filters] of Object.entries(this.pathFilters)) {
           if (this.currentPath.includes(path) && filters.includes(filter)) {
             return true;
@@ -328,7 +332,10 @@
 
   // Back-compat alias: the old navbar template called labsContextSelector().
   window.labsContextPicker = labsContextPicker;
-  window.labsContextSelector = function () {
-    return labsContextPicker({ mode: 'single' });
+  window.labsContextSelector = function (opts) {
+    return labsContextPicker({
+      mode: 'single',
+      anyPath: !!(opts && opts.anyPath),
+    });
   };
 })();

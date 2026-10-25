@@ -24,7 +24,7 @@ Desktop is unchanged. Plain CSS, so the header does not wait on a stylesheet reb
   }
 </style>
 {# Button only - no wrapper #}
-<div x-data="labsContextSelector()" class="relative min-w-0">
+<div x-data="labsContextSelector({% if page_chrome.labs_context_not_used or page_chrome.labs_context_started_from %}{ anyPath: true }{% endif %})" class="relative min-w-0">
   {% comment %}
   A page that reads its data from somewhere else declares it (labs/chrome.py, NOT_USED):
   the selector then says it is not used here rather than showing a selection that looks
