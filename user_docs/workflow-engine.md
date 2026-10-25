@@ -170,6 +170,15 @@ For most reports this makes no visible difference. One case where it does matter
 
 If you notice a report no longer showing categories or notes that you expect from another workflow, the report's settings may need to be updated to declare that workflow. Contact your program administrator or support if you are unsure.
 
+#### The assistant panel on a run page
+
+Each workflow run page has an assistant panel that can answer questions about the data shown on that page and suggest edits to the workflow or its pipelines. The assistant's access is limited to the run and workflow that the page is currently displaying:
+
+- Asked about a **different run**, the assistant will decline and direct you to the Data page to find that run.
+- Any **edits it proposes** can only affect the workflow shown on that page and its associated pipelines — it cannot modify other workflows.
+
+This scope applies to the assistant built into the run page panel. If you use the Labs assistant with your own personal token, that access is unchanged.
+
 ### UAT Comparison tab
 
 The **UAT Comparison** tab lets you compare data between your UAT and production environments side by side. Both environments have real verification data — if the verification block on this tab reads zero, that almost certainly means the page did not finish loading rather than that data is missing. Try refreshing the page; if the figure remains zero, contact support.
@@ -201,9 +210,4 @@ In KMC reports (program, opportunity, and worker review) and the generic indicat
 
 - The indicator's **title** appears at the top, with its ID shown once as a small tag beneath it — it is no longer repeated twice.
 - The **title and close button** stay fixed at the top of the popup, and the **sort and download links** stay fixed at the bottom, so these controls are always visible while the definition text scrolls between them.
-- **Out of / Counts / Shown** appears in a clean box with dividers. Each term has its own entry with its meaning shown on the line below, rather than everything running together.
-- **Thresholds** are displayed as small chips rather than inline text.
-- The **underlying query** sits below a divider and wraps onto multiple lines, so long queries are no longer cut off at the right edge of the popup.
-
-!!! note "Indicator definition popup on program-level reports"
-    If another browser tab had moved your session to a different opportunity or scope, clicking an indicator name on a program-level report could previously show "Could not read the definition: Workflow not found". The popup now correctly resolves the indicator's definition
+- **Out of / Counts / Shown** appears in a clean
