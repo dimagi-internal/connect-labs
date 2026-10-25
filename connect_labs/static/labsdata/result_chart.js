@@ -228,6 +228,15 @@ var LabsResultChart = (function () {
   // is cut in the MIDDLE, so its end -- often the part that differs -- still shows.
   // The whole label is each bar's tooltip.
   var AXIS_LABEL_MAX = 18;
+  // Room for the axis labels, from their length: the SVG is drawn with no DOM to measure
+  // it in. An 11px label (the card's and the page's svg text) runs about 6.5px a
+  // character, at most; bar labels are turned 40 degrees, so they reach down AND right.
+  var CHAR_PX = 6.5;
+  var FONT_PX = 11;
+  var TILT = (40 * Math.PI) / 180;
+  function textPx(t) {
+    return String(t).length * CHAR_PX;
+  }
   function middleCut(t, max) {
     t = String(t).trim();
     if (t.length <= max) return t;
@@ -554,10 +563,41 @@ var LabsResultChart = (function () {
       if (!tickFormat && !hundred && scaleOf(r, state.ys[0]) === 'percent')
         tickFormat = 'percent_0';
       var w = Math.max(320, Math.min(width, 1100));
-      var h = 240;
-      var pad = { l: 48, r: 10, t: 10, b: line ? 30 : 70 };
+      var pad = { l: 48, r: 10, t: 10, b: 30 };
+      var ih = line ? 200 : 160;
+      var n = rows.length;
+      var fullLabels = rows.map(xText);
+      var prefix = line ? '' : sharedPrefix(fullLabels);
+      var axisLabels = fullLabels.map(function (t) {
+        return middleCut(t.slice(prefix.length), AXIS_LABEL_MAX);
+      });
+      if (line) {
+        // The first and last dates are centred on the ends of the line: half of each
+        // sits outside the plot, so the padding holds that half.
+        pad.l = Math.max(pad.l, textPx(axisLabels[0]) / 2 + 4);
+        pad.r = Math.max(pad.r, textPx(axisLabels[n - 1]) / 2 + 4);
+      } else {
+        // A turned label starts under its bar and runs down and to the right: the
+        // bottom holds the longest one's drop, the right edge the reach of each.
+        var longest = Math.max.apply(null, axisLabels.map(textPx));
+        pad.b = Math.ceil(
+          10 + Math.sin(TILT) * longest + Math.cos(TILT) * FONT_PX + 4,
+        );
+        for (var pass = 0; pass < 3; pass++) {
+          var bandW = (w - pad.l - pad.r) / n;
+          var reach = 0;
+          axisLabels.forEach(function (t, i) {
+            reach = Math.max(
+              reach,
+              pad.l + bandW * (i + 0.5) + Math.cos(TILT) * textPx(t),
+            );
+          });
+          if (reach <= w - 4) break;
+          pad.r += reach - (w - 4);
+        }
+      }
+      var h = pad.t + ih + pad.b;
       var iw = w - pad.l - pad.r;
-      var ih = h - pad.t - pad.b;
       var max = 0;
       rows.forEach(function (row) {
         state.ys.forEach(function (i) {
@@ -618,7 +658,6 @@ var LabsResultChart = (function () {
             '</text>',
         );
       }
-      var n = rows.length;
       var notes = [];
       if (line) {
         var partial = partialMonthIndex(rows);
@@ -682,15 +721,13 @@ var LabsResultChart = (function () {
               '" y="' +
               (h - 10) +
               '" text-anchor="middle">' +
-              esc(middleCut(xText(rows[i]), AXIS_LABEL_MAX)) +
+              esc(axisLabels[i]) +
               '</text>',
           );
         });
       } else {
         var band = iw / n;
         var bw = Math.max(2, (band * 0.8) / state.ys.length);
-        var fullLabels = rows.map(xText);
-        var prefix = sharedPrefix(fullLabels);
         if (prefix)
           notes.push(
             'Every label starts \u201c' +
@@ -732,9 +769,7 @@ var LabsResultChart = (function () {
               ',' +
               (pad.t + ih + 10) +
               ') rotate(40)" text-anchor="start">' +
-              esc(
-                middleCut(fullLabels[i].slice(prefix.length), AXIS_LABEL_MAX),
-              ) +
+              esc(axisLabels[i]) +
               '</text></g>',
           );
         });
