@@ -58,6 +58,7 @@ function mount({
   queryFails = false,
   panel = false,
   canAdminAssign = false,
+  conversations = [],
 } = {}) {
   const window = new Window({ url: 'https://labs.example/labs/data/' });
   const document = window.document;
@@ -82,6 +83,9 @@ function mount({
     <button id="ex-sources-cancel" hidden>Cancel</button>
     <div id="ex-cache"></div><div id="ex-tables"></div><span id="ex-tables-hint"></span>
     <div id="ex-space-items"></div><div id="ex-saved"></div>
+    <div id="ex-conversations-card"><div id="ex-conversations"></div>
+      <input id="ex-conversation-label"><button id="ex-conversation-save" disabled>Save this conversation</button>
+      <p id="ex-conversation-hint"></p><div id="ex-conversation-error" hidden></div></div>
     <div id="ex-access-card"><select id="ex-audience" hidden><option value="holders"></option>
       <option value="private"></option></select><p id="ex-audience-text"></p>
       <div id="ex-managers"></div>
@@ -126,9 +130,15 @@ function mount({
       gets.push(url);
       if (url === '/sp/') return ok({ groups });
       if (url === '/sp/42/items/') return ok({ space_id: 42, items });
+      if (url === '/sp/42/conversations/')
+        return ok({ space_id: 42, conversations });
       return ok({ saved: saved || [] });
     }
     posts.push({ url, body: JSON.parse(init.body) });
+    if (url.endsWith('/conversations/'))
+      return ok({
+        conversation: { id: 9, session_id: JSON.parse(init.body).session_id },
+      });
     if (url === '/s/' || url.endsWith('/items/'))
       return ok({ saved: { id: 1, version: 2 } });
     if (url === '/q' && queryFails)
@@ -588,5 +598,124 @@ describe('page actions (the agent switching the canvas)', () => {
         'showVisit',
       ].sort(),
     );
+  });
+});
+
+describe('saved conversations (pointers to canopy chat sessions)', () => {
+  const SID = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  const tellOpen = (window, document, session) =>
+    document.dispatchEvent(
+      new window.CustomEvent('canopy:session', { detail: session }),
+    );
+
+  it('saves only a conversation started on this space, and sends a pointer and a label alone', async () => {
+    const { window, document, posts } = mount({ space: SPACE });
+    await settle();
+    const btn = document.getElementById('ex-conversation-save');
+    expect(btn.disabled).toBe(true);
+
+    tellOpen(window, document, {
+      id: SID,
+      resource: 'labs-data-space://99',
+      private: true,
+    });
+    expect(btn.disabled).toBe(true);
+    expect(
+      document.getElementById('ex-conversation-hint').textContent,
+    ).toContain('another page');
+
+    tellOpen(window, document, {
+      id: SID,
+      resource: 'labs-data-space://42',
+      private: true,
+    });
+    expect(btn.disabled).toBe(false);
+    document.getElementById('ex-conversation-label').value = 'Why O2 dipped';
+    btn.click();
+    await settle();
+    const saved = posts.filter((p) => p.url === '/sp/42/conversations/');
+    expect(saved).toHaveLength(1);
+    expect(saved[0].body).toEqual({
+      session_id: SID,
+      resource: 'labs-data-space://42',
+      label: 'Why O2 dipped',
+    });
+  });
+
+  it('a blank label saves as "Conversation, <date>"', async () => {
+    const { window, document, posts } = mount({ space: SPACE });
+    await settle();
+    tellOpen(window, document, {
+      id: SID,
+      resource: 'labs-data-space://42',
+      private: false,
+    });
+    document.getElementById('ex-conversation-save').click();
+    await settle();
+    const [saved] = posts.filter((p) => p.url === '/sp/42/conversations/');
+    expect(saved.body.label).toMatch(/^Conversation, \d{1,2} \w+ \d{4}$/);
+  });
+
+  it("lists the space's conversations and opens one in the panel by its id", async () => {
+    const { window, document } = mount({
+      space: MEMBER_SPACE,
+      conversations: [
+        {
+          id: 1,
+          session_id: SID,
+          label: 'Mine',
+          saved_by: 'bob',
+          created_at: '2026-10-24T10:00:00Z',
+          can_delete: true,
+        },
+        {
+          id: 2,
+          session_id: 'x',
+          label: 'Hers',
+          saved_by: 'ana',
+          created_at: '2026-10-24T09:00:00Z',
+          can_delete: false,
+        },
+      ],
+    });
+    const opened = [];
+    window.canopyHost = {
+      openSession: (id) => (opened.push(id), true),
+      session: () => null,
+    };
+    await settle();
+    const rows = document.querySelectorAll('[data-conversation-id]');
+    expect(rows).toHaveLength(2);
+    // A member may delete their own pointer only.
+    expect(rows[0].querySelector('.del')).not.toBeNull();
+    expect(rows[1].querySelector('.del')).toBeNull();
+    rows[0].querySelector('.open').click();
+    expect(opened).toEqual([SID]);
+  });
+
+  it('an already-saved conversation is not offered again', async () => {
+    const { window, document } = mount({
+      space: SPACE,
+      conversations: [
+        {
+          id: 1,
+          session_id: SID,
+          label: 'Mine',
+          saved_by: 'ana',
+          created_at: '',
+          can_delete: true,
+        },
+      ],
+    });
+    await settle();
+    tellOpen(window, document, {
+      id: SID,
+      resource: 'labs-data-space://42',
+      private: false,
+    });
+    expect(document.getElementById('ex-conversation-save').disabled).toBe(true);
+    expect(
+      document.getElementById('ex-conversation-hint').textContent,
+    ).toContain('is saved here');
   });
 });

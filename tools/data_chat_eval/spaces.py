@@ -19,6 +19,11 @@ A space scenario (``spaces:`` in a suite) walks one space's life, checking each 
 5. **proposeSave + Save** -- the Save dialog is filled, nothing is saved until the click;
    after ``#ex-save-confirm`` the item is in ``#ex-space-items`` and the items API.
 6. **the agent in the space** -- one chat turn in the space's panel; the canvas should switch.
+6b. **saved conversation** -- the panel reports the conversation it has open (``{id,
+   resource, private}``: canopy's id, begun on THIS space); "Save this conversation" keeps a
+   pointer (session id + the label typed, nothing it said); after a reload the rail lists it,
+   clicking it opens that conversation in the panel (canopy, as ace), and -- unlocked with
+   ace's test vault key -- the agent's reply reads again.
 7. **archive** -- ``POST .../archive/``; the space's page then answers 404.
 
 Teammate and lock-out rules (a member's view, private hiding a non-manager) need a second
@@ -89,6 +94,11 @@ class _Steps:
 ROUTE_SPACE = "data spaces: connect_labs/labsdata/spaces.py + views.py (Space*View)"
 ROUTE_MCP = "space-held data_* tools: connect_labs/mcp/tools/labsdata.py (_space / outside_space)"
 ROUTE_PAGE = "the Data page's canvas and page actions: connect_labs/static/labsdata/data.js (ACTIONS)"
+ROUTE_CONVERSATION = (
+    "saved conversations: connect_labs/labsdata/spaces.py (save_conversation) + views.SpaceConversations*View"
+    " + static/labsdata/data.js (Conversations card); the panel's report/openSession: canopy-web"
+    " frontend/src/embed (hostLink, EmbedApp) and sdk panel.html"
+)
 ROUTE_ACL = "who can open a space: connect_labs/labsdata/spaces.py (AUDIENCES, set_audience) + views.SpaceAudienceView"
 
 
@@ -328,6 +338,10 @@ def run(sc: SpaceScenario, mcp, out_dir: Path, args) -> dict:
                         )
                         if sc.save_as:
                             _agent_save(page, steps, turn, sc, space_id, out_dir)
+                        if turn.finished and cap.session_id:
+                            _saved_conversation(
+                                page, driver, steps, turn, cap.session_id, space_id, space_url, out_dir
+                            )
                         if want is not None:
                             r = checks.run({"number": {"value": want}}, turn, {})
                             steps.add(6, "agent's answer has the truth", r.passed, r.detail, r.route, gate=False)
@@ -451,6 +465,125 @@ def _agent_save(page, steps: _Steps, turn, sc: SpaceScenario, space_id, out_dir:
         gate=False,
     )
     page.screenshot(path=str(out_dir / "step6-agent-saved.png"))
+
+
+_PANEL_SESSION_JS = """() => {
+    const h = window.canopyHost;
+    if (!h) return null;
+    if (typeof h.session === 'function') return h.session();
+    return h.widget && typeof h.widget.currentSession === 'function' ? h.widget.currentSession() : null;
+}"""
+
+
+def _wait_for(page, fn, timeout_s: int = 30):
+    deadline = time.time() + timeout_s
+    value = None
+    while time.time() < deadline:
+        value = fn()
+        if value:
+            return value
+        page.wait_for_timeout(1000)
+    return value
+
+
+def _saved_conversation(page, driver, steps: _Steps, turn, session_id: str, space_id, space_url: str, out_dir) -> None:
+    """Step 6b: save the conversation the panel has open, reload, open it from the rail, and
+    read the agent's reply again (unlocked with ace's test vault key)."""
+    from .driver import _needle
+
+    want = f"labs-data-space://{space_id}"
+    reported = _wait_for(page, lambda: page.evaluate(_PANEL_SESSION_JS)) or {}
+    if not steps.add(
+        6,
+        "panel reports the open conversation, begun on this space",
+        reported.get("id") == session_id and reported.get("resource") == want,
+        f"reported {json.dumps(reported)[:200]}; expected id {session_id}, resource {want}",
+        ROUTE_CONVERSATION,
+    ):
+        return
+    steps.add(
+        6,
+        "the report carries a pointer, never words",
+        set(reported) <= {"id", "resource", "private"},
+        f"keys {sorted(reported)}",
+        ROUTE_CONVERSATION,
+    )
+    label = f"eval conversation {time.strftime('%H%M%S')}"
+    page.locator("#ex-conversation-label").fill(label)
+    page.locator("#ex-conversation-label").focus()
+    enabled = _wait_for(page, lambda: page.locator("#ex-conversation-save").is_enabled(), 15)
+    hint = page.evaluate("() => (document.querySelector('#ex-conversation-hint') || {}).textContent || ''")
+    if not steps.add(6, "Save this conversation is offered", bool(enabled), f"hint: {hint!r}", ROUTE_CONVERSATION):
+        return
+    page.locator("#ex-conversation-save").click()
+    page.wait_for_timeout(3000)
+    listed = (_get(page, f"{API}/spaces/{space_id}/conversations/").get("body") or {}).get("conversations") or []
+    mine = next((c for c in listed if c.get("session_id") == session_id), None)
+    steps.add(
+        6,
+        "the pointer is saved in the space (API)",
+        bool(mine) and mine.get("label") == label,
+        f"conversations: {json.dumps(listed)[:300]}",
+        ROUTE_CONVERSATION,
+    )
+    steps.add(
+        6,
+        "nothing of the conversation is stored",
+        bool(mine) and set(mine) <= {"id", "session_id", "label", "saved_by", "created_at", "can_delete"},
+        f"fields {sorted(mine or {})}",
+        ROUTE_CONVERSATION,
+    )
+    page.screenshot(path=str(out_dir / "step6b-saved-conversation.png"))
+
+    # Reload: a fresh page, the panel not yet on the conversation. Open it from the rail.
+    page.goto(space_url, wait_until="load", timeout=120_000)
+    page.wait_for_timeout(6000)
+    row = page.locator("#ex-conversations [data-conversation-id]").filter(has_text=label)
+    if not steps.add(
+        6, "after a reload the rail lists it", row.count() == 1, f"rows {row.count()}", ROUTE_CONVERSATION
+    ):
+        return
+    row.first.locator(".open").click()
+    frame = _wait_for(
+        page,
+        lambda: (lambda f: f if f is not None and f.locator("[data-turn-index]").count() else None)(
+            driver._chat_frame(page)
+        ),
+        60,
+    )
+    steps.add(
+        6,
+        "clicking it opens the conversation in the panel",
+        frame is not None,
+        "the panel shows the conversation" if frame is not None else "no conversation in the panel",
+        ROUTE_CONVERSATION,
+    )
+    if frame is None:
+        page.screenshot(path=str(out_dir / "step6b-open-failed.png"))
+        return
+    from . import vault
+
+    unlocked = vault.unlock(frame, page)
+    page.wait_for_timeout(4000)
+    text = frame.evaluate("() => document.body.innerText")
+    needle = _needle(turn.reply)
+    steps.add(
+        6,
+        "opened from the rail, the agent's reply reads again",
+        bool(needle) and needle in text,
+        f"needle {needle!r}; unlock {unlocked}",
+        ROUTE_CONVERSATION,
+    )
+    again = page.evaluate(_PANEL_SESSION_JS) or {}
+    steps.add(
+        6,
+        "the panel reports the reopened conversation",
+        again.get("id") == session_id,
+        f"reported {json.dumps(again)[:200]}",
+        ROUTE_CONVERSATION,
+        gate=False,
+    )
+    page.screenshot(path=str(out_dir / "step6b-reopened.png"))
 
 
 def _post(page, url: str, body: dict) -> dict:

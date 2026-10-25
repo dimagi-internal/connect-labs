@@ -1308,6 +1308,185 @@
     }
   }
 
+  // ---- saved conversations: pointers to canopy chat sessions -------------------
+  // A pointer is canopy's session id, a label the person typed, who saved it and when --
+  // never the conversation's words (a private one is sealed to its people; labs is not one
+  // of them). The panel reports the conversation it has open as {id, resource, private}
+  // (canopy's embedding guide §5e); only one started on THIS space's page may be saved
+  // here. Opening one asks canopy to open it in the panel, as the person: canopy's session
+  // ACL decides, and someone not in a private one is offered to ask to join.
+
+  let spaceConversations = [];
+  // The last `canopy:session` report (SDK >= 0.22.1); older panels are read on demand.
+  let panelSession = null;
+
+  function panelHost() {
+    return window.canopyHost || null;
+  }
+
+  function openPanelSession() {
+    const host = panelHost();
+    if (!host) return panelSession;
+    if (typeof host.session === 'function') return host.session();
+    const w = host.widget;
+    return w && typeof w.currentSession === 'function'
+      ? w.currentSession()
+      : panelSession;
+  }
+
+  function spaceResource() {
+    return space ? `labs-data-space://${space.id}` : '';
+  }
+
+  function defaultConversationLabel() {
+    const d = new Date();
+    return `Conversation, ${d.getDate()} ${d.toLocaleString('en-GB', { month: 'short' })} ${d.getFullYear()}`;
+  }
+
+  function renderConversationSave() {
+    const btn = $('ex-conversation-save');
+    const hint = $('ex-conversation-hint');
+    if (!btn || !hint) return;
+    const s = openPanelSession();
+    let ok = false;
+    let text;
+    if (!s) text = 'Start or open a conversation in the panel to save it here.';
+    else if (s.resource !== spaceResource())
+      text =
+        'The conversation open in the panel was started on another page. Only one started on this space can be saved here.';
+    else if (spaceConversations.some((c) => c.session_id === s.id))
+      text = 'The conversation open in the panel is saved here.';
+    else {
+      ok = true;
+      text =
+        'Saves a link to the conversation open in the panel, never its words. Whoever opens it sees it only if canopy lets them.';
+    }
+    btn.disabled = !ok;
+    hint.textContent = text;
+    const label = $('ex-conversation-label');
+    if (label && !label.placeholder)
+      label.placeholder = defaultConversationLabel();
+  }
+
+  function conversationRow(c) {
+    return el(
+      'div',
+      { class: 'ex-saved-row', 'data-conversation-id': c.id },
+      el(
+        'button',
+        {
+          class: 'open',
+          title: 'Open in the panel',
+          onclick: () => openConversation(c),
+        },
+        c.label,
+        el(
+          'small',
+          {},
+          ` · ${c.saved_by || ''} · ${(c.created_at || '').slice(0, 10)}`,
+        ),
+      ),
+      c.can_delete
+        ? el(
+            'button',
+            {
+              class: 'del',
+              title:
+                'Remove from this space (the conversation itself stays in canopy)',
+              onclick: () => deleteConversation(c),
+            },
+            '✕',
+          )
+        : '',
+    );
+  }
+
+  async function loadConversations() {
+    const box = $('ex-conversations');
+    if (!space || !box) return;
+    try {
+      const data = await getJson(spaceApi(space.id, 'conversations/'));
+      spaceConversations = data.conversations || [];
+      box.replaceChildren();
+      if (!spaceConversations.length)
+        box.append(
+          el(
+            'p',
+            { class: 'text-sm ex-muted' },
+            'No conversations saved here yet. Ask the agent in the panel, then save the conversation for your team.',
+          ),
+        );
+      spaceConversations.forEach((c) => box.append(conversationRow(c)));
+    } catch (e) {
+      box.replaceChildren(
+        el(
+          'p',
+          { class: 'text-sm ex-muted' },
+          e.message || 'Could not load conversations.',
+        ),
+      );
+    }
+    renderConversationSave();
+  }
+
+  function conversationError(message) {
+    const box = $('ex-conversation-error');
+    if (!box) return;
+    box.textContent = message || '';
+    box.hidden = !message;
+  }
+
+  async function saveConversation() {
+    const s = openPanelSession();
+    if (!s) return renderConversationSave();
+    conversationError('');
+    const label = $('ex-conversation-label');
+    try {
+      // The pointer and the label the person typed; nothing of the conversation.
+      await post(spaceApi(space.id, 'conversations/'), {
+        session_id: s.id,
+        resource: s.resource,
+        label: (label && label.value.trim()) || defaultConversationLabel(),
+      });
+      if (label) label.value = '';
+    } catch (e) {
+      conversationError(e.message || 'Could not save the conversation.');
+    }
+    await loadConversations();
+  }
+
+  async function deleteConversation(c) {
+    if (
+      !window.confirm(
+        `Remove “${c.label}” from this space? The conversation itself stays in canopy.`,
+      )
+    )
+      return;
+    conversationError('');
+    try {
+      await post(spaceApi(space.id, `conversations/${c.id}/delete/`), {});
+    } catch (e) {
+      conversationError(e.message || 'Could not remove it.');
+    }
+    await loadConversations();
+  }
+
+  function openConversation(c) {
+    conversationError('');
+    const host = panelHost();
+    const opened =
+      host &&
+      (typeof host.openSession === 'function'
+        ? host.openSession(c.session_id)
+        : host.widget && typeof host.widget.openSession === 'function'
+          ? (host.widget.openSession(c.session_id), true)
+          : false);
+    if (!opened)
+      conversationError(
+        'The agent panel cannot open saved conversations here yet. Reload the page and try again.',
+      );
+  }
+
   // A saved query of this space (any version), as {name, version, sql, display, max_rows}.
   function findSpaceItem(id) {
     for (const q of spaceItems) {
@@ -1746,6 +1925,18 @@
     if (e.key === 'Enter') manageAddManager();
   });
   on('ex-manager-admin-btn', 'click', manageAdminAddManager);
+  on('ex-conversation-save', 'click', saveConversation);
+  on('ex-conversation-label', 'keydown', (e) => {
+    if (e.key === 'Enter') saveConversation();
+  });
+  // The panel reports the conversation it has open (SDK >= 0.22.1); an older panel is
+  // asked when the person comes to save (focus).
+  document.addEventListener('canopy:session', (e) => {
+    panelSession = e.detail || null;
+    renderConversationSave();
+  });
+  on('ex-conversation-label', 'focus', renderConversationSave);
+  on('ex-conversations-card', 'mouseenter', renderConversationSave);
   $('ex-add').addEventListener('input', renderPicker);
   $('ex-add').addEventListener('focus', renderPicker);
   $('ex-add').addEventListener('keydown', (e) => {
@@ -1789,6 +1980,7 @@
   const describedReady = hasSelection() ? describe(false) : Promise.resolve();
   loadSaved();
   loadSpaceItems();
+  loadConversations();
   // A card's Save: highlight Save and, once the spaces are known, open the dialog on
   // the space matching the card's selection (or My queries). Nothing saves by itself.
   const spacesLoaded = loadSpaces();

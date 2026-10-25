@@ -62,7 +62,7 @@ from connect_labs.labs.access import scopes
 from connect_labs.labs.access.scopes import Caller
 
 from . import scope
-from .models import DataSpace, SavedQuery
+from .models import DataSpace, SavedQuery, SpaceConversation
 
 #: The ScopeError codes that mean "not yours" (or not a well-formed space): all not_found.
 _NOT_YOURS = {"not_held", "no_opportunities", "bad_opportunity_ids", "bad_program_ids", "bad_scope"}
@@ -106,6 +106,24 @@ class BadAudience(Exception):
     @property
     def message(self) -> str:
         return "The audience must be one of: " + ", ".join(sorted(AUDIENCES)) + "."
+
+
+class NotThisSpace(Exception):
+    """A conversation that was not started on this space's page. Only one begun here may
+    be saved here, so a space's list is its own conversations."""
+
+    code = "not_this_space"
+    message = "Only a conversation started on this space's page can be saved to it."
+
+
+class BadConversation(Exception):
+    code = "bad_conversation"
+    message = "That is not a canopy conversation id."
+
+
+class AlreadySaved(Exception):
+    code = "already_saved"
+    message = "This conversation is already saved in this space."
 
 
 class OutsideSpace(Exception):
@@ -727,6 +745,75 @@ def delete_item(opened: OpenSpace, item: SavedQuery) -> int:
         raise NotManager()
     deleted, _ = queries(opened).filter(name=item.name).delete()
     return deleted
+
+
+# --- saved conversations: pointers to canopy chat sessions (models.SpaceConversation) -----
+# A pointer, never a transcript: canopy's session id, a label the saver typed, who and when.
+# It grants nothing -- opening it asks canopy, as the person, and canopy's session ACL
+# decides. Each function takes an already-opened space (both rules passed), so a
+# conversation is listed, saved and deleted only by someone who may open the space now.
+
+#: What canopy reports as the page a conversation was started on, for a space's page
+#: (``views.DataView``'s ``resource``).
+SPACE_RESOURCE = "labs-data-space://{id}"
+#: The label when the saver types none: never canopy's title, never the conversation's words.
+DEFAULT_LABEL = "Conversation, {date}"
+
+
+def conversations(opened: OpenSpace):
+    """The saved space's conversation pointers, newest first."""
+    return SpaceConversation.objects.select_related("saved_by").filter(space=opened.space)
+
+
+def conversation_item(opened: OpenSpace, pk) -> SpaceConversation | None:
+    try:
+        return conversations(opened).filter(pk=int(pk)).first()
+    except (TypeError, ValueError):
+        return None
+
+
+def save_conversation(opened: OpenSpace, user, session_id, label, resource) -> SpaceConversation:
+    """Keep a pointer to a canopy conversation in an open saved space: any member may.
+
+    ``resource`` is where canopy says the conversation was started (the widget's report,
+    relayed by the person's own browser): it must be THIS space's page (``NotThisSpace``).
+    ``label`` is the saver's own words, or "Conversation, <date>". Nothing of the
+    conversation itself is taken or kept."""
+    import uuid
+
+    from django.db import IntegrityError, transaction
+
+    if not opened.saved:
+        raise SpaceNotFound()
+    try:
+        sid = uuid.UUID(str(session_id or ""))
+    except ValueError as e:
+        raise BadConversation() from e
+    if str(resource or "") != SPACE_RESOURCE.format(id=opened.id):
+        raise NotThisSpace()
+    text = " ".join(str(label or "").split())[:200] or DEFAULT_LABEL.format(
+        date=timezone.localdate().strftime("%d %b %Y").lstrip("0")
+    )
+    try:
+        with transaction.atomic():
+            return SpaceConversation.objects.create(space=opened.space, session_id=sid, label=text, saved_by=user)
+    except IntegrityError as e:
+        raise AlreadySaved() from e
+
+
+def may_delete_conversation(opened: OpenSpace, item: SpaceConversation) -> bool:
+    """A manager may delete any pointer; a member, one they saved."""
+    if opened.is_manager:
+        return True
+    return opened.viewer_id is not None and item.saved_by_id == opened.viewer_id
+
+
+def delete_conversation(opened: OpenSpace, item: SpaceConversation) -> None:
+    """Delete a pointer (never the conversation, which is canopy's): a manager, or the
+    member who saved it (``NotManager`` otherwise)."""
+    if not may_delete_conversation(opened, item):
+        raise NotManager()
+    item.delete()
 
 
 def reads(space_id) -> list[int] | None:

@@ -169,6 +169,24 @@
         <div id="ex-space-items" class="ex-saved"><p class="px-3 pb-3 text-sm ex-muted">—</p></div>
       </div>
 
+      {% if space %}
+      {# Saved conversations: pointers to canopy chat sessions begun on this space's page -- #}
+      {# never a transcript. Opening one asks canopy to open it in the panel, as you; canopy #}
+      {# decides whether you may read it (a private one: only its people). data.js fills it. #}
+      <div class="ex-card" id="ex-conversations-card">
+        <div class="px-3 pt-3 pb-3 flex flex-col gap-2">
+          <span class="ex-label">Conversations</span>
+          <div id="ex-conversations" class="ex-saved"><p class="text-sm ex-muted">—</p></div>
+          <div class="flex gap-2">
+            <input id="ex-conversation-label" class="ex-search" maxlength="200" autocomplete="off" aria-label="Name for the conversation">
+            <button class="ex-btn ghost whitespace-nowrap" id="ex-conversation-save" type="button" disabled>Save this conversation</button>
+          </div>
+          <p class="text-xs ex-muted" id="ex-conversation-hint">Start or open a conversation in the panel to save it here.</p>
+          <div class="ex-error" id="ex-conversation-error" hidden></div>
+        </div>
+      </div>
+      {% endif %}
+
       <div class="ex-card">
         <div class="px-3 pt-3 pb-2"><span class="ex-label">My queries</span></div>
         <div id="ex-saved" class="ex-saved"><p class="px-3 pb-3 text-sm ex-muted">—</p></div>
