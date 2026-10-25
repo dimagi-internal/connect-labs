@@ -508,6 +508,11 @@ def _saved_conversation(page, driver, steps: _Steps, turn, session_id: str, spac
         f"keys {sorted(reported)}",
         ROUTE_CONVERSATION,
     )
+    # A modal left open (the agent's proposed Save, say) covers the rail: put it away first,
+    # as a person would, without saving anything.
+    if page.locator("#ex-save-dialog").is_visible():
+        page.locator("#ex-save-cancel").click()
+        page.wait_for_timeout(500)
     label = f"eval conversation {time.strftime('%H%M%S')}"
     page.locator("#ex-conversation-label").fill(label)
     page.locator("#ex-conversation-label").focus()
