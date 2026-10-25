@@ -184,7 +184,7 @@ user sees" is the access story, and keeping it true belongs to the page.
 
 The Data page (`/labs/data/`, `connect_labs/labsdata`) offers the **agent for data work**
 (`canopy_settings.data_agent`): the first agent labs lets work with sensitive data, else the first
-shown agent canopy declares handles sensitive data (`labsdata`). With none, it offers the default agent.
+shown agent canopy declares handles sensitive data (`labsdata`). With none, the Data pages offer no agent at all: they never fall back to the default agent or to an ordinary runner.
 The page passes `canopy_panel.data_page_agent()` -- that agent, `runner_requirements:
 ["sensitive_data"]` and a docked, expandable panel -- and the SDK signs the agent and the requirement
 into the page token. Canopy then binds the visitor's token and the host grant to that

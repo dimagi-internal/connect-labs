@@ -1,6 +1,6 @@
 """The Data page offers the agent for data work (one that handles sensitive data, labsdata) read-only on
 sensitive-data
-runners; with none, the default agent. Every other page is unchanged."""
+runners; with none, no agent at all. Every other page is unchanged."""
 
 from unittest import mock
 
@@ -13,10 +13,10 @@ from connect_labs.labsdata.scope import Opportunity
 OPP = Opportunity(id=951, name="Opp P", llo="LLO P")
 
 
-def test_with_no_agent_for_data_work_the_data_pages_offer_the_default_agent(canopy_agents):
+def test_with_no_agent_for_data_work_the_data_pages_offer_no_agent(canopy_agents):
     canopy_agents("ace")
     here = canopy_panel.data_page_agent()
-    assert here.ok and here.page_agent == canopy_panel.PageAgent()
+    assert not here.ok and "no agent for data work" in here.reasons[0]
 
 
 def test_an_agent_handling_sensitive_data_labs_shows_is_offered_on_the_data_pages_on_sensitive_data_runners(

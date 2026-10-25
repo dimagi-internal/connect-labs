@@ -205,7 +205,7 @@ class DataView(LoginRequiredMixin, TemplateView):
         ctx["canopy_panel"] = canopy_panel.panel(
             self.request,
             reads=canopy_panel.NO_VISIT_DATA,
-            # The agent for data work (labsdata), read-only on sensitive-data runners; else the default agent.
+            # The agent for data work (labsdata), read-only on sensitive-data runners; with none, no panel.
             available=canopy_panel.data_page_agent(),
             # The agent's data reads are held to what this page shows (labsdata/page_holds.py).
             holds=holds,
