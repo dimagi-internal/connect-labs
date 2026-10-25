@@ -184,3 +184,92 @@ def test_only_the_persons_own_data_page_token_can_be_updated(labsdata, visitor):
     request.session = {}
     response = PageHoldsView.as_view()(request)
     assert response.status_code == 403
+
+
+# ---- a run page: its own run, nothing else -------------------------------------------
+
+
+def _run_page_grant(enabled, canopy_redeem, visitor):
+    """Render run 503's page (workflow 47, program 25), mint its panel token as the browser
+    does, redeem as canopy."""
+    from connect_labs.workflow.views import WorkflowRunView
+
+    path = "/labs/workflow/47/run/?run_id=503&program_id=25"
+    with (
+        mock.patch("connect_labs.workflow.views.get_org_data", return_value={}),
+        mock.patch("connect_labs.labs.synthetic.provenance.all_generated", return_value=True),
+    ):
+        _response, panel = _panel_e2e._panel(
+            WorkflowRunView, _request(path, visitor, {"program_id": 25}), _panel_e2e.SHARING_WORKFLOW, definition_id=47
+        )
+    arrival = _mint(panel, visitor)
+    return _redeem(canopy_redeem, arrival[contract.ARRIVAL_ID_JAG_FIELD])
+
+
+def _run_call(client_creds, token, tool, arguments):
+    from config.asgi import build_application
+    from connect_labs.mcp.tests.test_delegation import RESOURCE
+
+    async def add_proof(request):
+        request.headers["DPoP"] = client_creds.dpop_proof(request.method, RESOURCE, access_token=token)
+
+    async def work(mcp_client):
+        result = await mcp_client.call_tool(tool, arguments, raise_on_error=False)
+        return result.is_error, " ".join(getattr(c, "text", "") or "" for c in result.content)
+
+    return _run_mcp(build_application(), {"Authorization": f"DPoP {token}"}, add_proof, work)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize(
+    "tool, extra",
+    [
+        ("workflow_run_context", {}),
+        ("workflow_run_indicators", {}),
+        ("workflow_indicator_explain", {"indicators": ["x"]}),
+        ("workflow_action_status", {}),
+        ("workflow_run_action", {"action": "a", "arguments": {}}),
+    ],
+)
+def test_a_run_pages_tools_reach_only_its_own_run(enabled, canopy_redeem, visitor, tool, extra):
+    token = _run_page_grant(enabled, canopy_redeem, visitor)
+    # Another run -- one the visitor may well be able to open in Labs -- is outside the page.
+    failed, text = _run_call(enabled, token, tool, {"run_id": 504, "program_id": 25, **extra})
+    assert failed and "not the run this page shows" in text and "Data page" in text
+    # The page's own run in another scope is outside it too.
+    failed, text = _run_call(enabled, token, tool, {"run_id": 503, "program_id": 26, **extra})
+    assert failed and "not this run's scope" in text
+    # Its own run passes the hold (whatever the tool then makes of these stand-in records).
+    _failed, text = _run_call(enabled, token, tool, {"run_id": 503, "program_id": 25, **extra})
+    assert "not the run this page shows" not in text and "outside_page" not in text
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_run_page_grant_minted_without_its_record_reaches_no_run(enabled, canopy_redeem, visitor):
+    from canopy_sdk.django import views as sdk_views
+
+    from connect_labs.workflow.views import WorkflowRunView
+
+    with (
+        mock.patch("connect_labs.workflow.views.get_org_data", return_value={}),
+        mock.patch("connect_labs.labs.synthetic.provenance.all_generated", return_value=True),
+    ):
+        _r, panel = _panel_e2e._panel(
+            WorkflowRunView,
+            _request("/labs/workflow/47/run/?run_id=503&program_id=25", visitor, {"program_id": 25}),
+            _panel_e2e.SHARING_WORKFLOW,
+            definition_id=47,
+        )
+    sent = {}
+
+    def mint(config, payload, **kw):
+        sent.update(payload)
+        return {"token": "canopy-contact-token", "expires_at": "", "kind": "contact"}
+
+    request = RequestFactory().post(panel["options"]["tokenUrl"])
+    request.user = visitor
+    with mock.patch.object(sdk_views, "mint_contact_token", mint):
+        assert sdk_views.panel_token(request).status_code == 200
+    token = _redeem(canopy_redeem, sent[contract.ARRIVAL_ID_JAG_FIELD])
+    failed, text = _run_call(enabled, token, "workflow_run_context", {"run_id": 503, "program_id": 25})
+    assert failed and "did not record what it shows" in text

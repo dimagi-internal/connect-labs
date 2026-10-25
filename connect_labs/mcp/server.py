@@ -683,6 +683,17 @@ def _run_registry_tool_inner(
         )
         raise _tool_error(err) from err
     delegated = (getattr(access_token, "claims", None) or {}).get("auth_method") == "delegated"
+    if delegated:
+        # Before anything is read for it: a run page's grant reaches only its own run and
+        # workflow (labsdata/page_holds.py), as labs recorded them when it drew the page --
+        # never what the arguments say.
+        from connect_labs.labsdata import page_holds
+
+        outside = page_holds.run_denial(spec.name, arguments)
+        if outside is not None:
+            audit(user, spec.name, arguments, success=False, error_code="PERMISSION_DENIED", is_write=spec.is_write)
+            err = MCPToolError("PERMISSION_DENIED", outside.message, outside.as_dict())
+            raise _tool_error(err) from err
     denied = policy_denial(spec.name, arguments, user, restricted, delegated=delegated)
     if denied:
         audit(user, spec.name, arguments, success=False, error_code="PERMISSION_DENIED", is_write=spec.is_write)

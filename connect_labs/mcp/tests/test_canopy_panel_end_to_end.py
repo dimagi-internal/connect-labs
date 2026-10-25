@@ -348,7 +348,12 @@ def test_a_workflow_that_offers_the_data_agent_grants_it_the_runs_reads_and_edit
     from connect_labs.labsdata.models import PageGrant
 
     hold = PageGrant.objects.get(grant_jti=unverified_claims(id_jag)["jti"]).hold
-    assert hold.workflow == {"id": 47, "program_id": 25} and hold.user_id == visitor.pk
+    assert {k: hold.workflow.get(k) for k in ("id", "program_id", "run_id")} == {
+        "id": 47,
+        "program_id": 25,
+        "run_id": 503,
+    }
+    assert hold.user_id == visitor.pk
     assert hold.page_key == "labs:workflow:run:data" and hold.space_id is None
 
     token = _redeem(canopy_redeem, id_jag)

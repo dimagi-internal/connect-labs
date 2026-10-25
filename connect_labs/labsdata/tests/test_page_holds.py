@@ -120,3 +120,55 @@ def test_the_signed_selection_is_bound_to_its_page_token_and_person():
     assert page_holds._unsign(signed, "page-token-b", 5) is None
     assert page_holds._unsign(signed, "page-token-a", 6) is None
     assert page_holds._unsign(signed[:-2] + "xx", "page-token-a", 5) is None
+
+
+def _run_hold(**workflow):
+    return PageHold(page_key=RUN_PAGE, workflow={"id": 9027, "program_id": 10121, "run_id": 10021, **workflow})
+
+
+def test_run_tools_off_a_page_are_not_held():
+    with mock.patch.object(page_holds, "current", return_value=None):
+        assert page_holds.run_denial("workflow_run_context", {"run_id": 1}) is None
+
+
+def test_run_tools_with_no_recorded_page_are_refused():
+    with mock.patch.object(page_holds, "current", return_value=page_holds._NO_HOLD):
+        assert page_holds.run_denial("workflow_run_indicators", {"run_id": 10021}).code == "outside_page"
+
+
+def test_run_tools_reach_the_pages_run_only():
+    with mock.patch.object(page_holds, "current", return_value=_run_hold()):
+        assert page_holds.run_denial("workflow_run_context", {"run_id": 10021, "program_id": 10121}) is None
+        assert page_holds.run_denial("workflow_run_context", {"run_id": "10021"}) is None
+        other = page_holds.run_denial("workflow_run_action", {"run_id": 10022, "action": "a", "arguments": {}})
+        assert other is not None and "10022" in other.message and "/labs/data/" in other.message
+        assert page_holds.run_denial("workflow_run_cases", {"run_id": 10021, "opportunity_id": 5}) is not None
+        # Tools that take no run are not this check's.
+        assert page_holds.run_denial("data_query", {"opportunity_ids": [1]}) is None
+
+
+def test_a_page_without_a_run_reaches_no_run():
+    # A Data page or space hold (its grant has no run scopes anyway): fail closed.
+    hold = PageHold(page_key=page_holds.DATA_PAGE, opportunity_ids=[1])
+    with mock.patch.object(page_holds, "current", return_value=hold):
+        assert page_holds.run_denial("workflow_run_context", {"run_id": 10021}) is not None
+
+
+def test_proposed_edits_change_only_the_pages_workflow_and_its_pipelines():
+    with mock.patch.object(page_holds, "current", return_value=_run_hold(pipeline_ids=[19776, 19777])):
+
+        def propose(tool, **arguments):
+            return page_holds.run_denial("workflow_edit_propose", {"tool": tool, "arguments": arguments})
+
+        assert propose("workflow_update_definition", workflow_id=9027, definition={}) is None
+        assert propose("workflow_update_definition", workflow_id=9029, definition={}) is not None
+        assert propose("workflow_patch_render_code", workflow_id=9029) is not None
+        assert propose("pipeline_update_schema", pipeline_id=19776, schema={}) is None
+        assert propose("pipeline_update_schema", pipeline_id=555, schema={}) is not None
+
+
+def test_for_workflow_records_the_run_and_its_pipelines():
+    holds = page_holds.for_workflow(9027, {"program_id": 10121}, [10122], run_id=10021, pipeline_ids=[19777, 19776])
+    assert holds.workflow == {"id": 9027, "program_id": 10121, "run_id": 10021, "pipeline_ids": [19776, 19777]}
+    signed = page_holds.sign(holds, "tok", 1)
+    assert page_holds._unsign(signed, "tok", 1).workflow["run_id"] == 10021
