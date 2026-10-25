@@ -327,6 +327,37 @@ describe('saving a query', () => {
     expect(th[1].getAttribute('title')).toBe('n');
   });
 
+  it('a result over opportunities with nothing cached says it is not a real zero', async () => {
+    const { document } = mount({
+      selected: false,
+      saved: [
+        {
+          id: 5,
+          name: 'Count',
+          sql: 'SELECT count(*) AS n FROM visits',
+          selection: { opportunity_ids: [7], program_ids: [], workflow: null },
+          max_rows: 50,
+          display: null,
+          version: 1,
+        },
+      ],
+      result: {
+        columns: ['n'],
+        rows: [[0]],
+        row_count: 1,
+        truncated: false,
+        elapsed_ms: 1,
+        opportunities: [{ id: 7, name: 'Opp', cached_at: null }],
+      },
+    });
+    await settle();
+    document.querySelector('#ex-saved button.open').click();
+    await settle();
+    const warn = document.querySelector('#ex-result .ex-warn');
+    expect(warn.textContent).toContain('not a real zero');
+    expect(warn.textContent).toContain('Load them from Connect');
+  });
+
   it('a saved display formats its cells: a month as a month, a fraction as a percent', async () => {
     const { document } = mount({
       selected: false,

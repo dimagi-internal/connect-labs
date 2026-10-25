@@ -666,11 +666,39 @@
       : data.opportunities.length > 3
         ? `${data.opportunities.length} opportunities`
         : data.opportunities.map((o) => o.name).join(', ');
+    // A result over opportunities with nothing cached is not a result about them: a 0
+    // here means "not loaded", and it must say so where the number is, not only in the
+    // Sources card further down the rail.
+    const unloaded = (data.opportunities || []).filter(
+      (o) => 'cached_at' in o && !o.cached_at,
+    );
+    const notLoaded = unloaded.length
+      ? el(
+          'div',
+          { class: 'ex-warn', style: 'margin: 8px 12px' },
+          unloaded.length === n
+            ? `None of these ${n} opportunities is loaded yet, so this result counts nothing — it is not a real zero. `
+            : `${unloaded.length} of ${n} opportunities aren't loaded yet, so this result leaves out their visits. `,
+          el(
+            'button',
+            {
+              type: 'button',
+              class: 'ex-link',
+              onclick: async () => {
+                await describe(true);
+              },
+            },
+            'Load them from Connect',
+          ),
+          ', then run it again.',
+        )
+      : '';
     box.append(
       el(
         'div',
         { class: 'ex-card' },
         trailEl || '',
+        notLoaded,
         el('div', { class: 'ex-table-wrap' }, table),
         el(
           'div',
