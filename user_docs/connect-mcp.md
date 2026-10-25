@@ -214,10 +214,6 @@ The Data page at [labs.connect.dimagi.com/labs/data/](https://labs.connect.dimag
 
 The page is arranged in three regions: a **left rail**, a **canvas** in the centre, and an **agent panel** docked on the right.
 
-- **Left rail.** Contains the Space switcher, the current space's sources and tables, the queries saved in the space, and your personal saved queries under **My queries**.
-- **Canvas.** A tabbed workspace. Each tab holds an open query editor or a saved query you have opened. The last few things you opened stay as tabs so you can switch between them quickly.
-- **Agent panel.** The AI assistant for the Data page. It can open a query in a new canvas tab and run it there as you, open a saved query, open a visit, or fill in the Save dialog for you to confirm. It never gets rows back from the page — it can only act on the page on your behalf.
-
-### What the agent on each page can see
-
-The agent panel on any Labs page
+- **Left rail.** Contains the Space switcher, the current space's sources and tables, the queries saved in the space, and your personal saved queries under **My queries** (hidden when you have none, so it does not make the space look empty).
+- **Canvas.** A tabbed workspace. Each tab holds an open query editor or a saved query you have opened. The last few things you opened stay as tabs so you can switch between them quickly. A saved query that was kept with a chart opens directly on that chart — drawn the same way the results card draws it — with the table one click away. A query saved without a chart opens on its table as before.
+- **Agent panel.** The AI assistant for the Data page. It can open a query in a new canvas tab and run it
