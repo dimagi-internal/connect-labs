@@ -309,6 +309,7 @@
     // Only a space's managers change its sources (spaces.require_manager decides; this
     // only hides what a member could not do).
     show('ex-sources-edit', isManager() && !state.editingSources);
+    show('ex-space-more', isManager() && !state.editingSources);
     show('ex-sources-save', !!space && state.editingSources);
     show('ex-sources-cancel', !!space && state.editingSources);
     $('ex-add').disabled = !!state.workflow;
@@ -610,6 +611,22 @@
     );
   }
 
+  // A load from Connect in flight (describe with load_missing), and the warnings that
+  // say a result is not a real zero, repainted when it starts and ends.
+  let loading = false;
+  let loadsDone = 0;
+  let describeSeq = 0;
+  const loadWatchers = [];
+  function watchLoad(node, paint) {
+    loadWatchers.push({ node, paint });
+  }
+  function repaintLoadWatchers() {
+    for (let i = loadWatchers.length - 1; i >= 0; i--) {
+      if (!loadWatchers[i].node.isConnected) loadWatchers.splice(i, 1);
+      else loadWatchers[i].paint();
+    }
+  }
+
   async function describe(loadMissing) {
     syncUrlAndPanel();
     if (!hasSelection()) {
@@ -620,29 +637,65 @@
       );
       return;
     }
+    const seq = ++describeSeq;
+    const missing = described
+      ? described.opportunities.filter((o) => !o.cached_visits).length
+      : 0;
     $('ex-cache').textContent = loadMissing
-      ? 'Loading from Connect…'
+      ? missing
+        ? `Loading ${missing} opportunit${missing === 1 ? 'y' : 'ies'} from Connect… You can keep working; a result run before this finishes leaves ${missing === 1 ? 'it' : 'them'} out.`
+        : 'Loading from Connect…'
       : 'Reading…';
+    if (loadMissing) {
+      loading = true;
+      repaintLoadWatchers();
+    }
+    let got;
     try {
-      described = await post(cfg.describeUrl, {
+      got = await post(cfg.describeUrl, {
         ...selectionBody(),
         load_missing: !!loadMissing,
       });
-      if (described.workflow && state.workflow)
-        state.workflow.name = described.workflow.name;
-      renderChips();
-      syncUrlAndPanel();
-      renderCache(described.opportunities, described.loaded);
-      renderTables(described);
     } catch (e) {
-      $('ex-cache').replaceChildren(
-        el(
-          'div',
-          { class: 'ex-error' },
-          e.message || 'Could not read this selection.',
-        ),
-      );
+      if (seq === describeSeq)
+        $('ex-cache').replaceChildren(
+          el(
+            'div',
+            { class: 'ex-error' },
+            e.message || 'Could not read this selection.',
+          ),
+        );
+      return;
+    } finally {
+      if (loadMissing) {
+        loading = false;
+        loadsDone += 1;
+        // Kept before repainting, so "loaded" is judged on what the load reported.
+        if (got && seq === describeSeq) described = got;
+        repaintLoadWatchers();
+      }
     }
+    // A later describe (the selection changed meanwhile) owns the rail.
+    if (seq !== describeSeq) return;
+    described = got;
+    if (described.workflow && state.workflow)
+      state.workflow.name = described.workflow.name;
+    renderChips();
+    syncUrlAndPanel();
+    renderCache(described.opportunities, described.loaded);
+    renderTables(described);
+  }
+
+  // Opening a space loads what its sources have not loaded yet, as the person, once: a
+  // teammate following a link should see real numbers, not zeros. It never holds the page
+  // up -- the rail says it is loading, and a result run meanwhile says it is not a real
+  // zero. A load that fails leaves the rail's "Load from Connect" to try again.
+  let loadedOnOpen = false;
+  async function loadMissingOnOpen() {
+    if (!inSpace() || loadedOnOpen || !described) return;
+    if (!described.opportunities.some((o) => !o.cached_visits)) return;
+    loadedOnOpen = true;
+    await describe(true);
   }
 
   function renderResult(data) {
@@ -654,12 +707,79 @@
       onDrill: drillInto,
       labels: display,
     });
-    appendResultCard(box, data, table, { trail: renderTrail(), drillable });
+    appendResultCard(box, data, table, {
+      trail: renderTrail(),
+      drillable,
+      shown: display,
+      rerun: () => run({ keepTrail: true }),
+    });
     $('ex-csv').disabled = !data.rows.length;
   }
 
+  // The chart a result's display asked for (`display.chart`), drawn by the module the
+  // results card draws with (result_chart.js, the same SVG), or '' when there is none to
+  // draw: no chart asked for, or none that fits the rows.
+  function chartOf(data, shown, width) {
+    const C = window.LabsResultChart;
+    if (!C || !shown || !shown.chart || !data.rows || !data.rows.length)
+      return '';
+    const view = C.view(data, shown);
+    const axes = view.axes();
+    if (!axes.fromDisplay) return '';
+    return view.draw({ ...axes, rows: data.rows, width });
+  }
+
+  // Chart | Table, as the results card has them: the chart first when the display asked
+  // for one (it is what whoever saved it meant to be seen), the table one click away.
+  function chartAndTable(data, shown, tableWrap) {
+    const html = chartOf(data, shown, chartWidth());
+    if (!html) return [tableWrap];
+    const chartBox = el('div', { class: 'ex-chart' });
+    // Every value in it was escaped by the module (result_chart.js esc).
+    chartBox.innerHTML = html;
+    tableWrap.hidden = true;
+    const tabs = el('div', { class: 'ex-viewtabs', role: 'tablist' });
+    const pick = (which) => {
+      chartBox.hidden = which !== 'chart';
+      tableWrap.hidden = which !== 'table';
+      tabs
+        .querySelectorAll('button')
+        .forEach((b) =>
+          b.setAttribute('aria-selected', String(b.dataset.view === which)),
+        );
+    };
+    ['chart', 'table'].forEach((which) =>
+      tabs.append(
+        el(
+          'button',
+          {
+            type: 'button',
+            role: 'tab',
+            'data-view': which,
+            'aria-selected': String(which === 'chart'),
+            onclick: () => pick(which),
+          },
+          which === 'chart' ? 'Chart' : 'Table',
+        ),
+      ),
+    );
+    return [tabs, chartBox, tableWrap];
+  }
+
+  // The width a chart has: the canvas's, less the card's padding.
+  function chartWidth() {
+    const canvas = $('ex-canvas') || $('ex-panes');
+    const w = canvas && canvas.clientWidth;
+    return w ? Math.max(320, w - 26) : 800;
+  }
+
   // A result's footer line: rows, time, and what it was over.
-  function appendResultCard(box, data, table, { trail: trailEl, drillable }) {
+  function appendResultCard(
+    box,
+    data,
+    table,
+    { trail: trailEl, drillable, shown = null, rerun = null },
+  ) {
     const n = data.opportunities.length;
     const opps = data.workflow
       ? `${data.workflow.name} (${n} opportunit${n === 1 ? 'y' : 'ies'})`
@@ -672,34 +792,69 @@
     const unloaded = (data.opportunities || []).filter(
       (o) => 'cached_at' in o && !o.cached_at,
     );
-    const notLoaded = unloaded.length
-      ? el(
-          'div',
-          { class: 'ex-warn', style: 'margin: 8px 12px' },
-          unloaded.length === n
-            ? `None of these ${n} opportunities is loaded yet, so this result counts nothing — it is not a real zero. `
-            : `${unloaded.length} of ${n} opportunities aren't loaded yet, so this result leaves out their visits. `,
-          el(
-            'button',
-            {
-              type: 'button',
-              class: 'ex-link',
-              onclick: async () => {
-                await describe(true);
+    let notLoaded = '';
+    if (unloaded.length) {
+      const action = el('span');
+      const loadsBefore = loadsDone;
+      // What to do about it, as the load stands: loading now (a space loads its sources
+      // when it opens), loaded since this ran (run it again), or not loaded (load them).
+      const paint = () => {
+        const loaded =
+          loadsDone > loadsBefore &&
+          !!described &&
+          unloaded.every((o) =>
+            described.opportunities.some(
+              (d) => d.opportunity_id === o.id && d.cached_visits > 0,
+            ),
+          );
+        if (loading)
+          action.replaceChildren('They are loading from Connect now…');
+        else if (loaded && rerun)
+          action.replaceChildren(
+            'They have loaded now: ',
+            el(
+              'button',
+              { type: 'button', class: 'ex-link', onclick: rerun },
+              'run it again',
+            ),
+            '.',
+          );
+        else
+          action.replaceChildren(
+            el(
+              'button',
+              {
+                type: 'button',
+                class: 'ex-link',
+                onclick: () => describe(true),
               },
-            },
-            'Load them from Connect',
-          ),
-          ', then run it again.',
-        )
-      : '';
+              'Load them from Connect',
+            ),
+            ', then run it again.',
+          );
+      };
+      paint();
+      notLoaded = el(
+        'div',
+        { class: 'ex-warn', style: 'margin: 8px 12px' },
+        unloaded.length === n
+          ? `None of these ${n} opportunities is loaded yet, so this result counts nothing — it is not a real zero. `
+          : `${unloaded.length} of ${n} opportunities aren't loaded yet, so this result leaves out their visits. `,
+        action,
+      );
+      watchLoad(notLoaded, paint);
+    }
     box.append(
       el(
         'div',
         { class: 'ex-card' },
         trailEl || '',
         notLoaded,
-        el('div', { class: 'ex-table-wrap' }, table),
+        ...chartAndTable(
+          data,
+          shown,
+          el('div', { class: 'ex-table-wrap' }, table),
+        ),
         el(
           'div',
           { class: 'ex-status' },
@@ -1091,18 +1246,32 @@
       out,
     );
     revealCanvas();
+    const ran = await runInto(out, body, shown);
+    // Layout above the canvas can still move while the query runs; look again.
+    if (ran.ok) revealCanvas();
+    return { ...ran, tab: tab.id };
+  }
+
+  // A tab's query, run (again) into its result box.
+  async function runInto(out, body, shown) {
     try {
       const data = await post(cfg.queryUrl, body);
       out.replaceChildren();
-      appendResultCard(out, data, resultTable(data, { labels: shown }), {});
-      // Layout above the canvas can still move while the query runs; look again.
-      revealCanvas();
-      return { ok: true, tab: tab.id };
+      appendResultCard(out, data, resultTable(data, { labels: shown }), {
+        shown,
+        rerun: () => {
+          out.replaceChildren(
+            el('p', { class: 'text-sm ex-muted' }, 'Running…'),
+          );
+          runInto(out, body, shown);
+        },
+      });
+      return { ok: true };
     } catch (e) {
       out.replaceChildren(
         el('div', { class: 'ex-error' }, e.message || 'The query failed.'),
       );
-      return { ok: false, tab: tab.id, error: e.error || 'query_failed' };
+      return { ok: false, error: e.error || 'query_failed' };
     }
   }
 
@@ -1313,6 +1482,9 @@
       const data = await getJson(cfg.savedUrl);
       mySaved = data.saved || [];
       box.replaceChildren();
+      // On a space's page "My queries" shows only when the person has some: empty, it
+      // reads as if the space had nothing in it.
+      if (space) show('ex-saved-card', mySaved.length > 0);
       if (!mySaved.length) {
         box.append(emptyLine('None yet. Save a query to run it again.'));
         return;
@@ -1631,7 +1803,7 @@
           { value: '' },
           space
             ? 'Leave this space (an unsaved one from my selection)'
-            : 'Unsaved space: this selection',
+            : 'Not saved — save this selection as a space',
         ),
         ...(data.groups || []).map((g) =>
           el(
@@ -1676,11 +1848,16 @@
   }
 
   function startEditingSources() {
+    closeMore();
     state.editingSources = true;
     seedFromSpace();
     described = null;
     renderChips();
     describe(false);
+    // Chosen from the menu at the top of the rail: the editing happens in Sources.
+    const card = $('ex-sources-card');
+    if (card && typeof card.scrollIntoView === 'function')
+      card.scrollIntoView({ block: 'nearest' });
   }
 
   function cancelEditingSources() {
@@ -1715,7 +1892,14 @@
     }
   }
 
+  // The manager's "More" menu closes once a choice is made from it.
+  function closeMore() {
+    const more = $('ex-space-more');
+    if (more) more.open = false;
+  }
+
   async function archiveSpace() {
+    closeMore();
     if (
       !window.confirm(
         `Archive “${space.name}”? It disappears for everyone who can open it.`,
@@ -2036,6 +2220,7 @@
   });
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.ex-picker')) $('ex-add-results').hidden = true;
+    if (!e.target.closest('.ex-more')) closeMore();
   });
   $('ex-wf-btn').addEventListener('click', showWorkflows);
   $('ex-run').addEventListener('click', () => run());
@@ -2070,6 +2255,7 @@
   })();
   display = intent.display || null;
   const describedReady = hasSelection() ? describe(false) : Promise.resolve();
+  describedReady.then(loadMissingOnOpen);
   loadSaved();
   loadSpaceItems();
   loadConversations();

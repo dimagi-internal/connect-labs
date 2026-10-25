@@ -14,6 +14,7 @@ URI rather than a Labs link -- the View's opaque origin holds no Labs session.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -43,6 +44,11 @@ DATA_RESULT_URI = "ui://labs/data-result"
 WORKFLOW_EDIT_CONFIRM_URI = "ui://labs/workflow-edit-confirm"
 
 _HERE = Path(__file__).resolve().parent
+#: Where an ``/*@include:<path>*/`` marker in a View's script is resolved: labs' own static
+#: JS, so a View and a labs page can share one module (the results card and the Data page
+#: draw a chart with ``labsdata/result_chart.js``) while the View stays one document.
+_STATIC = _HERE.parent.parent / "static"
+_INCLUDE = re.compile(r"/\*@include:([a-z0-9_]+/[a-z0-9_]+\.js)\*/")
 
 
 @dataclass(frozen=True)
@@ -60,7 +66,19 @@ class UIResource:
 
 @cache
 def _read(filename: str) -> str:
-    return (_HERE / filename).read_text(encoding="utf-8")
+    return _inline((_HERE / filename).read_text(encoding="utf-8"))
+
+
+def _inline(html: str) -> str:
+    """Each ``/*@include:app/file.js*/`` replaced by that static file's text."""
+
+    def one(match: re.Match) -> str:
+        source = (_STATIC / match.group(1)).read_text(encoding="utf-8")
+        # Inside an inline <script>, the module must not be able to end it.
+        assert "</script" not in source.lower(), match.group(1)
+        return source
+
+    return _INCLUDE.sub(one, html)
 
 
 RESOURCES: tuple[UIResource, ...] = (
