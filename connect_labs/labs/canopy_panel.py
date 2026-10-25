@@ -266,12 +266,18 @@ def availability(choice: str, reads: Reads, *, ticks=None, listing=_UNSET) -> Av
 
 def data_page_agent(reads: Reads = None) -> Availability:
     """The Data pages' agent: the agent for data work (``canopy_settings.data_agent``),
-    always on sensitive-data runners -- or the default agent when there is none."""
+    always on sensitive-data runners. With none, no agent: a Data page reads raw visits,
+    so it never falls back to the default agent or to an ordinary runner."""
     reads = reads or NO_VISIT_DATA
     ticks = canopy_settings.current()
     listing = canopy_settings.site_agents()
     slug = canopy_settings.data_agent(ticks, listing)
-    return availability(slug or "", reads, ticks=ticks, listing=listing)
+    if not slug:
+        return Availability(False, reasons=(f"no agent for data work is shown: tick one in {ADMIN_PAGE}",))
+    here = availability(slug, reads, ticks=ticks, listing=listing)
+    if here.ok and not (here.read_only and canopy_settings.SENSITIVE_DATA in here.page_agent.runner_requirements):
+        return Availability(False, slug, reasons=(f"{slug} is not set to run only on sensitive-data runners",))
+    return here
 
 
 def panel(
