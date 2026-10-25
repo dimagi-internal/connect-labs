@@ -52,7 +52,10 @@ def is_semantic_report(definition) -> bool:
 HEADLINE_NOTE = (
     "The totals the run page's header shows the person (e.g. '10,450 babies · 45,598 visits · 6 organizations · "
     "12 opportunities · figures as of 11 Oct'), for the whole run. Quote these when asked what the report says; "
-    "never estimate a figure the header already shows."
+    "never estimate a figure the header already shows. `workers` are distinct people (usernames), as a "
+    "COUNT(DISTINCT username) over the visits counts them; `worker_accounts`, when given, counts each "
+    "opportunity's account separately (the rows of the page's workers table). Lead with `workers`, "
+    "under that word; give the accounts only beside it, as the other definition."
 )
 
 
@@ -61,18 +64,26 @@ def headline(payload: dict) -> dict:
     read them (``kmc_programme_metrics_render.js`` / ``indicator_report_render.js``
     subtitle): cases from the programme's ``total_cases`` cell, else ``meta.cases``;
     visits, opportunities and the as-of date from ``meta``; workers and organisations
-    from the graded rows. A key the payload cannot answer is left out, not guessed."""
+    from the graded rows. A key the payload cannot answer is left out, not guessed.
+
+    ``workers`` is distinct usernames -- one person across opportunities, what a
+    ``COUNT(DISTINCT username)`` over the visits (the agent's own card) says. ``byFLW`` has
+    a row per (opportunity, username) account, so its length is ``worker_accounts``, given
+    only when it differs: reported as "workers" it read 306 beside the card's 62."""
     meta = payload.get("meta") or {}
     total = (payload.get("programInd") or {}).get("total_cases")
     cases = total.get("n") if isinstance(total, dict) else None
     if cases is None:
         cases = meta.get("cases")
     by_llo = payload.get("byLLO") or []
+    by_flw = payload.get("byFLW") or []
+    people = {str(f.get("username") or f.get("flw") or f.get("key")) for f in by_flw}
     out = {
         "cases": cases,
         "visits": meta.get("visits"),
         # A zero is a figure the header shows ("0 organizations"), not a gap.
-        "workers": len(payload.get("byFLW") or []),
+        "workers": len(people),
+        "worker_accounts": len(by_flw) if len(by_flw) != len(people) else None,
         "organisations": len(by_llo),
         "opportunities": meta.get("opportunities") or len(payload.get("byOpp") or []),
         "as_of": meta.get("as_of") or (str(payload.get("generated_at") or "")[:10] or None),
