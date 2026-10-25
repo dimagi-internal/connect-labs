@@ -326,6 +326,46 @@ describe('saving a query', () => {
     expect(th[1].textContent).toBe('Visits');
     expect(th[1].getAttribute('title')).toBe('n');
   });
+
+  it('a saved display formats its cells: a month as a month, a fraction as a percent', async () => {
+    const { document } = mount({
+      selected: false,
+      saved: [
+        {
+          id: 4,
+          name: 'Monthly',
+          sql: 'SELECT m, r, n FROM x',
+          selection: { opportunity_ids: [7], program_ids: [], workflow: null },
+          max_rows: 50,
+          display: {
+            columns: {
+              m: { label: 'Month', format: 'month' },
+              r: { label: 'Rate', format: 'percent_1' },
+              n: { label: 'Visits', format: 'number_0' },
+            },
+          },
+          version: 1,
+        },
+      ],
+      result: {
+        columns: ['m', 'r', 'n'],
+        rows: [['2025-05-01T00:00:00+00:00', 0.253, '1234.4']],
+        row_count: 1,
+        truncated: false,
+        elapsed_ms: 1,
+        opportunities: [{ id: 7, name: 'Opp' }],
+      },
+    });
+    await settle();
+    document.querySelector('#ex-saved button.open').click();
+    await settle();
+    const td = [...document.querySelectorAll('#ex-result td')].map(
+      (c) => c.textContent,
+    );
+    expect(td[0]).toBe('May 2025');
+    expect(td[1]).toMatch(/^25\.3\s?%$/);
+    expect(td[2]).toBe((1234).toLocaleString());
+  });
 });
 
 describe("the page's agent reads what is on screen", () => {
@@ -464,6 +504,21 @@ describe('who can open a space, and its managers', () => {
     expect(posts.find((p) => p.url === '/sp/42/managers/').body).toEqual({
       person: 'bo@invented.example',
     });
+    // The only manager cannot be removed (the server says last_manager): not offered.
+    expect(document.querySelector('#ex-managers button')).toBeNull();
+  });
+
+  it('a manager removes another manager', async () => {
+    const two = {
+      ...SPACE,
+      managers: [
+        { id: 3, username: 'ana' },
+        { id: 4, username: 'bo' },
+      ],
+    };
+    const { window, document, posts } = mount({ space: two });
+    await settle();
+    window.confirm = () => true;
     document.querySelector('#ex-managers button').click();
     await settle();
     expect(posts.some((p) => p.url === '/sp/42/managers/3/remove/')).toBe(true);

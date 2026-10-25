@@ -686,6 +686,49 @@
     );
   }
 
+  // A cell as the result's display says (labsdata/display.py FORMATS): number_N,
+  // percent_N (a fraction), currency_N, compact_N, date, month. No format: as before.
+  function formatValue(v, format, currency) {
+    if (!format) return typeof v === 'number' ? v.toLocaleString() : v;
+    if (format === 'date' || format === 'month') {
+      const d = new Date(String(v).length === 10 ? `${v}T00:00:00Z` : v);
+      if (Number.isNaN(d.getTime())) return v;
+      const opts =
+        format === 'month'
+          ? { month: 'short', year: 'numeric', timeZone: 'UTC' }
+          : {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+              timeZone: 'UTC',
+            };
+      return d.toLocaleDateString('en-GB', opts);
+    }
+    const n = typeof v === 'number' ? v : Number(v);
+    if (v === '' || Number.isNaN(n)) return v;
+    const [kind, places] = format.split('_');
+    const digits = Math.max(0, Math.min(4, Number(places) || 0));
+    const opts = {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    };
+    try {
+      if (kind === 'percent')
+        return n.toLocaleString(undefined, { ...opts, style: 'percent' });
+      if (kind === 'currency')
+        return n.toLocaleString(undefined, {
+          ...opts,
+          style: 'currency',
+          currency,
+        });
+      if (kind === 'compact')
+        return n.toLocaleString(undefined, { ...opts, notation: 'compact' });
+      return n.toLocaleString(undefined, opts);
+    } catch (e) {
+      return n.toLocaleString();
+    }
+  }
+
   // The table of a result. `drillable` cells open the rows behind them (the editor
   // only); a visit_id opens the visit in a tab. `labels` is the result's display.
   function resultTable(
@@ -696,6 +739,15 @@
       const spec = labels && labels.columns && labels.columns[c];
       return (spec && spec.label) || c;
     };
+    const formats = data.columns.map(
+      (c) =>
+        (labels &&
+          labels.columns &&
+          labels.columns[c] &&
+          labels.columns[c].format) ||
+        null,
+    );
+    const currency = (labels && labels.currency) || 'USD';
     const table = el('table', { class: 'ex-table' });
     table.append(
       el(
@@ -752,9 +804,7 @@
                     )
                   : typeof v === 'object'
                     ? JSON.stringify(v)
-                    : typeof v === 'number'
-                      ? v.toLocaleString()
-                      : v,
+                    : formatValue(v, formats[i], currency),
             ),
           ),
         ),
@@ -935,6 +985,16 @@
     else renderTabs();
   }
 
+  // A tab opened from the rail (a saved query, low on a long rail or above the canvas
+  // on a phone) is out of sight: bring the canvas's tab strip into view.
+  function revealCanvas() {
+    const strip = $('ex-tabs');
+    if (!strip || typeof strip.getBoundingClientRect !== 'function') return;
+    const r = strip.getBoundingClientRect();
+    if (r.top < 0 || r.top > window.innerHeight * 0.6)
+      strip.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   // A query shown in its own tab: run here, as the person, over the page's selection
   // (or the given one: a personal saved query brings its own). No drill-down -- "Open
   // in editor" for that -- and the person's editor is left as it was.
@@ -947,6 +1007,7 @@
     selection = null,
   }) {
     const tab = openTab(kind, title || 'Query');
+    revealCanvas();
     const rows = Number(max_rows) || Number($('ex-max').value) || 500;
     const body = { ...(selection || selectionBody()), sql, max_rows: rows };
     const out = el(
@@ -1671,7 +1732,8 @@
           'div',
           { class: 'flex items-center justify-between gap-2' },
           el('span', {}, m.username),
-          manager
+          // The last manager cannot be removed (spaces.LastManager): don't offer it.
+          manager && (space.managers || []).length > 1
             ? el(
                 'button',
                 {

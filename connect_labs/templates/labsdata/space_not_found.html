@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block title %}Data space not available · Connect Labs{% endblock %}
+
+{% block content %}
+<div class="px-6 py-5 max-w-[720px]">
+  <h1 class="text-2xl font-semibold text-stone-900 mb-2">This data space isn't available to you</h1>
+  <p class="text-sm text-stone-700 mb-3">{{ message }}</p>
+  <p class="text-sm text-stone-700 mb-4">A space opens only for people who hold every program and opportunity it reads. Ask whoever sent you the link which ones those are, and get access to them in Connect; then this link will open.</p>
+  <a href="{% url 'labsdata:index' %}" class="inline-block text-sm font-semibold text-white bg-[#16006d] rounded-md px-4 py-2">Go to the Data page</a>
+</div>
+{% endblock %}

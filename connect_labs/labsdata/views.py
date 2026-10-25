@@ -11,7 +11,8 @@ from __future__ import annotations
 import json
 
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import Http404, HttpResponse, JsonResponse
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import render
 from django.views import View
 from django.views.generic import TemplateView
 
@@ -103,6 +104,10 @@ class DataView(LoginRequiredMixin, TemplateView):
             return super().get(request, *args, **kwargs)
         except ScopeError as e:  # what the person holds cannot be established right now
             return HttpResponse(e.message, status=503, content_type="text/plain")
+        except spaces.SpaceNotFound as e:
+            # Still the gate's one 404 (no such space == not yours to open), but a page a
+            # person who followed a colleague's link can act on: what to ask for, and a way on.
+            return render(request, "labsdata/space_not_found.html", {"message": e.message}, status=404)
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -111,10 +116,7 @@ class DataView(LoginRequiredMixin, TemplateView):
         # a space the person may not open is the same 404 as one that does not exist.
         opened = None
         if self.kwargs.get("space_id") is not None:
-            try:
-                opened = spaces.open(caller, self.kwargs["space_id"], allow_changed=True)
-            except spaces.SpaceNotFound as e:
-                raise Http404(e.message) from e
+            opened = spaces.open(caller, self.kwargs["space_id"], allow_changed=True)  # SpaceNotFound: get()
         opps = sorted(scope.directory(caller).values(), key=lambda o: (o.llo.lower(), o.name.lower()))
         initial = initial_selection(self.request)
         if opened is not None:

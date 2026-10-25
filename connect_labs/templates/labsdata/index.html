@@ -7,7 +7,8 @@
   {{ block.super }}
   <style>
     .ex-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
-    @media (max-width: 900px) { .ex-grid { grid-template-columns: 1fr; } }
+    /* minmax(0, 1fr), not 1fr: a wide result must scroll inside its card, never widen the phone page. */
+    @media (max-width: 900px) { .ex-grid { grid-template-columns: minmax(0, 1fr); } }
     .ex-card { background: #fff; border: 1px solid #e7e5e4; border-radius: 10px; }
     .ex-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #78716c; }
     .ex-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 4px 2px 8px; border-radius: 999px; background: #eef2ff; color: #16006d; }
@@ -62,7 +63,7 @@
     .ex-notice { color: #1e3a8a; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 6px 8px; font-size: 12px; margin-top: 6px; }
     .ex-versions { padding: 0 12px 6px 24px; font-size: 12px; color: #57534e; }
     .ex-versions button { color: #16006d; }
-    .ex-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid #e7e5e4; }
+    .ex-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid #e7e5e4; scroll-margin-top: 80px; }
     .ex-tab { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 6px 10px; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; color: #57534e; max-width: 260px; }
     .ex-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ex-tab[aria-selected="true"] { background: #fff; border-color: #e7e5e4; color: #16006d; font-weight: 600; margin-bottom: -1px; }
@@ -109,6 +110,30 @@
           <div id="ex-space-notice"></div>
         </div>
       </div>
+
+      {# What the space holds comes first: it is what someone opening a colleague's link came for. #}
+      <div class="ex-card" id="ex-space-items-card" {% if not space %}hidden{% endif %}>
+        <div class="px-3 pt-3 pb-2"><span class="ex-label">In this space</span> <span class="ex-muted text-xs">click one to run it</span></div>
+        <div id="ex-space-items" class="ex-saved"><p class="px-3 pb-3 text-sm ex-muted">—</p></div>
+      </div>
+
+      {% if space %}
+      {# Saved conversations: pointers to canopy chat sessions begun on this space's page -- #}
+      {# never a transcript. Opening one asks canopy to open it in the panel, as you; canopy #}
+      {# decides whether you may read it (a private one: only its people). data.js fills it. #}
+      <div class="ex-card" id="ex-conversations-card">
+        <div class="px-3 pt-3 pb-3 flex flex-col gap-2">
+          <span class="ex-label">Conversations</span>
+          <div id="ex-conversations" class="ex-saved"><p class="text-sm ex-muted">—</p></div>
+          <div class="flex flex-wrap gap-2">
+            <input id="ex-conversation-label" style="flex: 1 1 10rem; min-width: 10rem" class="ex-search" maxlength="200" autocomplete="off" aria-label="Name for the conversation">
+            <button class="ex-btn ghost whitespace-nowrap" id="ex-conversation-save" type="button" disabled>Save this conversation</button>
+          </div>
+          <p class="text-xs ex-muted" id="ex-conversation-hint">Start or open a conversation in the panel to save it here.</p>
+          <div class="ex-error" id="ex-conversation-error" hidden></div>
+        </div>
+      </div>
+      {% endif %}
 
       {% if space %}
       {# Who can open the space, and who manages it (spaces.AUDIENCES, DataSpace.managers). #}
@@ -163,29 +188,6 @@
         <div class="px-3 pt-3 pb-1"><span class="ex-label">Tables</span> <span class="ex-muted text-xs">click a name to insert it</span></div>
         <div id="ex-tables" class="ex-tables"><p class="px-3 pb-3 text-sm ex-muted">—</p></div>
       </div>
-
-      <div class="ex-card" id="ex-space-items-card" {% if not space %}hidden{% endif %}>
-        <div class="px-3 pt-3 pb-2"><span class="ex-label">In this space</span></div>
-        <div id="ex-space-items" class="ex-saved"><p class="px-3 pb-3 text-sm ex-muted">—</p></div>
-      </div>
-
-      {% if space %}
-      {# Saved conversations: pointers to canopy chat sessions begun on this space's page -- #}
-      {# never a transcript. Opening one asks canopy to open it in the panel, as you; canopy #}
-      {# decides whether you may read it (a private one: only its people). data.js fills it. #}
-      <div class="ex-card" id="ex-conversations-card">
-        <div class="px-3 pt-3 pb-3 flex flex-col gap-2">
-          <span class="ex-label">Conversations</span>
-          <div id="ex-conversations" class="ex-saved"><p class="text-sm ex-muted">—</p></div>
-          <div class="flex gap-2">
-            <input id="ex-conversation-label" class="ex-search" maxlength="200" autocomplete="off" aria-label="Name for the conversation">
-            <button class="ex-btn ghost whitespace-nowrap" id="ex-conversation-save" type="button" disabled>Save this conversation</button>
-          </div>
-          <p class="text-xs ex-muted" id="ex-conversation-hint">Start or open a conversation in the panel to save it here.</p>
-          <div class="ex-error" id="ex-conversation-error" hidden></div>
-        </div>
-      </div>
-      {% endif %}
 
       <div class="ex-card">
         <div class="px-3 pt-3 pb-2"><span class="ex-label">My queries</span></div>
