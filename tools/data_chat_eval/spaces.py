@@ -524,7 +524,11 @@ def _agent_artifact(page, steps: _Steps, sc: SpaceScenario, space_id, space_url:
         page.goto(space_url, wait_until="load", timeout=120_000)
         driver._open(page, space_url, cap)
         frame = driver._open_panel(page, cap)
-        turn = driver._turn(page, frame, sc.artifact_ask, 1, sessions, cap)
+        # A fresh conversation, so this is its turn 0 (canopy's turns are counted per
+        # conversation); step 6's own turn screenshots are kept under another name first.
+        for shot in out_dir.glob("turn1-*.png"):
+            shot.rename(out_dir / f"step6-{shot.name}")
+        turn = driver._turn(page, frame, sc.artifact_ask, 0, sessions, cap)
         entry["turns"] = [*entry.get("turns", []), _turn_dict(turn)]
         steps.add(
             6,
