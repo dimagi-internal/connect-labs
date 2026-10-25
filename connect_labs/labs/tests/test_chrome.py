@@ -120,6 +120,7 @@ class TestAPageThatDoesNotUseTheContext:
 
     def test_a_normal_page_shows_the_selection_as_applied(self, header):
         html = header()
+        assert SELECTOR in html  # the per-path filters, as before
         assert 'data-testid="context-button"' in html
         assert "Opp:" in html and "KMC - UG - PIPN - P1" in html
         assert "context-not-used" not in html
@@ -133,8 +134,9 @@ class TestAPageThatDoesNotUseTheContext:
         # The selection is not presented as applied -- named only in the tooltip.
         assert 'data-testid="context-button"' not in html
         assert "Opp:" not in html
-        # The menu still opens, so the person can change the context for other pages.
-        assert SELECTOR in html and "Apply Selection" in html
+        # The menu still opens, and Apply sets the context for other pages on any path
+        # (the picker's per-path filters would otherwise turn Apply into a clear).
+        assert "labsContextSelector({ anyPath: true })" in html and "Apply Selection" in html
         assert 'data-testid="context-not-used-note"' in html
 
     def test_not_used_without_a_selection_does_not_ask_for_one(self, django_user_model):
