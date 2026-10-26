@@ -335,6 +335,23 @@ RESOURCE_SCHEMES = ["labs-result"]
 RESOURCE_ID_LENGTHS = {"labs-result": 24}
 
 
+#: How long a page grant lasts: the delegated access token canopy redeems for a visitor on a
+#: labs page (the agent acting with the person's authority, held to that page). Thirty
+#: minutes, the owner's choice: long enough for a conversation, short enough that a grant
+#: the person has walked away from dies. The canopy SDK caps it at
+#: ``contract.ACCESS_TOKEN_MAX_LIFETIME`` -- 900 s through dimagi-canopy 0.22.x, raised to
+#: 1800 s in a later release -- so labs asks for the smaller of the two
+#: (``page_grant_seconds``) and gets 30 minutes once the SDK pin is bumped.
+PAGE_GRANT_SECONDS = 30 * 60
+
+
+def page_grant_seconds() -> int:
+    """The page grant's lifetime labs asks for: ``PAGE_GRANT_SECONDS``, within the SDK's cap."""
+    from canopy_sdk import contract
+
+    return min(PAGE_GRANT_SECONDS, int(contract.ACCESS_TOKEN_MAX_LIFETIME))
+
+
 def host_settings() -> dict:
     """``CANOPY_HOST`` as the SDK reads it, from labs' settings as they are NOW.
 
@@ -368,6 +385,10 @@ def host_settings() -> dict:
         "RESOURCE": f"{public}/mcp/" if public else "",
         "TOKEN_ENDPOINT": f"{public}/o/token/" if public else "",
         "RUNNER_REQUIREMENTS": list(agents.runner_requirements),
+        # The page grant's lifetime (``page_grant_seconds``). Read by an SDK that takes it
+        # (``HostConfig.access_token_ttl``); an SDK that does not issues its cap, which is
+        # the same number until the cap passes 30 minutes.
+        "ACCESS_TOKEN_TTL": page_grant_seconds(),
         "SCOPE_TOOLS": SCOPE_TOOLS,
         "PAGE_SCOPES": PAGE_SCOPES,
         "PAGE_TITLES": PAGE_TITLES,
