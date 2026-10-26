@@ -23,6 +23,12 @@ out of reach. ``Canopy-Actor`` still only NAMES the agent and is never trusted.
 in a conversation they are in -- bound to the person, the resource, the conversation, the
 DPoP key and the token. ``view_for_this_request`` verifies it. A delegated call with NO
 statement is neither an agent labs cleared nor the person: it is refused.
+
+A View's ``tools/call`` is the person's click only on the same positive word: a delegated
+call to a tool only a View may make (app-only, or a commit only the person may make) needs
+a ``Canopy-View`` for THAT ``tools/call`` -- its ``uri`` the View's own ``ui://`` resource --
+verified once per call (``view_for_this_call``) and kept for it (``current_view``). Hiding
+the tool from the agent is canopy's rule; labs does not take it on trust.
 """
 
 from __future__ import annotations
@@ -129,10 +135,11 @@ class CallView:
         return self.view.audit() if self.view is not None else {"refused": self.refused}
 
 
-def verify_view(headers, access_token: str | None, *, uri: str, subject: str) -> CallView:
+def verify_view(headers, access_token: str | None, *, uri: str, subject: str, rpc=None) -> CallView:
     """Verify ``Canopy-View`` on this request's ``headers`` for the ``resources/read`` of
     ``uri`` as ``subject`` (the labs user the delegated token serves), bound to that very
-    request. Never raises."""
+    request -- or, with ``rpc`` (``(method, params)``), to that JSON-RPC request instead
+    (a View's ``tools/call``, ``uri`` then the View's own resource). Never raises."""
     try:
         from canopy_sdk.django.execution import ViewRefused
         from canopy_sdk.django.execution import verify_view as sdk_verify_view
@@ -145,7 +152,7 @@ def verify_view(headers, access_token: str | None, *, uri: str, subject: str) ->
                 uri=uri,
                 subject=subject,
                 access_token=access_token,
-                rpc=("resources/read", {"uri": uri}),
+                rpc=rpc if rpc is not None else ("resources/read", {"uri": uri}),
             )
         )
     except ViewRefused as e:
@@ -164,3 +171,55 @@ def view_for_this_request(access_token, *, uri: str, subject: str) -> CallView:
     except Exception:  # noqa: BLE001 -- no request context
         headers = {}
     return verify_view(headers, getattr(access_token, "token", None), uri=uri, subject=subject)
+
+
+def subject_of(access_token) -> str:
+    """The labs user a delegated token serves, as canopy names them in a statement (the
+    grant's subject: the user's id)."""
+    claims = getattr(access_token, "claims", None) or {}
+    uid = claims.get("user_id")
+    if uid is None:
+        uid = claims.get("sub")
+    return "" if uid is None else str(uid)
+
+
+_CURRENT_VIEW: ContextVar[CallView | None] = ContextVar("labs_canopy_view", default=None)
+
+
+def view_for_this_call(access_token, *, uri: str, tool_name: str, arguments: dict) -> CallView:
+    """Verify ``Canopy-View`` on the MCP request in flight for THIS ``tools/call`` (this tool,
+    these arguments) from the View at ``uri``, as the person the token serves."""
+    try:
+        from fastmcp.server.dependencies import get_http_headers
+
+        headers = get_http_headers(include_all=True)
+    except Exception:  # noqa: BLE001 -- no request context
+        headers = {}
+    return verify_view(
+        headers,
+        getattr(access_token, "token", None),
+        uri=uri,
+        subject=subject_of(access_token),
+        rpc=("tools/call", {"name": tool_name, "arguments": dict(arguments or {})}),
+    )
+
+
+def current_view() -> CallView | None:
+    """This call's verified ``Canopy-View`` (or why there is none); None when it was not asked."""
+    return _CURRENT_VIEW.get()
+
+
+def is_persons_view() -> bool:
+    """Whether canopy stated, verifiably, that this call is the person's own View."""
+    view = _CURRENT_VIEW.get()
+    return view is not None and view.view is not None
+
+
+@contextmanager
+def bound_view(view: CallView | None):
+    """Keep ``view`` as this call's View statement for the duration of the block."""
+    token = _CURRENT_VIEW.set(view)
+    try:
+        yield view
+    finally:
+        _CURRENT_VIEW.reset(token)

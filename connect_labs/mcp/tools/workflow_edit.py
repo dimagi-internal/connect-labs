@@ -16,9 +16,14 @@ pipelines and its semantic registry -- but never on its own say-so. Its scope
                                   workflow (its version history is the undo).
 * ``workflow_edit_decline``    -- app-only: the card's Decline.
 
-The agent never holds a confirm token, so it cannot confirm its own edit; the host
-hides app-only tools from it and refuses it a call to one. That is the host's rule to
-enforce, so each app-only tool still checks its caller itself.
+The agent never holds a confirm token, so it cannot confirm its own edit. The host hides
+app-only tools from it and refuses it a call to one, but labs does not take that on trust:
+through canopy (a delegated call) an app-only tool runs only on canopy's signed
+``Canopy-View`` statement that THIS ``tools/call`` is the person's own View, as the person
+the token serves (``mcp/server.py`` ``view_denial``, verified once per call in
+``mcp/execution.py``) -- never on the absence of an agent's statement. Each tool then checks
+the edit is that person's own (``_find``, ``_spend``). On a person's own connection (PAT,
+OAuth) the tools are theirs to call.
 
 What an edit through canopy may NOT do, whatever the person confirms, is send data
 anywhere else: ``refusal`` refuses the definition changes that would (a workflow's
@@ -343,7 +348,9 @@ def _card(edit, *, with_token: bool) -> dict:
     description=(
         "For the edit confirm card only (MCP Apps, app-only): a proposed edit as the person LOOKING AT the "
         "card -- its summary, the diff and that person's own single-use `confirm`. Found by `change_id`, or "
-        "by the proposal's own `tool` and `arguments`. Hosts hide this tool from the agent."
+        "by the proposal's own `tool` and `arguments`. Hosts hide this tool from the agent; "
+        "through canopy labs runs it only with canopy's Canopy-View statement that the call is "
+        "the person's own View."
     ),
     input_schema={
         "type": "object",
@@ -397,7 +404,8 @@ _DECIDE_SCHEMA = {
     description=(
         "For the edit confirm card only (MCP Apps, app-only): the person's Confirm. Saves the proposed edit "
         "by running its tool as that person, with the `confirm` token workflow_edit_review_view issued them. "
-        "Hosts hide this tool from the agent."
+        "Hosts hide this tool from the agent, and through canopy labs runs it only "
+        "with canopy's Canopy-View statement that the call is the person's own View."
     ),
     input_schema=_DECIDE_SCHEMA,
     is_write=True,
@@ -446,7 +454,8 @@ def workflow_edit_apply(user, change_id: str, confirm: str):
     name="workflow_edit_decline",
     description=(
         "For the edit confirm card only (MCP Apps, app-only): the person's Decline. Nothing is saved. "
-        "Hosts hide this tool from the agent."
+        "Hosts hide this tool from the agent, and through canopy labs runs it only "
+        "with canopy's Canopy-View statement that the call is the person's own View."
     ),
     input_schema=_DECIDE_SCHEMA,
     meta=tool_meta(WORKFLOW_EDIT_CONFIRM_URI, "app"),

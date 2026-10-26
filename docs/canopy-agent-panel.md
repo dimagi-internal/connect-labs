@@ -503,15 +503,40 @@ tool as them -- straight to the workflow, whose version history is the undo. Ref
 whatever the person confirms, because they would send data elsewhere: anything but the
 listed edit tools (sharing, publishing, cloning, deleting), a definition's `kind`, `page`,
 `workflow_sources`, `config_reads`, `config.actions`, `config.agent` and `config.sandbox`,
-and render code on a workflow that does not run in the page sandbox. Code:
-`mcp/tools/workflow_edit.py`.
+and render code on a workflow that does not run in the page sandbox. Held to the page, too
+(`labsdata/page_holds.py` `run_denial`): a proposal changes the page's own workflow, a
+pipeline it reads, or the registry it computes from, and a new pipeline or registry is
+created only in the workflow's own scope (never shared). Code: `mcp/tools/workflow_edit.py`.
+
+**Definition reads are held to the page too.** Under a page grant, `data:read`'s definition
+tools -- `workflow_get`, `pipeline_get`, `pipeline_sql`, `semantic_registry_get` /
+`_explain` / `_list` -- read only the page's own workflow (in its own scope), the pipelines
+it reads, and the registries it computes from or whose deployment covers the page's
+opportunities (what `data_describe` lists); `semantic_registry_list` lists only those. They
+are read as the person when the call is made (`page_holds.page_definitions`). A person's own
+PAT or sign-in is not held.
+
+**App-only tools run on canopy's word, not on trust.** A tool only a View may call
+(`_meta.ui.visibility == ["app"]`: `workflow_action_preview_view`, `workflow_edit_review_view`,
+`workflow_edit_apply`, `workflow_edit_decline`) runs under a delegated token only with a
+verified `Canopy-View` statement for THAT `tools/call` -- its `uri` the View's own `ui://`
+resource, its `rpc` that very request, its `sub` the person the token serves
+(`mcp/server.py` `view_denial`; verified once per call in `mcp/execution.py`). No
+statement, an agent's `Canopy-Execution`, or a statement for another call or View is
+refused before the tool runs. canopy must therefore send `Canopy-View` on a View's
+`tools/call`, not only on its `resources/read`.
 
 **The coaching write scope, and why it is safe to hand to a page.** `workflow_run_action`
 cannot act in one call. Its first call is a preview of exactly what would happen,
 with a single-use token bound to the visitor, the run and those arguments. Only a
 second call carrying that token acts, and changing anything in between refuses it.
-For most actions the tool tells the agent to show the preview and get the person's
-yes in between; Labs enforces that a preview came first, not the yes itself.
+**Through canopy every action is the person's click.** Each action writes as the person (a
+follow-up task in their name, a coaching conversation from their Open Chat Studio), so
+under a page grant none is the agent's to confirm: its preview carries no `confirm`
+(`sent_by: click`), the View (the card) gets the token and shows the action's own button,
+and the commit runs only with the View's `Canopy-View` (`workflow_run.click_only`). The
+run page's own button is the other way. Only a person's own agent (their PAT or sign-in)
+confirms a non-coaching action in chat, on their yes.
 **Coaching is sent by a click, never by the agent.** A `start_ocs_outreach` preview,
 as the agent gets it, carries no `confirm`. `workflow_run_action` is an MCP Apps tool
 (`_meta.ui.resourceUri = ui://labs/workflow-action-preview`): canopy renders its result

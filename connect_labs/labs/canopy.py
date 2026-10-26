@@ -44,10 +44,11 @@ from connect_labs.labs import canopy_settings
 #: holds ``workflow_run_action``, which runs a workflow's own declared action (the
 #: same one its button runs) and cannot run without a preview first: the call that
 #: acts must carry the single-use token its preview issued, bound to the person,
-#: the run and exactly what was previewed (``workflow/actions.py``). A coaching
-#: action's token never reaches the agent at all: only the View canopy renders gets
-#: one, from ``workflow_action_preview_view`` (app-only, MCP Apps), previewed as the
-#: person looking at it -- so a coaching send is that person's click. A new write
+#: the run and exactly what was previewed (``workflow/actions.py``). Under this grant
+#: no action's token reaches the agent at all: only the View canopy renders gets one,
+#: from ``workflow_action_preview_view`` (app-only, MCP Apps, run only on canopy's
+#: ``Canopy-View``), previewed as the person looking at it -- so every action through
+#: canopy is that person's click (``mcp/tools/workflow_run.py`` ``click_only``). A new write
 #: scope must hold to the same rule -- ``PREVIEWED_WRITE_SCOPES`` is the list, and a
 #: test pins it.
 SCOPE_TOOLS: dict[str, frozenset[str]] = {

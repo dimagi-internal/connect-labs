@@ -574,7 +574,9 @@ def _run_registry_tool(
         mcp_caller(user),
         # Canopy acting for a visitor: verify its Canopy-Execution statement ONCE for
         # this call (it is single-use) and keep it for every check the call makes.
-        execution.bound(_call_execution(spec.name, arguments)),
+        execution.bound(_call_execution(spec.name, arguments)) as call,
+        # ...or, for a call from a View, its Canopy-View: the person's own click.
+        execution.bound_view(_call_view(spec, arguments, call)),
     ):
         started = _call_started.set(time.monotonic())
         try:
@@ -593,6 +595,50 @@ def _call_execution(tool_name: str, arguments: dict):
         return None
     return execution.for_this_request(
         access, rpc=("tools/call", {"name": tool_name, "arguments": dict(arguments or {})})
+    )
+
+
+def _view_uri(spec) -> str:
+    """The View a tool belongs to (its ``_meta.ui.resourceUri``), or ""."""
+    ui = (getattr(spec, "meta", None) or {}).get("ui") or {}
+    return str(ui.get("resourceUri") or "")
+
+
+def app_only(spec) -> bool:
+    """A tool only a View may call (``_meta.ui.visibility == ["app"]``): the person's click."""
+    ui = (getattr(spec, "meta", None) or {}).get("ui") or {}
+    return list(ui.get("visibility") or ()) == ["app"]
+
+
+def _call_view(spec, arguments: dict, call):
+    """This delegated call's verified ``Canopy-View`` (or why not), for a tool that belongs
+    to a View and a call that carries no verified agent statement; None for anything else.
+    Verified once here (it is single-use) and kept for the call (``execution.current_view``)."""
+    from . import execution
+
+    if call is None or call.execution is not None:
+        return None  # not delegated, or an agent's call: never a View
+    uri = _view_uri(spec)
+    if not uri:
+        return None
+    return execution.view_for_this_call(get_access_token(), uri=uri, tool_name=spec.name, arguments=arguments)
+
+
+def view_denial(spec) -> str | None:
+    """Why this delegated call may not make an app-only tool's call, or None.
+
+    Hosts hide an app-only tool from the agent, but that is the host's rule: labs admits the
+    call only on canopy's signed word that it is the person's own View (``Canopy-View``, for
+    this very ``tools/call``) -- never on the absence of an agent's statement."""
+    from . import execution
+
+    if not app_only(spec) or execution.is_persons_view():
+        return None
+    view = execution.current_view()
+    why = view.refused if view is not None else "no_statement"
+    return (
+        f"{spec.name} is the person's own click in canopy's card, and canopy did not say this call is "
+        f"their View ({why}). The agent cannot make it."
     )
 
 
@@ -693,6 +739,12 @@ def _run_registry_tool_inner(
         if outside is not None:
             audit(user, spec.name, arguments, success=False, error_code="PERMISSION_DENIED", is_write=spec.is_write)
             err = MCPToolError("PERMISSION_DENIED", outside.message, outside.as_dict())
+            raise _tool_error(err) from err
+        # A tool only the person's View may call: on canopy's signed word, never on trust.
+        not_view = view_denial(spec)
+        if not_view is not None:
+            audit(user, spec.name, arguments, success=False, error_code="PERMISSION_DENIED", is_write=spec.is_write)
+            err = MCPToolError("PERMISSION_DENIED", not_view, {"reason": "not_the_persons_view"})
             raise _tool_error(err) from err
     denied = policy_denial(spec.name, arguments, user, restricted, delegated=delegated)
     if denied:
