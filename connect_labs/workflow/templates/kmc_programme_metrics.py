@@ -94,7 +94,16 @@ BABY_CASE_ID_FIELD = {
 # `child_details.Danger_Signs_Checklist` (the first path present wins). The
 # registry's case states read them (`danger_signs` in semantic/registry/kmc) to say
 # WHICH sign a visit recorded -- `danger_visits` above only counts two of them.
-_DANGER_GROUPS = ("form.danger_signs_checklist", "form.child_details.Danger_Signs_Checklist")
+# Older app builds capitalise both the group and the question (`Floppy_or_lethargic`,
+# `form.Danger_Signs_Checklist`), newer ones neither: every sign is read under both
+# spellings of its group and its question, or a whole app generation's answers read as
+# missing (on the PIPN clones, every v2 lethargy answer did).
+_DANGER_GROUPS = (
+    "form.danger_signs_checklist",
+    "form.child_details.Danger_Signs_Checklist",
+    "form.Danger_Signs_Checklist",
+    "form.child_details.danger_signs_checklist",
+)
 _DANGER_QUESTIONS = {
     "ds_pus": ("pus_grp.pus_in_eyes_skin_or_on_belly_button", "pus_in_eyes_skin_or_on_belly_button"),
     "ds_convulsions": ("conv_grp.Convulsions_or_seizures", "Convulsions_or_seizures"),
@@ -112,10 +121,22 @@ _DANGER_QUESTIONS = {
     "dsl_slow_breathing": ("danger_sign_label.low_breath_count",),
     "dsl_low_heart_rate": ("danger_sign_label.low_heart_rate",),
 }
+
+
+def _both_cases(path: str) -> list[str]:
+    """``path`` and the same path with its question's first letter in the other case."""
+    head, _, leaf = path.rpartition(".")
+    other = (leaf[:1].swapcase() + leaf[1:]) if leaf else leaf
+    spelled = [leaf] if other == leaf else [leaf, other]
+    return [f"{head}.{x}" if head else x for x in spelled]
+
+
 DANGER_SIGN_FIELDS = [
     {
         "name": name,
-        "paths": [f"{group}.{path}" for group in _DANGER_GROUPS for path in paths],
+        "paths": [
+            f"{group}.{spelling}" for group in _DANGER_GROUPS for path in paths for spelling in _both_cases(path)
+        ],
         "aggregation": "first",
         "description": "One danger-sign answer as the visit recorded it (yes/no, or the label's OK).",
     }
