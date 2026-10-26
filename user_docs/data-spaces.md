@@ -21,7 +21,7 @@ When you choose your sources, the page gives you these tables to query:
 | Table | What it holds | When it appears |
 | --- | --- | --- |
 | `visits` | One row per Connect visit, with every visit column and the full submitted form (`form_json`) | Always, for the opportunities you chose |
-| `p_<alias>` | One table per pipeline of the workflow you chose (`p_approved_visits`, `p_flw_summary`). These are the **same stored rows the workflow's dashboard draws from** | When you choose a workflow |
+| `p_<alias>` | One table per visit-based pipeline of the workflow you chose (`p_approved_visits`, `p_flw_summary`; see [Which pipelines become tables](#which-pipelines-become-tables)). These are the **same stored rows the workflow's dashboard draws from** | When you choose a workflow |
 
 The left rail lists each table and its columns (click a name to put it into the editor), along with the form fields of the chosen opportunities, how often each is filled in, and the values each categorical field takes.
 
@@ -45,7 +45,7 @@ group by status
 order by visits desc
 ```
 
-If the two disagree, the pipeline is filtering something out. That is often deliberate (a pipeline that keeps approved visits only), and sometimes it is the bug you were looking for.
+If the two disagree, the pipeline is changing the data on its way to the dashboard: filtering visits out, or joining, de-duplicating or aggregating rows. That is often deliberate (a pipeline that keeps approved visits only, or counts per work area), and sometimes it is the bug you were looking for.
 
 ### Which pipelines become tables
 
@@ -99,7 +99,7 @@ Your space now appears in the **Space** switcher for everyone who can open it.
 
 ### 4. Share it (there's no share button)
 
-A space doesn't need sharing. **Anyone who holds every one of the space's sources can open it**, checked every time they open it. That is the "auto-sync across anyone holding the same data sources" in the release notes.
+A space doesn't need sharing. **By default, anyone who holds every one of the space's sources can open it**, checked every time they open it (its managers can narrow this to **Only managers**; see [Managing a space](#managing-a-space)). That is the "auto-sync across anyone holding the same data sources" in the release notes.
 
 - A teammate on the same opportunities sees the space, its saved queries and its charts.
 - Someone missing **even one** of the space's sources cannot open it at all. There is no partial view, so everyone who opens a chart sees the same numbers.
