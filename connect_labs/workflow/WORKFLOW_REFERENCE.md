@@ -778,11 +778,31 @@ does** — don't re-implement layer paint by hand; call these.
 | Method                                        | Purpose                                    |
 | --------------------------------------------- | ------------------------------------------ |
 | `createMap(el, opts)`                         | init a Mapbox map (`{center,zoom,style}`)  |
+| `isAvailable(map)`                            | `false` if the map could not start (below) |
 | `bounds(geojson)` / `fit(map, geojson, pad)`  | compute / fit viewport                     |
 | `boundary(map, id, fc, opts)`                 | admin-boundary fill+line(+label) layers    |
 | `points(map, id, fc, opts)`                   | dense point layer (e.g. delivery visits)   |
 | `pins(map, id, fc, opts)`                     | survey pins coloured by a boolean property |
 | `setSource(map, id, fc)` / `remove(map, ids)` | upsert source / tear down                  |
+
+**When the browser will not start WebGL, `createMap` does not throw.** Browsers
+sometimes refuse a WebGL context (after a GPU reset, with too many maps open, on a
+blocklisted driver), and Mapbox GL then throws `Failed to initialize WebGL.` from its
+constructor -- which, uncaught, takes down the whole render, every table and chart
+with it. `createMap` catches that one failure, draws a small panel in `el` reading
+_"Map unavailable — this browser couldn't start WebGL. Reload the page to try
+again."_, and returns an inert stand-in map: every method (`on`, `addControl`,
+`getSource(id).setData`, `getCanvas().style`, `setPaintProperty`, `remove`, ...) is a
+no-op, `'load'` never fires, and the `ConnectMap` and `PlanLayers` drawers do nothing
+with it. So the usual `createMap` → `map.on('load', ...)` code needs no guard and the
+rest of the page draws -- **as long as that rest is not drawn inside the map's
+`'load'` callback**, which never runs on the stand-in. Draw tables, charts and counts
+outside `map.on('load', ...)`; keep only map layers in it. Check
+`ConnectMap.isAvailable(map)` when you have something better to show instead (e.g. a
+table of the same points). Any other error
+from the constructor (a bad container, a bad option) still throws. **Use
+`createMap` rather than `new mapboxgl.Map(...)`** -- a direct constructor call gets
+none of this.
 
 **`window.PlanLayers`** — the canonical **microplan plan layers** (`static/maps/plan_layers.js`).
 These are the exact paint/source definitions the plan editor uses, so a render shows a
