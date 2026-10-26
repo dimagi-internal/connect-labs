@@ -20,6 +20,7 @@ from django.db.models import Max
 
 from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
 from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
+from connect_labs.labs.deid import fieldscan
 
 from .scope import Opportunity
 
@@ -27,8 +28,6 @@ SAMPLE_PER_OPPORTUNITY = 300
 MAX_CATEGORIES = 12
 MIN_VALUE_COUNT = 5
 MAX_VALUE_LENGTH = 60
-# Keys CommCare adds to every form that are noise for analysis.
-SKIP_KEYS = frozenset({"@xmlns", "@uiVersion", "@version", "#type", "@name", "meta"})
 
 
 def _current_rows(opp_id: int):
@@ -77,19 +76,6 @@ def cached_at(opps: list[Opportunity]) -> dict[int, str | None]:
     return out
 
 
-def _walk(node, path: tuple, out: list):
-    if isinstance(node, dict):
-        for key, value in node.items():
-            if key in SKIP_KEYS:
-                continue
-            _walk(value, path + (key,), out)
-    elif isinstance(node, list):
-        for item in node:
-            _walk(item, path + ("[]",), out)
-    else:
-        out.append((path, node))
-
-
 def _accessor(path: tuple) -> str:
     if "[]" in path:
         head = path[: path.index("[]")]
@@ -133,8 +119,7 @@ def describe_fields(opps: list[Opportunity], sample: int = SAMPLE_PER_OPPORTUNIT
         forms = _current_rows(o.id).order_by("-visit_date", "-id").values_list("form_json", "deliver_unit")[:sample]
         for form_json, deliver_unit in forms:
             sampled += 1
-            leaves: list = []
-            _walk(form_json or {}, (), leaves)
+            leaves = fieldscan.walk(form_json or {})
             seen = set()
             seen_values = set()
             for path, value in leaves:
