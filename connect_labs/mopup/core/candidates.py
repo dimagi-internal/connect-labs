@@ -67,7 +67,7 @@ def build_evaluation_input(
     `access_token`, if given, resolves each row's `flw_username` (the raw
     Connect FLW id) into a real display name via
     `labs.analysis.data_access.fetch_flw_names` — the same
-    cached-and-reused mechanism `audit`/`custom_analysis`/`workflow` already
+    cached-and-reused mechanism `audit`/`workflow` already
     use for this exact "raw FLW id -> display name" lookup. Without it,
     `flw_name` falls back to the raw id (same as every other caller of that
     helper does for a username with no resolved name)."""

@@ -197,7 +197,6 @@ SYNTHETIC_TOOLS: frozenset[str] = frozenset(
 GENERATED_ONLY_TOOLS: frozenset[str] = frozenset(
     {
         "pipeline_preview",
-        "custom_analysis_run",
         "explorer_describe",
         "explorer_query",
         "data_describe",
@@ -237,7 +236,6 @@ USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "workflow_history_runs",
         "workflow_preview_as_of",
         "workflow_preview_snapshot",
-        "custom_analysis_run",
         "explorer_describe",
         "explorer_query",
         "data_describe",

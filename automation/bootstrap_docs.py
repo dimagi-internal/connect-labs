@@ -60,14 +60,6 @@ FEATURES = [
         ),
     },
     {
-        "title": "Custom Analysis",
-        "slug": "custom-analysis",
-        "summary": (
-            "Program-specific dashboards for nutrition monitoring, maternal and child health, "
-            "and audit quality reviews. Each dashboard shows aggregated metrics for your program."
-        ),
-    },
-    {
         "title": "Coverage Maps",
         "slug": "coverage-maps",
         "summary": (

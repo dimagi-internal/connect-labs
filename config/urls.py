@@ -85,28 +85,8 @@ urlpatterns = [
     path("labs/explorer/", RedirectView.as_view(url="/labs/data/", query_string=True, permanent=False)),
     path("labs/", include("connect_labs.labs.urls", namespace="labs")),
     path(
-        "custom_analysis/chc_nutrition/",
-        include("connect_labs.custom_analysis.chc_nutrition.urls", namespace="chc_nutrition"),
-    ),
-    path(
-        "custom_analysis/kmc/",
-        include("connect_labs.custom_analysis.kmc.urls", namespace="kmc"),
-    ),
-    path(
         "custom_analysis/mbw_monitoring/",
         include("connect_labs.workflow.templates.mbw_monitoring.urls", namespace="mbw"),
-    ),
-    path(
-        "custom_analysis/rutf/",
-        include("connect_labs.custom_analysis.rutf.urls", namespace="rutf"),
-    ),
-    path(
-        "custom_analysis/audit_of_audits/",
-        include("connect_labs.custom_analysis.audit_of_audits.urls", namespace="audit_of_audits"),
-    ),
-    path(
-        "custom_analysis/exports/",
-        include("connect_labs.custom_analysis.exports.urls", namespace="exports"),
     ),
     path("ai/", include("connect_labs.ai.urls", namespace="ai")),
     path("campaign/", include("connect_labs.campaign.urls", namespace="campaign")),

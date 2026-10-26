@@ -39,7 +39,6 @@ _VISIT_VALUE_READERS = {
     "workflow_run_indicators",
     "workflow_indicator_explain",
     "pipeline_preview",
-    "custom_analysis_run",
     "get_sample_ids",
 }
 

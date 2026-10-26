@@ -6081,7 +6081,6 @@ class JobStatusStreamView(LoginRequiredMixin, View):
     heartbeat producer thread) for its whole lifetime, and the ASGI web tier runs
     only ``WEB_CONCURRENCY`` workers, so concurrent streams starve each other.
 
-    Follows same pattern as custom_analysis SSE views.
     Shows stage progress: "Stage 1/2: Loading data...", "Stage 2/2: Validating 5/10"
 
     Results are already being saved to workflow state by the task.

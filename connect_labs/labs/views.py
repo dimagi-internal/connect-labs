@@ -285,37 +285,4 @@ class LabsOverviewView(LoginRequiredMixin, TemplateView):
         ]
         context["labs_projects"] = [p for p in _all_labs_projects if _has_access(p["feature"])]
 
-        # ── Custom Analysis projects — Dimagi staff only ──────────────────────
-        _all_custom_analysis_projects = [
-            {
-                "name": "Coverage",
-                "url": "/coverage/",
-                "icon": "fa-map-marked-alt",
-                "description": "Geographic coverage analysis and mapping for Service Areas and Delivery Units",
-                "color": "green",
-            },
-            {
-                "name": "KMC Timeline",
-                "url": "/custom_analysis/kmc/children/",
-                "icon": "fa-baby",
-                "description": "Individual child timelines for Kangaroo Mother Care programs",
-                "color": "blue",
-            },
-            {
-                "name": "RUTF Timeline",
-                "url": "/custom_analysis/rutf/children/",
-                "icon": "fa-weight-scale",
-                "description": "SAM follow-up tracking with MUAC measurements for malnutrition programs",
-                "color": "orange",
-            },
-            {
-                "name": "Audit of Audits",
-                "url": "/custom_analysis/audit_of_audits/",
-                "icon": "fa-magnifying-glass-chart",
-                "description": "Cross-opportunity admin report of all workflow runs and audit sessions",
-                "color": "purple",
-            },
-        ]
-        context["custom_analysis_projects"] = _all_custom_analysis_projects if _has_access("custom_analysis") else []
-
         return context

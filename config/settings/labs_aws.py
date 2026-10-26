@@ -199,9 +199,8 @@ CANOPY_BASE_URL = env("CANOPY_BASE_URL", default="https://canopy.dimagi.com")
 # whereas the prelogin view's default ("/accounts/login/") suits prod connect.
 PRELOGIN_APP_LOGIN_URL = "/labs/overview/"
 
-# Add labs app and custom_analysis
+# Add labs app
 INSTALLED_APPS.append("connect_labs.labs")
-INSTALLED_APPS.append("connect_labs.custom_analysis.chc_nutrition")
 INSTALLED_APPS.append("connect_labs.campaign")
 
 # Add labs middlewares after auth.

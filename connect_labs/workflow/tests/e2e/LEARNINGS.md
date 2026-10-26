@@ -157,11 +157,7 @@ The audit pipeline uses a SQL cache (`RawVisitCache` in PostgreSQL) to filter vi
 
 **Bug discovered:** When `expected_visit_count` is 0 (which happens when the Celery task creates a mock request without opportunity metadata), `has_valid_raw_cache(0)` is vacuously true even on an empty table. The API download is skipped, and the audit finds 0 visits.
 
-**Workaround:** Pre-populate the cache before running the audit, or use the `test_sql_visit_level` management command:
-
-```bash
-python manage.py test_sql_visit_level --opportunity-id 874
-```
+**Workaround:** Pre-populate the cache before running the audit (the `workflow_ensure_visit_cache` MCP tool does this for a workflow's opportunities).
 
 ### Type Mismatch in Visit ID Filtering (Bug Found & Fixed)
 
