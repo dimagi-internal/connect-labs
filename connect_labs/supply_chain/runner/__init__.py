@@ -26,7 +26,7 @@ import logging
 from dataclasses import dataclass
 
 from connect_labs.labs.models import LabsOrg
-from connect_labs.utils.dimagi_user import is_dimagi_org_member
+from connect_labs.utils.dimagi_user import is_dimagi_user
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +178,7 @@ def is_member(access, org) -> bool:
     if org.slug == DIMAGI_ORG_SLUG:
         # Dimagi's people only, by domain -- never by a membership row or a
         # Connect link, both of which a non-staff path could once create.
-        return user is not None and is_dimagi_org_member(user)
+        return user is not None and is_dimagi_user(user)
     if (
         user is not None
         and getattr(user, "pk", None)

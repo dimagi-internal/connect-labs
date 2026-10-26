@@ -317,7 +317,7 @@ def manageable_orgs(subject) -> list[LabsOrg]:
     switcher lists those too.
     """
     from connect_labs.marketplace.models import OrgMembership
-    from connect_labs.utils.dimagi_user import is_dimagi_org_member
+    from connect_labs.utils.dimagi_user import is_dimagi_user
 
     caller = caller_for(subject)
     if not caller.is_authenticated:
@@ -334,7 +334,7 @@ def manageable_orgs(subject) -> list[LabsOrg]:
                 "pk", flat=True
             )
         )
-    if is_dimagi_org_member(caller.user):
+    if is_dimagi_user(caller.user):
         ids.add(runner.dimagi_org().pk)
     orgs = [org for org in LabsOrg.objects.filter(pk__in=ids).order_by("name") if caller.is_member(org)]
     if caller.is_operator:

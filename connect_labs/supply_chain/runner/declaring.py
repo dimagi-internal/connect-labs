@@ -145,12 +145,12 @@ def _dimagi_on_synthetic(access, program_id) -> bool:
     """
     from connect_labs.supply_chain.runner.operations import _can_open_programme
     from connect_labs.supply_chain.scopes import is_synthetic
-    from connect_labs.utils.dimagi_user import is_dimagi_org_member
+    from connect_labs.utils.dimagi_user import is_dimagi_user
 
     user = _user_of(access)
     return (
         user is not None
-        and is_dimagi_org_member(user)
+        and is_dimagi_user(user)
         and is_synthetic(program_id)
         and _can_open_programme(user, program_id)
     )
@@ -171,7 +171,7 @@ def why_eligible(access, program_id, org, *, tree, manager_id, current) -> str |
     """Why `org` may be named to run `program_id` by this caller, or None if nothing ties it there."""
     from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
     from connect_labs.supply_chain.runner import DIMAGI_ORG_SLUG
-    from connect_labs.utils.dimagi_user import is_dimagi_org_member
+    from connect_labs.utils.dimagi_user import is_dimagi_user
 
     pid = int(program_id)
     if org.labs_only:
@@ -180,7 +180,7 @@ def why_eligible(access, program_id, org, *, tree, manager_id, current) -> str |
         return "it already runs the program"
     if org.slug == DIMAGI_ORG_SLUG:
         user = _user_of(access)
-        if manager_id is not None and user is not None and is_dimagi_org_member(user):
+        if manager_id is not None and user is not None and is_dimagi_user(user):
             return "you manage the program in Connect, as Dimagi"
         if manager_id is None and current is None and _dimagi_on_synthetic(access, pid):
             return "it is a synthetic labs-only program, and you are Dimagi"

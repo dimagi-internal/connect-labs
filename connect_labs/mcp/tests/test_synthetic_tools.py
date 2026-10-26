@@ -1163,6 +1163,20 @@ def test_partner_with_access_cannot_widen_the_audience(user):
 
 
 @pytest.mark.django_db
+def test_a_dimagi_associate_is_staff_and_may_change_the_audience(user):
+    """Associates are Dimagi staff in labs, so they may change who sees an opp."""
+    user.email = "helper@dimagi-associate.com"
+    user.save()
+    row = _labs_only(allowed_domains=["@dimagi.com"])
+    result = get_tool("synthetic_set_allowed_domains").handler(
+        user=user, opportunity_id=row.opportunity_id, allowed_domains=["@partner.org", "@dimagi.com"]
+    )
+    assert result["previous_allowed_domains"] == ["@dimagi.com"]
+    row.refresh_from_db()
+    assert row.allowed_domains == ["@partner.org", "@dimagi.com"]
+
+
+@pytest.mark.django_db
 def test_creator_may_change_the_audience(user):
     user.email = "someone@partner.org"
     user.save()

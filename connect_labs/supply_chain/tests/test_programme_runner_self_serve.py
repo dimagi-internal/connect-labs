@@ -482,14 +482,16 @@ class TestASyntheticProgramme:
         with pytest.raises(PermissionDenied, match="no running organisation yet"):
             declare_as(manager, meadow, program_id=synthetic_programme)
 
-    def test_a_dimagi_member_who_cannot_see_it_may_not(self, synthetic_programme):
-        # A Dimagi associate belongs to the Dimagi organisation but is not one of
-        # labs' internal domains, so the programme's allowed domains govern them.
+    def test_a_dimagi_associate_can_see_it_and_declares_dimagi(self, synthetic_programme):
+        # A Dimagi associate is Dimagi in labs, and the Dimagi domains open every
+        # labs-only programme, so an associate can see this one and declare Dimagi
+        # to run it, as staff can.
         associate = make_user("associate", email="helper@dimagi-associate.com")
         with patch("connect_labs.supply_chain.data_access.may_use", return_value=None):
             access = _access(associate, program_id=synthetic_programme)
-        with pytest.raises(PermissionDenied, match="no running organisation yet"):
-            op(access, "programme_runner_set", org_id=dimagi_org().pk)
+        result = op(access, "programme_runner_set", org_id=dimagi_org().pk)
+        assert (result["org_id"], result["your_standing"]) == (dimagi_org().pk, PROGRAMME)
+        assert ProgrammeRunner.objects.get(program_id=synthetic_programme).declared_by == associate
 
     def test_a_real_programme_with_no_manager_is_still_refused(self, stranger):
         dimagi_person = make_user("dimagi-person", email="person@dimagi.com")

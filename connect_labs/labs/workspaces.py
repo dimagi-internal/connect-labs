@@ -525,11 +525,9 @@ def clean_email(raw) -> str:
 
 def is_dimagi_email(email: str) -> bool:
     """Whether `email` is a Dimagi sign-in (the rule `utils.dimagi_user` applies to users)."""
-    from types import SimpleNamespace
+    from connect_labs.utils import dimagi_user
 
-    from connect_labs.utils.dimagi_user import is_dimagi_user
-
-    return is_dimagi_user(SimpleNamespace(email=(email or "").strip().lower()))
+    return dimagi_user.is_dimagi_email(email)
 
 
 def set_user(workspace, email: str, role: str, team: str = "", *, by, program_id=None, keep_team=""):

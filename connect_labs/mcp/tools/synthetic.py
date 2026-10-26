@@ -40,6 +40,7 @@ from connect_labs.labs.synthetic.provenance import is_generated, mark_generated,
 from connect_labs.labs.synthetic.provisioning import register_labs_only_opp
 from connect_labs.labs.synthetic.registry import invalidate_cache
 from connect_labs.labs.synthetic.visit_count import resync_visit_count
+from connect_labs.utils.dimagi_user import DIMAGI_DOMAINS
 
 from ..connect_token import require_connect_token
 from ..progress import NULL_PROGRESS
@@ -1014,7 +1015,7 @@ def _normalise_allowed_domains(raw: list[str]) -> list[str]:
         "besides Dimagi staff and the creator, may open it and its workflows. Use it "
         "to let ONE partner's domain review ONE run's labs data (ACE "
         "clone-to-new-workspace), instead of regenerating the cascade. Only the "
-        "opp's creator or a Dimagi-internal caller may change it: a partner who can "
+        "opp's creator or Dimagi staff may change it: a partner who can "
         "read an opp cannot widen its audience. Refuses an empty list (that would "
         "mean anyone). Labs-only opps only."
     ),
@@ -1035,7 +1036,7 @@ def _normalise_allowed_domains(raw: list[str]) -> list[str]:
     is_write=True,
 )
 def synthetic_set_allowed_domains(user, *, opportunity_id: int, allowed_domains: list[str]) -> dict[str, Any]:
-    from connect_labs.labs.synthetic.models import DIMAGI_INTERNAL_DOMAINS
+    from connect_labs.utils.dimagi_user import is_dimagi_staff
 
     try:
         row = SyntheticOpportunity.objects.get(opportunity_id=opportunity_id)
@@ -1048,7 +1049,7 @@ def synthetic_set_allowed_domains(user, *, opportunity_id: int, allowed_domains:
         )
     email = (getattr(user, "email", "") or "").lower()
     is_creator = bool(row.created_by_id) and row.created_by_id == getattr(user, "id", None)
-    if not (is_creator or any(email.endswith(d) for d in DIMAGI_INTERNAL_DOMAINS)):
+    if not (is_creator or is_dimagi_staff(user)):
         raise MCPToolError(
             "PERMISSION_DENIED",
             "Only the opp's creator or Dimagi staff may change who can see it.",
@@ -1109,10 +1110,10 @@ def synthetic_set_allowed_domains(user, *, opportunity_id: int, allowed_domains:
             "allowed_domains": {
                 "type": "array",
                 "items": {"type": "string"},
-                "default": ["@dimagi.com", "@dimagi-ai.com"],
+                "default": list(DIMAGI_DOMAINS),
                 "description": (
-                    "Email-domain allowlist for the new labs-only opp. Default is broad "
-                    "(['@dimagi.com', '@dimagi-ai.com']) so ace@dimagi-ai.com can use it."
+                    "Email-domain allowlist for the new labs-only opp. Default is the Dimagi "
+                    f"domains ({list(DIMAGI_DOMAINS)}) so ace@dimagi-ai.com can use it."
                 ),
             },
         },
@@ -1158,7 +1159,7 @@ def synthetic_clone_to_labs_only(
         org_name=org_name or source.org_name or "Labs Synthetic",
         program_name=program_name or source.program_name or "Labs Synthetic",
         program_id=program_id,
-        allowed_domains=(allowed_domains if allowed_domains is not None else ["@dimagi.com", "@dimagi-ai.com"]),
+        allowed_domains=(allowed_domains if allowed_domains is not None else list(DIMAGI_DOMAINS)),
         enabled=True,
         created_by=user,
     )

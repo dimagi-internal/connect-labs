@@ -39,6 +39,14 @@ def test_a_dimagi_ai_sign_in_counts_too():
     assert service.write_refusal(agent, SHARED, {}) is None
 
 
+def test_a_dimagi_associate_is_dimagi_staff():
+    associate = caller("ash", holds=("organization:labs-synthetic-shared",), email="ash@dimagi-associate.com")
+
+    assert is_dimagi_staff(associate.user)
+    assert service.write_refusal(associate, SHARED, {}) is None
+    assert service.update("t", SHARED, {"a": 5}, associate)["value"]["a"] == 5
+
+
 def test_another_domain_is_still_refused_and_told_the_real_rule():
     outsider = caller("lee", holds=("organization:labs-synthetic-shared",), email="lee@dimagi.org")
 

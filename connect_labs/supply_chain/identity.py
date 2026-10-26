@@ -28,7 +28,7 @@ Three ways in, and each knows the user:
 import logging
 
 from connect_labs.labs.models import LabsOrg
-from connect_labs.utils.dimagi_user import is_dimagi_org_member
+from connect_labs.utils.dimagi_user import is_dimagi_user
 
 logger = logging.getLogger(__name__)
 
@@ -194,7 +194,7 @@ def resolve_org(access, prefer_id=None):
     have fixed it.
     """
     user = getattr(access, "user", None)
-    if user is not None and is_dimagi_org_member(user):
+    if user is not None and is_dimagi_user(user):
         return dimagi_org()
 
     organizations = _caller_organizations(access)

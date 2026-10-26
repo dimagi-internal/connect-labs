@@ -9,7 +9,7 @@ Who may do what (spec section 1):
     user           that person              that person
 
 "Dimagi staff" is `_is_dimagi_staff_for`: Django `is_staff` (granted by hand) on
-any scope, and a Dimagi sign-in (@dimagi.com / @dimagi-ai.com) on a LABS-ONLY
+any scope, and a Dimagi sign-in (`utils.dimagi_user.DIMAGI_DOMAINS`) on a LABS-ONLY
 scope. Ruling 2026-10-12: it was `is_staff` alone, a flag no OAuth-created labs
 user carries, so the people the refusal named as allowed were refused on labs-only
 organisations nobody administers. Ruling 2026-10-13 narrows the fix: a Dimagi
@@ -157,7 +157,8 @@ def _require(caller, scope: Scope) -> None:
 
 LABS_ONLY_ORG_WRITE = (
     "a labs-only (synthetic) organisation's settings are changed by its administrators and by Dimagi staff "
-    "(anyone signed in with a @dimagi.com or @dimagi-ai.com email), and seeing its opportunities does not "
+    "(anyone signed in with a @dimagi.com, @dimagi-ai.com or @dimagi-associate.com email), "
+    "and seeing its opportunities does not "
     "make you one -- set this on your program instead, or ask an administrator of the organisation"
 )
 
