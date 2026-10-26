@@ -18,6 +18,34 @@ flowchart LR
 
 ---
 
+## What a pipeline is
+
+A **pipeline** is a saved recipe that turns raw submissions into a tidy table of rows a report can read. It makes three choices:
+
+1. **Where the data comes from** — Connect visits (the usual case), CommCare HQ forms or cases, a Connect export (work areas, user data), or a Google Drive sheet.
+2. **Which answers to pull out** — each field is a name plus a path into the submitted form (`form.grp_beneficiary_details.child_dob`), optionally cleaned up (to a number, a date) or filtered.
+3. **What one row means** — one row per visit, per worker, or per case (a child, a household). When a row is a worker or a case, each field also says how to collapse many visits into one value: `first`, `last`, `sum`, `avg`, `count`.
+
+The result is stored. The dashboard doesn't dig through form JSON — it reads these flat rows. They are cached for about an hour and rebuilt when the workflow's page loads.
+
+**A pipeline holds no meaning.** It says *"read the baby's weight from the follow-up form."* Whether a baby counts as "adequately monitored" is an indicator definition — see [The Semantic Layer](semantic-layer.md). Meaning goes in the definitions, data goes in the pipeline.
+
+### Where to edit one
+
+The pipeline list is at `/labs/workflow/pipelines/`, showing the pipelines of the opportunity or programme currently selected in your Labs context. A single pipeline opens at `/labs/workflow/pipeline/<id>/edit/?opportunity_id=<its opportunity>`.
+
+The editor can preview a change against real data before you save it, and has its own AI assistant — see [AI Features](ai-features.md#workflow-pipeline-editor-assistant). You can also make the same changes by talking to Claude; see [Reports with Claude](reports-with-claude.md).
+
+!!! warning "A pipeline often feeds more than one report"
+    On KMC, for example, the Programme Report and the Worker Review read the same pipelines. Changing or
+    removing a column changes every report that reads it. Ask *"What else uses this pipeline?"* first.
+
+### Editing a pipeline, or querying its rows?
+
+The pipeline editor and the [Data page](data-spaces.md) are two views of the same thing. The editor shows a pipeline's **definition**, and lets you change it. The Data page shows its **output**, and changes nothing — see [Data Space vs pipeline tables](data-spaces.md#data-space-vs-pipeline-tables) for the full comparison.
+
+---
+
 ## Finding Your Workflows
 
 Click **Workflows** in the top navigation. You'll see a list of all workflows configured for your program.

@@ -1,16 +1,14 @@
 # Data Spaces and the Data Behind a Report
 
-The **Data page** at [labs.connect.dimagi.com/labs/data/](https://labs.connect.dimagi.com/labs/data/) is where you look at the raw data behind Labs: every Connect visit you have access to, down to the submitted form, and the rows a workflow's pipelines produced. You query it in SQL, or ask the assistant in the panel to write the SQL for you.
+The **Data page** at [labs.connect.dimagi.com/labs/data/](https://labs.connect.dimagi.com/labs/data/) is where you can look at the raw data behind a Labs Workflow.  You can view every Connect visit you have access to down to the submitted form, and the rows a workflow's pipelines produced. You query it in SQL, or ask the assistant in the panel to write the SQL for you.
 
-A **Data Space** is a named, saved set of sources on that page (opportunities, programmes and optionally one workflow), together with the queries, charts and small reports a team builds on them. Anyone who holds the same data sources can open the space and pick up where you left off.
+A **Data Space** is a SQL workbench over raw Connect visit data. It has a table called visits with every column plus the full submitted form, a list of the form fields, and a SQL editor to display results.
 
 !!! info "Who this is for"
-    Anyone who wants to check a number on a dashboard against the visits behind it, explore an opportunity's data
-    without waiting for a report, or keep a set of useful queries where their team can find them.
+    Anyone who wants to check a number on a dashboard against the visits behind it, explore an opportunity's data, or keep a set of useful queries where their team can find them.
 
 !!! warning "New, and still changing"
-    The Data page arrived on 22 October 2026 and Data Spaces on 24 October 2026. Both are changing daily, so expect
-    some rough edges. Post in **#connect-labs** when something doesn't behave as this page says.
+    The Data and Data Spaces on 24 October 2026 are new and changing daily.  Expect rough edges. Post in **#connect-labs** when something doesn't behave as this page says.
 
 ---
 
@@ -24,49 +22,6 @@ When you choose your sources, the page gives you these tables to query:
 | `p_<alias>` | One table per visit-based pipeline of the workflow you chose (`p_approved_visits`, `p_flw_summary`; see [Which pipelines become tables](#which-pipelines-become-tables)). These are the **same stored rows the workflow's dashboard draws from** | When you choose a workflow |
 
 The left rail lists each table and its columns (click a name to put it into the editor), along with the form fields of the chosen opportunities, how often each is filled in, and the values each categorical field takes.
-
-### Checking a dashboard number
-
-This is what the pipeline tables are for. Say a Ward Progress Tracker shows a work area as "Unvisited" and you want to know why. Choose the workflow on the Data page and compare what the pipeline kept with the raw visits:
-
-```sql
--- What the dashboard's approved_visits pipeline kept, by visit status
-select status, count(*) as visits
-from p_approved_visits
-group by status
-order by visits desc
-```
-
-```sql
--- The raw visits for the same opportunities, for comparison
-select status, count(*) as visits
-from visits
-group by status
-order by visits desc
-```
-
-If the two disagree, the pipeline is changing the data on its way to the dashboard: filtering visits out, or joining, de-duplicating or aggregating rows. That is often deliberate (a pipeline that keeps approved visits only, or counts per work area), and sometimes it is the bug you were looking for.
-
-### Which pipelines become tables
-
-Not all of them. **Only pipelines computed from Connect visits get a `p_` table**, because their rows come from visits you can already read in `visits`. Pipelines over other sources (CommCare cases, a Google Drive sheet, or Connect's own exports such as work areas, implementation areas or user data) have access rules of their own, so they are listed but cannot be queried here.
-
-For example, on the Ward Progress Tracker (workflow 13005), `approved_visits` is built from visits and can be queried as `p_approved_visits`. `wa_geo` (work-area geometry), `implementation_areas` and `flw_enroll` come from other Connect exports.
-
-### Raw data vs. the SQL that produced it
-
-The Data page shows a pipeline's **output**, not the SQL that built it. To see that SQL:
-
-- open `https://labs.connect.dimagi.com/labs/workflow/api/pipeline/<pipeline id>/sql/?opportunity_id=<the pipeline's opportunity>` while logged in, or
-- ask Claude: *"Show me the SQL for pipeline 20908 on opportunity 2156."* (the `pipeline_sql` tool).
-
-To find a workflow's pipeline IDs, and the opportunity each one belongs to, ask Claude: *"Which pipelines does workflow 13005 use?"* (`workflow_get`). Each pipeline belongs to one opportunity, which is not always the first opportunity of the workflow.
-
-!!! note "Some reports have no pipelines"
-    Not every report is built on pipelines. The **Supply Stock Forecast**, for example, is calculated in Python from
-    the supply-chain records (visits recorded per worker, stock movements, the dispensing rule and the stock network)
-    and has no SQL to inspect. For a report like that, ask Claude for its inputs with the `supply_chain_*` tools,
-    or open the JSON the page loads (`/labs/workflow/api/<workflow id>/supply-data/?opportunity_id=<opp>`).
 
 ---
 
@@ -83,7 +38,7 @@ You can only choose sources you currently have access to. For a workflow, that m
 ### 2. Query, or ask the assistant
 
 - **Write SQL** in the editor on the canvas and click **Run** (⌘↵ / Ctrl+↵). Set **max rows** to limit what comes back, and use **Download CSV** to take the result away.
-- **Ask the assistant** in the panel on the right, in plain words: *"How many approved visits per worker last week?"*, *"Which work areas have visits but none approved?"* It writes the SQL, runs it on the page **as you**, and opens the result in a new canvas tab. The assistant can only read the sources the page has selected.
+- **Ask the assistant** in the panel on the right, in plain words: *"How many approved visits per worker last week?"*, *"Which work areas have visits but none approved?"* It writes the SQL, runs it on the page **as you**, and opens the result in a new canvas tab. The assistant, once you enable it for your user in Canopy, uses your credentials to read the sources the page has selected leverages using a Zero Data Retention key.
 
 The canvas keeps your last few results as tabs, so the assistant opening something new never loses your work.
 
@@ -99,7 +54,7 @@ Your space now appears in the **Space** switcher for everyone who can open it.
 
 ### 4. Share it (there's no share button)
 
-A space doesn't need sharing. **By default, anyone who holds every one of the space's sources can open it**, checked every time they open it (its managers can narrow this to **Only managers**; see [Managing a space](#managing-a-space)). That is the "auto-sync across anyone holding the same data sources" in the release notes.
+A space doesn't need sharing. **By default, anyone who holds every one of the space's sources can open it**. This is checked every time they open it (its managers can narrow this to **Only managers**; see [Managing a space](#managing-a-space)). 
 
 - A teammate on the same opportunities sees the space, its saved queries and its charts.
 - Someone missing **even one** of the space's sources cannot open it at all. There is no partial view, so everyone who opens a chart sees the same numbers.
@@ -127,6 +82,68 @@ When you add a **programme** as a source, the space records the opportunities it
 
 ---
 
+## Data Space vs Pipeline Tables
+
+A **pipeline** is a saved recipe that turns raw submissions into the tidy rows a report reads — which source, which answers to pull out of the form, and what one row means. [What a pipeline is](workflow-engine.md#what-a-pipeline-is) explains it in full.
+
+The Data page and the pipeline editor are two views of that recipe. The editor shows the **definition** and lets you change it. The Data page shows its **output** (`p_<alias>`) and changes nothing.
+
+| You want to… | Go to |
+| --- | --- |
+| Find out why a dashboard number looks wrong | **Data page** — compare the `p_` table with `visits` |
+| Find the right form field, and how often it's filled in | **Data page** — the left rail lists every field and its fill rate |
+| Answer a one-off question, or save a query or chart for your team | **Data page / a Data Space** |
+| Add a column to a report, fix a wrong question path, change a filter or an aggregation | **[Pipeline editor](workflow-engine.md#where-to-edit-one)**, or ask Claude |
+| See the SQL a pipeline generates | [Raw data vs. the SQL that produced it](#raw-data-vs-the-sql-that-produced-it), below |
+| Change what a number *means* | Neither — [the indicator definitions](semantic-layer.md) |
+
+The usual order is both: explore here until you know which field you want, then change the pipeline.
+
+### Checking a dashboard number
+
+This is what the pipeline tables are for. Say a Ward Progress Tracker shows a work area as "Unvisited" and you want to know why. Choose the workflow on the Data page and compare what the pipeline kept with the raw visits:
+
+```sql
+-- What the dashboard's approved_visits pipeline kept, by visit status
+select status, count(*) as visits
+from p_approved_visits
+group by status
+order by visits desc
+```
+
+```sql
+-- The raw visits for the same opportunities, for comparison
+select status, count(*) as visits
+from visits
+group by status
+order by visits desc
+```
+
+If the two disagree, the pipeline is changing the data on its way to the dashboard: filtering visits out, or joining, de-duplicating or aggregating rows. That is often deliberate (a pipeline that keeps approved visits only, or counts per work area), and sometimes it is the bug you were looking for.
+
+### Which pipelines become tables
+
+**Only pipelines computed from Connect visits get a `p_` table**, because their rows come from visits you can already read in `visits`. Pipelines over other sources (CommCare cases, a Google Drive sheet, or Connect's own exports such as work areas, implementation areas or user data) have access rules of their own, so they are listed but cannot be queried here.
+
+For example, on the Ward Progress Tracker (workflow 13005), `approved_visits` is built from visits and can be queried as `p_approved_visits`. `wa_geo` (work-area geometry), `implementation_areas` and `flw_enroll` come from other Connect exports.
+
+### Raw data vs. the SQL that produced it
+
+The Data page shows a pipeline's **output**, not the SQL that built it. To see that SQL:
+
+- open `https://labs.connect.dimagi.com/labs/workflow/api/pipeline/<pipeline id>/sql/?opportunity_id=<the pipeline's opportunity>` while logged in, or
+- ask Claude: *"Show me the SQL for pipeline 20908 on opportunity 2156."* (the `pipeline_sql` tool).
+
+To find a workflow's pipeline IDs, and the opportunity each one belongs to, ask Claude: *"Which pipelines does workflow 13005 use?"* (`workflow_get`). Each pipeline belongs to one opportunity, which is not always the first opportunity of the workflow.
+
+!!! note "Some reports have no pipelines"
+    Not every report is built on pipelines. The **Supply Stock Forecast**, for example, is calculated in Python from
+    the supply-chain records (visits recorded per worker, stock movements, the dispensing rule and the stock network)
+    and has no SQL to inspect. For a report like that, ask Claude for its inputs with the `supply_chain_*` tools,
+    or open the JSON the page loads (`/labs/workflow/api/<workflow id>/supply-data/?opportunity_id=<opp>`).
+
+---
+
 ## Troubleshooting
 
 | What you see | Why, and what to do |
@@ -143,5 +160,5 @@ When you add a **programme** as a source, the space records the opportunities it
 ## Related pages
 
 - [Connect MCP](connect-mcp.md#data-formerly-the-sql-explorer): the Data page's layout and the tools Claude uses to read it.
-- [Workflow Engine](workflow-engine.md): how workflows and their pipelines fit together.
+- [Workflow Engine](workflow-engine.md#what-a-pipeline-is): what a pipeline is, where to edit one, and how workflows and their pipelines fit together.
 - [Reports with Claude](reports-with-claude.md): building and changing reports by talking to Claude.
