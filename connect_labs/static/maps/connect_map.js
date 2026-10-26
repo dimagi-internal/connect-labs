@@ -20,6 +20,14 @@
  *     ConnectMap.pins(map, 'pins', pinsGeoJSON);
  *     ConnectMap.fit(map, wardsGeoJSON, 40);
  *   });
+ *
+ * When the browser will not start WebGL (after a GPU reset, too many live
+ * contexts, a blocklisted driver), Mapbox throws "Failed to initialize WebGL"
+ * from its constructor. createMap does not let that escape: it draws a small
+ * "map unavailable" panel in `el` and returns an inert stand-in map whose every
+ * method is a no-op and whose 'load' never fires, so the code above runs to the
+ * end and the rest of the page draws. `ConnectMap.isAvailable(map)` tells the
+ * two apart when a caller needs to.
  */
 (function (global) {
   'use strict';
@@ -34,20 +42,128 @@
     return !!global.mapboxgl.accessToken;
   }
 
+  var UNAVAILABLE_TEXT =
+    "Map unavailable \u2014 this browser couldn't start WebGL. " +
+    'Reload the page to try again.';
+
+  // Mapbox v3 throws `new Error('Failed to initialize WebGL.')` when the
+  // browser refuses it a WebGL2 context. Anything else the constructor throws
+  // (a bad container, a bad option) is a bug in the caller and still throws.
+  function _isWebGLFailure(err) {
+    return /webgl/i.test(String((err && err.message) || err));
+  }
+
+  // An inert stand-in for a mapboxgl.Map. Every property is a callable that
+  // returns the stand-in again, so chained calls (`map.on(...).on(...)`),
+  // getters (`map.getSource(id).setData(...)`, `map.getCanvas().style.cursor
+  // = ...`) and the ConnectMap / PlanLayers drawers all no-op instead of
+  // throwing. Listeners are dropped, so 'load' never fires.
+  function _unavailableMap(el, err) {
+    var stub;
+    var target = function () {};
+    var own = {
+      __connectMapUnavailable: true,
+      error: err || null,
+      // Not a thenable: `await map` / Promise.resolve(map) must not hang.
+      then: undefined,
+      toJSON: undefined,
+      loaded: function () {
+        return false;
+      },
+      isStyleLoaded: function () {
+        return false;
+      },
+      getContainer: function () {
+        return el;
+      },
+      getStyle: function () {
+        return { layers: [], sources: {} };
+      },
+    };
+    own[Symbol.toPrimitive] = function (hint) {
+      return hint === 'number' ? NaN : '[ConnectMap unavailable]';
+    };
+    own[Symbol.iterator] = function () {
+      return [][Symbol.iterator]();
+    };
+    stub = new Proxy(target, {
+      get: function (_t, prop) {
+        if (Object.prototype.hasOwnProperty.call(own, prop)) return own[prop];
+        return stub;
+      },
+      set: function () {
+        return true;
+      },
+      has: function () {
+        return true;
+      },
+      apply: function () {
+        return stub;
+      },
+      construct: function () {
+        return stub;
+      },
+    });
+    return stub;
+  }
+
+  function isAvailable(map) {
+    return !!map && !map.__connectMapUnavailable;
+  }
+
+  // The panel that stands where the map would have been. Inline styles so it
+  // reads the same with or without Tailwind on the page.
+  function _renderUnavailable(el) {
+    if (!el || !el.ownerDocument) return;
+    var doc = el.ownerDocument;
+    var panel = doc.createElement('div');
+    panel.className = 'connect-map-unavailable';
+    panel.setAttribute('role', 'status');
+    panel.style.cssText =
+      'display:flex;align-items:center;justify-content:center;' +
+      'box-sizing:border-box;width:100%;height:100%;min-height:120px;' +
+      'padding:16px;background:#f8fafc;border:1px dashed #cbd5e1;' +
+      'border-radius:6px;color:#475569;font-size:13px;line-height:1.4;' +
+      'text-align:center;';
+    panel.textContent = UNAVAILABLE_TEXT;
+    el.appendChild(panel);
+  }
+
   function createMap(el, opts) {
     opts = opts || {};
     ready();
-    return new global.mapboxgl.Map({
-      container: el,
-      style: opts.style || DARK,
-      center: opts.center || [0, 0],
-      zoom: opts.zoom != null ? opts.zoom : 9,
-      attributionControl: true,
-      interactive: opts.interactive !== false,
-      // 'globe' draws the world as a sphere with atmosphere. Opt-in, so every
-      // existing caller keeps the flat mercator it was written against.
-      projection: opts.projection || undefined,
-    });
+    // What the container held before Mapbox touched it, so a failed start can
+    // take back exactly what Mapbox added (its canvas container, its classes).
+    var before =
+      el && el.childNodes ? Array.prototype.slice.call(el.childNodes) : [];
+    try {
+      return new global.mapboxgl.Map({
+        container: el,
+        style: opts.style || DARK,
+        center: opts.center || [0, 0],
+        zoom: opts.zoom != null ? opts.zoom : 9,
+        attributionControl: true,
+        interactive: opts.interactive !== false,
+        // 'globe' draws the world as a sphere with atmosphere. Opt-in, so every
+        // existing caller keeps the flat mercator it was written against.
+        projection: opts.projection || undefined,
+      });
+    } catch (err) {
+      if (!_isWebGLFailure(err)) throw err;
+      // One map that cannot start must not take the whole page down with it:
+      // say so in its own spot and hand back a map that does nothing.
+      if (global.console) {
+        console.warn('[ConnectMap] map unavailable, WebGL did not start', err);
+      }
+      if (el && el.childNodes) {
+        Array.prototype.slice.call(el.childNodes).forEach(function (node) {
+          if (before.indexOf(node) === -1) el.removeChild(node);
+        });
+        if (el.classList) el.classList.remove('mapboxgl-map');
+      }
+      _renderUnavailable(el);
+      return _unavailableMap(el, err);
+    }
   }
 
   /* The dark basemap ships place labels at reading brightness, which makes the
@@ -59,6 +175,7 @@
    * never ones the page adds afterwards. Call inside a 'load' handler.
    */
   function calmBasemap(map, opts) {
+    if (!isAvailable(map)) return;
     opts = opts || {};
     var text = opts.text == null ? 0.4 : opts.text;
     // Icons carry as much visual weight as the labels beside them, so dimming
@@ -117,6 +234,7 @@
   }
 
   function fit(map, geojson, padding) {
+    if (!isAvailable(map)) return;
     try {
       map.fitBounds(bounds(geojson), {
         padding: padding == null ? 32 : padding,
@@ -127,12 +245,14 @@
 
   // --- sources/layers ---
   function _setSource(map, id, geojson) {
+    if (!isAvailable(map)) return;
     var s = map.getSource(id);
     if (s) s.setData(geojson);
     else map.addSource(id, { type: 'geojson', data: geojson });
   }
 
   function remove(map, ids) {
+    if (!isAvailable(map)) return;
     (ids || []).forEach(function (id) {
       ['', '-fill', '-line', '-label'].forEach(function (sfx) {
         if (map.getLayer(id + sfx)) map.removeLayer(id + sfx);
@@ -144,6 +264,7 @@
   // Admin-boundary polygons. `activeWard` (matched on properties.ward) is
   // highlighted; the rest read as muted context.
   function boundary(map, id, geojson, opts) {
+    if (!isAvailable(map)) return;
     opts = opts || {};
     var active = opts.activeWard || null;
     var ACTIVE = opts.activeColor || '#34d399';
@@ -201,6 +322,7 @@
   // Dense point layer (e.g. service-delivery visits) — small + translucent so
   // it reads as ward-fill saturation, not confetti.
   function points(map, id, geojson, opts) {
+    if (!isAvailable(map)) return;
     opts = opts || {};
     _setSource(map, id, geojson);
     map.addLayer({
@@ -218,6 +340,7 @@
   // Survey pins coloured by a boolean property (default `confirmed`): purple
   // when confirmed, slate when not — distinct hues, foreground signal.
   function pins(map, id, geojson, opts) {
+    if (!isAvailable(map)) return;
     opts = opts || {};
     var prop = opts.prop || 'confirmed';
     _setSource(map, id, geojson);
@@ -245,6 +368,8 @@
     calmBasemap: calmBasemap,
     ready: ready,
     createMap: createMap,
+    isAvailable: isAvailable,
+    UNAVAILABLE_TEXT: UNAVAILABLE_TEXT,
     bounds: bounds,
     fit: fit,
     boundary: boundary,
