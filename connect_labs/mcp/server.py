@@ -689,7 +689,7 @@ def _run_registry_tool_inner(
         # never what the arguments say.
         from connect_labs.labsdata import page_holds
 
-        outside = page_holds.run_denial(spec.name, arguments)
+        outside = page_holds.run_denial(spec.name, arguments, user=user)
         if outside is not None:
             audit(user, spec.name, arguments, success=False, error_code="PERMISSION_DENIED", is_write=spec.is_write)
             err = MCPToolError("PERMISSION_DENIED", outside.message, outside.as_dict())
