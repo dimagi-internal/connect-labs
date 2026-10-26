@@ -69,8 +69,11 @@ def compute(entries: list[dict], props_doc: dict, configs: dict) -> dict:
     for e in entries:
         if e["column"]:
             continue
+        setting = dictionary_mod.effective(e) if e["reviewed"] else UNSET
         for s in e["sources"]:
-            by_path[fieldscan.normalise(s["path"])] = dictionary_mod.effective(e) if e["reviewed"] else UNSET
+            path = fieldscan.normalise(s["path"])
+            # Two entries can hold spellings that normalise alike: the stricter one wins.
+            by_path[path] = strictest([by_path[path], setting]) if path in by_path else setting
     by_column = {
         e["column"]: (dictionary_mod.effective(e) if e["reviewed"] else UNSET) for e in entries if e["column"]
     }

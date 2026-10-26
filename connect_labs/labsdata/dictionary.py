@@ -305,10 +305,20 @@ def scan(opened: spaces.OpenSpace, *, user) -> dict:
         DictionaryFlag.objects.create(dictionary=dictionary, entry=entry, kind=kind, detail=detail)
         added["flags"] += 1
 
+    # A spelling someone has placed (by a scan, or by merging two entries) stays where they
+    # put it: look an observed path up by the entry that already holds it, then by any entry
+    # holding a spelling it normalises to, and only then by its own key.
+    by_pk = {e.pk: e for e in entries.values()}
+    entry_of: dict[str, DictionaryEntry] = {}
+    for entry_id, path, _du in known:
+        if entry_id in by_pk:
+            entry_of.setdefault(path, by_pk[entry_id])
+            entry_of.setdefault(fieldscan.normalise(path), by_pk[entry_id])
+
     for (path, deliver_unit), info in sorted(observed["sources"].items()):
         key = fieldscan.normalise(path)
         kind = observed["kinds"].get(key, classify.EMPTY)
-        entry = entries.get(key)
+        entry = entry_of.get(path) or entry_of.get(key) or entries.get(key)
         if entry is None:
             setting, params = classify.default_setting(path, kind)
             entry = DictionaryEntry.objects.create(
@@ -323,19 +333,23 @@ def scan(opened: spaces.OpenSpace, *, user) -> dict:
                 quasi=classify.is_quasi_identifying(path, kind),
             )
             entries[key] = entry
+            entry_of[path] = entry_of[key] = entry
             created.add(key)
             added["entries"] += 1
             flag(DictionaryFlag.NEW_FIELD, entry, {"paths": [path], "kind": kind})
-        elif not entry.column and entry.kind != kind:
-            if entry.reviewed and _more_sensitive(kind, entry.kind):
+        elif not entry.column and _more_sensitive(kind, entry.kind):
+            # A kind only ever rises. One that does undoes the review: what was allowed for
+            # a category is not allowed for a name, so it is dropped until looked at again.
+            if entry.reviewed:
                 flag(DictionaryFlag.KIND_CHANGED, entry, {"paths": [path], "was": entry.kind, "now": kind})
             entry.kind = kind
             entry.suggested_setting, entry.suggested_params = classify.default_setting(path, kind)
-            entry.save(update_fields=["kind", "suggested_setting", "suggested_params"])
+            entry.reviewed_by = entry.reviewed_at = None
+            entry.save(update_fields=["kind", "suggested_setting", "suggested_params", "reviewed_by", "reviewed_at"])
         builds = sorted(info["builds"])[-_BUILDS_KEPT:]
         source = known.get((entry.pk, path, deliver_unit))
         if source is None:
-            if key not in created and not entry.column and path not in paths_of[entry.pk]:
+            if entry.key not in created and not entry.column and path not in paths_of[entry.pk]:
                 flag(DictionaryFlag.NEW_SPELLING, entry, {"paths": [path], "deliver_unit": deliver_unit})
             source = DictionarySource.objects.create(
                 entry=entry, path=path, deliver_unit=deliver_unit, builds=builds, visits=info["visits"], last_seen=now

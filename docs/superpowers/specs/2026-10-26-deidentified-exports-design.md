@@ -36,7 +36,7 @@ A team wants to share a programme's visit data with outside experts. Nothing tha
 | pseudonymise | keyed HMAC-SHA256 code, letters only, per namespace. Every case-id field shares `case`, so a case's visits link across forms and across exports of the same space, and a code cannot be turned back into the id. |
 | month | a date cut to YYYY-MM (the default for dates of birth) |
 | shift | a date moved by a keyed per-case number of days: intervals within a case survive, calendar dates do not |
-| coarsen | a GPS point to N decimal places; altitude and accuracy are dropped |
+| coarsen | a GPS point to 0–2 decimal places (2 is about 1 km); altitude and accuracy are dropped. Three decimals would be a home, and the leak scan fails it. |
 | scrub | free text with emails, long numbers and every learned name word removed. Best effort, and the caveats say so. |
 
 The key is `DataDictionary.secret`. It is 32 random bytes per dictionary, and it never leaves labs.
@@ -47,7 +47,7 @@ The key is `DataDictionary.secret`. It is 32 random bytes per dictionary, and it
 | --- | --- |
 | row_count | rows written must equal the visits in the window, else **fail** |
 | pii_scan | Every output cell is searched for the source's own identifying values: usernames, case names, the values of identifier and id fields, and name words from name fields, all learned in pass 1 and held in memory. It also looks for phone, email, UUID and GPS shapes. A hit fails, except a name word in a column of categories, numbers or dates, which warns (more likely a place). |
-| ranges | min and max per kept numeric column, and how many values lie far outside its interquartile range (**warn**). Values a setting could not read are counted. |
+| ranges | how many values of each kept numeric column lie far outside its interquartile range (**warn**), and how many values a setting could not read. Counts only: a minimum or maximum is a real value. |
 | duplicates | duplicate visit codes, or duplicate rows (**warn**) |
 | orphans | visits with no case, when a case column is exported (**warn**) |
 | small_groups | rows whose combination of quasi-identifying fields (dates cut to the month) is shared by fewer than 5 cases (**warn**). This is the "combinations of fields" risk, made into a number. |
@@ -58,6 +58,8 @@ The key is `DataDictionary.secret`. It is 32 random bytes per dictionary, and it
 - `dictionary.csv`: column, meaning, level, setting, params, kind, and sources with builds. No sample value, which is the second lesson above.
 - `README.md` with the caveats
 - `checks.json`
+
+One build runs at a time: only a queued export moves to building, under a row lock. A build that dies part-way is failed by `sweep` after 3 hours. A failed, blocked or rejected export never keeps a file. Download also requires that every opportunity the file was built from is still one of the space's sources, so taking an opportunity out of a space withdraws its exports.
 
 ## Registry lineage (`labsdata/lineage.py`)
 

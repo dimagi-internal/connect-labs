@@ -54,6 +54,8 @@ logger = logging.getLogger(__name__)
 EXPIRY = dt.timedelta(days=7)
 #: An export nobody signed off is withdrawn after this.
 UNSIGNED_EXPIRY = dt.timedelta(days=14)
+#: A build still running after this died with its worker; ``sweep`` fails it.
+STUCK = dt.timedelta(hours=3)
 PAGE = 1000
 #: A row whose fields that can single someone out are shared by fewer cases than this is
 #: counted by the small-group check.
@@ -176,19 +178,12 @@ def describe(export: SpaceExport, opened: spaces.OpenSpace) -> dict:
 def _pages(opps: list[Opportunity], date_from, date_to):
     """Every visit of ``opps`` in the window, whole, in pages, through the locked reader."""
     cte_sql, base_params = engine.visits_cte(opps)
-    where = ["TRUE"]
-    params: list = []
-    if date_from:
-        where.append("visit_date::date >= %s")
-        params.append(date_from)
-    if date_to:
-        where.append("visit_date::date <= %s")
-        params.append(date_to)
+    where, params = _window(date_from, date_to)
     after = (-1, "")
     grants = engine.visit_grants(opps)
     while True:
         sql = (
-            f"WITH {cte_sql}\nSELECT * FROM visits WHERE {' AND '.join(where)} "
+            f"WITH {cte_sql}\nSELECT * FROM visits WHERE {where} "
             "AND (opportunity_id, visit_id) > (%s, %s) ORDER BY opportunity_id, visit_id LIMIT %s"
         )
         columns, rows = engine._execute(sql, base_params + params + [after[0], after[1], PAGE], grants)
@@ -200,6 +195,27 @@ def _pages(opps: list[Opportunity], date_from, date_to):
         after = (int(last["opportunity_id"]), str(last["visit_id"]))
         if len(rows) < PAGE:
             return
+
+
+def _count(opps: list[Opportunity], date_from, date_to) -> int:
+    """The visits in the window, counted in one statement: what the pages must add up to."""
+    cte_sql, params = engine.visits_cte(opps)
+    where, extra = _window(date_from, date_to)
+    _cols, rows = engine._execute(
+        f"WITH {cte_sql}\nSELECT COUNT(*) FROM visits WHERE {where}", params + extra, engine.visit_grants(opps)
+    )
+    return int(rows[0][0])
+
+
+def _window(date_from, date_to) -> tuple[str, list]:
+    where, params = ["TRUE"], []
+    if date_from:
+        where.append("visit_date::date >= %s")
+        params.append(date_from)
+    if date_to:
+        where.append("visit_date::date <= %s")
+        params.append(date_to)
+    return " AND ".join(where), params
 
 
 def _source_values(entry: dict, row: dict) -> list:
@@ -225,7 +241,7 @@ def _learns_values(entry: dict) -> bool:
 
 def _guard(cell: str) -> str:
     """A spreadsheet must not run a cell as a formula."""
-    return "'" + cell if cell[:1] in ("=", "+", "-", "@") and not _is_number(cell) else cell
+    return "'" + cell if cell[:1] in ("=", "+", "-", "@", "\t", "\r") and not _is_number(cell) else cell
 
 
 def _is_number(text: str) -> bool:
@@ -255,18 +271,25 @@ class _Checks:
 
 
 def build(export_id: int) -> None:
-    """The task: build, check and store one export. Safe to rerun from the start."""
+    """The task: build, check and store one export.
+
+    Claimed once: only a QUEUED export moves to BUILDING, under a row lock, so a message
+    the broker delivers twice builds once. A build that dies part-way stays BUILDING until
+    ``sweep`` fails it (``STUCK``); one that fails leaves no file behind."""
+    with transaction.atomic():
+        export = SpaceExport.objects.select_for_update().filter(pk=export_id).first()
+        if export is None or export.status != SpaceExport.QUEUED:
+            return
+        export.status, export.error = SpaceExport.BUILDING, ""
+        export.save(update_fields=["status", "error"])
     export = SpaceExport.objects.select_related("space__dictionary").get(pk=export_id)
-    if export.status not in (SpaceExport.QUEUED, SpaceExport.BUILDING):
-        return
-    export.status, export.error = SpaceExport.BUILDING, ""
-    export.save(update_fields=["status", "error"])
     try:
         _build(export)
     except Exception as e:  # noqa: BLE001 -- recorded on the export, never lost
         logger.exception("labsdata export %s failed", export.pk)
+        _delete_file(export)
         export.status, export.error = SpaceExport.FAILED, f"{type(e).__name__}: {str(e)[:500]}"
-        export.save(update_fields=["status", "error"])
+        export.save(update_fields=["status", "error", "file_name"])
 
 
 def _build(export: SpaceExport) -> None:
@@ -302,7 +325,9 @@ def _build(export: SpaceExport) -> None:
             for e in value_entries:
                 for v in _source_values(e, row):
                     scanner.learn_value(v)
-    export.source_rows = source_rows
+    export.source_rows = _count(opps, export.date_from, export.date_to)
+    if export.source_rows != source_rows:
+        raise RuntimeError(f"read {source_rows} visits page by page but {export.source_rows} are in the window")
     missing = dictionary_mod.untagged(dictionary, seen_sources)
     if missing:
         export.status = SpaceExport.BLOCKED
@@ -351,7 +376,7 @@ def _build(export: SpaceExport) -> None:
                         cells.append(str(done))
                     cell = " | ".join(cells)
                     out.append(cell)
-                    _check_cell(checks, scanner, e, cell)
+                    _check_cell(checks, scanner, e, cells)
                 _check_row(checks, out, case, rows, quasi, case_out, id_out)
                 writer.writerow([_guard(c) for c in out])
                 rows += 1
@@ -366,18 +391,20 @@ def _build(export: SpaceExport) -> None:
     export.save(update_fields=["status", "checks", "rows", "source_rows", "built_at", "file_name"])
 
 
-def _check_cell(checks: _Checks, scanner: leaks.LeakScanner, entry: dict, cell: str) -> None:
+def _check_cell(checks: _Checks, scanner: leaks.LeakScanner, entry: dict, cells: list[str]) -> None:
+    """Scan every value of one cell (a repeat group has several), each on its own, so a
+    learned id in a list is found as surely as one alone."""
     label = entry["label"]
-    if not cell:
+    if not cells:
         checks.blank[label] += 1
         return
-    hits = scanner.scan(cell)
+    hits = set().union(*(scanner.scan(c) for c in cells))
     if entry["setting"] == transforms.PSEUDONYMISE:
         hits.discard("known_name")  # a code is letters; it can spell a short name by chance
     for hit in hits:
         checks.leak_hits[label][hit] += 1
     if entry["kind"] == classify.NUMBER and entry["setting"] in (transforms.KEEP, transforms.ROUND):
-        for part in cell.split(" | "):
+        for part in cells:
             if _is_number(part):
                 checks.numbers[label].append(float(part))
 
@@ -444,16 +471,18 @@ def _results(checks: _Checks, source_rows: int, rows: int, exported, case_out, i
 
     ranges = {}
     odd = 0
+    # Counts only: a minimum or maximum is a real value (an age of 103 names someone), and
+    # the checks are shown to everyone who can open the space and through MCP.
     for label, values in checks.numbers.items():
         if len(values) < 4:
-            ranges[label] = {"min": min(values), "max": max(values), "n": len(values)} if values else {}
+            ranges[label] = {"n": len(values)}
             continue
         q = statistics.quantiles(values, n=4)
         spread = q[2] - q[0]
         lo, hi = q[0] - 3 * spread, q[2] + 3 * spread
         far = sum(1 for v in values if v < lo or v > hi)
         odd += far
-        ranges[label] = {"min": min(values), "max": max(values), "n": len(values), "far_out": far}
+        ranges[label] = {"n": len(values), "far_out": far}
     out.append(
         {
             "name": "ranges",
@@ -621,8 +650,13 @@ def reject(opened: spaces.OpenSpace, export_id, *, user, note: str) -> SpaceExpo
 
 
 def _may_download(export: SpaceExport, opened: spaces.OpenSpace) -> bool:
+    # Opening the space checks what it reads NOW; a manager may since have taken an
+    # opportunity out of it. The file holds every opportunity it was built from, so each
+    # must still be one this space reads for this person.
+    held = set(opened.selection.ids)
     return (
-        export.status == SpaceExport.APPROVED
+        all(int(o["id"]) in held for o in export.opportunities)
+        and export.status == SpaceExport.APPROVED
         and bool(export.file_name)
         and export.expires_at is not None
         and export.expires_at > timezone.now()
@@ -652,7 +686,8 @@ def _delete_file(export: SpaceExport) -> None:
 
 
 def sweep(now=None) -> int:
-    """Delete the files of expired exports and withdraw unsigned ones (hourly)."""
+    """Delete the files of expired exports, withdraw unsigned ones, fail builds that died,
+    and delete any file an export that is not open still holds (hourly)."""
     now = now or timezone.now()
     n = 0
     stale = SpaceExport.objects.filter(status=SpaceExport.APPROVED, expires_at__lte=now) | SpaceExport.objects.filter(
@@ -662,5 +697,16 @@ def sweep(now=None) -> int:
         _delete_file(export)
         export.status = SpaceExport.EXPIRED
         export.save(update_fields=["status", "file_name"])
+        n += 1
+    for export in SpaceExport.objects.filter(status=SpaceExport.BUILDING, created_at__lte=now - STUCK):
+        _delete_file(export)
+        export.status, export.error = SpaceExport.FAILED, "The build stopped before it finished. Ask again."
+        export.save(update_fields=["status", "error", "file_name"])
+        n += 1
+    for export in SpaceExport.objects.exclude(status__in=[SpaceExport.APPROVED, SpaceExport.READY]).exclude(
+        file_name=""
+    ):
+        _delete_file(export)
+        export.save(update_fields=["file_name"])
         n += 1
     return n

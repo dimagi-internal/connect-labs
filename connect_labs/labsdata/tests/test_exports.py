@@ -34,7 +34,7 @@ pytestmark = pytest.mark.django_db
 O1 = Opportunity(id=9811, name="Opp Export", llo="LLO X")
 O2 = Opportunity(id=9812, name="Opp Other", llo="LLO Y")
 DIRECTORY = {o.id: o for o in (O1, O2)}
-HOLDS = {"ann": {O1.id}, "ben": {O1.id}, "cat": {O2.id}}
+HOLDS = {"ann": {O1.id, O2.id}, "ben": {O1.id, O2.id}, "cat": {O2.id}}
 MOTHERS = ["Zainab Okafor", "Halima Bello", "Ngozi Eze", "Amaka Uche"]
 
 
@@ -437,3 +437,85 @@ def test_the_page_draws_for_a_holder_and_links_from_the_space(people, space):
         f"/labs/data/space/{space}/exports/"
         in _client(people["ann"]).get(f"/labs/data/space/{space}/").content.decode()
     )
+
+
+# --- what review found --------------------------------------------------------------------
+
+
+def test_a_merge_survives_the_next_scan(people, space):
+    ann = _client(people["ann"])
+    _scan(ann, space)
+    _post(ann, _api(space, "dictionary/merge/"), {"into": "form.place", "other": "form.visit_note"})
+    d = _scan(ann, space)["dictionary"]
+    assert not any(e["key"] == "form.visit_note" for e in d["entries"])
+    assert {s["path"] for s in _entry(d, "form.place")["sources"]} == {"form.place", "form.visit_note"}
+
+
+def test_a_field_that_starts_to_look_like_a_name_is_dropped_until_reviewed_again(people, space):
+    ann = _client(people["ann"])
+    _scan(ann, space)
+    _post(ann, _api(space, "dictionary/accept/"), {"keys": ["form.place"]})
+    assert _entry(_dict(ann, space), "form.place")["effective"] == "keep"
+    # A new app version starts sending phone numbers under the same question.
+    RawVisitCache.objects.filter(opportunity_id=O1.id).delete()
+    _load(extra={"place": "08031234567"})
+    for row in RawVisitCache.objects.filter(opportunity_id=O1.id):
+        row.form_json["form"]["place"] = f"0803{row.visit_id[-3:]:0>7}"
+        row.save(update_fields=["form_json"])
+    d = _scan(ann, space)["dictionary"]
+    place = _entry(d, "form.place")
+    assert place["kind"] == "identifier" and place["effective"] == "drop" and not place["reviewed"]
+    assert any(f["kind"] == "kind_changed" for f in d["flags"])
+
+
+def test_a_download_needs_every_opportunity_the_export_read_still_in_the_space(
+    people, django_capture_on_commit_callbacks
+):
+    _load()
+    _load(opp=O2.id)
+    ann, ben = _client(people["ann"]), _client(people["ben"])
+    sid = _post(ann, "/labs/data/api/spaces/", {"name": "Two", "opportunity_ids": [O1.id, O2.id]}).json()["space"][
+        "id"
+    ]
+    _ready_dictionary(ann, sid)
+    with django_capture_on_commit_callbacks(execute=True):
+        pk = _ask(ben, sid).json()["export"]["id"]
+    _post(ann, _api(sid, f"exports/{pk}/sign-off/"), {"note": "n", "acknowledge_warnings": True})
+    assert ben.get(_api(sid, f"exports/{pk}/download/")).status_code == 200
+    # A manager takes O2 out of the space: the file still holds O2's visits.
+    _post(ann, _api(sid, "sources/"), {"opportunity_ids": [O1.id], "confirm": True})
+    assert ben.get(_api(sid, f"exports/{pk}/download/")).status_code == 403
+
+
+def test_the_checks_hold_counts_never_a_value(people, space, django_capture_on_commit_callbacks):
+    ann = _client(people["ann"])
+    _load(n=40)  # enough distinct weights to read as a number, not a category
+    _ready_dictionary(ann, space)
+    with django_capture_on_commit_callbacks(execute=True):
+        pk = _ask(ann, space).json()["export"]["id"]
+    ranges = next(c for c in _export(space, pk).checks["checks"] if c["name"] == "ranges")
+    assert set(ranges["detail"]["columns"]["form.weight_g"]) <= {"n", "far_out"}
+
+
+def test_a_learned_id_inside_a_repeat_group_is_found():
+    scanner = __import__("connect_labs.labs.deid.leaks", fromlist=["x"]).LeakScanner()
+    scanner.learn_value("A-1023")
+    checks = exports._Checks([])
+    entry = {"label": "ids", "setting": "keep", "kind": "categorical"}
+    exports._check_cell(checks, scanner, entry, ["A-1023", "B-2000"])
+    assert checks.leak_hits["ids"]["known_value"] == 1
+
+
+def test_a_build_runs_once_and_a_dead_one_is_swept(people, space, django_capture_on_commit_callbacks, monkeypatch):
+    ann = _client(people["ann"])
+    _ready_dictionary(ann, space)
+    with django_capture_on_commit_callbacks(execute=True):
+        pk = _ask(ann, space).json()["export"]["id"]
+    before = _export(space, pk).built_at
+    exports.build(pk)  # a second delivery of the same message
+    assert _export(space, pk).built_at == before
+    SpaceExport.objects.filter(pk=pk).update(status=SpaceExport.BUILDING)
+    export = _export(space, pk)
+    exports.sweep(now=export.created_at + exports.STUCK + timedelta(seconds=1))
+    export.refresh_from_db()
+    assert export.status == SpaceExport.FAILED and not export.file_name
