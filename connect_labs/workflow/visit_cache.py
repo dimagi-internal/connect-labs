@@ -271,15 +271,22 @@ def ensure_visit_cache(
             slot: dict = {"pipeline_id": pid}
             try:
                 mgr = manager(opp, pid)
-                before = mgr.get_raw_visit_count()
+                # Whole copies only (rows == label, cache.py whole_raw_visit_count): a
+                # slot short of its label is neither "held" nor worth holding. The fetch
+                # below rebuilds one, because has_valid_raw_cache refuses it.
+                before = mgr.whole_raw_visit_count()
                 slot["raw_visits"] = fetch_raw(opp, pid)
-                after = mgr.get_raw_visit_count()
+                after = mgr.whole_raw_visit_count()
+                if not after and mgr.get_raw_visit_count():
+                    raise RuntimeError(
+                        f"raw cache for opportunity {opp} holds fewer visits than it claims; not holding it"
+                    )
                 slot["raw"] = "held" if before and before == after else "refreshed"
                 mgr.extend_raw_cache_ttl(int(hold_minutes))
                 # A slot on another source (CommCare HQ) is filled by the pipeline run
                 # itself, not by the visits fetch above, so the hold just taken found
                 # nothing to extend; hold it again once the run has filled it.
-                filled_by_run = not mgr.get_raw_visit_count()
+                filled_by_run = not after
                 result = run_pipeline(opp, pid) or {}
                 error = (result.get("metadata") or {}).get("error")
                 if error:
@@ -346,7 +353,8 @@ def extend_if_held(
                 mgr = manager(opp, pid)
                 # A slot that could not be resolved to the pipeline's own source is not
                 # known to be held (its count would be the shared visits slot's): sync.
-                if not getattr(mgr, "slot_resolved", True) or not mgr.get_raw_visit_count():
+                # Nor is a slot short of its own label (cache.py whole_raw_visit_count).
+                if not getattr(mgr, "slot_resolved", True) or not mgr.whole_raw_visit_count():
                     return None
                 managers.append(mgr)
         for mgr in managers:

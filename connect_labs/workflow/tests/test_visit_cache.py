@@ -35,8 +35,10 @@ class _DAO:
 class _Slots:
     """A fake cache world: per (opp, pipeline) raw count before, and what a fetch does."""
 
-    def __init__(self, raw_before=None, fail=(), from_cache=True):
+    def __init__(self, raw_before=None, fail=(), from_cache=True, short=()):
         self.raw = dict(raw_before or {})
+        # Slots whose rows fall short of their label (cache.py whole_raw_visit_count).
+        self.short = set(short)
         self.fail = set(fail)
         self.from_cache = from_cache
         self.calls: list[tuple] = []
@@ -52,6 +54,9 @@ class _Slots:
 
             def get_raw_visit_count(self):
                 return slots.raw.get(self.key, 0)
+
+            def whole_raw_visit_count(self):
+                return 0 if self.key in slots.short else slots.raw.get(self.key, 0)
 
             def extend_raw_cache_ttl(self, minutes):
                 slots.calls.append(("hold_raw", self.key, minutes))

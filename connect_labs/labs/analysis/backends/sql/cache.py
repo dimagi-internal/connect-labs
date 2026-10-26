@@ -8,6 +8,7 @@ import logging
 import random
 from datetime import date, datetime, timedelta
 
+import sentry_sdk
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.db.models import Min, Q, Subquery
@@ -106,6 +107,38 @@ class DuplicateSourceVisitsError(CacheConcurrencyError):
             table="labs_raw_visit_cache",
             opportunity_id=opportunity_id,
         )
+
+
+class RawCacheWriteRefused(CacheConcurrencyError):
+    """A raw-cache writer would have published fewer rows than it walked, so it published nothing.
+
+    A slot's ``visit_count`` label is what ``has_valid_raw_cache`` compares against
+    the opportunity's visit count, so a label above the rows it sits on makes a short
+    copy look complete. That is how opp 2230 served 143 of its 2,643 visits
+    (2026-10-24): two walkers of one cold slot, each finalize deleting the other's
+    rows, the second labelling its survivors with what it had downloaded. A writer
+    now publishes only when every row it walked is still there, and labels them with
+    the number it promoted.
+
+    ``peer_published`` is True when the refusal was a peer finalizing the same
+    generation at the same instant (the unique key collided): the peer's copy stands
+    and is complete, so a caller can serve it. Otherwise rows went missing under the
+    writer, and whatever the slot already held is untouched.
+    """
+
+    def __init__(self, message: str, *, opportunity_id: int | None, walked: int, held: int, peer_published: bool):
+        super().__init__(message, table="labs_raw_visit_cache", opportunity_id=opportunity_id)
+        self.walked = walked
+        self.held = held
+        self.peer_published = peer_published
+
+
+class _Unpublishable(Exception):
+    """Rolls a finalize back from inside its transaction; never leaves this module."""
+
+    def __init__(self, held: int):
+        super().__init__(held)
+        self.held = held
 
 
 def _raise_if_duplicate_visit_ids(visit_dicts, opportunity_id) -> None:
@@ -234,13 +267,60 @@ class SQLCacheManager:
             expected_visit_count: The live visit count from the opportunity.
             tolerance_pct: Accept cache if it has >= this % of expected visits.
                            100 = strict (default), 95 = accept if >=95% of visits cached.
+
+        Valid means the slot's live generation is WHOLE (it holds as many rows as its
+        label claims; see ``raw_generation``) and its label reaches the expected count.
+        The label alone used to decide, so a copy that had lost rows after it was
+        labelled was served as complete -- and with no expected count (a headless
+        caller passes 0) any unexpired rows at all were accepted. A short slot now
+        reads as a miss, and the rebuild that follows replaces it: it heals on the
+        next read instead of living out its TTL, or a hold's extension of it.
         """
         min_count = int(expected_visit_count * tolerance_pct / 100) if tolerance_pct < 100 else expected_visit_count
-        return RawVisitCache.objects.filter(
-            **self._raw_filter(),
-            visit_count__gte=min_count,
-            expires_at__gt=timezone.now(),
-        ).exists()
+        generation = self.raw_generation()
+        if generation is None:
+            return False
+        label, rows = generation
+        if rows < label:
+            logger.warning(
+                "[SQLCache] opp %s slot %s holds %s rows under a label of %s -- treating as a miss so it is rebuilt",
+                self.opportunity_id,
+                self.raw_slot_id,
+                rows,
+                label,
+            )
+            return False
+        return label >= min_count
+
+    def raw_generation(self, *, ignore_ttl: bool = False) -> tuple[int, int] | None:
+        """``(label, rows)`` for the slot's live finalized generation, or None when it has none.
+
+        The generation is the largest label, as every reader serves it (see
+        ``_one_generation``). ``rows`` is how many rows carry that label. Every row
+        of a generation is written with one expiry and moved together, so the count
+        needs no expiry filter, and it runs on the unique index's
+        (opportunity_id, pipeline_id, visit_count) prefix.
+        """
+        live = RawVisitCache.objects.filter(**self._raw_filter(), visit_count__gt=0)
+        if not ignore_ttl:
+            live = live.filter(expires_at__gt=timezone.now())
+        label = live.order_by("-visit_count").values_list("visit_count", flat=True).first()
+        if label is None:
+            return None
+        rows = RawVisitCache.objects.filter(**self._raw_filter(), visit_count=label).count()
+        return label, rows
+
+    def whole_raw_visit_count(self, *, ignore_ttl: bool = False) -> int:
+        """Rows in the slot's live generation, or 0 when it is empty or SHORT of its label.
+
+        What anything that is about to rely on, lend or hold a slot should ask: a
+        short copy is not a copy.
+        """
+        generation = self.raw_generation(ignore_ttl=ignore_ttl)
+        if generation is None:
+            return 0
+        label, rows = generation
+        return rows if rows >= label else 0
 
     @staticmethod
     def _one_generation(qs):
@@ -335,9 +415,24 @@ class SQLCacheManager:
         a network blip) may already have resolved. Only extends forward
         (`expires_at__lt`) so this never SHORTENS an already-longer-lived
         entry.
+
+        Never extends a SHORT slot (fewer rows than its label, see
+        ``whole_raw_visit_count``): its expiry is what replaces it, and a hold
+        (``ensure_visit_cache`` holds for up to three hours) would otherwise keep a
+        partial copy in service long after its TTL. Returns the rows extended.
         """
+        generation = self.raw_generation(ignore_ttl=True)
+        if generation is not None and generation[1] < generation[0]:
+            logger.warning(
+                "[SQLCache] not extending opp %s slot %s: %s rows under a label of %s",
+                self.opportunity_id,
+                self.raw_slot_id,
+                generation[1],
+                generation[0],
+            )
+            return 0
         new_expiry = timezone.now() + timedelta(minutes=minutes)
-        RawVisitCache.objects.filter(
+        return RawVisitCache.objects.filter(
             **self._raw_filter(),
             visit_count__gt=0,
             expires_at__lt=new_expiry,
@@ -383,6 +478,17 @@ class SQLCacheManager:
         """
         _raise_if_duplicate_visit_ids(visit_dicts, self.opportunity_id)
         expires_at = self._get_expires_at()
+        # The label is the number of rows written, whatever the caller passed: it is
+        # what has_valid_raw_cache trusts, so it may never claim rows that are not here.
+        label = len(visit_dicts)
+        if visit_count != label:
+            logger.info(
+                "[SQLCache] opp %s slot %s: labelling %s stored rows by their count, not the %s passed",
+                self.opportunity_id,
+                self.raw_slot_id,
+                label,
+                visit_count,
+            )
 
         # Build rows first (outside transaction for speed)
         rows = []
@@ -391,7 +497,7 @@ class SQLCacheManager:
                 RawVisitCache(
                     opportunity_id=self.opportunity_id,
                     pipeline_id=self.raw_slot_id,
-                    visit_count=visit_count,
+                    visit_count=label,
                     expires_at=expires_at,
                     images_fetched=images_fetched,
                     visit_id=v.get("id", 0),
@@ -425,10 +531,13 @@ class SQLCacheManager:
         # (#116). The unique constraint
         # (opportunity_id, pipeline_id, visit_count, visit_id) catches
         # within-pipeline concurrent writers (one wins, the loser raises
-        # CacheConcurrencyError — #109).
+        # CacheConcurrencyError — #109). Only FINALIZED rows are replaced: a
+        # streaming writer's in-progress sentinel rows (negative visit_count)
+        # belong to that writer, and deleting them is how its finalize ended up
+        # publishing a short copy (see store_raw_visits_finalize).
         try:
             with transaction.atomic():
-                RawVisitCache.objects.filter(**self._raw_filter()).delete()
+                RawVisitCache.objects.filter(**self._raw_filter(), visit_count__gt=0).delete()
                 RawVisitCache.objects.bulk_create(rows, batch_size=1000)
         except IntegrityError as e:
             raise CacheConcurrencyError(
@@ -481,7 +590,22 @@ class SQLCacheManager:
             # could not re-stamp the set coherently.
             return None
 
-        return counts.pop(), max(numeric), max(r[2] for r in rows)
+        label = counts.pop()
+        if len(rows) != label:
+            # A short slot (rows lost after it was labelled) cannot anchor a top-up:
+            # the delta would be sized against the label, fetch only what is above the
+            # high-water mark, and re-stamp the survivors as if they were all there.
+            # Only a full rebuild recovers the missing rows.
+            logger.warning(
+                "[SQLCache] opp %s slot %s holds %s rows under a label of %s -- no delta anchor",
+                self.opportunity_id,
+                self.raw_slot_id,
+                len(rows),
+                label,
+            )
+            return None
+
+        return label, max(numeric), max(r[2] for r in rows)
 
     def store_raw_visits_append_start(self, expires_at, images_fetched: bool = False):
         """Prepare to ADD rows to the existing cache rather than replace it.
@@ -509,27 +633,38 @@ class SQLCacheManager:
         was not where we left it — another writer finalized underneath us, whose
         result is at least as fresh, so this top-up is abandoned rather than
         merged into it.
+
+        The same rule as a full finalize: the new label must be exactly the rows
+        it ends up on. If the base set is not ``prior_count`` rows (a short slot,
+        or one that moved) or the appended rows are not all there, the whole
+        top-up rolls back and returns 0, and the caller does a full rebuild.
         """
-        with transaction.atomic():
-            promoted_existing = RawVisitCache.objects.filter(
-                **self._raw_filter(),
-                visit_count=prior_count,
-            ).update(visit_count=new_total)
-            if not promoted_existing:
-                RawVisitCache.objects.filter(
+        try:
+            with transaction.atomic():
+                promoted_existing = RawVisitCache.objects.filter(
+                    **self._raw_filter(),
+                    visit_count=prior_count,
+                ).update(visit_count=new_total)
+                if promoted_existing != prior_count:
+                    raise _Unpublishable(promoted_existing)
+                promoted_new = RawVisitCache.objects.filter(
                     **self._raw_filter(),
                     visit_count=self._pending_visit_count,
-                ).delete()
-                logger.info(
-                    "[SQLCache] append for opp %s pipeline %s abandoned — the base cache moved",
-                    self.opportunity_id,
-                    self.pipeline_id,
-                )
-                return 0
-            promoted_new = RawVisitCache.objects.filter(
+                ).update(visit_count=new_total)
+                if promoted_existing + promoted_new != new_total:
+                    raise _Unpublishable(promoted_existing + promoted_new)
+        except (_Unpublishable, IntegrityError) as e:
+            RawVisitCache.objects.filter(
                 **self._raw_filter(),
                 visit_count=self._pending_visit_count,
-            ).update(visit_count=new_total)
+            ).delete()
+            logger.info(
+                "[SQLCache] append for opp %s pipeline %s abandoned — the base cache moved or is short (%s)",
+                self.opportunity_id,
+                self.pipeline_id,
+                e.held if isinstance(e, _Unpublishable) else "a peer published the same generation",
+            )
+            return 0
 
         logger.info(
             "[SQLCache] appended %s visits to opp %s pipeline %s (%s -> %s)",
@@ -627,34 +762,88 @@ class SQLCacheManager:
             ) from e
         return len(rows)
 
-    def store_raw_visits_finalize(self, actual_count: int):
+    def store_raw_visits_finalize(self, actual_count: int) -> int:
         """
         Atomically make batched rows visible by setting the real visit_count.
 
         Must be called after all store_raw_visits_batch() calls. In a single
-        transaction: removes any other writer's rows (old finalized or other
-        in-progress sentinel), then promotes THIS writer's sentinel rows to
-        the actual parsed count — making them visible to has_valid_raw_cache().
+        transaction: replaces the slot's FINALIZED rows with THIS writer's
+        sentinel rows, labelled with the number promoted -- making them visible
+        to has_valid_raw_cache(). Returns that number.
+
+        Two rules make a short copy impossible, whatever order concurrent writers
+        of one slot finalize in:
+
+        * **Another writer's in-progress rows are never touched.** Only finalized
+          rows (``visit_count > 0``) are deleted. This used to delete everything in
+          the slot that was not its own, including a peer's sentinel rows: on
+          2026-10-24 two jobs walked opp 2230's cold slot at once, the first to
+          finish deleted the second's first 2,500 rows, and the second's finalize
+          then deleted the first's complete copy. Abandoned sentinels (a writer
+          that died) carry an expiry and go with the periodic cleanup.
+        * **Nothing is published that this writer does not hold.** The label is
+          the rows promoted, and if that is not ``actual_count`` -- rows the writer
+          walked went missing (the expiry cleanup takes a walk that outlives its
+          TTL) -- the transaction rolls back, the writer's rows are dropped, the
+          slot keeps whatever it held, and ``RawCacheWriteRefused`` is raised. The
+          second writer in the incident labelled 143 survivors 2,643, which passed
+          ``has_valid_raw_cache(2643)`` for as long as it lived.
+
+        Two writers finalizing the same generation at the same instant collide on
+        the unique key; the later one's ``RawCacheWriteRefused`` says
+        ``peer_published``, and the peer's complete copy stands. Equal-sized
+        copies finalized one after another simply replace each other, and two
+        different-sized ones committing together leave two whole generations, of
+        which readers serve one (``_one_generation``) until the next finalize.
         """
-        with transaction.atomic():
-            # Remove rows that don't belong to this writer, but only WITHIN
-            # this pipeline's slot — DON'T touch other pipelines' rows for
-            # the same opp (#116). Within this pipeline, this still wipes
-            # old finalized rows + other writers' sentinels.
-            RawVisitCache.objects.filter(
-                **self._raw_filter(),
-            ).exclude(
-                visit_count=self._pending_visit_count,
-            ).delete()
-            # Make this writer's rows visible
-            updated = RawVisitCache.objects.filter(
-                **self._raw_filter(),
-                visit_count=self._pending_visit_count,
-            ).update(visit_count=actual_count)
+        sentinel = self._pending_visit_count
+        try:
+            with transaction.atomic():
+                held = RawVisitCache.objects.filter(**self._raw_filter(), visit_count=sentinel).count()
+                if held != actual_count:
+                    raise _Unpublishable(held)
+                # Within this slot only -- never other pipelines' rows for the opp (#116).
+                RawVisitCache.objects.filter(**self._raw_filter(), visit_count__gt=0).delete()
+                updated = RawVisitCache.objects.filter(**self._raw_filter(), visit_count=sentinel).update(
+                    visit_count=held
+                )
+                if updated != held:
+                    raise _Unpublishable(updated)
+        except _Unpublishable as short:
+            self.store_raw_visits_abort()
+            message = (
+                f"Raw cache write for opp {self.opportunity_id} slot {self.raw_slot_id} refused: walked "
+                f"{actual_count} visits but only {short.held} of its rows remain, so it was not published"
+            )
+            logger.error(f"[SQLCache] {message}")
+            sentry_sdk.capture_message(message, level="error")
+            raise RawCacheWriteRefused(
+                message,
+                opportunity_id=self.opportunity_id,
+                walked=actual_count,
+                held=short.held,
+                peer_published=False,
+            ) from None
+        except IntegrityError as e:
+            self.store_raw_visits_abort()
+            message = (
+                f"Raw cache write for opp {self.opportunity_id} slot {self.raw_slot_id}: a concurrent writer "
+                f"published the same {actual_count}-visit generation first; keeping theirs"
+            )
+            logger.warning(f"[SQLCache] {message}")
+            raise RawCacheWriteRefused(
+                message,
+                opportunity_id=self.opportunity_id,
+                walked=actual_count,
+                held=actual_count,
+                peer_published=True,
+            ) from e
+        self._pending_visit_count = None
         logger.info(
             f"[SQLCache] Finalized {updated} raw visits for opp {self.opportunity_id} "
-            f"pipeline {self.pipeline_id} (visit_count={actual_count})"
+            f"pipeline {self.pipeline_id} (visit_count={updated})"
         )
+        return updated
 
     def store_raw_visits_abort(self):
         """

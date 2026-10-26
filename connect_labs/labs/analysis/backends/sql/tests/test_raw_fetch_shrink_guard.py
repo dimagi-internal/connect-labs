@@ -278,7 +278,7 @@ class TestFetchRawVisitsShrinkGuard:
         prevent -- confirm the low-but-real fetch is served instead.
 
         The race is now simulated the way its `stream_raw_visits` sibling below
-        simulates it, by taking `get_raw_visit_count` to zero. It used to stub
+        simulates it, by taking `whole_raw_visit_count` to zero. It used to stub
         `_load_from_cache` to return [], which stopped being a simulation once
         the fill started ANSWERING from the cache: stubbing the read makes every
         outcome empty, including the correct one. Driving the real read is also
@@ -288,7 +288,8 @@ class TestFetchRawVisitsShrinkGuard:
         _seed_expired_cache(10)
         for _ in range(RAW_CACHE_MAX_ATTEMPTS):
             httpx_mock.add_response(**_single_page_response(2))
-        monkeypatch.setattr(SQLCacheManager, "get_raw_visit_count", lambda self: 0)
+        # The guard asks for the WHOLE copy it is protecting (a short one is not worth keeping).
+        monkeypatch.setattr(SQLCacheManager, "whole_raw_visit_count", lambda self, **kw: 0)
 
         backend = SQLBackend()
         visits = backend.fetch_raw_visits(opportunity_id=OPP_ID, access_token="t", pipeline_id=PIPELINE_ID)
@@ -459,7 +460,8 @@ class TestStreamRawVisitsShrinkGuard:
         # The stream path reports a COUNT rather than loading the rows (#1575), so
         # "the old cache vanished under us" is simulated by the count going to zero
         # rather than by _load_from_cache returning []. Same race, same fallback.
-        monkeypatch.setattr(SQLCacheManager, "get_raw_visit_count", lambda self: 0)
+        # The guard asks for the WHOLE copy it is protecting (a short one is not worth keeping).
+        monkeypatch.setattr(SQLCacheManager, "whole_raw_visit_count", lambda self, **kw: 0)
 
         backend = SQLBackend()
         events = list(

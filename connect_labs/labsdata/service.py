@@ -122,7 +122,7 @@ def warm(caller: Caller, opps: list[scope.Opportunity]) -> list[dict]:
 
     token = _token(caller)
     report = []
-    pending = [s for s in fields.cache_status(opps) if not s["cached_visits"]]
+    pending = [s for s in fields.cache_status(opps) if not s["cached_visits"] or not s.get("complete", True)]
     if not pending:
         return report
     if not token:

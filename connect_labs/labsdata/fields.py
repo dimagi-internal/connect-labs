@@ -45,14 +45,21 @@ def cache_status(opps: list[Opportunity]) -> list[dict]:
     for o in opps:
         rows = _current_rows(o.id)
         stats = rows.aggregate(
-            cached_at=Max("created_at"), expires_at=Max("expires_at"), latest_visit=Max("visit_date")
+            cached_at=Max("created_at"),
+            expires_at=Max("expires_at"),
+            latest_visit=Max("visit_date"),
+            label=Max("visit_count"),
         )
+        count = rows.count()
         out.append(
             {
                 "opportunity_id": o.id,
                 "opportunity_name": o.name,
                 "llo": o.llo,
-                "cached_visits": rows.count(),
+                "cached_visits": count,
+                # A copy holding fewer rows than its own label lost rows after it was
+                # written; it is not a complete load, and warming replaces it.
+                "complete": not count or count >= (stats["label"] or 0),
                 "cached_at": stats["cached_at"].isoformat() if stats["cached_at"] else None,
                 "latest_visit_date": stats["latest_visit"].isoformat() if stats["latest_visit"] else None,
             }

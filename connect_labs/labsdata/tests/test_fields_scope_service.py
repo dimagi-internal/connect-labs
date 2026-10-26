@@ -93,6 +93,21 @@ def test_field_search_matches_paths_and_values(forms):
 def test_cache_status(forms):
     [s] = fields.cache_status([OPP])
     assert s["cached_visits"] == 40 and s["llo"] == "LLO F"
+    # 40 rows under a label of 50: a copy that lost rows after it was written.
+    assert s["complete"] is False
+
+
+def test_warming_replaces_a_short_copy(forms):
+    """A short slot reads as cached, so warming used to skip it and the space kept
+    querying the partial copy for as long as it lived."""
+    analysis = mock.MagicMock()
+    analysis.backend.fetch_raw_visits.return_value = [{}] * 50
+    with (
+        mock.patch.object(service, "_token", return_value="t"),
+        mock.patch("connect_labs.labs.analysis.pipeline.AnalysisPipeline", return_value=analysis),
+    ):
+        report = service.warm(scopes.Caller(access_token="t"), [OPP])
+    assert report == [{"opportunity_id": OPP.id, "loaded_visits": 50}]
 
 
 def _caller():

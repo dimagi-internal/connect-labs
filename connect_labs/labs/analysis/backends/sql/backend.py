@@ -20,7 +20,11 @@ from django.http import HttpRequest
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
-from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager, filter_computed_visits
+from connect_labs.labs.analysis.backends.sql.cache import (
+    RawCacheWriteRefused,
+    SQLCacheManager,
+    filter_computed_visits,
+)
 from connect_labs.labs.analysis.backends.sql.query_builder import (
     execute_entity_aggregation,
     execute_flw_aggregation,
@@ -99,6 +103,15 @@ FORCED_REFRESH_REUSE_MINUTES = 5
 # measured in #1926 (~56k visits, ~2.5 min) with room to spare.
 FORCED_REFRESH_PEER_WAIT_SECONDS = 300
 FORCED_REFRESH_PEER_POLL_SECONDS = 2
+# How long an UNFORCED reader of a COLD slot waits for a peer's walk of it before
+# walking itself. A loser normally borrows the slot's existing rows; a cold slot
+# (first fetch, or after the expiry cleanup took everything) has none, and it used
+# to walk alongside the leader -- two walks of one slot at once, which is how opp
+# 2230 ended up serving 143 of its 2,643 visits (2026-10-24). The finalize can no
+# longer publish a short copy either way; waiting is what keeps it to one walk.
+# Same bounds as the forced wait, for the same reasons.
+COLD_SLOT_PEER_WAIT_SECONDS = FORCED_REFRESH_PEER_WAIT_SECONDS
+COLD_SLOT_PEER_POLL_SECONDS = FORCED_REFRESH_PEER_POLL_SECONDS
 # Above this many missing visits, top up the cache incrementally instead of
 # repaginating the whole export (#1361). Below it the delta's own overhead --
 # an extra count query and a second finalize -- is not worth avoiding a small
@@ -533,43 +546,56 @@ class SQLBackend:
         # payloads), which made the unguarded case the worst one. The lock is now
         # always taken; whether there is anything to lend is decided separately,
         # inside _lend_cache_during_peer_rebuild.
-        with claim_raw_rebuild(opportunity_id, cache_manager.raw_slot_id) as is_leader:
-            if not is_leader:
-                lent = self._lend_cache_during_peer_rebuild(
-                    cache_manager,
-                    opportunity_id,
-                    pipeline_id,
-                    skip_form_json=skip_form_json,
-                    require_images=include_images,
-                )
-                if lent is not None:
+        #
+        # With nothing to lend (a cold slot) the loser WAITS for the leader's rows
+        # rather than walking beside it -- see _peer_rows_landed.
+        started = time.monotonic()
+        polled = False
+        while True:
+            waited = time.monotonic() - started
+            with claim_raw_rebuild(opportunity_id, cache_manager.raw_slot_id) as is_leader:
+                if polled and self._peer_rows_landed(cache_manager, effective_count, tolerance_pct, include_images):
                     self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
-                    return lent
-            # Still inside the `with`: the leader must hold the lock for the whole
-            # walk, or the guard buys nothing. A top-up is a rebuild too, so it
-            # runs under the same lock.
-            if self._try_delta_refresh(
-                cache_manager,
-                opportunity_id,
-                access_token,
-                expected_visit_count=expected_visit_count,
-                pipeline_id=pipeline_id,
-                user=user,
-            ):
-                self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
-                return self._load_from_cache(cache_manager, skip_form_json, filter_visit_ids)
-            return self._fetch_raw_visits_uncached(
-                opportunity_id,
-                access_token,
-                cache_manager,
-                include_images=include_images,
-                user=user,
-                accept_low_count=accept_low_count,
-                pipeline_id=pipeline_id,
-                filter_visit_ids=filter_visit_ids,
-                skip_form_json=skip_form_json,
-                expected_visit_count=expected_visit_count,
-            )
+                    return self._load_from_cache(cache_manager, skip_form_json, filter_visit_ids)
+                if not is_leader:
+                    lent = self._lend_cache_during_peer_rebuild(
+                        cache_manager,
+                        opportunity_id,
+                        pipeline_id,
+                        skip_form_json=skip_form_json,
+                        require_images=include_images,
+                    )
+                    if lent is not None:
+                        self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
+                        return lent
+                if is_leader or not self._keep_waiting_for_peer(opportunity_id, waited, polled):
+                    # Still inside the `with`: the leader must hold the lock for the
+                    # whole walk, or the guard buys nothing. A top-up is a rebuild
+                    # too, so it runs under the same lock.
+                    if self._try_delta_refresh(
+                        cache_manager,
+                        opportunity_id,
+                        access_token,
+                        expected_visit_count=expected_visit_count,
+                        pipeline_id=pipeline_id,
+                        user=user,
+                    ):
+                        self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
+                        return self._load_from_cache(cache_manager, skip_form_json, filter_visit_ids)
+                    return self._fetch_raw_visits_uncached(
+                        opportunity_id,
+                        access_token,
+                        cache_manager,
+                        include_images=include_images,
+                        user=user,
+                        accept_low_count=accept_low_count,
+                        pipeline_id=pipeline_id,
+                        filter_visit_ids=filter_visit_ids,
+                        skip_form_json=skip_form_json,
+                        expected_visit_count=expected_visit_count,
+                    )
+            polled = True
+            time.sleep(COLD_SLOT_PEER_POLL_SECONDS)
 
     def _fetch_raw_visits_uncached(
         self,
@@ -702,37 +728,61 @@ class SQLBackend:
 
         logger.info(f"[SQL] Raw cache MISS for opp {opportunity_id}, paginating export API")
 
-        # One walk at a time per slot (#1361).
-        with claim_raw_rebuild(opportunity_id, cache_manager.raw_slot_id) as is_leader:
-            if not is_leader:
-                lent = self._lend_cache_during_peer_rebuild(
-                    cache_manager, opportunity_id, pipeline_id, skip_form_json=True, count_only=True
-                )
-                if lent is not None:
+        # One walk at a time per slot (#1361). A loser with nothing to lend (a cold
+        # slot) waits for the leader's rows, yielding ("waiting", seconds) so the page
+        # can say why -- see _peer_rows_landed.
+        started = time.monotonic()
+        polled = False
+        while True:
+            waited = time.monotonic() - started
+            with claim_raw_rebuild(opportunity_id, cache_manager.raw_slot_id) as is_leader:
+                if polled and self._peer_rows_landed(cache_manager, effective_count, tolerance_pct, False):
                     self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
-                    yield ("cached", lent)
+                    landed = cache_manager.get_raw_visit_count()
+                    walk = False
+                else:
+                    landed = None
+                    lent = None
+                    if not is_leader:
+                        lent = self._lend_cache_during_peer_rebuild(
+                            cache_manager, opportunity_id, pipeline_id, skip_form_json=True, count_only=True
+                        )
+                    if lent is not None:
+                        self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
+                        landed = lent
+                        walk = False
+                    else:
+                        walk = is_leader or not self._keep_waiting_for_peer(opportunity_id, waited, polled)
+                if walk:
+                    # A top-up is a rebuild too, so it runs under the same lock.
+                    if self._try_delta_refresh(
+                        cache_manager,
+                        opportunity_id,
+                        access_token,
+                        expected_visit_count=expected_visit_count,
+                        pipeline_id=pipeline_id,
+                        user=user,
+                    ):
+                        self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
+                        yield ("cached", cache_manager.get_raw_visit_count())
+                        return
+                    yield from self._stream_raw_visits_uncached(
+                        opportunity_id,
+                        access_token,
+                        cache_manager,
+                        expected_visit_count=expected_visit_count,
+                        user=user,
+                        accept_low_count=accept_low_count,
+                        pipeline_id=pipeline_id,
+                    )
                     return
-            # A top-up is a rebuild too, so it runs under the same lock.
-            if self._try_delta_refresh(
-                cache_manager,
-                opportunity_id,
-                access_token,
-                expected_visit_count=expected_visit_count,
-                pipeline_id=pipeline_id,
-                user=user,
-            ):
-                self.last_raw_fetch_anomaly = cache_manager.get_pending_raw_fetch_anomaly()
-                yield ("cached", cache_manager.get_raw_visit_count())
+            if landed is not None:
+                yield ("cached", landed)
                 return
-            yield from self._stream_raw_visits_uncached(
-                opportunity_id,
-                access_token,
-                cache_manager,
-                expected_visit_count=expected_visit_count,
-                user=user,
-                accept_low_count=accept_low_count,
-                pipeline_id=pipeline_id,
-            )
+            # A peer is walking this cold slot right now: wait for its rows.
+            yield ("waiting", int(waited))
+            polled = True
+            time.sleep(COLD_SLOT_PEER_POLL_SECONDS)
 
     def _stream_forced_raw_visits(
         self,
@@ -896,8 +946,22 @@ class SQLBackend:
                 raise RuntimeError(f"Connect export API error: {e}") from e
 
             if prior_count == 0 or accept_low_count or rows_so_far >= threshold:
-                # Atomically finalize cache with the real count
-                cache_manager.store_raw_visits_finalize(rows_so_far)
+                # Atomically finalize cache with the real count. A refusal means the
+                # rows walked were not all there to publish (see
+                # store_raw_visits_finalize); serve the whole copy that stands in the
+                # slot instead, or fail rather than serve a short one.
+                try:
+                    cache_manager.store_raw_visits_finalize(rows_so_far)
+                except RawCacheWriteRefused:
+                    standing = cache_manager.whole_raw_visit_count()
+                    if not standing:
+                        raise
+                    logger.warning(
+                        f"[SQL] Raw stream for opp {opportunity_id} was not published; serving the "
+                        f"{standing}-visit copy that stands in the slot"
+                    )
+                    yield ("cached", standing)
+                    return
                 cache_manager.clear_pending_raw_fetch_anomaly()
                 logger.info(f"[SQL] Streamed {rows_so_far} visits to DB (nothing retained in memory)")
                 yield ("complete", rows_so_far)
@@ -937,7 +1001,8 @@ class SQLBackend:
         # get_pending_raw_fetch_anomaly's docstring for why extend_raw_cache_ttl
         # alone isn't enough.
         cache_manager.set_pending_raw_fetch_anomaly(self.last_raw_fetch_anomaly, minutes=RAW_CACHE_ANOMALY_TTL_MINUTES)
-        old_count = cache_manager.get_raw_visit_count()
+        # A whole copy only: an old slot short of its own label is not worth protecting.
+        old_count = cache_manager.whole_raw_visit_count()
         if not old_count:
             # The old cache we were protecting vanished from under us (e.g. a
             # concurrent invalidation raced this guard). Serving nothing would be
@@ -950,8 +1015,12 @@ class SQLBackend:
             # already been aborted, so the number described data no reader could
             # see. `fetch_raw_visits` shares this path now and must return actual
             # rows, which made the gap load-bearing rather than cosmetic.
-            cache_manager.store_raw_visits_finalize(rows_so_far)
-            old_count = rows_so_far
+            try:
+                old_count = cache_manager.store_raw_visits_finalize(rows_so_far)
+            except RawCacheWriteRefused:
+                old_count = cache_manager.whole_raw_visit_count()
+                if not old_count:
+                    raise
         else:
             # The old cache is intact and is what we serve, so the low attempt's
             # rows are discarded as every earlier attempt's were.
@@ -1097,6 +1166,46 @@ class SQLBackend:
         visible = cache_manager.store_raw_visits_append_finalize(prior_count, prior_count + len(new_dicts))
         return bool(visible)
 
+    @staticmethod
+    def _peer_rows_landed(cache_manager, expected_count: int, tolerance_pct: int, require_images: bool) -> bool:
+        """Whether the walk a waiting loser deferred to has left a valid copy to read.
+
+        The same test a reader's first look makes (``has_valid_raw_cache``, which
+        refuses a short slot), plus the image flag when the reader needs photos.
+        """
+        if not cache_manager.has_valid_raw_cache(expected_count, tolerance_pct=tolerance_pct):
+            return False
+        return not require_images or cache_manager.slot_has_image_data()
+
+    @staticmethod
+    def _keep_waiting_for_peer(opportunity_id, waited: float, polled: bool) -> bool:
+        """A loser with nothing to lend waits for the leader's walk instead of starting a second one.
+
+        Two walks of one cold slot at once are what produced opp 2230's short copy
+        (2026-10-24): a scheduled workflow run and a scheduled audit both missed at
+        23:08:49-51 and both paginated the export. The finalize no longer lets either
+        destroy the other's rows, so a second walk is now only wasted work; waiting
+        removes it. Bounded by COLD_SLOT_PEER_WAIT_SECONDS, after which the loser
+        walks on its own: a stampede is a cost failure, an endless wait would be a
+        correctness one. A leader whose rows are not yet committed when it releases
+        the lock (a request under ATOMIC_REQUESTS) costs at most one extra walk, as
+        single_flight.py describes -- harmless now that a walk cannot publish short.
+        """
+        if waited < COLD_SLOT_PEER_WAIT_SECONDS:
+            if not polled:
+                logger.info(
+                    "[SingleFlight] opp %s is being rebuilt elsewhere and has nothing to lend — "
+                    "waiting for that walk rather than starting a second one",
+                    opportunity_id,
+                )
+            return True
+        logger.warning(
+            "[SingleFlight] opp %s waited %.0fs for a peer's walk that never landed -- walking unguarded",
+            opportunity_id,
+            waited,
+        )
+        return False
+
     def _lend_cache_during_peer_rebuild(
         self,
         cache_manager,
@@ -1111,7 +1220,8 @@ class SQLBackend:
 
         Returns the loaded dicts, or None when there is nothing to lend — a
         first-ever fetch has no prior rows, and serving nothing would be far worse
-        than briefly duplicating a walk, so the caller falls through and rebuilds.
+        than a wait, so the caller waits for the leader's rows (bounded; see
+        ``_keep_waiting_for_peer``) and only walks itself if they never land.
 
         ``require_images`` refuses to lend a slot that was filled WITHOUT images to
         a caller that needs them: those rows cannot answer "does this visit have a
@@ -1128,11 +1238,13 @@ class SQLBackend:
         Postgres to be counted and thrown away. ``prior_count`` below is already the
         COUNT query that answers it. See dimagi-internal/connect-labs#1575.
         """
-        prior_count = cache_manager.get_raw_visit_count_ignoring_ttl()
+        # A whole copy only: a slot holding fewer rows than its label is the very thing
+        # being rebuilt, and lending it would serve the partial copy for another
+        # RAW_CACHE_PEER_REBUILD_TTL_MINUTES.
+        prior_count = cache_manager.whole_raw_visit_count(ignore_ttl=True)
         if not prior_count:
             logger.info(
-                "[SingleFlight] opp %s pipeline %s is being rebuilt elsewhere but has no prior "
-                "rows to lend — rebuilding anyway",
+                "[SingleFlight] opp %s pipeline %s is being rebuilt elsewhere but has no whole " "copy to lend",
                 opportunity_id,
                 pipeline_id,
             )

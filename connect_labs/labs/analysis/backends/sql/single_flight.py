@@ -34,6 +34,15 @@ slots on 2026-07-30 (see ``audit.views.AuditImageView``'s docstring). Serving st
 returns the connection sooner than either waiting or rebuilding, and it is also, for
 the reader, far faster than the 10-20s walk it replaces.
 
+**Except on a cold slot, where they wait (bounded).** A slot with no rows at all --
+first fetch, or after the expiry cleanup took everything -- has nothing to lend, and
+losers used to walk beside the leader. Two walks of one slot at once is how opp 2230
+came to serve 143 of its 2,643 visits on 2026-10-24 (the finalize also let each walk
+delete the other's rows; it no longer can). So a cold-slot loser polls for the
+leader's rows for up to ``COLD_SLOT_PEER_WAIT_SECONDS`` and walks only if they never
+land (``SQLBackend._keep_waiting_for_peer``). The pinned-connection cost above is why
+this is limited to cold slots, which are rare, and why it is bounded.
+
 **The release is explicit, and the lock is deliberately NOT held across the commit.**
 Under ``ATOMIC_REQUESTS`` the leader's rows are invisible to anyone else until its whole
 request commits, which happens after this code has returned. So a loser that acquires
