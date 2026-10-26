@@ -358,6 +358,9 @@ class TestASlotFilledByThePipelineRunIsHeld:
                 def get_raw_visit_count(self):
                     return raw.get(self.key, 0)
 
+                def whole_raw_visit_count(self):
+                    return raw.get(self.key, 0)
+
                 def extend_raw_cache_ttl(self, minutes):
                     calls.append(("hold_raw", self.key))
 
