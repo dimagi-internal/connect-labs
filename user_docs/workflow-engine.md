@@ -179,39 +179,36 @@ Each workflow run page has an assistant panel that can answer questions about th
 
 This scope applies to the assistant built into the run page panel. If you use the Labs assistant with your own personal token, that access is unchanged.
 
+### The Canopy agent (Data agent / ace)
+
+The Canopy agent — also called the **Data agent** or **ace** — can answer questions about the data on a Labs page and help you take actions such as creating follow-up tasks or starting coaching conversations. It acts with **your own access**, held to the current page by a short-lived grant, and can only do things that you explicitly trigger.
+
+#### What the agent can see
+
+The agent's view is limited to the page you are currently on:
+
+- It can read the page's own workflow, the pipelines that workflow uses, and any indicator registries that cover the page's opportunities.
+- It may propose edits only to those same workflows and pipelines. Any new pipeline or registry it proposes is created in the same place as the page's workflow — it is never created somewhere else or shared with other workflows.
+- It cannot read data from a different workflow's runs unless that workflow is already declared in the current page's settings.
+
+#### How the Data page works with the agent
+
+When the agent opens one of your saved queries for you on the Data page, it opens that query in its own tab on the canvas. The page's active selection — and therefore what the agent may read — only changes when **you** change it yourself. The agent cannot silently switch which query or dataset you are looking at.
+
+#### How workflow actions work
+
+When the agent prepares a workflow action — such as creating a follow-up task or starting a coaching conversation with a worker — it presents a card in the chat showing what it intends to do. The card has its own button (for example, **Create follow-up task**). **The action only runs when you click that button yourself.** The agent cannot confirm or carry out the action on your behalf after you say yes in chat.
+
+The Labs run page's own buttons (for example, the coaching send button or audit edit controls) work the same way — they run on your click, not the agent's.
+
+!!! note "If you use your own Labs token or sign-in"
+    If you access the agent using your own personal Labs token or sign-in rather than through a Canopy page, the flow is unchanged: you preview the action, say yes, and the agent acts.
+
+!!! note "Action buttons inside Canopy"
+    Action buttons on agent cards (coaching Send, audit edit Confirm/Decline, and the follow-up task button) call Labs through Canopy and require Canopy to confirm that it is your card making the call. If a button inside a Canopy-embedded page does not respond, this confirmation may not yet be in place for that button type — the Labs run page's own buttons are unaffected. Contact support if you consistently cannot complete an action from a card.
+
 ### UAT Comparison tab
 
 The **UAT Comparison** tab lets you compare data between your UAT and production environments side by side. Both environments have real verification data — if the verification block on this tab reads zero, that almost certainly means the page did not finish loading rather than that data is missing. Try refreshing the page; if the figure remains zero, contact support.
 
-The dashboard now loads only production data. The separate test/pilot domain and the toggle to switch between them have been removed, as production has carried real verification data for some time and the test domain is no longer in use. This roughly halves the number of data pipelines the dashboard streams on each load, making it faster and more reliable.
-
-Visit history on this tab is limited to the **last 90 days** (a rolling window). The "how does this compare to before the pilot" comparison will show a shorter history for any field worker whose pre-pilot data is older than 90 days — the tab notes this when it applies.
-
-### Verification Summary tab
-
-The **Verification Summary** tab shows an overview of visit verification statuses for the current run.
-
-#### Visits Over Time chart
-
-The **Visits Over Time** chart displays a weekly bar chart of visits broken down by outcome — **Passed**, **Pending Audit**, and **Failed** — stacked with Passed at the bottom. Each bar represents one calendar week, so you can see at a glance whether pass rates are trending up, down, or holding steady over the reporting period, rather than only seeing the current snapshot totals.
-
-### GPS Map tab
-
-The **GPS Map** tab on the MBW Visit Verification dashboard plots every registration point and visit point on an interactive map. Each point now displays a faint shaded ring around it, sized to the GPS accuracy that the device reported at the moment it captured that reading. A larger ring means the phone was less certain of its exact position when it recorded that location.
-
-Hovering over any point shows its accuracy in meters alongside the existing details — worker name, visit date, and verification outcome.
-
-!!! note "Accuracy rings are informational only"
-    The size of the ring has no effect on whether a visit passed or failed verification, and does not change any totals or filters elsewhere on the dashboard. It is purely a visual aid to help you judge how precise a given GPS reading was at the time it was taken.
-
-### Indicator definition popup
-
-In KMC reports (program, opportunity, and worker review) and the generic indicator reports, you can click an indicator's name to open a popup with its full definition. The popup has been restyled to make it easier to read:
-
-- The indicator's **title** appears at the top, with its ID shown once as a small tag beneath it — it is no longer repeated twice.
-- The **title and close button** stay fixed at the top of the popup, and the **sort and download links** stay fixed at the bottom, so these controls are always visible while the definition text scrolls between them.
-- **Out of / Counts / Shown** appears in a clean
-
-### Visit data completeness
-
-Reports and audits that display visit history draw on a stored copy of each program's visit data to keep load times fast. In rare cases, two things loading that data at exactly the same moment —
+The dashboard now loads only production data. The separate test/pilot domain and the toggle to switch between them have been removed, as production has carried real
