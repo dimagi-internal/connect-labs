@@ -35,6 +35,7 @@ graph LR
 | [Task Management](task-management.md) | Create and track follow-up actions from audits or manual triage               |
 | [Solicitations](solicitations.md)     | Post RFPs/EOIs, collect responses from organizations, score and award funding |
 | [Reports with Claude](reports-with-claude.md) | Build and change reports and indicator definitions by talking to Claude |
+| [Data Spaces and Raw Data](data-spaces.md) | Query the raw visits and pipeline rows behind a report, and save queries and charts where your team can find them |
 | [The Semantic Layer](semantic-layer.md) | How indicator definitions work, reading their SQL, and managing them across programmes |
 | [Benchmarks](benchmarks.md) | Show each opportunity how it compares with anonymous peers, today and over time |
 | [Shared Report Templates](shared-report-templates.md) | Keep many per-opportunity reports in step from one template, one set of pipelines and one registry |

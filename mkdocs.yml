@@ -29,6 +29,7 @@ nav:
       - AI Features: ai-features.md
   - For Power Users:
       - Reports with Claude: reports-with-claude.md
+      - Data Spaces and Raw Data: data-spaces.md
       - The Semantic Layer: semantic-layer.md
       - Benchmarks: benchmarks.md
       - Shared Report Templates: shared-report-templates.md
