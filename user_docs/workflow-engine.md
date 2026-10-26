@@ -211,3 +211,7 @@ In KMC reports (program, opportunity, and worker review) and the generic indicat
 - The indicator's **title** appears at the top, with its ID shown once as a small tag beneath it — it is no longer repeated twice.
 - The **title and close button** stay fixed at the top of the popup, and the **sort and download links** stay fixed at the bottom, so these controls are always visible while the definition text scrolls between them.
 - **Out of / Counts / Shown** appears in a clean
+
+### Visit data completeness
+
+Reports and audits that display visit history draw on a stored copy of each program's visit data to keep load times fast. In rare cases, two things loading that data at exactly the same moment —
