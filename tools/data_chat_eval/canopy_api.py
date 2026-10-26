@@ -9,7 +9,9 @@ back as metadata only; the harness then falls back to the panel's text.
 
 from __future__ import annotations
 
+import json
 import os
+import re
 from pathlib import Path
 
 import httpx
@@ -112,18 +114,50 @@ def tool_calls(turn: list[dict]) -> list[dict]:
         content = m.get("content") or {}
         name = content.get("name") or ""
         is_error, result = results.get(content.get("id"), (False, ""))
-        calls.append(
-            {
-                # A sealed conversation keeps the tool's name, never its input or result.
-                "sealed": content.get("redacted") == "sensitive",
-                "name": name,
-                "short": name.rsplit("__", 1)[-1],
-                "input": content.get("input"),
-                "is_error": is_error,
-                "result": result[:2000],
-            }
-        )
+        call = {
+            # A sealed conversation keeps the tool's name, never its input or result.
+            "sealed": content.get("redacted") == "sensitive",
+            "name": name,
+            "short": name.rsplit("__", 1)[-1],
+            "input": content.get("input"),
+            "is_error": is_error,
+            "result": result[:2000],
+        }
+        calls.append(through_gateway(call))
     return calls
+
+
+#: canopy's gateway to the page's site: every turn on a labs page reaches labs through it,
+#: as the person who sent -- the agent's owner included (canopy-web#2142).
+GATEWAY_TOOLS = ("site_call", "site_read")
+#: The site's own refusal inside a gateway call that canopy delivered (`is_error` in its body).
+_SITE_ERROR = re.compile(r'"is_error"\s*:\s*true')
+
+
+def through_gateway(call: dict) -> dict:
+    """A ``site_call`` as the labs tool it called: ``short`` and ``input`` are the inner
+    tool's (``via`` keeps ``site_call``), and the site's own refusal counts as an error.
+    So every check reads a gateway call the way it reads a direct one. A sealed call keeps
+    no input, so it stays ``site_call``."""
+    if call["sealed"] or call["short"] != "site_call":
+        return call
+    given = call.get("input")
+    if isinstance(given, str):
+        try:
+            given = json.loads(given)
+        except ValueError:
+            return call
+    if not isinstance(given, dict) or not isinstance(given.get("tool"), str):
+        return call
+    inner = given["tool"].rsplit("__", 1)[-1]
+    arguments = given.get("arguments")
+    return {
+        **call,
+        "via": "site_call",
+        "short": inner,
+        "input": arguments if isinstance(arguments, dict) else {},
+        "is_error": call["is_error"] or bool(_SITE_ERROR.search(call.get("result") or "")),
+    }
 
 
 def reply_text(turn: list[dict]) -> str:

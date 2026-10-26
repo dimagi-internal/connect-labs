@@ -174,13 +174,18 @@ dialog, so `page_showQuery` and `page_proposeSave` are checked from what the per
 
 ## Known limits
 
-- **On the run page ace visits as its own owner, so its turn is FULL, not confined**, and it reads
-  labs through its own plugin connector (ace's PAT), not canopy's page grant (`site_call`). Labs'
-  page hold (`labsdata/page_holds.py`) enforces the page's selection on the grant only -- a
-  person's (or agent's) own credentials are their own direct use. So `outside-selection` there
-  tests the agent's behaviour (`workflow_run_context`'s `page_scope`, the agent's skill), and
-  `data-outside-selection` tests labs' enforcement: the Data page's agent runs confined for
-  everyone (its capability handles sensitive data), so it reads only through the grant.
+- **On the run page ace visits as its own owner, so its turn is FULL, not confined** -- and
+  since canopy-web#2142 a full turn on a labs page reaches labs only through canopy's gateway
+  (`site_call`), under the sender's page grant, owners included: canopy withholds ace's own
+  `LABS_MCP_TOKEN` from the turn and ace's headers helper sends no credential there. So
+  `outside-selection` now also tests labs' enforcement: labs' page hold
+  (`labsdata/page_holds.py`) refuses the outside opportunities on the grant. The harness reads a
+  gateway call as the labs tool it named (`canopy_api.through_gateway`: `short` and `input` are
+  the inner tool's, and the site's own refusal -- `"is_error": true` in `site_call`'s answer --
+  counts as a refused error), so `tool`, `reads_none_of` and `no_errors` see it as they see a
+  direct call. On a laptop runner ace's token is still on disk; there the withholding is ace's
+  helper and its instructions. `data-outside-selection` tests the same on the Data page, whose
+  agent runs confined for everyone (its capability handles sensitive data).
 
 - Spaces' teammate and lock-out rules need a second synthetic person (one who holds the
   sources, one who misses one); not covered yet.

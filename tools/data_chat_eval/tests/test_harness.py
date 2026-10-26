@@ -314,3 +314,52 @@ def test_needle_skips_the_turn_duration_chip():
     )
     assert _needle(reply) == "This space has 484 approved visits"
     assert _needle("Thought for 12s\nThe answer is forty two today.") == "The answer is forty two today."
+
+
+# A turn on a labs page reaches labs only through canopy's gateway, as the person who sent --
+# the agent's owner included (canopy-web#2142). Its calls are `site_call`s naming the labs tool.
+
+
+def _gateway_turn(tool, arguments, result="", is_error=False):
+    from tools.data_chat_eval import canopy_api
+
+    return canopy_api.tool_calls(
+        [
+            {
+                "role": "tool_use",
+                "content": {
+                    "id": "u1",
+                    "name": "mcp__plugin_canopy_canopy-web__site_call",
+                    "input": {"tool": tool, "arguments": arguments},
+                },
+            },
+            {"role": "tool_result", "content": {"tool_use_id": "u1", "is_error": is_error}, "plaintext": result},
+        ]
+    )
+
+
+def test_a_gateway_call_reads_as_the_labs_tool_it_called():
+    [call] = _gateway_turn(
+        "data_query",
+        {"opportunity_ids": [10061], "sql": "select 1"},
+        result='{"site": "connect-labs", "tool": "data_query", "is_error": false}',
+    )
+    assert call["short"] == "data_query" and call["via"] == "site_call"
+    assert call["input"] == {"opportunity_ids": [10061], "sql": "select 1"} and not call["is_error"]
+    t = turn("No.")
+    t.tool_calls = [call]
+    assert not checks.run({"reads_none_of": {"opportunities": [10061]}}, t, {}).passed
+    assert checks.run({"tool": {"any_of": ["data_query"]}}, t, {}).passed
+
+
+def test_the_sites_own_refusal_through_the_gateway_is_a_refused_error():
+    [call] = _gateway_turn(
+        "mcp__connect_labs__data_query",
+        {"opportunity_ids": [10061]},
+        result='{"tool": "data_query", "is_error": true, "content": "not_held"}',
+    )
+    assert call["short"] == "data_query" and call["is_error"]
+    t = turn("I can't read opportunity 10061: it is not part of this page.")
+    t.tool_calls = [call]
+    assert checks.run({"reads_none_of": {"opportunities": [10061]}}, t, {}).passed
+    assert checks.run({"no_errors": {"allow_refused": True}}, t, {}).passed
