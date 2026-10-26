@@ -210,6 +210,11 @@ def test_nothing_in_a_space_is_rows(people):
         "conversations",
         # Render code and the named queries it reads: never rows (test_artifacts).
         "artifacts",
+        # Form paths, kinds and settings: never a value (test_exports.test_a_scan_stores_no_value).
+        "dictionary",
+        # The one place rows are kept: a DE-IDENTIFIED file, built from the dictionary, held
+        # until a manager signs it off and deleted when it expires (test_exports).
+        "exports",
     }
     assert not {"rows", "columns", "result", "row_count"} & {f.name for f in SavedQuery._meta.get_fields()}
     from connect_labs.labsdata.models import SpaceArtifact

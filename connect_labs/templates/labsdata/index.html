@@ -108,6 +108,7 @@
       <h1 class="text-2xl font-semibold text-stone-900">{% if space %}<a href="{% url 'labsdata:index' %}" class="text-stone-500 font-normal">Data</a> / <span id="ex-space-name">{{ space.name }}</span>{% else %}Data{% endif %}</h1>
       {% if space %}
         <p class="text-sm text-stone-500">{% if space.description %}{{ space.description }} · {% endif %}A data space: {% if space.audience == "private" %}only its managers can open it, and only while they hold every one of its sources{% else %}anyone who holds every one of its sources sees it and its saved queries{% endif %}. Read-only, audit-logged; nothing here stores rows.</p>
+        <p class="text-sm mt-1"><a class="ex-link" href="{% url 'labsdata:space_exports' space.pk %}">Data dictionary and de-identified exports</a></p>
       {% else %}
         <p class="text-sm text-stone-500">Query the visits of the programs and opportunities you hold, down to each submitted form, or a workflow's pipelines. Click a visit id to open the whole visit. Read-only, audit-logged. Ask the agent to write the SQL for you.</p>
       {% endif %}

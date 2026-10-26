@@ -118,6 +118,12 @@ class LeakScanner:
             if len(word) >= 3 and not word.isdigit() and word not in STOPWORDS:
                 self.words.add(word)
 
+    def learn_value(self, value) -> None:
+        """Learn a whole value (an id, a username) without its words."""
+        text = str(value or "").strip().lower()
+        if len(text) >= 3:
+            self.values.add(text)
+
     def scan(self, cell) -> set[str]:
         text = str(cell or "")
         if not text:

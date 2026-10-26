@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Dictionary · {{ space.name }} · Connect Labs{% endblock %}
+
+{% block css %}
+  {{ block.super }}
+  <style>
+    .dx-card { background: #fff; border: 1px solid #e7e5e4; border-radius: 10px; }
+    .dx-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 10px 12px; border-bottom: 1px solid #f5f5f4; }
+    .dx-head h2 { font-size: 15px; font-weight: 600; color: #1c1917; margin-right: auto; }
+    .dx-btn { white-space: nowrap; background: #16006d; color: #fff; font-weight: 600; font-size: 13px; padding: 5px 12px; border-radius: 6px; }
+    .dx-btn:disabled { opacity: .5; }
+    .dx-btn.ghost { background: #fff; color: #16006d; border: 1px solid #c7d2fe; }
+    .dx-btn.danger { background: #fff; color: #991b1b; border: 1px solid #fecaca; }
+    .dx-wrap { overflow: auto; max-height: 70vh; }
+    table.dx { border-collapse: collapse; width: 100%; font-size: 13px; }
+    .dx th { position: sticky; top: 0; z-index: 1; background: #fafaf9; text-align: left; font-weight: 600; color: #44403c; padding: 6px 8px; border-bottom: 1px solid #e7e5e4; white-space: nowrap; }
+    .dx td { padding: 5px 8px; border-bottom: 1px solid #f5f5f4; vertical-align: top; }
+    .dx td.path { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: #1c1917; max-width: 360px; word-break: break-all; }
+    .dx td.path small { display: block; color: #78716c; font-family: inherit; }
+    .dx select, .dx input[type=text], .dx textarea { font-size: 12px; border: 1px solid #d6d3d1; border-radius: 5px; padding: 2px 4px; }
+    .dx textarea { width: 100%; min-width: 180px; min-height: 26px; }
+    .dx .param { width: 60px; }
+    .dx-pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+    .dx-pill.out { background: #dcfce7; color: #166534; }
+    .dx-pill.drop { background: #f5f5f4; color: #57534e; }
+    .dx-pill.todo { background: #fef3c7; color: #92400e; }
+    .dx-pill.fail { background: #fee2e2; color: #991b1b; }
+    .dx-pill.warn { background: #fef3c7; color: #92400e; }
+    .dx-pill.pass { background: #dcfce7; color: #166534; }
+    .dx-kind { font-size: 11px; color: #57534e; }
+    .dx-kind.sens { color: #991b1b; font-weight: 600; }
+    .dx-muted { color: #78716c; font-size: 12px; }
+    .dx-error { color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 8px 12px; font-size: 13px; margin: 8px 12px; }
+    .dx-note { color: #1e3a8a; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+    .dx-filter button { font-size: 12px; padding: 2px 9px; border-radius: 999px; color: #57534e; border: 1px solid transparent; }
+    .dx-filter button[aria-pressed="true"] { background: #eef2ff; color: #16006d; font-weight: 600; border-color: #c7d2fe; }
+    .dx-checks { margin: 4px 0 0; padding: 0; list-style: none; font-size: 12px; }
+    .dx-checks li { margin: 2px 0; }
+    .dx-row-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; align-items: center; }
+    .dx-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+    .dx-search { font-size: 13px; border: 1px solid #d6d3d1; border-radius: 6px; padding: 4px 8px; min-width: 200px; }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="px-6 py-5 max-w-[1500px] mx-auto" id="dx-page" data-space-id="{{ space.pk }}" data-manager="{{ is_manager|yesno:'1,0' }}">
+  <div class="mb-4">
+    <h1 class="text-2xl font-semibold text-stone-900"><a href="{% url 'labsdata:index' %}" class="text-stone-500 font-normal">Data</a> / <a href="{% url 'labsdata:space' space.pk %}" class="text-stone-500 font-normal">{{ space.name }}</a> / Dictionary and exports</h1>
+    <p class="text-sm text-stone-500 max-w-4xl">Every field this space's visits carry, what it means, and what a de-identified export does with it. A field is exported only after someone has reviewed it: until then it is dropped. Scanning reads the structure of the loaded visits (form paths, app builds, how many visits filled each field) and stores no values. {% if is_manager %}You manage this space, so you can change settings and sign off exports others ask for.{% else %}Only this space's managers change settings and sign exports off.{% endif %}</p>
+  </div>
+
+  <div class="dx-grid">
+    <section class="dx-card" id="dx-fields">
+      <div class="dx-head">
+        <h2>Fields <span class="dx-muted" id="dx-counts"></span></h2>
+        <span class="dx-muted" id="dx-scanned"></span>
+        <button class="dx-btn ghost" id="dx-scan" type="button">Scan for fields and app changes</button>
+      </div>
+      <div class="dx-head" style="border-bottom:0">
+        <div class="dx-filter" role="group" aria-label="Show">
+          <button type="button" data-filter="all" aria-pressed="true">All</button>
+          <button type="button" data-filter="todo" aria-pressed="false">Needs review</button>
+          <button type="button" data-filter="out" aria-pressed="false">Exported</button>
+          <button type="button" data-filter="flagged" aria-pressed="false">Flagged</button>
+        </div>
+        <input class="dx-search" id="dx-search" type="search" placeholder="Find a field">
+        {% if is_manager %}
+          <button class="dx-btn ghost" id="dx-accept" type="button" disabled>Accept suggestions for selected</button>
+          <button class="dx-btn ghost" id="dx-merge" type="button" disabled title="One question asked under two names: pick exactly two">Merge selected</button>
+        {% endif %}
+      </div>
+      <div id="dx-flags"></div>
+      <div id="dx-fields-error"></div>
+      <div class="dx-wrap">
+        <table class="dx">
+          <thead><tr>
+            <th>{% if is_manager %}<input type="checkbox" id="dx-all" aria-label="Select all shown">{% endif %}</th>
+            <th>Field</th><th>Kind</th><th>Meaning</th><th>Level</th><th>Setting</th><th>Export</th>
+          </tr></thead>
+          <tbody id="dx-rows"><tr><td colspan="7" class="dx-muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="dx-card" id="dx-exports">
+      <div class="dx-head">
+        <h2>De-identified exports</h2>
+        <label class="dx-muted">From <input type="date" id="dx-from"></label>
+        <label class="dx-muted">To <input type="date" id="dx-to"></label>
+        <button class="dx-btn" id="dx-request" type="button">Ask for an export</button>
+      </div>
+      <p class="dx-muted px-3 pt-2">An export applies the settings above to every visit in the window (no row limit), refuses to run if the visits carry a field the dictionary does not know, and checks its own output: rows against visits, a scan for names, usernames, phones, ids and GPS points from the source, value ranges, duplicates, visits with no case, and small groups of cases on fields that could single someone out. A manager other than the person who asked signs it off; it can then be downloaded for 7 days.</p>
+      <div id="dx-exports-error"></div>
+      <div class="dx-wrap" style="max-height:none">
+        <table class="dx">
+          <thead><tr><th>#</th><th>Asked</th><th>Window</th><th>Rows</th><th>Status</th><th>Checks</th><th></th></tr></thead>
+          <tbody id="dx-export-rows"><tr><td colspan="7" class="dx-muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="dx-card" id="dx-lineage">
+      <div class="dx-head">
+        <h2>What the registry's properties inherit</h2>
+        {% if is_manager %}<label class="dx-muted">Registry id <input type="text" id="dx-registry" size="8" placeholder="the workflow's"></label><button class="dx-btn ghost" id="dx-registry-save" type="button">Use</button>{% endif %}
+        <button class="dx-btn ghost" id="dx-lineage-load" type="button">Work it out</button>
+      </div>
+      <p class="dx-muted px-3 pt-2">Each property takes the strictest setting of the form fields it is computed from. One that reads any field nobody reviewed counts as sensitive ("unset").</p>
+      <div id="dx-lineage-body" class="px-3 pb-3"></div>
+    </section>
+
+    <section class="dx-card">
+      <div class="dx-head"><h2>History</h2></div>
+      <div class="dx-wrap" style="max-height:320px">
+        <table class="dx"><thead><tr><th>When</th><th>Who</th><th>What</th><th>Field</th><th>Change</th></tr></thead>
+          <tbody id="dx-changes"></tbody></table>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+  {{ block.super }}
+  <script>
+    window.LABSDATA_DX = {
+      dictionaryUrl: "{% url 'labsdata:dictionary' space.pk %}",
+      scanUrl: "{% url 'labsdata:dictionary_scan' space.pk %}",
+      entryUrl: "{% url 'labsdata:dictionary_entry' space.pk %}",
+      acceptUrl: "{% url 'labsdata:dictionary_accept' space.pk %}",
+      mergeUrl: "{% url 'labsdata:dictionary_merge' space.pk %}",
+      flagResolveUrl: "{% url 'labsdata:dictionary_flag_resolve' space.pk 0 %}",
+      registryUrl: "{% url 'labsdata:dictionary_registry' space.pk %}",
+      lineageUrl: "{% url 'labsdata:dictionary_lineage' space.pk %}",
+      exportsUrl: "{% url 'labsdata:exports' space.pk %}",
+      exportBase: "{% url 'labsdata:exports' space.pk %}",
+      isManager: {{ is_manager|yesno:"true,false" }},
+      csrf: "{{ csrf_token }}",
+    };
+  </script>
+  <script src="{% static 'labsdata/exports.js' %}"></script>
+{% endblock %}

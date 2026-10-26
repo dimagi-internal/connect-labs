@@ -51,7 +51,7 @@ LABS = pathlib.Path(__file__).resolve().parents[2]
 LABSDATA = LABS / "labsdata"
 SPACES = LABSDATA / "spaces.py"
 #: Where a space_id arrives from a person or an agent.
-DOORS = (LABSDATA / "views.py", LABS / "mcp" / "tools" / "labsdata.py")
+DOORS = (LABSDATA / "views.py", LABSDATA / "export_views.py", LABS / "mcp" / "tools" / "labsdata.py")
 #: The modules a read of visit data passes through.
 READ_PATH = (*DOORS, LABSDATA / "service.py", LABSDATA / "engine.py", LABSDATA / "drill.py", LABSDATA / "fields.py")
 #: The gate's own calls: a function making one of these is a gate. ``admin_add_manager``
