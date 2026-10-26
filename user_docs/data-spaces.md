@@ -54,7 +54,7 @@ Your space now appears in the **Space** switcher for everyone who can open it.
 
 ### 4. Share it (there's no share button)
 
-A space doesn't need sharing. **By default, anyone who holds every one of the space's sources can open it**. This is checked every time they open it (its managers can narrow this to **Only managers**; see [Managing a space](#managing-a-space)). 
+A space doesn't need sharing. **By default, anyone who holds every one of the space's sources can open it**. This is checked every time they open it (its managers can narrow this to **Only managers**; see [Managing a space](#managing-a-space)).
 
 - A teammate on the same opportunities sees the space, its saved queries and its charts.
 - Someone missing **even one** of the space's sources cannot open it at all. There is no partial view, so everyone who opens a chart sees the same numbers.
