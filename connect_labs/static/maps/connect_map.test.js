@@ -177,6 +177,16 @@ describe('createMap when WebGL will not start', () => {
     }).not.toThrow();
   });
 
+  it('accepts an element id, as Mapbox does, and still draws the panel there', () => {
+    el.id = 'the-map';
+    const { ConnectMap } = load();
+    const map = ConnectMap.createMap('the-map', {});
+    expect(ConnectMap.isAvailable(map)).toBe(false);
+    expect(el.querySelector('.mapboxgl-canvas-container')).toBeNull();
+    expect(el.querySelector('.connect-map-unavailable')).not.toBeNull();
+    expect(map.getContainer()).toBe(el);
+  });
+
   it('is not a thenable, so awaiting it does not hang', async () => {
     const { ConnectMap } = load();
     const map = ConnectMap.createMap(el, {});

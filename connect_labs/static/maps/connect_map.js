@@ -132,6 +132,11 @@
   function createMap(el, opts) {
     opts = opts || {};
     ready();
+    // Mapbox takes an element id as well as an element; resolve it here so a
+    // failed start can still clean up and draw the panel in the right place.
+    if (typeof el === 'string' && global.document) {
+      el = global.document.getElementById(el) || el;
+    }
     // What the container held before Mapbox touched it, so a failed start can
     // take back exactly what Mapbox added (its canvas container, its classes).
     var before =

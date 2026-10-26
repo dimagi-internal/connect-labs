@@ -795,8 +795,11 @@ again."_, and returns an inert stand-in map: every method (`on`, `addControl`,
 `getSource(id).setData`, `getCanvas().style`, `setPaintProperty`, `remove`, ...) is a
 no-op, `'load'` never fires, and the `ConnectMap` and `PlanLayers` drawers do nothing
 with it. So the usual `createMap` → `map.on('load', ...)` code needs no guard and the
-rest of the page draws. Check `ConnectMap.isAvailable(map)` only when you have
-something better to show instead (e.g. a table of the same points). Any other error
+rest of the page draws -- **as long as that rest is not drawn inside the map's
+`'load'` callback**, which never runs on the stand-in. Draw tables, charts and counts
+outside `map.on('load', ...)`; keep only map layers in it. Check
+`ConnectMap.isAvailable(map)` when you have something better to show instead (e.g. a
+table of the same points). Any other error
 from the constructor (a bad container, a bad option) still throws. **Use
 `createMap` rather than `new mapboxgl.Map(...)`** -- a direct constructor call gets
 none of this.
