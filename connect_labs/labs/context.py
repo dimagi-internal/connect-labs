@@ -8,6 +8,7 @@ across all labs projects. Context is represented as URL parameters and backed by
 import logging
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
+from django.core.cache import cache
 from django.http import HttpRequest, HttpResponseRedirect
 from django.utils.deprecation import MiddlewareMixin
 
@@ -19,6 +20,85 @@ CONTEXT_PARAMS = ["organization_id", "program_id", "opportunity_id"]
 # The context the middleware picked on its own (the person holds exactly one), kept
 # in the session so a page can tell "they came here for it" from "it was chosen for them".
 AUTO_SELECTED_KEY = "labs_context_auto_selected"
+
+
+#: In a session's ``labs_oauth``: the forget mark its ``organization_data`` was
+#: fetched after (``oauth.forget_user_organization_data``).
+_FORGOTTEN_MARK_SEEN = "organization_data_forgotten_mark"
+
+
+def _refetch_if_forgotten(request, labs_oauth: dict) -> dict:
+    """A session holds the org tree it fetched at login. When an admin has since
+    cleared this person's access cache, fetch it again from Connect, once.
+
+    Fails closed: if Connect cannot be reached, this request sees no organisations
+    (the session keeps no mark, so the next request tries again) rather than the
+    copy an admin asked to be dropped."""
+    user = getattr(request, "user", None)
+    if not labs_oauth or user is None or not getattr(user, "is_authenticated", False):
+        return labs_oauth
+    if getattr(request, "_org_data_forgotten_checked", False):
+        return labs_oauth
+    from connect_labs.labs.integrations.connect.oauth import (
+        fetch_user_organization_data,
+        organization_data_forgotten_mark,
+    )
+
+    username = getattr(user, "username", None)
+    if not username:
+        return labs_oauth
+    try:
+        mark = organization_data_forgotten_mark(username)
+    except Exception:  # noqa: BLE001 -- the cache is down, and the mark went with it
+        logger.warning("Could not read the org data forget mark for %s", username, exc_info=True)
+        return labs_oauth
+    if not mark or labs_oauth.get(_FORGOTTEN_MARK_SEEN) == mark:
+        _mark_checked(request)
+        return labs_oauth
+    token = labs_oauth.get("access_token")
+    fresh = fetch_user_organization_data(token, force_refresh=True, owner=username) if token else None
+    labs_oauth = dict(labs_oauth)
+    if fresh is None:
+        logger.warning("Org data for %s was cleared and could not be re-fetched; showing none", username)
+        labs_oauth["organization_data"] = {}
+        return labs_oauth
+    labs_oauth["organization_data"] = fresh
+    labs_oauth[_FORGOTTEN_MARK_SEEN] = mark
+    request.session["labs_oauth"] = labs_oauth
+    if hasattr(request.session, "modified"):
+        request.session.modified = True
+    _mark_checked(request)
+    return labs_oauth
+
+
+def forget_labs_context(user) -> None:
+    """Make labs ask Connect again everything it remembers about what ``user`` may
+    access -- the whole labs context, for an admin (Labs Admin › Access cache).
+
+    * the org tree cached for them (``oauth.forget_user_organization_data``), and
+      every signed-in session's copy, which re-fetches on its next request; the
+      opportunity, programme or organisation a session has selected is checked
+      against that copy on every request, so it follows;
+    * the copies cached under their stored Connect token, which no username names;
+    * every other per-person access cache, keyed on ``oauth.access_generation``.
+
+    Safe: it only discards caches. Connect still decides what they may access."""
+    from connect_labs.audit.link_helpers import forget_org_data
+    from connect_labs.labs.integrations.connect.oauth import _org_data_cache_key, forget_user_organization_data
+    from connect_labs.labs.models import UserConnectToken
+
+    forget_user_organization_data(user.username)
+    token = UserConnectToken.objects.filter(user=user).values_list("access_token", flat=True).first()
+    if token:
+        cache.delete(_org_data_cache_key(token))
+        forget_org_data(token)
+
+
+def _mark_checked(request) -> None:
+    try:
+        request._org_data_forgotten_checked = True
+    except AttributeError:  # a request stand-in that refuses attributes
+        pass
 
 
 def get_org_data(request) -> dict:
@@ -35,6 +115,7 @@ def get_org_data(request) -> dict:
     from connect_labs.labs.synthetic.org_tree import drop_labs_only_keys
 
     labs_oauth = getattr(request, "session", {}).get("labs_oauth", {}) if hasattr(request, "session") else {}
+    labs_oauth = _refetch_if_forgotten(request, labs_oauth)
     # A Connect organisation claiming a reserved labs-only key ("Labs Synthetic X")
     # is dropped before anything reads the tree: it would otherwise stand in for,
     # and hold, the labs-only organisation with that key.

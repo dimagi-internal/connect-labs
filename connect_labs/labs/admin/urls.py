@@ -6,7 +6,7 @@ from django.urls import include, path
 
 from connect_labs.labs.analytics_views import AnalyticsDashboardView, UmamiSSOView
 
-from . import canopy_views, registry_views, usage_views, views
+from . import access_cache_views, canopy_views, registry_views, usage_views, views
 
 app_name = "labs_admin"
 
@@ -37,6 +37,8 @@ urlpatterns = [
     path("cache/", views.CacheManagerView.as_view(), name="cache_manager"),
     path("cache/delete/", views.CacheDeleteView.as_view(), name="cache_delete"),
     path("cache/stats/", views.CacheStatsAPIView.as_view(), name="cache_stats"),
+    # Access cache: make labs ask Connect again what one person may access
+    path("access-cache/", access_cache_views.AccessCacheView.as_view(), name="access_cache"),
     # Task Manager
     path("tasks/", views.TaskManagerView.as_view(), name="task_manager"),
     path("tasks/kill/", views.TaskKillView.as_view(), name="task_kill"),

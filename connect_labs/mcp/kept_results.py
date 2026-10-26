@@ -584,7 +584,9 @@ def read_verdict(reader: int | None, result) -> str | None:
     user = _active_user(reader) if reader is not None else None
     if user is None:
         return "forbidden"
-    key = f"labs-result-acl:{user.pk}:{result.id}"
+    from connect_labs.labs.integrations.connect.oauth import access_generation
+
+    key = f"labs-result-acl:{user.pk}:{access_generation(user.username)}:{result.id}"
     if cache.get(key):
         return None
     try:
