@@ -19,7 +19,9 @@ whose ``grant_jti`` is the ID-JAG's ``jti`` (the canopy SDK's ``DelegatedToken``
 MCP a call's page is found through its own token (``current``). On the plain Data page the
 person changes the selection in place; the page tells labs in the person's own session
 (``update_from_page``, CSRF, as them, every source resolved as them) -- the agent has no
-tool or page action that can.
+tool or page action that can: the page reports a selection only with the DOM event of the
+person's own click (``static/labsdata/data.js`` ``reportSelection``), and a page action that
+names other sources shows them in a canvas tab without changing the selection.
 
 A delegated call whose grant has no hold is refused (fail closed). A person's own MCP use --
 a PAT, an OAuth sign-in -- has no page and is not held here.

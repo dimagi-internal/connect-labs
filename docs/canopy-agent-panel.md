@@ -205,7 +205,13 @@ labs' mint view (`labs/canopy_token.py`, the SDK's `panel_token` plus this recor
 redeems keeps that `jti` (`grant_jti`), so the MCP finds the call's page from its own token
 (`mcp/server.py` puts it in the claims). On the plain Data page the person changes the
 selection in place, and the page reports it in their own session (`/labs/data/api/page-holds/`,
-CSRF, every source resolved as them). A delegated call whose grant has no hold reads nothing.
+CSRF, every source resolved as them). Only the person's own gesture reaches that report: in
+`static/labsdata/data.js` `reportSelection` takes the DOM event of their click and refuses
+anything else, and no page action holds one -- an action that names other sources (`openItem`
+on a personal saved query, `data_set_query` with sources) shows them in a canvas tab over those
+sources and leaves the page's selection, and so the agent's reach, as it was (`data.test.js`
+pins both, and that no action's code names the selection). A delegated call whose grant has no
+hold reads nothing.
 A person's own PAT or OAuth sign-in has no page and is not held.
 
 A workflow chooses which agent its run pages offer (`config.agent.agent`, a slug, the run
@@ -391,9 +397,11 @@ unchanged.
 runs in the person's tab, as them, checks its input and throws to refuse, and returns an
 acknowledgement only -- never rows, counts or a query's error text):
 `showQuery {sql, title, display}` runs a query in a new canvas tab; `openItem {kind: "query", id}`
-opens a saved query of the space (any version) or of the person's own; `proposeSave {name, sql,
+opens a saved query of the space (any version) or of the person's own -- in a new canvas tab,
+a personal one over its own saved selection, never as the page's selection; `proposeSave {name, sql,
 display}` fills the Save dialog, saving nothing; `showVisit {visit_id}` opens a visit; the older
-`data_set_query` still puts SQL in the editor. `data_describe` teaches a canopy agent these
+`data_set_query` still puts SQL in the editor (given sources of its own, it runs in a tab over them
+instead). No page action changes the page's selection. `data_describe` teaches a canopy agent these
 (`guidance.PAGE_ACTIONS`, and `guidance.SPACE_RULES` with a `space_id`).
 
 The PMC
