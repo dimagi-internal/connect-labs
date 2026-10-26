@@ -8,6 +8,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from connect_labs.utils.dimagi_user import DIMAGI_DOMAINS
+
 from ..progress import NULL_PROGRESS, safe_call
 from .bundle import make_bundle_store, read_bundle
 from .cohort import CohortSpec
@@ -401,7 +403,8 @@ def generate_opp_from_bundle(
         program_name: Display program name.
         org_name: Display org name.
         label: Override the opportunity label. Defaults to ``[Synthetic] <opp_name>``.
-        allowed_domains: Email-domain allowlist. Defaults to ``["@dimagi.com", "@dimagi-ai.com"]``.
+        allowed_domains: Email-domain allowlist. Defaults to the Dimagi domains
+            (``DIMAGI_DOMAINS``).
         fresh: If ``True``, regenerate even if a row already exists.
         target_opportunity_id: Register onto THIS labs-only opp id, bypassing the
             ``cloned_from`` idempotency lookup entirely. This is how a source that
@@ -593,7 +596,7 @@ def _register_one(
         org_name=org_name,
         program_name=program_name,
         program_id=program_id,
-        allowed_domains=allowed_domains if allowed_domains is not None else ["@dimagi.com", "@dimagi-ai.com"],
+        allowed_domains=allowed_domains if allowed_domains is not None else list(DIMAGI_DOMAINS),
         cloned_from=source,
         created_by=None if plan.pre_existing else created_by,
     )

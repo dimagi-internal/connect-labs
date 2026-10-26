@@ -14,13 +14,13 @@ def test_is_bootstrap_admin():
     assert whitelist.is_bootstrap_admin("") is False
 
 
-def test_default_authorized_domains_include_dimagi_and_dimagi_ai():
-    # The shipped default authorizes both Dimagi domains (no env override here).
-    from django.conf import settings
-
-    assert "dimagi.com" in settings.CAMPAIGN_BOOTSTRAP_ADMIN_DOMAINS
-    assert "dimagi-ai.com" in settings.CAMPAIGN_BOOTSTRAP_ADMIN_DOMAINS
+@override_settings(CAMPAIGN_BOOTSTRAP_ADMIN_DOMAINS=None)
+def test_unconfigured_bootstrap_admins_are_the_dimagi_domains():
+    # The shipped default is unset, which means labs' one list of Dimagi domains.
+    assert whitelist.is_bootstrap_admin("x@dimagi.com") is True
     assert whitelist.is_bootstrap_admin("ace@dimagi-ai.com") is True
+    assert whitelist.is_bootstrap_admin("helper@dimagi-associate.com") is True
+    assert whitelist.is_bootstrap_admin("x@notdimagi.com") is False
 
 
 @pytest.mark.django_db

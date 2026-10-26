@@ -6,15 +6,12 @@ from django.db import models
 from django.db.models import Max
 from django.utils import timezone
 
+from connect_labs.utils.dimagi_user import DIMAGI_DOMAINS, is_dimagi_user
+
 logger = logging.getLogger(__name__)
 
 
 LABS_ONLY_OPP_ID_FLOOR = 10_000
-
-# Dimagi-internal email domains treated as a single trust boundary for labs-only
-# synthetic-opp visibility: the AI team uses @dimagi-ai.com, most demo opps are
-# registered for @dimagi.com, and both should see each other's synthetic opps.
-DIMAGI_INTERNAL_DOMAINS = ("@dimagi.com", "@dimagi-ai.com")
 
 
 class SyntheticOpportunity(models.Model):
@@ -189,15 +186,14 @@ class SyntheticOpportunity(models.Model):
         email = (getattr(user, "email", "") or "").lower()
         if any(email.endswith(d.lower()) for d in self.allowed_domains):
             return True
-        # Dimagi-internal equivalence: the AI team uses @dimagi-ai.com while most
-        # demo opps are registered for @dimagi.com (the create form's default).
-        # Treat the Dimagi-internal domains as one trust boundary so an
-        # @dimagi-ai.com user sees opps allow-listed for @dimagi.com and vice
-        # versa — the same reason the MCP labs-only access gate grants opted-in
-        # Dimagi callers regardless of allowed_domains.
-        user_is_dimagi = any(email.endswith(d) for d in DIMAGI_INTERNAL_DOMAINS)
-        allowlist_is_dimagi = any(d.strip().lower() in DIMAGI_INTERNAL_DOMAINS for d in self.allowed_domains)
-        return user_is_dimagi and allowlist_is_dimagi
+        # Dimagi equivalence: the AI team uses @dimagi-ai.com, associates use
+        # @dimagi-associate.com, and most demo opps are registered for @dimagi.com
+        # (the create form's default). The Dimagi domains (`DIMAGI_DOMAINS`) are
+        # one trust boundary: an allowlist naming any of them admits every one of
+        # them -- the same reason `is_accessible_to` grants Dimagi users
+        # regardless of allowed_domains.
+        allowlist_is_dimagi = any(d.strip().lower() in DIMAGI_DOMAINS for d in self.allowed_domains)
+        return is_dimagi_user(user) and allowlist_is_dimagi
 
     def is_accessible_to(self, user) -> bool:
         """Security boundary for READING/WRITING this labs-only opp's records.
@@ -211,9 +207,10 @@ class SyntheticOpportunity(models.Model):
 
         Access rules:
         * The creator always retains access.
-        * Dimagi-internal users are the platform operators and keep broad access
-          across labs-only opps (mirrors the existing Dimagi-equivalence carve-outs
-          in ``is_visible_to`` / the MCP access gate).
+        * Dimagi users (``DIMAGI_DOMAINS``: staff, the AI team and associates) are
+          the platform operators and keep broad access across labs-only opps,
+          partner-allowlisted ones included (mirrors the Dimagi-equivalence
+          carve-out in ``is_visible_to``).
         * Non-Dimagi (partner) users are gated on ``allowed_domains``: an empty list
           means no restriction (the field's documented default); a non-empty list
           requires the user's email domain to match.
@@ -230,9 +227,9 @@ class SyntheticOpportunity(models.Model):
             return role_in(user, workspace) is not None
         if self.created_by_id and self.created_by_id == getattr(user, "id", None):
             return True
-        email = (getattr(user, "email", "") or "").lower()
-        if any(email.endswith(d) for d in DIMAGI_INTERNAL_DOMAINS):
+        if is_dimagi_user(user):
             return True
+        email = (getattr(user, "email", "") or "").lower()
         if not self.allowed_domains:
             # Fail-open, and deliberately still the default. This is the one
             # predicate isolating labs-only tenants, and the audit flagged it as

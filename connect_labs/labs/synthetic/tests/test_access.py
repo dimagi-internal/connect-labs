@@ -59,6 +59,51 @@ class TestIsAccessibleTo:
 
 
 @pytest.mark.django_db
+class TestADimagiAssociate:
+    """A @dimagi-associate.com address is a Dimagi sign-in, so it gets the same
+    labs-only access and visibility as @dimagi.com and @dimagi-ai.com."""
+
+    def _associate(self, username, *, toggle=True):
+        return User.objects.create_user(
+            username=username, email="helper@dimagi-associate.com", view_synthetic_opps=toggle
+        )
+
+    def test_may_open_an_opp_allowlisted_for_dimagi(self):
+        opp = _make_opp(LABS_ONLY_OPP_ID_FLOOR + 30, allowed_domains=["@dimagi.com"])
+        assert opp.is_accessible_to(self._associate("a1")) is True
+
+    def test_may_open_a_partner_allowlisted_opp_as_dimagi_staff_may(self):
+        opp = _make_opp(LABS_ONLY_OPP_ID_FLOOR + 31, allowed_domains=["@partner-y.com"])
+        assert opp.is_accessible_to(_user("staff@dimagi.com", "a2-staff")) is True
+        assert opp.is_accessible_to(self._associate("a2")) is True
+        assert opp.is_accessible_to(_user("w@partner-x.com", "a2-outsider")) is False
+
+    def test_sees_an_opp_allowlisted_for_dimagi(self):
+        opp = _make_opp(LABS_ONLY_OPP_ID_FLOOR + 32, allowed_domains=["@dimagi.com"])
+        assert opp.is_visible_to(self._associate("a3")) is True
+
+    def test_an_allowlist_naming_associates_admits_dimagi_staff(self):
+        opp = _make_opp(LABS_ONLY_OPP_ID_FLOOR + 33, allowed_domains=["@dimagi-associate.com"])
+        staff = User.objects.create_user(username="a4-staff", email="s@dimagi.com", view_synthetic_opps=True)
+        assert opp.is_visible_to(staff) is True
+
+    def test_does_not_see_a_partner_allowlisted_opp_as_dimagi_staff_does_not(self):
+        # is_visible_to's Dimagi rule applies only when the allowlist names a Dimagi
+        # domain; a partner-only allowlist hides the opp from the picker for staff
+        # too, though both may still open it (is_accessible_to above).
+        opp = _make_opp(LABS_ONLY_OPP_ID_FLOOR + 34, allowed_domains=["@partner-y.com"])
+        staff = User.objects.create_user(username="a5-staff", email="s5@dimagi.com", view_synthetic_opps=True)
+        partner = User.objects.create_user(username="a5-partner", email="p@partner-y.com", view_synthetic_opps=True)
+        assert opp.is_visible_to(partner) is True
+        assert opp.is_visible_to(staff) is False
+        assert opp.is_visible_to(self._associate("a5")) is False
+
+    def test_still_needs_the_picker_toggle_to_see_one(self):
+        opp = _make_opp(LABS_ONLY_OPP_ID_FLOOR + 35, allowed_domains=["@dimagi.com"])
+        assert opp.is_visible_to(self._associate("a6", toggle=False)) is False
+
+
+@pytest.mark.django_db
 class TestScopeGate:
     def test_real_opp_id_is_ignored(self):
         # id below the labs-only floor is a real Connect opp — this gate must not

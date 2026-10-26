@@ -193,7 +193,7 @@ def test_owning_org_member_responding_under_a_typed_name_is_own_side(world):
     assert access.can_review(world["staff"], response)
 
 
-def test_a_dimagi_associate_belongs_to_dimagi_but_is_not_staff():
+def test_a_dimagi_associate_belongs_to_dimagi_and_is_staff():
     from connect_labs.supply_chain.runner import dimagi_org
     from connect_labs.utils.dimagi_user import is_dimagi_staff, is_dimagi_user
 
@@ -201,7 +201,7 @@ def test_a_dimagi_associate_belongs_to_dimagi_but_is_not_staff():
     call = make_call(dimagi_org())
     assert access.standing(associate, call) == access.OWNER
     assert dimagi_org() in access.manageable_orgs(associate)
-    assert not is_dimagi_user(associate) and not is_dimagi_staff(associate)
+    assert is_dimagi_user(associate) and is_dimagi_staff(associate)
 
 
 def test_a_lookalike_domain_is_not_dimagi():

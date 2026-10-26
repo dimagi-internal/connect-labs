@@ -6,14 +6,18 @@ from django.conf import settings
 from django.utils import timezone
 
 from connect_labs.campaign.models import CampaignUser
+from connect_labs.utils.dimagi_user import is_dimagi_email
 
 
 def is_bootstrap_admin(email: str) -> bool:
     if not email or "@" not in email:
         return False
+    configured = getattr(settings, "CAMPAIGN_BOOTSTRAP_ADMIN_DOMAINS", None)
+    if configured is None:
+        # Not configured: Dimagi's own sign-ins, by the one list labs keeps.
+        return is_dimagi_email(email)
     domain = email.rsplit("@", 1)[1].lower()
-    allowed = [d.lower() for d in getattr(settings, "CAMPAIGN_BOOTSTRAP_ADMIN_DOMAINS", ["dimagi.com"])]
-    return domain in allowed
+    return domain in [d.lower().lstrip("@") for d in configured]
 
 
 def resolve_campaign_user(identity: dict, django_user) -> CampaignUser | None:

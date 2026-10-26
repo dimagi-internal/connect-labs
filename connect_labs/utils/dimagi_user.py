@@ -1,16 +1,22 @@
-"""Who counts as Dimagi staff, and who belongs to the Dimagi organisation."""
+"""Who counts as Dimagi: the one list of Dimagi sign-in domains, and the checks on it."""
 
-#: Addresses that make someone a member of the Dimagi organisation (the
-#: ``dimagi`` LabsOrg). Wider than `is_dimagi_user`: Dimagi's associates work on
-#: Dimagi's calls and programmes, so they belong to the organisation, but they
-#: are not Dimagi staff and get none of the staff gates that domain opens.
-DIMAGI_ORG_DOMAINS = ("@dimagi.com", "@dimagi-ai.com", "@dimagi-associate.com")
+#: The addresses that make someone Dimagi in labs: staff (@dimagi.com), the AI
+#: team (@dimagi-ai.com) and Dimagi's associates (@dimagi-associate.com). One list for
+#: every rule -- staff gates, membership of the ``dimagi`` organisation, and
+#: access to labs-only (synthetic) opportunities. Until 2026-10-25 associates
+#: were Dimagi members but not staff, and synthetic access kept a third list of
+#: its own; the owner collapsed all three into this one.
+DIMAGI_DOMAINS = ("@dimagi.com", "@dimagi-ai.com", "@dimagi-associate.com")
+
+
+def is_dimagi_email(email: str | None) -> bool:
+    """Return True if `email` is a Dimagi address (`DIMAGI_DOMAINS`)."""
+    return (email or "").strip().lower().endswith(DIMAGI_DOMAINS)
 
 
 def is_dimagi_user(user) -> bool:
-    """Return True if the user signs in with a Dimagi email (@dimagi.com or @dimagi-ai.com)."""
-    email = getattr(user, "email", "") or ""
-    return email.endswith("@dimagi.com") or email.endswith("@dimagi-ai.com")
+    """Return True if the user signs in with a Dimagi email (`DIMAGI_DOMAINS`)."""
+    return is_dimagi_email(getattr(user, "email", "") if user is not None else "")
 
 
 def is_dimagi_staff(user) -> bool:
@@ -24,10 +30,3 @@ def is_dimagi_staff(user) -> bool:
     if user is None:
         return False
     return bool(getattr(user, "is_staff", False)) or is_dimagi_user(user)
-
-
-def is_dimagi_org_member(user) -> bool:
-    """Return True if the user signs in with an address of the Dimagi organisation
-    (`DIMAGI_ORG_DOMAINS`) -- membership of one organisation, not a staff gate."""
-    email = (getattr(user, "email", "") or "").strip().lower()
-    return email.endswith(DIMAGI_ORG_DOMAINS)
