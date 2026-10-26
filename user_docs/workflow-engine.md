@@ -179,6 +179,14 @@ Each workflow run page has an assistant panel that can answer questions about th
 
 This scope applies to the assistant built into the run page panel. If you use the Labs assistant with your own personal token, that access is unchanged.
 
+### Maps on workflow dashboards
+
+Some dashboards include a map panel. If your browser cannot start the map — which Chrome can do occasionally after a graphics reset or when too many maps are open at once — only the map is affected. In its place the page shows a small panel reading:
+
+> Map unavailable — this browser couldn't start WebGL. Reload the page to try again.
+
+All other tables, charts, and panels on the dashboard continue to draw as usual. Reloading the page tries the map again.
+
 ### The Canopy agent (Data agent / ace)
 
 The Canopy agent — also called the **Data agent** or **ace** — can answer questions about the data on a Labs page and help you take actions such as creating follow-up tasks or starting coaching conversations. It acts with **your own access**, held to the current page by a short-lived grant, and can only do things that you explicitly trigger.
@@ -206,9 +214,3 @@ The Labs run page's own buttons (for example, the coaching send button or audit 
 
 !!! note "Action buttons inside Canopy"
     Action buttons on agent cards (coaching Send, audit edit Confirm/Decline, and the follow-up task button) call Labs through Canopy and require Canopy to confirm that it is your card making the call. If a button inside a Canopy-embedded page does not respond, this confirmation may not yet be in place for that button type — the Labs run page's own buttons are unaffected. Contact support if you consistently cannot complete an action from a card.
-
-### UAT Comparison tab
-
-The **UAT Comparison** tab lets you compare data between your UAT and production environments side by side. Both environments have real verification data — if the verification block on this tab reads zero, that almost certainly means the page did not finish loading rather than that data is missing. Try refreshing the page; if the figure remains zero, contact support.
-
-The dashboard now loads only production data. The separate test/pilot domain and the toggle to switch between them have been removed, as production has carried real
