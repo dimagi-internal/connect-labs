@@ -8,11 +8,16 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from weekly_changelog import (  # noqa: E402
+    _to_slack_mrkdwn,
     classify_pr,
+    collect_page_routes,
     fetch_pr_files,
     generate_weekly_summary,
     group_prs_by_feature,
+    link_bullets,
     load_user_visible_prs,
+    markdown_to_storage,
+    page_url,
 )
 
 PR_TEMPLATE = {
@@ -195,8 +200,8 @@ def test_generate_weekly_summary_includes_category_annotation():
 
     assert len(captured_messages) == 1
     user_content = captured_messages[0]["messages"][0]["content"]
-    assert "Group [category: marketing]" in user_content
-    assert "Group [category: app]" in user_content
+    assert "Group {g0} [category: marketing]" in user_content
+    assert "Group {g1} [category: app]" in user_content
 
 
 def test_group_prs_by_feature_returns_groups():
@@ -326,3 +331,122 @@ def test_group_prs_by_feature_fallback_on_bad_json():
     assert len(groups) == 10
     assert groups[0]["lead_pr"] == 1
     assert groups[0]["pr_numbers"] == [1]
+
+
+def _fake_client(text, captured=None):
+    class FakeResponse:
+        content = [MagicMock(text=text)]
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            if captured is not None:
+                captured.append(kwargs)
+            return FakeResponse()
+
+    class FakeClient:
+        messages = FakeMessages()
+
+    return FakeClient()
+
+
+def _write_module(root, dotted, source):
+    path = root / (dotted.replace(".", "/") + ".py")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(source)
+
+
+def test_collect_page_routes_follows_includes_and_drops_non_pages(tmp_path):
+    _write_module(
+        tmp_path,
+        "config.urls",
+        """
+urlpatterns = [
+    path("", include("app.home.urls")),
+    path("solicitations/", include("app.sol.urls", namespace="solicitations")),
+    path("o/", include("oauth2_provider.urls")),
+] + static("/media/")
+urlpatterns += [path("api/", include("app.api"))]
+if DEBUG:
+    urlpatterns += [path("debug-only/", view)]
+""",
+    )
+    _write_module(tmp_path, "app.home.urls", 'urlpatterns = [path("about/", view)]')
+    _write_module(
+        tmp_path,
+        "app.sol.urls",
+        """
+urlpatterns = [
+    path("", view),
+    path("manage/", view),
+    path("<int:pk>/", view),
+    path("callback/", view),
+    path("export.json", view),
+    path("rounds/stream/", view),
+]
+""",
+    )
+    _write_module(tmp_path, "app.api", 'urlpatterns = [path("things/", view)]')
+
+    assert collect_page_routes(tmp_path) == ["/about/", "/solicitations/", "/solicitations/manage/"]
+
+
+def test_collect_page_routes_reads_the_real_urlconf():
+    pages = collect_page_routes()
+    assert "/solicitations/" in pages
+    assert "/labs/admin/usage/" in pages
+    assert not any("<" in p or p.startswith("/api/") for p in pages)
+
+
+def test_page_url_only_for_listed_pages():
+    pages = {"/solicitations/", "/microplans/"}
+    assert page_url("/solicitations/", pages) == "https://labs.connect.dimagi.com/solicitations/"
+    assert page_url("microplans/", pages) == "https://labs.connect.dimagi.com/microplans/"
+    assert page_url("/invented/", pages) == ""
+    assert page_url(None, pages) == ""
+
+
+def test_group_prs_by_feature_attaches_only_real_pages():
+    fake_json = json.dumps(
+        [
+            {"title": "Map", "description": "d", "pr_numbers": [1], "lead_pr": 1, "page": "/solicitations/"},
+            {"title": "Guess", "description": "d", "pr_numbers": [2], "lead_pr": 2, "page": "/made-up/"},
+            {"title": "Infra", "description": "d", "pr_numbers": [3], "lead_pr": 3, "page": None},
+        ]
+    )
+    captured = []
+    prs = [
+        {"number": n, "title": "t", "description": "d", "url": "", "files": ["connect_labs/solicitations/views.py"]}
+        for n in (1, 2, 3)
+    ]
+    groups = group_prs_by_feature(_fake_client(fake_json, captured), prs, ["/solicitations/"])
+
+    assert [g["page_url"] for g in groups] == ["https://labs.connect.dimagi.com/solicitations/", "", ""]
+    sent = captured[0]["messages"][0]["content"]
+    assert "PAGES:\n/solicitations/" in sent
+    assert "Changed files: connect_labs/solicitations/views.py" in sent
+
+
+def test_link_bullets_replaces_tags_and_drops_unlinked_ones():
+    groups = [{"page_url": "https://labs.connect.dimagi.com/solicitations/"}, {"page_url": ""}]
+    summary = "Theme line.\n- Respondent map {g0}\n- Faster audits {g1}\n- Stray tag {g9}"
+    assert link_bullets(summary, groups) == (
+        "Theme line.\n"
+        "- Respondent map [Open in Labs →](https://labs.connect.dimagi.com/solicitations/)\n"
+        "- Faster audits\n"
+        "- Stray tag"
+    )
+
+
+def test_generate_weekly_summary_links_bullets():
+    groups = [{"title": "Map", "description": "d", "category": "app", "page_url": "https://x.test/map/"}]
+    summary = generate_weekly_summary(_fake_client("Theme.\n- Map drawing {g0}"), groups)
+    assert summary == "Theme.\n- Map drawing [Open in Labs →](https://x.test/map/)"
+
+
+def test_links_render_for_slack_and_confluence():
+    text = "- **Map** drawing [Open in Labs →](https://x.test/a?b=1&c=2)"
+    assert _to_slack_mrkdwn(text) == "- *Map* drawing <https://x.test/a?b=1&c=2|Open in Labs →>"
+    assert markdown_to_storage(text) == (
+        "<ul>\n  <li><strong>Map</strong> drawing "
+        '<a href="https://x.test/a?b=1&amp;c=2">Open in Labs →</a></li>\n</ul>'
+    )
