@@ -144,6 +144,72 @@ To find a workflow's pipeline IDs, and the opportunity each one belongs to, ask 
 
 ---
 
+## Sharing data outside Dimagi: the dictionary and de-identified exports
+
+A saved space has a **Data dictionary and de-identified exports** page. The link is under the space's name. Use it when a programme's visit data has to go to someone outside Dimagi, such as evaluators or researchers, without anything that identifies a person.
+
+### The dictionary
+
+The dictionary lists every field the space's visits carry. That covers each form question and each column of `visits`. For each field it shows:
+
+- **Kind**: what the values look like. A name, phone or address shows as *identifier*; also *free text*, *gps*, *case id*, *date*, *number* or *categorical*.
+- **Meaning**: what the question asks, in your words, per app version where that differs.
+- **Level**: whether the field is about the visit or the case.
+- **Setting**: what an export does with the field.
+
+| Setting | What it does |
+| --- | --- |
+| Keep as is | The value goes out unchanged |
+| Drop | Left out |
+| Round | Rounded to a step you choose, e.g. weights to 25 g |
+| Replace with a code | The same id always gets the same code, in this export and the next. A code can't be turned back into the id. Every case-id field shares one set of codes, so visits still join up by case. |
+| Month only | A date cut to the month (the default for dates of birth) |
+| Shift dates per case | Every date of one case moves by the same hidden number of days, so intervals within a case stay true |
+| Coarsen location | A GPS point rounded, by default to about 1 km |
+| Scrub free text | Emails, long numbers and known names removed. This is a best guess, and a note can still identify someone. |
+
+**Nothing is exported until a manager of the space has reviewed it.** Each field arrives with a suggested setting (identifiers, free text and GPS are dropped, ids are coded, dates and numbers are kept). It stays out of every export, marked *Dropped until reviewed*, until a manager accepts that suggestion or picks another. A field whose kind is *identifier* can never be kept as is.
+
+### Scanning for fields and app changes
+
+Press **Scan for fields and app changes**. Labs reads the structure of the space's loaded visits: which questions were answered, under which form, in which app build. It stores no values. The scan:
+
+- adds every new field, unreviewed (so dropped)
+- puts one question spelled two ways into the same field, such as `Lethargy` in one app version and `lethargy` in the next
+- flags a field the newest build of a form no longer sends, and a field whose values now look more sensitive than before
+
+Run it whenever a new app version goes out. When an app *renames* a question, rather than just changing its capitals, select both fields and press **Merge selected**. The merged field takes the stricter of the two settings and needs reviewing again.
+
+### Asking for an export
+
+Pick a date window (or none) and press **Ask for an export**. Anyone who can open the space can ask for one.
+
+1. **It refuses unknown fields.** If the visits in the window carry a field the dictionary doesn't know, the export stops and names it. Scan, review the field, then ask again.
+2. **It applies the settings to every visit in the window.** There is no 5,000-row limit.
+3. **It checks its own output** before anyone can see it:
+   - rows against visits
+   - a search of every cell for the names, usernames, phone numbers, ids and GPS points of the people in the source
+   - numbers far outside their usual range
+   - duplicates
+   - visits with no case
+   - how many rows share their dates, worker and similar fields with fewer than 5 cases (fields that could single someone out together)
+
+   A failed check blocks the export, and it never produces a file.
+4. **Someone else signs it off.** A manager of the space who did *not* ask for it signs it off. They write who it is for and why, and confirm they have read any warnings.
+5. **Download.** The person who asked, or a manager, can then download it for **7 days**, after which the file is deleted.
+
+The download is a zip of four files:
+- `data.csv`
+- `dictionary.csv`: every column's meaning, setting and source form paths. It never holds a sample value.
+- `README.md`: the caveats
+- `checks.json`
+
+### What the registry inherits
+
+For a space made from a workflow, **What the registry's properties inherit** follows each semantic-registry property back to the form fields it is computed from. Each property gets the strictest setting of those fields. A property that reads any field nobody has reviewed shows as *unset (sensitive)*.
+
+---
+
 ## Troubleshooting
 
 | What you see | Why, and what to do |

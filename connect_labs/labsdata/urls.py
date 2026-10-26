@@ -2,7 +2,7 @@
 
 from django.urls import path
 
-from connect_labs.labsdata import views
+from connect_labs.labsdata import export_views, views
 
 app_name = "labsdata"
 
@@ -53,6 +53,58 @@ urlpatterns = [
         "api/spaces/<int:space_id>/conversations/<int:pk>/delete/",
         views.SpaceConversationDeleteView.as_view(),
         name="space_conversation_delete",
+    ),
+    # A space's dictionary and de-identified exports (export_views; every route opens the space).
+    path("space/<int:space_id>/exports/", export_views.ExportsPageView.as_view(), name="space_exports"),
+    path("api/spaces/<int:space_id>/dictionary/", export_views.DictionaryView.as_view(), name="dictionary"),
+    path(
+        "api/spaces/<int:space_id>/dictionary/scan/", export_views.DictionaryScanView.as_view(), name="dictionary_scan"
+    ),
+    path(
+        "api/spaces/<int:space_id>/dictionary/entry/",
+        export_views.DictionaryEntryView.as_view(),
+        name="dictionary_entry",
+    ),
+    path(
+        "api/spaces/<int:space_id>/dictionary/accept/",
+        export_views.DictionaryAcceptView.as_view(),
+        name="dictionary_accept",
+    ),
+    path(
+        "api/spaces/<int:space_id>/dictionary/merge/",
+        export_views.DictionaryMergeView.as_view(),
+        name="dictionary_merge",
+    ),
+    path(
+        "api/spaces/<int:space_id>/dictionary/flags/<int:flag_id>/resolve/",
+        export_views.DictionaryFlagResolveView.as_view(),
+        name="dictionary_flag_resolve",
+    ),
+    path(
+        "api/spaces/<int:space_id>/dictionary/registry/",
+        export_views.DictionaryRegistryView.as_view(),
+        name="dictionary_registry",
+    ),
+    path(
+        "api/spaces/<int:space_id>/dictionary/lineage/",
+        export_views.DictionaryLineageView.as_view(),
+        name="dictionary_lineage",
+    ),
+    path("api/spaces/<int:space_id>/exports/", export_views.ExportsView.as_view(), name="exports"),
+    path(
+        "api/spaces/<int:space_id>/exports/<int:pk>/sign-off/",
+        export_views.ExportSignOffView.as_view(),
+        name="export_sign_off",
+    ),
+    path(
+        "api/spaces/<int:space_id>/exports/<int:pk>/reject/",
+        export_views.ExportRejectView.as_view(),
+        name="export_reject",
+    ),
+    path(
+        "api/spaces/<int:space_id>/exports/<int:pk>/download/",
+        export_views.ExportDownloadView.as_view(),
+        name="export_download",
     ),
     path("api/describe/", views.DescribeView.as_view(), name="describe"),
     # The plain page's selection, as the person changes it: what its agent may read.

@@ -87,7 +87,9 @@ _PHONE = re.compile(r"(?<!\d)\+?\d{7,}(?!\d)")
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 _GEOPOINT = re.compile(r"-?\d{1,2}\.\d{3,}[ ,]+-?\d{1,3}\.\d{3,}")
 _UUID_IN = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
-_WORD = re.compile(r"[^\W_]+(?:['-][^\W_]+)*", re.UNICODE)
+#: A word is letters only: "Amina's" and "Amina-Wanjiru" are read as their parts, so a
+#: possessive or a double-barrelled name never hides a learned name.
+_WORD = re.compile(r"[^\W\d_]+", re.UNICODE)
 
 #: What the scan reports a hit as. Never the matching text: the report travels with
 #: the export and is shown to people signing it off.
@@ -117,6 +119,12 @@ class LeakScanner:
         for word in _WORD.findall(text):
             if len(word) >= 3 and not word.isdigit() and word not in STOPWORDS:
                 self.words.add(word)
+
+    def learn_value(self, value) -> None:
+        """Learn a whole value (an id, a username) without its words."""
+        text = str(value or "").strip().lower()
+        if len(text) >= 3:
+            self.values.add(text)
 
     def scan(self, cell) -> set[str]:
         text = str(cell or "")

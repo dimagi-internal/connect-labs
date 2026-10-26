@@ -268,3 +268,208 @@ class PageGrant(models.Model):
 
     def __str__(self) -> str:
         return f"grant {self.grant_jti[:8]} on {self.hold_id}"
+
+
+# --- de-identified exports (dictionary.py, exports.py) -----------------------------------
+#
+# A data space's DICTIONARY says, for every field its visits carry, what it means and what
+# an export does with it; an EXPORT is one run of that dictionary over the space's visits,
+# checked and signed off before anyone can download it. Both belong to the space and are
+# read only through ``spaces.open`` (``dictionary.for_space`` / ``exports.for_space``).
+# Design: docs/superpowers/specs/2026-10-26-deidentified-exports-design.md
+
+
+def _new_secret() -> bytes:
+    import secrets
+
+    return secrets.token_bytes(32)
+
+
+class DataDictionary(models.Model):
+    """What each field of a space's visits means, and what an export does with it.
+
+    ``secret`` keys every pseudonym and date shift (``labs.deid.transforms``): the same case
+    gets the same code in every export of this dictionary, and nobody without the key can
+    reverse one. It never leaves labs and is never shown."""
+
+    space = models.OneToOneField(DataSpace, on_delete=models.CASCADE, related_name="dictionary")
+    secret = models.BinaryField(default=_new_secret, editable=False)
+    #: The semantic registry (its LabsRecord id) whose properties inherit settings from
+    #: these fields (``lineage.py``). Optional.
+    registry_id = models.IntegerField(null=True, blank=True)
+    scanned_at = models.DateTimeField(null=True, blank=True)
+    scanned_visits = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"dictionary of space {self.space_id}"
+
+
+class DictionaryEntry(models.Model):
+    """One data element: a form question (every spelling of it, in every app build), or
+    one column of ``visits``. Exported only once a person has reviewed it: until then it
+    is dropped, whatever its setting says ("drop unless allowed")."""
+
+    VISIT = "visit"
+    CASE = "case"
+    LEVELS = [(VISIT, "Visit"), (CASE, "Case")]
+
+    dictionary = models.ForeignKey(DataDictionary, on_delete=models.CASCADE, related_name="entries")
+    #: ``fieldscan.normalise`` of the path, or ``@<column>`` for a visits column.
+    key = models.CharField(max_length=500)
+    label = models.CharField(max_length=500)
+    #: A visits column (``engine.VISIT_COLUMNS``) rather than a form field.
+    column = models.CharField(max_length=100, blank=True, default="")
+    #: What the values look like (``labs.deid.classify.KINDS``), from the last scan.
+    kind = models.CharField(max_length=20)
+    meaning = models.TextField(blank=True, default="")
+    level = models.CharField(max_length=10, choices=LEVELS, default=VISIT)
+    setting = models.CharField(max_length=20, default="drop")
+    params = models.JSONField(default=dict, blank=True)
+    #: What the classifier suggests for ``kind`` (``classify.default_setting``).
+    suggested_setting = models.CharField(max_length=20, default="drop")
+    suggested_params = models.JSONField(default=dict, blank=True)
+    #: Can single someone out in combination with other fields (a date, a worker).
+    quasi = models.BooleanField(default=False)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["column", "key"]
+        constraints = [models.UniqueConstraint(fields=["dictionary", "key"], name="labsdata_dictionary_entry_key")]
+
+    def __str__(self) -> str:
+        return self.label
+
+    @property
+    def reviewed(self) -> bool:
+        return self.reviewed_at is not None
+
+
+class DictionarySource(models.Model):
+    """One spelling of an entry's question in one form: the exact path, the deliver unit
+    it was submitted under, and the app builds it was seen in. Never a value."""
+
+    entry = models.ForeignKey(DictionaryEntry, on_delete=models.CASCADE, related_name="sources")
+    path = models.CharField(max_length=500)
+    deliver_unit = models.CharField(max_length=200, blank=True, default="")
+    builds = models.JSONField(default=list, blank=True)
+    visits = models.PositiveIntegerField(default=0)
+    first_seen = models.DateTimeField(auto_now_add=True)
+    last_seen = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["path", "deliver_unit"]
+        constraints = [
+            models.UniqueConstraint(fields=["entry", "path", "deliver_unit"], name="labsdata_dictionary_source_once")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.path} ({self.deliver_unit or 'any form'})"
+
+
+class DictionaryFlag(models.Model):
+    """Something a scan found that a person should look at: a new field, a new spelling of
+    a known one, a field a newer app build stopped sending, or values that now look more
+    sensitive than the setting assumes. Paths and build numbers only, never values."""
+
+    NEW_FIELD = "new_field"
+    NEW_SPELLING = "new_spelling"
+    GONE = "gone"
+    KIND_CHANGED = "kind_changed"
+    KINDS = [
+        (NEW_FIELD, "New field"),
+        (NEW_SPELLING, "New spelling of a known field"),
+        (GONE, "No longer sent by the newest app build"),
+        (KIND_CHANGED, "Values look more sensitive than before"),
+    ]
+
+    dictionary = models.ForeignKey(DataDictionary, on_delete=models.CASCADE, related_name="flags")
+    entry = models.ForeignKey(DictionaryEntry, null=True, blank=True, on_delete=models.CASCADE, related_name="flags")
+    kind = models.CharField(max_length=20, choices=KINDS)
+    detail = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class DictionaryChange(models.Model):
+    """Who changed what in a dictionary, and from what. One row per change, never edited."""
+
+    dictionary = models.ForeignKey(DataDictionary, on_delete=models.CASCADE, related_name="changes")
+    entry_key = models.CharField(max_length=500, blank=True, default="")
+    action = models.CharField(max_length=30)
+    before = models.JSONField(default=dict, blank=True)
+    after = models.JSONField(default=dict, blank=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
+    at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-at"]
+
+
+class SpaceExport(models.Model):
+    """One de-identified export of a space: the dictionary as it stood when asked for,
+    the visits it covered, what the checks found, and who signed it off.
+
+    Nothing is downloadable until a manager of the space other than the person who asked
+    signs it off, and then only for ``EXPIRY`` -- after which the file is deleted. The
+    file never holds a value the dictionary did not allow (``exports.build``)."""
+
+    QUEUED = "queued"
+    BUILDING = "building"
+    BLOCKED = "blocked"  # untagged fields, or a check failed: nothing to sign
+    READY = "ready"  # built and checked: waiting for sign-off
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    FAILED = "failed"
+    EXPIRED = "expired"
+    STATUSES = [
+        (QUEUED, "Queued"),
+        (BUILDING, "Building"),
+        (BLOCKED, "Blocked"),
+        (READY, "Waiting for sign-off"),
+        (APPROVED, "Signed off"),
+        (REJECTED, "Rejected"),
+        (FAILED, "Failed"),
+        (EXPIRED, "Expired"),
+    ]
+
+    space = models.ForeignKey(DataSpace, on_delete=models.CASCADE, related_name="exports")
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    date_from = models.DateField(null=True, blank=True)
+    date_to = models.DateField(null=True, blank=True)
+    #: The opportunities the requester held when they asked (the space's sources then), as
+    #: ``{id, name, llo}``: exactly what the build reads, checked as them when they asked.
+    opportunities = models.JSONField(default=list)
+    #: The dictionary's entries as they stood when asked for: what this export applies.
+    entries = models.JSONField(default=list)
+    status = models.CharField(max_length=20, choices=STATUSES, default=QUEUED)
+    source_rows = models.PositiveIntegerField(default=0)
+    rows = models.PositiveIntegerField(default=0)
+    checks = models.JSONField(default=dict, blank=True)
+    error = models.TextField(blank=True, default="")
+    file_name = models.CharField(max_length=300, blank=True, default="")
+    built_at = models.DateTimeField(null=True, blank=True)
+    signed_off_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    signed_off_at = models.DateTimeField(null=True, blank=True)
+    signoff_note = models.TextField(blank=True, default="")
+    expires_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"export {self.pk} of space {self.space_id}"

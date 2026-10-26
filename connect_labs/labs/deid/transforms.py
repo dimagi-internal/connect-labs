@@ -17,7 +17,7 @@ import hashlib
 import hmac
 import math
 import re
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, DecimalException, InvalidOperation
 
 from .classify import parse_iso_date
 
@@ -91,7 +91,10 @@ def round_to(value, step) -> str | _Drop:
         return DROP
     if not (number.is_finite() and size.is_finite()) or size <= 0:
         return DROP
-    rounded = (number / size).quantize(Decimal(1), rounding=ROUND_HALF_UP) * size
+    try:
+        rounded = (number / size).quantize(Decimal(1), rounding=ROUND_HALF_UP) * size
+    except (DecimalException, ArithmeticError):
+        return DROP  # too large to round: dropped, and counted as unreadable
     return format(rounded.normalize(), "f")
 
 
@@ -129,7 +132,8 @@ def scrub(text, terms: frozenset[str] = frozenset()) -> str:
     out = _EMAIL.sub("[email]", str(text))
     out = _LONG_NUMBER.sub("[number]", out)
     if terms:
-        out = re.sub(r"[^\W\d_][\w'-]*", lambda m: "[name]" if m.group(0).lower() in terms else m.group(0), out)
+        # Letters only, so "Amina's" and "Amina-Wanjiru" are matched part by part.
+        out = re.sub(r"[^\W\d_]+", lambda m: "[name]" if m.group(0).lower() in terms else m.group(0), out)
     return out
 
 
@@ -196,7 +200,8 @@ def validate_params(setting: str, params: dict | None) -> dict:
         return {"max_days": days}
     if setting == COARSEN:
         decimals = _int(params.get("decimals", 2), "decimals")
-        if not 0 <= decimals <= 4:
-            raise ValueError("decimals is between 0 and 4")
+        # Three decimals is ~100 m: a home, not an area. The leak scan fails such a point.
+        if not 0 <= decimals <= 2:
+            raise ValueError("decimals is between 0 and 2 (2 is about 1 km)")
         return {"decimals": decimals}
     return {}

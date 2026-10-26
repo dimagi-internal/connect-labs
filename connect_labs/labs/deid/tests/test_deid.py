@@ -135,7 +135,11 @@ def test_apply_drops_unknown_settings_and_validate_params_checks():
             transforms.validate_params("round", bad)
     with pytest.raises(ValueError):
         transforms.validate_params("shift", {"max_days": None})
-    assert transforms.validate_params("coarsen", {"decimals": 3}) == {"decimals": 3}
+    assert transforms.validate_params("coarsen", {"decimals": 2}) == {"decimals": 2}
+    with pytest.raises(ValueError):
+        transforms.validate_params("coarsen", {"decimals": 3})  # ~100 m: a home, not an area
+    assert transforms.round_to("12345678901234567890123456789012", 25) is transforms.DROP
+    assert transforms.round_to("1e999999999", 25) is transforms.DROP
 
 
 def test_stricter():
@@ -168,3 +172,12 @@ def test_a_pseudonym_never_trips_the_scan():
 def test_identity_terms_and_leaks():
     terms = leaks.identity_terms([("Ada Obi", "ada_o")], "")
     assert leaks.identity_leaks("ask ada_o", terms) == ["ada_o"]
+
+
+def test_a_possessive_or_hyphenated_name_is_still_found_and_scrubbed():
+    scan = leaks.LeakScanner()
+    scan.learn("Amina Wanjiru")
+    assert "known_name" in scan.scan("Visited Amina's house")
+    assert "known_name" in scan.scan("Amina-Wanjiru came")
+    assert "Amina" not in transforms.scrub("Visited Amina's house", frozenset(scan.words))
+    assert "Wanjiru" not in transforms.scrub("Amina-Wanjiru came", frozenset(scan.words))

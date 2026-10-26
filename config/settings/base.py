@@ -853,6 +853,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "connect_labs.audit_trail.tasks.emit_canary_event",
         "schedule": crontab(minute="*/30"),
     },
+    # De-identified exports (labsdata/exports.py): delete a signed-off file once it expires
+    # and withdraw one nobody signed off. Hourly, because an expiry is a promise to delete.
+    "sweep-space-exports": {
+        "task": "connect_labs.labsdata.tasks.sweep_space_exports",
+        "schedule": crontab(minute=23),
+    },
     # NO prior-audit reconciliation entry, deliberately. It used to live here,
     # running daily under a named person's stored Connect token. The projection
     # is now populated just-in-time by the request that needs it -- authorised by

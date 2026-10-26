@@ -680,3 +680,94 @@ def data_artifact(user, space_id, artifact_id):
         ],
         "space_id": opened.id,
     }
+
+
+# --- a data space's dictionary and de-identified exports (labsdata/dictionary.py, exports.py) ---
+
+
+def _space_tool_error(e) -> MCPToolError:
+    return MCPToolError("INVALID_SCHEMA", e.message, {"reason": e.code})
+
+
+@register(
+    name="data_dictionary",
+    description=(
+        "A data space's data dictionary: every field its visits carry (each form path, per deliver unit, with "
+        "the app builds it was seen in), what kind of value it holds (identifier, free text, gps, case id, date, "
+        "number, categorical...), what it means, and what a de-identified export does with it (keep, drop, round, "
+        "pseudonymise, month, shift, coarsen, scrub). A field is exported only once a person reviewed it: "
+        "`effective` says what an export does now. Also open flags from the last scan (new fields, new spellings, "
+        "fields a newer app build stopped sending). Structure only: never a value. Settings are changed by the "
+        "space's managers on its Dictionary page, not here."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {"space_id": {**_SPACE["space_id"], "description": "The saved data space."}},
+        "required": ["space_id"],
+        "additionalProperties": False,
+    },
+)
+def data_dictionary(user, space_id):
+    from connect_labs.labsdata import dictionary
+
+    opened = _space(_caller(user), space_id)
+    try:
+        out = dictionary.describe(opened)
+    except dictionary.DictionaryError as e:
+        raise _space_tool_error(e) from e
+    out.pop("changes", None)
+    return out
+
+
+@register(
+    name="data_exports",
+    description=(
+        "A data space's de-identified exports: who asked, the date window, rows, status (queued, building, "
+        "blocked, ready for sign-off, signed off, rejected, expired) and every check's result (rows against "
+        "visits, the leak scan, value ranges, duplicates, visits with no case, small groups). Counts and "
+        "column names only, never a value. Downloading and signing off are a person's, on the space's "
+        "Dictionary page."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {"space_id": {**_SPACE["space_id"], "description": "The saved data space."}},
+        "required": ["space_id"],
+        "additionalProperties": False,
+    },
+)
+def data_exports(user, space_id):
+    from connect_labs.labsdata import exports
+
+    opened = _space(_caller(user), space_id)
+    return {"space_id": opened.id, "exports": [exports.describe(e, opened) for e in exports.for_space(opened)[:50]]}
+
+
+@register(
+    name="data_export_request",
+    description=(
+        "Ask for a de-identified export of a data space, optionally for a date window (YYYY-MM-DD). It applies "
+        "the space's dictionary to every visit in the window, refuses any field the dictionary does not know, "
+        "and checks its own output; then a manager of the space other than you signs it off on the Dictionary "
+        "page before anyone can download it. Returns the export's id and status; poll with data_exports."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "space_id": {**_SPACE["space_id"], "description": "The saved data space."},
+            "date_from": {"type": "string", "description": "First visit date, YYYY-MM-DD."},
+            "date_to": {"type": "string", "description": "Last visit date, YYYY-MM-DD."},
+        },
+        "required": ["space_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def data_export_request(user, space_id, date_from=None, date_to=None):
+    from connect_labs.labsdata import dictionary, exports
+
+    opened = _space(_caller(user), space_id)
+    try:
+        export = exports.request(opened, user=user, date_from=date_from, date_to=date_to)
+    except (dictionary.DictionaryError, exports.ExportError) as e:
+        raise _space_tool_error(e) from e
+    return {"export": exports.describe(export, opened)}

@@ -104,6 +104,10 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "data_workflow_context",
         # A data space artifact's code and its queries' SQL (through spaces.open): no rows.
         "data_artifact",
+        # A data space's dictionary (paths, kinds, settings) and its exports' status and
+        # checks (counts and column names): structure only, through spaces.open.
+        "data_dictionary",
+        "data_exports",
         # Workflow definitions: config, statuses, render code, pipeline wiring.
         "workflow_list",
         "workflow_get",
