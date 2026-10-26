@@ -90,14 +90,10 @@ ROUTES: tuple[Route, ...] = (
     Route(GET, r"^/labs/workflow/api/available-pipelines/$", "read"),
     Route(GET, r"^/labs/workflow/api/pipeline/(?<pipe>\d+)/$", "read"),
     Route(GET, r"^/labs/workflow/$", "read"),
-    Route(POST, r"^/custom_analysis/mbw_monitoring/api/opportunity-flws/$", "read"),
-    Route(GET, r"^/custom_analysis/mbw_monitoring/(stream|api/oauth-status|api/snapshot)/$", "read"),
-    Route(GET, r"^/custom_analysis/mbw_monitoring/api/gps/([^/]+)/$", "read"),
     # Own: this run's and this workflow's own records
     Route(POST, r"^/labs/workflow/api/run/(?<run>\d+)/state/$", "own"),
     Route(POST, r"^/labs/workflow/api/run/(?<run>\d+)/(worker-result|flags|rename|reconcile-generation)/$", "own"),
     Route(POST, r"^/labs/workflow/api/(?<def>\d+)/audit-batch-config/$", "own"),
-    Route(POST, r"^/custom_analysis/mbw_monitoring/api/save-snapshot/$", "own"),
     Route(POST, r"^/labs/workflow/api/job/(?<job>[A-Za-z0-9_.:-]+)/cancel/$", "own"),
     # Effect: past this run; the host asks first
     Route(POST, r"^/labs/workflow/api/run/(?<run>\d+)/job/start/$", "effect"),

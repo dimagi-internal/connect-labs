@@ -146,7 +146,6 @@ Labs uses three frontend approaches depending on complexity:
 - Audit creation progress
 - AI agent responses
 - Pipeline data loading
-- Coverage map GeoJSON loading
 
 ## Decision Tree: Building a New Feature
 

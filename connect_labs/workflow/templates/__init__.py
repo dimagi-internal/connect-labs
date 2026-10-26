@@ -59,8 +59,7 @@ TEMPLATES: dict[str, dict] = {}
 #:
 #: `kmc_image_audit` joined once it audited only its own `opportunity_ids` (its
 #: `config.opp_meta` describes them and cannot add one; the frame binds reads to the
-#: former). Left out on purpose: `mbw_monitoring` is deprecated; `page_blank` and other
-#: pages are always sandboxed.
+#: former). Left out on purpose: `page_blank` and other pages are always sandboxed.
 SANDBOX_CHECKED = frozenset(
     {
         "audit_par",

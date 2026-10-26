@@ -550,9 +550,6 @@ class LabsContextMiddleware(MiddlewareMixin):
                 "/labs/pipelines/",
                 "/labs/scout/",
                 "/labs/scout-prod/",
-                "/coverage/",
-                # The deprecated MBW v1 template still serves its endpoints here.
-                "/custom_analysis/mbw_monitoring/",
                 "/funder/",
                 # Programme-scoped: a bare supply URL picks up the session's programme
                 # and shows it, so the links a supply page offers name their scope.

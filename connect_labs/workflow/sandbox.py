@@ -67,8 +67,8 @@ CHART_ADAPTER_URL = (
 LEAFLET_JS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
 LEAFLET_CSS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
 LEAFLET_PREFIX = "https://unpkg.com/leaflet@1.9.4/"
-#: The marker-cluster plugin the deprecated MBW monitoring dashboards load for their GPS
-#: map (script and stylesheets), pinned to the version they name.
+#: Leaflet's marker-cluster plugin (script and stylesheets), pinned to the one version
+#: renders name.
 MARKERCLUSTER_PREFIX = "https://unpkg.com/leaflet.markercluster@1.5.3/"
 MAPBOX_GL_JS_URL = "https://api.mapbox.com/mapbox-gl-js/v3.13.0/mapbox-gl.js"
 MAPBOX_GL_CSS_URL = "https://api.mapbox.com/mapbox-gl-js/v3.13.0/mapbox-gl.css"

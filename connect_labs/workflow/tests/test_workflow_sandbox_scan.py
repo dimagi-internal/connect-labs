@@ -191,10 +191,6 @@ def test_an_event_source_is_checked_like_a_fetch():
     assert _ids(dynamic) == {("event_source", "info")}
     [refused] = scan_render_code(_wrap("  new EventSource('/labs/workflow/api/1/render-code/');"))
     assert refused.pattern == "fetch_refused" and refused.detail.startswith("EventSource: GET")
-    # The deprecated MBW dashboard's own stream is on the table.
-    assert _ids(_wrap("  new EventSource('/custom_analysis/mbw_monitoring/stream/?x=1');")) == {
-        ("event_source", "info")
-    }
 
 
 def test_line_numbers_are_those_of_the_render_code():
@@ -379,9 +375,6 @@ def test_seed_templates_are_scanned_apart():
     assert set(targets) == set(TEMPLATES)
     assert targets["performance_review"].sandboxed_now
     assert targets["kmc_image_audit"].sandboxed_now  # checked since #2473
-    # The deprecated MBW v1 is never checked: in the frame only under "all".
-    assert not targets["mbw_monitoring"].sandboxed_now
-    assert targets["mbw_monitoring"].sandboxed_all
 
 
 class _FakeDA:
@@ -517,8 +510,6 @@ def test_command_refuses_an_unknown_user():
 
 # --- no workflow is kept out of the sandbox (2026-10-13 ruling) -----------------------
 
-MBW_CODE = TEMPLATES["mbw_monitoring"]["render_code"]
-
 
 def _mbw(id_, opp, key="mbw_monitoring"):
     return SimpleNamespace(id=id_, opportunity_id=opp, data={"name": "MBW", "config": {"templateType": key}})
@@ -532,14 +523,6 @@ def test_under_all_every_workflow_is_sandboxed_deprecated_copies_included():
         assert should_sandbox(_mbw(id_, opp), mode="all")
         assert should_sandbox(_mbw(id_, opp, "mbw_monitoring_v2"), mode="all")
     assert not should_sandbox(_mbw(1035, 740), mode="off")
-
-
-def test_the_deprecated_mbw_dashboard_scans_without_a_break():
-    """Its own /custom_analysis/mbw_monitoring/ endpoints and stream are on the table now."""
-    from connect_labs.workflow.sandbox_scan import BREAKS
-
-    breaks = [f for f in scan_render_code(MBW_CODE) if f.severity == BREAKS]
-    assert breaks == []
 
 
 def test_the_live_copies_gaps_are_answered():

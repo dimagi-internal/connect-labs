@@ -34,7 +34,6 @@ PREFIX_TO_FEATURE = {
     "connect_labs/workflow/": "Workflow Engine",
     "connect_labs/tasks/": "Task Management",
     "connect_labs/solicitations/": "Solicitations",
-    "connect_labs/coverage/": "Coverage Maps",
     # Simple Microplan (its page is also the in-app help popup on the editor)
     "connect_labs/microplans/simple_": "Simple Microplan",
     "connect_labs/static/microplans/simple_microplan": "Simple Microplan",
@@ -52,7 +51,6 @@ FEATURE_PAGE_IDS = {
     "Workflow Engine": "3927801864",
     "Task Management": "3928293395",
     "Solicitations": "3927179271",
-    "Coverage Maps": "3927867398",
     "AI Features": "3928817690",
     "Connect MCP & Safe Mode": "3927801885",
 }
@@ -63,7 +61,6 @@ FEATURE_TO_DOC_FILE = {
     "Workflow Engine": "user_docs/workflow-engine.md",
     "Task Management": "user_docs/task-management.md",
     "Solicitations": "user_docs/solicitations.md",
-    "Coverage Maps": "user_docs/coverage-maps.md",
     "Simple Microplan": "user_docs/simple-microplan.md",
     "AI Features": "user_docs/ai-features.md",
     "Connect MCP & Safe Mode": "user_docs/connect-mcp.md",

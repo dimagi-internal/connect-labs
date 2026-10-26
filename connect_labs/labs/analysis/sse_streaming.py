@@ -448,7 +448,7 @@ class AnalysisPipelineSSEMixin:
                 internal try/except caught something and gave up) re-raises the
                 original exception here instead of being silently dropped.
                 Defaults to False to preserve the historical behavior for
-                existing callers (labs/admin, mbw_monitoring) that
+                existing callers (labs/admin) that
                 have never handled a raised exception from this call — before
                 this flag existed, EVENT_ERROR matched none of the branches
                 below and was silently discarded, leaving

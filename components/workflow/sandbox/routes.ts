@@ -67,10 +67,6 @@ export interface Route {
   /** The answer lists pipelines (`{pipelines: [{id}]}`) the viewer may attach: the
    * host remembers their ids, which `pipe` then binds to. */
   remembersPipelines?: boolean;
-  /** Query parameters this route alone binds, beyond the ones every route does
-   * (SCOPE_PARAMS, BOUND_PARAMS): `{session_id: 'run'}` where a view reads a run
-   * by another name. */
-  boundQuery?: Record<string, string>;
   /** For `effect`: what the host's question says, in labs' words, built from the
    * CHECKED body (for a write whose reach the body decides). Replaces `label`. */
   describe?: (body: Record<string, unknown>, ctx: RouteContext) => string;
@@ -183,27 +179,6 @@ function fewAreas(body: Record<string, unknown>): void {
     throw new RouteError(
       `fetch: building footprints for at most ${MAX_FOOTPRINT_AREAS} areas at a time`,
     );
-  }
-}
-
-/** Requires `run_id` in the body, and that it is THIS run (a write a route makes
- * to the run it names). */
-function thisRunRequired(
-  body: Record<string, unknown>,
-  ctx: RouteContext,
-): void {
-  if (ctx.runId === null || Number(body.run_id) !== ctx.runId) {
-    throw new RouteError(
-      'fetch: that request names a run this workflow does not cover',
-    );
-  }
-  if (
-    body.opportunity_id !== undefined &&
-    body.opportunity_id !== null &&
-    body.opportunity_id !== '' &&
-    !ctx.opportunityIds.includes(Number(body.opportunity_id))
-  ) {
-    refuseOpportunity(body.opportunity_id);
   }
 }
 
@@ -614,29 +589,6 @@ export const ROUTES: readonly Route[] = [
   // links of the workflows this one declares (views.WorkflowListView, sandboxed),
   // never the list page itself. Old dashboards find run ids there.
   { methods: GET, gate: 'read', path: p(`/labs/workflow/`) },
-  // The deprecated MBW monitoring dashboards' own endpoints
-  // (workflow/templates/mbw_monitoring/urls.py): reads of this workflow's
-  // opportunity (bound by the query) and its own run (`run_id`, bound).
-  {
-    methods: POST,
-    gate: 'read',
-    path: p(`/custom_analysis/mbw_monitoring/api/opportunity-flws/`),
-    bodyCheck: opportunitiesInBody,
-  },
-  {
-    methods: GET,
-    gate: 'read',
-    path: p(
-      `/custom_analysis/mbw_monitoring/(stream|api/oauth-status|api/snapshot)/`,
-    ),
-    // These views read the run as `run_id` OR `session_id`: both are this run.
-    boundQuery: { session_id: 'run' },
-  },
-  {
-    methods: GET,
-    gate: 'read',
-    path: p(`/custom_analysis/mbw_monitoring/api/gps/([^/]+)/`),
-  },
 
   // --- Own: this run's and this workflow's own records --------------------------
   {
@@ -657,13 +609,6 @@ export const ROUTES: readonly Route[] = [
     gate: 'own',
     path: p(`/labs/workflow/api/${DEF}/audit-batch-config/`),
     bodyCheck: perOppInBody,
-  },
-  // The MBW dashboard's snapshot of THIS run (its body names the run).
-  {
-    methods: POST,
-    gate: 'own',
-    path: p(`/custom_analysis/mbw_monitoring/api/save-snapshot/`),
-    bodyCheck: thisRunRequired,
   },
   {
     methods: POST,
@@ -967,7 +912,6 @@ export function checkFetch(
   for (const [param, name] of Object.entries({
     ...SCOPE_PARAMS,
     ...BOUND_PARAMS,
-    ...(route.boundQuery || {}),
   })) {
     for (const value of parsed.searchParams.getAll(param)) {
       if (!bound(name, value, ctx)) {

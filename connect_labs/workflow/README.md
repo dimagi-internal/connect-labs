@@ -8,14 +8,13 @@ Workflows are defined as JSON definitions with associated React component code (
 
 ## Key Files
 
-| File                        | Purpose                                                                                      |
-| --------------------------- | -------------------------------------------------------------------------------------------- |
-| `data_access.py`            | `WorkflowDataAccess`, `PipelineDataAccess` — both extend `BaseDataAccess`                    |
-| `views.py`                  | ~40 views: workflow CRUD, run management, pipeline editing, SSE streaming, sharing           |
-| `tasks.py`                  | `run_workflow_job` Celery task with pluggable job handler registry                           |
-| `urls.py`                   | URL routing under `/workflow/`                                                               |
-| `templates/`                | Workflow template definitions (Python files auto-discovered by registry)                     |
-| `templates/mbw_monitoring/` | MBW monitoring dashboard — see [DOCUMENTATION.md](templates/mbw_monitoring/DOCUMENTATION.md) |
+| File             | Purpose                                                                            |
+| ---------------- | ---------------------------------------------------------------------------------- |
+| `data_access.py` | `WorkflowDataAccess`, `PipelineDataAccess` — both extend `BaseDataAccess`          |
+| `views.py`       | ~40 views: workflow CRUD, run management, pipeline editing, SSE streaming, sharing |
+| `tasks.py`       | `run_workflow_job` Celery task with pluggable job handler registry                 |
+| `urls.py`        | URL routing under `/workflow/`                                                     |
+| `templates/`     | Workflow template definitions (Python files auto-discovered by registry)           |
 
 ## Data Model
 
