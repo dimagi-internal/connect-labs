@@ -369,7 +369,7 @@ def link_bullets(summary: str, groups: list[dict]) -> str:
     def to_link(match: re.Match) -> str:
         index = int(match.group(1))
         url = groups[index].get("page_url", "") if index < len(groups) else ""
-        return f" [Open in Labs →]({url})" if url else ""
+        return f" [link]({url})" if url else ""
 
     return "\n".join(GROUP_TAG.sub(to_link, line).rstrip() for line in summary.split("\n"))
 
@@ -378,9 +378,9 @@ MD_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
 
 
 def _inline_storage(text: str) -> str:
-    """Escape one line for Confluence storage format, keeping **bold** and [label](url) links."""
+    """Escape one line for Confluence storage format, keeping **bold** and rendering [label](url) as [label]."""
     content = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", html.escape(text))
-    return MD_LINK.sub(r'<a href="\2">\1</a>', content)
+    return MD_LINK.sub(r'[<a href="\2">\1</a>]', content)
 
 
 def markdown_to_storage(text: str) -> str:
@@ -425,9 +425,9 @@ def build_changelog_row(week_date: str, summary: str, groups: list[dict]) -> str
 
 
 def _to_slack_mrkdwn(text: str) -> str:
-    """Convert Markdown bold (**text**) and links ([label](url)) to Slack mrkdwn."""
+    """Convert Markdown bold (**text**) to Slack mrkdwn and links ([label](url)) to a compact [label]."""
     text = re.sub(r"\*\*(.*?)\*\*", r"*\1*", text)
-    return MD_LINK.sub(r"<\2|\1>", text)
+    return MD_LINK.sub(r"[<\2|\1>]", text)
 
 
 def post_to_slack(webhook_url: str, week_label: str, summary: str, groups: list[dict]) -> None:

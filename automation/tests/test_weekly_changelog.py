@@ -431,7 +431,7 @@ def test_link_bullets_replaces_tags_and_drops_unlinked_ones():
     summary = "Theme line.\n- Respondent map {g0}\n- Faster audits {g1}\n- Stray tag {g9}"
     assert link_bullets(summary, groups) == (
         "Theme line.\n"
-        "- Respondent map [Open in Labs →](https://labs.connect.dimagi.com/solicitations/)\n"
+        "- Respondent map [link](https://labs.connect.dimagi.com/solicitations/)\n"
         "- Faster audits\n"
         "- Stray tag"
     )
@@ -440,13 +440,12 @@ def test_link_bullets_replaces_tags_and_drops_unlinked_ones():
 def test_generate_weekly_summary_links_bullets():
     groups = [{"title": "Map", "description": "d", "category": "app", "page_url": "https://x.test/map/"}]
     summary = generate_weekly_summary(_fake_client("Theme.\n- Map drawing {g0}"), groups)
-    assert summary == "Theme.\n- Map drawing [Open in Labs →](https://x.test/map/)"
+    assert summary == "Theme.\n- Map drawing [link](https://x.test/map/)"
 
 
 def test_links_render_for_slack_and_confluence():
-    text = "- **Map** drawing [Open in Labs →](https://x.test/a?b=1&c=2)"
-    assert _to_slack_mrkdwn(text) == "- *Map* drawing <https://x.test/a?b=1&c=2|Open in Labs →>"
+    text = "- **Map** drawing [link](https://x.test/a?b=1&c=2)"
+    assert _to_slack_mrkdwn(text) == "- *Map* drawing [<https://x.test/a?b=1&c=2|link>]"
     assert markdown_to_storage(text) == (
-        "<ul>\n  <li><strong>Map</strong> drawing "
-        '<a href="https://x.test/a?b=1&amp;c=2">Open in Labs →</a></li>\n</ul>'
+        "<ul>\n  <li><strong>Map</strong> drawing " '[<a href="https://x.test/a?b=1&amp;c=2">link</a>]</li>\n</ul>'
     )
