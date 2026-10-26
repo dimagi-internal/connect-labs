@@ -67,11 +67,19 @@ def _summary(record):
     input_schema={"type": "object", "properties": dict(_SCOPE_PROPS), "additionalProperties": False},
 )
 def semantic_registry_list(user, opportunity_id=None, program_id=None, organization_id=None):
+    from connect_labs.labsdata import page_holds
+
+    # Under a page grant, only the registries the page computes from or that cover its
+    # opportunities (``page_holds``); a person's own connection lists everything visible.
+    allowed = page_holds.allowed_registry_ids(user)
     access = _access(user, opportunity_id, program_id, organization_id)
     try:
-        return {"registries": [_summary(r) for r in access.list_registries(include_shared=True)]}
+        registries = access.list_registries(include_shared=True)
     finally:
         access.close()
+    if allowed is not None:
+        registries = [r for r in registries if r.id in allowed]
+    return {"registries": [_summary(r) for r in registries]}
 
 
 @register(

@@ -19,7 +19,9 @@ whose ``grant_jti`` is the ID-JAG's ``jti`` (the canopy SDK's ``DelegatedToken``
 MCP a call's page is found through its own token (``current``). On the plain Data page the
 person changes the selection in place; the page tells labs in the person's own session
 (``update_from_page``, CSRF, as them, every source resolved as them) -- the agent has no
-tool or page action that can.
+tool or page action that can: the page reports a selection only with the DOM event of the
+person's own click (``static/labsdata/data.js`` ``reportSelection``), and a page action that
+names other sources shows them in a canvas tab without changing the selection.
 
 A delegated call whose grant has no hold is refused (fail closed). A person's own MCP use --
 a PAT, an OAuth sign-in -- has no page and is not held here.
@@ -244,7 +246,8 @@ def update_from_page(user, page_token: str, signed_holds: str, opportunity_ids, 
 
 
 def prune(days: int = 2) -> int:
-    """Drop holds older than any grant on them can live (delegated tokens last an hour)."""
+    """Drop holds older than any grant on them can live (a page grant lasts 30 minutes at most:
+    ``labs.canopy.page_grant_seconds``; a page token two hours)."""
     from datetime import timedelta
 
     from django.utils import timezone
@@ -450,6 +453,25 @@ WORKFLOW_EDIT_TOOLS = frozenset(
 )
 
 
+#: Proposable edits that create a pipeline or a registry: only in the page workflow's own scope.
+CREATE_EDIT_TOOLS = frozenset({"pipeline_create", "semantic_registry_create"})
+#: Proposable edits that change a registry (``registry_id``): only the page workflow's own.
+REGISTRY_EDIT_TOOLS = frozenset({"semantic_registry_update", "semantic_registry_set_indicator_meta"})
+#: Definition reads in ``data:read``: under a page grant, only the page's own workflow, its
+#: pipelines and the registries it computes from (or that cover the page's opportunities).
+DEFINITION_READ_TOOLS = frozenset(
+    {
+        "workflow_get",
+        "pipeline_get",
+        "pipeline_sql",
+        "semantic_registry_list",
+        "semantic_registry_get",
+        "semantic_registry_explain",
+    }
+)
+_SCOPE_KEYS = ("opportunity_id", "program_id", "organization_id")
+
+
 def _asked_int(value):
     try:
         return int(value)
@@ -457,21 +479,202 @@ def _asked_int(value):
         return None
 
 
-def run_denial(tool_name: str, arguments: dict) -> OutsidePage | None:
-    """Why a run page's tool may not make this delegated call, or None.
+@dataclass(frozen=True)
+class PageDefinitions:
+    """The definitions a page shows, read as the person: its workflow (and the scope it lives
+    in), the pipelines it reads, the registries it computes from or that cover its
+    opportunities, and every scope those are read in."""
+
+    workflow_id: int | None = None
+    workflow_scope: tuple = ()
+    pipeline_ids: frozenset = frozenset()
+    registry_ids: frozenset = frozenset()
+    scopes: frozenset = frozenset()
+
+
+def _scope_pairs(mapping) -> set:
+    out = set()
+    for key in _SCOPE_KEYS:
+        value = _asked_int((mapping or {}).get(key))
+        if value is not None:
+            out.add((key, value))
+    return out
+
+
+def _read_definition(user, workflow_id: int, scope: dict):
+    """The page's workflow definition, read as the person in its own scope, or None."""
+    import logging
+
+    try:
+        from connect_labs.mcp.connect_token import require_connect_token
+        from connect_labs.workflow.data_access import WorkflowDataAccess
+
+        with WorkflowDataAccess(access_token=require_connect_token(user), **scope) as wda:
+            return wda.get_definition(workflow_id)
+    except Exception:  # noqa: BLE001 -- cannot read it means nothing more is inside
+        logging.getLogger(__name__).info("page hold: workflow %s could not be read", workflow_id, exc_info=True)
+        return None
+
+
+def _covering_registries(user, opportunity_ids) -> set:
+    """Registries whose deployment names one of the page's opportunities (what
+    ``data_describe`` lists as the page's ``registries``), read as the person."""
+    import logging
+
+    ids = {str(int(o)) for o in opportunity_ids or ()}
+    if not ids:
+        return set()
+    try:
+        from connect_labs.mcp.connect_token import require_connect_token
+        from connect_labs.workflow.data_access import SemanticRegistryDataAccess
+
+        access = SemanticRegistryDataAccess(access_token=require_connect_token(user))
+        try:
+            return {
+                int(r.id)
+                for r in access.list_registries(include_shared=True)
+                if ids & {str(k) for k in ((r.deployment or {}).get("llo_map") or {})}
+            }
+        finally:
+            access.close()
+    except Exception:  # noqa: BLE001 -- cannot tell means none
+        logging.getLogger(__name__).info("page hold: registries could not be listed", exc_info=True)
+        return set()
+
+
+def page_definitions(hold, user, *, registries: bool = False) -> PageDefinitions:
+    """What ``hold``'s page shows by way of definitions, read as ``user`` now."""
+    workflow = dict(hold.workflow or {})
+    workflow_id = _asked_int(workflow.get("id"))
+    workflow_scope = {k: workflow[k] for k in ("opportunity_id", "program_id") if workflow.get(k) is not None}
+    pipelines = set(_ints(workflow.get("pipeline_ids")))
+    registry_ids: set = set()
+    scopes = _scope_pairs(workflow_scope)
+    opportunity_ids = list(hold.opportunity_ids) if hold.opportunity_ids is not None else []
+    scopes |= {("opportunity_id", int(o)) for o in opportunity_ids}
+    if workflow_id is not None and len(workflow_scope) == 1 and user is not None:
+        definition = _read_definition(user, workflow_id, workflow_scope)
+        data = getattr(definition, "data", None) or {}
+        for source in data.get("pipeline_sources") or []:
+            pid = _asked_int((source or {}).get("pipeline_id"))
+            if pid is not None:
+                pipelines.add(pid)
+                scopes |= _scope_pairs((source or {}).get("home_scope"))
+        bound = data.get("registry_source") or {}
+        if _asked_int(bound.get("registry_id")) is not None:
+            registry_ids.add(int(bound["registry_id"]))
+            scopes |= _scope_pairs(bound)
+    if registries and user is not None:
+        if hold.opportunity_ids is None:
+            opportunity_ids = _workflow_opportunities(hold, _caller_for(user))
+            scopes |= {("opportunity_id", int(o)) for o in opportunity_ids}
+        registry_ids |= _covering_registries(user, opportunity_ids)
+    return PageDefinitions(
+        workflow_id=workflow_id,
+        workflow_scope=tuple(sorted(_scope_pairs(workflow_scope))),
+        pipeline_ids=frozenset(pipelines),
+        registry_ids=frozenset(registry_ids),
+        scopes=frozenset(scopes),
+    )
+
+
+def _caller_for(user):
+    try:
+        from connect_labs.mcp.tools.labsdata import _caller
+
+        return _caller(user)
+    except Exception:  # noqa: BLE001 -- no caller means no opportunities
+        return None
+
+
+def _outside_scopes(defs: PageDefinitions, arguments: dict) -> list:
+    """The scope arguments a call names that the page does not read in."""
+    return sorted(f"{k} {v}" for k, v in _scope_pairs(arguments) if (k, v) not in defs.scopes)
+
+
+def allowed_registry_ids(user) -> frozenset | None:
+    """Under a page grant, the registries the page's agent may read; None off a page."""
+    hold = current()
+    if hold is None:
+        return None
+    if hold is _NO_HOLD:
+        return frozenset()
+    return page_definitions(hold, user, registries=True).registry_ids
+
+
+def _definition_denial(hold, tool_name: str, arguments: dict, user) -> OutsidePage | None:
+    """A definition read under a page grant: only the page's own."""
+    defs = page_definitions(hold, user, registries=tool_name.startswith("semantic_registry_"))
+    outside = _outside_scopes(defs, arguments)
+    if outside:
+        return _refuse(hold, f"{', '.join(outside).capitalize()} is not a scope this page reads in.")
+    if tool_name == "workflow_get":
+        asked = _asked_int(arguments.get("workflow_id"))
+        if defs.workflow_id is None or asked != defs.workflow_id:
+            return _refuse(hold, f"Workflow {arguments.get('workflow_id')} is not this page's.")
+        if defs.workflow_scope and not set(defs.workflow_scope) & _scope_pairs(arguments):
+            return _refuse(hold, "Read this page's workflow in its own scope.")
+    elif tool_name in ("pipeline_get", "pipeline_sql"):
+        if _asked_int(arguments.get("pipeline_id")) not in defs.pipeline_ids:
+            return _refuse(hold, f"Pipeline {arguments.get('pipeline_id')} is not one this page reads.")
+    elif tool_name in ("semantic_registry_get", "semantic_registry_explain"):
+        if _asked_int(arguments.get("registry_id")) not in defs.registry_ids:
+            return _refuse(hold, f"Registry {arguments.get('registry_id')} is not one this page computes from.")
+    # semantic_registry_list: the tool itself lists only allowed_registry_ids().
+    return None
+
+
+def _edit_denial(hold, tool: str, inner: dict, user) -> OutsidePage | None:
+    """A proposed edit under a page grant: only to the page's own workflow, pipelines and registry."""
+    page = hold.workflow or {}
+    if tool in WORKFLOW_EDIT_TOOLS:
+        if page.get("id") is None or _asked_int(inner.get("workflow_id")) != page.get("id"):
+            return _refuse(hold, f"Workflow {inner.get('workflow_id')} is not the workflow this page shows.")
+        return None
+    if tool == "pipeline_update_schema":
+        if _asked_int(inner.get("pipeline_id")) not in set(page.get("pipeline_ids") or ()):
+            return _refuse(hold, f"Pipeline {inner.get('pipeline_id')} is not one this page's workflow reads.")
+        return None
+    if page.get("id") is None:
+        return _refuse(hold, f"{tool} changes a workflow's definitions, and this page shows no workflow.")
+    defs = page_definitions(hold, user)
+    if tool in CREATE_EDIT_TOOLS:
+        # A new pipeline or registry belongs where the page's workflow lives, and to it alone.
+        if _scope_pairs(inner) != set(defs.workflow_scope):
+            return _refuse(hold, f"{tool} may create only in this page's workflow's own scope.")
+        if inner.get("is_shared"):
+            return _refuse(hold, "A registry made from this page is the workflow's own, not shared.")
+        return None
+    if tool in REGISTRY_EDIT_TOOLS:
+        if _asked_int(inner.get("registry_id")) not in defs.registry_ids:
+            return _refuse(
+                hold, f"Registry {inner.get('registry_id')} is not the one this page's workflow computes from."
+            )
+        outside = _outside_scopes(defs, inner)
+        if outside:
+            return _refuse(hold, f"{', '.join(outside).capitalize()} is not a scope this page reads in.")
+        return None
+    return _refuse(hold, f"{tool} is not an edit this page can propose.")
+
+
+def run_denial(tool_name: str, arguments: dict, user=None) -> OutsidePage | None:
+    """Why a page grant may not make this delegated call, or None.
 
     ``RUN_TOOLS`` must name the page's own run (and, when given, its scope); an edit the
-    agent proposes (``workflow_edit_propose``) must change the page's own workflow, or one
-    of the pipelines that workflow reads. Off a page (PAT, OAuth): None. A delegated call
-    whose grant recorded no page: refused."""
+    agent proposes (``workflow_edit_propose``) must change the page's own workflow, one of
+    the pipelines it reads or the registry it computes from, or create one in its scope; a
+    definition read (``DEFINITION_READ_TOOLS``) must be of the page's own. Off a page (PAT,
+    OAuth): None. A delegated call whose grant recorded no page: refused."""
     arguments = arguments or {}
-    if tool_name not in RUN_TOOLS and tool_name != "workflow_edit_propose":
+    if tool_name not in RUN_TOOLS and tool_name != "workflow_edit_propose" and tool_name not in DEFINITION_READ_TOOLS:
         return None
     hold = current()
     if hold is None:
         return None
     if hold is _NO_HOLD:
         return _no_hold()
+    if tool_name in DEFINITION_READ_TOOLS:
+        return _definition_denial(hold, tool_name, arguments, user)
     page = hold.workflow or {}
     if tool_name in RUN_TOOLS:
         run_id = page.get("run_id")
@@ -489,10 +692,4 @@ def run_denial(tool_name: str, arguments: dict) -> OutsidePage | None:
     # workflow_edit_propose {tool, arguments}
     tool = (arguments.get("tool") or "").strip()
     inner = arguments.get("arguments") if isinstance(arguments.get("arguments"), dict) else {}
-    if tool in WORKFLOW_EDIT_TOOLS:
-        if page.get("id") is None or _asked_int(inner.get("workflow_id")) != page.get("id"):
-            return _refuse(hold, f"Workflow {inner.get('workflow_id')} is not the workflow this page shows.")
-    elif tool == "pipeline_update_schema":
-        if _asked_int(inner.get("pipeline_id")) not in set(page.get("pipeline_ids") or ()):
-            return _refuse(hold, f"Pipeline {inner.get('pipeline_id')} is not one this page's workflow reads.")
-    return None
+    return _edit_denial(hold, tool, inner, user)

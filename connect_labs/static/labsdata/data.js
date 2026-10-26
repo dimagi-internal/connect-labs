@@ -178,16 +178,42 @@
         url.searchParams.set('programs', state.programs.join(','));
       if (state.opps.length) url.searchParams.set('opps', state.opps.join(','));
       window.history.replaceState(null, '', url);
-      reportSelection();
     }
     pushPageState();
   }
 
   // Tell labs what the plain page now shows, in the person's own session: the page's agent
   // reads only that (labsdata/page_holds.py). Only the latest change matters.
+  //
+  // Reachable ONLY from the person's own gesture: it takes the DOM event of their click
+  // (or key, or change) and refuses anything else. A page action (the agent, through
+  // canopy) is called with plain JSON and holds no such event, so nothing the agent does
+  // can widen what it may read -- not by opening a saved query, not by naming sources.
+  // Labs signed the page's first selection when it drew it, so loading reports nothing.
+  const GESTURES = new Set([
+    'click',
+    'keydown',
+    'keyup',
+    'change',
+    'input',
+    'submit',
+    'pointerup',
+  ]);
+  function isGesture(e) {
+    return (
+      !!e &&
+      typeof window.Event === 'function' &&
+      e instanceof window.Event &&
+      GESTURES.has(e.type)
+    );
+  }
   let reported = '';
-  function reportSelection() {
-    if (!cfg.pageHoldsUrl || !cfg.panelPageToken) return;
+  function reportSelection(gesture) {
+    if (!isGesture(gesture))
+      throw new Error(
+        'The selection changes only by the person’s own click; it reports nothing otherwise.',
+      );
+    if (space || !cfg.pageHoldsUrl || !cfg.panelPageToken) return;
     const body = {
       page_token: cfg.panelPageToken,
       page_holds: cfg.panelHolds,
@@ -270,9 +296,9 @@
           n ? `${n} opp${n === 1 ? '' : 's'}` : '',
           locked
             ? null
-            : () => {
+            : (e) => {
                 state.workflow = null;
-                changed();
+                changed(e);
               },
           'wf',
         ),
@@ -286,9 +312,9 @@
           'program',
           locked
             ? null
-            : () => {
+            : (e) => {
                 state.programs = state.programs.filter((x) => x !== pid);
-                changed();
+                changed(e);
               },
         ),
       );
@@ -301,9 +327,9 @@
           `#${oid}`,
           locked
             ? null
-            : () => {
+            : (e) => {
                 state.opps = state.opps.filter((x) => x !== oid);
-                changed();
+                changed(e);
               },
         ),
       );
@@ -355,10 +381,10 @@
           {
             type: 'button',
             class: 'ex-option',
-            onclick: () => {
+            onclick: (e) => {
               state.programs.push(p.id);
               closePicker();
-              changed();
+              changed(e);
             },
           },
           el('span', { class: 'kind' }, 'Program'),
@@ -378,10 +404,10 @@
           {
             type: 'button',
             class: 'ex-option',
-            onclick: () => {
+            onclick: (e) => {
               state.opps.push(o.id);
               closePicker();
-              changed();
+              changed(e);
             },
           },
           el('span', { class: 'kind' }, 'Opp'),
@@ -436,12 +462,12 @@
             {
               type: 'button',
               class: 'ex-option',
-              onclick: () => {
+              onclick: (e) => {
                 state.workflow = { id: w.id, name: w.name, ...w.scope };
                 state.opps = [];
                 state.programs = [];
                 box.hidden = true;
-                changed();
+                changed(e);
               },
             },
             w.name || `Workflow ${w.id}`,
@@ -480,10 +506,13 @@
     }
   }
 
-  function changed() {
+  // The person changed the selection (`gesture`: their click). On a space's page while
+  // its sources are edited nothing is reported: the space's agent is held to the space.
+  function changed(gesture) {
     $('ex-wf-list').hidden = true;
     described = null;
     renderChips();
+    reportSelection(gesture);
     describe(false);
   }
 
@@ -1441,7 +1470,7 @@
       { class: 'ex-saved-row', [idAttr]: q.id },
       el(
         'button',
-        { class: 'open', title, onclick: () => onOpen(q) },
+        { class: 'open', title, onclick: (e) => onOpen(q, e) },
         q.name,
         q.version > 1 ? el('small', {}, ` v${q.version}`) : '',
         q.saved_by ? el('small', {}, ` · ${q.saved_by}`) : '',
@@ -1523,33 +1552,51 @@
     }
   }
 
-  // A personal query brings its own selection. Off a space it opens in the editor, as
-  // before; on a space's page it opens in a tab over its own selection, leaving the
-  // space's selection as it is.
-  async function openSaved(q) {
+  // A personal query's own selection, as a call body names it.
+  function savedSelection(q) {
     const sel = q.selection || {};
-    if (space) {
-      return openQueryTab({
-        kind: 'saved',
-        title: q.name,
-        sql: q.sql,
-        display: q.display || null,
-        max_rows: q.max_rows,
-        selection: sel.workflow
-          ? { workflow: sel.workflow }
-          : {
-              opportunity_ids: sel.opportunity_ids || [],
-              program_ids: sel.program_ids || [],
-            },
-      });
-    }
+    return sel.workflow
+      ? { workflow: sel.workflow }
+      : {
+          opportunity_ids: sel.opportunity_ids || [],
+          program_ids: sel.program_ids || [],
+        };
+  }
+
+  // A personal query in a canvas tab over its own selection, leaving the page's selection
+  // -- and what the page's agent may read -- as it is.
+  function openSavedInTab(q) {
+    return openQueryTab({
+      kind: 'saved',
+      title: q.name,
+      sql: q.sql,
+      display: q.display || null,
+      max_rows: q.max_rows,
+      selection: savedSelection(q),
+    });
+  }
+
+  // A personal query brings its own selection. Clicked on the plain Data page it becomes
+  // the page's selection, in the editor (`gesture`: the person's click, which is what
+  // lets the page tell labs its new selection); on a space's page it opens in a tab over
+  // its own selection, leaving the space's as it is.
+  async function openSaved(q, gesture) {
+    if (space) return openSavedInTab(q);
+    const sel = q.selection || {};
+    // Refused before anything changes: only the person's own click moves the selection.
+    if (!isGesture(gesture))
+      throw new Error(
+        'Only the person’s own click opens a saved query as the page’s selection.',
+      );
     state.workflow = sel.workflow || null;
     state.opps = state.workflow ? [] : [...(sel.opportunity_ids || [])];
     state.programs = state.workflow ? [] : [...(sel.program_ids || [])];
     $('ex-sql').value = q.sql;
     $('ex-max').value = q.max_rows;
     display = q.display || null;
+    described = null;
     renderChips();
+    reportSelection(gesture);
     showTab('editor');
     await describe(false);
     await run();
@@ -2731,7 +2778,10 @@
   // -- never rows, counts, answers or a query's error text (a cast error can quote a
   // value) -- so sensitive data stays in the person's browser and never travels back
   // through canopy. Each checks its input and throws to refuse. None of them saves
-  // anything or changes a space's sources: those are the person's own clicks.
+  // anything, changes a space's sources or changes the plain page's selection: those
+  // are the person's own clicks. The selection decides what the page's agent may read
+  // (labsdata/page_holds.py), so reportSelection takes a click's DOM event, which no
+  // page action holds -- an action that names other sources shows them in a tab.
 
   const MAX_SQL = 20000;
 
@@ -2920,18 +2970,22 @@
               ? 'No such saved query in this space or in the person’s own queries.'
               : 'No such saved query among the person’s own queries.',
           );
-        const out = await openSaved(mine);
+        // In its own tab, over its own selection: the page's selection -- what you may
+        // read -- stays the person's to change.
+        const out = await openSavedInTab(mine);
         return {
           ok: true,
           opened: true,
-          outcome: out && out.ok ? 'shown_to_person' : 'error_shown_to_person',
+          tab: out.tab,
+          outcome: out.ok ? 'shown_to_person' : 'error_shown_to_person',
         };
       },
       {
         description:
-          'Open a saved query or an artifact in the Data page canvas, run as the person: one of this space’s queries (any ' +
-          'version) or one of the person’s own ("My queries"), or one of this space’s artifacts (any version), drawn in the ' +
-          'sandbox. Returns only an acknowledgement.',
+          'Open a saved query or an artifact in a new Data page canvas tab, run as the person: one of this space’s queries ' +
+          '(any version) or one of the person’s own ("My queries", over its own saved selection), or one of this space’s ' +
+          'artifacts (any version), drawn in the sandbox. It never changes the page’s selection, so it never changes what ' +
+          'you may read: only the person does that. Returns only an acknowledgement.',
         parameters: {
           type: 'object',
           properties: {
@@ -3166,25 +3220,37 @@
           throw new Error(
             'This page is a data space: its sources are fixed. Send sql alone (or use page_showQuery).',
           );
-        if (workflow && workflow.id) {
-          state.workflow = {
-            id: Number(workflow.id),
-            ...(workflow.opportunity_id
-              ? { opportunity_id: Number(workflow.opportunity_id) }
-              : { program_id: Number(workflow.program_id) }),
+        if (names) {
+          // Sources of its own: shown in a tab over them, as the person. The page's
+          // selection -- and what you may read -- is the person's alone to change.
+          const selection =
+            workflow && workflow.id
+              ? {
+                  workflow: {
+                    id: Number(workflow.id),
+                    ...(workflow.opportunity_id
+                      ? { opportunity_id: Number(workflow.opportunity_id) }
+                      : { program_id: Number(workflow.program_id) }),
+                  },
+                }
+              : {
+                  opportunity_ids: ids(opportunity_ids),
+                  program_ids: ids(program_ids),
+                };
+          const out = await openQueryTab({
+            kind: 'query',
+            title: 'Query from the agent',
+            sql,
+            selection,
+          });
+          return {
+            ok: true,
+            placed: true,
+            ran: true,
+            tab: out.tab,
+            outcome: out.ok ? 'shown_to_person' : 'error_shown_to_person',
+            note: 'Shown in its own tab over the sources you named; the page’s selection is unchanged.',
           };
-          state.opps = [];
-          state.programs = [];
-          described = null;
-          renderChips();
-          await describe(false);
-        } else if (ids(opportunity_ids).length || ids(program_ids).length) {
-          state.workflow = null;
-          state.opps = ids(opportunity_ids);
-          state.programs = ids(program_ids);
-          described = null;
-          renderChips();
-          await describe(false);
         }
         showTab('editor');
         $('ex-sql').value = sql;
@@ -3200,7 +3266,8 @@
       },
       {
         description:
-          'Put a SQL query into the Data page editor for the person, over the selection you give (and optionally run it in their browser). ' +
+          'Put a SQL query into the Data page editor for the person (and optionally run it in their browser). Given sources ' +
+          'of its own, it is shown and run in its own canvas tab over them instead, and the page’s selection is left as it is. ' +
           'Prefer page_showQuery, which shows it in its own canvas tab. Returns only an acknowledgement: the result is shown to the person, never returned to you.',
         parameters: {
           type: 'object',
@@ -3214,7 +3281,7 @@
               type: 'array',
               items: { type: 'integer' },
               description:
-                'Optional (not on a space’s page): query these opportunities (the person must hold them).',
+                'Optional (not on a space’s page): run it in its own tab over these opportunities (the person must hold them).',
             },
             program_ids: {
               type: 'array',

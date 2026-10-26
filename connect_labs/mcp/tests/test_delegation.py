@@ -159,7 +159,10 @@ def test_a_redeemed_token_is_stored_as_a_hash_bound_to_the_visitor(client, enabl
     assert response.status_code == 200, response.content
     body = response.json()
     assert body["token_type"] == "DPoP"
-    assert 0 < body["expires_in"] <= 900
+    from connect_labs.labs import canopy
+
+    # A page grant lasts PAGE_GRANT_SECONDS (30 minutes), within the SDK's cap.
+    assert 0 < body["expires_in"] <= canopy.page_grant_seconds()
     assert body["scope"] == "marketplace:read"
     assert "refresh_token" not in body
     row = DelegatedToken.objects.get()
@@ -523,3 +526,17 @@ def test_a_pat_sent_with_a_dpop_scheme_is_not_a_delegated_token(enabled):
 
     assert resolved[0] == user
     assert resolved[1] == "pat"
+
+
+def test_a_page_grant_asks_for_thirty_minutes_within_the_sdks_cap(enabled):
+    """Labs asks for a 30-minute page grant; the SDK issues at most its contract cap (900 s
+    through dimagi-canopy 0.22.x). When the pin moves to a release whose cap is 1800 s this
+    must read 1800 -- if it does not, the SDK takes the lifetime under another setting name
+    than ``CANOPY_HOST["ACCESS_TOKEN_TTL"]`` (``labs/canopy.py`` ``host_settings``)."""
+    from canopy_sdk import contract
+
+    from connect_labs.labs import canopy
+
+    assert canopy.PAGE_GRANT_SECONDS == 1800
+    assert canopy.page_grant_seconds() == min(1800, contract.ACCESS_TOKEN_MAX_LIFETIME)
+    assert canopy.host_config().access_token_ttl == canopy.page_grant_seconds()

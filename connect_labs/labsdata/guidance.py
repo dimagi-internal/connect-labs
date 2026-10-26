@@ -119,7 +119,8 @@ sees. Each runs in their browser, as them, and returns only an acknowledgement -
   with data_validate first, give a short title ("Visits per worker, last 30 days") and the same `display`
   (labels, formats, chart) you would give data_query. The page keeps the person's own editor untouched.
 - page_openItem {kind: "query" | "artifact", id}: open one of this space's saved queries (or one of the person's
-  own) or one of its artifacts in the canvas; data_describe with space_id lists them under `space.items`.
+  own) or one of its artifacts in a new canvas tab; data_describe with space_id lists them under `space.items`.
+  It never changes the page's selection, so it never widens what you may read: only the person does that.
 - page_showArtifactDraft {name, code, queries}: draw a DRAFT artifact in the canvas (below). Nothing is saved.
 - page_proposeSave {name, sql, display} for a query, or {kind: "artifact", name, code, queries} for an artifact:
   fill the page's Save dialog so the person can keep it in this space with one click. Nothing is saved until they

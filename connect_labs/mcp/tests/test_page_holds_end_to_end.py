@@ -108,7 +108,9 @@ def test_a_grant_whose_page_was_not_recorded_reads_nothing(labsdata, canopy_rede
         sent.update(payload)
         return {"token": "canopy-contact-token", "expires_at": "", "kind": "contact"}
 
-    request = RequestFactory().post(panel["options"]["tokenUrl"])
+    request = RequestFactory().post(
+        panel["options"]["tokenUrl"], data=json.dumps({"grant": True}), content_type="application/json"
+    )
     request.user = visitor
     with mock.patch.object(sdk_views, "mint_contact_token", mint):
         assert sdk_views.panel_token(request).status_code == 200
@@ -166,6 +168,45 @@ def test_the_person_widens_the_data_page_and_its_agent_follows(labsdata, canopy_
     assert json.loads(response.content)["opportunity_ids"] == [REAL.id, OTHER.id]
     ok, text = _query(labsdata, token, [OTHER.id])
     assert ok, text
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_agent_cannot_widen_the_data_page_itself(labsdata, canopy_redeem, visitor, real_visits, client):
+    """The selection is the person's: canopy's token at the person's own page-holds endpoint
+    is not their session, so it changes nothing, and the agent still reads only the page."""
+    from django.urls import reverse
+
+    panel = _render_data_page(visitor)
+    token = _grant(canopy_redeem, visitor, panel)
+    response = client.post(
+        reverse("labsdata:page_holds"),
+        data=json.dumps(
+            {
+                "page_token": panel["page_token"],
+                "page_holds": panel["page_holds"],
+                "opportunity_ids": [REAL.id, OTHER.id],
+            }
+        ),
+        content_type="application/json",
+        HTTP_AUTHORIZATION=f"DPoP {token}",
+    )
+    assert response.status_code in (302, 401, 403)
+    ok, text = _query(labsdata, token, [OTHER.id])
+    assert not ok and "not part of this page" in text
+
+
+def test_only_the_persons_page_view_changes_a_hold():
+    """Structural: the one way a hold changes after the mint is the person's own Data page
+    view (CSRF, their session). No MCP tool, and nothing else, calls it."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    callers = sorted(
+        str(path.relative_to(root))
+        for path in root.rglob("*.py")
+        if "/tests/" not in str(path) and "update_from_page(" in path.read_text(encoding="utf-8")
+    )
+    assert callers == ["labsdata/page_holds.py", "labsdata/views.py"]
 
 
 @pytest.mark.django_db(transaction=True)
@@ -266,7 +307,9 @@ def test_a_run_page_grant_minted_without_its_record_reaches_no_run(enabled, cano
         sent.update(payload)
         return {"token": "canopy-contact-token", "expires_at": "", "kind": "contact"}
 
-    request = RequestFactory().post(panel["options"]["tokenUrl"])
+    request = RequestFactory().post(
+        panel["options"]["tokenUrl"], data=json.dumps({"grant": True}), content_type="application/json"
+    )
     request.user = visitor
     with mock.patch.object(sdk_views, "mint_contact_token", mint):
         assert sdk_views.panel_token(request).status_code == 200

@@ -107,6 +107,14 @@ def _call(name, user, **kwargs):
     return get_tool(name).handler(user=user, **kwargs)
 
 
+def _as_the_persons_view():
+    """canopy's verified ``Canopy-View`` for this call: the person's own View is calling
+    (``mcp/server.py`` binds it once per call; here it is bound by hand)."""
+    from connect_labs.mcp import execution
+
+    return execution.bound_view(execution.CallView(view=object()))
+
+
 def test_context_names_the_indicators_bands_and_the_workflows_actions(user, wda):
     out = _call("workflow_run_context", user, run_id=70, program_id=25)
     assert [i["id"] for i in out["indicators"]] == ["wt", "fu"]
@@ -239,7 +247,7 @@ def test_a_canopy_call_is_recorded_as_canopy(user, actionable, monkeypatch, cano
         action="initiate_ai_coach",
         arguments={"workers": [{"key": "10::asha"}]},
     )
-    with patch("connect_labs.workflow.tasks.execute_workflow_action.delay"):
+    with patch("connect_labs.workflow.tasks.execute_workflow_action.delay"), _as_the_persons_view():
         _call(
             "workflow_run_action",
             user,
@@ -488,7 +496,7 @@ def test_the_view_sends_what_it_showed(user, actionable, django_capture_on_commi
     from unittest.mock import patch
 
     shown = _coach_preview(user, tool="workflow_action_preview_view")
-    with patch("connect_labs.workflow.tasks.execute_workflow_action.delay"):
+    with patch("connect_labs.workflow.tasks.execute_workflow_action.delay"), _as_the_persons_view():
         with django_capture_on_commit_callbacks(execute=True):
             sent = _call(
                 "workflow_run_action",
@@ -505,6 +513,91 @@ def test_the_view_sends_what_it_showed(user, actionable, django_capture_on_commi
     # A reload of the View shows it was sent.
     again = _coach_preview(user, tool="workflow_action_preview_view")
     assert [e["id"] for e in again["executions"]] == [execution.pk]
+
+
+TASK = {"key": "follow_up", "type": "create_task", "label": "Follow up", "defaults": {"title": "Follow up"}}
+
+
+def _with_task(actionable):
+    definition = _definition_with_opps()
+    definition.data["config"]["actions"] = [COACH, TASK]
+    actionable.get_definition.return_value = definition
+
+
+def _task(user, tool="workflow_run_action", **extra):
+    return _call(
+        tool,
+        user,
+        run_id=70,
+        program_id=25,
+        action="follow_up",
+        arguments={"workers": [{"key": "10::asha"}]},
+        **extra,
+    )
+
+
+def test_through_canopy_every_action_is_the_persons_click(user, actionable, canopy):
+    """A follow-up task files as the person: through canopy the agent previews it and gets
+    no token; the person's card (the View) gets one and is where it is done."""
+    _with_task(actionable)
+    agent = _task(user)
+    assert "confirm" not in agent and "confirm_expires_in" not in agent
+    assert agent["sent_by"] == "click"
+    assert "Nothing has been done" in agent["next"] and "no `confirm` for you" in agent["next"]
+    assert "button on the card" in agent["next"]
+    view = _task(user, tool="workflow_action_preview_view")
+    assert view["confirm"] and view["sent_by"] == "click"
+    context = _call("workflow_run_context", user, run_id=70, program_id=25)
+    how = {a["key"]: a["how_to_run"] for a in context["actions"]}
+    assert how["follow_up"] == wa.HOW_TO_RUN_CLICK_TO_CONFIRM
+    assert how["initiate_ai_coach"] == wa.HOW_TO_RUN_CLICK_TO_SEND
+
+
+def test_through_canopy_only_the_persons_view_can_commit(user, actionable, canopy):
+    """Even holding a View's token, a delegated commit without canopy's Canopy-View (the
+    agent's call) is refused, for a task and for coaching alike."""
+    from unittest.mock import patch
+
+    _with_task(actionable)
+    for action, shown in (
+        ("follow_up", _task(user, tool="workflow_action_preview_view")),
+        ("initiate_ai_coach", _coach_preview(user, tool="workflow_action_preview_view")),
+    ):
+        with pytest.raises(MCPToolError) as e:
+            _call(
+                "workflow_run_action",
+                user,
+                run_id=70,
+                program_id=25,
+                action=action,
+                arguments=shown["arguments"],
+                confirm=shown["confirm"],
+            )
+        assert e.value.code == "PERMISSION_DENIED" and e.value.details["reason"] == "click_only"
+    assert not WorkflowActionExecution.objects.exists()
+    shown = _task(user, tool="workflow_action_preview_view")
+    with patch("connect_labs.workflow.tasks.execute_workflow_action.delay"), _as_the_persons_view():
+        done = _call(
+            "workflow_run_action",
+            user,
+            run_id=70,
+            program_id=25,
+            action="follow_up",
+            arguments=shown["arguments"],
+            confirm=shown["confirm"],
+        )
+    assert done["execution"]["id"] == WorkflowActionExecution.objects.get().pk
+
+
+def test_a_persons_own_agent_still_confirms_a_task_in_chat(user, actionable):
+    """Off canopy (their own token or sign-in) a non-coaching action keeps its token and the
+    View gets none: the agent confirms it with them."""
+    _with_task(actionable)
+    assert _task(user)["confirm"]
+    view = _task(user, tool="workflow_action_preview_view")
+    assert "confirm" not in view and view["sent_by"] == "agent"
+    context = _call("workflow_run_context", user, run_id=70, program_id=25)
+    assert {a["key"]: a["how_to_run"] for a in context["actions"]}["follow_up"] == wa.HOW_TO_RUN_CONFIRMED
 
 
 def test_the_views_qa_send_is_refused_to_anyone_not_dimagi_staff(user, actionable):

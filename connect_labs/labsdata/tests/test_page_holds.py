@@ -172,3 +172,113 @@ def test_for_workflow_records_the_run_and_its_pipelines():
     assert holds.workflow == {"id": 9027, "program_id": 10121, "run_id": 10021, "pipeline_ids": [19776, 19777]}
     signed = page_holds.sign(holds, "tok", 1)
     assert page_holds._unsign(signed, "tok", 1).workflow["run_id"] == 10021
+
+
+# ---- definitions: a page's agent reads and edits only the page's own ----------------------
+
+
+def _definitions(**kw):
+    """What the page's workflow reads, as ``page_definitions`` would find it, read as the person."""
+    defaults = dict(
+        workflow_id=9027,
+        workflow_scope=(("program_id", 10121),),
+        pipeline_ids=frozenset({19776, 19777}),
+        registry_ids=frozenset({25526}),
+        scopes=frozenset({("program_id", 10121), ("opportunity_id", 10122)}),
+    )
+    return mock.patch.object(
+        page_holds, "page_definitions", return_value=page_holds.PageDefinitions(**{**defaults, **kw})
+    )
+
+
+def test_definition_reads_off_a_page_are_not_held():
+    with mock.patch.object(page_holds, "current", return_value=None):
+        assert page_holds.run_denial("workflow_get", {"workflow_id": 1, "program_id": 2}) is None
+        assert page_holds.run_denial("semantic_registry_get", {"registry_id": 1}) is None
+        assert page_holds.allowed_registry_ids(user=None) is None
+
+
+def test_definition_reads_with_no_recorded_page_are_refused():
+    with mock.patch.object(page_holds, "current", return_value=page_holds._NO_HOLD):
+        assert page_holds.run_denial("pipeline_get", {"pipeline_id": 1, "program_id": 2}).code == "outside_page"
+        assert page_holds.allowed_registry_ids(user=None) == frozenset()
+
+
+def test_definition_reads_reach_only_the_pages_workflow_pipelines_and_registry():
+    with mock.patch.object(page_holds, "current", return_value=_run_hold()), _definitions():
+
+        def denied(tool, **arguments):
+            return page_holds.run_denial(tool, arguments, user=object())
+
+        assert denied("workflow_get", workflow_id=9027, program_id=10121) is None
+        assert denied("workflow_get", workflow_id=9029, program_id=10121) is not None
+        # Its own workflow, read in another scope, is outside too.
+        assert denied("workflow_get", workflow_id=9027, program_id=10061) is not None
+        assert denied("pipeline_get", pipeline_id=19776, program_id=10121) is None
+        assert denied("pipeline_sql", pipeline_id=19777, opportunity_id=10122) is None
+        assert denied("pipeline_sql", pipeline_id=555, program_id=10121) is not None
+        assert denied("semantic_registry_get", registry_id=25526) is None
+        assert denied("semantic_registry_explain", registry_id=25526, program_id=10121) is None
+        refused = denied("semantic_registry_get", registry_id=1)
+        assert refused is not None and "Data page" in refused.message
+        assert denied("semantic_registry_list", organization_id=7) is not None
+        assert denied("semantic_registry_list", program_id=10121) is None
+
+
+def test_the_registry_list_under_a_page_is_the_pages_registries():
+    with mock.patch.object(page_holds, "current", return_value=_run_hold()), _definitions():
+        assert page_holds.allowed_registry_ids(user=object()) == frozenset({25526})
+
+
+def test_proposed_definition_edits_stay_with_the_pages_workflow():
+    with mock.patch.object(page_holds, "current", return_value=_run_hold(pipeline_ids=[19776])), _definitions():
+
+        def propose(tool, **arguments):
+            return page_holds.run_denial(
+                "workflow_edit_propose", {"tool": tool, "arguments": arguments}, user=object()
+            )
+
+        # New pipelines and registries: only where the page's workflow lives, never shared.
+        assert propose("pipeline_create", name="n", schema={}, program_id=10121) is None
+        assert propose("pipeline_create", name="n", schema={}, program_id=10061) is not None
+        assert propose("pipeline_create", name="n", schema={}, opportunity_id=10122) is not None
+        assert propose("semantic_registry_create", seed_from="kmc", program_id=10121) is None
+        assert propose("semantic_registry_create", seed_from="kmc", organization_id=3) is not None
+        assert propose("semantic_registry_create", seed_from="kmc", program_id=10121, is_shared=True) is not None
+        # A registry edit: only the registry the page's workflow computes from.
+        assert propose("semantic_registry_update", registry_id=25526, program_id=10121) is None
+        assert propose("semantic_registry_update", registry_id=1, program_id=10121) is not None
+        assert propose("semantic_registry_set_indicator_meta", registry_id=25526, patches={}) is None
+        assert propose("semantic_registry_set_indicator_meta", registry_id=99, patches={}) is not None
+        assert propose("semantic_registry_set_indicator_meta", registry_id=25526, patches={}, organization_id=3)
+
+
+def test_a_page_with_no_workflow_proposes_no_definition_edit():
+    hold = PageHold(page_key=page_holds.DATA_PAGE, opportunity_ids=[1])
+    with mock.patch.object(page_holds, "current", return_value=hold):
+        refused = page_holds.run_denial(
+            "workflow_edit_propose", {"tool": "semantic_registry_create", "arguments": {"program_id": 1}}
+        )
+        assert refused is not None and "shows no workflow" in refused.message
+
+
+def test_page_definitions_reads_the_workflow_as_the_person():
+    definition = SimpleNamespace(
+        data={
+            "pipeline_sources": [
+                {"pipeline_id": 19776},
+                {"pipeline_id": 30001, "home_scope": {"opportunity_id": 962}},
+            ],
+            "registry_source": {"registry_id": 25526, "organization_id": 4},
+        }
+    )
+    hold = _run_hold()
+    with (
+        mock.patch.object(page_holds, "_read_definition", return_value=definition) as read,
+        mock.patch.object(page_holds, "_covering_registries", return_value={777}),
+    ):
+        defs = page_holds.page_definitions(hold, user="person", registries=True)
+    read.assert_called_once_with("person", 9027, {"program_id": 10121})
+    assert defs.workflow_id == 9027 and defs.pipeline_ids == {19776, 30001}
+    assert defs.registry_ids == {25526, 777}
+    assert {("program_id", 10121), ("opportunity_id", 962), ("organization_id", 4)} <= defs.scopes

@@ -12,6 +12,10 @@
   would be sent, and sends it on the viewer's click: workflow_run_action with the
   confirm token that preview issued. The agent never holds that token.
 
+  Coaching is always sent this way. Through canopy every other action (a follow-up
+  task, ...) is too: the card's button is the person's click, labeled with the
+  action's own label.
+
   Self-contained on purpose: no network load of any kind. The host's default CSP
   (connect-src 'none'; img-src 'self' data:) allows exactly this, and the picture
   arrives as a data: URI. Every call goes to the host over postMessage.
@@ -599,6 +603,11 @@
         }
 
         // ---------------------------------------------------------------- actions
+        // Coaching (a conversation sent to a worker) or any other action (a task...).
+        function coaching(p) {
+          return !!p && p.type === 'start_ocs_outreach';
+        }
+
         function workerName(p) {
           var w = (p && p.workers) || [];
           if (w.length === 1) return w[0].name || 'the worker';
@@ -622,6 +631,23 @@
               state.outcome = 'sent';
               state.execution = (out && out.execution) || null;
               var id = state.execution && state.execution.id;
+              if (!coaching(p)) {
+                var what = p.label || 'the action';
+                tell(
+                  { outcome: 'done', execution_id: id, action: what },
+                  'The person confirmed it from the card: ' +
+                    what +
+                    ' for ' +
+                    workerName(p) +
+                    (id ? ' (execution ' + id + ')' : '') +
+                    '. The card shows its progress. Reply in one short line; do not look it up -- ' +
+                    'it ran under their Labs account, which may not be the one you use.',
+                  what + ' for ' + workerName(p) + '.',
+                );
+                render();
+                followStatus();
+                return;
+              }
               tell(
                 {
                   outcome: 'sent',
@@ -873,7 +899,7 @@
             var one =
               p.workers && p.workers.length === 1 ? p.workers[0].name : '';
             title.textContent =
-              p.sent_by === 'click' && one
+              p.sent_by === 'click' && one && coaching(p)
                 ? 'Coach ' + one
                 : p.summary || p.label || 'Preview';
             subtitle.textContent =
@@ -1053,7 +1079,7 @@
                 class: 'note ok',
                 role: 'status',
                 text:
-                  'Sent' +
+                  (coaching(p) ? 'Sent' : 'Done') +
                   (ex.id ? ' (execution ' + ex.id + ')' : '') +
                   status +
                   '.',
@@ -1064,7 +1090,11 @@
           if (state.outcome === 'declined') {
             qa.classList.add('hidden');
             box.appendChild(
-              h('div', { class: 'note', role: 'status', text: 'Not sent.' }),
+              h('div', {
+                class: 'note',
+                role: 'status',
+                text: coaching(p) ? 'Not sent.' : 'Not done.',
+              }),
             );
             box.appendChild(
               h('button', {
@@ -1140,7 +1170,13 @@
           var sendBtn = h('button', {
             type: 'button',
             class: 'primary',
-            text: state.busy ? 'Sending…' : 'Send to ' + workerName(p),
+            text: coaching(p)
+              ? state.busy
+                ? 'Sending…'
+                : 'Send to ' + workerName(p)
+              : state.busy
+                ? 'Working…'
+                : p.label || 'Confirm',
             onclick: send,
           });
           sendBtn.disabled = !(idle && ready);

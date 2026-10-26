@@ -503,29 +503,136 @@ describe('saving a query', () => {
 });
 
 describe("the page's agent reads what is on screen", () => {
-  it('the plain page tells labs its selection, in the person own session', async () => {
+  const MINE = {
+    id: 3,
+    name: 'Elsewhere',
+    sql: 'SELECT 3',
+    selection: { opportunity_ids: [9], program_ids: [], workflow: null },
+    max_rows: 50,
+    display: null,
+    version: 1,
+  };
+  const told = (posts) => posts.filter((p) => p.url === '/ph');
+  const chips = (document) =>
+    [...document.querySelectorAll('#ex-chips .ex-chip')].map((c) =>
+      c.textContent.replace('×', '').trim(),
+    );
+
+  it('loading tells labs nothing: labs signed the selection it drew', async () => {
     const { posts } = mount({ panel: true });
     await settle();
-    const told = posts.filter((p) => p.url === '/ph');
-    expect(told.length).toBe(1);
-    expect(told[0].body).toEqual({
+    expect(told(posts)).toEqual([]);
+  });
+
+  it("the person's own click tells labs the new selection, in their own session", async () => {
+    const { document, posts } = mount({ panel: true });
+    await settle();
+    document.querySelector('#ex-chips button').click();
+    await settle();
+    expect(told(posts)).toHaveLength(1);
+    expect(told(posts)[0].body).toEqual({
       page_token: 'page-token',
       page_holds: 'signed',
-      opportunity_ids: [7],
+      opportunity_ids: [],
       program_ids: [],
     });
   });
 
-  it('a space page never does: its selection is the space', async () => {
+  it("the person's click on one of their saved queries makes it the page's selection", async () => {
+    const { document, posts } = mount({ panel: true, saved: [MINE] });
+    await settle();
+    document.querySelector('#ex-saved button.open').click();
+    await settle();
+    expect(told(posts).map((p) => p.body.opportunity_ids)).toEqual([[9]]);
+  });
+
+  it("the agent's openItem opens a saved query in its own tab and never widens the page", async () => {
+    const { window, document, posts } = mount({ panel: true, saved: [MINE] });
+    await settle();
+    const before = chips(document);
+    const ack = await window.LABSDATA_ACTIONS.openItem({
+      kind: 'query',
+      id: 3,
+    });
+    await settle();
+    expect(ack).toMatchObject({
+      ok: true,
+      opened: true,
+      outcome: 'shown_to_person',
+    });
+    expect(ack.tab).toBeTruthy();
+    // Run in the tab over the query's own selection, as the person...
+    expect(posts.filter((p) => p.url === '/q').pop().body).toEqual({
+      opportunity_ids: [9],
+      program_ids: [],
+      sql: 'SELECT 3',
+      max_rows: 50,
+    });
+    // ...while the page's selection, and what its agent may read, stay as they were.
+    expect(told(posts)).toEqual([]);
+    expect(chips(document)).toEqual(before);
+    expect(new URL(window.location.href).searchParams.get('opps')).not.toBe(
+      '9',
+    );
+  });
+
+  it("the agent's data_set_query with sources of its own shows them in a tab, the page untouched", async () => {
+    const { window, document, posts } = mount({ panel: true });
+    await settle();
+    const before = chips(document);
+    const ack = await window.LABSDATA_ACTIONS.data_set_query({
+      sql: 'SELECT 1',
+      opportunity_ids: [9],
+      program_ids: [4],
+    });
+    await settle();
+    expect(ack).toMatchObject({ ok: true, outcome: 'shown_to_person' });
+    expect(posts.filter((p) => p.url === '/q').pop().body).toMatchObject({
+      opportunity_ids: [9],
+      program_ids: [4],
+    });
+    const wf = await window.LABSDATA_ACTIONS.data_set_query({
+      sql: 'SELECT 2',
+      workflow: { id: 5, program_id: 4 },
+    });
+    expect(wf).toMatchObject({ ok: true });
+    expect(posts.filter((p) => p.url === '/q').pop().body).toMatchObject({
+      workflow: { id: 5, program_id: 4 },
+    });
+    expect(told(posts)).toEqual([]);
+    expect(chips(document)).toEqual(before);
+  });
+
+  it('no page action reaches the selection: none touches it or reports it', () => {
+    // Structural: the page actions' code never names what changes or reports the selection.
+    const actions = SCRIPT.slice(
+      SCRIPT.indexOf('const ACTIONS = {'),
+      SCRIPT.indexOf('window.LABSDATA_ACTIONS ='),
+    );
+    expect(actions.length).toBeGreaterThan(1000);
+    for (const forbidden of [
+      'reportSelection(',
+      'changed(',
+      'openSaved(',
+      'state.opps =',
+      'state.programs =',
+      'state.workflow =',
+    ])
+      expect(actions).not.toContain(forbidden);
+  });
+
+  it('a space page never tells labs: its selection is the space', async () => {
     const { posts } = mount({ panel: true, space: SPACE });
     await settle();
-    expect(posts.filter((p) => p.url === '/ph')).toEqual([]);
+    expect(told(posts)).toEqual([]);
   });
 
   it('without a panel there is nothing to tell', async () => {
-    const { posts } = mount();
+    const { document, posts } = mount();
     await settle();
-    expect(posts.filter((p) => p.url === '/ph')).toEqual([]);
+    document.querySelector('#ex-chips button').click();
+    await settle();
+    expect(told(posts)).toEqual([]);
   });
 });
 

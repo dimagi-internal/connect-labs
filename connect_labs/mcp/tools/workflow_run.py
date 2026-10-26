@@ -23,6 +23,14 @@ the agent gets it, carries no confirm token; the token goes only to the View can
 renders for ``workflow_run_action`` (``ui://labs/workflow-action-preview``), which
 previews again as whoever is looking at it, or to the Labs run page's own button.
 
+Through canopy (a delegated call, the agent acting with the person's page grant) EVERY
+action is that way: each one writes as the person (a follow-up task filed in their name,
+a coaching conversation sent from their Open Chat Studio), so none is the agent's to
+confirm. The agent previews; the person confirms on the card (the View, whose calls carry
+canopy's ``Canopy-View``) or with the workflow's own button on the Labs run page. A
+person's own agent (their PAT or OAuth sign-in -- credentials they set up themselves)
+still confirms a non-coaching action in chat, on the person's yes.
+
 A canopy (delegated) call is held to the workflow's opt-in to sharing; a person's
 own agent is not, since it already reaches every tool.
 """
@@ -38,8 +46,19 @@ from ..ui import WORKFLOW_ACTION_PREVIEW_URI, tool_meta
 logger = logging.getLogger(__name__)
 
 #: Action types a person sends by clicking -- the View's Send, or the run page's
-#: button -- and never the agent: the agent's preview of one carries no ``confirm``.
+#: button -- and never the agent, whoever the agent is: its preview carries no ``confirm``.
 CLICK_TO_SEND_TYPES = frozenset({"start_ocs_outreach"})
+
+
+def click_only(kind: str, delegated: bool) -> bool:
+    """Whether an action of type ``kind`` is confirmed only by the person's click.
+
+    Coaching always is. Through canopy (``delegated``: the agent holds the person's page
+    grant) every action is: each writes as the person, and an agent never acts with the
+    person's delegated authority on its own say-so. Only a person's own agent (their PAT
+    or OAuth sign-in) confirms the rest in chat, on their yes."""
+    return kind in CLICK_TO_SEND_TYPES or delegated
+
 
 #: The pictures a View preview draws inline, at most: one per worker, for the first
 #: few workers, each well under what a postMessage to a sandboxed frame copes with.
@@ -91,6 +110,18 @@ HOW_TO_RUN_CONFIRMED = (
     "Preview with workflow_run_action (no `confirm`), show the person exactly what it will do, "
     "and on their explicit yes call again with the preview's `arguments` and `confirm`."
 )
+#: Any other action through canopy: the person confirms it on the card, never the agent.
+CLICK_TO_CONFIRM = (
+    "The person does this themselves, by clicking: in canopy, the button on the card shown with "
+    "this preview; on the Labs run page (`page_url`), the workflow's own button. You cannot do it: "
+    "there is no `confirm` for you, and a yes in chat does not change that."
+)
+HOW_TO_RUN_CLICK_TO_CONFIRM = (
+    "Done only by the person's click, never by you. When they want it, PREVIEW it with "
+    "workflow_run_action (this action's key, its `arguments`, no `confirm`): in canopy the preview "
+    "appears to them as a card with the button that does it. Say in one line what it will do and "
+    "that the button on the card does it; don't ask for a yes in chat and don't offer to do it."
+)
 
 
 #: What the agent is told about the coaching picture: it chooses WHAT the chart shows,
@@ -135,11 +166,15 @@ def _picture_types() -> dict:
     }
 
 
-def _with_how_to_run(actions: list[dict]) -> list[dict]:
+def _with_how_to_run(actions: list[dict], delegated: bool = False) -> list[dict]:
     for action in actions:
-        action["how_to_run"] = (
-            HOW_TO_RUN_CLICK_TO_SEND if action.get("type") in CLICK_TO_SEND_TYPES else HOW_TO_RUN_CONFIRMED
-        )
+        kind = action.get("type")
+        if kind in CLICK_TO_SEND_TYPES:
+            action["how_to_run"] = HOW_TO_RUN_CLICK_TO_SEND
+        elif click_only(kind, delegated):
+            action["how_to_run"] = HOW_TO_RUN_CLICK_TO_CONFIRM
+        else:
+            action["how_to_run"] = HOW_TO_RUN_CONFIRMED
         if action.get("type") == "start_ocs_outreach":
             action["picture"] = PICTURE_GUIDE
             action["picture_types"] = _picture_types()
@@ -356,7 +391,7 @@ def workflow_run_context(user, *, run_id: int, opportunity_id=None, program_id=N
             "indicators": indicators,
             "bands": BAND_MEANING,
             "grading": grading,
-            "actions": _with_how_to_run(definition_actions(r.definition)),
+            "actions": _with_how_to_run(definition_actions(r.definition), r.delegated),
         }
 
 
@@ -684,16 +719,21 @@ def workflow_run_cases(
 
 
 def _for_the_agent(out: dict, r: _Run) -> dict:
-    """A click-to-send preview as the agent may see it: everything it shows, minus the
-    token that would let the agent send it."""
+    """A click-only preview as the agent may see it: everything it shows, minus the token
+    that would let the agent do it."""
     out.pop("confirm", None)
     out.pop("confirm_expires_in", None)
     out["sent_by"] = "click"
     out["page_url"] = r.page_url
     if out["needs"]:
         out["next"] = "Nothing has been done. Settle `needs`, then preview again."
-    else:
+    elif out["type"] in CLICK_TO_SEND_TYPES:
         out["next"] = "Nothing has been done. " + CHAT_AFTER_PREVIEW + " " + CLICK_TO_SEND + _picture_next(out)
+    else:
+        out["next"] = (
+            "Nothing has been done. Reply in one short line saying what it will do; the card shows the "
+            "rest. " + CLICK_TO_CONFIRM
+        )
     return out
 
 
@@ -828,10 +868,13 @@ def _view_text(out: dict) -> str:
         "names the coach a real run uses: that is expected, not a mismatch. A synthetic preview "
         "also has no `opening`, because no message goes to the worker; a QA send (Send to me) "
         "opens with Labs' fixed opening, which the card shows. The card explains all this: don't.\n\n"
-        "OTHER ACTIONS (e.g. create_task): the preview carries a single-use `confirm`. Show the "
-        "preview, get the person's explicit yes, then call again with the preview's `arguments` "
-        "and its `confirm`; the action is queued and an execution id returned. Changing anything "
-        "between the two calls invalidates the token.\n\n"
+        "OTHER ACTIONS (e.g. create_task) THROUGH CANOPY are the same: done by the person's click "
+        "on the card (or the workflow's button on the Labs run page), never by you -- the preview "
+        "has no `confirm` (`sent_by: click`); say in one line what it will do and that the card's "
+        "button does it. Only on the person's OWN connection (their token or sign-in, not canopy) "
+        "does the preview carry a single-use `confirm`: show the preview, get their explicit yes, "
+        "then call again with the preview's `arguments` and its `confirm`; the action is queued and "
+        "an execution id returned. Changing anything between the two calls invalidates the token.\n\n"
         "`arguments.workers[].key` are worker keys from workflow_run_indicators; an item's own "
         "`prompt` is how to address that worker's own red indicators.\n\n"
         "CASE COACHING (one case, one case state): give the worker's item `case: {id, case_state}` from "
@@ -902,10 +945,26 @@ def workflow_run_action(
             restricted=caller_restricted(),
         )
         try:
-            if not confirm:
-                from connect_labs.workflow.actions import INCLUDE_IMAGE, find_action
+            from connect_labs.workflow.actions import find_action
 
-                if find_action(r.definition, action)["type"] in CLICK_TO_SEND_TYPES and isinstance(arguments, dict):
+            kind = find_action(r.definition, action)["type"]
+            if confirm and r.delegated:
+                from .. import execution
+
+                # Through canopy every action is the person's click: the commit is the
+                # card's (the View's) own call, on canopy's signed word that it is their
+                # View -- never the agent's, whatever token it holds.
+                if not execution.is_persons_view():
+                    raise MCPToolError(
+                        "PERMISSION_DENIED",
+                        "Through canopy, a workflow action is done only by the person's click on the "
+                        "card (or the workflow's button on the Labs run page). " + CLICK_TO_CONFIRM,
+                        {"reason": "click_only"},
+                    )
+            if not confirm:
+                from connect_labs.workflow.actions import INCLUDE_IMAGE
+
+                if kind in CLICK_TO_SEND_TYPES and isinstance(arguments, dict):
                     # The card always sends a picture (workflow_action_preview_view): the
                     # agent's preview pictures the same, so it can say what is shown.
                     arguments = {**arguments, INCLUDE_IMAGE: True}
@@ -919,7 +978,7 @@ def workflow_run_action(
                     briefing=briefing,
                     restricted=caller_restricted(),
                 )
-                if out["type"] in CLICK_TO_SEND_TYPES:
+                if click_only(out["type"], r.delegated):
                     return _for_the_agent(out, r)
                 out["next"] = (
                     "Nothing has been done. Settle `needs`, then preview again."
@@ -957,7 +1016,9 @@ def workflow_run_action(
         "the person LOOKING AT the View, with each worker's picture inline as a data: URI and "
         "that person's own single-use `confirm`, which the View's Send hands to "
         "workflow_run_action. `deliver_to` (Dimagi staff only, one worker) previews a QA send "
-        "to that PersonalID username instead of the worker. Hosts hide this tool from the agent."
+        "to that PersonalID username instead of the worker. Hosts hide this tool from the agent; "
+        "through canopy labs runs it only with canopy's Canopy-View statement that the call is "
+        "the person's own View."
     ),
     input_schema={
         "type": "object",
@@ -1041,12 +1102,14 @@ def workflow_action_preview_view(
             )
         except ActionError as e:
             raise _action_error(e) from e
-        if out["type"] not in CLICK_TO_SEND_TYPES:
-            # The View only sends what is sent by a click; anything else the agent
-            # confirms with the person, so the View gets no token for it.
+        clicked = click_only(out["type"], r.delegated)
+        if not clicked:
+            # On a person's own connection the agent confirms a non-coaching action with
+            # them in chat, so the View gets no token for it. Through canopy every action
+            # is the person's click, and this View is where they make it.
             out.pop("confirm", None)
             out.pop("confirm_expires_in", None)
-        out["sent_by"] = "click" if out["type"] in CLICK_TO_SEND_TYPES else "agent"
+        out["sent_by"] = "click" if clicked else "agent"
         for i, worker in enumerate(out["workers"]):
             linked = worker.pop("image", None)  # the Labs link: the View can only open it, not load it
             if out["type"] in CLICK_TO_SEND_TYPES and i < VIEW_IMAGE_WORKERS:

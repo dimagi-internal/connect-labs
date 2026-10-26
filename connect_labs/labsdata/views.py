@@ -398,7 +398,9 @@ class PageHoldsView(_JsonView):
 
     In the person's own session (CSRF), for their own Data page token only, with every
     source resolved as them (``spaces.generate``, which refuses anything not held). The
-    agent has no tool or page action that reaches this (``page_holds``)."""
+    agent has no tool or page action that reaches this (``page_holds``): the page sends it
+    only on the person's own click (``data.js`` ``reportSelection``), and a delegated token
+    is not a session."""
 
     def handle(self, request, body):
         page_token = body.get("page_token") or ""
