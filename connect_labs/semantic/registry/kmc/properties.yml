@@ -99,9 +99,13 @@ visit_columns:
   - name: visit_weight_g
     optional: true
     sql: "CASE WHEN form_names ~* 'regist' THEN COALESCE(weight_g, enrollment_weight_g) ELSE weight_g END"
+  # A 24-hour recall cannot exceed 24 hours. Some app builds send a running total under
+  # the same name (up to 167 h on the PIPN clones, a third of readings over 24): those
+  # are not a day's skin-to-skin time and read as missing, never as a fall or a rise.
   - name: skin_to_skin_h
     optional: true
-    column: kmc_hours_total
+    null_as: numeric
+    sql: 'CASE WHEN kmc_hours_total <= 24 THEN kmc_hours_total END'
   # The referral answer as recorded, for a case's visit lines -- through a visit
   # column so it reads NULL, not an error, until the pipeline carries the field.
   - name: referral_text
@@ -281,9 +285,12 @@ aggregates:
     label: 'Date death recorded'
     means: 'Date of the first visit that recorded the baby as not alive.'
     sql: 'MIN(visit_date) FILTER (WHERE child_alive_no)'
+  # Named for what it counts: the pipeline's `danger_visits` reads the jaundice and
+  # convulsions answers only. The other signs are in `danger_signs` (a visit column);
+  # whether this indicator should count them is the metrics framework's call.
   - name: danger_visits
-    label: 'Visits with a danger sign'
-    means: 'Visits that recorded a danger sign.'
+    label: 'Visits with jaundice or convulsions'
+    means: 'Visits that recorded jaundice or convulsions (the two danger signs this count reads).'
     sql: 'COUNT(*) FILTER (WHERE danger_sign_yes)'
   - name: referral_visits
     label: 'Visits with a referral'
