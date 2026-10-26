@@ -16,7 +16,6 @@ import json
 import logging
 import math
 import random
-import re
 import statistics
 from collections import Counter, defaultdict
 from typing import Any
@@ -24,6 +23,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import yaml
+
+from connect_labs.labs.deid import classify as deid
 
 from .case_model import synthesize_case_pool
 from .manifest import Manifest, ManifestValidationError
@@ -419,32 +420,21 @@ def _observed_values(visits: list[dict], path: str) -> Counter:
 # combinations a few dozen at most (which is why this is looser than the text path's
 # 25), while a field typed "select" whose answers are names, hand-typed places or ids
 # comes back with hundreds. 50 keeps genuine enumerations and drops those.
-_MAX_CATEGORY_VALUES = 50
-
-# A category value shaped like an identifier is refused however few distinct values
-# there are: a uuid (a case id) or a long run of digits (a phone or national id).
-_IDENTIFIER_VALUE_RE = re.compile(
-    r"^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\+?\d{7,})$", re.IGNORECASE
-)
-
-
-def _looks_like_free_text(counts: Counter) -> bool:
-    """True when observed values are not a closed list of choice codes.
-
-    Such a field is treated as free text: none of its values may be copied into the
-    profile, the manifest or the transplant pool. Shares the text-replay path's
-    length bound (``_MAX_REPLAYABLE_VALUE_LEN``), applied per space-separated token so
-    a multiselect's joined codes are judged code by code. Deliberately value-based,
-    not leaf-name based: a yes/no select named ``photo_taken`` is a real category, and
-    the text path's leaf filter would refuse it.
-    """
-    if len(counts) > _MAX_CATEGORY_VALUES:
-        return True
-    for value in counts:
-        for token in str(value).split():
-            if len(token) > _MAX_REPLAYABLE_VALUE_LEN or _IDENTIFIER_VALUE_RE.match(token):
-                return True
-    return False
+# (These rules, and the identifier and envelope rules, live in ``labs/deid/classify``:
+# the de-identified export reads the same ones, so a field a clone may not copy is a
+# field an export drops by default.)
+_MAX_CATEGORY_VALUES = deid.MAX_CATEGORY_VALUES
+_IDENTIFIER_VALUE_RE = deid.IDENTIFIER_VALUE_RE
+_IDENTIFIER_LEAF_TOKENS = deid.IDENTIFIER_LEAF_TOKENS
+_MAX_REPLAYABLE_CARDINALITY = deid.MAX_REPLAYABLE_CARDINALITY
+_MAX_REPLAYABLE_VALUE_LEN = deid.MAX_REPLAYABLE_VALUE_LEN
+_MIN_REPLAYABLE_OBSERVATIONS = deid.MIN_REPLAYABLE_OBSERVATIONS
+_ENVELOPE_PREFIXES = deid.ENVELOPE_PREFIXES
+_ENVELOPE_EXACT = deid.ENVELOPE_EXACT
+_looks_like_free_text = deid.looks_like_free_text
+_is_envelope_path = deid.is_envelope_path
+_is_identifier_path = deid.is_identifier_path
+_parse_iso_date = deid.parse_iso_date
 
 
 _NEGATIVE_TOKENS = {"no", "0", "false", "absent", "none", "negative", "n", "normal"}
@@ -469,106 +459,6 @@ _AFFIRMATIVE_FOR = {
 # invent variance in how work is RECORDED; it must not invent whether babies lived.
 # connect-labs#1189.
 _OUTCOME_LEAVES = frozenset({"child_alive", "alive", "baby_alive", "is_alive", "child_died", "died", "death"})
-
-
-# Leaf-name tokens that mark a direct identifier. A text field is NEVER replayed
-# verbatim into the transplant pool when its leaf matches one — the pool ships to a
-# synthetic environment that is supposed to be safe to reason over, so it must not
-# become a side channel for names, phones, addresses or free-text remarks.
-_IDENTIFIER_LEAF_TOKENS = frozenset(
-    {
-        "name",
-        "names",
-        "phone",
-        "mobile",
-        "tel",
-        "address",
-        "email",
-        "gps",
-        "coordinate",
-        "coordinates",
-        "latitude",
-        "longitude",
-        "lat",
-        "lon",
-        "nin",
-        "bvn",
-        "id",
-        "ids",
-        "uuid",
-        "contact",
-        "surname",
-        "guardian",
-        "signature",
-        "photo",
-        "image",
-        "comment",
-        "comments",
-        "remark",
-        "remarks",
-        "note",
-        "notes",
-        "specify",
-        "description",
-        "other",
-    }
-)
-
-# A replayable enumerable must be genuinely enumerable. These bounds are what keep
-# free text out: a field with many distinct long values is prose or an identifier,
-# whatever its declared type says.
-_MAX_REPLAYABLE_CARDINALITY = 25
-_MAX_REPLAYABLE_VALUE_LEN = 40
-_MIN_REPLAYABLE_OBSERVATIONS = 5
-
-
-# Submission-envelope paths: CommCare transport metadata that wraps every form, not
-# anything the form asked. Replaying them is pointless (the engine stamps its own
-# timestamps, versions and ids) and actively harmful for the date-typed ones — the pool
-# stores dates as day-offsets, so a transplanted received_on/server_modified_on lands
-# alongside a generated visit_date it was never consistent with. They are also the most
-# expensive paths to carry, because unlike a real question they are present on EVERY
-# visit: on opp 524 just 14 of these accounted for most of a 28.9 MB -> 46.1 MB manifest.
-_ENVELOPE_PREFIXES = ("metadata.", "form.meta.", "form.@", "form.#", "form.case.@")
-_ENVELOPE_EXACT = frozenset(
-    {
-        "received_on",
-        "server_modified_on",
-        "indexed_on",
-        "edited_on",
-        "archived",
-        "version",
-        "uiversion",
-        "type",
-        "doc_type",
-        "id",
-        "build_id",
-        "app_id",
-        "xmlns",
-        "form_name",
-        "state",
-        "partial_submission",
-        "is_phone_submission",
-        "initial_processing_complete",
-    }
-)
-
-
-def _is_envelope_path(path: str) -> bool:
-    return path in _ENVELOPE_EXACT or path.startswith(_ENVELOPE_PREFIXES)
-
-
-def _is_identifier_path(path: str) -> bool:
-    """Match whole underscore-separated segments, never substrings.
-
-    Substring matching over-blocks badly: "nin" is inside "kmc_positioning_checklist",
-    "id" is inside "valid" and "avoid". Over-blocking costs real fidelity — the point
-    of this pass is to carry MORE of the app — so the guard has to be precise in both
-    directions.
-    """
-    leaf = path.rsplit(".", 1)[-1].lower()
-    segments = {seg for seg in re.split(r"[^a-z0-9]+", leaf) if seg}
-    return bool(segments & _IDENTIFIER_LEAF_TOKENS)
 
 
 def _is_numeric_identifier(visits: list[dict], path: str) -> bool:
@@ -629,24 +519,6 @@ def _discover_replayable_text_paths(visits: list[dict], candidate_paths: set[str
         elif len(values) <= _MAX_REPLAYABLE_CARDINALITY and all(len(v) <= _MAX_REPLAYABLE_VALUE_LEN for v in values):
             enumerable.add(path)
     return date_like, enumerable
-
-
-def _parse_iso_date(raw: str) -> dt.date | None:
-    """Separator-formatted ISO dates only, which is what CommCare emits.
-
-    Deliberately stricter than ``dt.date.fromisoformat``, which since 3.11 also accepts
-    the compact ``YYYYMMDD`` basic format — so a bare integer id like ``20250601``
-    parses as a date. Misclassifying one is not a near miss: the pool stores dates as
-    day-offsets, so the value would be reconstructed as a different number entirely.
-    A date we decline here is still eligible to be carried as an enumerable.
-    """
-    text = raw.strip()[:10]
-    if len(text) != 10 or text[4] != "-" or text[7] != "-":
-        return None
-    try:
-        return dt.date.fromisoformat(text)
-    except ValueError:
-        return None
 
 
 def _is_outcome_path(path: str) -> bool:

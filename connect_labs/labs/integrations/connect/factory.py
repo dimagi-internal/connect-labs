@@ -54,22 +54,13 @@ def get_export_client(
     opportunity_id: int,
     access_token: str,
     timeout: float = 60.0,
-    user=None,
 ):
-    """Return an ExportAPIClient or synthetic client depending on registry/user state.
+    """Return an ExportAPIClient, or a synthetic client for a registered synthetic opp.
 
     Priority:
-    1. User-specific synthetic dataset (self-service, stored in PostgreSQL)
-    2. Global GDrive-backed synthetic opportunity (admin-configured)
-    3. Real Connect export client
+    1. Global GDrive-backed synthetic opportunity (admin-configured)
+    2. Real Connect export client
     """
-    if user is not None:
-        from connect_labs.labs.synthetic.user_client import get_user_synthetic_client
-
-        user_client = get_user_synthetic_client(user, opportunity_id)
-        if user_client is not None:
-            return user_client
-
     from connect_labs.labs.synthetic.client import SyntheticExportClient
     from connect_labs.labs.synthetic.registry import get_synthetic_opp
 

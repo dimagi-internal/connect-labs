@@ -1,7 +1,6 @@
 """Synthetic generator archetypes for non-FLW entities.
 
-Mirrors the FLW archetype pattern (see ``connect_labs/labs/synthetic/self_service.py``
-and ``connect_labs/labs/synthetic/program_admin_demo.py``) for the other
+Mirrors the FLW archetype pattern (see ``connect_labs/labs/synthetic/program_admin_demo.py``) for the other
 record types the synthetic generator emits — primarily ``AuditSession`` and
 ``Task``. The point of the archetype layer is the same as for FLWs: name a
 narrative state once (e.g. ``completed_warned_tape_usage``) so every story we

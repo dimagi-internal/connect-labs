@@ -10,17 +10,17 @@ it against the run -- the topics, Labs' datasets, the spec -- and returns the CH
 A chart is complete and frozen: its spec plus its datasets draw the same picture
 anywhere (``render.render_png`` today, a webview later), and nothing in it is read
 again from the run. The caption and alt text are Labs' words, never the request's.
-No text in a chart may name a peer (``identity_leaks``).
+No text in a chart may name a peer (``labs.deid.leaks.identity_leaks``).
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import re
 from collections.abc import Callable
 from typing import Any
 
+from connect_labs.labs.deid import leaks
 from connect_labs.workflow import coach_briefing
 from connect_labs.workflow.coach_charts import custom, datasets, render, types
 from connect_labs.workflow.coach_charts.datasets import ChartError
@@ -90,42 +90,6 @@ def normalise_request(request: Any) -> dict:
 # ---------------------------------------------------------------------------
 # Peer identity
 # ---------------------------------------------------------------------------
-
-
-def identity_terms(people: list[tuple[str, str]], worker_name: str = "") -> list[str]:
-    """What would identify a peer, from ``(name, username)`` pairs of everyone the
-    worker must not see named: each full name, each username, and each word of a
-    person-like name (two or more capitalised words) that is not also in the worker's
-    own name."""
-    own = {w.lower() for w in (worker_name or "").split()}
-    terms: set[str] = set()
-    for name, username in people:
-        name, username = (name or "").strip(), (username or "").strip()
-        if len(name) >= 3:
-            terms.add(name.lower())
-        if len(username) >= 3:
-            terms.add(username.lower())
-        words = name.split()
-        if len(words) >= 2 and all(w[:1].isupper() for w in words):
-            terms.update(w.lower() for w in words if len(w) >= 3 and w.lower() not in own)
-    return sorted(terms)
-
-
-def identity_leaks(text: str, terms: list[str]) -> list[str]:
-    """The ``terms`` that appear in ``text`` as whole words (case-insensitive)."""
-    low = (text or "").lower()
-    return [t for t in terms if re.search(rf"(?<![\w]){re.escape(t)}(?![\w])", low)]
-
-
-def _strings(node: Any):
-    if isinstance(node, str):
-        yield node
-    elif isinstance(node, dict):
-        for v in node.values():
-            yield from _strings(v)
-    elif isinstance(node, list):
-        for v in node:
-            yield from _strings(v)
 
 
 # ---------------------------------------------------------------------------
@@ -228,8 +192,8 @@ def build_chart(
     caption = _caption(
         kind, first=first, labels=[r["label"] for r in ds["worker_topics"]], peers=peer_count, weeks=weeks, noun=noun
     )
-    terms = identity_terms(others, worker_name)
-    leaked = sorted({t for s in [caption, *_strings(spec)] for t in identity_leaks(s, terms)})
+    terms = leaks.identity_terms(others, worker_name)
+    leaked = sorted({t for s in [caption, *leaks.strings(spec)] for t in leaks.identity_leaks(s, terms)})
     if leaked:
         raise ChartError(
             "peer_identity", "the chart's text names another worker; peers are shown only as Peer A, B, ..."

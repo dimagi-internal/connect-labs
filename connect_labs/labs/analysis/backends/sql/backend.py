@@ -919,7 +919,6 @@ class SQLBackend:
                     opportunity_id=opportunity_id,
                     access_token=access_token,
                     timeout=180.0,
-                    user=user,
                 ) as client:
                     for page in client.paginate(endpoint, params=params):
                         # Convert v2 records to visit dicts (with form_json)
@@ -1113,7 +1112,6 @@ class SQLBackend:
                 opportunity_id=opportunity_id,
                 access_token=access_token,
                 timeout=180.0,
-                user=user,
             ) as client:
                 for page in client.paginate(endpoint, params=params):
                     for record in page:

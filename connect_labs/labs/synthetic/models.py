@@ -4,7 +4,6 @@ from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
 from django.db.models import Max
-from django.utils import timezone
 
 from connect_labs.utils.dimagi_user import DIMAGI_DOMAINS, is_dimagi_user
 
@@ -305,46 +304,3 @@ class LabsLocalRecord(models.Model):
 
     def __str__(self):
         return f"local:{self.experiment}:{self.type}:{self.id}"
-
-
-class UserSyntheticDataset(models.Model):
-    """Per-user synthetic fixture data stored in the database.
-
-    Generated on demand from the opportunity's CommCare app structure.
-    Expires after 24 hours. The factory serves this instead of hitting
-    real Connect when it exists for the requesting user + opportunity.
-    """
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="synthetic_datasets",
-    )
-    opportunity_id = models.IntegerField(db_index=True)
-    visit_count = models.IntegerField()
-    fixtures = models.JSONField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    expires_at = models.DateTimeField()
-
-    class Meta:
-        db_table = "labs_user_synthetic_dataset"
-        unique_together = [("user", "opportunity_id")]
-        verbose_name = "User synthetic dataset"
-        verbose_name_plural = "User synthetic datasets"
-
-    def is_expired(self) -> bool:
-        return timezone.now() >= self.expires_at
-
-    @classmethod
-    def for_user_and_opp(cls, user, opportunity_id: int) -> "UserSyntheticDataset | None":
-        try:
-            dataset = cls.objects.get(user=user, opportunity_id=opportunity_id)
-            if dataset.is_expired():
-                dataset.delete()
-                return None
-            return dataset
-        except cls.DoesNotExist:
-            return None
-
-    def __str__(self):
-        return f"user={self.user_id} opp={self.opportunity_id} visits={self.visit_count}"

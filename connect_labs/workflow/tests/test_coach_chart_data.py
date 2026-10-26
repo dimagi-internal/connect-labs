@@ -10,6 +10,7 @@ import pytest
 from django.core.cache import cache
 from PIL import Image
 
+from connect_labs.labs.deid import leaks
 from connect_labs.workflow.coach_charts import chart, custom, datasets, render, theme
 from connect_labs.workflow.coach_charts.datasets import ChartError
 
@@ -279,7 +280,7 @@ def test_the_workers_own_name_is_not_a_leak():
 
 
 def test_identity_terms_skip_names_that_are_not_peoples_words():
-    terms = chart.identity_terms([("Registration worker", "flw_001"), ("Ibrahim Musa", "im")], "Ibrahim Lawal")
+    terms = leaks.identity_terms([("Registration worker", "flw_001"), ("Ibrahim Musa", "im")], "Ibrahim Lawal")
     assert "registration worker" in terms and "flw_001" in terms and "musa" in terms
     assert "worker" not in terms and "registration" not in terms and "ibrahim" not in terms
 

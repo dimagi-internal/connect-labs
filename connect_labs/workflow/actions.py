@@ -824,8 +824,8 @@ def _check_notes(merged: dict, roster: dict[str, dict]) -> None:
     """No worker-facing text may name another worker. A briefing's programme-team note
     goes to the coach, which talks to the worker, so a note naming a colleague is
     refused -- peers are only ever anonymous (``coach_charts/datasets.py``)."""
+    from connect_labs.labs.deid.leaks import identity_leaks, identity_terms
     from connect_labs.workflow import coach_briefing
-    from connect_labs.workflow.coach_charts.chart import identity_leaks, identity_terms
 
     for item in merged["workers"]:
         prompt = item.get("prompt") or merged.get("prompt")
@@ -1067,7 +1067,7 @@ def _check_page_prompts(run, args: dict, roster: dict[str, dict]) -> None:
     name another worker."""
     if not is_page_scope(run):
         return
-    from connect_labs.workflow.coach_charts.chart import identity_leaks, identity_terms
+    from connect_labs.labs.deid.leaks import identity_leaks, identity_terms
 
     for item in args.get("workers") or []:
         prompt = item.get("prompt") or args.get("prompt")

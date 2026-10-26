@@ -24,6 +24,7 @@ from __future__ import annotations
 import datetime as dt
 import math
 
+from connect_labs.labs.deid import leaks
 from connect_labs.semantic import case_states as cs
 from connect_labs.workflow.coach_charts import case_types, theme
 from connect_labs.workflow.coach_charts.datasets import ChartError
@@ -445,9 +446,9 @@ def build_case_chart(
         raise ChartError("no_readings", "this case has no readings to draw")
     spec = case_types.CASE_TYPES[kind](meta)
     text = caption(state, series)
-    terms = charts.identity_terms(others or [], "")
+    terms = leaks.identity_terms(others or [], "")
     leaked = sorted(
-        {t for s in [text, *charts._strings(spec), *charts._strings(ds)] for t in charts.identity_leaks(s, terms)}
+        {t for s in [text, *leaks.strings(spec), *leaks.strings(ds)] for t in leaks.identity_leaks(s, terms)}
     )
     if leaked:
         raise ChartError("peer_identity", "the picture's text names another worker")
