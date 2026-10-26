@@ -210,8 +210,11 @@ class ExperimentAuditListView(LoginRequiredMixin, SingleTableView):
     SESSION_LIST_CACHE_TTL = 60
 
     def _session_list_cache_key(self, labs_context):
-        return "audit:session_list:v1:{}:{}:{}".format(
+        from connect_labs.labs.integrations.connect.oauth import access_generation
+
+        return "audit:session_list:v1:{}:{}:{}:{}".format(
             self.request.user.pk,
+            access_generation(getattr(self.request.user, "username", "") or ""),
             labs_context.get("opportunity_id") or "",
             labs_context.get("program_id") or "",
         )

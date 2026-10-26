@@ -134,13 +134,22 @@ def resolve_org_slug(access_token: str, opportunity_id, request=None) -> str:
     if request is not None:
         return _find_org_slug(get_org_data(request), opportunity_id) or ""
 
-    cache_key = f"link_helpers:org_data:{hashlib.sha256(access_token.encode()).hexdigest()}"
+    cache_key = _org_data_key(access_token)
     org_data = cache.get(cache_key)
     if org_data is None:
         org_data = fetch_user_organization_data(access_token)
         if org_data:
             cache.set(cache_key, org_data, _ORG_DATA_CACHE_TTL)
     return _find_org_slug(org_data, opportunity_id) or ""
+
+
+def _org_data_key(access_token: str) -> str:
+    return f"link_helpers:org_data:{hashlib.sha256(access_token.encode()).hexdigest()}"
+
+
+def forget_org_data(access_token: str) -> None:
+    """Drop the org tree cached here for this token (``labs.context.forget_labs_context``)."""
+    cache.delete(_org_data_key(access_token))
 
 
 def build_absolute_url(path: str, request=None) -> str:

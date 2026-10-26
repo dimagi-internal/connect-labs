@@ -4,7 +4,7 @@ Internal (Dimagi-staff-only) tooling surfaced at `/labs/admin/`, presented as **
 The landing page groups the tools into three sections:
 
 - **Data Exploration** — Labs Record (browse/edit/delete records), Semantic Registries (view/delete indicator registries), Visit Inspector
-- **System & Ops** — Canopy Agents (which canopy agents labs offers and which may work with sensitive data; staff change it, see `docs/canopy-agent-panel.md`), Task Manager (kill Celery jobs), Cache Manager (wipe analysis cache)
+- **System & Ops** — Canopy Agents (which canopy agents labs offers and which may work with sensitive data; staff change it, see `docs/canopy-agent-panel.md`), Task Manager (kill Celery jobs), Cache Manager (wipe analysis cache), Access cache (make labs ask Connect again what one person may access, instead of waiting out the hour it keeps that list; safe, it only discards a cache)
 - **Data & Assets** — Admin Boundaries (load geoBoundaries), App Downloader (CCZ files)
 
 Access is gated by `AdminRequiredMixin` (`connect_labs/labs/view_mixins.py`), which grants access via the

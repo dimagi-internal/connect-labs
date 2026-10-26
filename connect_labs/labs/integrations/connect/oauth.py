@@ -6,6 +6,7 @@ Shared OAuth utilities for both web and CLI authentication flows.
 
 import hashlib
 import logging
+import time
 
 import httpx
 from django.conf import settings
@@ -139,6 +140,47 @@ def _org_data_cache_key(access_token: str, owner: str | None = None) -> str:
     if owner:
         return f"labs:org_data:owner:{hashlib.sha256(owner.encode()).hexdigest()}"
     return f"labs:org_data:token:{hashlib.sha256(access_token.encode()).hexdigest()}"
+
+
+def _org_data_forgotten_key(owner: str) -> str:
+    return f"labs:org_data:forgotten:{hashlib.sha256(owner.encode()).hexdigest()}"
+
+
+def forget_user_organization_data(owner: str) -> str:
+    """Make labs ask Connect again what ``owner`` may access -- an admin's tool for
+    the rare removal that cannot wait out ``_ORG_DATA_CACHE_TTL``.
+
+    Drops the cached tree keyed on ``owner`` (what MCP, agents and the next login
+    read) and leaves a mark that every web session holding an older copy re-fetches
+    against once (``labs.context.get_org_data``). Safe for anyone to run: it only
+    discards a cache, and the next read rebuilds it from Connect -- what the person
+    may access is decided there, never here. Entries keyed on a bare token (CLI,
+    management commands, Celery) cannot be found by owner and still lapse with the
+    TTL.
+
+    Returns the mark.
+    """
+    cache.delete(_org_data_cache_key("", owner))
+    mark = f"{time.time():.6f}"
+    # Outlives the longest a session's copy can: a session started just before the
+    # clear must still find the mark on its last request.
+    ttl = int(getattr(settings, "SESSION_COOKIE_AGE", 1209600)) + _ORG_DATA_CACHE_TTL
+    cache.set(_org_data_forgotten_key(owner), mark, ttl)
+    return mark
+
+
+def organization_data_forgotten_mark(owner: str) -> str | None:
+    """The mark ``forget_user_organization_data`` left for ``owner``, if any."""
+    return cache.get(_org_data_forgotten_key(owner))
+
+
+def access_generation(owner: str) -> str:
+    """A key part for any per-person cache of what they may access: it changes when
+    an admin clears their labs context, so every such entry is missed after."""
+    try:
+        return organization_data_forgotten_mark(owner) or "0"
+    except Exception:  # noqa: BLE001 -- a cache that cannot be read holds no entries to miss either
+        return "0"
 
 
 def fetch_user_organization_data(
