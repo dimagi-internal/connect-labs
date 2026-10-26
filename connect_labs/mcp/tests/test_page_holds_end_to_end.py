@@ -108,7 +108,9 @@ def test_a_grant_whose_page_was_not_recorded_reads_nothing(labsdata, canopy_rede
         sent.update(payload)
         return {"token": "canopy-contact-token", "expires_at": "", "kind": "contact"}
 
-    request = RequestFactory().post(panel["options"]["tokenUrl"])
+    request = RequestFactory().post(
+        panel["options"]["tokenUrl"], data=json.dumps({"grant": True}), content_type="application/json"
+    )
     request.user = visitor
     with mock.patch.object(sdk_views, "mint_contact_token", mint):
         assert sdk_views.panel_token(request).status_code == 200
@@ -305,7 +307,9 @@ def test_a_run_page_grant_minted_without_its_record_reaches_no_run(enabled, cano
         sent.update(payload)
         return {"token": "canopy-contact-token", "expires_at": "", "kind": "contact"}
 
-    request = RequestFactory().post(panel["options"]["tokenUrl"])
+    request = RequestFactory().post(
+        panel["options"]["tokenUrl"], data=json.dumps({"grant": True}), content_type="application/json"
+    )
     request.user = visitor
     with mock.patch.object(sdk_views, "mint_contact_token", mint):
         assert sdk_views.panel_token(request).status_code == 200
