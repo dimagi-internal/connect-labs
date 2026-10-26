@@ -1194,100 +1194,6 @@ describe('review fixes', () => {
 // Every live copy runs sandboxed (2026-10-13): what the live scan found missing
 // ---------------------------------------------------------------------------
 
-describe('the deprecated MBW monitoring dashboards', () => {
-  it('reach their own endpoints, bound to their opportunity and run', () => {
-    for (const [url, method] of [
-      ['/custom_analysis/mbw_monitoring/api/oauth-status/?next=%2Fx%2F', 'GET'],
-      ['/custom_analysis/mbw_monitoring/api/snapshot/?run_id=900', 'GET'],
-      [
-        '/custom_analysis/mbw_monitoring/api/gps/some.user/?opportunity_id=10&start_date=2026-01-01',
-        'GET',
-      ],
-      [
-        '/custom_analysis/mbw_monitoring/stream/?opportunity_id=10&run_id=900',
-        'GET',
-      ],
-    ]) {
-      expect(checkFetch(url, method, CTX).gate, url).toBe('read');
-    }
-    expect(
-      checkFetch(
-        '/custom_analysis/mbw_monitoring/api/opportunity-flws/',
-        'POST',
-        CTX,
-        JSON.stringify({ opportunities: [10] }),
-      ).gate,
-    ).toBe('read');
-    // Another run's snapshot, another opportunity's stream or workers: refused.
-    expect(() =>
-      checkFetch(
-        '/custom_analysis/mbw_monitoring/api/snapshot/?run_id=901',
-        'GET',
-        CTX,
-      ),
-    ).toThrow(/does not cover/);
-    expect(() =>
-      checkFetch(
-        '/custom_analysis/mbw_monitoring/stream/?opportunity_id=99',
-        'GET',
-        CTX,
-      ),
-    ).toThrow(/does not cover/);
-    expect(() =>
-      checkFetch(
-        '/custom_analysis/mbw_monitoring/api/opportunity-flws/',
-        'POST',
-        CTX,
-        JSON.stringify({ opportunities: [99] }),
-      ),
-    ).toThrow(/does not cover/);
-    // Its other write endpoints (suspend a user, a session result) stay off the table.
-    for (const url of [
-      '/custom_analysis/mbw_monitoring/api/suspend-user/',
-      '/custom_analysis/mbw_monitoring/api/session/complete/',
-    ]) {
-      expect(() => checkFetch(url, 'POST', CTX, '{}'), url).toThrow(
-        /cannot be reached/,
-      );
-    }
-  });
-
-  it('save a snapshot of THIS run only', () => {
-    const body = (b) => JSON.stringify(b);
-    const ok = checkFetch(
-      '/custom_analysis/mbw_monitoring/api/save-snapshot/?opportunity_id=10',
-      'POST',
-      CTX,
-      body({ run_id: 900, opportunity_id: 10, snapshot_data: { a: 1 } }),
-    );
-    expect(ok.gate).toBe('own');
-    expect(JSON.parse(ok.body).run_id).toBe(900);
-    for (const b of [
-      { run_id: 901, snapshot_data: {} },
-      { snapshot_data: {} },
-      { run_id: 900, opportunity_id: 99, snapshot_data: {} },
-    ]) {
-      expect(() =>
-        checkFetch(
-          '/custom_analysis/mbw_monitoring/api/save-snapshot/',
-          'POST',
-          CTX,
-          body(b),
-        ),
-      ).toThrow(/does not cover/);
-    }
-    // In edit mode there is no run to save to.
-    expect(() =>
-      checkFetch(
-        '/custom_analysis/mbw_monitoring/api/save-snapshot/',
-        'POST',
-        { ...CTX, runId: null },
-        body({ run_id: 900 }),
-      ),
-    ).toThrow(/does not cover/);
-  });
-});
-
 describe("a workflow's own data sources (attach / detach a pipeline)", () => {
   const ctx = () => ({ ...CTX, pipelineIds: [6619], jobIds: [] });
 
@@ -1512,24 +1418,6 @@ describe('a control room that marks the runs it watches', () => {
       }
     });
     expect([...overlapping]).toEqual(['/labs/workflow/api/run/7/state/']);
-  });
-});
-
-describe('the MBW views that read a run by another name', () => {
-  it('session_id is bound like run_id', () => {
-    for (const url of [
-      '/custom_analysis/mbw_monitoring/api/snapshot/?session_id=901',
-      '/custom_analysis/mbw_monitoring/stream/?program_id=7&session_id=901',
-    ]) {
-      expect(() => checkFetch(url, 'GET', CTX), url).toThrow(/does not cover/);
-    }
-    expect(
-      checkFetch(
-        '/custom_analysis/mbw_monitoring/api/snapshot/?session_id=900',
-        'GET',
-        CTX,
-      ).gate,
-    ).toBe('read');
   });
 });
 

@@ -25,8 +25,6 @@ graph LR
     Labs --> W[Workflow Engine]
     Labs --> T[Task Management]
     Labs --> S[Solicitations]
-    Labs --> C[Custom Analysis]
-    Labs --> M[Coverage Maps]
     Labs --> AI[AI Features]
 ```
 
@@ -36,8 +34,6 @@ graph LR
 | [Workflow Engine](workflow-engine.md) | Configurable dashboards showing live CommCare data by worker and case         |
 | [Task Management](task-management.md) | Create and track follow-up actions from audits or manual triage               |
 | [Solicitations](solicitations.md)     | Post RFPs/EOIs, collect responses from organizations, score and award funding |
-| [Custom Analysis](custom-analysis.md) | Program-specific dashboards for KMC, MBW, nutrition, and SAM tracking         |
-| [Coverage Maps](coverage-maps.md)     | Interactive map of delivery unit boundaries and service point locations       |
 | [Reports with Claude](reports-with-claude.md) | Build and change reports and indicator definitions by talking to Claude |
 | [The Semantic Layer](semantic-layer.md) | How indicator definitions work, reading their SQL, and managing them across programmes |
 | [Benchmarks](benchmarks.md) | Show each opportunity how it compares with anonymous peers, today and over time |

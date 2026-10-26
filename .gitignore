@@ -353,12 +353,6 @@ connect_labs/labs/explorer/downloaded_visits/
 # Admin boundaries example files (GeoPoDe exports, etc.)
 connect_labs/labs/admin_boundaries/examples/
 
-# MBW custom analysis example files (visit JSON samples)
-connect_labs/custom_analysis/mbw/examples/
-
-# RUTF custom analysis example files (visit JSON samples)
-connect_labs/custom_analysis/rutf/examples/
-
 # Elastic Beanstalk Files
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml

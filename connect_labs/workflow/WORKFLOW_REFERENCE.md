@@ -1158,14 +1158,14 @@ var result = await actions.cancelAudit(taskId);
 
 ### Job Management
 
-Jobs are long-running backend computations (e.g., MBW monitoring analysis).
+Jobs are long-running backend computations (e.g., a programme audit rollup).
 **Before wiring live progress, read [§11 Long-running job progress](#11-long-running-job-progress).**
 `streamJobProgress` is now poll-first (holds no connection); the SSE stream is opt-in.
 
 ```javascript
 // Start a job
 var result = await actions.startJob(instance.id, {
-  job_type: 'mbw_monitoring',
+  job_type: 'audit_par_rollup',
   params: {/* job-specific parameters */},
   records: [/* optional data records */],
 });

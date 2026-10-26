@@ -1,6 +1,6 @@
 # Audit Export to S3 — Implementation Plan
 
-> **Status (2026-07-25 doc-regen):** shipped — see `connect_labs/labs/s3_export.py`; the unchecked boxes below were completed but never ticked. Historical record.
+> **Status (2026-07-25 doc-regen):** shipped — see `connect_labs/labs/s3_export.py`; the unchecked boxes below were completed but never ticked. Historical record. The `/custom_analysis/exports/` download page was removed on 2026-10-25 (no use); the S3 export itself remains.
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 

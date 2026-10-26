@@ -106,8 +106,6 @@
         '/explorer/': ['orgs', 'programs', 'opps'],
         '/audit/': ['orgs', 'programs', 'opps'],
         '/tasks/': ['orgs', 'programs', 'opps'],
-        '/coverage/': ['orgs', 'programs', 'opps'],
-        '/custom_analysis/': ['orgs', 'programs', 'opps'],
         '/funder/': ['orgs', 'programs', 'opps'],
         '/labs/synthetic/': ['orgs', 'programs', 'opps'],
         // The global Simple Microplan list + editor: plans belong to the context

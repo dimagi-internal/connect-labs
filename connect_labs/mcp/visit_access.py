@@ -174,7 +174,6 @@ def _read_definition(user, key: str, arguments: dict, opportunity_id, program_id
 
 RESOLVERS: dict[str, Resolver] = {
     "pipeline_preview": _pipeline_preview,
-    "custom_analysis_run": _opportunity_id,
     "explorer_describe": _data_selection,
     "explorer_query": _data_selection,
     "data_describe": _data_selection,

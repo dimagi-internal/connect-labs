@@ -34,15 +34,14 @@ python manage.py runserver
 
 ## Labs Apps
 
-| App              | Purpose                                            | Docs                                                                   |
-| ---------------- | -------------------------------------------------- | ---------------------------------------------------------------------- |
-| `labs/`          | Core infrastructure: OAuth, API client, middleware | [LABS_GUIDE.md](connect_labs/labs/LABS_GUIDE.md)                       |
-| `audit/`         | Quality assurance review of FLW visits             | [README](connect_labs/audit/README.md)                                 |
-| `tasks/`         | Task management for FLW follow-ups                 | [README](connect_labs/tasks/README.md)                                 |
-| `workflow/`      | Configurable workflow engine with React UIs        | [README](connect_labs/workflow/README.md)                              |
-| `ai/`            | AI agent integration via pydantic-ai               | [README](connect_labs/ai/README.md)                                    |
-| `solicitations/` | RFP management scoped by program                   | `data_access.py`, `api_views.py`, `mcp_tools.py`                       |
-| `coverage/`      | Delivery unit mapping from CommCare HQ             | [Commands README](connect_labs/coverage/management/commands/README.md) |
+| App              | Purpose                                            | Docs                                             |
+| ---------------- | -------------------------------------------------- | ------------------------------------------------ |
+| `labs/`          | Core infrastructure: OAuth, API client, middleware | [LABS_GUIDE.md](connect_labs/labs/LABS_GUIDE.md) |
+| `audit/`         | Quality assurance review of FLW visits             | [README](connect_labs/audit/README.md)           |
+| `tasks/`         | Task management for FLW follow-ups                 | [README](connect_labs/tasks/README.md)           |
+| `workflow/`      | Configurable workflow engine with React UIs        | [README](connect_labs/workflow/README.md)        |
+| `ai/`            | AI agent integration via pydantic-ai               | [README](connect_labs/ai/README.md)              |
+| `solicitations/` | RFP management scoped by program                   | `data_access.py`, `api_views.py`, `mcp_tools.py` |
 
 ## Documentation Map
 
@@ -77,9 +76,13 @@ Access labs features at `http://localhost:8000/labs/login/` — this initiates O
 python manage.py get_cli_token
 ```
 
-### CommCare HQ OAuth (for coverage app)
+### CommCare HQ OAuth (for scripts that read CommCare HQ)
 
-See [coverage commands README](connect_labs/coverage/management/commands/README.md).
+```bash
+python manage.py get_commcare_token
+```
+
+Saves to `~/.commcare-connect/commcare_token.json`. Needs `COMMCARE_OAUTH_CLIENT_ID` (and `COMMCARE_HQ_URL`, default https://www.commcarehq.org).
 
 ### AI Integrations
 

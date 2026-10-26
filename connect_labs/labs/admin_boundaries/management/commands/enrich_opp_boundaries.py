@@ -26,7 +26,21 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 
+from connect_labs.labs.analysis.config import AnalysisPipelineConfig, CacheStage, FieldComputation
+
 logger = logging.getLogger(__name__)
+
+# Fills the visit cache the boundary match reads; visit-level, so every visit lands.
+_CACHE_FILL_CONFIG = AnalysisPipelineConfig(
+    grouping_key="username",
+    fields=[
+        FieldComputation(name="commcare_userid", path="form.meta.userID", aggregation="first"),
+        FieldComputation(name="du_name", path="form.case.update.du_name", aggregation="first"),
+    ],
+    histograms=[],
+    filters={},
+    terminal_stage=CacheStage.VISIT_LEVEL,
+)
 
 
 # Country name to ISO 3166-1 alpha-3 code mapping
@@ -302,7 +316,6 @@ class Command(BaseCommand):
 
     def _enrich_opportunity(self, opp_id: int, country: str, iso_code: str, funder: str) -> dict:
         """Run analysis pipeline and spatial query for an opportunity."""
-        from connect_labs.coverage.analysis import COVERAGE_BASE_CONFIG
         from connect_labs.labs.admin_boundaries.services import get_opp_boundary_coverage
         from connect_labs.labs.analysis.pipeline import AnalysisPipeline
         from connect_labs.labs.integrations.connect.cli import create_cli_request
@@ -329,7 +342,7 @@ class Command(BaseCommand):
             self.stdout.write("  Running analysis pipeline to populate cache...")
             try:
                 pipeline = AnalysisPipeline(request)
-                pipeline.stream_analysis_ignore_events(COVERAGE_BASE_CONFIG, opportunity_id=opp_id)
+                pipeline.stream_analysis_ignore_events(_CACHE_FILL_CONFIG, opportunity_id=opp_id)
                 self.stdout.write(self.style.SUCCESS("  Cache populated"))
             except Exception as e:
                 raise CommandError(f"Pipeline error for opp {opp_id}: {e}") from e

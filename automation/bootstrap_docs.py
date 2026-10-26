@@ -60,22 +60,6 @@ FEATURES = [
         ),
     },
     {
-        "title": "Custom Analysis",
-        "slug": "custom-analysis",
-        "summary": (
-            "Program-specific dashboards for nutrition monitoring, maternal and child health, "
-            "and audit quality reviews. Each dashboard shows aggregated metrics for your program."
-        ),
-    },
-    {
-        "title": "Coverage Maps",
-        "slug": "coverage-maps",
-        "summary": (
-            "Visualize delivery unit boundaries and service points on an interactive map. "
-            "Filter by field worker or geographic area to understand coverage patterns."
-        ),
-    },
-    {
         "title": "AI Features",
         "slug": "ai-features",
         "summary": (

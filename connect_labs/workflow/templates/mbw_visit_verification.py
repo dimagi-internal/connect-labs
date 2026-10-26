@@ -83,8 +83,7 @@ _VISIT_FIELDS = [
     {"name": "visit_datetime", "path": "form.meta.timeEnd", "aggregation": "first"},
     # CommCare's own clean integer build number -- NOT form.meta.appVersion,
     # which is a free-text descriptive string ("CommCare Version: X, Build
-    # Number: Y..."). mbw_monitoring already uses this exact path
-    # (pipeline_config.py) for build-version filtering; same field here.
+    # Number: Y...").
     # Added to diagnose/guard against pre-verification-block submissions
     # leaking into this dashboard via a stale xmlns match -- see
     # hasVerificationData()'s PROD_APP_BUILD_FLOOR check in the render code.

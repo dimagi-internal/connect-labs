@@ -6,7 +6,6 @@ Import all handler modules here so they register on app startup.
 """
 
 from connect_labs.workflow.job_handlers import audit_par  # noqa: F401
-from connect_labs.workflow.job_handlers import mbw_monitoring  # noqa: F401
 from connect_labs.workflow.job_handlers import muac_picture_audit  # noqa: F401
 from connect_labs.workflow.job_handlers import muac_plausibility  # noqa: F401
 from connect_labs.workflow.job_handlers import program_admin_report  # noqa: F401

@@ -166,7 +166,6 @@ LOCAL_APPS = [
     "connect_labs.audit_trail",
     "connect_labs.benchmarks",
     "connect_labs.workflow",
-    "connect_labs.coverage",
     "connect_labs.flags",
     "connect_labs.commcarehq",  # stub: HQServer model for FK references
     "connect_labs.labs.admin_boundaries",

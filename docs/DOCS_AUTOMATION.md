@@ -24,8 +24,6 @@ connect_labs/audit/          → Audit & QA Review
 connect_labs/workflow/       → Workflow Engine
 connect_labs/tasks/          → Task Management
 connect_labs/solicitations/  → Solicitations
-connect_labs/custom_analysis/→ Custom Analysis
-connect_labs/coverage/       → Coverage Maps
 connect_labs/microplans/simple_*, static/ + templates/microplans/simple_*
                              → Simple Microplan (help site + the editor's help popup; no Confluence page)
 connect_labs/ai/             → AI Features
@@ -50,8 +48,6 @@ user_docs/
   workflow-engine.md     Workflow Engine
   task-management.md     Task Management
   solicitations.md       Solicitations
-  custom-analysis.md     Custom Analysis
-  coverage-maps.md       Coverage Maps
   simple-microplan.md    Simple Microplan (also rendered as the editor's in-page help)
   ai-features.md         AI Features
   connect-mcp.md         Connect MCP & Safe Mode
@@ -122,8 +118,6 @@ internal hostnames or anything that only works inside Dimagi. The repo is public
 | Workflow Engine                     | `3927801864` |
 | Task Management                     | `3928293395` |
 | Solicitations                       | `3927179271` |
-| Custom Analysis                     | `3928817669` |
-| Coverage Maps                       | `3927867398` |
 | AI Features                         | `3928817690` |
 | Connect MCP & Safe Mode             | `3927801885` |
 

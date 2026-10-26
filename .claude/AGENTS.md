@@ -51,7 +51,7 @@ The only local Django models used by labs are cache tables in `connect_labs/labs
 - **Need to store/retrieve domain data?** → `LabsRecordAPIClient` via `data_access.py`
 - **Need visit/user CSV data for analysis?** → `AnalysisPipeline` (handles caching transparently)
 - **Need opportunity/organization metadata?** → HTTP call to `/export/opp_org_program_list/`
-- **Need CommCare HQ case data?** → CommCare HQ OAuth + Case API v2 (see `coverage/` app)
+- **Need CommCare HQ case data?** → CommCare HQ OAuth + Case API v2 (see `labs/integrations/commcare/` and `labs/analysis/backends/sql/cchq_fetcher.py`)
 - **Need AI integration?** → Add agent in `ai/agents/`, SSE streaming via `AIStreamView`
 - **Need async processing?** → Celery task in `{app}/tasks.py`, SSE for progress
 
@@ -160,7 +160,7 @@ Data-driven workflows with custom React UIs and pipeline integration.
 - **DataAccess:** `WorkflowDataAccess`, `PipelineDataAccess` (both extend `BaseDataAccess`) in `workflow/data_access.py`
 - **Proxy models:** `WorkflowDefinitionRecord`, `WorkflowRenderCodeRecord`, `WorkflowRunRecord`, `WorkflowChatHistoryRecord`, `PipelineDefinitionRecord` (experiment=`"workflow"` / `"pipeline"`)
 - **Key views:** Workflow list (`/workflow/`), definition view, run view
-- **Templates:** Predefined workflow templates in `workflow/templates/` (audit_with_ai_review, bulk_image_audit, mbw_monitoring_v2, performance_review [multi-opp], ocs_outreach)
+- **Templates:** Predefined workflow templates in `workflow/templates/` (audit_with_ai_review, bulk_image_audit, mbw_auditing_v5, performance_review [multi-opp], ocs_outreach)
 - **Render code:** React components stored as LabsRecords, rendered dynamically in workflow runner
 - **Cross-app:** Can create audit sessions and tasks from workflow actions
 - **Multi-opportunity:** Templates can set `multi_opp: True` to opt into cross-opp support. Multi-opp workflows store `opportunity_ids` on the definition, tag each worker/pipeline row with its source `opportunity_id`, and expose per-opp metadata (`per_opp` dict, **string keys** after JSON). Edit endpoint: `POST /labs/workflow/api/<def_id>/opportunity-ids/`. Full contract in [`workflow/WORKFLOW_REFERENCE.md` §8](../connect_labs/workflow/WORKFLOW_REFERENCE.md#8-multi-opportunity-workflows).
@@ -236,16 +236,6 @@ Solicitations (requests for proposals), responses, and reviews.
 - **Key views:** Solicitation list, create, respond, review
 - **Standalone:** No cross-app dependencies (except AI agent integration)
 
-### `coverage/` — Delivery Unit Mapping
-
-Interactive map visualization of FLW coverage.
-
-- **Different pattern:** Uses CommCare HQ OAuth (separate from Connect OAuth) + Case API v2
-- **Models:** Dataclasses (`LocalUserVisit`, `DeliveryUnit`), NOT LabsRecord proxies
-- **DataAccess:** `CoverageDataAccess` fetches from CommCare HQ, not Connect
-- **Key views:** Map view (`/coverage/map/`), SSE stream for GeoJSON loading
-- **Standalone:** No cross-app dependencies
-
 ### `labs/` — Core Infrastructure
 
 Foundation layer used by all other apps.
@@ -271,7 +261,6 @@ AI ──────imports──→ WorkflowDataAccess (agents modify workflow
 AI ──────imports──→ SolicitationsDataAccess (solicitation agent)
 Audit ←──references── Tasks (tasks store audit_session_id)
 All apps ──depend──→ labs/ (API client, models, middleware)
-Coverage ──────────→ CommCare HQ (separate OAuth, no Connect dependency)
 ```
 
 ## Key Files Quick Reference

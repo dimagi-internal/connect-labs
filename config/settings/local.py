@@ -63,7 +63,6 @@ OCS_OAUTH_CLIENT_SECRET = env("OCS_OAUTH_CLIENT_SECRET", default="")
 # Add labs app to installed apps
 INSTALLED_APPS = INSTALLED_APPS + [  # noqa: F405
     "connect_labs.labs",
-    "connect_labs.custom_analysis.chc_nutrition",
     "connect_labs.campaign",
 ]
 

@@ -550,8 +550,6 @@ class LabsContextMiddleware(MiddlewareMixin):
                 "/labs/pipelines/",
                 "/labs/scout/",
                 "/labs/scout-prod/",
-                "/coverage/",
-                "/custom_analysis/",
                 "/funder/",
                 # Programme-scoped: a bare supply URL picks up the session's programme
                 # and shows it, so the links a supply page offers name their scope.

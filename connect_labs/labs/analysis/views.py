@@ -40,7 +40,7 @@ class FLWAnalysisAPIView(LoginRequiredMixin, View):
         }
 
     Example:
-        GET /labs/api/analysis/flw/?config=chc_nutrition
+        GET /labs/api/analysis/flw/?config=<registered name>
         GET /labs/api/analysis/flw/?grouping_key=username&experiment=my_analysis
     """
 
