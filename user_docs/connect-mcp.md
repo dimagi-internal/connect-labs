@@ -73,9 +73,15 @@ Connect Labs provides two MCP addresses. **Use `mcp/no_user_visit/` unless you n
 
     Then type `/mcp`, choose `connect_labs` and sign in with CommCare Connect when the browser opens. There is no token to copy.
 
+    !!! note "Full-access sign-in requires a passkey confirmation"
+        If you connect using the full `/mcp/` address, Labs will send you to canopy to confirm with your passkey before completing sign-in. No extra step is needed for the `mcp/no_user_visit/` address.
+
 === "Claude desktop or claude.ai"
 
     Open **Settings → Connectors**, choose **Add custom connector**, and add `https://labs.connect.dimagi.com/mcp/no_user_visit/` (or `https://labs.connect.dimagi.com/mcp/` only if you need real visit data). Click **Connect** and sign in with CommCare Connect.
+
+    !!! note "Full-access sign-in requires a passkey confirmation"
+        If you connect using the full `/mcp/` address, Labs will send you to canopy to confirm with your passkey before completing sign-in. No extra step is needed for the `mcp/no_user_visit/` address.
 
 Claude acts as you, with your Connect permissions. To see or disconnect the apps you have signed in, visit [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/).
 
@@ -88,6 +94,9 @@ Claude acts as you, with your Connect permissions. To see or disconnect the apps
 ```
 
 When asked, choose **Production labs environment**, then approve the token in the browser. Fully quit and restart Claude Code afterwards. The token lasts 90 days by default; run the skill again to replace it.
+
+!!! note "Full-access tokens require a passkey confirmation"
+    If you choose a full-access token during setup, Labs will send you to canopy to confirm with your passkey. If you are not a member of Labs' canopy workspace, you can create a no-user-visit token only.
 
 ### 3. (Safe Mode only) Fetch the CommCare HQ credentials
 
@@ -104,14 +113,23 @@ The `.env` holds the CommCare HQ credentials Safe Mode's read-only app-structure
 
 Personal Access Tokens let you connect an MCP client (such as Claude Code in Safe Mode) to Labs without going through the browser sign-in flow. You create and manage them at [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/).
 
+### Creating and rotating tokens
+
+**No-user-visit tokens** can be created and rotated by you directly on the tokens page, with no extra step.
+
+**Full-access (Standard) tokens** require a passkey confirmation through canopy. When you create or rotate a Standard token, Labs redirects you to canopy, you touch your passkey, and you are returned to Labs with your new token. If your account is not a member of Labs' canopy workspace, Labs cannot ask for that approval and you will only be able to create no-user-visit tokens.
+
+!!! note "Tokens you already have keep working"
+    This confirmation step applies only when creating or rotating a token. Using an existing token is unchanged.
+
 ### Access levels
 
 When you create a token you choose an **Access** level:
 
 | Access level | What it can do |
 | --- | --- |
-| **Standard** | Full access matching your Connect permissions, including reading visit data and making workflow edits. |
-| **No user visit data** | Never sees user visit data. Reads workflow definitions, CommCare app structure, pipeline and indicator definitions, solicitations, funds, the organisation directory, targeting data, and microplan sampling. Can edit workflow and indicator definitions (including a workflow's opportunity list; render code only on synthetic opportunities whose data was generated, because render code runs over the visit data of whoever opens the page) and trigger saved-run generation — snapshots, history rebuilds, cache warms, hand-downs and benchmark publication — where the server computes over visits and the token gets back only ids, versions, dates and counts. Cannot delete workflows or pipelines. Can also profile real opportunities on the server and generate synthetic data from those profiles. Same permissions as the `mcp/no_user_visit/` address. Cannot access individual visit rows or per-visit values — including through the export API and data reseed endpoints — except on synthetic opportunities whose data was generated. Opportunity-level counts and dates, and contact details of people who submitted as an organisation, are allowed. |
+| **Standard** | Full access matching your Connect permissions, including reading visit data and making workflow edits. Requires passkey confirmation through canopy to create or rotate. |
+| **No user visit data** | Never sees user visit data. Reads workflow definitions, CommCare app structure, pipeline and indicator definitions, solicitations, funds, the organisation directory, targeting data, and microplan sampling. Can edit workflow and indicator definitions (including a workflow's opportunity list; render code only on synthetic opportunities whose data was generated, because render code runs over the visit data of whoever opens the page) and trigger saved-run generation — snapshots, history rebuilds, cache warms, hand-downs and benchmark publication — where the server computes over visits and the token gets back only ids, versions, dates and counts. Cannot delete workflows or pipelines. Can also profile real opportunities on the server and generate synthetic data from those profiles. Same permissions as the `mcp/no_user_visit/` address. Cannot access individual visit rows or per-visit values — including through the export API and data reseed endpoints — except on synthetic opportunities whose data was generated. Opportunity-level counts and dates, and contact details of people who submitted as an organisation, are allowed. No passkey confirmation required. |
 | **Coaching pictures only** | Lets an Open Chat Studio team fetch coaching pictures. Nothing else. Cannot be used for MCP or the export API. |
 
 Tools the token is not allowed to use do not appear to the agent at all, so the agent cannot accidentally attempt a blocked action.
@@ -202,18 +220,4 @@ Any MCP client can read the link back with the standard `resources/read` request
 - **What it shows.** Each read returns exactly the rows the tool produced. A result is never re-run, so the numbers cannot change between reads.
 - **For a day.** After a day the link returns `expired` (the PMC ranking lasts 30 days instead). Run the tool again to get a new one.
 - **When Connect can't answer.** If Labs cannot check your access with Connect at that moment, the read is refused with `unavailable`. Try again shortly.
-- **Refusals are structured.** A refused read is an MCP error whose `data.code` is `bad_uri`, `not_found`, `expired`, `forbidden` or `unavailable` (with `data.sensitive: true` when the result holds sensitive data). The message reads `<code>: <why>`.
-
-Sensitive data follows the same rules as the tool that produced it. A token that cannot see user visit data cannot read a result that holds them. Through canopy, only an agent Labs has cleared for sensitive data can read one, and it reads long cells cut, as its query returned them. Every read is recorded in the audit trail, and so is every refused one.
-
-## Data (formerly the SQL explorer)
-
-The Data page at [labs.connect.dimagi.com/labs/data/](https://labs.connect.dimagi.com/labs/data/) lets you query live visit data for the opportunities you have access to, down to each submitted form, without needing a developer to write reports. The old `/labs/explorer/` address redirects here.
-
-### How it works
-
-The page is arranged in three regions: a **left rail**, a **canvas** in the centre, and an **agent panel** docked on the right.
-
-- **Left rail.** Contains the Space switcher, the current space's sources and tables, the queries saved in the space, and your personal saved queries under **My queries** (hidden when you have none, so it does not make the space look empty).
-- **Canvas.** A tabbed workspace. Each tab holds an open query editor or a saved query you have opened. The last few things you opened stay as tabs so you can switch between them quickly. A saved query that was kept with a chart opens directly on that chart — drawn the same way the results card draws it — with the table one click away. A query saved without a chart opens on its table as before.
-- **Agent panel.** The AI assistant for the Data page. It can open a query in a new canvas tab and run it
+- **Refusals are structured.** A refused read is an MCP error whose `data.code` is `bad_uri`, `not_found`, `expired`, `forbidden` or `unavailable` (with `data.sensitive: true` when the result holds sensitive data
