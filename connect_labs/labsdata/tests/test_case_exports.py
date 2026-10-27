@@ -20,7 +20,9 @@ from django.test import Client
 
 from connect_labs.labs import canopy_panel
 from connect_labs.labs.access import scopes
-from connect_labs.labsdata import cases, exports, lineage, scope, tasks
+from connect_labs.labsdata import cases
+from connect_labs.labsdata import dictionary as dictionary_module
+from connect_labs.labsdata import exports, lineage, scope, tasks
 from connect_labs.labsdata.models import SpaceExport
 from connect_labs.labsdata.scope import Opportunity
 from connect_labs.semantic.tests.test_end_to_end import (  # noqa: F401 -- visit_cache is a fixture
@@ -55,6 +57,8 @@ def connect(monkeypatch, settings, tmp_path):
     monkeypatch.setattr(scope, "directory", lambda caller: {OPP: OPP_ROW})
     monkeypatch.setattr(canopy_panel, "panel", lambda *a, **k: None)
     monkeypatch.setattr(tasks.build_space_export, "delay", lambda pk: exports.build(pk))
+    # Scans run on the worker; here, at once.
+    monkeypatch.setattr(dictionary_module, "_enqueue_scan", lambda pk: dictionary_module.run_scan(pk))
 
 
 def _client(user):

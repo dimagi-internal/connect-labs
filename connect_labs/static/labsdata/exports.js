@@ -147,9 +147,22 @@
     const d = state.dict;
     $('dx-counts').textContent =
       `${d.counts.entries} · ${d.counts.reviewed} reviewed · ${d.counts.exported} exported`;
-    $('dx-scanned').textContent = d.scanned_at
-      ? `Scanned ${new Date(d.scanned_at).toLocaleString()} (${d.scanned_visits} visits)`
-      : 'Never scanned';
+    // A scan runs on the worker: while it is queued or running, say so and look again.
+    const scanning = d.scan_status === 'queued' || d.scan_status === 'running';
+    $('dx-scan').disabled = scanning;
+    $('dx-scanned').textContent = scanning
+      ? `Scanning (${d.scan_status})… this page updates when it is done`
+      : d.scanned_at
+        ? `Scanned ${new Date(d.scanned_at).toLocaleString()} (${d.scanned_visits} visits)`
+        : 'Never scanned';
+    if (scanning) setTimeout(loadDictionary, 4000);
+    if (d.scan_status === 'failed')
+      showError(
+        'dx-fields-error',
+        new Error(
+          `The last scan failed (${d.scan_error || 'error'}). Scan again.`,
+        ),
+      );
     const flagged = flaggedKeys();
     const rows = d.entries.filter((e) => shown(e, flagged));
     $('dx-rows').innerHTML = rows.length
@@ -328,17 +341,14 @@
     drawFields();
   });
   $('dx-scan').addEventListener('click', async () => {
-    const btn = $('dx-scan');
-    btn.disabled = true;
-    btn.textContent = 'Scanning…';
+    $('dx-scan').disabled = true;
     try {
       await call(cfg.scanUrl, {});
-      await loadDictionary();
+      await loadDictionary(); // shows "Scanning…" and looks again until it is done
     } catch (e) {
       showError('dx-fields-error', e);
+      $('dx-scan').disabled = false;
     }
-    btn.disabled = false;
-    btn.textContent = 'Scan for fields and app changes';
   });
   if (cfg.isManager) {
     $('dx-all').addEventListener('change', (ev) => {

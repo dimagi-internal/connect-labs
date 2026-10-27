@@ -17,3 +17,10 @@ def sweep_space_exports() -> int:
     from .exports import sweep
 
     return sweep()
+
+
+@celery_app.task(acks_late=True)
+def scan_dictionary(dictionary_id: int) -> None:
+    from .dictionary import run_scan
+
+    run_scan(dictionary_id)

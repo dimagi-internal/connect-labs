@@ -25,7 +25,9 @@ from connect_labs.labs import canopy_panel
 from connect_labs.labs.access import scopes
 from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
 from connect_labs.labs.analysis.config import USER_VISITS_RAW_SLOT
-from connect_labs.labsdata import dictionary, exports, scope, tasks
+from connect_labs.labsdata import dictionary
+from connect_labs.labsdata import dictionary as dictionary_module
+from connect_labs.labsdata import exports, scope, tasks
 from connect_labs.labsdata.models import DictionaryFlag, SpaceExport
 from connect_labs.labsdata.scope import Opportunity
 
@@ -58,6 +60,8 @@ def connect(monkeypatch, settings, tmp_path):
     monkeypatch.setattr(canopy_panel, "panel", lambda *a, **k: None)
     # Build in the request, not on a worker.
     monkeypatch.setattr(tasks.build_space_export, "delay", lambda pk: exports.build(pk))
+    # Scans run on the worker; here, at once.
+    monkeypatch.setattr(dictionary_module, "_enqueue_scan", lambda pk: dictionary_module.run_scan(pk))
 
 
 def _form(n: int, *, extra: dict | None = None, lethargy_key: str = "lethargy", build: int = 7):
@@ -519,3 +523,35 @@ def test_a_build_runs_once_and_a_dead_one_is_swept(people, space, django_capture
     exports.sweep(now=export.created_at + exports.STUCK + timedelta(seconds=1))
     export.refresh_from_db()
     assert export.status == SpaceExport.FAILED and not export.file_name
+
+
+# --- the scan runs on the worker -------------------------------------------------------
+
+
+def test_a_scan_is_queued_once_and_lists_answers_never_the_envelope(people, space, monkeypatch):
+    queued = []
+    monkeypatch.setattr(dictionary_module, "_enqueue_scan", queued.append)
+    ann = _client(people["ann"])
+    first = _post(ann, _api(space, "dictionary/scan/")).json()
+    second = _post(ann, _api(space, "dictionary/scan/")).json()
+    assert first["scan"] == second["scan"] == {"scan_status": "queued"} and len(queued) == 1
+    assert first["dictionary"]["scan_status"] == "queued"
+    for row in RawVisitCache.objects.filter(opportunity_id=O1.id):
+        row.form_json["received_on"] = "2026-09-01T10:00:00Z"
+        row.form_json["metadata"] = {"location": "9.1 7.4 0 5", "username": "worker0"}
+        row.save(update_fields=["form_json"])
+    dictionary_module.run_scan(queued[0])
+    d = _dict(ann, space)
+    assert d["scan_status"] is None and d["scanned_visits"] == 24
+    assert all(e["column"] or e["key"].startswith("form.") for e in d["entries"])
+
+
+def test_a_failed_scan_says_so_and_can_be_asked_again(people, space, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("cache unreadable")
+
+    monkeypatch.setattr(dictionary_module, "observe", boom)
+    ann = _client(people["ann"])
+    d = _post(ann, _api(space, "dictionary/scan/")).json()["dictionary"]
+    assert (d["scan_status"], d["scan_error"]) == ("failed", "RuntimeError")
+    monkeypatch.undo()

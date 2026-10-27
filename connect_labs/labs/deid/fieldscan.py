@@ -35,6 +35,16 @@ def walk(node, path: tuple = (), *, skip: frozenset = SKIP_KEYS) -> Iterator[tup
         yield path, node
 
 
+def answers(form_json) -> Iterator[tuple[tuple, object]]:
+    """Every answer in a submitted form: the leaves under ``form`` only. The submission
+    envelope around it (``received_on``, ``archived``, ``metadata`` with the phone's GPS and
+    the worker's username, ``id``...) is transport, not a question anyone asked, so a
+    dictionary never lists it and an export never carries it."""
+    form = (form_json or {}).get("form") if isinstance(form_json, dict) else None
+    if isinstance(form, dict):
+        yield from walk(form, ("form",))
+
+
 def dotted(path: tuple) -> str:
     return ".".join(path)
 

@@ -328,7 +328,7 @@ def _build(export: SpaceExport) -> None:
         for row in page:
             source_rows += 1
             du = row.get("deliver_unit") or ""
-            for path, value in fieldscan.walk(row.get("form_json") or {}):
+            for path, value in fieldscan.answers(row.get("form_json")):
                 if value not in (None, ""):
                     seen_sources.add((fieldscan.dotted(path), du))
             for column in _NAME_COLUMNS:

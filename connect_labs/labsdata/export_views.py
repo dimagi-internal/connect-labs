@@ -58,16 +58,16 @@ class DictionaryView(_SpaceJson):
 
 
 class DictionaryScanView(_SpaceJson):
-    """POST: scan the space's cached visits for its fields (structure only). Anyone who can
-    open the space: it changes no setting a person made."""
+    """POST: queue a scan of the space's cached visits for its fields (structure only), run
+    on the worker. Anyone who can open the space: it changes no setting a person made."""
 
     def handle(self, request, body):
         from connect_labs.audit_trail.models import Action
 
         opened = _opened(request, self.kwargs["space_id"])
-        summary = dictionary.scan(opened, user=request.user)
-        _audit_space(Action.READ, opened, "labsdata_dictionary_scan", opened.id, request.user, summary)
-        return {"scan": summary, "dictionary": dictionary.describe(opened)}
+        queued = dictionary.request_scan(opened, user=request.user)
+        _audit_space(Action.READ, opened, "labsdata_dictionary_scan", opened.id, request.user, queued)
+        return {"scan": queued, "dictionary": dictionary.describe(opened)}
 
 
 class DictionaryEntryView(_SpaceJson):
