@@ -4,6 +4,7 @@ import pytest
 from django.urls import reverse
 
 from connect_labs.mcp.models import MCPAccessToken
+from connect_labs.mcp.testing import allow_self_mint
 from connect_labs.users.models import User
 
 VALID_CALLBACK = "http://127.0.0.1:8765/cb"
@@ -29,6 +30,7 @@ def test_get_renders_consent_page(client, logged_in_user):
 
 @pytest.mark.django_db
 def test_post_creates_token_and_redirects_with_token(client, logged_in_user):
+    allow_self_mint(logged_in_user)
     url = reverse("mcp:admin_create_token")
     resp = client.post(
         url,
@@ -45,6 +47,7 @@ def test_post_creates_token_and_redirects_with_token(client, logged_in_user):
 
 @pytest.mark.django_db
 def test_post_auto_generates_name_when_empty(client, logged_in_user):
+    allow_self_mint(logged_in_user)
     url = reverse("mcp:admin_create_token")
     resp = client.post(
         url,

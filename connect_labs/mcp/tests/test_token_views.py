@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from connect_labs.mcp.models import MCPAccessToken
 from connect_labs.mcp.snippets import build_mcp_json_snippet
+from connect_labs.mcp.testing import allow_self_mint, mint_token
 from connect_labs.users.models import User
 
 
@@ -32,8 +33,8 @@ def test_index_requires_login(client):
 
 @pytest.mark.django_db
 def test_index_lists_only_own_tokens(client, alice, bob):
-    MCPAccessToken.create_token(alice, name="alice-laptop")
-    MCPAccessToken.create_token(bob, name="bob-laptop")
+    mint_token(alice, name="alice-laptop")
+    mint_token(bob, name="bob-laptop")
 
     resp = client.get(reverse("labs:mcp_tokens_index"))
     assert resp.status_code == 200
@@ -43,8 +44,8 @@ def test_index_lists_only_own_tokens(client, alice, bob):
 
 @pytest.mark.django_db
 def test_index_hides_inactive_tokens(client, alice):
-    MCPAccessToken.create_token(alice, name="active-one")
-    revoked, _ = MCPAccessToken.create_token(alice, name="revoked-one")
+    mint_token(alice, name="active-one")
+    revoked, _ = mint_token(alice, name="revoked-one")
     revoked.is_active = False
     revoked.save()
 
@@ -55,6 +56,7 @@ def test_index_hides_inactive_tokens(client, alice):
 
 @pytest.mark.django_db
 def test_create_renders_raw_token_and_snippet(client, alice):
+    allow_self_mint(alice)
     resp = client.post(
         reverse("labs:mcp_tokens_create"),
         {"name": "my-laptop", "ttl_days": "30"},
@@ -75,6 +77,7 @@ def test_create_renders_raw_token_and_snippet(client, alice):
 
 @pytest.mark.django_db
 def test_create_zero_ttl_clamps_to_max(client, alice):
+    allow_self_mint(alice)
     # "No expiry" is no longer a thing — 0 clamps to MAX_TTL_DAYS so every
     # self-service token ages out.
     client.post(
@@ -89,6 +92,7 @@ def test_create_zero_ttl_clamps_to_max(client, alice):
 
 @pytest.mark.django_db
 def test_create_default_ttl_when_blank(client, alice):
+    allow_self_mint(alice)
     client.post(
         reverse("labs:mcp_tokens_create"),
         {"name": "default-ttl", "ttl_days": ""},
@@ -115,7 +119,7 @@ def test_create_requires_post(client, alice):
 
 @pytest.mark.django_db
 def test_revoke_own_token(client, alice):
-    token, raw = MCPAccessToken.create_token(alice, name="kill-me")
+    token, raw = mint_token(alice, name="kill-me")
     resp = client.post(reverse("labs:mcp_tokens_revoke", args=[token.pk]))
     assert resp.status_code == 302
     token.refresh_from_db()
@@ -126,7 +130,7 @@ def test_revoke_own_token(client, alice):
 
 @pytest.mark.django_db
 def test_revoke_other_users_token_is_404(client, alice, bob):
-    bob_token, _ = MCPAccessToken.create_token(bob, name="bob-token")
+    bob_token, _ = mint_token(bob, name="bob-token")
     resp = client.post(reverse("labs:mcp_tokens_revoke", args=[bob_token.pk]))
     assert resp.status_code == 404
     bob_token.refresh_from_db()
@@ -135,7 +139,7 @@ def test_revoke_other_users_token_is_404(client, alice, bob):
 
 @pytest.mark.django_db
 def test_revoke_requires_post(client, alice):
-    token, _ = MCPAccessToken.create_token(alice, name="x")
+    token, _ = mint_token(alice, name="x")
     resp = client.get(reverse("labs:mcp_tokens_revoke", args=[token.pk]))
     assert resp.status_code == 405
     token.refresh_from_db()
@@ -144,7 +148,8 @@ def test_revoke_requires_post(client, alice):
 
 @pytest.mark.django_db
 def test_rotate_revokes_old_and_creates_new(client, alice):
-    old, old_raw = MCPAccessToken.create_token(alice, name="laptop")
+    allow_self_mint(alice)
+    old, old_raw = mint_token(alice, name="laptop")
 
     resp = client.post(reverse("labs:mcp_tokens_rotate", args=[old.pk]))
     assert resp.status_code == 200
@@ -163,7 +168,7 @@ def test_rotate_revokes_old_and_creates_new(client, alice):
 
 @pytest.mark.django_db
 def test_rotate_other_users_token_is_404(client, alice, bob):
-    bob_token, _ = MCPAccessToken.create_token(bob, name="bob-token")
+    bob_token, _ = mint_token(bob, name="bob-token")
     resp = client.post(reverse("labs:mcp_tokens_rotate", args=[bob_token.pk]))
     assert resp.status_code == 404
     bob_token.refresh_from_db()

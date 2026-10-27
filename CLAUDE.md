@@ -415,6 +415,14 @@ user, audit rows attribute to them):
   self-service at `/labs/mcp/tokens/` (the `labs-token-setup` skill automates
   this). The verifier tries a PAT first, then an OAuth token. A PAT is
   **full** or **no-uservisit-data**.
+- **Minting full access needs the person's passkey, through canopy** —
+  creating or rotating a full PAT, the `labs-token-setup` page and a full `mcp`
+  OAuth sign-in all ask canopy for a passkey approval (canopy's site sign-offs,
+  `canopy_sdk.django.sign_offs`) and mint only after checking it
+  (`mcp/full_access.py`; `create_token` refuses a full token without that
+  proof). Someone canopy cannot vouch for gets no-user-visit tokens only. Accounts
+  ticked in the Django admin (`FullAccessSelfMint`, on for ACE) self-mint; using
+  tokens, existing tokens and no-user-visit tokens are untouched.
 - **"No user visit data"** — `/mcp/no_user_visit/` is the same MCP app mounted
   a second time (`config/asgi.py` marks each request; `server.endpoint_restricted`
   reads the mark). A request there, a no-uservisit-data PAT, or an OAuth token

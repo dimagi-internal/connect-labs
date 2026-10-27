@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto px-4 py-8">
+  <div class="bg-white rounded-xl shadow-sm p-8 space-y-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
+        <i class="fa-solid fa-fingerprint text-indigo-600 text-lg"></i>
+      </div>
+      <h1 class="text-2xl font-semibold text-brand-deep-purple">Full-access approval</h1>
+    </div>
+
+    {% if refused %}
+      <p class="text-sm text-gray-700" data-testid="full-access-refused">{{ refused }}</p>
+    {% elif pending %}
+      {% if not_yet %}
+        <p class="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Not approved yet.
+        </p>
+      {% endif %}
+      <p class="text-sm text-gray-700" data-testid="full-access-waiting">
+        Full access for this account needs a passkey approval from its owner or an admin in canopy.
+        They have been asked{% if approve_url %}, and can approve at
+        <a href="{{ approve_url }}" class="text-indigo-600 hover:text-indigo-800 underline">this link</a>{% endif %}.
+        Once they have, finish here.
+      </p>
+      <form method="post" action="{% url 'labs:mcp_full_access_collect' pending.ref %}">
+        {% csrf_token %}
+        <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
+          Finish
+        </button>
+      </form>
+    {% endif %}
+
+    <p class="text-sm text-gray-500">
+      <a href="{% url 'labs:mcp_tokens_index' %}" class="text-indigo-600 hover:text-indigo-800 underline">Back to your MCP tokens</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

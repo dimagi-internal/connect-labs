@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import MCPAccessToken, MCPAuditLog
+from .models import FullAccessSelfMint, MCPAccessToken, MCPAuditLog
 
 
 @admin.register(MCPAccessToken)
@@ -34,3 +34,20 @@ class MCPAuditLogAdmin(admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return False
+
+
+@admin.register(FullAccessSelfMint)
+class FullAccessSelfMintAdmin(admin.ModelAdmin):
+    """Accounts that mint full-access MCP credentials with no passkey approval
+    (``full_access.may_self_mint``). Tick only an account that is never in a project
+    space with real data, such as an agent's."""
+
+    list_display = ("user", "reason", "granted_by", "granted_at")
+    search_fields = ("user__username", "user__email")
+    autocomplete_fields = ("user",)
+    readonly_fields = ("granted_by", "granted_at")
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.granted_by = request.user
+        super().save_model(request, obj, form, change)

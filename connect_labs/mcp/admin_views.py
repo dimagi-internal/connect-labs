@@ -15,7 +15,7 @@ from django.http import HttpResponseBadRequest
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_http_methods
 
-from . import token_scopes
+from . import full_access, token_scopes
 from .models import MCPAccessToken
 
 _LOCALHOST_HOSTS = {"localhost", "127.0.0.1"}
@@ -72,6 +72,7 @@ def create_token_browser(request):
                 "scope": scope,
                 "scope_label": scope_labels[scope],
                 "is_no_uservisit_data": scope == token_scopes.NO_USERVISIT_DATA,
+                "needs_passkey": scope == token_scopes.FULL and not full_access.may_self_mint(request.user),
                 "default_name": f"claude-code-{datetime.now():%Y%m%d-%H%M%S}",
             },
         )
@@ -81,7 +82,27 @@ def create_token_browser(request):
     if not name:
         name = f"claude-code-{datetime.now():%Y%m%d-%H%M%S}"
 
-    _, raw = MCPAccessToken.create_token(request.user, name=name, scope=scope)
+    allowed = None
+    if scope == token_scopes.FULL:
+        # Clicking "create" is not enough for full access: an agent driving this
+        # browser could click it. The person's passkey, through canopy, is.
+        allowed = full_access.self_minted(request.user)
+        if allowed is None:
+            return full_access.begin(
+                request,
+                full_access.PendingFullAccess.TOKEN_BROWSER,
+                {"callback": callback, "state": state, "name": name},
+            )
+    return mint_and_redirect(request, callback=callback, state=state, name=name, scope=scope, full_access=allowed)
+
+
+def mint_and_redirect(
+    request, *, callback: str, state: str, name: str, scope: str = token_scopes.FULL, full_access=None
+):
+    """Mint the token and hand it to the localhost callback."""
+    if _validate_callback(callback):
+        return HttpResponseBadRequest("Invalid callback")
+    _, raw = MCPAccessToken.create_token(request.user, name=name, scope=scope, full_access=full_access)
 
     sep = "&" if "?" in callback else "?"
     redirect_url = f"{callback}{sep}" + urlencode({"token": raw, "state": state, "name": name})

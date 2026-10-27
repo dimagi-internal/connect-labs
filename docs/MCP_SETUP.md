@@ -64,7 +64,10 @@ A process with no browser uses a Personal Access Token (PAT) instead:
 1. Create one at `https://labs.connect.dimagi.com/labs/mcp/tokens/` (create,
    rotate, revoke). The raw token is shown once — copy it then. Pick the access
    level there:
-   - **Full access** reaches every tool, as you.
+   - **Full access** reaches every tool, as you. Creating or rotating one sends
+     you to canopy to approve it with your passkey, and back here to collect it
+     (the same for a full MCP sign-in). If canopy does not know your account,
+     use a no-user-visit token.
    - **No user visit data** is restricted the same way as the
      `/mcp/no_user_visit/` endpoint above, on either URL. Rotating keeps the
      access level.

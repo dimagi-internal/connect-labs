@@ -12,8 +12,7 @@ import pytest
 from django.utils import timezone
 
 from connect_labs.labs.models import UserConnectToken
-from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.testing import call_tool, mint_token
 from connect_labs.mcp.tool_registry import get_tool
 from connect_labs.users.models import User
 
@@ -26,7 +25,7 @@ from connect_labs.users.models import User
 def auth_user(db):
     """User with a PAT AND a UserConnectToken (fully set up for tool calls)."""
     user = User.objects.create(username="fund-test")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     UserConnectToken.objects.create(
         user=user,
         access_token="connect-tok",
@@ -480,7 +479,7 @@ def test_remove_fund_allocation_not_found(mock_client_cls, client, auth_user):
 def test_fund_tools_require_connect_token(client, db):
     """All fund tools fail with PERMISSION_DENIED when the user has no Connect token."""
     user = User.objects.create(username="no-conn-fund")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
 
     for name, args in [
         ("list_funds", {"program_id": "25"}),

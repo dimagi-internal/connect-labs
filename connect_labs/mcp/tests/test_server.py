@@ -19,8 +19,8 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
-from connect_labs.mcp.models import MCPAccessToken
 from connect_labs.mcp.server import CommCarePATVerifier, mcp
+from connect_labs.mcp.testing import mint_token
 from connect_labs.mcp.tool_registry import list_tools as registry_list_tools
 from connect_labs.users.models import User
 
@@ -43,7 +43,7 @@ def _verify(raw):
 @pytest.mark.django_db(transaction=True)
 def test_verifier_valid_token_resolves_user():
     user = User.objects.create(username="verify-ok")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     access = _verify(raw)
     assert access is not None
     assert access.claims["user_id"] == user.pk
@@ -54,7 +54,7 @@ def test_verifier_valid_token_resolves_user():
 @pytest.mark.django_db(transaction=True)  # see note above: async verify_token uses a threadpool connection
 def test_verifier_valid_token_touches_last_used():
     user = User.objects.create(username="verify-touch")
-    token, raw = MCPAccessToken.create_token(user, name="t")
+    token, raw = mint_token(user, name="t")
     assert token.last_used_at is None
     before = timezone.now()
     assert _verify(raw) is not None
@@ -76,7 +76,7 @@ def test_verifier_empty_token_returns_none():
 @pytest.mark.django_db(transaction=True)  # async verify_token threadpool connection must see the seeded row
 def test_verifier_revoked_token_returns_none():
     user = User.objects.create(username="verify-revoked")
-    token, raw = MCPAccessToken.create_token(user, name="t")
+    token, raw = mint_token(user, name="t")
     token.is_active = False
     token.save()
     assert _verify(raw) is None
@@ -85,7 +85,7 @@ def test_verifier_revoked_token_returns_none():
 @pytest.mark.django_db(transaction=True)  # async verify_token threadpool connection must see the seeded row
 def test_verifier_expired_token_returns_none():
     user = User.objects.create(username="verify-expired")
-    token, raw = MCPAccessToken.create_token(user, name="t")
+    token, raw = mint_token(user, name="t")
     token.expires_at = timezone.now() - timedelta(days=1)
     token.save()
     assert _verify(raw) is None

@@ -50,6 +50,7 @@ from django.http import HttpResponseBadRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
+from oauth2_provider.exceptions import OAuthToolkitError
 from oauth2_provider.models import get_access_token_model, get_application_model
 from oauth2_provider.oauth2_validators import OAuth2Validator
 from oauth2_provider.scopes import SettingsScopes
@@ -341,6 +342,24 @@ class MCPAuthorizationView(AuthorizationView):
                 request.GET = forced
         return super().dispatch(request, *args, **kwargs)
 
+    def form_valid(self, form):
+        """An MCP app asking for full access (the ``mcp`` scope) is allowed only once the
+        person has approved it with their passkey through canopy (``full_access``), unless
+        the account may self-mint. The restricted scope signs in as before."""
+        application = _application_from_client_id(form.cleaned_data.get("client_id"))
+        scopes = (form.cleaned_data.get("scope") or "").split()
+        if form.cleaned_data.get("allow") and is_mcp_client(application) and MCP_SCOPE in scopes:
+            from . import full_access
+
+            if not full_access.may_self_mint(self.request.user):
+                return full_access.begin(
+                    self.request,
+                    full_access.PendingFullAccess.OAUTH,
+                    {"credentials": _credentials(form.cleaned_data), "scopes": form.cleaned_data.get("scope")},
+                    detail=f"The app calls itself {application.name!r}.",
+                )
+        return super().form_valid(form)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         application = context.get("application")
@@ -349,6 +368,35 @@ class MCPAuthorizationView(AuthorizationView):
         parsed = urlparse(redirect_uri)
         context["redirect_origin"] = f"{parsed.scheme}://{parsed.netloc}" if parsed.netloc else redirect_uri
         return context
+
+
+def _credentials(data) -> dict:
+    """The authorization request's credentials, as the toolkit's ``form_valid`` builds them."""
+    credentials = {k: data.get(k) for k in ("client_id", "redirect_uri", "response_type", "state")}
+    for optional in ("code_challenge", "code_challenge_method", "nonce", "claims"):
+        if data.get(optional):
+            credentials[optional] = data.get(optional)
+    return credentials
+
+
+def complete_authorization(request, payload: dict, full_access):
+    """Finish an MCP sign-in the person approved through canopy (``full_access``): issue
+    the authorization code exactly as the consent form would have, and send the browser
+    to the app. ``full_access`` is the proof; it is checked by its type."""
+    from .full_access import require
+
+    require(full_access, request.user)
+    view = MCPAuthorizationView()
+    view.setup(request)
+    credentials = payload["credentials"]
+    application = _application_from_client_id(credentials.get("client_id"))
+    try:
+        uri, _headers, _body, _status = view.create_authorization_response(
+            request=request, scopes=payload["scopes"], credentials=credentials, allow=True
+        )
+    except OAuthToolkitError as error:
+        return view.error_response(error, application)
+    return view.redirect(uri, application)
 
 
 def _application_from_client_id(client_id):

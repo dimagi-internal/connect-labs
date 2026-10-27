@@ -15,8 +15,7 @@ from django.utils import timezone
 from connect_labs.labs.analysis.backends.sql import gdrive_fetcher as gf
 from connect_labs.labs.analysis.config import DataSourceConfig
 from connect_labs.labs.models import UserConnectToken
-from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.testing import call_tool, mint_token
 from connect_labs.users.models import User
 
 PROGRAM = 121
@@ -37,7 +36,7 @@ def drive_tree(settings, monkeypatch):
 
 def _user(email="analyst@dimagi.com"):
     user = User.objects.create(username=email.split("@")[0], email=email)
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     UserConnectToken.objects.create(user=user, access_token="tok", expires_at=timezone.now() + timedelta(hours=1))
     return raw
 

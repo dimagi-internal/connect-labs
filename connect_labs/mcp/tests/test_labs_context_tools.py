@@ -7,8 +7,7 @@ import pytest
 from django.utils import timezone
 
 from connect_labs.labs.models import UserConnectToken
-from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.testing import call_tool, mint_token
 from connect_labs.users.models import User
 
 
@@ -16,7 +15,7 @@ from connect_labs.users.models import User
 def auth_user(db):
     """User with a PAT AND a UserConnectToken (fully set up for tool calls)."""
     user = User.objects.create(username="labs-ctx-test")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     UserConnectToken.objects.create(
         user=user,
         access_token="connect-tok",
@@ -163,7 +162,7 @@ def test_labs_context_upstream_failure(mock_fetch, client, auth_user):
 def test_labs_context_requires_connect_token(client, db):
     """A user without a Connect token gets PERMISSION_DENIED, same as other tools."""
     user = User.objects.create(username="no-conn-labs-ctx")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
 
     data = _call_tool(client, raw, "labs_context", {})
     err = data["result"]["structuredContent"]["error"]

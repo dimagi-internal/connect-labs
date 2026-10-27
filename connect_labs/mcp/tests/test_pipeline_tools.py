@@ -13,8 +13,7 @@ from django.utils import timezone
 
 from connect_labs.labs.analysis.config import VALID_AGGREGATIONS
 from connect_labs.labs.models import UserConnectToken
-from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.testing import call_tool, mint_token
 from connect_labs.users.models import User
 
 
@@ -22,7 +21,7 @@ from connect_labs.users.models import User
 def auth_user(db):
     """User with a PAT AND a UserConnectToken (fully set up)."""
     user = User.objects.create(username="pltest")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     UserConnectToken.objects.create(
         user=user,
         access_token="connect-tok",
@@ -126,7 +125,7 @@ def test_pipeline_get_not_found(mock_pda_cls, client, auth_user):
 @pytest.mark.django_db
 def test_pipeline_tools_reject_user_without_connect_token(client, db):
     user = User.objects.create(username="no-connect-pl")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     data = _call_tool(client, raw, "pipeline_list", {"opportunity_id": 1})
     assert data["result"]["isError"] is True
     assert data["result"]["structuredContent"]["error"]["code"] == "PERMISSION_DENIED"

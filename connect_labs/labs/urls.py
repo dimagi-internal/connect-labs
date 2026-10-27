@@ -39,6 +39,8 @@ urlpatterns = [
     path("mcp/tokens/create/", mcp_token_views.tokens_create, name="mcp_tokens_create"),
     path("mcp/tokens/<int:pk>/revoke/", mcp_token_views.tokens_revoke, name="mcp_tokens_revoke"),
     path("mcp/tokens/<int:pk>/rotate/", mcp_token_views.tokens_rotate, name="mcp_tokens_rotate"),
+    path("mcp/full-access/approved/", mcp_token_views.full_access_approved, name="mcp_full_access_approved"),
+    path("mcp/full-access/<str:ref>/collect/", mcp_token_views.full_access_collect, name="mcp_full_access_collect"),
     # Signed-in MCP clients (the OAuth half of the same page)
     path(
         "mcp/clients/<int:pk>/disconnect/",

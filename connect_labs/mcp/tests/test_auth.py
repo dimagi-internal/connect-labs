@@ -10,8 +10,7 @@ return-value contract.
 
 import pytest
 
-from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.testing import call_tool, mint_token
 from connect_labs.users.models import User
 
 
@@ -31,7 +30,7 @@ def test_invalid_token_is_rejected():
 @pytest.mark.django_db
 def test_valid_token_runs_tool_as_user():
     user = User.objects.create(username="mcp-auth-test")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     # list_templates is read-only and needs no Connect token, so it runs clean
     # for any authenticated user.
     resp = call_tool(raw, "list_templates", {})
@@ -42,7 +41,7 @@ def test_valid_token_runs_tool_as_user():
 @pytest.mark.django_db
 def test_revoked_token_is_rejected():
     user = User.objects.create(username="revoked-test")
-    token, raw = MCPAccessToken.create_token(user, name="t")
+    token, raw = mint_token(user, name="t")
     token.is_active = False
     token.save()
     resp = call_tool(raw, "list_templates", {})
@@ -54,7 +53,7 @@ def test_valid_token_updates_last_used():
     from django.utils import timezone
 
     user = User.objects.create(username="last-used-test")
-    token, raw = MCPAccessToken.create_token(user, name="t")
+    token, raw = mint_token(user, name="t")
     assert token.last_used_at is None
     before = timezone.now()
     call_tool(raw, "list_templates", {})

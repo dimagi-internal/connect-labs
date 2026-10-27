@@ -36,7 +36,7 @@ Seamless flow for creating an MCP Personal Access Token and wiring it into Claud
    - Start a tiny HTTP listener on 127.0.0.1:PORT for the callback.
    - Print the full `<labs_base_url>/mcp/admin/create-token/?callback=...&state=...` URL to the terminal so the user can copy-paste it into any browser (essential for WSL, SSH, and headless sessions).
    - On non-WSL systems, also attempt `webbrowser.open()` as a convenience. On WSL the auto-open is skipped with a note, since it usually can't reach the Windows browser — the user copies the printed URL instead. The localhost callback still works via WSL2's automatic localhost forwarding.
-   - Wait up to 120 seconds for the callback.
+   - Wait up to 300 seconds for the callback. A **full-access** token sends the user to canopy on the way, to approve it with their passkey; a no-user-visit one does not.
    - On receipt, validate the state nonce, then shell out to `claude mcp add --transport http --scope user connect_labs <labs_base_url>/mcp/ --header "Authorization: Bearer <token>"`. Any existing `connect_labs` user-scope entry is removed first so the add cleanly overwrites.
 
    > **Why not edit `~/.claude/mcp.json` directly?** Claude Code stores user-scope MCP servers in `~/.claude.json` (a large file with many unrelated keys), not in a separate `mcp.json`. Using the `claude mcp add` CLI is the supported interface and is forward-compatible with future config layout changes.

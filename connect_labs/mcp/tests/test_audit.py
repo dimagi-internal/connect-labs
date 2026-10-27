@@ -1,7 +1,7 @@
 import pytest
 
-from connect_labs.mcp.models import MCPAccessToken, MCPAuditLog
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.models import MCPAuditLog
+from connect_labs.mcp.testing import call_tool, mint_token
 from connect_labs.mcp.tool_registry import _REGISTRY, register
 from connect_labs.users.models import User
 
@@ -41,7 +41,7 @@ def test_audit_log_failure_stores_error_code():
 @pytest.mark.django_db
 def test_tools_call_not_found_logs_failure(client):
     user = User.objects.create(username="audit-nf")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     call_tool(raw, "no_such_tool", {})
     log = MCPAuditLog.objects.get(user=user, tool_name="no_such_tool")
     assert log.success is False
@@ -68,7 +68,7 @@ def sample_tool():
 @pytest.mark.django_db
 def test_tools_call_success_logs_version_transition(client, sample_tool):
     user = User.objects.create(username="audit-ok")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     resp = call_tool(raw, "workflow_update_sample", {"x": 3})
     assert resp["result"]["isError"] is False
     # Private keys must not leak to the client
@@ -110,7 +110,7 @@ def test_every_call_logs_its_scope_duration_and_the_id_its_data_touches_carry(cl
     from connect_labs.audit_trail.models import AuditEvent
 
     user = User.objects.create(username="audit-scope")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     call_tool(raw, "workflow_scoped_read_sample", {"opportunity_id": "812", "program_id": 25})
 
     log = MCPAuditLog.objects.get(user=user, tool_name="workflow_scoped_read_sample")

@@ -27,7 +27,7 @@ from connect_labs.mcp import kept_results
 from connect_labs.mcp.kept_results import Refused
 from connect_labs.mcp.models import KeptResult as Row
 from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool, read_resource
+from connect_labs.mcp.testing import call_tool, mint_token, read_resource
 
 pytestmark = pytest.mark.django_db
 
@@ -71,7 +71,7 @@ def connect(monkeypatch):
 
 
 def _pat(user) -> str:
-    _, raw = MCPAccessToken.create_token(user, name="kept")
+    _, raw = mint_token(user, name="kept")
     return raw
 
 

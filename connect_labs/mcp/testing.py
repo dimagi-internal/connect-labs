@@ -40,7 +40,7 @@ from unittest.mock import patch
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken
 
-from . import token_scopes
+from . import full_access, token_scopes
 from .models import MCPAccessToken
 from .server import PAT_SCOPES, _run_registry_tool, _write_audit, current_user
 from .tool_registry import MCPToolError, get_tool
@@ -173,3 +173,20 @@ def read_resource(raw_pat: str | None, uri: str):
 
     with _as_authenticated(access):
         return asyncio.run(read())
+
+
+def mint_token(user, name: str = "test", ttl_days: int | None = 90, scope: str = token_scopes.FULL):
+    """``MCPAccessToken.create_token`` with the server's exemption from the passkey
+    approval (``full_access.for_server_command``), for a test that needs a full token and
+    is not testing how one is approved."""
+    allowed = full_access.for_server_command(user) if scope == token_scopes.FULL else None
+    return MCPAccessToken.create_token(user, name=name, ttl_days=ttl_days, scope=scope, full_access=allowed)
+
+
+def allow_self_mint(user):
+    """Let ``user`` mint full access with no passkey approval, for a test about what a
+    full token or sign-in does rather than how one is approved."""
+    from .models import FullAccessSelfMint
+
+    FullAccessSelfMint.objects.get_or_create(user=user)
+    return user

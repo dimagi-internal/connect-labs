@@ -10,8 +10,13 @@ import pytest
 
 from connect_labs.labs.analysis.config import DataSourceConfig
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
-from connect_labs.labs.synthetic.provenance import is_generated, mark_generated, replays_real_cases
+from connect_labs.labs.synthetic.provenance import (
+    is_generated,
+    mark_generated,
+    replays_real_cases,
+)
 from connect_labs.mcp import profile_limits, visit_access
+from connect_labs.mcp.testing import mint_token
 from connect_labs.mcp.tests.test_no_user_visit import SAFE_URL, _call
 from connect_labs.mcp.tool_registry import MCPToolError, get_tool
 from connect_labs.users.models import User
@@ -158,9 +163,8 @@ def test_get_opportunity_apps_refuses_an_id_that_is_not_an_integer(monkeypatch):
 
 @pytest.mark.django_db(transaction=True)
 def test_the_safe_endpoint_holds_arguments_to_the_declared_schema():
-    from connect_labs.mcp.models import MCPAccessToken
 
-    _, raw = MCPAccessToken.create_token(_user("schema-r"), name="laptop")
+    _, raw = mint_token(_user("schema-r"), name="laptop")
 
     async def work(mcp_client):
         return await mcp_client.call_tool(
@@ -243,7 +247,10 @@ def test_a_retired_mirror_manifest_is_refused_and_a_modelled_one_is_not():
     import yaml
 
     from connect_labs.labs.synthetic.generator.fixtures.profiler import profile
-    from connect_labs.labs.synthetic.generator.fixtures.tests.test_case_timelines_privacy import _app, _source
+    from connect_labs.labs.synthetic.generator.fixtures.tests.test_case_timelines_privacy import (
+        _app,
+        _source,
+    )
 
     modelled = yaml.safe_load(
         profile(

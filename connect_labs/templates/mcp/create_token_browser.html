@@ -27,6 +27,7 @@
     {% else %}
     <p class="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
       <strong>{{ scope_label }}.</strong> This token can do anything you can do in labs, including reading visit data.
+      {% if needs_passkey %}Creating it takes you to canopy to approve it with your passkey.{% endif %}
     </p>
     {% endif %}
     <p class="text-sm text-gray-500 mb-6">

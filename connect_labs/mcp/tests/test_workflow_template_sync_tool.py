@@ -12,15 +12,14 @@ import pytest
 from django.utils import timezone
 
 from connect_labs.labs.models import UserConnectToken
-from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.testing import call_tool, mint_token
 from connect_labs.users.models import User
 
 
 @pytest.fixture
 def auth_user(db):
     user = User.objects.create(username="synctest")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     UserConnectToken.objects.create(
         user=user,
         access_token="connect-tok",

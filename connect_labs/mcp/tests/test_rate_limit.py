@@ -2,8 +2,7 @@ import pytest
 from django.core.cache import cache
 from django.test import override_settings
 
-from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.testing import call_tool, mint_token
 from connect_labs.mcp.tool_registry import _REGISTRY, register
 from connect_labs.users.models import User
 
@@ -56,7 +55,7 @@ def _call(client, raw):
 @override_settings(MCP_WRITE_RATE_LIMIT="2/m")
 def test_rate_limit_kicks_in_after_threshold(client, write_tool):
     user = User.objects.create(username="rate")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
 
     resp1 = _call(client, raw)
     resp2 = _call(client, raw)
@@ -73,8 +72,8 @@ def test_rate_limit_kicks_in_after_threshold(client, write_tool):
 def test_rate_limit_is_per_user(client, write_tool):
     alice = User.objects.create(username="alice")
     bob = User.objects.create(username="bob")
-    _, a_raw = MCPAccessToken.create_token(alice, name="a")
-    _, b_raw = MCPAccessToken.create_token(bob, name="b")
+    _, a_raw = mint_token(alice, name="a")
+    _, b_raw = mint_token(bob, name="b")
 
     _call(client, a_raw)  # alice hits her cap
     # Bob should still be allowed
@@ -102,6 +101,6 @@ def read_only_tool():
 def test_read_tool_bypasses_rate_limit(client, read_only_tool):
     """Reads are not rate-limited even if writes cap is 0."""
     user = User.objects.create(username="read-nolimit")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     resp = call_tool(raw, "workflow_get_readtest", {})
     assert resp["result"]["isError"] is False

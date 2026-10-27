@@ -8,7 +8,7 @@ Usage:
 
 from django.core.management.base import BaseCommand, CommandError
 
-from connect_labs.mcp import token_scopes
+from connect_labs.mcp import full_access, token_scopes
 from connect_labs.mcp.models import MCPAccessToken
 from connect_labs.mcp.snippets import build_mcp_json_snippet
 from connect_labs.users.models import User
@@ -46,7 +46,9 @@ class Command(BaseCommand):
         except User.DoesNotExist:
             raise CommandError(f"No user with username {username!r}")
 
-        _, raw = MCPAccessToken.create_token(user, name=name, ttl_days=ttl, scope=opts["scope"])
+        # A shell on the server holds more than any token gives: no passkey to ask for.
+        allowed = full_access.for_server_command(user) if opts["scope"] == token_scopes.FULL else None
+        _, raw = MCPAccessToken.create_token(user, name=name, ttl_days=ttl, scope=opts["scope"], full_access=allowed)
 
         self.stdout.write(self.style.SUCCESS("Token created. Store it now — it is not retrievable later.\n"))
         self.stdout.write(f"Token: {raw}\n")

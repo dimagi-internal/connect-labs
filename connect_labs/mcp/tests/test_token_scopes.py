@@ -13,6 +13,7 @@ from django.urls import reverse
 from connect_labs.mcp import token_scopes
 from connect_labs.mcp.models import MCPAccessToken, MCPAuditLog
 from connect_labs.mcp.server import _verify_bearer_sync, allowed_tools
+from connect_labs.mcp.testing import allow_self_mint, mint_token
 from connect_labs.mcp.tests.test_delegation import _run_mcp
 from connect_labs.mcp.tool_registry import _REGISTRY, get_tool
 from connect_labs.users.models import User
@@ -76,13 +77,13 @@ def test_no_visit_data_tool_is_no_uservisit_data():
 def test_create_token_refuses_an_unknown_scope(db):
     user = User.objects.create(username="scope-typo")
     with pytest.raises(ValueError):
-        MCPAccessToken.create_token(user, name="x", scope="admin")
+        mint_token(user, name="x", scope="admin")
 
 
 @pytest.mark.django_db
 def test_a_no_uservisit_data_pat_resolves_to_its_tools():
     user = User.objects.create(username="meta-resolve")
-    _, raw = MCPAccessToken.create_token(user, name="agent", scope=token_scopes.NO_USERVISIT_DATA)
+    _, raw = mint_token(user, name="agent", scope=token_scopes.NO_USERVISIT_DATA)
 
     resolved_user, method, _, scopes, _ = _verify_bearer_sync(raw)
 
@@ -100,7 +101,7 @@ def test_a_no_uservisit_data_pat_resolves_to_its_tools():
 def test_a_pat_with_a_scope_nobody_defined_fails_closed():
     """A row whose scope the code no longer knows gets the narrow list, not everything."""
     user = User.objects.create(username="meta-unknown")
-    token, raw = MCPAccessToken.create_token(user, name="agent")
+    token, raw = mint_token(user, name="agent")
     MCPAccessToken.objects.filter(pk=token.pk).update(scope="retired")
 
     _, _, _, scopes, _ = _verify_bearer_sync(raw)
@@ -113,7 +114,7 @@ def test_a_no_uservisit_data_pat_sees_and_calls_only_its_tools():
     from config.asgi import build_application
 
     user = User.objects.create(username="meta-e2e")
-    _, raw = MCPAccessToken.create_token(user, name="agent", scope=token_scopes.NO_USERVISIT_DATA)
+    _, raw = mint_token(user, name="agent", scope=token_scopes.NO_USERVISIT_DATA)
 
     async def work(mcp_client):
         tools = await mcp_client.list_tools()
@@ -182,6 +183,7 @@ def test_the_tokens_page_mints_a_no_uservisit_data_token(client, alice):
 
 
 def test_the_tokens_page_defaults_to_full(client, alice):
+    allow_self_mint(alice)
     client.post(reverse("labs:mcp_tokens_create"), {"name": "laptop"})
 
     assert MCPAccessToken.objects.get(user=alice, name="laptop").scope == token_scopes.FULL
@@ -194,7 +196,7 @@ def test_the_tokens_page_refuses_an_unknown_scope(client, alice):
 
 
 def test_rotating_a_no_uservisit_data_token_keeps_its_scope(client, alice):
-    old, _ = MCPAccessToken.create_token(alice, name="agent", scope=token_scopes.NO_USERVISIT_DATA)
+    old, _ = mint_token(alice, name="agent", scope=token_scopes.NO_USERVISIT_DATA)
 
     client.post(reverse("labs:mcp_tokens_rotate", args=[old.pk]))
 
@@ -237,8 +239,8 @@ def test_the_shared_pat_verifier_refuses_a_restricted_token(db, rf):
     from connect_labs.mcp.auth import authenticate_request
 
     user = User.objects.create(username="reseed-caller")
-    _, restricted = MCPAccessToken.create_token(user, name="agent", scope=token_scopes.NO_USERVISIT_DATA)
-    _, full = MCPAccessToken.create_token(user, name="laptop")
+    _, restricted = mint_token(user, name="agent", scope=token_scopes.NO_USERVISIT_DATA)
+    _, full = mint_token(user, name="laptop")
 
     denied_user, failure = authenticate_request(rf.post("/", HTTP_AUTHORIZATION=f"Bearer {restricted}"))
     allowed_user, no_failure = authenticate_request(rf.post("/", HTTP_AUTHORIZATION=f"Bearer {full}"))
@@ -267,7 +269,7 @@ def test_the_tokens_page_mints_a_coaching_pictures_token_without_mcp_config(clie
 
 
 def test_rotating_a_coaching_pictures_token_keeps_its_scope(client, alice):
-    old, _ = MCPAccessToken.create_token(alice, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
+    old, _ = mint_token(alice, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
 
     resp = client.post(reverse("labs:mcp_tokens_rotate", args=[old.pk]))
 
@@ -279,7 +281,7 @@ def test_rotating_a_coaching_pictures_token_keeps_its_scope(client, alice):
 def test_the_mcp_server_refuses_a_coaching_pictures_token():
     """Not mapped to the restricted tool set like an unknown scope: refused outright."""
     user = User.objects.create(username="ocs-team")
-    token, raw = MCPAccessToken.create_token(user, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
+    token, raw = mint_token(user, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
 
     assert _verify_bearer_sync(raw) is None
     token.refresh_from_db()
@@ -295,7 +297,7 @@ def test_a_coaching_pictures_token_gets_a_401_from_the_mcp_endpoint(path):
     from config.asgi import build_application
 
     user = User.objects.create(username=f"ocs-team-e2e{path.count('/')}")
-    _, raw = MCPAccessToken.create_token(user, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
+    _, raw = mint_token(user, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
     application = build_application()
     headers = {
         "Accept": "application/json, text/event-stream",
@@ -318,7 +320,7 @@ def test_the_shared_pat_verifier_refuses_a_coaching_pictures_token(db, rf):
     from connect_labs.mcp.auth import authenticate_request
 
     user = User.objects.create(username="ocs-team-shared")
-    _, raw = MCPAccessToken.create_token(user, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
+    _, raw = mint_token(user, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
 
     denied_user, failure = authenticate_request(rf.post("/", HTTP_AUTHORIZATION=f"Bearer {raw}"))
 

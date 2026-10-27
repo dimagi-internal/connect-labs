@@ -7,8 +7,7 @@ import pytest
 from django.utils import timezone
 
 from connect_labs.labs.models import UserConnectToken
-from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.testing import call_tool, mint_token
 from connect_labs.users.models import User
 
 
@@ -16,7 +15,7 @@ from connect_labs.users.models import User
 def auth_user(db):
     """User with a PAT AND a UserConnectToken (fully set up for tool calls)."""
     user = User.objects.create(username="sids-test")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     UserConnectToken.objects.create(
         user=user,
         access_token="connect-tok",
@@ -125,7 +124,7 @@ def test_get_sample_ids_partial_failure_still_returns(mock_client_cls, client, a
 def test_get_sample_ids_requires_connect_token(client, db):
     """Tool must fail gracefully when the user has no Connect token."""
     user = User.objects.create(username="no-conn-sids")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
 
     data = _call_tool(client, raw, "get_sample_ids", {})
     assert data["result"]["structuredContent"]["error"]["code"] == "PERMISSION_DENIED"

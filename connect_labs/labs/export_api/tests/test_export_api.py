@@ -14,7 +14,7 @@ from rest_framework.test import APIClient
 
 from connect_labs.labs.synthetic import registry
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
-from connect_labs.mcp.models import MCPAccessToken
+from connect_labs.mcp.testing import mint_token
 from connect_labs.users.models import User
 
 
@@ -74,7 +74,7 @@ def _user(email="flw@dimagi.com", view=True):
 
 
 def _client_for(user):
-    _, raw = MCPAccessToken.create_token(user, name="test")
+    _, raw = mint_token(user, name="test")
     client = APIClient()
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
     return client
@@ -114,7 +114,7 @@ def test_a_token_that_is_not_full_access_cannot_read_visits(monkeypatch, scope):
     one -- is refused on it."""
     _install(monkeypatch, {"folder-a": {"user_visits.json": [{"id": 1, "form": "sentinel"}]}})
     _make_opp()
-    _, raw = MCPAccessToken.create_token(_user(), name="restricted", scope=scope)
+    _, raw = mint_token(_user(), name="restricted", scope=scope)
     client = APIClient()
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
 
@@ -131,7 +131,7 @@ def test_a_person_set_to_no_uservisit_data_cannot_read_visits_even_with_a_full_t
     user = _user()
     user.mcp_no_uservisit_data = True
     user.save()
-    _, raw = MCPAccessToken.create_token(user, name="full")
+    _, raw = mint_token(user, name="full")
     client = APIClient()
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
 

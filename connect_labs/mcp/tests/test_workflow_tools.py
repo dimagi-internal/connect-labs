@@ -10,8 +10,7 @@ import pytest
 from django.utils import timezone
 
 from connect_labs.labs.models import UserConnectToken
-from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.testing import call_tool, mint_token
 from connect_labs.users.models import User
 
 
@@ -19,7 +18,7 @@ from connect_labs.users.models import User
 def auth_user(db):
     """A user with a PAT AND a UserConnectToken (fully set up for tool calls)."""
     user = User.objects.create(username="wftest")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     UserConnectToken.objects.create(
         user=user,
         access_token="connect-tok",
@@ -79,7 +78,7 @@ def test_workflow_list_rejects_multiple_scopes(client, auth_user):
 def test_workflow_list_rejects_user_without_connect_token(client, db):
     """A user with a PAT but no UserConnectToken row gets PERMISSION_DENIED."""
     user = User.objects.create(username="notoken")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     data = _call_tool(client, raw, "workflow_list", {"opportunity_id": 1})
     assert data["result"]["isError"] is True
     assert data["result"]["structuredContent"]["error"]["code"] == "PERMISSION_DENIED"
@@ -231,7 +230,7 @@ def test_workflow_get_not_found(mock_wda_cls, client, auth_user):
 @pytest.mark.django_db
 def test_workflow_get_rejects_user_without_connect_token(client, db):
     user = User.objects.create(username="no-connect")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     data = _call_tool(client, raw, "workflow_get", {"workflow_id": 1, "opportunity_id": 100})
     assert data["result"]["isError"] is True
     assert data["result"]["structuredContent"]["error"]["code"] == "PERMISSION_DENIED"
@@ -849,7 +848,7 @@ def test_workflow_create_forwards_valid_opportunity_ids(mock_wda_cls, mock_fetch
 @pytest.mark.django_db
 def test_workflow_create_rejects_user_without_connect_token(client, db):
     user = User.objects.create(username="create-no-connect")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     data = _call_tool(client, raw, "workflow_create", {"opportunity_id": 1, "name": "X"})
     assert data["result"]["structuredContent"]["error"]["code"] == "PERMISSION_DENIED"
 
@@ -1047,11 +1046,10 @@ def test_set_template_flag_global_accepted_for_admin(mock_wda_cls, client, db):
     from django.utils import timezone
 
     from connect_labs.labs.models import UserConnectToken
-    from connect_labs.mcp.models import MCPAccessToken
     from connect_labs.users.models import User
 
     admin = User.objects.create(username="admin-user", is_staff=True)
-    _, raw = MCPAccessToken.create_token(admin, name="t")
+    _, raw = mint_token(admin, name="t")
     UserConnectToken.objects.create(
         user=admin,
         access_token="ok",

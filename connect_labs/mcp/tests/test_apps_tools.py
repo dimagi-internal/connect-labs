@@ -8,8 +8,7 @@ import pytest
 from django.utils import timezone
 
 from connect_labs.labs.models import UserConnectToken
-from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.testing import call_tool, mint_token
 from connect_labs.mcp.tool_registry import get_tool
 from connect_labs.users.models import User
 
@@ -17,7 +16,7 @@ from connect_labs.users.models import User
 @pytest.fixture
 def auth_user(db):
     user = User.objects.create(username="apps-test")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     UserConnectToken.objects.create(
         user=user,
         access_token="connect-tok",
@@ -146,7 +145,7 @@ def test_request_error_maps_to_upstream_error(mock_client_cls, client, auth_user
 @pytest.mark.django_db
 def test_requires_connect_token(client, db):
     user = User.objects.create(username="no-conn-apps")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
 
     data = _call_tool(client, raw, "get_opportunity_apps", {"opportunity_id": 42})
     assert data["result"]["structuredContent"]["error"]["code"] == "PERMISSION_DENIED"
