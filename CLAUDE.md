@@ -131,11 +131,11 @@ Each item in the list can include `program_id`, `opportunity_id`, or `organizati
 
 **Cross-app connections:** Workflow can create audits and tasks; flags hang off workflow runs. AI agents modify workflows and solicitations; funder-dashboard AI agents live in `ai/agents/`. `mopup` reads CommCare/Connect data and writes into `microplans`; `semantic` is read by `workflow` — the live dashboard endpoint and the `semantic_snapshot` builder that freezes a saved run. Campaign is standalone.
 
-## Prelogin marketing site
+## No marketing site here
 
-The public marketing site at `/` is the `prelogin` app. **This repo (labs) is its source of truth and staging environment** — edit `connect_labs/templates/prelogin/home.html`, `static/prelogin/`, and `prelogin/urls.py` directly (Django-native; no code-generation or import step), preview on `labs.connect.dimagi.com`, then promote to production (`dimagi/commcare-connect`). The old `dimagi-internal/connect-prelogin` upstream + `export-to-django.py` pipeline is **deprecated**.
+**Labs no longer serves the marketing site.** It lives in its own repo, **[dimagi-internal/connect-marketing](https://github.com/dimagi-internal/connect-marketing)** — not here, and labs is no longer its staging environment. The `prelogin` app, its templates and its ~15 MB of assets were removed on 2026-10-27; nothing in labs should be edited to change the marketing site. (`/about/` is still an ungated `TemplateView`, so labs is not literally page-free — it is just not where marketing pages are authored.)
 
-To promote, the trigger is **"create a PR to push the prelogin changes to connect prod"** — copy the three `prelogin` dirs (`prelogin/`, `templates/prelogin/`, `static/prelogin/`) labs→prod and open a PR; leave each repo's `config/urls.py`/robots policy alone (labs stays `Disallow: /`, prod stays indexable). Full details: **[docs/prelogin-marketing-site.md](docs/prelogin-marketing-site.md)**.
+The site root (`/`) redirects to `/labs/overview/`, which is login-gated, so an anonymous visitor lands on `/labs/login/?next=/labs/overview/`. Every former marketing URL (`/platform`, `/portfolio/<slug>`, `/insights`, `/blog/<slug>`, `/contact/`, `/in-action/<slug>`) now 404s here, which is correct: labs is `Disallow: /` and not public-facing.
 
 ## Workflow Engine
 

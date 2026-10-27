@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from weekly_changelog import (  # noqa: E402
     _to_slack_mrkdwn,
-    classify_pr,
     collect_page_routes,
     fetch_pr_files,
     generate_weekly_summary,
@@ -36,39 +35,10 @@ def _write_prs_file(prs):
     return f.name
 
 
-def test_classify_pr_all_marketing():
-    files = [
-        "connect_labs/prelogin/views.py",
-        "connect_labs/templates/prelogin/home.html",
-        "connect_labs/static/prelogin/app.js",
-    ]
-    assert classify_pr(files) == "marketing"
-
-
-def test_classify_pr_all_app():
-    files = [
-        "connect_labs/workflow/views.py",
-        "connect_labs/audit/models.py",
-    ]
-    assert classify_pr(files) == "app"
-
-
-def test_classify_pr_mixed():
-    files = [
-        "connect_labs/prelogin/views.py",
-        "connect_labs/workflow/views.py",
-    ]
-    assert classify_pr(files) == "mixed"
-
-
-def test_classify_pr_empty_files():
-    assert classify_pr([]) == "app"
-
-
 def test_fetch_pr_files_returns_filenames():
     mock_result = MagicMock()
     mock_result.returncode = 0
-    mock_result.stdout = "connect_labs/prelogin/views.py\nconnect_labs/workflow/views.py\n"
+    mock_result.stdout = "connect_labs/audit/views.py\nconnect_labs/workflow/views.py\n"
     with patch("weekly_changelog.subprocess.run", return_value=mock_result) as mock_run:
         files = fetch_pr_files(42, "dimagi-internal/connect-labs")
     mock_run.assert_called_once_with(
@@ -77,7 +47,7 @@ def test_fetch_pr_files_returns_filenames():
         text=True,
         timeout=15,
     )
-    assert files == ["connect_labs/prelogin/views.py", "connect_labs/workflow/views.py"]
+    assert files == ["connect_labs/audit/views.py", "connect_labs/workflow/views.py"]
 
 
 def test_fetch_pr_files_returns_empty_on_error():
@@ -98,29 +68,13 @@ def test_fetch_pr_files_returns_empty_on_timeout():
 def test_fetch_pr_files_strips_blank_lines():
     mock_result = MagicMock()
     mock_result.returncode = 0
-    mock_result.stdout = "\nconnect_labs/prelogin/home.html\n\n"
+    mock_result.stdout = "\nconnect_labs/templates/labs/overview.html\n\n"
     with patch("weekly_changelog.subprocess.run", return_value=mock_result):
         files = fetch_pr_files(1, "dimagi-internal/connect-labs")
-    assert files == ["connect_labs/prelogin/home.html"]
+    assert files == ["connect_labs/templates/labs/overview.html"]
 
 
-def test_load_user_visible_prs_adds_marketing_category():
-    pr = dict(PR_TEMPLATE, number=10)
-    prs_file = _write_prs_file([pr])
-    marketing_files = ["connect_labs/prelogin/views.py"]
-    try:
-        with (
-            patch("weekly_changelog.fetch_pr_files", return_value=marketing_files),
-            patch.dict(os.environ, {"GITHUB_REPOSITORY": "dimagi-internal/connect-labs"}),
-        ):
-            result = load_user_visible_prs(prs_file)
-    finally:
-        os.unlink(prs_file)
-    assert len(result) == 1
-    assert result[0]["category"] == "marketing"
-
-
-def test_load_user_visible_prs_adds_app_category():
+def test_load_user_visible_prs_records_changed_files():
     pr = dict(PR_TEMPLATE, number=11)
     prs_file = _write_prs_file([pr])
     app_files = ["connect_labs/workflow/views.py"]
@@ -132,7 +86,8 @@ def test_load_user_visible_prs_adds_app_category():
             result = load_user_visible_prs(prs_file)
     finally:
         os.unlink(prs_file)
-    assert result[0]["category"] == "app"
+    assert len(result) == 1
+    assert result[0]["files"] == app_files
 
 
 def test_load_user_visible_prs_skips_empty_product_description():
@@ -149,7 +104,7 @@ def test_load_user_visible_prs_skips_empty_product_description():
     assert result == []
 
 
-def test_load_user_visible_prs_defaults_to_app_when_no_repo():
+def test_load_user_visible_prs_skips_file_fetch_when_no_repo():
     pr = dict(PR_TEMPLATE, number=13)
     prs_file = _write_prs_file([pr])
     try:
@@ -160,15 +115,15 @@ def test_load_user_visible_prs_defaults_to_app_when_no_repo():
     finally:
         os.unlink(prs_file)
     mock_fetch.assert_not_called()
-    assert result[0]["category"] == "app"
+    assert result[0]["files"] == []
 
 
-def test_generate_weekly_summary_includes_category_annotation():
-    """Verify the group text sent to Claude includes [category: X] annotation."""
+def test_generate_weekly_summary_tags_each_group():
+    """Verify the group text sent to Claude tags each group, so bullets can cite one."""
     captured_messages = []
 
     class FakeResponse:
-        content = [MagicMock(text="- **Some fix** — [Marketing] Details here.")]
+        content = [MagicMock(text="- **Some fix** — Details here.")]
 
     class FakeMessages:
         def create(self, **kwargs):
@@ -185,7 +140,6 @@ def test_generate_weekly_summary_includes_category_annotation():
             "pr_numbers": [5],
             "lead_pr": 5,
             "lead_url": "https://github.com/dimagi-internal/connect-labs/pull/5",
-            "category": "marketing",
         },
         {
             "title": "Dashboard fix",
@@ -193,19 +147,18 @@ def test_generate_weekly_summary_includes_category_annotation():
             "pr_numbers": [6],
             "lead_pr": 6,
             "lead_url": "https://github.com/dimagi-internal/connect-labs/pull/6",
-            "category": "app",
         },
     ]
     generate_weekly_summary(FakeClient(), groups)
 
     assert len(captured_messages) == 1
     user_content = captured_messages[0]["messages"][0]["content"]
-    assert "Group {g0} [category: marketing]" in user_content
-    assert "Group {g1} [category: app]" in user_content
+    assert "Group {g0}: Nav fix" in user_content
+    assert "Group {g1}: Dashboard fix" in user_content
 
 
 def test_group_prs_by_feature_returns_groups():
-    """Verify grouping parses JSON and attaches marketing category from source PRs."""
+    """Verify grouping parses JSON and resolves each group's lead PR."""
     fake_json = json.dumps(
         [
             {
@@ -234,14 +187,12 @@ def test_group_prs_by_feature_returns_groups():
             "title": "feat: dashboard",
             "description": "Overview.",
             "url": "https://github.com/dimagi-internal/connect-labs/pull/10",
-            "category": "app",
         },
         {
             "number": 11,
             "title": "fix: dashboard crash",
             "description": "Fixed crash.",
             "url": "https://github.com/dimagi-internal/connect-labs/pull/11",
-            "category": "app",
         },
     ]
     groups = group_prs_by_feature(FakeClient(), prs)
@@ -251,55 +202,7 @@ def test_group_prs_by_feature_returns_groups():
     assert g["title"] == "New dashboard"
     assert g["lead_pr"] == 10
     assert g["lead_url"] == "https://github.com/dimagi-internal/connect-labs/pull/10"
-    assert g["category"] == "app"
     assert set(g["pr_numbers"]) == {10, 11}
-
-
-def test_group_prs_by_feature_derives_marketing_category():
-    """Verify group category is derived from constituent PRs (marketing > mixed > app)."""
-    fake_json = json.dumps(
-        [
-            {
-                "title": "Homepage update",
-                "description": "Navigation changed.",
-                "pr_numbers": [20, 21],
-                "lead_pr": 20,
-                "type": "Improvement",
-            }
-        ]
-    )
-
-    class FakeResponse:
-        content = [MagicMock(text=fake_json)]
-
-    class FakeMessages:
-        def create(self, **kwargs):
-            return FakeResponse()
-
-    class FakeClient:
-        messages = FakeMessages()
-
-    prs = [
-        {
-            "number": 20,
-            "title": "feat: workflow",
-            "description": "Workflow update.",
-            "url": "https://github.com/dimagi-internal/connect-labs/pull/20",
-            "category": "app",
-        },
-        {
-            "number": 21,
-            "title": "feat: prelogin nav",
-            "description": "Navigation change.",
-            "url": "https://github.com/dimagi-internal/connect-labs/pull/21",
-            "category": "marketing",
-        },
-    ]
-    groups = group_prs_by_feature(FakeClient(), prs)
-
-    assert len(groups) == 1
-    # One app PR + one marketing PR → group inherits "marketing"
-    assert groups[0]["category"] == "marketing"
 
 
 def test_group_prs_by_feature_fallback_on_bad_json():
@@ -321,7 +224,6 @@ def test_group_prs_by_feature_fallback_on_bad_json():
             "title": f"PR {i}",
             "description": f"Desc {i}.",
             "url": f"https://github.com/dimagi-internal/connect-labs/pull/{i}",
-            "category": "app",
         }
         for i in range(1, 15)  # 14 PRs — more than fallback cap of 10
     ]
@@ -438,7 +340,7 @@ def test_link_bullets_replaces_tags_and_drops_unlinked_ones():
 
 
 def test_generate_weekly_summary_links_bullets():
-    groups = [{"title": "Map", "description": "d", "category": "app", "page_url": "https://x.test/map/"}]
+    groups = [{"title": "Map", "description": "d", "page_url": "https://x.test/map/"}]
     summary = generate_weekly_summary(_fake_client("Theme.\n- Map drawing {g0}"), groups)
     assert summary == "Theme.\n- Map drawing [link](https://x.test/map/)"
 

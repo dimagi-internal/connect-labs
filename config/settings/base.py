@@ -177,7 +177,6 @@ LOCAL_APPS = [
     "connect_labs.multidb",
     "connect_labs.opportunity",
     "connect_labs.organization",
-    "connect_labs.prelogin",
     "connect_labs.program",
     "connect_labs.microplans",
     "connect_labs.mopup",
