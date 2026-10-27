@@ -9,7 +9,8 @@ from connect_labs.utils.dimagi_user import is_dimagi_user
 # "solicitations": calls for partners are posted by, and answered by, organisations
 # outside Dimagi; who may manage a call is decided per organisation
 # (solicitations/access.py), not by this gate.
-EXTERNAL_USER_FEATURES = {"tasks", "workflow", "docs", "solicitations"}
+# "data": the Data page shows only data the person already holds (labsdata/spaces.py).
+EXTERNAL_USER_FEATURES = {"tasks", "workflow", "docs", "solicitations", "data"}
 EXTERNAL_USER_WORKFLOW_TEMPLATES = {"bulk_image_audit"}
 
 
