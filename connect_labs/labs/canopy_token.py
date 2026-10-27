@@ -6,8 +6,10 @@ through this copy of it so that, in the same request, it can record WHICH page t
 is for (``labsdata.page_holds.record_mint``): the selection labs signed onto the panel's
 token URL when it drew the page. At labs' MCP the ``data_*`` tools then hold every call
 under that grant to that page. Everything else is the SDK's, step for step: the subject is
-``request.user``, the body is never read, ``?page=`` only selects among the registered
-pages, and a failed mint says nothing the visitor could act on.
+``request.user``, ``?page=`` only selects among the registered pages, the page's scopes
+(and so an ID-JAG) ride only a mint whose body is ``{"grant": true}`` -- which the panel
+sends once the person has sent a message in it, never on page load -- and a failed mint
+says nothing the visitor could act on.
 """
 
 from __future__ import annotations
@@ -47,7 +49,8 @@ def panel_token(request):
         payload = arrival_payload(
             config,
             conf.subject_for_user(request.user),
-            scopes=page.scopes if page is not None else (),
+            # The SDK's own reading of the body: a grant only when the person acted.
+            scopes=page.scopes if page is not None and sdk_views._wants_grant(request) else (),
             agent_slug=chosen or conf.agent_slug(),
             bind_agent=bool(chosen),
             runner_requirements=(page.runner_requirements if page is not None else ()),

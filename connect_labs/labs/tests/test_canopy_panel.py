@@ -93,10 +93,15 @@ class _Body:
         pass
 
 
-def _mint(client, query=""):
+def _mint(client, query="", grant=True):
+    """Mint as the panel does once the person has sent a message (``{"grant": true}``);
+    ``grant=False`` is its plain mint, on load."""
     stub = _CanopyStub()
+    body = {"grant": True} if grant else {}
     with mock.patch("urllib.request.urlopen", stub):
-        response = client.post(reverse("labs:canopy_token") + query)
+        response = client.post(
+            reverse("labs:canopy_token") + query, data=json.dumps(body), content_type="application/json"
+        )
     return response, stub
 
 
@@ -276,6 +281,16 @@ class TestTheIdJag:
         _, canopy_stub = _mint(client)
 
         assert set(canopy_stub.sent) == {"assertion", "agent_slug"}
+
+    def test_a_mint_the_panel_did_not_ask_a_grant_with_has_no_id_jag(self, client, user, configured):
+        """On load the panel mints plain; the page's scopes ride only a mint it asked a grant with."""
+        client.force_login(user)
+        token = _rendered_page_token(client)
+
+        _, canopy_stub = _mint(client, f"?page={token}", grant=False)
+
+        assert "id_jag" not in canopy_stub.sent
+        assert "assertion" in canopy_stub.sent, "the plain token is still minted"
 
     def test_the_grant_switched_off_means_no_id_jag(self, client, user, configured, canopy_agents):
         client.force_login(user)

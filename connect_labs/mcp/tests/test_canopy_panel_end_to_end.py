@@ -119,7 +119,8 @@ def _mint(panel, user) -> dict:
         return {"token": "canopy-contact-token", "expires_at": "", "kind": "contact"}
 
     url = panel["options"]["tokenUrl"]
-    request = RequestFactory().post(url)
+    # The mint the panel makes once the person has sent a message: it asks for the grant.
+    request = RequestFactory().post(url, data=json.dumps({"grant": True}), content_type="application/json")
     request.user = user
     # The view the URL routes to: labs' mint (labs/canopy_token.py), which records the page.
     view = resolve(url.split("?")[0]).func

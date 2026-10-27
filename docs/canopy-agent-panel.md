@@ -200,7 +200,10 @@ the plain Data page to the selection on screen. A call outside it is refused
 `PERMISSION_DENIED` with `reason: outside_page` and a message telling the agent to send the
 person to the Data page. Where it comes from is labs, never the agent: `canopy_panel.panel(...,
 holds=)` signs the selection onto the panel's token URL (bound to that page token and person);
-labs' mint view (`labs/canopy_token.py`, the SDK's `panel_token` plus this record) stores a
+labs' mint view (`labs/canopy_token.py`, the SDK's `panel_token` plus this record) puts an
+ID-JAG in a mint only when the panel asks for one (`{"grant": true}`, sent once the person has
+sent a message, never on page load; canopy then holds it unusable until they confirm it with
+their passkey), and for that grant stores a
 `PageHold` for the page and a `PageGrant` for the ID-JAG's `jti`; the delegated token canopy
 redeems keeps that `jti` (`grant_jti`), so the MCP finds the call's page from its own token
 (`mcp/server.py` puts it in the claims). On the plain Data page the person changes the
