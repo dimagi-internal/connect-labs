@@ -10,6 +10,7 @@ import pytest
 from django.urls import reverse
 
 
+@pytest.mark.django_db
 def test_root_redirects_to_the_labs_overview(client):
     resp = client.get("/")
     assert resp.status_code == 302
