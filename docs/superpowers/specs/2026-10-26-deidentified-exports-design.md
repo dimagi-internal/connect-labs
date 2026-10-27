@@ -65,6 +65,12 @@ One build runs at a time: only a queued export moves to building, under a row lo
 
 For a workflow space, a registry property's lineage is walked backwards: property, then the columns its SQL reads, aggregates, visit columns, Layer 1 pipeline fields, and finally their fallback form paths. Its inherited setting is the strictest at the bottom. A property with any source that is unreviewed, unknown or that the walk cannot place is **unset**, which counts as sensitive. The registry is the workflow's own (`registry_source`), or the dictionary's `registry_id` to try a candidate. Everything is read as the person, through `workflow_context.read_workflow` and `read_pipeline`.
 
+## Case fields (`labsdata/cases.py`)
+
+For a workflow space, **Add as case fields** puts every aggregate and property of the registry in the dictionary as a case-level entry (`@case:<name>`). Each entry records what it inherits from its lineage. Its setting may be that or stricter, never looser (`dictionary.case_allowed`). Anything that inherits `unset` can only be dropped. Re-adding updates what each inherits. A reviewed field whose sources became stricter than its setting goes back to unreviewed, with a flag.
+
+When an export includes any case field, the case statement is compiled at request time, as the person who asked (`cases.compile_sql`): it reads the workflow, its pipelines and its registry with their own token, uses `compile_props_sql` over the opportunities they hold, and is as of the export's end date. The statement is frozen into the export (`SpaceExport.case_query`). The build runs it and writes `cases.csv`: one row per case, keyed by `pseudonym(case id, "case")`, the same code the visit file's case columns carry, so the two files join. Values go through the same transforms and the same leak scan. Like every semantic read, the statement runs as the app over the visit cache. Its opportunities were fixed, as the person, when it was compiled.
+
 ## Shared with synthetic cloning (`labs/deid/`)
 
 The identifier, free-text and envelope rules were the synthetic profiler's. They now live in `labs/deid/classify.py`, and the profiler imports them, so a field the cloner refuses to copy is a field an export drops by default. The Data page's field index uses the same form walk (`fieldscan`). The coach charts' peer-name check is in `deid/leaks.py`, next to the export's scanner.
@@ -81,5 +87,4 @@ There is no tool for settings, sign-off or download.
 
 ## Not built (yet)
 
-- Exporting registry properties as an entity-level table: lineage says which ones may be shared, but the export writes visit rows only.
 - Declared value ranges per entry. The ranges check uses each column's own spread.

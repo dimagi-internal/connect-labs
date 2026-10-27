@@ -64,6 +64,7 @@
           <button type="button" data-filter="todo" aria-pressed="false">Needs review</button>
           <button type="button" data-filter="out" aria-pressed="false">Exported</button>
           <button type="button" data-filter="flagged" aria-pressed="false">Flagged</button>
+          <button type="button" data-filter="case" aria-pressed="false">Case fields</button>
         </div>
         <input class="dx-search" id="dx-search" type="search" placeholder="Find a field">
         {% if is_manager %}
@@ -106,8 +107,9 @@
         <h2>What the registry's properties inherit</h2>
         {% if is_manager %}<label class="dx-muted">Registry id <input type="text" id="dx-registry" size="8" placeholder="the workflow's"></label><button class="dx-btn ghost" id="dx-registry-save" type="button">Use</button>{% endif %}
         <button class="dx-btn ghost" id="dx-lineage-load" type="button">Work it out</button>
+        <button class="dx-btn ghost" id="dx-cases-add" type="button" title="Add each property as a case field of the export, starting at what it inherits">Add as case fields</button>
       </div>
-      <p class="dx-muted px-3 pt-2">Each property takes the strictest setting of the form fields it is computed from. One that reads any field nobody reviewed counts as sensitive ("unset").</p>
+      <p class="dx-muted px-3 pt-2">Each property takes the strictest setting of the form fields it is computed from. One that reads any field nobody reviewed counts as sensitive ("unset"). <b>Add as case fields</b> puts every property in the dictionary as a case field: once reviewed, an export adds <code>cases.csv</code>, one row per case under the same case codes, each field at least as strict as what it inherits.</p>
       <div id="dx-lineage-body" class="px-3 pb-3"></div>
     </section>
 
@@ -134,6 +136,7 @@
       flagResolveUrl: "{% url 'labsdata:dictionary_flag_resolve' space.pk 0 %}",
       registryUrl: "{% url 'labsdata:dictionary_registry' space.pk %}",
       lineageUrl: "{% url 'labsdata:dictionary_lineage' space.pk %}",
+      casesUrl: "{% url 'labsdata:dictionary_cases' space.pk %}",
       exportsUrl: "{% url 'labsdata:exports' space.pk %}",
       exportBase: "{% url 'labsdata:exports' space.pk %}",
       isManager: {{ is_manager|yesno:"true,false" }},

@@ -68,6 +68,20 @@ VISIT_COLUMN_ENTRIES: dict[str, tuple[str, str, dict, bool]] = {
 }
 
 
+#: Case fields' keys (``cases.py``, which imports this module).
+CASE_PREFIX = "@case:"
+
+
+def case_floor(inherits: str) -> str:
+    """The loosest setting a case field may carry: what it inherits, or drop when unset."""
+    return transforms.DROP_SETTING if inherits in ("", "unset") else inherits
+
+
+def case_allowed(setting: str, inherits: str) -> bool:
+    """A case field may be as strict as its sources or stricter, never looser."""
+    return transforms.stricter(setting, case_floor(inherits)) == setting
+
+
 class DictionaryError(Exception):
     def __init__(self, code: str, message: str):
         super().__init__(message)
@@ -135,6 +149,7 @@ def entry_dict(entry: DictionaryEntry) -> dict:
         "suggested_setting": entry.suggested_setting,
         "suggested_params": entry.suggested_params or {},
         "quasi": entry.quasi,
+        "inherits": entry.inherits or None,
         "reviewed": entry.reviewed,
         "reviewed_by": getattr(entry.reviewed_by, "username", None),
         "reviewed_at": entry.reviewed_at.isoformat() if entry.reviewed_at else None,
@@ -214,6 +229,7 @@ def snapshot(dictionary: DataDictionary) -> list[dict]:
                 "setting": e.setting,
                 "params": e.params or {},
                 "quasi": e.quasi,
+                "inherits": e.inherits,
                 "reviewed": e.reviewed,
                 "sources": [
                     {"path": s.path, "deliver_unit": s.deliver_unit, "builds": s.builds} for s in e.sources.all()
@@ -429,6 +445,12 @@ def update_entry(opened: spaces.OpenSpace, key: str, change: dict, *, user) -> d
             params = transforms.validate_params(setting, change.get("params"))
         except ValueError as e:
             raise DictionaryError("bad_setting", str(e)) from e
+        if entry.key.startswith(CASE_PREFIX) and not case_allowed(setting, entry.inherits):
+            raise DictionaryError(
+                "looser_than_sources",
+                f"This case field is computed from fields set to {entry.inherits or 'unset'}: "
+                "it can be as strict as that or stricter, never looser.",
+            )
         if entry.column == "entity_name" or entry.kind in (classify.IDENTIFIER, classify.MEDIA):
             if setting == transforms.KEEP:
                 raise DictionaryError(
@@ -480,8 +502,8 @@ def merge(opened: spaces.OpenSpace, into: str, other: str, *, user) -> dict:
     if into == other:
         raise DictionaryError("same_entry", "Choose two different fields to merge.")
     keep, gone = _entry(dictionary, into), _entry(dictionary, other)
-    if keep.column or gone.column:
-        raise DictionaryError("column", "A visits column cannot be merged with a form field.")
+    if keep.column or gone.column or keep.key.startswith(CASE_PREFIX) or gone.key.startswith(CASE_PREFIX):
+        raise DictionaryError("column", "Only two form fields can be merged.")
     before = {"into": _state(keep), "other": {**_state(gone), "key": gone.key}}
     for source in gone.sources.all():
         if keep.sources.filter(path=source.path, deliver_unit=source.deliver_unit).exists():

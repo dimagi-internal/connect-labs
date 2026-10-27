@@ -332,6 +332,9 @@ class DictionaryEntry(models.Model):
     suggested_params = models.JSONField(default=dict, blank=True)
     #: Can single someone out in combination with other fields (a date, a worker).
     quasi = models.BooleanField(default=False)
+    #: A case field (``cases.py``): the setting it inherits from the form fields it is
+    #: computed from (``lineage``), or ``unset``. Its own setting may be stricter, never looser.
+    inherits = models.CharField(max_length=20, blank=True, default="")
     reviewed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
@@ -454,6 +457,10 @@ class SpaceExport(models.Model):
     opportunities = models.JSONField(default=list)
     #: The dictionary's entries as they stood when asked for: what this export applies.
     entries = models.JSONField(default=list)
+    #: The case rows' statement, compiled as the person who asked (``cases.compile_sql``),
+    #: when any case field is exported: ``{sql, row_id, registry, compiled_at}``.
+    case_query = models.JSONField(default=dict, blank=True)
+    case_rows = models.PositiveIntegerField(default=0)
     status = models.CharField(max_length=20, choices=STATUSES, default=QUEUED)
     source_rows = models.PositiveIntegerField(default=0)
     rows = models.PositiveIntegerField(default=0)

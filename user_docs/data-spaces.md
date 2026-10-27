@@ -208,6 +208,12 @@ The download is a zip of four files:
 
 For a space made from a workflow, **What the registry's properties inherit** follows each semantic-registry property back to the form fields it is computed from. Each property gets the strictest setting of those fields. A property that reads any field nobody has reviewed shows as *unset (sensitive)*.
 
+### Case fields: one row per case
+
+For a space made from a workflow, press **Add as case fields** to list every figure the programme's indicator registry works out per case (visits, birthweight, KMC hours, registered and so on) as a *case field*. Review them like any other field. A case field can be as strict as the form fields it is computed from, or stricter, never looser. A figure computed from a field nobody has reviewed can only be dropped.
+
+When an export includes a case field, the zip gains **`cases.csv`**: one row per case, worked out as of the export's end date, keyed by the same case codes as `data.csv`, so the two files join.
+
 ---
 
 ## Troubleshooting
