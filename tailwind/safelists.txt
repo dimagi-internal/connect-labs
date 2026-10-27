@@ -45,3 +45,9 @@ bg-green-200
 text-green-900
 bg-gray-500
 text-white
+
+# Overview page Data tile (colour comes from a Python dict, never scanned)
+bg-cyan-100
+text-cyan-600
+hover:border-cyan-500
+group-hover:text-cyan-600

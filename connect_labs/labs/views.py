@@ -275,6 +275,15 @@ class LabsOverviewView(LoginRequiredMixin, TemplateView):
                 "feature": "docs",
             },
             {
+                "name": "Data",
+                "url": "/labs/data/",
+                "icon": "fa-database",
+                "description": "Query the visits and pipeline rows of the opportunity or program you have selected, "
+                "and keep useful queries in a data space",
+                "color": "cyan",
+                "feature": "data",
+            },
+            {
                 "name": "Labs Admin",
                 "url": "/labs/admin/",
                 "icon": "fa-screwdriver-wrench",
