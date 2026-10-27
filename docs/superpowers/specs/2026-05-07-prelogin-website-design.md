@@ -1,6 +1,10 @@
 # Pre-login Marketing Website (`prelogin_website` app)
 
 > **Status (2026-07-25 doc-regen):** shipped as `connect_labs/prelogin/` (app name drifted from the `prelogin_website` proposed here). Historical design record.
+>
+> **Superseded (2026-10-27):** the app, its templates and its assets were removed from labs.
+> The marketing site now lives in `dimagi-internal/connect-marketing`; labs' root redirects
+> to `/labs/overview/` and labs serves no public pages.
 
 **Status:** Design approved 2026-05-07
 **Author:** jjackson + Claude

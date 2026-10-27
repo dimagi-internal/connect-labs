@@ -1,6 +1,10 @@
 # Design: `[Marketing]` Labels in Weekly Changelog
 
-> **Status: shipped (2026-05-19) — historical record, not current-state.**
+> **Status: shipped (2026-05-19), then removed (2026-10-27) — historical record, not current-state.**
+>
+> The marketing site moved out of labs into `dimagi-internal/connect-marketing`, so no PR
+> here touches marketing paths any more. `MARKETING_PATHS`, `classify_pr()` and the
+> `[Marketing]` bullet prefix described below were deleted from `automation/weekly_changelog.py`.
 
 **Date:** 2026-05-19  
 **Status:** Approved

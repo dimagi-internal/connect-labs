@@ -195,10 +195,6 @@ LABS_PUBLIC_URL = env("LABS_PUBLIC_URL", default="https://labs.connect.dimagi.co
 # CANOPY_SIGNING_KEY; everything else is Labs Admin › Canopy agents.
 CANOPY_BASE_URL = env("CANOPY_BASE_URL", default="https://canopy.dimagi.com")
 
-# Prelogin Login CTA target — labs sends authenticated users into the labs app,
-# whereas the prelogin view's default ("/accounts/login/") suits prod connect.
-PRELOGIN_APP_LOGIN_URL = "/labs/overview/"
-
 # Add labs app
 INSTALLED_APPS.append("connect_labs.labs")
 INSTALLED_APPS.append("connect_labs.campaign")

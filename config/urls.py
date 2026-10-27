@@ -20,7 +20,11 @@ urlpatterns = [
     # MCP token creation — registered here at the path Django sees after Starlette's
     # Mount("/mcp/admin", ...) strips the prefix, i.e. /create-token/ → this view.
     path("create-token/", create_token_browser, name="mcp_admin_create_token"),
-    path("", include("connect_labs.prelogin.urls")),
+    # Labs serves no public pages: the marketing site lives in its own repo
+    # (dimagi-internal/connect-marketing). The root sends you into the labs app,
+    # and because LabsOverviewView is login-gated an anonymous visitor is bounced
+    # on to LOGIN_URL (/labs/login/) with ?next= set.
+    path("", RedirectView.as_view(url="/labs/overview/", query_string=True), name="root"),
     # The ACE Web SPA is served by a separate nginx container; the ALB only
     # routes `/ace/*` to it. A bare `/ace` would fall through here and 404 —
     # catch it and redirect to the slash variant so typed URLs work.

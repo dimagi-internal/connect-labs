@@ -54,25 +54,6 @@ NON_PAGE_ROUTE = re.compile(
     r"|\.(json|txt|js|xml)$"
 )
 
-MARKETING_PATHS = (
-    "connect_labs/prelogin/",
-    "connect_labs/templates/prelogin/",
-    "connect_labs/static/prelogin/",
-)
-
-
-def classify_pr(files: list[str]) -> str:
-    """Return 'marketing', 'app', or 'mixed' based on which paths a PR touched."""
-    if not files:
-        return "app"
-    marketing = [f for f in files if any(f.startswith(p) for p in MARKETING_PATHS)]
-    app = [f for f in files if not any(f.startswith(p) for p in MARKETING_PATHS)]
-    if marketing and not app:
-        return "marketing"
-    if app and not marketing:
-        return "app"
-    return "mixed"
-
 
 def fetch_pr_files(pr_number: int, repo: str) -> list[str]:
     """Return list of filenames changed in a PR, via the gh CLI."""
@@ -217,10 +198,6 @@ Format rules:
 - End each bullet with the tag of the group it describes, e.g. {g3}; a bullet that \
 merges several groups takes the tag of the main one
 - Return only the summary text — no preamble, no trailing notes
-- Groups marked [category: marketing]: prefix every bullet from that group with "[Marketing] "
-- Groups marked [category: mixed]: split into separate bullets for app and marketing changes; \
-prefix only the marketing bullets with "[Marketing] "
-- Groups marked [category: app]: no prefix
 """
 
 
@@ -235,9 +212,7 @@ def group_prs_by_feature(client: anthropic.Anthropic, prs: list[dict], pages: li
     """Cluster PRs into logical feature groups ordered by user impact, each with its prod page."""
     pages = pages or []
     pr_text = "\n\n".join(
-        f"PR #{p['number']} [marketing: {p.get('category', 'app')}]: {p['title']}"
-        f"{_files_summary(p.get('files', []))}\n{p['description']}"
-        for p in prs
+        f"PR #{p['number']}: {p['title']}{_files_summary(p.get('files', []))}\n{p['description']}" for p in prs
     )
     resp = client.messages.create(
         model=MODEL_GROUPING,
@@ -263,7 +238,6 @@ def group_prs_by_feature(client: anthropic.Anthropic, prs: list[dict], pages: li
                 "pr_numbers": [p["number"]],
                 "lead_pr": p["number"],
                 "lead_url": p.get("url", ""),
-                "category": p.get("category", "app"),
                 "page_url": "",
             }
             for p in prs[:10]
@@ -277,14 +251,6 @@ def group_prs_by_feature(client: anthropic.Anthropic, prs: list[dict], pages: li
         lead = pr_by_number.get(group.get("lead_pr", 0), {})
         group["lead_url"] = lead.get("url", "")
         group["page_url"] = page_url(group.get("page"), set(pages))
-        # Derive marketing category from constituent PRs
-        pr_cats = [pr_by_number.get(n, {}).get("category", "app") for n in pr_nums]
-        if "marketing" in pr_cats:
-            group["category"] = "marketing"
-        elif "mixed" in pr_cats:
-            group["category"] = "mixed"
-        else:
-            group["category"] = "app"
 
     return groups[:GROUP_MAX]
 
@@ -324,7 +290,6 @@ def load_user_visible_prs(prs_file: str) -> list[dict]:
                     "merged_at": pr.get("merged_at", ""),
                     "description": desc,
                     "files": files,
-                    "category": classify_pr(files),
                 }
             )
     return result
@@ -332,10 +297,7 @@ def load_user_visible_prs(prs_file: str) -> list[dict]:
 
 def generate_weekly_summary(client: anthropic.Anthropic, groups: list[dict]) -> str:
     """Ask Claude for a user-friendly weekly summary, one bullet per feature group."""
-    group_text = "\n\n".join(
-        f"Group {{g{i}}} [category: {g.get('category', 'app')}]: {g['title']}\n{g['description']}"
-        for i, g in enumerate(groups)
-    )
+    group_text = "\n\n".join(f"Group {{g{i}}}: {g['title']}\n{g['description']}" for i, g in enumerate(groups))
     resp = client.messages.create(
         model=MODEL_SUMMARY,
         max_tokens=1000,
