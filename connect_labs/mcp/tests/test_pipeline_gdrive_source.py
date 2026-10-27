@@ -11,11 +11,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.utils import timezone
 
-from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import verify_gdrive_authorization
+from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import (
+    verify_gdrive_authorization,
+)
 from connect_labs.labs.analysis.config import DataSourceConfig
 from connect_labs.labs.models import UserConnectToken
-from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.testing import call_tool, mint_token
 from connect_labs.users.models import User
 
 DRIVE_SCHEMA = {
@@ -37,7 +38,7 @@ def drive_tree(settings, monkeypatch):
 
 def _user(email):
     user = User.objects.create(username=email.split("@")[0], email=email)
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     UserConnectToken.objects.create(user=user, access_token="tok", expires_at=timezone.now() + timedelta(hours=1))
     return raw
 

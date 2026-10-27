@@ -2,8 +2,7 @@
 
 import pytest
 
-from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.testing import call_tool, mint_token
 from connect_labs.mcp.tool_registry import get_tool
 from connect_labs.solicitations.tests.factories import (
     grant,
@@ -16,7 +15,7 @@ from connect_labs.solicitations.tests.factories import (
 
 
 def pat(user):
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     return raw
 
 

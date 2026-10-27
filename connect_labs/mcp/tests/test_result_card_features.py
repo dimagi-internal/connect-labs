@@ -19,8 +19,7 @@ from connect_labs.labsdata import display, engine, fields, scope, service
 from connect_labs.labsdata.scope import Opportunity, ScopeError
 from connect_labs.mcp import kept_results
 from connect_labs.mcp.models import KeptResult as Row
-from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.testing import call_tool, mint_token
 
 pytestmark = pytest.mark.django_db
 
@@ -62,7 +61,7 @@ def connect(monkeypatch, owner):
 
 
 def _call(user, **args):
-    _, raw = MCPAccessToken.create_token(user, name="card")
+    _, raw = mint_token(user, name="card")
     base = {"opportunity_ids": [OPP.id], "sql": "select worker_name, visits from visits where status <> 'x'"}
     return call_tool(raw, "data_query", {**base, **args})
 
@@ -317,7 +316,7 @@ def test_resources_read_sorts_and_refuses_a_bad_sort_as_the_reader(owner, connec
 
     _call(owner, keep_result=True)
     uri = f"labs-result://{Row.objects.get().pk}"
-    _, raw = MCPAccessToken.create_token(owner, name="sort")
+    _, raw = mint_token(owner, name="sort")
     contents = read_resource(raw, f"{uri}?sort=visits&dir=desc&page=1&page_size=5")
     body = json.loads(contents[0].text)
     assert [r[2] for r in body["rows"]] == [8] * 5

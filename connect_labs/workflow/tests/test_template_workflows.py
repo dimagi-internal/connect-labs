@@ -24,8 +24,7 @@ from django.utils import timezone
 
 from connect_labs.labs.integrations.connect.api_client import LabsAPIError
 from connect_labs.labs.models import LocalLabsRecord, UserConnectToken
-from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.testing import call_tool, mint_token
 from connect_labs.users.models import User
 from connect_labs.workflow import render_source as rs
 from connect_labs.workflow import template_workflows as tw
@@ -231,7 +230,7 @@ class FakeLabsAPI:
 
 def _person(username):
     user = User.objects.create(username=username)
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     UserConnectToken.objects.create(
         user=user, access_token=f"tok-{username}", expires_at=timezone.now() + timedelta(hours=1)
     )

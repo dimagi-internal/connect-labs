@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 
 from connect_labs.mcp import token_scopes
-from connect_labs.mcp.models import MCPAccessToken
+from connect_labs.mcp.testing import mint_token
 from connect_labs.workflow import actions, coach_image
 from connect_labs.workflow.actions import ActionError, commit, preview
 from connect_labs.workflow.coach_charts import store
@@ -213,19 +213,19 @@ def test_a_chart_link_draws_the_stored_chart_for_the_coaching_token(client, user
     out = _preview(user, {"workers": [{"key": "10::a10"}], "picture": COMPARE})
     [sent] = _sent(user, out["arguments"])
     path = sent["coach_image"]["url"].split("labs.connect.dimagi.com", 1)[1]
-    _, raw = MCPAccessToken.create_token(user, name="ocs", scope=token_scopes.COACH_IMAGES)
+    _, raw = mint_token(user, name="ocs", scope=token_scopes.COACH_IMAGES)
     resp = client.get(path, HTTP_AUTHORIZATION=f"Bearer {raw}")
     assert resp.status_code == 200 and resp["Content-Type"] == "image/png"
 
 
 def test_a_link_to_a_chart_that_is_gone_is_a_404(client, user, db):
-    _, raw = MCPAccessToken.create_token(user, name="ocs", scope=token_scopes.COACH_IMAGES)
+    _, raw = mint_token(user, name="ocs", scope=token_scopes.COACH_IMAGES)
     url = reverse("labs:coach_image", args=[coach_image.sign({"chart": "f" * 32, "opportunity_id": 10})])
     assert client.get(url, HTTP_AUTHORIZATION=f"Bearer {raw}").status_code == 404
 
 
 def test_a_legacy_link_still_draws(client, user, db):
-    _, raw = MCPAccessToken.create_token(user, name="ocs", scope=token_scopes.COACH_IMAGES)
+    _, raw = mint_token(user, name="ocs", scope=token_scopes.COACH_IMAGES)
     legacy = {
         "worker": "Asha Banda",
         "topics": [{"label": "Meetings held", "band": "red", "numerator": 5, "denominator": 12}],

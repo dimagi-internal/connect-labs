@@ -11,8 +11,7 @@ import pytest
 from django.utils import timezone
 
 from connect_labs.labs.models import UserConnectToken
-from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.testing import call_tool, mint_token
 from connect_labs.mcp.tool_registry import get_tool
 from connect_labs.solicitations.local_models import Solicitation
 from connect_labs.solicitations.tests.factories import (
@@ -40,7 +39,7 @@ TOOLS = (
 
 
 def pat(user):
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     return raw
 
 

@@ -18,7 +18,8 @@ from unittest import mock
 import httpx
 import pytest
 
-from connect_labs.mcp.models import MCPAccessToken, MCPAuditLog
+from connect_labs.mcp.models import MCPAuditLog
+from connect_labs.mcp.testing import mint_token
 from connect_labs.users.models import User
 
 
@@ -63,7 +64,7 @@ def test_streamable_http_list_and_call_end_to_end(asgi_app):
     application = asgi_app
 
     user = User.objects.create(username="e2e-mcp")
-    _, raw = MCPAccessToken.create_token(user, name="e2e")
+    _, raw = mint_token(user, name="e2e")
 
     async def _run():
         transport = StreamableHttpTransport(
@@ -255,7 +256,7 @@ def test_real_mcp_request_closes_connections_at_boundary(asgi_app, monkeypatch):
     application = asgi_app
 
     user = User.objects.create(username="boundary-close")
-    _, raw = MCPAccessToken.create_token(user, name="boundary")
+    _, raw = mint_token(user, name="boundary")
 
     close_spy = mock.Mock(wraps=dj_connections.close_all)
     monkeypatch.setattr(dj_connections, "close_all", close_spy)

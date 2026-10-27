@@ -8,8 +8,8 @@ from django.utils import timezone
 
 from connect_labs.labs import canopy
 from connect_labs.labs.models import UserConnectToken
-from connect_labs.mcp.models import MCPAccessToken, MCPAuditLog, StagedEdit
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.models import MCPAuditLog, StagedEdit
+from connect_labs.mcp.testing import call_tool, mint_token
 from connect_labs.mcp.tool_registry import get_tool
 from connect_labs.mcp.tools import workflow_edit
 from connect_labs.mcp.ui import RESOURCES, WORKFLOW_EDIT_CONFIRM_URI
@@ -27,7 +27,7 @@ PATCH = {
 
 def _person(username):
     user = User.objects.create(username=username)
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     UserConnectToken.objects.create(
         user=user, access_token="connect-tok", expires_at=timezone.now() + timedelta(hours=1)
     )

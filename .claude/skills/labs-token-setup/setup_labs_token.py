@@ -30,7 +30,8 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
-TIMEOUT_SECONDS = 120
+# Long enough to approve a full-access token with a passkey in canopy on the way.
+TIMEOUT_SECONDS = 300
 SERVER_NAME = "connect_labs"
 
 

@@ -29,8 +29,9 @@ from starlette.testclient import TestClient
 
 from connect_labs.labs import canopy
 from connect_labs.mcp import oauth
-from connect_labs.mcp.models import MCPAccessToken, MCPAuditLog
+from connect_labs.mcp.models import MCPAuditLog
 from connect_labs.mcp.server import _verify_bearer_sync
+from connect_labs.mcp.testing import mint_token
 from connect_labs.mcp.tool_registry import get_tool
 from connect_labs.testing.canopy_agents import CONFORMANCE_CANOPY
 from connect_labs.users.models import User
@@ -495,7 +496,7 @@ def test_pats_and_oauth_sign_ins_are_unchanged(kind, enabled):
 
     user = User.objects.create(username=f"direct-{kind}")
     if kind == "pat":
-        _, raw = MCPAccessToken.create_token(user, name="regression")
+        _, raw = mint_token(user, name="regression")
     else:
         raw = _access_token(user, _mcp_application())
 
@@ -520,7 +521,7 @@ def test_a_pat_sent_with_a_dpop_scheme_is_not_a_delegated_token(enabled):
     """A token the SDK did not issue gets nothing from the DPoP scheme: the PAT
     still resolves as a PAT, with the whole catalogue, exactly as before."""
     user = User.objects.create(username="pat-over-dpop")
-    _, raw = MCPAccessToken.create_token(user, name="regression")
+    _, raw = mint_token(user, name="regression")
 
     resolved = _verify_bearer_sync(raw, enabled.dpop_jkt)
 

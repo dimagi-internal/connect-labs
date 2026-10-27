@@ -27,6 +27,7 @@ from oauth2_provider.models import get_access_token_model, get_application_model
 from connect_labs.mcp import oauth
 from connect_labs.mcp.models import MCPAuditLog, MCPOAuthClient
 from connect_labs.mcp.server import CommCarePATVerifier
+from connect_labs.mcp.testing import allow_self_mint
 from connect_labs.users.models import User
 
 LOOPBACK = "http://127.0.0.1:33418/callback"
@@ -75,7 +76,10 @@ def _authorize_params(client_id, challenge, redirect_uri=LOOPBACK, scope=oauth.M
 
 
 def _sign_in(client, user):
-    """Register, approve on the consent screen, exchange the code. Returns (client_id, token response)."""
+    """Register, approve on the consent screen, exchange the code. Returns (client_id, token response).
+
+    The user may self-mint: how a full sign-in is approved is test_full_access.py's."""
+    allow_self_mint(user)
     registered = _register(client).json()
     verifier, challenge = _pkce()
     client.force_login(user)

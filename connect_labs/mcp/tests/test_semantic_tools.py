@@ -23,8 +23,7 @@ import pytest
 from django.utils import timezone
 
 from connect_labs.labs.models import UserConnectToken
-from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.testing import call_tool
+from connect_labs.mcp.testing import call_tool, mint_token
 from connect_labs.mcp.tool_registry import MCPToolError
 from connect_labs.semantic.seed import registry_payload
 from connect_labs.users.models import User
@@ -37,7 +36,7 @@ _CLIENT_RESULT_LIMIT_CHARS = 25_000 * 3
 @pytest.fixture
 def auth_user(db):
     user = User.objects.create(username="semantictest")
-    _, raw = MCPAccessToken.create_token(user, name="t")
+    _, raw = mint_token(user, name="t")
     UserConnectToken.objects.create(
         user=user,
         access_token="connect-tok",
@@ -284,7 +283,10 @@ class TestItemLevelUpdate:
     def _access(version=7):
         """The REAL data access -- validation, merge and version bump included --
         over a mocked labs API holding the KMC registry."""
-        from connect_labs.workflow.data_access import SemanticRegistryDataAccess, SemanticRegistryRecord
+        from connect_labs.workflow.data_access import (
+            SemanticRegistryDataAccess,
+            SemanticRegistryRecord,
+        )
 
         payload = registry_payload("kmc")
         record = SemanticRegistryRecord(

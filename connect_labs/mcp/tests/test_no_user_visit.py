@@ -7,7 +7,8 @@ import pytest
 from connect_labs.labs.synthetic.models import LabsLocalRecord, SyntheticOpportunity
 from connect_labs.labs.synthetic.provenance import mark_generated
 from connect_labs.mcp import oauth, token_scopes, visit_access
-from connect_labs.mcp.models import MCPAccessToken, MCPAuditLog
+from connect_labs.mcp.models import MCPAuditLog
+from connect_labs.mcp.testing import mint_token
 from connect_labs.mcp.tests.test_delegation import _factory
 from connect_labs.mcp.tests.test_oauth import _access_token, _mcp_application
 from connect_labs.mcp.tool_registry import _REGISTRY, get_tool
@@ -94,7 +95,7 @@ def test_reachable_outright_tools_do_not_write_except_the_synthetic_flow():
 @pytest.mark.django_db(transaction=True)
 def test_a_full_token_on_the_safe_endpoint_sees_only_the_restricted_tools():
     user = _user("safe-endpoint")
-    _, raw = MCPAccessToken.create_token(user, name="laptop")
+    _, raw = mint_token(user, name="laptop")
 
     async def work(mcp_client):
         tools = await mcp_client.list_tools()
@@ -110,7 +111,7 @@ def test_a_full_token_on_the_safe_endpoint_sees_only_the_restricted_tools():
 @pytest.mark.django_db(transaction=True)
 def test_the_same_full_token_on_the_full_endpoint_sees_everything():
     user = _user("full-endpoint")
-    _, raw = MCPAccessToken.create_token(user, name="laptop")
+    _, raw = mint_token(user, name="laptop")
 
     async def work(mcp_client):
         return await mcp_client.list_tools()
@@ -124,7 +125,7 @@ def test_the_same_full_token_on_the_full_endpoint_sees_everything():
 @pytest.mark.django_db(transaction=True)
 def test_a_restricted_pat_is_restricted_on_the_full_endpoint():
     user = _user("restricted-pat")
-    _, raw = MCPAccessToken.create_token(user, name="agent", scope=token_scopes.NO_USERVISIT_DATA)
+    _, raw = mint_token(user, name="agent", scope=token_scopes.NO_USERVISIT_DATA)
 
     async def work(mcp_client):
         return await mcp_client.list_tools()
@@ -148,8 +149,8 @@ def test_the_restricted_endpoint_and_the_restricted_token_grant_the_same_tools()
     """The /mcp/no_user_visit/ address and a no-uservisit-data PAT are two ways to ask
     for the same permissions -- definition writes included -- and must never drift."""
     user = _user("same-reach")
-    _, full = MCPAccessToken.create_token(user, name="laptop")
-    _, restricted = MCPAccessToken.create_token(user, name="agent", scope=token_scopes.NO_USERVISIT_DATA)
+    _, full = mint_token(user, name="laptop")
+    _, restricted = mint_token(user, name="agent", scope=token_scopes.NO_USERVISIT_DATA)
 
     async def work(mcp_client):
         return await mcp_client.list_tools()
@@ -164,7 +165,7 @@ def test_the_restricted_endpoint_and_the_restricted_token_grant_the_same_tools()
 @pytest.mark.django_db(transaction=True)
 def test_a_definition_write_on_the_restricted_endpoint_passes_the_scope_gate():
     user = _user("endpoint-write")
-    _, full = MCPAccessToken.create_token(user, name="laptop")
+    _, full = mint_token(user, name="laptop")
 
     async def work(mcp_client):
         return await mcp_client.call_tool(
@@ -199,7 +200,7 @@ def test_the_safe_endpoint_reads_a_generated_opp_but_never_an_unmarked_one():
     user = _user("canary")
     generated = _synthetic_opp(10801, user=user, generated=True)
     unmarked = _synthetic_opp(10802, user=user, generated=False)
-    _, raw = MCPAccessToken.create_token(user, name="laptop")
+    _, raw = mint_token(user, name="laptop")
 
     async def work(mcp_client):
         ok = await mcp_client.call_tool(
@@ -227,7 +228,7 @@ def test_the_full_endpoint_still_reads_an_unmarked_opp():
     """The control for the canary: the refusal above is the rule, not a broken tool."""
     user = _user("canary-control")
     unmarked = _synthetic_opp(10803, user=user, generated=False)
-    _, raw = MCPAccessToken.create_token(user, name="laptop")
+    _, raw = mint_token(user, name="laptop")
 
     async def work(mcp_client):
         return await mcp_client.call_tool(
@@ -429,7 +430,7 @@ def test_a_person_set_to_no_uservisit_data_is_restricted_with_a_full_token_on_ei
     user = _user(f"locked-{'safe' if url == SAFE_URL else 'full'}")
     user.mcp_no_uservisit_data = True
     user.save()
-    _, raw = MCPAccessToken.create_token(user, name="laptop")  # a FULL token
+    _, raw = mint_token(user, name="laptop")  # a FULL token
 
     async def work(mcp_client):
         return await mcp_client.list_tools()

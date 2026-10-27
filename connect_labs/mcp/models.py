@@ -77,6 +77,8 @@ class MCPAccessToken(models.Model):
         name: str,
         ttl_days: int | None = 90,
         scope: str = token_scopes.FULL,
+        *,
+        full_access=None,
     ) -> tuple["MCPAccessToken", str]:
         """Create a new token and return (model_instance, raw_token).
 
@@ -88,9 +90,18 @@ class MCPAccessToken(models.Model):
 
         scope is one of ``token_scopes.SCOPE_CHOICES``; anything else raises
         rather than minting a token whose reach nobody decided.
+
+        A FULL token needs ``full_access``: the ``full_access.FullAccess`` that says why
+        this one may be minted (a person's passkey approval through canopy, an account
+        allowed to self-mint, or the server-side command). Without it this raises, so a
+        new mint path cannot skip the approval by forgetting to ask for it.
         """
         if scope not in dict(token_scopes.SCOPE_CHOICES):
             raise ValueError(f"Unknown token scope {scope!r}")
+        if scope == token_scopes.FULL:
+            from .full_access import require
+
+            require(full_access, user)
         raw = secrets.token_urlsafe(32)
         if not ttl_days or ttl_days > cls.MAX_TTL_DAYS:
             ttl_days = cls.MAX_TTL_DAYS
@@ -376,3 +387,64 @@ class KeptResult(models.Model):
             "sensitive": self.sensitive,
             "through_canopy": self.through_canopy,
         }
+
+
+class FullAccessSelfMint(models.Model):
+    """An account allowed to mint full-access MCP credentials for itself, with no
+    passkey approval (``full_access.may_self_mint``).
+
+    For an agent account that is never in a project space with real data, such as ACE:
+    approving each of its tokens would guard nothing. Ticked by Dimagi staff in the
+    Django admin; everyone else's full token needs their passkey through canopy.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="full_access_self_mint"
+    )
+    granted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    granted_at = models.DateTimeField(auto_now_add=True)
+    #: Why this account may: shown in the admin beside the tick.
+    reason = models.CharField(max_length=300, blank=True, default="")
+
+    class Meta:
+        db_table = "mcp_full_access_self_mint"
+        verbose_name = "full-access self-mint"
+
+    def __str__(self) -> str:
+        return f"{self.user} may self-mint full access"
+
+
+def _pending_ref() -> str:
+    return secrets.token_urlsafe(24)
+
+
+class PendingFullAccess(models.Model):
+    """A full-access credential waiting on its person's passkey approval in canopy
+    (``full_access``). ``ref`` is the sign-off's ``site_ref``, so an approval for one
+    pending mint cannot complete another; the row is completed once."""
+
+    TOKEN_CREATE, TOKEN_ROTATE, TOKEN_BROWSER, OAUTH = "token_create", "token_rotate", "token_browser", "oauth"
+    KINDS = [
+        (TOKEN_CREATE, "Create a token"),
+        (TOKEN_ROTATE, "Rotate a token"),
+        (TOKEN_BROWSER, "Create a token for a local app"),
+        (OAUTH, "Sign an MCP app in"),
+    ]
+
+    ref = models.CharField(max_length=64, unique=True, default=_pending_ref, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    kind = models.CharField(max_length=20, choices=KINDS)
+    #: What to do once approved (a token's name and lifetime, the callback, the OAuth
+    #: request). Never a secret: the token does not exist yet.
+    payload = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
+    sign_off_id = models.CharField(max_length=40, blank=True, default="", db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    completed_at = models.DateTimeField(null=True, blank=True)
+    #: The approval that completed it; unique, so one approval completes one thing.
+    approval_jti = models.CharField(max_length=64, null=True, blank=True, unique=True)
+
+    class Meta:
+        db_table = "mcp_pending_full_access"

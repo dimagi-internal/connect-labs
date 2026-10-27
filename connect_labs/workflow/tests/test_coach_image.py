@@ -13,6 +13,7 @@ from PIL import Image
 
 from connect_labs.mcp import token_scopes
 from connect_labs.mcp.models import MCPAccessToken
+from connect_labs.mcp.testing import mint_token
 from connect_labs.workflow import actions, coach_briefing, coach_image
 from connect_labs.workflow.actions import ActionError, preview
 from connect_labs.workflow.coach_charts import theme
@@ -237,14 +238,14 @@ def test_an_unknown_token_is_refused(client, db):
 
 @pytest.mark.parametrize("scope", [token_scopes.FULL, token_scopes.NO_USERVISIT_DATA])
 def test_a_token_of_any_other_scope_is_refused(client, owner, scope):
-    _, raw = MCPAccessToken.create_token(owner, name="other", scope=scope)
+    _, raw = mint_token(owner, name="other", scope=scope)
     resp = _get(client, _url(), raw=raw)
     assert resp.status_code == 403
     assert resp["Content-Type"] != "image/png"
 
 
 def test_a_coaching_pictures_token_gets_the_png(client, owner):
-    token, raw = MCPAccessToken.create_token(owner, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
+    token, raw = mint_token(owner, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
     resp = _get(client, _url(), raw=raw)
     assert resp.status_code == 200
     assert resp["Content-Type"] == "image/png"
@@ -256,7 +257,7 @@ def test_a_coaching_pictures_token_gets_the_png(client, owner):
 
 
 def test_altered_and_expired_links_get_the_same_404(client, owner):
-    _, raw = MCPAccessToken.create_token(owner, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
+    _, raw = mint_token(owner, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
     good = coach_image.sign(_payload())
     tampered = reverse("labs:coach_image", args=[good[:-3] + "xyz"])
     assert _get(client, tampered, raw=raw).status_code == 404
@@ -265,7 +266,7 @@ def test_altered_and_expired_links_get_the_same_404(client, owner):
 
 
 def test_a_revoked_or_expired_token_is_refused(client, owner):
-    token, raw = MCPAccessToken.create_token(owner, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
+    token, raw = mint_token(owner, name="ocs-coach", scope=token_scopes.COACH_IMAGES)
     MCPAccessToken.objects.filter(pk=token.pk).update(is_active=False)
     assert _get(client, _url(), raw=raw).status_code == 401
 

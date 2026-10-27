@@ -20,7 +20,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
 from oauth2_provider.models import get_access_token_model, get_application_model, get_refresh_token_model
 
-from . import token_scopes
+from . import full_access, token_scopes
 from .models import MCPAccessToken
 from .snippets import build_mcp_json_snippet
 
@@ -73,6 +73,7 @@ def _render_index(
         "scope_choices": token_scopes.SCOPE_CHOICES,
         "no_uservisit_data_scope": token_scopes.NO_USERVISIT_DATA,
         "coach_images_scope": token_scopes.COACH_IMAGES,
+        "may_self_mint": full_access.may_self_mint(request.user),
     }
     return render(request, "mcp/tokens.html", context)
 
@@ -116,7 +117,16 @@ def tokens_create(request):
         return redirect(reverse("labs:mcp_tokens_index"))
 
     ttl_days = _parse_ttl(request.POST.get("ttl_days"))
-    _, raw = MCPAccessToken.create_token(request.user, name=name, ttl_days=ttl_days, scope=scope)
+    allowed = None
+    if scope == token_scopes.FULL:
+        # Full access needs the person's passkey through canopy, unless this account
+        # may self-mint (full_access.py).
+        allowed = full_access.self_minted(request.user)
+        if allowed is None:
+            return full_access.begin(
+                request, full_access.PendingFullAccess.TOKEN_CREATE, {"name": name, "ttl_days": ttl_days}
+            )
+    _, raw = MCPAccessToken.create_token(request.user, name=name, ttl_days=ttl_days, scope=scope, full_access=allowed)
     return _render_index(request, raw_token=raw, raw_token_name=name, raw_token_scope=scope)
 
 
@@ -166,9 +176,35 @@ def tokens_rotate(request, pk: int):
     """
     old = get_object_or_404(MCPAccessToken, pk=pk, user=request.user)
     name = old.name
+    allowed = None
+    if old.scope == token_scopes.FULL:
+        # A full token rotates into another full token, so it asks like a new one; the
+        # old token stays live until the new one is approved.
+        allowed = full_access.self_minted(request.user)
+        if allowed is None:
+            return full_access.begin(
+                request, full_access.PendingFullAccess.TOKEN_ROTATE, {"name": name, "rotate_of": old.pk}
+            )
     with transaction.atomic():
         if old.is_active:
             old.is_active = False
             old.save(update_fields=["is_active"])
-        _, raw = MCPAccessToken.create_token(request.user, name=name, ttl_days=90, scope=old.scope)
+        _, raw = MCPAccessToken.create_token(
+            request.user, name=name, ttl_days=90, scope=old.scope, full_access=allowed
+        )
     return _render_index(request, raw_token=raw, raw_token_name=name, raw_token_scope=old.scope)
+
+
+@login_required
+@require_http_methods(["GET"])
+def full_access_approved(request):
+    """Where canopy sends the browser after the person approved or declined a full-access
+    credential with their passkey (``full_access.approved``)."""
+    return full_access.approved(request)
+
+
+@login_required
+@require_POST
+def full_access_collect(request, ref: str):
+    """Finish a full-access credential an agent's owner approved in canopy (``full_access.collect``)."""
+    return full_access.collect(request, ref)
