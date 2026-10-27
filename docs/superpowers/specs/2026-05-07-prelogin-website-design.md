@@ -4,7 +4,7 @@
 >
 > **Superseded (2026-10-27):** the app, its templates and its assets were removed from labs.
 > The marketing site now lives in `dimagi-internal/connect-marketing`; labs' root redirects
-> to `/labs/overview/` and labs serves no public pages.
+> to `/labs/overview/`, and labs no longer serves the marketing site.
 
 **Status:** Design approved 2026-05-07
 **Author:** jjackson + Claude

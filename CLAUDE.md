@@ -133,7 +133,7 @@ Each item in the list can include `program_id`, `opportunity_id`, or `organizati
 
 ## No marketing site here
 
-**Labs serves no public pages.** The marketing site lives in its own repo, **[dimagi-internal/connect-marketing](https://github.com/dimagi-internal/connect-marketing)** — not here, and labs is no longer its staging environment. The `prelogin` app, its templates and its ~15 MB of assets were removed on 2026-10-27; nothing in labs should be edited to change a public page.
+**Labs no longer serves the marketing site.** It lives in its own repo, **[dimagi-internal/connect-marketing](https://github.com/dimagi-internal/connect-marketing)** — not here, and labs is no longer its staging environment. The `prelogin` app, its templates and its ~15 MB of assets were removed on 2026-10-27; nothing in labs should be edited to change the marketing site. (`/about/` is still an ungated `TemplateView`, so labs is not literally page-free — it is just not where marketing pages are authored.)
 
 The site root (`/`) redirects to `/labs/overview/`, which is login-gated, so an anonymous visitor lands on `/labs/login/?next=/labs/overview/`. Every former marketing URL (`/platform`, `/portfolio/<slug>`, `/insights`, `/blog/<slug>`, `/contact/`, `/in-action/<slug>`) now 404s here, which is correct: labs is `Disallow: /` and not public-facing.
 
