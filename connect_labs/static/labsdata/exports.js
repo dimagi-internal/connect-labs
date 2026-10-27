@@ -77,6 +77,7 @@
     if (state.filter === 'todo') return !entry.reviewed;
     if (state.filter === 'out') return entry.effective !== 'drop';
     if (state.filter === 'flagged') return flagged.has(entry.key);
+    if (state.filter === 'case') return entry.key.startsWith('@case:');
     return true;
   }
 
@@ -124,6 +125,8 @@
 
   function sourcesText(e) {
     if (e.column) return '<small>visits column</small>';
+    if (e.key.startsWith('@case:'))
+      return `<small>case field, from the registry · inherits ${esc(e.inherits === 'unset' || !e.inherits ? 'unset: dropped until its sources are reviewed' : labelOf(e.inherits))}</small>`;
     const n = e.sources.length;
     const builds = [...new Set(e.sources.flatMap((s) => s.builds || []))].sort(
       (a, b) => a - b,
@@ -418,6 +421,21 @@
           )
           .join('')}
         </tbody></table></div>`;
+    } catch (e) {
+      body.innerHTML = `<div class="dx-error">${esc(e.message)}</div>`;
+    }
+  });
+
+  $('dx-cases-add').addEventListener('click', async () => {
+    const body = $('dx-lineage-body');
+    try {
+      const res = await call(cfg.casesUrl, {});
+      if (!res.available) {
+        body.innerHTML = `<p class="dx-muted">${esc(res.reason)}</p>`;
+        return;
+      }
+      body.innerHTML = `<p class="dx-muted">${res.case_fields.added} case field(s) added and ${res.case_fields.updated} updated. They are in the field list above, dropped until reviewed.</p>`;
+      await loadDictionary();
     } catch (e) {
       body.innerHTML = `<div class="dx-error">${esc(e.message)}</div>`;
     }

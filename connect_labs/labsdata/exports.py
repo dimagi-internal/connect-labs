@@ -44,6 +44,7 @@ from django.utils.text import slugify
 
 from connect_labs.labs.deid import classify, fieldscan, leaks, transforms
 
+from . import cases
 from . import dictionary as dictionary_mod
 from . import engine, fields, spaces
 from .models import SpaceExport
@@ -87,8 +88,12 @@ def _date(raw, what: str) -> dt.date | None:
         raise ExportError("bad_date", f"The {what} date must be YYYY-MM-DD.") from e
 
 
-def request(opened: spaces.OpenSpace, *, user, date_from=None, date_to=None) -> SpaceExport:
-    """Ask for an export of the space (anyone who can open it). Queues the build."""
+def request(opened: spaces.OpenSpace, *, user, caller=None, date_from=None, date_to=None) -> SpaceExport:
+    """Ask for an export of the space (anyone who can open it). Queues the build.
+
+    When a case field is exported, its statement is compiled here, as ``caller`` (the
+    person asking, with their own Connect token: the workflow, its pipelines and its
+    registry are read as them), and frozen into the export."""
     dictionary = dictionary_mod.for_space(opened)
     start, end = _date(date_from, "start"), _date(date_to, "end")
     if start and end and start > end:
@@ -111,6 +116,14 @@ def request(opened: spaces.OpenSpace, *, user, date_from=None, date_to=None) -> 
             f"Some of the space's visits are not loaded yet (opportunities {unloaded}). Open the space to load them.",
             status=409,
         )
+    case_query = {}
+    if any(cases.is_case_entry(e) and dictionary_mod.effective(e) != transforms.DROP_SETTING for e in entries):
+        try:
+            case_query = cases.compile_sql(caller, opened, as_of=end)
+        except dictionary_mod.DictionaryError:
+            raise
+        except Exception as e:  # noqa: BLE001 -- said as itself: the case fields cannot be computed
+            raise ExportError("cases_unavailable", f"The case fields could not be computed: {str(e)[:300]}") from e
     export = SpaceExport.objects.create(
         space=opened.space,
         requested_by=user,
@@ -118,6 +131,7 @@ def request(opened: spaces.OpenSpace, *, user, date_from=None, date_to=None) -> 
         date_to=end,
         opportunities=[{"id": o.id, "name": o.name, "llo": o.llo} for o in opps],
         entries=entries,
+        case_query=case_query,
     )
     from .tasks import build_space_export
 
@@ -299,7 +313,9 @@ def _build(export: SpaceExport) -> None:
     entries = export.entries
     dictionary = export.space.dictionary
     key = bytes(dictionary.secret)
-    exported = [e for e in entries if dictionary_mod.effective(e) != transforms.DROP_SETTING]
+    allowed = [e for e in entries if dictionary_mod.effective(e) != transforms.DROP_SETTING]
+    exported = [e for e in allowed if not cases.is_case_entry(e)]
+    case_fields = [e for e in allowed if cases.is_case_entry(e)]
 
     # Pass 1: every field the visits carry is one the dictionary knows (refuse untagged),
     # and what identifies the people in them, held in memory to scan the output for.
@@ -381,14 +397,60 @@ def _build(export: SpaceExport) -> None:
                 writer.writerow([_guard(c) for c in out])
                 rows += 1
         export.rows = rows
-        export.checks = {"checks": _results(checks, source_rows, rows, exported, case_out, id_out)}
-        failed = any(c["status"] == FAIL for c in export.checks["checks"])
-        export.status = SpaceExport.BLOCKED if failed else SpaceExport.READY
-        export.built_at = timezone.now()
-        if not failed:
-            data.seek(0)
-            export.file_name = _store(export, data, exported)
-    export.save(update_fields=["status", "checks", "rows", "source_rows", "built_at", "file_name"])
+        with tempfile.TemporaryFile(mode="w+", newline="", encoding="utf-8") as case_data:
+            case_count = _write_cases(export, case_fields, case_data, checks, scanner, key, terms)
+            export.case_rows = case_count
+            results = _results(checks, source_rows, rows, exported + case_fields, case_out, id_out)
+            if case_fields:
+                results.append(
+                    {
+                        "name": "cases",
+                        "status": PASS if case_count else WARN,
+                        "summary": f"{case_count} case rows with {len(case_fields)} case field(s).",
+                        "detail": {"case_rows": case_count, "fields": [e["label"] for e in case_fields]},
+                    }
+                )
+            export.checks = {"checks": results}
+            failed = any(c["status"] == FAIL for c in export.checks["checks"])
+            export.status = SpaceExport.BLOCKED if failed else SpaceExport.READY
+            export.built_at = timezone.now()
+            if not failed:
+                data.seek(0)
+                case_data.seek(0)
+                export.file_name = _store(export, data, exported, case_data if case_fields else None, case_fields)
+    export.save(update_fields=["status", "checks", "rows", "case_rows", "source_rows", "built_at", "file_name"])
+
+
+def _write_cases(export, case_fields: list[dict], out, checks, scanner, key: bytes, terms) -> int:
+    """One row per case of the registry's ``props``, its fields through their settings
+    and the same leak scan; keyed by the same case code as the visit rows."""
+    if not case_fields or not export.case_query.get("sql"):
+        return 0
+    row_id = export.case_query["row_id"]
+    writer = csv.writer(out)
+    writer.writerow(["case", *[e["label"] for e in case_fields]])
+    n = 0
+    for row in cases.rows(export.case_query["sql"]):
+        case = cases.case_key(row, row_id)
+        line = [transforms.pseudonym(case, key, "case") if case else ""]
+        for e in case_fields:
+            value = row.get(e["key"][len(cases.PREFIX) :])
+            cell = ""
+            if value not in (None, ""):
+                if isinstance(value, dict | list):
+                    value = json.dumps(value, sort_keys=True, default=str)
+                elif isinstance(value, dt.date | dt.datetime):
+                    value = value.isoformat()[:10]
+                done = transforms.apply(e["setting"], e["params"], value, key=key, case=case, terms=terms)
+                if done is transforms.DROP:
+                    checks.unreadable[e["label"]] += 1
+                else:
+                    cell = str(done)
+            _check_cell(checks, scanner, e, [cell] if cell else [])
+            line.append(cell)
+        writer.writerow([_guard(c) for c in line])
+        n += 1
+    return n
 
 
 def _check_cell(checks: _Checks, scanner: leaks.LeakScanner, entry: dict, cells: list[str]) -> None:
@@ -553,6 +615,9 @@ def _dictionary_csv(exported: list[dict]) -> str:
             f"{' (builds ' + ','.join(str(b) for b in s['builds']) + ')' if s['builds'] else ''}"
             for s in e["sources"]
         )
+        if cases.is_case_entry(e):
+            name = e["key"][len(cases.PREFIX) :]
+            sources = f"registry property {name}; its sources are set to {e.get('inherits') or 'unset'}"
         writer.writerow(
             [
                 e["label"],
@@ -576,6 +641,16 @@ def _readme(export: SpaceExport, exported: list[dict]) -> str:
         f"opportunities {', '.join(str(o['id']) for o in export.opportunities)}.",
         f"- {export.rows} rows, {len(exported)} columns; {dropped} field(s) of the dictionary were dropped.",
         f"- Asked for by {getattr(export.requested_by, 'username', 'unknown')} on {export.created_at:%Y-%m-%d}.",
+        *(
+            [
+                f"- cases.csv: {export.case_rows} cases, computed by the programme's indicator registry "
+                f"{(export.case_query.get('registry') or {}).get('registry_id') or ''} as of "
+                f"{export.date_to or 'the export date'}, one row per case, keyed by the same case codes as "
+                "data.csv. Each case field is at least as strict as the form fields it is computed from."
+            ]
+            if export.case_rows
+            else []
+        ),
         "",
         "## What was done to the data",
         "",
@@ -597,15 +672,19 @@ def _readme(export: SpaceExport, exported: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _store(export: SpaceExport, data, exported: list[dict]) -> str:
+def _store(export: SpaceExport, data, exported: list[dict], case_data=None, case_fields=()) -> str:
     name = f"labsdata/exports/{export.pk}/{slugify(export.space.name)[:60] or 'space'}-export-{export.pk}.zip"
     with tempfile.TemporaryFile() as raw:
         with zipfile.ZipFile(raw, "w", compression=zipfile.ZIP_DEFLATED) as z:
             with z.open("data.csv", "w") as out:
                 while chunk := data.read(1 << 20):
                     out.write(chunk.encode("utf-8"))
-            z.writestr("dictionary.csv", _dictionary_csv(exported))
-            z.writestr("README.md", _readme(export, exported))
+            if case_data is not None:
+                with z.open("cases.csv", "w") as out:
+                    while chunk := case_data.read(1 << 20):
+                        out.write(chunk.encode("utf-8"))
+            z.writestr("dictionary.csv", _dictionary_csv([*exported, *case_fields]))
+            z.writestr("README.md", _readme(export, [*exported, *case_fields]))
             z.writestr("checks.json", json.dumps(export.checks, indent=2))
         raw.seek(0)
         return default_storage.save(name, File(raw, name=name.rsplit("/", 1)[-1]))

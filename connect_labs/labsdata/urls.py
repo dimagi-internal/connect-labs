@@ -90,6 +90,11 @@ urlpatterns = [
         export_views.DictionaryLineageView.as_view(),
         name="dictionary_lineage",
     ),
+    path(
+        "api/spaces/<int:space_id>/dictionary/cases/",
+        export_views.DictionaryCasesView.as_view(),
+        name="dictionary_cases",
+    ),
     path("api/spaces/<int:space_id>/exports/", export_views.ExportsView.as_view(), name="exports"),
     path(
         "api/spaces/<int:space_id>/exports/<int:pk>/sign-off/",

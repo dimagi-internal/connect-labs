@@ -767,7 +767,7 @@ def data_export_request(user, space_id, date_from=None, date_to=None):
 
     opened = _space(_caller(user), space_id)
     try:
-        export = exports.request(opened, user=user, date_from=date_from, date_to=date_to)
+        export = exports.request(opened, user=user, caller=_caller(user), date_from=date_from, date_to=date_to)
     except (dictionary.DictionaryError, exports.ExportError) as e:
         raise _space_tool_error(e) from e
     return {"export": exports.describe(export, opened)}

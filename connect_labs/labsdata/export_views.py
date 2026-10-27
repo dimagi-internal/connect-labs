@@ -145,6 +145,19 @@ class DictionaryLineageView(_SpaceJson):
         return lineage.for_space(_caller(request), opened)
 
 
+class DictionaryCasesView(_SpaceJson):
+    """POST: add a case field for every aggregate and property of the space's workflow's
+    registry, each starting at what it inherits from its form fields (unreviewed, so
+    dropped). Anyone who can open the space: it changes no setting a person made."""
+
+    def handle(self, request, body):
+        from . import cases
+
+        opened = _opened(request, self.kwargs["space_id"])
+        out = cases.refresh(_caller(request), opened, user=request.user)
+        return {**out, "dictionary": dictionary.describe(opened) if out.get("available") else None}
+
+
 class ExportsView(_SpaceJson):
     """GET: the space's exports. POST ``{date_from?, date_to?}``: ask for one."""
 
@@ -157,7 +170,11 @@ class ExportsView(_SpaceJson):
 
         opened = _opened(request, self.kwargs["space_id"])
         export = exports.request(
-            opened, user=request.user, date_from=body.get("date_from"), date_to=body.get("date_to")
+            opened,
+            user=request.user,
+            caller=_caller(request),
+            date_from=body.get("date_from"),
+            date_to=body.get("date_to"),
         )
         _audit_space(
             Action.CREATE,
