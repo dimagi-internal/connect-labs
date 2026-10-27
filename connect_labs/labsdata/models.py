@@ -299,6 +299,13 @@ class DataDictionary(models.Model):
     registry_id = models.IntegerField(null=True, blank=True)
     scanned_at = models.DateTimeField(null=True, blank=True)
     scanned_visits = models.PositiveIntegerField(default=0)
+    #: A scan runs on the worker (``dictionary.run_scan``): "", queued, running or failed.
+    scan_status = models.CharField(max_length=10, blank=True, default="")
+    scan_error = models.CharField(max_length=200, blank=True, default="")
+    scan_requested_at = models.DateTimeField(null=True, blank=True)
+    scan_requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -172,7 +172,7 @@ The dictionary lists every field the space's visits carry. That covers each form
 
 ### Scanning for fields and app changes
 
-Press **Scan for fields and app changes**. Labs reads the structure of the space's loaded visits: which questions were answered, under which form, in which app build. It stores no values. The scan:
+Press **Scan for fields and app changes**. It runs in the background (a large programme takes a minute or two) and the page updates when it is done. Labs reads the structure of the space's loaded visits: which questions were answered, under which form, in which app build. It stores no values. The scan:
 
 - adds every new field, unreviewed (so dropped)
 - puts one question spelled two ways into the same field, such as `Lethargy` in one app version and `lethargy` in the next

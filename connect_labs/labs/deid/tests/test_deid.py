@@ -27,6 +27,12 @@ def test_walk_yields_leaves_with_repeat_groups_and_skips_meta():
     assert not any("meta" in p or "@xmlns" in p for p, _ in leaves)
 
 
+def test_answers_skip_the_submission_envelope():
+    form = {"received_on": "2026-01-01", "metadata": {"location": "9.1 7.4"}, "form": {"q": "yes", "meta": {"x": 1}}}
+    assert list(fieldscan.answers(form)) == [(("form", "q"), "yes")]
+    assert list(fieldscan.answers({"form": "not a form"})) == []
+
+
 def test_values_at_reads_through_repeat_groups():
     form = {"form": {"visits": [{"muac": "11"}, {"muac": "12"}, {}]}}
     assert fieldscan.values_at(form, fieldscan.split("form.visits.[].muac")) == ["11", "12"]

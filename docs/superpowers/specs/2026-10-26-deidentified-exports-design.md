@@ -22,7 +22,7 @@ A team wants to share a programme's visit data with outside experts. Nothing tha
    - fields the newest build of a form stopped sending
    - values that now look more sensitive than the setting assumes
 
-   It is the app-change check, and it is deliberately manual: labs has no scheduled job that reads visits without a person (see `CELERY_BEAT_SCHEDULE` on prior audits).
+   It reads the answers under `form` only, never the submission envelope (`received_on`, `metadata` with the phone's GPS and the username), and runs on the worker (`dictionary.run_scan`), because walking every form of a large programme takes longer than a web request should hold a worker. It is the app-change check, and it is deliberately manual: labs has no scheduled job that reads visits without a person (see `CELERY_BEAT_SCHEDULE` on prior audits).
 6. **Settings are a manager's.** Changing a setting, meaning, level or the quasi-identifier flag, merging, resolving a flag, and naming a registry are each checked with `spaces.require_manager`. Every change is a `DictionaryChange` row, with the value before and after. A field classified as an identifier or media can never be kept as is. No MCP tool and no page action changes a setting.
 7. **Sign-off by someone else.** A built export that passed its checks waits for a manager of the space who did not ask for it. That manager writes a note saying who it is for, and acknowledges any warnings. Only then can the requester or a manager download it, while they can still open the space, for 7 days. After that, `sweep` (hourly) deletes the file. An export nobody signs off is withdrawn after 14 days.
 

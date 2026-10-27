@@ -21,6 +21,8 @@ also what notices a new app build's new or vanished fields (``DictionaryFlag``).
 
 from __future__ import annotations
 
+import datetime as dt
+import logging
 from collections import Counter, defaultdict
 
 from django.db import transaction
@@ -29,8 +31,12 @@ from django.utils import timezone
 from connect_labs.labs.deid import classify, fieldscan, transforms
 
 from . import fields as field_index
-from . import spaces
+from . import scope, spaces
 from .models import DataDictionary, DictionaryChange, DictionaryEntry, DictionaryFlag, DictionarySource
+
+logger = logging.getLogger(__name__)
+
+SCAN_QUEUED, SCAN_RUNNING, SCAN_FAILED = "queued", "running", "failed"
 
 #: Distinct values held per field while scanning: enough to tell a closed list from free
 #: text (``classify.MAX_CATEGORY_VALUES``), never the whole column.
@@ -179,6 +185,8 @@ def describe(opened: spaces.OpenSpace) -> dict:
         "registry_id": dictionary.registry_id,
         "scanned_at": dictionary.scanned_at.isoformat() if dictionary.scanned_at else None,
         "scanned_visits": dictionary.scanned_visits,
+        "scan_status": dictionary.scan_status or None,
+        "scan_error": dictionary.scan_error or None,
         "is_manager": opened.is_manager,
         "counts": {
             "entries": len(listed),
@@ -265,7 +273,7 @@ def observe(opps, *, date_from=None, date_to=None) -> dict:
         visits += 1
         build = fieldscan.app_build(form_json)
         counted = set()
-        for path, value in fieldscan.walk(form_json or {}):
+        for path, value in fieldscan.answers(form_json):
             if value in (None, ""):
                 continue
             dotted = fieldscan.dotted(path)
@@ -290,14 +298,63 @@ def _more_sensitive(new: str, old: str) -> bool:
     return _RANK.get(new, 0) < _RANK.get(old, len(_RANK))
 
 
-@transaction.atomic
-def scan(opened: spaces.OpenSpace, *, user) -> dict:
-    """Walk the space's cached visits and bring the dictionary up to date: a new entry for
-    every new field (unreviewed, so dropped), every spelling and app build recorded, flags
-    for what a person should look at. Anyone who can open the space may run it: it reads
-    structure only, and changes no setting a person made."""
+#: A scan still marked running after this died with its worker; asking again restarts it.
+SCAN_STUCK = dt.timedelta(minutes=30)
+
+
+def request_scan(opened: spaces.OpenSpace, *, user) -> dict:
+    """Ask for a scan of the space's cached visits (anyone who can open the space: it reads
+    structure only and changes no setting a person made). It runs on the worker
+    (``run_scan``): walking every form of a large programme takes longer than a page
+    request should hold a web worker. Asking while one is queued or running does nothing."""
     dictionary = for_space(opened)
-    observed = observe(opened.selection.opportunities)
+    with transaction.atomic():
+        row = DataDictionary.objects.select_for_update().get(pk=dictionary.pk)
+        busy = row.scan_status in (SCAN_QUEUED, SCAN_RUNNING)
+        if busy and row.scan_requested_at and row.scan_requested_at > timezone.now() - SCAN_STUCK:
+            return {"scan_status": row.scan_status}
+        row.scan_status, row.scan_error = SCAN_QUEUED, ""
+        row.scan_requested_at, row.scan_requested_by = timezone.now(), user
+        row.save(update_fields=["scan_status", "scan_error", "scan_requested_at", "scan_requested_by"])
+    _enqueue_scan(dictionary.pk)
+    return {"scan_status": SCAN_QUEUED}
+
+
+def _enqueue_scan(dictionary_id: int) -> None:
+    from .tasks import scan_dictionary
+
+    transaction.on_commit(lambda: scan_dictionary.delay(dictionary_id))
+
+
+def run_scan(dictionary_id: int) -> None:
+    """The worker's half: claim the queued scan, run it over the opportunities the space
+    froze (the person who asked could open the space, so holds every one), record the
+    outcome. Never leaves it marked running."""
+    with transaction.atomic():
+        dictionary = DataDictionary.objects.select_for_update().filter(pk=dictionary_id).first()
+        if dictionary is None or dictionary.scan_status != SCAN_QUEUED:
+            return
+        dictionary.scan_status = SCAN_RUNNING
+        dictionary.save(update_fields=["scan_status"])
+    opps = [scope.Opportunity(id=int(o), name="", llo="") for o in dictionary.space.opportunity_ids]
+    try:
+        summary = scan(dictionary, opps, user=dictionary.scan_requested_by)
+    except Exception as e:  # noqa: BLE001 -- recorded on the dictionary for the page to say
+        logger.exception("labsdata dictionary %s: scan failed", dictionary_id)
+        DataDictionary.objects.filter(pk=dictionary_id).update(
+            scan_status=SCAN_FAILED, scan_error=f"{type(e).__name__}"[:200]
+        )
+        return
+    DataDictionary.objects.filter(pk=dictionary_id).update(scan_status="", scan_error="")
+    return summary
+
+
+@transaction.atomic
+def scan(dictionary: DataDictionary, opps, *, user) -> dict:
+    """Walk ``opps``' cached visits and bring the dictionary up to date: a new entry for
+    every new field (unreviewed, so dropped), every spelling and app build recorded, flags
+    for what a person should look at. Changes no setting a person made."""
+    observed = observe(opps)
     now = timezone.now()
     entries = {e.key: e for e in dictionary.entries.all()}
     known = {
