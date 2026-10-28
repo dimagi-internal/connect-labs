@@ -47,7 +47,8 @@ DEFAULT_FRAME_ANCESTORS = ("'none'",)
 
 
 def default_frame_src() -> tuple[str, ...]:
-    """Frames the app embeds: its own (the page sandbox's shell) and the canopy agent panel's widget.
+    """Frames the app embeds: its own (the page sandbox's shell), the canopy agent panel's widget,
+    and canopy's passkey dialog for a full-access approval (``{% canopy_sign_off %}``).
 
     Without a frame-src, `default-src 'self'` flagged the canopy panel on every page
     that shows it -- noise that would hide a real report, and a block once enforced.
@@ -55,7 +56,7 @@ def default_frame_src() -> tuple[str, ...]:
     (workflow/sandbox.py `host_frame_src`).
     """
     canopy = (getattr(settings, "CANOPY_BASE_URL", "") or "").rstrip("/")
-    return ("'self'", canopy + "/embed/chat") if canopy else ("'self'",)
+    return ("'self'", canopy + "/embed/chat", canopy + "/embed/sign-off") if canopy else ("'self'",)
 
 
 def default_script_src() -> tuple[str, ...]:

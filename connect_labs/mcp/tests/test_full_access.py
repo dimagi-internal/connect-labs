@@ -84,6 +84,16 @@ def canopy():
         yield stand_in
 
 
+def _dialog_done(client, canopy, pending, state="approved"):
+    """canopy's dialog on the page reports how it ended: the browser POSTs to ``then``.
+    labs believes canopy, not the post, so canopy's own state is set too."""
+    canopy.state = state
+    return client.post(
+        reverse("labs:mcp_full_access_collect", args=[pending.ref]),
+        {"sign_off": pending.sign_off_id, "state": state},
+    )
+
+
 def _come_back(client, pending, *, token=None):
     return client.get(
         reverse("labs:mcp_full_access_approved"),
@@ -95,23 +105,58 @@ def _come_back(client, pending, *, token=None):
 
 
 @pytest.mark.django_db
-def test_a_full_token_waits_for_the_persons_passkey(client, alice, canopy):
+def test_a_full_token_waits_for_the_persons_passkey_on_the_tokens_page(client, alice, canopy):
     resp = client.post(reverse("labs:mcp_tokens_create"), {"name": "laptop", "ttl_days": "30"})
 
-    assert resp.status_code == 302 and resp["Location"] == APPROVE_URL
+    # The person stays on the tokens page; canopy's dialog opens over it.
+    assert resp.status_code == 200
     assert not MCPAccessToken.objects.filter(user=alice).exists()
     pending = PendingFullAccess.objects.get(user=alice)
+    notice = resp.context["full_access_notice"]
+    assert notice["sign_off"] == pending.sign_off_id == "so_1"
+    assert notice["then"] == reverse("labs:mcp_full_access_collect", args=[pending.ref])
+    assert b"data-canopy-sign-off-open" in resp.content and b"window.canopySignOff" in resp.content
     (asked,) = canopy.asked
     assert asked["subject"] == "alice@dimagi.com"
     assert asked["action_key"] == "labs.mcp_token.full"
     assert asked["site_ref"] == pending.ref
     assert asked["return_url"].endswith(reverse("labs:mcp_full_access_approved"))
 
-    back = _come_back(client, pending)
-    assert back.status_code == 200
+    done = _dialog_done(client, canopy, pending)
+    assert done.status_code == 200
     token = MCPAccessToken.objects.get(user=alice, name="laptop")
     assert token.scope == token_scopes.FULL
-    assert MCPAccessToken.verify(back.context["raw_token"]) == token
+    assert MCPAccessToken.verify(done.context["raw_token"]) == token
+
+
+@pytest.mark.django_db
+def test_the_page_saying_approved_is_not_believed(client, alice, canopy):
+    client.post(reverse("labs:mcp_tokens_create"), {"name": "laptop"})
+    pending = PendingFullAccess.objects.get(user=alice)
+    # The browser claims approval; canopy says it is still open.
+    resp = client.post(
+        reverse("labs:mcp_full_access_collect", args=[pending.ref]),
+        {"sign_off": pending.sign_off_id, "state": "approved"},
+    )
+    assert resp.status_code == 200 and b"Not approved yet" in resp.content
+    assert not MCPAccessToken.objects.exists()
+
+
+@pytest.mark.django_db
+def test_declining_in_the_dialog_says_so_on_the_tokens_page(client, alice, canopy):
+    client.post(reverse("labs:mcp_tokens_create"), {"name": "laptop"})
+    pending = PendingFullAccess.objects.get(user=alice)
+    resp = _dialog_done(client, canopy, pending, "declined")
+    assert resp.context["full_access_notice"]["text"] == "You declined, so nothing was created."
+    assert not MCPAccessToken.objects.exists()
+
+
+@pytest.mark.django_db
+def test_approving_in_canopy_instead_still_comes_back(client, alice, canopy):
+    client.post(reverse("labs:mcp_tokens_create"), {"name": "laptop"})
+    pending = PendingFullAccess.objects.get(user=alice)
+    back = _come_back(client, pending)
+    assert MCPAccessToken.verify(back.context["raw_token"]).user == alice
 
 
 @pytest.mark.django_db
@@ -163,7 +208,8 @@ def test_someone_canopy_cannot_vouch_for_is_offered_no_user_visit_tokens(client,
     resp = client.post(reverse("labs:mcp_tokens_create"), {"name": "laptop"})
 
     assert resp.status_code == 403
-    assert b"no-user-visit token" in resp.content
+    # Said on the tokens page, where the no-user-visit option is.
+    assert b"no-user-visit token" in resp.content and resp.context["scope_choices"]
     assert not PendingFullAccess.objects.exists()
     assert not MCPAccessToken.objects.exists()
 
@@ -192,9 +238,9 @@ def test_rotating_a_full_token_keeps_the_old_one_until_approved(client, alice, c
     old, old_raw = mint_token(alice, name="laptop")
     resp = client.post(reverse("labs:mcp_tokens_rotate", args=[old.pk]))
 
-    assert resp["Location"] == APPROVE_URL
+    assert resp.status_code == 200 and resp.context["full_access_notice"]["sign_off"]
     assert MCPAccessToken.verify(old_raw) == old
-    _come_back(client, PendingFullAccess.objects.get(user=alice))
+    _dialog_done(client, canopy, PendingFullAccess.objects.get(user=alice))
     assert MCPAccessToken.verify(old_raw) is None
     assert MCPAccessToken.objects.filter(user=alice, is_active=True, name="laptop").count() == 1
 
@@ -225,10 +271,12 @@ def test_an_agents_request_is_finished_from_its_own_session(client, alice, canop
 @pytest.mark.django_db
 def test_the_token_setup_page_hands_the_token_over_only_after_approval(client, alice, canopy):
     resp = client.post(reverse("mcp:admin_create_token"), {"callback": CALLBACK, "state": STATE, "name": "cc"})
-    assert resp["Location"] == APPROVE_URL
+    assert resp.status_code == 200 and resp.context["full_access_notice"]["sign_off"]
+    # The consent form posts back to itself, not to where the dialog reports.
+    assert reverse("mcp:admin_create_token").encode() in resp.content
     assert not MCPAccessToken.objects.exists()
 
-    back = _come_back(client, PendingFullAccess.objects.get(user=alice))
+    back = _dialog_done(client, canopy, PendingFullAccess.objects.get(user=alice))
     location = urlparse(back["Location"])
     assert f"{location.scheme}://{location.netloc}{location.path}" == CALLBACK
     query = parse_qs(location.query)

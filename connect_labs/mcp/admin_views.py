@@ -63,19 +63,7 @@ def create_token_browser(request):
         return HttpResponseBadRequest(f"Unknown scope {scope!r}")
 
     if request.method == "GET":
-        return render(
-            request,
-            "mcp/create_token_browser.html",
-            {
-                "callback": callback,
-                "state": state,
-                "scope": scope,
-                "scope_label": scope_labels[scope],
-                "is_no_uservisit_data": scope == token_scopes.NO_USERVISIT_DATA,
-                "needs_passkey": scope == token_scopes.FULL and not full_access.may_self_mint(request.user),
-                "default_name": f"claude-code-{datetime.now():%Y%m%d-%H%M%S}",
-            },
-        )
+        return render_consent(request, callback=callback, state=state, scope=scope)
 
     # POST — create the token and redirect
     name = (request.POST.get("name") or "").strip()
@@ -94,6 +82,35 @@ def create_token_browser(request):
                 {"callback": callback, "state": state, "name": name},
             )
     return mint_and_redirect(request, callback=callback, state=state, name=name, scope=scope, full_access=allowed)
+
+
+def render_consent(
+    request,
+    *,
+    callback: str,
+    state: str,
+    scope: str = token_scopes.FULL,
+    name: str = "",
+    notice: dict | None = None,
+    status: int = 200,
+):
+    """The consent page; with ``notice`` when a full-access token waits on (or was refused)
+    the person's passkey (``full_access._show``)."""
+    return render(
+        request,
+        "mcp/create_token_browser.html",
+        {
+            "callback": callback,
+            "state": state,
+            "scope": scope,
+            "scope_label": dict(token_scopes.SCOPE_CHOICES)[scope],
+            "is_no_uservisit_data": scope == token_scopes.NO_USERVISIT_DATA,
+            "needs_passkey": scope == token_scopes.FULL and not full_access.may_self_mint(request.user),
+            "default_name": name or f"claude-code-{datetime.now():%Y%m%d-%H%M%S}",
+            "full_access_notice": notice,
+        },
+        status=status,
+    )
 
 
 def mint_and_redirect(

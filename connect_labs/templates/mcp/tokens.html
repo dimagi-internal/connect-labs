@@ -57,6 +57,8 @@
   </div>
   {% endif %}
 
+  {% include "mcp/_full_access_notice.html" with notice=full_access_notice %}
+
   {% if messages %}
   <div class="space-y-2">
     {% for message in messages %}
@@ -120,7 +122,7 @@
         <div class="space-y-2">
           <label class="flex items-start gap-2 text-sm text-gray-700">
             <input type="radio" name="scope" value="full" checked class="mt-1">
-            <span><strong>Full access.</strong> Everything you can do in labs, including reading visit data and making changes.{% if not may_self_mint %} You approve it with your passkey in canopy.{% endif %}</span>
+            <span><strong>Full access.</strong> Everything you can do in labs, including reading visit data and making changes.{% if not may_self_mint %} You approve it with your passkey.{% endif %}</span>
           </label>
           <label class="flex items-start gap-2 text-sm text-gray-700">
             <input type="radio" name="scope" value="{{ no_uservisit_data_scope }}" class="mt-1">
