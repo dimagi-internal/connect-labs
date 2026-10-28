@@ -73,14 +73,14 @@ Connect Labs provides two MCP addresses. **Use `mcp/no_user_visit/` unless you n
 
     Then type `/mcp`, choose `connect_labs` and sign in with CommCare Connect when the browser opens. There is no token to copy.
 
-    !!! note "Full-access sign-in requires a passkey confirmation"
+    !!! note "Full-access sign-in still goes to canopy and back"
         If you connect using the full `/mcp/` address, Labs will send you to canopy to confirm with your passkey before completing sign-in. No extra step is needed for the `mcp/no_user_visit/` address.
 
 === "Claude desktop or claude.ai"
 
     Open **Settings → Connectors**, choose **Add custom connector**, and add `https://labs.connect.dimagi.com/mcp/no_user_visit/` (or `https://labs.connect.dimagi.com/mcp/` only if you need real visit data). Click **Connect** and sign in with CommCare Connect.
 
-    !!! note "Full-access sign-in requires a passkey confirmation"
+    !!! note "Full-access sign-in still goes to canopy and back"
         If you connect using the full `/mcp/` address, Labs will send you to canopy to confirm with your passkey before completing sign-in. No extra step is needed for the `mcp/no_user_visit/` address.
 
 Claude acts as you, with your Connect permissions. To see or disconnect the apps you have signed in, visit [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/).
@@ -96,7 +96,7 @@ Claude acts as you, with your Connect permissions. To see or disconnect the apps
 When asked, choose **Production labs environment**, then approve the token in the browser. Fully quit and restart Claude Code afterwards. The token lasts 90 days by default; run the skill again to replace it.
 
 !!! note "Full-access tokens require a passkey confirmation"
-    If you choose a full-access token during setup, Labs will send you to canopy to confirm with your passkey. If you are not a member of Labs' canopy workspace, you can create a no-user-visit token only.
+    If you choose a full-access token during setup, a small canopy window opens over the page and asks you to touch your passkey. If you are not a member of Labs' canopy workspace, you can create a no-user-visit token only.
 
 ### 3. (Safe Mode only) Fetch the CommCare HQ credentials
 
@@ -117,7 +117,7 @@ Personal Access Tokens let you connect an MCP client (such as Claude Code in Saf
 
 **No-user-visit tokens** can be created and rotated by you directly on the tokens page, with no extra step.
 
-**Full-access (Standard) tokens** require a passkey confirmation through canopy. When you create or rotate a Standard token, Labs redirects you to canopy, you touch your passkey, and you are returned to Labs with your new token. If your account is not a member of Labs' canopy workspace, Labs cannot ask for that approval and you will only be able to create no-user-visit tokens.
+**Full-access (Standard) tokens** require a passkey confirmation through canopy. When you create or rotate a Standard token, a small canopy window opens over the tokens page, you touch your passkey, and the token appears — you stay on the same page throughout. If the window cannot open, a link lets you approve in canopy instead. Every outcome shows a message at the top of the page: for example, if you decline, if canopy does not recognise your account (in which case you can create a no-user-visit token instead), or if canopy is temporarily unreachable.
 
 !!! note "Tokens you already have keep working"
     This confirmation step applies only when creating or rotating a token. Using an existing token is unchanged.
@@ -220,4 +220,4 @@ Any MCP client can read the link back with the standard `resources/read` request
 - **What it shows.** Each read returns exactly the rows the tool produced. A result is never re-run, so the numbers cannot change between reads.
 - **For a day.** After a day the link returns `expired` (the PMC ranking lasts 30 days instead). Run the tool again to get a new one.
 - **When Connect can't answer.** If Labs cannot check your access with Connect at that moment, the read is refused with `unavailable`. Try again shortly.
-- **Refusals are structured.** A refused read is an MCP error whose `data.code` is `bad_uri`, `not_found`, `expired`, `forbidden` or `unavailable` (with `data.sensitive: true` when the result holds sensitive data
+- **Refusals are structured.** A refused read
