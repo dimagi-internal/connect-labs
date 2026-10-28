@@ -1,0 +1,39 @@
+{% comment %}
+A full-access mint waiting on the person's passkey, or why it was not made
+(connect_labs/mcp/full_access.py `_show`). `notice`: tone (waiting | error | info), text,
+and while waiting either `sign_off` + `then` (canopy's dialog opens over this page; its
+outcome is posted to `then`) or `finish` (an agent's request, finished once its owner
+approved). `approve_url` approves in canopy instead, if the dialog cannot open here.
+{% endcomment %}
+{% load canopy_host %}
+{% if notice %}
+{# The test ids are what ACE's labs-token-mint watches for: an approval asked instead of a token. #}
+<div data-testid="{% if notice.tone == 'error' %}full-access-refused{% else %}full-access-waiting{% endif %}" role="{% if notice.tone == 'error' %}alert{% else %}status{% endif %}"
+     class="rounded-lg px-4 py-3 text-sm flex flex-wrap items-center gap-x-3 gap-y-2
+            {% if notice.tone == 'error' %}bg-rose-50 border border-rose-200 text-rose-900
+            {% elif notice.tone == 'waiting' %}bg-indigo-50 border border-indigo-200 text-indigo-900
+            {% else %}bg-gray-50 border border-gray-200 text-gray-800{% endif %}">
+  <i class="fa-solid fa-fingerprint"></i>
+  <span class="flex-1">{{ notice.text }}</span>
+  {% if notice.sign_off %}
+    <button type="button" data-canopy-sign-off-open
+            class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700">
+      Approve with passkey
+    </button>
+  {% endif %}
+  {% if notice.finish %}
+    <form method="post" action="{{ notice.finish }}" class="inline">
+      {% csrf_token %}
+      <button type="submit" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700">
+        Finish
+      </button>
+    </form>
+  {% endif %}
+  {% if notice.approve_url %}
+    <a href="{{ notice.approve_url }}" class="text-xs underline">
+      {% if notice.finish %}The approval in canopy{% else %}Approve in canopy instead{% endif %}
+    </a>
+  {% endif %}
+</div>
+{% if notice.sign_off %}{% canopy_sign_off notice.sign_off then=notice.then %}{% endif %}
+{% endif %}

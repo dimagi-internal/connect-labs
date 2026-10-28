@@ -54,7 +54,13 @@ def _connected_mcp_clients(user):
 
 
 def _render_index(
-    request, *, raw_token: str | None = None, raw_token_name: str | None = None, raw_token_scope: str | None = None
+    request,
+    *,
+    raw_token: str | None = None,
+    raw_token_name: str | None = None,
+    raw_token_scope: str | None = None,
+    full_access_notice: dict | None = None,
+    status: int = 200,
 ):
     tokens = MCPAccessToken.objects.filter(user=request.user, is_active=True).order_by("-created_at")
     now = timezone.now()
@@ -74,8 +80,10 @@ def _render_index(
         "no_uservisit_data_scope": token_scopes.NO_USERVISIT_DATA,
         "coach_images_scope": token_scopes.COACH_IMAGES,
         "may_self_mint": full_access.may_self_mint(request.user),
+        # A full-access mint waiting on (or refused) the person's passkey (full_access._show).
+        "full_access_notice": full_access_notice,
     }
-    return render(request, "mcp/tokens.html", context)
+    return render(request, "mcp/tokens.html", context, status=status)
 
 
 @login_required

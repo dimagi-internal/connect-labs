@@ -15,6 +15,12 @@ only once canopy's signed approval has been checked here.
   mints with no approval. It is on for ACE, which is never in a project space with real
   data, so approving each of its tokens would guard nothing.
 * **Untouched**: existing tokens, using any token, and no-user-visit and coaching tokens.
+* **Where they approve**: on the page they started from. canopy's passkey dialog opens
+  over the tokens page (or the ``labs-token-setup`` page) in canopy's frame
+  (``{% canopy_sign_off %}``, SDK 0.26), and every outcome is a notice on that page
+  (``_show``). The page only learns how it ended; ``collect`` reads the approval from
+  canopy itself. A full ``mcp`` OAuth sign-in still goes to canopy and back
+  (``approved``), which is also every page's fallback link.
 
 ``MCPAccessToken.create_token`` refuses a FULL token without a ``FullAccess`` (``require``),
 and only this module makes one, so a new mint path cannot skip the approval by
@@ -120,12 +126,40 @@ def refused(request, reason: str, *, status: int = 403):
     return render(request, "mcp/full_access.html", {"refused": reason}, status=status)
 
 
-def begin(request, kind: str, payload: dict, *, detail: str = ""):
-    """Ask canopy for the person's approval of one full-access mint and send them to it.
+def _collect_url(pending: PendingFullAccess) -> str:
+    return reverse("labs:mcp_full_access_collect", args=[pending.ref])
 
-    Their own request: the browser goes straight to canopy's approval page, and comes
-    back to ``approved`` with the signed approval. An agent's (approved by its owner or
-    admins): the page says who was asked and offers to finish once they have."""
+
+def _show(request, kind: str, payload: dict, notice: dict, *, status: int = 200):
+    """The page the person started from, with ``notice`` on it: the tokens page, or the
+    ``labs-token-setup`` page. A full OAuth sign-in has no page of labs' own to go back
+    to, so it gets the plain full-access page."""
+    show = SHOW.get(kind)
+    if show is None:
+        if notice.get("tone") == "error":
+            return refused(request, notice["text"], status=status)
+        return render(request, "mcp/full_access.html", {"notice": notice}, status=status)
+    return show(request, payload, notice, status)
+
+
+def _waiting(pending: PendingFullAccess, approve_url: str) -> dict:
+    """The notice while canopy's dialog is open on the page: reopen it, or approve in canopy."""
+    return {
+        "tone": "waiting",
+        "text": "Approve with your passkey to create it. Nothing is created until you do.",
+        "sign_off": pending.sign_off_id,
+        "then": _collect_url(pending),
+        "approve_url": approve_url,
+    }
+
+
+def begin(request, kind: str, payload: dict, *, detail: str = ""):
+    """Ask canopy for the person's approval of one full-access mint.
+
+    Their own request: canopy's passkey dialog opens over the page they are on, and its
+    outcome comes back to ``collect``. An agent's (approved by its owner or admins): the
+    page says who was asked and offers to finish once they have. A full OAuth sign-in
+    goes to canopy's page and back to ``approved``."""
     user = request.user
     pending = PendingFullAccess.objects.create(
         user=user, kind=kind, payload=payload, expires_at=timezone.now() + PENDING_LIFETIME
@@ -143,24 +177,48 @@ def begin(request, kind: str, payload: dict, *, detail: str = ""):
         pending.delete()
         _audit(user, "refused", kind, exc.code)
         if exc.code == NO_APPROVER:
-            return refused(
+            return _show(
                 request,
-                "Full access needs your passkey approval in canopy, and canopy does not "
-                "know this account. Use a no-user-visit token instead.",
+                kind,
+                payload,
+                {
+                    "tone": "error",
+                    "text": "Full access needs your passkey approval in canopy, and canopy does not know "
+                    "this account. You can create a no-user-visit token instead.",
+                },
+                status=403,
             )
         log.warning("full access sign-off for %s: %s %s", user.pk, exc.code, exc.message)
-        return refused(
+        return _show(
             request,
-            "Full access needs your passkey approval in canopy, and canopy could not be "
-            "asked just now. Try again in a minute.",
+            kind,
+            payload,
+            {
+                "tone": "error",
+                "text": "Full access needs your passkey approval in canopy, and canopy could not be "
+                "asked just now. Try again in a minute.",
+            },
             status=503,
         )
     pending.sign_off_id = asked.id
     pending.save(update_fields=["sign_off_id"])
     _audit(user, "asked", kind, asked.approvers)
     if asked.approvers == AGENT_ADMINS:
-        return render(request, "mcp/full_access.html", {"pending": pending, "approve_url": asked.approve_url})
-    return redirect(asked.approve_url)
+        return _show(
+            request,
+            kind,
+            payload,
+            {
+                "tone": "waiting",
+                "text": "Full access for this account needs a passkey approval from its owner or an admin "
+                "in canopy. They have been asked; finish here once they have.",
+                "approve_url": asked.approve_url,
+                "finish": _collect_url(pending),
+            },
+        )
+    if kind not in SHOW:
+        return redirect(asked.approve_url)
+    return _show(request, kind, payload, _waiting(pending, asked.approve_url))
 
 
 def _open_pending(user, *, ref: str = "", sign_off_id: str = "") -> PendingFullAccess | None:
@@ -172,25 +230,29 @@ def _open_pending(user, *, ref: str = "", sign_off_id: str = "") -> PendingFullA
 
 def _complete(request, pending: PendingFullAccess, approval_token: str | None):
     """Check canopy's approval for ``pending`` and, once, do what it was waiting for."""
+
+    def no(text: str, status: int = 403):
+        return _show(request, pending.kind, pending.payload, {"tone": "error", "text": text}, status=status)
+
     if not approval_token:
-        return refused(request, "There is no approval for this yet.")
+        return no("There is no approval for this yet.")
     try:
         approval = sign_offs.verify(
             approval_token, action_key=ACTION_KEY, site_ref=pending.ref, subject=request.user.email or ""
         )
     except SignOffError as exc:
         _audit(request.user, "refused", pending.kind, exc.code)
-        return refused(request, "canopy's approval could not be checked, so nothing was created.")
+        return no("canopy's approval could not be checked, so nothing was created.")
     try:
         with transaction.atomic():
             locked = PendingFullAccess.objects.select_for_update().get(pk=pending.pk)
             if locked.completed_at is not None:
-                return refused(request, "This was already done.")
+                return no("This was already done.")
             locked.completed_at = timezone.now()
             locked.approval_jti = approval.jti
             locked.save(update_fields=["completed_at", "approval_jti"])
     except IntegrityError:
-        return refused(request, "This approval was already used.")
+        return no("This approval was already used.")
     _audit(request.user, "approved", pending.kind, approval.approver_email)
     return COMPLETERS[locked.kind](request, locked.payload, FullAccess(request.user.pk, "passkey", _MINT))
 
@@ -208,16 +270,27 @@ def approved(request):
             status=404,
         )
     if declined:
-        pending.completed_at = timezone.now()
-        pending.save(update_fields=["completed_at"])
-        _audit(request.user, "declined", pending.kind)
-        return refused(request, "You declined, so nothing was created.")
+        return _close(request, pending, "declined")
     return _complete(request, pending, request.GET.get("sign_off"))
 
 
+def _close(request, pending: PendingFullAccess, state: str):
+    pending.completed_at = timezone.now()
+    pending.save(update_fields=["completed_at"])
+    _audit(request.user, state, pending.kind)
+    text = (
+        "You declined, so nothing was created."
+        if state == "declined"
+        else (f"The request was {state}, so nothing was created.")
+    )
+    return _show(request, pending.kind, pending.payload, {"tone": "info", "text": text})
+
+
 def collect(request, ref: str):
-    """POST ``/labs/mcp/full-access/<ref>/collect/``: an agent's request, approved by its
-    owner in canopy, finished from the agent's own session."""
+    """POST ``/labs/mcp/full-access/<ref>/collect/``: where canopy's dialog on the page
+    reports how it ended, and where an agent's request (approved by its owner in canopy)
+    is finished from its own session. Either way the state is canopy's, read here with
+    the site's own signed request; the browser's word for it is not taken."""
     pending = _open_pending(request.user, ref=ref)
     if pending is None:
         return refused(request, "Nothing is waiting under this link.", status=404)
@@ -225,13 +298,23 @@ def collect(request, ref: str):
         state = sign_offs.status(pending.sign_off_id)
     except SignOffError as exc:
         log.warning("full access status for %s: %s %s", request.user.pk, exc.code, exc.message)
-        return refused(request, "canopy could not be asked just now. Try again in a minute.", status=503)
+        return _show(
+            request,
+            pending.kind,
+            pending.payload,
+            {
+                "tone": "error",
+                "text": "canopy could not be asked just now. Try again in a minute.",
+            },
+            status=503,
+        )
     if state.state == "open":
-        return render(request, "mcp/full_access.html", {"pending": pending, "not_yet": True})
+        notice = {"tone": "waiting", "text": "Not approved yet.", "finish": _collect_url(pending)}
+        if pending.kind in SHOW:
+            notice = {**_waiting(pending, ""), "text": "Not approved yet. Approve with your passkey to create it."}
+        return _show(request, pending.kind, pending.payload, notice)
     if state.state != "approved":
-        pending.completed_at = timezone.now()
-        pending.save(update_fields=["completed_at"])
-        return refused(request, f"The request was {state.state}, so nothing was created.")
+        return _close(request, pending, state.state)
     return _complete(request, pending, state.approval)
 
 
@@ -284,4 +367,33 @@ COMPLETERS = {
     PendingFullAccess.TOKEN_ROTATE: _complete_token_rotate,
     PendingFullAccess.TOKEN_BROWSER: _complete_token_browser,
     PendingFullAccess.OAUTH: _complete_oauth,
+}
+
+
+# --- the page each kind of pending mint started from -------------------------------------
+
+
+def _show_tokens(request, payload: dict, notice: dict, status: int):
+    from .token_views import _render_index
+
+    return _render_index(request, full_access_notice=notice, status=status)
+
+
+def _show_token_browser(request, payload: dict, notice: dict, status: int):
+    from .admin_views import render_consent
+
+    return render_consent(
+        request,
+        callback=payload["callback"],
+        state=payload["state"],
+        name=payload["name"],
+        notice=notice,
+        status=status,
+    )
+
+
+SHOW = {
+    PendingFullAccess.TOKEN_CREATE: _show_tokens,
+    PendingFullAccess.TOKEN_ROTATE: _show_tokens,
+    PendingFullAccess.TOKEN_BROWSER: _show_token_browser,
 }

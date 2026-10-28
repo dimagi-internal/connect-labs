@@ -12,24 +12,8 @@
 
     {% if refused %}
       <p class="text-sm text-gray-700" data-testid="full-access-refused">{{ refused }}</p>
-    {% elif pending %}
-      {% if not_yet %}
-        <p class="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          Not approved yet.
-        </p>
-      {% endif %}
-      <p class="text-sm text-gray-700" data-testid="full-access-waiting">
-        Full access for this account needs a passkey approval from its owner or an admin in canopy.
-        They have been asked{% if approve_url %}, and can approve at
-        <a href="{{ approve_url }}" class="text-indigo-600 hover:text-indigo-800 underline">this link</a>{% endif %}.
-        Once they have, finish here.
-      </p>
-      <form method="post" action="{% url 'labs:mcp_full_access_collect' pending.ref %}">
-        {% csrf_token %}
-        <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700">
-          Finish
-        </button>
-      </form>
+    {% else %}
+      {% include "mcp/_full_access_notice.html" with notice=notice %}
     {% endif %}
 
     <p class="text-sm text-gray-500">

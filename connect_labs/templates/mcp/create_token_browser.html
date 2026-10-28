@@ -27,7 +27,7 @@
     {% else %}
     <p class="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
       <strong>{{ scope_label }}.</strong> This token can do anything you can do in labs, including reading visit data.
-      {% if needs_passkey %}Creating it takes you to canopy to approve it with your passkey.{% endif %}
+      {% if needs_passkey %}Creating it asks you to approve it with your passkey.{% endif %}
     </p>
     {% endif %}
     <p class="text-sm text-gray-500 mb-6">
@@ -37,7 +37,9 @@
       into your <code class="bg-gray-100 px-1 rounded">~/.claude/mcp.json</code> automatically.
     </p>
 
-    <form method="post" class="space-y-5">
+    {% include "mcp/_full_access_notice.html" with notice=full_access_notice %}
+
+    <form method="post" action="{% url 'mcp:admin_create_token' %}" class="space-y-5">
       {% csrf_token %}
       <input type="hidden" name="callback" value="{{ callback }}">
       <input type="hidden" name="state" value="{{ state }}">

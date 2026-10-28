@@ -420,7 +420,9 @@ user, audit rows attribute to them):
   OAuth sign-in all ask canopy for a passkey approval (canopy's site sign-offs,
   `canopy_sdk.django.sign_offs`) and mint only after checking it
   (`mcp/full_access.py`; `create_token` refuses a full token without that
-  proof). Someone canopy cannot vouch for gets no-user-visit tokens only. Accounts
+  proof). The person approves on the page they are on, in canopy's dialog
+  (`{% canopy_sign_off %}`), and every outcome is a notice there; the page's
+  word is never taken, `collect` reads canopy's state. Someone canopy cannot vouch for gets no-user-visit tokens only. Accounts
   ticked in the Django admin (`FullAccessSelfMint`, on for ACE) self-mint; using
   tokens, existing tokens and no-user-visit tokens are untouched.
 - **"No user visit data"** — `/mcp/no_user_visit/` is the same MCP app mounted
