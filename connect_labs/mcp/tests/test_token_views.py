@@ -55,6 +55,13 @@ def test_index_hides_inactive_tokens(client, alice):
 
 
 @pytest.mark.django_db
+def test_index_offers_a_one_day_lifetime(client, alice):
+    resp = client.get(reverse("labs:mcp_tokens_index"))
+    field = resp.content.split(b'id="id_ttl_days"')[1].split(b">")[0]
+    assert b'value="1"' in field
+
+
+@pytest.mark.django_db
 def test_create_renders_raw_token_and_snippet(client, alice):
     allow_self_mint(alice)
     resp = client.post(
