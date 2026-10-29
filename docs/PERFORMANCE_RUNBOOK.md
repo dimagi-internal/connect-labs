@@ -184,6 +184,86 @@ step:
 
 Baseline: median web CPU is **0.8%**. Anything sustained above 90% is real.
 
+## 2a. The one-query signals — memory, streams, and who
+
+Each of these exists because an alarm investigation ended "cause unknown, the data
+was not there". Read them before building a hypothesis. `$S`/`$E` are UTC
+timestamps with a `Z`. Metrics work under `--profile labs-observe` today; the log
+lines are on `/ecs/labs-jj-web` (`--profile labs`) and, once the
+`labs-jj-observe-pipeline` stack carries the scrubber that passes them, scrubbed in
+`/labs-jj/observe/request-telemetry` (`--profile labs-observe`).
+
+| Question | Signal | Where |
+| --- | --- | --- |
+| Is ONE requester most of the traffic? (Sep 1, Oct 13 ×2, Oct 14, Oct 29 / #2769) | `TopRequesterShare` (%), `TopRequesterRequests`, `ActiveRequesters`, `WindowRequests` — per web worker per 60 s, **no dimensions** | `Labs/Requests` metrics |
+| …and who / what kind of client? | `event = "top_requester"`: `top_requester` (Dimagi staff/system account by labs username; **anyone else is `u:<hmac>`**, never a name), `top_user_agent_class` (browser / curl / python / node / agent / other / none), `top_route` | telemetry log line, written when the top requester made ≥ 20 requests in the window |
+| Which heavy request grew the worker? (#1575, 2026-09-09 "peak RSS, not elapsed time") | every `slow_request` line: `rss_kb`, `rss_delta_kb`, `maxrss_kb`, `maxrss_rise_kb`; metrics `HeavyRequestRssDeltaKb` / `HeavyRequestMaxRssRiseKb` by `route`, slow/fan-out requests only | log line + `Labs/Requests` metrics |
+| How long did a STREAM really run, and did it finish? | `Labs/Streams` by `route`: `StreamStarted` (at headers), `StreamFinished`, `StreamDuration`, `StreamRssPeakRiseKb`, `StreamMaxRssRiseKb`; `event = "stream_end"` line when slow, closed, errored or ≥ 50 MB growth | metrics + log line |
+| Was a pipeline fan-out OOM-killed mid-way, and how big had it got? | `event = "pipeline_stream"`: `phase` start → step (per pipeline × opp: `rows`, `from_cache`, `rss_kb`, `rss_peak_rise_kb`) → end. **A killed stream has no `end`.** | log line |
+| What does a fair draw of requests look like? | `sampled = 1` now covers **every path except `/health/` and `/static/`** (was `/audit/image/` only, which held zero events in 62 alarm hours) | `slow_request` lines |
+
+`Labs/Requests` `RequestLatency` for a streaming route is time to HEADERS (the
+pipeline stream reads ~64 ms there while it pins a core); read `StreamDuration`.
+All memory numbers are per worker PROCESS, so a concurrent neighbour's growth can
+land on the request that finished — trust a pattern across lines, not one line.
+
+**One requester?** (`Maximum` across workers; read the share WITH the count):
+
+```bash
+aws cloudwatch get-metric-data --profile labs-observe --region us-east-1 \
+  --start-time $S --end-time $E --metric-data-queries '[
+  {"Id":"share","MetricStat":{"Metric":{"Namespace":"Labs/Requests","MetricName":"TopRequesterShare"},"Period":300,"Stat":"Maximum"}},
+  {"Id":"top","MetricStat":{"Metric":{"Namespace":"Labs/Requests","MetricName":"TopRequesterRequests"},"Period":300,"Stat":"Maximum"}}]'
+```
+
+Share ≥ 80% with `top` ≥ 100 per 5 min is the looping-client shape. Then name it
+(Logs Insights, observe group or raw web group):
+
+```
+fields @timestamp, top_requester, top_requester_kind, top_user_agent_class, top_route, top_requests, top_share_pct, requests
+| filter event = "top_requester"
+| stats sum(top_requests) as n, max(top_share_pct) as peak_share by top_requester, top_user_agent_class, top_route
+| sort n desc
+```
+
+**Killed streams** (started minus finished, per route):
+
+```bash
+cat > killed.json <<'EOF'
+[{"Id":"s","Expression":"SEARCH('{Labs/Streams,route} MetricName=\"StreamStarted\"', 'Sum', 300)","ReturnData":false},
+ {"Id":"f","Expression":"SEARCH('{Labs/Streams,route} MetricName=\"StreamFinished\"', 'Sum', 300)","ReturnData":false},
+ {"Id":"killed","Expression":"SUM(s) - SUM(f)"}]
+EOF
+aws cloudwatch get-metric-data --profile labs-observe --region us-east-1 \
+  --start-time $S --end-time $E --metric-data-queries file://killed.json
+```
+
+A positive `killed` in a window with a `SIGKILL` (§1, "lagging proxy") is the
+stream that held the memory. Which one, and how big it got:
+
+```
+fields @timestamp, stream_id, phase, definition_id, pipeline_id, rows, total_rows, rss_kb, rss_peak_rise_kb
+| filter event = "pipeline_stream"
+| stats latest(phase) as last_phase, max(rss_peak_rise_kb) as grew_kb, max(total_rows) as rows, max(elapsed_ms) as ms by stream_id, definition_id
+| filter last_phase != "end"
+| sort grew_kb desc
+```
+
+**Heavy requests by memory** (`Maximum`, every route that had one):
+
+```bash
+cat > heavy.json <<'EOF'
+[{"Id":"m","Expression":"SEARCH('{Labs/Requests,route} MetricName=\"HeavyRequestMaxRssRiseKb\"', 'Maximum', 300)"}]
+EOF
+aws cloudwatch get-metric-data --profile labs-observe --region us-east-1 \
+  --start-time $S --end-time $E --metric-data-queries file://heavy.json
+```
+
+The #1575 falsifier: pipeline-stream rows with a multi-hundred-MB `grew_kb`
+confirm the attribution; small ones mean the memory is coming from elsewhere.
+
+---
+
 ## 3. Which request, and why is it expensive
 
 **First, no SSO: which route.** Every labs request writes the `Labs/Requests` metrics

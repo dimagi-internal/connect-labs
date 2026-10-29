@@ -96,7 +96,11 @@
         },
         {
           "name": "TELEMETRY_SAMPLE_PATH_PREFIX",
-          "value": "/audit/image/"
+          "value": ""
+        },
+        {
+          "name": "TELEMETRY_SAMPLE_EXCLUDE_PREFIX",
+          "value": "/health/,/static/"
         },
         {
           "name": "LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID",

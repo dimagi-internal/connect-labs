@@ -701,7 +701,7 @@ class TestUnbiasedSample:
     def test_prefix_scopes_the_sample_to_one_endpoint(self, caplog, monkeypatch):
         """A census of the tier would be a request log; the ALB already is one."""
         monkeypatch.setattr(request_telemetry, "SAMPLE_RATE", 1.0)
-        monkeypatch.setattr(request_telemetry, "SAMPLE_PATH_PREFIX", "/audit/image/")
+        monkeypatch.setattr(request_telemetry, "SAMPLE_PATH_PREFIXES", ("/audit/image/",))
 
         def req(path):
             r = MagicMock()
@@ -719,7 +719,7 @@ class TestUnbiasedSample:
     def test_the_draw_cannot_break_the_request(self, monkeypatch):
         """It runs before the view, outside the middleware's try/finally."""
         monkeypatch.setattr(request_telemetry, "SAMPLE_RATE", 1.0)
-        monkeypatch.setattr(request_telemetry, "SAMPLE_PATH_PREFIX", "/audit/")
+        monkeypatch.setattr(request_telemetry, "SAMPLE_PATH_PREFIXES", ("/audit/",))
 
         broken = MagicMock()
         broken.method = "GET"

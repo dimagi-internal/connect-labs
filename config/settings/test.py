@@ -85,3 +85,7 @@ MCP_JOBS_RUN_INLINE = True
 # off, active_release() is the code floor and no tiles are listed, which is what a
 # test that wants a manifest sets up itself.
 OVERTURE_SNAPSHOTS_READ_MANIFEST = False
+
+# Request-concentration windows are process-wide; a flush would land in whichever
+# test crossed the window. Its own tests switch it on (test_alarm_diagnosability).
+TELEMETRY_REQUESTER_CONCENTRATION = False

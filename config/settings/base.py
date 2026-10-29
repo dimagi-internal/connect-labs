@@ -278,7 +278,10 @@ MIDDLEWARE.insert(0, "connect_labs.utils.request_telemetry.RequestTelemetryMiddl
 # threshold-gated behaviour exactly. See the request_telemetry module docstring for
 # why a threshold-gated stream cannot be compared across load levels at all.
 TELEMETRY_SAMPLE_RATE = env.float("TELEMETRY_SAMPLE_RATE", default=0.0)
+# Comma-separated path prefixes to sample (empty = every path), and prefixes to
+# leave out of the sample (health checks are most of the tier's requests).
 TELEMETRY_SAMPLE_PATH_PREFIX = env("TELEMETRY_SAMPLE_PATH_PREFIX", default="")
+TELEMETRY_SAMPLE_EXCLUDE_PREFIX = env("TELEMETRY_SAMPLE_EXCLUDE_PREFIX", default="/health/,/static/")
 # Per-request route metric (CloudWatch EMF, namespace Labs/Requests). On by default;
 # False is a kill switch. Pin it in deploy/task-definitions/web.json if you set it.
 TELEMETRY_ROUTE_METRICS = env.bool("TELEMETRY_ROUTE_METRICS", default=True)

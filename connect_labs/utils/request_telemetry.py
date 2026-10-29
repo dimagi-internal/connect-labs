@@ -118,6 +118,36 @@ in the query rather than the data. So the authoritative filter is the boolean fi
 
 Never mix the two populations in one statistic; ``sampled = 1`` is unbiased,
 ``sampled = 0`` is the ``duration >= 3s`` tail.
+
+Memory, not just time
+---------------------
+Two CPU pins in a row (2026-09-08, #1575) ended in a gunicorn ``SIGKILL ... out of
+memory?`` with nothing in this stream to say which request held the memory, and the
+2026-09-09 follow-up named the one measurement that splits the remaining causes:
+**peak RSS per heavy call, not elapsed time**. Every logged line therefore carries
+
+* ``rss_kb`` / ``rss_delta_kb`` -- the worker's resident set at the end of the
+  request, and how much it grew across it (``/proc/self/statm``; Python rarely hands
+  memory back, so growth is a fair proxy for the working set the request built);
+* ``maxrss_kb`` / ``maxrss_rise_kb`` -- the process high-water mark
+  (``getrusage``), and how far THIS request pushed it. Non-zero only for a request
+  that set a new peak, which is exactly the request an OOM kill is about.
+
+Both are per PROCESS: a worker serving concurrent requests attributes the growth to
+whichever finished, so read them across many lines, not one.
+
+Streams are measured to the end of the body, not the headers
+------------------------------------------------------------
+A ``StreamingHttpResponse`` returns to this middleware at HEADERS; the work -- every
+pipeline read behind ``/labs/workflow/api/<id>/pipeline-data/stream/`` -- happens
+afterwards, while the body is iterated. So until #1575's follow-up that route read
+64 ms median in ``Labs/Requests`` while it pinned a core for 15 minutes, and a
+worker OOM-killed mid-stream left no line at all. The body is now wrapped
+(``_wrap_stream``): a ``stream_end`` line (``event = "stream_end"``) carries the
+real duration, bytes, chunks, the sampled PEAK RSS during the stream and its
+outcome (``complete`` / ``closed`` / ``error``), and ``Labs/Streams`` counts
+``StreamStarted`` at headers and ``StreamFinished`` at the end -- so a stream whose
+worker was killed shows up as ``StreamStarted - StreamFinished > 0``.
 """
 
 from __future__ import annotations
@@ -126,7 +156,9 @@ import contextvars
 import functools
 import json
 import logging
+import os
 import random
+import sys
 import time
 from collections import Counter
 from dataclasses import dataclass, field
@@ -139,6 +171,10 @@ logger = logging.getLogger("connect_labs.telemetry.request")
 # logger so it can be routed, levelled and kill-switched apart from the diagnostic
 # stream, and so the diagnostic stream's tests and queries never see it.
 metrics_logger = logging.getLogger("connect_labs.telemetry.metrics")
+# The newer EMF lines (heavy-request memory, streams) on a CHILD of it: same handler
+# in production (propagation), but a distinct logger name, so the per-request
+# Labs/Requests line keeps its one-line-per-request contract in tests and queries.
+extra_metrics_logger = logging.getLogger("connect_labs.telemetry.metrics.extra")
 
 # Thresholds. A request trips the log if it exceeds ANY of them. Defaults are set
 # well above normal labs traffic (median ALB p95 is 0.23s) so a clean request is
@@ -152,11 +188,27 @@ DB_QUERY_LIMIT = getattr(settings, "TELEMETRY_DB_QUERY_LIMIT", 100)
 # healthy path still costs two counters and no output. Turning it on is a one-value
 # edit to deploy/task-definitions/web.json, the same shape as WEB_LIMIT_CONCURRENCY.
 #
-# Scope it with the prefix rather than raising the rate globally: the population
-# worth sampling is usually one endpoint under investigation, and an empty prefix
-# means every path, which on this tier is ~28k requests/day.
+# Scoping: ``TELEMETRY_SAMPLE_PATH_PREFIX`` is a comma-separated list (empty = every
+# path) and ``TELEMETRY_SAMPLE_EXCLUDE_PREFIX`` drops paths that are pure volume. It
+# shipped scoped to ``/audit/image/`` alone, which sampled NOTHING across 62 alarm
+# hours because the heavy routes were elsewhere (2026-09-02). Since 2026-10-29 it
+# samples every path except health checks (~75% of requests) and requests that
+# never resolved to a route (scanners; dropped at log time, which depends only on
+# the URL, never on the outcome): ~12k lines/day at 2026-10-29 traffic -- see
+# deploy/task-definitions/README.md.
 SAMPLE_RATE = float(getattr(settings, "TELEMETRY_SAMPLE_RATE", 0.0))
-SAMPLE_PATH_PREFIX = getattr(settings, "TELEMETRY_SAMPLE_PATH_PREFIX", "")
+
+
+def _prefixes(value) -> tuple[str, ...]:
+    if isinstance(value, (list, tuple)):
+        items = value
+    else:
+        items = str(value or "").split(",")
+    return tuple(p.strip() for p in items if p and p.strip())
+
+
+SAMPLE_PATH_PREFIXES = _prefixes(getattr(settings, "TELEMETRY_SAMPLE_PATH_PREFIX", ""))
+SAMPLE_EXCLUDE_PREFIXES = _prefixes(getattr(settings, "TELEMETRY_SAMPLE_EXCLUDE_PREFIX", ""))
 
 # The per-request route metric. On by default: it is the only request-level signal
 # the read-only incident role can see. False is a kill switch, not a tuning knob.
@@ -466,7 +518,10 @@ def _should_sample(request) -> bool:
     try:
         if SAMPLE_RATE <= 0:
             return False
-        if SAMPLE_PATH_PREFIX and not request.path.startswith(SAMPLE_PATH_PREFIX):
+        path = request.path
+        if SAMPLE_PATH_PREFIXES and not path.startswith(SAMPLE_PATH_PREFIXES):
+            return False
+        if SAMPLE_EXCLUDE_PREFIXES and path.startswith(SAMPLE_EXCLUDE_PREFIXES):
             return False
         # >= 1.0 short-circuits to a census rather than 1_000_000 coin flips a day.
         return SAMPLE_RATE >= 1.0 or random.random() < SAMPLE_RATE
@@ -544,6 +599,287 @@ def emit_route_metric(request, response, duration_ms: int) -> None:
     metrics_logger.info(json.dumps(line, separators=(",", ":")))
 
 
+# Memory
+# ------
+# Per-PROCESS numbers (see "Memory, not just time" above). Both readers return None
+# rather than guess where the source does not exist (macOS dev, a sandbox), and
+# neither may raise: they run on every request.
+
+try:
+    _PAGE_KB = os.sysconf("SC_PAGE_SIZE") // 1024
+except (ValueError, OSError, AttributeError):  # pragma: no cover - non-POSIX
+    _PAGE_KB = 4
+
+
+def current_rss_kb() -> int | None:
+    """Resident set of this process, in KB, from ``/proc/self/statm`` (Linux only)."""
+    try:
+        with open("/proc/self/statm") as fh:
+            return int(fh.read().split()[1]) * _PAGE_KB
+    except Exception:
+        return None
+
+
+def peak_rss_kb() -> int | None:
+    """This process's high-water resident set in KB (``ru_maxrss``)."""
+    try:
+        import resource
+
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        # Linux reports KB, macOS bytes.
+        return int(peak // 1024) if sys.platform == "darwin" else int(peak)
+    except Exception:
+        return None
+
+
+@dataclass
+class MemoryProbe:
+    """RSS and high-water mark at the start of a span, and the change across it."""
+
+    rss_start: int | None = field(default_factory=current_rss_kb)
+    maxrss_start: int | None = field(default_factory=peak_rss_kb)
+
+    def fields(self, rss_peak: int | None | object = ...) -> dict:
+        rss_now, maxrss_now = current_rss_kb(), peak_rss_kb()
+        out = {"rss_kb": rss_now, "maxrss_kb": maxrss_now}
+        out["rss_delta_kb"] = rss_now - self.rss_start if None not in (rss_now, self.rss_start) else None
+        out["maxrss_rise_kb"] = maxrss_now - self.maxrss_start if None not in (maxrss_now, self.maxrss_start) else None
+        if rss_peak is not ...:
+            out["rss_peak_kb"] = rss_peak
+            out["rss_peak_rise_kb"] = rss_peak - self.rss_start if None not in (rss_peak, self.rss_start) else None
+        return out
+
+
+def _emf(namespace: str, dimensions: dict, metrics: dict, units: dict) -> None:
+    """One EMF line. ``dimensions`` must be bounded values (route templates, never ids)."""
+    line = {
+        "_aws": {
+            "Timestamp": int(time.time() * 1000),
+            "CloudWatchMetrics": [
+                {
+                    "Namespace": namespace,
+                    "Dimensions": [list(dimensions)],
+                    "Metrics": [{"Name": k, "Unit": units.get(k, "None")} for k in metrics],
+                }
+            ],
+        },
+        **dimensions,
+        **metrics,
+    }
+    extra_metrics_logger.info(json.dumps(line, separators=(",", ":")))
+
+
+# Heavy requests' memory, as a metric the read-only observe role can see. Only for
+# lines that tripped a THRESHOLD (slow / fan-out), not for every request: one
+# dimension (route), and the slow routes are a short list, so this is a handful of
+# billed metrics rather than another copy of Labs/Requests.
+HEAVY_MEMORY_METRICS = ("HeavyRequestRssDeltaKb", "HeavyRequestMaxRssRiseKb")
+
+
+def emit_heavy_memory_metric(route: str, mem: dict) -> None:
+    if not ROUTE_METRICS_ENABLED:
+        return
+    values = {
+        "HeavyRequestRssDeltaKb": mem.get("rss_delta_kb"),
+        "HeavyRequestMaxRssRiseKb": mem.get("maxrss_rise_kb"),
+    }
+    values = {k: v for k, v in values.items() if isinstance(v, int)}
+    if values:
+        _emf(METRICS_NAMESPACE, {"route": route}, values, {k: "Kilobytes" for k in values})
+
+
+# Streams
+# -------
+STREAMS_NAMESPACE = "Labs/Streams"
+# Sample RSS at most this often while a body streams: a FileResponse can yield
+# thousands of 8 KB blocks, and one /proc read per block is pointless.
+_STREAM_RSS_EVERY_S = 0.5
+# A stream_end line is written when the stream was slow, sampled, or grew the
+# worker by at least this much -- the #1575 falsifier is "a multi-hundred-MB
+# working set", so 50 MB is well under the signal and well over noise.
+STREAM_RSS_LOG_KB = getattr(settings, "TELEMETRY_STREAM_RSS_LOG_KB", 50 * 1024)
+
+
+class _StreamTracker:
+    def __init__(self, request, response, started: float, sampled: bool):
+        self.route = route_template(request)
+        self.method = _bounded_method(request.method)
+        self.status = getattr(response, "status_code", None)
+        self.started = started
+        self.sampled = sampled
+        self.mem = MemoryProbe()
+        self.rss_peak = self.mem.rss_start
+        self._last_rss_at = time.monotonic()
+        self.chunks = 0
+        self.bytes = 0
+        self.outcome = "complete"
+        self._done = False
+
+    def chunk(self, part) -> None:
+        self.chunks += 1
+        try:
+            self.bytes += len(part)
+        except TypeError:
+            pass
+        now = time.monotonic()
+        if now - self._last_rss_at >= _STREAM_RSS_EVERY_S:
+            self._last_rss_at = now
+            rss = current_rss_kb()
+            if rss is not None and (self.rss_peak is None or rss > self.rss_peak):
+                self.rss_peak = rss
+
+    def finish(self) -> None:
+        if self._done:
+            return
+        self._done = True
+        try:
+            rss = current_rss_kb()
+            if rss is not None and (self.rss_peak is None or rss > self.rss_peak):
+                self.rss_peak = rss
+            duration_ms = int((time.perf_counter() - self.started) * 1000)
+            mem = self.mem.fields(rss_peak=self.rss_peak)
+            if ROUTE_METRICS_ENABLED:
+                values = {"StreamFinished": 1, "StreamDuration": duration_ms}
+                units = {"StreamFinished": "Count", "StreamDuration": "Milliseconds"}
+                for key, name in (
+                    ("rss_peak_rise_kb", "StreamRssPeakRiseKb"),
+                    ("maxrss_rise_kb", "StreamMaxRssRiseKb"),
+                ):
+                    if isinstance(mem.get(key), int):
+                        values[name] = mem[key]
+                        units[name] = "Kilobytes"
+                _emf(STREAMS_NAMESPACE, {"route": self.route}, values, units)
+            grew = mem.get("rss_peak_rise_kb") or 0
+            if (
+                duration_ms >= SLOW_REQUEST_MS
+                or self.sampled
+                or grew >= STREAM_RSS_LOG_KB
+                or self.outcome != "complete"
+            ):
+                logger.warning(
+                    json.dumps(
+                        {
+                            "event": "stream_end",
+                            "route": self.route,
+                            "method": self.method,
+                            "status": self.status,
+                            "outcome": self.outcome,
+                            "duration_ms": duration_ms,
+                            "chunks": self.chunks,
+                            "bytes": self.bytes,
+                            "sampled": self.sampled,
+                            **mem,
+                        },
+                        default=str,
+                    )
+                )
+        except Exception:
+            logger.debug("stream telemetry failed", exc_info=True)
+
+
+def _wrap_stream(response, tracker: _StreamTracker) -> None:
+    """Re-point the response body through ``tracker``, keeping it sync or async as it was.
+
+    Django's documented pattern for middleware that touches a streaming body. The
+    wrapper yields every part unchanged and in order; it only counts and times.
+    """
+    original = response.streaming_content
+
+    if response.is_async:
+
+        async def body():
+            try:
+                async for part in original:
+                    tracker.chunk(part)
+                    yield part
+            except BaseException as exc:
+                tracker.outcome = "error" if isinstance(exc, Exception) else "closed"
+                raise
+            finally:
+                tracker.finish()
+
+    else:
+
+        def body():
+            try:
+                for part in original:
+                    tracker.chunk(part)
+                    yield part
+            except BaseException as exc:
+                tracker.outcome = "error" if isinstance(exc, Exception) else "closed"
+                raise
+            finally:
+                tracker.finish()
+
+    response.streaming_content = body()
+
+
+def _track_stream(request, response, started: float, sampled: bool) -> None:
+    if response is None or not getattr(response, "streaming", False):
+        return
+    tracker = _StreamTracker(request, response, started, sampled)
+    if ROUTE_METRICS_ENABLED:
+        _emf(STREAMS_NAMESPACE, {"route": tracker.route}, {"StreamStarted": 1}, {"StreamStarted": "Count"})
+    _wrap_stream(response, tracker)
+
+
+class StreamTrace:
+    """Structured progress lines for one long in-request job (``event = "pipeline_stream"``).
+
+    The pipeline SSE view fans across opportunities inside one request; when its
+    worker is OOM-killed nothing completes, so a completion-only line can never
+    describe it (#1575). This writes ``phase: start`` up front, ``phase: step`` after
+    every read (rows, cache hit, RSS so far) and ``phase: end`` in a ``finally`` --
+    so a killed stream is the one with a ``start`` and no ``end``, and its last
+    ``step`` says how big it had got. Counts, config ids and memory only: never
+    opportunity ids, usernames or row content.
+    """
+
+    def __init__(self, kind: str, **ids):
+        self.stream_id = os.urandom(6).hex()
+        self.kind = kind
+        self.ids = {k: v for k, v in ids.items() if isinstance(v, int)}
+        self.started = time.perf_counter()
+        self.mem = MemoryProbe()
+        self.rss_peak = self.mem.rss_start
+        self.steps = 0
+        self.rows = 0
+        self.outcome = "complete"
+        self._emit("start", {"pid": os.getpid()})
+
+    def _emit(self, phase: str, extra: dict) -> None:
+        try:
+            rss = current_rss_kb()
+            if rss is not None and (self.rss_peak is None or rss > self.rss_peak):
+                self.rss_peak = rss
+            logger.warning(
+                json.dumps(
+                    {
+                        "event": self.kind,
+                        "phase": phase,
+                        "stream_id": self.stream_id,
+                        **self.ids,
+                        "elapsed_ms": int((time.perf_counter() - self.started) * 1000),
+                        "total_rows": self.rows,
+                        **extra,
+                        **self.mem.fields(rss_peak=self.rss_peak),
+                    },
+                    default=str,
+                )
+            )
+        except Exception:
+            logger.debug("stream trace failed", exc_info=True)
+
+    def step(self, *, rows: int = 0, **fields) -> None:
+        self.steps += 1
+        self.rows += rows if isinstance(rows, int) else 0
+        clean = {k: v for k, v in fields.items() if isinstance(v, (int, bool, float))}
+        self._emit("step", {"step": self.steps, "rows": rows, **clean})
+
+    def end(self) -> None:
+        self._emit("end", {"steps": self.steps, "outcome": self.outcome})
+
+
 class RequestTelemetryMiddleware:
     """Log a structured line for any request that looks expensive.
 
@@ -570,6 +906,7 @@ class RequestTelemetryMiddleware:
         # an asgiref thread pool, process CPU would include whatever the other
         # in-flight requests in this worker burned, and attribute it to this one.
         thread_started = time.thread_time()
+        mem = MemoryProbe()
 
         def count_queries(execute, sql, params, many, context):
             stats.db_queries += 1
@@ -589,9 +926,20 @@ class RequestTelemetryMiddleware:
             duration_ms = int((time.perf_counter() - started) * 1000)
             cpu_ms = int((time.thread_time() - thread_started) * 1000)
             try:
-                self._maybe_log(request, stats, duration_ms, cpu_ms, sampled, response=response)
+                self._maybe_log(request, stats, duration_ms, cpu_ms, sampled, response=response, mem=mem)
             except Exception:
                 logger.debug("request telemetry failed", exc_info=True)
+            # A streaming body has not run yet: measure it to the end (#1575).
+            try:
+                _track_stream(request, response, started, sampled)
+            except Exception:
+                logger.debug("stream telemetry failed", exc_info=True)
+            try:
+                from connect_labs.utils import requester_concentration
+
+                requester_concentration.observe(request, route_template(request))
+            except Exception:
+                logger.debug("requester concentration failed", exc_info=True)
             # Unconditional, unlike _maybe_log: a count that only includes the
             # requests that breached a threshold is not a count.
             try:
@@ -610,7 +958,11 @@ class RequestTelemetryMiddleware:
         cpu_ms: int = 0,
         sampled: bool = False,
         response=None,
+        mem: MemoryProbe | None = None,
     ) -> None:
+        if sampled and getattr(request, "resolver_match", None) is None:
+            # Scanners walking random paths are not a population worth sampling.
+            sampled = False
         reasons = []
         if duration_ms >= SLOW_REQUEST_MS:
             reasons.append("slow")
@@ -623,6 +975,9 @@ class RequestTelemetryMiddleware:
         if not reasons:
             return
 
+        mem_fields = mem.fields() if mem is not None else {}
+        if reasons != ["sample"]:
+            emit_heavy_memory_metric(route_template(request), mem_fields)
         user = getattr(request, "user", None)
         payload = {
             "event": "slow_request",
@@ -661,6 +1016,12 @@ class RequestTelemetryMiddleware:
             # reason == "sample": a sampled request that is also slow reads
             # "slow,sample" and would be dropped, biasing the sample by query.
             "sampled": sampled,
+            # Worker memory across the request (see "Memory, not just time"):
+            # rss_kb, rss_delta_kb, maxrss_kb, maxrss_rise_kb.
+            **mem_fields,
+            # Streaming responses return here at HEADERS; their real duration is
+            # on the matching stream_end line.
+            "streaming": bool(getattr(response, "streaming", False)),
             "username": getattr(user, "username", None) if user and user.is_authenticated else None,
         }
         # Never log the query string: labs URLs carry opportunity and record ids
