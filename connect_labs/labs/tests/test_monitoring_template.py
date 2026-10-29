@@ -147,3 +147,74 @@ def test_composite_description_states_its_childs_live_rule(composite, descriptio
         assert (
             int(stated_period) == child_props["Period"]
         ), f"{composite} says 'over {stated_period}s' but {child} has Period {child_props['Period']}"
+
+
+# ── Size, first steps, latency gate ───────────────────────────────────────────
+
+INFRA = TEMPLATE_PATH.parent
+RUNBOOK_PATH = INFRA.parent / "docs" / "PERFORMANCE_RUNBOOK.md"
+ALARM_TEMPLATES = ["labs-monitoring.yml", "labs-tenant-monitoring.yml", "labs-synthetic-jobs.yml"]
+
+# CloudFormation's limit on an inline --template-body, which infra/README.md's
+# change-set path uses. Over it, the deploy fails with "Member must have length
+# less than or equal to 51200", which reads like a malformed template.
+MAX_INLINE_TEMPLATE_BYTES = 51_200
+
+
+def test_template_fits_inline_limit():
+    size = len(TEMPLATE_PATH.read_bytes())
+    assert size <= MAX_INLINE_TEMPLATE_BYTES, (
+        f"infra/labs-monitoring.yml is {size} bytes, over CloudFormation's {MAX_INLINE_TEMPLATE_BYTES}-byte "
+        f"inline limit. Trim comments (history lives in the PRs), or move new alarms to their own "
+        f"template as labs-tenant-monitoring.yml did. See infra/README.md § Deploy."
+    )
+
+
+def _paging_alarms():
+    """Yield (template, alarm_name, description) for every alarm that notifies the topic."""
+    for name in ALARM_TEMPLATES:
+        doc = yaml.load((INFRA / name).read_text(), Loader=_CfnLoader)
+        for resource in doc["Resources"].values():
+            props = resource.get("Properties", {})
+            if resource.get("Type") in ALARM_TYPES and "AlarmActions" in props:
+                yield name, props["AlarmName"], props.get("AlarmDescription") or ""
+
+
+def test_paging_alarms_found():
+    """Guards the test below against passing vacuously."""
+    assert len(list(_paging_alarms())) >= 15
+
+
+@pytest.mark.parametrize("template,alarm_name,description", list(_paging_alarms()))
+def test_paging_alarm_description_names_its_first_step(template, alarm_name, description):
+    """A paging alarm's description is the responder's only briefing, read cold by an agent
+    session. It must name the first read the responder can run without an SSO approval
+    (`--profile labs-observe`) and the runbook section to continue in, and that section
+    must exist, so the email starts the turn on the right query (#2404 did this once)."""
+    assert "--profile labs-observe" in description, f"{alarm_name} ({template}) names no labs-observe first step"
+    sections = re.findall(r"PERFORMANCE_RUNBOOK\.md §(\d+)", description)
+    assert sections, f"{alarm_name} ({template}) names no docs/PERFORMANCE_RUNBOOK.md §N"
+    headings = set(re.findall(r"^## (\d+)\.", RUNBOOK_PATH.read_text(), flags=re.M))
+    missing = [s for s in sections if s not in headings]
+    assert not missing, f"{alarm_name} points at runbook §{missing}, which has no '## N.' heading"
+
+
+def test_latency_alarm_is_labs_scoped_and_gated_on_request_count():
+    """#2768. The ALB-wide p95 counted canopy-web, whose ~14s night-time p95 flapped this
+    alarm 10 times in 38 minutes while labs served 0-10 requests at ~0.1s; and on labs' own
+    sparse traffic p95 is just the slowest request. So both inputs carry the labs target
+    group, and the alarm judges p95 only when the period had LatencyMinRequests requests."""
+    doc = yaml.load(TEMPLATE_PATH.read_text(), Loader=_SubKeepingLoader)
+    props = next(
+        r["Properties"]
+        for r in doc["Resources"].values()
+        if r.get("Properties", {}).get("AlarmName") == "labs-jj-alb-latency-high"
+    )
+    metrics = {m["Id"]: m for m in props["Metrics"]}
+    for metric_id, name in (("p95", "TargetResponseTime"), ("n", "RequestCount")):
+        stat = metrics[metric_id]["MetricStat"]
+        assert stat["Metric"]["MetricName"] == name
+        assert [d["Name"] for d in stat["Metric"]["Dimensions"]] == ["LoadBalancer", "TargetGroup"]
+    assert metrics["gated"]["Expression"] == "IF(n >= ${LatencyMinRequests}, p95, 0)"
+    assert [m["Id"] for m in props["Metrics"] if m.get("ReturnData")] == ["gated"]
+    assert doc["Parameters"]["LatencyMinRequests"]["Default"] > 0

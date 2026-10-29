@@ -133,9 +133,19 @@ Parameters:
     Type: Number
     Default: 10
     Description: >-
-      Alarm when ALB p95 target response time (seconds) stays above this for 15
-      minutes. Median p95 over the same 5 days was 0.23s and only 1.7% of
-      5-minute buckets exceeded 10s, so this is a rare, meaningful signal.
+      Alarm when the labs web target group's p95 response time (seconds) is
+      above this in 3 of 5 judged 5-minute periods (see LatencyMinRequests).
+
+  LatencyMinRequests:
+    Type: Number
+    Default: 40
+    Description: >-
+      A 5-minute period is judged for latency only if the labs web target group
+      served at least this many requests; below it p95 is one or two slow
+      requests, not "users waiting" (#2768). 40 is the knee of a replay over the
+      14 days to 2026-10-29 (alarm PR): 0 pages 26x (21 cleared within 5 min),
+      20 pages 12x, 40-60 page 6x (5 real slowdowns), 75+ flaps again. 0 turns
+      the gate off.
 
   Elb5xxThreshold:
     Type: Number
@@ -251,10 +261,14 @@ Resources:
     Properties:
       AlarmName: labs-jj-rds-connections-high
       AlarmDescription: >-
-        RDS DatabaseConnections is elevated — likely a connection leak climbing
-        toward slot exhaustion (the failure mode fixed in PR #765). Investigate
-        before it reaches the ceiling (829 slots since the 2026-08-18 resize to
-        db.m6g.large; it was ~155) and 500s everywhere.
+        RDS DatabaseConnections over 90 (steady state 5-15, ceiling ~829). Usually a
+        symptom: each slow web request holds a connection, so a pile-up shows here
+        first; a leak (PR #765) climbs without dipping. FIRST: aws cloudwatch
+        get-metric-statistics --profile labs-observe --region us-east-1 --namespace
+        AWS/RDS --metric-name DatabaseConnections --dimensions
+        Name=DBInstanceIdentifier,Value=labs-jj-postgres --statistics Maximum --period
+        60 --start-time <page-3h>Z --end-time <page>Z, then web CPU (python3
+        tools/perf_triage.py --hours 3). Runbook: docs/PERFORMANCE_RUNBOOK.md §4.
       Namespace: AWS/RDS
       MetricName: DatabaseConnections
       Dimensions:
@@ -313,8 +327,12 @@ Resources:
       AlarmName: labs-jj-rds-slot-exhaustion
       AlarmDescription: >-
         Postgres is rejecting connections ("remaining connection slots are
-        reserved") — the pool is exhausted RIGHT NOW and requests are failing.
-        This is the terminal symptom of the connection leak; page immediately.
+        reserved"): the pool is exhausted now and requests are failing, the terminal
+        symptom of a leak or a pile-up. FIRST: aws cloudwatch get-metric-statistics
+        --profile labs-observe --region us-east-1 --namespace AWS/RDS --metric-name
+        DatabaseConnections --dimensions Name=DBInstanceIdentifier,Value=labs-jj-postgres
+        --statistics Maximum --period 60 --start-time <page-1h>Z --end-time <page>Z,
+        read against the ~829-slot ceiling. Runbook: docs/PERFORMANCE_RUNBOOK.md §4.
       Namespace: Labs/RDS
       MetricName: ConnectionSlotExhaustion
       Statistic: Sum
@@ -353,15 +371,14 @@ Resources:
     Properties:
       AlarmName: labs-jj-rds-free-storage-low
       AlarmDescription: >-
-        RDS free storage is running out. A full disk takes labs down AND
-        disables the hourly cache cleanup that would free it (beat's
-        DatabaseScheduler cannot write last_run_at), so this does not
-        recover on its own — it needs a resize. Check what grew:
-        labs_raw_visit_cache holds ~29KB/row of visit form_json and is
-        normally the largest table by far. Storage autoscaling is on
-        (max 500GB), so this should now be a warning rather than an
-        outage; if it fires anyway, autoscaling has hit its ceiling or
-        is growing slower than the workload.
+        RDS free storage is under 20% of allocated. A full disk takes labs down and
+        stops the hourly cache cleanup that would free it (beat's DatabaseScheduler
+        cannot write), so it does not recover on its own. FIRST, has autoscaling hit
+        its ceiling: aws rds describe-db-instances --profile labs-observe --region
+        us-east-1 --db-instance-identifier labs-jj-postgres --query
+        'DBInstances[0].[AllocatedStorage,MaxAllocatedStorage]'. Then FreeStorageSpace
+        Minimum at --period 3600 over 24h for the rate. labs_raw_visit_cache is
+        normally the largest table. Runbook: docs/PERFORMANCE_RUNBOOK.md §4.
       Namespace: AWS/RDS
       MetricName: FreeStorageSpace
       Dimensions:
@@ -403,30 +420,10 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: labs-jj-web-cpu-high
-      # The description is the ONLY context a responder gets — it is pasted into
-      # every notification email, and on labs those page an agent mailbox, so it
-      # is read cold by a session with no prior. It therefore has to name the
-      # LIKELIEST cause first. It used to lead with "a request path fanning out
-      # remote calls in a loop", and four sessions across 08-31→09-02 dutifully
-      # went looking for that endpoint and recorded zero findings. Measured on
-      # 09-05 (issue #1461): 9 of the last 15 firings, and every firing since
-      # 09-02, coincided with a deploy rollout rather than with load.
       AlarmDescription: >-
-        A web task has been at/over 90% CPU for 4 of the last 5 MINUTES — a
-        real sustained pin, not a spike. Each task has 1 vCPU, so a pinned task
-        means its requests are queueing behind CPU-bound Python and every user
-        routed to it is stalled.
-        CHECK THE DEPLOY LOG FIRST (see issue #1461): a rolling replacement pins
-        the booting task, and this alarm reads Maximum across tasks, so one
-        starting task holds 100% for the whole rollout. Overlapping deploys — a
-        run superseded by cancel-in-progress keeps rolling after its waiter is
-        killed — run long enough to fire this. Audited web traffic DROPS during
-        such a pin, so low request volume is not evidence against it. Only if no
-        deploy was rolling, look for a request path fanning out remote calls in a
-        loop: check the web log group for one URL repeating at high volume before
-        reaching for a scale-up. Holds through brief dips (4-of-5 one-minute
-        datapoints), so one sustained pin is ONE incident — treat a repeat
-        notification as the same incident until proven otherwise.
+        Raw CPU signal (busiest task's Maximum, Period 60, 4-of-5). NOT wired to
+        notifications: a rolling deploy pins the booting task. The page is
+        labs-jj-web-cpu-high-actionable. Runbook: docs/PERFORMANCE_RUNBOOK.md §1.
       Namespace: AWS/ECS
       MetricName: CPUUtilization
       Dimensions:
@@ -434,82 +431,23 @@ Resources:
           Value: !Ref ClusterName
         - Name: ServiceName
           Value: !Ref WebServiceName
-      # Maximum, NOT Average — Average is the mean ACROSS TASKS, and the service
-      # no longer runs one.
-      #
-      # This alarm was written when desiredCount was 1, where Average and Maximum
-      # are the same number. At desiredCount=2 they diverge exactly when it
-      # matters: one task pinned at 100% while the other idles reads as ~50%, and
-      # a threshold of 90 can never be reached no matter how long the pinned task
-      # stays pinned. Nothing about that looks broken — the alarm sits green and
-      # the graph looks half-loaded.
-      #
-      # Measured over 2026-08-24 05:00-10:00 UTC, sixty 5-minute periods:
-      # SEVENTEEN had Maximum >= 90%; ZERO had Average >= 90%; the highest
-      # Average seen was 58.1%. The tier served 502s to real users across that
-      # window (labs-jj-alb-5xx-high caught those, four separate times) and this
-      # alarm — the one whose whole job is to name saturation as the cause —
-      # never left OK.
-      #
-      # The same reasoning is why the latency alarm below is p95 and not Average:
-      # an aggregate that averages away the bad half cannot alarm on the bad half.
-      # It applies across tasks for exactly the reason it applies across requests.
+      # Maximum, NOT Average: Average is the mean ACROSS TASKS, so at
+      # desiredCount=2 one pinned task reads ~50% and never crosses 90 (08-24:
+      # 17 periods had Maximum >= 90%, zero had Average >= 90%). README § What
+      # the alarms watch.
       Statistic: Maximum
-      # Period 60, NOT 300. At 300, Maximum records the PEAK INSTANT in a
-      # bucket, so ONE breaching minute marks a whole "5-minute period" — and
-      # buckets align to the alarm's evaluation offset, not :00/:05, so a spike
-      # straddling a boundary counts TWICE. The 2026-09-09T06:44:31Z page scored
-      # 3-of-5 on three breaching MINUTES out of 25 (06:21, 06:22, 06:38), two
-      # of them one spike, and landed at 60% CPU and falling; the same mechanism
-      # paged at 1.1% on 09-08 23:52 and 23:57. At Period 60 a datapoint IS a
-      # minute. Replay 08-31 -> 09-09 (tools/alarm_rule_replay.py): 3of5@300s
-      # fires 26x, 4of5@60s 9x, and 4of5@60s still catches both established
-      # incidents (09-08 04:49Z; 05:27Z = #1578's OOM pin). #1461's objection —
-      # a real 08-24 incident whose longest run was 5 min — defeats a 10-MINUTE
-      # bar, not this one: the 5-minute run at 09-03 10:27Z fires 4of5@60s. The
-      # suppressor rationale below stands: it is about DEPLOY CHURN, a different
-      # pair of populations. Evidence on #1512.
-      # KEEP ADDITIONS HERE TERSE: this file is ~50KB against CloudFormation's
-      # 51,200-byte INLINE limit, which infra/README.md's change-set path uses.
+      # Period 60, NOT 300: at 300 Maximum is the peak INSTANT in a bucket, so
+      # one breaching minute marks a whole period (#1512, PR #1647). Replay
+      # 08-31 -> 09-09: 3of5@300s fired 26x, 4of5@60s 9x and still caught both
+      # established incidents. Re-check: python3 tools/alarm_rule_replay.py
+      # --metric web-cpu --days 9.
+      # KEEP COMMENTS HERE TERSE: this file is near CloudFormation's
+      # 51,200-byte INLINE limit (test_template_fits_inline_limit).
       Period: 60
-      # 4-of-5, NOT 4-of-4. DatapointsToAlarm is omitted by default, which makes
-      # EvaluationPeriods do double duty: N breaching periods to fire, and — the
-      # part that bites — a SINGLE sub-threshold datapoint to clear. A tier that
-      # sits at 90-100% and dips briefly therefore does not produce one alarm; it
-      # produces an ALARM/OK pair every few minutes, for as long as the condition
-      # lasts.
-      #
-      # Measured over 2026-08-31 -> 09-02 from the notification bodies (UTC):
-      #   08-31  08:03->08:05, 09:34->09:35, 11:39->11:51
-      #   09-01  10:42->10:45, 11:42->11:45, 12:04->12:17
-      #   09-02  11:04->11:05, 11:08->11:10, 11:15->11:16, 11:20->11:21,
-      #          11:46->11:47, 12:59->13:13
-      # Twelve firings in three days, and NINE of them cleared within 1-3
-      # minutes. That is one CPU condition per morning being reported as six
-      # separate incidents — 24 emails across the three days.
-      #
-      # The cost is not inbox noise. This topic pages an agent mailbox
-      # (AgentAlarmEmail), and each message dispatches a session: on 09-01 a
-      # single alarm's ALARM and OK threads spawned four sessions that produced
-      # zero findings, because each one re-derived the same incident from a
-      # different message. Deduping downstream cannot fix this — by then the
-      # transitions are already distinct events.
-      #
-      # M-of-N adds hysteresis without dulling detection: still N breaching
-      # datapoints to fire (marginally EARLIER than M-of-M, since they need not
-      # be consecutive), and one dip inside a pin no longer clears it. It clears
-      # once FEWER THAN 4 breach (not "4 of 5 under"): 10-05 paged 22:31:01Z,
-      # OK 22:32:01Z. That reasoning was written for 3-of-5 at Period
-      # 300 and it survives the period change intact; only the meaning of a
-      # "datapoint" got honest. Statistic stays Maximum for the reason above.
-      #
-      # Falsifier for the period change: if a real user-visible incident is
-      # reported here whose longest consecutive run >=90% was under four
-      # minutes, then a minute-resolution duration rule is the wrong instrument
-      # for this tier and the answer is a second, lower-severity signal (or
-      # #1578's direction — page on a different metric entirely), NOT a return
-      # to Period 300, which cannot express duration at all. Re-run
-      # `python3 tools/alarm_rule_replay.py --metric web-cpu --days 9` to check.
+      # 4-of-5, NOT 4-of-4: N-of-N clears on ONE dip, so one pin paged as six
+      # incidents a morning (08-31 -> 09-02: 12 firings, 9 cleared in 1-3 min),
+      # and each transition dispatches an agent session (#1419). M-of-N fires on
+      # the same datapoints and holds through a dip.
       EvaluationPeriods: 5
       DatapointsToAlarm: 4
       Threshold: !Ref WebCpuThreshold
@@ -589,15 +527,17 @@ Resources:
       # pasted into the notification email, and that email pages an agent
       # mailbox, so it is read cold by a session with no prior context.
       AlarmDescription: >-
-        A web task was at/over 90% CPU for 4 of the last 5 MINUTES (Maximum,
-        Period 60) while labs-jj-deploy-in-progress was OK. Each task has 1
-        vCPU, so its requests queue. The suppressor lifts 15-20 min after a
-        rollout ends, so first check gh run list for deploy-labs.yml. Then group
-        the audit trail by minute and source: an MCP agent session (ensure
-        visit cache, rapid workflow polling) or a whole-opp visit read is the
-        commonest real cause; then read self_ms/outbound_ms/db_ms in
-        /ecs/labs-jj-web. An OK a minute after the page is the pin's edge, not
-        a fix. See #1461, #1512.
+        A web task was at/over 90% CPU for 4 of the last 5 MINUTES (Maximum, Period
+        60) while labs-jj-deploy-in-progress was OK; requests on that 1-vCPU task
+        queue. FIRST, is it memory: aws cloudwatch get-metric-statistics --profile
+        labs-observe --region us-east-1 --namespace AWS/ECS --metric-name
+        MemoryUtilization --dimensions Name=ClusterName,Value=labs-jj-cluster
+        Name=ServiceName,Value=labs-jj-web --statistics Maximum --period 60
+        --start-time <page-30m>Z --end-time <page>Z. 90%+ means OOM kills and
+        re-forking (#1575, runbook §8), not a request path. Then gh run list -w
+        deploy-labs.yml: the suppressor lifts 15-20 min after a rollout. An OK a
+        minute later is the pin's edge, not a fix. Runbook:
+        docs/PERFORMANCE_RUNBOOK.md §1, then §3.
       AlarmRule: !Sub 'ALARM("${WebCpuHighAlarm}") AND NOT ALARM("${DeployInProgressAlarm}")'
       AlarmActions: [!Ref AlertTopic]
       OKActions: [!Ref AlertTopic]
@@ -605,31 +545,58 @@ Resources:
   # ── User-visible slowness ──────────────────────────────────────────
   # p95, not Average: Average is dragged to ~0 by health checks and static
   # assets and stayed unremarkable through the whole incident.
+  # Labs' target group, not the LoadBalancer (#2768): the ALB-wide p95 also
+  # counts canopy-web, whose night p95 (~14s on 250-400 requests per 5 min)
+  # flapped this 10x on 10-28/29 while labs served 0-10 requests at ~0.1s, and
+  # whose fast traffic diluted labs' real 10-28 12:25-13:35Z slowdown so it
+  # never paged. Gated on request count: labs is sparse (median 15 per 5 min),
+  # and on a handful of requests p95 is just the slowest one.
   TargetLatencyHighAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: labs-jj-alb-latency-high
       AlarmDescription: >-
-        ALB p95 target response time has been above threshold for 15 minutes —
-        real users are waiting tens of seconds. Deliberately NOT a timeout
-        change: long-running audit work legitimately needs the 600s gunicorn
-        and ALB idle timeouts. This alarm is how we find out that the long
-        requests are hurting, since the timeouts will never tell us.
-      Namespace: AWS/ApplicationELB
-      MetricName: TargetResponseTime
-      Dimensions:
-        - Name: LoadBalancer
-          Value: !Ref LoadBalancerDimension
-      ExtendedStatistic: p95
-      Period: 300
-      # 3-of-5, NOT 3-of-3 — see the web-CPU alarm below for the full reasoning
-      # and the measurement behind it. p95 latency is the classic oscillator:
-      # it crosses a fixed threshold repeatedly while the underlying slowness is
-      # continuous, so 3-of-3 reports one slow stretch as a stream of ALARM/OK
-      # pairs rather than as one incident.
-      #
-      # Same 3 breaching datapoints to fire; it just will not clear on a single
-      # fast period.
+        Labs web p95 response time over 10s in 3 of 5 five-minute periods, counting
+        only periods with 40+ requests: on sparse traffic one slow page IS the p95,
+        so quieter periods are not judged (#2768). Labs' target group only; canopy-web
+        shares the ALB. FIRST, which route: aws cloudwatch get-metric-data --profile
+        labs-observe --region us-east-1 --start-time <page-30m>Z --end-time <page>Z
+        --metric-data-queries '[{"Id":"q","Period":300,"Expression":"SELECT
+        SUM(RequestLatency) FROM \"Labs/Requests\" GROUP BY route ORDER BY SUM() DESC
+        LIMIT 5"}]'. Never lower the 600s timeouts. Runbook:
+        docs/PERFORMANCE_RUNBOOK.md §3.
+      Metrics:
+        - Id: p95
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: AWS/ApplicationELB
+              MetricName: TargetResponseTime
+              Dimensions:
+                - Name: LoadBalancer
+                  Value: !Ref LoadBalancerDimension
+                - Name: TargetGroup
+                  Value: !Ref TargetGroupDimension
+            Period: 300
+            Stat: p95
+        - Id: n
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: AWS/ApplicationELB
+              MetricName: RequestCount
+              Dimensions:
+                - Name: LoadBalancer
+                  Value: !Ref LoadBalancerDimension
+                - Name: TargetGroup
+                  Value: !Ref TargetGroupDimension
+            Period: 300
+            Stat: Sum
+        - Id: gated
+          Label: labs web p95 (s), 0 when under LatencyMinRequests
+          Expression: !Sub 'IF(n >= ${LatencyMinRequests}, p95, 0)'
+          ReturnData: true
+      # 3-of-5, NOT 3-of-3: p95 oscillates, so 3-of-3 clears on one fast period.
       EvaluationPeriods: 5
       DatapointsToAlarm: 3
       Threshold: !Ref LatencyP95Threshold
@@ -644,11 +611,15 @@ Resources:
     Properties:
       AlarmName: labs-jj-alb-5xx-high
       AlarmDescription: >-
-        The ALB is returning 5xx it generated itself — it could not get a usable
-        response from the web task (no healthy target, connection refused, or the
-        idle timeout elapsed). Distinct from target 5xx, which mean the app
-        answered with an error; during the 2026-07-29 incident target 5xx was 1
-        while ELB 5xx peaked at 84, so watching only application errors misses it.
+        The ALB is returning 5xx it generated itself: it got no usable response from
+        a target (none healthy, connection refused, idle timeout). Covers every
+        service on the ALB; target-5xx counts cannot see it. FIRST, which service lost
+        its targets: aws cloudwatch get-metric-data --profile labs-observe --region
+        us-east-1 --start-time <page-30m>Z --end-time <page>Z --metric-data-queries
+        '[{"Id":"q","Period":60,"Expression":"SELECT MIN(HealthyHostCount) FROM
+        SCHEMA(\"AWS/ApplicationELB\", LoadBalancer, TargetGroup) GROUP BY
+        TargetGroup"}]'. Then that service's describe-services events. Stopped-task
+        reasons age out in ~1h. Runbook: docs/PERFORMANCE_RUNBOOK.md §10.
       Namespace: AWS/ApplicationELB
       MetricName: HTTPCode_ELB_5XX_Count
       Dimensions:
@@ -674,15 +645,14 @@ Resources:
     Properties:
       AlarmName: labs-jj-alb-target-5xx-high
       AlarmDescription: >-
-        The WEB TIER is answering with 5xx — the application itself returned an
-        error, as opposed to the ALB failing to get a response at all (that is
-        labs-jj-alb-5xx-high). Scoped to the web target group ON PURPOSE: it
-        used to carry only the LoadBalancer dimension, which spans every target
-        group, so Umami's 5xx paged this alarm too. Umami 5xx cost analytics
-        beacons and NOT the HIPAA audit trail (#1396), so they are not worth a
-        responder — and because this topic pages an agent mailbox, every one of
-        them was a dispatched session. If this fires it is labs itself, and it
-        is worth your time.
+        The labs web tier answered with 5xx: the app's own errors (ALB-generated 5xx
+        are labs-jj-alb-5xx-high). Scoped to the labs target group, so never Umami,
+        canopy-web or ace-web. FIRST, which route: aws cloudwatch get-metric-data
+        --profile labs-observe --region us-east-1 --start-time <page-30m>Z --end-time
+        <page>Z --metric-data-queries '[{"Id":"q","Period":300,"Expression":"SELECT
+        SUM(RequestCount) FROM \"Labs/Requests\" WHERE status_class = '\''5xx'\''
+        GROUP BY route ORDER BY SUM() DESC LIMIT 5"}]'. Every route at once: read the
+        RDS alarms (shared instance). Runbook: docs/PERFORMANCE_RUNBOOK.md §10.
       Namespace: AWS/ApplicationELB
       MetricName: HTTPCode_Target_5XX_Count
       # LoadBalancer + TargetGroup, not LoadBalancer alone — see the description.
@@ -712,9 +682,14 @@ Resources:
     Properties:
       AlarmName: labs-jj-web-no-healthy-targets
       AlarmDescription: >-
-        The web target group has no healthy target — labs is down. Every task
-        is failing its health check at once, which a rolling deploy does not
-        cause, so this is the app or its dependencies, not capacity.
+        The labs web target group has no healthy target: labs is down. Every task
+        failing its health check at once is the app or a dependency, not a deploy or
+        capacity. FIRST: aws ecs describe-services --profile labs-observe --region
+        us-east-1 --cluster labs-jj-cluster --services labs-jj-web --query
+        'services[0].events[0:8].[createdAt,message]' --output text (task stops and
+        starts, dated), then the RDS alarm states. Stopped-task reasons
+        (describe-tasks, labs SSO) age out in ~1h. Runbook:
+        docs/PERFORMANCE_RUNBOOK.md §10.
       Namespace: AWS/ApplicationELB
       MetricName: HealthyHostCount
       Dimensions:
@@ -766,18 +741,16 @@ Resources:
     Properties:
       AlarmName: labs-jj-web-worker-crash-loop
       AlarmDescription: >-
-        gunicorn workers killed repeatedly on the web tier. Two causes seen, each
-        needing a different search in /ecs/labs-jj-web. (1) ONE request allocating too much:
-        2026-08-24 materialised 61,917 visits for a one-row question; tell is a large
-        "[SQL] Loaded N visits" near the kills. (2) MANY requests rebuilding the same cache at
-        once: 2026-09-03; tell is a burst of user_visits/?page_size=2500 whose last_id cursors
-        REPEAT across log streams -- 83 fetches over just 12 distinct cursors, i.e. ~7 workers
-        each walking the same 12-page (~30k visit) rebuild at once. A RawVisitCache stampede;
-        peak memory N x per-request. See #1361. A SMALL "[SQL] Loaded N" does NOT rule out (2):
-        it logs the cache read AFTER the rebuild, so it is 8-35 and lands after the kills; the
-        memory goes upstream in the repagination, logged only as httpx GETs. The memory graph
-        looks fine either way, which is why this counts restarts. Holds through dips (2-of-4):
-        a second notification is the same incident until proven otherwise.
+        gunicorn workers on the web tier are being killed: 5+ in a 5-minute period,
+        in 2 of the last 4. Each kill drops its in-flight requests. The memory gauge
+        misses a per-request spike, which is why this counts restarts. FIRST: aws
+        cloudwatch get-metric-statistics --profile labs-observe --region us-east-1
+        --namespace Labs/Web --metric-name WorkerKilled --statistics Sum --period 60
+        --start-time <page-1h>Z --end-time <page>Z, beside AWS/ECS MemoryUtilization
+        Maximum for labs-jj-web. Seen causes: one request loading a whole opp's
+        visits (a large "[SQL] Loaded N visits"), or many workers rebuilding one
+        RawVisitCache at once (#1361). A repeat is the same incident. Runbook:
+        docs/PERFORMANCE_RUNBOOK.md §8.
       Namespace: Labs/Web
       MetricName: WorkerKilled
       Statistic: Sum
@@ -853,8 +826,8 @@ Resources:
     Properties:
       AlarmName: labs-jj-web-worker-kill-rate
       AlarmDescription: >-
-        Raw sustained-kill signal. Deploy rollouts also kill workers, so this one
-        is NOT wired to notifications — see labs-jj-web-worker-kill-rate-actionable.
+        Raw sustained-kill signal. Deploy rollouts also kill workers, so this one is
+        NOT wired to notifications; see labs-jj-web-worker-kill-rate-actionable.
       Namespace: Labs/Web
       MetricName: WorkerKilled
       Statistic: Sum
@@ -876,19 +849,13 @@ Resources:
       # cold by a session with no prior context.
       AlarmDescription: >-
         Web-tier gunicorn workers are dying at a SUSTAINED rate: 6+ per 30-minute
-        window in 2 of the last 3, and no deploy is rolling. Counterpart to
-        labs-jj-web-worker-crash-loop, which catches only an acute 5-in-5-minute
-        loop — a rate under that bar runs all day unseen, and did on 2026-09-07
-        (32 kills vs a 9/day baseline). Each kill drops that worker's in-flight
-        requests, so users see 5xx and stalls. These are KERNEL OOM kills:
-        gunicorn logs CRITICAL WORKER TIMEOUT before reaping a hung worker, so
-        no TIMEOUT lines means gunicorn did not send the signal. Do NOT diagnose
-        from MemoryUtilization — a 1-minute gauge misses a per-request spike; it
-        read 29-35% through the 2026-08-24 incident. Start at #1361: in
-        /ecs/labs-jj-web query user_visits/?page_size=2500 grouped by last_id
-        cursor. Cursors REPEATING across log streams mean several workers are
-        paginating one opportunity's whole visit export at once, so peak memory
-        is N x per-request.
+        window in 2 of the last 3, and no deploy is rolling (the acute 5-in-5 loop is
+        labs-jj-web-worker-crash-loop). These are kernel OOM kills; a 1-minute memory
+        gauge misses them. FIRST: aws cloudwatch get-metric-statistics --profile
+        labs-observe --region us-east-1 --namespace Labs/Web --metric-name
+        WorkerKilled --statistics Sum --period 300 --start-time <page-2h>Z --end-time
+        <page>Z: one burst or a steady trickle. Prime suspect: the RawVisitCache
+        stampede (#1361). Runbook: docs/PERFORMANCE_RUNBOOK.md §8.
       AlarmRule: !Sub 'ALARM("${WebWorkerKillRateAlarm}") AND NOT ALARM("${DeployInProgressAlarm}")'
       AlarmActions: [!Ref AlertTopic]
       OKActions: [!Ref AlertTopic]
@@ -920,10 +887,14 @@ Resources:
     Properties:
       AlarmName: labs-jj-ai-review-empty-audit
       AlarmDescription: >-
-        An AI image-audit run reviewed ZERO images and produced an empty audit —
-        every image was skipped. Usually a misconfigured comparison/image field
-        path or a failing blob fetch. The run reports success, so nobody notices
-        without this. Check the [AIReview:<id>] lines for the skip breakdown.
+        An AI image-audit run reviewed ZERO images: every image was skipped and the
+        audit is empty, though the run reports success. FIRST: aws cloudwatch
+        get-metric-statistics --profile labs-observe --region us-east-1 --namespace
+        Labs/AIReview --metric-name EmptyAudit --statistics Sum --period 300
+        --start-time <page-1h>Z --end-time <page>Z (how many runs, when). Then read
+        the job's result.ai_review.skip_reasons (no AWS): no_reviewer_reading is a
+        field-path misconfig, image_download_failed a blob fetch. Runbook:
+        docs/PERFORMANCE_RUNBOOK.md §9.
       Namespace: Labs/AIReview
       MetricName: EmptyAudit
       Statistic: Sum
@@ -973,14 +944,14 @@ Resources:
     Properties:
       AlarmName: labs-jj-ai-classifier-saturation
       AlarmDescription: >-
-        The AI classifier gateway is timing out in bulk — an image audit running
-        now is producing errors instead of verdicts, and each timeout costs a
-        full 60s. First count how many [AIReview:<id>] runs were in flight
-        (python3 tools/classifier_outcomes.py). Two or more overlapping is
-        #1231. ONE run means the gateway itself was slow, not the load: the
-        first firing (2026-10-20, a weekly KMC audit at concurrency 1, same
-        size as prior weeks but 5-6x slower) was this case. Then compare the
-        timed-out agent's elapsed_ms with other agents' in the same hours.
+        The AI classifier gateway is timing out in bulk (25+ in 15 minutes): a
+        running image audit gets errors instead of verdicts, 60s each. FIRST: aws
+        cloudwatch get-metric-statistics --profile labs-observe --region us-east-1
+        --namespace Labs/AIReview --metric-name ClassifierTimeout --statistics Sum
+        --period 300 --start-time <page-2h>Z --end-time <page>Z (one burst or
+        sustained). Then count runs in flight (python3 tools/classifier_outcomes.py,
+        labs SSO): 2+ overlapping is #1231; ONE run means the gateway itself was slow
+        (2026-10-20). Runbook: docs/PERFORMANCE_RUNBOOK.md §9.
       Namespace: Labs/AIReview
       MetricName: ClassifierTimeout
       Statistic: Sum
