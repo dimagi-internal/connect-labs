@@ -159,6 +159,9 @@ if SENTRY_DSN:
     from connect_labs.utils.sentry import before_send as sentry_before_send
 
     ignore_logger("django.security.DisallowedHost")
+    # One line per request: as breadcrumbs it would crowd every useful one out of
+    # Sentry's 100-breadcrumb buffer.
+    ignore_logger("connect_labs.telemetry.metrics")
     sentry_logging = LoggingIntegration(level=logging.INFO, event_level=logging.ERROR)
     sentry_sdk.init(
         dsn=SENTRY_DSN,
