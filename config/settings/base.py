@@ -742,6 +742,9 @@ UMAMI_ADMIN_PASSWORD = env("UMAMI_ADMIN_PASSWORD", default="")
 # ------------------------------------------------------------------------------
 OCS_BASE_URL = env("OCS_BASE_URL", default="")
 OCS_API_KEY = env("OCS_API_KEY", default="")
+# The Open Chat Studio chatbot (public id) supply update links are sent through, offered as the
+# default when a link is issued. Empty = the issuer must choose one.
+SUPPLY_LINK_OCS_BOT = env("SUPPLY_LINK_OCS_BOT", default="")
 
 # Scale Image Validation API Configuration (KMC weight verification)
 # ------------------------------------------------------------------------------

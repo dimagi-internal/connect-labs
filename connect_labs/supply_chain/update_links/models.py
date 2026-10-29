@@ -55,6 +55,13 @@ class UpdateLink(TimestampedModel):
     # docs/personalid-authorization.md for how this becomes a verified identity.
     connect_username = models.CharField(max_length=150, blank=True, default="", db_default="", db_index=True)
 
+    # Sending the link through PersonalID (update_links/delivery.py), when that
+    # was asked for at issue time. The raw link exists only in the issue
+    # response, so this is the only moment it can be sent from the system.
+    sent_at = models.DateTimeField(null=True, blank=True)
+    sent_via_bot = models.CharField(max_length=64, blank=True, default="", db_default="")
+    send_error = models.CharField(max_length=255, blank=True, default="", db_default="")
+
     contracts = models.ManyToManyField(Contract, blank=True, related_name="update_links")
     supply_points = models.ManyToManyField(SupplyPoint, blank=True, related_name="update_links")
     # Approvals asked of this link's organisation, which it may answer itself.

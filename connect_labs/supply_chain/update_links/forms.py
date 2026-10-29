@@ -177,9 +177,21 @@ class UpdateLinkIssueForm(forms.Form):
         ),
     )
 
+    send_via_bot = forms.ChoiceField(
+        label=_("Send it through PersonalID"),
+        required=False,
+        choices=[("", _("Don't send — I'll pass it on myself"))],
+        help_text=_(
+            "Sends the link to that PersonalID user's Connect chat, through the chatbot you choose, as you. "
+            "Needs their PersonalID username above, your Open Chat Studio connection, and their consent to "
+            "messages from that chatbot."
+        ),
+    )
+
     def __init__(self, *args, access=None, **kwargs):
         self.access = access
         super().__init__(*args, **kwargs)
+        self._offer_bots(access)
         self.fields["org"].queryset = LabsOrg.objects.real().order_by("name")
         self.fields["org"].empty_label = _("Select an organisation…")
         program_id = getattr(access, "program_id", None) if access else None
@@ -204,6 +216,7 @@ class UpdateLinkIssueForm(forms.Form):
             self,
             _pair("org", "label"),
             "connect_username",
+            *(["send_via_bot"] if "send_via_bot" in self.fields else []),
             "coverage",
             "contracts",
             "supply_points",
@@ -211,8 +224,34 @@ class UpdateLinkIssueForm(forms.Form):
             "expires_in_days",
         )
 
+    def _offer_bots(self, access):
+        """Offer the chatbots the issuer can send through -- or no choice at all.
+
+        With no usable Open Chat Studio connection there is nothing to pick, so the field is
+        removed rather than rendered as an empty dropdown, and the username's help says how to
+        get the option.
+        """
+        from connect_labs.supply_chain.update_links import delivery
+
+        user = getattr(access, "user", None) if access else None
+        bots = delivery.available_bots(user) if getattr(user, "pk", None) else None
+        if not bots:
+            del self.fields["send_via_bot"]
+            self.fields["connect_username"].help_text = _(
+                "{} To send the link from here, connect Open Chat Studio first (Labs → Open Chat Studio); "
+                "until then, pass the link on yourself."
+            ).format(self.fields["connect_username"].help_text)
+            return
+        field = self.fields["send_via_bot"]
+        field.choices = [("", _("Don't send — I'll pass it on myself"))] + [
+            (b["id"], b["name"] or b["id"]) for b in bots
+        ]
+        field.initial = delivery.default_bot() if any(b["id"] == delivery.default_bot() for b in bots) else ""
+
     def clean(self):
         cleaned = super().clean()
+        if cleaned.get("send_via_bot") and not cleaned.get("connect_username"):
+            raise forms.ValidationError(_("To send it through PersonalID, enter the PersonalID username it is for."))
         if cleaned.get("coverage") == COVERAGE_ORGANISATION:
             if cleaned.get("contracts") or cleaned.get("supply_points") or cleaned.get("approvals"):
                 raise forms.ValidationError(
@@ -246,6 +285,8 @@ class UpdateLinkIssueForm(forms.Form):
             data["label"] = self.cleaned_data["label"]
         if self.cleaned_data.get("connect_username"):
             data["connect_username"] = self.cleaned_data["connect_username"].strip()
+        if self.cleaned_data.get("send_via_bot"):
+            data["send_via_bot"] = self.cleaned_data["send_via_bot"]
         return data
 
 
