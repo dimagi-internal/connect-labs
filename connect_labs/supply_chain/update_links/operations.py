@@ -45,6 +45,10 @@ _ISSUE_DATA = _data_with(
     # gets a fresh link, which is also a moment to check the scope still fits.
     expires_in_days={"type": "integer", "minimum": 1, "maximum": MAX_EXPIRY_DAYS},
     label={"type": "string"},
+    # The PersonalID user the link is being sent to. Not authentication: it is
+    # who we SAY the link is for, so what is recorded through it is attributed
+    # to them. A listed link also covers that user's own stock point(s).
+    connect_username={"type": "string", "maxLength": 150},
 )
 
 
@@ -75,6 +79,7 @@ def serialize_link(link) -> dict:
         "org_id": link.org_id,
         "org_name": link.org.name,
         "label": link.label,
+        "connect_username": link.connect_username,
         "coverage": link.coverage,
         "follows_org": link.follows_org,
         "contract_ids": [c.pk for c in contracts],
@@ -152,6 +157,15 @@ def update_link_issue(access, data):
     point_ids = list(data.get("supply_point_ids") or [])
     approval_ids = list(data.get("approval_ids") or [])
     coverage = data.get("coverage") or COVERAGE_LISTED
+    username = (data.get("connect_username") or "").strip()
+    if username and coverage == COVERAGE_LISTED:
+        # A link sent to a worker covers that worker's own stock: the point
+        # that holds what they carry. Looked up in this programme, so a name
+        # cannot reach a point in another one.
+        own = SupplyPoint.objects.filter(
+            program_id=program_id, kind="user_held", connect_username=username, status="active"
+        )
+        point_ids = sorted(set(point_ids) | set(own.values_list("pk", flat=True)))
     if coverage == COVERAGE_ORGANISATION:
         # One or the other, never both: a link that follows its organisation
         # AND names rows would leave nobody sure which of the two it obeys.
@@ -199,6 +213,7 @@ def _create(access, program_id, org, data, coverage, contracts, points, approval
         org=org,
         coverage=coverage,
         label=data.get("label") or "",
+        connect_username=(data.get("connect_username") or "").strip(),
         token_hash=tokens.hash_token(raw),
         token_hint=tokens.hint(raw),
         expires_at=timezone.now() + timedelta(days=data.get("expires_in_days") or DEFAULT_EXPIRY_DAYS),

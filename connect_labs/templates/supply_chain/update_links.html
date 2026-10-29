@@ -62,7 +62,7 @@ apart. The token is shown once, when the link is issued.
             {% for link in group.links %}
               <tr class="align-top">
                 <td class="px-4 py-2">
-                  <span class="text-gray-900">{{ link.org_name }}</span>
+                  <span class="text-gray-900">{{ link.org_name }}</span>{% if link.connect_username %} <span class="text-xs text-gray-600">· sent to {{ link.connect_username }}</span>{% endif %}
                   <div class="text-xs text-gray-600 mt-0.5">
                     {{ link.label|default:"" }}{% if link.label %} · {% endif %}<code>{{ link.token_hint }}…</code>
                   </div>

@@ -47,6 +47,13 @@ class UpdateLink(TimestampedModel):
     # "listed": the join tables below are the scope. "organisation": they are
     # empty and the scope is worked out afresh at each request.
     coverage = models.CharField(max_length=16, default=COVERAGE_LISTED, choices=COVERAGE)
+    # The PersonalID user the link was sent to, when it was sent to one person
+    # (a field worker, a store keeper) rather than to an organisation's desk.
+    # NOT authentication: whoever holds the link can use it, and this is only
+    # who we SAID it was for -- so what is recorded through it is attributed to
+    # that person, labelled as "link sent to", never as "verified". See
+    # docs/personalid-authorization.md for how this becomes a verified identity.
+    connect_username = models.CharField(max_length=150, blank=True, default="", db_default="", db_index=True)
 
     contracts = models.ManyToManyField(Contract, blank=True, related_name="update_links")
     supply_points = models.ManyToManyField(SupplyPoint, blank=True, related_name="update_links")
@@ -111,6 +118,10 @@ class UpdateLinkSubmission(models.Model):
 
     link = models.ForeignKey(UpdateLink, on_delete=models.CASCADE, related_name="submissions")
     action = models.CharField(max_length=32)
+    # Whom the link was sent to when this was recorded, copied from the link so
+    # the attribution survives the link being revoked or re-issued. Empty for a
+    # link sent to an organisation rather than a person.
+    connect_username = models.CharField(max_length=150, blank=True, default="", db_default="", db_index=True)
     operation = models.CharField(max_length=64)
     result_type = models.CharField(max_length=32, blank=True, default="")
     result_id = models.IntegerField(null=True, blank=True)
