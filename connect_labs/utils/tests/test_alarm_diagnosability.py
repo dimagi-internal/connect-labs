@@ -202,6 +202,7 @@ class TestSampleIsNotOnePath:
 
 @pytest.fixture
 def window(monkeypatch):
+    monkeypatch.setattr(requester_concentration, "ENABLED", True)
     monkeypatch.setattr(requester_concentration, "WINDOW_S", 3600)
     monkeypatch.setattr(requester_concentration, "_window", requester_concentration._Window())
 

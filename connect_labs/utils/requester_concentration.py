@@ -53,6 +53,9 @@ logger = logging.getLogger("connect_labs.telemetry.request")
 # A child of the per-request metrics logger: same handler, distinct name.
 metrics_logger = logging.getLogger("connect_labs.telemetry.metrics.requesters")
 
+# Off under test settings: the window is process-wide, so in a long test run it
+# would flush a top_requester line into whichever unrelated test crossed 60 s.
+ENABLED = bool(getattr(settings, "TELEMETRY_REQUESTER_CONCENTRATION", True))
 WINDOW_S = float(getattr(settings, "TELEMETRY_REQUESTER_WINDOW_S", 60))
 LOG_MIN_REQUESTS = int(getattr(settings, "TELEMETRY_TOP_REQUESTER_LOG_MIN", 20))
 METRICS_NAMESPACE = "Labs/Requests"
@@ -114,7 +117,7 @@ _window = _Window()
 def observe(request, route: str) -> None:
     """Count one finished request; flush the window when it is due. Never raises."""
     try:
-        if route in _SKIP_ROUTES:
+        if not ENABLED or route in _SKIP_ROUTES:
             return
         label, kind = requester_label(getattr(request, "user", None))
         ua = user_agent_class(getattr(request, "META", {}).get("HTTP_USER_AGENT"))
