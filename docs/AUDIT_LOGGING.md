@@ -157,14 +157,22 @@ included. It is the one place labs keeps a copy of what an MCP tool returned, so
   which also ships cookies, bodies and client IPs — not acceptable this close
   to PHI — so labs attaches just the identity, from this contextvar. One
   definition of "who is acting" for both sinks: they cannot disagree.
-  **User id and username only, never the email.** Sentry keys its Users count
-  and per-user filtering off the id alone, so the email would only save a
-  lookup, at the cost of staff contact details living in Sentry's store. Go
-  from an id to a person via the labs admin, or pivot on `labs.request_id`
-  into the audit trail — which holds the full record for the same action.
-  Errors also carry `labs.source` / `labs.request_id` / `labs.path` tags, and
-  `labs.opportunity_id` / `labs.program_id` where scoped, so a Sentry issue
-  and the audit rows for the same action share a correlation id.
+  **User id only — no username, email or IP.** Sentry keys its Users count
+  and per-user filtering off the id alone. Go from an id to a person via the
+  labs admin, or pivot on `labs.request_id` into the audit trail — which
+  holds the full record for the same action. Errors also carry `labs.source`
+  / `labs.request_id` / `labs.path` tags (the route template for web
+  requests, `mcp:<tool>` or the task path otherwise — never a concrete path),
+  and `labs.opportunity_id` / `labs.program_id` where scoped, so a Sentry
+  issue and the audit rows for the same action share a correlation id.
+- **Sentry gets the shape of a failure, never its content.**
+  `include_local_variables=False` (frame locals are the visit/form being
+  processed), and `before_send` / `before_send_transaction` /
+  `before_breadcrumb` strip query strings (request, URLs in messages,
+  breadcrumbs, spans), request data and cookies, all headers but
+  User-Agent/Content-Type/Content-Length/Accept/Host, Celery task args, and
+  payload-named `extra` keys. Scrubbing fails closed: an event the scrubber
+  cannot process is dropped. Tests: `connect_labs/utils/tests/test_sentry.py`.
 - Settings: `AUDIT_TRAIL_ARCHIVE_BUCKET` (unset ⇒ archive task no-ops),
   `AUDIT_TRAIL_HOT_RETENTION_DAYS` (default 400).
 - Hygiene: never put identifiers in logged URLs or exception messages; Sentry
