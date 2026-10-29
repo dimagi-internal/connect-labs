@@ -1,9 +1,6 @@
 # Connect MCP
 
-Connect Labs gives technical program staff a way to edit workflows using Claude Code (an AI assistant) from the command line — without writing code themselves.
-
-!!! note "Who this is for"
-    This feature is for program administrators and technical staff who are comfortable working in a terminal. If you just want to use the AI assistant inside the Labs browser app, see [AI Features](ai-features.md) instead.
+Connect Labs has an MCP server: the connection Claude uses to read and act on labs (workflows, pipelines, solicitations, targeting, synthetic data)
 
 ---
 
@@ -11,14 +8,14 @@ Connect Labs gives technical program staff a way to edit workflows using Claude 
 
 Normally, editing a workflow's display logic or data fields requires a developer to modify code. With the Connect MCP (Model Context Protocol), you can describe changes in plain English and Claude Code makes the edits for you.
 
-**Claude Code** is the AI assistant CLI you run in your terminal. **MCP** (Model Context Protocol) is the server it connects to — hosted inside Connect Labs — that gives Claude Code the tools to read and update workflows. You use Claude Code; it uses the MCP behind the scenes.
+**Claude Code** is the AI assistant CLI you run in your terminal or in the 'code' tab of Claude Desktop. **MCP** (Model Context Protocol) is the server it connects to — hosted inside Connect Labs — that gives Claude Code the tools to read and update workflows. You use Claude Code; it uses the MCP behind the scenes.
 
 <!-- prettier-ignore -->
 > _"Add a column showing how many weeks since the last visit"_
 > _"Change the status colors so 'Overdue' shows in red"_
 > _"Remove the RUTF field from the table — it's not relevant for this program"_
 
-Claude reads the workflow's current definition, makes the change, and pushes it back to Labs — all from your terminal.
+Claude reads the workflow's current definition, makes the change, and pushes it back to Labs.
 
 ---
 
@@ -30,10 +27,46 @@ Claude reads the workflow's current definition, makes the change, and pushes it 
 | **Claude Code** (`npm install -g @anthropic-ai/claude-code`), or Claude desktop / claude.ai | Everything |
 | A clone of the connect-labs repository (`git clone https://github.com/dimagi-internal/connect-labs.git`) | The `/workflow-author` skill |
 
-Ask in **#engineering-connect** if you're unsure about any of these.
+Ask in **#connect-labs** if you're unsure about any of these.
 
-!!! note "You don't need to run Labs locally"
-    For workflow editing you do **not** need to run the Django app locally. The Labs MCP server is hosted on Labs itself; Claude pushes workflow changes directly to Labs prod, and you verify the result in your browser. Run locally only if you are modifying the core Connect Labs application code itself.
+---
+
+## First-Time Setup
+
+### 1. Connect Claude to Labs
+
+=== "Claude Code"
+
+    ```bash
+    claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/no_user_visit/
+    ```
+
+    Then type `/mcp`, choose `connect_labs` and sign in with CommCare Connect when the browser opens. There is no token to copy.
+
+    !!! note "Full-access sign-in still goes to canopy and back"
+        If you connect using the full `/mcp/` address, Labs will send you to canopy to confirm with your passkey before completing sign-in. No extra step is needed for the `mcp/no_user_visit/` address.
+
+=== "Claude desktop or claude.ai"
+
+    Open **Settings → Connectors**, choose **Add custom connector**, and add `https://labs.connect.dimagi.com/mcp/no_user_visit/` (or `https://labs.connect.dimagi.com/mcp/` only if you need real visit data). Click **Connect** and sign in with CommCare Connect.
+
+    !!! note "Full-access sign-in still goes to canopy and back"
+        If you connect using the full `/mcp/` address, Labs will send you to canopy to confirm with your passkey before completing sign-in. No extra step is needed for the `mcp/no_user_visit/` address.
+
+Claude acts as you, with your Connect permissions. To see or disconnect the apps you have signed in, visit [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/).
+
+### 2. (Scripts and headless agents only) Register a Labs token
+
+Anything that cannot open a browser to sign in — a script, a scheduled job, a headless agent — needs a Personal Access Token instead. From **inside your connect-labs checkout**, start Claude Code and run:
+
+```
+/labs-token-setup
+```
+
+When asked, choose **Production labs environment**, then approve the token in the browser. Fully quit and restart Claude Code afterwards. The token lasts 1 day by default; run the skill again to replace it, or set a longer lifetime (up to 365 days) on the tokens page when you approve it.
+
+!!! note "Full-access tokens require a passkey confirmation"
+    If you choose a full-access token during setup, a small canopy window opens over the page and asks you to touch your passkey. If you are not a member of Labs' canopy workspace, you can create a no-user-visit token only.
 
 ---
 
@@ -48,11 +81,8 @@ Connect Labs provides two MCP addresses. **Use `mcp/no_user_visit/` unless you n
 
 On the restricted address, anything that reads visits needs a synthetic opportunity whose data was generated. [Synthetic Data](synthetic-data.md) explains what those are and how to make one in a single request.
 
-!!! tip "Using the restricted address for a whole team"
-    `mcp/no_user_visit/` is designed as a safe default for a shared or team setup. Signing in through this address gives a restricted token that stays restricted even if it is later used on the main `/mcp/` address.
-
 !!! note "Locking a person to restricted access"
-    An administrator can permanently lock an individual account to "no user visit data" (Django admin → Users → **MCP: no user visit data**). Once set, everything that person does through MCP is restricted — on either address, with any token, and including sign-ins and any automated action taken on their behalf. The Labs export API and the demo reseed endpoint also refuse them. This is stronger than the team default above, because it cannot be stepped around by switching to the full `/mcp/` address.
+    An administrator can permanently lock an individual account to "no user visit data" (Django admin → Users → **MCP: no user visit data**). Once set, everything that person does through MCP is restricted — on either address, with any token, and including sign-ins and any automated action taken on their behalf. The Labs export API and the demo reseed endpoint also refuse them. This is stronger than simply choosing the restricted address, because it cannot be stepped around by switching to the full `/mcp/` address.
 
 ---
 
@@ -118,50 +148,8 @@ Note the trailing slash on `mcp/no_user_visit/` — without it the address will 
 
 ---
 
-## First-Time Setup
+# Advanced
 
-### 1. Connect Claude to Labs
-
-=== "Claude Code"
-
-    ```bash
-    claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/no_user_visit/
-    ```
-
-    Only if you need real visit data, use the full address instead:
-
-    ```bash
-    claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/
-    ```
-
-    Then type `/mcp`, choose `connect_labs` and sign in with CommCare Connect when the browser opens. There is no token to copy.
-
-    !!! note "Full-access sign-in still goes to canopy and back"
-        If you connect using the full `/mcp/` address, Labs will send you to canopy to confirm with your passkey before completing sign-in. No extra step is needed for the `mcp/no_user_visit/` address.
-
-=== "Claude desktop or claude.ai"
-
-    Open **Settings → Connectors**, choose **Add custom connector**, and add `https://labs.connect.dimagi.com/mcp/no_user_visit/` (or `https://labs.connect.dimagi.com/mcp/` only if you need real visit data). Click **Connect** and sign in with CommCare Connect.
-
-    !!! note "Full-access sign-in still goes to canopy and back"
-        If you connect using the full `/mcp/` address, Labs will send you to canopy to confirm with your passkey before completing sign-in. No extra step is needed for the `mcp/no_user_visit/` address.
-
-Claude acts as you, with your Connect permissions. To see or disconnect the apps you have signed in, visit [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/).
-
-### 2. (Scripts and headless agents only) Register a Labs token
-
-Anything that cannot open a browser to sign in — a script, a scheduled job, a headless agent — needs a Personal Access Token instead. From **inside your connect-labs checkout**, start Claude Code and run:
-
-```
-/labs-token-setup
-```
-
-When asked, choose **Production labs environment**, then approve the token in the browser. Fully quit and restart Claude Code afterwards. The token lasts 1 day by default; run the skill again to replace it, or set a longer lifetime (up to 365 days) on the tokens page when you approve it.
-
-!!! note "Full-access tokens require a passkey confirmation"
-    If you choose a full-access token during setup, a small canopy window opens over the page and asks you to touch your passkey. If you are not a member of Labs' canopy workspace, you can create a no-user-visit token only.
-
----
 
 ## Personal Access Tokens
 
