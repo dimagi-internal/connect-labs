@@ -33,6 +33,11 @@ own prefix so seven of them cannot collide.
       Anything you record here is shared with the programme team and marked as reported by
       {{ org.name }}. The link works until {{ expires_on|date:"j M Y" }}.
     </p>
+    {% if link.connect_username %}
+      <p class="text-sm text-gray-700 mt-1" data-sent-to>
+        This link was sent to <strong>{{ link.connect_username }}</strong>; what you record is credited to them.
+      </p>
+    {% endif %}
     {% if link.follows_org %}
       <p class="text-sm text-gray-700 mt-1" data-follows-org>
         It covers everything involving {{ org.name }} in this programme — new orders appear here as soon as

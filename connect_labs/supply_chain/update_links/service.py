@@ -16,7 +16,9 @@ gone. Anything outside scope raises `OutOfScope` and nothing is written.
 **Attributable.** Each write is recorded three ways: the row it produced
 (`source`, `recorded_by_org`), an `UpdateLinkSubmission` naming the link, and
 an audit-trail event (docs/AUDIT_LOGGING.md) carrying the link and the
-organisation, since there is no user to attribute it to.
+organisation, since there is no user to attribute it to. A link sent to one
+person also carries their PersonalID username on all three where the row can
+hold it: who it was SENT to, not who is proven to have used it.
 """
 
 from __future__ import annotations
@@ -362,6 +364,9 @@ def _record_stock_count(scope, data):
             "counted_on": _iso(data.get("counted_on") or timezone.localdate()),
             "quantity": str(data["quantity"]),
             "quantity_unit": _unit(data.get("unit_basis"), item),
+            # Who the link was sent to, when it was sent to a person. The
+            # count says whose word it is, beside the organisation's.
+            "connect_username": scope.link.connect_username,
         }
     )
     return "stock_count_record", {"data": {**count, **_provenance(scope)}}, Action.CREATE
@@ -759,6 +764,7 @@ def submit(link, action, data) -> dict:
         UpdateLinkSubmission.objects.create(
             link=link,
             action=action,
+            connect_username=link.connect_username,
             operation=operation,
             result_type=operation.split("_", 1)[0],
             result_id=result_id,
@@ -793,6 +799,7 @@ def submit(link, action, data) -> dict:
             "via": "supply_update_link",
             "update_link_id": link.pk,
             "org_id": link.org_id,
+            "connect_username": link.connect_username,
             "action": action,
             "operation": operation,
         },

@@ -164,6 +164,17 @@ class UpdateLinkIssueForm(forms.Form):
         max_length=255,
         widget=forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. EHA — co-pack orders, 2026")}),
     )
+    connect_username = forms.CharField(
+        label=_("Sent to (PersonalID username)"),
+        required=False,
+        max_length=150,
+        widget=forms.TextInput(attrs={**INPUT, "autocomplete": "off"}),
+        help_text=_(
+            "When the link goes to one person — a field worker, a store keeper — their PersonalID username. "
+            "What they record is attributed to them, and a link for a worker also covers that worker's own "
+            "stock. This is who it was sent to, not proof of who opened it: anyone holding the link can use it."
+        ),
+    )
 
     def __init__(self, *args, access=None, **kwargs):
         self.access = access
@@ -189,7 +200,14 @@ class UpdateLinkIssueForm(forms.Form):
                 .order_by("-requested_on")
             )
         self.helper = _tidy(
-            self, _pair("org", "label"), "coverage", "contracts", "supply_points", "approvals", "expires_in_days"
+            self,
+            _pair("org", "label"),
+            "connect_username",
+            "coverage",
+            "contracts",
+            "supply_points",
+            "approvals",
+            "expires_in_days",
         )
 
     def clean(self):
@@ -203,7 +221,12 @@ class UpdateLinkIssueForm(forms.Form):
                     )
                 )
             return cleaned
-        if not cleaned.get("contracts") and not cleaned.get("supply_points") and not cleaned.get("approvals"):
+        if (
+            not cleaned.get("contracts")
+            and not cleaned.get("supply_points")
+            and not cleaned.get("approvals")
+            and not cleaned.get("connect_username")
+        ):
             raise forms.ValidationError(
                 _("Pick at least one order, supply point or approval — a link has to cover something.")
             )
@@ -220,6 +243,8 @@ class UpdateLinkIssueForm(forms.Form):
         }
         if self.cleaned_data.get("label"):
             data["label"] = self.cleaned_data["label"]
+        if self.cleaned_data.get("connect_username"):
+            data["connect_username"] = self.cleaned_data["connect_username"].strip()
         return data
 
 
