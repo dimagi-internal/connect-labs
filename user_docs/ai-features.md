@@ -120,8 +120,8 @@ See [Solicitations](solicitations.md) for the step-by-step procurement workflow.
 
 AI features in Connect Labs route through a **governed endpoint** — content that passes through AI processing is handled under Dimagi's Zero Data Retention (ZDR) agreement with Anthropic. This means prompt content is not stored by the AI provider after processing.
 
-!!! info "Safe Mode for sensitive workflows"
-If you're working with programs that have stricter data handling requirements, use [Connect Safe Mode](connect-safe-mode.md) — a locked-down AI editing environment with additional safeguards.
+!!! info "Stricter data handling"
+    If you work with programmes that have stricter requirements, connect Claude to Labs through the restricted address, `https://labs.connect.dimagi.com/mcp/no_user_visit/`. It lets Claude read and edit how your programme is built, but never shows it a real beneficiary's visit. See [What "No User Visit Data" Means](connect-mcp.md#what-no-user-visit-data-means). An administrator can also lock an account to that level permanently, so it holds whatever address or token is used.
 
 ---
 

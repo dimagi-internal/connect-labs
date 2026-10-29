@@ -27,9 +27,13 @@ connect_labs/solicitations/  → Solicitations
 connect_labs/microplans/simple_*, static/ + templates/microplans/simple_*
                              → Simple Microplan (help site + the editor's help popup; no Confluence page)
 connect_labs/ai/             → AI Features
-docs/WORKFLOW_EDITOR_QUICKSTART.md
-docs/SAFE_MODE.md                → Connect MCP & Safe Mode
+connect_labs/mcp/, docs/MCP_SETUP.md, docs/WORKFLOW_EDITOR_QUICKSTART.md
+                             → Connect MCP
 ```
+
+`docs/SAFE_MODE.md` is deliberately unmapped. Safe Mode is an engineering-only tool and
+no longer appears on the help site (see "Connect Safe Mode" below), so a change to it
+must not trigger a rewrite of a user-facing page.
 
 ## File map
 
@@ -50,8 +54,9 @@ user_docs/
   solicitations.md       Solicitations
   simple-microplan.md    Simple Microplan (also rendered as the editor's in-page help)
   ai-features.md         AI Features
-  connect-mcp.md         Connect MCP & Safe Mode
-  connect-safe-mode.md   (linked from connect-mcp.md; not auto-updated)
+  connect-mcp.md         Connect MCP
+  connect-safe-mode.md   Excluded from the build (exclude_docs in mkdocs.yml); not published
+  synthetic-data.md      Synthetic Data (not auto-updated)
   reports-with-claude.md (not auto-updated)
   semantic-layer.md, benchmarks.md, cross-program-rollups.md,
   shared-report-templates.md, weekly-trends-and-snapshots.md
@@ -120,6 +125,16 @@ internal hostnames or anything that only works inside Dimagi. The repo is public
 | Solicitations                       | `3927179271` |
 | AI Features                         | `3928817690` |
 | Connect MCP & Safe Mode             | `3927801885` |
+
+The Confluence page keeps its original title; `update_docs.py` now calls the feature area
+"Connect MCP" and passes the live page title through when it updates it.
+
+## Connect Safe Mode
+
+`user_docs/connect-safe-mode.md` is **not published**. It is listed in `exclude_docs` in
+`mkdocs.yml`, so it is absent from the nav, from search and from any URL on the help site.
+The restricted MCP address (`/mcp/no_user_visit/`) is what the user docs point people to
+instead. The engineering doc, `docs/SAFE_MODE.md`, is unaffected and still current.
 
 ## Labs help site
 

@@ -123,6 +123,16 @@ Notes are saved automatically as you work (autosave), when you click **Save Prog
 
 ---
 
+## Demoing Audit Without Real Data
+
+To show someone the audit review — the photo queue, pass and fail, completing a session, the follow-up tasks that come out of it — without putting a real beneficiary's record on screen, run it against a **synthetic opportunity**.
+
+A synthetic opportunity is a fake, labs-only copy of a real one. Its visits, photos and workers are generated rather than copied, so nothing in it belongs to anyone, and audit sessions over it behave exactly like live ones. Pick it from the opportunity list and audit it as normal.
+
+See [Synthetic Data](synthetic-data.md) for what they are and how to make one.
+
+---
+
 ## Guided Audit Workflows
 
 In addition to the standard audit creation page, Labs includes purpose-built guided workflows for common audit patterns. These workflows walk through the same steps as the standard page but pre-configure certain options and add extra filtering tools suited to specific program needs.

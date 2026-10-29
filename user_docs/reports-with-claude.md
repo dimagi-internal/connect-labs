@@ -214,10 +214,13 @@ Claude can tell you which of these it is:
     Anyone who can reach a report's opportunity or programme through their Connect login can change its page,
     pipelines and indicator definitions. There is no separate "editor" role, so agree within your team who changes what.
 
-!!! tip "Working with real program data in Claude Code?"
-    Use [Safe Mode](connect-safe-mode.md). It's for Claude Code only, and needs a copy of the connect-labs repository and
-    1Password access. It blocks shell, web, file-writing and sub-agent tools, so program data can't be copied out of the
-    session, and it sends everything through a zero-data-retention AI endpoint. It still allows every Labs tool, including edits.
+!!! tip "Don't want Claude seeing real programme data?"
+    Stay on the restricted address, `https://labs.connect.dimagi.com/mcp/no_user_visit/` — the default these setup steps use.
+    Claude can still read and edit your workflows, pipelines and indicator definitions and regenerate saved runs; it simply
+    never sees a real beneficiary's visit. To work against realistic data it *can* read, make a
+    [synthetic clone](synthetic-data.md) of the opportunity. See
+    [What "No User Visit Data" Means](connect-mcp.md#what-no-user-visit-data-means), and
+    [Checking Which Address You Are On](connect-mcp.md#checking-which-address-you-are-on) to confirm which one you have.
 
 ---
 
