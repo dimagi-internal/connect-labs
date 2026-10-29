@@ -226,7 +226,9 @@ def test_api_calls_rule_excludes_cloudwatch_logs_writes():
         pass
 
     _L.add_multi_constructor("!", lambda loader, suffix, node: None)
-    tpl = yaml.load((pathlib.Path(__file__).resolve().parents[3] / "infra/labs-observe-pipeline.yml").read_text(), Loader=_L)
+    tpl = yaml.load(
+        (pathlib.Path(__file__).resolve().parents[3] / "infra/labs-observe-pipeline.yml").read_text(), Loader=_L
+    )
     for branch in tpl["Resources"]["ApiCallsRule"]["Properties"]["EventPattern"]["$or"]:
         assert branch["detail"]["eventName"] == [{"anything-but": ["CreateLogStream", "PutLogEvents"]}]
 
