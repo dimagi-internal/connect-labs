@@ -97,7 +97,7 @@ class TestSending:
     def test_the_link_goes_to_the_recipients_chat_as_a_markdown_link_through_the_chosen_bot(self, da, world, user):
         result = _issue(da, world, connect_username="amina.bello", send_via_bot="bot-1")
         assert result["delivery"] == {"sent": True}
-        (sent,) = [m for i in FakeOCS.instances for m in i.sent]
+        (sent,) = (m for i in FakeOCS.instances for m in i.sent)
         assert (sent["identifier"], sent["platform"], sent["experiment_id"]) == (
             "amina.bello",
             "commcare_connect",
