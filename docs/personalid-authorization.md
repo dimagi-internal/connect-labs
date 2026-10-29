@@ -132,6 +132,13 @@ holding it can use it**. What is added is attribution:
 - `update_links/messaging.link_message()` produces the message text with a
   tappable Markdown link.
 
+**Known limitation.** The count form offers only products the link can
+already name: its orders' items and anything that has ever moved at its
+supply points. A worker sent a link with no order and no stock movements
+therefore has nothing to count. Normal flow (stock is distributed to the
+worker first) is fine; an issuer-selectable product scope is the fix if the
+empty-bag case matters.
+
 **What this does and does not claim.** It is "the link we sent to X was used",
 not "X used it". Everything surfaced must say *sent to*, never *verified*. A
 forwarded link, a shared phone, or a leaked URL all attribute work to X.

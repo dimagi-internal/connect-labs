@@ -53,7 +53,7 @@ class UpdateLink(TimestampedModel):
     # who we SAID it was for -- so what is recorded through it is attributed to
     # that person, labelled as "link sent to", never as "verified". See
     # docs/personalid-authorization.md for how this becomes a verified identity.
-    connect_username = models.CharField(max_length=150, blank=True, default="", db_index=True)
+    connect_username = models.CharField(max_length=150, blank=True, default="", db_default="", db_index=True)
 
     contracts = models.ManyToManyField(Contract, blank=True, related_name="update_links")
     supply_points = models.ManyToManyField(SupplyPoint, blank=True, related_name="update_links")
@@ -121,7 +121,7 @@ class UpdateLinkSubmission(models.Model):
     # Whom the link was sent to when this was recorded, copied from the link so
     # the attribution survives the link being revoked or re-issued. Empty for a
     # link sent to an organisation rather than a person.
-    connect_username = models.CharField(max_length=150, blank=True, default="", db_index=True)
+    connect_username = models.CharField(max_length=150, blank=True, default="", db_default="", db_index=True)
     operation = models.CharField(max_length=64)
     result_type = models.CharField(max_length=32, blank=True, default="")
     result_id = models.IntegerField(null=True, blank=True)

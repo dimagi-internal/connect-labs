@@ -17,11 +17,11 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="updatelink",
             name="connect_username",
-            field=models.CharField(blank=True, db_index=True, default="", max_length=150),
+            field=models.CharField(blank=True, db_index=True, db_default="", default="", max_length=150),
         ),
         migrations.AddField(
             model_name="updatelinksubmission",
             name="connect_username",
-            field=models.CharField(blank=True, db_index=True, default="", max_length=150),
+            field=models.CharField(blank=True, db_index=True, db_default="", default="", max_length=150),
         ),
     ]

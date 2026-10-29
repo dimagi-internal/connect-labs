@@ -171,8 +171,9 @@ class UpdateLinkIssueForm(forms.Form):
         widget=forms.TextInput(attrs={**INPUT, "autocomplete": "off"}),
         help_text=_(
             "When the link goes to one person — a field worker, a store keeper — their PersonalID username. "
-            "What they record is attributed to them, and a link for a worker also covers that worker's own "
-            "stock. This is who it was sent to, not proof of who opened it: anyone holding the link can use it."
+            "What they record is attributed to them, and a listed link for a worker also covers that worker's own "
+            "stock (a link that follows the organisation does not). This is who it was sent to, not proof of "
+            "who opened it: anyone holding the link can use it."
         ),
     )
 
