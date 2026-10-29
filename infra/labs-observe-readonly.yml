@@ -17,8 +17,10 @@ AWSTemplateFormatVersion: '2010-09-09'
 # What this stack owns:
 #   * `labs-jj-observe-readonly` (ManagedPolicy): an explicit ALLOW list of
 #     metadata and metric reads, plus an explicit DENY on every action that
-#     returns content that can carry PHI or a secret (log events, object
-#     bodies, secret/parameter values, task-definition environment, DB data).
+#     returns content that can carry PHI, PII or a secret (log events, object
+#     bodies, secret/parameter values, task commands + environment, stack
+#     parameters/outputs, subscription endpoints, DB data). No exceptions:
+#     nothing this role can read returns user data or a person's address.
 #     Named, so an IAM Identity Center permission set can reference the same
 #     policy as a customer-managed policy and humans get exactly this too.
 #   * `labs-jj-observe-readonly` (Role) with that policy, assumable only by
@@ -90,9 +92,8 @@ Parameters:
     Type: String
     Default: labs-jj-
     Description: >-
-      CloudFormation stacks and SNS topics whose describe calls are allowed.
-      Other stacks in the account (canopy-web, ace-web, runners) may carry
-      non-NoEcho parameters this role has no business reading.
+      CloudFormation stacks whose resource-status reads are allowed. Other
+      stacks in the account (canopy-web, ace-web, runners) are out of scope.
 
 Conditions:
   TrustRunners: !Not [!Equals [!Ref RunnerRoleNamePattern, '']]
@@ -161,12 +162,13 @@ Resources:
               - elasticloadbalancing:DescribeTags
             Resource: '*'
 
-          # Services, deployments, rollout events, running/stopped tasks with
-          # their stop reasons and exit codes, and capacity. DescribeTaskDefinition
-          # is deliberately absent and denied below: a task definition's
-          # `environment` is plaintext, and this account holds revisions
-          # registered out-of-band (Umami, canopy-web, ace-web, older labs)
-          # that nobody has audited for secrets.
+          # Services, deployments, rollout events (incl. "task stopped" /
+          # "unable to place" messages — the crash signal this role relies on),
+          # task ARNs and capacity. Nothing here returns a task's environment or
+          # command. DescribeTasks (returns containerOverrides: the command and
+          # env of one-off tasks), DescribeTaskDefinition (plaintext
+          # `environment`; this account holds out-of-band revisions nobody has
+          # audited) and DescribeServiceRevisions are absent and denied below.
           - Sid: EcsRuntimeMetadata
             Effect: Allow
             Action:
@@ -176,9 +178,7 @@ Resources:
               - ecs:DescribeServices
               - ecs:ListServiceDeployments
               - ecs:DescribeServiceDeployments
-              - ecs:DescribeServiceRevisions
               - ecs:ListTasks
-              - ecs:DescribeTasks
               - ecs:ListTaskDefinitions
               - ecs:ListTaskDefinitionFamilies
               - ecs:ListContainerInstances
@@ -212,16 +212,15 @@ Resources:
               - health:DescribeAffectedEntities
             Resource: '*'
 
-          # Stack status, events and resources for the labs stacks only —
-          # "did the monitoring change set actually apply?". Scoped because
-          # DescribeStacks returns non-NoEcho parameter values. Callers must
-          # pass --stack-name; an unscoped DescribeStacks is evaluated against
-          # '*' and is denied by omission.
+          # Stack and per-resource STATUS for the labs stacks only — "did the
+          # monitoring change set actually apply?". ListStacks gives each
+          # stack's status; DescribeStackResources gives each resource's id and
+          # status. DescribeStacks (parameter values + outputs, e.g. AlarmEmail),
+          # DescribeStackEvents (each event carries the resource's full
+          # properties) and templates/change sets are denied below.
           - Sid: LabsStacks
             Effect: Allow
             Action:
-              - cloudformation:DescribeStacks
-              - cloudformation:DescribeStackEvents
               - cloudformation:DescribeStackResource
               - cloudformation:DescribeStackResources
               - cloudformation:ListStackResources
@@ -230,15 +229,6 @@ Resources:
             Effect: Allow
             Action: cloudformation:ListStacks
             Resource: '*'
-
-          # "Is anyone actually subscribed to the alert topic?" — the check in
-          # infra/README.md. Endpoints are staff/agent mailboxes.
-          - Sid: AlertTopicSubscriptions
-            Effect: Allow
-            Action:
-              - sns:GetTopicAttributes
-              - sns:ListSubscriptionsByTopic
-            Resource: !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${LabsStackPrefix}*'
 
           # ── DENY (backstop) ───────────────────────────────────────────────
           # Every read below returns CONTENT that can carry PHI or a secret.
@@ -292,6 +282,21 @@ Resources:
               - ec2:DescribeLaunchTemplateVersions
               - ec2:GetConsoleOutput
               - ec2:GetConsoleScreenshot
+            Resource: '*'
+          - Sid: DenyTaskCommandsAndConfigContent
+            Effect: Deny
+            Action:
+              - ecs:DescribeTasks # containerOverrides: command + env of one-off tasks
+              - ecs:DescribeTaskSets
+              - ecs:DescribeServiceRevisions
+              - cloudformation:DescribeStacks # parameter values + outputs
+              - cloudformation:DescribeStackEvents # ResourceProperties of every resource
+              - cloudformation:GetTemplate
+              - cloudformation:GetTemplateSummary
+              - cloudformation:DescribeChangeSet
+              - sns:ListSubscriptions # endpoints = email addresses
+              - sns:ListSubscriptionsByTopic
+              - sns:GetSubscriptionAttributes
             Resource: '*'
           - Sid: DenyExecIntoTasks
             Effect: Deny

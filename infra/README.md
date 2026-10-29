@@ -313,7 +313,9 @@ which hands a laptop turn full admin over a HIPAA account. `labs-jj-observe-read
 is the read-only, non-sensitive path: metrics, alarm definitions + history, and
 ALB / ECS / RDS / ElastiCache / labs-stack metadata. It **cannot** read log
 events, S3 object bodies (audit archive, exports, ALB access logs), secret or
-parameter values, task-definition environments, or anything in the database, and
+parameter values, task commands or environments (`DescribeTasks`,
+`DescribeTaskDefinition`), stack parameters/outputs, SNS subscription endpoints
+(email addresses), or anything in the database, and
 it grants no write. The template's comments say why each action is or is not
 sensitive.
 
@@ -355,6 +357,7 @@ aws cloudwatch describe-alarms --alarm-name-prefix labs-jj- --profile labs-obser
 aws logs filter-log-events --log-group-name /ecs/labs-jj-web --limit 1 --profile labs-observe                        # AccessDenied
 aws ecs describe-task-definition --task-definition labs-jj-web --profile labs-observe                                # AccessDenied
 aws secretsmanager get-secret-value --secret-id labs-jj-umami-app-secret --profile labs-observe                       # AccessDenied
+aws ecs describe-tasks --cluster labs-jj-cluster --tasks "$(aws ecs list-tasks --cluster labs-jj-cluster --profile labs-observe --query 'taskArns[0]' --output text)" --profile labs-observe  # AccessDenied
 ```
 
 Anything sensitive (Logs Insights, the HIPAA telemetry review, ALB access logs,
