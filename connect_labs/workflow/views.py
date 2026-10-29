@@ -6953,6 +6953,25 @@ class PipelineDataStreamView(BaseSSEStreamView):
     """
 
     def stream_data(self, request) -> Generator[str]:
+        """The stream, bracketed by ``pipeline_stream`` telemetry (#1575).
+
+        A start line before any work, a step line per pipeline read (rows, cache hit,
+        worker RSS so far), an end line in ``finally``. A worker OOM-killed mid-fan-out
+        leaves a start with no end, and its last step says how big it had grown --
+        the measurement #1575 asked for. Counts, config ids and memory only.
+        """
+        from connect_labs.utils.request_telemetry import StreamTrace
+
+        trace = StreamTrace("pipeline_stream", definition_id=_coerce_int(self.kwargs.get("definition_id")))
+        try:
+            yield from self._stream_pipeline_data(request, trace)
+        except BaseException as exc:
+            trace.outcome = "error" if isinstance(exc, Exception) else "closed"
+            raise
+        finally:
+            trace.end()
+
+    def _stream_pipeline_data(self, request, trace) -> Generator[str]:
         from connect_labs.labs.analysis.pipeline import AnalysisPipeline
         from connect_labs.labs.analysis.sse_streaming import AnalysisPipelineSSEMixin, send_sse_event
 
@@ -7140,6 +7159,14 @@ class PipelineDataStreamView(BaseSSEStreamView):
                                 "row_count": row_count,
                                 "from_cache": from_cache,
                             }
+                            trace.step(
+                                rows=row_count,
+                                pipeline_id=_coerce_int(pipeline_id),
+                                target=i + 1,
+                                targets=len(targets),
+                                from_cache=bool(from_cache),
+                                merged_rows=len(merged_rows) + row_count,
+                            )
                             # Surfaced when SQLBackend rejected a raw-visit
                             # refetch that came back suspiciously smaller than
                             # what was already cached, and served the previous
@@ -7181,6 +7208,13 @@ class PipelineDataStreamView(BaseSSEStreamView):
                                 opp_id,
                             )
                             per_opp_entry = {"error": str(e)}
+                            trace.step(
+                                rows=0,
+                                pipeline_id=_coerce_int(pipeline_id),
+                                target=i + 1,
+                                targets=len(targets),
+                                failed=True,
+                            )
                             if isinstance(e, CCHQAuthError):
                                 per_opp_entry["auth_error"] = "commcare_hq"
                                 per_opp_entry["auth_error_domain"] = e.domain

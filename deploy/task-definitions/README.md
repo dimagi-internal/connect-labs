@@ -88,10 +88,20 @@ out of that stream in one day (#1386).
 These two settings log a fixed fraction of requests _regardless of duration_, which
 is a fair draw. They ship scoped to the endpoint under investigation:
 
-|                                |                                                                                              |
-| ------------------------------ | -------------------------------------------------------------------------------------------- |
-| `TELEMETRY_SAMPLE_RATE`        | `1.0` — every matching request. `0.0` disables the sample entirely (pre-existing behaviour). |
-| `TELEMETRY_SAMPLE_PATH_PREFIX` | `/audit/image/` — empty means every path.                                                    |
+|                                   |                                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `TELEMETRY_SAMPLE_RATE`           | `1.0` — every matching request. `0.0` disables the sample entirely (pre-existing behaviour).      |
+| `TELEMETRY_SAMPLE_PATH_PREFIX`    | empty — every path. Comma-separated prefixes narrow it (it was `/audit/image/` until 2026-10-29). |
+| `TELEMETRY_SAMPLE_EXCLUDE_PREFIX` | `/health/,/static/` — never sampled. ALB health checks are ~75% of the tier's requests.           |
+
+**Why every path now (2026-10-29).** Scoped to `/audit/image/`, the sample held zero
+events across 62 alarm hours (found 2026-09-02): the heavy routes were
+`labs/workflow/api/…/pipeline-data/`, `…/status.json`, `audit/api/…/bulk-data/`, and
+the one prefix sampled none of them. Measured from `Labs/Requests` over its first 11
+hours (2026-10-29, 13:00–23:00Z): ~46,000 requests, of which ~35,000 `health/` and
+~5,800 unresolved (`unmatched` — scanners; dropped from the sample after resolution)
+— leaving ~5,500, i.e. ~12,000 sampled lines/day, ~7 MB/day of ingest. The volume
+note below is the reason to re-check before raising traffic, not a reason to scope.
 
 **Volume, before you widen it.** Measured from ALB access logs, 2026-08-30 → 09-01:
 the labs target group serves ~28,000 requests/day, of which `/audit/image/` is ~6,200
