@@ -15,6 +15,16 @@ python3 tools/perf_triage.py --hours 168        # the weekly telemetry-review pa
 Run that first. The sections below are the manual fallback and the reasoning
 behind each threshold.
 
+**Which AWS profile.** Metric, alarm and ECS/ALB/RDS metadata reads use
+`--profile labs-observe`: the read-only `labs-jj-observe-readonly` role
+(connect-labs#2770), no SSO approval. `perf_triage.py` uses it by default; an
+agent gets the profile from `canopy aws profile --role labs-observe`, a human
+from the chained profile in `infra/README.md`. Only three things here stay on
+the admin `--profile labs` SSO session: **raw application log events**
+(`/ecs/labs-jj-*`, denied to labs-observe), **raw ALB access logs** in S3 (§3),
+and **writes** (§6). `perf_triage.py --profile labs` is the override if a read
+is ever denied.
+
 Any window works; the metric period widens automatically past 120h to stay under
 CloudWatch's 1440-datapoint cap, and the verdict header prints the period it used.
 A wider period averages short spikes away, so **widen to find an incident, then
@@ -51,7 +61,7 @@ window and you will draw a confident wrong conclusion. Always pass an explicit
 ## 1. Alarm state → branch
 
 ```bash
-aws cloudwatch describe-alarms --profile labs --region us-east-1 \
+aws cloudwatch describe-alarms --profile labs-observe --region us-east-1 \
   --query 'MetricAlarms[?starts_with(AlarmName,`labs-jj`)].{Name:AlarmName,State:StateValue}' \
   --output json
 ```
@@ -129,7 +139,7 @@ So on a `labs-jj-web-cpu-high` page whose per-minute shape is spiky, check the k
 same window **before** concluding anything about CPU:
 
 ```bash
-aws cloudwatch get-metric-statistics --profile labs --region us-east-1 \
+aws cloudwatch get-metric-statistics --profile labs-observe --region us-east-1 \
   --namespace "Labs/Web" --metric-name WorkerKilled \
   --start-time 2026-09-08T15:10:00Z --end-time 2026-09-09T07:30:00Z \
   --period 1800 --statistics Sum --output text --query 'Datapoints[].[Timestamp,Sum]'
@@ -146,7 +156,7 @@ across three tasks, every 30-minute bucket reconciling with its log timestamps.)
 END=$(date -u +%Y-%m-%dT%H:%M:%SZ); START=$(date -u -v-3H +%Y-%m-%dT%H:%M:%SZ)
 for SVC in labs-jj-web labs-jj-worker; do
   echo "=== $SVC ==="
-  aws cloudwatch get-metric-statistics --profile labs --region us-east-1 \
+  aws cloudwatch get-metric-statistics --profile labs-observe --region us-east-1 \
     --namespace AWS/ECS --metric-name CPUUtilization \
     --dimensions Name=ClusterName,Value=labs-jj-cluster Name=ServiceName,Value=$SVC \
     --start-time "$START" --end-time "$END" --period 300 --statistics Average \
@@ -283,7 +293,7 @@ are the thing moving.
 END=$(date -u +%Y-%m-%dT%H:%M:%SZ); START=$(date -u -v-3H +%Y-%m-%dT%H:%M:%SZ)
 for M in CPUUtilization DatabaseConnections ReadLatency WriteLatency; do
   echo "=== $M ==="
-  aws cloudwatch get-metric-statistics --profile labs --region us-east-1 \
+  aws cloudwatch get-metric-statistics --profile labs-observe --region us-east-1 \
     --namespace AWS/RDS --metric-name $M \
     --dimensions Name=DBInstanceIdentifier,Value=labs-jj-postgres \
     --start-time "$START" --end-time "$END" --period 300 --statistics Average Maximum \
@@ -303,7 +313,7 @@ also elevated.
 ## 5. Did something ship?
 
 ```bash
-aws ecs describe-services --profile labs --region us-east-1 \
+aws ecs describe-services --profile labs-observe --region us-east-1 \
   --cluster labs-jj-cluster --services labs-jj-web \
   --query 'services[0].events[0:10].[createdAt,message]' --output text
 git log --oneline --since="6 hours ago"
