@@ -120,11 +120,15 @@ Resources:
     Properties:
       AlarmName: labs-jj-synthetic-job-overran
       AlarmDescription: >-
-        A synthetic job's own Fargate machine ran past SYNTHETIC_ECS_MAX_RUNTIME_SECONDS
-        and was stopped, by the job itself or by the reap-synthetic-job-tasks beat. The
-        job is marked failed. Search /ecs/labs-jj-worker for "synthetic job overran" (or,
-        for a standalone MCP job, "long-running job overran") for the job id, then that task's log stream (worker/worker/<task id>) for where it
-        stalled. A cohort that legitimately needs longer: raise the setting.
+        A synthetic job's own Fargate machine ran past
+        SYNTHETIC_ECS_MAX_RUNTIME_SECONDS and was stopped; the job is marked failed.
+        FIRST, before stopped tasks age out (~1h), capture the task ids: aws ecs
+        list-tasks --profile labs-observe --region us-east-1 --cluster labs-jj-cluster
+        --family labs-jj-worker --desired-status STOPPED. Then search
+        /ecs/labs-jj-worker (labs SSO) for "synthetic job overran" (MCP jobs:
+        "long-running job overran") for the job id, and its stream
+        worker/worker/<task id> for where it stalled. A cohort that legitimately needs
+        longer: raise the setting. Runbook: docs/PERFORMANCE_RUNBOOK.md §9.
       Namespace: Labs/Synthetic
       MetricName: JobOverran
       Statistic: Sum
@@ -155,10 +159,14 @@ Resources:
       AlarmName: labs-jj-synthetic-job-machine-died
       AlarmDescription: >-
         A synthetic job's own Fargate machine stopped before the job recorded how it
-        ended, and the reap-synthetic-job-tasks beat marked the job failed. Search
-        /ecs/labs-jj-worker for "its task stopped without a result": the line carries
-        ECS's stop reason. OutOfMemoryError means the job needs a larger machine
-        (SYNTHETIC_ECS_MEMORY); "stopped by user" is someone stopping it by hand.
+        ended; the reap-synthetic-job-tasks beat marked the job failed. FIRST, before
+        stopped tasks age out (~1h), capture the task ids: aws ecs list-tasks
+        --profile labs-observe --region us-east-1 --cluster labs-jj-cluster --family
+        labs-jj-worker --desired-status STOPPED. Then search /ecs/labs-jj-worker (labs
+        SSO) for "its task stopped without a result": the line carries ECS's stop
+        reason. OutOfMemoryError means a larger machine (SYNTHETIC_ECS_MEMORY);
+        "stopped by user" is someone stopping it by hand. Runbook:
+        docs/PERFORMANCE_RUNBOOK.md §9.
       Namespace: Labs/Synthetic
       MetricName: MachineDied
       Statistic: Sum

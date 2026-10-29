@@ -66,14 +66,24 @@ aws cloudwatch describe-alarms --profile labs-observe --region us-east-1 \
   --output json
 ```
 
+Every paging alarm's description names its own first `--profile labs-observe` query and
+the section below to continue in. This table is the same routing, in one place:
+
 | In ALARM | Go to | Conclusion |
 | --- | --- | --- |
-| `labs-jj-web-cpu-high` | §3 | web tier saturated — the common case |
-| `labs-jj-alb-latency-high` only | §3 | slow dependency, not necessarily CPU |
-| `labs-jj-rds-connections-high` | §4 | connection pressure |
-| `labs-jj-web-no-healthy-targets` | §5 | hard outage — mitigate first |
-| `labs-jj-alb-5xx-high` | §3 | ALB cannot get a usable response |
+| `labs-jj-web-cpu-high-actionable` (`labs-jj-web-cpu-high` is its raw, silent signal) | §1, §8, §3 | web tier saturated, or memory exhaustion re-forking workers |
+| `labs-jj-alb-latency-high` only | §3 | slow route or dependency, not necessarily CPU |
+| `labs-jj-rds-connections-high`, `-rds-slot-exhaustion` | §4 | connection pressure; usually slow requests holding connections |
+| `labs-jj-rds-free-storage-low` | §4 | disk filling; does not self-heal |
+| `labs-jj-web-no-healthy-targets` | §10, §6 | hard outage — mitigate first |
+| `labs-jj-alb-5xx-high` | §10 | ALB cannot get a usable response from some service |
+| `labs-jj-alb-target-5xx-high`, `-canopy-web-…`, `-ace-web-target-5xx-high` | §10 | that service's app returned errors |
+| `labs-jj-web-worker-crash-loop`, `-web-worker-kill-rate-actionable` | §8 | gunicorn workers being OOM-killed |
+| `labs-jj-ai-review-empty-audit`, `-ai-classifier-saturation`, `-synthetic-job-*` | §9 | a background job failed; the site is fine |
 | nothing | §2 | confirm there is a problem at all before digging |
+
+`<page>` in a description's command is the alarm's UTC time, from the alarm history (not your
+inbox clock).
 
 **Is the alarm itself the problem?** If it has paged repeatedly and each ALARM cleared within
 a few minutes, the pattern is a fact about the *config*, not about the tier — measure it before
@@ -175,6 +185,26 @@ step:
 Baseline: median web CPU is **0.8%**. Anything sustained above 90% is real.
 
 ## 3. Which request, and why is it expensive
+
+**First, no SSO: which route.** Every labs request writes the `Labs/Requests` metrics
+(`route`, `method`, `status_class`; README § Why there are two layers of request telemetry),
+so labs-observe can rank routes by total time in the window:
+
+```bash
+aws cloudwatch get-metric-data --profile labs-observe --region us-east-1 \
+  --start-time <page-30m>Z --end-time <page>Z --metric-data-queries \
+  '[{"Id":"q","Period":300,"Expression":"SELECT SUM(RequestLatency) FROM \"Labs/Requests\" GROUP BY route ORDER BY SUM() DESC LIMIT 5"}]'
+```
+
+Swap `SUM(RequestLatency)` for `MAX(RequestLatency)` to find the single slowest route, or add
+`WHERE status_class = '5xx'` to `SUM(RequestCount)` for errors (§10). The route names the view;
+the app telemetry below says why it was expensive.
+
+`labs-jj-alb-latency-high` reads the **labs web target group** only, and judges a 5-minute
+period only if it had **40+ requests** (`LatencyMinRequests`, #2768). Below that, p95 is the
+slowest one or two requests. The ALB-wide p95 also counts canopy-web, whose night-time p95
+runs ~14s on 250-400 requests per 5 minutes; that, not labs, is what flapped the alarm 10 times
+on 2026-10-28/29. So an ALB-wide p95 graph is not evidence about labs.
 
 **Primary source — app telemetry.** CloudWatch Logs Insights on
 `/ecs/labs-jj-web`:
@@ -302,7 +332,22 @@ done
 ```
 
 Baselines: CPU 7–12%, read/write latency sub-millisecond, connections 5–15
-against ~155 slots.
+against ~829 slots.
+
+**`labs-jj-rds-free-storage-low`:** read the allocation and autoscaling ceiling, then the rate:
+
+```bash
+aws rds describe-db-instances --profile labs-observe --region us-east-1 \
+  --db-instance-identifier labs-jj-postgres \
+  --query 'DBInstances[0].[AllocatedStorage,MaxAllocatedStorage]'
+aws cloudwatch get-metric-statistics --profile labs-observe --region us-east-1 \
+  --namespace AWS/RDS --metric-name FreeStorageSpace \
+  --dimensions Name=DBInstanceIdentifier,Value=labs-jj-postgres \
+  --start-time <page-24h>Z --end-time <page>Z --period 3600 --statistics Minimum
+```
+
+Allocated at the ceiling means autoscaling cannot help; a resize is a write (§6). A full disk
+also stops beat's hourly cache cleanup, so it does not recover on its own.
 
 **Connections are a symptom, not a cause.** Sync Django views under ASGI each
 hold a connection from the asgiref thread pool, so a request pile-up shows here
@@ -346,6 +391,92 @@ DB connections against a ~155-slot instance. Fix the request path.
 Record the review as an audit event (`POST /labs/audit-trail/`) naming what was
 checked. §164.308(a)(1)(ii)(D) requires the activity review to be *practised*,
 and the review itself is an auditable event.
+
+## 8. Worker kills (`labs-jj-web-worker-crash-loop`, `-web-worker-kill-rate-actionable`)
+
+Kills and memory at one-minute resolution, both labs-observe:
+
+```bash
+aws cloudwatch get-metric-statistics --profile labs-observe --region us-east-1 \
+  --namespace Labs/Web --metric-name WorkerKilled --statistics Sum --period 60 \
+  --start-time <page-1h>Z --end-time <page>Z
+aws cloudwatch get-metric-statistics --profile labs-observe --region us-east-1 \
+  --namespace AWS/ECS --metric-name MemoryUtilization --statistics Maximum --period 60 \
+  --dimensions Name=ClusterName,Value=labs-jj-cluster Name=ServiceName,Value=labs-jj-web \
+  --start-time <page-1h>Z --end-time <page>Z
+```
+
+These are kernel OOM kills of single requests, so the memory gauge often reads normal. Two
+causes seen: one request materialising a whole opportunity's visits (a large
+`[SQL] Loaded N visits` near the kills), and the RawVisitCache stampede (#1361), where several
+workers rebuild one opportunity's cache at once. Reading the logs needs `labs` SSO
+(`tools/kill_stampede_triage.py`). **Caveat since 2026-10-29 (#2776):** outbound-request log
+lines no longer carry query strings, so the old stampede tell (repeating `page_size=2500` /
+`last_id` cursors) is gone from the logs. A `probably not #1361` verdict from the tool is no
+evidence either way until it gets a new tell.
+
+## 9. Job alarms (AI review, synthetic jobs)
+
+These say a background job failed. The site is usually fine.
+
+- **`labs-jj-ai-review-empty-audit`**: `Labs/AIReview` `EmptyAudit` (Sum, `--period 300`) says
+  how many runs and when. The skip breakdown is on the job record,
+  `result.ai_review.skip_reasons`: `no_reviewer_reading` is a field-path misconfig,
+  `image_download_failed` a blob fetch (`synth-*` blobs go through the synthetic image server).
+- **`labs-jj-ai-classifier-saturation`**: `Labs/AIReview` `ClassifierTimeout` (Sum,
+  `--period 300`) says burst or sustained. Then `python3 tools/classifier_outcomes.py`
+  (`labs` SSO) counts runs in flight: two or more overlapping is #1231; one run means the gateway
+  itself was slow.
+- **`labs-jj-synthetic-job-overran`, `-machine-died`**: capture the stopped task ids before
+  they age out (~1h):
+
+  ```bash
+  aws ecs list-tasks --profile labs-observe --region us-east-1 --cluster labs-jj-cluster \
+    --family labs-jj-worker --desired-status STOPPED
+  ```
+
+  Then search `/ecs/labs-jj-worker` (`labs` SSO) for the line the alarm description quotes; its
+  stream `worker/worker/<task id>` shows where the job stalled.
+
+## 10. 5xx and outage pages: name the service first
+
+The ALB fronts four services (labs web, canopy-web, ace-web, Umami), and canopy-web and ace-web
+use the same `labs-jj-postgres`. So answer "which service?" from metrics before reading any log.
+
+- **Target 5xx** (`labs-jj-alb-target-5xx-high`, `-canopy-web-…`, `-ace-web-…`): the page names
+  the service. For labs, rank the failing routes:
+
+  ```bash
+  aws cloudwatch get-metric-data --profile labs-observe --region us-east-1 \
+    --start-time <page-30m>Z --end-time <page>Z --metric-data-queries \
+    '[{"Id":"q","Period":300,"Expression":"SELECT SUM(RequestCount) FROM \"Labs/Requests\" WHERE status_class = '\''5xx'\'' GROUP BY route ORDER BY SUM() DESC LIMIT 5"}]'
+  ```
+
+  Every route failing at once points at the shared tier: read the RDS alarm states
+  (`aws cloudwatch describe-alarms --profile labs-observe --region us-east-1 --alarm-name-prefix labs-jj-rds`).
+  For canopy-web, a page in one or two buckets is usually its own migrating deploy (`gh run list
+  -R dimagi-internal/canopy-web -w "Deploy to Labs (AWS)"`, #2404, #2454).
+- **ELB 5xx** (`labs-jj-alb-5xx-high`) has no target-group dimension, and target 5xx cannot see
+  it. A task that died sent nothing. Find the service that lost its targets:
+
+  ```bash
+  aws cloudwatch get-metric-data --profile labs-observe --region us-east-1 \
+    --start-time <page-30m>Z --end-time <page>Z --metric-data-queries \
+    '[{"Id":"q","Period":60,"Expression":"SELECT MIN(HealthyHostCount) FROM SCHEMA(\"AWS/ApplicationELB\", LoadBalancer, TargetGroup) GROUP BY TargetGroup"}]'
+  ```
+
+- **No healthy targets** (`labs-jj-web-no-healthy-targets`), or a target group that dipped above:
+  date the task deaths and replacements. `<svc>` is `labs-jj-web`, `labs-jj-canopy-web`,
+  `labs-jj-ace-web` or `labs-jj-umami`:
+
+  ```bash
+  aws ecs describe-services --profile labs-observe --region us-east-1 \
+    --cluster labs-jj-cluster --services <svc> \
+    --query 'services[0].events[0:8].[createdAt,message]' --output text
+  ```
+
+  The stop **reason** (`describe-tasks`, exit code 137 + `OutOfMemoryError`) needs `labs` SSO and
+  ages out about an hour after the stop, so start that login as soon as a death shows up.
 
 ---
 

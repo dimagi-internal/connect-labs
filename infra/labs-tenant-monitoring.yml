@@ -93,16 +93,15 @@ Resources:
     Properties:
       AlarmName: labs-jj-canopy-web-target-5xx-high
       AlarmDescription: >-
-        canopy-web (the fleet control plane at /canopy/*) is answering with 5xx
-        — the application itself returned an error. Its database is on
-        labs-jj-postgres, so check the RDS alarms first: on 2026-09-08 a full
-        disk showed up here as ~1,200 5xx in 45 minutes while labs' own web
-        tier stayed under 20 per bucket. It pages only on 3 of 4 breaching
-        5-minute buckets, because canopy-web's own deploys 5xx for up to two
-        (it migrates before cutover; 2026-10-09 ran 62 then 89, 2026-10-13
-        ran 12 on a NOT NULL column). So this is sustained, not a deploy, unless
-        a deploy is stuck: check `gh run list -R dimagi-internal/canopy-web -w
-        "Deploy to Labs (AWS)"`. If neither, read /ecs/labs-jj-canopy-web.
+        canopy-web (the fleet control plane) answered with 5xx in 3 of 4 five-minute
+        buckets. Its database is labs-jj-postgres, so FIRST: aws cloudwatch
+        describe-alarms --profile labs-observe --region us-east-1 --alarm-name-prefix
+        labs-jj-rds --query 'MetricAlarms[].[AlarmName,StateValue]' --output text (on
+        2026-09-08 a full disk showed up here as ~1,200 5xx in 45 minutes). Its own
+        deploys 5xx for up to two buckets (it migrates before cutover; 2026-10-09 ran
+        62 then 89), so a third means a stuck deploy or a real fault: gh run list -R
+        dimagi-internal/canopy-web -w "Deploy to Labs (AWS)". If neither, read
+        /ecs/labs-jj-canopy-web (labs SSO). Runbook: docs/PERFORMANCE_RUNBOOK.md §10.
       Namespace: AWS/ApplicationELB
       MetricName: HTTPCode_Target_5XX_Count
       Dimensions:
@@ -125,11 +124,13 @@ Resources:
     Properties:
       AlarmName: labs-jj-ace-web-target-5xx-high
       AlarmDescription: >-
-        ace-web (served at /ace/*) is answering with 5xx — the application
-        itself returned an error, as opposed to the ALB failing to reach it.
-        It shares this ALB and the labs RDS instance with labs and canopy-web,
-        so if the RDS or canopy-web alarms fired at the same time, the cause is
-        the shared tier, not ace-web. Otherwise read ace-web's ECS log group.
+        ace-web (/ace/*) answered with 5xx: the app returned errors, not the ALB
+        failing to reach it. It shares the ALB and labs-jj-postgres with labs and
+        canopy-web. FIRST: aws cloudwatch describe-alarms --profile labs-observe
+        --region us-east-1 --state-value ALARM --query 'MetricAlarms[].AlarmName'
+        --output text. RDS or canopy-web alarms firing too means the shared tier, not
+        ace-web. Otherwise read /ecs/labs-jj-ace-web (labs SSO). Runbook:
+        docs/PERFORMANCE_RUNBOOK.md §10.
       Namespace: AWS/ApplicationELB
       MetricName: HTTPCode_Target_5XX_Count
       Dimensions:
