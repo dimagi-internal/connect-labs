@@ -49,6 +49,11 @@ _ISSUE_DATA = _data_with(
     # who we SAY the link is for, so what is recorded through it is attributed
     # to them. A listed link also covers that user's own stock point(s).
     connect_username={"type": "string", "maxLength": 150},
+    # An Open Chat Studio chatbot (public id) to send the link through, to that
+    # user's PersonalID chat, as the person issuing it. The link is created
+    # either way; if the send fails the response says why and carries the link
+    # to pass on by hand.
+    send_via_bot={"type": "string", "maxLength": 64},
 )
 
 
@@ -80,6 +85,9 @@ def serialize_link(link) -> dict:
         "org_name": link.org.name,
         "label": link.label,
         "connect_username": link.connect_username,
+        "sent_at": link.sent_at.isoformat() if link.sent_at else None,
+        "sent_via_bot": link.sent_via_bot,
+        "send_error": link.send_error,
         "coverage": link.coverage,
         "follows_org": link.follows_org,
         "contract_ids": [c.pk for c in contracts],
@@ -158,6 +166,8 @@ def update_link_issue(access, data):
     approval_ids = list(data.get("approval_ids") or [])
     coverage = data.get("coverage") or COVERAGE_LISTED
     username = (data.get("connect_username") or "").strip()
+    if (data.get("send_via_bot") or "").strip() and not username:
+        raise ValueError("to send the link through PersonalID, name the PersonalID user it is for (connect_username)")
     if username and coverage == COVERAGE_LISTED:
         # A link sent to a worker covers that worker's own stock: the point
         # that holds what they carry. Looked up in this programme, so a name
@@ -222,7 +232,46 @@ def _create(access, program_id, org, data, coverage, contracts, points, approval
     link.contracts.set(contracts)
     link.supply_points.set(points)
     link.approvals.set(approvals)
-    return {**serialize_link(link), "token": raw, "url": public_url(raw)}
+    url = public_url(raw)
+    delivery = _send(access, link, (data.get("send_via_bot") or "").strip(), url)
+    result = {**serialize_link(link), "token": raw, "url": url}
+    if delivery is not None:
+        result["delivery"] = delivery
+    return result
+
+
+def _send(access, link, bot, url):
+    """Send the freshly made link to its recipient's PersonalID chat. None when no send was asked for.
+
+    Never raises: the link exists and the issuer holds it, so a refusal (no
+    consent yet, OCS not connected) is reported beside it rather than undoing it.
+    Synthetic programmes send nothing, as a workflow's coaching send does.
+    """
+    if not bot:
+        return None
+    from connect_labs.supply_chain import scopes as synthetic_scopes
+    from connect_labs.supply_chain.update_links import delivery
+    from connect_labs.supply_chain.update_links.messaging import link_message
+
+    if synthetic_scopes.is_synthetic(link.program_id):
+        return {"sent": False, "synthetic": True, "reason": "Synthetic programme: nothing is sent."}
+    try:
+        delivery.send_text(
+            _caller_user(access),
+            bot=bot,
+            username=link.connect_username,
+            text=link_message(url, org_name=link.org.name, label=link.label),
+            session_data={"supply_update_link_id": str(link.pk), "program_id": str(link.program_id)},
+        )
+    except delivery.DeliveryError as e:
+        link.send_error = str(e)[:255]
+        link.save(update_fields=["send_error", "updated_at"])
+        return {"sent": False, "reason": str(e)}
+    link.sent_at = timezone.now()
+    link.sent_via_bot = bot[:64]
+    link.send_error = ""
+    link.save(update_fields=["sent_at", "sent_via_bot", "send_error", "updated_at"])
+    return {"sent": True}
 
 
 @register_operation(
