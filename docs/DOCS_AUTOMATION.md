@@ -29,6 +29,7 @@ connect_labs/microplans/simple_*, static/ + templates/microplans/simple_*
 connect_labs/ai/             → AI Features
 connect_labs/mcp/, docs/MCP_SETUP.md, docs/WORKFLOW_EDITOR_QUICKSTART.md
                              → Connect MCP
+connect_labs/labs/synthetic/ → Synthetic Data (help site only; no Confluence page)
 ```
 
 `docs/SAFE_MODE.md` is deliberately unmapped. Safe Mode is an engineering-only tool and
@@ -56,7 +57,7 @@ user_docs/
   ai-features.md         AI Features
   connect-mcp.md         Connect MCP
   connect-safe-mode.md   Excluded from the build (exclude_docs in mkdocs.yml); not published
-  synthetic-data.md      Synthetic Data (not auto-updated)
+  synthetic-data.md      Synthetic Data (auto-updated from connect_labs/labs/synthetic/)
   reports-with-claude.md (not auto-updated)
   semantic-layer.md, benchmarks.md, cross-program-rollups.md,
   shared-report-templates.md, weekly-trends-and-snapshots.md
