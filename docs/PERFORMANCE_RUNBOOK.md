@@ -234,6 +234,8 @@ and confirm every client on the path in question reports itself.
 
 The cheap cross-check that does not depend on any of this: **httpx logs every
 request at INFO**, so the web log has the ground truth regardless of who opted in.
+(Since 2026-10-29 those lines carry no query string and `{id}` for id-like path segments --
+`connect_labs/utils/log_scrub.py` -- so count by host and path shape, not by exact URL.)
 Pull the raw lines for the request's own time window and count them.
 
 *Why this is here:* on 2026-08-26 `/labs/workflow/<id>/run/` logged

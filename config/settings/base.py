@@ -402,6 +402,11 @@ LOGGING = {
             "format": "%(message)s",
         },
     },
+    "filters": {
+        # Outbound-request lines keep method/host/path shape/status but lose
+        # query strings and id segments (connect_labs/utils/log_scrub.py).
+        "scrub_outbound_urls": {"()": "connect_labs.utils.log_scrub.OutboundUrlScrubFilter"},
+    },
     "handlers": {
         "console": {
             "level": "DEBUG",
@@ -421,6 +426,13 @@ LOGGING = {
     },
     "root": {"level": "INFO", "handlers": ["console"]},
     "loggers": {
+        # Filters sit on the LOGGERS, not a handler: a logger filter runs before
+        # any handler (so Celery's hijacked root handler and Sentry's breadcrumb
+        # hook both see the scrubbed record). No handlers here -- they propagate.
+        **{
+            name: {"filters": ["scrub_outbound_urls"], "propagate": True}
+            for name in ("httpx", "httpcore", "urllib3", "requests")
+        },
         "django.template": {
             "handlers": ["console"],
             "level": env("DJANGO_TEMPLATE_LOG_LEVEL", default="WARN"),
