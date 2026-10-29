@@ -1,0 +1,782 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Labs observe pipeline: SCRUBBED derivatives of the sources the observe role
+# (infra/labs-observe-readonly.yml) may not read raw. Sixth slice of
+# infrastructure-as-code for the labs AWS environment — see infra/README.md.
+#
+# The sensitivity line (Jonathan, 2026-10-29): program / beneficiary /
+# frontline-worker data, secrets/credentials and raw request content are
+# sensitive; staff and system identity is not. Several debugging sources mix the
+# two — application logs, ALB access logs, ECS task details, CloudTrail — so the
+# raw source stays denied and this stack writes an ALLOW-LISTED projection of it
+# into /labs-jj/observe/*, the only log groups the observe role can read:
+#
+#   /labs-jj/observe/ecs-events        ECS task STOPPED (stop code + reason, exit
+#                                      code per container, task def family:rev,
+#                                      timestamps) and deployment state changes.
+#                                      Never containerOverrides (task commands).
+#   /labs-jj/observe/aws-health        AWS Health events (any support plan).
+#   /labs-jj/observe/api-calls         Management API calls that wrote or failed:
+#                                      who (principal, sourceIdentity, IP), what
+#                                      (service, event), error code. Never request
+#                                      parameters / response elements.
+#   /labs-jj/observe/request-telemetry Slow / sampled labs requests: route
+#                                      TEMPLATE, method, status, *_ms. Never the
+#                                      path, username or outbound hosts.
+#   /labs-jj/observe/alb-requests      Every ALB request: target group, method,
+#                                      route template (identifying segments ->
+#                                      {id}, query dropped), statuses, latencies,
+#                                      target, bytes. Never client IP, UA, query.
+#
+# plus metric filters that COUNT without copying content: ERROR lines by logger
+# (labs web/worker, canopy-web, ace-web), audit events by action/outcome/source,
+# Umami P2002s.
+#
+# Each projection is a small Lambda whose source lives in infra/observe_pipeline/
+# and is tested there (connect_labs/utils/tests/test_observe_scrubbers.py asserts
+# no disallowed field survives). The ZipFile blocks below are COPIES written by
+# `python infra/observe_pipeline/render.py`; a test fails if they drift.
+#
+# Also owns the account's management-events CloudTrail trail (there was none,
+# only the 90-day event history), into a private bucket nobody in the observe
+# role can read; EventBridge's "AWS API Call via CloudTrail" feed is what the
+# api-calls projection consumes.
+#
+# Needs labs-access-logs.yml's EventBridge notifications on the ALB log bucket.
+#
+#   aws cloudformation deploy --profile labs --region us-east-1 \
+#     --stack-name labs-jj-observe-pipeline \
+#     --template-file infra/labs-observe-pipeline.yml \
+#     --capabilities CAPABILITY_NAMED_IAM
+
+Description: >-
+  Labs observe pipeline: scrubbed, allow-listed projections of ECS task events,
+  AWS Health, CloudTrail API calls, labs request telemetry and ALB access logs
+  into /labs-jj/observe/*, a management-events trail, and count-only metric
+  filters on the app log groups.
+
+Parameters:
+  WebLogGroupName:
+    Type: String
+    Default: /ecs/labs-jj-web
+  WorkerLogGroupName:
+    Type: String
+    Default: /ecs/labs-jj-worker
+  CanopyWebLogGroupName:
+    Type: String
+    Default: /ecs/labs-jj-canopy-web
+    Description: Empty = no canopy-web ERROR filter.
+  AceWebLogGroupName:
+    Type: String
+    Default: ''
+    Description: >-
+      ace-web's log group, if its lines use the `LEVEL date time logger ...`
+      shape. Empty = no ace-web ERROR filter.
+  UmamiLogGroupName:
+    Type: String
+    Default: /ecs/labs-jj-umami
+  AlbLogsBucketName:
+    Type: String
+    Default: labs-jj-alb-access-logs
+  RetentionDays:
+    Type: Number
+    Default: 30
+
+Conditions:
+  HasCanopyWeb: !Not [!Equals [!Ref CanopyWebLogGroupName, '']]
+  HasAceWeb: !Not [!Equals [!Ref AceWebLogGroupName, '']]
+
+Resources:
+  # ── the scrubbed log groups (the observe role may read these) ─────────────
+  EcsEventsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      {
+        LogGroupName: /labs-jj/observe/ecs-events,
+        RetentionInDays: !Ref RetentionDays,
+      }
+  HealthGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      {
+        LogGroupName: /labs-jj/observe/aws-health,
+        RetentionInDays: !Ref RetentionDays,
+      }
+  ApiCallsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      { LogGroupName: /labs-jj/observe/api-calls, RetentionInDays: 90 }
+  RequestTelemetryGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      {
+        LogGroupName: /labs-jj/observe/request-telemetry,
+        RetentionInDays: !Ref RetentionDays,
+      }
+  AlbRequestsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      {
+        LogGroupName: /labs-jj/observe/alb-requests,
+        RetentionInDays: !Ref RetentionDays,
+      }
+
+  # ── events projector: ECS, Health, CloudTrail -> allow-listed records ─────
+  ProjectorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: write-scrubbed
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource:
+                  - !Sub '${EcsEventsGroup.Arn}'
+                  - !Sub '${HealthGroup.Arn}'
+                  - !Sub '${ApiCallsGroup.Arn}'
+
+  ProjectorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: labs-jj-observe-events-projector
+      Description: ECS / Health / CloudTrail events -> allow-listed records in /labs-jj/observe/*
+      Runtime: python3.12
+      Handler: index.handler
+      Timeout: 30
+      MemorySize: 128
+      Role: !GetAtt ProjectorRole.Arn
+      Environment:
+        Variables:
+          GROUP_ECS: !Ref EcsEventsGroup
+          GROUP_HEALTH: !Ref HealthGroup
+          GROUP_API: !Ref ApiCallsGroup
+      Code:
+        ZipFile: |
+          # BEGIN events_projector.py
+          # Projects EventBridge events into /labs-jj/observe/* keeping ONLY allow-listed
+          # fields (labs-observe-pipeline.yml). Inlined into the template by render.py.
+          import json
+          import os
+          import time
+          import uuid
+
+          import boto3
+
+          logs = boto3.client("logs")
+
+
+          def _g(d, *path):
+              for p in path:
+                  d = d.get(p) if isinstance(d, dict) else None
+              return d
+
+
+          def _tail(arn):
+              return str(arn or "").rsplit("/", 1)[-1] or None
+
+
+          def project(ev):
+              """(log group key, record) for one event, or None to drop it."""
+              d, src, kind = ev.get("detail") or {}, ev.get("source"), ev.get("detail-type")
+              if src == "aws.ecs" and kind == "ECS Task State Change":
+                  return "ecs", {
+                      "kind": "task_stopped",
+                      "time": ev.get("time"),
+                      "cluster": _tail(d.get("clusterArn")),
+                      "group": d.get("group"),
+                      "task_definition": _tail(d.get("taskDefinitionArn")),
+                      "stop_code": d.get("stopCode"),
+                      "stopped_reason": d.get("stoppedReason"),
+                      "started_at": d.get("startedAt"),
+                      "stopped_at": d.get("stoppedAt"),
+                      "containers": [
+                          {"name": c.get("name"), "exit_code": c.get("exitCode"), "reason": c.get("reason")}
+                          for c in d.get("containers") or []
+                      ],
+                  }
+              if src == "aws.ecs" and kind == "ECS Deployment State Change":
+                  return "ecs", {
+                      "kind": "deployment",
+                      "time": ev.get("time"),
+                      "event": d.get("eventName"),
+                      "deployment_id": d.get("deploymentId"),
+                      "reason": d.get("reason"),
+                      "service": _tail((ev.get("resources") or [None])[0]),
+                  }
+              if src == "aws.health":
+                  return "health", {
+                      "kind": "aws_health",
+                      "time": ev.get("time"),
+                      "service": d.get("service"),
+                      "event_type": d.get("eventTypeCode"),
+                      "category": d.get("eventTypeCategory"),
+                      "status": d.get("statusCode"),
+                      "start": d.get("startTime"),
+                      "end": d.get("endTime"),
+                  }
+              if kind == "AWS API Call via CloudTrail":
+                  return "api", {
+                      "kind": "api_call",
+                      "time": d.get("eventTime"),
+                      "service": d.get("eventSource"),
+                      "event": d.get("eventName"),
+                      "principal": _g(d, "userIdentity", "arn"),
+                      "source_identity": _g(d, "userIdentity", "sessionContext", "sourceIdentity"),
+                      "error_code": d.get("errorCode"),
+                      "read_only": d.get("readOnly"),
+                      "source_ip": d.get("sourceIPAddress"),
+                  }
+              return None
+
+
+          def handler(ev, ctx):
+              out = project(ev)
+              if out is None:
+                  return {"written": 0}
+              group = os.environ["GROUP_" + out[0].upper()]
+              stream = time.strftime("%Y/%m/%d/") + uuid.uuid4().hex
+              logs.create_log_stream(logGroupName=group, logStreamName=stream)
+              logs.put_log_events(
+                  logGroupName=group,
+                  logStreamName=stream,
+                  logEvents=[{"timestamp": int(time.time() * 1000), "message": json.dumps(out[1], separators=(",", ":"))}],
+              )
+              return {"written": 1}
+          # END events_projector.py
+
+  EcsTaskStoppedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: ECS task stopped -> scrubbed /labs-jj/observe/ecs-events
+      EventPattern:
+        source: [aws.ecs]
+        detail-type: [ECS Task State Change]
+        detail: { lastStatus: [STOPPED] }
+      Targets: [{ Id: projector, Arn: !GetAtt ProjectorFunction.Arn }]
+  EcsDeploymentRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: ECS deployment state change -> scrubbed /labs-jj/observe/ecs-events
+      EventPattern:
+        source: [aws.ecs]
+        detail-type: [ECS Deployment State Change]
+      Targets: [{ Id: projector, Arn: !GetAtt ProjectorFunction.Arn }]
+  HealthRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: AWS Health -> /labs-jj/observe/aws-health
+      EventPattern:
+        source: [aws.health]
+      Targets: [{ Id: projector, Arn: !GetAtt ProjectorFunction.Arn }]
+  ApiCallsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Management API calls that wrote or failed -> scrubbed /labs-jj/observe/api-calls
+      EventPattern:
+        detail-type: [AWS API Call via CloudTrail]
+        $or:
+          - detail: { readOnly: [false] }
+          - detail: { errorCode: [{ exists: true }] }
+      Targets: [{ Id: projector, Arn: !GetAtt ProjectorFunction.Arn }]
+
+  ProjectorInvokeEcsTask:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ProjectorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt EcsTaskStoppedRule.Arn
+  ProjectorInvokeEcsDeployment:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ProjectorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt EcsDeploymentRule.Arn
+  ProjectorInvokeHealth:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ProjectorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt HealthRule.Arn
+  ProjectorInvokeApiCalls:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ProjectorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ApiCallsRule.Arn
+
+  # ── the management-events trail (the account had none) ───────────────────
+  # Raw CloudTrail records carry request parameters (RunTask overrides,
+  # RegisterTaskDefinition env), so the bucket is private and the observe role
+  # is denied s3:GetObject and cloudtrail:LookupEvents; agents read the
+  # api-calls projection instead.
+  TrailBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub 'labs-jj-cloudtrail-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      OwnershipControls:
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-365d
+            Status: Enabled
+            ExpirationInDays: 365
+  TrailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref TrailBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: CloudTrailAclCheck
+            Effect: Allow
+            Principal: { Service: cloudtrail.amazonaws.com }
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt TrailBucket.Arn
+            Condition:
+              StringEquals:
+                aws:SourceArn: !Sub 'arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/labs-jj-management'
+          - Sid: CloudTrailWrite
+            Effect: Allow
+            Principal: { Service: cloudtrail.amazonaws.com }
+            Action: s3:PutObject
+            Resource: !Sub '${TrailBucket.Arn}/AWSLogs/${AWS::AccountId}/*'
+            Condition:
+              StringEquals:
+                aws:SourceArn: !Sub 'arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/labs-jj-management'
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: [!GetAtt TrailBucket.Arn, !Sub '${TrailBucket.Arn}/*']
+            Condition: { Bool: { aws:SecureTransport: 'false' } }
+  Trail:
+    Type: AWS::CloudTrail::Trail
+    DependsOn: TrailBucketPolicy
+    Properties:
+      TrailName: labs-jj-management
+      S3BucketName: !Ref TrailBucket
+      IsLogging: true
+      IsMultiRegionTrail: false
+      IncludeGlobalServiceEvents: true
+      EnableLogFileValidation: true
+      EventSelectors:
+        - ReadWriteType: All
+          IncludeManagementEvents: true
+
+  # ── request telemetry: subscription on the labs web group ────────────────
+  RequestTelemetryRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: write-scrubbed
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt RequestTelemetryGroup.Arn
+  RequestTelemetryFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: labs-jj-observe-request-telemetry
+      Description: labs slow-request telemetry -> route/method/status/*_ms only
+      Runtime: python3.12
+      Handler: index.handler
+      Timeout: 30
+      MemorySize: 128
+      Role: !GetAtt RequestTelemetryRole.Arn
+      Environment:
+        Variables:
+          GROUP: !Ref RequestTelemetryGroup
+      Code:
+        ZipFile: |
+          # BEGIN request_telemetry_scrubber.py
+          # Subscription filter on /ecs/labs-jj-web -> /labs-jj/observe/request-telemetry.
+          # Keeps route TEMPLATE, method, status and latency numbers; drops path, username,
+          # outbound hosts and everything else. A line with no `route` is dropped, never
+          # backfilled from the path. Inlined into the template by render.py.
+          import base64
+          import gzip
+          import json
+          import os
+          import time
+          import uuid
+
+          import boto3
+
+          logs = boto3.client("logs")
+          KEEP = ("route", "method", "status")
+          MS = ("duration_ms", "db_ms", "outbound_ms", "self_ms", "cpu_ms", "retry_wait_ms")
+
+
+          def scrub(line):
+              try:
+                  rec = json.loads(line)
+              except ValueError:
+                  return None
+              if not isinstance(rec, dict) or not isinstance(rec.get("route"), str):
+                  return None
+              out = {k: rec[k] for k in KEEP if isinstance(rec.get(k), (str, int))}
+              out.update({k: rec[k] for k in MS if isinstance(rec.get(k), (int, float))})
+              return out
+
+
+          def handler(ev, ctx):
+              data = json.loads(gzip.decompress(base64.b64decode(ev["awslogs"]["data"])))
+              if data.get("messageType") != "DATA_MESSAGE":
+                  return {"written": 0}
+              events = []
+              for e in data.get("logEvents") or []:
+                  rec = scrub(e.get("message", ""))
+                  if rec is not None:
+                      events.append({"timestamp": e["timestamp"], "message": json.dumps(rec, separators=(",", ":"))})
+              if events:
+                  group = os.environ["GROUP"]
+                  stream = time.strftime("%Y/%m/%d/") + uuid.uuid4().hex
+                  logs.create_log_stream(logGroupName=group, logStreamName=stream)
+                  events.sort(key=lambda x: x["timestamp"])
+                  logs.put_log_events(logGroupName=group, logStreamName=stream, logEvents=events)
+              return {"written": len(events)}
+          # END request_telemetry_scrubber.py
+  RequestTelemetryInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RequestTelemetryFunction
+      Action: lambda:InvokeFunction
+      Principal: logs.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${WebLogGroupName}:*'
+      SourceAccount: !Ref AWS::AccountId
+  RequestTelemetrySubscription:
+    Type: AWS::Logs::SubscriptionFilter
+    DependsOn: RequestTelemetryInvoke
+    Properties:
+      LogGroupName: !Ref WebLogGroupName
+      FilterName: labs-jj-observe-request-telemetry
+      FilterPattern: '{ $.event = "slow_request" }'
+      DestinationArn: !GetAtt RequestTelemetryFunction.Arn
+
+  # ── ALB access logs: each delivered object -> scrubbed records ───────────
+  AlbScrubberRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: read-alb-write-scrubbed
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${AlbLogsBucketName}/alb/*'
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt AlbRequestsGroup.Arn
+  AlbScrubberFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: labs-jj-observe-alb-scrubber
+      Description: ALB access logs -> route template / status / latency / bytes only
+      Runtime: python3.12
+      Handler: index.handler
+      Timeout: 120
+      MemorySize: 512
+      Role: !GetAtt AlbScrubberRole.Arn
+      Environment:
+        Variables:
+          GROUP: !Ref AlbRequestsGroup
+      Code:
+        ZipFile: |
+          # BEGIN alb_scrubber.py
+          # ALB access-log object (S3, via EventBridge) -> /labs-jj/observe/alb-requests.
+          # Keeps time, target group, method, route TEMPLATE, statuses, latencies, target
+          # and bytes. Drops client IP, user agent, query string, host, TLS and trace ids.
+          # Inlined into the template by render.py.
+          import calendar
+          import gzip
+          import json
+          import os
+          import re
+          import time
+          import uuid
+
+          import boto3
+
+          s3, logs = boto3.client("s3"), boto3.client("logs")
+          FIELD = re.compile(r'"[^"]*"|\S+')
+          STATIC = re.compile(r"^[a-z][a-z_-]{0,29}$")
+          IDENTITY = {
+              "user",
+              "users",
+              "u",
+              "username",
+              "worker",
+              "workers",
+              "flw",
+              "flws",
+              "profile",
+              "people",
+              "person",
+              "member",
+              "members",
+              "contact",
+              "contacts",
+              "email",
+              "share",
+          }
+
+
+          def route(path):
+              """A path with every segment that could identify someone replaced by {id}."""
+              out, prev = [], ""
+              for seg in path.split("?", 1)[0].split("/"):
+                  orig = seg
+                  if seg and (not STATIC.match(seg) or prev in IDENTITY):
+                      seg = "{id}"
+                  out.append(seg)
+                  prev = orig
+              return "/".join(out) or "/"
+
+
+          def scrub(line):
+              f = [x.strip('"') for x in FIELD.findall(line)]
+              if len(f) < 13 or f[12].count(" ") < 2:
+                  return None
+              method, url, _ = f[12].split(" ", 2)
+              m = re.match(r"^[a-z]+://[^/]+(/[^ ]*)?$", url)
+              if not m:
+                  return None
+
+              def num(x):
+                  try:
+                      return float(x) if "." in x else int(x)
+                  except ValueError:
+                      return None
+
+              return {
+                  "time": f[1],
+                  "target_group": (f[16].split("/") + ["", ""])[1] if len(f) > 16 else None,
+                  "method": method if method.isalpha() else "OTHER",
+                  "route": route(m.group(1) or "/"),
+                  "elb_status": num(f[8]),
+                  "target_status": num(f[9]),
+                  "request_s": num(f[5]),
+                  "target_s": num(f[6]),
+                  "response_s": num(f[7]),
+                  "received_bytes": num(f[10]),
+                  "sent_bytes": num(f[11]),
+                  "target": f[4],
+              }
+
+
+          def _ms(t):
+              try:
+                  return calendar.timegm(time.strptime(t[:19], "%Y-%m-%dT%H:%M:%S")) * 1000
+              except ValueError:
+                  return int(time.time() * 1000)
+
+
+          def handler(ev, ctx):
+              d = ev.get("detail") or {}
+              body = s3.get_object(Bucket=d["bucket"]["name"], Key=d["object"]["key"])["Body"].read()
+              lines = gzip.decompress(body).decode("utf-8", "replace").splitlines()
+              recs = [r for r in map(scrub, lines) if r]
+              group, stream = os.environ["GROUP"], time.strftime("%Y/%m/%d/") + uuid.uuid4().hex
+              if recs:
+                  logs.create_log_stream(logGroupName=group, logStreamName=stream)
+              events = sorted(
+                  ({"timestamp": _ms(r["time"]), "message": json.dumps(r, separators=(",", ":"))} for r in recs),
+                  key=lambda x: x["timestamp"],
+              )
+              for i in range(0, len(events), 3000):
+                  logs.put_log_events(logGroupName=group, logStreamName=stream, logEvents=events[i : i + 3000])
+              return {"written": len(events)}
+          # END alb_scrubber.py
+  AlbObjectRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: New ALB access-log object -> labs-jj-observe-alb-scrubber
+      EventPattern:
+        source: [aws.s3]
+        detail-type: [Object Created]
+        detail:
+          bucket: { name: [!Ref AlbLogsBucketName] }
+          object: { key: [{ prefix: alb/ }] }
+      Targets: [{ Id: alb-scrubber, Arn: !GetAtt AlbScrubberFunction.Arn }]
+  AlbScrubberInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AlbScrubberFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AlbObjectRule.Arn
+
+  # ── count-only metric filters (no content leaves the raw groups) ─────────
+  # Root formatter: `LEVEL YYYY-MM-DD HH:MM:SS,mmm logger message` (labs and
+  # canopy-web alike); JSON lines start with `{` and never match.
+  WebErrorLines:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WebLogGroupName
+      FilterName: labs-jj-observe-error-lines
+      FilterPattern: '[level="ERROR", date, time, logger, ...]'
+      MetricTransformations:
+        - {
+            MetricNamespace: Labs/Web,
+            MetricName: ErrorLines,
+            MetricValue: '1',
+            Unit: Count,
+            Dimensions: [{ Key: logger, Value: $logger }],
+          }
+  WorkerErrorLines:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WorkerLogGroupName
+      FilterName: labs-jj-observe-error-lines
+      FilterPattern: '[level="ERROR", date, time, logger, ...]'
+      MetricTransformations:
+        - {
+            MetricNamespace: Labs/Worker,
+            MetricName: ErrorLines,
+            MetricValue: '1',
+            Unit: Count,
+            Dimensions: [{ Key: logger, Value: $logger }],
+          }
+  CanopyWebErrorLines:
+    Type: AWS::Logs::MetricFilter
+    Condition: HasCanopyWeb
+    Properties:
+      LogGroupName: !Ref CanopyWebLogGroupName
+      FilterName: labs-jj-observe-error-lines
+      FilterPattern: '[level="ERROR", date, time, logger, ...]'
+      MetricTransformations:
+        - {
+            MetricNamespace: Labs/CanopyWeb,
+            MetricName: ErrorLines,
+            MetricValue: '1',
+            Unit: Count,
+            Dimensions: [{ Key: logger, Value: $logger }],
+          }
+  AceWebErrorLines:
+    Type: AWS::Logs::MetricFilter
+    Condition: HasAceWeb
+    Properties:
+      LogGroupName: !Ref AceWebLogGroupName
+      FilterName: labs-jj-observe-error-lines
+      FilterPattern: '[level="ERROR", date, time, logger, ...]'
+      MetricTransformations:
+        - {
+            MetricNamespace: Labs/AceWeb,
+            MetricName: ErrorLines,
+            MetricValue: '1',
+            Unit: Count,
+            Dimensions: [{ Key: logger, Value: $logger }],
+          }
+  # Audit events (connect_labs/audit_trail/service.py, one JSON line each): the
+  # bounded enums only — never resource ids, paths, users or IPs.
+  WebAuditEvents:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WebLogGroupName
+      FilterName: labs-jj-observe-audit-events
+      FilterPattern: '{ $.action = * && $.outcome = * }'
+      MetricTransformations:
+        - {
+            MetricNamespace: Labs/Audit,
+            MetricName: EventCount,
+            MetricValue: '1',
+            Unit: Count,
+            Dimensions:
+              [
+                { Key: action, Value: $.action },
+                { Key: outcome, Value: $.outcome },
+                { Key: source, Value: $.source },
+              ],
+          }
+  WorkerAuditEvents:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WorkerLogGroupName
+      FilterName: labs-jj-observe-audit-events
+      FilterPattern: '{ $.action = * && $.outcome = * }'
+      MetricTransformations:
+        - {
+            MetricNamespace: Labs/Audit,
+            MetricName: EventCount,
+            MetricValue: '1',
+            Unit: Count,
+            Dimensions:
+              [
+                { Key: action, Value: $.action },
+                { Key: outcome, Value: $.outcome },
+                { Key: source, Value: $.source },
+              ],
+          }
+  UmamiP2002:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref UmamiLogGroupName
+      FilterName: labs-jj-observe-p2002
+      FilterPattern: '"P2002"'
+      MetricTransformations:
+        - {
+            MetricNamespace: Labs/Umami,
+            MetricName: P2002,
+            MetricValue: '1',
+            Unit: Count,
+          }
+
+Outputs:
+  ObserveLogGroups:
+    Description: The scrubbed groups the observe role may read.
+    Value:
+      !Join [
+        ', ',
+        [
+          !Ref EcsEventsGroup,
+          !Ref HealthGroup,
+          !Ref ApiCallsGroup,
+          !Ref RequestTelemetryGroup,
+          !Ref AlbRequestsGroup,
+        ],
+      ]
+  TrailName:
+    Value: !Ref Trail

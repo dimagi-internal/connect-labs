@@ -589,7 +589,7 @@ class RequestTelemetryMiddleware:
             duration_ms = int((time.perf_counter() - started) * 1000)
             cpu_ms = int((time.thread_time() - thread_started) * 1000)
             try:
-                self._maybe_log(request, stats, duration_ms, cpu_ms, sampled)
+                self._maybe_log(request, stats, duration_ms, cpu_ms, sampled, response=response)
             except Exception:
                 logger.debug("request telemetry failed", exc_info=True)
             # Unconditional, unlike _maybe_log: a count that only includes the
@@ -609,6 +609,7 @@ class RequestTelemetryMiddleware:
         duration_ms: int,
         cpu_ms: int = 0,
         sampled: bool = False,
+        response=None,
     ) -> None:
         reasons = []
         if duration_ms >= SLOW_REQUEST_MS:
@@ -628,6 +629,12 @@ class RequestTelemetryMiddleware:
             "reason": ",".join(reasons),
             "method": request.method,
             "path": request.path,
+            # The route TEMPLATE and the status: the two fields the scrubbed copy
+            # in /labs-jj/observe/request-telemetry keys on (infra/observe_pipeline/
+            # request_telemetry_scrubber.py drops `path` and `username`, and drops
+            # any line without `route` rather than fall back to the path).
+            "route": route_template(request),
+            "status": getattr(response, "status_code", None) if response is not None else 500,
             "duration_ms": duration_ms,
             "outbound_calls": stats.outbound_calls,
             "outbound_ms": int(stats.outbound_ms),
