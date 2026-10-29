@@ -28,18 +28,27 @@ CPU resolves "request path or background job" in one comparison, and starting at
 the database -- which is almost always healthy -- is the single most expensive
 wrong turn available.
 
-Read-only. Needs AWS profile `labs` (account 858923557655).
+Read-only. Runs as AWS profile `labs-observe` by default: the read-only
+labs-jj-observe-readonly role (metrics, alarms, ECS/ALB/RDS metadata; log events,
+secrets and DB content denied). It needs no SSO approval -- `canopy aws profile
+--role labs-observe` writes the profile for an agent, and infra/README.md has the
+chained profile a human uses. Every read this tool makes is allowed to that role,
+so the admin `labs` SSO profile (account 858923557655) is only an override:
+`--profile labs`, or env LABS_PERF_PROFILE.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 
-PROFILE = "labs"
+#: Read-only by default (connect-labs#2770). `--profile` / LABS_PERF_PROFILE override.
+DEFAULT_PROFILE = "labs-observe"
+PROFILE = os.environ.get("LABS_PERF_PROFILE") or DEFAULT_PROFILE
 REGION = "us-east-1"
 CLUSTER = "labs-jj-cluster"
 WEB_SERVICE = "labs-jj-web"
@@ -413,7 +422,7 @@ def judge(d: dict) -> dict:
             "next_step": (
                 "Verify the dimensions match a live metric: "
                 "aws cloudwatch list-metrics --namespace AWS/ECS "
-                "--metric-name CPUUtilization --profile labs --region us-east-1"
+                f"--metric-name CPUUtilization --profile {PROFILE} --region us-east-1"
             ),
         }
 
@@ -555,7 +564,7 @@ def judge(d: dict) -> dict:
                 "aws cloudwatch get-metric-statistics --namespace AWS/ECS "
                 "--metric-name CPUUtilization --statistics Average Maximum "
                 "--dimensions ClusterName=labs-jj-cluster,ServiceName=labs-jj-web "
-                "--profile labs --region us-east-1. Then §3 for the request itself."
+                f"--profile {PROFILE} --region us-east-1. Then §3 for the request itself."
             )
 
     if d["target_5xx_total"]:
@@ -623,15 +632,29 @@ def judge(d: dict) -> dict:
 
 
 def main() -> int:
+    global PROFILE
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--hours", type=int, default=3, help="lookback window (default 3)")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
+    ap.add_argument(
+        "--profile",
+        default=PROFILE,
+        help=f"AWS profile (default {PROFILE}, read-only). Pass `labs` (admin SSO) only "
+        "when a read here is ever denied to labs-observe.",
+    )
     args = ap.parse_args()
+    PROFILE = args.profile
 
     try:
         data = collect(args.hours)
     except Exception as exc:
         print(f"triage failed: {exc}", file=sys.stderr)
+        if PROFILE == DEFAULT_PROFILE and "could not be found" in str(exc):
+            print(
+                f"  fix: `canopy aws profile --role {DEFAULT_PROFILE}` writes the profile "
+                "(an agent), or add the chained profile in infra/README.md (a human)",
+                file=sys.stderr,
+            )
         return 2
 
     result = judge(data)

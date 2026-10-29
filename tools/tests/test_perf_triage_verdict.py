@@ -399,3 +399,9 @@ def test_a_slow_neighbour_is_not_blamed_on_labs():
     )
     slow = [f for f in verdict["findings"] if f.startswith("SLOW TARGET GROUP")][0]
     assert "labs-jj-canopy-web-tg" in slow and "not labs-jj-web" in slow
+
+
+def test_reads_default_to_the_read_only_observe_role():
+    """connect-labs#2770: every read here is allowed to labs-jj-observe-readonly, so
+    the admin `labs` SSO session is an override, never the default."""
+    assert perf_triage.DEFAULT_PROFILE == "labs-observe"
