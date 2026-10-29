@@ -267,6 +267,28 @@ OOM-killed, or never received the request. The app half is the only thing that
 can say _139 outbound calls to connect.dimagi.com in one request_ — which is
 exactly what the incident was, and what took a day to establish without it.
 
+**A third, metric-only layer is the one the read-only incident role can see.**
+`labs-jj-observe-readonly` can read CloudWatch _metrics_ but not log events, so
+neither table row above answers "which route is slow, and how much traffic is it
+taking?" for it. Every web request therefore also writes one CloudWatch Embedded
+Metric Format (EMF) line (`emit_route_metric` in `request_telemetry.py`), which
+CloudWatch Logs turns into metrics as the awslogs driver ships it — no IAM grant,
+no `PutMetricData` call, no stack to deploy:
+
+| Namespace       | Metrics                                                 | Dimensions (exactly these)        |
+| --------------- | ------------------------------------------------------- | --------------------------------- |
+| `Labs/Requests` | `RequestLatency` (Milliseconds), `RequestCount` (Count) | `route`, `method`, `status_class` |
+
+`route` is the URL pattern template (`labs/workflow/<int:workflow_id>/`), never the
+raw path; anything that did not resolve (404s, scanners) is `unmatched`, and a
+non-standard method is `OTHER`, so cardinality is bounded by the urlconf. EMF copies
+every key of the line into the log event, so the line holds the two values and three
+dimensions and nothing else — no ids, usernames or query strings; a test pins that.
+Unlike the diagnostic lines it covers **every** request (it is not threshold-gated or
+sampled). Kill switch: `TELEMETRY_ROUTE_METRICS=false` (pin it in
+`deploy/task-definitions/web.json`). Each `route × method × status_class` seen in an
+hour is a billed custom metric (×2), so keep new dimensions out.
+
 ### Deploy: audit + analytics stack
 
 ```bash

@@ -135,6 +135,10 @@ from django.conf import settings
 from django.db import connection
 
 logger = logging.getLogger("connect_labs.telemetry.request")
+# One EMF line per request (see "Every request, as a metric" above). A separate
+# logger so it can be routed, levelled and kill-switched apart from the diagnostic
+# stream, and so the diagnostic stream's tests and queries never see it.
+metrics_logger = logging.getLogger("connect_labs.telemetry.metrics")
 
 # Thresholds. A request trips the log if it exceeds ANY of them. Defaults are set
 # well above normal labs traffic (median ALB p95 is 0.23s) so a clean request is
@@ -153,6 +157,25 @@ DB_QUERY_LIMIT = getattr(settings, "TELEMETRY_DB_QUERY_LIMIT", 100)
 # means every path, which on this tier is ~28k requests/day.
 SAMPLE_RATE = float(getattr(settings, "TELEMETRY_SAMPLE_RATE", 0.0))
 SAMPLE_PATH_PREFIX = getattr(settings, "TELEMETRY_SAMPLE_PATH_PREFIX", "")
+
+# The per-request route metric. On by default: it is the only request-level signal
+# the read-only incident role can see. False is a kill switch, not a tuning knob.
+ROUTE_METRICS_ENABLED = getattr(settings, "TELEMETRY_ROUTE_METRICS", True)
+
+METRICS_NAMESPACE = "Labs/Requests"
+# The ONLY dimensions, in this order. Adding one multiplies the number of billed
+# CloudWatch metrics AND puts its value into every log line; the test pins it.
+METRIC_DIMENSIONS = ("route", "method", "status_class")
+# A request that never resolved to a URL pattern (404s, scanners, anything that
+# failed before URL resolution). Collapsed to one value so a scanner walking random
+# paths cannot mint a metric per path — and so a raw path never becomes a dimension.
+UNMATCHED_ROUTE = "unmatched"
+# The method is client-controlled (any token is a legal HTTP method), so it is
+# bounded too: anything outside the standard set is one bucket.
+_KNOWN_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
+# Route templates come from our own urlconf, so they are bounded by construction;
+# the cap only guards against a pathological regex pattern.
+_MAX_ROUTE_LEN = 200
 
 
 @dataclass
@@ -452,6 +475,75 @@ def _should_sample(request) -> bool:
         return False
 
 
+def route_template(request) -> str:
+    """The URL pattern the request matched, as a template — never the raw path.
+
+    ``ResolverMatch.route`` is the joined pattern across ``include()``s, e.g.
+    ``labs/workflow/<int:workflow_id>/``: it comes from the urlconf, so it carries
+    no ids, usernames or query strings. Anything that did not resolve is
+    ``UNMATCHED_ROUTE``. There is deliberately no fallback to ``request.path``.
+    """
+    match = getattr(request, "resolver_match", None)
+    route = getattr(match, "route", None) if match is not None else None
+    if not isinstance(route, str):
+        return UNMATCHED_ROUTE
+    if not route:
+        return "/"
+    return route[:_MAX_ROUTE_LEN]
+
+
+def status_class(status_code) -> str:
+    if isinstance(status_code, int) and 100 <= status_code <= 599:
+        return f"{status_code // 100}xx"
+    return "unknown"
+
+
+def _bounded_method(method) -> str:
+    return method if method in _KNOWN_METHODS else "OTHER"
+
+
+def route_metric_line(route: str, method: str, status: str, duration_ms: int) -> dict:
+    """The EMF object for one request. Every top-level key lands in the log event,
+    so this holds the two metric values, the three dimensions, and ``_aws`` — and
+    nothing else."""
+    return {
+        "_aws": {
+            "Timestamp": int(time.time() * 1000),
+            "CloudWatchMetrics": [
+                {
+                    "Namespace": METRICS_NAMESPACE,
+                    "Dimensions": [list(METRIC_DIMENSIONS)],
+                    "Metrics": [
+                        {"Name": "RequestLatency", "Unit": "Milliseconds"},
+                        {"Name": "RequestCount", "Unit": "Count"},
+                    ],
+                }
+            ],
+        },
+        "route": route,
+        "method": method,
+        "status_class": status,
+        "RequestLatency": duration_ms,
+        "RequestCount": 1,
+    }
+
+
+def emit_route_metric(request, response, duration_ms: int) -> None:
+    """Write one EMF line for this request. Called for EVERY request.
+
+    ``response`` is None when the inner stack raised instead of returning (Django
+    normally converts exceptions to a 500 response further in, so this is rare);
+    it is counted as ``5xx`` rather than dropped, or the error rate would read low.
+    The line is a bare JSON object on its own line — the logger's handler uses the
+    message-only formatter — which is what CloudWatch needs to extract it.
+    """
+    if not ROUTE_METRICS_ENABLED:
+        return
+    status = "5xx" if response is None else status_class(getattr(response, "status_code", None))
+    line = route_metric_line(route_template(request), _bounded_method(request.method), status, duration_ms)
+    metrics_logger.info(json.dumps(line, separators=(",", ":")))
+
+
 class RequestTelemetryMiddleware:
     """Log a structured line for any request that looks expensive.
 
@@ -487,6 +579,7 @@ class RequestTelemetryMiddleware:
             finally:
                 stats.db_ms += (time.perf_counter() - q_started) * 1000
 
+        response = None
         try:
             # execute_wrapper is the supported hook and, unlike connection.queries,
             # works with DEBUG=False — which is the only mode that matters here.
@@ -499,6 +592,12 @@ class RequestTelemetryMiddleware:
                 self._maybe_log(request, stats, duration_ms, cpu_ms, sampled)
             except Exception:
                 logger.debug("request telemetry failed", exc_info=True)
+            # Unconditional, unlike _maybe_log: a count that only includes the
+            # requests that breached a threshold is not a count.
+            try:
+                emit_route_metric(request, response, duration_ms)
+            except Exception:
+                logger.debug("route metric failed", exc_info=True)
             _stats.reset(token)
 
         return response

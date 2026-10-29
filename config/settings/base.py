@@ -279,6 +279,9 @@ MIDDLEWARE.insert(0, "connect_labs.utils.request_telemetry.RequestTelemetryMiddl
 # why a threshold-gated stream cannot be compared across load levels at all.
 TELEMETRY_SAMPLE_RATE = env.float("TELEMETRY_SAMPLE_RATE", default=0.0)
 TELEMETRY_SAMPLE_PATH_PREFIX = env("TELEMETRY_SAMPLE_PATH_PREFIX", default="")
+# Per-request route metric (CloudWatch EMF, namespace Labs/Requests). On by default;
+# False is a kill switch. Pin it in deploy/task-definitions/web.json if you set it.
+TELEMETRY_ROUTE_METRICS = env.bool("TELEMETRY_ROUTE_METRICS", default=True)
 
 # SSE bodies are served as ASYNC iterators, so a stream is actually a stream:
 # Django drains a SYNC iterator in full before sending any of it, so every labs
@@ -437,6 +440,14 @@ LOGGING = {
         "connect_labs.telemetry.request": {
             "handlers": ["audit_stream"],
             "level": "WARNING",
+            "propagate": False,
+        },
+        # One CloudWatch EMF line per request (request_telemetry.emit_route_metric):
+        # message-only, so each line is a bare JSON object CloudWatch extracts into
+        # the Labs/Requests metrics. Every request, so INFO and high-volume by design.
+        "connect_labs.telemetry.metrics": {
+            "handlers": ["audit_stream"],
+            "level": "INFO",
             "propagate": False,
         },
         "django.security.DisallowedHost": {
