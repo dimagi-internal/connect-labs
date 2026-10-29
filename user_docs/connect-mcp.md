@@ -110,11 +110,14 @@ It is about what Claude *sees*, not about whether it may change things.
 !!! note "Counts and dates are allowed"
     Opportunity-level counts and dates are on the allowed side of the line, as are the contact details of people who submitted something as an organisation. The line is drawn at an individual visit and its values.
 
+!!! warning "One gap worth knowing about"
+    When work set going on the server fails — a cache warm, a history rebuild, a hand-down — the error message comes back to Claude. Those are configuration and infrastructure messages, but a pipeline that choked on a value can quote that value in its error. It is the one way a restricted caller can see something drawn from a real visit.
+
 ---
 
 ## Checking Which Address You Are On
 
-The restriction comes from **the address**, not from your token. A full-access token pointed at `mcp/no_user_visit/` is still a restricted call. So the address your tool is configured with is the thing to check.
+**Either the address or the credential is enough to make a call restricted** — a full-access token pointed at `mcp/no_user_visit/` is still a restricted call, and a no-user-visit token is restricted even on the full address. The address is simply the easiest of the two to check, so start there.
 
 === "Claude Code"
 
@@ -148,8 +151,10 @@ Note the trailing slash on `mcp/no_user_visit/` — without it the address will 
 
 ---
 
-# Advanced
+## Advanced
 
+Everything below is reference material: tokens, the exact rules of the restricted
+address, job limits and how results are kept. Most people will not need it.
 
 ## Personal Access Tokens
 
@@ -203,22 +208,22 @@ The `mcp/no_user_visit/` address enforces a strict set of rules to prevent real 
 The restricted address offers a simpler set of synthetic tools: `synthetic_clone_opp` (plus status checking, fidelity scoring, demo environments, and visibility) rather than the full set of step-by-step tools available on the full-access address. That one flow is all you need — see [Synthetic Data](synthetic-data.md).
 
 !!! note "No change for full-access callers"
-    If you use the main `/mcp/` address, none of the above restrictions apply to you. The only change that affects everyone is described in the pipeline export name note below.
+    If you use the main `/mcp/` address, none of the above restrictions apply to you.
 
 ---
 
-## Profiling Limits
+## Limits on Profiling and Synthetic Jobs
 
 **There is no per-person limit** on how many jobs you start, or on how many opportunities you profile or clone in one call. The caps that used to apply were removed once each job began running on a machine of its own.
 
 What still bounds the work:
 
-| Limit | Value | Who it applies to |
-| --- | --- | --- |
-| Synthetic jobs running at the same time across the whole system | 6 | Everyone |
-| Time limit per job, after which it is stopped and marked failed | 6 hours | Everyone |
+| Limit | Value |
+| --- | --- |
+| Synthetic jobs running at the same time across the whole system | 6 |
+| Time limit per job, after which it is stopped and marked failed | 6 hours on Labs |
 
-Jobs over the system-wide limit wait their turn rather than being refused, so a large batch is slower, not rejected.
+Jobs over the system-wide limit wait their turn rather than being refused, so a large batch is slower, not rejected. Both figures are the current settings on Labs and can be changed by an administrator; a job running somewhere other than the Labs cluster is held to a shorter limit.
 
 If you submit a request that is identical to one already running, Labs returns the existing job rather than starting a duplicate.
 

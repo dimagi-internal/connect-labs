@@ -11,8 +11,8 @@ A **synthetic opportunity** is a fake, labs-only copy of a real one. It looks an
 
 Labs makes a synthetic opportunity:
 
-1. **It measures the real opportunity.** It reads the real visits once, inside Labs, and writes down only *patterns* — how many cases each worker carries, how a child's weight tends to change between visits, how often a danger sign is recorded, how far apart visits fall. This is called a **profile**, and it holds statistics, not rows. Real visit rows are read on the server during step 1 and never leave it. They never reach Claude, and they are never written into the clone.
-2. **It generates new data from that profile.** Every case, name, date, answer and measurement in the clone is newly invented to match those patterns. No real case is copied or lightly disguised.
+1. **It measures the real opportunity.** It reads the real visits once, inside Labs, and writes down only *patterns* — how many cases each worker carries, how a child's weight tends to change between visits, how often a danger sign is recorded, how far apart visits fall. This is called a **profile**, and it holds statistics rather than rows: distributions, counts, and the real range — the lowest and highest value a numeric field actually took. Real visit rows are read on the server during step 1 and never leave it. They never reach Claude, and they are never written into the clone.
+2. **It generates new data from that profile.** Every case, name, date, answer and measurement in the clone is newly invented to match those patterns. No real case is copied or lightly disguised — though that was not always so, which is why some older clones have to be remade (see **Old clones may need remaking** below).
 
 Labs keeps a record of which opportunities hold generated data, and that record is what the restricted MCP address checks before it will read anything.
 

@@ -124,7 +124,7 @@ internal hostnames or anything that only works inside Dimagi. The repo is public
 | Task Management                     | `3928293395` |
 | Solicitations                       | `3927179271` |
 | AI Features                         | `3928817690` |
-| Connect MCP & Safe Mode             | `3927801885` |
+| Connect MCP (page still titled "Connect MCP & Safe Mode") | `3927801885` |
 
 The Confluence page keeps its original title; `update_docs.py` now calls the feature area
 "Connect MCP" and passes the live page title through when it updates it.
