@@ -1,0 +1,535 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Labs observe-only role: a read-only, NON-SENSITIVE AWS path for debugging
+# incidents across the labs account (connect-labs, canopy-web, ace-web, the
+# canopy runners). Fifth slice of infrastructure-as-code for the connect-labs
+# AWS environment — see infra/README.md.
+#
+# The problem. Every incident question an agent can't answer from the database
+# ("what did the ALB p95 do?", "which alarm fired, and when?", "did the deploy
+# reach steady state?") needs telemetry, and the only way to it was the `labs`
+# SSO profile with AdministratorAccess. An unattended cloud-runner turn cannot
+# complete SSO; a laptop turn pushes an approval to a person's phone
+# (`canopy aws login`) and then holds full admin over an account that stores
+# health data (HIPAA).
+#
+# The sensitivity line (Jonathan, 2026-10-29): program / beneficiary /
+# frontline-worker data (visits, cases, images, form content, health data),
+# secrets and credentials, and raw request content are SENSITIVE. Staff and
+# system identity (alarm recipients, stack parameters, who ran a deploy) is
+# NOT. This role reads everything on the non-sensitive side and nothing on the
+# sensitive side. Where a source mixes both (application logs, ALB access logs,
+# ECS task overrides, CloudTrail request parameters), the raw source stays
+# denied and `infra/labs-observe-pipeline.yml` writes a SCRUBBED derivative —
+# an allow-listed projection — into `/labs-jj/observe/*`, which this role may
+# read.
+#
+# What this stack owns:
+#   * `labs-jj-observe-readonly` (ManagedPolicy): the explicit ALLOW list, and
+#     `labs-jj-observe-readonly-deny` (ManagedPolicy): the explicit-DENY backstop
+#     on every read that returns sensitive content (two policies because IAM caps
+#     one at 6,144 characters). Named, so an IAM Identity Center permission set
+#     can reference both as customer-managed policies.
+#   * `labs-jj-observe-readonly` (Role) with that policy, 1h sessions.
+#
+# The allow list is the control; the deny list keeps the sensitive reads closed
+# even if a broader policy (e.g. ReadOnlyAccess) is ever attached. Explicit Deny
+# always wins in IAM.
+#
+# Trust is account-root + an aws:PrincipalArn match, so the CALLER's own identity
+# policy must also allow sts:AssumeRole on this role (canopy-web runner.cfn.yaml,
+# fleet.cfn.yaml, canopy-web-task-role.cfn.yaml). No writes of any kind.
+#
+#   aws cloudformation deploy --profile labs --region us-east-1 \
+#     --stack-name labs-jj-observe \
+#     --template-file infra/labs-observe-readonly.yml \
+#     --capabilities CAPABILITY_NAMED_IAM
+
+Description: >-
+  Labs observe-only role (labs-jj-observe-readonly): metrics, alarms, resource
+  and stack metadata, cost, and the scrubbed /labs-jj/observe/* log groups, with
+  explicit denies on raw log content, objects, secrets, task commands/env, API
+  call parameters and DB data. Assumable by canopy runners (cloud + fleet), the
+  canopy-web credential broker and SSO users. No writes.
+
+Parameters:
+  RoleName:
+    Type: String
+    Default: labs-jj-observe-readonly
+    Description: Name of the role (and of its managed policy).
+
+  RunnerRoleNamePattern:
+    Type: String
+    Default: canopy-cloud-runner*-RunnerRole-*
+    Description: >-
+      Role-name pattern (ArnLike) of the canopy cloud runners' instance roles
+      (stack canopy-cloud-runner[-<n>], role <stack>-RunnerRole-<suffix>). The
+      instance role is root's on the box (IMDS is closed to runner uids), so an
+      agent reaches this role only through the root-owned canopy-aws-broker.
+      Empty = do not trust cloud runners.
+
+  FleetRoleNamePattern:
+    Type: String
+    Default: canopy-fleet-*
+    Description: >-
+      Role-name pattern of runner-fleet members' instance roles
+      (runner/ec2/fleet.cfn.yaml names its role canopy-fleet-<FleetName>).
+      Empty = do not trust fleet members.
+
+  BrokerRoleName:
+    Type: String
+    Default: canopy-web-task-role
+    Description: >-
+      canopy-web's own ECS task role. Trusting it lets canopy-web vend one-hour
+      observe credentials to an authenticated agent (laptop or cloud) with no
+      SSO approval. Empty = do not trust canopy-web.
+
+  AllowSsoUsers:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: >-
+      'true' lets any IAM Identity Center role in this account chain into the
+      observe role, so a human on the existing `labs` login can work
+      least-privilege without a second login.
+
+  ExportsBucketName:
+    Type: String
+    Default: labs-jj-exports-dev-858923557655-us-east-1-an
+    Description: Labs exports bucket (visit exports, media) — listing denied.
+
+  AttachmentsBucketName:
+    Type: String
+    Default: labs-jj-canopy-web-attachments-858923557655
+    Description: canopy-web chat attachments bucket — listing denied.
+
+  InboundMailBucketName:
+    Type: String
+    Default: canopy-inbound-mail-858923557655
+    Description: canopy-web inbound mail bucket — listing denied.
+
+Conditions:
+  TrustRunners: !Not [!Equals [!Ref RunnerRoleNamePattern, '']]
+  TrustFleet: !Not [!Equals [!Ref FleetRoleNamePattern, '']]
+  TrustBroker: !Not [!Equals [!Ref BrokerRoleName, '']]
+  TrustSso: !Equals [!Ref AllowSsoUsers, 'true']
+
+Resources:
+  ObservePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Ref RoleName
+      Description: >-
+        Read-only, non-sensitive labs observability. Denies every read that
+        returns raw log content, object bodies, secrets, task commands or env,
+        API call parameters or database data.
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # ── ALLOW ──────────────────────────────────────────────────────────
+          # Metrics are numbers keyed by resource names (custom ones included:
+          # labs' metric filters count fixed strings, and Labs/Requests'
+          # dimensions are route TEMPLATE / method / status class only).
+          - Sid: MetricsAndAlarms
+            Effect: Allow
+            Action:
+              - cloudwatch:GetMetricData
+              - cloudwatch:GetMetricStatistics
+              - cloudwatch:GetMetricWidgetImage
+              - cloudwatch:ListMetrics
+              - cloudwatch:DescribeAlarms
+              - cloudwatch:DescribeAlarmHistory
+              - cloudwatch:DescribeAlarmsForMetric
+              - cloudwatch:DescribeAnomalyDetectors
+              - cloudwatch:ListDashboards
+              - cloudwatch:GetDashboard
+              - cloudwatch:ListTagsForResource
+            Resource: '*'
+
+          # Log-group METADATA: names, retention, bytes, stream names and
+          # last-event timestamps, metric- and subscription-filter patterns.
+          - Sid: LogMetadata
+            Effect: Allow
+            Action:
+              - logs:DescribeLogGroups
+              - logs:DescribeLogStreams
+              - logs:DescribeMetricFilters
+              - logs:DescribeSubscriptionFilters
+            Resource: '*'
+
+          # Event reads on the SCRUBBED groups only: /labs-jj/observe/* (written
+          # by labs-observe-pipeline.yml as allow-listed projections) and the
+          # Umami image build log (no secrets are injected into that build).
+          - Sid: ScrubbedLogsRead
+            Effect: Allow
+            Action:
+              - logs:FilterLogEvents
+              - logs:GetLogEvents
+              - logs:StartQuery
+              - logs:GetLogGroupFields
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/labs-jj/observe/*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/labs-jj/observe/*:log-stream:*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/labs-jj-umami-build:*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:RDSOSMetrics:*'
+          # Query ids are not enumerable (DescribeQueries is denied), and a
+          # query can only have been started on the scrubbed groups above.
+          - Sid: QueryResults
+            Effect: Allow
+            Action:
+              - logs:GetQueryResults
+              - logs:StopQuery
+            Resource: '*'
+
+          - Sid: LoadBalancerMetadata
+            Effect: Allow
+            Action:
+              - elasticloadbalancing:DescribeLoadBalancers
+              - elasticloadbalancing:DescribeLoadBalancerAttributes
+              - elasticloadbalancing:DescribeListeners
+              - elasticloadbalancing:DescribeRules
+              - elasticloadbalancing:DescribeTargetGroups
+              - elasticloadbalancing:DescribeTargetGroupAttributes
+              - elasticloadbalancing:DescribeTargetHealth
+              - elasticloadbalancing:DescribeTags
+            Resource: '*'
+
+          # Services, deployments, rollout events ("has stopped 1 running
+          # tasks", "unable to place"), task ARNs, capacity. Never a task's
+          # command or env: DescribeTasks / DescribeTaskDefinition are denied
+          # below; stop reasons and exit codes come from the scrubbed
+          # /labs-jj/observe/ecs-events group instead.
+          - Sid: EcsRuntimeMetadata
+            Effect: Allow
+            Action:
+              - ecs:ListClusters
+              - ecs:DescribeClusters
+              - ecs:ListServices
+              - ecs:DescribeServices
+              - ecs:ListServiceDeployments
+              - ecs:DescribeServiceDeployments
+              - ecs:ListTasks
+              - ecs:ListTaskDefinitions
+              - ecs:ListTaskDefinitionFamilies
+              - ecs:ListContainerInstances
+              - ecs:DescribeContainerInstances
+              - ecs:DescribeCapacityProviders
+              - ecs:ListTagsForResource
+              - application-autoscaling:DescribeScalableTargets
+              - application-autoscaling:DescribeScalingActivities
+              - application-autoscaling:DescribeScalingPolicies
+            Resource: '*'
+
+          # Database / redis configuration and AWS-side events. No data, no
+          # logs (DescribeDBLogFiles lists names and sizes only; downloads are
+          # denied), no Performance Insights (see DenyDatabaseContent).
+          - Sid: DataTierMetadata
+            Effect: Allow
+            Action:
+              - rds:DescribeDBInstances
+              - rds:DescribeEvents
+              - rds:DescribePendingMaintenanceActions
+              - rds:DescribeDBParameters
+              - rds:DescribeDBParameterGroups
+              - rds:DescribeDBLogFiles
+              - rds:DescribeDBSnapshots
+              - rds:ListTagsForResource
+              - elasticache:DescribeCacheClusters
+              - elasticache:DescribeReplicationGroups
+              - elasticache:DescribeEvents
+            Resource: '*'
+
+          # Runner boxes and fleets: instance state, status checks, volumes,
+          # network, ASG activity and warm pool. Instance user data and console
+          # output are denied below.
+          - Sid: RunnersAndNetwork
+            Effect: Allow
+            Action:
+              - ec2:DescribeInstances
+              - ec2:DescribeInstanceStatus
+              - ec2:DescribeVolumes
+              - ec2:DescribeSecurityGroups
+              - ec2:DescribeSubnets
+              - autoscaling:DescribeAutoScalingGroups
+              - autoscaling:DescribeAutoScalingInstances
+              - autoscaling:DescribeScalingActivities
+              - autoscaling:DescribeWarmPool
+            Resource: '*'
+
+          - Sid: AwsHealth
+            Effect: Allow
+            Action:
+              - health:DescribeEvents
+              - health:DescribeEventDetails
+              - health:DescribeAffectedEntities
+            Resource: '*'
+
+          # Stacks of the labs, canopy and ace tenants: status, events (whose
+          # ResourceProperties are config: every secret is `valueFrom`, no
+          # parameter is NoEcho), templates, drift. "Did the change set apply,
+          # and why did it roll back?"
+          - Sid: StacksReadable
+            Effect: Allow
+            Action:
+              - cloudformation:DescribeStacks
+              - cloudformation:DescribeStackEvents
+              - cloudformation:DescribeStackResource
+              - cloudformation:DescribeStackResources
+              - cloudformation:ListStackResources
+              - cloudformation:DescribeStackResourceDrifts
+              - cloudformation:GetTemplate
+              - cloudformation:GetTemplateSummary
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/labs-jj-*/*'
+              - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/canopy-*/*'
+              - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/ace-*/*'
+          - Sid: StackListAndDrift
+            Effect: Allow
+            Action:
+              - cloudformation:ListStacks
+              - cloudformation:DescribeStackDriftDetectionStatus
+            Resource: '*'
+
+          # "Is anyone actually subscribed to the alert topic?" Endpoints are
+          # staff/agent mailboxes and canopy-web URLs — not sensitive.
+          - Sid: AlertTopics
+            Effect: Allow
+            Action:
+              - sns:GetTopicAttributes
+              - sns:ListSubscriptionsByTopic
+              - sns:GetSubscriptionAttributes
+            Resource: !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:*'
+          - Sid: ListTopics
+            Effect: Allow
+            Action:
+              - sns:ListTopics
+              - sns:ListSubscriptions
+            Resource: '*'
+
+          - Sid: CostAndTags
+            Effect: Allow
+            Action:
+              - ce:GetCostAndUsage
+              - ce:GetCostForecast
+              - ce:GetDimensionValues
+              - ce:GetTags
+              - ce:GetAnomalies
+              - ce:GetAnomalyMonitors
+              - budgets:ViewBudget
+              - tag:GetResources
+            Resource: '*'
+
+          # Certificate expiry, SES sending status (not event payloads or the
+          # suppression list), and whether a trail is logging (not its events).
+          - Sid: CertsMailTrailMeta
+            Effect: Allow
+            Action:
+              - acm:ListCertificates
+              - acm:DescribeCertificate
+              - ses:GetAccount
+              - ses:GetEmailIdentity
+              - ses:GetConfigurationSet
+              - cloudtrail:DescribeTrails
+              - cloudtrail:GetTrailStatus
+            Resource: '*'
+
+  # IAM caps a managed policy at 6,144 characters, so the backstop denies are a
+  # second policy on the same role. Both must stay attached.
+  ObserveDenyPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-deny'
+      Description: >-
+        Backstop for labs-jj-observe-readonly: denies raw log content, object
+        bodies, secrets, task commands/env, API call parameters and DB data.
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Raw log content everywhere except the scrubbed groups. Application
+          # logs carry exception text, outbound URLs with query strings, audit
+          # paths with FLW/beneficiary identifiers, and client IPs.
+          - Sid: DenyLogContent
+            Effect: Deny
+            Action:
+              - logs:GetLogEvents
+              - logs:GetLogRecord
+              - logs:FilterLogEvents
+              - logs:StartQuery
+              - logs:StartLiveTail
+              - logs:GetLogGroupFields
+              - logs:Unmask
+              - logs:CreateExportTask
+            NotResource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/labs-jj/observe/*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/labs-jj/observe/*:log-stream:*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/labs-jj-umami-build:*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:RDSOSMetrics:*'
+          # These return log content but take no log-group resource:
+          # ListAnomalies (pattern strings + sample lines), DescribeQueries
+          # (other principals' query text), Contributor Insights reports.
+          - Sid: DenyLogContentUnscoped
+            Effect: Deny
+            Action:
+              - logs:ListAnomalies
+              - logs:DescribeQueries
+              - cloudwatch:GetInsightRuleReport
+            Resource: '*'
+          - Sid: DenyObjectAndQueryContent
+            Effect: Deny
+            Action:
+              - s3:GetObject* # (also authorizes SelectObjectContent) audit archive, exports, raw ALB logs
+              - s3:RestoreObject
+              - athena:*
+            Resource: '*'
+          # Object keys in these buckets can carry filenames and senders.
+          - Sid: DenySensitiveBucketListing
+            Effect: Deny
+            Action: s3:ListBucket
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:s3:::${ExportsBucketName}'
+              - !Sub 'arn:${AWS::Partition}:s3:::${AttachmentsBucketName}'
+              - !Sub 'arn:${AWS::Partition}:s3:::${InboundMailBucketName}'
+          - Sid: DenySecretValues
+            Effect: Deny
+            Action:
+              - secretsmanager:GetSecretValue
+              - secretsmanager:BatchGetSecretValue
+              - ssm:GetParameter*
+              - kms:Decrypt
+              - kms:GenerateDataKey*
+            Resource: '*'
+          # Performance Insights stays fully denied. `pi:Dimensions` exists as a
+          # condition key on GetResourceMetrics / DescribeDimensionKeys /
+          # GetDimensionKeyDetails, but PI is off on labs-jj-postgres, so the
+          # gate (does a db.sql group-by naming no dimensions still populate
+          # pi:Dimensions with db.sql.statement?) cannot be tested live. Enable
+          # PI, test that, then grant the aggregate subset with a
+          # ForAnyValue:StringEquals pi:Dimensions deny on db.sql.statement.
+          - Sid: DenyDatabaseContent
+            Effect: Deny
+            Action:
+              - rds-data:*
+              - rds-db:connect
+              - rds:DownloadDBLogFilePortion
+              - rds:DownloadCompleteDBLogFile
+              - pi:*
+            Resource: '*'
+          - Sid: DenyPlaintextEnvAndUserData
+            Effect: Deny
+            Action:
+              - ecs:DescribeTaskDefinition # containerDefinitions[].environment
+              - lambda:GetFunction # code + env
+              - lambda:GetFunctionConfiguration # env
+              - codebuild:BatchGetBuilds # environmentVariables
+              - codebuild:BatchGetProjects
+              - ec2:DescribeInstanceAttribute # userData
+              - ec2:DescribeLaunchTemplateVersions
+              - ec2:GetConsoleOutput
+              - ec2:GetConsoleScreenshot
+            Resource: '*'
+          # Task overrides carry the command of one-off tasks; for
+          # run-labs-command.yml that is an agent-written Django snippet, which
+          # can hold literal program data (a case id, a worker's name).
+          # CloudTrail request parameters carry the same (RunTask overrides,
+          # RegisterTaskDefinition env, PutParameter values) — the scrubbed
+          # /labs-jj/observe/api-calls group keeps only who/what/when/error.
+          - Sid: DenyTaskCommandsAndApiCallContent
+            Effect: Deny
+            Action:
+              - ecs:DescribeTasks
+              - ecs:DescribeTaskSets
+              - ecs:DescribeServiceRevisions
+              - cloudformation:DescribeChangeSet
+              - cloudtrail:LookupEvents
+            Resource: '*'
+          - Sid: DenyImageQueueAndTableContent
+            Effect: Deny
+            Action:
+              - ecr:BatchGetImage
+              - ecr:GetDownloadUrlForLayer
+              - dynamodb:GetItem
+              - dynamodb:BatchGetItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - elasticache:Connect
+              - sqs:ReceiveMessage
+              - ses:ListSuppressedDestinations # recipient addresses (may be partners)
+              - ses:GetSuppressedDestination
+            Resource: '*'
+          - Sid: DenyExecIntoTasks
+            Effect: Deny
+            Action:
+              - ecs:ExecuteCommand
+              - ecs:RunTask
+              - ecs:StartTask
+              - ssm:StartSession
+              - ssm:SendCommand
+            Resource: '*'
+          - Sid: DenyTraceContent
+            Effect: Deny
+            # X-Ray is not used by labs today; traces carry URLs and SQL.
+            Action:
+              - xray:BatchGetTraces
+              - xray:Get*
+            Resource: '*'
+
+  ObserveRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: >-
+        Read-only, non-sensitive labs observability for incident debugging
+        (agents and humans). No raw log content, objects, secrets or writes.
+      MaxSessionDuration: 3600
+      ManagedPolicyArns:
+        - !Ref ObservePolicy
+        - !Ref ObserveDenyPolicy
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: NamedPrincipalsInThisAccount
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action:
+              - sts:AssumeRole
+              # Lets the broker stamp the agent / runner onto the session, so
+              # CloudTrail says who made each call.
+              - sts:SetSourceIdentity
+              - sts:TagSession
+            Condition:
+              ArnLike:
+                aws:PrincipalArn:
+                  - !If
+                    - TrustRunners
+                    - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RunnerRoleNamePattern}'
+                    - !Ref AWS::NoValue
+                  - !If
+                    - TrustFleet
+                    - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${FleetRoleNamePattern}'
+                    - !Ref AWS::NoValue
+                  - !If
+                    - TrustBroker
+                    - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${BrokerRoleName}'
+                    - !Ref AWS::NoValue
+                  - !If
+                    - TrustSso
+                    - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*'
+                    - !Ref AWS::NoValue
+      Tags:
+        - { Key: purpose, Value: labs-observe-readonly }
+
+Outputs:
+  RoleArn:
+    Description: Role to assume for read-only, non-sensitive labs observability.
+    Value: !GetAtt ObserveRole.Arn
+    Export:
+      Name: labs-jj-observe-readonly-role-arn
+
+  PolicyArn:
+    Description: The allow policy (reference by name from a permission set).
+    Value: !Ref ObservePolicy
+
+  DenyPolicyArn:
+    Description: The deny backstop (a permission set must reference it too).
+    Value: !Ref ObserveDenyPolicy
