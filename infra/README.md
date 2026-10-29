@@ -359,8 +359,16 @@ aws secretsmanager get-secret-value --secret-id labs-jj-umami-app-secret --profi
 aws ecs describe-tasks --cluster labs-jj-cluster --tasks "$(aws ecs list-tasks --cluster labs-jj-cluster --profile labs-observe --query 'taskArns[0]' --output text)" --profile labs-observe  # AccessDenied
 ```
 
-Anything sensitive (Logs Insights, the HIPAA telemetry review, ALB access logs,
-alarm enable/disable) stays on the `labs` SSO admin path with a person's approval.
+It can also read the **scrubbed** groups `/labs-jj/observe/*` (written by
+`labs-observe-pipeline.yml`: ECS stop reasons, API calls, request telemetry and
+ALB requests with every identifying field removed), stack status/events/templates
+for `labs-jj-*`, `canopy-*` and `ace-*`, runner EC2/ASG state, RDS config, cost
+and budgets, ACM, SES status and trail status. Performance Insights stays denied
+until it is enabled and its `pi:Dimensions` gate is tested live.
+
+Anything sensitive (raw application logs, the HIPAA telemetry review, raw ALB
+access logs, task overrides, CloudTrail request parameters, alarm enable/disable)
+stays on the `labs` SSO admin path with a person's approval.
 
 ### Upgrading Umami
 
