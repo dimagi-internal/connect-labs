@@ -314,8 +314,7 @@ is the read-only, non-sensitive path: metrics, alarm definitions + history, and
 ALB / ECS / RDS / ElastiCache / labs-stack metadata. It **cannot** read log
 events, S3 object bodies (audit archive, exports, ALB access logs), secret or
 parameter values, task commands or environments (`DescribeTasks`,
-`DescribeTaskDefinition`), stack parameters/outputs, SNS subscription endpoints
-(email addresses), or anything in the database, and
+`DescribeTaskDefinition`), stack parameters/outputs, or anything in the database, and
 it grants no write. The template's comments say why each action is or is not
 sensitive.
 

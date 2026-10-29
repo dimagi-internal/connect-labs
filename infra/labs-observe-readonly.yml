@@ -19,8 +19,9 @@ AWSTemplateFormatVersion: '2010-09-09'
 #     metadata and metric reads, plus an explicit DENY on every action that
 #     returns content that can carry PHI, PII or a secret (log events, object
 #     bodies, secret/parameter values, task commands + environment, stack
-#     parameters/outputs, subscription endpoints, DB data). No exceptions:
-#     nothing this role can read returns user data or a person's address.
+#     parameters/outputs, DB data). The line (Jonathan, 2026-10-29): program,
+#     beneficiary and frontline-worker data, secrets/credentials and raw request
+#     content are sensitive; staff and system identity (alarm recipients) is not.
 #     Named, so an IAM Identity Center permission set can reference the same
 #     policy as a customer-managed policy and humans get exactly this too.
 #   * `labs-jj-observe-readonly` (Role) with that policy, assumable only by
@@ -230,6 +231,20 @@ Resources:
             Action: cloudformation:ListStacks
             Resource: '*'
 
+          # "Is anyone actually subscribed to the alert topic?" — the check in
+          # infra/README.md. Endpoints are staff/agent mailboxes: staff and system
+          # identity is not sensitive (Jonathan, 2026-10-29); the line is program /
+          # beneficiary / frontline-worker data, secrets, and raw request content.
+          - Sid: AlertTopicSubscriptions
+            Effect: Allow
+            Action:
+              - sns:ListTopics
+              - sns:GetTopicAttributes
+              - sns:ListSubscriptions
+              - sns:ListSubscriptionsByTopic
+              - sns:GetSubscriptionAttributes
+            Resource: '*'
+
           # ── DENY (backstop) ───────────────────────────────────────────────
           # Every read below returns CONTENT that can carry PHI or a secret.
           # None is granted above; the denies keep them closed if a broader
@@ -286,7 +301,11 @@ Resources:
           - Sid: DenyTaskCommandsAndConfigContent
             Effect: Deny
             Action:
-              - ecs:DescribeTasks # containerOverrides: command + env of one-off tasks
+              # containerOverrides carry the command of one-off tasks; for
+              # run-labs-command.yml that is an agent-written Django snippet, which
+              # can hold literal program data (a case id, a worker's name or phone
+              # in a filter). So denied, not merely noted.
+              - ecs:DescribeTasks
               - ecs:DescribeTaskSets
               - ecs:DescribeServiceRevisions
               - cloudformation:DescribeStacks # parameter values + outputs
@@ -294,9 +313,6 @@ Resources:
               - cloudformation:GetTemplate
               - cloudformation:GetTemplateSummary
               - cloudformation:DescribeChangeSet
-              - sns:ListSubscriptions # endpoints = email addresses
-              - sns:ListSubscriptionsByTopic
-              - sns:GetSubscriptionAttributes
             Resource: '*'
           - Sid: DenyExecIntoTasks
             Effect: Deny
