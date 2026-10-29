@@ -31,6 +31,9 @@ review screen is affected: the images, verdicts, filters and saves all work norm
 ## Steps
 
 Run once per opportunity in program 217, via the `run-labs-command.yml` GitHub Action.
+The Action's log does not show a command's output (it is visible to every repo reader);
+run it with `tools/run_labs_command.py "<command>"`, which receives the output sealed to a
+key only your shell holds, or read the task's CloudWatch stream named in the log.
 
 1. **Dry-run one opportunity first.** `--verify-only` diffs the projection against the
    live computation and exits non-zero on disagreement, so it can catch a problem before

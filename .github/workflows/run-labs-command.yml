@@ -8,6 +8,18 @@ name: Run Labs management command
 # The task uses the CURRENTLY REGISTERED web task definition, so it runs the code +
 # secrets that are live in prod. Output goes to the web service's CloudWatch log group.
 #
+# OUTPUT NEVER LANDS IN THIS LOG IN PLAINTEXT. An Actions log is readable by every
+# reader of the repo for ~90 days, and a command run against prod's DB prints
+# whatever it reads (audit rows, FLW usernames, visit values, tracebacks echoing
+# them). So:
+#   * with `recipient` (a base64 raw X25519 public key the dispatcher made for this
+#     run and holds the private half of in memory -- hal's bin/hal-labs-prod-read
+#     does this), the command runs under `manage.py run_sealed` and only the sealed
+#     envelope is printed here; the plaintext is in neither this log nor CloudWatch.
+#   * without it, the command runs as before and this log carries only its exit
+#     code and the size of what it printed. Read the output itself in CloudWatch
+#     (the stream is named below) with AWS access, or re-run with a recipient.
+#
 # AWS auth is the GitHub OIDC role (secrets.AWS_ROLE_ARN); no local creds needed.
 #
 # SECURITY: the `guard` job gates only the REF (must be main) — it does NOT gate
@@ -25,6 +37,11 @@ on:
         description: 'manage.py command + args (without "python manage.py"), e.g. "load_geopode_from_drive --iso NGA"'
         type: string
         required: true
+      recipient:
+        description: 'Optional base64 raw X25519 public key. When set, output is printed here only sealed to it (manage.py run_sealed). Without it, output is NOT printed here (CloudWatch only).'
+        type: string
+        required: false
+        default: ''
 
 env:
   AWS_REGION: us-east-1
@@ -121,11 +138,29 @@ jobs:
       - name: Run command as a one-off Fargate task
         env:
           MGMT_CMD: ${{ github.event.inputs.command }}
+          RECIPIENT: ${{ github.event.inputs.recipient }}
         run: |
           # Build the container command array safely from the input (via env, not
           # shell interpolation, so args can't break out of the JSON / shell).
-          OVERRIDES=$(python3 -c "import json,os,shlex; print(json.dumps({'containerOverrides':[{'name':'web','command':['python','manage.py']+shlex.split(os.environ['MGMT_CMD'])}]}))")
-          echo "Overrides: $OVERRIDES"
+          # With a recipient the command is wrapped in run_sealed, so the task's
+          # own stdout -- and therefore CloudWatch and this log -- holds only
+          # ciphertext.
+          if [ -n "$RECIPIENT" ] && ! printf '%s' "$RECIPIENT" | grep -Eq '^[A-Za-z0-9+/]{43}=$'; then
+            echo "::error::recipient must be a base64 raw X25519 public key (44 chars)"
+            exit 1
+          fi
+          OVERRIDES=$(python3 -c "
+          import json, os, shlex
+          cmd = shlex.split(os.environ['MGMT_CMD'])
+          r = os.environ.get('RECIPIENT', '')
+          wrap = ['run_sealed', '--recipient', r, '--'] if r else []
+          print(json.dumps({'containerOverrides': [{'name': 'web', 'command': ['python', 'manage.py'] + wrap + cmd}]}))
+          ")
+          # Name the command, not its arguments: a snippet or an --email arg is
+          # the dispatcher's business, not every repo reader's.
+          CMD_NAME=$(python3 -c "import os,shlex; a=shlex.split(os.environ['MGMT_CMD']); print(f'{a[0]} ({len(a)-1} args)' if a else '(empty)')")
+          if [ -n "$RECIPIENT" ]; then MODE=sealed; else MODE=masked; fi
+          echo "Command: $CMD_NAME | output mode: $MODE"
 
           TASK_DEF_ARN=$(aws ecs describe-task-definition \
             --task-definition ${{ env.ECS_WEB_SERVICE }} \
@@ -150,13 +185,10 @@ jobs:
             --query 'tasks[0].stoppedReason' --output text)
           echo "Exit code: $EXIT_CODE | stoppedReason: $REASON"
 
-          # Tail the task's stdout/stderr into the Actions log so command OUTPUT is
-          # visible here. Read the task's OWN stream, not a time filter over the
-          # whole group: /ecs/labs-jj-web is shared with the live web service, so
-          # a group-wide filter buries the command's output in request logs and
-          # pages through a very large result set. The awslogs driver names one
-          # stream per task, "<awslogs-stream-prefix>/<container>/<task-id>", and
-          # both halves are read off the task definition rather than assumed.
+          # Read the task's OWN stream, not a time filter over the whole group:
+          # /ecs/labs-jj-web is shared with the live web service. The awslogs
+          # driver names one stream per task, "<prefix>/<container>/<task-id>",
+          # and both halves are read off the task definition rather than assumed.
           TASK_ID="${TASK_ARN##*/}"
           LOG_OPTS=$(aws ecs describe-task-definition \
             --task-definition "$TASK_DEF_ARN" \
@@ -166,46 +198,54 @@ jobs:
           LOG_PREFIX=$(printf '%s' "$LOG_OPTS" | python3 -c "import sys,json; print(json.load(sys.stdin)['awslogs-stream-prefix'])")
           LOG_STREAM="$LOG_PREFIX/web/$TASK_ID"
 
-          echo "----- command output ($LOG_GROUP : $LOG_STREAM) -----"
-          # Retry: CloudWatch ingestion lags task stop by a few seconds.
-          #
-          # Errors are deliberately NOT silenced. This block used to end in
-          # "2>/dev/null || true", which made a MISSING logs:GetLogEvents grant
-          # look identical to a command that simply printed nothing — the role
-          # had no logs:* permission at all, so every run of this workflow
-          # reported "(no log events found)" and the actual output (including
-          # tracebacks from failed commands) was never visible here.
-          # Every page of the stream, one event per line. get-log-events returns
-          # at most 1 MB / 10,000 events a call; reading one page cut a long
-          # command's output off mid-run, so a report printed at the end never
-          # appeared. The stream is read to its end, when the forward token stops
-          # changing.
-          read_stream() {
-            local token="" next page
-            while :; do
-              page=$(aws logs get-log-events \
-                --log-group-name "$LOG_GROUP" \
-                --log-stream-name "$LOG_STREAM" \
-                --start-from-head \
-                ${token:+--next-token "$token"} \
-                --output json) || return 1
-              printf '%s' "$page" | jq -r '.events[].message'
-              next=$(printf '%s' "$page" | jq -r '.nextForwardToken')
-              [ "$next" = "$token" ] && return 0
-              token="$next"
-            done
-          }
-          OUT=""
-          for i in 1 2 3 4 5 6 7 8; do
-            OUT=$(read_stream) || {
-                echo "::warning::could not read $LOG_STREAM (see error above); retrying"
-                OUT=""
-              }
-            [ -n "$OUT" ] && break
+          # Fetch the stream to a file on the runner (never echoed), paging
+          # until the forward token stops moving. Retry: CloudWatch ingestion
+          # lags task stop by a few seconds. Errors are NOT silenced -- a missing
+          # logs:GetLogEvents grant must not look like a command that printed
+          # nothing.
+          OUT_FILE="$RUNNER_TEMP/task-output.txt"
+          : > "$OUT_FILE"
+          for _ in 1 2 3 4 5 6 7 8; do
+            if LOG_GROUP="$LOG_GROUP" LOG_STREAM="$LOG_STREAM" OUT_FILE="$OUT_FILE" python3 -c "
+          import json, os, subprocess
+          args = ['aws', 'logs', 'get-log-events', '--log-group-name', os.environ['LOG_GROUP'],
+                  '--log-stream-name', os.environ['LOG_STREAM'], '--start-from-head', '--output', 'json']
+          token, lines = None, []
+          while True:
+              page = json.loads(subprocess.run(args + (['--next-token', token] if token else []),
+                                               check=True, capture_output=True, text=True).stdout)
+              lines += [e['message'] for e in page.get('events', [])]
+              nxt = page.get('nextForwardToken')
+              if not page.get('events') or nxt == token:
+                  break
+              token = nxt
+          open(os.environ['OUT_FILE'], 'w').write('\n'.join(lines))
+          "; then
+              [ -s "$OUT_FILE" ] && break
+            else
+              echo "::warning::could not read $LOG_STREAM; retrying"
+            fi
             sleep 8
           done
-          echo "${OUT:-(no log events found in $LOG_STREAM)}"
+
+          BYTES=$(wc -c < "$OUT_FILE" | tr -d ' ')
+          LINES=$(wc -l < "$OUT_FILE" | tr -d ' ')
+          echo "----- command output ($LOG_GROUP : $LOG_STREAM) -----"
+          if [ "$MODE" = sealed ]; then
+            # Print ONLY the envelope. Anything else in the stream (Django log
+            # records on stderr) stays in CloudWatch.
+            if grep -q '__SEALED_OUTPUT_BEGIN__' "$OUT_FILE"; then
+              sed -n '/__SEALED_OUTPUT_BEGIN__ v/,/__SEALED_OUTPUT_END__/p' "$OUT_FILE"
+            else
+              echo "(no sealed envelope in the task's output: $LINES lines, $BYTES bytes, not shown;"
+              echo " the task likely failed before run_sealed ran -- e.g. the deployed image predates it)"
+            fi
+          else
+            echo "(output not shown: $LINES lines, $BYTES bytes. It is in CloudWatch at the stream above;"
+            echo " re-run with a 'recipient' public key to receive it sealed here.)"
+          fi
           echo "-------------------------------------------------------------------"
+          rm -f "$OUT_FILE"
 
           if [ "$EXIT_CODE" != "0" ]; then
             echo "::error::Command failed with exit code $EXIT_CODE"
