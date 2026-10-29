@@ -1,0 +1,4 @@
+jsQR 1.4.0 (https://github.com/cozmo/jsQR), Apache License 2.0.
+jsQR.min.js is that release's dist/jsQR.js, minified with terser and otherwise unmodified.
+Loaded by field.js only when a code is scanned and the browser has no built-in BarcodeDetector.
+Full licence text: https://www.apache.org/licenses/LICENSE-2.0

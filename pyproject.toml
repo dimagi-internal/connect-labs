@@ -1,7 +1,7 @@
 # ==== pytest ====
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "--ds=config.settings.test -p canopy_sdk.conformance.pytest_plugin --reuse-db --durations=25 --ignore=connect_labs/workflow/tests/e2e --ignore=connect_labs/labs/tests/e2e --ignore=connect_labs/funder_dashboard/tests/e2e --ignore=connect_labs/campaign/tests/e2e --ignore=connect_labs/audit/management/commands/test_search_readers.py"
+addopts = "--ds=config.settings.test -p canopy_sdk.conformance.pytest_plugin --reuse-db --durations=25 --ignore=connect_labs/workflow/tests/e2e --ignore=connect_labs/labs/tests/e2e --ignore=connect_labs/funder_dashboard/tests/e2e --ignore=connect_labs/campaign/tests/e2e --ignore=connect_labs/supply_chain/tests/e2e --ignore=connect_labs/audit/management/commands/test_search_readers.py"
 norecursedirs = ["management"]
 python_files = [
     "tests.py",

@@ -20,6 +20,13 @@ own prefix so seven of them cannot collide.
 
 {% block body %}
 
+{% if supply_points %}
+  <p class="mb-4 text-sm" data-field-link>
+    <a href="{% url 'supply_chain:update_link_field' link_token %}" class="inline-block px-4 py-2 rounded-md bg-brand-indigo text-white font-medium">Count stock on your phone</a>
+    <span class="text-gray-600 ml-2">A light page that keeps working with no signal.</span>
+  </p>
+{% endif %}
+
 {% if done %}
   <div class="flex items-center gap-2 p-4 mb-4 rounded-lg border-[0.5px] bg-message-success text-message-success-text border-message-success-border">
     <span>{{ done_sentence }} The programme team can see it now.</span>

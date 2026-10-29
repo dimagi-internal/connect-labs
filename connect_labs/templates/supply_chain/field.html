@@ -1,0 +1,119 @@
+{% comment %}
+The field page. A standalone document, like the form page, and for the same reason the token is in
+its URL: no analytics, no referrer to other sites, never indexed. Unlike the form page it loads NOTHING
+from another site -- no web font, no CDN -- and no labs stylesheet: a few lines of CSS inline and one
+small script, because the people who use it are on old phones with poor signal. The script, the
+service worker and the reference data are kept on the phone (field_sw.js), so it opens with no signal
+once it has been opened with some.
+{% endcomment %}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="same-origin">
+  <meta name="theme-color" content="#3843d0">
+  <link rel="manifest" href="{{ urls.manifest }}">
+  <title>Stock · {{ org.name }}</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#f5f5f4;color:#1c1917}
+    header{background:#3843d0;color:#fff;padding:12px 16px}
+    header h1{margin:0;font-size:18px}
+    header p{margin:2px 0 0;font-size:13px;opacity:.9}
+    main{max-width:34rem;margin:0 auto;padding:12px 16px 40px}
+    section{background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:14px;margin:12px 0}
+    h2{margin:0 0 8px;font-size:15px}
+    label{display:block;font-size:14px;font-weight:600;margin:10px 0 3px}
+    select,input[type=text],input[type=number],input[type=date]{width:100%;padding:11px;font-size:16px;border:1px solid #a8a29e;border-radius:8px;background:#fff}
+    button{font-size:16px;padding:12px 16px;border-radius:8px;border:1px solid #a8a29e;background:#fff;color:#1c1917}
+    button.primary{background:#3843d0;border-color:#3843d0;color:#fff;width:100%;margin-top:14px;font-weight:600}
+    button.link{border:0;background:none;color:#3843d0;padding:4px 0;font-size:14px;text-decoration:underline}
+    .row{display:flex;gap:8px;align-items:flex-end}.row>*{flex:1}.row>button{flex:0 0 auto}
+    .pill{display:inline-block;font-size:12px;padding:2px 8px;border-radius:99px;background:#e7e5e4}
+    .pill.off{background:#fde68a}.pill.ok{background:#bbf7d0}
+    .note{font-size:13px;color:#57534e;margin:4px 0}
+    .msg{padding:10px 12px;border-radius:8px;margin:10px 0;font-size:14px;background:#fef3c7}
+    .msg.good{background:#dcfce7}
+    ul{list-style:none;margin:0;padding:0}li{padding:8px 0;border-top:1px solid #f0efed;font-size:14px}li:first-child{border-top:0}
+    .bad{color:#b91c1c}
+    #scanner{position:fixed;inset:0;background:#000;color:#fff;z-index:9;display:none;flex-direction:column}
+    #scanner video{flex:1;min-height:0;object-fit:cover;width:100%}
+    #scanner .bar{padding:12px;background:#1c1917;display:flex;gap:8px;flex-wrap:wrap}
+    #scanner input[type=text]{flex:1;min-width:8rem}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+<header>
+  <h1>Stock for {{ org.name }}</h1>
+  <p>
+    {% if link.connect_username %}For {{ link.connect_username }}{% if verified %} · checked{% endif %} · {% endif %}
+    <span id="net" class="pill">checking…</span> <span id="pending" class="pill" hidden></span>
+  </p>
+</header>
+<noscript><main><section>This page needs JavaScript. Use the form page instead: <a href="{{ urls.verify }}">open it</a>.</section></main></noscript>
+<main id="app">
+  <div id="banner" class="msg" role="status" hidden></div>
+
+  <section aria-labelledby="h-count">
+    <h2 id="h-count">Count stock</h2>
+    <form id="entry" autocomplete="off">
+      <label for="point">Where</label>
+      <select id="point" required></select>
+
+      <label for="item">Product</label>
+      <div class="row">
+        <select id="item" required></select>
+        <button type="button" id="scan" aria-label="Scan a code">Scan</button>
+      </div>
+
+      <div class="row">
+        <div><label for="qty">How many</label><input id="qty" type="number" inputmode="decimal" min="0" step="any" required></div>
+        <div><label for="basis">In</label><select id="basis"></select></div>
+      </div>
+
+      <label for="batch">Batch (if on the pack)</label>
+      <input id="batch" type="text" maxlength="64">
+
+      <label for="day">Counted on</label>
+      <input id="day" type="date" required>
+
+      <label for="photo">Photo (optional)</label>
+      <input id="photo" type="file" accept="image/*" capture="environment">
+      <p class="note" id="photo-note" hidden></p>
+
+      <button class="primary" type="submit">Save</button>
+      <p class="note">Saved on this phone first, then sent when there is signal.</p>
+    </form>
+  </section>
+
+  <section aria-labelledby="h-wait" id="queue-box" hidden>
+    <h2 id="h-wait">Waiting to send</h2>
+    <ul id="queue"></ul>
+    <button type="button" id="send-now" class="link">Send now</button>
+  </section>
+
+  <section aria-labelledby="h-done" id="done-box" hidden>
+    <h2 id="h-done">Sent from this phone</h2>
+    <ul id="done"></ul>
+  </section>
+
+  <p class="note">The full form page for this link is <a href="{{ urls.verify }}">here</a>.</p>
+</main>
+
+<div id="scanner" role="dialog" aria-label="Scan a code">
+  <video id="video" playsinline muted></video>
+  <div class="bar">
+    <input id="typed" type="text" placeholder="…or type the code" aria-label="Type the code">
+    <button type="button" id="typed-go">Use</button>
+    <label class="note" style="margin:0;color:#fff">Photo of the code <input id="shot" type="file" accept="image/*" capture="environment"></label>
+    <button type="button" id="scan-close">Close</button>
+  </div>
+  <p class="note" id="scan-note" style="color:#fff;padding:0 12px"></p>
+</div>
+
+{{ config|json_script:"cfg" }}
+<script src="{{ static_files.script }}" defer></script>
+</body>
+</html>

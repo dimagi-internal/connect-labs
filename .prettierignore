@@ -18,3 +18,7 @@ CLAUDE.md
 # deliberate regeneration diffs row by row. Prettier would put every value on its
 # own line.
 connect_labs/semantic/tests/fixtures/kmc_rollup_golden.json
+
+# A vendored, already-minified third-party decoder (jsQR, Apache-2.0). Reformatting it would
+# turn a 130 KB line into a diff nobody can review.
+connect_labs/static/supply_chain/field/jsQR.min.js
