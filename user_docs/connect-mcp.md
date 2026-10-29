@@ -1,9 +1,6 @@
 # Connect MCP
 
-Connect Labs gives technical program staff a way to edit workflows using Claude Code (an AI assistant) from the command line — without writing code themselves.
-
-!!! note "Who this is for"
-    This feature is for program administrators and technical staff who are comfortable working in a terminal. If you just want to use the AI assistant inside the Labs browser app, see [AI Features](ai-features.md) instead.
+Connect Labs has an MCP server: the connection Claude uses to read and act on labs (workflows, pipelines, solicitations, targeting, synthetic data)
 
 ---
 
@@ -11,14 +8,14 @@ Connect Labs gives technical program staff a way to edit workflows using Claude 
 
 Normally, editing a workflow's display logic or data fields requires a developer to modify code. With the Connect MCP (Model Context Protocol), you can describe changes in plain English and Claude Code makes the edits for you.
 
-**Claude Code** is the AI assistant CLI you run in your terminal. **MCP** (Model Context Protocol) is the server it connects to — hosted inside Connect Labs — that gives Claude Code the tools to read and update workflows. You use Claude Code; it uses the MCP behind the scenes.
+**Claude Code** is the AI assistant CLI you run in your terminal or in the 'code' tab of Claude Desktop. **MCP** (Model Context Protocol) is the server it connects to — hosted inside Connect Labs — that gives Claude Code the tools to read and update workflows. You use Claude Code; it uses the MCP behind the scenes.
 
 <!-- prettier-ignore -->
 > _"Add a column showing how many weeks since the last visit"_
 > _"Change the status colors so 'Overdue' shows in red"_
 > _"Remove the RUTF field from the table — it's not relevant for this program"_
 
-Claude reads the workflow's current definition, makes the change, and pushes it back to Labs — all from your terminal.
+Claude reads the workflow's current definition, makes the change, and pushes it back to Labs.
 
 ---
 
@@ -28,30 +25,9 @@ Claude reads the workflow's current definition, makes the change, and pushes it 
 | --- | --- |
 | A **Labs login** (the account you use at [labs.connect.dimagi.com](https://labs.connect.dimagi.com)) | Everything |
 | **Claude Code** (`npm install -g @anthropic-ai/claude-code`), or Claude desktop / claude.ai | Everything |
-| A clone of the connect-labs repository (`git clone https://github.com/dimagi-internal/connect-labs.git`) | The `/workflow-author` skill and Safe Mode |
-| The 1Password CLI (`op`), with access to the **Employee** and **AI-Agents** vaults | Safe Mode only |
+| A clone of the connect-labs repository (`git clone https://github.com/dimagi-internal/connect-labs.git`) | The `/workflow-author` skill |
 
-Ask in **#engineering-connect** if you're unsure about any of these.
-
-!!! note "You don't need to run Labs locally"
-    For workflow editing you do **not** need to run the Django app locally. The Labs MCP server is hosted on Labs itself; Claude pushes workflow changes directly to Labs prod, and you verify the result in your browser. Run locally only if you are modifying the core Connect Labs application code itself.
-
----
-
-## MCP Addresses
-
-Connect Labs provides two MCP addresses. **Use `mcp/no_user_visit/` unless you need real visit data.** It is the default for everyone.
-
-| Address | What it can access |
-| --- | --- |
-| `https://labs.connect.dimagi.com/mcp/no_user_visit/` (**default**) | Never shows real user visit data. Can read programme structure (workflows, pipelines, indicator registries, app structure, solicitations, org directory, targeting), can edit workflow and indicator definitions and trigger saved-run generation, and can profile real opportunities and generate synthetic data. Tools that read visits work only on synthetic opportunities whose data was generated. |
-| `https://labs.connect.dimagi.com/mcp/` | Full access matching your Connect permissions, including real visit data. Only if your work needs it. |
-
-!!! tip "Using the restricted address for a whole team"
-    `mcp/no_user_visit/` is designed as a safe default for a shared or team setup. Signing in through this address gives a restricted token that stays restricted even if it is later used on the main `/mcp/` address.
-
-!!! note "Locking a person to restricted access"
-    An administrator can permanently lock an individual account to "no user visit data" (Django admin → Users → **MCP: no user visit data**). Once set, everything that person does through MCP is restricted — on either address, with any token, and including sign-ins and any automated action taken on their behalf. The Labs export API and the demo reseed endpoint also refuse them. This is stronger than the team default above, because it cannot be stepped around by switching to the full `/mcp/` address.
+Ask in **#connect-labs** if you're unsure about any of these.
 
 ---
 
@@ -63,12 +39,6 @@ Connect Labs provides two MCP addresses. **Use `mcp/no_user_visit/` unless you n
 
     ```bash
     claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/no_user_visit/
-    ```
-
-    Only if you need real visit data, use the full address instead:
-
-    ```bash
-    claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/
     ```
 
     Then type `/mcp`, choose `connect_labs` and sign in with CommCare Connect when the browser opens. There is no token to copy.
@@ -85,9 +55,9 @@ Connect Labs provides two MCP addresses. **Use `mcp/no_user_visit/` unless you n
 
 Claude acts as you, with your Connect permissions. To see or disconnect the apps you have signed in, visit [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/).
 
-### 2. (Safe Mode only) Register a Labs token
+### 2. (Scripts and headless agents only) Register a Labs token
 
-[Safe Mode](connect-safe-mode.md) cannot use the browser sign-in — it needs a Personal Access Token. From **inside your connect-labs checkout**, start Claude Code and run:
+Anything that cannot open a browser to sign in — a script, a scheduled job, a headless agent — needs a Personal Access Token instead. From **inside your connect-labs checkout**, start Claude Code and run:
 
 ```
 /labs-token-setup
@@ -98,20 +68,97 @@ When asked, choose **Production labs environment**, then approve the token in th
 !!! note "Full-access tokens require a passkey confirmation"
     If you choose a full-access token during setup, a small canopy window opens over the page and asks you to touch your passkey. If you are not a member of Labs' canopy workspace, you can create a no-user-visit token only.
 
-### 3. (Safe Mode only) Fetch the CommCare HQ credentials
+---
 
-```bash
-op signin --account dimagi
-op inject -f -i .env.tpl -o .env
-```
+## MCP Addresses
 
-The `.env` holds the CommCare HQ credentials Safe Mode's read-only app-structure tools use.
+Connect Labs provides two MCP addresses. **Use `mcp/no_user_visit/` unless you need real visit data.** It is the default for everyone.
+
+| Address | What it can access |
+| --- | --- |
+| `https://labs.connect.dimagi.com/mcp/no_user_visit/` (**default**) | Never shows real user visit data. Can read programme structure (workflows, pipelines, indicator registries, app structure, solicitations, org directory, targeting), can edit workflow and indicator definitions and trigger saved-run generation, and can profile real opportunities and generate synthetic data. Tools that read visits work only on synthetic opportunities whose data was generated. |
+| `https://labs.connect.dimagi.com/mcp/` | Full access matching your Connect permissions, including real visit data. Only if your work needs it. |
+
+On the restricted address, anything that reads visits needs a synthetic opportunity whose data was generated. [Synthetic Data](synthetic-data.md) explains what those are and how to make one in a single request.
+
+!!! note "Locking a person to restricted access"
+    An administrator can permanently lock an individual account to "no user visit data" (Django admin → Users → **MCP: no user visit data**). Once set, everything that person does through MCP is restricted — on either address, with any token, and including sign-ins and any automated action taken on their behalf. The Labs export API and the demo reseed endpoint also refuse them. This is stronger than simply choosing the restricted address, because it cannot be stepped around by switching to the full `/mcp/` address.
 
 ---
 
+## What "No User Visit Data" Means
+
+In one sentence: **a restricted Claude never sees a real beneficiary's visit, but it can still see and change how your programme is built.**
+
+It is about what Claude *sees*, not about whether it may change things.
+
+### What it cannot do
+
+- **See real visit data.** No visit rows and no per-visit values, whether raw or worked out by a pipeline, a workflow run, a snapshot or a report. The tools that read visits — querying data, listing visits, previewing a pipeline, opening a workflow run, dumping records — run **only** on synthetic opportunities whose data was generated. Point one at a real opportunity and it refuses. [Synthetic Data](synthetic-data.md) explains how to get one it can read.
+- **Read a stored snapshot of a saved run.** A snapshot saved earlier was built from whatever the run read at the time, so a restricted Claude is never handed one. It gets a fresh build over generated data, or a refusal.
+- **Delete a workflow or a pipeline.** Editing is allowed; deleting is not.
+- **Write synthetic data onto a real opportunity**, or wipe a shared demo environment.
+- **Run a page-type workflow.** Open pages in the browser instead.
+
+### What it can do
+
+- **Read how your programme is built.** Workflow definitions, pipeline schemas, indicator registries, CommCare app structure, solicitations and their responses, funds, the organisation directory, admin boundaries, targeting data and microplan sampling.
+- **Edit definitions.** It can change a workflow's configuration and its opportunity list, and create and edit indicator registries. (Render code is the exception: it can only be edited on a workflow whose opportunities are all generated, because render code later runs over real data in whoever opens the page.)
+- **Set work going on the server.** Creating runs, saving snapshots, rebuilding a report's history, warming a visit cache, handing a report down and publishing a benchmark all work. For these the **server** reads the visits and keeps the result; what comes back to Claude is ids, versions, dates and counts.
+- **Make synthetic data.** It can measure a real opportunity on the server and generate a synthetic copy from that measurement — see [Synthetic Data](synthetic-data.md).
+
+!!! note "Counts and dates are allowed"
+    Opportunity-level counts and dates are on the allowed side of the line, as are the contact details of people who submitted something as an organisation. The line is drawn at an individual visit and its values.
+
+!!! warning "One gap worth knowing about"
+    When work set going on the server fails — a cache warm, a history rebuild, a hand-down — the error message comes back to Claude. Those are configuration and infrastructure messages, but a pipeline that choked on a value can quote that value in its error. It is the one way a restricted caller can see something drawn from a real visit.
+
+---
+
+## Checking Which Address You Are On
+
+**Either the address or the credential is enough to make a call restricted** — a full-access token pointed at `mcp/no_user_visit/` is still a restricted call, and a no-user-visit token is restricted even on the full address. The address is simply the easiest of the two to check, so start there.
+
+=== "Claude Code"
+
+    List your servers and their addresses:
+
+    ```bash
+    claude mcp list
+    ```
+
+    Look at the `connect_labs` row. (Typing `/mcp` inside a Claude Code session shows the same servers and lets you sign in or out.) The setting itself lives in `~/.claude.json`, under `mcpServers`.
+
+    To switch to the restricted address, remove the server and add it back:
+
+    ```bash
+    claude mcp remove connect_labs
+    claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/no_user_visit/
+    ```
+
+    **Restart Claude Code afterwards.** A change to the address does not take effect in a session that is already running — quit fully and start again, then type `/mcp` and sign in.
+
+=== "Claude desktop or claude.ai"
+
+    Open **Settings → Connectors** and find the Connect Labs connector. The address it was added with is shown there.
+
+    To switch, remove the connector and add it again with `https://labs.connect.dimagi.com/mcp/no_user_visit/`, then click **Connect** and sign in. There is no way to edit an existing connector's address in place.
+
+Note the trailing slash on `mcp/no_user_visit/` — without it the address will not work.
+
+!!! tip "Belt and braces: a restricted token too"
+    If you want the restriction to hold even when something is pointed at the full address, mint a **No user visit data** token at [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/) and use that. Either the address or the token is enough on its own; both is simply harder to undo by accident. Stronger still is the account-level lock described above, which an administrator sets.
+
+---
+
+## Advanced
+
+Everything below is reference material: tokens, the exact rules of the restricted
+address, job limits and how results are kept. Most people will not need it.
+
 ## Personal Access Tokens
 
-Personal Access Tokens let you connect an MCP client (such as Claude Code in Safe Mode) to Labs without going through the browser sign-in flow. You create and manage them at [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/).
+Personal Access Tokens let you connect an MCP client to Labs without going through the browser sign-in flow — a script, a scheduled job or any headless agent that cannot open a browser. You create and manage them at [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/).
 
 ### Creating and rotating tokens
 
@@ -158,27 +205,27 @@ The `mcp/no_user_visit/` address enforces a strict set of rules to prevent real 
 - **Reading visit data with the Data tools (`data_describe`, `data_query`, `data_visits`, and the older `explorer_describe` / `explorer_query` names).** These tools read live visit data and are not available on the restricted address, except over generated synthetic opportunities. `data_validate` and `data_workflow_context` read no visit data and are available there.
 - **Starting a run on a page-type workflow.** Pages are not run through MCP — open them in the browser instead.
 
-The restricted address offers a simpler set of synthetic tools: `synthetic_clone_opp` (plus status checking, fidelity scoring, demo environments, and visibility) rather than the full set of step-by-step tools available on the full-access address.
+The restricted address offers a simpler set of synthetic tools: `synthetic_clone_opp` (plus status checking, fidelity scoring, demo environments, and visibility) rather than the full set of step-by-step tools available on the full-access address. That one flow is all you need — see [Synthetic Data](synthetic-data.md).
 
 !!! note "No change for full-access callers"
-    If you use the main `/mcp/` address, none of the above restrictions apply to you. The only change that affects everyone is described in the pipeline export name note below.
+    None of the above applies to a full-access call — meaning an unrestricted credential on an account that has not been locked. A no-user-visit token stays restricted on the main `/mcp/` address, and so does a locked account.
 
 ---
 
-## Profiling Limits
+## Limits on Profiling and Synthetic Jobs
 
-The following limits apply when using the profiling and synthetic-data tools.
+**There is no per-person limit** on how many jobs you start, or on how many opportunities you profile or clone in one call. The caps that used to apply were removed once each job began running on a machine of its own.
 
-| Limit | Value | Who it applies to |
-| --- | --- | --- |
-| Opportunities per single call | 10 | Restricted address only |
-| Time limit per job | 2 hours | Everyone |
-| Synthetic jobs running at the same time across the whole system | 2 | Everyone |
+What still bounds the work:
+
+| Limit | Value |
+| --- | --- |
+| Synthetic jobs running at the same time across the whole system | 6 |
+| Time limit per job, after which it is stopped and marked failed | 6 hours on Labs |
+
+Jobs over the system-wide limit wait their turn rather than being refused, so a large batch is slower, not rejected. Both figures are the current settings on Labs and can be changed by an administrator; a job running somewhere other than the Labs cluster is held to a shorter limit.
 
 If you submit a request that is identical to one already running, Labs returns the existing job rather than starting a duplicate.
-
-!!! tip "If you hit a limit"
-    Wait for a running job to finish before starting a new one if the system-wide limit is reached.
 
 ---
 
@@ -220,4 +267,12 @@ Any MCP client can read the link back with the standard `resources/read` request
 - **Sorting.** Add `&sort=<column>&dir=desc` to sort the whole result before it is paged. The column must be one of the result's columns.
 - **Who can read it.** You can, and so can anyone who could run the same thing themselves (for example, someone with access to every opportunity the query read). Anyone else is refused with `forbidden`.
 - **What it shows.** Each read returns exactly the rows the tool produced. A result is never re-run, so the numbers cannot change between reads.
-- **For a day.** After a day the link returns `expired` (the
+- **For a day.** After a day the link returns `expired` and the rows are gone. Run the tool again to get a fresh result.
+
+---
+
+## Related
+
+- [Synthetic Data](synthetic-data.md) — fake, labs-only copies of real opportunities, and the one request that makes them
+- [Reports with Claude](reports-with-claude.md) — building and changing reports with Claude
+- [Data Spaces and Raw Data](data-spaces.md) — the Data page and the tools Claude reads it with

@@ -39,10 +39,15 @@ PREFIX_TO_FEATURE = {
     "connect_labs/static/microplans/simple_microplan": "Simple Microplan",
     "connect_labs/templates/microplans/simple_": "Simple Microplan",
     "connect_labs/ai/": "AI Features",
-    "connect_labs/mcp/": "Connect MCP & Safe Mode",
-    "docs/MCP_SETUP.md": "Connect MCP & Safe Mode",
-    "docs/WORKFLOW_EDITOR_QUICKSTART.md": "Connect MCP & Safe Mode",
-    "docs/SAFE_MODE.md": "Connect MCP & Safe Mode",
+    "connect_labs/mcp/": "Connect MCP",
+    "docs/MCP_SETUP.md": "Connect MCP",
+    "docs/WORKFLOW_EDITOR_QUICKSTART.md": "Connect MCP",
+    # Synthetic Data has a help page but no Confluence summary (like Simple
+    # Microplan): absent from FEATURE_PAGE_IDS, which main() tolerates.
+    "connect_labs/labs/synthetic/": "Synthetic Data",
+    # docs/SAFE_MODE.md is deliberately NOT mapped: Safe Mode is an engineering-only
+    # tool and no longer appears on the help site, so a change to it must not trigger
+    # a rewrite of a user-facing page.
 }
 
 # Confluence page IDs for each feature summary page (created by bootstrap)
@@ -52,7 +57,9 @@ FEATURE_PAGE_IDS = {
     "Task Management": "3928293395",
     "Solicitations": "3927179271",
     "AI Features": "3928817690",
-    "Connect MCP & Safe Mode": "3927801885",
+    # The Confluence page keeps its own title (update_page passes the live one through);
+    # this key is only how the updater names the feature area.
+    "Connect MCP": "3927801885",
 }
 
 # Maps feature names to their GitHub Pages markdown file paths in user_docs/
@@ -63,7 +70,8 @@ FEATURE_TO_DOC_FILE = {
     "Solicitations": "user_docs/solicitations.md",
     "Simple Microplan": "user_docs/simple-microplan.md",
     "AI Features": "user_docs/ai-features.md",
-    "Connect MCP & Safe Mode": "user_docs/connect-mcp.md",
+    "Connect MCP": "user_docs/connect-mcp.md",
+    "Synthetic Data": "user_docs/synthetic-data.md",
 }
 
 # Developer documentation: technical pages for engineers on OTHER systems (claims, HTTP,

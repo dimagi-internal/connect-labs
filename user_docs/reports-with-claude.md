@@ -129,7 +129,7 @@ Smaller changes work the same way:
 
 This is usually two steps, and Claude does them in order:
 
-1. **Pipeline**: add the form question. Claude looks through the opportunity's app to find where the question sits, then runs the pipeline on real data to check the new column actually fills in. If a column comes back empty for every row, it has the wrong question, and Claude should fix that before going further.
+1. **Pipeline**: add the form question. Claude looks through the opportunity's app to find where the question sits, then runs the pipeline to check the new column actually fills in (on the default restricted address that run is against a synthetic clone; on the full address it can be the real data). If a column comes back empty for every row, it has the wrong question, and Claude should fix that before going further.
 2. **Indicator or page**: turn the new column into a figure, either as an indicator definition (KMC reports) or on the report page.
 
 Tell Claude the form and the question as field workers see it.
@@ -202,7 +202,7 @@ Claude can tell you which of these it is:
 
 **Ask to see the current version before it changes anything.** Labs doesn't keep a history of earlier versions of report pages, pipelines or indicator definitions. Claude can undo a change only by putting back what it read earlier **in the same conversation**. If you might want to go back, start with *"show me what's there now"*, and do the undo before you close the conversation.
 
-**Preview where you can.** Claude can run a pipeline change on real data before saving it, and recalculate a past week without saving anything. Ask for that whenever the change affects numbers someone will act on.
+**Preview where you can.** Claude can run a pipeline change before saving it, and recalculate a past week without saving anything. Ask for that whenever the change affects numbers someone will act on. On the restricted address — the default — a preview runs only against a [synthetic clone](synthetic-data.md), not the real opportunity; previewing on real data needs the full address.
 
 **Check in the browser.** After each change, reload the report and look. The fastest way to work is: say the change → Claude applies it → reload → check → next change. Small steps are easier to check than one big one.
 
@@ -214,10 +214,13 @@ Claude can tell you which of these it is:
     Anyone who can reach a report's opportunity or programme through their Connect login can change its page,
     pipelines and indicator definitions. There is no separate "editor" role, so agree within your team who changes what.
 
-!!! tip "Working with real program data in Claude Code?"
-    Use [Safe Mode](connect-safe-mode.md). It's for Claude Code only, and needs a copy of the connect-labs repository and
-    1Password access. It blocks shell, web, file-writing and sub-agent tools, so program data can't be copied out of the
-    session, and it sends everything through a zero-data-retention AI endpoint. It still allows every Labs tool, including edits.
+!!! tip "Don't want Claude seeing real programme data?"
+    Stay on the restricted address, `https://labs.connect.dimagi.com/mcp/no_user_visit/` — the default these setup steps use.
+    Claude can still read and edit your workflows, pipelines and indicator definitions and regenerate saved runs; it simply
+    never sees a real beneficiary's visit. To work against realistic data it *can* read, make a
+    [synthetic clone](synthetic-data.md) of the opportunity. See
+    [What "No User Visit Data" Means](connect-mcp.md#what-no-user-visit-data-means), and
+    [Checking Which Address You Are On](connect-mcp.md#checking-which-address-you-are-on) to confirm which one you have.
 
 ---
 

@@ -4,6 +4,13 @@ site_url: https://labs.connect.dimagi.com/labs/docs/help/
 
 docs_dir: user_docs
 
+# Connect Safe Mode is no longer shown to users: the restricted MCP address
+# (/mcp/no_user_visit/) is the answer we give instead. Excluded rather than deleted
+# so the engineering doc's history and docs/SAFE_MODE.md keep their context; nothing
+# in the built site links to it, and it is unreachable by URL or search.
+exclude_docs: |
+  connect-safe-mode.md
+
 theme:
   name: material
   palette:
@@ -36,7 +43,7 @@ nav:
       - Cross-Programme Reports: cross-program-rollups.md
       - Weekly Trends and Saved Runs: weekly-trends-and-snapshots.md
       - Connect MCP: connect-mcp.md
-      - Connect Safe Mode: connect-safe-mode.md
+      - Synthetic Data: synthetic-data.md
       - Embedding Labs in Other Systems: embedding-labs.md
   # Technical pages for engineers on other systems (user_docs/developers/). Written by
   # hand with the interface they describe; never rewritten by automation/update_docs.py.

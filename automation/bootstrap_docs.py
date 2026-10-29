@@ -69,11 +69,14 @@ FEATURES = [
         ),
     },
     {
-        "title": "Connect MCP & Safe Mode",
+        # The live Confluence page is still titled "Connect MCP & Safe Mode"; this is the
+        # name a fresh bootstrap would give it, and it matches update_docs.py's feature key.
+        # Safe Mode is no longer published to users (docs/DOCS_AUTOMATION.md).
+        "title": "Connect MCP",
         "slug": "connect-mcp",
         "summary": (
             "Edit Labs workflows using Claude Code from the command line — no coding required. "
-            "Safe Mode ensures patient data stays protected by restricting what Claude can access."
+            "The restricted address lets Claude work on your programme without seeing real visit data."
         ),
     },
 ]

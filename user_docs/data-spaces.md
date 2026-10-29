@@ -231,6 +231,6 @@ When an export includes a case field, the zip gains **`cases.csv`**: one row per
 
 ## Related pages
 
-- [Connect MCP](connect-mcp.md#data-formerly-the-sql-explorer): the Data page's layout and the tools Claude uses to read it.
+- [Connect MCP](connect-mcp.md): connecting Claude to Labs, and what it may read on each address.
 - [Workflow Engine](workflow-engine.md#what-a-pipeline-is): what a pipeline is, where to edit one, and how workflows and their pipelines fit together.
 - [Reports with Claude](reports-with-claude.md): building and changing reports by talking to Claude.

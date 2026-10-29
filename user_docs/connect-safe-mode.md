@@ -1,3 +1,11 @@
+<!--
+NOT PUBLISHED. This page is excluded from the help site via `exclude_docs` in
+mkdocs.yml: it is absent from the nav, from search and from every URL. The user
+docs now point people at the restricted MCP address (/mcp/no_user_visit/)
+instead. Do not edit it expecting readers; its links are stale. The engineering
+doc is docs/SAFE_MODE.md. See docs/DOCS_AUTOMATION.md, "Connect Safe Mode".
+-->
+
 # Connect Safe Mode
 
 Safe Mode adds security guardrails so that when AI has access to real program data, it cannot leak that data outside approved channels.
