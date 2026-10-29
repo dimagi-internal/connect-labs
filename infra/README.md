@@ -35,6 +35,7 @@ doing if labs proves long-lived enough to justify the import work.
 | `labs-audit-analytics.yml`   | Umami service (log group, target group, `/umami/*` ALB rule, task def, ECS service), Umami CodeBuild image pipeline + its role, audit-archive/secrets IAM inline policies                                                                                                                                                                                                                                                                            | Object-Locked audit S3 bucket, Umami secrets, ECR repo, ALB/cluster/roles/VPC                                        |
 | `labs-access-logs.yml`       | ALB access-log S3 bucket, its delivery policy, and a 90-day retention lifecycle                                                                                                                                                                                                                                                                                                                                                                      | The ALB itself (logging is switched on via a CLI attribute — see below)                                              |
 | `labs-email.yml`             | SES domain identity + DKIM, `labs-jj-email` configuration set, `labs-jj-email-events` SNS topic + event destination, scoped `ses:SendEmail` managed policy                                                                                                                                                                                                                                                                                           | ECS task role (policy attaches by name), the DNS zone, SES production access                                         |
+| `labs-observe-readonly.yml`  | `labs-jj-observe-readonly` role + managed policy: read-only, non-sensitive observability (metrics, alarms, ALB/ECS/RDS/ElastiCache/stack metadata) with explicit denies on log events, object bodies, secrets, task-definition env and DB data                                                                                                                                                                                                       | canopy runner instance roles + canopy-web's task role (they need their own `sts:AssumeRole` grant), Identity Center  |
 | `labs-media.yml`             | `labs-media-uploads` inline policy: Get/Put on `media/*` in the exports bucket, where `default_storage` (supply documents) writes                                                                                                                                                                                                                                                                                                                    | ECS task role, the exports bucket (private; its ListBucket grant is out-of-band)                                     |
 | `labs-overture.yml`          | `labs-overture-snapshots` inline policy: Delete on `overture/snapshots/*` in the exports bucket, so `overture_refresh` can prune Overture snapshots older than the rollback (Get/Put/List are out-of-band)                                                                                                                                                                                                                                           | ECS task role, the exports bucket                                                                                    |
 | `labs-synthetic-jobs.yml`    | `labs-synthetic-jobs` inline policy: `ecs:RunTask` from the worker family on the labs cluster, `ListTasks`/`StopTask`/`DescribeTasks`/`DescribeServices`/`DescribeTaskDefinition`, and `iam:PassRole` for the task + execution roles -- so each synthetic job runs on a standalone Fargate task a deploy does not stop (`labs/synthetic/ecs_runner.py`); the `labs-jj-synthetic-job-overran` and `-machine-died` alarms and their log metric filters | ECS task role, execution role, the cluster, the worker log group, the alert topic (`labs-jj-alert-topic-arn` export) |
@@ -301,6 +302,63 @@ until the three DKIM CNAMEs in the stack Outputs are published in the
 `connect.dimagi.com` zone (which lives outside the labs account — there are no
 Route 53 hosted zones here), and the account must leave the SES sandbox via an
 AWS Support request. Full runbook: **[docs/OUTBOUND_EMAIL.md](../docs/OUTBOUND_EMAIL.md)**.
+
+### Observe-only access (`labs-jj-observe-readonly`)
+
+The everyday incident questions ("what did ALB p95 do?", "when did this alarm
+fire?", "did the rollout reach steady state?") need **telemetry, not data**. Until
+this stack the only path to them was the `labs` SSO profile with
+AdministratorAccess, which an unattended cloud-runner turn cannot complete, and
+which hands a laptop turn full admin over a HIPAA account. `labs-jj-observe-readonly`
+is the read-only, non-sensitive path: metrics, alarm definitions + history, and
+ALB / ECS / RDS / ElastiCache / labs-stack metadata. It **cannot** read log
+events, S3 object bodies (audit archive, exports, ALB access logs), secret or
+parameter values, task-definition environments, or anything in the database, and
+it grants no write. The template's comments say why each action is or is not
+sensitive.
+
+```bash
+aws cloudformation deploy --profile labs --region us-east-1 \
+  --stack-name labs-jj-observe \
+  --template-file infra/labs-observe-readonly.yml \
+  --capabilities CAPABILITY_NAMED_IAM
+```
+
+Trust is account-root plus an `aws:PrincipalArn` match, so **the caller's own
+identity policy must also allow `sts:AssumeRole` on this role** — the stack alone
+lets nobody in. Who may assume it:
+
+| Caller                                          | How                                                                                                      | Login?                                                                                      |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| A human on a laptop                             | the same `labs` SSO login, then a chained profile (below), or a `LabsObserveReadOnly` permission set     | **No new login.** Same SSO sign-in; you pick a narrower role instead of AdministratorAccess |
+| An agent on a canopy cloud runner (cloud-ec2-*) | a root-owned broker on the box assumes the role with the instance role and hands the runner uid 1h creds | **None.** The instance role is the identity; runner uids never see it (IMDS is root-only)   |
+| An agent on a laptop                            | canopy-web (`canopy-web-task-role`) assumes the role and vends 1h creds to the authenticated agent       | **None.** The agent's canopy identity is the gate; no phone approval                        |
+
+A human's chained profile, needing nothing but the existing `labs` session:
+
+```ini
+[profile labs-observe]
+source_profile = labs
+role_arn = arn:aws:iam::858923557655:role/labs-jj-observe-readonly
+region = us-east-1
+```
+
+For an Identity Center permission set instead, create it in the Identity Center
+admin account with a **customer-managed policy reference** to
+`labs-jj-observe-readonly` (the managed policy this stack creates), and assign it
+to this account.
+
+Verify after deploy that the denies hold (each must say `AccessDenied`):
+
+```bash
+aws cloudwatch describe-alarms --alarm-name-prefix labs-jj- --profile labs-observe --query 'length(MetricAlarms)'   # works
+aws logs filter-log-events --log-group-name /ecs/labs-jj-web --limit 1 --profile labs-observe                        # AccessDenied
+aws ecs describe-task-definition --task-definition labs-jj-web --profile labs-observe                                # AccessDenied
+aws secretsmanager get-secret-value --secret-id labs-jj-umami-app-secret --profile labs-observe                       # AccessDenied
+```
+
+Anything sensitive (Logs Insights, the HIPAA telemetry review, ALB access logs,
+alarm enable/disable) stays on the `labs` SSO admin path with a person's approval.
 
 ### Upgrading Umami
 

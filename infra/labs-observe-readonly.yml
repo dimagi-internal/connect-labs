@@ -1,0 +1,365 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Labs observe-only role: a read-only, NON-SENSITIVE AWS path for debugging
+# connect-labs incidents. Fifth slice of infrastructure-as-code for the
+# connect-labs AWS environment — see infra/README.md.
+#
+# The problem. Every incident question an agent can't answer from the database
+# ("what did the ALB p95 do?", "which alarm fired, and when?", "did the deploy
+# reach steady state?") needs telemetry, and the only way to it today is the
+# `labs` SSO profile with AdministratorAccess. An unattended cloud-runner turn
+# cannot complete SSO, so it ends with "someone with SSO please pull this"; a
+# laptop turn has to push an approval to a person's phone (`canopy aws login`)
+# and then holds full admin over an account that stores health data (HIPAA).
+# The `run-labs-command.yml` path needs no SSO, but runs as the task role,
+# which holds prod's secrets and NO CloudWatch read at all.
+#
+# What this stack owns:
+#   * `labs-jj-observe-readonly` (ManagedPolicy): an explicit ALLOW list of
+#     metadata and metric reads, plus an explicit DENY on every action that
+#     returns content that can carry PHI or a secret (log events, object
+#     bodies, secret/parameter values, task-definition environment, DB data).
+#     Named, so an IAM Identity Center permission set can reference the same
+#     policy as a customer-managed policy and humans get exactly this too.
+#   * `labs-jj-observe-readonly` (Role) with that policy, assumable only by
+#     the principals named below, for at most one hour.
+#
+# The allow list is the control; the deny list is a backstop that keeps the
+# sensitive reads closed even if someone later attaches a broad policy (e.g.
+# ReadOnlyAccess) to this role. Explicit Deny always wins in IAM.
+#
+# What it does NOT do:
+#   * It grants no write of any kind (not even alarm enable/disable).
+#   * It does not, by itself, let anyone in. Trust is account-root + an
+#     aws:PrincipalArn match, which means the CALLER's own identity policy must
+#     also allow sts:AssumeRole on this role. Two-sided consent: the canopy
+#     runner and canopy-web roles get that grant in their own stacks
+#     (canopy-web repo), not here. SSO AdministratorAccess already has it.
+#   * It does not wire any agent. See infra/README.md § Observe-only access.
+#
+# Deployed by hand with a labs admin login (the Deploy to Labs role holds no
+# iam:CreateRole):
+#
+#   aws cloudformation deploy --profile labs --region us-east-1 \
+#     --stack-name labs-jj-observe \
+#     --template-file infra/labs-observe-readonly.yml \
+#     --capabilities CAPABILITY_NAMED_IAM
+
+Description: >-
+  Labs observe-only role (labs-jj-observe-readonly): CloudWatch metrics/alarms,
+  ALB/ECS/RDS/ElastiCache/CloudFormation metadata for incident debugging, with
+  explicit denies on log events, object bodies, secrets, task-definition env and
+  DB data. Assumable by canopy cloud runners, the canopy-web credential broker
+  and SSO users. No writes.
+
+Parameters:
+  RoleName:
+    Type: String
+    Default: labs-jj-observe-readonly
+    Description: Name of the role (and of its managed policy).
+
+  RunnerRoleNamePattern:
+    Type: String
+    Default: canopy-cloud-runner*-RunnerRole-*
+    Description: >-
+      IAM role-name pattern (ArnLike) of the canopy cloud runners' instance
+      roles. The runner stacks are canopy-cloud-runner (cloud-ec2-1) and
+      canopy-cloud-runner-<n> (cloud-ec2-<n>); CloudFormation names the role
+      <stack>-RunnerRole-<suffix>. The instance role is root's on the box (IMDS
+      is closed to runner uids), so an agent reaches this role only through a
+      root-owned broker on the box, never directly. Empty = do not trust runners.
+
+  BrokerRoleName:
+    Type: String
+    Default: canopy-web-task-role
+    Description: >-
+      canopy-web's own ECS task role. Trusting it lets canopy-web vend
+      one-hour observe credentials to an authenticated agent (laptop or cloud)
+      with no SSO approval. Empty = do not trust canopy-web.
+
+  AllowSsoUsers:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: >-
+      'true' lets any IAM Identity Center role in this account chain into the
+      observe role (aws-reserved/sso.amazonaws.com/*), so a human on the
+      existing `labs` login can work least-privilege without a second login.
+
+  LabsStackPrefix:
+    Type: String
+    Default: labs-jj-
+    Description: >-
+      CloudFormation stacks and SNS topics whose describe calls are allowed.
+      Other stacks in the account (canopy-web, ace-web, runners) may carry
+      non-NoEcho parameters this role has no business reading.
+
+Conditions:
+  TrustRunners: !Not [!Equals [!Ref RunnerRoleNamePattern, '']]
+  TrustBroker: !Not [!Equals [!Ref BrokerRoleName, '']]
+  TrustSso: !Equals [!Ref AllowSsoUsers, 'true']
+
+Resources:
+  ObservePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Ref RoleName
+      Description: >-
+        Read-only, non-sensitive labs observability: metrics, alarms and
+        resource metadata. Denies every read that returns log content, object
+        bodies, secrets, task-definition env or database data.
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # ── ALLOW ──────────────────────────────────────────────────────────
+          # Metrics are numbers keyed by resource names; alarms are their
+          # thresholds and state transitions. labs' own metric filters only
+          # COUNT matching lines and extract no dimension from log content
+          # (infra/labs-monitoring.yml), so nothing here carries a log line.
+          # No resource-level scoping exists for most of these.
+          - Sid: MetricsAndAlarms
+            Effect: Allow
+            Action:
+              - cloudwatch:GetMetricData
+              - cloudwatch:GetMetricStatistics
+              - cloudwatch:GetMetricWidgetImage
+              - cloudwatch:ListMetrics
+              - cloudwatch:DescribeAlarms
+              - cloudwatch:DescribeAlarmHistory
+              - cloudwatch:DescribeAlarmsForMetric
+              - cloudwatch:DescribeAnomalyDetectors
+              - cloudwatch:ListDashboards
+              - cloudwatch:GetDashboard
+              - cloudwatch:ListTagsForResource
+            Resource: '*'
+
+          # Log-group METADATA only: names, retention, stored bytes, stream
+          # names (ecs/web/<task-id>) and last-event timestamps ("is this task
+          # still logging?"), and metric-filter patterns. Never an event body —
+          # see DenyLogContent.
+          - Sid: LogMetadataOnly
+            Effect: Allow
+            Action:
+              - logs:DescribeLogGroups
+              - logs:DescribeLogStreams
+              - logs:DescribeMetricFilters
+            Resource: '*'
+
+          # Load balancer topology, attributes, listener rules and target
+          # health. Configuration only; request data lives in the access-log
+          # bucket, which this role cannot read.
+          - Sid: LoadBalancerMetadata
+            Effect: Allow
+            Action:
+              - elasticloadbalancing:DescribeLoadBalancers
+              - elasticloadbalancing:DescribeLoadBalancerAttributes
+              - elasticloadbalancing:DescribeListeners
+              - elasticloadbalancing:DescribeRules
+              - elasticloadbalancing:DescribeTargetGroups
+              - elasticloadbalancing:DescribeTargetGroupAttributes
+              - elasticloadbalancing:DescribeTargetHealth
+              - elasticloadbalancing:DescribeTags
+            Resource: '*'
+
+          # Services, deployments, rollout events, running/stopped tasks with
+          # their stop reasons and exit codes, and capacity. DescribeTaskDefinition
+          # is deliberately absent and denied below: a task definition's
+          # `environment` is plaintext, and this account holds revisions
+          # registered out-of-band (Umami, canopy-web, ace-web, older labs)
+          # that nobody has audited for secrets.
+          - Sid: EcsRuntimeMetadata
+            Effect: Allow
+            Action:
+              - ecs:ListClusters
+              - ecs:DescribeClusters
+              - ecs:ListServices
+              - ecs:DescribeServices
+              - ecs:ListServiceDeployments
+              - ecs:DescribeServiceDeployments
+              - ecs:DescribeServiceRevisions
+              - ecs:ListTasks
+              - ecs:DescribeTasks
+              - ecs:ListTaskDefinitions
+              - ecs:ListTaskDefinitionFamilies
+              - ecs:ListContainerInstances
+              - ecs:DescribeContainerInstances
+              - ecs:ListTagsForResource
+              - application-autoscaling:DescribeScalableTargets
+              - application-autoscaling:DescribeScalingActivities
+              - application-autoscaling:DescribeScalingPolicies
+            Resource: '*'
+
+          # Instance class, status, maintenance and AWS-side events for the
+          # database and redis. No data, no logs, no Performance Insights (its
+          # SQL dimension returns statement text, which can hold literal values).
+          - Sid: DataTierMetadata
+            Effect: Allow
+            Action:
+              - rds:DescribeDBInstances
+              - rds:DescribeEvents
+              - rds:DescribePendingMaintenanceActions
+              - elasticache:DescribeCacheClusters
+              - elasticache:DescribeReplicationGroups
+              - elasticache:DescribeEvents
+            Resource: '*'
+
+          # AWS's own service-health events ("was it us or us-east-1?").
+          - Sid: AwsHealth
+            Effect: Allow
+            Action:
+              - health:DescribeEvents
+              - health:DescribeEventDetails
+              - health:DescribeAffectedEntities
+            Resource: '*'
+
+          # Stack status, events and resources for the labs stacks only —
+          # "did the monitoring change set actually apply?". Scoped because
+          # DescribeStacks returns non-NoEcho parameter values. Callers must
+          # pass --stack-name; an unscoped DescribeStacks is evaluated against
+          # '*' and is denied by omission.
+          - Sid: LabsStacks
+            Effect: Allow
+            Action:
+              - cloudformation:DescribeStacks
+              - cloudformation:DescribeStackEvents
+              - cloudformation:DescribeStackResource
+              - cloudformation:DescribeStackResources
+              - cloudformation:ListStackResources
+            Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${LabsStackPrefix}*/*'
+          - Sid: ListStacks
+            Effect: Allow
+            Action: cloudformation:ListStacks
+            Resource: '*'
+
+          # "Is anyone actually subscribed to the alert topic?" — the check in
+          # infra/README.md. Endpoints are staff/agent mailboxes.
+          - Sid: AlertTopicSubscriptions
+            Effect: Allow
+            Action:
+              - sns:GetTopicAttributes
+              - sns:ListSubscriptionsByTopic
+            Resource: !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${LabsStackPrefix}*'
+
+          # ── DENY (backstop) ───────────────────────────────────────────────
+          # Every read below returns CONTENT that can carry PHI or a secret.
+          # None is granted above; the denies keep them closed if a broader
+          # policy is ever attached to this role.
+          - Sid: DenyLogContent
+            Effect: Deny
+            Action:
+              - logs:Get* # GetLogEvents, GetQueryResults, GetLogRecord, GetLogGroupFields, …
+              - logs:FilterLogEvents
+              - logs:StartQuery
+              - logs:StartLiveTail
+              - logs:Unmask
+              - logs:CreateExportTask
+              - cloudwatch:GetInsightRuleReport # Contributor Insights keys come from log fields
+            Resource: '*'
+          - Sid: DenyObjectAndQueryContent
+            Effect: Deny
+            Action:
+              - s3:GetObject* # (also authorizes SelectObjectContent) audit archive, exports, ALB access logs (client IPs + full URLs)
+              - s3:RestoreObject
+              - athena:* # ALB logs are queryable through Athena
+            Resource: '*'
+          - Sid: DenySecretValues
+            Effect: Deny
+            Action:
+              - secretsmanager:GetSecretValue
+              - secretsmanager:BatchGetSecretValue
+              - ssm:GetParameter*
+              - kms:Decrypt
+              - kms:GenerateDataKey*
+            Resource: '*'
+          - Sid: DenyDatabaseContent
+            Effect: Deny
+            Action:
+              - rds-data:*
+              - rds-db:connect
+              - rds:DownloadDBLogFilePortion
+              - rds:DownloadCompleteDBLogFile
+              - pi:*
+            Resource: '*'
+          - Sid: DenyPlaintextEnvAndUserData
+            Effect: Deny
+            Action:
+              - ecs:DescribeTaskDefinition # containerDefinitions[].environment
+              - lambda:GetFunction # code + env
+              - lambda:GetFunctionConfiguration # env
+              - codebuild:BatchGetBuilds # environmentVariables
+              - codebuild:BatchGetProjects
+              - ec2:DescribeInstanceAttribute # userData
+              - ec2:DescribeLaunchTemplateVersions
+              - ec2:GetConsoleOutput
+              - ec2:GetConsoleScreenshot
+            Resource: '*'
+          - Sid: DenyExecIntoTasks
+            Effect: Deny
+            Action:
+              - ecs:ExecuteCommand
+              - ecs:RunTask
+              - ecs:StartTask
+              - ssm:StartSession
+              - ssm:SendCommand
+            Resource: '*'
+          - Sid: DenyTraceContent
+            Effect: Deny
+            # X-Ray is not used by labs today; traces carry URLs and SQL.
+            Action:
+              - xray:BatchGetTraces
+              - xray:Get*
+            Resource: '*'
+
+  ObserveRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: >-
+        Read-only, non-sensitive labs observability for incident debugging
+        (agents and humans). No log content, object bodies, secrets or writes.
+      MaxSessionDuration: 3600
+      ManagedPolicyArns:
+        - !Ref ObservePolicy
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: NamedPrincipalsInThisAccount
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action:
+              - sts:AssumeRole
+              # Lets the broker stamp the agent's name onto the session, so
+              # CloudTrail says which agent made each call.
+              - sts:SetSourceIdentity
+              - sts:TagSession
+            Condition:
+              ArnLike:
+                aws:PrincipalArn:
+                  - !If
+                    - TrustRunners
+                    - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RunnerRoleNamePattern}'
+                    - !Ref AWS::NoValue
+                  - !If
+                    - TrustBroker
+                    - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${BrokerRoleName}'
+                    - !Ref AWS::NoValue
+                  - !If
+                    - TrustSso
+                    - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*'
+                    - !Ref AWS::NoValue
+      Tags:
+        - { Key: purpose, Value: labs-observe-readonly }
+
+Outputs:
+  RoleArn:
+    Description: Role to assume for read-only, non-sensitive labs observability.
+    Value: !GetAtt ObserveRole.Arn
+    Export:
+      Name: labs-jj-observe-readonly-role-arn
+
+  PolicyArn:
+    Description: >-
+      The managed policy. An Identity Center permission set can reference it as
+      a customer-managed policy by name.
+    Value: !Ref ObservePolicy
