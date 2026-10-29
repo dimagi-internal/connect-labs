@@ -1,0 +1,50 @@
+{% extends 'supply_chain/_update_link_shell.html' %}
+
+{% comment %}
+Shown instead of the link's page when the link wants proof the person can read
+the recipient's PersonalID chat. Two steps on one URL: ask for a code (it is
+sent to their Connect chat), then type it. Nothing about the link's scope is
+read to build this page.
+{% endcomment %}
+
+{% block title %}Check it's you{% endblock %}
+{% block heading %}Updates for {{ org.name }}{% endblock %}
+
+{% block body %}
+<div class="bg-white border border-brand-border-light rounded-lg px-5 py-6 max-w-2xl" data-verify>
+  <h2 class="text-base font-semibold text-gray-900">Check it's you</h2>
+  <p class="text-sm text-gray-700 mt-1">
+    This link is for <strong>{{ masked_username }}</strong>. We send a short code to that person's
+    chat in the Connect app; type it here to continue.
+  </p>
+
+  {% if error %}
+    <div class="mt-3 p-3 rounded-lg border border-message-warning-border/50 bg-message-warning text-message-warning-text text-sm" role="alert" data-verify-error>{{ error }}</div>
+  {% endif %}
+
+  {% if sent %}
+    <p class="mt-3 text-sm text-gray-700" data-code-sent>A code is on its way — open the Connect app and look in your messages.</p>
+    <form method="post" class="mt-3 flex gap-2 items-end">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="check_code">
+      <div>
+        <label for="code" class="block text-sm font-medium text-gray-700 mb-1">The code</label>
+        <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]*" maxlength="9" required class="base-input">
+      </div>
+      <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-brand-indigo rounded-md">Continue</button>
+    </form>
+  {% endif %}
+
+  {% if can_send %}
+    <form method="post" class="mt-3">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="send_code">
+      <button type="submit" class="px-4 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">
+        {% if sent %}Send another code{% else %}Send me a code{% endif %}
+      </button>
+    </form>
+  {% else %}
+    <p class="mt-3 text-sm text-gray-700">A code cannot be sent for this link. Ask the programme team that sent it to you.</p>
+  {% endif %}
+</div>
+{% endblock %}

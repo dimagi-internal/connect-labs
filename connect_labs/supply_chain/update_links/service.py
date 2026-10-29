@@ -737,7 +737,7 @@ def link_access(link):
 
 
 @transaction.atomic
-def submit(link, action, data) -> dict:
+def submit(link, action, data, *, verified: bool = False) -> dict:
     """Carry out one action through its ordinary operation. Returns the operation's result.
 
     One transaction: the write, whatever follows it (an attached letter), the
@@ -765,6 +765,7 @@ def submit(link, action, data) -> dict:
             link=link,
             action=action,
             connect_username=link.connect_username,
+            verified=verified,
             operation=operation,
             result_type=operation.split("_", 1)[0],
             result_id=result_id,
@@ -800,6 +801,7 @@ def submit(link, action, data) -> dict:
             "update_link_id": link.pk,
             "org_id": link.org_id,
             "connect_username": link.connect_username,
+            "verified": verified,
             "action": action,
             "operation": operation,
         },

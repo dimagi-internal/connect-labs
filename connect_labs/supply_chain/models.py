@@ -1694,4 +1694,9 @@ from connect_labs.supply_chain.portfolio.models import Portfolio  # noqa: E402,F
 # Which organisation runs each programme (#2458). Read its docstring before
 # reasoning about who "we" are in a programme.
 from connect_labs.supply_chain.runner.models import ProgrammeRunner  # noqa: E402,F401
-from connect_labs.supply_chain.update_links.models import UpdateLink, UpdateLinkSubmission  # noqa: E402,F401
+from connect_labs.supply_chain.update_links.models import (  # noqa: E402,F401
+    LinkDevice,
+    LinkVerification,
+    UpdateLink,
+    UpdateLinkSubmission,
+)

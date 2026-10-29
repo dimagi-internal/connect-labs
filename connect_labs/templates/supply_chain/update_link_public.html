@@ -36,6 +36,7 @@ own prefix so seven of them cannot collide.
     {% if link.connect_username %}
       <p class="text-sm text-gray-700 mt-1" data-sent-to>
         This link was sent to <strong>{{ link.connect_username }}</strong>; what you record is credited to them.
+        {% if verified %}<span data-verified>Checked: you could read their Connect chat.</span>{% endif %}
       </p>
     {% endif %}
     {% if link.follows_org %}
