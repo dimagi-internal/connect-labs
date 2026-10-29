@@ -58,6 +58,13 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      # Each delivered object raises an EventBridge "Object Created" event, which
+      # labs-observe-pipeline.yml's ALB scrubber turns into the IP/UA/query-free
+      # /labs-jj/observe/alb-requests group. Notification only; nothing reads
+      # the raw objects but that Lambda (and an admin).
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
       LifecycleConfiguration:
         Rules:
           - Id: expire-access-logs

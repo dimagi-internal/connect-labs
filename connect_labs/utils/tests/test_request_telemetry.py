@@ -129,6 +129,21 @@ class TestFanoutDetection:
         assert "slow" in line["reason"]
         assert line["duration_ms"] >= 0
 
+    def test_line_carries_the_route_template_and_status(self, request_obj, caplog, monkeypatch):
+        """The scrubbed copy (/labs-jj/observe/request-telemetry) keys on these two:
+        it drops `path`, and drops any line without `route` rather than use the path."""
+        monkeypatch.setattr(request_telemetry, "SLOW_REQUEST_MS", 0)
+        request_obj.path = "/labs/workflow/4242/"
+        request_obj.resolver_match.route = "labs/workflow/<int:workflow_id>/"
+        response = MagicMock(status_code=404)
+        caplog.set_level("WARNING")
+
+        _middleware(lambda r: response)(request_obj)
+
+        (line,) = _lines(caplog)
+        assert line["route"] == "labs/workflow/<int:workflow_id>/"
+        assert line["status"] == 404
+
 
 class TestRobustness:
     def test_telemetry_never_swallows_the_response(self, request_obj):

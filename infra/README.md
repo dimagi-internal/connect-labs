@@ -392,6 +392,35 @@ Anything sensitive (raw application logs, the HIPAA telemetry review, raw ALB
 access logs, task overrides, CloudTrail request parameters, alarm enable/disable)
 stays on the `labs` SSO admin path with a person's approval.
 
+### Deploy: observe pipeline (scrubbed derivatives)
+
+`labs-observe-pipeline.yml` (stack `labs-jj-observe-pipeline`) writes
+allow-listed copies of the sources the observe role may not read raw into
+`/labs-jj/observe/*`: ECS task stops and deployments (stop code/reason, exit
+codes, task def family:revision; never overrides), AWS Health, management API
+calls that wrote or failed (who/what/error; never request parameters), labs
+slow-request telemetry (route template, method, status, `*_ms`; never the path
+or username) and every ALB request (target group, method, route template with
+identifying segments as `{id}`, statuses, latencies, target, bytes; never client
+IP, user agent or query). It also owns the account's management-events trail
+(`labs-jj-management`, private bucket) and count-only metric filters: ERROR
+lines by logger (`Labs/Web`, `Labs/Worker`, `Labs/CanopyWeb`), audit events by
+action/outcome/source (`Labs/Audit EventCount`) and Umami P2002s.
+
+The scrubbers live in `infra/observe_pipeline/` and are tested in
+`connect_labs/utils/tests/test_observe_scrubbers.py`. The template's `ZipFile`
+blocks are copies: edit the `.py`, then `python infra/observe_pipeline/render.py`.
+It needs EventBridge notifications on the ALB log bucket (`labs-access-logs.yml`),
+so deploy that stack first:
+
+```bash
+aws cloudformation deploy --profile labs --region us-east-1 \
+  --stack-name labs-jj-access-logs --template-file infra/labs-access-logs.yml
+aws cloudformation deploy --profile labs --region us-east-1 \
+  --stack-name labs-jj-observe-pipeline --template-file infra/labs-observe-pipeline.yml \
+  --capabilities CAPABILITY_NAMED_IAM
+```
+
 ### Upgrading Umami
 
 **The version is a pinned tag (`UmamiVersion`, currently `v3.3.1`), not `main`.**
