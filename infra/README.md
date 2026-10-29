@@ -399,9 +399,10 @@ stays on the `labs` SSO admin path with a person's approval.
 allow-listed copies of the sources the observe role may not read raw into
 `/labs-jj/observe/*`: ECS task stops and deployments (stop code/reason, exit
 codes, task def family:revision; never overrides), AWS Health, management API
-calls that wrote or failed (who/what/error; never request parameters), labs
-slow-request telemetry (route template, method, status, `*_ms`; never the path
-or username) and every ALB request (target group, method, route template with
+calls that wrote or failed (who/what/error; never request parameters), labs request telemetry — `slow_request`, `stream_end`, `pipeline_stream` and
+`top_requester` lines (route template, method, status, `*_ms`, counts, worker RSS,
+config ids; never the path, opportunity ids, outbound hosts, or any username but a
+staff account's — everyone else arrives already hashed as `u:<hmac>`) and every ALB request (target group, method, route template with
 identifying segments as `{id}`, statuses, latencies, target, bytes; never client
 IP, user agent or query). It also owns the account's management-events trail
 (`labs-jj-management`, private bucket) and count-only metric filters: ERROR
