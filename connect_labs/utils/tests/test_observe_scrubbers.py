@@ -228,22 +228,121 @@ def _telemetry_line(**over):
     return json.dumps(line)
 
 
-def test_telemetry_keeps_route_method_status_and_latency_only(monkeypatch):
+def test_telemetry_keeps_route_method_status_and_numbers_only(monkeypatch):
     mod, _ = _load("request_telemetry_scrubber", monkeypatch)
-    rec = mod.scrub(_telemetry_line())
+    rec = mod.scrub(_telemetry_line(rss_kb=812000, rss_delta_kb=310000, maxrss_kb=900000, maxrss_rise_kb=88000))
     assert set(rec) == {
+        "event",
         "route",
         "method",
+        "reason",
         "status",
+        "sampled",
         "duration_ms",
         "db_ms",
         "outbound_ms",
         "self_ms",
         "cpu_ms",
         "retry_wait_ms",
+        "outbound_calls",
+        "rss_kb",
+        "rss_delta_kb",
+        "maxrss_kb",
+        "maxrss_rise_kb",
     }
     assert rec["route"] == "labs/workflow/<int:workflow_id>/"
+    assert rec["event"] == "slow_request"
     _no_sentinel(rec)
+
+
+def test_unknown_event_is_dropped(monkeypatch):
+    mod, _ = _load("request_telemetry_scrubber", monkeypatch)
+    assert mod.scrub(_telemetry_line(event="audit")) is None
+    assert mod.scrub(_telemetry_line(event=None)) is None
+
+
+def test_stream_end_keeps_route_outcome_and_numbers(monkeypatch):
+    mod, _ = _load("request_telemetry_scrubber", monkeypatch)
+    line = {
+        "event": "stream_end",
+        "route": "labs/workflow/api/<int:definition_id>/pipeline-data/stream/",
+        "method": "GET",
+        "status": 200,
+        "outcome": "closed",
+        "duration_ms": 900000,
+        "chunks": 40,
+        "bytes": 31000000,
+        "sampled": True,
+        "rss_peak_kb": 1900000,
+        "rss_peak_rise_kb": 1200000,
+        "path": SENTINEL,
+        "username": SENTINEL,
+    }
+    rec = mod.scrub(json.dumps(line))
+    assert rec["outcome"] == "closed" and rec["rss_peak_rise_kb"] == 1200000
+    assert "path" not in rec and "username" not in rec
+    _no_sentinel(rec)
+    del line["route"]
+    assert mod.scrub(json.dumps(line)) is None
+
+
+def test_pipeline_stream_keeps_config_ids_and_counts_never_opportunity_ids(monkeypatch):
+    mod, _ = _load("request_telemetry_scrubber", monkeypatch)
+    line = {
+        "event": "pipeline_stream",
+        "phase": "step",
+        "stream_id": "a1b2c3d4e5f6",
+        "definition_id": 5476,
+        "pipeline_id": 5108,
+        "rows": 2189,
+        "total_rows": 2797,
+        "from_cache": False,
+        "rss_kb": 1500000,
+        "rss_peak_rise_kb": 700000,
+        "opportunity_id": SENTINEL,
+        "opp_id": SENTINEL,
+        "error": SENTINEL,
+    }
+    rec = mod.scrub(json.dumps(line))
+    assert rec["pipeline_id"] == 5108 and rec["rows"] == 2189 and rec["phase"] == "step"
+    _no_sentinel(rec)
+
+
+def _top(**over):
+    line = {
+        "event": "top_requester",
+        "window_s": 60,
+        "pid": 21,
+        "requests": 400,
+        "anonymous_requests": 3,
+        "distinct_requesters": 2,
+        "top_requester": "ace",
+        "top_requester_kind": "staff",
+        "top_user_agent_class": "python",
+        "top_requests": 380,
+        "top_share_pct": 95.0,
+        "top_route": "labs/workflow/api/job/<str:task_id>/status.json",
+        "top_route_requests": 380,
+        "user_agent": SENTINEL,
+        "email": SENTINEL,
+    }
+    line.update(over)
+    return json.dumps(line)
+
+
+def test_top_requester_keeps_staff_name_and_hash_only(monkeypatch):
+    mod, _ = _load("request_telemetry_scrubber", monkeypatch)
+    staff = mod.scrub(_top())
+    assert staff["top_requester"] == "ace" and staff["top_share_pct"] == 95.0
+    _no_sentinel(staff)
+    hashed = mod.scrub(_top(top_requester="u:0123456789ab", top_requester_kind="hashed"))
+    assert hashed["top_requester"] == "u:0123456789ab"
+    # A non-staff line whose requester is not a well-formed hash keeps NO requester.
+    leaked = mod.scrub(_top(top_requester=SENTINEL, top_requester_kind="hashed"))
+    assert "top_requester" not in leaked
+    _no_sentinel(leaked)
+    unknown_kind = mod.scrub(_top(top_requester=SENTINEL, top_requester_kind="partner"))
+    assert "top_requester" not in unknown_kind and "top_requester_kind" not in unknown_kind
 
 
 def test_telemetry_without_route_is_dropped_not_backfilled(monkeypatch):
