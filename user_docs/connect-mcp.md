@@ -208,7 +208,7 @@ The `mcp/no_user_visit/` address enforces a strict set of rules to prevent real 
 The restricted address offers a simpler set of synthetic tools: `synthetic_clone_opp` (plus status checking, fidelity scoring, demo environments, and visibility) rather than the full set of step-by-step tools available on the full-access address. That one flow is all you need — see [Synthetic Data](synthetic-data.md).
 
 !!! note "No change for full-access callers"
-    If you use the main `/mcp/` address, none of the above restrictions apply to you.
+    None of the above applies to a full-access call — meaning an unrestricted credential on an account that has not been locked. A no-user-visit token stays restricted on the main `/mcp/` address, and so does a locked account.
 
 ---
 

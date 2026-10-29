@@ -1,6 +1,6 @@
 # Synthetic Data
 
-A **synthetic opportunity** is a fake, labs-only copy of a real one. It looks and behaves like the real thing — workers, cases, visits, photos, reports — but no beneficiary's data is in it.
+A **synthetic opportunity** is a fake, labs-only dataset — usually a copy of a real opportunity, but it can also be generated from a CommCare app alone. It looks and behaves like the real thing — workers, cases, visits, photos, reports — but no beneficiary's data is in it.
 
 !!! note "Who this is for"
     Anyone who needs realistic programme data to demo, analyze, build or practise with. You do not need to know anything about MCP to read this page, though you do need Claude connected to Labs to make a clone yourself.
@@ -69,7 +69,7 @@ Claude turns a description like that into a manifest — the specification Labs 
     Unlike cloning, generating from a manifest is only available on the full MCP address, `https://labs.connect.dimagi.com/mcp/`. See [MCP Addresses](connect-mcp.md#mcp-addresses).
 
 !!! warning "Generate onto a labs-only opportunity"
-    Always target a labs-only opportunity (an id of 10,000 or above). If you generate onto a real opportunity's id, Labs will serve your generated fixtures for that opportunity to everyone who opens it. Ask Claude to make you a fresh labs-only opportunity to target if you don't already have one.
+    Always target an opportunity that is **registered** as labs-only. Ids from 10,000 up are the range reserved for them, but the number on its own does not prove an opportunity is registered — so do not go by the id alone. On the full address nothing stops you generating onto a real opportunity you have access to, and Labs will then serve your generated fixtures for that opportunity to everyone who opens it. Ask Claude to make you a fresh labs-only opportunity if you do not already have one.
 
 **If the fields come back empty**, Labs could not load the app structure — it falls back to generating visits with standard metadata only, and no per-question answers. Check that the opportunity you named really has a deliver app and that you can reach it.
 
