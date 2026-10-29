@@ -22,65 +22,161 @@
     }
   };
 
-  // Mirror of audit_trail.service.FREE_TEXT_PARAMS: parameters whose values
-  // are typed free text (can contain PHI content). Identifier params
-  // (username, entity_id, status, scope ids...) pass through — they are the
-  // meaning of labs URLs and aggregate as distinct pages.
-  var FREE_TEXT_PARAMS = [
-    'q',
-    'query',
-    'search',
-    'term',
-    'notes',
-    'note',
-    'text',
-    'message',
-    'comment',
-    'title',
+  // What Umami stores is a ROUTE TEMPLATE, never the raw URL. Labs paths
+  // and query strings carry frontline-worker identifiers (`?username=`,
+  // `/users/<username>/`, `/kyc/<worker_id>/`) and record/opportunity ids,
+  // and an identifier is not ours to keep in an analytics store. So:
+  //   - the path becomes the Django URL pattern the server matched
+  //     (`cfg.route`, e.g. `/labs/workflow/{workflow_id}/`) when it is the
+  //     page the server rendered, else a heuristic template (ids -> `{id}`);
+  //   - the query string is dropped, all of it;
+  //   - the referrer is templated the same way (another site: origin only);
+  //   - the page title is dropped (titles can name a worker or a record).
+
+  // A segment right after one of these names an entity (a worker, a user,
+  // a token) whatever it looks like, e.g. `/campaign/api/users/jdoe/role/`.
+  var ID_PREFIXES = [
+    'user',
+    'users',
+    'username',
+    'worker',
+    'workers',
+    'flw',
+    'flws',
+    'kyc',
+    'payments',
+    'invite',
+    'invites',
+    'accept_invite',
+    'token',
+    'tokens',
+    'coach-image',
+    'image',
+    'u',
+    'r',
+    't',
+    'v',
+    'c',
+    'p',
+    'o',
+    'opp',
+    'org',
+    'rounds',
+    'past',
+    'portfolios',
+    'catalogue',
+    'reports',
+    'job',
+    'jobs',
+    'clone',
+    'status',
+    'microplans',
+    'activities',
+    'settings',
+    'application',
+    'usage',
   ];
 
-  function redactUrl(value) {
-    if (!value || value.indexOf('?') === -1) return value;
+  function looksLikeId(segment) {
+    var raw = segment;
     try {
-      var parts = value.split('?');
-      var params = new URLSearchParams(parts.slice(1).join('?'));
-      FREE_TEXT_PARAMS.forEach(function (key) {
-        if (params.has(key)) params.set(key, '[redacted]');
-      });
-      var qs = params.toString();
-      return qs ? parts[0] + '?' + qs : parts[0];
+      raw = decodeURIComponent(segment);
     } catch (e) {
-      return value.split('?')[0]; // parse failure: drop params rather than risk content
+      return true; // undecodable: treat as an identifier
     }
+    if (/^\d+$/.test(raw)) return true; // numeric id
+    if (
+      /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(
+        raw,
+      )
+    )
+      return true; // uuid
+    if (/^[0-9a-f]{8,}$/i.test(raw) && /\d/.test(raw)) return true; // hex token
+    if (raw.length >= 20) return true; // long token / slug-with-id
+    if (/\d/.test(raw) && raw.length >= 6) return true; // e.g. flw1234, +2547...
+    if (/[^A-Za-z0-9._-]/.test(raw)) return true; // @, +, spaces: emails, phones, names
+    return false;
+  }
+
+  function templatePath(pathname) {
+    var segments = (pathname || '/').split('/');
+    var out = [];
+    for (var i = 0; i < segments.length; i++) {
+      var seg = segments[i];
+      if (seg === '') {
+        out.push(seg);
+        continue;
+      }
+      var prev = i > 0 ? segments[i - 1].toLowerCase() : '';
+      if (ID_PREFIXES.indexOf(prev) !== -1 || looksLikeId(seg)) {
+        out.push('{id}');
+      } else {
+        out.push(seg);
+      }
+    }
+    return out.join('/') || '/';
+  }
+
+  var cfg = null;
+  var el = document.getElementById('labs-analytics-data');
+  if (el) {
+    try {
+      cfg = JSON.parse(el.textContent);
+    } catch (e) {
+      cfg = null;
+    }
+  }
+  // The server's template describes the page it rendered — and only that
+  // page, so a later client-side navigation falls back to the heuristic.
+  var renderedPath = window.location.pathname;
+  var serverRoute =
+    cfg && typeof cfg.route === 'string' && cfg.route.charAt(0) === '/'
+      ? cfg.route
+      : null;
+
+  function templateUrl(value, isReferrer) {
+    if (!value) return value;
+    var parsed;
+    try {
+      parsed = new URL(value, window.location.origin);
+    } catch (e) {
+      return ''; // unparseable: store nothing rather than risk an identifier
+    }
+    var absolute = /^[a-z][a-z0-9+.-]*:/i.test(value);
+    if (parsed.origin !== window.location.origin) {
+      // Another site's URL is not ours to template; keep where it came from.
+      return isReferrer
+        ? parsed.origin + '/'
+        : parsed.origin + templatePath(parsed.pathname);
+    }
+    var path =
+      !isReferrer && serverRoute && parsed.pathname === renderedPath
+        ? serverRoute
+        : templatePath(parsed.pathname);
+    return absolute ? parsed.origin + path : path;
   }
 
   window.labsAnalyticsBeforeSend = function (type, payload) {
     if (payload) {
-      if (payload.url) payload.url = redactUrl(payload.url);
-      if (payload.referrer) payload.referrer = redactUrl(payload.referrer);
+      if (payload.url) payload.url = templateUrl(payload.url, false);
+      if (payload.referrer)
+        payload.referrer = templateUrl(payload.referrer, true);
+      if ('title' in payload) delete payload.title;
     }
     return payload;
   };
+  window.labsAnalyticsTemplatePath = templatePath;
 
-  var el = document.getElementById('labs-analytics-data');
-  if (!el) return;
-
-  var cfg;
-  try {
-    cfg = JSON.parse(el.textContent);
-  } catch (e) {
-    return;
-  }
   if (!cfg || !cfg.websiteId || !cfg.hostUrl) return;
 
   var script = document.createElement('script');
   script.defer = true;
   script.src = cfg.hostUrl.replace(/\/+$/, '') + '/script.js';
   script.setAttribute('data-website-id', cfg.websiteId);
-  // HIPAA-bar: query params flow through the beforeSend redaction above
-  // (identifier params kept — they carry the page's meaning; typed free-text
-  // values replaced). Same identifiers-not-content standard as the audit trail.
+  // Every pageview and event goes through the route templating above:
+  // no query string, no identifier path segments, no page title.
   script.setAttribute('data-before-send', 'labsAnalyticsBeforeSend');
+  script.setAttribute('data-exclude-search', 'true');
   script.setAttribute('data-exclude-hash', 'true');
   // Web Vitals (LCP/INP/CLS/FCP/TTFB) feed Umami's Performance view —
   // timing numbers only, no page content. (Attribute name verified against

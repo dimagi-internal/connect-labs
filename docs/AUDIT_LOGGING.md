@@ -33,9 +33,9 @@ attributed via the PAT user with `source="mcp"`.
 contain typed PHI content, whereas `?username=`/`?entity_id=`/`?status=` are
 identifiers and are kept verbatim). Filter the dashboard by username with
 "Include page views" checked to replay a user's exact click-path — full URLs
-interleaved with what each page actually read, exported, or changed. This
-same redaction applies to what the Umami tracker sends (`beforeSend` hook),
-so both stores hold the identical identifiers-not-content data class.
+interleaved with what each page actually read, exported, or changed. The
+Umami tracker is stricter than this (see "Analytics store classification"):
+it stores route templates, so no identifier reaches analytics.
 
 **Partial exports are not failures.** Several callers *sample* the visit
 stream rather than export it — the audit-creation wizard's question-discovery
@@ -102,17 +102,19 @@ the single sanctioned bypass of the append-only trigger).
 
 ## Analytics store classification
 
-The self-hosted Umami analytics DB holds the **same data class as the audit
-log**: PHI-adjacent usage metadata — staff usernames (via `identify`), page
-*paths* with opaque record ids, and feature-event names with resource types.
-Two rules keep it that way:
+The self-hosted Umami analytics DB holds **no program or worker data**: the
+signed-in labs user (staff, via `identify`), page **route templates**, and
+feature-event names with resource types. Rules that keep it that way:
 
-- The tracker runs every URL through a `beforeSend` redaction hook
-  (`labsAnalyticsBeforeSend`, mirroring `service.FREE_TEXT_PARAMS`):
-  identifier params (`username`, `entity_id`, `status`, scope ids) pass
-  through — they are the meaning of labs URLs — while typed free-text values
-  (`q`, `search`, `notes`, ...) are replaced with `[redacted]` before
-  anything leaves the browser.
+- The tracker runs every URL through a `beforeSend` hook
+  (`labsAnalyticsBeforeSend`, `static/js/labs-analytics.js`) that stores the
+  Django URL pattern the page matched (`analytics_route` in
+  `web/context_processors.py`, e.g. `/campaign/api/users/{username}/role/`)
+  instead of the path, falls back to templating ids, tokens and the segment
+  after an entity prefix (`users/`, `worker/`, `kyc/`, ...) as `{id}` after a
+  client-side navigation, drops the **whole query string** and the page
+  title, and keeps only the origin of an off-site referrer. Frontline-worker
+  usernames, record ids and `?username=` never leave the browser.
 - Server-side events carry `resource_type` + `labs_only` only.
 
 Consequently, viewing analytics is viewing usage metadata, not PHI content —
