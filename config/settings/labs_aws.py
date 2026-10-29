@@ -156,7 +156,9 @@ if SENTRY_DSN:
     from sentry_sdk.integrations.logging import LoggingIntegration, ignore_logger
     from sentry_sdk.integrations.redis import RedisIntegration
 
+    from connect_labs.utils.sentry import before_breadcrumb as sentry_before_breadcrumb
     from connect_labs.utils.sentry import before_send as sentry_before_send
+    from connect_labs.utils.sentry import before_send_transaction as sentry_before_send_transaction
 
     ignore_logger("django.security.DisallowedHost")
     # One line per request: as breadcrumbs it would crowd every useful one out of
@@ -176,7 +178,15 @@ if SENTRY_DSN:
         # acting identity instead — see connect_labs/utils/sentry.py.
         send_default_pii=False,
         max_request_body_size="never",
+        # Frame locals are the visit/form/case being processed when it failed:
+        # programme data, not debugging data. The stack itself still ships.
+        include_local_variables=False,
+        # Scrub query strings, request data, cookies, headers (allowlist), user
+        # fields other than id, Celery task args, and concrete web paths from
+        # events, transactions and breadcrumbs — connect_labs/utils/sentry.py.
         before_send=sentry_before_send,
+        before_send_transaction=sentry_before_send_transaction,
+        before_breadcrumb=sentry_before_breadcrumb,
     )
 
 # CSRF
