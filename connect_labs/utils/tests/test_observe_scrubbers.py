@@ -202,6 +202,37 @@ def test_projector_handler_writes_to_the_mapped_group(monkeypatch):
     _no_sentinel(rec)
 
 
+def test_projector_drops_cloudwatch_logs_own_writes(monkeypatch):
+    # Its own CreateLogStream/PutLogEvents come back through the api-calls rule;
+    # projecting them re-invoked it in a loop (2026-10-29).
+    mod, _ = _load("events_projector", monkeypatch)
+    for name in ("CreateLogStream", "PutLogEvents"):
+        ev = {**API_CALL, "detail": {**API_CALL["detail"], "eventSource": "logs.amazonaws.com", "eventName": name}}
+        assert mod.project(ev) is None
+
+
+def test_projector_handler_creates_one_stream_per_container(monkeypatch):
+    monkeypatch.setenv("GROUP_ECS", "/labs-jj/observe/ecs-events")
+    mod, logs = _load("events_projector", monkeypatch)
+    for _ in range(3):
+        assert mod.handler(TASK_STOPPED, None) == {"written": 1}
+    assert len(logs.streams) == 1 and len(logs.events) == 3
+
+
+def test_api_calls_rule_excludes_cloudwatch_logs_writes():
+    import yaml
+
+    class _L(yaml.SafeLoader):
+        pass
+
+    _L.add_multi_constructor("!", lambda loader, suffix, node: None)
+    tpl = yaml.load(
+        (pathlib.Path(__file__).resolve().parents[3] / "infra/labs-observe-pipeline.yml").read_text(), Loader=_L
+    )
+    for branch in tpl["Resources"]["ApiCallsRule"]["Properties"]["EventPattern"]["$or"]:
+        assert branch["detail"]["eventName"] == [{"anything-but": ["CreateLogStream", "PutLogEvents"]}]
+
+
 # ── request telemetry ───────────────────────────────────────────────────────
 
 

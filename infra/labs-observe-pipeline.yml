@@ -177,6 +177,12 @@ Resources:
           import boto3
 
           logs = boto3.client("logs")
+          _streams = {}  # group -> this container's stream: one CreateLogStream per cold start, not per event
+
+          # CloudWatch Logs' own write calls. Writing a record is one of these, and every
+          # one is a CloudTrail event the api-calls rule delivers back here: projecting
+          # them made each write trigger the next (2026-10-29, ~590k invocations/hour).
+          _SELF_FEEDING = {"CreateLogStream", "PutLogEvents"}
 
 
           def _g(d, *path):
@@ -229,6 +235,8 @@ Resources:
                       "end": d.get("endTime"),
                   }
               if kind == "AWS API Call via CloudTrail":
+                  if d.get("eventSource") == "logs.amazonaws.com" and d.get("eventName") in _SELF_FEEDING:
+                      return None
                   return "api", {
                       "kind": "api_call",
                       "time": d.get("eventTime"),
@@ -248,8 +256,11 @@ Resources:
               if out is None:
                   return {"written": 0}
               group = os.environ["GROUP_" + out[0].upper()]
-              stream = time.strftime("%Y/%m/%d/") + uuid.uuid4().hex
-              logs.create_log_stream(logGroupName=group, logStreamName=stream)
+              stream = _streams.get(group)
+              if stream is None:
+                  stream = time.strftime("%Y/%m/%d/") + uuid.uuid4().hex
+                  logs.create_log_stream(logGroupName=group, logStreamName=stream)
+                  _streams[group] = stream
               logs.put_log_events(
                   logGroupName=group,
                   logStreamName=stream,
@@ -288,9 +299,15 @@ Resources:
       Description: Management API calls that wrote or failed -> scrubbed /labs-jj/observe/api-calls
       EventPattern:
         detail-type: [AWS API Call via CloudTrail]
+        # CloudWatch Logs' stream/write calls never reach the projector: its own
+        # writes are such calls, so delivering them re-invokes it in a loop.
         $or:
-          - detail: { readOnly: [false] }
-          - detail: { errorCode: [{ exists: true }] }
+          - detail:
+              readOnly: [false]
+              eventName: [{ anything-but: [CreateLogStream, PutLogEvents] }]
+          - detail:
+              errorCode: [{ exists: true }]
+              eventName: [{ anything-but: [CreateLogStream, PutLogEvents] }]
       Targets: [{ Id: projector, Arn: !GetAtt ProjectorFunction.Arn }]
 
   ProjectorInvokeEcsTask:

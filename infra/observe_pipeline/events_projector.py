@@ -8,6 +8,12 @@ import uuid
 import boto3
 
 logs = boto3.client("logs")
+_streams = {}  # group -> this container's stream: one CreateLogStream per cold start, not per event
+
+# CloudWatch Logs' own write calls. Writing a record is one of these, and every
+# one is a CloudTrail event the api-calls rule delivers back here: projecting
+# them made each write trigger the next (2026-10-29, ~590k invocations/hour).
+_SELF_FEEDING = {"CreateLogStream", "PutLogEvents"}
 
 
 def _g(d, *path):
@@ -60,6 +66,8 @@ def project(ev):
             "end": d.get("endTime"),
         }
     if kind == "AWS API Call via CloudTrail":
+        if d.get("eventSource") == "logs.amazonaws.com" and d.get("eventName") in _SELF_FEEDING:
+            return None
         return "api", {
             "kind": "api_call",
             "time": d.get("eventTime"),
@@ -79,8 +87,11 @@ def handler(ev, ctx):
     if out is None:
         return {"written": 0}
     group = os.environ["GROUP_" + out[0].upper()]
-    stream = time.strftime("%Y/%m/%d/") + uuid.uuid4().hex
-    logs.create_log_stream(logGroupName=group, logStreamName=stream)
+    stream = _streams.get(group)
+    if stream is None:
+        stream = time.strftime("%Y/%m/%d/") + uuid.uuid4().hex
+        logs.create_log_stream(logGroupName=group, logStreamName=stream)
+        _streams[group] = stream
     logs.put_log_events(
         logGroupName=group,
         logStreamName=stream,
