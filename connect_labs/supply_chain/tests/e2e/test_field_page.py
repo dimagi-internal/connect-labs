@@ -140,6 +140,17 @@ class TestOffline:
         assert not StockCount.objects.exists()
 
 
+class TestQuantity:
+    def test_a_quantity_in_exponent_form_is_stopped_before_it_is_saved(self, phone):
+        # A number input keeps "5E21" when a batch code lands in it (seen on an Android phone,
+        # ace#3348): the page saved 5x10^21 cartons and labs refused it only on send.
+        context, page, issued = phone
+        _enter(page, qty="5E21")
+        page.wait_for_function("document.getElementById('banner').textContent.indexOf('as a number') >= 0")
+        assert not page.query_selector_all("#queue li") and not page.query_selector_all("#done li")
+        assert not StockCount.objects.exists()
+
+
 class TestPhoto:
     def test_a_big_photo_is_shrunk_on_the_phone_and_travels_with_the_count(self, phone, tmp_path):
         context, page, issued = phone
