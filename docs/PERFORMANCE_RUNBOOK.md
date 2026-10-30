@@ -490,10 +490,15 @@ These are kernel OOM kills of single requests, so the memory gauge often reads n
 causes seen: one request materialising a whole opportunity's visits (a large
 `[SQL] Loaded N visits` near the kills), and the RawVisitCache stampede (#1361), where several
 workers rebuild one opportunity's cache at once. Reading the logs needs `labs` SSO
-(`tools/kill_stampede_triage.py`). **Caveat since 2026-10-29 (#2776):** outbound-request log
-lines no longer carry query strings, so the old stampede tell (repeating `page_size=2500` /
-`last_id` cursors) is gone from the logs. A `probably not #1361` verdict from the tool is no
-evidence either way until it gets a new tell.
+(`tools/kill_stampede_triage.py`). Since 2026-10-29 (#2776) outbound-request lines carry no
+query string, so the exact tell (one `last_id` cursor repeating across web tasks) survives
+only in older lines. Newer lines end in non-identifying facts --
+`[query: page_size=2500 paginated=true has_cursor=false]` (never the cursor value) -- and the
+tool reads those as `concurrent_repagination`: several tasks fetching 2500-row `user_visits`
+pages in the same 2-minute bin. That is the #1361 shape but cannot prove the tasks walked the
+same opportunity. Lines logged between #2776 and the facts suffix carry neither; the tool
+reports them as `blind_window` (no evidence either way), and only `no_repagination_seen`
+means "probably not #1361".
 
 ## 9. Job alarms (AI review, synthetic jobs)
 
