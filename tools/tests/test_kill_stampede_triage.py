@@ -121,13 +121,14 @@ def test_kills_with_no_misses_are_not_blamed_on_rebuild_pressure(kst):
 def test_same_cursor_on_two_streams_is_concurrency_one_stream_is_a_retry(kst):
     out = kst._cursor_repetition(
         [
-            {"cursor": "111", "@logStream": "a"},
-            {"cursor": "111", "@logStream": "b"},  # two tasks -> concurrency
-            {"cursor": "222", "@logStream": "a"},
-            {"cursor": "222", "@logStream": "a"},  # one task -> retry
-            {"@logStream": "a"},  # no cursor parsed
+            {"page_size": "2500", "cursor": "111", "@logStream": "a"},
+            {"page_size": "2500", "cursor": "111", "@logStream": "b"},  # two tasks -> concurrency
+            {"page_size": "2500", "cursor": "222", "@logStream": "a"},
+            {"page_size": "2500", "cursor": "222", "@logStream": "a"},  # one task -> retry
+            {"page_size": "2500", "@logStream": "a"},  # first page, no cursor yet
         ]
     )
+    assert "111" not in str(out["top"]) and "222" not in str(out["top"])  # visit ids stay out
     assert out["cursors_repeated_across_streams"] == 1
     assert out["distinct_cursors"] == 2
     assert out["fetches_without_cursor"] == 1
@@ -166,3 +167,69 @@ def test_queries_pin_the_two_fields_the_analysis_depends_on(kst):
     assert "@logStream" in kst.Q_CURSORS
     assert f"bin(@timestamp, {kst.BUCKET_MINUTES}m)" in kst.Q_KILLS_AND_MISSES
     assert kst.BUCKET_MINUTES == 30  # labs-jj-web-worker-kill-rate's own Period
+
+
+# --- the post-#2776 line shape ----------------------------------------------
+# #2776 dropped query strings (the cursor is a visit id). The logger now appends
+# `[query: page_size=2500 paginated=true has_cursor=true]`; these pin that the
+# tool reads it, and that lines carrying neither shape are not read as health.
+
+NEW_LINE = (
+    "INFO 2026-10-30 10:01:02,123 httpx HTTP Request: GET "
+    'https://connect.dimagi.com/export/opportunity/{id}/user_visits/?… "HTTP/1.1 200 OK" '
+    "[query: page_size=2500 paginated=true has_cursor=false]"
+)
+
+
+def _query_regex(kst, name):
+    return re.search(rf"/{name}=\(\?<{name}>(.+?)\)/", kst.Q_CURSORS).group(1)
+
+
+def test_query_parses_the_new_facts_suffix(kst):
+    assert "@message like /HTTP Request/" in kst.Q_CURSORS
+    assert re.search(f"page_size=(?P<v>{_query_regex(kst, 'page_size')})", NEW_LINE).group("v") == "2500"
+    assert re.search(f"has_cursor=(?P<v>{_query_regex(kst, 'has_cursor')})", NEW_LINE).group("v") == "false"
+    assert "@message" not in kst.Q_CURSORS.splitlines()[0]  # raw bodies are never returned
+
+
+def test_two_streams_repaginating_in_one_bin_is_concurrent_repagination(kst):
+    rows = [
+        {"@timestamp": "2026-10-30 10:00:05.000", "@logStream": "a", "page_size": "2500", "has_cursor": "false"},
+        {"@timestamp": "2026-10-30 10:00:40.000", "@logStream": "b", "page_size": "2500", "has_cursor": "false"},
+        {"@timestamp": "2026-10-30 10:01:10.000", "@logStream": "a", "page_size": "2500", "has_cursor": "true"},
+        {"@timestamp": "2026-10-30 10:30:00.000", "@logStream": "a", "page_size": "2500", "has_cursor": "true"},
+    ]
+    out = kst._cursor_repetition(rows)
+    assert (out["new_style_fetches"], out["walks_started"]) == (4, 2)
+    assert (out["concurrent_bins"], out["concurrent_walk_start_bins"], out["max_streams_in_bin"]) == (1, 1, 2)
+    v = kst._verdict({"b": {"kills": 4, "misses": 10}}, _sf(), out, clipped=False)
+    assert v["verdict"] == "concurrent_repagination"
+    assert "SAME opportunity" in v["reason"]
+
+
+def test_one_stream_repaginating_is_not_concurrency(kst):
+    rows = [
+        {"@timestamp": "2026-10-30 10:00:05.000", "@logStream": "a", "page_size": "2500", "has_cursor": "false"},
+        {"@timestamp": "2026-10-30 10:00:09.000", "@logStream": "a", "page_size": "2500", "has_cursor": "true"},
+    ]
+    v = kst._verdict({"b": {"kills": 1, "misses": 3}}, _sf(), kst._cursor_repetition(rows), clipped=False)
+    assert v["verdict"] == "repagination_without_stampede"
+
+
+def test_lines_with_neither_shape_are_blind_not_probably_not_1361(kst):
+    """2026-10-29 .. facts-suffix deploy: no query, no facts. Silence is not evidence."""
+    rows = [{"@timestamp": "2026-10-29 12:00:00.000", "@logStream": "a"}] * 3
+    out = kst._cursor_repetition(rows)
+    assert out["blind_fetches"] == 3
+    v = kst._verdict({"b": {"kills": 5, "misses": 9}}, _sf(), out, clipped=False)
+    assert v["verdict"] == "blind_window"
+    assert "probably not" not in v["reason"]
+
+
+def test_other_page_sizes_are_not_the_stampede(kst):
+    rows = [
+        {"@timestamp": "2026-10-30 10:00:05.000", "@logStream": s, "page_size": "500", "has_cursor": "true"}
+        for s in ("a", "b")
+    ]
+    out = kst._cursor_repetition(rows)
+    assert out["total_fetches"] == 0 and out["concurrent_bins"] == 0

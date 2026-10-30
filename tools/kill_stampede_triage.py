@@ -60,6 +60,24 @@ over 16 distinct cursors, every cursor 2-6x, across both web tasks -- N workers
 each walking the same ~40k-visit rebuild at once, peak memory N x per-request on
 a 4096 MB task.
 
+THE TELL CHANGED ON 2026-10-29.  #2776 strips query strings from outbound-request
+lines (the cursor is a visit id and must not be logged), so lines after that carry
+no `last_id`.  Since 2026-10-30 the logger (connect_labs/utils/log_scrub.py) appends
+non-identifying facts instead:
+
+    ... user_visits/?… "HTTP/1.1 200 OK" [query: page_size=2500 paginated=true has_cursor=true]
+
+so a fetch is still recognisable as a 2500-row repagination page, and
+`has_cursor=false` marks the FIRST page of a walk.  Without the cursor the tool
+can no longer prove two streams walked the SAME rebuild; the new-line tell is
+CONCURRENT repagination: two or more log streams fetching 2500-row user_visits
+pages in the same 2-minute bin.  That is weaker than a repeated
+cursor (it cannot tell one opportunity from two) and the verdict says so.  Old
+lines (before #2776) still carry `last_id` and are judged on the exact cursor tell.
+Lines from the gap between #2776 and the facts suffix carry neither; the tool
+counts them and refuses to read their silence as "not #1361".  Cursor values are
+used only to count repeats and are never printed.
+
 WHAT THIS TOOL DOES NOT ANSWER.  Single-flight partitions on
 (opportunity_id, pipeline_id) -- see raw_rebuild_lock_key -- so it bounds
 concurrent rebuilds of the SAME opportunity and does nothing about several
@@ -106,13 +124,26 @@ Q_SINGLEFLIGHT = """fields @timestamp, @message
 | sort @timestamp asc
 | limit 500"""
 
-# @logStream is what makes a repeated cursor evidence of CONCURRENCY rather than
-# of one worker retrying: the same cursor on two streams is two tasks walking it.
-Q_CURSORS = """fields @timestamp, @logStream, @message
-| filter @message like /user_visits/ and @message like /page_size=2500/
+# Two web tasks repaginating at once is the #1361 concurrency half.
+CONCURRENCY_MINUTES = 2
+STAMPEDE_PAGE_SIZE = 2500
+# Logs Insights' own ceiling; a result this long is truncated, and says so.
+CURSOR_ROW_LIMIT = 10000
+
+# @logStream is what makes a repeat evidence of CONCURRENCY rather than of one
+# worker retrying: the same cursor (old lines) or the same minutes (new lines) on
+# two streams is two tasks walking at once. Every httpx user_visits line is
+# matched -- not just page_size=2500 ones -- so lines that carry NEITHER the old
+# query nor the new facts (2026-10-29 until the facts suffix shipped) are counted
+# as blind instead of silently missing. @message itself is never returned: only
+# the parsed, non-identifying fields (plus old lines' cursor, counted not shown).
+Q_CURSORS = f"""fields @timestamp, @logStream
+| filter @message like /HTTP Request/ and @message like /user_visits/
+| parse @message /page_size=(?<page_size>\\d+)/
+| parse @message /has_cursor=(?<has_cursor>true|false)/
 | parse @message /last_id=(?<cursor>\\d+)/
 | sort @timestamp asc
-| limit 2000"""
+| limit {CURSOR_ROW_LIMIT}"""
 
 QUERIES = {
     "kills_and_misses": Q_KILLS_AND_MISSES,
@@ -221,35 +252,80 @@ def _classify_singleflight(rows: list[dict]) -> dict[str, int]:
     return counts
 
 
-def _cursor_repetition(rows: list[dict]) -> dict:
-    """Fetches per cursor, and how many distinct log streams each appeared on.
+def _minute_bin(ts: str) -> str | None:
+    """Logs Insights @timestamp ('2026-09-07 10:01:02.123') -> its CONCURRENCY_MINUTES bin."""
+    try:
+        dt = datetime.fromisoformat((ts or "").strip().replace(" ", "T")[:19])
+    except ValueError:
+        return None
+    return dt.replace(minute=dt.minute - dt.minute % CONCURRENCY_MINUTES, second=0).strftime("%Y-%m-%d %H:%M")
 
-    A cursor fetched N times from ONE stream is a retry; the same cursor on two
-    streams is two tasks walking the same rebuild concurrently, which is the
-    documented stampede tell.
+
+def _cursor_repetition(rows: list[dict]) -> dict:
+    """Repagination evidence from user_visits fetch lines, old and new shapes.
+
+    Old lines (query string intact): fetches per cursor and how many distinct log
+    streams each appeared on. A cursor fetched N times from ONE stream is a retry;
+    the same cursor on two streams is two tasks walking the same rebuild
+    concurrently -- the documented stampede tell. Cursor values are counted, never
+    returned.
+
+    New lines (`[query: page_size=... has_cursor=...]`): which streams fetched
+    2500-row pages in each CONCURRENCY_MINUTES bin, and how many walks started
+    (has_cursor=false is a first page). Two streams in one bin is concurrent
+    repagination; it cannot say whether they walked the same opportunity.
+
+    Lines with neither shape are counted as `blind_fetches`.
     """
     per_cursor: dict[str, dict] = {}
-    unparsed = 0
+    bins: dict[str, dict] = {}
+    unparsed = blind = new_style = walks_started = 0
     for r in rows:
+        page_size = r.get("page_size")
+        has_cursor = r.get("has_cursor")
         cursor = r.get("cursor")
-        if not cursor:
-            unparsed += 1
+        stream = r.get("@logStream")
+        if not page_size:
+            blind += 1
             continue
-        slot = per_cursor.setdefault(cursor, {"fetches": 0, "streams": set()})
-        slot["fetches"] += 1
-        if r.get("@logStream"):
-            slot["streams"].add(r["@logStream"])
-    table = [
-        {"cursor": c, "fetches": v["fetches"], "streams": len(v["streams"])}
-        for c, v in sorted(per_cursor.items(), key=lambda kv: -kv[1]["fetches"])
-    ]
-    multi = [t for t in table if t["fetches"] > 1 and t["streams"] > 1]
+        if str(page_size) != str(STAMPEDE_PAGE_SIZE):
+            continue
+        if cursor:
+            slot = per_cursor.setdefault(cursor, {"fetches": 0, "streams": set()})
+            slot["fetches"] += 1
+            if stream:
+                slot["streams"].add(stream)
+        elif has_cursor in ("true", "false"):
+            new_style += 1
+            if has_cursor == "false":
+                walks_started += 1
+            b = _minute_bin(r.get("@timestamp", ""))
+            if b and stream:
+                slot = bins.setdefault(b, {"streams": set(), "walk_streams": set()})
+                slot["streams"].add(stream)
+                if has_cursor == "false":
+                    slot["walk_streams"].add(stream)
+        else:
+            unparsed += 1  # old line on its first page (no last_id yet)
+    table = sorted(per_cursor.values(), key=lambda v: -v["fetches"])
+    multi = [v for v in table if v["fetches"] > 1 and len(v["streams"]) > 1]
+    concurrent = {b: v for b, v in bins.items() if len(v["streams"]) > 1}
     return {
-        "total_fetches": sum(t["fetches"] for t in table) + unparsed,
+        "total_fetches": sum(v["fetches"] for v in table) + unparsed + new_style,
         "fetches_without_cursor": unparsed,
         "distinct_cursors": len(table),
         "cursors_repeated_across_streams": len(multi),
-        "top": table[:15],
+        # Ranked by fetch count; the cursor values themselves are visit ids and stay out.
+        "top": [
+            {"rank": i + 1, "fetches": v["fetches"], "streams": len(v["streams"])} for i, v in enumerate(table[:15])
+        ],
+        "new_style_fetches": new_style,
+        "walks_started": walks_started,
+        "concurrent_bins": len(concurrent),
+        "concurrent_walk_start_bins": sum(1 for v in concurrent.values() if len(v["walk_streams"]) > 1),
+        "max_streams_in_bin": max((len(v["streams"]) for v in bins.values()), default=0),
+        "blind_fetches": blind,
+        "truncated": len(rows) >= CURSOR_ROW_LIMIT,
     }
 
 
@@ -272,23 +348,43 @@ def _verdict(series: dict, sf: dict[str, int], cursors: dict, clipped: bool) -> 
             "notes": notes,
         }
 
-    if cursors["cursors_repeated_across_streams"] > 0:
+    if cursors.get("cursors_repeated_across_streams", 0) > 0:
         verdict = "stampede_present"
         reason = (
             f"{cursors['cursors_repeated_across_streams']} cursor(s) fetched more than once "
             f"across MORE THAN ONE log stream -- several workers walking the same rebuild "
             f"concurrently, the #1361 tell."
         )
-    elif cursors["distinct_cursors"] > 0:
+    elif cursors.get("concurrent_bins", 0) > 0:
+        verdict = "concurrent_repagination"
+        reason = (
+            f"{cursors['concurrent_bins']} {CONCURRENCY_MINUTES}-minute bin(s) with up to "
+            f"{cursors['max_streams_in_bin']} log streams fetching {STAMPEDE_PAGE_SIZE}-row user_visits "
+            f"pages at once ({cursors['concurrent_walk_start_bins']} with walks STARTING on several "
+            "streams) -- the #1361 concurrency shape. The logs no longer carry the cursor, so this "
+            "cannot prove the streams walked the SAME opportunity; single-flight only guards that case."
+        )
+    elif cursors["distinct_cursors"] > 0 or cursors.get("new_style_fetches", 0) > 0:
         verdict = "repagination_without_stampede"
         reason = (
             "Full repaginations are happening but no cursor repeats across streams, so this "
             "window shows the invalidation half of #1361 (cost per request) without the "
             "concurrency half (the OOM driver)."
         )
+    elif cursors.get("blind_fetches", 0) > 0:
+        verdict = "blind_window"
+        reason = (
+            f"{cursors['blind_fetches']} user_visits fetch line(s) carry neither the old query string "
+            "nor the [query: ...] facts (logged between #2776 on 2026-10-29 and the facts suffix). "
+            "This window cannot say whether these kills are #1361 -- no evidence either way."
+        )
     else:
         verdict = "no_repagination_seen"
         reason = "No page_size=2500 fetches in this window; these kills are probably not #1361."
+    if cursors.get("truncated"):
+        notes.append(
+            f"FETCH ROWS TRUNCATED at {CURSOR_ROW_LIMIT}: narrow the window before quoting the cursor counts."
+        )
 
     if sf["lent_existing"] > 0:
         notes.append(
@@ -385,12 +481,20 @@ def main() -> int:
     for k, v in sf.items():
         print(f"  {k:<18} {v}")
 
-    print("\nrepagination cursors:")
+    print(f"\nrepagination ({STAMPEDE_PAGE_SIZE}-row user_visits pages):")
     print(f"  total fetches                  {cursors['total_fetches']}")
-    print(f"  distinct cursors               {cursors['distinct_cursors']}")
-    print(f"  repeated ACROSS log streams    {cursors['cursors_repeated_across_streams']}")
+    print(f"  old lines: distinct cursors    {cursors['distinct_cursors']}")
+    print(f"  old lines: repeated ACROSS log streams {cursors['cursors_repeated_across_streams']}")
     for t in cursors["top"][:8]:
-        print(f"    cursor {t['cursor']:<12} fetches={t['fetches']:<3} streams={t['streams']}")
+        print(f"    cursor #{t['rank']:<3} fetches={t['fetches']:<3} streams={t['streams']}")
+    print(f"  new lines: fetches             {cursors['new_style_fetches']}")
+    print(f"  new lines: walks started       {cursors['walks_started']}")
+    print(
+        f"  new lines: concurrent {CONCURRENCY_MINUTES}m bins  {cursors['concurrent_bins']}"
+        f" (walk-start on >1 stream: {cursors['concurrent_walk_start_bins']},"
+        f" max streams {cursors['max_streams_in_bin']})"
+    )
+    print(f"  blind lines (no query, no facts) {cursors['blind_fetches']}")
 
     print(f"\nVERDICT: {verdict['verdict']}")
     print(f"  {verdict['reason']}")
