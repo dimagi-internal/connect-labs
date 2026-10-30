@@ -737,7 +737,7 @@ def link_access(link):
 
 
 @transaction.atomic
-def submit(link, action, data, *, verified: bool = False) -> dict:
+def submit(link, action, data, *, verified: bool = False, client_id: str = "", device_time=None) -> dict:
     """Carry out one action through its ordinary operation. Returns the operation's result.
 
     One transaction: the write, whatever follows it (an attached letter), the
@@ -748,6 +748,12 @@ def submit(link, action, data, *, verified: bool = False) -> dict:
     link = UpdateLink.objects.select_related("org").filter(pk=link.pk).first()
     if link is None or not link.is_usable:
         raise OutOfScope("this link is no longer valid")
+    if client_id:
+        # The same entry sent again (a retry after a dropped connection) is the
+        # entry already recorded, not another one.
+        prior = UpdateLinkSubmission.objects.filter(link=link, client_id=client_id).first()
+        if prior is not None:
+            return {"id": prior.result_id, "duplicate": True}
     handler = ACTIONS.get(action)
     if handler is None:
         raise ValueError(f"no action {action!r}")
@@ -766,6 +772,8 @@ def submit(link, action, data, *, verified: bool = False) -> dict:
             action=action,
             connect_username=link.connect_username,
             verified=verified,
+            client_id=client_id,
+            device_time=device_time,
             operation=operation,
             result_type=operation.split("_", 1)[0],
             result_id=result_id,
@@ -807,3 +815,58 @@ def submit(link, action, data, *, verified: bool = False) -> dict:
         },
     )
     return result
+
+
+@transaction.atomic
+def attach_photo(link, client_id: str, *, filename: str, content_type: str, content: bytes) -> dict:
+    """Hold a photo against the stock count a field entry made. Returns ``{"id", "duplicate"}``.
+
+    The count is found by the phone's own entry id, so a photo can only go to an entry THIS link
+    made -- not to another link's, and not to any other record. Sent twice, the second is
+    acknowledged and ignored. Goes through the ordinary ``document_attach`` operation, marked as
+    the organisation's word like everything else behind a link.
+    """
+    import base64
+
+    link = UpdateLink.objects.select_related("org").filter(pk=link.pk).first()
+    if link is None or not link.is_usable:
+        raise OutOfScope("this link is no longer valid")
+    submission = UpdateLinkSubmission.objects.select_for_update().filter(link=link, client_id=client_id).first()
+    if submission is None or submission.operation != "stock_count_record" or not submission.result_id:
+        raise OutOfScope("that entry has not been sent yet")
+    if submission.photo_attached:
+        return {"id": submission.result_id, "duplicate": True}
+    result = call_operation(
+        "document_attach",
+        link_access(link),
+        {
+            "data": {
+                "kind": "photo",
+                "title": f"Photo with {possessive(link.org.name)} stock count",
+                "filename": filename[:255] or "photo.jpg",
+                "content_type": content_type,
+                "content_base64": base64.b64encode(content).decode("ascii"),
+                "stock_count_id": submission.result_id,
+                **_provenance(scope_for(link)),
+            }
+        },
+        channel="supplier",
+        acting_org_id=link.org_id,
+    )
+    UpdateLinkSubmission.objects.filter(pk=submission.pk).update(photo_attached=True)
+    audit_record(
+        Action.CREATE,
+        resource_type="supply_document_attach",
+        resource_id=result.get("id") if isinstance(result, dict) else None,
+        program_id=link.program_id,
+        labs_only=synthetic_scopes.is_synthetic(link.program_id),
+        metadata={
+            "via": "supply_update_link",
+            "update_link_id": link.pk,
+            "org_id": link.org_id,
+            "connect_username": link.connect_username,
+            "action": "attach_photo",
+            "operation": "document_attach",
+        },
+    )
+    return {"id": submission.result_id, "duplicate": False}

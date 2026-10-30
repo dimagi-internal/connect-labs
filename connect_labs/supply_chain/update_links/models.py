@@ -148,6 +148,14 @@ class UpdateLinkSubmission(models.Model):
     # recipient's PersonalID chat (a LinkDevice), as opposed to merely holding
     # the link.
     verified = models.BooleanField(default=False, db_default=False)
+    # Set by the field page: an id the phone made up for this one entry, so that
+    # sending it again (a retry after a dropped connection, a second tab) is the
+    # same entry, never a second one. Empty for everything entered on the form page.
+    client_id = models.CharField(max_length=64, blank=True, default="", db_default="")
+    # The phone's own clock when it was entered. An entry made in a village on
+    # Monday and sent on Thursday says so; `submitted_at` is when we got it.
+    device_time = models.DateTimeField(null=True, blank=True)
+    photo_attached = models.BooleanField(default=False, db_default=False)
     # The order it touched, so the order page can ask the database for its
     # submissions rather than filtering every link's in Python.
     contract = models.ForeignKey(
@@ -163,6 +171,13 @@ class UpdateLinkSubmission(models.Model):
 
     class Meta:
         ordering = ["-submitted_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["link", "client_id"],
+                condition=~models.Q(client_id=""),
+                name="uniq_update_link_submission_client_id",
+            )
+        ]
 
 
 class LinkVerification(models.Model):

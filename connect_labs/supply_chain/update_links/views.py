@@ -263,9 +263,12 @@ def _with_holdings(program_id, scope):
     return points
 
 
-@method_decorator(never_cache, name="dispatch")
-class UpdateLinkPublicView(View):
-    template_name = "supply_chain/update_link_public.html"
+class LinkRequestMixin(View):
+    """What every request behind a link shares: find the usable link, and who is holding it.
+
+    A bad token costs the caller a throttle count and gets one answer. A good one
+    sets ``self.link`` and ``self.device`` (the verified browser, or None).
+    """
 
     def dispatch(self, request, *args, **kwargs):
         # The audit trail is append-only and archived under object lock, so a
@@ -291,6 +294,11 @@ class UpdateLinkPublicView(View):
     def gated(self) -> bool:
         """True when this link wants proof and this browser has not given it."""
         return self.link.require_verification and self.device is None
+
+
+@method_decorator(never_cache, name="dispatch")
+class UpdateLinkPublicView(LinkRequestMixin):
+    template_name = "supply_chain/update_link_public.html"
 
     def _verify_page(self, *, status=200, error="", sent=False):
         name = self.link.connect_username
@@ -422,6 +430,7 @@ class UpdateLinkPublicView(View):
             ),
             "expires_on": timezone.localtime(self.link.expires_at).date(),
             "verified": self.device is not None,
+            "link_token": self.kwargs["token"],
         }
         return _private(render(self.request, self.template_name, context, status=status))
 

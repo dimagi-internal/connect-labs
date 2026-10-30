@@ -15,6 +15,7 @@ from connect_labs.supply_chain.reference import views as reference_views
 from connect_labs.supply_chain.runner import views as runner_views
 from connect_labs.supply_chain.stock import views as stock_views
 from connect_labs.supply_chain.stock import visit_views
+from connect_labs.supply_chain.update_links import field as field_views
 from connect_labs.supply_chain.update_links import views as update_link_views
 from connect_labs.supply_chain.workflow_views import views as workflow_page_views
 
@@ -391,6 +392,16 @@ urlpatterns = [
     # route in the domain without login_required, and skip-listed in
     # labs/oauth_session.py for the same reason Pulse's public displays are.
     path("u/<str:token>/", update_link_views.UpdateLinkPublicView.as_view(), name="update_link_public"),
+    path("u/<str:token>/field/", field_views.FieldPageView.as_view(), name="update_link_field"),
+    path("u/<str:token>/field/data.json", field_views.FieldDataView.as_view(), name="update_link_field_data"),
+    path("u/<str:token>/field/count/", field_views.FieldCountView.as_view(), name="update_link_field_count"),
+    path("u/<str:token>/field/photo/", field_views.FieldPhotoView.as_view(), name="update_link_field_photo"),
+    path("u/<str:token>/field/sw.js", field_views.FieldServiceWorkerView.as_view(), name="update_link_field_sw"),
+    path(
+        "u/<str:token>/field/manifest.webmanifest",
+        field_views.FieldManifestView.as_view(),
+        name="update_link_field_manifest",
+    ),
 ]
 
 if settings.DEBUG:

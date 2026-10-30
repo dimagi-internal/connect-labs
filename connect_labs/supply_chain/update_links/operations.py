@@ -257,7 +257,7 @@ def _create(access, program_id, org, data, coverage, contracts, points, approval
     link.approvals.set(approvals)
     url = public_url(raw)
     delivery = _send(access, link, (data.get("send_via_bot") or "").strip(), url)
-    result = {**serialize_link(link), "token": raw, "url": url}
+    result = {**serialize_link(link), "token": raw, "url": url, "field_url": f"{url}field/"}
     if delivery is not None:
         result["delivery"] = delivery
     return result
