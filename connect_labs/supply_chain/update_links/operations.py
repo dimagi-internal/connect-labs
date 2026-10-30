@@ -54,6 +54,10 @@ _ISSUE_DATA = _data_with(
     # either way; if the send fails the response says why and carries the link
     # to pass on by hand.
     send_via_bot={"type": "string", "maxLength": 64},
+    # Make the page prove, before it shows anything, that its user can read the
+    # recipient's PersonalID chat (a code sent there). Needs connect_username.
+    # Without it the link is open to whoever holds it.
+    require_verification={"type": "boolean"},
 )
 
 
@@ -85,6 +89,7 @@ def serialize_link(link) -> dict:
         "org_name": link.org.name,
         "label": link.label,
         "connect_username": link.connect_username,
+        "require_verification": link.require_verification,
         "sent_at": link.sent_at.isoformat() if link.sent_at else None,
         "sent_via_bot": link.sent_via_bot,
         "send_error": link.send_error,
@@ -166,6 +171,13 @@ def update_link_issue(access, data):
     approval_ids = list(data.get("approval_ids") or [])
     coverage = data.get("coverage") or COVERAGE_LISTED
     username = (data.get("connect_username") or "").strip()
+    if data.get("require_verification") and not username:
+        raise ValueError("to require verification, name the PersonalID user it is for (connect_username)")
+    if data.get("require_verification") and not _verify_bot(data):
+        raise ValueError(
+            "to require verification, choose the chatbot the code is sent through (send_via_bot), "
+            "or set SUPPLY_LINK_OCS_BOT"
+        )
     if (data.get("send_via_bot") or "").strip() and not username:
         raise ValueError("to send the link through PersonalID, name the PersonalID user it is for (connect_username)")
     if username and coverage == COVERAGE_LISTED:
@@ -216,6 +228,15 @@ def update_link_issue(access, data):
     return _create(access, program_id, org, data, coverage, contracts, points, approvals)
 
 
+def _verify_bot(data) -> str:
+    """The chatbot codes go through for this link: the one chosen to send it, else the default."""
+    if not data.get("require_verification"):
+        return ""
+    from connect_labs.supply_chain.update_links import delivery
+
+    return (data.get("send_via_bot") or "").strip() or delivery.default_bot()
+
+
 def _create(access, program_id, org, data, coverage, contracts, points, approvals):
     raw = tokens.new_token()
     link = UpdateLink.objects.create(
@@ -224,6 +245,8 @@ def _create(access, program_id, org, data, coverage, contracts, points, approval
         coverage=coverage,
         label=data.get("label") or "",
         connect_username=(data.get("connect_username") or "").strip(),
+        require_verification=bool(data.get("require_verification")),
+        verify_bot=_verify_bot(data),
         token_hash=tokens.hash_token(raw),
         token_hint=tokens.hint(raw),
         expires_at=timezone.now() + timedelta(days=data.get("expires_in_days") or DEFAULT_EXPIRY_DAYS),

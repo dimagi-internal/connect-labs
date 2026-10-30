@@ -36,7 +36,7 @@ from django.views.decorators.cache import never_cache
 from connect_labs.audit_trail.context import get_audit_context
 from connect_labs.supply_chain.api_views import has_program_context
 from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView
-from connect_labs.supply_chain.update_links import service, tokens
+from connect_labs.supply_chain.update_links import service, tokens, verification
 from connect_labs.supply_chain.update_links.forms import PUBLIC_FORMS, UpdateLinkIssueForm
 from connect_labs.supply_chain.update_links.models import UpdateLinkSubmission
 from connect_labs.supply_chain.views import OperationBase
@@ -282,7 +282,52 @@ class UpdateLinkPublicView(View):
             _count(f"supply:update-link:bad:{address}", BAD_TOKEN_WINDOW)
             return _not_valid(request)
         self.link = link
+        # A browser that proved it could read the recipient's PersonalID chat
+        # carries a secret for this link; None for one that only holds the URL.
+        self.device = verification.device_for(link, request.COOKIES.get(verification.cookie_name(link)))
         return super().dispatch(request, *args, **kwargs)
+
+    @property
+    def gated(self) -> bool:
+        """True when this link wants proof and this browser has not given it."""
+        return self.link.require_verification and self.device is None
+
+    def _verify_page(self, *, status=200, error="", sent=False):
+        name = self.link.connect_username
+        context = {
+            "link": self.link,
+            "org": self.link.org,
+            # Enough to recognise their own name, not enough to hand a stranger a username.
+            "masked_username": name[:2] + "•" * max(len(name) - 2, 3),
+            "error": error,
+            "sent": sent,
+            "can_send": verification.can_send(self.link),
+        }
+        return _private(render(self.request, "supply_chain/update_link_verify.html", context, status=status))
+
+    def _verification_step(self, request, token):
+        """Answer a 'send me a code' or 'here is the code' post. Always returns a response."""
+        if request.POST.get("action") == "send_code":
+            try:
+                verification.start(self.link)
+            except verification.VerificationError as exc:
+                return self._verify_page(error=str(exc), status=429)
+            return self._verify_page(sent=True)
+        try:
+            secret = verification.check(self.link, request.POST.get("code", ""))
+        except verification.VerificationError as exc:
+            return self._verify_page(error=str(exc), sent=True, status=400)
+        response = redirect(reverse("supply_chain:update_link_public", kwargs={"token": token}))
+        response.set_cookie(
+            verification.cookie_name(self.link),
+            secret,
+            max_age=max(int((self.link.expires_at - timezone.now()).total_seconds()), 60),
+            httponly=True,
+            samesite="Lax",
+            secure=request.is_secure(),
+            path="/supply/u/",
+        )
+        return _private(response)
 
     def _forms(self, scope, bound=None):
         forms = []
@@ -376,13 +421,22 @@ class UpdateLinkPublicView(View):
                 recent[0]["detail"] if recent and done_action and recent[0]["action"] == done_action else "",
             ),
             "expires_on": timezone.localtime(self.link.expires_at).date(),
+            "verified": self.device is not None,
         }
         return _private(render(self.request, self.template_name, context, status=status))
 
     def get(self, request, token):
+        if self.gated:
+            return self._verify_page()
         return self._render(service.scope_for(self.link))
 
     def post(self, request, token):
+        if request.POST.get("action") in ("send_code", "check_code"):
+            if not self.link.require_verification:
+                raise Http404("no such action")
+            return self._verification_step(request, token)
+        if self.gated:
+            return self._verify_page(status=403)
         form_class = PUBLIC_FORMS.get(request.POST.get("action", ""))
         if form_class is None:
             raise Http404("no such action")
@@ -396,7 +450,7 @@ class UpdateLinkPublicView(View):
             return self._render(scope, bound=form, status=429)
 
         try:
-            service.submit(self.link, form.action, form.payload())
+            service.submit(self.link, form.action, form.payload(), verified=self.device is not None)
         except service.OutOfScope as exc:
             form.add_error(None, str(exc))
             return self._render(scope, bound=form)

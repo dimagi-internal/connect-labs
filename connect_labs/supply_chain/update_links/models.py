@@ -55,6 +55,13 @@ class UpdateLink(TimestampedModel):
     # docs/personalid-authorization.md for how this becomes a verified identity.
     connect_username = models.CharField(max_length=150, blank=True, default="", db_default="", db_index=True)
 
+    # When set, the page asks the person to prove they can read the PersonalID
+    # chat of `connect_username` (a code sent there) before it shows anything or
+    # accepts a write. Needs connect_username. See update_links/verification.py.
+    require_verification = models.BooleanField(default=False, db_default=False)
+    # The Open Chat Studio chatbot (public id) codes are sent through.
+    verify_bot = models.CharField(max_length=64, blank=True, default="", db_default="")
+
     # Sending the link through PersonalID (update_links/delivery.py), when that
     # was asked for at issue time. The raw link exists only in the issue
     # response, so this is the only moment it can be sent from the system.
@@ -137,6 +144,10 @@ class UpdateLinkSubmission(models.Model):
     # dispatch recorded as "dispatched" and later moved to customs must still
     # read "dispatched" against the submission that recorded it.
     summary = models.TextField(blank=True, default="")
+    # Whether this was done from a browser that had proved it could read the
+    # recipient's PersonalID chat (a LinkDevice), as opposed to merely holding
+    # the link.
+    verified = models.BooleanField(default=False, db_default=False)
     # The order it touched, so the order page can ask the database for its
     # submissions rather than filtering every link's in Python.
     contract = models.ForeignKey(
@@ -152,3 +163,38 @@ class UpdateLinkSubmission(models.Model):
 
     class Meta:
         ordering = ["-submitted_at", "-id"]
+
+
+class LinkVerification(models.Model):
+    """One code sent to the recipient's PersonalID chat, waiting to be typed back.
+
+    Only a keyed hash of the code is kept. A code is good once, for ten minutes,
+    for five tries.
+    """
+
+    link = models.ForeignKey(UpdateLink, on_delete=models.CASCADE, related_name="verifications")
+    code_hash = models.CharField(max_length=64)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    expires_at = models.DateTimeField()
+    attempts = models.PositiveSmallIntegerField(default=0)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+
+class LinkDevice(models.Model):
+    """A browser that proved it could read the recipient's PersonalID chat.
+
+    The browser holds a random secret in a cookie; only its keyed hash is
+    stored. It is good until the link expires or is revoked. This is what
+    "verified" means: *a browser whose user read a code sent to X's chat* --
+    possession of X's registered device and app at that moment, not a
+    continuing identity.
+    """
+
+    link = models.ForeignKey(UpdateLink, on_delete=models.CASCADE, related_name="devices")
+    secret_hash = models.CharField(max_length=64, unique=True)
+    connect_username = models.CharField(max_length=150)
+    created_at = models.DateTimeField(default=timezone.now)
+    last_used_at = models.DateTimeField(null=True, blank=True)

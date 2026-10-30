@@ -177,6 +177,15 @@ class UpdateLinkIssueForm(forms.Form):
         ),
     )
 
+    require_verification = forms.BooleanField(
+        label=_("Make them prove it's them"),
+        required=False,
+        help_text=_(
+            "Before the page shows anything, a code is sent to that PersonalID user's Connect chat and they "
+            "must type it in. It proves they can read that chat; without this the link works for anyone "
+            "holding it. Needs the PersonalID username above and a chatbot to send the code through."
+        ),
+    )
     send_via_bot = forms.ChoiceField(
         label=_("Send it through PersonalID"),
         required=False,
@@ -216,6 +225,7 @@ class UpdateLinkIssueForm(forms.Form):
             self,
             _pair("org", "label"),
             "connect_username",
+            "require_verification",
             *(["send_via_bot"] if "send_via_bot" in self.fields else []),
             "coverage",
             "contracts",
@@ -250,6 +260,18 @@ class UpdateLinkIssueForm(forms.Form):
 
     def clean(self):
         cleaned = super().clean()
+        if cleaned.get("require_verification") and not cleaned.get("connect_username"):
+            raise forms.ValidationError(_("To require verification, enter the PersonalID username it is for."))
+        if cleaned.get("require_verification"):
+            from connect_labs.supply_chain.update_links import delivery
+
+            if not (cleaned.get("send_via_bot") or delivery.default_bot()):
+                raise forms.ValidationError(
+                    _(
+                        "To require verification, pick the chatbot the code is sent through — which needs "
+                        "your Open Chat Studio connection."
+                    )
+                )
         if cleaned.get("send_via_bot") and not cleaned.get("connect_username"):
             raise forms.ValidationError(_("To send it through PersonalID, enter the PersonalID username it is for."))
         if cleaned.get("coverage") == COVERAGE_ORGANISATION:
@@ -287,6 +309,8 @@ class UpdateLinkIssueForm(forms.Form):
             data["connect_username"] = self.cleaned_data["connect_username"].strip()
         if self.cleaned_data.get("send_via_bot"):
             data["send_via_bot"] = self.cleaned_data["send_via_bot"]
+        if self.cleaned_data.get("require_verification"):
+            data["require_verification"] = True
         return data
 
 
