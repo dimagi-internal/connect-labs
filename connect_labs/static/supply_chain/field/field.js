@@ -311,9 +311,18 @@
     if (!data) {
       return;
     }
-    var qty = $('qty').value;
-    if (qty === '' || isNaN(Number(qty)) || Number(qty) < 0) {
-      banner('Enter how many, as a number.', false);
+    var qty = $('qty').value.trim();
+    // A number input keeps "5E21" when letters land in it; the server refuses that, so stop it
+    // here, before it is saved on the phone and can only fail later.
+    if (!/^\d+(\.\d+)?$/.test(qty)) {
+      banner('Enter how many, as a number like 12 or 2.5.', false);
+      return;
+    }
+    if (Number(qty) > 1000000000) {
+      banner(
+        'That is too many for one count: the most is 1,000,000,000.',
+        false,
+      );
       return;
     }
     var entry = {

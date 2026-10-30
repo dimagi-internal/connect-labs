@@ -38,6 +38,10 @@ from connect_labs.supply_chain.update_links.views import LinkRequestMixin, _coun
 
 # Higher than the form page's: a worker catching up after days without signal sends a backlog at once.
 FIELD_WRITE_LIMIT = 300
+# A quantity as a person types it: digits, optionally a decimal part. Decimal() also accepts
+# "5E21", "Infinity" and "NaN", which a number input lets through when letters land in it.
+QUANTITY = re.compile(r"^\d+(\.\d+)?$")
+MAX_QUANTITY = Decimal("1000000000")
 FIELD_WRITE_WINDOW = 60 * 60
 MAX_PHOTO_BYTES = 4 * 1024 * 1024
 CLIENT_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -170,12 +174,17 @@ def _entry_from(body: dict, scope):
     item = scope.items.filter(pk=_int(body.get("item"))).first()
     if item is None:
         raise ValueError("That product is not covered by this link.")
-    try:
-        quantity = Decimal(str(body.get("quantity")).strip())
-    except (InvalidOperation, ValueError):
-        raise ValueError("Enter the quantity as a number.") from None
-    if not quantity.is_finite() or quantity < 0 or quantity > Decimal("1000000000"):
+    raw = str(body.get("quantity")).strip()
+    if raw.startswith("-"):
         raise ValueError("Enter a quantity of zero or more.")
+    if not QUANTITY.match(raw):
+        raise ValueError("Enter the quantity as a number, like 12 or 2.5.")
+    try:
+        quantity = Decimal(raw)
+    except InvalidOperation:
+        raise ValueError("Enter the quantity as a number, like 12 or 2.5.") from None
+    if quantity > MAX_QUANTITY:
+        raise ValueError("That quantity is too large: the most one count can hold is 1,000,000,000.")
     basis = body.get("unit_basis") or "pack"
     if basis not in ("pack", "base"):
         raise ValueError("Count in packs or in single units.")
