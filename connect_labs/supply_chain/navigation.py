@@ -156,6 +156,14 @@ VIEWS_WITHOUT_TABS = frozenset(
         # A supplier's own login-free page: deliberately no programme chrome,
         # because the person reading it is not in the programme.
         "supply_chain:update_link_public",
+        # The same person's lean phone page and the files that make it work offline. Standalone documents
+        # and JSON, no programme chrome, for the same reason.
+        "supply_chain:update_link_field",
+        "supply_chain:update_link_field_data",
+        "supply_chain:update_link_field_count",
+        "supply_chain:update_link_field_photo",
+        "supply_chain:update_link_field_sw",
+        "supply_chain:update_link_field_manifest",
         # Local sign-in shim, mounted only under DEBUG.
         "supply_chain:dev_login",
         # The portfolio spans programmes, and every tab above reverses to a
