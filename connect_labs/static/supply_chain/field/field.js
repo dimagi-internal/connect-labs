@@ -76,7 +76,9 @@
         var t = d.transaction(store, mode);
         var result = work(t.objectStore(store));
         t.oncomplete = function () {
-          resolve(result && result.result !== undefined ? result.result : undefined);
+          resolve(
+            result && result.result !== undefined ? result.result : undefined,
+          );
         };
         t.onerror = function () {
           reject(t.error);
@@ -202,7 +204,10 @@
     }
     setBasisOptions();
     if (!data.points.length || !data.items.length) {
-      banner('Nothing is set up on this link to count yet. Ask the programme team.', false);
+      banner(
+        'Nothing is set up on this link to count yet. Ask the programme team.',
+        false,
+      );
     }
   }
 
@@ -228,7 +233,9 @@
     a.href = cfg.urls.verify;
     a.textContent = 'open this link’s main page';
     b.appendChild(a);
-    b.appendChild(document.createTextNode(' and enter the code, then come back.'));
+    b.appendChild(
+      document.createTextNode(' and enter the code, then come back.'),
+    );
     b.hidden = false;
   }
 
@@ -243,18 +250,23 @@
       img.onload = function () {
         try {
           var max = 1280;
-          var scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+          var scale = Math.min(
+            1,
+            max / Math.max(img.naturalWidth, img.naturalHeight),
+          );
           var canvas = document.createElement('canvas');
           canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
           canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
-          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas
+            .getContext('2d')
+            .drawImage(img, 0, 0, canvas.width, canvas.height);
           canvas.toBlob(
             function (blob) {
               URL.revokeObjectURL(url);
               resolve(blob || file);
             },
             'image/jpeg',
-            0.7
+            0.7,
           );
         } catch (e) {
           URL.revokeObjectURL(url);
@@ -283,7 +295,10 @@
         text(note, 'That photo is too large to send. Try again.');
       } else {
         photoBlob = blob;
-        text(note, 'Photo ready (' + Math.max(1, Math.round(blob.size / 1024)) + ' KB).');
+        text(
+          note,
+          'Photo ready (' + Math.max(1, Math.round(blob.size / 1024)) + ' KB).',
+        );
       }
       note.hidden = false;
     });
@@ -334,7 +349,10 @@
         return render().then(sync);
       })
       .catch(function () {
-        banner('This phone could not save the entry. Free some space and try again.', false);
+        banner(
+          'This phone could not save the entry. Free some space and try again.',
+          false,
+        );
       });
   }
 
@@ -344,7 +362,9 @@
     return (
       $('qty').value +
       ' ' +
-      ($('basis').options[$('basis').selectedIndex] ? $('basis').options[$('basis').selectedIndex].text : '') +
+      ($('basis').options[$('basis').selectedIndex]
+        ? $('basis').options[$('basis').selectedIndex].text
+        : '') +
       ' · ' +
       (item ? item.name : '') +
       ' · ' +
@@ -411,7 +431,8 @@
         return response.json().then(
           function (b) {
             entry.state = 'rejected';
-            entry.error = (b && b.error) || 'The programme could not take this entry.';
+            entry.error =
+              (b && b.error) || 'The programme could not take this entry.';
             return store.put('outbox', entry).then(function () {
               return 'next';
             });
@@ -422,7 +443,7 @@
             return store.put('outbox', entry).then(function () {
               return 'next';
             });
-          }
+          },
         );
       }
       if (result === 'refresh') {
@@ -432,7 +453,7 @@
           },
           function () {
             return 'refresh';
-          }
+          },
         );
       }
       if (result !== 'sent') {
@@ -461,7 +482,12 @@
           });
         }
         entry.state = 'sent';
-        var summary = { id: entry.id, label: entry.label, sent: Date.now(), counted_on: entry.counted_on };
+        var summary = {
+          id: entry.id,
+          label: entry.label,
+          sent: Date.now(),
+          counted_on: entry.counted_on,
+        };
         return store
           .put('done', summary)
           .then(function () {
@@ -511,9 +537,15 @@
         if (result === 'verify') {
           needVerify();
         } else if (result === 'gone') {
-          banner('This link has stopped working. Ask the programme team for a new one.', false);
+          banner(
+            'This link has stopped working. Ask the programme team for a new one.',
+            false,
+          );
         } else if (result === 'refresh') {
-          banner('Could not send yet. Reload this page, then it will try again.', false);
+          banner(
+            'Could not send yet. Reload this page, then it will try again.',
+            false,
+          );
         } else if (result === 'stop') {
           retryLater();
         } else {
@@ -526,7 +558,10 @@
         if (err && err.verify) {
           needVerify();
         } else if (err && err.status === 404) {
-          banner('This link has stopped working. Ask the programme team for a new one.', false);
+          banner(
+            'This link has stopped working. Ask the programme team for a new one.',
+            false,
+          );
         } else {
           retryLater();
         }
@@ -543,60 +578,64 @@
   // ---- what is on screen ---------------------------------------------------
 
   function render() {
-    return Promise.all([store.all('outbox'), store.all('done')]).then(function (both) {
-      var outbox = both[0].sort(function (a, b) {
-        return a.saved - b.saved;
-      });
-      var done = both[1]
-        .sort(function (a, b) {
-          return b.sent - a.sent;
-        })
-        .slice(0, 10);
-      var queue = $('queue');
-      queue.innerHTML = '';
-      outbox.forEach(function (e) {
-        var li = document.createElement('li');
-        li.setAttribute('data-state', e.state);
-        li.appendChild(document.createTextNode(e.label + ' · ' + e.counted_on));
-        var status = document.createElement('div');
-        status.className = 'note' + (e.state === 'rejected' ? ' bad' : '');
-        status.textContent =
-          e.state === 'rejected'
-            ? 'Not accepted: ' + e.error
-            : e.countSent
-            ? 'Counted; photo still to send'
-            : 'Waiting for signal';
-        li.appendChild(status);
-        if (e.state === 'rejected') {
-          var b = document.createElement('button');
-          b.type = 'button';
-          b.className = 'link';
-          b.textContent = 'Dismiss';
-          b.onclick = function () {
-            store.del('outbox', e.id).then(render);
-          };
-          li.appendChild(b);
-        }
-        queue.appendChild(li);
-      });
-      $('queue-box').hidden = !outbox.length;
-      var pending = outbox.filter(function (e) {
-        return e.state !== 'rejected';
-      }).length;
-      var pill = $('pending');
-      pill.hidden = !pending;
-      pill.textContent = pending + ' to send';
-      $('send-now').hidden = !pending;
+    return Promise.all([store.all('outbox'), store.all('done')]).then(
+      function (both) {
+        var outbox = both[0].sort(function (a, b) {
+          return a.saved - b.saved;
+        });
+        var done = both[1]
+          .sort(function (a, b) {
+            return b.sent - a.sent;
+          })
+          .slice(0, 10);
+        var queue = $('queue');
+        queue.innerHTML = '';
+        outbox.forEach(function (e) {
+          var li = document.createElement('li');
+          li.setAttribute('data-state', e.state);
+          li.appendChild(
+            document.createTextNode(e.label + ' · ' + e.counted_on),
+          );
+          var status = document.createElement('div');
+          status.className = 'note' + (e.state === 'rejected' ? ' bad' : '');
+          status.textContent =
+            e.state === 'rejected'
+              ? 'Not accepted: ' + e.error
+              : e.countSent
+                ? 'Counted; photo still to send'
+                : 'Waiting for signal';
+          li.appendChild(status);
+          if (e.state === 'rejected') {
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'link';
+            b.textContent = 'Dismiss';
+            b.onclick = function () {
+              store.del('outbox', e.id).then(render);
+            };
+            li.appendChild(b);
+          }
+          queue.appendChild(li);
+        });
+        $('queue-box').hidden = !outbox.length;
+        var pending = outbox.filter(function (e) {
+          return e.state !== 'rejected';
+        }).length;
+        var pill = $('pending');
+        pill.hidden = !pending;
+        pill.textContent = pending + ' to send';
+        $('send-now').hidden = !pending;
 
-      var list = $('done');
-      list.innerHTML = '';
-      done.forEach(function (d) {
-        var li = document.createElement('li');
-        li.textContent = d.label + ' · ' + d.counted_on;
-        list.appendChild(li);
-      });
-      $('done-box').hidden = !done.length;
-    });
+        var list = $('done');
+        list.innerHTML = '';
+        done.forEach(function (d) {
+          var li = document.createElement('li');
+          li.textContent = d.label + ' · ' + d.counted_on;
+          list.appendChild(li);
+        });
+        $('done-box').hidden = !done.length;
+      },
+    );
   }
 
   function showNet() {
@@ -662,7 +701,10 @@
       });
     })[0];
     if (!match) {
-      text(note, 'No product on this link matches that code (' + parsed.gtin + ').');
+      text(
+        note,
+        'No product on this link matches that code (' + parsed.gtin + ').',
+      );
       return false;
     }
     $('item').value = match.id;
@@ -671,7 +713,13 @@
       $('batch').value = parsed.batch;
     }
     closeScanner();
-    banner('Product set to ' + match.name + (parsed.batch ? ', batch ' + parsed.batch : '') + '.', true);
+    banner(
+      'Product set to ' +
+        match.name +
+        (parsed.batch ? ', batch ' + parsed.batch : '') +
+        '.',
+      true,
+    );
     return true;
   }
 
@@ -703,7 +751,9 @@
     var ctx = canvas.getContext('2d');
     var image = ctx.getImageData(0, 0, canvas.width, canvas.height);
     return loadDecoder().then(function (jsQR) {
-      var found = jsQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' });
+      var found = jsQR(image.data, image.width, image.height, {
+        inversionAttempts: 'attemptBoth',
+      });
       return found ? found.data : null;
     });
   }
@@ -713,11 +763,16 @@
       var url = URL.createObjectURL(file);
       var img = new Image();
       img.onload = function () {
-        var scale = Math.min(1, 900 / Math.max(img.naturalWidth, img.naturalHeight));
+        var scale = Math.min(
+          1,
+          900 / Math.max(img.naturalWidth, img.naturalHeight),
+        );
         var canvas = document.createElement('canvas');
         canvas.width = Math.round(img.naturalWidth * scale);
         canvas.height = Math.round(img.naturalHeight * scale);
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas
+          .getContext('2d')
+          .drawImage(img, 0, 0, canvas.width, canvas.height);
         URL.revokeObjectURL(url);
         decodeCanvas(canvas).then(resolve, function () {
           resolve(null);
@@ -735,7 +790,10 @@
     $('scanner').style.display = 'flex';
     text($('scan-note'), '');
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      text($('scan-note'), 'The camera is not available here. Photograph the code, or type it.');
+      text(
+        $('scan-note'),
+        'The camera is not available here. Photograph the code, or type it.',
+      );
       return;
     }
     navigator.mediaDevices
@@ -772,7 +830,9 @@
           var scale = Math.min(1, 640 / video.videoWidth);
           canvas.width = Math.round(video.videoWidth * scale);
           canvas.height = Math.round(video.videoHeight * scale);
-          canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+          canvas
+            .getContext('2d')
+            .drawImage(video, 0, 0, canvas.width, canvas.height);
           decodeCanvas(canvas)
             .then(function (value) {
               if (value) {
@@ -783,7 +843,10 @@
         }, 300);
       })
       .catch(function () {
-        text($('scan-note'), 'The camera could not be opened. Photograph the code, or type it.');
+        text(
+          $('scan-note'),
+          'The camera could not be opened. Photograph the code, or type it.',
+        );
       });
   }
 
@@ -824,7 +887,10 @@
         if (value) {
           applyCode(value);
         } else {
-          text($('scan-note'), 'No code found in that photo. Try again, closer and steady, or type it.');
+          text(
+            $('scan-note'),
+            'No code found in that photo. Try again, closer and steady, or type it.',
+          );
         }
       });
     });
@@ -859,9 +925,15 @@
         if (err && err.verify) {
           needVerify();
         } else if (err && err.status === 404) {
-          banner('This link has stopped working. Ask the programme team for a new one.', false);
+          banner(
+            'This link has stopped working. Ask the programme team for a new one.',
+            false,
+          );
         } else {
-          banner('Open this page once with signal to load the products. Then it works without.', false);
+          banner(
+            'Open this page once with signal to load the products. Then it works without.',
+            false,
+          );
         }
         return render();
       });
