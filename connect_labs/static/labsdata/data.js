@@ -516,7 +516,21 @@
     describe(false);
   }
 
+  // Opportunities a load found with no visits at Connect (loaded_visits 0, no error).
+  const emptyAtConnect = new Set();
+  function nameOf(id) {
+    const o = ((described && described.opportunities) || []).find(
+      (x) => x.opportunity_id === id,
+    );
+    return o && o.opportunity_name ? o.opportunity_name : `#${id}`;
+  }
+
   function renderCache(opps, loaded) {
+    (loaded || []).forEach((l) => {
+      if (!l.error && l.loaded_visits === 0)
+        emptyAtConnect.add(l.opportunity_id);
+      else emptyAtConnect.delete(l.opportunity_id);
+    });
     const box = $('ex-cache');
     box.replaceChildren();
     const total = opps.reduce((n, o) => n + (o.cached_visits || 0), 0);
@@ -539,9 +553,33 @@
       );
       box.append(line);
     });
-    const missing = opps.filter((o) => !o.cached_visits);
+    // An opportunity a load found empty at Connect is not "missing": loading it again
+    // cannot change anything, so it is named as empty instead of offered a button.
+    const missing = opps.filter(
+      (o) => !o.cached_visits && !emptyAtConnect.has(o.opportunity_id),
+    );
+    const empty = opps.filter(
+      (o) => !o.cached_visits && emptyAtConnect.has(o.opportunity_id),
+    );
+    // Said by name whatever the count: with more than six sources the lines above are
+    // not drawn, and "Load 1" alone does not say which one.
+    const names = (list) =>
+      list.map((o) => o.opportunity_name || `#${o.opportunity_id}`).join(', ');
+    if (empty.length)
+      box.append(
+        el(
+          'div',
+          { class: 'mt-2 ex-muted' },
+          `Connect has no visits yet for ${names(empty)}, so there is nothing to load; it counts as zero.`,
+        ),
+      );
     if (missing.length) {
       box.append(
+        el(
+          'div',
+          { class: 'mt-2 ex-muted' },
+          `Not loaded: ${names(missing)}.`,
+        ),
         el(
           'button',
           { class: 'ex-btn ghost mt-2', onclick: () => describe(true) },
@@ -556,7 +594,7 @@
           el(
             'div',
             { class: 'ex-error mt-2' },
-            `#${l.opportunity_id}: ${l.error}`,
+            `${nameOf(l.opportunity_id)}: ${l.error}`,
           ),
         ),
       );
@@ -828,7 +866,7 @@
     // here means "not loaded", and it must say so where the number is, not only in the
     // Sources card further down the rail.
     const unloaded = (data.opportunities || []).filter(
-      (o) => 'cached_at' in o && !o.cached_at,
+      (o) => 'cached_at' in o && !o.cached_at && !emptyAtConnect.has(o.id),
     );
     let notLoaded = '';
     if (unloaded.length) {
