@@ -48,6 +48,19 @@ _SESSION_SEARCH_OPP_LIMIT = 1000
 # granted access to another opportunity — but long enough that a polling page
 # cannot re-run the fan-out on every request. See #1060.
 _SESSION_MISS_CACHE_TTL = 60 * 5  # 5 minutes
+# How long a prior-audit projection that was just confirmed current is trusted
+# without asking the export API again. See _projection_can_serve.
+_PROJECTION_CHECKED_TTL = 60  # 1 minute
+
+
+def _projection_checked_cache_key(opportunity_id) -> str:
+    """Cache key for "this opportunity's prior-audit projection was just confirmed current".
+
+    Not namespaced per user, like the location memo below: the projection it
+    vouches for is itself shared, and the readers that consult it run only
+    after the caller has proved access to the opportunity.
+    """
+    return f"audit:prior-projection-checked:{opportunity_id}"
 
 
 def _session_opp_cache_key(session_id: int) -> str:
@@ -1708,6 +1721,19 @@ class AuditDataAccess(BaseDataAccess):
            ``is_stale`` permanently False, so the 24h floor never fires at all --
            tracked separately; it is not introduced or worsened here.)
 
+        A projection confirmed current is trusted for _PROJECTION_CHECKED_TTL
+        without asking again. The delta is not cheap for a program-scoped
+        caller: get_audit_sessions fans it out over the program and EVERY member
+        opportunity, then keeps only this one -- 13 upstream calls for a
+        12-opportunity program, and both readers above run this gate, so 26 per
+        bulk-data load. Scoping the delta to one opportunity is not the fix: a
+        session's storage opportunity can differ from its subject under program
+        scope, so that would silently drop verdicts. On 2026-10-29 one auditor's
+        page held ~6 workers for 91 minutes at 16-76s per load paying exactly
+        this (connect-labs#2769). The window costs little freshness: a session
+        completed in labs is written into the projection directly by
+        record_session, so the delta only catches what that write missed.
+
         Authorisation is unchanged on every path: the delta fetch uses THIS
         caller's credentials, and the caller has already proved access to the
         opportunity to get here. The async rebuild runs under this same user's
@@ -1726,6 +1752,11 @@ class AuditDataAccess(BaseDataAccess):
                 return False
             projection.schedule_stale_refresh(opportunity_id, self._requesting_username())
 
+        # After the staleness checks, so the memo can never retire the 24h floor.
+        checked_key = _projection_checked_cache_key(opportunity_id)
+        if cache.get(checked_key):
+            return True
+
         changed = [
             s
             for s in self.get_audit_sessions(status="completed", completed_at__gt=state.watermark.isoformat())
@@ -1733,6 +1764,7 @@ class AuditDataAccess(BaseDataAccess):
         ]
         if changed:
             projection.merge_changed(opportunity_id, changed, built_by=self._requesting_username())
+        cache.set(checked_key, True, _PROJECTION_CHECKED_TTL)
         return True
 
     def _requesting_username(self) -> str:

@@ -17,10 +17,11 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
+from django.core.cache import cache
 from django.utils import timezone as dj_timezone
 
 from connect_labs.audit import prior_audit_projection as projection
-from connect_labs.audit.data_access import AuditDataAccess
+from connect_labs.audit.data_access import AuditDataAccess, _projection_checked_cache_key
 from connect_labs.audit.models import AuditSessionRecord
 from connect_labs.audit.prior_audit_models import PriorAuditProjectionState
 from connect_labs.audit.prior_audit_projection import read_index, rebuild_opportunity
@@ -119,6 +120,63 @@ class TestWatermarkFreshness:
         rebuild_opportunity(OPP, [_session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))])
         projection.merge_changed(OPP, [_session(1, "in_progress", {"111": _vr(b1="pass")})])
         assert read_index(OPP) == {}
+
+
+@pytest.mark.django_db
+class TestAConfirmedProjectionIsNotReCheckedAtOnce:
+    """The delta fans out to every opportunity in a program-scoped caller's program.
+
+    On 2026-10-29 that was 26 upstream calls per bulk-data load (13 per gate, two
+    gates), 16-76s each, and one auditor's page held ~6 workers for 91 minutes
+    (connect-labs#2769). A projection just confirmed current is trusted briefly.
+    """
+
+    def test_a_second_read_inside_the_window_asks_nothing(self):
+        rebuild_opportunity(OPP, [_session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))])
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[]) as spy:
+            _da().get_prior_audited_images(opportunity_id=OPP)
+            index = _da().get_prior_audited_images(opportunity_id=OPP)
+        assert spy.call_count == 1
+        assert index["111:b1"]["result"] == "pass"
+
+    def test_both_readers_in_one_bulk_load_share_one_check(self):
+        rebuild_opportunity(OPP, [_session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))])
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[]) as spy:
+            da = _da()
+            da.get_prior_audited_images_for(OPP, [("111", "b1")])
+            da.get_duplicate_history_for_flws(OPP, ["flw1"])
+        assert spy.call_count == 1
+
+    def test_past_the_window_it_asks_again(self):
+        rebuild_opportunity(OPP, [_session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))])
+        edited = _session(1, "completed", {"111": _vr(b1="fail")}, completed_at=_dt(9))
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[]):
+            _da().get_prior_audited_images(opportunity_id=OPP)
+        cache.delete(_projection_checked_cache_key(OPP))  # the TTL lapsing
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[edited]) as spy:
+            index = _da().get_prior_audited_images(opportunity_id=OPP)
+        assert spy.call_args.kwargs["completed_at__gt"] == _dt(1).isoformat()
+        assert index["111:b1"]["result"] == "fail"
+
+    def test_the_memo_cannot_retire_the_staleness_floor(self):
+        rebuild_opportunity(OPP, [_session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))])
+        cache.set(_projection_checked_cache_key(OPP), True, 60)
+        st = PriorAuditProjectionState.objects.get(opportunity_id=OPP)
+        PriorAuditProjectionState.objects.filter(pk=st.pk).update(
+            built_at=dj_timezone.now() - (projection.STALE_AFTER + timedelta(hours=1))
+        )
+        survivor = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[survivor]) as spy:
+            _da().get_prior_audited_images(opportunity_id=OPP)
+        assert "completed_at__gt" not in spy.call_args.kwargs
+
+    def test_an_unbuilt_projection_ignores_a_leftover_memo(self):
+        cache.set(_projection_checked_cache_key(OPP), True, 60)
+        s = _session(1, "completed", {"111": _vr(b1="pass")}, completed_at=_dt(1))
+        with patch.object(AuditDataAccess, "get_audit_sessions", autospec=True, return_value=[s]) as spy:
+            index = _da().get_prior_audited_images(opportunity_id=OPP)
+        assert "completed_at__gt" not in spy.call_args.kwargs
+        assert index["111:b1"]["result"] == "pass"
 
 
 class TestTheWatermarkKwargIsActuallyAccepted:
