@@ -69,6 +69,9 @@ PATHS = {
     "AlertCheckState": _via("subscription"),
     # `contract` is nullable on a submission; `link` never is.
     "UpdateLinkSubmission": _via("link"),
+    # Proof-of-identity state for a link: a code waiting to be typed, a browser that typed it.
+    "LinkVerification": _via("link"),
+    "LinkDevice": _via("link"),
     # Many-to-many link rows: Django's auto-created through models, named
     # `<Model>_<field>`. Each walks the FK to the side that owns the field.
     "Tender_invited_orgs": _via("tender"),
