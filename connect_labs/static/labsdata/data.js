@@ -575,11 +575,7 @@
       );
     if (missing.length) {
       box.append(
-        el(
-          'div',
-          { class: 'mt-2 ex-muted' },
-          `Not loaded: ${names(missing)}.`,
-        ),
+        el('div', { class: 'mt-2 ex-muted' }, `Not loaded: ${names(missing)}.`),
         el(
           'button',
           { class: 'ex-btn ghost mt-2', onclick: () => describe(true) },
