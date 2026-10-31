@@ -68,6 +68,8 @@ function mount({
   // Connect, and after one.
   cached = 3,
   cachedAfterLoad = 3,
+  // What a load from Connect reports per opportunity (describe's `loaded`).
+  loadedReport = [],
   // Hold a load from Connect until the test releases it (mount returns releaseLoad).
   holdLoad = false,
   // The space's artifacts (GET artifacts/), and whether a draft's data is all synthetic.
@@ -208,7 +210,7 @@ function mount({
                   : cached,
               },
             ],
-            loaded: [],
+            loaded: JSON.parse(init.body).load_missing ? loadedReport : [],
             relations: {},
             fields: [],
             sampled_visits: 0,
@@ -1137,6 +1139,40 @@ describe('opening a space loads what its sources have not loaded', () => {
     expect(
       posts.filter((p) => p.url === '/d' && p.body.load_missing),
     ).toHaveLength(1);
+  });
+
+  it('an opportunity Connect has no visits for is named as empty, not offered for loading again', async () => {
+    const { document } = mount({
+      space: SPACE,
+      cached: 0,
+      cachedAfterLoad: 0,
+      loadedReport: [{ opportunity_id: 7, loaded_visits: 0 }],
+      result: UNLOADED,
+    });
+    await settle();
+    const rail = document.getElementById('ex-cache');
+    expect(rail.textContent).toContain('Connect has no visits yet for Opp');
+    expect(rail.textContent).not.toContain('from Connect');
+    expect(rail.querySelector('button')).toBeNull();
+    document.getElementById('ex-run').click();
+    await settle();
+    expect(document.querySelector('#ex-result .ex-warn')).toBeNull();
+  });
+
+  it('an unloaded opportunity is named in the rail and its load failure is named too', async () => {
+    const { document } = mount({
+      space: SPACE,
+      cached: 0,
+      cachedAfterLoad: 0,
+      loadedReport: [{ opportunity_id: 7, error: 'boom' }],
+    });
+    await settle();
+    const rail = document.getElementById('ex-cache');
+    expect(rail.textContent).toContain('Not loaded: Opp.');
+    expect(rail.textContent).toContain('Opp: boom');
+    expect(rail.querySelector('button').textContent).toBe(
+      'Load 1 from Connect',
+    );
   });
 
   it('a space whose sources are loaded loads nothing', async () => {
