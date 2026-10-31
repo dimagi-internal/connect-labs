@@ -52,6 +52,7 @@ def new_assessment_bucket() -> dict:
         "ai_pending": 0,
         "ai_flags_by_label": {},
         "ai_flags_unlabeled": 0,
+        "ai_flags_confirmed_by_label": {},
     }
 
 
@@ -97,11 +98,20 @@ def tally_assessment(bucket: dict, assessment: dict) -> None:
         # label, so ai_flags_by_label's values can sum to more than ai_no_match.
         # ai_flags_unlabeled is tracked as its own counter (not inferred by subtracting
         # one from the other) for exactly that reason.
+        # The subset of each label's flags that still carry a failing verdict
+        # (fail or duplicate/fake), i.e. a reviewer who disagreed did not flip it
+        # to pass. Auto-applied verdicts are stored exactly like a person's, so on
+        # its own this is NOT proof a human looked: readers pair it with their own
+        # "was this day reviewed" test (the FLW audit-flags report does).
+        confirmed = result in ("fail", "duplicate_fake", "duplicate", "fake")
         found_label = False
         for label in (assessment.get("ai_notes") or "").split(AI_NOTES_JOIN_SEP):
             label = label.strip()
             if label:
                 bucket["ai_flags_by_label"][label] = bucket["ai_flags_by_label"].get(label, 0) + 1
+                if confirmed:
+                    by_label = bucket["ai_flags_confirmed_by_label"]
+                    by_label[label] = by_label.get(label, 0) + 1
                 found_label = True
         if not found_label:
             bucket["ai_flags_unlabeled"] += 1
@@ -578,6 +588,7 @@ class AuditSessionRecord(LocalLabsRecord):
                 "ai_pending": int,      # AI: not yet reviewed
                 "ai_flags_by_label": dict[str, int],  # AI: no_match count per classifier label
                 "ai_flags_unlabeled": int,  # AI: no_match count with no recoverable label
+                "ai_flags_confirmed_by_label": dict[str, int],  # of those, still fail/duplicate_fake
             }
 
             Note: ai_flags_by_label's values can sum to MORE than ai_no_match
