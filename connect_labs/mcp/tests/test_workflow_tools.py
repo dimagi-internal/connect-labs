@@ -2292,3 +2292,80 @@ def test_workflow_clone_unlinked_still_forks_the_render_code(mock_wda_cls, clien
     assert content["render_code_version"] == 1
     assert content["render_source"] is None
     dst.save_render_code.assert_called_once()
+
+
+# --- opportunity_source: a workflow that reads its program's opportunities ----
+
+_PROGRAM_TREE = {
+    "opportunities": [{"id": 2154, "program": 217}, {"id": 2356, "program": 217}, {"id": 7, "program": 1}]
+}
+
+
+def _update(client, raw, patch, tool="workflow_update_definition"):
+    return _call_tool(client, raw, tool, {"workflow_id": 42, "program_id": 217, "patch": patch, "expected_version": 3})
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.fetch_user_organization_data", return_value=_PROGRAM_TREE)
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_definition_sets_opportunity_source_and_stores_its_list(mock_wda_cls, _fetch, client, auth_user):
+    _, raw = auth_user
+    mock_wda_cls.return_value.get_definition.return_value = MagicMock(data={"version": 3, "opportunity_ids": [2154]})
+    mock_wda_cls.return_value.update_definition.return_value = MagicMock(data={"version": 4})
+
+    data = _update(client, raw, {"opportunity_source": {"program_id": 217}})
+    assert data["result"]["isError"] is False, data
+    written = mock_wda_cls.return_value.update_definition.call_args.kwargs["data"]
+    assert written["opportunity_source"] == {"program_id": 217}
+    assert written["opportunity_ids"] == [2154, 2356]
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.fetch_user_organization_data", return_value=_PROGRAM_TREE)
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_definition_refuses_a_program_the_caller_sees_nothing_of(mock_wda_cls, _fetch, client, auth_user):
+    _, raw = auth_user
+    data = _update(client, raw, {"opportunity_source": {"program_id": 999}})
+    assert data["result"]["structuredContent"]["error"]["code"] == "PERMISSION_DENIED"
+    mock_wda_cls.return_value.update_definition.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_definition_refuses_a_malformed_opportunity_source(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    data = _update(client, raw, {"opportunity_source": {"program": 217}})
+    assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_SCHEMA"
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_definition_null_opportunity_source_removes_it(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_wda_cls.return_value.get_definition.return_value = MagicMock(
+        data={"version": 3, "opportunity_source": {"program_id": 217}, "opportunity_ids": [2154, 2356]}
+    )
+    mock_wda_cls.return_value.update_definition.return_value = MagicMock(data={"version": 4})
+    data = _update(client, raw, {"opportunity_source": None})
+    assert data["result"]["isError"] is False, data
+    written = mock_wda_cls.return_value.update_definition.call_args.kwargs["data"]
+    assert "opportunity_source" not in written
+    assert written["opportunity_ids"] == [2154, 2356]
+
+
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows.fetch_user_organization_data", return_value=_PROGRAM_TREE)
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_opportunity_ids_refuses_a_workflow_that_follows_its_program(mock_wda_cls, _fetch, client, auth_user):
+    _, raw = auth_user
+    mock_wda_cls.return_value.get_definition.return_value = MagicMock(
+        data={"version": 3, "opportunity_source": {"program_id": 217}}
+    )
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_opportunity_ids",
+        {"workflow_id": 42, "program_id": 217, "opportunity_ids": [2154], "expected_version": 3},
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_SCHEMA"
+    mock_wda_cls.return_value.update_definition.assert_not_called()

@@ -7625,6 +7625,13 @@ class UpdateOpportunityIdsView(LoginRequiredMixin, View):
                     {"error": "Workflow is not multi-opp"},
                     status=400,
                 )
+            if existing.data.get("opportunity_source"):
+                # Resolved from the program on every read (workflow/program_opportunities.py);
+                # a saved list would be replaced at the next load.
+                return JsonResponse(
+                    {"error": "This workflow includes every opportunity of its program you can access."},
+                    status=400,
+                )
 
             result = data_access.update_opportunity_ids(definition_id, opportunity_ids)
             if not result:
