@@ -32,6 +32,7 @@ urlpatterns = [
     path("about/", TemplateView.as_view(template_name="pages/about.html"), name="about"),
     path("health/", views.health_check, name="health_check"),
     path("robots.txt", views.robots_txt, name="robots_txt"),
+    path("favicon.ico", views.favicon_ico, name="favicon_ico"),
     path(".well-known/assetlinks.json", views.assetlinks_json, name="assetlinks_json"),
     # canopy's "Fill from the site" reads labs' signed site document here (the canopy
     # SDK's view, canopy_sdk.site.WELL_KNOWN_PATH); it is also at /labs/canopy/site.json.

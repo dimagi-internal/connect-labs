@@ -6,6 +6,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{% block title %}Connect - {% block head_title %}{% endblock head_title %}{% endblock title %}</title>
+    {% include 'favicon.html' %}
     {% block css %}
       <link rel="stylesheet" href="{% static 'bundles/css/tailwind.css' %}">
       <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
