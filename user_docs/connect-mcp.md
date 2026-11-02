@@ -79,6 +79,9 @@ When asked, choose **Production labs environment**, then approve the token in th
 !!! note "Full-access tokens require a passkey confirmation"
     If you choose a full-access token during setup, a small canopy window opens over the page and asks you to touch your passkey. If you are not a member of Labs' canopy workspace, you can create a no-user-visit token only.
 
+!!! tip "If you were not signed in when you opened the approval page"
+    If Labs sent you to sign in before showing the approval page, the approve button and all links on the page now work correctly after you sign in. If you previously saw a "not found" page at that step, this has been fixed — run `/labs-token-setup` again and it will complete normally.
+
 ### 3. (Agents doing one job) Get a short-lived token
 
 If you ask an agent to carry out a single task — rather than setting it up as a permanent assistant — it can request a token that lasts **one hour** and cannot renew itself. This leaves your own Claude Code setup untouched. The agent asks for the token, does the work, and the token expires on its own.
@@ -198,6 +201,10 @@ Personal Access Tokens let you connect an MCP client to Labs without going throu
 !!! note "Tokens you already have keep working"
     This confirmation step applies only when creating or rotating a token. Using an existing token is unchanged.
 
+### Creating and rotating tokens via `labs-token-setup`
+
+When `/labs-token-setup` opens a browser to approve a token, it uses the same approval page as the tokens page at `/labs/mcp/tokens/`. The approve button and all links on that page work correctly, including when you were not already signed in and Labs redirected you to sign in first. If you previously encountered a "not found" page after signing in at that step, this has been fixed — run `/labs-token-setup` again and it will complete normally.
+
 ### Access levels
 
 When you create a token you choose an **Access** level:
@@ -213,15 +220,4 @@ Tools the token is not allowed to use do not appear to the agent at all, so the 
 The token list on the tokens page shows the access level and exact expiry time of each token. When you rotate a token, its access level stays the same.
 
 !!! tip "When to use 'No user visit data'"
-    Choose this level when you want an AI assistant to help you navigate programme structure, explore or edit indicator and workflow definitions, regenerate saved runs, or query the organisation directory — but you do not want it to have access to any beneficiary visit data. Because it can edit a report's definition, give it to an assistant you would let edit the report itself. It is a good default for any automated or shared setup where full data access is not needed. Tokens at this level can still profile real opportunities and generate synthetic data.
-
-!!! note "Account-level lock overrides token access level"
-    If an administrator has locked your account to "no user visit data" (see [MCP Addresses](#mcp-addresses) above), that restriction applies regardless of which token you use or which address you connect through. A Standard token issued to a locked account behaves as a No user visit data token.
-
----
-
-## What the Restricted Address Blocks
-
-The `mcp/no_user_visit/` address enforces a strict set of rules to prevent real visit data from reaching a restricted caller. The following actions are **not available** on that address, regardless of your token's access level:
-
-- **Reading stored workflow snapshots.
+    Choose this level when you want an AI assistant to help you navigate programme structure, explore or edit indicator and workflow definitions, regenerate saved runs, or query the organisation directory — but you do not want it to have access to any beneficiary visit data. Because it can edit a report
