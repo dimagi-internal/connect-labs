@@ -93,13 +93,15 @@ If someone shares a direct link to a specific workflow card — for example, a U
 
 A saved workflow run can be shared with anyone — including people who have no Labs account — using a **public link**.
 
-On any saved run page, click the **Share** button. You will be asked to:
+On the workflow list, each saved run row has three buttons: **Open**, **Share**, and **Delete**. In-progress runs do not have a **Share** button — you can only share a run once it has been saved.
+
+To create a public link, click **Share** on the run's row. You will be asked to:
 
 1. Choose how long the link should stay active: **1, 7, 30, or 90 days**, or a specific date up to one year away.
 2. Confirm that you understand what the link exposes (see the warning below).
 3. Copy the generated link.
 
-Once a link exists, the run's Share panel lists all its active links together with a view count for each. You can end any link at any time by deleting it from that list. When a link ends — whether you delete it or it expires — Labs deletes the stored copy of that run.
+Once a link exists, the button label changes to **Shared** to indicate that the run has at least one active link. Clicking **Shared** opens the same panel, where you can see all active links together with a view count for each. You can end any link at any time by deleting it from that list. When a link ends — whether you delete it or it expires — Labs deletes the stored copy of that run.
 
 Anyone who has the link can open the report in their browser with no sign-in. The report shows the run exactly as it was saved; it does not refresh or update.
 
@@ -212,8 +214,4 @@ If you previously saw a workflow listed as exempt, that status no longer applies
 
 #### Reading another workflow's runs in the protected frame
 
-A protected workflow can read the saved runs of another workflow only if its settings explicitly declare that relationship — for example, the way a worker review names the program report it belongs to, or the way a page lists the workflows it displays.
-
-If a protected workflow tries to read runs from a workflow it has not declared, it will show the message **"This workflow or page does not declare that workflow"** rather than loading any data.
-
-For most reports this makes no visible difference. One case where it does matter: the M
+A protected workflow can read the saved runs of another workflow only if its settings explicitly declare that relationship — for example, the way
