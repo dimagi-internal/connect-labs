@@ -405,6 +405,76 @@ The `meta` block controls how the figure is shown:
 
 The indicators document also has **suppression rules**. For example, `mortality` at LLO level depends on whether that LLO records deaths credibly.
 
+#### Measures over worker-days (`grain: worker_day`)
+
+A measure normally aggregates the registry's entity rows. With `grain: worker_day` it aggregates the visits
+instead, one row per worker per calendar day, credited to the worker who **made** each visit. Its `sql` names one
+visit column, and it takes no filters (put the condition in the visit column):
+
+| `type` | A day's value | A level's value (worker, opportunity, LLO, programme) |
+| --- | --- | --- |
+| `number` | median of the column over that day's visits | median of the day values |
+| `count` | how many of that day's visits have a value | total of the day values |
+| `sum` | total of the column over that day's visits | total of the day values |
+
+Each level is computed once; at a scope without one (month, case) the measure is empty.
+
+A `count` or `sum` is a total, so a `type: number` measure may divide one by another. The division happens at
+each scope's own level, so it is a ratio of totals everywhere: the worker's photos for a worker, the programme's
+for the programme. A `number` (median) worker-day measure can't be used in another measure, because a ratio of
+medians isn't a figure of anything.
+
+This is how a figure follows the visit's worker in a registry whose entity is something else. A mother credited to
+her latest visitor (`entity.worker: last_visit`) puts every entity-grain figure on that worker, including photos
+another worker took on an earlier visit. A worker-day sum doesn't move them.
+
+Two things to know:
+
+- **Only visits with the entity key count.** A visit without one (no `mother_case_id`, say) is in no entity row,
+  so it's in no worker-day either. On MBW every visit has a mother.
+- **A worker gets a row only if they are some entity's worker.** A worker whose every mother was later visited by
+  someone else has no worker row, for this measure as for every other. Their visits still count in the
+  opportunity, LLO and programme figures.
+
+The indicator's `min_denominator` is checked against its `_denominator` measure, as always. For a worker-day sum
+that is the summed column (photos, below), not a number of entities.
+
+##### Example: photo approval per worker
+
+Labs' own photo reviews come from a `labs_audits` pipeline (one row per audited visit, joined on `visit_id`; see
+`connect_labs/workflow/WORKFLOW_REFERENCE.md`, section "Labs audit results", added in #2800).
+In a mother registry:
+
+```yaml
+# properties
+visit_columns:
+  - { name: photos_passed_v, sql: 'COALESCE(photos_pass, 0)' }       # an unaudited visit adds 0
+  - { name: photos_decided_v, sql: 'COALESCE(photos_decided, 0)' }
+pipelines:
+  entity: visits
+  lookups:
+    photo_audit:
+      pipeline: photo_audits       # the report's labs_audits pipeline
+      on: visit_id
+      key: visit_id
+      pick: latest
+      fields: { photos_pass: n_pass, photos_decided: n_decided }
+
+# indicators
+measures:
+  - name: photo_approval
+    title: Photo approval rate
+    type: number
+    sql: '100.0 * {photo_approval_numerator} / NULLIF({photo_approval_denominator}, 0)'
+    meta: { indicator: photo_approval, label: Photo approval rate, category: Photo quality,
+            unit: '%', direction: higher, flw_applicable: true }
+  - { name: photo_approval_numerator, type: sum, grain: worker_day, sql: photos_passed_v }
+  - { name: photo_approval_denominator, type: sum, grain: worker_day, sql: photos_decided_v }
+```
+
+Read it as: *of the photos a worker took that a reviewer decided, the percentage that passed* (duplicate or fake
+counts against; undecided photos are left out).
+
 ### Deployment facts
 
 ```yaml

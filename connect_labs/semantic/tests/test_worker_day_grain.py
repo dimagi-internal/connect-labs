@@ -273,7 +273,7 @@ def test_the_fixture_validates():
     "changes, expected",
     [
         ({"grain": "worker_week"}, "is not a grain"),
-        ({"type": "sum"}, "type number or count"),
+        ({"type": "avg"}, "type number, count or sum"),
         ({"sql": "not_a_visit_column"}, "must name one of the registry's visit_columns"),
         ({"sql": "hop_m + 1"}, "must name one of the registry's visit_columns"),
         ({"filters": [{"sql": "{CUBE}.is_mother"}]}, "takes no filters"),

@@ -246,6 +246,13 @@ def _component_words(m: dict[str, Any], plural: str) -> str:
     scope = f" where {where}" if where else ""
     mtype = m.get("type")
     inner = m.get("sql") or ""
+    if m.get("grain") == "worker_day":
+        # Over visits, credited to each visit's own worker -- not over the entities.
+        if mtype == "sum":
+            return f"the total {_words(inner)} of the visits, credited to the worker who made each visit"
+        if mtype == "count":
+            return f"the number of visits with a {_words(inner)}, credited to the worker who made each visit"
+        return f"the median of each worker-day's median {_words(inner)}"
     if mtype == "count":
         return f"the number of {plural}{scope}"
     if mtype == "count_distinct":
@@ -435,6 +442,8 @@ def english(registry: dict[str, Any], props_doc: dict[str, Any], indicator: str)
         col = _words(expr)
         if top.get("type") == "count":
             definition = f"The number of visits with a {col}, over every worker-day in scope."
+        elif top.get("type") == "sum":
+            definition = f"The total {col} of the visits in scope, credited to the worker who made each visit."
         else:
             definition = (
                 f"The median, across each worker's days, of that day's median {col}; above one worker, "

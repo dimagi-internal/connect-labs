@@ -120,12 +120,28 @@ INTRINSIC_SCOPE_COLUMNS = frozenset({"opportunity_id", "username", "cohort_month
 # entities (MBW's Daily Meter/Visit: the median of each FLW-day's home-to-home
 # distances, then the median across the FLW's days). Such a measure names ONE visit
 # column in `sql`: a `number` is the median across the days of each day's median of
-# that column, a `count` is how many non-null values it has. Each level (worker,
-# opportunity, LLO, programme) is computed once and carried onto every `props` row,
-# so the value reads the same through the CTE chain and through a materialised
-# props table; at any other scope (month, case) it is NULL.
+# that column, a `count` is how many non-null values it has, and a `sum` is the total
+# of that column. Each level (worker, opportunity, LLO, programme) is computed once and
+# carried onto every `props` row, so the value reads the same through the CTE chain and
+# through a materialised props table; at any other scope (month, case) it is NULL.
+#
+# A `count` or `sum` is ADDITIVE: its level is a plain total of its day values, so a
+# ratio of two of them is a ratio of totals at every level. That is why a `type:
+# number` measure may reference them -- `100.0 * {passed} / NULLIF({decided}, 0)` --
+# and why such a measure is itself resolved per scope (each reference reads that
+# scope's level; `scope_dependent_measures`). It is how a figure is credited to the
+# worker who MADE each visit even in a registry whose entity is a mother credited to
+# her latest visitor: the worker-day rows are the visits' own workers. A median is not
+# additive -- a ratio of medians means nothing -- so nothing may reference one.
+#
+# The worker-day rows are the as-of-cut visits that HAVE the entity key (visit_agg
+# drops the others), and the worker level joins on the ENTITY's worker: a worker who
+# is no entity's worker has no flw row, for this measure as for every other (see
+# _grain_join), while their days still count in the opportunity/LLO/programme levels.
 MEASURE_GRAINS = ("worker_day",)
-_GRAIN_TYPES = ("number", "count")
+_GRAIN_TYPES = ("number", "count", "sum")
+# The grain types whose levels are totals, and so may be referenced by another measure.
+_ADDITIVE_GRAIN_TYPES = ("count", "sum")
 # scope -> the pre-computed level a worker_day measure reads there
 _GRAIN_LEVELS = {"flw": "flw", "opportunity": "opp", "llo": "llo", "programme": "prog"}
 
@@ -190,8 +206,15 @@ def _compile_aggregate(measure: dict[str, Any]) -> str:
     return expr
 
 
-def compile_measures(registry: dict[str, Any]) -> dict[str, str]:
-    """Every measure -> its SQL expression, with {measure} references resolved."""
+def compile_measures(
+    registry: dict[str, Any], scope: str = "programme", llo_map: dict[Any, str] | None = None
+) -> dict[str, str]:
+    """Every measure -> its SQL expression, with {measure} references resolved.
+
+    A worker_day measure is its level at `scope` (the programme level by default),
+    and so is every measure that references one (`scope_dependent_measures`): the
+    scope-aware callers compile once per scope and take those from each.
+    """
     by_name = {m["name"]: m for m in registry["measures"]}
 
     for m in registry["measures"]:
@@ -215,8 +238,8 @@ def compile_measures(registry: dict[str, Any]) -> dict[str, str]:
         resolving.add(name)
 
         if measure.get("grain") == "worker_day":
-            # The programme-level value; each scope reads its own level (_grain_expr).
-            expr = _grain_expr(name, "programme", None)
+            # This scope's pre-computed level (_grain_expr); NULL where it has none.
+            expr = _grain_expr(name, scope, llo_map)
         elif measure["type"] == "number":
             sql = measure.get("sql")
             if not sql:
@@ -1361,6 +1384,33 @@ def _grain_measures(registry: dict[str, Any]) -> list[dict[str, Any]]:
     return [m for m in registry.get("measures") or [] if isinstance(m, dict) and m.get("grain") == "worker_day"]
 
 
+def scope_dependent_measures(registry: dict[str, Any]) -> list[str]:
+    """Measures whose value depends on the scope it is read at, in registry order:
+    every worker_day measure, and every measure that references one (directly or
+    through another). Each is compiled once per scope -- see compile_measures."""
+    measures = [m for m in registry.get("measures") or [] if isinstance(m, dict) and m.get("name")]
+    dependent = {m["name"] for m in _grain_measures(registry)}
+    changed = True
+    while changed:
+        changed = False
+        for m in measures:
+            if m["name"] in dependent:
+                continue
+            if any(ref in dependent for ref in _MEASURE_REF.findall(str(m.get("sql") or ""))):
+                dependent.add(m["name"])
+                changed = True
+    return [m["name"] for m in measures if m["name"] in dependent]
+
+
+def _per_scope(registry: dict[str, Any], scope: str, llo_map: dict[Any, str] | None) -> dict[str, str]:
+    """The scope-dependent measures' expressions at one scope."""
+    dependent = scope_dependent_measures(registry)
+    if not dependent:
+        return {}
+    compiled = compile_measures(registry, scope, llo_map)
+    return {name: compiled[name] for name in dependent}
+
+
 def _grain_levels(llo_map: dict[Any, str] | None) -> list[str]:
     return ["flw", "opp", "prog"] + (["llo"] if llo_map else [])
 
@@ -1383,10 +1433,11 @@ def _grain_expr(name: str, scope: str, llo_map: dict[Any, str] | None) -> str:
 
 
 def _grain_problems(props_doc: dict[str, Any], registry: dict[str, Any]) -> list[str]:
-    """A `grain` must be known, its measure a number or count over ONE declared visit
-    column with no filters, and no other measure may reference it: its value is
-    chosen per scope, so inlining it into another expression would freeze one
-    scope's value into every scope."""
+    """A `grain` must be known, its measure a number, count or sum over ONE declared
+    visit column with no filters. Only a `type: number` measure may reference one, and
+    only an ADDITIVE one (count, sum): a ratio of two totals is a total ratio at every
+    level, while a ratio of medians is not a figure of anything. Such a reference is
+    resolved per scope (`scope_dependent_measures`)."""
     measures = [m for m in registry.get("measures") or [] if isinstance(m, dict)]
     declared = _declared_visit_columns(props_doc.get("visit_columns"))
     grained: set[str] = set()
@@ -1400,7 +1451,7 @@ def _grain_problems(props_doc: dict[str, Any], registry: dict[str, Any]) -> list
             continue
         grained.add(name)
         if m.get("type") not in _GRAIN_TYPES:
-            problems.append(f"{name}: a worker_day measure is type number or count, got {m.get('type')!r}")
+            problems.append(f"{name}: a worker_day measure is type number, count or sum, got {m.get('type')!r}")
         if m.get("filters"):
             problems.append(f"{name}: a worker_day measure takes no filters; put the condition in its visit column")
         col = m.get("sql")
@@ -1408,11 +1459,20 @@ def _grain_problems(props_doc: dict[str, Any], registry: dict[str, Any]) -> list
             problems.append(
                 f"{name}: a worker_day measure's sql must name one of the registry's visit_columns, got {col!r}"
             )
+    additive = {m.get("name") for m in measures if m.get("name") in grained and m.get("type") in _ADDITIVE_GRAIN_TYPES}
     for m in measures:
         for ref in _MEASURE_REF.findall(str(m.get("sql") or "")):
-            if ref in grained:
+            if ref not in grained:
+                continue
+            if ref not in additive:
                 problems.append(
-                    f"{m.get('name')}: cannot reference {ref}, a worker_day measure (its value is per scope)"
+                    f"{m.get('name')}: cannot reference {ref}, a worker_day median -- a median is not a total, "
+                    "so no ratio or sum of it means anything; reference a worker_day count or sum"
+                )
+            elif m.get("type") != "number" or m.get("grain"):
+                problems.append(
+                    f"{m.get('name')}: only a plain type: number measure may reference {ref}, a worker_day "
+                    "count or sum (its value is read per scope)"
                 )
     return problems
 
@@ -1425,9 +1485,10 @@ def _grain_ctes(
 ) -> str:
     """worker_day -> one row per worker per day; then each level's value over those days.
 
-    The day's value is the median (number) or count (count) of the measure's visit
-    column over the worker's visits that day; a level's value is the median of the
-    day values (days with no value are skipped by PERCENTILE_CONT) or their sum.
+    The day's value is the median (number), count (count) or total (sum) of the
+    measure's visit column over the worker's visits that day; a level's value is the
+    median of the day values (days with no value are skipped by PERCENTILE_CONT) or,
+    for a count or sum, their total.
     Above one worker (opportunity, LLO, programme) the median is over every
     worker-day in that scope pooled, not a median of the workers' own values.
     Reads `visits`, so it is cut at the report date like everything else -- which
@@ -1454,10 +1515,12 @@ def _grain_ctes(
     def day(m: dict[str, Any]) -> str:
         if m["type"] == "count":
             return f"COUNT({m['sql']}) AS {m['name']}"
+        if m["type"] == "sum":
+            return f"SUM({m['sql']}) AS {m['name']}"
         return f"PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {m['sql']}) AS {m['name']}"
 
     def level(m: dict[str, Any]) -> str:
-        if m["type"] == "count":
+        if m["type"] in _ADDITIVE_GRAIN_TYPES:
             return f"SUM({m['name']}) AS {m['name']}"
         return f"PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {m['name']}) AS {m['name']}"
 
@@ -1750,7 +1813,8 @@ def compile_indicator_sql(
     """One statement for ONE scope. Prefer compile_rollup_sql for several."""
     _check_scopes([scope], llo_map)
     ctes, compiled = _build_ctes(props_doc, registry, visit_sql, as_of, llo_map=llo_map, visit_filter=visit_filter)
-    compiled = {**compiled, **{m["name"]: _grain_expr(m["name"], scope, llo_map) for m in _grain_measures(registry)}}
+    # worker_day measures, and measures referencing them, read this scope's level.
+    compiled = {**compiled, **_per_scope(registry, scope, llo_map)}
     supp = _suppression_columns(registry, settings, llo_map)
     scope_cols = SCOPES[scope]
     scope_select = "".join(f"props.{c},\n    " for c in scope_cols)
@@ -1820,13 +1884,15 @@ def _rollup_select(
         for sc in scopes
     }
     label_cases = "\n        ".join(f"WHEN {is_scope[sc]} THEN '{sc}'" for sc in scopes)
-    # A worker_day measure reads the level of the row's own scope (see MEASURE_GRAINS).
-    grained = _grain_measures(registry)
-    if grained:
+    # A worker_day measure -- and a measure referencing one, such as a ratio of two
+    # worker_day sums -- reads the level of the row's own scope (see MEASURE_GRAINS).
+    dependent = scope_dependent_measures(registry)
+    if dependent:
         compiled = dict(compiled)
-        for m in grained:
-            whens = " ".join(f"WHEN {is_scope[sc]} THEN {_grain_expr(m['name'], sc, llo_map)}" for sc in scopes)
-            compiled[m["name"]] = f"CASE {whens} END"
+        per_scope = {sc: _per_scope(registry, sc, llo_map) for sc in scopes}
+        for name in dependent:
+            whens = " ".join(f"WHEN {is_scope[sc]} THEN {per_scope[sc][name]}" for sc in scopes)
+            compiled[name] = f"CASE {whens} END"
     col_select = "".join(f"props.{c},\n    " for c in all_cols)
     alias = "" if source == "props" else " AS props"
 
