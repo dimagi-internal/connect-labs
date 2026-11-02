@@ -114,8 +114,8 @@ def _create(request, data_access, run):
         return JsonResponse({"error": "Only a saved run can be shared."}, status=400)
     try:
         expires_at = public_shares.resolve_expiry(body.get("days"), body.get("until"))
-    except ValueError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+    except ValueError:
+        return JsonResponse({"error": "Choose 1, 7, 30 or 90 days, or a date within the next year."}, status=400)
     definition = data_access.get_definition(run.definition_id)
     if definition is None:
         return JsonResponse({"error": "Workflow not found"}, status=404)

@@ -45,6 +45,8 @@ def resolve_expiry(days, until, now: datetime | None = None) -> datetime:
             day = date.fromisoformat(until)
         except ValueError as e:
             raise ValueError("Choose a date.") from e
+        if day >= date.max:
+            raise ValueError("A link can last at most a year.")
         expires = timezone.make_aware(
             datetime.combine(day + timedelta(days=1), time.min), timezone.get_current_timezone()
         )

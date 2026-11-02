@@ -172,6 +172,7 @@ def test_a_date_in_the_past_too_far_ahead_or_nonsense_is_refused():
     for until in [
         (now - timedelta(days=1)).date().isoformat(),
         (now + timedelta(days=366)).date().isoformat(),
+        "9999-12-31",
         "next week",
         "2026-13-45",
         12345,
