@@ -331,12 +331,15 @@ _RESTRICTED_PROTECTED_RESOURCE_METADATA_PATHS = [
 
 
 class _ReprefixApp:
-    """Re-prepend the stripped Starlette Mount prefix before forwarding to app.
+    """Hand Django the public path of a request under a Starlette Mount, and no script prefix.
 
-    Starlette's Mount strips its prefix from scope["path"] before calling the
-    child app, so Mount("/mcp/admin", django) gives Django path "/create-token/"
-    instead of "/mcp/admin/create-token/".  This wrapper re-adds the prefix so
-    Django's URL router sees the full path and can match mcp/admin/create-token/.
+    Mount keeps the full path in ``scope["path"]`` and adds its own prefix to
+    ``scope["root_path"]`` (older Starlette stripped the path instead). Django treats
+    ``root_path`` as where the whole project is mounted, and writes it in front of every
+    URL it builds. But this project is at the root, and the URLconf already includes
+    ``mcp/admin/create-token/``. So Django must see that full path and an empty
+    ``root_path``, or the page's links, its form's action and the login redirect's
+    ``next`` all come out under a prefix that 404s.
     """
 
     def __init__(self, prefix: str, app):
@@ -345,8 +348,8 @@ class _ReprefixApp:
 
     async def __call__(self, scope, receive, send):
         if scope.get("type") in ("http", "websocket"):
-            scope = dict(scope)
-            scope["path"] = self.prefix + scope["path"]
+            path = scope["path"]
+            scope = {**scope, "root_path": "", "path": path if path.startswith(self.prefix) else self.prefix + path}
         await self.app(scope, receive, send)
 
 
@@ -396,8 +399,8 @@ def build_application() -> Starlette:
                 for path in _OPENID_CONFIGURATION_PATHS
             ],
             # Keep the Django token-management browser routes on Django. The
-            # _ReprefixApp wrapper re-adds /mcp/admin so Django's URL router sees
-            # the full path and can match mcp/admin/create-token/.
+            # _ReprefixApp gives Django the full path and no script prefix, so its
+            # URL router matches mcp/admin/create-token/ and the URLs it writes are right.
             Mount("/mcp/admin", app=_ReprefixApp("/mcp/admin", _django_asgi_app)),
             # FastMCP Streamable-HTTP protocol endpoint at /mcp/. Wrapped so the
             # auth 401 is the MCP spec's challenge, naming where to sign in. The

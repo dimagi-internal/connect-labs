@@ -1,16 +1,21 @@
 """Tests for the browser-driven MCP token-creation view."""
 
+import asyncio
 import importlib.util
 import os
 import stat
 from datetime import timedelta
 from pathlib import Path
 
+import httpx
 import pytest
 from django.conf import settings
 from django.urls import reverse
 from django.utils import timezone
+from starlette.applications import Starlette
+from starlette.routing import Mount
 
+from config.asgi import _ReprefixApp
 from connect_labs.mcp.models import MCPAccessToken
 from connect_labs.mcp.testing import allow_self_mint
 from connect_labs.users.models import User
@@ -208,3 +213,40 @@ def test_the_setup_script_makes_a_private_file_when_given_no_path():
         assert stat.S_IMODE(os.stat(written).st_mode) == 0o600
     finally:
         os.unlink(written)
+
+
+# --- through the ASGI mount, which Django's test client never sees ------------------------
+
+
+def _scope_django_sees(url):
+    """What the app behind the real ``/mcp/admin`` mount is handed for ``url``."""
+    seen = {}
+
+    async def capture(scope, receive, send):
+        seen.update(path=scope["path"], root_path=scope["root_path"])
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    app = Starlette(routes=[Mount("/mcp/admin", app=_ReprefixApp("/mcp/admin", capture))])
+
+    async def call():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+            await client.get(url)
+
+    asyncio.run(call())
+    return seen
+
+
+def test_the_mount_gives_django_the_public_path_and_no_script_prefix():
+    """A script prefix makes Django prepend /mcp/admin to every URL it writes: the page's
+    links, the form's own action (which then 404s), and the login redirect's ``next``."""
+    assert _scope_django_sees("/mcp/admin/create-token/?state=x") == {
+        "path": "/mcp/admin/create-token/",
+        "root_path": "",
+    }
+
+
+@pytest.mark.django_db
+def test_the_form_posts_to_the_public_address(client, logged_in_user):
+    resp = client.get(reverse("mcp:admin_create_token"), {"callback": VALID_CALLBACK, "state": VALID_STATE})
+    assert b'action="/mcp/admin/create-token/"' in resp.content
