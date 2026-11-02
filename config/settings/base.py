@@ -844,6 +844,11 @@ CELERY_BEAT_SCHEDULE = {
     # the sweep can only act once a run has already been silent for
     # JOB_STALE_SECONDS (45m) anyway -- a finer tick wouldn't notice anything
     # sooner.
+    # Delete the copied run behind public links past their expiry (workflow/public_shares.py).
+    "sweep-public-run-shares": {
+        "task": "connect_labs.workflow.tasks.sweep_public_run_shares",
+        "schedule": crontab(minute=17),
+    },
     "resume-stale-workflow-runs": {
         "task": "connect_labs.workflow.tasks.sweep_stale_workflow_runs",
         "schedule": crontab(minute="*/10"),

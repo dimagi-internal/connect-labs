@@ -6,6 +6,7 @@ from pathlib import Path
 
 import connect_labs.workflow as _workflow_pkg
 from connect_labs.labs.integrations.connect.oauth import fetch_user_organization_data
+from connect_labs.workflow import public_shares
 from connect_labs.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
 
 from ..connect_token import require_connect_token
@@ -2208,6 +2209,7 @@ def workflow_delete(
         if existing is None:
             raise MCPToolError("NOT_FOUND", f"No workflow with id {workflow_id}")
         counts = wda.delete_definition(workflow_id, delete_linked=delete_linked)
+        public_shares.end_for_definition(workflow_id, opportunity_id=opportunity_id, program_id=program_id, user=user)
         return {"workflow_id": workflow_id, "deleted": counts}
     finally:
         if hasattr(wda, "close"):

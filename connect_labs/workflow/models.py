@@ -111,3 +111,42 @@ class CoachChart(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=["run_id", "worker_key"])]
+
+
+class PublicRunShare(models.Model):
+    """A public link to a completed run, and the frozen copy of the run it shows.
+
+    The visitor has no Connect token, so nothing can be read at view time: ``payload``
+    holds everything the page draws. It holds real report data, worker names included,
+    and is deleted (set to NULL) when the share ends. The row stays, with no report data
+    in it, as the record of who shared what and when. See ``public_shares.py`` and
+    docs/superpowers/specs/2026-11-02-public-run-share-links-design.md.
+    """
+
+    class EndedReason(models.TextChoices):
+        EXPIRED = "expired", "Expired"
+        ENDED = "ended", "Ended by a person"
+        SOURCE_DELETED = "source_deleted", "The run or its workflow was deleted"
+
+    token = models.CharField(max_length=64, unique=True)
+    definition_id = models.IntegerField()
+    run_id = models.IntegerField()
+    opportunity_id = models.IntegerField(null=True, blank=True)
+    program_id = models.IntegerField(null=True, blank=True)
+    workflow_name = models.CharField(max_length=500, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+    ended_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    ended_reason = models.CharField(max_length=20, choices=EndedReason.choices, blank=True)
+    last_viewed_at = models.DateTimeField(null=True, blank=True)
+    view_count = models.PositiveIntegerField(default=0)
+    payload = models.JSONField(null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["run_id"]), models.Index(fields=["definition_id"])]

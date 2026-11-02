@@ -70,6 +70,7 @@ import {
   Settings,
 } from 'lucide-react';
 import { PipelineEditor } from './pipeline-editor';
+import { ShareRunDialog } from '@/components/workflow/ShareRunDialog';
 import { LabsReport } from '@/components/workflow/report';
 import { createLinkHelpers } from '@/components/workflow/links';
 import { buildRunView } from '@/components/workflow/runView';
@@ -117,6 +118,8 @@ interface ExtendedWorkflowData extends WorkflowDataFromDjango {
   };
   mapboxToken?: string;
   viewer_is_staff?: boolean;
+  // Set when this person may make public links to this saved run (public_share_views.py).
+  share?: { url: string };
 }
 
 /**
@@ -1736,6 +1739,14 @@ function WorkflowRunner({
         {/* Workflow Content - Only show when workflow tab is active */}
         {activeTab === 'workflow' && (
           <>
+            {initialData.share && (
+              <div className="flex justify-end px-4 pb-2">
+                <ShareRunDialog
+                  url={initialData.share.url}
+                  csrfToken={csrfToken}
+                />
+              </div>
+            )}
             {/* Show error if any */}
             {error && (
               <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-4 mx-4">

@@ -1770,6 +1770,14 @@ function WorkflowUI({
 
 The contract: `view.workers`, `view.pipelines`, and `view.state` work identically whether the run is in_progress (live data) or completed (snapshot data). The template's `snapshot_inputs` (or hook) is what makes the round-trip safe — the snapshot's shape must match what `view` reads.
 
+### Public links to a saved run
+
+Dimagi staff who hold a run's ACL, and have access to every opportunity its snapshot holds, can make a public link from the run page's **Share** button (`workflow/public_share_views.py`). Making a link copies the render code, the definition without its `actions` and `agent` config, and the decoded snapshot into a `PublicRunShare` row in the labs DB (`workflow/public_shares.py`), because a visitor has no Connect token to read with.
+
+The page at `/labs/workflow/shared/<token>/` (`workflow/public_run_views.py`) draws that copy in the ordinary sandbox frame, mounted without workflow handlers (`components/workflow/sandbox/publicRun.tsx`), so the render's `fetch`, run writes and actions simply fail. **A render that needs anything beyond its snapshot shows its own empty state there**: boundaries from `/microplans/boundaries/`, images, `supply_sources`, `workflow_sources`. Nothing is stripped from the copy.
+
+Expiry is checked on every read. An hourly task (`sweep_public_run_shares`) then sets `payload` to NULL; ending a link, or a person deleting the run or workflow, does so at once. Routine replacement through `delete_run` (`hand_down`, `history_rebuild`) leaves a link showing its frozen copy until it expires. Spec: `docs/superpowers/specs/2026-11-02-public-run-share-links-design.md`.
+
 ### Marking a run completed
 
 `view.complete({ confirm? })`:

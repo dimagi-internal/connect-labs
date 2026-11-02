@@ -238,6 +238,7 @@ class EmbedWorkflowView(WorkflowRunView):
         context = super().get_context_data(**kwargs)
         for key in ("canopy_panel", "agent_settings", "agent_held_back"):
             context.pop(key, None)
+        (context.get("workflow_data") or {}).pop("share", None)
         # Read-only: the workflow's actions would only be refused (the session reaches no
         # write), so their buttons are not offered.
         workflow_data = context.get("workflow_data")
