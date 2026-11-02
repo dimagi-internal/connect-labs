@@ -163,7 +163,7 @@ has one row per **audited visit** of the opportunity, carrying that visit's huma
 `n_pass`, `n_fail`, `n_duplicate_fake`, `n_pending` and `n_decided` (pass + fail + duplicate/fake) -- read
 at `audit.<name>` (declare them with `transform: "int"`). Only a reviewer's decision counts, never the AI
 reviewer's; an image reviewed in several audits counts once, with its latest decision. See
-[WORKFLOW_REFERENCE.md, "Labs audit results"](../connect_labs/workflow/WORKFLOW_REFERENCE.md#labs-audit-results-labs_audits)
+`connect_labs/workflow/WORKFLOW_REFERENCE.md`, section "Labs audit results (`labs_audits`)",
 for the exact rules.
 
 Its rows join on the visit itself:
