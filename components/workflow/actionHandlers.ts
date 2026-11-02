@@ -288,6 +288,13 @@ export function createActionHandlers(csrfToken: string): ActionHandlers {
       workflow_run_id?: number;
       ai_agent_id?: string; // Optional AI agent to run after creation
       ai_auto_apply_actions?: string[]; // Which AI verdicts pre-tag a human result ([] = flag only)
+      // Per-image-type selection (audit/ai_review_config.py build_review_config):
+      // each image_path keeps only visits with that photo (OR across paths);
+      // reviewers: [] runs no AI reviewer on it.
+      image_audits?: Array<{
+        image_path: string;
+        reviewers?: Array<Record<string, unknown>>;
+      }>;
     }): Promise<{
       success: boolean;
       task_id?: string;

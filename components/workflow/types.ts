@@ -1022,6 +1022,16 @@ export interface CreateAuditConfig {
 
   /** AI agent ID to run after audit creation (optional) */
   ai_agent_id?: string;
+
+  /**
+   * Per-image-type selection (audit/ai_review_config.py build_review_config):
+   * only visits with ANY one of these photos, only those photos; reviewers: []
+   * runs no AI reviewer.
+   */
+  image_audits?: Array<{
+    image_path: string;
+    reviewers?: Array<Record<string, unknown>>;
+  }>;
 }
 
 /**

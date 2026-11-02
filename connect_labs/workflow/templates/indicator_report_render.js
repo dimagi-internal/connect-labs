@@ -266,6 +266,209 @@ function WorkflowUI({
   var sCohort = React.useState('none');
   var cohortDim = sCohort[0],
     setCohortDim = sCohort[1];
+
+  // ══ Photo audit (optional: config.photo_audit) ══════════════════════════════
+  // A workflow that sets `photo_audit` gets an "Audit photos" button per worker:
+  // one Labs image audit of that worker's photos at the configured question
+  // paths, for a person to pass or fail in the audit review screen. No AI
+  // reviewer. Absent or without image_paths, nothing is drawn and nothing is
+  // fetched. This parser is kept identical in indicator_report_render.js and
+  // indicator_worker_review_render.js.
+  function photoAuditConfig(c) {
+    var pa = c && c.photo_audit;
+    if (!pa || typeof pa !== 'object') return null;
+    // Audit image matching is exact on the question path inside the form:
+    // '/'-separated, no 'form/' prefix, no leading slash.
+    var seen = {};
+    var paths = (Array.isArray(pa.image_paths) ? pa.image_paths : [])
+      .map(function (p) {
+        return String(p || '')
+          .trim()
+          .replace(/^\/+/, '')
+          .replace(/^form\//, '');
+      })
+      .filter(function (p) {
+        if (!p || seen[p]) return false;
+        seen[p] = true;
+        return true;
+      });
+    if (!paths.length) return null;
+    function days(v) {
+      var n = Math.floor(Number(v));
+      return n > 0 ? n : null;
+    }
+    var recent = days(pa.recent_days) || 30;
+    var given = Array.isArray(pa.window_options) ? pa.window_options : [];
+    var options = (given.length ? given : [30, 60, 90, 180])
+      .map(days)
+      .concat([recent])
+      .filter(function (n, i, all) {
+        return n && all.indexOf(n) === i;
+      })
+      .sort(function (a, b) {
+        return a - b;
+      });
+    return {
+      paths: paths,
+      recent: recent,
+      options: options,
+      title: String(pa.title || '').trim() || 'Photo audit',
+    };
+  }
+  // The window ends on the worker's last visit (else the fallback day) and
+  // spans `days` days, both ends inclusive.
+  function photoAuditWindow(lastDay, fallbackDay, days) {
+    var end = String(lastDay || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(end))
+      end = String(fallbackDay || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(end))
+      end = new Date().toISOString().slice(0, 10);
+    var start = new Date(Date.parse(end + 'T00:00:00Z') - (days - 1) * 86400000)
+      .toISOString()
+      .slice(0, 10);
+    return { start: start, end: end };
+  }
+  // The createAudit payload for one worker, and the window it covers.
+  // `image_audits` with no reviewers (audit/ai_review_config.py
+  // build_review_config) is the server's "these image types only": each path
+  // becomes a filter_by_image rule, a visit is kept when it has ANY one of them
+  // (OR, audit/data_access.py _filter_visits_by_related_fields), only those
+  // photos are kept, and no AI reviewer runs. criteria.count_per_flw is ignored
+  // for a date_range audit, so none is sent.
+  function photoAuditRequest(pa, who, days, runId) {
+    var range = photoAuditWindow(who.last, who.fallback, days);
+    var payload = {
+      opportunities: [{ id: Number(who.opp), name: who.oppName || '' }],
+      criteria: {
+        audit_type: 'date_range',
+        granularity: 'per_flw',
+        start_date: range.start,
+        end_date: range.end,
+        selected_flw_user_ids: [who.username],
+        title:
+          pa.title +
+          ' — ' +
+          who.name +
+          ' (' +
+          days +
+          ' days to ' +
+          range.end +
+          ')',
+      },
+      image_audits: pa.paths.map(function (p) {
+        return { image_path: p, reviewers: [] };
+      }),
+      // Links the audit to this run. The server reuses a session this run
+      // already made for the same worker, opportunity and window rather than
+      // making a second (audit/tasks.py run_audit_creation, RESUME).
+      workflow_run_id: runId || undefined,
+    };
+    return { payload: payload, range: range };
+  }
+  // What happened to a worker's photo audit, under its button.
+  function photoAuditNote(st) {
+    if (!st || !st.status) return null;
+    if (st.status === 'running')
+      return (
+        <span className="text-gray-600">
+          {'Creating the photo audit for ' + st.name + '…'}
+        </span>
+      );
+    if (st.status === 'error')
+      return (
+        <span className="text-red-700">
+          {'Could not create the photo audit: ' + st.message}
+        </span>
+      );
+    return (
+      <span className="text-gray-700">
+        {'Photo audit queued for ' +
+          st.name +
+          ' (visits ' +
+          st.range.start +
+          ' to ' +
+          st.range.end +
+          '). Reviewers will find it under Audits for ' +
+          st.oppName +
+          ' once it finishes building. '}
+        <a
+          href={'/audit/?opportunity_id=' + encodeURIComponent(st.opp)}
+          className="text-indigo-600 hover:underline"
+        >
+          Open Audits →
+        </a>
+      </span>
+    );
+  }
+  var PHOTO_AUDIT =
+    actions && actions.createAudit ? photoAuditConfig(cfg) : null;
+  // One window for the table (the select beside "compare with"); each worker's
+  // audit state by row key.
+  var sAuditDays = React.useState(PHOTO_AUDIT ? PHOTO_AUDIT.recent : 0);
+  var auditDays = sAuditDays[0],
+    setAuditDays = sAuditDays[1];
+  var sAudits = React.useState({});
+  var audits = sAudits[0],
+    setAudits = sAudits[1];
+  function setAuditFor(key, st) {
+    setAudits(function (prev) {
+      var next = {};
+      Object.keys(prev).forEach(function (k) {
+        next[k] = prev[k];
+      });
+      next[key] = st;
+      return next;
+    });
+  }
+  // The connect username: the worker key is `<opp>::<username>`.
+  function usernameOf(w) {
+    var i = String(w.key).indexOf(FLW_SEP);
+    return i >= 0 ? String(w.key).slice(i + FLW_SEP.length) : String(w.key);
+  }
+  function auditPhotos(w) {
+    if (!PHOTO_AUDIT) return;
+    var days = auditDays;
+    var req = photoAuditRequest(
+      PHOTO_AUDIT,
+      {
+        opp: w.opp,
+        oppName: oppLabel(w.opp),
+        username: usernameOf(w),
+        name: w.name,
+        last: w.last,
+        fallback: asOf,
+      },
+      days,
+      instance && instance.id,
+    );
+    var base = {
+      days: days,
+      name: w.name,
+      opp: w.opp,
+      oppName: oppLabel(w.opp),
+      range: req.range,
+    };
+    function put(extra) {
+      var st = {};
+      Object.keys(base).forEach(function (k) {
+        st[k] = base[k];
+      });
+      Object.keys(extra).forEach(function (k) {
+        st[k] = extra[k];
+      });
+      setAuditFor(w.key, st);
+    }
+    put({ status: 'running' });
+    Promise.resolve(actions.createAudit(req.payload))
+      .then(function (result) {
+        if (!result || !result.success)
+          throw new Error((result && result.error) || 'audit creation failed');
+        put({ status: 'created', taskId: result.task_id });
+      })
+      .catch(function (err) {
+        put({ status: 'error', message: String((err && err.message) || err) });
+      });
+  }
   var sort = R.useTableSort({
     orgs: { key: 'size', dir: 'desc' },
     opps: { key: 'size', dir: 'desc' },
@@ -1745,6 +1948,34 @@ function WorkflowUI({
                 </button>
               );
             })}
+            {PHOTO_AUDIT ? (
+              <label
+                className="inline-flex items-center gap-1"
+                title={
+                  'Each ' +
+                  WRK.name +
+                  "'s photo audit covers this many days up to their last visit."
+                }
+              >
+                <span>Photo audit window</span>
+                <select
+                  data-photo-audit-window="1"
+                  className="border border-gray-200 rounded px-1 py-0.5 text-xs"
+                  value={auditDays}
+                  onChange={function (e) {
+                    setAuditDays(Number(e.target.value));
+                  }}
+                >
+                  {PHOTO_AUDIT.options.map(function (n) {
+                    return (
+                      <option key={n} value={n}>
+                        {n + ' days'}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+            ) : null}
             <span>{R.nounCount(list.length, WRK) + ' · compare with'}</span>
             <select
               className="border border-gray-200 rounded px-1 py-0.5 text-xs"
@@ -1839,6 +2070,41 @@ function WorkflowUI({
                       </button>
                     );
                   })}
+                  {PHOTO_AUDIT
+                    ? (function () {
+                        var st = audits[w.key];
+                        var running = !!st && st.status === 'running';
+                        var queued =
+                          !!st &&
+                          st.status === 'created' &&
+                          st.days === auditDays;
+                        return (
+                          <button
+                            type="button"
+                            data-photo-audit={w.key}
+                            disabled={running || queued}
+                            title={
+                              'Create an audit of ' +
+                              w.name +
+                              "'s photos from the " +
+                              auditDays +
+                              ' days up to their last visit, for a reviewer to pass or fail'
+                            }
+                            className="ml-2 text-xs text-indigo-600 hover:underline disabled:text-gray-500 disabled:no-underline"
+                            onClick={function (ev) {
+                              ev.stopPropagation();
+                              auditPhotos(w);
+                            }}
+                          >
+                            {running
+                              ? 'Creating…'
+                              : queued
+                                ? 'Photo audit queued'
+                                : 'Audit photos'}
+                          </button>
+                        );
+                      })()
+                    : null}
                   {oneOpp ? null : (
                     <div className="text-gray-500">
                       {oppLabel(w.opp) +
@@ -1858,6 +2124,14 @@ function WorkflowUI({
                 <AttnCell reds={w.reds} yellows={w.yellows} />
               </tr>,
             );
+            if (PHOTO_AUDIT && audits[w.key])
+              out.push(
+                <tr key={w.key + ':audit'} data-photo-audit-note={w.key}>
+                  <td colSpan={width} className="px-3 pb-2 text-xs">
+                    {photoAuditNote(audits[w.key])}
+                  </td>
+                </tr>,
+              );
             if (open)
               out.push(
                 <tr key={w.key + ':cases'} className="bg-indigo-50/40">
