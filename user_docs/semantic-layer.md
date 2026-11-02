@@ -398,7 +398,7 @@ that is the summed column (photos, below), not a number of entities.
 ##### Example: photo approval per worker
 
 Labs' own photo reviews come from a `labs_audits` pipeline (one row per audited visit, joined on `visit_id`; see
-[WORKFLOW_REFERENCE.md, "Labs audit results"](../connect_labs/workflow/WORKFLOW_REFERENCE.md), added in #2800).
+`connect_labs/workflow/WORKFLOW_REFERENCE.md`, section "Labs audit results", added in #2800).
 In a mother registry:
 
 ```yaml
