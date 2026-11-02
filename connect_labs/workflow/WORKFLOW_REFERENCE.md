@@ -2138,6 +2138,24 @@ A programme report's saved run already graded every opportunity in it. When a ru
 - A **changed config value** in the template: patch existing instances (see the limit above).
 - Benchmarks: see `connect_labs/benchmarks/README.md`. Publication follows the source report automatically once the cohort's `source_workflow_id` and `auto_publish_on_completion` are set.
 
+### Optional: a photo audit per worker (`photo_audit`)
+
+The generic indicator renders (`indicator_report_render.js` for the programme and opportunity reports, `indicator_worker_review_render.js`) draw an **Audit photos** button per worker when, and only when, the workflow's own `config` carries `photo_audit` with a non-empty `image_paths`. No template sets a default, so every other instance stays off and fetches nothing extra. Each page reads its **own** config: set the key on the programme report, the opportunity report and the worker review separately (instance config wins over a template's, see "Config resolved from the template on read").
+
+```json
+"photo_audit": {
+  "image_paths": ["group/question_a", "group/question_b"],
+  "recent_days": 30,
+  "window_options": [30, 60, 90, 180],
+  "title": "Photo audit"
+}
+```
+
+- `image_paths` (required): question paths inside the form, `/`-separated, as the audit matches them exactly (`audit/analysis_config.py`); a leading `/` or `form/` is stripped.
+- `recent_days` (default 30) is the window selected first; `window_options` (default `[30, 60, 90, 180]`) are the choices offered. `title` (default `Photo audit`) prefixes the audit title.
+
+A click calls `actions.createAudit` for that one worker in that one opportunity: `granularity: "per_flw"`, `selected_flw_user_ids: [<username from the worker key>]`, `audit_type: "date_range"` from (last visit - days + 1) to the worker's last visit (else the run's as-of date, else today), both inclusive; `image_audits: [{image_path, reviewers: []}]`, so a visit with ANY one of the photos is included, only those photos are kept, and no AI reviewer runs; and `workflow_run_id` (the run). A reviewer then passes or fails each photo in the audit review screen, found under Audits for the opportunity (`/audit/?opportunity_id=<id>`). A second request for the same worker, window and run reuses the session already made (`run_audit_creation`'s resume) rather than duplicating it.
+
 ---
 
 ## 13. Semantic registries (indicator definitions as data)

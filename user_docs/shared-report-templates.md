@@ -148,6 +148,16 @@ Claude uses `workflow_create_from_template` with `registry_source` (the registry
 
 For the opportunity reports, use the benchmark fan-out with `template_key: indicator_opp_report` and the program report as the source. Each report is stamped with that source (`source_workflow_id`), so every week the program report saves is handed down to it.
 
+#### Optional: audit a worker's photos
+
+A report can offer an **Audit photos** button on each worker (the worker table, and the worker review's header). It is off unless the report's settings name the photo questions to audit:
+
+> *"Turn on photo audits for workflow 19778, for the photo questions group/question_a and group/question_b."*
+
+Claude sets `photo_audit` in that report's settings (`image_paths`, and optionally `recent_days`, `window_options` and a `title`). Set it on each page that should show the button: the program report, the opportunity report and the worker review read their own settings.
+
+The button creates one [audit](audit.md) for that worker: the visits in the chosen window (30 days up to their last visit, unless you pick a longer one) that have at least one of those photos, and only those photos. No AI reviewer runs; a person passes or fails each photo in the audit review screen, under **Audits** for that opportunity. Asking again for the same worker and window reuses the audit already made.
+
 ### Every new instance needs a run
 
 A newly created report has no run, and its page needs one to open. Ask Claude to create one for each new instance (`workflow_create_run`).
