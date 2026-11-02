@@ -8,8 +8,8 @@ You need to be Dimagi staff and have access to the run's opportunity or program.
 
 ## Create a link
 
-1. Open a saved (completed) run. An in-progress run has no **Share** button.
-2. Click **Share**.
+1. On the workflow list, expand the workflow to see its runs.
+2. On a saved (completed) run's row, click **Share**. An in-progress run has no **Share**.
 3. Choose how long the link lasts: 1, 7, 30 or 90 days, or until a date up to a year away.
 4. Read the notice and tick the box.
 5. Click **Create link**, then **Copy link**.
@@ -23,7 +23,7 @@ You need to be Dimagi staff and have access to the run's opportunity or program.
 
 ## Ending a link
 
-A link stops working on its end date. To stop it sooner, open **Share** on the run and click **End link**. Deleting the run or its workflow ends its links too.
+A link stops working on its end date. To stop it sooner, click **Shared** on the run's row and then **End link**. Deleting the run or its workflow ends its links too.
 
 When a link ends, the copy of the run is deleted from Labs. A record of who shared what, and when, stays, without the report data.
 

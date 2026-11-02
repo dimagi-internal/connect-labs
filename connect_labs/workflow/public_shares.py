@@ -135,6 +135,14 @@ def live_for_run(run_id: int, opportunity_id, program_id):
     )
 
 
+def live_run_ids() -> set[int]:
+    return set(
+        PublicRunShare.objects.filter(ended_at__isnull=True, expires_at__gt=timezone.now()).values_list(
+            "run_id", flat=True
+        )
+    )
+
+
 def note_view(share: PublicRunShare) -> None:
     PublicRunShare.objects.filter(pk=share.pk).update(last_viewed_at=timezone.now(), view_count=F("view_count") + 1)
     _audit(Action.READ, share, None)

@@ -5,10 +5,12 @@ THIS REPOSITORY IS PUBLIC. Every name here is invented.
 
 import json
 from datetime import timedelta
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.template.loader import render_to_string
 from django.test import Client, RequestFactory
 from django.urls import reverse
 from django.utils import timezone
@@ -319,9 +321,43 @@ def test_a_person_deleting_a_run_ends_its_links():
     assert share.ended_reason == "source_deleted"
 
 
-def test_share_is_offered_only_to_staff_on_a_saved_run():
-    outsider = get_user_model().objects.create(username="partner", email="partner@example.org")
+def _share_control(**context):
+    defaults = {
+        "can_share_runs": True,
+        "shared_run_ids": set(),
+        "run": SimpleNamespace(id=22, status="completed"),
+        "workflow": {"definition": SimpleNamespace(opportunity_id=7)},
+        "view_mode": "opportunity",
+    }
+    return render_to_string("workflow/_public_run_share.html", {**defaults, **context})
 
-    assert public_share_views.can_share_run(_staff(), _run()) is True
-    assert public_share_views.can_share_run(outsider, _run()) is False
-    assert public_share_views.can_share_run(_staff("two"), _run(status="in_progress", snapshot=None)) is False
+
+def test_the_control_is_on_a_saved_run_and_names_its_scope():
+    html = _share_control()
+
+    assert "/labs/workflow/api/run/22/public-shares/?opportunity_id=7" in html
+    assert ", false)" in html
+
+
+def test_a_program_list_scopes_the_control_by_program():
+    assert "public-shares/?program_id=5" in _share_control(view_mode="program", program_id=5)
+
+
+def test_the_control_says_when_a_run_has_a_live_link():
+    assert ", true)" in _share_control(shared_run_ids={22})
+
+
+def test_no_control_on_an_in_progress_run_or_for_someone_who_cannot_share():
+    assert "publicRunShare" not in _share_control(run=SimpleNamespace(id=22, status="in_progress"))
+    assert "publicRunShare" not in _share_control(can_share_runs=False)
+
+
+def test_the_list_offers_share_only_to_staff_and_marks_only_live_links():
+    outsider = get_user_model().objects.create(username="partner", email="partner@example.org")
+    live = _share()
+    ended = _share()
+    PublicRunShare.objects.filter(pk=ended.pk).update(run_id=33)
+    public_shares.end(PublicRunShare.objects.get(pk=ended.pk), PublicRunShare.EndedReason.ENDED)
+
+    assert public_share_views.share_list_context(_staff()) == {"can_share_runs": True, "shared_run_ids": {live.run_id}}
+    assert public_share_views.share_list_context(outsider) == {"can_share_runs": False, "shared_run_ids": set()}

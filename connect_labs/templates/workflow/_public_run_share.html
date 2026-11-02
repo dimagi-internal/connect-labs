@@ -1,0 +1,62 @@
+{% comment %}
+Share on a run's row on the workflow list (public_run_share.js). Only a saved run, only for
+someone who may share; the API checks both again, along with the run's ACL.
+{% endcomment %}{% if can_share_runs and run.status == "completed" %}
+<div class="text-left" x-data="publicRunShare('{% url 'labs:workflow:api_public_shares' run.id %}{% if view_mode == 'program' %}?program_id={{ program_id }}{% else %}?opportunity_id={{ workflow.definition.opportunity_id }}{% endif %}', '{{ csrf_token }}', {% if run.id in shared_run_ids %}true{% else %}false{% endif %})">
+    <button type="button" @click="show()" data-testid="share-run"
+            class="inline-flex items-center px-2 py-1 text-xs font-medium text-purple-700 hover:text-purple-900 hover:bg-purple-50 rounded transition-colors">
+        <i class="fa-solid fa-share-nodes mr-1"></i>
+        <span x-text="shared ? 'Shared' : 'Share'">Share</span>
+    </button>
+    <template x-teleport="body">
+        <div x-show="open" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+             @keydown.escape.window="open = false">
+            <div role="dialog" aria-label="Share this run" @click.outside="open = false"
+                 class="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-lg bg-white p-5 shadow-xl text-left">
+                <div class="flex items-start justify-between mb-3">
+                    <h2 class="text-lg font-semibold text-gray-900">Share this run by public link</h2>
+                    <button type="button" aria-label="Close" @click="open = false" class="text-gray-500 hover:text-gray-800">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <div class="flex flex-wrap items-center gap-2 mb-3">
+                    <label class="text-sm font-medium text-gray-700">
+                        Link lasts
+                        <select x-model="duration" class="ml-2 rounded-md border border-gray-300 px-2 py-1 text-sm">
+                            <option value="1">1 day</option>
+                            <option value="7">7 days</option>
+                            <option value="30">30 days</option>
+                            <option value="90">90 days</option>
+                            <option value="date">Until a date</option>
+                        </select>
+                    </label>
+                    <input x-show="duration === 'date'" x-model="until" type="date" aria-label="Last day of the link"
+                           class="rounded-md border border-gray-300 px-2 py-1 text-sm">
+                </div>
+                <label class="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 mb-3">
+                    <input type="checkbox" x-model="confirmed" class="mt-0.5">
+                    <span>Anyone with this link can see everything saved in this run without signing in, including worker names and locations, and including data the report does not display. It stays available until the date you chose or until you end it.</span>
+                </label>
+                <button type="button" @click="create()" :disabled="!canCreate()"
+                        class="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50">
+                    Create link
+                </button>
+                <p x-show="error" x-text="error" role="alert" class="mt-3 text-sm text-red-700"></p>
+                <ul x-show="shares.length" class="mt-4 divide-y divide-gray-200 border-t border-gray-200">
+                    <template x-for="share in shares" :key="share.id">
+                        <li class="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                            <span class="text-gray-700" x-text="summary(share)"></span>
+                            <span class="flex gap-2">
+                                <button type="button" @click="copy(share)" class="text-blue-700 underline"
+                                        x-text="copied === share.id ? 'Copied' : 'Copy link'"></button>
+                                <button type="button" @click="end(share.id)" :disabled="busy"
+                                        class="text-red-700 underline disabled:opacity-50">End link</button>
+                            </span>
+                        </li>
+                    </template>
+                </ul>
+            </div>
+        </div>
+    </template>
+</div>
+{% endif %}

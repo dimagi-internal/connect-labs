@@ -1,4 +1,4 @@
-"""Making and ending public links to a run, from the run's own page.
+"""Making and ending public links to a run, from its row on the workflow list.
 
 This is the only step with an access rule of its own. Making a link copies a run out from
 behind every ACL, so whoever makes one must be Dimagi staff, must be able to read the run
@@ -28,9 +28,11 @@ from connect_labs.workflow.templates import SnapshotTooLargeError
 logger = logging.getLogger(__name__)
 
 
-def can_share_run(user, run) -> bool:
-    """Whether the run page offers Share. The run was read with the person's own token."""
-    return bool(is_dimagi_staff(user) and run.is_completed and run.snapshot)
+def share_list_context(user) -> dict:
+    """What the workflow list needs for Share on each saved run's row."""
+    if not is_dimagi_staff(user):
+        return {"can_share_runs": False, "shared_run_ids": set()}
+    return {"can_share_runs": True, "shared_run_ids": public_shares.live_run_ids()}
 
 
 def snapshot_opportunity_ids(definition, run) -> list[int]:

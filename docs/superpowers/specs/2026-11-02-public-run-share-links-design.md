@@ -16,8 +16,9 @@ completed run on a stored render whose snapshot captures one pipeline and the wo
 
 ## Goals
 
-- From a completed run's page, a person with the right to do so creates a link.
-  **They choose how long it lasts, on that page.**
+- From a completed run's row on the workflow list, a person with the right to do so creates
+  a link. **They choose how long it lasts, there.** Sharing is rare, so it adds nothing to
+  the report's own page.
 - Anyone with the link sees that run as it was saved, with no login and no Connect token.
 - When the link expires or is ended, the copied data is deleted from the labs database.
 - The person sharing can see the run's links, copy one again, and end one early.
@@ -148,8 +149,9 @@ own empty state, which is accepted.
 
 ### The share dialog
 
-A **Share** control in the runner's own chrome, not in render code, so every saved-run
-workflow gets it. It shows only on a completed run and only to someone who passes decision 7.
+A **Share** control beside Open and Delete on a run's row on the workflow list, so every
+saved-run workflow gets it and the report's page stays as it is. It shows only on a completed
+run and only to Dimagi staff; the API also checks the run's ACL when it is used.
 
 The dialog holds the duration choice and the list of this run's live links, each with copy,
 its expiry, its view count and an end button. Before the first link is created it says
