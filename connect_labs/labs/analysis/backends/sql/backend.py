@@ -436,6 +436,13 @@ def flw_row_from_cache(row) -> FLWRow:
     return flw_row
 
 
+def _is_empty_cached(config: AnalysisPipelineConfig, cache_manager: SQLCacheManager) -> bool:
+    """A labs_audits config that was last built from zero audited visits (see
+    SQLCacheManager.store_empty_marker). Scoped to that source: others keep treating
+    a missing row set as a miss."""
+    return config.data_source.type == "labs_audits" and cache_manager.has_empty_marker()
+
+
 class SQLBackend:
     """
     SQL backend for analysis.
@@ -1357,6 +1364,10 @@ class SQLBackend:
         cache_manager = SQLCacheManager(opportunity_id, config)
 
         if not cache_manager.has_valid_flw_cache(visit_count, tolerance_pct=tolerance_pct):
+            if _is_empty_cached(config, cache_manager):
+                return FLWAnalysisResult(
+                    opportunity_id=opportunity_id, rows=[], metadata={"total_visits": 0, "from_sql_cache": True}
+                )
             return None
 
         logger.info(f"[SQL] FLW cache HIT for opp {opportunity_id}")
@@ -1428,6 +1439,13 @@ class SQLBackend:
         cache_manager = SQLCacheManager(opportunity_id, config)
 
         if not cache_manager.has_valid_computed_visit_cache(visit_count, tolerance_pct=tolerance_pct):
+            if _is_empty_cached(config, cache_manager):
+                return VisitAnalysisResult(
+                    opportunity_id=opportunity_id,
+                    rows=[],
+                    metadata={"total_visits": 0, "from_sql_cache": True},
+                    field_metadata=[{"name": f.name, "description": f.description} for f in config.fields],
+                )
             return None
 
         logger.info(f"[SQL] Visit cache HIT for opp {opportunity_id}")
@@ -1464,6 +1482,10 @@ class SQLBackend:
         cache_manager = SQLCacheManager(opportunity_id, config)
 
         if not cache_manager.has_valid_entity_cache(visit_count, tolerance_pct=tolerance_pct):
+            if _is_empty_cached(config, cache_manager):
+                return EntityAnalysisResult(
+                    opportunity_id=opportunity_id, rows=[], metadata={"total_visits": 0, "from_sql_cache": True}
+                )
             return None
 
         logger.info(f"[SQL] Entity cache HIT for opp {opportunity_id}")
@@ -1531,6 +1553,15 @@ class SQLBackend:
         if not skip_raw_store:
             logger.info(f"[SQL] Storing {visit_count} raw visits to SQL")
             cache_manager.store_raw_visits(visit_dicts, visit_count)
+            if config.data_source.type == "labs_audits":
+                # No audits reviewed yet is this source's normal initial state, and a
+                # zero-row result leaves no row for a cache read to find: mark it
+                # (see SQLCacheManager.store_empty_marker); a later non-empty build
+                # drops the marker so it can never shadow real rows.
+                if visit_count == 0:
+                    cache_manager.store_empty_marker()
+                else:
+                    cache_manager.clear_empty_marker()
         else:
             logger.info(f"[SQL] Skipping raw store ({visit_count} visits already in DB)")
 
