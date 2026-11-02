@@ -89,6 +89,28 @@ If a scheduled or unattended run fails, the run now records the reason for the f
 
 If someone shares a direct link to a specific workflow card — for example, a URL ending in `#workflow-5110` — the page will smoothly scroll to that card and briefly highlight it so you can spot it immediately, even on a long list. This works the same way in both the program view and the opportunity view.
 
+### Sharing a saved run with someone outside Labs
+
+A saved workflow run can be shared with anyone — including people who have no Labs account — using a **public link**.
+
+On any saved run page, click the **Share** button. You will be asked to:
+
+1. Choose how long the link should stay active: **1, 7, 30, or 90 days**, or a specific date up to one year away.
+2. Confirm that you understand what the link exposes (see the warning below).
+3. Copy the generated link.
+
+Once a link exists, the run's Share panel lists all its active links together with a view count for each. You can end any link at any time by deleting it from that list. When a link ends — whether you delete it or it expires — Labs deletes the stored copy of that run.
+
+Anyone who has the link can open the report in their browser with no sign-in. The report shows the run exactly as it was saved; it does not refresh or update.
+
+!!! warning "Understand what a public link exposes before sharing"
+    - **Everything saved in the run is visible**, including worker names, locations, and any underlying data the report does not visually display on screen.
+    - The link works for anyone who has it — there is no further access check.
+    - **Admin boundary shapes on a map, photos, and action buttons** (such as coaching or task creation) do not work on a public link view.
+    - When the link expires or is deleted, the run copy is removed from Labs permanently.
+
+    Share public links only when you are confident that all people who might receive the URL are permitted to see the data it contains.
+
 ### Program-level vs. opportunity-level workflows
 
 Workflows in Connect Labs are owned by either a **program** or a specific **opportunity**:
@@ -194,51 +216,4 @@ A protected workflow can read the saved runs of another workflow only if its set
 
 If a protected workflow tries to read runs from a workflow it has not declared, it will show the message **"This workflow or page does not declare that workflow"** rather than loading any data.
 
-For most reports this makes no visible difference. One case where it does matter: the MBW auditing reports, when running in the protected frame, will no longer carry categories and notes across from a *different* workflow's runs unless that other workflow is listed in the report's settings. Categories and notes from a report's own runs continue to carry over as before.
-
-If you notice a report no longer showing categories or notes that you expect from another workflow, the report's settings may need to be updated to declare that workflow. Contact your program administrator or support if you are unsure.
-
-#### The assistant panel on a run page
-
-Each workflow run page has an assistant panel that can answer questions about the data shown on that page and suggest edits to the workflow or its pipelines. The assistant's access is limited to the run and workflow that the page is currently displaying:
-
-- Asked about a **different run**, the assistant will decline and direct you to the Data page to find that run.
-- Any **edits it proposes** can only affect the workflow shown on that page and its associated pipelines — it cannot modify other workflows.
-
-This scope applies to the assistant built into the run page panel. If you use the Labs assistant with your own personal token, that access is unchanged.
-
-### Maps on workflow dashboards
-
-Some dashboards include a map panel. If your browser cannot start the map — which Chrome can do occasionally after a graphics reset or when too many maps are open at once — only the map is affected. In its place the page shows a small panel reading:
-
-> Map unavailable — this browser couldn't start WebGL. Reload the page to try again.
-
-All other tables, charts, and panels on the dashboard continue to draw as usual. Reloading the page tries the map again.
-
-### The Canopy agent (Data agent / ace)
-
-The Canopy agent — also called the **Data agent** or **ace** — can answer questions about the data on a Labs page and help you take actions such as creating follow-up tasks or starting coaching conversations. It acts with **your own access**, held to the current page by a short-lived grant, and can only do things that you explicitly trigger.
-
-#### What the agent can see
-
-The agent's view is limited to the page you are currently on:
-
-- It can read the page's own workflow, the pipelines that workflow uses, and any indicator registries that cover the page's opportunities.
-- It may propose edits only to those same workflows and pipelines. Any new pipeline or registry it proposes is created in the same place as the page's workflow — it is never created somewhere else or shared with other workflows.
-- It cannot read data from a different workflow's runs unless that workflow is already declared in the current page's settings.
-
-#### How the Data page works with the agent
-
-When the agent opens one of your saved queries for you on the Data page, it opens that query in its own tab on the canvas. The page's active selection — and therefore what the agent may read — only changes when **you** change it yourself. The agent cannot silently switch which query or dataset you are looking at.
-
-#### How workflow actions work
-
-When the agent prepares a workflow action — such as creating a follow-up task or starting a coaching conversation with a worker — it presents a card in the chat showing what it intends to do. The card has its own button (for example, **Create follow-up task**). **The action only runs when you click that button yourself.** The agent cannot confirm or carry out the action on your behalf after you say yes in chat.
-
-The Labs run page's own buttons (for example, the coaching send button or audit edit controls) work the same way — they run on your click, not the agent's.
-
-!!! note "If you use your own Labs token or sign-in"
-    If you access the agent using your own personal Labs token or sign-in rather than through a Canopy page, the flow is unchanged: you preview the action, say yes, and the agent acts.
-
-!!! note "Action buttons inside Canopy"
-    Action buttons on agent cards (coaching Send, audit edit Confirm/Decline, and the follow-up task button) call Labs through Canopy and require Canopy to confirm that it is your card making the call. If a button inside a Canopy-embedded page does not respond, this confirmation may not yet be in place for that button type — the Labs run page's own buttons are unaffected. Contact support if you consistently cannot complete an action from a card.
+For most reports this makes no visible difference. One case where it does matter: the M
