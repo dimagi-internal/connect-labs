@@ -551,3 +551,51 @@ def test_visit_results_preserves_visit_level_result_alongside_assessments(labs_c
     assert entry["result"] == "pass"
     assert entry["xform_id"] == "xform-abc-123"
     assert entry["assessments"]["b1"]["result"] == "pass"
+
+
+def _bulk_image_urls(labs_client, monkeypatch, entry_extra):
+    from connect_labs.audit import views
+
+    session = _make_session("worker1")
+    session.data["visit_images"]["111"][0].update(entry_extra)
+
+    class FakeDataAccess:
+        def __init__(self, *a, **k):
+            pass
+
+        def get_audit_session(self, session_id, opportunity_id=None):
+            return session
+
+        def get_opportunity_details(self, opportunity_id):
+            return {"name": "Opp"}
+
+        def get_flw_names(self, opportunity_id):
+            return {}
+
+        def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
+            return {}
+
+        def get_prior_audited_images_for(self, opportunity_id, pairs, exclude_session_id=None):
+            return {}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(views, "AuditDataAccess", FakeDataAccess)
+    data = labs_client.get(f"/audit/api/{session.id}/bulk-data/").json()
+    return [a["image_url"] for a in data["assessments"]]
+
+
+def test_image_url_is_the_connect_proxy_by_default(labs_client, monkeypatch):
+    assert _bulk_image_urls(labs_client, monkeypatch, {}) == ["/audit/image/1973/b1/"]
+
+
+def test_image_url_is_the_hq_proxy_for_an_hq_entry_and_keeps_blob_id(labs_client, monkeypatch):
+    entry = {
+        "image_source": "commcare_hq",
+        "hq_xform_id": "0a1b2c3d-0000-4000-8000-000000000001",
+        "hq_attachment_name": "img1.jpg",
+        "hq_domain": "demo-domain",
+    }
+    (url,) = _bulk_image_urls(labs_client, monkeypatch, entry)
+    assert url == "/audit/image/hq/1973/0a1b2c3d-0000-4000-8000-000000000001/img1.jpg/?domain=demo-domain"

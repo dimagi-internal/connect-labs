@@ -124,6 +124,14 @@ urlpatterns = [
         views.ExperimentAuditImageConnectView.as_view(),
         name="audit_image_connect",
     ),
+    # Photo fetched from CommCare HQ with the reviewer's own HQ sign-in
+    # (audits created with image_source "commcare_hq"). Under /audit/image/ so
+    # the same redirect/telemetry exemptions as the Connect proxy apply.
+    path(
+        "image/hq/<int:opp_id>/<str:xform_id>/<path:name>/",
+        views.ExperimentAuditImageHQView.as_view(),
+        name="audit_image_hq",
+    ),
     # Workflow integration endpoints
     path(
         "api/workflow/<int:workflow_run_id>/sessions/",

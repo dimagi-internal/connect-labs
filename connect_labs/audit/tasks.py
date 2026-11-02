@@ -1584,12 +1584,20 @@ def run_audit_creation(
             all_visit_images = {}
             for real_opp, opp_visit_ids in visits_by_opp.items():
                 opp_images = _data_access_for_opp(real_opp).extract_images_for_visits(
-                    opp_visit_ids, real_opp, related_fields=related_fields, progress_callback=on_extraction_progress
+                    opp_visit_ids,
+                    real_opp,
+                    related_fields=related_fields,
+                    progress_callback=on_extraction_progress,
+                    image_source=audit_criteria.image_source,
                 )
                 all_visit_images.update(opp_images)
         else:
             all_visit_images = data_access.extract_images_for_visits(
-                visit_ids, opp_id, related_fields=related_fields, progress_callback=on_extraction_progress
+                visit_ids,
+                opp_id,
+                related_fields=related_fields,
+                progress_callback=on_extraction_progress,
+                image_source=audit_criteria.image_source,
             )
         image_count = sum(len(imgs) for imgs in all_visit_images.values())
         logger.info(
@@ -1716,6 +1724,9 @@ def run_audit_creation(
                 "tag": session_tag,
                 "start_date": audit_criteria.start_date,
                 "end_date": audit_criteria.end_date,
+                # A different photo source is a different audit: never resume
+                # (and report as done) a session built from another source.
+                "image_source": audit_criteria.image_source,
             }
             this_call_keys = {call_key(oid, this_call_criteria) for oid in opportunity_ids}
             existing_sessions: list = []
