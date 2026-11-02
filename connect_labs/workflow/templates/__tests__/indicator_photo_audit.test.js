@@ -72,6 +72,9 @@ async function mount(file, { url, props, routes }) {
     };
   };
   const WorkflowUI = loadRender(file);
+  // Kept so a test can re-render the SAME component type (a fresh
+  // loadRender is a new type, so React would mount a new instance).
+  mount.last = WorkflowUI;
   host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
@@ -180,7 +183,7 @@ function expectPayload(call, { start, end, days, run }) {
     start_date: start,
     end_date: end,
     selected_flw_user_ids: [USERNAME],
-    tag: expect.stringMatching(/^photo-audit:[0-9a-z]+-[0-9a-z]+$/),
+    tag: expect.stringMatching(/^photo-audit:[0-9a-z]+-.+$/),
     title: 'Photo check (' + days + ' days to ' + end + ')',
   });
   // Exact question paths, no 'form/' prefix or leading slash; no reviewers.
@@ -430,7 +433,7 @@ describe('the indicator report photo audit', () => {
     await React.act(async () => {
       root.render(
         React.createElement(
-          loadRender('indicator_report_render.js'),
+          mount.last,
           oppProps({ photo_audit: PHOTO_AUDIT }, actions),
         ),
       );

@@ -246,12 +246,14 @@ function WorkflowUI({
   // call_key: opportunity, tag, start, end). From the photo paths, so changing
   // them makes a new audit rather than returning the old one; and from the
   // worker, so the sessions a resumed call reports are this worker's only.
+  // The username itself, not a hash of it: two workers whose hashes collided
+  // would share a resume key.
   function photoAuditTag(paths, username) {
     return (
       'photo-audit:' +
       photoAuditHash(paths.slice().sort().join('|')) +
       '-' +
-      photoAuditHash(String(username))
+      String(username)
     );
   }
   // The connect username: a worker key is `<opp>::<username>`.
