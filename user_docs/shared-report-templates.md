@@ -156,7 +156,9 @@ A report can offer an **Audit photos** button on each worker (the worker table, 
 
 Claude sets `photo_audit` in that report's settings (`image_paths`, and optionally `recent_days`, `window_options` and a `title`). Set it on each page that should show the button: the program report, the opportunity report and the worker review read their own settings.
 
-The button creates one [audit](audit.md) for that worker: the visits in the chosen window (30 days up to their last visit, unless you pick a longer one) that have at least one of those photos, and only those photos. No AI reviewer runs; a person passes or fails each photo in the audit review screen, under **Audits** for that opportunity. Asking again for the same worker and window reuses the audit already made.
+The button creates one [audit](audit.md) for that worker: the visits in the chosen window (30 days up to their last visit, unless you pick a longer one) that have at least one of those photos, and only those photos. No AI reviewer runs; a person passes or fails each photo in the audit review screen, under **Audits** for that opportunity. The page says when the audit is ready and how many photos it holds, or that the worker had none of those photos in the window.
+
+Asking again for the same worker and window **from the same report run** gives back the audit already made. The program report, the opportunity report, the worker review and each week's run are separate runs, so asking from two of them makes two audits. Changing the photo questions makes a new audit.
 
 ### Every new instance needs a run
 
