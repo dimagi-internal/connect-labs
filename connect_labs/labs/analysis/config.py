@@ -428,6 +428,38 @@ def raw_cache_slot(pipeline_id: int | None, source_type: str = USER_VISITS_SOURC
     return pipeline_id
 
 
+#: Every pipeline data_source.type. "labs_audits" is Labs' own image-audit results.
+DATA_SOURCE_TYPES = (
+    "connect_csv",
+    "cchq_forms",
+    "ocs_sessions",
+    "connect_export",
+    "cchq_cases",
+    "gdrive",
+    "labs_audits",
+)
+
+# DataSourceConfig keys that belong to one particular source type.
+_SOURCE_SPECIFIC_KEYS = (
+    "form_name",
+    "app_id",
+    "app_id_source",
+    "gs_app_id",
+    "experiment_id",
+    "endpoint",
+    "case_type",
+    "form_lookback_days",
+    "domain",
+    "file_id",
+    "folder_id",
+    "file_pattern",
+    "username_column",
+    "date_column",
+    "columns",
+    "authorization",
+)
+
+
 @dataclass
 class DataSourceConfig:
     """
@@ -444,6 +476,12 @@ class DataSourceConfig:
               "cchq_cases" fetches from CommCare HQ Case API v2 (e.g. work-area cases).
               "gdrive" reads tabular files (CSV, Google Sheet, JSON array) from Google
               Drive with the server's service account. See backends/sql/gdrive_fetcher.py.
+              "labs_audits" reads Labs' own image-audit results (AuditSession
+              LabsRecords) for the opportunity: one row per audited visit with its
+              human photo-review counts (n_pass, n_fail, n_duplicate_fake,
+              n_pending, n_decided) under form_json["audit"]. Takes no other
+              data_source keys. See backends/sql/labs_audits_fetcher.py and
+              connect_labs/audit/audited_visit_rows.py.
         form_name: (cchq_forms only) Form name for xmlns discovery,
                    e.g., "Register Mother", "Gold Standard Visit Checklist"
         app_id: (cchq_forms only) Explicit CommCare app ID.
@@ -522,8 +560,15 @@ class DataSourceConfig:
     bearer_token: str = field(default="", repr=False)
 
     def __post_init__(self):
-        if self.type not in ("connect_csv", "cchq_forms", "ocs_sessions", "connect_export", "cchq_cases", "gdrive"):
+        if self.type not in DATA_SOURCE_TYPES:
             raise ValueError(f"Invalid data source type: {self.type}")
+        if self.type == "labs_audits":
+            # Reads the opportunity's own audit sessions and nothing else: a stray
+            # source key (an endpoint, a form name, a domain) would otherwise be
+            # ignored silently and suggest a filter that is not applied.
+            stray = [name for name in _SOURCE_SPECIFIC_KEYS if getattr(self, name) not in ("", 0, None, [""], {})]
+            if stray:
+                raise ValueError(f"a labs_audits data_source takes no other keys; remove {', '.join(sorted(stray))}")
         # One path SEGMENT (audit_reports, assigned_tasks, ...). The fetcher builds
         # f".../export/opportunity/{opp}/{endpoint}/" and httpx collapses "..", so a
         # segment carrying "/" or ".." would read another opportunity's export.
