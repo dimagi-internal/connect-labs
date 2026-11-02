@@ -1,7 +1,15 @@
 """Tests for the browser-driven MCP token-creation view."""
 
+import importlib.util
+import os
+import stat
+from datetime import timedelta
+from pathlib import Path
+
 import pytest
+from django.conf import settings
 from django.urls import reverse
+from django.utils import timezone
 
 from connect_labs.mcp.models import MCPAccessToken
 from connect_labs.mcp.testing import allow_self_mint
@@ -23,7 +31,9 @@ def test_get_renders_consent_page(client, logged_in_user):
     url = reverse("mcp:admin_create_token")
     resp = client.get(url, {"callback": VALID_CALLBACK, "state": VALID_STATE})
     assert resp.status_code == 200
-    assert b"Claude Code is requesting" in resp.content
+    # Nothing tells labs which app opened this page, so it does not name one.
+    assert b"Claude Code" not in resp.content
+    assert b"Labs can't tell which app is asking" in resp.content
     # Username visible on the page
     assert b"tokenflow" in resp.content
 
@@ -108,3 +118,93 @@ def test_post_rejects_mismatched_callback(client, logged_in_user):
         {"callback": "http://evil.com/", "state": VALID_STATE, "name": "x"},
     )
     assert resp.status_code == 400
+
+
+# --- what the page says ---------------------------------------------------------------
+
+
+def _page(client, **params):
+    return client.get(
+        reverse("mcp:admin_create_token"), {"callback": VALID_CALLBACK, "state": VALID_STATE, **params}
+    ).context["consent"]
+
+
+@pytest.mark.django_db
+def test_the_page_describes_each_access_level_as_what_it_is(client, logged_in_user):
+    assert "visit data" in _page(client).access_text
+    assert _page(client).next_step  # full access: the passkey comes next
+    restricted = _page(client, scope="no-uservisit-data")
+    assert restricted.access_label == "No user visit data" and not restricted.next_step
+    # This page used to tell a coaching-pictures token it could do anything.
+    assert "coaching pictures" in _page(client, scope="coach-images").access_text
+
+
+@pytest.mark.django_db
+def test_an_account_that_self_mints_is_not_promised_a_passkey(client, logged_in_user):
+    allow_self_mint(logged_in_user)
+    consent = _page(client)
+    assert not consent.next_step and consent.button == "Approve"
+
+
+# --- a temporary token ------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_the_page_says_how_long_a_token_lasts(client, logged_in_user):
+    assert _page(client).lasts.startswith("90 days")
+    assert _page(client, temporary="1").lasts.startswith("1 hour")
+
+
+@pytest.mark.django_db
+def test_a_temporary_token_lasts_an_hour(client, logged_in_user):
+    allow_self_mint(logged_in_user)
+    resp = client.post(
+        reverse("mcp:admin_create_token"),
+        {"callback": VALID_CALLBACK, "state": VALID_STATE, "temporary": "1"},
+    )
+    assert resp.status_code == 302
+    token = MCPAccessToken.objects.get(user=logged_in_user)
+    assert token.name.startswith("temporary-")
+    assert timedelta(minutes=59) < token.expires_at - timezone.now() <= timedelta(hours=1)
+
+
+@pytest.mark.django_db
+def test_without_the_flag_a_token_still_lasts_ninety_days(client, logged_in_user):
+    allow_self_mint(logged_in_user)
+    client.post(reverse("mcp:admin_create_token"), {"callback": VALID_CALLBACK, "state": VALID_STATE})
+    token = MCPAccessToken.objects.get(user=logged_in_user)
+    assert token.expires_at - timezone.now() > timedelta(days=89)
+
+
+# --- the setup script's temporary mode (.claude/skills is outside CI's path, this is not) ---
+
+
+def _setup_script():
+    path = Path(settings.BASE_DIR) / ".claude/skills/labs-token-setup/setup_labs_token.py"
+    spec = importlib.util.spec_from_file_location("setup_labs_token", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_setup_script_writes_a_temporary_token_only_its_user_can_read(tmp_path):
+    written = _setup_script().write_temporary_token("s3cret", str(tmp_path / "token"))
+    assert Path(written).read_text() == "s3cret"
+    assert stat.S_IMODE(os.stat(written).st_mode) == 0o600
+
+
+def test_the_setup_script_tightens_a_file_that_was_already_there(tmp_path):
+    existing = tmp_path / "token"
+    existing.write_text("old old old")
+    existing.chmod(0o644)
+    _setup_script().write_temporary_token("new", str(existing))
+    assert existing.read_text() == "new"
+    assert stat.S_IMODE(existing.stat().st_mode) == 0o600
+
+
+def test_the_setup_script_makes_a_private_file_when_given_no_path():
+    written = _setup_script().write_temporary_token("s3cret")
+    try:
+        assert stat.S_IMODE(os.stat(written).st_mode) == 0o600
+    finally:
+        os.unlink(written)

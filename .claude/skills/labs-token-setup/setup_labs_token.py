@@ -6,13 +6,16 @@ creation page in the user's browser with callback + state params, waits for
 the redirect, and registers the resulting token with Claude Code by shelling
 out to `claude mcp add --scope user`.
 
+With --temporary it does not touch Claude Code's config: it asks for a token that
+lasts one hour and writes it to a private file for the job at hand.
+
 Why shell out instead of editing JSON directly? Claude Code stores user-scope
 MCP servers in ~/.claude.json (a large file with lots of unrelated state), not
 ~/.claude/mcp.json. Using the CLI keeps us forward-compatible with any future
 config layout changes.
 
 Usage:
-    python setup_labs_token.py <labs_base_url>
+    python setup_labs_token.py <labs_base_url> [--no-uservisit-data] [--temporary [--output PATH]]
 
 Example:
     python setup_labs_token.py https://labs.connect.dimagi.com
@@ -20,15 +23,18 @@ Example:
 
 from __future__ import annotations
 
+import argparse
+import os
 import secrets
 import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 # Long enough to approve a full-access token with a passkey in canopy on the way.
 TIMEOUT_SECONDS = 300
@@ -173,7 +179,23 @@ def _register_mcp_server(raw_token: str, labs_base_url: str) -> None:
         )
 
 
-def main(labs_base_url: str, scope: str = "full") -> int:
+def write_temporary_token(raw_token: str, output: str | None = None) -> str:
+    """Write the token to a file only this user can read, and return its path.
+
+    Never to the terminal: it would land in the session's transcript.
+    """
+    if output:
+        fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.fchmod(fd, 0o600)  # the file may have been there already, with other modes
+        path = output
+    else:
+        fd, path = tempfile.mkstemp(prefix="labs-token-")  # mkstemp makes it 0600
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(raw_token)
+    return path
+
+
+def main(labs_base_url: str, scope: str = "full", temporary: bool = False, output: str | None = None) -> int:
     if not labs_base_url.startswith(("http://", "https://")):
         print(
             f"error: labs base URL must start with http:// or https://, got {labs_base_url!r}",
@@ -189,19 +211,10 @@ def main(labs_base_url: str, scope: str = "full") -> int:
     t = threading.Thread(target=_wait_for_callback, args=(server, result), daemon=True)
     t.start()
 
-    from urllib.parse import urlencode
-
-    consent_url = (
-        labs_base_url.rstrip("/")
-        + "/mcp/admin/create-token/?"
-        + urlencode(
-            {
-                "callback": f"http://127.0.0.1:{port}/cb",
-                "state": state,
-                "scope": scope,
-            }
-        )
-    )
+    params = {"callback": f"http://127.0.0.1:{port}/cb", "state": state, "scope": scope}
+    if temporary:
+        params["temporary"] = "1"
+    consent_url = labs_base_url.rstrip("/") + "/mcp/admin/create-token/?" + urlencode(params)
 
     print()
     print("Open this URL in your browser to approve the token:")
@@ -226,6 +239,12 @@ def main(labs_base_url: str, scope: str = "full") -> int:
         return 1
 
     assert result.token  # if we got here, success
+    if temporary:
+        path = write_temporary_token(result.token, output)
+        print()
+        print(f"Temporary token '{result.name}' written to {path}. It stops working in 1 hour.")
+        print("Claude Code's config was not changed. Delete the file when the job is done.")
+        return 0
     _register_mcp_server(result.token, labs_base_url)
     print()
     print(f"Token '{result.name}' created and registered as MCP server '{SERVER_NAME}' (user scope).")
@@ -234,10 +253,21 @@ def main(labs_base_url: str, scope: str = "full") -> int:
 
 
 if __name__ == "__main__":
-    args = sys.argv[1:]
-    no_uservisit_data = "--no-uservisit-data" in args
-    args = [a for a in args if a != "--no-uservisit-data"]
-    if len(args) != 1:
-        print("usage: setup_labs_token.py <labs_base_url> [--no-uservisit-data]", file=sys.stderr)
-        sys.exit(2)
-    sys.exit(main(args[0], scope="no-uservisit-data" if no_uservisit_data else "full"))
+    parser = argparse.ArgumentParser(description="Create a labs MCP token through the browser.")
+    parser.add_argument("labs_base_url")
+    parser.add_argument("--no-uservisit-data", action="store_true", help="a token that never sees user visit data")
+    parser.add_argument(
+        "--temporary", action="store_true", help="a token for one job: lasts 1 hour, not registered with Claude Code"
+    )
+    parser.add_argument("--output", help="with --temporary, where to write the token (default: a new private file)")
+    cli = parser.parse_args()
+    if cli.output and not cli.temporary:
+        parser.error("--output only applies with --temporary")
+    sys.exit(
+        main(
+            cli.labs_base_url,
+            scope="no-uservisit-data" if cli.no_uservisit_data else "full",
+            temporary=cli.temporary,
+            output=cli.output,
+        )
+    )

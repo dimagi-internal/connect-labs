@@ -7,7 +7,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.snippets import build_mcp_json_snippet
+from connect_labs.mcp.snippets import build_claude_mcp_add, build_mcp_json_snippet
 from connect_labs.mcp.testing import allow_self_mint, mint_token
 from connect_labs.users.models import User
 
@@ -80,6 +80,9 @@ def test_create_renders_raw_token_and_snippet(client, alice):
     # Snippet is the same shape the management command emits.
     assert resp.context["mcp_json_snippet"] == build_mcp_json_snippet(raw)
     assert raw.encode() in resp.content
+    # Claude Code registers a server with this command, and does not read ~/.claude/mcp.json.
+    assert build_claude_mcp_add(raw).replace('"', "&quot;").encode() in resp.content
+    assert b"mcp.json" not in resp.content
 
 
 @pytest.mark.django_db

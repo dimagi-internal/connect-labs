@@ -92,6 +92,17 @@ A process with no browser uses a Personal Access Token (PAT) instead:
    `~/.claude/mcp.json` is not read). Or run `/labs-token-setup` from a
    connect-labs checkout, which mints the token and registers the server.
 
+### Which way in
+
+| | Sign-in | Token page | `/labs-token-setup` | `/labs-token-setup --temporary` |
+|---|---|---|---|---|
+| **For** | An app you add yourself | A script or headless agent | Claude Code on your machine | An agent doing one job you asked for |
+| **Lasts** | Until you disconnect it | What you set (1 to 365 days) | 90 days | 1 hour, no renewal |
+| **Listed under** | Apps you've signed in | Your active tokens | Your active tokens | Your active tokens |
+
+Full access needs your passkey on all four. An agent that needs access should use
+the temporary token, not write its own sign-in against `/o/register/`.
+
 ## How the sign-in works
 
 - An unauthenticated request to `/mcp/` gets a 401 whose `WWW-Authenticate`
@@ -105,8 +116,10 @@ A process with no browser uses a Personal Access Token (PAT) instead:
   other. Tokens for labs' other OAuth APIs are refused by the MCP server, and an
   MCP token is refused by labs' REST API — the separation holds both ways.
 - Clients register themselves, so the name on the consent screen is whatever the
-  app called itself. The screen says so and shows where the sign-in will be
-  sent; approve only an app you just started connecting.
+  app called itself, and it limits nothing. The screen says so, keeps the name out
+  of its headline, and says what the app can do, for how long, and where the
+  sign-in will be sent; approve only an app you just started connecting. The
+  `labs-token-setup` page shows the same summary (`connect_labs/mcp/consent.py`).
 - The token is bound to this server by scope and by the registered client, not
   by an audience (`resource`) claim. Labs has one MCP resource today, so there
   is nowhere else such a token could be replayed.

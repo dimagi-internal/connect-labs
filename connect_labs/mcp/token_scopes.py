@@ -75,6 +75,20 @@ SCOPE_CHOICES = [
     (COACH_IMAGES, "Coaching pictures only"),
 ]
 
+#: What each access level can do, in the words every page uses: the tokens page and both
+#: approval pages (``consent.py``).
+ACCESS_TEXT = {
+    FULL: "Everything you can do in labs, including reading visit data and making changes.",
+    NO_USERVISIT_DATA: (
+        "Never sees real user visit data (raw, or from pipelines, workflow runs and reports); those tools "
+        "work only on synthetic opportunities whose data was generated. It can read workflow definitions, "
+        "pipeline and indicator definitions, app structure, solicitations, the org directory and targeting; "
+        "edit workflow and indicator definitions and trigger saved-run generation; and profile real "
+        "opportunities and generate synthetic data from the profile. Same reach as the /mcp/no_user_visit/ address."
+    ),
+    COACH_IMAGES: "Lets an Open Chat Studio team fetch coaching pictures. Nothing else.",
+}
+
 #: Token scopes the MCP server must refuse rather than map to a tool set. A scope it
 #: does not know at all still fails closed to the restricted tool set; these are known
 #: and reach no tool.

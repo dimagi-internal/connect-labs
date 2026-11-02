@@ -1,62 +1,42 @@
-{% extends "oauth2_provider/base.html" %}
+{% extends "base.html" %}
 
-{% load i18n %}
 {% block content %}
-    <div class="block-center">
-        {% if not error %}
-            <form id="authorizationForm" method="post">
-                <h3 class="block-center-heading">
-                    {% blocktrans with name=application.name %}Allow {{ name }} to use Connect Labs as you?{% endblocktrans %}
-                </h3>
-                {% csrf_token %}
+<div class="max-w-2xl mx-auto px-4 py-8">
+  <div class="bg-white rounded-xl shadow-sm p-8">
+    {% if error %}
+      <h1 class="text-2xl font-semibold text-brand-deep-purple mb-3">This sign-in can't continue</h1>
+      <p class="text-sm text-gray-700"><strong>{{ error.error }}</strong></p>
+      <p class="text-sm text-gray-700">{{ error.description }}</p>
+    {% else %}
+      <form id="authorizationForm" method="post">
+        {% csrf_token %}
+        {% for field in form %}
+          {% if field.is_hidden %}{{ field }}{% endif %}
+        {% endfor %}
 
-                {% for field in form %}
-                    {% if field.is_hidden %}
-                        {{ field }}
-                    {% endif %}
-                {% endfor %}
-
-                <p>{% blocktrans with username=request.user.username %}You are signed in as {{ username }}.{% endblocktrans %}</p>
-
-                {% if is_self_registered %}
-                    {# The name above is supplied by the app itself when it registers, and nobody checks it. #}
-                    {# What cannot be faked is where the sign-in is sent, so lead with that. #}
-                    <p>
-                        <strong>{% trans "Check where this sends you:" %}</strong>
-                        <strong>{{ redirect_origin }}</strong>
-                    </p>
-                    <p>
-                        {% blocktrans with name=application.name %}This app calls itself "{{ name }}", but it registered
-                        itself and no one has verified it. Approve it only if you just started connecting it yourself,
-                        and only if the address above is the app you expect.{% endblocktrans %}
-                    </p>
-                {% else %}
-                    <p>{% trans "After you approve, you will be sent to" %} <strong>{{ redirect_origin }}</strong></p>
-                {% endif %}
-
-                <p>{% trans "It will be able to:" %}</p>
-                <ul>
-                    {% for scope in scopes_descriptions %}
-                        <li>{{ scope }}</li>
-                    {% endfor %}
-                </ul>
-
-                <p>{% trans "You can revoke access at any time." %}</p>
-
-                {{ form.errors }}
-                {{ form.non_field_errors }}
-
-                <div class="control-group">
-                    <div class="controls">
-                        <input type="submit" class="btn btn-large" value="{% trans 'Cancel' %}"/>
-                        <input type="submit" class="btn btn-large btn-primary" name="allow" value="{% trans 'Approve' %}"/>
-                    </div>
-                </div>
-            </form>
-
+        {% if consent %}
+          {% include "mcp/_consent_summary.html" %}
         {% else %}
-            <h2>{% trans "Error:" %} {{ error.error }}</h2>
-            <p>{{ error.description }}</p>
+          {# An application labs registered itself, not a self-registered MCP app. #}
+          <h1 class="text-2xl font-semibold text-brand-deep-purple mb-4">Allow {{ application.name }} to use Connect Labs as you?</h1>
+          <p class="text-sm text-gray-700 mb-3">You are signed in as {{ request.user.username }}.</p>
+          <p class="text-sm text-gray-700 mb-3">After you approve, you will be sent to <strong>{{ redirect_origin }}</strong></p>
+          <p class="text-sm text-gray-700">It will be able to:</p>
+          <ul class="list-disc pl-5 text-sm text-gray-700 mb-3">
+            {% for scope in scopes_descriptions %}<li>{{ scope }}</li>{% endfor %}
+          </ul>
+          <p class="text-sm text-gray-700 mb-4">You can revoke access at any time.</p>
         {% endif %}
-    </div>
+
+        {{ form.errors }}
+        {{ form.non_field_errors }}
+
+        <div class="flex items-center gap-3">
+          <input type="submit" value="Cancel" class="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition cursor-pointer">
+          <input type="submit" name="allow" value="{% if consent %}{{ consent.button }}{% else %}Approve{% endif %}" class="px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition cursor-pointer">
+        </div>
+      </form>
+    {% endif %}
+  </div>
+</div>
 {% endblock %}

@@ -69,16 +69,22 @@ class MCPAccessToken(models.Model):
     #: credential — with self-service PATs across many users, a leaked token
     #: must age out even if nobody notices the leak.
     MAX_TTL_DAYS = 365
+    #: What a token lasts when nobody chose otherwise.
+    DEFAULT_TTL_DAYS = 90
+    #: A temporary token, for an agent doing one job the person asked for
+    #: (``labs-token-setup --temporary``).
+    TEMPORARY_LIFETIME = timedelta(hours=1)
 
     @classmethod
     def create_token(
         cls,
         user,
         name: str,
-        ttl_days: int | None = 90,
+        ttl_days: int | None = DEFAULT_TTL_DAYS,
         scope: str = token_scopes.FULL,
         *,
         full_access=None,
+        temporary: bool = False,
     ) -> tuple["MCPAccessToken", str]:
         """Create a new token and return (model_instance, raw_token).
 
@@ -86,7 +92,8 @@ class MCPAccessToken(models.Model):
         the DB only has the hash.
 
         ttl_days is clamped to MAX_TTL_DAYS; None / 0 (historically "no
-        expiry") also becomes MAX_TTL_DAYS.
+        expiry") also becomes MAX_TTL_DAYS. ``temporary`` ignores it and lasts
+        TEMPORARY_LIFETIME.
 
         scope is one of ``token_scopes.SCOPE_CHOICES``; anything else raises
         rather than minting a token whose reach nobody decided.
@@ -105,7 +112,7 @@ class MCPAccessToken(models.Model):
         raw = secrets.token_urlsafe(32)
         if not ttl_days or ttl_days > cls.MAX_TTL_DAYS:
             ttl_days = cls.MAX_TTL_DAYS
-        expires_at = timezone.now() + timedelta(days=ttl_days)
+        expires_at = timezone.now() + (cls.TEMPORARY_LIFETIME if temporary else timedelta(days=ttl_days))
         token = cls.objects.create(
             user=user,
             name=name,

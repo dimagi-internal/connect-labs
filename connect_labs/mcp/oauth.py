@@ -367,6 +367,18 @@ class MCPAuthorizationView(AuthorizationView):
         redirect_uri = context.get("redirect_uri") or ""
         parsed = urlparse(redirect_uri)
         context["redirect_origin"] = f"{parsed.scheme}://{parsed.netloc}" if parsed.netloc else redirect_uri
+        if context["is_self_registered"]:
+            from . import consent, full_access
+
+            # The default when the request names no scope (MCPScopes.get_default_scopes).
+            scopes = context.get("scopes") or [MCP_SCOPE]
+            context["consent"] = consent.for_sign_in(
+                claimed_name=application.name,
+                restricted=MCP_NO_USERVISIT_SCOPE in scopes,
+                needs_passkey=MCP_SCOPE in scopes and not full_access.may_self_mint(self.request.user),
+                address=context["redirect_origin"],
+                is_loopback=_is_loopback_http(parsed),
+            )
         return context
 
 

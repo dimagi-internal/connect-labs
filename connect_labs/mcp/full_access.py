@@ -352,7 +352,12 @@ def _complete_token_browser(request, payload: dict, full: FullAccess):
     from .admin_views import mint_and_redirect
 
     return mint_and_redirect(
-        request, callback=payload["callback"], state=payload["state"], name=payload["name"], full_access=full
+        request,
+        callback=payload["callback"],
+        state=payload["state"],
+        name=payload["name"],
+        full_access=full,
+        temporary=payload.get("temporary", False),
     )
 
 
@@ -387,6 +392,7 @@ def _show_token_browser(request, payload: dict, notice: dict, status: int):
         callback=payload["callback"],
         state=payload["state"],
         name=payload["name"],
+        temporary=payload.get("temporary", False),
         notice=notice,
         status=status,
     )

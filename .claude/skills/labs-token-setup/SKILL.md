@@ -1,6 +1,6 @@
 ---
 name: labs-token-setup
-description: Use when the user wants to set up or refresh their labs MCP Personal Access Token (PAT). Triggers on "set up labs mcp", "I need a labs token", "configure claude for labs", "my labs token expired", "connect me to labs". Opens the labs UI to approve a new token, receives it via a localhost callback, and registers a `connect_labs` MCP server in Claude Code via `claude mcp add --scope user`.
+description: Use when the user wants to set up or refresh their labs MCP Personal Access Token (PAT), or asks an agent to get short-lived labs access for one job. Triggers on "set up labs mcp", "I need a labs token", "configure claude for labs", "my labs token expired", "connect me to labs", "request a short-lived token", "get a temporary token on my behalf". Opens the labs UI to approve a new token, receives it via a localhost callback, and registers a `connect_labs` MCP server in Claude Code via `claude mcp add --scope user`.
 ---
 
 # Labs MCP Token Setup
@@ -19,7 +19,7 @@ Seamless flow for creating an MCP Personal Access Token and wiring it into Claud
 
 3. Run the bundled helper script, passing the labs base URL:
 
-   python .claude/skills/labs-token-setup/setup_labs_token.py <labs_base_url> [--no-uservisit-data]
+   python .claude/skills/labs-token-setup/setup_labs_token.py <labs_base_url> [--no-uservisit-data] [--temporary [--output PATH]]
 
    Pass `--no-uservisit-data` when the user wants a token that never sees user
    visit data: it reads definitions (workflows, pipelines, indicator registries,
@@ -50,7 +50,20 @@ Seamless flow for creating an MCP Personal Access Token and wiring it into Claud
    - **`claude` CLI not on PATH:** the script errors out with a clear message. The user needs Claude Code installed and on PATH.
    - **Existing `connect_labs` user-scope entry:** the script removes it first and then adds fresh, so any previous token is silently overwritten. If the user had a valid existing token they wanted to keep, confirm before rerunning.
 
+## Temporary access for one job
+
+When the person asks you to get short-lived access for something your own labs tools cannot reach (they run as another identity, and it 404s), use `--temporary`, and add `--no-uservisit-data` if the job does not need visit data:
+
+    python .claude/skills/labs-token-setup/setup_labs_token.py https://labs.connect.dimagi.com --temporary --output <scratchpad>/labs-token
+
+- The token lasts one hour and cannot renew. The approval page says so.
+- It does NOT touch Claude Code's config: the person's `connect_labs` server keeps its token, and this session's MCP tools do not change. Call the server yourself with `Authorization: Bearer $(cat <file>)`.
+- A full-access token still needs the person's passkey. Tell them what you are about to read and why before you start.
+- Keep the token out of your output, and delete the file when the job is done.
+
 ## Anti-patterns
+
+- Do NOT write your own OAuth script against `/o/register/` and `/o/authorize/` to get access. That sign-in is for MCP apps a person adds themselves: it lasts until disconnected and leaves a registered app behind. An app's name also limits nothing, so a name like "read one saved run" misleads the person approving it.
 
 - Do NOT try to create tokens via `python manage.py mcp_create_token` unless the user explicitly asks — that requires shell access to the labs host. The browser flow works for any environment the user can reach with a browser.
 - Do NOT hand-edit `~/.claude.json` or `~/.claude/mcp.json` — let the script call `claude mcp add`. Hand-editing `~/.claude.json` risks clobbering unrelated user state; writing to `~/.claude/mcp.json` doesn't register the server at all (Claude Code doesn't read that path).
