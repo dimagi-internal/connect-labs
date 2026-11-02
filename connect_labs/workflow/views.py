@@ -31,7 +31,7 @@ from connect_labs.labs.integrations.connect.api_client import LabsAPIError
 from connect_labs.labs.presentation import is_present_mode
 from connect_labs.tasks.data_access import TaskDataAccess
 from connect_labs.utils.feature_access import can_create_from_template, get_allowed_templates
-from connect_labs.workflow import declared_reads
+from connect_labs.workflow import declared_reads, public_shares
 from connect_labs.workflow.data_access import (
     PIPELINE_LOAD_VALUES,
     PipelineDataAccess,
@@ -44,6 +44,7 @@ from connect_labs.workflow.data_access import (
     streamed_and_skipped_aliases,
 )
 from connect_labs.workflow.page_mode import is_page as _is_page
+from connect_labs.workflow.public_share_views import can_share_run
 from connect_labs.workflow.templates import (
     MULTI_OPTION_COERCERS,
     TEMPLATES,
@@ -1766,6 +1767,12 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 workflow_data["sandbox"]["readable_definitions"] = sorted(
                     declared_reads.readable_definition_ids(definition)
                 )
+
+            # The Share button: a saved run, for someone who may make a public link to it.
+            if not is_edit_mode and not page and not context["present_mode"] and can_share_run(self.request.user, run):
+                workflow_data["share"] = {
+                    "url": f"/labs/workflow/api/run/{run_data['id']}/public-shares/{run_scope_qs}",
+                }
 
             # Not in edit mode (no real run), not a page (no run either), and not on a
             # presentation link: a page shared with a funder carries no actions and no agent.
@@ -4840,6 +4847,12 @@ def delete_workflow_api(request, definition_id):
 
         data_access = WorkflowDataAccess(request=request)
         deleted_counts = data_access.delete_definition(definition_id, delete_linked=delete_linked)
+        public_shares.end_for_definition(
+            definition_id,
+            opportunity_id=data_access.opportunity_id,
+            program_id=data_access.program_id,
+            user=request.user,
+        )
         data_access.close()
 
         return JsonResponse(
@@ -7460,6 +7473,11 @@ def delete_run_api(request, run_id):
 
         # Delete the run and all linked records (audit sessions, etc.)
         deleted_counts = data_access.delete_run(run_id, delete_linked=True)
+        # A person deleted it: its public links end with it. Not in delete_run, which also
+        # runs for routine replacement (hand_down, history_rebuild).
+        public_shares.end_for_run(
+            run_id, opportunity_id=run.opportunity_id, program_id=run.program_id, user=request.user
+        )
 
         logger.info(
             f"[DeleteRun] Deleted run {run_id}: "

@@ -61,6 +61,10 @@ _LABS_SKIP_PATH_PREFIXES = (
     # Studio with a coach-images Bearer token, never a session; a signed-in
     # staffer opening one must not be logged out by it.
     "/labs/coach-image/",
+    # A public link to a saved run (workflow/public_run_views.py). Same reasoning as
+    # Pulse above: it authenticates nobody and grants nothing beyond the one revocable,
+    # expiring token in its path.
+    "/labs/workflow/shared/",
     "/mcp/",
     # Another system's frame (connect_labs/embed/). Its requests authenticate by the
     # embed's own cookie, never this session, and a signed-in staffer opening one

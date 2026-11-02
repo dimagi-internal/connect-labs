@@ -1,0 +1,24 @@
+{% load static %}<!DOCTYPE html>
+{% comment %}
+The page behind a public link (workflow/public_run_views.py). Standalone, not base.html: a
+visitor gets no navigation, no context selector and nothing that edits. The copied run is
+handed to the sandboxed frame by components/workflow/sandbox/publicRun.tsx.
+{% endcomment %}
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
+    <title>{{ share.workflow_name|default:"Shared report" }}</title>
+    <link rel="stylesheet" href="{% static 'bundles/css/tailwind.css' %}">
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="{% static 'bundles/js/public-run-bundle.js' %}" defer></script>
+  </head>
+  <body class="bg-gray-50">
+    {{ public_run_data|json_script:"public-run-data" }}
+    <div id="public-run-root"></div>
+    <p class="px-4 py-3 text-center text-xs text-gray-500" data-testid="public-run-footer">
+      A saved copy of this report{% if completed_at %} as of {{ completed_at|slice:":10" }}{% endif %}. It does not update. This link ends on {{ share.expires_at|date:"Y-m-d" }}.
+    </p>
+  </body>
+</html>

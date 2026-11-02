@@ -587,7 +587,7 @@ def _redirect_is_pointless(path: str) -> bool:
 
 
 #: Paths that never read, save or redirect for a labs context.
-CONTEXT_FREE_PREFIXES = ("/labs/sandbox/render/", "/static/")
+CONTEXT_FREE_PREFIXES = ("/labs/sandbox/render/", "/labs/workflow/shared/", "/static/")
 
 
 class LabsContextMiddleware(MiddlewareMixin):

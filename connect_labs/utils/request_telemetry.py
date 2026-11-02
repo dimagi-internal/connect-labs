@@ -222,6 +222,8 @@ METRIC_DIMENSIONS = ("route", "method", "status_class")
 # failed before URL resolution). Collapsed to one value so a scanner walking random
 # paths cannot mint a metric per path — and so a raw path never becomes a dimension.
 UNMATCHED_ROUTE = "unmatched"
+# Paths whose last segment works as a key to real data: never logged as they are.
+SECRET_PATH_PREFIXES = ("/labs/workflow/shared/",)
 # The method is client-controlled (any token is a legal HTTP method), so it is
 # bounded too: anything outside the standard set is one bucket.
 _KNOWN_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
@@ -528,6 +530,13 @@ def _should_sample(request) -> bool:
     except Exception:
         logger.debug("telemetry sample decision failed", exc_info=True)
         return False
+
+
+def loggable_path(request) -> str:
+    """The request's path, unless the path is itself the credential (a public run link)."""
+    if request.path.startswith(SECRET_PATH_PREFIXES):
+        return route_template(request)
+    return request.path
 
 
 def route_template(request) -> str:
@@ -983,7 +992,7 @@ class RequestTelemetryMiddleware:
             "event": "slow_request",
             "reason": ",".join(reasons),
             "method": request.method,
-            "path": request.path,
+            "path": loggable_path(request),
             # The route TEMPLATE and the status: the two fields the scrubbed copy
             # in /labs-jj/observe/request-telemetry keys on (infra/observe_pipeline/
             # request_telemetry_scrubber.py drops `path` and `username`, and drops

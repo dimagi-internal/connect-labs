@@ -35,6 +35,12 @@ module.exports = {
       __dirname,
       '../connect_labs/static/js/space-artifact.tsx',
     ),
+    // The page behind a public link to a saved run: the same sandbox host, with the frame
+    // drawing only the copy (components/workflow/sandbox/publicRun.tsx).
+    'public-run': path.resolve(
+      __dirname,
+      '../connect_labs/static/js/public-run.tsx',
+    ),
     'pipeline-editor': path.resolve(
       __dirname,
       '../connect_labs/static/js/pipeline-editor.tsx',

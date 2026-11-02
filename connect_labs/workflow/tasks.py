@@ -1111,6 +1111,15 @@ def _resume_eligibility(run) -> tuple[bool, str]:
 
 
 @celery_app.task
+def sweep_public_run_shares() -> int:
+    """Delete the copied data of public run links past their expiry. A link stops working
+    at its expiry whether or not this has run (public_shares.find_usable)."""
+    from connect_labs.workflow.public_shares import sweep_expired
+
+    return sweep_expired()
+
+
+@celery_app.task
 def sweep_stale_workflow_runs() -> dict:
     """Beat ticker: find scheduled runs whose job died and resume them.
 

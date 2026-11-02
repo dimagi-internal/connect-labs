@@ -2,7 +2,7 @@ from django.urls import include, path
 
 from connect_labs.labs.synthetic import manager_flow_views
 
-from . import action_views, supply_views, views, workflow_sources
+from . import action_views, public_run_views, public_share_views, supply_views, views, workflow_sources
 
 app_name = "workflow"
 
@@ -57,6 +57,13 @@ urlpatterns = [
     # visit to /workflow/<def>/run/ with no run_id.
     path("api/<int:definition_id>/run/start/", views.start_run_api, name="api_start_run"),
     path("api/run/<int:run_id>/", views.get_run_api, name="api_get_run"),
+    # Public links to a saved run (public_share_views.py), and the page behind one, which
+    # needs no login (public_run_views.py).
+    path("api/run/<int:run_id>/public-shares/", public_share_views.public_shares_api, name="api_public_shares"),
+    path(
+        "api/public-shares/<int:share_id>/end/", public_share_views.end_public_share_api, name="api_end_public_share"
+    ),
+    path("shared/<str:token>/", public_run_views.PublicRunView.as_view(), name="public_run"),
     # A workflow's declared actions (workflow/actions.py): preview, then run with the
     # preview's confirm token -- the same two steps as the MCP's workflow_run_action.
     path(
