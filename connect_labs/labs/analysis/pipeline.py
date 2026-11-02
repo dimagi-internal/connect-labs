@@ -483,6 +483,19 @@ class AnalysisPipeline:
 
         record_computed_fingerprint(opp_id, config, getattr(self, "_gdrive_raw_fp", None))
 
+    def _fetch_labs_audits(self, config: AnalysisPipelineConfig, opp_id: int) -> list[dict]:
+        """A labs_audits source's rows: the opportunity's audit results, read as this
+        pipeline's user (its access token -- the same identity every other source of
+        the pipeline reads with). See backends/sql/labs_audits_fetcher.py."""
+        from connect_labs.labs.analysis.backends.sql.labs_audits_fetcher import fetch_labs_audits_as_visit_dicts
+
+        return fetch_labs_audits_as_visit_dicts(
+            request=self.request,
+            data_source=config.data_source,
+            access_token=self.access_token,
+            opportunity_id=opp_id,
+        )
+
     def _fill_gdrive_raw(self, config: AnalysisPipelineConfig, opp_id: int, force_refresh: bool):
         """Make the gdrive source's SHARED raw slot hold its rows; yield progress events.
 
@@ -796,7 +809,15 @@ class AnalysisPipeline:
             is_cchq = config.data_source.type in ("cchq_forms", "cchq_cases")
             is_ocs = config.data_source.type == "ocs_sessions"
             is_gdrive = config.data_source.type == "gdrive"
-            expected_count = 0 if (is_cchq or is_ocs or is_gdrive or has_filters) else self.expected_visits_for(opp_id)
+            # labs_audits holds one row per AUDITED visit, a small fraction of the
+            # opportunity's visits, so the visit count says nothing about it: the
+            # cache is trusted for its TTL, like OCS sessions.
+            is_labs_audits = config.data_source.type == "labs_audits"
+            expected_count = (
+                0
+                if (is_cchq or is_ocs or is_gdrive or is_labs_audits or has_filters)
+                else self.expected_visits_for(opp_id)
+            )
             # Read as a particular person (an MCP caller's own OCS token): never from the
             # cache, which the data source is not part of the key of and which a web
             # dashboard may have filled under the server's team key -- every bot's
@@ -899,6 +920,11 @@ class AnalysisPipeline:
                                 access_token=self.access_token,
                                 opportunity_id=opp_id,
                             )
+                            visit_count = None
+                            raw_data_already_stored = False
+                        elif unfiltered_config.data_source.type == "labs_audits":
+                            yield (EVENT_STATUS, {"message": f"Reading Labs audit results for opp {opp_id}..."})
+                            visit_dicts = self._fetch_labs_audits(unfiltered_config, opp_id)
                             visit_count = None
                             raw_data_already_stored = False
                         elif unfiltered_config.data_source.type == "cchq_cases":
@@ -1045,6 +1071,11 @@ class AnalysisPipeline:
                             access_token=self.access_token,
                             opportunity_id=opp_id,
                         )
+                        visit_count = None
+                        raw_data_already_stored = False
+                    elif unfiltered_config.data_source.type == "labs_audits":
+                        yield (EVENT_STATUS, {"message": f"Reading Labs audit results for opp {opp_id}..."})
+                        visit_dicts = self._fetch_labs_audits(unfiltered_config, opp_id)
                         visit_count = None
                         raw_data_already_stored = False
                     elif unfiltered_config.data_source.type == "cchq_cases":
@@ -1258,6 +1289,29 @@ class AnalysisPipeline:
                     return
 
                 yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} {ep} records..."})
+                result = self.backend.process_and_cache(
+                    self.request,
+                    config,
+                    opp_id,
+                    visit_dicts,
+                    skip_raw_store=False,
+                )
+                yield (EVENT_STATUS, {"message": "Complete!"})
+                yield (EVENT_RESULT, result)
+                return
+
+            # Labs image-audit results -- one row per audited visit, read from the
+            # opportunity's AuditSession records and processed in one pass. Audited
+            # visits are a sample (hundreds to low thousands), so no streaming.
+            if config.data_source.type == "labs_audits":
+                yield (EVENT_STATUS, {"message": f"Reading Labs audit results for opp {opp_id}..."})
+                visit_dicts = self._fetch_labs_audits(config, opp_id)
+                if not visit_dicts:
+                    yield (EVENT_STATUS, {"message": "No audited visits found"})
+                    yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))
+                    return
+
+                yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} audited visits..."})
                 result = self.backend.process_and_cache(
                     self.request,
                     config,
