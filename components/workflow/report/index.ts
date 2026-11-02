@@ -92,7 +92,7 @@ import {
   SectionTitle,
 } from './Layout';
 
-export const VERSION = 10;
+export const VERSION = 11;
 
 export const LabsReport = {
   VERSION,

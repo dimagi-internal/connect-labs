@@ -70,6 +70,17 @@ export interface Display {
   targets_note?: string | null;
   /** The registry's default minimum denominator, when the payload carries it. */
   min_denominator?: number | null;
+  /**
+   * Toggles over the worker table (VERSION 11): ticked, a filter keeps only the
+   * workers whose `indicator` value is truthy / above 0. Empty when none declared.
+   */
+  worker_filters: WorkerFilter[];
+}
+
+export interface WorkerFilter {
+  indicator: string;
+  label: string;
+  default?: boolean;
 }
 
 type CatalogMeasure = Measure & {
@@ -175,6 +186,9 @@ export function displayOf(payload: any): Display {
     visits_pipeline: raw.visits_pipeline || null,
     targets_note: raw.targets_note || null,
     min_denominator: raw.min_denominator || null,
+    worker_filters: (raw.worker_filters || []).filter(function (f: any) {
+      return f && f.indicator && f.label;
+    }),
   };
 }
 

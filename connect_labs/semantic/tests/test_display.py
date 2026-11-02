@@ -286,3 +286,136 @@ def test_resolve_keeps_only_the_string_pairs_of_a_value_map(vq):
         "display": {"visit_fields": [{"field": "o", "values": {"met": "Met her", "x": 3, 1: "One"}}]},
     }
     assert resolve_display(props, doc)["visit_fields"][0]["values"] == {"met": "Met her"}
+
+
+# ── display.worker_filters ───────────────────────────────────────────────────
+
+# A per-worker flag indicator built for a worker filter, as a programme adds one:
+# the count of the worker's cases that carry a property, with `min_denominator: 1`
+# so a worker with one case still has a value, and kept off the tiles and the
+# scorecard WITHOUT switching the rest of the registry out of its defaults.
+FLAG_MEASURES = [
+    {
+        "name": "in_group",
+        "title": "In the reviewed group",
+        "type": "number",
+        "sql": "{in_group_numerator}",
+        "meta": {
+            "indicator": "GRP",
+            "category": "Reach",
+            "unit": "n",
+            "direction": "none",
+            "flw_applicable": True,
+            "min_denominator": 1,
+            "scorecard": False,
+            "headline": False,
+        },
+    },
+    {"name": "in_group_numerator", "type": "count", "filters": [{"sql": "{CUBE}.seen_recently"}]},
+    {"name": "in_group_denominator", "type": "count"},
+]
+
+
+def _with_flag(inds, worker_filters=None):
+    doc = copy.deepcopy(inds)
+    doc["measures"] = doc["measures"] + copy.deepcopy(FLAG_MEASURES)
+    if worker_filters is not None:
+        doc["display"] = {**(doc.get("display") or {}), "worker_filters": worker_filters}
+    return doc
+
+
+def test_a_registry_without_worker_filters_resolves_without_the_key(vq):
+    props, inds = vq
+    assert "worker_filters" not in resolve_display(props, inds)
+
+
+def test_a_worker_filter_validates_and_resolves_by_indicator_id_or_measure_name(vq):
+    props, inds = vq
+    doc = _with_flag(
+        inds,
+        [
+            {"indicator": "in_group", "label": "  Reviewed group only "},
+            {"indicator": "Q04", "label": "Every visit approved", "default": True},
+        ],
+    )
+    assert validate_registry(props, doc, {}) == []
+    d = resolve_display(props, doc)
+    assert d["worker_filters"] == [
+        {"indicator": "GRP", "label": "Reviewed group only", "default": False},
+        {"indicator": "Q04", "label": "Every visit approved", "default": True},
+    ]
+
+
+def test_a_flag_measure_stays_off_the_tiles_and_scorecard_without_moving_the_others(vq):
+    """`scorecard: false` / `headline: false` on the flag exclude IT alone: the
+    registry's other indicators keep their prominence defaults."""
+    props, inds = vq
+    before = resolve_display(props, inds)
+    after = resolve_display(props, _with_flag(inds, [{"indicator": "GRP", "label": "Reviewed group only"}]))
+    assert after["indicators"]["GRP"]["scorecard"] is False and after["indicators"]["GRP"]["headline"] is None
+    assert after["headline"] == before["headline"] == ["Q01", "Q02", "Q03"]
+    on = [i for i, x in after["indicators"].items() if x["scorecard"]]
+    assert on == [i for i, x in before["indicators"].items() if x["scorecard"]] == ["Q01", "Q02", "Q03"]
+
+
+def test_headline_false_keeps_an_indicator_off_the_default_tiles():
+    """No indicator declares a prominence or a headline: the first N are the
+    tiles, except one that says `headline: false` -- and saying so does not switch
+    the registry into declared-headline mode."""
+    measures = [
+        {"name": "a", "title": "A", "meta": {"indicator": "a"}},
+        {"name": "flag", "title": "F", "meta": {"indicator": "flag", "headline": False, "scorecard": False}},
+        {"name": "b", "title": "B", "meta": {"indicator": "b"}},
+    ]
+    shown = indicator_display(measures)
+    assert [i for i in ("a", "flag", "b") if shown[i]["headline"]] == ["a", "b"]
+    assert (shown["a"]["headline"], shown["b"]["headline"]) == (1, 2)
+    assert [i for i in ("a", "flag", "b") if shown[i]["scorecard"]] == ["a", "b"]
+
+
+@pytest.mark.parametrize(
+    "worker_filters, message",
+    [
+        ("GRP", "display.worker_filters: must be a list"),
+        (["GRP"], "display.worker_filters[0]: must be"),
+        ([{"label": "Group only"}], "worker_filters[0]: needs `indicator`"),
+        ([{"indicator": "nope", "label": "Group only"}], "'nope' is not an indicator of this registry"),
+        ([{"indicator": "in_group_numerator", "label": "x"}], "is not an indicator of this registry"),
+        ([{"indicator": "GRP"}], "worker_filters[0]: needs `label`"),
+        ([{"indicator": "GRP", "label": "  "}], "worker_filters[0]: needs `label`"),
+        ([{"indicator": "GRP", "label": "x" * 81}], "worker_filters[0].label: at most 80"),
+        ([{"indicator": "GRP", "label": "x", "default": "yes"}], "worker_filters[0].default"),
+        ([{"indicator": "GRP", "label": "x", "colour": "red"}], "worker_filters[0]: unknown key"),
+        (
+            [{"indicator": "GRP", "label": "x"}, {"indicator": "in_group", "label": "y"}],
+            "worker_filters[1].indicator: 'in_group' already has a filter",
+        ),
+        ([{"indicator": "Q01", "label": f"x{i}"} for i in range(6)], "at most 5 filters"),
+    ],
+)
+def test_a_malformed_worker_filter_is_refused(vq, worker_filters, message):
+    props, inds = vq
+    errors = validate_registry(props, _with_flag(inds, worker_filters), {})
+    assert any(message in e for e in errors), errors
+
+
+def test_resolve_drops_a_worker_filter_the_save_gate_would_refuse(vq):
+    """A record that predates the gate still resolves, carrying only filters a
+    render can apply."""
+    props, inds = vq
+    doc = _with_flag(
+        inds,
+        [{"indicator": "nope", "label": "x"}, {"indicator": "GRP"}, "GRP", {"indicator": "GRP", "label": "Ok"}],
+    )
+    assert resolve_display(props, doc)["worker_filters"] == [{"indicator": "GRP", "label": "Ok", "default": False}]
+
+
+def test_the_payload_carries_the_worker_filters_it_was_built_with(vq):
+    """Live preview and a saved run both build through `snapshot.build`, which
+    stores the resolved display: a saved run keeps the filters it was saved with."""
+    from connect_labs.semantic import snapshot as snap
+
+    props, inds = vq
+    display = resolve_display(props, _with_flag(inds, [{"indicator": "GRP", "label": "Reviewed group only"}]))
+    out = snap.build(spec={}, rows=[], measures=[], deployment={}, display=display)
+    assert out["display"]["worker_filters"] == [{"indicator": "GRP", "label": "Reviewed group only", "default": False}]
