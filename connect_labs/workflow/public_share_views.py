@@ -23,6 +23,7 @@ from connect_labs.workflow import public_shares
 from connect_labs.workflow.data_access import WorkflowDataAccess
 from connect_labs.workflow.models import PublicRunShare
 from connect_labs.workflow.render_source import resolve_render_code
+from connect_labs.workflow.templates import SnapshotTooLargeError
 
 logger = logging.getLogger(__name__)
 
@@ -91,14 +92,35 @@ def public_shares_api(request, run_id):
         if run is None:
             return JsonResponse({"error": "Run not found"}, status=404)
         if request.method == "GET":
-            shares = public_shares.live_for_run(run.id, run.opportunity_id, run.program_id)
-            return JsonResponse({"shares": [_row(request, s) for s in shares]})
+            return _list(request, data_access, run)
         return _create(request, data_access, run)
     except LabsAPIError:
         logger.exception("Could not share run %s", run_id)
         return JsonResponse({"error": "Could not read this run from Connect. Please try again."}, status=502)
     finally:
         data_access.close()
+
+
+def _refused_for_opportunities(user, definition, run):
+    """A link opens the whole copy, so seeing one takes what making one takes."""
+    missing = _opportunities_without_access(user, snapshot_opportunity_ids(definition, run))
+    if not missing:
+        return None
+    names = ", ".join(str(o) for o in missing)
+    return JsonResponse(
+        {"error": f"This run holds data from opportunities you do not have access to: {names}."}, status=403
+    )
+
+
+def _list(request, data_access, run):
+    definition = data_access.get_definition(run.definition_id)
+    if definition is None:
+        return JsonResponse({"error": "Workflow not found"}, status=404)
+    refused = _refused_for_opportunities(request.user, definition, run)
+    if refused:
+        return refused
+    shares = public_shares.live_for_run(run.id, run.opportunity_id, run.program_id)
+    return JsonResponse({"shares": [_row(request, s) for s in shares]})
 
 
 def _create(request, data_access, run):
@@ -119,16 +141,16 @@ def _create(request, data_access, run):
     definition = data_access.get_definition(run.definition_id)
     if definition is None:
         return JsonResponse({"error": "Workflow not found"}, status=404)
-    missing = _opportunities_without_access(request.user, snapshot_opportunity_ids(definition, run))
-    if missing:
-        names = ", ".join(str(o) for o in missing)
-        return JsonResponse(
-            {"error": f"This run holds data from opportunities you do not have access to: {names}."}, status=403
-        )
+    refused = _refused_for_opportunities(request.user, definition, run)
+    if refused:
+        return refused
     render_code, _source = resolve_render_code(data_access, definition)
     if not render_code:
         return JsonResponse({"error": "This workflow has nothing to draw."}, status=400)
-    share = public_shares.create(request.user, definition, run, render_code, expires_at)
+    try:
+        share = public_shares.create(request.user, definition, run, render_code, expires_at)
+    except SnapshotTooLargeError:
+        return JsonResponse({"error": "This run is too large to share by link."}, status=400)
     return JsonResponse({"share": _row(request, share)}, status=201)
 
 

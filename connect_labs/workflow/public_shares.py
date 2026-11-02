@@ -65,11 +65,13 @@ def resolve_expiry(days, until, now: datetime | None = None) -> datetime:
 def copy_payload(definition, run, render_code: str) -> dict:
     """Everything the public page draws, frozen. ``run.snapshot`` is already decoded by
     the API client, which also fetches a large snapshot's child record."""
-    from connect_labs.workflow.templates import with_inherited_config_flags
+    from connect_labs.workflow.templates import _check_snapshot_size, with_inherited_config_flags
 
     data = with_inherited_config_flags(definition.data, definition.template_type)
     config = {k: v for k, v in (data.get("config") or {}).items() if k not in _CONFIG_LEFT_OUT}
     snapshot = run.snapshot or {}
+    # Every view of the link sends the whole copy, so the cap saved runs have applies here too.
+    _check_snapshot_size("public_share", snapshot)
     payload = {
         "renderCode": render_code,
         "definition": {"id": definition.id, **{k: data[k] for k in _DEFINITION_KEPT if k in data}, "config": config},

@@ -169,6 +169,47 @@ def test_a_run_holding_an_opportunity_the_person_lacks_is_refused_and_says_which
     assert not PublicRunShare.objects.exists()
 
 
+def test_someone_lacking_an_opportunity_cannot_see_the_links_to_that_run():
+    share = _share()
+    request = RequestFactory().get("/x/")
+    request.user = _staff()
+    with (
+        patch.object(public_share_views, "WorkflowDataAccess") as wda,
+        patch.object(public_share_views, "_opportunities_without_access", return_value=[99]),
+    ):
+        wda.return_value.get_run.return_value = _run()
+        wda.return_value.get_definition.return_value = _definition()
+        response = public_share_views.public_shares_api(request, 22)
+
+    assert response.status_code == 403
+    assert share.token not in response.content.decode()
+
+
+def test_someone_with_every_opportunity_sees_the_links():
+    share = _share()
+    request = RequestFactory().get("/x/")
+    request.user = _staff()
+    with (
+        patch.object(public_share_views, "WorkflowDataAccess") as wda,
+        patch.object(public_share_views, "_opportunities_without_access", return_value=[]),
+    ):
+        wda.return_value.get_run.return_value = _run()
+        wda.return_value.get_definition.return_value = _definition()
+        response = public_share_views.public_shares_api(request, 22)
+
+    assert response.status_code == 200
+    assert share.token in response.content.decode()
+
+
+def test_a_run_over_the_snapshot_limit_is_refused_and_nothing_is_kept():
+    too_big = {"pipelines": {"visits": {"rows": [{"note": "x" * (6 * 1024 * 1024)}]}}}
+
+    response, _ = _post(_staff(), GOOD, run=_run(snapshot=too_big))
+
+    assert response.status_code == 400
+    assert not PublicRunShare.objects.exists()
+
+
 @pytest.mark.parametrize(
     "run",
     [_run(status="in_progress", snapshot=None), _run(snapshot={})],
