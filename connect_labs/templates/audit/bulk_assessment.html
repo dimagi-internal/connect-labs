@@ -593,7 +593,8 @@
             <div x-show="status === 'error'"
                  class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 gap-2 p-2 text-center">
               <i class="fa-solid fa-image-slash text-2xl"></i>
-              <span class="text-xs">Image failed to load</span>
+              <span class="text-xs" x-text="errorMessage || 'Image failed to load'"></span>
+              <a x-show="connectHqUrl" :href="connectHqUrl" class="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">Connect CommCare HQ</a>
               <button @click="retry()"
                       class="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
                 <i class="fa-solid fa-rotate-right mr-1"></i>Retry
@@ -1263,6 +1264,8 @@ function imageTile(url) {
     baseUrl: url,
     src: '',
     status: 'loading',   // 'loading' | 'loaded' | 'error'
+    errorMessage: '',    // set when an HQ-sourced photo says why it cannot load
+    connectHqUrl: '',    // sign-in link, set when the reviewer has not connected CommCare HQ
     attempt: 0,
     maxAttempts: 3,
     _released: true,
@@ -1283,8 +1286,31 @@ function imageTile(url) {
       this.status = 'loaded';
       this._release();
     },
-    onError() {
+    // A failed <img> says nothing about why. For photos read from CommCare HQ the
+    // proxy answers 401 {"error": "commcare_hq_not_connected"} when the reviewer has
+    // not signed in to HQ in Labs: retrying cannot help, so say so and link to sign-in.
+    async _explainHqFailure() {
+      if (!this.baseUrl.includes('/audit/image/hq/')) return false;
+      try {
+        const resp = await fetch(this.baseUrl, { credentials: 'same-origin' });
+        if (resp.ok) return false;
+        const body = await resp.json().catch(() => ({}));
+        if (body && body.error === 'commcare_hq_not_connected') {
+          this.errorMessage = body.message || 'Connect CommCare HQ in Labs to view these photos.';
+          const next = encodeURIComponent(window.location.pathname + window.location.search);
+          this.connectHqUrl = (body.connect_url || '/labs/commcare/initiate/') + '?next=' + next;
+          return true;
+        }
+        if (body && body.message && resp.status !== 502) this.errorMessage = body.message;
+      } catch (e) { /* network error: fall through to the ordinary retry path */ }
+      return false;
+    },
+    async onError() {
       this._release();
+      if (await this._explainHqFailure()) {
+        this.status = 'error';
+        return;
+      }
       if (this.attempt < this.maxAttempts - 1) {
         this.attempt++;
         const delay = 300 * Math.pow(2, this.attempt - 1); // 300ms, 600ms
@@ -1294,7 +1320,7 @@ function imageTile(url) {
         this.status = 'error';
       }
     },
-    retry() { this.attempt = 0; this.load(); },
+    retry() { this.attempt = 0; this.errorMessage = ''; this.connectHqUrl = ''; this.load(); },
   };
 }
 

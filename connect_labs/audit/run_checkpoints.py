@@ -20,8 +20,10 @@ to answer it independently, both wrongly:
 This module is the single answer both layers now use.
 
 **Identity** (:func:`call_key` / :func:`session_key`) is
-``(opportunity_id, tag, start_date, end_date)`` -- what actually distinguishes
-one audit-creation call from another within a run. Tag alone is not enough (a
+``(opportunity_id, tag, start_date, end_date, image_source)`` -- what actually
+distinguishes one audit-creation call from another within a run. The photo
+source is part of it so a re-audit that reads photos from a different place
+(Connect vs CommCare HQ) never resumes a session built from the other. Tag alone is not enough (a
 creator run reused across days would collide); the window alone is not enough
 (two tracks share a window).
 
@@ -43,6 +45,8 @@ The two layers compose deliberately:
 
 from __future__ import annotations
 
+from connect_labs.audit.image_source import normalize_image_source
+
 
 def _window(criteria) -> tuple:
     """``(start_date, end_date)`` from a criteria dict, normalised to str|None.
@@ -59,7 +63,7 @@ def _window(criteria) -> tuple:
 
 def call_key(opportunity_id, criteria) -> tuple:
     """Checkpoint identity for one audit-creation call, from its inputs."""
-    return (opportunity_id, (criteria or {}).get("tag") or "", *_window(criteria))
+    return (opportunity_id, (criteria or {}).get("tag") or "", *_window(criteria), normalize_image_source(criteria))
 
 
 def session_key(session) -> tuple:
@@ -70,7 +74,12 @@ def session_key(session) -> tuple:
     ``AuditSessionRecord.opportunity_id`` for why those can differ.
     """
     data = getattr(session, "data", None) or {}
-    return (data.get("opportunity_id"), data.get("tag") or "", *_window(data.get("criteria")))
+    return (
+        data.get("opportunity_id"),
+        data.get("tag") or "",
+        *_window(data.get("criteria")),
+        normalize_image_source(data.get("criteria")),
+    )
 
 
 def session_is_complete(session, *, require_dup_detection: bool = False) -> bool:

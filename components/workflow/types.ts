@@ -1005,7 +1005,11 @@ export interface CreateAuditConfig {
   /** Opportunities to audit (with id and optional name) */
   opportunities: Array<{ id: number; name?: string }>;
 
-  /** Audit criteria */
+  /**
+   * Audit criteria. `image_source` ("connect" default | "commcare_hq") picks
+   * where the review screen reads photos from; the server also folds it into
+   * the resume key (audit/run_checkpoints.py).
+   */
   criteria: Record<string, unknown>;
 
   /** Pre-computed visit IDs (optional) */

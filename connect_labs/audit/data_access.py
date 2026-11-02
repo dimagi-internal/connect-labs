@@ -25,6 +25,12 @@ from django.http import HttpRequest
 
 from connect_labs.audit import prior_audit_projection
 from connect_labs.audit.analysis_config import AUDIT_EXTRACTION_CONFIG
+from connect_labs.audit.image_source import (
+    IMAGE_SOURCE_COMMCARE_HQ,
+    IMAGE_SOURCE_CONNECT,
+    hq_fields_for_image,
+    normalize_image_source,
+)
 from connect_labs.audit.models import AuditSessionRecord
 from connect_labs.labs.analysis.computations import compute_visit_fields
 from connect_labs.labs.analysis.models import LocalUserVisit
@@ -219,6 +225,11 @@ class AuditCriteria:
     time_gap_minutes: int | None = None
     enable_distance: bool = False
     distance_meters: int | None = None
+    # Where the reviewer's photos are read from: "connect" (Connect's export
+    # image endpoint, the default and the behaviour of every audit created
+    # before this option existed) or "commcare_hq" (CommCare HQ, with the
+    # reviewer's own HQ sign-in). See IMAGE_SOURCES / normalize_image_source.
+    image_source: str = IMAGE_SOURCE_CONNECT
 
     @classmethod
     def from_dict(cls, data: dict) -> "AuditCriteria":
@@ -267,6 +278,7 @@ class AuditCriteria:
             time_gap_minutes=data.get("time_gap_minutes") or data.get("timeGapMinutes"),
             enable_distance=bool(data.get("enable_distance") or data.get("enableDistance") or False),
             distance_meters=data.get("distance_meters") or data.get("distanceMeters"),
+            image_source=normalize_image_source(data),
         )
 
 
@@ -1064,6 +1076,7 @@ class AuditDataAccess(BaseDataAccess):
         opportunity_id: int | None = None,
         related_fields: list[dict] | None = None,
         progress_callback: Callable[[int, int, str], None] | None = None,
+        image_source: str = IMAGE_SOURCE_CONNECT,
     ) -> dict[str, list]:
         """
         Extract images with question IDs for selected visits.
@@ -1077,6 +1090,9 @@ class AuditDataAccess(BaseDataAccess):
             related_fields: Optional list of related field rules to extract and attach to images.
                            Each rule is a dict with {image_path, field_path, label}.
             progress_callback: Optional callback for progress updates (processed, total, message).
+            image_source: ``"connect"`` (default, entries unchanged) or ``"commcare_hq"``,
+                which adds the fields needed to fetch each photo from CommCare HQ
+                (see ``connect_labs.audit.image_source``) to every entry that has them.
 
         Returns:
             Dict mapping visit_id (str) to list of image dicts
@@ -1125,6 +1141,9 @@ class AuditDataAccess(BaseDataAccess):
             if str(vid) not in result:
                 result[str(vid)] = []
 
+        if image_source == IMAGE_SOURCE_COMMCARE_HQ:
+            self._add_hq_fields_to_images(result, visit_dicts)
+
         # Add related field values if rules provided
         if related_fields:
             if progress_callback:
@@ -1137,6 +1156,28 @@ class AuditDataAccess(BaseDataAccess):
             progress_callback(total_visits, total_visits, f"Extracted images from {total_visits} visits")
 
         return result
+
+    @staticmethod
+    def _add_hq_fields_to_images(visit_images: dict[str, list], visit_dicts: list[dict]) -> None:
+        """Attach xform id / attachment name / domain to each image, in place.
+
+        Matched to the visit's raw ``images`` entries by blob_id (falling back to
+        the file name), because the extractor output does not carry ``parent_id``.
+        """
+        for visit in visit_dicts:
+            entries = visit_images.get(str(visit.get("id")))
+            if not entries:
+                continue
+            raw_by_blob = {}
+            raw_by_name = {}
+            for raw in visit.get("images") or []:
+                if isinstance(raw, dict):
+                    raw_by_blob.setdefault(raw.get("blob_id"), raw)
+                    raw_by_name.setdefault(raw.get("name"), raw)
+            for entry in entries:
+                raw = raw_by_blob.get(entry.get("blob_id")) or raw_by_name.get(entry.get("name"))
+                if raw:
+                    entry.update(hq_fields_for_image(raw, visit.get("form_json"), visit.get("xform_id")))
 
     def _filter_visits_by_related_fields(
         self,
@@ -1260,6 +1301,7 @@ class AuditDataAccess(BaseDataAccess):
         # Generate description and normalize criteria
         description = ""
         criteria_dict = None
+        criteria_obj = None
         if criteria:
             if isinstance(criteria, dict):
                 if audit_type and "audit_type" not in criteria:
@@ -1288,6 +1330,7 @@ class AuditDataAccess(BaseDataAccess):
                     "time_gap_minutes": criteria_obj.time_gap_minutes,
                     "enable_distance": criteria_obj.enable_distance,
                     "distance_meters": criteria_obj.distance_meters,
+                    "image_source": criteria_obj.image_source,
                 }
             description = generate_audit_description(criteria_obj)
             # Use related_fields from criteria if not passed directly
@@ -1296,7 +1339,12 @@ class AuditDataAccess(BaseDataAccess):
 
         # Extract images (use passed value to avoid redundant CSV parsing in batch operations)
         if visit_images is None:
-            visit_images = self.extract_images_for_visits(visit_ids, opp_id, related_fields=related_fields)
+            visit_images = self.extract_images_for_visits(
+                visit_ids,
+                opp_id,
+                related_fields=related_fields,
+                image_source=criteria_obj.image_source if criteria_obj else IMAGE_SOURCE_CONNECT,
+            )
 
         image_count = sum(len(imgs) for imgs in (visit_images or {}).values())
 

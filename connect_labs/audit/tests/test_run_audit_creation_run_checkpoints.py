@@ -24,7 +24,10 @@ OPP = 1973
 WINDOW = {"start_date": "2026-06-22", "end_date": "2026-06-28"}
 
 
-def _existing(session_id, tag, *, start=WINDOW["start_date"], end=WINDOW["end_date"]):
+def _existing(session_id, tag, *, start=WINDOW["start_date"], end=WINDOW["end_date"], image_source=None):
+    criteria = {"start_date": start, "end_date": end}
+    if image_source:
+        criteria["image_source"] = image_source
     return AuditSessionRecord(
         {
             "id": session_id,
@@ -37,10 +40,13 @@ def _existing(session_id, tag, *, start=WINDOW["start_date"], end=WINDOW["end_da
                 "tag": tag,
                 "opportunity_id": OPP,
                 "visit_ids": [101],
-                "criteria": {"start_date": start, "end_date": end},
+                "criteria": criteria,
             },
         }
     )
+
+
+_extract_kwargs: list = []
 
 
 def _patch_audit_stack(monkeypatch, created, existing_sessions):
@@ -49,9 +55,12 @@ def _patch_audit_stack(monkeypatch, created, existing_sessions):
 
     def _make(opportunity_id=None, **_kwargs):
         da = MagicMock()
-        da.extract_images_for_visits.return_value = {
-            "101": [{"blob_id": "a", "name": "a.jpg", "question_id": "form/muac", "username": "flwA"}]
-        }
+
+        def _extract(*args, **kwargs):
+            _extract_kwargs.append(kwargs)
+            return {"101": [{"blob_id": "a", "name": "a.jpg", "question_id": "form/muac", "username": "flwA"}]}
+
+        da.extract_images_for_visits.side_effect = _extract
         da.get_flw_names.return_value = {}
         da.get_sessions_by_workflow_run.return_value = existing_sessions
 
@@ -133,6 +142,42 @@ def test_same_tag_different_window_is_a_different_audit(monkeypatch):
     _run("muac")
 
     assert [c["tag"] for c in created] == ["muac"]
+
+
+def test_a_different_image_source_never_resumes_the_other_sources_session(monkeypatch):
+    """Same worker, tag and window, but asked to read photos from CommCare HQ:
+    the old Connect-sourced session (which shows broken photos) must not be
+    returned as this call's."""
+    created = []
+    _extract_kwargs.clear()
+    _patch_audit_stack(monkeypatch, created, [_existing(5, "muac")])
+
+    result = _run("muac", image_source="commcare_hq")
+
+    assert [c["tag"] for c in created] == ["muac"]
+    assert [s["id"] for s in result["sessions"]] == [901]
+    # ...and the HQ source reached image extraction.
+    assert _extract_kwargs[-1]["image_source"] == "commcare_hq"
+
+
+def test_the_same_image_source_still_resumes(monkeypatch):
+    created = []
+    _patch_audit_stack(monkeypatch, created, [_existing(5, "muac", image_source="commcare_hq")])
+
+    result = _run("muac", image_source="commcare_hq")
+
+    assert created == []
+    assert [s["id"] for s in result["sessions"]] == [5]
+
+
+def test_default_source_resumes_a_session_stored_before_the_option_existed(monkeypatch):
+    created = []
+    _patch_audit_stack(monkeypatch, created, [_existing(5, "muac")])
+
+    result = _run("muac", image_source="connect")
+
+    assert created == []
+    assert [s["id"] for s in result["sessions"]] == [5]
 
 
 def test_direct_runs_without_a_workflow_run_never_resume(monkeypatch):

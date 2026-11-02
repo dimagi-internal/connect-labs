@@ -10,6 +10,7 @@ same links without duplicating the logic.
 
 import hashlib
 import logging
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.core.cache import cache
@@ -26,6 +27,29 @@ logger = logging.getLogger(__name__)
 # (AI review / duplicate detection resolving URLs once per session, all for
 # the same user/token) -- not meant to serve stale org data for long.
 _ORG_DATA_CACHE_TTL = 300
+
+
+def image_proxy_path(opportunity_id, blob_id: str, image: dict | None = None) -> str:
+    """Path of the proxy that serves one audit photo.
+
+    An entry that says it is an HQ image (``image_source == "commcare_hq"`` plus
+    its xform id / attachment name, see ``audit.image_source``) goes through the
+    CommCare HQ proxy; every other entry through the Connect proxy, as before.
+    """
+    from connect_labs.audit.image_source import is_hq_image
+
+    if is_hq_image(image):
+        path = reverse(
+            "audit:audit_image_hq",
+            kwargs={
+                "opp_id": opportunity_id,
+                "xform_id": image["hq_xform_id"],
+                "name": image["hq_attachment_name"],
+            },
+        )
+        domain = image.get("hq_domain")
+        return f"{path}?{urlencode({'domain': domain})}" if domain else path
+    return reverse("audit:audit_image_connect", kwargs={"opp_id": opportunity_id, "blob_id": blob_id})
 
 
 def resolve_hq_link_base(access_token: str, opportunity_id: int) -> str | None:
@@ -253,9 +277,7 @@ def resolve_urls_by_blob(
                     blob_id = image.get("blob_id")
                     if not blob_id:
                         continue
-                    image_path = reverse(
-                        "audit:audit_image_connect", kwargs={"opp_id": opp_for_group, "blob_id": blob_id}
-                    )
+                    image_path = image_proxy_path(opp_for_group, blob_id, image)
                     urls_by_blob[blob_id] = {
                         "image_url": build_absolute_url(image_path, request=request),
                         "form_url": form_url,

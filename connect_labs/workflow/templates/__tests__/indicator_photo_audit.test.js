@@ -635,3 +635,71 @@ test('both renders carry the same photo_audit helper', () => {
     block('indicator_report_render.js'),
   );
 });
+
+// ── photo_audit.image_source (both renders) ────────────────────────────────
+
+describe('photo_audit.image_source', () => {
+  const HQ = Object.assign({}, PHOTO_AUDIT, { image_source: 'commcare_hq' });
+
+  async function criteriaOf(mountFn, config, clickFn) {
+    const actions = stubActions(OK);
+    const el = await mountFn(config, actions);
+    await click(clickFn(el));
+    const criteria = actions.calls[0].criteria;
+    await React.act(async () => {
+      root.unmount();
+    });
+    root = null;
+    host.remove();
+    host = null;
+    return criteria;
+  }
+  const reportButton = (el) => rowButton(el);
+  const workerButton = (el) => buttonsNamed(el, 'Audit photos')[0];
+
+  test.each([
+    ['report', mountReport, reportButton],
+    ['worker review', mountWorker, workerButton],
+  ])(
+    '%s: HQ source is sent and changes the tag; default sends no key',
+    async (_name, mountFn, clickFn) => {
+      const dflt = await criteriaOf(
+        mountFn,
+        { photo_audit: PHOTO_AUDIT },
+        clickFn,
+      );
+      const explicit = await criteriaOf(
+        mountFn,
+        {
+          photo_audit: Object.assign({}, PHOTO_AUDIT, {
+            image_source: 'connect',
+          }),
+        },
+        clickFn,
+      );
+      const hq = await criteriaOf(mountFn, { photo_audit: HQ }, clickFn);
+      expect(dflt.image_source).toBeUndefined();
+      expect(explicit).toEqual(dflt);
+      expect(hq.image_source).toBe('commcare_hq');
+      expect(hq.tag).not.toBe(dflt.tag);
+      expect(hq.tag).toContain('@commcare_hq');
+    },
+  );
+
+  test.each([
+    ['report', mountReport, reportButton],
+    ['worker review', mountWorker, workerButton],
+  ])(
+    '%s: an unknown source draws no button',
+    async (_name, mountFn, clickFn) => {
+      const el = await mountFn(
+        {
+          photo_audit: Object.assign({}, PHOTO_AUDIT, { image_source: 'ftp' }),
+        },
+        stubActions(OK),
+      );
+      expect(buttonsNamed(el, 'Audit photos')).toEqual([]);
+      expect(el.querySelector('button[data-photo-audit]')).toBeNull();
+    },
+  );
+});

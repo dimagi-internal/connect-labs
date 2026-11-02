@@ -200,6 +200,11 @@ function WorkflowUI({
         return true;
       });
     if (!paths.length) return null;
+    // Where the photos are read from: Connect (the default) or CommCare HQ with
+    // the reviewer's own HQ sign-in. Anything else is a config mistake: draw
+    // no button rather than quietly audit from the wrong place.
+    var source = pa.image_source == null ? 'connect' : String(pa.image_source);
+    if (source !== 'connect' && source !== 'commcare_hq') return null;
     function days(v) {
       var n = Math.floor(Number(v));
       return n > 0 ? n : null;
@@ -220,6 +225,7 @@ function WorkflowUI({
       recent: recent,
       options: options,
       title: String(pa.title || '').trim() || 'Photo audit',
+      imageSource: source,
     };
   }
   // The window ends on the worker's last visit (else the fallback day) and
@@ -247,13 +253,16 @@ function WorkflowUI({
   // them makes a new audit rather than returning the old one; and from the
   // worker, so the sessions a resumed call reports are this worker's only.
   // The username itself, not a hash of it: two workers whose hashes collided
-  // would share a resume key.
-  function photoAuditTag(paths, username) {
+  // would share a resume key. A non-default photo source is part of the tag
+  // (the server also keys on criteria.image_source), so switching source makes
+  // a new audit; the default source keeps the tag it always had.
+  function photoAuditTag(paths, username, imageSource) {
     return (
       'photo-audit:' +
       photoAuditHash(paths.slice().sort().join('|')) +
       '-' +
-      String(username)
+      String(username) +
+      (imageSource && imageSource !== 'connect' ? '@' + imageSource : '')
     );
   }
   // The connect username: a worker key is `<opp>::<username>`.
@@ -279,7 +288,7 @@ function WorkflowUI({
         start_date: range.start,
         end_date: range.end,
         selected_flw_user_ids: [who.username],
-        tag: photoAuditTag(pa.paths, who.username),
+        tag: photoAuditTag(pa.paths, who.username, pa.imageSource),
         // The server puts the worker's name in front of a per-worker session's
         // title (audit/tasks.py), so the title itself does not repeat it.
         title: pa.title + ' (' + days + ' days to ' + range.end + ')',
@@ -292,6 +301,9 @@ function WorkflowUI({
       // than making a second (audit/tasks.py run_audit_creation, RESUME).
       workflow_run_id: runId || undefined,
     };
+    // Only a non-default source is sent: the server reads a missing key as "connect".
+    if (pa.imageSource && pa.imageSource !== 'connect')
+      payload.criteria.image_source = pa.imageSource;
     return { payload: payload, range: range };
   }
   // What a finished creation task made (audit/tasks.py run_audit_creation's

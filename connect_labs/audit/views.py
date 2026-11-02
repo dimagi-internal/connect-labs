@@ -37,9 +37,11 @@ from connect_labs.audit.data_access import (
     filter_audit_sessions,
     parse_session_id_filter,
 )
+from connect_labs.audit.image_source import normalize_image_source
 from connect_labs.audit.link_helpers import (
     build_connect_visit_url,
     build_hq_form_url,
+    image_proxy_path,
     resolve_hq_link_base,
     resolve_org_slug,
 )
@@ -1069,12 +1071,13 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                         "question_id": img["question_id"],
                         "filename": img["name"],
                         "related_fields": img.get("related_fields", []),
+                        "image": img,
                     }
                     for img in images_metadata
                 }
 
                 def build_image_url(blob_id: str) -> str:
-                    return reverse("audit:audit_image_connect", kwargs={"opp_id": opportunity_id, "blob_id": blob_id})
+                    return image_proxy_path(opportunity_id, blob_id, blob_metadata.get(blob_id, {}).get("image"))
 
                 for blob_id, metadata in blob_metadata.items():
                     question_id = metadata.get("question_id") or ""
@@ -1481,6 +1484,126 @@ class VisitClusterExportCSVView(LoginRequiredMixin, View):
 
 
 @method_decorator(transaction.non_atomic_requests, name="dispatch")
+class ExperimentAuditImageHQView(LoginRequiredMixin, View):
+    """Serve an audit photo fetched from CommCare HQ with the reviewer's own HQ sign-in.
+
+    Used instead of ``ExperimentAuditImageConnectView`` for audits created with
+    ``image_source == "commcare_hq"``. The review page builds the URL from the
+    xform id and attachment name stored on each image entry.
+
+    Why the xform id + name are in the URL rather than a session/blob lookup:
+    the proxy then needs no labs-DB read, so the connection slot can be handed
+    back before the slow fetch, exactly as in ``ExperimentAuditImageConnectView``
+    (read its docstring: #1060). Authorisation does not rely on the client: the
+    HQ domain is never taken as given. It is the opportunity's own deliver-app
+    domain; an optional ``?domain=`` is honoured only if it is one of that
+    opportunity's app domains. The user's own HQ permissions then apply on top,
+    because the fetch uses their token.
+
+    Errors are JSON ``{"error": <code>, "message": ...}``; a missing HQ sign-in
+    is 401 with ``error == "commcare_hq_not_connected"`` and ``connect_url``.
+    """
+
+    CONNECT_HQ_URL = "/labs/commcare/initiate/"
+
+    @staticmethod
+    def _error(code: str, message: str, status: int, **extra) -> JsonResponse:
+        return JsonResponse({"error": code, "message": message, **extra}, status=status)
+
+    def _not_connected(self) -> JsonResponse:
+        # The page appends ``?next=<itself>`` to connect_url before linking to it.
+        return self._error(
+            "commcare_hq_not_connected",
+            "Connect CommCare HQ in Labs to view these photos.",
+            401,
+            connect_url=self.CONNECT_HQ_URL,
+        )
+
+    @staticmethod
+    def allowed_domains(connect_token: str, opp_id: int) -> tuple[str, set[str]]:
+        """``(default_domain, allowed_domains)`` for an opportunity's deliver app."""
+        from connect_labs.labs.analysis.data_access import fetch_opportunity_metadata
+
+        metadata = fetch_opportunity_metadata(connect_token, opp_id)
+        default = metadata.get("cc_domain") or ""
+        deliver_domain = ((metadata.get("raw") or {}).get("deliver_app") or {}).get("cc_domain") or ""
+        return default, {d for d in (default, deliver_domain) if d}
+
+    def get(self, request, opp_id, xform_id, name):
+        from connect_labs.audit.hq_images import HQImageError, HQUnauthorized, fetch_hq_image
+        from connect_labs.audit.image_source import valid_attachment_name, valid_domain, valid_xform_id
+        from connect_labs.labs.integrations.commcare.cchq_tokens import (
+            CCHQTokenError,
+            get_valid_cchq_access_token,
+            refresh_cchq_token,
+        )
+
+        requested_domain = request.GET.get("domain") or ""
+        if not (valid_xform_id(xform_id) and valid_attachment_name(name)):
+            return self._error("bad_request", "Invalid image reference", 400)
+        if requested_domain and not valid_domain(requested_domain):
+            return self._error("bad_request", "Invalid image reference", 400)
+
+        connect_token = request.session.get("labs_oauth", {}).get("access_token")
+        if not connect_token:
+            return self._error("not_authenticated", "Sign in to Connect to view these photos.", 401)
+
+        # Everything that needs the labs DB (the user's stored HQ token and its
+        # refresh) happens first; the connection is then returned to the pool
+        # before any network call.
+        try:
+            hq_token = get_valid_cchq_access_token(request.user)
+        except CCHQTokenError:
+            return self._not_connected()
+        connection.close()
+
+        try:
+            default_domain, allowed = self.allowed_domains(connect_token, opp_id)
+        except Exception:
+            logger.exception("Could not resolve the CommCare domain for opportunity %s", opp_id)
+            return self._error("domain_unresolved", "Could not resolve this opportunity's CommCare project.", 502)
+        domain = requested_domain or default_domain
+        if not domain or domain not in allowed:
+            return self._error("domain_not_allowed", "This image is not in this opportunity's CommCare project.", 403)
+
+        try:
+            try:
+                content, content_type = fetch_hq_image(hq_token, domain, xform_id, name)
+            except HQUnauthorized:
+                # The stored access token was rejected: redeem the refresh token once and retry.
+                try:
+                    hq_token = refresh_cchq_token(request.user, stale_access_token=hq_token).access_token
+                except CCHQTokenError:
+                    return self._not_connected()
+                finally:
+                    connection.close()
+                content, content_type = fetch_hq_image(hq_token, domain, xform_id, name)
+        except HQUnauthorized:
+            return self._not_connected()
+        except HQImageError as e:
+            if e.status_code == 404:
+                logger.warning("HQ image not found (opp=%s)", opp_id)
+                return self._error("not_found", "Image not found in CommCare HQ.", 404)
+            if e.status_code == 403:
+                return self._error(
+                    "hq_denied", "Your CommCare HQ account cannot view this image (no access to the project?).", 403
+                )
+            logger.warning("HQ image fetch failed (opp=%s, code=%s, status=%s)", opp_id, e.code, e.status_code)
+            return self._error(e.code, "Image temporarily unavailable.", 502)
+        except Exception:
+            logger.exception("HQ image fetch failed (opp=%s)", opp_id)
+            return self._error("hq_fetch_failed", "Image temporarily unavailable.", 502)
+
+        safe_name = name.rsplit("/", 1)[-1].replace('"', "").replace("\r", "").replace("\n", "")
+        response = HttpResponse(content, content_type=content_type)
+        response["Content-Disposition"] = f'inline; filename="{safe_name}"'
+        # Attachments are immutable; same caching as the Connect proxy. "private"
+        # because the bytes are only readable with this user's HQ permissions.
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
+
+
+@method_decorator(transaction.non_atomic_requests, name="dispatch")
 class ExperimentAuditImageConnectView(LoginRequiredMixin, View):
     """Serve audit visit images from Connect API (no CommCare HQ).
 
@@ -1822,6 +1945,11 @@ class ExperimentAuditCreateAsyncAPIView(LoginRequiredMixin, View):
 
             if not opportunities:
                 return JsonResponse({"error": "No opportunities provided"}, status=400)
+
+            try:
+                normalize_image_source(criteria, strict=True)
+            except ValueError as e:
+                return JsonResponse({"error": str(e)}, status=400)
 
             # Get OAuth token from session
             labs_oauth = request.session.get("labs_oauth", {})
