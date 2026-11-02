@@ -1549,22 +1549,30 @@ class SQLBackend:
 
         cache_manager = SQLCacheManager(opportunity_id, config)
 
+        # An empty labs_audits build is recorded as a marker (see
+        # SQLCacheManager.store_empty_marker): no audits reviewed yet is this source's
+        # normal initial state, and a zero-row result leaves no row for a cache read to
+        # find. Any earlier marker is dropped BEFORE the raw store (which replaces the
+        # rows it described) and the new one set only AFTER processing succeeds, so a
+        # build that fails part-way never leaves one behind for readers to answer
+        # "empty" from instead of retrying.
+        marks_empty = config.data_source.type == "labs_audits" and not skip_raw_store
+        if marks_empty:
+            cache_manager.clear_empty_marker()
+
         # Step 1: Store raw visits to SQL (skip if already stored during streaming)
         if not skip_raw_store:
             logger.info(f"[SQL] Storing {visit_count} raw visits to SQL")
             cache_manager.store_raw_visits(visit_dicts, visit_count)
-            if config.data_source.type == "labs_audits":
-                # No audits reviewed yet is this source's normal initial state, and a
-                # zero-row result leaves no row for a cache read to find: mark it
-                # (see SQLCacheManager.store_empty_marker); a later non-empty build
-                # drops the marker so it can never shadow real rows.
-                if visit_count == 0:
-                    cache_manager.store_empty_marker()
-                else:
-                    cache_manager.clear_empty_marker()
         else:
             logger.info(f"[SQL] Skipping raw store ({visit_count} visits already in DB)")
 
+        result = self._process_terminal_stage(config, opportunity_id, visit_count, cache_manager)
+        if marks_empty and visit_count == 0:
+            cache_manager.store_empty_marker()
+        return result
+
+    def _process_terminal_stage(self, config, opportunity_id, visit_count, cache_manager):
         # Branch based on terminal stage
         if config.terminal_stage == CacheStage.VISIT_LEVEL:
             return self._process_visit_level(config, opportunity_id, visit_count, cache_manager)
