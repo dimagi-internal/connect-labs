@@ -241,3 +241,15 @@ def test_a_mother_registry_credits_the_mothers_worker_instead(cache):
     assert rows[("flw", "bola")]["photo_approval_rate"] == pytest.approx(50.0)
     # The programme figure is the same either way: only the attribution moves.
     assert rows[("programme", None)]["photo_approval_rate"] == pytest.approx(50.0)
+
+
+def test_an_opportunity_with_no_audits_yet_still_grades_with_a_blank_photo_rate(db):
+    """No audits reviewed is the normal initial state: the lookup finds nothing, every
+    visit keeps its row, and the photo approval rate is blank (NULL), not an error or 0."""
+    _visit("1", "ada", "2026-09-01", "m1")
+    _visit("2", "bola", "2026-09-02", "m2")
+    rows = _by_scope(_evaluate(VISIT_PROPS, ["programme", "flw"]))
+    assert rows[("programme", None)]["photo_approval_rate"] is None
+    assert rows[("programme", None)]["photos_decided"] == 0
+    assert rows[("flw", "ada")]["photo_approval_rate"] is None
+    assert rows[("flw", "bola")]["photo_approval_rate"] is None

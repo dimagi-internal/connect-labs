@@ -6,6 +6,7 @@ Handles reading/writing cache data to PostgreSQL tables.
 
 import logging
 import random
+import time
 from datetime import date, datetime, timedelta
 
 import sentry_sdk
@@ -1188,8 +1189,46 @@ class SQLCacheManager:
     # Cache Invalidation
     # -------------------------------------------------------------------------
 
+    # -------------------------------------------------------------------------
+    # Empty-result marker
+    # -------------------------------------------------------------------------
+    #
+    # Every cache table above says "this config is cached" by the EXISTENCE of its
+    # rows (has_valid_*_cache is an .exists() on expires_at / visit_count), so a
+    # result with zero rows leaves nothing to find and a cache-only read can never
+    # tell "built, empty" from "never built". For a labs_audits source that is the
+    # normal initial state (no audits reviewed yet), so the empty result is
+    # recorded as a marker in Django's cache instead, with the same TTL as the row
+    # caches. Best-effort like the raw-fetch anomaly flag: losing it only costs a
+    # rebuild, never a wrong answer. The opportunity "epoch" lets a whole-opp cache
+    # delete drop every marker without enumerating config hashes.
+
+    def _empty_epoch_key(self) -> str:
+        return f"empty_result_epoch:{self.opportunity_id}"
+
+    def _empty_marker_key(self) -> str:
+        epoch = cache.get(self._empty_epoch_key(), 0)
+        return f"empty_result:{self.opportunity_id}:{epoch}:{self.pipeline_id}:{self.config_hash}"
+
+    def store_empty_marker(self) -> None:
+        """Record that this config was built from zero rows (valid until the TTL)."""
+        if self.config_hash:
+            cache.set(self._empty_marker_key(), True, timeout=int(self.ttl.total_seconds()))
+
+    def has_empty_marker(self) -> bool:
+        return bool(self.config_hash) and bool(cache.get(self._empty_marker_key()))
+
+    def clear_empty_marker(self) -> None:
+        if self.config_hash:
+            cache.delete(self._empty_marker_key())
+
+    @classmethod
+    def _invalidate_empty_markers(cls, opportunity_id: int) -> None:
+        cache.set(f"empty_result_epoch:{opportunity_id}", time.time_ns(), timeout=None)
+
     def invalidate_all(self):
         """Invalidate all cache for this opportunity."""
+        self._invalidate_empty_markers(self.opportunity_id)
         RawVisitCache.objects.filter(opportunity_id=self.opportunity_id).delete()
         ComputedVisitCache.objects.filter(opportunity_id=self.opportunity_id).delete()
         ComputedFLWCache.objects.filter(opportunity_id=self.opportunity_id).delete()
@@ -1207,6 +1246,7 @@ class SQLCacheManager:
             logger.warning("[SQLCache] Cannot delete config cache without config_hash")
             return {"computed_visit": 0, "computed_flw": 0, "computed_entity": 0}
 
+        self.clear_empty_marker()
         visit_deleted, _ = ComputedVisitCache.objects.filter(
             opportunity_id=self.opportunity_id,
             config_hash=self.config_hash,
@@ -1249,6 +1289,7 @@ class SQLCacheManager:
         Returns:
             Dict with deletion counts for each cache type
         """
+        cls._invalidate_empty_markers(opportunity_id)
         raw_deleted = RawVisitCache.invalidate_opportunity(opportunity_id)
 
         visit_deleted, _ = ComputedVisitCache.objects.filter(opportunity_id=opportunity_id).delete()
@@ -1282,6 +1323,7 @@ class SQLCacheManager:
         Returns:
             Dict with deletion counts
         """
+        cls._invalidate_empty_markers(opportunity_id)
         visit_deleted = ComputedVisitCache.invalidate_opportunity_config(opportunity_id, config_hash)
 
         flw_deleted = ComputedFLWCache.invalidate_opportunity_config(opportunity_id, config_hash)

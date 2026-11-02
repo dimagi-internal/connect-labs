@@ -1306,12 +1306,13 @@ class AnalysisPipeline:
             if config.data_source.type == "labs_audits":
                 yield (EVENT_STATUS, {"message": f"Reading Labs audit results for opp {opp_id}..."})
                 visit_dicts = self._fetch_labs_audits(config, opp_id)
+                # No reviewed audits yet is this source's normal initial state: it still
+                # goes through process_and_cache so a (valid, empty) cache is recorded
+                # for the cache-only readers, rather than returning an unstored result.
                 if not visit_dicts:
                     yield (EVENT_STATUS, {"message": "No audited visits found"})
-                    yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))
-                    return
-
-                yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} audited visits..."})
+                else:
+                    yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} audited visits..."})
                 result = self.backend.process_and_cache(
                     self.request,
                     config,

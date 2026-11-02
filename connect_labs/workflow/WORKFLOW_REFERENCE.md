@@ -295,6 +295,10 @@ Rules (`connect_labs/audit/audited_visit_rows.py`):
   undecided images are `n_pending`.
 - Approval rate = `n_pass / n_decided` (duplicate/fake counts against it, pending is excluded) --
   the Photo Audit Report's definition.
+- **No audits yet is a valid, empty result.** An opportunity none of whose visits has been reviewed yields
+  zero rows -- the normal initial state -- and that empty result is cached (for the usual one hour, then
+  rebuilt) like any other, so saved weeks and history rebuilds read it as "no photo reviews", not as a
+  missing cache. The next fetch that finds audits replaces it.
 
 ```python
 {
