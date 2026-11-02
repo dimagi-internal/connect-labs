@@ -179,7 +179,7 @@ function WorkflowUI({
   // one Labs image audit of that worker's photos at the configured question
   // paths, for a person to pass or fail in the audit review screen. No AI
   // reviewer. Absent or without image_paths, nothing is drawn and nothing is
-  // fetched. This parser is kept identical in indicator_report_render.js and
+  // fetched. This block is kept identical in indicator_report_render.js and
   // indicator_worker_review_render.js.
   function photoAuditConfig(c) {
     var pa = c && c.photo_audit;
@@ -235,6 +235,31 @@ function WorkflowUI({
       .slice(0, 10);
     return { start: start, end: end };
   }
+  // A short, stable hash (djb2, base 36).
+  function photoAuditHash(text) {
+    var h = 5381;
+    for (var i = 0; i < text.length; i++)
+      h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36);
+  }
+  // criteria.tag, part of the server's resume key (audit/run_checkpoints.py
+  // call_key: opportunity, tag, start, end). From the photo paths, so changing
+  // them makes a new audit rather than returning the old one; and from the
+  // worker, so the sessions a resumed call reports are this worker's only.
+  function photoAuditTag(paths, username) {
+    return (
+      'photo-audit:' +
+      photoAuditHash(paths.slice().sort().join('|')) +
+      '-' +
+      photoAuditHash(String(username))
+    );
+  }
+  // The connect username: a worker key is `<opp>::<username>`.
+  function photoAuditUsername(key) {
+    var k = String(key || '');
+    var i = k.indexOf(FLW_SEP);
+    return i >= 0 ? k.slice(i + FLW_SEP.length) : k;
+  }
   // The createAudit payload for one worker, and the window it covers.
   // `image_audits` with no reviewers (audit/ai_review_config.py
   // build_review_config) is the server's "these image types only": each path
@@ -252,6 +277,7 @@ function WorkflowUI({
         start_date: range.start,
         end_date: range.end,
         selected_flw_user_ids: [who.username],
+        tag: photoAuditTag(pa.paths, who.username),
         // The server puts the worker's name in front of a per-worker session's
         // title (audit/tasks.py), so the title itself does not repeat it.
         title: pa.title + ' (' + days + ' days to ' + range.end + ')',
@@ -260,19 +286,161 @@ function WorkflowUI({
         return { image_path: p, reviewers: [] };
       }),
       // Links the audit to this run. The server reuses a session this run
-      // already made for the same worker, opportunity and window rather than
-      // making a second (audit/tasks.py run_audit_creation, RESUME).
+      // already made for the same worker, opportunity, tag and window rather
+      // than making a second (audit/tasks.py run_audit_creation, RESUME).
       workflow_run_id: runId || undefined,
     };
     return { payload: payload, range: range };
   }
+  // What a finished creation task made (audit/tasks.py run_audit_creation's
+  // result: sessions [{id, images, ...}], total_images). No session or no
+  // photo means no visit in the window had any of the photos.
+  function photoAuditOutcome(res) {
+    res = res || {};
+    if (res.error || res.success === false)
+      return {
+        status: 'error',
+        message: String(
+          res.error || (res.cancelled ? 'cancelled' : 'audit creation failed'),
+        ),
+      };
+    var sessions = Array.isArray(res.sessions) ? res.sessions : [];
+    var photos = Number(res.total_images) || 0;
+    if (!sessions.length || !photos) return { status: 'empty' };
+    return { status: 'ready', photos: photos };
+  }
+  // One page's photo audits, keyed by worker: start one and follow its task
+  // to the real outcome; `reset` forgets them all and drops any answer still
+  // on its way; following stops on unmount.
+  function usePhotoAudits(pa) {
+    var sDays = React.useState(pa ? pa.recent : 0);
+    var sAudits = React.useState({});
+    var audits = sAudits[0],
+      setAudits = sAudits[1];
+    var streams = React.useRef({});
+    var generation = React.useRef(0);
+    function stopAll() {
+      var open = streams.current;
+      streams.current = {};
+      Object.keys(open).forEach(function (k) {
+        if (typeof open[k] === 'function') open[k]();
+      });
+    }
+    // Gone: stop following, and drop any answer still on its way.
+    React.useEffect(function () {
+      return function () {
+        generation.current += 1;
+        stopAll();
+      };
+    }, []);
+    // Never 0: the window is always one of the offered days.
+    var days = sDays[0] || (pa ? pa.recent : 0);
+    function start(key, req, base) {
+      var gen = generation.current;
+      function set(extra) {
+        if (gen !== generation.current) return;
+        setAudits(function (prev) {
+          var next = Object.assign({}, prev);
+          next[key] = Object.assign({}, base, extra);
+          return next;
+        });
+      }
+      set({ status: 'running' });
+      Promise.resolve(actions.createAudit(req.payload))
+        .then(function (result) {
+          if (!result || !result.success)
+            throw new Error(
+              (result && result.error) || 'audit creation failed',
+            );
+          if (gen !== generation.current) return;
+          if (!actions.streamAuditProgress || !result.task_id) {
+            set({ status: 'created' });
+            return;
+          }
+          set({ status: 'building' });
+          if (streams.current[key]) streams.current[key]();
+          var finished = false;
+          function finish(st) {
+            finished = true;
+            delete streams.current[key];
+            set(st);
+          }
+          var stop = actions.streamAuditProgress(
+            result.task_id,
+            function () {},
+            function (res) {
+              finish(photoAuditOutcome(res));
+            },
+            function (err) {
+              finish({ status: 'error', message: String(err || 'failed') });
+            },
+          );
+          if (!finished) streams.current[key] = stop;
+        })
+        .catch(function (err) {
+          set({
+            status: 'error',
+            message: String((err && err.message) || err),
+          });
+        });
+    }
+    function reset() {
+      generation.current += 1;
+      stopAll();
+      setAudits({});
+    }
+    // The button for one worker: busy while creating or building; done (and
+    // off) once this window's audit exists, since asking again returns it.
+    function buttonOf(key) {
+      var st = audits[key];
+      var s = st ? st.status : null;
+      var busy = s === 'running' || s === 'building';
+      var done = (s === 'created' || s === 'ready') && st.days === days;
+      return {
+        disabled: busy || done,
+        label:
+          s === 'running'
+            ? 'Creating…'
+            : s === 'building'
+              ? 'Building…'
+              : done
+                ? s === 'ready'
+                  ? 'Photo audit ready'
+                  : 'Photo audit queued'
+                : 'Audit photos',
+      };
+    }
+    return {
+      days: days,
+      setDays: sDays[1],
+      audits: audits,
+      start: start,
+      reset: reset,
+      buttonOf: buttonOf,
+    };
+  }
   // What happened to a worker's photo audit, under its button.
   function photoAuditNote(st) {
     if (!st || !st.status) return null;
+    var span = ' (visits ' + st.range.start + ' to ' + st.range.end + ')';
+    var link = (
+      <a
+        href={'/audit/?opportunity_id=' + encodeURIComponent(st.opp)}
+        className="text-indigo-600 hover:underline"
+      >
+        Open Audits →
+      </a>
+    );
     if (st.status === 'running')
       return (
         <span className="text-gray-600">
           {'Creating the photo audit for ' + st.name + '…'}
+        </span>
+      );
+    if (st.status === 'building')
+      return (
+        <span className="text-gray-600">
+          {'Building the photo audit for ' + st.name + span + '…'}
         </span>
       );
     if (st.status === 'error')
@@ -281,64 +449,72 @@ function WorkflowUI({
           {'Could not create the photo audit: ' + st.message}
         </span>
       );
+    if (st.status === 'empty')
+      return (
+        <span className="text-gray-700">
+          {'No photos found for ' + st.name + ' in this window' + span + '.'}
+        </span>
+      );
+    if (st.status === 'ready')
+      return (
+        <span className="text-gray-700">
+          {'Photo audit ready: ' +
+            st.photos +
+            (st.photos === 1 ? ' photo' : ' photos') +
+            ' for ' +
+            st.name +
+            span +
+            '. Reviewers will find it under Audits for ' +
+            st.oppName +
+            '. '}
+          {link}
+        </span>
+      );
     return (
       <span className="text-gray-700">
         {'Photo audit queued for ' +
           st.name +
-          ' (visits ' +
-          st.range.start +
-          ' to ' +
-          st.range.end +
-          '). Reviewers will find it under Audits for ' +
+          span +
+          '. Reviewers will find it under Audits for ' +
           st.oppName +
           ' once it finishes building. '}
-        <a
-          href={'/audit/?opportunity_id=' + encodeURIComponent(st.opp)}
-          className="text-indigo-600 hover:underline"
-        >
-          Open Audits →
-        </a>
+        {link}
       </span>
     );
   }
   var PHOTO_AUDIT =
     actions && actions.createAudit ? photoAuditConfig(cfg) : null;
-  var sAuditDays = React.useState(PHOTO_AUDIT ? PHOTO_AUDIT.recent : 0);
-  var auditDays = sAuditDays[0],
-    setAuditDays = sAuditDays[1];
-  var sAudit = React.useState(null);
-  var audit = sAudit[0],
-    setAudit = sAudit[1];
-  // Another worker picked on this page starts with no audit message.
+  var photoAudits = usePhotoAudits(PHOTO_AUDIT);
+  // Another worker picked on this page: forget the last one's audit and drop
+  // any answer still on its way for it.
   React.useEffect(
     function () {
-      setAudit(null);
+      photoAudits.reset();
     },
     [selKey],
   );
   function auditPhotos() {
     if (!PHOTO_AUDIT || !flw) return;
-    var key = String(flw.key || '');
-    var i = key.indexOf(FLW_SEP);
     var name = flw.name || flw.flw || flw.username;
     var oppName =
       ((P.deployment && P.deployment.opportunity_labels) || {})[
         String(flw.opp)
       ] || 'Opportunity ' + flw.opp;
-    // The worker's last visit: their own row's, else their newest case's.
+    // The worker's own last visit first (a case's last visit may be by
+    // another worker), else their newest case's.
     var last = String(flw.lastVisit || '').slice(0, 10);
-    cases.forEach(function (c) {
-      var d = String(c.last_visit_date || '').slice(0, 10);
-      if (d > last) last = d;
-    });
-    var days = auditDays;
+    if (!last)
+      cases.forEach(function (c) {
+        var d = String(c.last_visit_date || '').slice(0, 10);
+        if (d > last) last = d;
+      });
+    var days = photoAudits.days;
     var req = photoAuditRequest(
       PHOTO_AUDIT,
       {
         opp: flw.opp,
         oppName: oppName,
-        username:
-          i >= 0 ? key.slice(i + FLW_SEP.length) : flw.username || flw.flw,
+        username: photoAuditUsername(flw.key) || flw.username || flw.flw,
         name: name,
         last: last,
         fallback: asOf || (view && view.asOf),
@@ -346,34 +522,16 @@ function WorkflowUI({
       days,
       instance && instance.id,
     );
-    var base = {
+    photoAudits.start(flw.key, req, {
       days: days,
       name: name,
       opp: flw.opp,
       oppName: oppName,
       range: req.range,
-    };
-    function put(extra) {
-      var st = {};
-      Object.keys(base).forEach(function (k) {
-        st[k] = base[k];
-      });
-      Object.keys(extra).forEach(function (k) {
-        st[k] = extra[k];
-      });
-      setAudit(st);
-    }
-    put({ status: 'running' });
-    Promise.resolve(actions.createAudit(req.payload))
-      .then(function (result) {
-        if (!result || !result.success)
-          throw new Error((result && result.error) || 'audit creation failed');
-        put({ status: 'created', taskId: result.task_id });
-      })
-      .catch(function (err) {
-        put({ status: 'error', message: String((err && err.message) || err) });
-      });
+    });
   }
+  var audit = flw ? photoAudits.audits[flw.key] : null;
+  var auditButton = photoAudits.buttonOf(flw ? flw.key : '');
 
   // Peers: the worker's own cohort as the builder banded it.
   var peers = React.useMemo(
@@ -1324,9 +1482,9 @@ function WorkflowUI({
                   <select
                     data-photo-audit-window="1"
                     className="border border-gray-200 rounded px-1 py-0.5 text-xs"
-                    value={auditDays}
+                    value={photoAudits.days}
                     onChange={function (e) {
-                      setAuditDays(Number(e.target.value));
+                      photoAudits.setDays(Number(e.target.value));
                     }}
                   >
                     {PHOTO_AUDIT.options.map(function (n) {
@@ -1343,23 +1501,13 @@ function WorkflowUI({
                     'Create an audit of this ' +
                     WRK.name +
                     "'s photos from the " +
-                    auditDays +
+                    photoAudits.days +
                     ' days up to their last visit, for a reviewer to pass or fail'
                   }
-                  disabled={
-                    !!audit &&
-                    (audit.status === 'running' ||
-                      (audit.status === 'created' && audit.days === auditDays))
-                  }
+                  disabled={auditButton.disabled}
                   onClick={auditPhotos}
                 >
-                  {audit && audit.status === 'running'
-                    ? 'Creating…'
-                    : audit &&
-                        audit.status === 'created' &&
-                        audit.days === auditDays
-                      ? 'Photo audit queued'
-                      : 'Audit photos'}
+                  {auditButton.label}
                 </R.Button>
               </div>
               {audit ? (

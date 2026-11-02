@@ -116,18 +116,61 @@ const PHOTO_AUDIT = {
   title: 'Photo check',
 };
 
-function stubActions(result) {
+// createAudit records each payload. `stream` (optional) answers
+// streamAuditProgress: {complete: result} | {error: message} | 'hold' (never
+// answers; its cleanup is counted).
+function stubActions(result, stream) {
   const calls = [];
-  return {
+  const actions = {
     calls,
+    stopped: 0,
     createAudit: (payload) => {
       calls.push(JSON.parse(JSON.stringify(payload)));
-      return Promise.resolve(result);
+      return result && result.then ? result : Promise.resolve(result);
     },
   };
+  if (stream)
+    actions.streamAuditProgress = (taskId, onProgress, onComplete, onError) => {
+      expect(taskId).toBe('task-fake-1');
+      if (stream.complete) setTimeout(() => onComplete(stream.complete), 0);
+      if (stream.error) setTimeout(() => onError(stream.error), 0);
+      return () => {
+        actions.stopped += 1;
+      };
+    };
+  return actions;
 }
 
 const OK = { success: true, task_id: 'task-fake-1' };
+// run_audit_creation's final result, one session with photos / none.
+const FOUND = {
+  success: true,
+  sessions: [{ id: 501, title: 't', visits: 4, images: 12 }],
+  total_visits: 4,
+  total_images: 12,
+};
+const NONE_FOUND = {
+  success: true,
+  sessions: [],
+  total_visits: 0,
+  total_images: 0,
+};
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+// The fixture with the first worker's own last visit moved earlier than their
+// case's last visit (a case can be visited by another worker).
+function payloadWithOwnLast(day) {
+  const p = JSON.parse(JSON.stringify(PAYLOAD));
+  p.byFLW[0].lastVisit = day;
+  return p;
+}
 
 function expectPayload(call, { start, end, days, run }) {
   expect(call.opportunities).toEqual([{ id: 10097, name: expect.any(String) }]);
@@ -137,6 +180,7 @@ function expectPayload(call, { start, end, days, run }) {
     start_date: start,
     end_date: end,
     selected_flw_user_ids: [USERNAME],
+    tag: expect.stringMatching(/^photo-audit:[0-9a-z]+-[0-9a-z]+$/),
     title: 'Photo check (' + days + ' days to ' + end + ')',
   });
   // Exact question paths, no 'form/' prefix or leading slash; no reviewers.
@@ -151,7 +195,7 @@ function expectPayload(call, { start, end, days, run }) {
 
 // ── The opportunity report (indicator_report_render.js) ─────────────────────
 
-function oppProps(config, actions) {
+function oppProps(config, actions, payload) {
   return {
     definition: {
       id: 1,
@@ -170,20 +214,27 @@ function oppProps(config, actions) {
     links: {},
     actions,
     onUpdateState: () => {},
-    view: { isCompleted: true, state: { snapshot: PAYLOAD } },
+    view: { isCompleted: true, state: { snapshot: payload || PAYLOAD } },
   };
 }
 
-function mountReport(config, actions) {
+function mountReport(config, actions, payload) {
   return mount('indicator_report_render.js', {
     url: '/labs/workflow/1/run/?opportunity_id=10097&run_id=12',
-    props: oppProps(config, actions),
+    props: oppProps(config, actions, payload),
     routes: {},
   });
 }
 
-function rowButton(el) {
-  return el.querySelector('button[data-photo-audit="' + WORKER.key + '"]');
+function rowButton(el, key) {
+  return el.querySelector(
+    'button[data-photo-audit="' + (key || WORKER.key) + '"]',
+  );
+}
+function rowNote(el, key) {
+  return el.querySelector(
+    '[data-photo-audit-note="' + (key || WORKER.key) + '"]',
+  );
 }
 
 describe('the indicator report photo audit', () => {
@@ -259,6 +310,139 @@ describe('the indicator report photo audit', () => {
     );
     expect(rowButton(el).disabled).toBe(false);
   });
+
+  test('follows the task: photos found', async () => {
+    const actions = stubActions(OK, { complete: FOUND });
+    const el = await mountReport({ photo_audit: PHOTO_AUDIT }, actions);
+    await click(rowButton(el));
+    expect(rowNote(el).textContent).toContain(
+      'Photo audit ready: 12 photos for ' + WORKER.name,
+    );
+    expect(rowNote(el).querySelector('a').getAttribute('href')).toBe(
+      '/audit/?opportunity_id=10097',
+    );
+    expect(rowButton(el).textContent).toBe('Photo audit ready');
+    expect(rowButton(el).disabled).toBe(true);
+  });
+
+  test('follows the task: no photo in the window', async () => {
+    const actions = stubActions(OK, { complete: NONE_FOUND });
+    const el = await mountReport({ photo_audit: PHOTO_AUDIT }, actions);
+    await click(rowButton(el));
+    expect(rowNote(el).textContent).toContain(
+      'No photos found for ' + WORKER.name + ' in this window',
+    );
+    expect(rowButton(el).textContent).toBe('Audit photos');
+    expect(rowButton(el).disabled).toBe(false);
+  });
+
+  test('follows the task: the task fails', async () => {
+    const actions = stubActions(OK, { error: 'Task failed' });
+    const el = await mountReport({ photo_audit: PHOTO_AUDIT }, actions);
+    await click(rowButton(el));
+    expect(rowNote(el).textContent).toContain(
+      'Could not create the photo audit: Task failed',
+    );
+    expect(rowButton(el).disabled).toBe(false);
+  });
+
+  test('a task still building is shown, and stopped on unmount', async () => {
+    const actions = stubActions(OK, 'hold');
+    const el = await mountReport({ photo_audit: PHOTO_AUDIT }, actions);
+    await click(rowButton(el));
+    expect(rowButton(el).textContent).toBe('Building…');
+    expect(rowButton(el).disabled).toBe(true);
+    expect(rowNote(el).textContent).toContain('Building the photo audit');
+    await React.act(async () => {
+      root.unmount();
+    });
+    root = null;
+    expect(actions.stopped).toBe(1);
+  });
+
+  test("one worker's pending audit does not touch another's row", async () => {
+    const pending = deferred();
+    const actions = stubActions(pending.promise);
+    const el = await mountReport({ photo_audit: PHOTO_AUDIT }, actions);
+    const other = PAYLOAD.byFLW[1].key;
+    await click(rowButton(el));
+    expect(rowButton(el).textContent).toBe('Creating…');
+    expect(rowButton(el, other).textContent).toBe('Audit photos');
+    await click(rowButton(el, other));
+    expect(actions.calls.length).toBe(2);
+    // Each worker's own resume key.
+    expect(actions.calls[0].criteria.tag).not.toBe(
+      actions.calls[1].criteria.tag,
+    );
+    expect(actions.calls[1].criteria.selected_flw_user_ids).toEqual([
+      other.split('::')[1],
+    ]);
+    await React.act(async () => {
+      pending.resolve(OK);
+    });
+    await settle();
+    expect(rowNote(el).textContent).toContain(
+      'Photo audit queued for ' + WORKER.name,
+    );
+    expect(rowNote(el, other).textContent).toContain(
+      'Photo audit queued for ' + PAYLOAD.byFLW[1].name,
+    );
+  });
+
+  test('the tag follows the photo paths, not their order', async () => {
+    const tagFor = async (paths) => {
+      const actions = stubActions(OK);
+      const el = await mountReport(
+        { photo_audit: Object.assign({}, PHOTO_AUDIT, { image_paths: paths }) },
+        actions,
+      );
+      await click(rowButton(el));
+      await React.act(async () => {
+        root.unmount();
+      });
+      root = null;
+      host.remove();
+      host = null;
+      return actions.calls[0].criteria.tag;
+    };
+    const ab = await tagFor(['group_one/photo_a', 'group_two/photo_b']);
+    const ba = await tagFor(['group_two/photo_b', 'group_one/photo_a']);
+    const a = await tagFor(['group_one/photo_a']);
+    expect(ab).toBe(ba);
+    expect(a).not.toBe(ab);
+  });
+
+  test("the window ends on the worker's own last visit, not a case's", async () => {
+    const actions = stubActions(OK);
+    const el = await mountReport(
+      { photo_audit: PHOTO_AUDIT },
+      actions,
+      payloadWithOwnLast('2026-09-20'),
+    );
+    await click(rowButton(el));
+    expect(actions.calls[0].criteria.end_date).toBe('2026-09-20');
+    expect(actions.calls[0].criteria.start_date).toBe('2026-08-22');
+  });
+
+  test('a window is never 0 days when the config arrives after mount', async () => {
+    const actions = stubActions(OK);
+    const el = await mountReport({}, actions);
+    await React.act(async () => {
+      root.render(
+        React.createElement(
+          loadRender('indicator_report_render.js'),
+          oppProps({ photo_audit: PHOTO_AUDIT }, actions),
+        ),
+      );
+    });
+    await settle();
+    expect(el.querySelector('[data-photo-audit-window]').value).toBe('30');
+    await click(rowButton(el));
+    expect(actions.calls[0].criteria.start_date).toBe('2026-08-31');
+    expect(actions.calls[0].criteria.title).toBe(
+      'Photo check (30 days to 2026-09-29)',
+    );
+  });
 });
 
 // ── The worker review (indicator_worker_review_render.js) ───────────────────
@@ -285,7 +469,7 @@ function workerProps(config, actions) {
   };
 }
 
-function mountWorker(config, actions) {
+function mountWorker(config, actions, payload) {
   return mount('indicator_worker_review_render.js', {
     url:
       '/labs/workflow/3/run/?program_id=1&flw=' +
@@ -294,7 +478,7 @@ function mountWorker(config, actions) {
     props: workerProps(config, actions),
     routes: {
       '/snapshot/preview/': {
-        snapshot: { state: { snapshot: PAYLOAD } },
+        snapshot: { state: { snapshot: payload || PAYLOAD } },
         source: 'stored',
       },
       '/pipeline-rows/': { rows: [] },
@@ -352,6 +536,81 @@ describe('the worker review photo audit', () => {
       'Could not create the photo audit: Not authenticated',
     );
     expect(buttonsNamed(el, 'Audit photos')[0].disabled).toBe(false);
+  });
+
+  test('follows the task: photos found', async () => {
+    const actions = stubActions(OK, { complete: FOUND });
+    const el = await mountWorker({ photo_audit: PHOTO_AUDIT }, actions);
+    await click(buttonsNamed(el, 'Audit photos')[0]);
+    expect(el.querySelector('[data-photo-audit-note]').textContent).toContain(
+      'Photo audit ready: 12 photos for ' + WORKER.name,
+    );
+    expect(buttonsNamed(el, 'Photo audit ready')[0].disabled).toBe(true);
+  });
+
+  test('follows the task: no photo in the window', async () => {
+    const actions = stubActions(OK, { complete: NONE_FOUND });
+    const el = await mountWorker({ photo_audit: PHOTO_AUDIT }, actions);
+    await click(buttonsNamed(el, 'Audit photos')[0]);
+    expect(el.querySelector('[data-photo-audit-note]').textContent).toContain(
+      'No photos found for ' + WORKER.name + ' in this window',
+    );
+    expect(buttonsNamed(el, 'Audit photos')[0].disabled).toBe(false);
+  });
+
+  test('follows the task: the task fails', async () => {
+    const actions = stubActions(OK, { error: 'Task failed' });
+    const el = await mountWorker({ photo_audit: PHOTO_AUDIT }, actions);
+    await click(buttonsNamed(el, 'Audit photos')[0]);
+    expect(el.querySelector('[data-photo-audit-note]').textContent).toContain(
+      'Could not create the photo audit: Task failed',
+    );
+  });
+
+  test('an answer arriving after the page is gone is dropped, not followed', async () => {
+    const pending = deferred();
+    const actions = stubActions(pending.promise, 'hold');
+    const streamed = [];
+    const stream = actions.streamAuditProgress;
+    actions.streamAuditProgress = function () {
+      streamed.push(1);
+      return stream.apply(null, arguments);
+    };
+    const el = await mountWorker({ photo_audit: PHOTO_AUDIT }, actions);
+    await click(buttonsNamed(el, 'Audit photos')[0]);
+    await React.act(async () => {
+      root.unmount();
+    });
+    root = null;
+    await React.act(async () => {
+      pending.resolve(OK);
+    });
+    await settle();
+    // The page went away before createAudit answered: nothing is followed.
+    expect(streamed).toEqual([]);
+  });
+
+  test('a building audit is stopped when the page goes', async () => {
+    const actions = stubActions(OK, 'hold');
+    const el = await mountWorker({ photo_audit: PHOTO_AUDIT }, actions);
+    await click(buttonsNamed(el, 'Audit photos')[0]);
+    expect(buttonsNamed(el, 'Building…')[0].disabled).toBe(true);
+    await React.act(async () => {
+      root.unmount();
+    });
+    root = null;
+    expect(actions.stopped).toBe(1);
+  });
+
+  test("the window ends on the worker's own last visit, not a case's", async () => {
+    const actions = stubActions(OK);
+    const el = await mountWorker(
+      { photo_audit: PHOTO_AUDIT },
+      actions,
+      payloadWithOwnLast('2026-09-20'),
+    );
+    await click(buttonsNamed(el, 'Audit photos')[0]);
+    expect(actions.calls[0].criteria.end_date).toBe('2026-09-20');
   });
 });
 
