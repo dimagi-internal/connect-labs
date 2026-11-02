@@ -486,8 +486,88 @@ def test_the_consent_screen_says_the_app_is_unverified_and_where_it_sends_you(cl
     page = client.get("/o/authorize/", _authorize_params(registered["client_id"], challenge)).content.decode()
 
     assert "Claude Code" in page
-    assert "no one has verified it" in page
+    assert "Labs can't verify that name" in page
     assert "http://127.0.0.1:33418" in page
+
+
+def _consent_page(client, *, client_name="Claude Code", scope=oauth.MCP_SCOPE, redirect_uri=LOOPBACK):
+    registered = _register(client, client_name=client_name, redirect_uris=[redirect_uri]).json()
+    _, challenge = _pkce()
+    return client.get(
+        "/o/authorize/", _authorize_params(registered["client_id"], challenge, redirect_uri=redirect_uri, scope=scope)
+    )
+
+
+def _heading(page):
+    # The labs header has an <h1> of its own.
+    return page.split('data-testid="consent-heading"', 1)[1].split("</h1>", 1)[0]
+
+
+@pytest.mark.django_db
+def test_an_apps_chosen_name_is_a_claim_never_the_headline(client):
+    client.force_login(User.objects.create(username="oauth-consent-name"))
+    page = _consent_page(client, client_name="read one saved run").content.decode()
+
+    assert "read one saved run" not in _heading(page)
+    assert "this computer" in _heading(page)
+    assert "read one saved run" in page.split('data-testid="consent-who"')[1].split("</p>")[0]
+
+
+@pytest.mark.django_db
+def test_a_chosen_name_cannot_write_into_the_page(client):
+    client.force_login(User.objects.create(username="oauth-consent-xss"))
+    page = _consent_page(client, client_name="<script>alert(1)</script>").content.decode()
+
+    assert "<script>alert(1)</script>" not in page
+
+
+@pytest.mark.django_db
+def test_a_full_sign_in_says_what_it_reaches_how_long_and_that_a_passkey_comes_next(client):
+    client.force_login(User.objects.create(username="oauth-consent-full"))
+    consent = _consent_page(client).context["consent"]
+
+    assert consent.access_label == "Full access" and "visit data" in consent.access_text
+    assert consent.lasts.startswith("Until you disconnect it")
+    assert "passkey" in consent.next_step and consent.button == "Continue to passkey"
+
+
+@pytest.mark.django_db
+def test_a_restricted_sign_in_is_described_as_restricted_with_no_passkey(client):
+    client.force_login(User.objects.create(username="oauth-consent-restricted"))
+    consent = _consent_page(client, scope=oauth.MCP_NO_USERVISIT_SCOPE).context["consent"]
+
+    assert consent.access_label == "No user visit data"
+    assert not consent.next_step and consent.button == "Approve"
+
+
+@pytest.mark.django_db
+def test_a_sign_in_going_elsewhere_names_the_address_not_this_computer(client):
+    client.force_login(User.objects.create(username="oauth-consent-remote"))
+    response = _consent_page(client, redirect_uri="https://app.example/callback")
+    consent = response.context["consent"]
+
+    assert "this computer" not in consent.heading and not consent.address_is_local
+    assert consent.address == "https://app.example"
+    assert f"<strong>{consent.address}</strong>" in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_an_application_labs_registered_keeps_its_own_plain_page(client):
+    client.force_login(User.objects.create(username="oauth-consent-own-app"))
+    application = get_application_model().objects.create(
+        name="Labs own app",
+        client_type="public",
+        authorization_grant_type="authorization-code",
+        redirect_uris="https://own.example/cb",
+    )
+    _, challenge = _pkce()
+    response = client.get(
+        "/o/authorize/",
+        _authorize_params(application.client_id, challenge, redirect_uri="https://own.example/cb", scope="export"),
+    )
+
+    assert response.status_code == 200 and "consent" not in response.context
+    assert "Allow Labs own app to use Connect Labs as you?" in response.content.decode()
 
 
 # ---------------------------------------------------------------------------

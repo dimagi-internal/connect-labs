@@ -416,7 +416,12 @@ user, audit rows attribute to them):
 - **Personal Access Tokens (PAT)** — for scripts and headless agents. Mint/rotate
   self-service at `/labs/mcp/tokens/` (the `labs-token-setup` skill automates
   this). The verifier tries a PAT first, then an OAuth token. A PAT is
-  **full** or **no-uservisit-data**.
+  **full** or **no-uservisit-data**. An agent that needs labs access for one job the
+  person asked for uses `labs-token-setup --temporary` (one hour, no renewal, nothing
+  registered), never a sign-in script of its own against `/o/register/`.
+- **Both approval pages say the same thing** (`mcp/consent.py`): what can it do, for how
+  long, what happens next. An app's self-chosen name is shown as a claim, never in the
+  headline: it limits nothing.
 - **Minting full access needs the person's passkey, through canopy** —
   creating or rotating a full PAT, the `labs-token-setup` page and a full `mcp`
   OAuth sign-in all ask canopy for a passkey approval (canopy's site sign-offs,

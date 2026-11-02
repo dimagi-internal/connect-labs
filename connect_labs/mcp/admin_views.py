@@ -15,7 +15,7 @@ from django.http import HttpResponseBadRequest
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_http_methods
 
-from . import full_access, token_scopes
+from . import consent, full_access, token_scopes
 from .models import MCPAccessToken
 
 _LOCALHOST_HOSTS = {"localhost", "127.0.0.1"}
@@ -62,13 +62,16 @@ def create_token_browser(request):
     if scope not in scope_labels:
         return HttpResponseBadRequest(f"Unknown scope {scope!r}")
 
+    # ``?temporary=1`` (``labs-token-setup --temporary``): the page says how long it lasts.
+    temporary = (request.GET.get("temporary") or request.POST.get("temporary")) == "1"
+
     if request.method == "GET":
-        return render_consent(request, callback=callback, state=state, scope=scope)
+        return render_consent(request, callback=callback, state=state, scope=scope, temporary=temporary)
 
     # POST — create the token and redirect
     name = (request.POST.get("name") or "").strip()
     if not name:
-        name = f"claude-code-{datetime.now():%Y%m%d-%H%M%S}"
+        name = _default_name(temporary)
 
     allowed = None
     if scope == token_scopes.FULL:
@@ -79,9 +82,16 @@ def create_token_browser(request):
             return full_access.begin(
                 request,
                 full_access.PendingFullAccess.TOKEN_BROWSER,
-                {"callback": callback, "state": state, "name": name},
+                {"callback": callback, "state": state, "name": name, "temporary": temporary},
+                detail="This token lasts 1 hour." if temporary else "",
             )
-    return mint_and_redirect(request, callback=callback, state=state, name=name, scope=scope, full_access=allowed)
+    return mint_and_redirect(
+        request, callback=callback, state=state, name=name, scope=scope, full_access=allowed, temporary=temporary
+    )
+
+
+def _default_name(temporary: bool) -> str:
+    return f"{'temporary' if temporary else 'claude-code'}-{datetime.now():%Y%m%d-%H%M%S}"
 
 
 def render_consent(
@@ -91,6 +101,7 @@ def render_consent(
     state: str,
     scope: str = token_scopes.FULL,
     name: str = "",
+    temporary: bool = False,
     notice: dict | None = None,
     status: int = 200,
 ):
@@ -103,10 +114,14 @@ def render_consent(
             "callback": callback,
             "state": state,
             "scope": scope,
-            "scope_label": dict(token_scopes.SCOPE_CHOICES)[scope],
-            "is_no_uservisit_data": scope == token_scopes.NO_USERVISIT_DATA,
-            "needs_passkey": scope == token_scopes.FULL and not full_access.may_self_mint(request.user),
-            "default_name": name or f"claude-code-{datetime.now():%Y%m%d-%H%M%S}",
+            "temporary": temporary,
+            "consent": consent.for_token(
+                scope=scope,
+                temporary=temporary,
+                needs_passkey=scope == token_scopes.FULL and not full_access.may_self_mint(request.user),
+                callback=callback,
+            ),
+            "default_name": name or _default_name(temporary),
             "full_access_notice": notice,
         },
         status=status,
@@ -114,12 +129,21 @@ def render_consent(
 
 
 def mint_and_redirect(
-    request, *, callback: str, state: str, name: str, scope: str = token_scopes.FULL, full_access=None
+    request,
+    *,
+    callback: str,
+    state: str,
+    name: str,
+    scope: str = token_scopes.FULL,
+    full_access=None,
+    temporary: bool = False,
 ):
     """Mint the token and hand it to the localhost callback."""
     if _validate_callback(callback):
         return HttpResponseBadRequest("Invalid callback")
-    _, raw = MCPAccessToken.create_token(request.user, name=name, scope=scope, full_access=full_access)
+    _, raw = MCPAccessToken.create_token(
+        request.user, name=name, scope=scope, full_access=full_access, temporary=temporary
+    )
 
     sep = "&" if "?" in callback else "?"
     redirect_url = f"{callback}{sep}" + urlencode({"token": raw, "state": state, "name": name})

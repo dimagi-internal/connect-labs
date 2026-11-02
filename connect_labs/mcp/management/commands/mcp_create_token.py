@@ -10,7 +10,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from connect_labs.mcp import full_access, token_scopes
 from connect_labs.mcp.models import MCPAccessToken
-from connect_labs.mcp.snippets import build_mcp_json_snippet
+from connect_labs.mcp.snippets import build_claude_mcp_add, build_mcp_json_snippet
 from connect_labs.users.models import User
 
 
@@ -52,5 +52,7 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS("Token created. Store it now — it is not retrievable later.\n"))
         self.stdout.write(f"Token: {raw}\n")
-        self.stdout.write("\nAdd this to your .claude/mcp.json:\n")
+        self.stdout.write("\nFor Claude Code, run:\n")
+        self.stdout.write(self.style.WARNING(build_claude_mcp_add(raw)))
+        self.stdout.write("\nFor another MCP client, add this to its config:\n")
         self.stdout.write(self.style.WARNING(build_mcp_json_snippet(raw)))

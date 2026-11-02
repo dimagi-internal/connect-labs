@@ -33,9 +33,24 @@
     </div>
 
     {% if mcp_json_snippet %}
+    <div class="mb-4">
+      <label class="block text-xs font-medium text-amber-900 mb-1">
+        Claude Code: run this
+      </label>
+      <div class="flex items-stretch gap-2">
+        <code id="claude-add" class="flex-1 bg-white border border-amber-200 rounded-lg px-3 py-2 text-xs font-mono break-all">{{ claude_add_command }}</code>
+        <button
+          type="button"
+          onclick="copyText('claude-add', this)"
+          class="px-3 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition self-start"
+        >
+          <i class="fa-solid fa-copy mr-1"></i> Copy
+        </button>
+      </div>
+    </div>
     <div>
       <label class="block text-xs font-medium text-amber-900 mb-1">
-        ~/.claude/mcp.json snippet
+        Another MCP client: add this to its config
       </label>
       <div class="flex items-stretch gap-2">
         <pre id="mcp-snippet" class="flex-1 bg-white border border-amber-200 rounded-lg px-3 py-2 text-xs font-mono overflow-auto whitespace-pre">{{ mcp_json_snippet }}</pre>
@@ -76,15 +91,16 @@
       <div class="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
         <i class="fa-solid fa-key text-indigo-600 text-lg"></i>
       </div>
-      <h1 class="text-2xl font-semibold text-brand-deep-purple">MCP access tokens</h1>
+      <h1 class="text-2xl font-semibold text-brand-deep-purple">MCP access</h1>
     </div>
 
-    <p class="text-sm text-gray-600 mb-6">
-      Personal Access Tokens for the labs MCP server, issued to
-      <strong>{{ request.user.username }}</strong>. Use them in
-      <code class="bg-gray-100 px-1 rounded">~/.claude/mcp.json</code> to connect Claude
-      Code (or any other MCP client) to <code class="bg-gray-100 px-1 rounded">https://labs.connect.dimagi.com/mcp/</code>.
+    <p class="text-sm text-gray-600 mb-3">
+      There are two ways an app gets to the labs MCP server (<code class="bg-gray-100 px-1 rounded">https://labs.connect.dimagi.com/mcp/</code>) as <strong>{{ request.user.username }}</strong>:
     </p>
+    <ul class="list-disc pl-5 text-sm text-gray-600 mb-6 space-y-1">
+      <li><strong>Sign-in</strong>, for an app you add yourself. It opens your browser, you approve it, and it stays signed in until you disconnect it. These are under "Apps you've signed in" below.</li>
+      <li><strong>Token</strong>, for a script or an agent with no browser. It lasts as long as you set here, and these are under "Your active tokens" below.</li>
+    </ul>
 
     <form method="post" action="{% url 'labs:mcp_tokens_create' %}" class="space-y-4 border-t border-gray-100 pt-6">
       {% csrf_token %}
@@ -120,18 +136,12 @@
       <fieldset>
         <legend class="block text-sm font-medium text-gray-700 mb-2">Access</legend>
         <div class="space-y-2">
+          {% for level in access_levels %}
           <label class="flex items-start gap-2 text-sm text-gray-700">
-            <input type="radio" name="scope" value="full" checked class="mt-1">
-            <span><strong>Full access.</strong> Everything you can do in labs, including reading visit data and making changes.{% if not may_self_mint %} You approve it with your passkey.{% endif %}</span>
+            <input type="radio" name="scope" value="{{ level.value }}"{% if level.value == full_scope %} checked{% endif %} class="mt-1">
+            <span><strong>{{ level.label }}.</strong> {{ level.text }}{% if level.value == full_scope and not may_self_mint %} You approve it with your passkey.{% endif %}</span>
           </label>
-          <label class="flex items-start gap-2 text-sm text-gray-700">
-            <input type="radio" name="scope" value="{{ no_uservisit_data_scope }}" class="mt-1">
-            <span><strong>No user visit data.</strong> Never sees real user visit data (raw, or from pipelines, workflow runs and reports); those tools work only on synthetic opportunities whose data was generated. It can read workflow definitions, pipeline and indicator definitions, app structure, solicitations, the org directory and targeting; edit workflow and indicator definitions and trigger saved-run generation; and profile real opportunities and generate synthetic data from the profile. Same reach as the <code>/mcp/no_user_visit/</code> address.</span>
-          </label>
-          <label class="flex items-start gap-2 text-sm text-gray-700">
-            <input type="radio" name="scope" value="{{ coach_images_scope }}" class="mt-1">
-            <span><strong>Coaching pictures only.</strong> Lets an Open Chat Studio team fetch coaching pictures. Nothing else.</span>
-          </label>
+          {% endfor %}
         </div>
       </fieldset>
       <div>
@@ -178,7 +188,7 @@
               {% elif token.expires_at < now %}
                 <span class="text-rose-600">expired {{ token.expires_at|date:"Y-m-d" }}</span>
               {% else %}
-                <span class="text-gray-600">{{ token.expires_at|date:"Y-m-d" }}</span>
+                <span class="text-gray-600">{{ token.expires_at|date:"Y-m-d H:i" }}</span>
               {% endif %}
             </td>
             <td class="py-3 text-right space-x-2 whitespace-nowrap">

@@ -1,0 +1,54 @@
+{% comment %}
+The one description of an app asking for access, from `connect_labs/mcp/consent.py`. Used by the
+MCP sign-in (oauth2_provider/authorize.html) and the labs-token-setup page. The page brings
+its own form and buttons, because those two post to different places.
+{% endcomment %}
+<div class="flex items-center gap-3 mb-4">
+  <div class="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
+    <i class="fa-solid fa-key text-indigo-600 text-lg"></i>
+  </div>
+  <h1 data-testid="consent-heading" class="text-2xl font-semibold text-brand-deep-purple">{{ consent.heading }}</h1>
+</div>
+
+<p class="text-sm text-gray-700 mb-5" data-testid="consent-who">
+  {% if consent.claimed_name %}
+    It calls itself <strong>“{{ consent.claimed_name }}”</strong>. Labs can't verify that name, and the name doesn't limit what the app can do.
+  {% else %}
+    Labs can't tell which app is asking.
+  {% endif %}
+</p>
+
+<dl class="text-sm border-t border-gray-100 divide-y divide-gray-100 mb-5">
+  <div class="py-3 sm:grid sm:grid-cols-4 sm:gap-4">
+    <dt class="font-medium text-gray-500">As</dt>
+    <dd class="sm:col-span-3 text-gray-900">{{ request.user.username }}</dd>
+  </div>
+  <div class="py-3 sm:grid sm:grid-cols-4 sm:gap-4">
+    <dt class="font-medium text-gray-500">Access</dt>
+    <dd class="sm:col-span-3 rounded-lg px-3 py-2 border {% if consent.is_full %}text-amber-900 bg-amber-50 border-amber-200{% else %}text-emerald-900 bg-emerald-50 border-emerald-200{% endif %}" data-testid="consent-access">
+      <strong>{{ consent.access_label }}.</strong> {{ consent.access_text }}
+    </dd>
+  </div>
+  <div class="py-3 sm:grid sm:grid-cols-4 sm:gap-4">
+    <dt class="font-medium text-gray-500">Lasts</dt>
+    <dd class="sm:col-span-3 text-gray-900" data-testid="consent-lasts">{{ consent.lasts }} {{ consent.undo }} any time on your <a href="{% url 'labs:mcp_tokens_index' %}" class="text-indigo-600 hover:text-indigo-800 underline">MCP access page</a>.</dd>
+  </div>
+  {% if consent.next_step %}
+  <div class="py-3 sm:grid sm:grid-cols-4 sm:gap-4">
+    <dt class="font-medium text-gray-500">Next</dt>
+    <dd class="sm:col-span-3 text-gray-900" data-testid="consent-next">{{ consent.next_step }}</dd>
+  </div>
+  {% endif %}
+  <div class="py-3 sm:grid sm:grid-cols-4 sm:gap-4">
+    <dt class="font-medium text-gray-500">Sends to</dt>
+    <dd class="sm:col-span-3 text-gray-900" data-testid="consent-address">
+      {% if consent.address_is_local %}
+        This computer <span class="text-xs text-gray-500">({{ consent.address }})</span>
+      {% else %}
+        <strong>{{ consent.address }}</strong>. Check that this is the app you expect.
+      {% endif %}
+    </dd>
+  </div>
+</dl>
+
+<p class="text-sm font-medium text-gray-900 mb-4">Only continue if you just started this yourself, or just asked an agent to.</p>

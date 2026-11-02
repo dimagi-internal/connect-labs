@@ -8,6 +8,7 @@ the approval itself.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
@@ -15,6 +16,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from canopy_sdk.sign_offs import Approval, SignOffError, SignOffRequest, SignOffStatus
 from django.urls import reverse
+from django.utils import timezone
 
 from connect_labs.mcp import full_access, oauth, token_scopes
 from connect_labs.mcp.models import FullAccessSelfMint, MCPAccessToken, PendingFullAccess
@@ -209,7 +211,8 @@ def test_someone_canopy_cannot_vouch_for_is_offered_no_user_visit_tokens(client,
 
     assert resp.status_code == 403
     # Said on the tokens page, where the no-user-visit option is.
-    assert b"no-user-visit token" in resp.content and resp.context["scope_choices"]
+    assert b"no-user-visit token" in resp.content
+    assert f'value="{token_scopes.NO_USERVISIT_DATA}"'.encode() in resp.content
     assert not PendingFullAccess.objects.exists()
     assert not MCPAccessToken.objects.exists()
 
@@ -282,6 +285,21 @@ def test_the_token_setup_page_hands_the_token_over_only_after_approval(client, a
     query = parse_qs(location.query)
     assert query["state"] == [STATE]
     assert MCPAccessToken.verify(query["token"][0]).user == alice
+
+
+@pytest.mark.django_db
+def test_a_temporary_token_stays_temporary_through_the_passkey(client, alice, canopy):
+    resp = client.post(
+        reverse("mcp:admin_create_token"), {"callback": CALLBACK, "state": STATE, "name": "job", "temporary": "1"}
+    )
+    # Still waiting, the page still says one hour, and asking again is not offered.
+    assert resp.context["consent"].lasts.startswith("1 hour")
+    assert b"Continue to passkey" not in resp.content
+    assert not MCPAccessToken.objects.exists()
+
+    back = _dialog_done(client, canopy, PendingFullAccess.objects.get(user=alice))
+    token = MCPAccessToken.verify(parse_qs(urlparse(back["Location"]).query)["token"][0])
+    assert token.expires_at - timezone.now() <= timedelta(hours=1)
 
 
 # --- an MCP app signing in --------------------------------------------------------------

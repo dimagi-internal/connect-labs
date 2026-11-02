@@ -22,7 +22,7 @@ from oauth2_provider.models import get_access_token_model, get_application_model
 
 from . import full_access, token_scopes
 from .models import MCPAccessToken
-from .snippets import build_mcp_json_snippet
+from .snippets import build_claude_mcp_add, build_mcp_json_snippet
 
 
 def _connected_mcp_clients(user):
@@ -76,7 +76,16 @@ def _render_index(
             if raw_token and raw_token_scope not in token_scopes.NOT_MCP_SCOPES
             else None
         ),
-        "scope_choices": token_scopes.SCOPE_CHOICES,
+        "claude_add_command": (
+            build_claude_mcp_add(raw_token)
+            if raw_token and raw_token_scope not in token_scopes.NOT_MCP_SCOPES
+            else None
+        ),
+        "access_levels": [
+            {"value": value, "label": label, "text": token_scopes.ACCESS_TEXT[value]}
+            for value, label in token_scopes.SCOPE_CHOICES
+        ],
+        "full_scope": token_scopes.FULL,
         "no_uservisit_data_scope": token_scopes.NO_USERVISIT_DATA,
         "coach_images_scope": token_scopes.COACH_IMAGES,
         "may_self_mint": full_access.may_self_mint(request.user),
