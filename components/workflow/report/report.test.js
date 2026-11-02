@@ -536,6 +536,23 @@ describe('the registry display contract (VERSION 3)', () => {
     // no cases is not "all finished"
     expect(R.allCasesDone(d, [])).toBe(false);
   });
+  test('worker filters: none declared is an empty list; malformed entries are dropped (VERSION 11)', () => {
+    expect(R.VERSION).toBeGreaterThanOrEqual(11);
+    expect(R.displayOf({ cMeasures: measures }).worker_filters).toEqual([]);
+    const d = R.displayOf({
+      cMeasures: measures,
+      display: {
+        worker_filters: [
+          { indicator: 'GRP', label: 'Group only', default: true },
+          { indicator: 'GRP2' },
+          null,
+        ],
+      },
+    });
+    expect(d.worker_filters).toEqual([
+      { indicator: 'GRP', label: 'Group only', default: true },
+    ]);
+  });
   test('displayOf falls back to the catalog when a payload carries no display block', () => {
     const d = R.displayOf({ cMeasures: measures });
     expect(d.entity.plural).toBe('cases');

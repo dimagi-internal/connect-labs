@@ -2217,6 +2217,10 @@ A click calls `actions.createAudit` for that one worker in that one opportunity:
 
 Asking again returns the audit already made, rather than a second, only within the **same run**: `run_audit_creation`'s resume key is the run plus (opportunity, tag, start, end) (`audit/run_checkpoints.py`). The programme report, the opportunity report, the worker review and each weekly run are different runs, so the same worker and window asked for from two of them makes two audits. Changing `image_paths` changes the tag, so it makes a new audit even in the same run.
 
+### Optional: worker filters (registry `display.worker_filters`, not config)
+
+A checkbox over the worker table of `indicator_report_render.js` that keeps only the workers carrying a per-worker flag (for example a test group) is declared in the bound **registry**, not in the workflow config. It sits next to every other label and column the report takes from the display contract. Every report bound to the registry gets it, and a saved run keeps the filters it was built with: `display.worker_filters: [{indicator, label, default?}]` (`semantic/display.py`; the flag indicator and how to keep it off the scorecard are described in `user_docs/semantic-layer.md`, "Worker filters"). Only the worker table's rows, count and action buttons follow the filter. Tiles, trends and organisation/opportunity rows do not.
+
 ---
 
 ## 13. Semantic registries (indicator definitions as data)

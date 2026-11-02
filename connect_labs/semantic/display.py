@@ -55,6 +55,8 @@ PER REGISTRY (`display:` in the indicators document)::
            fields: [male_attendance, female_attendance],  # visit_fields it is about
            description: 'Counts exactly repeat the previous visit'}  # Flags tooltip
       targets_note: 'Targets from the 2026 workplan'        # optional footnote
+      worker_filters:                              # optional toggles over the worker table
+        - {indicator: in_pilot_group, label: Pilot group only, default: false}
 
 `entity.label_field` names a case-index field (a column of the entity pipeline,
 e.g. Connect's own `entity_name`) whose value is a case's human label: the case
@@ -85,6 +87,17 @@ Keys and labels are strings (quote a numeric code: `'1': Yes`), at most
 the map changes only what is printed -- flags and comparisons still read the
 stored value.
 
+`worker_filters` gives the worker table one checkbox per entry. Ticked, it hides
+every worker row whose graded value for `indicator` (an indicator id or the name of
+its measure) at the worker scope is not truthy / above 0 -- a worker with no value
+is hidden too. Several ticked filters AND together. Only the worker table's rows
+and its count change: tiles, trends and the organisation and opportunity rows are
+the whole population. `default: true` starts the box ticked. A flag indicator
+built for a filter is usually not a column: give it `scorecard: false` and
+`headline: false` (each is an exclusion for that indicator alone; the others keep
+their defaults) and `min_denominator: 1`, so a worker with one case still has a
+value.
+
 `resolve_display` fills every default so readers never branch on absence, and
 `display_problems` is the save-time gate (`validation.validate_registry` calls it).
 """
@@ -113,7 +126,11 @@ _DISPLAY_KEYS = {
     "visit_fields",
     "visit_flags",
     "targets_note",
+    "worker_filters",
 }
+# A `worker_filters` label is a checkbox caption, not a paragraph.
+WORKER_FILTER_LABEL_MAX = 80
+WORKER_FILTERS_MAX = 5
 # Every per-indicator meta key this module reads, for the validator.
 INDICATOR_DISPLAY_KEYS = ("label", "plain", "headline", "target", "order", "scorecard", "credibility")
 
@@ -196,6 +213,70 @@ def _fields_problems(key: str, fields: Any, problems: list[str]) -> None:
         _values_problems(f"display.{key}[{i}].values", f.get("values"), problems)
 
 
+def _indicator_ids(measures: Any) -> dict[str, str]:
+    """A measure's name or its indicator id -> the indicator id, for indicator measures."""
+    out: dict[str, str] = {}
+    for m in measures or []:
+        meta = (m or {}).get("meta") if isinstance(m, dict) else None
+        if isinstance(meta, dict) and isinstance(meta.get("indicator"), str) and meta["indicator"]:
+            out[meta["indicator"]] = meta["indicator"]
+            if isinstance(m.get("name"), str):
+                out.setdefault(m["name"], meta["indicator"])
+    return out
+
+
+def _worker_filters(raw: Any, measures: Any) -> list[dict[str, Any]]:
+    """The well-formed `worker_filters` entries, each naming its indicator by id."""
+    if not isinstance(raw, list):
+        return []
+    ids = _indicator_ids(measures)
+    out = []
+    for f in raw[:WORKER_FILTERS_MAX]:
+        if not isinstance(f, dict) or not isinstance(f.get("label"), str) or not f["label"].strip():
+            continue
+        ind = ids.get(f.get("indicator")) if isinstance(f.get("indicator"), str) else None
+        if ind:
+            out.append({"indicator": ind, "label": f["label"].strip(), "default": f.get("default") is True})
+    return out
+
+
+def _worker_filters_problems(raw: Any, measures: Any, problems: list[str]) -> None:
+    if raw is None:
+        return
+    shape = "a list of {indicator, label, default?}"
+    if not isinstance(raw, list):
+        problems.append(f"display.worker_filters: must be {shape}")
+        return
+    if len(raw) > WORKER_FILTERS_MAX:
+        problems.append(f"display.worker_filters: at most {WORKER_FILTERS_MAX} filters")
+    ids = _indicator_ids(measures)
+    seen: set[str] = set()
+    for i, f in enumerate(raw):
+        where = f"display.worker_filters[{i}]"
+        if not isinstance(f, dict):
+            problems.append(f"{where}: must be {{indicator, label, default?}}")
+            continue
+        unknown = sorted(set(f) - {"indicator", "label", "default"})
+        if unknown:
+            problems.append(f"{where}: unknown key(s) {unknown}; expected ['default', 'indicator', 'label']")
+        ind = f.get("indicator")
+        if not isinstance(ind, str) or not ind:
+            problems.append(f"{where}: needs `indicator`, an indicator id or its measure's name")
+        elif ind not in ids:
+            problems.append(f"{where}.indicator: {ind!r} is not an indicator of this registry")
+        elif ids[ind] in seen:
+            problems.append(f"{where}.indicator: {ind!r} already has a filter")
+        else:
+            seen.add(ids[ind])
+        label = f.get("label")
+        if not isinstance(label, str) or not label.strip():
+            problems.append(f"{where}: needs `label`, the checkbox's text")
+        elif len(label) > WORKER_FILTER_LABEL_MAX:
+            problems.append(f"{where}.label: at most {WORKER_FILTER_LABEL_MAX} characters")
+        if f.get("default") is not None and not isinstance(f["default"], bool):
+            problems.append(f"{where}.default: must be true or false")
+
+
 def _noun(value: Any, name: str, plural: str) -> dict[str, str]:
     value = value if isinstance(value, dict) else {}
     n = str(value.get("name") or name)
@@ -251,7 +332,9 @@ def indicator_display(measures: list[dict[str, Any]]) -> dict[str, dict[str, Any
         chosen = [(i, d) for i, d in out.items() if d["_headline"] not in (None, False)]
         chosen.sort(key=lambda kv: (0, kv[1]["_headline"]) if _is_num(kv[1]["_headline"]) else (1, kv[1]["_pos"]))
     else:
-        chosen = [(i, d) for i, d in out.items() if d["_top"]][:HEADLINE_COUNT]
+        # `headline: false` keeps an indicator off the default tiles too, without
+        # switching the registry into declared-headline mode.
+        chosen = [(i, d) for i, d in out.items() if d["_top"] and d["_headline"] is not False][:HEADLINE_COUNT]
     positions = {i: n + 1 for n, (i, _d) in enumerate(chosen)}
     for i, d in out.items():
         d["headline"] = positions.get(i)
@@ -312,6 +395,7 @@ def resolve_display(
     )
     label_field = raw_entity.get("label_field")
     done_property = raw_entity.get("done_property")
+    worker_filters = _worker_filters(raw.get("worker_filters"), measures)
     return {
         "title": raw.get("title") or None,
         "entity": {
@@ -336,6 +420,8 @@ def resolve_display(
         "visit_flags": _visit_flags(raw.get("visit_flags")),
         "visits_pipeline": visits_pipeline,
         "targets_note": raw.get("targets_note") or None,
+        # Present only when declared, so a registry without one resolves as before.
+        **({"worker_filters": worker_filters} if worker_filters else {}),
         # The registry's `defaults.min_denominator`: the floor a measure with none of
         # its own is graded against, and what an "n<..." cell must say.
         "min_denominator": model.min_denominator,
@@ -419,6 +505,7 @@ def display_problems(indicators_doc: dict[str, Any] | None, props_doc: dict[str,
             isinstance(reading, dict) and isinstance(reading.get("column"), str) and _FIELD.match(reading["column"])
         ):
             problems.append("display.reading: must be {column: <column name>, label?, unit?}")
+        _worker_filters_problems(raw.get("worker_filters"), doc.get("measures"), problems)
 
     positions: dict[int, str] = {}
     for m in doc.get("measures") or []:

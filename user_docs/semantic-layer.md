@@ -496,12 +496,12 @@ On each indicator's `meta`:
 
 | Key | What it does | If you leave it out |
 |---|---|---|
-| `headline` | `true`, or a position (`1`, `2`, …), puts the indicator in the headline tiles | The first five indicators with `prominence: Top` (or the first five, if none has a prominence) |
+| `headline` | `true`, or a position (`1`, `2`, …), puts the indicator in the headline tiles; `false` keeps it out of the default five without changing how the others are picked | The first five indicators with `prominence: Top` (or the first five, if none has a prominence) |
 | `target` | The goal, in the same units as `bands` (`70` for 70%). Printed under the tile and drawn as the dashed line on its trend | The green edge of `bands` for `higher`/`lower` indicators; no target otherwise |
 | `label` | A short name for tiles and column headers | The indicator's `title` |
 | `plain` | One plain-English sentence, shown in the definitions panel and column tooltips | None |
 | `order` | Sort position inside its category | Registry order |
-| `scorecard` | `true`/`false`: whether it is a column in the organisation and worker tables | Every `prominence: Top` indicator (or all of them, if none has a prominence) |
+| `scorecard` | `true`/`false`: whether it is a column in the organisation and worker tables. Each indicator's own value applies to it alone: `false` on one indicator leaves the others on their default | Every `prominence: Top` indicator (or all of them, if none has a prominence) |
 | `credibility` | The name of a `settings` table in the deployment facts. The headline figure is pooled over the organisations that table marks credible, and the others' cells are marked | No credibility gate |
 
 And one `display:` block at the top of the indicators document:
@@ -528,7 +528,29 @@ display:
     - { column: repeat_counts_flag, label: Repeat count }       # flagged when yes / true / 1
     - { column: risk_level, label: High risk, value: high }     # or when it equals `value`
   targets_note: 'Targets from the 2026 workplan.'
+  worker_filters:                                  # checkboxes over the worker table
+    - { indicator: in_group, label: Reviewed group only, default: false }
 ```
+
+**Worker filters.** `worker_filters` puts one checkbox per entry beside the worker table's own controls (the "compare with" select). Ticked, it hides every worker whose value for `indicator` (an indicator id, or the name of its measure) at the worker level is not above 0; a worker with no value is hidden too. Ticked filters combine: a worker must pass all of them. Only the worker table's rows, its count and its action buttons follow the filter. The headline tiles, the trends and the organisation and opportunity rows still count everyone. `label` is the checkbox's text (at most 80 characters) and `default: true` starts it ticked. A registry may declare up to five. Saving refuses an entry whose `indicator` is not an indicator of the registry, or that has no `label`. A run keeps the filters it was built with, like the rest of the display.
+
+The indicator behind a filter is usually a per-worker flag that should not be a column. A worker's value is computed like any indicator's, so a flag is the count of the worker's cases that carry a property. To mark workers from a list kept outside the visits, add a lookup on `username` (see [lookups](#data-from-another-source-lookups)) so every visit carries the worker's flag, and a bool property over that column. Then keep the flag off the tiles and the scorecard with `headline: false` and `scorecard: false`. Each applies to that indicator alone, so the registry's other indicators keep their defaults. Do not give the flag a `prominence`, because in a registry where no indicator has one, that would take every other indicator off the default tiles and columns. Set `min_denominator: 1` too, or a worker with fewer cases than the registry's floor would have no value and would be hidden:
+
+```yaml
+  - name: in_group
+    title: In the reviewed group
+    type: number
+    sql: '{in_group_numerator}'
+    meta: { indicator: in_group, category: Reach, unit: n, direction: none,
+            flw_applicable: true, min_denominator: 1, headline: false, scorecard: false }
+  - name: in_group_numerator
+    type: count
+    filters: [{ sql: '{CUBE}.in_reviewed_group' }]   # a bool property
+  - name: in_group_denominator
+    type: count
+```
+
+The flag still appears in the "Indicators and their definitions" list, so give it a `title` and `plain` sentence a reader will understand. List it after the registry's scale indicator. The table's size column is the first `count`-kind indicator in registry order, so a flag listed first would take its place.
 
 **Value labels.** Any `case_fields` or `visit_fields` entry can carry `values`, a map from a value as it is STORED (a form's choice code, such as `not_home`) to the label a reader sees ("Not at home"). The case table, the worker review's visit list and its "… at every visit" header chip all print the label. A value the map does not name prints as stored, so a map can cover only the codes that need words. Keys and labels are strings: quote a numeric code (`'1': Yes`). A map holds at most 100 entries of at most 120 characters each, and saving refuses anything else. The map changes only what is printed: `visit_flags` and the "same as the previous visit" marks still compare the stored value. A saved run keeps the display it was frozen with, so a new map shows on the live report and on runs saved after the change.
 
@@ -566,7 +588,7 @@ Labs checks every registry before saving it:
 - nothing is circular;
 - the whole registry compiles at **every** level it can have (programme, opportunity, worker, month, each level by month, single entity — and the LLO levels when it has an `llo_map`; a registry without one simply has no LLO level).
 
-- the display keys above have the right types: a headline position is used once, a percentage target is between 0 and 100, a `case_fields` entry names a column and a known format, and a `credibility` table exists in the deployment facts.
+- the display keys above have the right types: a headline position is used once, a percentage target is between 0 and 100, a `case_fields` entry names a column and a known format, a `credibility` table exists in the deployment facts, and each `worker_filters` entry names an indicator of the registry and has a label.
 
 Validation doesn't run the SQL, so **it catches a broken definition, not a wrong number.**
 

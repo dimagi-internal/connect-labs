@@ -266,6 +266,39 @@ function WorkflowUI({
   var sCohort = React.useState('none');
   var cohortDim = sCohort[0],
     setCohortDim = sCohort[1];
+  // ══ Worker filters (optional: the registry's display.worker_filters) ════════
+  // One checkbox per declared filter beside the worker table's controls. Ticked,
+  // it keeps only the workers whose graded value for its indicator is true or
+  // above 0 (no value: hidden); ticked filters AND together. Only the worker
+  // table's rows, its count and its action buttons follow -- tiles, trends and
+  // the organisation and opportunity rows still count everyone. The label is
+  // the registry's.
+  var WORKER_FILTERS = (D.worker_filters || []).filter(function (f) {
+    return f && f.indicator && f.label;
+  });
+  var sWorkerFilter = React.useState({});
+  var workerFilterTicks = sWorkerFilter[0],
+    setWorkerFilterTicks = sWorkerFilter[1];
+  function workerFilterOn(f) {
+    var v = workerFilterTicks[f.indicator];
+    return v === undefined ? f['default'] === true : v;
+  }
+  function setWorkerFilter(f, on) {
+    var next = {};
+    Object.keys(workerFilterTicks).forEach(function (k) {
+      next[k] = workerFilterTicks[k];
+    });
+    next[f.indicator] = on;
+    setWorkerFilterTicks(next);
+  }
+  function passesWorkerFilters(w) {
+    return WORKER_FILTERS.every(function (f) {
+      if (!workerFilterOn(f)) return true;
+      var e = w.ind && w.ind[f.indicator];
+      var v = e ? e.value : null;
+      return v === true || Number(v) > 0;
+    });
+  }
 
   // ══ Photo audit (optional: config.photo_audit) ══════════════════════════════
   // A workflow that sets `photo_audit` gets an "Audit photos" button per worker:
@@ -1995,6 +2028,7 @@ function WorkflowUI({
 
   function WorkerTable() {
     var list = workerRows.filter(function (w) {
+      if (!passesWorkerFilters(w)) return false;
       if (selOpp !== null) return String(w.opp) === String(selOpp);
       if (selOrg) return w.org === selOrg;
       return true;
@@ -2088,6 +2122,31 @@ function WorkflowUI({
                     R.nounCount(targets.length, WRK) +
                     (isCoaching(a) ? ' off target or on watch' : '')}
                 </button>
+              );
+            })}
+            {WORKER_FILTERS.map(function (f) {
+              return (
+                <label
+                  key={'wf:' + f.indicator}
+                  className="inline-flex items-center gap-1"
+                  title={
+                    'Show only the ' +
+                    WRK.plural +
+                    ' this applies to. The tiles and the other tables still count every ' +
+                    WRK.name +
+                    '.'
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    data-worker-filter={f.indicator}
+                    checked={workerFilterOn(f)}
+                    onChange={function (e) {
+                      setWorkerFilter(f, e.target.checked);
+                    }}
+                  />
+                  <span>{f.label}</span>
+                </label>
               );
             })}
             {PHOTO_AUDIT ? (
