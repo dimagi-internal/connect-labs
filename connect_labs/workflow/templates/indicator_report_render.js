@@ -345,15 +345,9 @@ function WorkflowUI({
         start_date: range.start,
         end_date: range.end,
         selected_flw_user_ids: [who.username],
-        title:
-          pa.title +
-          ' — ' +
-          who.name +
-          ' (' +
-          days +
-          ' days to ' +
-          range.end +
-          ')',
+        // The server puts the worker's name in front of a per-worker session's
+        // title (audit/tasks.py), so the title itself does not repeat it.
+        title: pa.title + ' (' + days + ' days to ' + range.end + ')',
       },
       image_audits: pa.paths.map(function (p) {
         return { image_path: p, reviewers: [] };

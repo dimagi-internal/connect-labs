@@ -137,8 +137,7 @@ function expectPayload(call, { start, end, days, run }) {
     start_date: start,
     end_date: end,
     selected_flw_user_ids: [USERNAME],
-    title:
-      'Photo check — ' + WORKER.name + ' (' + days + ' days to ' + end + ')',
+    title: 'Photo check (' + days + ' days to ' + end + ')',
   });
   // Exact question paths, no 'form/' prefix or leading slash; no reviewers.
   expect(call.image_audits).toEqual([
