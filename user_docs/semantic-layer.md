@@ -197,8 +197,9 @@ entity's worker. In a registry whose entity is the visit (`entity: {key: visit_i
 one who made the visit and took the photos. In a registry whose entity is a mother or a child, it is the
 entity's worker (`entity.worker`) -- with `last_visit`, a photo another worker took on an earlier visit to
 the same mother counts for whoever visited her last. The programme and opportunity figures are the same
-either way. `grain: worker_day` measures cannot carry this ratio today: a worker-day measure is a median or
-a count of non-empty values, and no other measure may reference one.
+either way. To credit the worker who took each photo in a mother or child registry, use worker-day
+`sum` measures and a ratio of them -- see "Measures over worker-days (`grain: worker_day`)" below, which
+has the photo approval example.
 
 #### The previous visit: window columns
 
