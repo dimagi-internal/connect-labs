@@ -44,7 +44,7 @@ from connect_labs.workflow.data_access import (
     streamed_and_skipped_aliases,
 )
 from connect_labs.workflow.page_mode import is_page as _is_page
-from connect_labs.workflow.public_share_views import can_share_run
+from connect_labs.workflow.public_share_views import share_list_context
 from connect_labs.workflow.templates import (
     MULTI_OPTION_COERCERS,
     TEMPLATES,
@@ -554,6 +554,8 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
         context["opportunity_name"] = labs_context.get("opportunity_name")
         view_mode = "opportunity" if opportunity_id else ("program" if program_id else None)
         context["view_mode"] = view_mode
+        # Share on a saved run's row (templates/workflow/_public_run_share.html).
+        context.update(share_list_context(self.request.user))
         context["program_id"] = program_id
 
         # Restrict Create Workflow button based on allowed templates
@@ -1767,12 +1769,6 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 workflow_data["sandbox"]["readable_definitions"] = sorted(
                     declared_reads.readable_definition_ids(definition)
                 )
-
-            # The Share button: a saved run, for someone who may make a public link to it.
-            if not is_edit_mode and not page and not context["present_mode"] and can_share_run(self.request.user, run):
-                workflow_data["share"] = {
-                    "url": f"/labs/workflow/api/run/{run_data['id']}/public-shares/{run_scope_qs}",
-                }
 
             # Not in edit mode (no real run), not a page (no run either), and not on a
             # presentation link: a page shared with a funder carries no actions and no agent.

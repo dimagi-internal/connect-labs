@@ -1835,7 +1835,7 @@ The contract: `view.workers`, `view.pipelines`, and `view.state` work identicall
 
 ### Public links to a saved run
 
-Dimagi staff who hold a run's ACL, and have access to every opportunity its snapshot holds, can make a public link from the run page's **Share** button (`workflow/public_share_views.py`). Making a link copies the render code, the definition without its `actions` and `agent` config, and the decoded snapshot into a `PublicRunShare` row in the labs DB (`workflow/public_shares.py`), because a visitor has no Connect token to read with.
+Dimagi staff who hold a run's ACL, and have access to every opportunity its snapshot holds, can make a public link with **Share** on the run's row on the workflow list (`workflow/public_share_views.py`, `templates/workflow/_public_run_share.html`). Making a link copies the render code, the definition without its `actions` and `agent` config, and the decoded snapshot into a `PublicRunShare` row in the labs DB (`workflow/public_shares.py`), because a visitor has no Connect token to read with.
 
 The page at `/labs/workflow/shared/<token>/` (`workflow/public_run_views.py`) draws that copy in the ordinary sandbox frame, mounted without workflow handlers (`components/workflow/sandbox/publicRun.tsx`), so the render's `fetch`, run writes and actions simply fail. **A render that needs anything beyond its snapshot shows its own empty state there**: boundaries from `/microplans/boundaries/`, images, `supply_sources`, `workflow_sources`. Nothing is stripped from the copy.
 

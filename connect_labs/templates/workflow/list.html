@@ -1473,6 +1473,7 @@
                                            class="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline">
                                             <i class="fa-solid fa-arrow-right mr-1"></i> Open
                                         </a>
+                                        {% include "workflow/_public_run_share.html" %}
                                         <div class="relative">
                                             <button @click="showRunDeleteConfirm = true"
                                                     :disabled="deletingRun"
@@ -1691,6 +1692,7 @@
 
 {% block javascript %}
 {{ block.super }}
+<script src="{% static 'workflow/public_run_share.js' %}"></script>
 <script>
     // Highlight + scroll to a specific workflow card when arriving with
     // ?highlight=<definition_id> — e.g. redirected from a bare run URL, whose
