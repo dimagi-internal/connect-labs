@@ -156,6 +156,50 @@ Python (an `extractor`) is refused by name, so give the pipeline plain path fiel
 If a lookup's pipeline has no data loaded for an opportunity, every visit there reads NULL. The semantic
 endpoint says so in `lookups_missing: {<lookup>: [opportunity ids]}`, beside `opportunities_missing`.
 
+#### Photo review results (`labs_audits`)
+
+Labs' own image audits can feed a registry. A pipeline with `"data_source": {"type": "labs_audits"}`
+has one row per **audited visit** of the opportunity, carrying that visit's human photo-review counts --
+`n_pass`, `n_fail`, `n_duplicate_fake`, `n_pending` and `n_decided` (pass + fail + duplicate/fake) -- read
+at `audit.<name>` (declare them with `transform: "int"`). Only a reviewer's decision counts, never the AI
+reviewer's; an image reviewed in several audits counts once, with its latest decision. See
+[WORKFLOW_REFERENCE.md, "Labs audit results"](../connect_labs/workflow/WORKFLOW_REFERENCE.md#labs-audit-results-labs_audits)
+for the exact rules.
+
+Its rows join on the visit itself:
+
+```yaml
+pipelines:
+  entity: visits
+  lookups:
+    photo_audit:
+      pipeline: photo_audits       # the report's labs_audits pipeline
+      on: visit_id
+      key: visit_id
+      pick: latest                 # one row per visit, so any pick gives the same value
+      fields: { photos_pass: n_pass, photos_decided: n_decided }
+aggregates:
+  - { name: photos_pass_n, sql: 'COALESCE(SUM(photos_pass), 0)' }       # an unaudited visit adds 0
+  - { name: photos_decided_n, sql: 'COALESCE(SUM(photos_decided), 0)' }
+```
+
+and the rate is a ratio of sums, never an average of per-row rates:
+
+```yaml
+measures:
+  - { name: photo_approval_rate, type: number, sql: '100.0 * {photos_passed} / NULLIF({photos_decided}, 0)' }
+  - { name: photos_passed, type: sum, sql: '{CUBE}.photos_pass_n' }
+  - { name: photos_decided, type: sum, sql: '{CUBE}.photos_decided_n' }
+```
+
+**Who a worker's figure credits.** At the worker scope a measure groups the registry's ENTITY rows by the
+entity's worker. In a registry whose entity is the visit (`entity: {key: visit_id}`) that worker is the
+one who made the visit and took the photos. In a registry whose entity is a mother or a child, it is the
+entity's worker (`entity.worker`) -- with `last_visit`, a photo another worker took on an earlier visit to
+the same mother counts for whoever visited her last. The programme and opportunity figures are the same
+either way. `grain: worker_day` measures cannot carry this ratio today: a worker-day measure is a median or
+a count of non-empty values, and no other measure may reference one.
+
 #### The previous visit: window columns
 
 Some rules compare a visit with the **previous visit to the same case**, such as the distance moved or the
@@ -609,7 +653,7 @@ Every registry starts by saying what it counts. Answer these questions in the re
 | Which month does a row belong to? | `entity.cohort_date` (defaults to a `first_visit` aggregate) |
 | Which worker does a row count for, when several visited it? | `entity.worker`: `first_visit`, `last_visit`, or the default `alphabetical` |
 | Which extra per-visit columns do the rules need? | `visit_columns` (`word_match`, `sql`, `column`, or a window: `previous`, `distance_from_previous`) |
-| Which of the report's pipelines feed it? | `pipelines: {entity, extra_fields}`, plus `lookups` for a pipeline on another source (CommCare HQ forms) |
+| Which of the report's pipelines feed it? | `pipelines: {entity, extra_fields}`, plus `lookups` for a pipeline on another source (CommCare HQ forms, Labs photo-review results) |
 | Is there a per-entity reading series (weights, MUAC…)? | `weight_series` with its `value_column`, or leave it out |
 | Are there organisations? | `llo_map` in the deployment facts, or leave it out |
 | What is the minimum denominator? | `defaults.min_denominator` in the indicators document |

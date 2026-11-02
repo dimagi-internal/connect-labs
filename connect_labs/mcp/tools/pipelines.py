@@ -346,6 +346,16 @@ def _authorize_drive_source(
         raise MCPToolError("INVALID_SCHEMA", str(e))
 
 
+_LABS_AUDITS_DOC = (
+    'A `labs_audits` data_source ({"type": "labs_audits"}, no other keys) reads the opportunity\'s '
+    "Labs image-audit results: one row per audited visit, visit_id = the Connect visit id (join it to "
+    "a registry's visits with a lookup on: visit_id, key: visit_id), username = the worker who made the "
+    "visit, and human photo-review counts at audit.n_pass / audit.n_fail / audit.n_duplicate_fake / "
+    'audit.n_pending / audit.n_decided (declare them with "transform": "int"). Human results only; an '
+    "image audited twice counts once, with its latest decision (WORKFLOW_REFERENCE.md, Labs audit results)."
+)
+
+
 @register(
     name="pipeline_update_schema",
     description=(
@@ -365,7 +375,7 @@ def _authorize_drive_source(
         "program_id its PROGRAM (then read once for the whole program, and only by members "
         "of the program's managing organization). Re-saving an unchanged target "
         "keeps its stamp; pass authorize_drive_source=true to authorize an unchanged, "
-        "unstamped target deliberately."
+        "unstamped target deliberately.\n\n" + _LABS_AUDITS_DOC
     ),
     input_schema={
         "type": "object",
@@ -450,7 +460,8 @@ def pipeline_update_schema(
         "Drive sources) needs Dimagi staff and a target inside the workflow-data folder; it is "
         "authorized for the new pipeline as part of the create, in the pipeline's scope. A "
         "program-scoped Drive pipeline is read ONCE for the whole program (rows tagged "
-        "opportunity_id null), and only members of the program's managing organization can read it."
+        "opportunity_id null), and only members of the program's managing organization can read it.\n\n"
+        + _LABS_AUDITS_DOC
     ),
     input_schema={
         "type": "object",

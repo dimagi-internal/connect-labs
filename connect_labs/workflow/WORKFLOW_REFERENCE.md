@@ -227,7 +227,7 @@ A pipeline schema defines how raw form submission data is extracted, transformed
 ```python
 {
     "data_source": {
-        "type": "connect_csv",            # or "cchq_forms", "ocs_sessions", "connect_export", "cchq_cases", "gdrive"
+        "type": "connect_csv",            # or "cchq_forms", "ocs_sessions", "connect_export", "cchq_cases", "gdrive", "labs_audits"
         "form_name": "Register Mother",   # cchq_forms only: form name for xmlns lookup
         "app_id_source": "opportunity",   # cchq_forms only: derive app_id from opportunity
         "app_id": "",                     # cchq_forms only: explicit app ID
@@ -255,6 +255,65 @@ A pipeline schema defines how raw form submission data is extracted, transformed
 | `app_id`        | string          | (cchq_forms only) Explicit CommCare application ID.                                                                           |
 | `gs_app_id`     | string          | (cchq_forms only) Explicit Gold Standard supervisor app ID.                                                                   |
 | `type`          | `"gdrive"`      | Read CSV / Google Sheet / JSON files from Google Drive. See [Google Drive sources](#google-drive-sources).                    |
+| `type`          | `"labs_audits"` | Labs image-audit results: one row per audited visit. See [Labs audit results](#labs-audit-results-labs_audits).               |
+
+#### Labs audit results (`labs_audits`)
+
+`"type": "labs_audits"` reads the opportunity's image-audit sessions (AuditSession records,
+experiment `audit`) through the audit app's data access, as the pipeline's user -- the same token
+every other source of the pipeline reads with. A labs-only (synthetic) opportunity is read from the
+local records backend, like every other LabsRecord. It takes no other `data_source` keys.
+
+It yields **one row per audited visit**: every visit with at least one image that has an
+assessment in any audit session of the opportunity. The row's `visit_id` is the Connect visit id,
+the same value the visits pipeline's rows carry, so a semantic registry joins it with a lookup
+`{on: visit_id, key: visit_id}` (see `user_docs/semantic-layer.md`, "Photo review results").
+Base columns: `visit_id`, `username` (the worker who **made the visit** -- who took the photos --
+as the session stored it on the visit's images; not the auditor, not the session's first worker),
+`visit_date` (the visit's local date), `opportunity_id`. Under `audit.` (declare the fields you
+need, with `transform: "int"` for the counts so SQL reads numbers):
+
+| Path                     | Meaning                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| `audit.n_pass`           | images a human passed                                                          |
+| `audit.n_fail`           | images a human failed                                                          |
+| `audit.n_duplicate_fake` | images a human flagged duplicate / fake (legacy `duplicate`, `fake` fold in)   |
+| `audit.n_pending`        | images with no human decision yet                                              |
+| `audit.n_decided`        | `n_pass + n_fail + n_duplicate_fake` -- the approval-rate denominator          |
+| `audit.n_images`         | every assessed image of the visit (`n_decided + n_pending`)                    |
+| `audit.question_ids`     | the visit's photo question ids, comma-joined (to restrict by photo type later) |
+| `audit.session_ids`      | the audit sessions that assessed the visit, comma-joined                       |
+
+Rules (`connect_labs/audit/audited_visit_rows.py`):
+
+- **Human results only.** An image's verdict is its `result`; `ai_result` is never read.
+- **One verdict per image** (`visit_id`, `blob_id`). Audited in several sessions, the most recent
+  session's human **decision** wins: a completed session outranks an in-progress one, then the later
+  `completed_at`, then the newer session. A session where the image is still pending never
+  overrides an earlier decision.
+- **Every session counts**, in any status: a decision taken in an in-progress session counts;
+  undecided images are `n_pending`.
+- Approval rate = `n_pass / n_decided` (duplicate/fake counts against it, pending is excluded) --
+  the Photo Audit Report's definition.
+
+```python
+{
+    "data_source": {"type": "labs_audits"},
+    "grouping_key": "username",
+    "terminal_stage": "visit_level",
+    "fields": [
+        {"name": "n_pass", "path": "audit.n_pass", "transform": "int", "aggregation": "sum"},
+        {"name": "n_fail", "path": "audit.n_fail", "transform": "int", "aggregation": "sum"},
+        {"name": "n_duplicate_fake", "path": "audit.n_duplicate_fake", "transform": "int", "aggregation": "sum"},
+        {"name": "n_pending", "path": "audit.n_pending", "transform": "int", "aggregation": "sum"},
+        {"name": "n_decided", "path": "audit.n_decided", "transform": "int", "aggregation": "sum"},
+        {"name": "question_ids", "path": "audit.question_ids", "aggregation": "first"},
+    ],
+}
+```
+
+The rows are cached like any non-visit source (its own raw-cache slot, the usual TTL, one hour
+in production): a reviewer's change shows after the cache expires or on a forced refresh.
 
 #### Google Drive sources
 
