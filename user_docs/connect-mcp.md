@@ -55,6 +55,17 @@ Ask in **#connect-labs** if you're unsure about any of these.
 
 Claude acts as you, with your Connect permissions. To see or disconnect the apps you have signed in, visit [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/).
 
+### What the sign-in page tells you
+
+When you sign in, Labs shows you a page that explains exactly what the app is asking for before you approve. Every sign-in page says the same things in the same order:
+
+- **What it can do as you** — whether it can see real visit data or only programme structure.
+- **How long that access lasts** — the expiry date and time.
+- **How to undo it** — where to go to disconnect the app.
+- **Whether a passkey step comes next** — only for full-access sign-ins.
+
+The headline reads "An app on this computer wants to use Connect Labs as you". The name the app gives itself appears beneath that, labelled as something the app claims — not something Labs has verified. Check the access level and expiry rather than relying on the name.
+
 ### 2. (Scripts and headless agents only) Register a Labs token
 
 Anything that cannot open a browser to sign in — a script, a scheduled job, a headless agent — needs a Personal Access Token instead. From **inside your connect-labs checkout**, start Claude Code and run:
@@ -67,6 +78,20 @@ When asked, choose **Production labs environment**, then approve the token in th
 
 !!! note "Full-access tokens require a passkey confirmation"
     If you choose a full-access token during setup, a small canopy window opens over the page and asks you to touch your passkey. If you are not a member of Labs' canopy workspace, you can create a no-user-visit token only.
+
+### 3. (Agents doing one job) Get a short-lived token
+
+If you ask an agent to carry out a single task — rather than setting it up as a permanent assistant — it can request a token that lasts **one hour** and cannot renew itself. This leaves your own Claude Code setup untouched. The agent asks for the token, does the work, and the token expires on its own.
+
+Full access (including real visit data) still requires your passkey, even for a one-hour token.
+
+---
+
+## MCP Access
+
+The page where you manage sign-ins and tokens is called **MCP access** and is at [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/). It explains the difference between signing an app in through the browser and using a Personal Access Token, and shows expiry dates including the time of day.
+
+The `claude mcp add` command shown on that page is the correct one to use. Do not edit `~/.claude/mcp.json` directly — Claude Code does not read that file.
 
 ---
 
@@ -166,7 +191,9 @@ Personal Access Tokens let you connect an MCP client to Labs without going throu
 
 **Full-access (Standard) tokens** require a passkey confirmation through canopy. When you create or rotate a Standard token, a small canopy window opens over the tokens page, you touch your passkey, and the token appears — you stay on the same page throughout. If the window cannot open, a link lets you approve in canopy instead. Every outcome shows a message at the top of the page: for example, if you decline, if canopy does not recognise your account (in which case you can create a no-user-visit token instead), or if canopy is temporarily unreachable.
 
-**Token lifetime** defaults to **1 day** for new tokens. You can type any value up to 365 days when creating a token. When you rotate a token, you can set a new lifetime the same way.
+**Token lifetime** defaults to **1 day** for new tokens. You can type any value up to 365 days when creating a token. Agents doing a single job can request a token that lasts **one hour** and cannot renew — this leaves your own setup untouched and expires automatically when the job is done. When you rotate a token, you can set a new lifetime the same way.
+
+**Expiry dates** on the tokens page include the time of day, so you can tell exactly when a token will stop working.
 
 !!! note "Tokens you already have keep working"
     This confirmation step applies only when creating or rotating a token. Using an existing token is unchanged.
@@ -183,7 +210,7 @@ When you create a token you choose an **Access** level:
 
 Tools the token is not allowed to use do not appear to the agent at all, so the agent cannot accidentally attempt a blocked action.
 
-The token list on the tokens page shows the access level of each token. When you rotate a token, its access level stays the same.
+The token list on the tokens page shows the access level and exact expiry time of each token. When you rotate a token, its access level stays the same.
 
 !!! tip "When to use 'No user visit data'"
     Choose this level when you want an AI assistant to help you navigate programme structure, explore or edit indicator and workflow definitions, regenerate saved runs, or query the organisation directory — but you do not want it to have access to any beneficiary visit data. Because it can edit a report's definition, give it to an assistant you would let edit the report itself. It is a good default for any automated or shared setup where full data access is not needed. Tokens at this level can still profile real opportunities and generate synthetic data.
@@ -197,15 +224,4 @@ The token list on the tokens page shows the access level of each token. When you
 
 The `mcp/no_user_visit/` address enforces a strict set of rules to prevent real visit data from reaching a restricted caller. The following actions are **not available** on that address, regardless of your token's access level:
 
-- **Reading stored workflow snapshots.** Workflow runs are rebuilt live from generated data instead of reading a stored snapshot that might contain real visits.
-- **Pointing `pipeline_preview` at another opportunity's export or at Open Chat Studio sessions.** This prevents a restricted caller from pulling in visit-level data through a pipeline preview.
-- **Generating from an old mirror-mode profile.** Profiles saved in the old mirror mode (before case timelines were introduced) hold real cases lightly perturbed, so their data never counts as "generated". Profiling with `case_timelines=true` *is* allowed: it models each worker's caseload and each case's timeline and saves only newly sampled cases, which are generated — not copies of real data. Re-profile any old mirror-mode profiles to use this safer approach.
-- **Generating from a profile created before measurement numbers were fully modelled.** Profiles created before all numeric measurements (such as weights and visit-day sequences) were regenerated hold data that traces back to real cases. A synthetic programme profiled before this change no longer counts as generated data and must be re-profiled before it can be read on the restricted address.
-- **Writing synthetic data onto a real opportunity, wiping a shared demo environment, or reading or writing a profile bundle outside Drive.**
-- **Reading visit data with the Data tools (`data_describe`, `data_query`, `data_visits`, and the older `explorer_describe` / `explorer_query` names).** These tools read live visit data and are not available on the restricted address, except over generated synthetic opportunities. `data_validate` and `data_workflow_context` read no visit data and are available there.
-- **Starting a run on a page-type workflow.** Pages are not run through MCP — open them in the browser instead.
-
-The restricted address offers a simpler set of synthetic tools: `synthetic_clone_opp` (plus status checking, fidelity scoring, demo environments, and visibility) rather than the full set of step-by-step tools available on the full-access address. That one flow is all you need — see [Synthetic Data](synthetic-data.md).
-
-!!! note "No change for full-access callers"
-    None of the above applies to a full-access call — meaning an unrestricted credential on an account that
+- **Reading stored workflow snapshots.
