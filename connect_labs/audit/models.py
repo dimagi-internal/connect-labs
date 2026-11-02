@@ -55,6 +55,33 @@ def new_assessment_bucket() -> dict:
     }
 
 
+#: The human verdict buckets ``human_verdict`` sorts an image into.
+HUMAN_VERDICTS = ("pass", "fail", "duplicate_fake", "pending")
+
+
+def human_verdict(assessment: dict) -> str:
+    """The HUMAN reviewer's verdict on one image: one of ``HUMAN_VERDICTS``.
+
+    Reads ``result`` only -- never ``ai_result``: an AI reviewer's opinion is not a
+    decision. "duplicate_fake" is a completed assessment (the image was reviewed and
+    flagged), not an unreviewed one; "duplicate" and "fake" are the same bucket split
+    in two, written only by the muac_picture_audit workflow's review screen. Anything
+    else -- no result, a blank one, an unknown value -- is "pending".
+
+    Shared by ``tally_assessment`` (the session's own stats) and the ``labs_audits``
+    pipeline source (``connect_labs.audit.audited_visit_rows``), so the review screen,
+    the Photo Audit Report and a semantic registry cannot disagree about what passed.
+    """
+    result = (assessment or {}).get("result")
+    if result == "pass":
+        return "pass"
+    if result == "fail":
+        return "fail"
+    if result in ("duplicate_fake", "duplicate", "fake"):
+        return "duplicate_fake"
+    return "pending"
+
+
 def tally_assessment(bucket: dict, assessment: dict) -> None:
     """Count ONE assessment into ``bucket``.
 
@@ -73,15 +100,7 @@ def tally_assessment(bucket: dict, assessment: dict) -> None:
     # since neither is counted in "pass" and pass rate is computed as pass/total.
     # "duplicate" and "fake" are the same bucket split into two distinct results --
     # only ever written by the muac_picture_audit workflow's review screen.
-    result = assessment.get("result")
-    if result == "pass":
-        bucket["pass"] += 1
-    elif result == "fail":
-        bucket["fail"] += 1
-    elif result in ("duplicate_fake", "duplicate", "fake"):
-        bucket["duplicate_fake"] += 1
-    else:
-        bucket["pending"] += 1
+    bucket[human_verdict(assessment)] += 1
 
     # AI review result
     ai_result = assessment.get("ai_result")
