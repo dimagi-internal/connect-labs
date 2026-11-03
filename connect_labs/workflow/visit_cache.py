@@ -155,18 +155,29 @@ def _default_slot(
         mgr.slot_resolved = config is not None
         return mgr
 
+    raw_counts: dict[int, int] = {}
+
     def fetch_raw(opp: int, pipeline_id: int) -> int:
         # The backend's own path decides hit / delta / full rebuild; the return is
         # the slim visit list (storage is always full -- skip_form_json only trims
         # what comes back), so this costs a count, not 11,000 form payloads.
-        rows = analysis.backend.fetch_raw_visits(
-            opportunity_id=opp,
-            access_token=access_token,
-            expected_visit_count=analysis.expected_visits_for(opp),
-            pipeline_id=pipeline_id,
-            skip_form_json=True,
-        )
-        return len(rows or [])
+        #
+        # Once per opportunity, however many pipelines the workflow reads:
+        # fetch_raw_visits ignores `pipeline_id` when choosing the slot, so every call
+        # re-reads the same export. A count here still materialises every row: on
+        # 2026-11-03 opp 765 loaded 146,400 visits six times in one warm, 13-20s each
+        # on a 1-vCPU task, five of them for pipelines that do not read that export.
+        # That was the back half of a CPU page (#2810).
+        if opp not in raw_counts:
+            rows = analysis.backend.fetch_raw_visits(
+                opportunity_id=opp,
+                access_token=access_token,
+                expected_visit_count=analysis.expected_visits_for(opp),
+                pipeline_id=pipeline_id,
+                skip_form_json=True,
+            )
+            raw_counts[opp] = len(rows or [])
+        return raw_counts[opp]
 
     def run_pipeline(opp: int, pipeline_id: int) -> dict:
         # Pipelines are owned by the workflow's owner, so the definition is read in

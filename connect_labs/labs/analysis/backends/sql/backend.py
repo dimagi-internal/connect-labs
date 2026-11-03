@@ -109,8 +109,12 @@ FORCED_REFRESH_PEER_POLL_SECONDS = 2
 # to walk alongside the leader -- two walks of one slot at once, which is how opp
 # 2230 ended up serving 143 of its 2,643 visits (2026-10-24). The finalize can no
 # longer publish a short copy either way; waiting is what keeps it to one walk.
-# Same bounds as the forced wait, for the same reasons.
-COLD_SLOT_PEER_WAIT_SECONDS = FORCED_REFRESH_PEER_WAIT_SECONDS
+# Bounded for the same reasons as the forced wait, but longer: a cold slot has no
+# rows to serve, so a walk that outlasts the wait is simply done twice. Measured
+# 2026-11-03 on opp 765: 146,400 visits took 471s, the loser gave up at 301s and
+# walked the same export for 522s more (#2810). Waiting costs a thread and no CPU.
+# If an opportunity outgrows this, the same log line says so again.
+COLD_SLOT_PEER_WAIT_SECONDS = 600
 COLD_SLOT_PEER_POLL_SECONDS = FORCED_REFRESH_PEER_POLL_SECONDS
 # Above this many missing visits, top up the cache incrementally instead of
 # repaginating the whole export (#1361). Below it the delta's own overhead --
