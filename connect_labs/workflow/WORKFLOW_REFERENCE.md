@@ -282,7 +282,7 @@ need, with `transform: "int"` for the counts so SQL reads numbers):
 | `audit.n_decided`        | `n_pass + n_fail + n_duplicate_fake` -- the approval-rate denominator          |
 | `audit.n_images`         | every assessed image of the visit (`n_decided + n_pending`)                    |
 | `audit.question_ids`     | the visit's photo question ids, comma-joined (to restrict by photo type later) |
-| `audit.xform_id`        | the visit's CommCare form id (`form.meta.instanceID`), to match a CommCare-form pipeline's rows; blank if not found |
+| `audit.xform_id`         | the visit's CommCare form id, to match a CommCare-form pipeline's rows       |
 | `audit.session_ids`      | the audit sessions that assessed the visit, comma-joined                       |
 
 Rules (`connect_labs/audit/audited_visit_rows.py`):
