@@ -56,12 +56,9 @@ def _cchq_token_for_user(user) -> str | None:
     have its cache warmed or its history rebuilt headless with this; every other
     workflow ignores it, so a missing or expired HQ login must never block the call.
     """
-    from connect_labs.labs.integrations.commcare.cchq_tokens import CCHQTokenError, get_valid_cchq_access_token
+    from connect_labs.labs.integrations.commcare.cchq_tokens import cchq_token_or_none
 
-    try:
-        return get_valid_cchq_access_token(user)
-    except CCHQTokenError:
-        return None
+    return cchq_token_or_none(user)
 
 
 def _parse_date(value: str | None, field: str) -> dt.date | None:

@@ -14,6 +14,11 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DynamicWorkflow } from '@/components/workflow/DynamicWorkflow';
 import { SandboxFrame } from '@/components/workflow/sandbox/SandboxFrame';
+import {
+  WarmingTimeout,
+  pollWhileWarming,
+  warmingFrom,
+} from '@/components/workflow/warming';
 import { createAgentSelection } from '@/components/workflow/agentSelection';
 import type { FramePayload } from '@/components/workflow/sandbox/protocol';
 import type { RouteContext } from '@/components/workflow/sandbox/routes';
@@ -1064,8 +1069,7 @@ function WorkflowRunner({
         const { onStatus, timeoutMs, ...body } = query;
         const url = new URL(queryPipelineRowsUrl, window.location.origin);
         applyScopeParams(url.searchParams);
-        const deadline = Date.now() + (timeoutMs ?? 10 * 60 * 1000);
-        for (;;) {
+        const read = async () => {
           const response = await fetch(url.toString(), {
             method: 'POST',
             credentials: 'same-origin',
@@ -1083,31 +1087,36 @@ function WorkflowRunner({
               `queryPipelineRows: server error ${response.status}`,
             );
           }
-          if (response.status === 202 && data.status === 'warming') {
-            if (onStatus) onStatus(String(data.message || 'Loading...'));
-            if (Date.now() > deadline) {
-              throw new Error(
-                `queryPipelineRows: the ${alias} pipeline is still loading; try again shortly.`,
-              );
-            }
-            const wait = Number(data.retry_after_ms) || 3000;
-            await new Promise((r) => setTimeout(r, wait));
-            continue;
-          }
-          if (!response.ok || data.status !== 'ready') {
+          return { response, data };
+        };
+        let answer: Awaited<ReturnType<typeof read>>;
+        try {
+          answer = await pollWhileWarming(read, {
+            warmingOf: ({ response, data }) =>
+              warmingFrom(response.status, data),
+            onWarming: (warming) => onStatus?.(warming.message, warming),
+            timeoutMs: timeoutMs ?? 10 * 60 * 1000,
+          });
+        } catch (e) {
+          if (e instanceof WarmingTimeout) {
             throw new Error(
-              String(
-                data.error || `queryPipelineRows: HTTP ${response.status}`,
-              ),
+              `queryPipelineRows: the ${alias} pipeline is still loading; try again shortly.`,
             );
           }
-          return {
-            rows: (data.rows as Record<string, unknown>[]) || [],
-            total: Number(data.total) || 0,
-            limit: Number(data.limit) || 0,
-            offset: Number(data.offset) || 0,
-          };
+          throw e;
         }
+        const { response, data } = answer;
+        if (!response.ok || data.status !== 'ready') {
+          throw new Error(
+            String(data.error || `queryPipelineRows: HTTP ${response.status}`),
+          );
+        }
+        return {
+          rows: (data.rows as Record<string, unknown>[]) || [],
+          total: Number(data.total) || 0,
+          limit: Number(data.limit) || 0,
+          offset: Number(data.offset) || 0,
+        };
       },
       // One supply source on demand (supply_sources.py), e.g. a worker's timeline:
       // querySupply('timeline', {args: {supply_point_id: 7}, opportunity_id: 10113}).

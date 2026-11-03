@@ -32,6 +32,7 @@ from connect_labs.labs.presentation import is_present_mode
 from connect_labs.tasks.data_access import TaskDataAccess
 from connect_labs.utils.feature_access import can_create_from_template, get_allowed_templates
 from connect_labs.workflow import declared_reads, public_shares
+from connect_labs.workflow.cache_warm import warming_response
 from connect_labs.workflow.data_access import (
     PIPELINE_LOAD_VALUES,
     PipelineDataAccess,
@@ -58,6 +59,7 @@ from connect_labs.workflow.templates import (
     with_inherited_config_flags,
 )
 from connect_labs.workflow.templates.weekly_dual_track_audit import CLASSIFIER_KEYS
+from connect_labs.workflow.visit_cache import visit_warm_slot
 
 logger = logging.getLogger(__name__)
 
@@ -2728,36 +2730,71 @@ def preview_snapshot_api(request, run_id):
         if run.is_completed and run.snapshot:
             return JsonResponse({"source": "stored", "snapshot": run.snapshot, "cache": None})
 
-        def build():
-            return build_snapshot_for_run(
+        # A fill under way answers before any building: this is what a reader's poll
+        # hits every few seconds, and building over a half-filled cache is wasted work.
+        slot = visit_warm_slot(run.definition_id)
+        filling = slot.state()
+        if filling:
+            return warming_response(request, filling, COLD_CACHE_MESSAGE)
+
+        def warm_opportunities(definition):
+            return definition.opportunity_ids or ([run.opportunity_id] if run.opportunity_id else [])
+
+        try:
+            built = build_snapshot_for_run(
                 data_access,
                 run,
                 request=request,
                 program_id=getattr(data_access, "program_id", None),
             )
-
-        try:
-            try:
-                built = build()
-            except SnapshotBuildError as e:
-                # A report that fills its own cache (`warm_cache_on_read`) warms it
-                # and tries once more, rather than telling its reader to go and
-                # open some other page first. The opportunity report streams no
-                # pipelines, so nothing else on its page would ever fill it.
-                definition = data_access.get_definition(run.definition_id) if e.code == "cache_miss" else None
-                if definition is None or not _warm_cache_on_read(definition):
-                    raise
-                _warm_visit_cache(data_access, definition, definition.opportunity_ids or [run.opportunity_id])
-                built = build()
         except SnapshotBuildError as e:
-            return _snapshot_build_error_response(e)
+            # A report that fills its own cache (`warm_cache_on_read`) has it filled,
+            # rather than telling its reader to go and open some other page first. The
+            # opportunity report streams no pipelines, so nothing else on its page would
+            # ever fill it. The fill is off this request (cache_warm.py).
+            definition = data_access.get_definition(run.definition_id) if e.code == "cache_miss" else None
+            if (
+                definition is None
+                or not _warm_cache_on_read(definition)
+                or _warm_owner(definition, warm_opportunities(definition)) is None
+            ):
+                return _snapshot_build_error_response(e)
+            finished = slot.take_outcome()
+            if finished is not None:
+                # It already ran and the data is still not there: say so, and let the
+                # reader's Retry try again. Filling again here would poll forever.
+                return JsonResponse(
+                    {
+                        "error": f"The report's data could not be loaded: {finished.get('error') or e.message}",
+                        "code": "warm_failed",
+                    },
+                    status=502,
+                )
+            return _warm_in_background(request, data_access, definition, warm_opportunities(definition))
+
+        cache_report = cache_state(built["opportunity_ids"])
+        if cache_report.get("cold_cache") or cache_report.get("partial_cache"):
+            # A builder that does not read pipelines builds happily over a cold cache:
+            # every figure zero. Cold, wait for the fill. Partial, answer now with the
+            # flag the page already shows, and fill behind it, which is what makes that
+            # notice's "reload in a minute" true.
+            definition = data_access.get_definition(run.definition_id)
+            if (
+                definition is not None
+                and _warm_cache_on_read(definition)
+                and slot.outcome() is None
+                and _warm_owner(definition, warm_opportunities(definition)) is not None
+            ):
+                waiting = _warm_in_background(request, data_access, definition, warm_opportunities(definition))
+                if cache_report.get("cold_cache"):
+                    return waiting
         return JsonResponse(
             {
                 "source": "preview",
                 "snapshot": built["payload"],
                 "opportunity_id": built["opportunity_id"],
                 "opportunity_ids": built["opportunity_ids"],
-                "cache": cache_state(built["opportunity_ids"]),
+                "cache": cache_report,
             }
         )
     except Exception:
@@ -3155,12 +3192,10 @@ def pipeline_query_api(request, definition_id):
           past the 60 s load-balancer timeout). Ask again.
       4xx/5xx ``{status: "error", error}``
     """
-    from django.core.cache import cache
-
     from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import GDriveSourceError
     from connect_labs.labs.analysis.pipeline import AnalysisPipeline
+    from connect_labs.workflow.cache_warm import WarmSlot
     from connect_labs.workflow.pipeline_query import (
-        WARM_LOCK_SECONDS,
         PipelineQueryError,
         cached_queryset,
         parse_query,
@@ -3234,11 +3269,11 @@ def pipeline_query_api(request, definition_id):
             from connect_labs.workflow.tasks import warm_pipeline_query_cache
 
             lock_key = warm_cache_key(cache_scope, config)
-            failure = cache.get(lock_key + ":error")
-            if failure:
-                cache.delete(lock_key + ":error")  # report once; the next call tries again
-                return error(f"Filling the {params['alias']} pipeline failed: {failure}", 502)
-            if cache.add(lock_key, "warming", WARM_LOCK_SECONDS):
+            slot = WarmSlot(lock_key)
+            finished = None if slot.state() else slot.take_outcome()  # report once; the next call tries again
+            if finished and finished.get("error"):
+                return error(f"Filling the {params['alias']} pipeline failed: {finished['error']}", 502)
+            if slot.claim():
                 scope = {"program_id": scope_program} if (scope_program and not scope_opp) else {}
                 if not scope and not scope_opp and program_scope is not None:
                     scope = {"program_id": program_scope}
@@ -3251,13 +3286,10 @@ def pipeline_query_api(request, definition_id):
                     scope=scope,
                     lock_key=lock_key,
                 )
-            return JsonResponse(
-                {
-                    "status": "warming",
-                    "message": f"Loading the {params['alias']} pipeline; this can take a few minutes the first time.",
-                    "retry_after_ms": 3000,
-                },
-                status=202,
+            return warming_response(
+                request,
+                slot.state(),
+                f"Loading the {params['alias']} pipeline; this can take a few minutes the first time.",
             )
 
         # A program-scoped source's rows belong to the program: tagged opportunity_id null.
@@ -4198,29 +4230,40 @@ def _warm_cache_on_read(definition) -> bool:
     return bool((data.get("config") or {}).get("warm_cache_on_read"))
 
 
-def _warm_visit_cache(data_access, definition, opportunity_ids, only=None) -> None:
-    """Fill (and hold) the visit cache for this workflow's opportunities -- or, with
-    `only`, for that ONE of them. Best effort: a failure here is logged and the
-    endpoint answers as before, with its cold/partial cache flags telling the page
-    what is missing."""
-    from connect_labs.workflow.visit_cache import ensure_visit_cache, workflow_opportunity_ids
+def _warm_owner(definition, opportunity_ids) -> int | None:
+    """Which opportunity a fill runs under: the workflow's own, else its first."""
+    return getattr(definition, "opportunity_id", None) or (opportunity_ids[0] if opportunity_ids else None)
 
-    owner = getattr(definition, "opportunity_id", None) or (opportunity_ids[0] if opportunity_ids else None)
-    window = {}
-    if only is not None:
-        # ensure_visit_cache walks the workflow's opportunities in order; a window of
-        # one starting at `only` warms exactly that opportunity.
-        order = [int(o) for o in workflow_opportunity_ids(definition, int(owner))]
-        if int(only) in order:
-            window = {"start_at": order.index(int(only)), "limit": 1}
-    try:
-        report = ensure_visit_cache(data_access, definition.id, opportunity_id=int(owner), **window)
-        if report.get("failed"):
-            logger.warning(
-                "warm-on-read left opportunities uncached for workflow %s: %s", definition.id, report["failed"]
+
+COLD_CACHE_MESSAGE = "Loading visit data. The first load can take several minutes on a large opportunity."
+
+
+def _warm_in_background(request, data_access, definition, opportunity_ids, only=None) -> JsonResponse:
+    """Have this workflow's visit cache filled off the request -- or, with `only`, that
+    ONE opportunity's -- and answer the 202 the reader polls on (cache_warm.py). The
+    first reader to find it cold queues the fill; the rest watch the same one."""
+    from connect_labs.workflow.tasks import warm_visit_cache
+
+    slot = visit_warm_slot(definition.id, only)
+    if slot.claim():
+        owner = _warm_owner(definition, opportunity_ids)
+        scope_opportunity = getattr(data_access, "opportunity_id", None)
+        scope_program = getattr(data_access, "program_id", None)
+        scope = {"program_id": scope_program} if scope_program and not scope_opportunity else {}
+        try:
+            warm_visit_cache.delay(
+                (request.session.get("labs_oauth", {}) or {}).get("access_token"),
+                definition_id=int(definition.id),
+                owner_opportunity_id=int(owner),
+                scope=scope or {"opportunity_id": int(scope_opportunity or owner)},
+                only=int(only) if only is not None else None,
+                user_id=getattr(request.user, "pk", None),
             )
-    except Exception:
-        logger.warning("warm-on-read failed for workflow %s", definition.id, exc_info=True)
+        except Exception as exc:
+            # No task is coming, so no claim may stand: the next read reports this.
+            slot.finish(f"the background fill could not be queued: {exc}")
+            raise
+    return warming_response(request, slot.state(), COLD_CACHE_MESSAGE)
 
 
 @login_required
@@ -4541,9 +4584,16 @@ def semantic_indicators_api(request, definition_id):
                 return JsonResponse({"error": f"opportunity {worker_opp} is not in this workflow"}, status=400)
             opportunity_ids = [worker_opp]
             warm_only = worker_opp
-        warm_cache = _warm_cache_on_read(definition) or warm_only is not None
-        if warm_cache and _cached_opportunities(opportunity_ids)[1]:
-            _warm_visit_cache(data_access, definition, opportunity_ids, only=warm_only)
+        if _warm_cache_on_read(definition) or warm_only is not None:
+            # The fill is off this request (cache_warm.py). One that has just finished
+            # and left this cold answers below with the cold/partial flags: filling
+            # again would poll forever.
+            slot = visit_warm_slot(definition.id, warm_only)
+            filling = slot.state()
+            if filling:
+                return warming_response(request, filling, COLD_CACHE_MESSAGE)
+            if _cached_opportunities(opportunity_ids)[1] and slot.outcome() is None:
+                return _warm_in_background(request, data_access, definition, opportunity_ids, only=warm_only)
 
         rows = evaluate(
             pipeline_config,

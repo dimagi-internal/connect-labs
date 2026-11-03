@@ -327,9 +327,8 @@ def run_query(config: AnalysisPipelineConfig, opportunity_id: int, query: dict, 
 # stream would run it), but OFF the request: on a big source that takes longer than
 # the load balancer's 60 s idle timeout, and a request that dies there reports
 # nothing. So the endpoint answers 202 `{status: "warming"}` at once, a Celery task
-# fills the cache, and the caller asks again (actions.queryPipelineRows polls).
-WARM_LOCK_SECONDS = 20 * 60
-WARM_ERROR_SECONDS = 5 * 60
+# fills the cache, and the caller asks again (actions.queryPipelineRows polls). The
+# protocol is cache_warm.py's, shared with every other reader of a cold cache.
 
 
 def warm_cache_key(opportunity_id: int, config: AnalysisPipelineConfig) -> str:
@@ -347,15 +346,36 @@ def warm_pipeline_cache(
     scope: dict,
     lock_key: str,
 ) -> dict:
+    """Hold ``lock_key``'s claim (cache_warm.py) while ``_fill_pipeline_cache`` runs."""
+    from connect_labs.workflow.cache_warm import WarmSlot
+
+    with WarmSlot(lock_key).running() as outcome:
+        return _fill_pipeline_cache(
+            access_token,
+            definition_id=definition_id,
+            alias=alias,
+            opportunity_id=opportunity_id,
+            scope=scope,
+            outcome=outcome,
+        )
+
+
+def _fill_pipeline_cache(
+    access_token: str,
+    *,
+    definition_id: int,
+    alias: str,
+    opportunity_id: int,
+    scope: dict,
+    outcome: dict,
+) -> dict:
     """Fill ``alias``'s terminal cache for ``opportunity_id`` -- and that of any
     pipeline it JOINs, when cold -- as the person who asked. Celery-side.
 
     Every gate of a normal read applies, because this IS a normal read
     (``AnalysisPipeline.stream_analysis``), under the caller's own token. A failure is
-    left under ``lock_key + ":error"`` for the next poll to report.
+    left in ``outcome`` for the next poll to report.
     """
-    from django.core.cache import cache
-
     from connect_labs.labs.analysis.pipeline import AnalysisPipeline
     from connect_labs.labs.analysis.utils import resolve_join_hashes
     from connect_labs.workflow.data_access import PipelineDataAccess, WorkflowDataAccess, program_drive_scope
@@ -424,9 +444,8 @@ def warm_pipeline_cache(
     except Exception as exc:
         logger.warning("pipeline-query warm of %s (workflow %s, opp %s) failed", alias, definition_id, opportunity_id)
         message = exc.message if isinstance(exc, PipelineQueryError) else str(exc)
-        cache.set(lock_key + ":error", message[:500], WARM_ERROR_SECONDS)
+        outcome["error"] = message
         return {"error": message}
     finally:
         if pipeline_access is not None:
             pipeline_access.close()
-        cache.delete(lock_key)
