@@ -124,6 +124,14 @@ Notes are saved automatically as you work (autosave), when you click **Save Prog
 
 ---
 
+## Connecting Audit Results to CommCare Reports
+
+When Labs exports photo-audit results to a data feed, each audited visit now includes the **CommCare form ID** for that visit. This means any report or dashboard built on CommCare form rows — such as the MBW Visit Verification dashboard — can match a photo-review outcome (pass or fail) directly to the form it belongs to, without needing to join on any other field.
+
+No extra setup is needed on your end. If your reporting team has already built a dashboard against the audit feed, they can now include the form ID column to link audit results alongside the rest of the form data.
+
+---
+
 ## Demoing Audit Without Real Data
 
 To show someone the audit review — the photo queue, pass and fail, completing a session, the follow-up tasks that come out of it — without putting a real beneficiary's record on screen, run it against a **synthetic opportunity**.
@@ -164,24 +172,4 @@ The Visit Clustering tile includes an additional option: **Send groupings to the
 
 The duplicate detection check runs separately for each field worker — each worker's photos are assessed as their own batch rather than combined with everyone else's. This means the per-day photo limit applies per field worker, so on a busy day with multiple workers in the audit, every worker's photos are checked rather than only those who happened to be processed first.
 
-The raw response from the duplicate-detection API is saved against each visit cluster, so there is a full record of why images were or were not flagged — useful if you later need to investigate why a particular image was not caught.
-
-Leave this option unticked if you only want the standard time-and-location grouping without the additional image-similarity check.
-
-**Completing a dual-track run:**
-
-When you finish reviewing the last field worker in a MUAC image audit run, or click **Mark Run Complete**, the run now correctly closes and displays its summary. Previously, this step failed silently — the run stayed marked "in progress" with no summary appearing. If you have any older dual-track runs that appear stuck in progress despite all reviews being done, open the run and click **Mark Run Complete** to finalise them.
-
-**Stopping a run in progress:**
-
-While audit creation or AI review is running, a **Stop** button appears on the run screen. Clicking it halts the remaining work immediately. Any sessions that have already been created and any images that have already been reviewed are kept — only the work that had not yet started is cancelled. This is useful if you realise you have selected a sample that is larger than intended and want to stop before it completes.
-
-**Resuming an interrupted run:**
-
-Workflow runs can be interrupted mid-way — most often during AI review, which is where the bulk of processing time is spent. When you resume an interrupted run, Labs picks up exactly where it left off:
-
-- **All audits are created.** A run that covers multiple audits (such as both tracks in a dual-track session, or a second audit on a Muac Picture Audit run) now creates every audit the run asked for. Previously, only the first audit was really made; the rest reported success but produced nothing.
-- **Partially-reviewed sessions are completed.** If a session was created but its AI review was cut short, resuming picks up image-by-image from where the review stopped, rather than skipping that session as already done.
-- **Already-finished work is not repeated.** When a multi-opportunity run is resumed, opportunities that were fully completed are skipped. Only the work that was not yet finished is picked back up.
-- **A run cannot be resumed while it is still running.** If a run is already active, Labs will refuse a second resume attempt. This prevents duplicate audit sessions from being created by two overlapping jobs.
-- **Settings are preserved
+The raw response from the duplicate-detection API is saved against each visit cluster, so there is a full record of why images were or were not flagged — useful if you later need to investigate why a particular

@@ -44,6 +44,12 @@ The editor can preview a change against real data before you save it, and has it
 
 The pipeline editor and the [Data page](data-spaces.md) are two views of the same thing. The editor shows a pipeline's **definition**, and lets you change it. The Data page shows its **output**, and changes nothing — see [Data Space vs pipeline tables](data-spaces.md#data-space-vs-pipeline-tables) for the full comparison.
 
+### Photo-audit results alongside CommCare form rows
+
+A report built on CommCare form rows — such as the MBW Visit Verification dashboard — can now display photo-review outcomes next to each form. The Labs photo-audit feed includes the **CommCare form ID** (`audit.xform_id`) for each audited visit, which lets a report match a pass or fail result to the exact form it belongs to.
+
+In practice this means a dashboard can show, for each submitted form, whether the associated photos passed or failed review — without any manual cross-referencing.
+
 ---
 
 ## Finding Your Workflows
@@ -204,14 +210,4 @@ Closing the dialog returns the page to its normal state. Nothing changes when no
 Dashboards that remember your filter choices — for example, the Ward Progress Tracker's ward and period filters, the KMC audit dashboard's filters, or a status filter that is kept across a CommCare sign-in — continue to remember those choices after a page reload when the sandbox is switched on. The behaviour matches what you already experience without the sandbox.
 
 !!! note "All live workflows are fully compatible with the sandbox"
-    Every workflow that exists on Labs today works correctly in the protected frame. Authorization buttons (such as **Authorize CommCare** or **Authorize OCS**) bring you back to the workflow after you sign in. Any confirmation question a workflow presents is shown in Labs' own dialog and properly waited for before continuing. No workflow requires an exemption from the sandbox.
-
-#### Sandbox exemptions
-
-~~A small number of older workflow copies contain code that relies on features the sandbox will never support~~ All live workflows are now fully compatible with the sandbox, so no exemptions are needed or granted. The exemption mechanism is no longer in use.
-
-If you previously saw a workflow listed as exempt, that status no longer applies.
-
-#### Reading another workflow's runs in the protected frame
-
-A protected workflow can read the saved runs of another workflow only if its settings explicitly declare that relationship — for example, the way
+    Every workflow that exists on Labs today works correctly in the protected frame. Authorization buttons (such as **Authorize CommCare** or **Authorize OCS**) bring you back to the workflow after you sign in. Any confirmation question a workflow presents is shown in Labs' own dialog and properly waited for
