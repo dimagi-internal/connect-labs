@@ -123,6 +123,44 @@ def test_fetch_reads_the_opportunity_sessions_as_the_given_token():
     assert [(r["id"], r["username"], r["form_json"]["audit"]["n_pass"]) for r in rows] == [("555", "flw_one", 1)]
 
 
+def _fetch_with_visits(visits, *, hq_xform=None, raises=False):
+    image = {"blob_id": "b1", "username": "flw_one", "visit_date": "2026-08-30T08:00:00"}
+    if hq_xform:
+        image["hq_xform_id"] = hq_xform
+    session = _session_record(
+        1,
+        {"555": {"assessments": {"b1": {"question_id": "q", "result": "fail"}}}},
+        {"555": [image]},
+    )
+    fake = MagicMock()
+    fake.get_audit_sessions.return_value = [session]
+    if raises:
+        fake.get_visits_batch.side_effect = RuntimeError("cache unavailable")
+    else:
+        fake.get_visits_batch.return_value = visits
+    with patch("connect_labs.audit.data_access.AuditDataAccess", return_value=fake):
+        rows = fetch_labs_audits_as_visit_dicts(None, DataSourceConfig(type="labs_audits"), "tok", 4321)
+    return rows, fake
+
+
+def test_a_blank_form_id_is_filled_from_the_visit_cache():
+    rows, fake = _fetch_with_visits([{"id": "555", "xform_id": "form-uuid-1"}])
+    fake.get_visits_batch.assert_called_once_with([555], 4321)
+    assert rows[0]["form_json"]["audit"]["xform_id"] == "form-uuid-1"
+
+
+def test_a_form_id_the_session_recorded_needs_no_cache_read():
+    rows, fake = _fetch_with_visits([], hq_xform="form-uuid-2")
+    fake.get_visits_batch.assert_not_called()
+    assert rows[0]["form_json"]["audit"]["xform_id"] == "form-uuid-2"
+
+
+def test_a_cache_failure_leaves_the_form_id_blank_and_keeps_the_counts():
+    rows, _ = _fetch_with_visits([], raises=True)
+    audit = rows[0]["form_json"]["audit"]
+    assert audit["xform_id"] == "" and audit["n_fail"] == 1
+
+
 def test_fetch_takes_the_token_from_the_session_and_refuses_without_one():
     request = MagicMock()
     request.session = {"labs_oauth": {"access_token": "from-session"}}
