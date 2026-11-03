@@ -75,6 +75,32 @@ def normalize_audited_visit_row(row: dict, opportunity_id: int) -> dict:
     }
 
 
+def _fill_xform_ids(data_access, rows: list[dict], opportunity_id: int) -> None:
+    """Set ``xform_id`` on rows whose sessions did not record it, from the visit cache.
+
+    Only the audited visits are read (an id filter, so a handful of rows). A failure
+    here leaves ``xform_id`` blank rather than failing the feed: the counts are the
+    feed's purpose, the form id only lets a report match them to its own rows.
+    """
+    missing = [r for r in rows if not r.get("xform_id")]
+    if not missing:
+        return
+    try:
+        ids = [int(r["visit_id"]) for r in missing if str(r["visit_id"]).isdigit()]
+        visits = data_access.get_visits_batch(ids, opportunity_id)
+    except Exception:
+        logger.warning("[LabsAuditsFetcher] opp %s: could not read form ids for audited visits", opportunity_id, exc_info=True)
+        return
+    xform_of = {}
+    for visit in visits:
+        form_json = visit.get("form_json") if isinstance(visit.get("form_json"), dict) else {}
+        xform_id = visit.get("xform_id") or form_json.get("id")
+        if xform_id:
+            xform_of[str(visit["id"])] = str(xform_id)
+    for row in missing:
+        row["xform_id"] = xform_of.get(str(row["visit_id"]), "")
+
+
 def fetch_labs_audits_as_visit_dicts(
     request: HttpRequest | None,
     data_source: DataSourceConfig,
@@ -95,10 +121,11 @@ def fetch_labs_audits_as_visit_dicts(
     data_access = AuditDataAccess(opportunity_id=opportunity_id, access_token=token)
     try:
         sessions = data_access.get_audit_sessions()
+        rows = build_audited_visit_rows(sessions)
+        _fill_xform_ids(data_access, rows, opportunity_id)
     finally:
         data_access.close()
 
-    rows = build_audited_visit_rows(sessions)
     logger.info(
         "[LabsAuditsFetcher] opp %s: %s audit sessions -> %s audited visits",
         opportunity_id,

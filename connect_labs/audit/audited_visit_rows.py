@@ -35,6 +35,11 @@ user_docs/semantic-layer.md):
   (``analysis_config.extract_images_with_question_ids``). Not the session's
   ``flw_username`` (the first visit's worker -- wrong for a combined session) and
   not the record's ``username`` (the AUDITOR who created the session).
+* ``xform_id`` is the CommCare form (xform) id of the visit, the id a CommCare-form
+  pipeline carries as ``form.meta.instanceID``: it lets a report line these results up
+  with its own form rows. It is read from the ``hq_xform_id`` a session stores on a
+  visit's images when it was created with the CommCare HQ photo source, and is ""
+  otherwise; ``labs_audits_fetcher`` fills a blank one from the visit cache.
 * ``visit_date`` is the local date of the visit's timestamp from the same place
   (``prior_audit_projection._visit_metadata``), or None.
 """
@@ -48,6 +53,7 @@ from connect_labs.audit.models import human_verdict
 #: The per-visit fields a row carries; a pipeline reads them at ``audit.<name>``.
 ROW_FIELDS = (
     "visit_id",
+    "xform_id",
     "username",
     "visit_date",
     "n_images",
@@ -75,6 +81,7 @@ def build_audited_visit_rows(sessions: Iterable) -> list[dict]:
     # visit_id -> (username, visit_date), from the most recent session that knows it
     visit_meta: dict[str, tuple[str, object]] = {}
     sessions_by_visit: dict[str, set] = {}
+    xform_by_visit: dict[str, str] = {}
 
     for session in sorted(sessions, key=PRIOR_AUDIT_ORDER):
         data = getattr(session, "data", None) or {}
@@ -83,6 +90,12 @@ def build_audited_visit_rows(sessions: Iterable) -> list[dict]:
             if username or visit_date:
                 prev_user, prev_date = visit_meta.get(visit_key, ("", None))
                 visit_meta[visit_key] = (username or prev_user, visit_date or prev_date)
+        for visit_key, images in (data.get("visit_images") or {}).items():
+            for image in images or []:
+                xform_id = (image or {}).get("hq_xform_id")
+                if xform_id:
+                    xform_by_visit[str(visit_key)] = str(xform_id)
+                    break
         question_of = _question_ids(data)
         for visit_key, visit_result in (data.get("visit_results") or {}).items():
             visit_key = str(visit_key)
@@ -102,6 +115,7 @@ def build_audited_visit_rows(sessions: Iterable) -> list[dict]:
             username, visit_date = visit_meta.get(visit_key, ("", None))
             row = per_visit[visit_key] = {
                 "visit_id": visit_key,
+                "xform_id": xform_by_visit.get(visit_key, ""),
                 "username": username,
                 "visit_date": visit_date.isoformat() if visit_date else None,
                 "n_images": 0,
