@@ -89,7 +89,9 @@ def _fill_xform_ids(data_access, rows: list[dict], opportunity_id: int) -> None:
         ids = [int(r["visit_id"]) for r in missing if str(r["visit_id"]).isdigit()]
         visits = data_access.get_visits_batch(ids, opportunity_id)
     except Exception:
-        logger.warning("[LabsAuditsFetcher] opp %s: could not read form ids for audited visits", opportunity_id, exc_info=True)
+        logger.warning(
+            "[LabsAuditsFetcher] opp %s: could not read form ids for audited visits", opportunity_id, exc_info=True
+        )
         return
     xform_of = {}
     for visit in visits:
