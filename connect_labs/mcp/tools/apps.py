@@ -32,6 +32,20 @@ VALID_APP_TYPES = ("learn", "deliver", "both")
 APP_STRUCTURE_TIMEOUT_SECONDS = 120.0
 
 
+def _not_found_message(opportunity_id: int, resp: httpx.Response) -> str:
+    # Connect answers 404 both when the caller can't reach the opportunity and when the
+    # opportunity has no HQ key, and only its `detail` tells them apart. Said as one catch-all,
+    # the second read like the caller's own login failing, which canopy's credential guard
+    # aborts a turn for (ACE, 2026-11-03).
+    try:
+        detail = resp.json().get("detail", "")
+    except (ValueError, AttributeError):
+        detail = ""
+    if "api key" in str(detail).lower():
+        return f"Opportunity {opportunity_id} has no CommCare HQ key in Connect, so its apps can't be read."
+    return f"Opportunity {opportunity_id} not found, or you do not have access to it."
+
+
 @register(
     name="get_opportunity_apps",
     description=(
@@ -93,7 +107,7 @@ def get_opportunity_apps(user, opportunity_id: int, app_type: str = "both") -> d
         if resp.status_code == 404:
             raise MCPToolError(
                 "NOT_FOUND",
-                f"Opportunity {opportunity_id} not found, has no API key, or you do not have access to it.",
+                _not_found_message(opportunity_id, resp),
             )
         if resp.status_code == 502:
             raise MCPToolError(

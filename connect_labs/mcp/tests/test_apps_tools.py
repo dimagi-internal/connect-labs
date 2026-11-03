@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from connect_labs.labs.models import UserConnectToken
 from connect_labs.mcp.testing import call_tool, mint_token
-from connect_labs.mcp.tool_registry import get_tool
+from connect_labs.mcp.tool_registry import MCPToolError, get_tool
 from connect_labs.users.models import User
 
 
@@ -113,6 +113,45 @@ def test_404_maps_to_not_found(mock_client_cls, client, auth_user):
 
     data = _call_tool(client, raw, "get_opportunity_apps", {"opportunity_id": 9999})
     assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
+
+
+def _message_for_404(json_response):
+    """The tool's error when Connect answers 404, called directly (no token, no database)."""
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = 404
+    resp.json = json_response
+    mock_client = _mock_client()
+    mock_client.http_client.get.return_value = resp
+    with (
+        patch("connect_labs.mcp.tools.apps.LabsRecordAPIClient", return_value=mock_client),
+        patch("connect_labs.mcp.tools.apps.require_connect_token", return_value="t"),
+        pytest.raises(MCPToolError) as e,
+    ):
+        get_tool("get_opportunity_apps").handler(user=MagicMock(), opportunity_id=9999)
+    assert e.value.code == "NOT_FOUND"
+    return e.value.message
+
+
+def test_404_for_an_opportunity_without_a_key_says_only_that():
+    """Connect's own wording (AppStructureView). This key is the opportunity's, not the caller's
+    login, and must not read like one: canopy's credential guard aborted two ACE turns on the old
+    catch-all's "has no API key" (2026-11-03)."""
+    message = _message_for_404(lambda: {"detail": "Opportunity does not have an associated API key."})
+    assert "CommCare HQ key" in message
+    assert "no api key" not in message.lower()
+    assert "access" not in message
+
+
+def test_404_for_anything_else_says_not_found_or_no_access():
+    message = _message_for_404(lambda: {"detail": "No Opportunity matches the given query."})
+    assert message == "Opportunity 9999 not found, or you do not have access to it."
+
+
+def test_404_whose_body_is_not_json_says_not_found_or_no_access():
+    def not_json():
+        raise ValueError("not json")
+
+    assert _message_for_404(not_json) == "Opportunity 9999 not found, or you do not have access to it."
 
 
 @pytest.mark.django_db
