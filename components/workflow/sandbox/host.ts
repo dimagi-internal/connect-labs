@@ -40,6 +40,12 @@ import {
   type StreamMessage,
 } from './protocol';
 import {
+  WarmingTimeout,
+  pollWhileWarming,
+  warmingFrom,
+  type Warming,
+} from '../warming';
+import {
   RouteError,
   checkFetch,
   cleanHeaders,
@@ -745,6 +751,8 @@ export interface WorkflowHandlers {
   completeRun(pageText: string): Promise<boolean>;
   setLocation(search: string, hash: string, push: boolean): void;
   notify(message: string): void;
+  /** A read `id` is waiting on a cold cache, or has stopped waiting (../warming.ts). */
+  warming?(id: number, warming: Warming | null): void;
   /**
    * The host's own question, in its own words: "This workflow wants to <label>,
    * as you." Resolves true on the person's yes.
@@ -766,6 +774,8 @@ export interface DispatchOptions {
   /** User activation on the HOST page when the request arrives. */
   hasActivation: () => boolean;
   now?: () => number;
+  /** How a read waits between polls of a cold cache (a test's clock). */
+  sleep?: (ms: number) => Promise<void>;
   /**
    * What the frame draws. A page and a workflow get ONE capability set (Jonathan,
    * 2026-10-12: "pages should be completely definable like workflows are"); the
@@ -820,6 +830,25 @@ function isColdRead(checked: CheckedRequest): boolean {
   }
 }
 
+/** A cold cache's 202, read off a proxied answer. The body is only decoded for a 202. */
+function warmingOfAnswer(answer: FetchAnswer): Warming | null {
+  if (answer.status !== 202) return null;
+  try {
+    return warmingFrom(202, JSON.parse(new TextDecoder().decode(answer.body)));
+  } catch {
+    return null;
+  }
+}
+
+function errorAnswer(status: number, error: string): FetchAnswer {
+  return {
+    status,
+    statusText: '',
+    headers: { 'content-type': 'application/json' },
+    body: new TextEncoder().encode(JSON.stringify({ error })).buffer,
+  } as FetchAnswer;
+}
+
 /** Methods outside the request budget (see the dispatcher). */
 const UNCOUNTED_METHODS = ['resize', 'overlay', 'scroll', 'reveal', 'storage'];
 
@@ -843,6 +872,8 @@ export function createDispatcher(
   const questionsAsked: number[] = [];
   let quietUntil = 0;
   let coldReads = 0;
+  let warmingSeq = 0;
+  let closed = false;
   const storageWrites: number[] = [];
   let streamSeq = 0;
   let warnedTall = false;
@@ -931,6 +962,30 @@ export function createDispatcher(
     const yes = await workflow().ask(text);
     if (!yes) quietUntil = now() + LIMITS.quietAfterNoMs;
     return yes;
+  }
+
+  /** `read`, asked again while it answers 202 warming. A fill outlasting the wait
+   * reaches the render as an ordinary failed read, which it already knows how to show. */
+  async function waitOutWarming(
+    w: WorkflowHandlers,
+    read: () => Promise<FetchAnswer>,
+  ): Promise<FetchAnswer> {
+    const id = (warmingSeq += 1);
+    try {
+      return await pollWhileWarming(read, {
+        warmingOf: warmingOfAnswer,
+        isBlip: (answer) => [502, 503, 504].includes(answer.status),
+        onWarming: (warming) => w.warming?.(id, warming),
+        stopped: () => closed,
+        now,
+        sleep: options.sleep,
+      });
+    } catch (e) {
+      if (e instanceof WarmingTimeout) return errorAnswer(504, e.message);
+      throw e;
+    } finally {
+      w.warming?.(id, null);
+    }
   }
 
   /** At most LIMITS.coldReadsInFlight of the reads that run a pipeline at once. */
@@ -1256,13 +1311,19 @@ export function createDispatcher(
         if (checked.gate === 'effect') {
           await allowEffect(checked);
         }
-        const read = () =>
+        const once = () =>
           w.fetch(checked, {
             headers: params.headers,
             body: params.body,
           });
+        // A cold-read slot guards a request in flight, not a reader asleep between polls.
+        const attempt = () => (isColdRead(checked) ? coldRead(once) : once());
+        // A render's read waits out a cold cache here, so its promise just takes as
+        // long as the fill takes. Only a GET: nothing else is safe to send twice.
+        const read = () =>
+          checked.method === 'GET' ? waitOutWarming(w, attempt) : attempt();
         return limited(async () => {
-          const answer = await (isColdRead(checked) ? coldRead(read) : read());
+          const answer = await read();
           if (checked.startsJob && answer.status < 300) rememberJob(answer);
           if (checked.remembersPipelines && answer.status < 300) {
             rememberPipelines(answer);
@@ -1277,11 +1338,20 @@ export function createDispatcher(
         const w = workflow();
         const a = alias(params);
         const query = isPlainObject(params.query) ? params.query : {};
-        return limited(async () =>
-          JSON.parse(
-            JSON.stringify((await w.queryPipelineRows(a, query)) ?? null),
-          ),
-        );
+        const id = (warmingSeq += 1);
+        return limited(async () => {
+          try {
+            const rows = await w.queryPipelineRows(a, {
+              ...query,
+              onStatus: (_message: string, warming?: Warming) => {
+                if (warming) w.warming?.(id, warming);
+              },
+            });
+            return JSON.parse(JSON.stringify(rows ?? null));
+          } finally {
+            w.warming?.(id, null);
+          }
+        });
       }
       case 'updateState': {
         const w = workflow();
@@ -1465,6 +1535,7 @@ export function createDispatcher(
     }
   }) as Dispatcher;
   dispatch.closeStreams = () => {
+    closed = true;
     for (const controller of streams.values()) controller.abort();
     streams.clear();
   };

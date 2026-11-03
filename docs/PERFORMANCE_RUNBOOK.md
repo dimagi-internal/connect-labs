@@ -61,6 +61,11 @@ re-run narrow around it to size it** — a 10-minute saturation that is obvious 
 | MCP is `stateless_http=True` | No sticky sessions required; any task can serve any request. |
 | `occurred_at` in the audit trail is **flush** time | Never infer latency or ordering from it. `request_id` is the only honest grouping key. |
 
+**A cold visit cache fills on the worker, not the web tier** (`workflow/cache_warm.py`,
+since #2810). A report's cold read answers 202 and `warm_visit_cache` does the download in
+`/ecs/labs-jj-worker`, so `via visit_cache.py` and the walk's lines are there now. A
+pipeline stream (`pipeline-data/stream`) still fills in its web request.
+
 **The prior that is right most often:** it is the web tier, and the cause is one
 request path doing N remote calls. The database is usually innocent — during the
 2026-07-29 incident RDS ran at 7–12% CPU with sub-millisecond IO for the whole

@@ -263,10 +263,11 @@ class TestColdCache:
         assert kwargs["scope"] == {"opportunity_id": OPP}
 
     def test_a_failed_warm_is_reported_then_retried(self):
+        from connect_labs.workflow.cache_warm import WarmSlot
         from connect_labs.workflow.pipeline_query import warm_cache_key
 
         config = _visit_config()
-        cache.set(warm_cache_key(OPP, config) + ":error", "Drive said no", 60)
+        WarmSlot(warm_cache_key(OPP, config)).finish("Drive said no")
         with patch("connect_labs.workflow.tasks.warm_pipeline_query_cache") as task:
             status, out = _post(config, {"alias": "answers"})
             assert status == 502 and "Drive said no" in out["error"]
@@ -276,9 +277,10 @@ class TestColdCache:
 
     def test_the_warm_task_runs_the_pipeline_and_releases_its_lock(self):
         from connect_labs.workflow import pipeline_query
+        from connect_labs.workflow.cache_warm import WarmSlot
 
         config = _visit_config()
-        cache.set("lock", "warming", 60)
+        WarmSlot("lock").claim()
         wda = MagicMock()
         wda.get_definition.return_value = _definition()
         with (

@@ -16,6 +16,8 @@ import {
 } from './host';
 import type { FramePayload } from './protocol';
 import { checkFetch, type RouteContext } from './routes';
+import type { Warming } from '../warming';
+import { WarmingStrip } from './WarmingStrip';
 
 /** What the runner does for a workflow drawn in the frame (phase 2). */
 export interface WorkflowHostProps {
@@ -109,6 +111,10 @@ export function SandboxFrame(props: SandboxFrameProps) {
   const [renderError, setRenderError] = useState<string | null>(null);
   const [question, setQuestion] = useState<Question | null>(null);
   const [notices, setNotices] = useState<{ id: number; text: string }[]>([]);
+  // Reads waiting on a cold cache, by read: a render can have several at once, and
+  // they usually share one fill, so one strip says enough.
+  const [warmings, setWarmings] = useState<Record<number, Warming>>({});
+  const firstWarming: Warming | undefined = Object.values(warmings)[0];
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -193,6 +199,13 @@ export function SandboxFrame(props: SandboxFrameProps) {
               ...n.slice(-2),
               { id: Date.now() + Math.random(), text },
             ]),
+          warming: (id, warming) =>
+            setWarmings((all) => {
+              const next = { ...all };
+              if (warming) next[id] = warming;
+              else delete next[id];
+              return next;
+            }),
         }
       : undefined;
     const host = createSandboxHost({
@@ -259,6 +272,7 @@ export function SandboxFrame(props: SandboxFrameProps) {
           {renderError}
         </div>
       )}
+      {firstWarming && <WarmingStrip warming={firstWarming} />}
       <div ref={containerRef} data-testid="page-sandbox" />
       {notices.length > 0 && (
         <div

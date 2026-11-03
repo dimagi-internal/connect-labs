@@ -497,7 +497,7 @@ class _ProgrammeDef(_OppReportDef):
     opportunity_ids = [523, 524]
 
 
-def _call_semantic(client, definition, *, cache_fill=None):
+def _call_semantic(client, definition):
     class _Pipe:
         schema = {"fields": [], "terminal_stage": "entity"}
 
@@ -505,62 +505,65 @@ def _call_semantic(client, definition, *, cache_fill=None):
         patch("connect_labs.workflow.views.WorkflowDataAccess") as wda,
         patch("connect_labs.workflow.data_access.PipelineDataAccess") as pda,
         patch("connect_labs.semantic.runtime.evaluate") as ev,
-        patch("connect_labs.workflow.visit_cache.ensure_visit_cache") as ensure,
+        patch("connect_labs.workflow.tasks.warm_visit_cache") as task,
     ):
         wda.return_value.get_definition.return_value = definition
+        wda.return_value.opportunity_id = 523
+        wda.return_value.program_id = None
         pda.return_value.get_definition.return_value = _Pipe()
         pda.return_value._schema_to_config.return_value = object()
         ev.return_value = [{"scope": "opportunity", "n_cases": 5}]
-        ensure.side_effect = cache_fill or (lambda *a, **k: {"failed": []})
         resp = client.get(_url(definition.id), {"series": "KMC", "opportunity_id": 523})
-    return resp, ensure
+    return resp, task
 
 
-def test_a_cold_opportunity_report_fills_its_own_cache_before_computing(client, django_user_model):
+def test_a_cold_opportunity_report_queues_its_fill_and_answers_at_once(client, django_user_model):
     client.force_login(django_user_model.objects.create_user(username="w1", password="p"))
+    resp, task = _call_semantic(client, _OppReportDef())
+    assert resp.status_code == 202
+    assert resp.json()["status"] == "warming"
+    assert task.delay.call_count == 1
+    assert task.delay.call_args.kwargs["definition_id"] == 21115
+    assert task.delay.call_args.kwargs["owner_opportunity_id"] == 523
 
-    def fill(*args, **kwargs):
-        _cache_visits(523)
-        return {"failed": []}
 
-    resp, ensure = _call_semantic(client, _OppReportDef(), cache_fill=fill)
-    assert ensure.call_count == 1
-    assert ensure.call_args.args[1] == 21115
-    assert ensure.call_args.kwargs["opportunity_id"] == 523
+def test_a_second_read_during_the_fill_joins_it(client, django_user_model):
+    client.force_login(django_user_model.objects.create_user(username="w1b", password="p"))
+    _call_semantic(client, _OppReportDef())
+    resp, task = _call_semantic(client, _OppReportDef())
+    assert resp.status_code == 202
+    assert task.delay.call_count == 0
+
+
+def test_a_filled_opportunity_report_answers_from_the_cache(client, django_user_model):
+    client.force_login(django_user_model.objects.create_user(username="w2", password="p"))
+    _cache_visits(523)
+    resp, task = _call_semantic(client, _OppReportDef())
+    assert task.delay.call_count == 0
     body = resp.json()
-    assert body["cold_cache"] is False, "the page must answer from the cache it just filled"
+    assert body["cold_cache"] is False
     assert body["opportunities_with_data"] == [523]
 
 
-def test_a_warm_opportunity_report_does_not_refetch(client, django_user_model):
-    client.force_login(django_user_model.objects.create_user(username="w2", password="p"))
-    _cache_visits(523)
-    _, ensure = _call_semantic(client, _OppReportDef())
-    assert ensure.call_count == 0
-
-
-def test_a_report_without_the_flag_never_downloads_on_read(client, django_user_model):
-    """The programme report spans every opportunity; a page load must not become
-    a download of all of them."""
+def test_a_report_that_does_not_warm_on_read_never_queues_a_fill(client, django_user_model):
     client.force_login(django_user_model.objects.create_user(username="w3", password="p"))
-    resp, ensure = _call_semantic(client, _ProgrammeDef())
-    assert ensure.call_count == 0
+    resp, task = _call_semantic(client, _ProgrammeDef())
+    assert task.delay.call_count == 0
     assert resp.json()["cold_cache"] is True
 
 
-def test_a_failed_warm_still_answers_and_says_the_cache_is_cold(client, django_user_model):
+def test_a_failed_fill_still_answers_and_says_the_cache_is_cold(client, django_user_model):
+    from connect_labs.workflow.visit_cache import visit_warm_slot
+
     client.force_login(django_user_model.objects.create_user(username="w4", password="p"))
-
-    def boom(*a, **k):
-        raise RuntimeError("Connect export timed out")
-
-    resp, ensure = _call_semantic(client, _OppReportDef(), cache_fill=boom)
-    assert ensure.call_count == 1
+    visit_warm_slot(_OppReportDef().id).finish("Connect export timed out")
+    resp, task = _call_semantic(client, _OppReportDef())
+    assert task.delay.call_count == 0, "filling again here would poll forever"
     assert resp.status_code == 200
     assert resp.json()["cold_cache"] is True
 
 
-def _call_worker_cases(client, definition, flw, *, cache_fill=None):
+def _call_worker_cases(client, definition, flw):
     """The worker review's call: one worker's case rows from the programme report."""
 
     class _Pipe:
@@ -570,52 +573,47 @@ def _call_worker_cases(client, definition, flw, *, cache_fill=None):
         patch("connect_labs.workflow.views.WorkflowDataAccess") as wda,
         patch("connect_labs.workflow.data_access.PipelineDataAccess") as pda,
         patch("connect_labs.semantic.runtime.evaluate") as ev,
-        patch("connect_labs.workflow.visit_cache.ensure_visit_cache") as ensure,
+        patch("connect_labs.workflow.tasks.warm_visit_cache") as task,
     ):
         wda.return_value.get_definition.return_value = definition
+        wda.return_value.opportunity_id = 523
+        wda.return_value.program_id = None
         pda.return_value.get_definition.return_value = _Pipe()
         pda.return_value._schema_to_config.return_value = object()
         ev.return_value = [{"scope": "case", "case_id": "524|c1", "n_cases": 1}]
-        ensure.side_effect = cache_fill or (lambda *a, **k: {"failed": []})
         resp = client.get(_url(definition.id), {"scopes": "case", "flw": flw, "opportunity_id": 523})
-    return resp, ensure, ev
+    return resp, task, ev
 
 
-def test_one_workers_cases_warm_and_read_only_that_workers_opportunity(client, django_user_model):
+def test_one_workers_cases_warm_only_that_workers_opportunity(client, django_user_model):
     """The worker review's case table asks the PROGRAMME report, which spans a dozen
     opportunities and never warms on read. With 523 cached and the worker's 524 cold,
     the call answered "ready" with no rows and the table stayed blank until a
     reload. One worker is one opportunity: judge the cache on it, and warm it."""
     client.force_login(django_user_model.objects.create_user(username="w5", password="p"))
     _cache_visits(523)
+    resp, task, ev = _call_worker_cases(client, _ProgrammeDef(), "524::nurse1")
+    assert resp.status_code == 202
+    assert task.delay.call_args.kwargs["only"] == 524, "warm exactly the worker's opportunity"
+    assert ev.call_count == 0
 
-    def fill(*args, **kwargs):
-        _cache_visits(524)
-        return {"failed": []}
 
-    resp, ensure, ev = _call_worker_cases(client, _ProgrammeDef(), "524::nurse1", cache_fill=fill)
-    assert ensure.call_count == 1
-    assert (
-        ensure.call_args.kwargs["start_at"] == 1 and ensure.call_args.kwargs["limit"] == 1
-    ), "warm exactly the worker's opportunity, not the whole programme"
+def test_a_warm_workers_opportunity_reads_only_that_opportunity(client, django_user_model):
+    client.force_login(django_user_model.objects.create_user(username="w6", password="p"))
+    _cache_visits(524)
+    resp, task, ev = _call_worker_cases(client, _ProgrammeDef(), "524::nurse1")
+    assert task.delay.call_count == 0
     assert ev.call_args.args[1] == [524], "evaluate only the worker's opportunity"
     body = resp.json()
     assert body["cold_cache"] is False and body["partial_cache"] is False
     assert body["opportunity_ids"] == [524]
 
 
-def test_a_warm_workers_opportunity_does_not_download(client, django_user_model):
-    client.force_login(django_user_model.objects.create_user(username="w6", password="p"))
-    _cache_visits(524)
-    _, ensure, _ = _call_worker_cases(client, _ProgrammeDef(), "524::nurse1")
-    assert ensure.call_count == 0
-
-
 def test_a_worker_from_outside_the_workflow_is_refused(client, django_user_model):
     client.force_login(django_user_model.objects.create_user(username="w7", password="p"))
-    resp, ensure, _ = _call_worker_cases(client, _ProgrammeDef(), "999::nurse1")
+    resp, task, _ = _call_worker_cases(client, _ProgrammeDef(), "999::nurse1")
     assert resp.status_code == 400
-    assert ensure.call_count == 0
+    assert task.delay.call_count == 0
 
 
 def test_another_sources_rows_do_not_make_the_visits_look_cached(client, django_user_model):

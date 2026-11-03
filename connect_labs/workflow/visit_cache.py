@@ -43,6 +43,8 @@ from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
+from connect_labs.workflow.cache_warm import WarmSlot
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_HOLD_MINUTES = 90
@@ -207,6 +209,7 @@ def ensure_visit_cache(
     progress: Callable | None = None,
     slot_factory: Callable | None = None,
     cchq_access_token: str | None = None,
+    on_stage: Callable[[str], None] | None = None,
 ) -> dict:
     """Make every (opportunity, pipeline) slot a workflow reads valid, and hold it.
 
@@ -214,8 +217,18 @@ def ensure_visit_cache(
     opportunity, naming what happened on each slot. A failure on one opportunity is
     reported, not raised, so one bad export cannot cost the other eleven -- and the
     report says which, so the caller knows exactly what is still missing.
+
+    `on_stage` hears each step in words a viewer can read, finer than `progress`'s
+    one tick per opportunity.
     """
     from django.utils import timezone
+
+    def stage(message: str) -> None:
+        if on_stage is not None:
+            try:
+                on_stage(message)
+            except Exception:  # noqa: BLE001 -- telemetry must never fail the work
+                logger.debug("on_stage callback raised; continuing", exc_info=True)
 
     if (opportunity_id is None) == (program_id is None):
         raise VisitCacheError("no_owner", "provide exactly one of opportunity_id / program_id")
@@ -278,7 +291,8 @@ def ensure_visit_cache(
                 entry["images"] = {"error": str(e)}
                 entry["ok"] = False
                 entry["error"] = entry["error"] or f"images: {e}"
-        for pid in pipeline_ids:
+        where = f"opportunity {index} of {len(batch)}, " if len(batch) > 1 else ""
+        for pipeline_index, pid in enumerate(pipeline_ids, start=1):
             slot: dict = {"pipeline_id": pid}
             try:
                 mgr = manager(opp, pid)
@@ -286,6 +300,7 @@ def ensure_visit_cache(
                 # slot short of its label is neither "held" nor worth holding. The fetch
                 # below rebuilds one, because has_valid_raw_cache refuses it.
                 before = mgr.whole_raw_visit_count()
+                stage(f"Loading visit data: {where}downloading visits.")
                 slot["raw_visits"] = fetch_raw(opp, pid)
                 after = mgr.whole_raw_visit_count()
                 if not after and mgr.get_raw_visit_count():
@@ -298,6 +313,7 @@ def ensure_visit_cache(
                 # itself, not by the visits fetch above, so the hold just taken found
                 # nothing to extend; hold it again once the run has filled it.
                 filled_by_run = not after
+                stage(f"Loading visit data: {where}preparing data set {pipeline_index} of {len(pipeline_ids)}.")
                 result = run_pipeline(opp, pid) or {}
                 error = (result.get("metadata") or {}).get("error")
                 if error:
@@ -317,6 +333,81 @@ def ensure_visit_cache(
 
     report["failed"] = [e["opportunity_id"] for e in report["opportunities"] if not e["ok"]]
     return report
+
+
+def visit_warm_slot(definition_id: int, only: int | None = None, token: str | None = None) -> WarmSlot:
+    """The one background fill of a workflow's visit cache, or of ONE of its opportunities."""
+    return WarmSlot(f"visit_cache:warm:{int(definition_id)}:{int(only) if only is not None else 'all'}", token=token)
+
+
+def warm_visit_cache_in_background(
+    access_token: str | None,
+    *,
+    definition_id: int,
+    owner_opportunity_id: int,
+    scope: dict,
+    only: int | None = None,
+    user_id: int | None = None,
+    claim: str | None = None,
+) -> dict:
+    """Fill a workflow's visit cache for whoever is waiting on it. Celery-side.
+
+    Runs as the viewer who first found it cold. Every viewer's own gates ran in the
+    request that polls, before any answer: this fills a cache and returns nothing to
+    anyone. It carries the viewer's CommCare HQ token too, which the request could not
+    afford to use: a workflow's HQ pipelines are real walks, and here they cost no one.
+    """
+    from connect_labs.labs.integrations.commcare.cchq_tokens import cchq_token_or_none
+    from connect_labs.workflow.data_access import WorkflowDataAccess
+
+    slot = visit_warm_slot(definition_id, only, claim)
+    if slot.superseded():
+        return {"superseded": True}
+    with slot.running() as outcome:
+        data_access = None
+        try:
+            cchq_token = None
+            if user_id is not None:
+                from django.contrib.auth import get_user_model
+
+                user = get_user_model().objects.filter(pk=user_id).first()
+                cchq_token = cchq_token_or_none(user) if user is not None else None
+            data_access = WorkflowDataAccess(access_token=access_token, **scope)
+            window = {}
+            if only is not None:
+                # ensure_visit_cache walks the workflow's opportunities in order; a
+                # window of one starting at `only` warms exactly that opportunity.
+                definition = data_access.get_definition(definition_id)
+                order = [int(o) for o in workflow_opportunity_ids(definition, int(owner_opportunity_id))]
+                if int(only) not in order:
+                    # The workflow changed while this waited its turn. Falling through
+                    # with no window would download every opportunity it spans.
+                    raise VisitCacheError("no_opportunities", f"opportunity {only} is not in this workflow")
+                window = {"start_at": order.index(int(only)), "limit": 1}
+            report = ensure_visit_cache(
+                data_access,
+                definition_id,
+                opportunity_id=int(owner_opportunity_id),
+                cchq_access_token=cchq_token,
+                on_stage=slot.report,
+                **window,
+            )
+            failed = report.get("failed") or []
+            if failed:
+                # Not necessarily the reader's problem: a CommCare pipeline can fail
+                # while the visits the report reads landed. The reader's next build
+                # decides; this is what it says if that build still finds nothing.
+                logger.warning("warm left opportunities uncached for workflow %s: %s", definition_id, failed)
+                first = next((e["error"] for e in report["opportunities"] if e.get("error")), None)
+                outcome["error"] = first or f"opportunities {failed} could not be loaded"
+            return {"failed": failed}
+        except Exception as exc:  # noqa: BLE001 -- the reader is polling; it must hear what happened
+            logger.warning("visit cache warm failed for workflow %s", definition_id, exc_info=True)
+            outcome["error"] = str(exc) or type(exc).__name__
+            return {"error": outcome["error"]}
+        finally:
+            if data_access is not None:
+                data_access.close()
 
 
 def extend_if_held(

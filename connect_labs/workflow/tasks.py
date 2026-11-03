@@ -1337,6 +1337,35 @@ def execute_workflow_action(self, execution_id: int):
 
 
 @celery_app.task(acks_late=False, max_retries=0)
+def warm_visit_cache(
+    access_token: str,
+    *,
+    definition_id: int,
+    owner_opportunity_id: int,
+    scope: dict,
+    only: int | None = None,
+    user_id: int | None = None,
+    claim: str | None = None,
+) -> dict:
+    """Fill a workflow's visit cache for a reader polling on a 202 (cache_warm.py).
+
+    Not retried and not redelivered: a worker lost mid-walk loses its claim within
+    minutes, and the reader's next poll queues a new one.
+    """
+    from connect_labs.workflow.visit_cache import warm_visit_cache_in_background
+
+    return warm_visit_cache_in_background(
+        access_token,
+        definition_id=definition_id,
+        owner_opportunity_id=owner_opportunity_id,
+        scope=scope,
+        only=only,
+        user_id=user_id,
+        claim=claim,
+    )
+
+
+@celery_app.task(acks_late=False, max_retries=0)
 def warm_pipeline_query_cache(
     access_token: str,
     *,
@@ -1345,6 +1374,7 @@ def warm_pipeline_query_cache(
     opportunity_id: int,
     scope: dict,
     lock_key: str,
+    claim: str | None = None,
 ) -> dict:
     """Fill one pipeline's cache so `actions.queryPipelineRows` can answer from it.
 
@@ -1361,4 +1391,5 @@ def warm_pipeline_query_cache(
         opportunity_id=opportunity_id,
         scope=scope,
         lock_key=lock_key,
+        claim=claim,
     )

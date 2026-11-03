@@ -26,7 +26,7 @@ instead of recomputing them. Runs arrive two ways:
     saves its own weeks, exactly like the programme report does.
 
 A live, unsaved view is still available as an in-progress run: its preview fills
-this opportunity's visit cache itself (`warm_cache_on_read`).
+this opportunity's visit cache itself (`warm_cache_on_read`, off the request: cache_warm.py).
 
 THE DISCLOSURE LINE. Worker names come from this opportunity's own snapshot: an
 opportunity owns its workers' data, so naming them to the people running it is

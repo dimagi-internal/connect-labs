@@ -61,6 +61,16 @@ class CCHQReLoginRequired(CCHQTokenError):
     """Raised when the refresh_token is no longer valid and the user must re-authorize."""
 
 
+def cchq_token_or_none(user) -> str | None:
+    """The user's CommCare HQ token, or None -- for work that only some workflows need it
+    for. A workflow with no CommCare HQ pipelines ignores it, so a missing or expired HQ
+    login must never block the work."""
+    try:
+        return get_valid_cchq_access_token(user)
+    except CCHQTokenError:
+        return None
+
+
 def get_valid_cchq_access_token(user) -> str:
     """Return a non-expired CommCare HQ access_token for the given user.
 

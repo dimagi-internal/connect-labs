@@ -6,6 +6,8 @@
  * via the `pipelines` prop.
  */
 
+import type { Warming } from './warming';
+
 // =============================================================================
 // Core Props - What every workflow component receives
 // =============================================================================
@@ -871,7 +873,7 @@ export interface PipelineRowsQuery {
   offset?: number;
   /** Which opportunity of a multi-opp workflow to read. */
   opportunity_id?: number;
-  onStatus?: (message: string) => void;
+  onStatus?: (message: string, warming?: Warming) => void;
   timeoutMs?: number;
 }
 
