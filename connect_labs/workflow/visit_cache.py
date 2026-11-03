@@ -335,9 +335,9 @@ def ensure_visit_cache(
     return report
 
 
-def visit_warm_slot(definition_id: int, only: int | None = None) -> WarmSlot:
+def visit_warm_slot(definition_id: int, only: int | None = None, token: str | None = None) -> WarmSlot:
     """The one background fill of a workflow's visit cache, or of ONE of its opportunities."""
-    return WarmSlot(f"visit_cache:warm:{int(definition_id)}:{int(only) if only is not None else 'all'}")
+    return WarmSlot(f"visit_cache:warm:{int(definition_id)}:{int(only) if only is not None else 'all'}", token=token)
 
 
 def warm_visit_cache_in_background(
@@ -348,6 +348,7 @@ def warm_visit_cache_in_background(
     scope: dict,
     only: int | None = None,
     user_id: int | None = None,
+    claim: str | None = None,
 ) -> dict:
     """Fill a workflow's visit cache for whoever is waiting on it. Celery-side.
 
@@ -359,10 +360,12 @@ def warm_visit_cache_in_background(
     from connect_labs.labs.integrations.commcare.cchq_tokens import cchq_token_or_none
     from connect_labs.workflow.data_access import WorkflowDataAccess
 
-    with visit_warm_slot(definition_id, only).running() as outcome:
+    slot = visit_warm_slot(definition_id, only, claim)
+    if slot.superseded():
+        return {"superseded": True}
+    with slot.running() as outcome:
         data_access = None
         try:
-            on_stage = visit_warm_slot(definition_id, only).report
             cchq_token = None
             if user_id is not None:
                 from django.contrib.auth import get_user_model
@@ -376,14 +379,17 @@ def warm_visit_cache_in_background(
                 # window of one starting at `only` warms exactly that opportunity.
                 definition = data_access.get_definition(definition_id)
                 order = [int(o) for o in workflow_opportunity_ids(definition, int(owner_opportunity_id))]
-                if int(only) in order:
-                    window = {"start_at": order.index(int(only)), "limit": 1}
+                if int(only) not in order:
+                    # The workflow changed while this waited its turn. Falling through
+                    # with no window would download every opportunity it spans.
+                    raise VisitCacheError("no_opportunities", f"opportunity {only} is not in this workflow")
+                window = {"start_at": order.index(int(only)), "limit": 1}
             report = ensure_visit_cache(
                 data_access,
                 definition_id,
                 opportunity_id=int(owner_opportunity_id),
                 cchq_access_token=cchq_token,
-                on_stage=on_stage,
+                on_stage=slot.report,
                 **window,
             )
             failed = report.get("failed") or []

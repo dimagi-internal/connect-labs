@@ -1316,12 +1316,14 @@ export function createDispatcher(
             headers: params.headers,
             body: params.body,
           });
+        // A cold-read slot guards a request in flight, not a reader asleep between polls.
+        const attempt = () => (isColdRead(checked) ? coldRead(once) : once());
         // A render's read waits out a cold cache here, so its promise just takes as
         // long as the fill takes. Only a GET: nothing else is safe to send twice.
         const read = () =>
-          checked.method === 'GET' ? waitOutWarming(w, once) : once();
+          checked.method === 'GET' ? waitOutWarming(w, attempt) : attempt();
         return limited(async () => {
-          const answer = await (isColdRead(checked) ? coldRead(read) : read());
+          const answer = await read();
           if (checked.startsJob && answer.status < 300) rememberJob(answer);
           if (checked.remembersPipelines && answer.status < 300) {
             rememberPipelines(answer);

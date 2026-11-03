@@ -1345,6 +1345,7 @@ def warm_visit_cache(
     scope: dict,
     only: int | None = None,
     user_id: int | None = None,
+    claim: str | None = None,
 ) -> dict:
     """Fill a workflow's visit cache for a reader polling on a 202 (cache_warm.py).
 
@@ -1360,6 +1361,7 @@ def warm_visit_cache(
         scope=scope,
         only=only,
         user_id=user_id,
+        claim=claim,
     )
 
 
@@ -1372,6 +1374,7 @@ def warm_pipeline_query_cache(
     opportunity_id: int,
     scope: dict,
     lock_key: str,
+    claim: str | None = None,
 ) -> dict:
     """Fill one pipeline's cache so `actions.queryPipelineRows` can answer from it.
 
@@ -1388,4 +1391,5 @@ def warm_pipeline_query_cache(
         opportunity_id=opportunity_id,
         scope=scope,
         lock_key=lock_key,
+        claim=claim,
     )

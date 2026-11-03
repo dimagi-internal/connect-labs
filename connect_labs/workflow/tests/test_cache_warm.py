@@ -21,9 +21,52 @@ def _clear_cache():
 class TestSlot:
     def test_only_the_first_reader_claims_it(self):
         slot = WarmSlot("k")
-        assert slot.claim() is True
-        assert slot.claim() is False
-        assert WarmSlot("other").claim() is True
+        assert slot.claim()
+        assert slot.claim() is None
+        assert WarmSlot("other").claim()
+
+    def test_an_old_fill_cannot_release_a_newer_ones_claim(self):
+        """A task queued so long its claim lapsed, then a second reader queued another."""
+        late = WarmSlot("k")
+        late.claim()
+        cache.delete("k")
+        newer = WarmSlot("k")
+        newer_token = newer.claim()
+        assert late.superseded() is True
+        late.report("stale stage")
+        late.finish("stale failure")
+        assert newer.state()["token"] == newer_token and newer.state()["message"] is None
+        assert newer.outcome() is None
+
+    def test_a_task_whose_claim_lapsed_with_no_successor_still_runs(self):
+        late = WarmSlot("k")
+        late.claim()
+        cache.delete("k")
+        assert late.superseded() is False
+        with late.running():
+            assert late.state()["running"] is True
+        assert late.state() is None
+
+    def test_a_claim_that_could_not_be_queued_does_not_stand(self):
+        slot = WarmSlot("k")
+
+        def broker_down(token):
+            raise ConnectionError("no broker")
+
+        with pytest.raises(ConnectionError):
+            slot.queue_once(broker_down)
+        assert slot.state() is None
+        assert "no broker" in slot.take_outcome()["error"]
+
+    def test_queue_once_queues_once_and_hands_over_the_token(self):
+        tokens = []
+        WarmSlot("k").queue_once(tokens.append)
+        WarmSlot("k").queue_once(tokens.append)
+        assert len(tokens) == 1 and WarmSlot("k").state()["token"] == tokens[0]
+
+    def test_a_claim_from_before_this_format_reads_as_a_fill_under_way(self):
+        cache.set("k", "warming", 60)
+        assert WarmSlot("k").state() == {"message": None, "started_at": None}
 
     def test_running_releases_the_claim_and_leaves_the_outcome(self):
         slot = WarmSlot("k")
@@ -32,7 +75,7 @@ class TestSlot:
             assert slot.state()["running"] is True
         assert slot.state() is None
         assert slot.outcome() == {"error": None}
-        assert slot.claim() is True
+        assert slot.claim()
 
     def test_a_reported_failure_is_left_for_the_reader(self):
         slot = WarmSlot("k")
@@ -59,14 +102,16 @@ class TestSlot:
     def test_the_heartbeat_keeps_a_long_walk_claimed(self, monkeypatch):
         monkeypatch.setattr(cache_warm, "HEARTBEAT_SECONDS", 0.01)
         slot = WarmSlot("k")
-        beats = []
-        real = slot._write
-        monkeypatch.setattr(slot, "_write", lambda changes: (beats.append(1), real(changes)))
         import time
 
+        # On the module, not the proxy: django's cache is per-thread, and this is a thread.
+        spy = MagicMock(wraps=cache)
+        monkeypatch.setattr(cache_warm, "cache", spy)
         with slot.running():
+            slot.report("downloading")
             time.sleep(0.1)
-        assert len(beats) > 2, "the walk has nothing to tick from; the thread must"
+            assert slot.state()["message"] == "downloading", "a beat must not undo a reported stage"
+        assert spy.touch.call_count > 2, "the walk has nothing to tick from; the thread must"
         assert slot.state() is None, "a beat after the release must not take the claim back"
 
     def test_taking_a_failure_spends_it(self):
@@ -104,6 +149,24 @@ class TestVisitWarm:
         assert ensure.call_args.kwargs["start_at"] == 1 and ensure.call_args.kwargs["limit"] == 1
         assert visit_warm_slot(5, 524).outcome() == {"error": None}
         assert visit_warm_slot(5).outcome() is None, "one worker's fill is not the whole report's"
+
+    def test_an_opportunity_removed_while_queued_downloads_nothing(self):
+        """No window would mean every opportunity the workflow spans."""
+        out, ensure = self._run(only=999)
+        assert ensure.call_count == 0
+        assert "999" in out["error"]
+        assert "999" in visit_warm_slot(5, 999).outcome()["error"]
+
+    def test_a_task_a_newer_fill_replaced_does_nothing(self):
+        slot = visit_warm_slot(5)
+        slot.claim()
+        ensure = MagicMock()
+        with patch.object(visit_cache, "ensure_visit_cache", ensure):
+            out = warm_visit_cache_in_background(
+                "tok", definition_id=5, owner_opportunity_id=523, scope={"opportunity_id": 523}, claim="older"
+            )
+        assert out == {"superseded": True} and ensure.call_count == 0
+        assert slot.state() is not None
 
     def test_a_failed_opportunity_is_named_for_the_reader(self):
         report = {"failed": [523], "opportunities": [{"opportunity_id": 523, "error": "pipeline 9: no export"}]}

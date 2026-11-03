@@ -3,8 +3,8 @@
  * by the host, above the frame, so every render gets it without asking; same strip as
  * the runner's own pipeline-loading one.
  *
- * The clock ticks here between polls. It sits outside the live region: announcing the
- * stage to a screen reader helps, announcing every second does not.
+ * The clock ticks here between polls. It sits outside the live region: a screen reader
+ * can reach it, and announcing the stage helps where announcing every second would not.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -40,9 +40,7 @@ export function WarmingStrip({ warming }: { warming: Warming }) {
         <span role="status" className="flex-1">
           {warming.message}
         </span>
-        <span className="tabular-nums" aria-hidden="true">
-          {formatElapsed(elapsed)}
-        </span>
+        <span className="tabular-nums">{formatElapsed(elapsed)}</span>
       </div>
       <div className="mt-1 text-gray-400">
         You can leave this page. Loading carries on, and the report opens

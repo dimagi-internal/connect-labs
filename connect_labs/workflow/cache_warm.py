@@ -32,7 +32,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from collections.abc import Iterator
+import uuid
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any
 
@@ -54,27 +55,68 @@ RETRY_AFTER_MS = 5000
 class WarmSlot:
     """One background fill of one cache, keyed by what it fills."""
 
-    def __init__(self, key: str):
+    def __init__(self, key: str, token: str | None = None):
+        """`token` is the claim a task was queued with (`queue_once`). Without one, the
+        slot acts for whichever fill holds it."""
         self.key = key
         self.outcome_key = key + ":outcome"
+        self.token = token
 
-    def claim(self) -> bool:
-        """Take the slot. False means another reader's fill is already under way."""
-        return bool(
-            cache.add(self.key, {"message": None, "started_at": time.time(), "running": False}, QUEUED_SECONDS)
+    def claim(self) -> str | None:
+        """Take the slot, and return its token. None means a fill is already under way."""
+        token = uuid.uuid4().hex
+        taken = cache.add(
+            self.key,
+            {"token": token, "message": None, "started_at": time.time(), "running": False},
+            QUEUED_SECONDS,
         )
+        if not taken:
+            return None
+        self.token = token
+        return token
+
+    def queue_once(self, enqueue: Callable[[str], Any]) -> None:
+        """Have `enqueue(token)` queue the fill, if no fill is under way yet.
+
+        If it cannot be queued, no task is coming, so no claim may stand: the next read
+        hears why instead of polling for ten minutes on nothing.
+        """
+        token = self.claim()
+        if token is None:
+            return
+        try:
+            enqueue(token)
+        except Exception as exc:
+            self.finish(f"the background fill could not be queued: {exc}")
+            raise
 
     def state(self) -> dict[str, Any] | None:
         """What the fill under way is doing, or None when there is none."""
-        return cache.get(self.key)
+        found = cache.get(self.key)
+        if found is None or isinstance(found, dict):
+            return found
+        # A claim written before this format, still live across a deploy.
+        return {"message": None, "started_at": None}
+
+    def superseded(self) -> bool:
+        """This task's claim lapsed while it queued and a newer fill holds the slot.
+        That fill will do the work; this one must neither repeat it nor release its claim."""
+        current = self.state()
+        return bool(current and self.token and current.get("token") != self.token)
 
     def report(self, message: str) -> None:
         """Say what the task is doing now. A reader sees it on its next poll."""
         self._write({"message": str(message)[:200]})
 
     def _write(self, changes: dict[str, Any]) -> None:
-        current = cache.get(self.key) or {"started_at": time.time()}
-        cache.set(self.key, {**current, "running": True, **changes}, RUNNING_SECONDS)
+        if self.superseded():
+            return
+        current = self.state() or {"started_at": time.time()}
+        cache.set(
+            self.key,
+            {**current, "token": self.token or current.get("token"), "running": True, **changes},
+            RUNNING_SECONDS,
+        )
 
     @contextmanager
     def running(self) -> Iterator[dict[str, Any]]:
@@ -93,7 +135,9 @@ class WarmSlot:
         def beat():
             while not stop.wait(HEARTBEAT_SECONDS):
                 try:
-                    self._write({})
+                    # Only the expiry: rewriting the value could undo a stage just
+                    # reported, and a lapsed key must stay lapsed.
+                    cache.touch(self.key, RUNNING_SECONDS)
                 except Exception:  # noqa: BLE001 -- a missed beat must never fail the work
                     logger.debug("warm heartbeat failed for %s", self.key, exc_info=True)
 
@@ -106,13 +150,14 @@ class WarmSlot:
             outcome["error"] = str(exc) or type(exc).__name__
             raise
         finally:
-            # Stopped first: a beat after the release would take the claim back.
             stop.set()
             thread.join(timeout=5)
             self.finish(outcome["error"])
 
     def finish(self, error: str | None = None) -> None:
         """Release the claim and leave what happened for the next reader."""
+        if self.superseded():
+            return
         cache.set(self.outcome_key, {"error": error[:500] if error else None}, OUTCOME_SECONDS)
         cache.delete(self.key)
 

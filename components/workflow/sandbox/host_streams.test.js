@@ -662,7 +662,7 @@ describe('a read that finds a cold cache', () => {
   );
   const url = `${LABS}/labs/workflow/api/run/900/snapshot/preview/`;
 
-  function dispatcher(answers) {
+  function dispatcher(answers, sleep = async () => undefined) {
     const queue = [...answers];
     const statuses = [];
     const w = {
@@ -692,7 +692,7 @@ describe('a read that finds a cold cache', () => {
         mode: 'workflow',
         routeContext: ctx(),
         workflow: w,
-        sleep: async () => undefined,
+        sleep,
       },
     );
     return { d, w, statuses };
@@ -718,6 +718,35 @@ describe('a read that finds a cold cache', () => {
     const answer = await request(d);
     expect(answer.result.status).toBe(200);
     expect(w.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not hold a cold-read slot while it sleeps', async () => {
+    // LIMITS.coldReadsInFlight is 6: a seventh reader waiting on a fill still gets in.
+    const semantic = `${LABS}/labs/workflow/api/42/semantic/`;
+    const wake = [];
+    const { d, w } = dispatcher([], () => new Promise((r) => wake.push(r)));
+    w.fetch.mockImplementation(async () => warming);
+    const reads = [];
+    for (let i = 1; i <= 7; i += 1) {
+      reads.push(
+        d({
+          id: i,
+          method: 'fetch',
+          params: { url: semantic, method: 'GET' },
+        }),
+      );
+      await tick(); // this one has had its answer and gone to sleep
+    }
+    expect(w.fetch).toHaveBeenCalledTimes(7);
+    expect(wake).toHaveLength(7);
+    w.fetch.mockImplementation(async () => json({ rows: [] }));
+    // All awake at once is seven in flight: the seventh is refused its slot, and that
+    // is a blip under a known fill, so it sleeps and asks again.
+    wake.splice(0).forEach((r) => r());
+    await tick();
+    wake.splice(0).forEach((r) => r());
+    const out = await Promise.all(reads);
+    expect(out.every((o) => o.result && o.result.status === 200)).toBe(true);
   });
 
   it('never reads a failure as something to wait on', async () => {

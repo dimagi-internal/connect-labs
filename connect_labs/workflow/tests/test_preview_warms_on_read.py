@@ -99,6 +99,35 @@ def test_a_poll_during_the_fill_builds_nothing_and_queues_nothing(monkeypatch):
     assert json.loads(response.content)["message"] == "Loading visit data: downloading visits."
 
 
+def test_a_partial_cache_answers_during_the_fill_too(monkeypatch):
+    """A second viewer gets what the first did: the figures so far, with their flag."""
+    visit_warm_slot(DEFINITION).claim()
+    response, builds, task = _call(
+        monkeypatch, build=lambda *a, **k: BUILT, cache_report={"cold_cache": False, "partial_cache": True}
+    )
+    assert response.status_code == 200 and builds == 1 and task.delay.call_count == 0
+
+
+def test_a_partial_answer_survives_a_broker_outage(monkeypatch):
+    def broker_down(*a, **k):
+        raise ConnectionError("no broker")
+
+    monkeypatch.setattr(
+        "connect_labs.workflow.tasks.warm_visit_cache", SimpleNamespace(delay=broker_down), raising=True
+    )
+    monkeypatch.setattr(views, "WorkflowDataAccess", _DAO)
+    monkeypatch.setattr("connect_labs.workflow.snapshot_runtime.build_snapshot_for_run", lambda *a, **k: BUILT)
+    monkeypatch.setattr(
+        "connect_labs.workflow.snapshot_runtime.cache_state", lambda ids: {"cold_cache": False, "partial_cache": True}
+    )
+    monkeypatch.setattr(views, "_warm_cache_on_read", lambda d: True)
+    request = RequestFactory().get("/", headers={"x-labs-sandbox-for": "5"})
+    request.user = SimpleNamespace(is_authenticated=True, pk=7)
+    request.session = {"labs_oauth": {"access_token": "tok"}}
+    response = views.preview_snapshot_api.__wrapped__.__wrapped__(request, run_id=1)
+    assert response.status_code == 200
+
+
 def test_a_filled_cache_answers_with_the_figures(monkeypatch):
     response, builds, task = _call(monkeypatch, build=lambda *a, **k: BUILT)
     assert response.status_code == 200

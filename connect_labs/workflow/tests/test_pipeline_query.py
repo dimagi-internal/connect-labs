@@ -277,9 +277,10 @@ class TestColdCache:
 
     def test_the_warm_task_runs_the_pipeline_and_releases_its_lock(self):
         from connect_labs.workflow import pipeline_query
+        from connect_labs.workflow.cache_warm import WarmSlot
 
         config = _visit_config()
-        cache.set("lock", "warming", 60)
+        WarmSlot("lock").claim()
         wda = MagicMock()
         wda.get_definition.return_value = _definition()
         with (

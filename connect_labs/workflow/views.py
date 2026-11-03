@@ -2732,13 +2732,17 @@ def preview_snapshot_api(request, run_id):
 
         # A fill under way answers before any building: this is what a reader's poll
         # hits every few seconds, and building over a half-filled cache is wasted work.
+        def warm_opportunities(definition):
+            return definition.opportunity_ids or ([run.opportunity_id] if run.opportunity_id else [])
+
         slot = visit_warm_slot(run.definition_id)
         filling = slot.state()
         if filling:
-            return warming_response(request, filling, COLD_CACHE_MESSAGE)
-
-        def warm_opportunities(definition):
-            return definition.opportunity_ids or ([run.opportunity_id] if run.opportunity_id else [])
+            # ...unless some of it has landed: a partial cache answers now, with its flag.
+            definition = data_access.get_definition(run.definition_id)
+            ids = warm_opportunities(definition) if definition is not None else []
+            if not cache_state(ids).get("partial_cache"):
+                return warming_response(request, filling, COLD_CACHE_MESSAGE)
 
         try:
             built = build_snapshot_for_run(
@@ -2785,9 +2789,16 @@ def preview_snapshot_api(request, run_id):
                 and slot.outcome() is None
                 and _warm_owner(definition, warm_opportunities(definition)) is not None
             ):
-                waiting = _warm_in_background(request, data_access, definition, warm_opportunities(definition))
-                if cache_report.get("cold_cache"):
-                    return waiting
+                try:
+                    waiting = _warm_in_background(request, data_access, definition, warm_opportunities(definition))
+                except Exception:
+                    # Figures in hand are still worth answering with; cold ones are not.
+                    if cache_report.get("cold_cache"):
+                        raise
+                    logger.warning("could not queue the fill behind a partial cache", exc_info=True)
+                else:
+                    if cache_report.get("cold_cache"):
+                        return waiting
         return JsonResponse(
             {
                 "source": "preview",
@@ -3273,19 +3284,21 @@ def pipeline_query_api(request, definition_id):
             finished = None if slot.state() else slot.take_outcome()  # report once; the next call tries again
             if finished and finished.get("error"):
                 return error(f"Filling the {params['alias']} pipeline failed: {finished['error']}", 502)
-            if slot.claim():
-                scope = {"program_id": scope_program} if (scope_program and not scope_opp) else {}
-                if not scope and not scope_opp and program_scope is not None:
-                    scope = {"program_id": program_scope}
-                scope = scope or {"opportunity_id": scope_opp or rows_opp}
-                warm_pipeline_query_cache.delay(
+            scope = {"program_id": scope_program} if (scope_program and not scope_opp) else {}
+            if not scope and not scope_opp and program_scope is not None:
+                scope = {"program_id": program_scope}
+            scope = scope or {"opportunity_id": scope_opp or rows_opp}
+            slot.queue_once(
+                lambda claim: warm_pipeline_query_cache.delay(
                     (request.session.get("labs_oauth", {}) or {}).get("access_token"),
                     definition_id=int(definition_id),
                     alias=params["alias"],
                     opportunity_id=cache_scope,
                     scope=scope,
                     lock_key=lock_key,
+                    claim=claim,
                 )
+            )
             return warming_response(
                 request,
                 slot.state(),
@@ -4245,24 +4258,21 @@ def _warm_in_background(request, data_access, definition, opportunity_ids, only=
     from connect_labs.workflow.tasks import warm_visit_cache
 
     slot = visit_warm_slot(definition.id, only)
-    if slot.claim():
-        owner = _warm_owner(definition, opportunity_ids)
-        scope_opportunity = getattr(data_access, "opportunity_id", None)
-        scope_program = getattr(data_access, "program_id", None)
-        scope = {"program_id": scope_program} if scope_program and not scope_opportunity else {}
-        try:
-            warm_visit_cache.delay(
-                (request.session.get("labs_oauth", {}) or {}).get("access_token"),
-                definition_id=int(definition.id),
-                owner_opportunity_id=int(owner),
-                scope=scope or {"opportunity_id": int(scope_opportunity or owner)},
-                only=int(only) if only is not None else None,
-                user_id=getattr(request.user, "pk", None),
-            )
-        except Exception as exc:
-            # No task is coming, so no claim may stand: the next read reports this.
-            slot.finish(f"the background fill could not be queued: {exc}")
-            raise
+    owner = _warm_owner(definition, opportunity_ids)
+    scope_opportunity = getattr(data_access, "opportunity_id", None)
+    scope_program = getattr(data_access, "program_id", None)
+    scope = {"program_id": scope_program} if scope_program and not scope_opportunity else {}
+    slot.queue_once(
+        lambda claim: warm_visit_cache.delay(
+            (request.session.get("labs_oauth", {}) or {}).get("access_token"),
+            definition_id=int(definition.id),
+            owner_opportunity_id=int(owner),
+            scope=scope or {"opportunity_id": int(scope_opportunity or owner)},
+            only=int(only) if only is not None else None,
+            user_id=getattr(request.user, "pk", None),
+            claim=claim,
+        )
+    )
     return warming_response(request, slot.state(), COLD_CACHE_MESSAGE)
 
 
@@ -4588,12 +4598,25 @@ def semantic_indicators_api(request, definition_id):
             # The fill is off this request (cache_warm.py). One that has just finished
             # and left this cold answers below with the cold/partial flags: filling
             # again would poll forever.
+            # A partial cache answers now with its flag and fills behind it, as the
+            # preview does; only a cold one has nothing to answer with yet.
             slot = visit_warm_slot(definition.id, warm_only)
+            cached, missing = _cached_opportunities(opportunity_ids)
             filling = slot.state()
-            if filling:
+            # One opportunity mid-download can look cached, so anything but a true
+            # partial waits: its rows may not all be there yet.
+            if filling and not (cached and missing):
                 return warming_response(request, filling, COLD_CACHE_MESSAGE)
-            if _cached_opportunities(opportunity_ids)[1] and slot.outcome() is None:
-                return _warm_in_background(request, data_access, definition, opportunity_ids, only=warm_only)
+            if missing and slot.outcome() is None:
+                try:
+                    waiting = _warm_in_background(request, data_access, definition, opportunity_ids, only=warm_only)
+                except Exception:
+                    if not cached:
+                        raise
+                    logger.warning("could not queue the fill behind a partial cache", exc_info=True)
+                else:
+                    if not cached:
+                        return waiting
 
         rows = evaluate(
             pipeline_config,

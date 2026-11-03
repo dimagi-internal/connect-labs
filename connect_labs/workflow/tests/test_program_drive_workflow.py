@@ -32,6 +32,7 @@ from connect_labs.labs.analysis.backends.sql.tests.test_gdrive_program_scope imp
 )
 from connect_labs.labs.analysis.config import AnalysisPipelineConfig, CacheStage, DataSourceConfig, FieldComputation
 from connect_labs.workflow import views
+from connect_labs.workflow.cache_warm import WarmSlot
 from connect_labs.workflow.data_access import (
     PipelineDataAccess,
     WorkflowDataAccess,
@@ -252,7 +253,7 @@ def test_the_warm_task_reads_a_program_source_in_the_program_scope(drive, owner)
     from connect_labs.workflow import pipeline_query
 
     config = _config()
-    cache.set("lock", "warming", 60)
+    WarmSlot("lock").claim()
     wda = MagicMock()
     wda.get_definition.return_value = _definition(opps=[])
     with (

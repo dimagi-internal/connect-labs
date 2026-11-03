@@ -345,11 +345,15 @@ def warm_pipeline_cache(
     opportunity_id: int,
     scope: dict,
     lock_key: str,
+    claim: str | None = None,
 ) -> dict:
     """Hold ``lock_key``'s claim (cache_warm.py) while ``_fill_pipeline_cache`` runs."""
     from connect_labs.workflow.cache_warm import WarmSlot
 
-    with WarmSlot(lock_key).running() as outcome:
+    slot = WarmSlot(lock_key, token=claim)
+    if slot.superseded():
+        return {"superseded": True}
+    with slot.running() as outcome:
         return _fill_pipeline_cache(
             access_token,
             definition_id=definition_id,
@@ -443,7 +447,7 @@ def _fill_pipeline_cache(
         return {"warmed": warmed}
     except Exception as exc:
         logger.warning("pipeline-query warm of %s (workflow %s, opp %s) failed", alias, definition_id, opportunity_id)
-        message = exc.message if isinstance(exc, PipelineQueryError) else str(exc)
+        message = (exc.message if isinstance(exc, PipelineQueryError) else str(exc)) or type(exc).__name__
         outcome["error"] = message
         return {"error": message}
     finally:
