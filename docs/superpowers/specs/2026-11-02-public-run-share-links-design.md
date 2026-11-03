@@ -1,6 +1,6 @@
 # Public links to a saved workflow run
 
-**Status:** design, not built. Date: 2026-11-02.
+**Status:** built (#2798, #2807) and deployed. Date: 2026-11-02.
 
 ## Why
 
