@@ -25,6 +25,21 @@ the admin `--profile labs` SSO session: **raw application log events**
 and **writes** (§6). `perf_triage.py --profile labs` is the override if a read
 is ever denied.
 
+**Most log questions do not need SSO.** labs-observe reads the scrubbed
+`/labs-jj/observe/*` groups: `request-telemetry` (every `slow_request` and
+`stream_end` line, with the `cpu_ms`/`db_ms`/`outbound_ms` split),
+`alb-requests` (per-request status, including `460` for a client that left) and
+`ecs-events`. `perf_triage.py` prints the heaviest requests from the first of
+these, each with its implied start. Raw logs are needed for exception text and
+kill lines, and a killed worker writes no `slow_request` line at all.
+A `family:labs-jj-web` task stop in `ecs-events` is a `run-labs-command` one-off,
+not a rollout.
+
+**Verdict `paged_below_sustained`:** a paging alarm fired in the window and the
+CPU never ran `SUSTAINED_MINUTES` consecutive minutes. The CPU page is 4 of 5
+one-minute datapoints, so a real 4-minute pin lands here. It is not a clean bill
+of health: line the `HEAVY REQUEST` rows up against per-minute CPU.
+
 Any window works; the metric period widens automatically past 120h to stay under
 CloudWatch's 1440-datapoint cap, and the verdict header prints the period it used.
 A wider period averages short spikes away, so **widen to find an incident, then

@@ -17,6 +17,7 @@ would just teach the next reviewer to ignore the verdict.
 """
 
 import importlib.util
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -51,6 +52,113 @@ def _snapshot(**overrides):
     )
     data.update(overrides)
     return data
+
+
+def test_a_page_below_the_sustained_line_is_not_healthy():
+    """2026-11-03: a 4-minute pin paged, and the tool printed healthy, "all 17 OK"."""
+    verdict = perf_triage.judge(
+        _snapshot(
+            web_cpu_peak_pct=100.0,
+            paged_in_window=[{"name": "labs-jj-web-cpu-high-actionable", "at": "2026-11-03T12:02:42Z"}],
+        )
+    )
+    assert verdict["verdict"] == "paged_below_sustained"
+    assert "labs-jj-web-cpu-high-actionable at 2026-11-03T12:02:42Z" in verdict["findings"][0]
+    assert "No sustained performance problem" not in verdict["next_step"]
+
+
+def test_a_page_does_not_mask_a_named_tier():
+    verdict = perf_triage.judge(
+        _snapshot(
+            web_cpu_peak_pct=99.0,
+            web_cpu_saturated_periods=6,
+            paged_in_window=[{"name": "labs-jj-web-cpu-high-actionable", "at": "2026-11-03T12:02:42Z"}],
+        )
+    )
+    assert verdict["verdict"] == "web_saturated"
+
+
+def test_no_page_and_no_saturation_stays_healthy():
+    assert perf_triage.judge(_snapshot(paged_in_window=[]))["verdict"] == "healthy"
+
+
+def test_only_alarms_that_page_count_and_times_become_utc():
+    """The raw child has no actions; the CLI prints local offsets."""
+    items = [
+        {
+            "AlarmName": "labs-jj-web-cpu-high-actionable",
+            "Timestamp": "2026-11-03T05:02:42.842000-07:00",
+            "HistorySummary": "Alarm updated from OK to ALARM",
+        },
+        {
+            "AlarmName": "labs-jj-web-cpu-high-actionable",
+            "Timestamp": "2026-11-03T05:04:42.842000-07:00",
+            "HistorySummary": "Alarm updated from ALARM to OK",
+        },
+        {
+            "AlarmName": "labs-jj-web-cpu-high",
+            "Timestamp": "2026-11-03T05:02:42.000000-07:00",
+            "HistorySummary": "Alarm updated from OK to ALARM",
+        },
+    ]
+    assert perf_triage._paged_from_history(items, {"labs-jj-web-cpu-high-actionable"}) == [
+        {"name": "labs-jj-web-cpu-high-actionable", "at": "2026-11-03T12:02:42Z"}
+    ]
+
+
+def _slow_line(ended_ms, duration_ms, cpu_ms, route="labs/x/"):
+    message = json.dumps(
+        {
+            "event": "slow_request",
+            "route": route,
+            "status": 500,
+            "duration_ms": duration_ms,
+            "cpu_ms": cpu_ms,
+            "db_ms": 1000,
+            "db_queries": 7,
+            "outbound_ms": 2000,
+            "outbound_calls": 3,
+        }
+    )
+    return {"timestamp": ended_ms, "message": message}
+
+
+def test_heaviest_requests_rank_by_cpu_and_report_when_they_started():
+    """The line is written at the END, so a long request logs after its own pin."""
+    ended = int(datetime(2026, 11, 3, 11, 59, 35, tzinfo=timezone.utc).timestamp() * 1000)
+    rows = perf_triage._heaviest_from_events(
+        [
+            _slow_line(ended, 900_000, 1_000, route="labs/waiting/"),
+            _slow_line(ended, 746_000, 230_000, route="labs/burning/"),
+            {"timestamp": ended, "message": "not json"},
+        ]
+    )
+    assert [row["route"] for row in rows] == ["labs/burning/", "labs/waiting/"]
+    assert rows[0]["started"] == "2026-11-03T11:47:09Z"
+    assert rows[0]["cpu_s"] == 230
+
+
+def test_a_heavy_request_is_reported_under_any_verdict():
+    row = {
+        "route": "labs/burning/",
+        "status": 500,
+        "started": "2026-11-03T11:47:09Z",
+        "ended": "2026-11-03T11:59:35Z",
+        "duration_s": 746,
+        "cpu_s": 230,
+        "db_s": 234,
+        "db_queries": 444,
+        "outbound_s": 286,
+        "outbound_calls": 98,
+    }
+    verdict = perf_triage.judge(_snapshot(heaviest_requests=[row]))
+    assert verdict["verdict"] == "healthy"
+    assert any("HEAVY REQUEST labs/burning/" in f and "11:47:09Z" in f for f in verdict["findings"])
+
+
+def test_a_failed_telemetry_read_says_so():
+    verdict = perf_triage.judge(_snapshot(heaviest_requests_error="AccessDenied"))
+    assert any("HEAVY REQUESTS UNREAD: AccessDenied" in f for f in verdict["findings"])
 
 
 def test_breaching_5xx_is_not_healthy():

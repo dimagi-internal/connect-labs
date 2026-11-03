@@ -229,6 +229,12 @@ def _peak_ext(points, stat):
 
 
 SUSTAINED_MINUTES = 15
+# The scrubbed slow_request stream, readable on labs-observe with no SSO. The route
+# metric names a slow route; this says where the seconds went. A worker that was
+# killed writes no line, so an empty result is NOT evidence that nothing was heavy.
+REQUEST_TELEMETRY_GROUP = "/labs-jj/observe/request-telemetry"
+HEAVY_REQUEST_MS = 60_000
+HEAVY_REQUEST_LIMIT = 5
 
 
 def _sustained(points, threshold, period, min_minutes=SUSTAINED_MINUTES, key="Average"):
@@ -251,6 +257,66 @@ def _sustained(points, threshold, period, min_minutes=SUSTAINED_MINUTES, key="Av
         else:
             run = 0
     return best if best * period >= min_minutes * 60 else 0
+
+
+def _epoch_ms(iso_z: str) -> int:
+    parsed = datetime.strptime(iso_z, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    return int(parsed.timestamp() * 1000)
+
+
+def _paged_from_history(items, paging) -> list[dict]:
+    """Transitions INTO ALARM, oldest first, for alarms that actually page.
+
+    `paging` matters because a child alarm with no actions (labs-jj-web-cpu-high)
+    transitions constantly and emails nobody. Times are normalised to UTC: the CLI
+    renders these in the caller's local offset, and a pasted local time aims every
+    later query hours away from the incident.
+    """
+    paged = [
+        {
+            "name": item["AlarmName"],
+            "at": datetime.fromisoformat(item["Timestamp"]).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        for item in items
+        if item.get("AlarmName") in paging and item.get("HistorySummary", "").endswith("to ALARM")
+    ]
+    return sorted(paged, key=lambda row: row["at"])
+
+
+def _heaviest_from_events(events, limit=HEAVY_REQUEST_LIMIT) -> list[dict]:
+    """The most expensive slow_request lines, by CPU, each with its implied START.
+
+    Ranked by cpu_ms because the question is what burned the tier; a long wait on
+    an upstream costs a thread, not a core. The start matters because the line is
+    written when a request ENDS: a 12-minute request that pinned the tier logs
+    after the pin, so reading the end time alone points at the recovery. Its start
+    is what lines up against the audit trail to say who opened it.
+    """
+    rows = []
+    for event in events:
+        try:
+            line = json.loads(event["message"])
+            ended = datetime.fromtimestamp(event["timestamp"] / 1000, timezone.utc)
+            duration_ms = int(line["duration_ms"])
+        except (KeyError, TypeError, ValueError):
+            continue  # one malformed line must not cost the rest of the evidence
+        fmt = "%Y-%m-%dT%H:%M:%SZ"
+        rows.append(
+            {
+                "route": line.get("route"),
+                "status": line.get("status"),
+                "started": (ended - timedelta(milliseconds=duration_ms)).strftime(fmt),
+                "ended": ended.strftime(fmt),
+                "duration_s": round(duration_ms / 1000),
+                "cpu_s": round((line.get("cpu_ms") or 0) / 1000),
+                "db_s": round((line.get("db_ms") or 0) / 1000),
+                "db_queries": line.get("db_queries"),
+                "outbound_s": round((line.get("outbound_ms") or 0) / 1000),
+                "outbound_calls": line.get("outbound_calls"),
+            }
+        )
+    rows.sort(key=lambda row: (row["cpu_s"], row["duration_s"]), reverse=True)
+    return rows[:limit]
 
 
 def collect(hours: int) -> dict:
@@ -348,11 +414,55 @@ def collect(hours: int) -> dict:
         for tg in target_groups
     }
 
-    alarms = [
-        {"name": a["AlarmName"], "state": a["StateValue"]}
-        for a in _aws(["cloudwatch", "describe-alarms"]).get("MetricAlarms", [])
+    # --alarm-types is load-bearing: the default returns metric alarms only, and the
+    # alarms that actually PAGE on this stack are composites, so without it "all OK"
+    # never covered the alarm that sent you here.
+    described = _aws(["cloudwatch", "describe-alarms", "--alarm-types", "CompositeAlarm", "MetricAlarm"])
+    raw_alarms = [
+        a
+        for a in described.get("MetricAlarms", []) + described.get("CompositeAlarms", [])
         if a["AlarmName"].startswith("labs-jj")
     ]
+    alarms = [{"name": a["AlarmName"], "state": a["StateValue"]} for a in raw_alarms]
+    paging = {a["AlarmName"] for a in raw_alarms if a.get("ActionsEnabled") and a.get("AlarmActions")}
+    paged_in_window = _paged_from_history(
+        _aws(
+            [
+                "cloudwatch",
+                "describe-alarm-history",
+                "--alarm-types",
+                "CompositeAlarm",
+                "MetricAlarm",
+                "--history-item-type",
+                "StateUpdate",
+                "--start-date",
+                start,
+                "--end-date",
+                end,
+            ]
+        ).get("AlarmHistoryItems", []),
+        paging,
+    )
+    heaviest_requests, heaviest_requests_error = [], None
+    try:
+        heaviest_requests = _heaviest_from_events(
+            _aws(
+                [
+                    "logs",
+                    "filter-log-events",
+                    "--log-group-name",
+                    REQUEST_TELEMETRY_GROUP,
+                    "--start-time",
+                    str(_epoch_ms(start)),
+                    "--end-time",
+                    str(_epoch_ms(end)),
+                    "--filter-pattern",
+                    f'{{ $.event = "slow_request" && $.duration_ms >= {HEAVY_REQUEST_MS} }}',
+                ]
+            ).get("events", [])
+        )
+    except Exception as exc:  # the verdict must survive this read, and must say it failed
+        heaviest_requests_error = str(exc)[:200]
     svc = _aws(["ecs", "describe-services", "--cluster", CLUSTER, "--services", WEB_SERVICE])
     service = svc.get("services", [{}])[0]
 
@@ -398,6 +508,9 @@ def collect(hours: int) -> dict:
         "target_5xx_breaching_periods": _breaching_5xx_periods(target_5xx, period, TARGET_5XX_PER_300S),
         "alarms_firing": [a["name"] for a in alarms if a["state"] == "ALARM"],
         "alarms_all": alarms,
+        "paged_in_window": paged_in_window,
+        "heaviest_requests": heaviest_requests,
+        "heaviest_requests_error": heaviest_requests_error,
         "web_desired_count": service.get("desiredCount"),
         "web_running_count": service.get("runningCount"),
         "recent_ecs_events": [e["message"] for e in service.get("events", [])[:5]],
@@ -601,6 +714,24 @@ def judge(d: dict) -> dict:
     if d["web_running_count"] != d["web_desired_count"]:
         findings.append(f"CAPACITY: {d['web_running_count']} of {d['web_desired_count']} web tasks running.")
 
+    # The pager and SUSTAINED_MINUTES measure different things: the CPU page is 4 of 5
+    # one-minute datapoints, so a real 4-minute pin pages and still never reaches 15
+    # consecutive minutes. "healthy" over that window is a wrong answer, not a nuance.
+    paged = d.get("paged_in_window") or []
+    if verdict == "healthy" and paged:
+        verdict = "paged_below_sustained"
+        names = ", ".join(f"{row['name']} at {row['at']}" for row in paged[:5])
+        more = f" (+{len(paged) - 5} more)" if len(paged) > 5 else ""
+        findings.append(
+            f"PAGED in this window: {names}{more}, with no run of {SUSTAINED_MINUTES} consecutive "
+            f"minutes (web CPU peak {web:.1f}%). This window is not healthy; it is shorter than "
+            "this tool's sustained line."
+        )
+        next_step = (
+            "Read any HEAVY REQUEST lines above first, lining each one's start and end up against "
+            "per-minute CPU (Maximum, --period 60). Then runbook section 1."
+        )
+
     if verdict == "healthy":
         # Distinguish a transient peak from sustained saturation explicitly. A
         # single 5-minute period at 100% is a task start or a deploy; only a run
@@ -626,6 +757,18 @@ def judge(d: dict) -> dict:
         next_step = (
             "No sustained performance problem in this window. Widen --hours before concluding "
             "it never happened -- a window that starts after an incident ended looks clean."
+        )
+
+    for row in d.get("heaviest_requests") or []:
+        findings.append(
+            f"HEAVY REQUEST {row['route']} status {row['status']}: {row['started']} to {row['ended']} "
+            f"({row['duration_s']}s; cpu {row['cpu_s']}s, db {row['db_s']}s/{row['db_queries']} queries, "
+            f"outbound {row['outbound_s']}s/{row['outbound_calls']} calls)"
+        )
+    if d.get("heaviest_requests_error"):
+        findings.append(
+            f"HEAVY REQUESTS UNREAD: {d['heaviest_requests_error']}. This is a failed read, not evidence "
+            "that no request was heavy."
         )
 
     return {"verdict": verdict, "findings": findings, "next_step": next_step}
