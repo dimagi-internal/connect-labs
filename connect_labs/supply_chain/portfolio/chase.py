@@ -49,7 +49,7 @@ ASK = {
     "stock_negative": "Check with {who}: more was given out than was ever received",
 }
 
-AUDIENCES = (
+CHASE_GROUPS = (
     ("supplier", "Suppliers to chase"),
     ("partner", "Partners to chase"),
     ("internal", "Ours to answer"),
@@ -173,7 +173,7 @@ def grouped(items: list[dict]) -> list[dict]:
     the same as being new.
     """
     out = []
-    for audience, label in AUDIENCES:
+    for audience, label in CHASE_GROUPS:
         group = sorted(
             (i for i in items if i["audience"] == audience),
             key=lambda i: -(i["days"] if i["days"] is not None else -1),
