@@ -262,6 +262,36 @@ class TestSomeoneElsesRefresh:
             assert h.read().warming is not None
         assert len(h.queued) == 1
 
+    def test_once_it_has_found_a_cold_pipeline_its_polls_read_nothing(self):
+        """On 2026-11-04 each poll re-read 96k warm rows to reach the cold pipeline, 4.5s of
+        CPU on a web task, every twelve seconds for three minutes."""
+        with Harness() as h:
+            self._refreshing(h)
+            assert h.read().warming is not None
+            before = h.analysis.read_cached.call_count
+            assert before > 0
+            assert h.read().warming is not None
+            assert h.read().warming is not None
+        assert h.analysis.read_cached.call_count == before
+
+    def test_a_warm_reader_keeps_being_served_on_every_read(self):
+        with Harness() as h:
+            h.cached[OPP] = _result("a")
+            self._refreshing(h)
+            for _ in range(2):
+                assert h.read().data is not None
+            assert h.analysis.read_cached.call_count == 2
+
+    def test_what_one_refresh_found_cold_says_nothing_about_the_next(self):
+        with Harness() as h:
+            self._refreshing(h)
+            h.read()
+            h.slot.finish(forced=True)
+            h.slot.take_outcome()
+            h.cached[OPP] = _result("a")
+            self._refreshing(h)
+            assert h.read().data is not None
+
     def test_a_plain_reader_does_not_spend_the_outcome_the_refresher_is_waiting_for(self):
         with Harness() as h:
             h.cached[OPP] = _result("a")

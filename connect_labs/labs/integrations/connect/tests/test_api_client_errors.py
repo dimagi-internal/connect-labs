@@ -61,3 +61,29 @@ def test_create_record_network_error_carries_no_status_or_body():
 
     assert excinfo.value.status_code is None
     assert excinfo.value.body is None
+
+
+class TestAReadOfOneRecord:
+    CLIENT_LOG = "connect_labs.labs.integrations.connect.api_client"
+
+    def _errors(self, caplog):
+        return [r for r in caplog.records if r.name == self.CLIENT_LOG and r.levelname == "ERROR"]
+
+    def _read(self, client, status_code):
+        with patch.object(client.http_client, "get", return_value=_mock_response(status_code, "no")):
+            with pytest.raises(LabsAPIError) as excinfo:
+                client.get_record_by_id(27307, experiment="workflow", type="workflow_definition")
+        assert excinfo.value.status_code == status_code
+
+    def test_not_found_is_an_answer_not_an_error(self, caplog):
+        """A follower reads its template in the template's scope, then as a public record.
+        Everyone outside that scope logged a traceback on every poll of every report."""
+        with caplog.at_level("INFO", logger=self.CLIENT_LOG):
+            self._read(LabsRecordAPIClient(access_token="t", opportunity_id=22), 404)
+        assert self._errors(caplog) == []
+        assert any("27307" in r.getMessage() for r in caplog.records)
+
+    @pytest.mark.parametrize("status_code", [403, 500])
+    def test_anything_else_is_still_an_error(self, caplog, status_code):
+        self._read(LabsRecordAPIClient(access_token="t", opportunity_id=22), status_code)
+        assert self._errors(caplog)
