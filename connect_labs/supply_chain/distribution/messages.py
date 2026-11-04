@@ -113,10 +113,30 @@ def similarity(a: str, b: str) -> float:
 ACCEPT = 0.8
 
 
+def convert_units(quantity: Decimal, from_unit: str, to_unit: str, pack: dict | None) -> Decimal | None:
+    """`quantity` of `from_unit` in `to_unit` using the item's carton size, or None when it cannot be done exactly.
+
+    `pack` is {"base": "sachet", "pack": "carton", "per_pack": 150}. Sachets to cartons is converted only
+    when they make a whole number of cartons; a part carton is left for a person to look at.
+    """
+    if not pack or not pack.get("per_pack"):
+        return None
+    per_pack = Decimal(int(pack["per_pack"]))
+    base, packed = _canonical(pack.get("base") or ""), _canonical(pack.get("pack") or "")
+    if from_unit == base and to_unit == packed:
+        whole = quantity / per_pack
+        return whole if whole == whole.to_integral_value() else None
+    if from_unit == packed and to_unit == base:
+        return quantity * per_pack
+    return None
+
+
 def match_to_plan(entries: list[dict], planned: list[dict]) -> dict:
     """Match each message entry to at most one planned line, and compare the quantities.
 
-    `planned` is [{line_id, name, quantity, unit}]. Returns {lines, extras}: `lines` has one row per
+    `planned` is [{line_id, name, quantity, unit, pack?}]; `pack` is the item's carton size
+    ({base, pack, per_pack}), used to convert a message that counts in sachets where the plan is in
+    cartons (or the reverse) instead of only flagging it. Returns {lines, extras}: `lines` has one row per
     planned line (status matches / differs / unit_differs / not_mentioned, with `given` and
     `difference`); `extras` is every entry that was not clearly one planned place (a handout nobody
     planned, or a name that needs matching by hand). Two entries for one place are both left to a
@@ -152,14 +172,24 @@ def match_to_plan(entries: list[dict], planned: list[dict]) -> dict:
         }
         if entry is not None:
             row["heard_as"] = entry["raw"]
+            quantity = entry["quantity"]
             if entry["unit"] and entry["unit"] != _canonical(p["unit"]):
-                row["status"] = "unit_differs"
-                row["message_unit"] = entry["unit"]
-                row["given"] = entry["quantity"]
-            else:
-                row["given"] = entry["quantity"]
-                row["difference"] = entry["quantity"] - Decimal(str(p["quantity"]))
-                row["status"] = "matches" if row["difference"] == 0 else "differs"
+                converted = convert_units(quantity, entry["unit"], _canonical(p["unit"]), p.get("pack"))
+                if converted is None:
+                    row["status"] = "unit_differs"
+                    row["message_unit"] = entry["unit"]
+                    row["given"] = quantity
+                    rows.append(row)
+                    continue
+                row["converted_from"] = {
+                    "quantity": quantity,
+                    "unit": entry["unit"],
+                    "per_pack": p["pack"]["per_pack"],
+                }
+                quantity = converted
+            row["given"] = quantity
+            row["difference"] = quantity - Decimal(str(p["quantity"]))
+            row["status"] = "matches" if row["difference"] == 0 else "differs"
         rows.append(row)
     return {"lines": rows, "extras": extras}
 

@@ -73,9 +73,9 @@
               <td class="px-4 py-2">{{ row.line.to_supply_point.name }}</td>
               <td class="px-4 py-2 tabular-nums text-gray-600">{{ row.line.quantity|qty:row.line.quantity_unit }}</td>
               <td class="px-4 py-2 text-xs">
-                {% if row.status == "matches" %}<span class="text-teal-700">“{{ row.heard_as }}” matches the plan</span>
-                {% elif row.status == "differs" %}<span class="text-amber-800">“{{ row.heard_as }}”: {{ row.difference_text }}</span>
-                {% elif row.status == "unit_differs" %}<span class="text-amber-800">“{{ row.heard_as }}”: counted in {{ row.message_unit }}s, the plan is in {{ row.line.quantity_unit }}s. Check the number.</span>
+                {% if row.status == "matches" %}<span class="text-teal-700">“{{ row.heard_as }}” matches the plan{% if row.converted_text %} ({{ row.converted_text }}){% endif %}</span>
+                {% elif row.status == "differs" %}<span class="text-amber-800">“{{ row.heard_as }}”: {{ row.difference_text }}{% if row.converted_text %} ({{ row.converted_text }}){% endif %}</span>
+                {% elif row.status == "unit_differs" %}<span class="text-amber-800">“{{ row.heard_as }}”: counted in {{ row.message_unit }}s, the plan is in {{ row.line.quantity_unit }}s, and the size of a {{ row.line.quantity_unit }} is not known (or does not divide evenly). Check the number.</span>
                 {% elif text %}<span class="text-gray-600">not mentioned</span>
                 {% else %}<span class="text-gray-600">—</span>{% endif %}
               </td>
