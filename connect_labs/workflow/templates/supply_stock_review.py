@@ -47,6 +47,9 @@ DEFINITION = {
         # last 14 days (resupply.window_for) -- so a worker has one run-out date (#2342).
         {"alias": "stock", "source": "worker_stock", "item": "rutf"},
         {"alias": "stores", "source": "network_stock", "item": "rutf"},
+        # How long it lasts is the forecast's run-dry date per worker (the children each is treating);
+        # a worker it has no children for keeps the recent-pace date from `stock`.
+        {"alias": "forecast", "source": "stock_forecast", "item": "rutf", "params": {"course_size": 150}},
         {
             "alias": "worker",
             "source": "worker_stock_get",
