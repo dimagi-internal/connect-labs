@@ -87,6 +87,19 @@ Previously, the only freshness signal a report could show came from the reader's
 
 Scheduled reports that display a "last synced" or "last refreshed" time now draw that figure from the schedule itself, so it reflects the real sync time and is consistent across all readers.
 
+### How a report loads its data
+
+When you open a report, data loads the same way every time — there is one consistent loading experience regardless of how the data is cached.
+
+If the data is already cached, the report appears straight away. If it is not — a **cold open** — you will see a single progress strip showing:
+
+- The current loading stage
+- A download count where one is available
+- How long the load has been running
+- A note that you can leave the page — loading continues in the background without you
+
+You do not need to stay on the page while data loads. If you navigate away and come back, the report will be ready if loading has finished, or will show the same progress strip if it has not. A cold open still takes as long as the download itself; the progress strip just makes that visible.
+
 ### Run failure reasons
 
 If a scheduled or unattended run fails, the run now records the reason for the failure alongside the failed status. Previously, a failure was logged with no error message, making it impossible to diagnose the problem without accessing production logs. You can now see what went wrong directly on the run record, which makes it easier to decide whether to retry, adjust settings, or contact support.
@@ -203,11 +216,4 @@ When you open a dialog inside a sandboxed workflow or page — such as a detail 
 - The dimmed background extends over the Labs header and navigation, so they are no longer left bright behind an open dialog.
 - The dialog is centred in the full window and can use its full height, so a tall dialog opened near the top of a page will no longer have its title and close button cut off above the report area.
 
-Closing the dialog returns the page to its normal state. Nothing changes when no dialog is open.
-
-#### Saved filters in the sandbox
-
-Dashboards that remember your filter choices — for example, the Ward Progress Tracker's ward and period filters, the KMC audit dashboard's filters, or a status filter that is kept across a CommCare sign-in — continue to remember those choices after a page reload when the sandbox is switched on. The behaviour matches what you already experience without the sandbox.
-
-!!! note "All live workflows are fully compatible with the sandbox"
-    Every workflow that exists on Labs today works correctly in the protected frame. Authorization buttons (such as **Authorize CommCare** or **Authorize OCS**) bring you back to the workflow after you sign in. Any confirmation question a workflow presents is shown in Labs' own dialog and properly waited for
+Closing the dialog returns the
