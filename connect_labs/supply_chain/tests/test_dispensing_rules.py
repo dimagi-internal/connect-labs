@@ -5,6 +5,7 @@ copied from an app definition (form paths only; no submission was read).
 """
 
 import json
+import re
 
 import jsonschema
 import pytest
@@ -561,3 +562,47 @@ def test_a_rule_saves_its_case_block_and_keeps_it_when_an_edit_leaves_it_out(da,
 def test_a_case_block_that_reads_outside_the_form_is_refused(da, world):
     with pytest.raises(ValueError, match="form_json path"):
         upsert(da, world, cases={**CASES, "enrol": {**CASES["enrol"], "path": "screening.x"}})
+
+
+def _rule_post(world, **extra):
+    return {
+        "opportunity_id": str(OPP),
+        "item": str(world["item"]["id"]),
+        "resupply_point": str(world["store"]["id"]),
+        "active_from": "2026-08-01",
+        "lines": json.dumps(RUTF_LINES),
+        "form_names": "",
+        "reports": "",
+        "status": "active",
+        **extra,
+    }
+
+
+def test_the_form_saves_how_the_forecast_sizes_a_course(scoped, world):
+    response = scoped.post(
+        reverse("supply_chain:dispensing_rule_create"),
+        _rule_post(
+            world,
+            cases=json.dumps({key: CASES[key] for key in ("enrol", "outcome")}),
+            course_basis="protocol",
+            dose_basis="delivered",
+            lost_after_days="30",
+        ),
+    )
+    assert response.status_code == 302
+    cases = DispensingRule.objects.get().cases
+    assert (cases["course_basis"], cases["dose_basis"], cases["lost_after_days"]) == ("protocol", "delivered", 30)
+
+
+def test_forecast_settings_without_a_case_rule_are_refused_on_the_form(scoped, world):
+    response = scoped.post(reverse("supply_chain:dispensing_rule_create"), _rule_post(world, course_basis="protocol"))
+    assert response.status_code == 200
+    assert "describe what counts as a case" in response.content.decode()
+    assert not DispensingRule.objects.exists()
+
+
+def test_the_edit_form_shows_the_saved_forecast_settings(scoped, da, world):
+    rule = upsert(da, world, cases={**CASES, "course_basis": "protocol"})
+    body = scoped.get(reverse("supply_chain:dispensing_rule_edit", args=[rule["id"]])).content.decode()
+    assert re.search(r'<option value="protocol"\s+selected', body)
+    assert 'value="28"' in body

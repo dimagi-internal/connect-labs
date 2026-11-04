@@ -78,6 +78,10 @@ class DispensingRuleUpdateView(_RuleScreen):
             "lines": rule.lines,
             "form_names": "\n".join(rule.forms or []),
             "reports": rule.reports or None,
+            "cases": {key: value for key, value in (rule.cases or {}).items() if key in ("enrol", "outcome")} or None,
+            "course_basis": (rule.cases or {}).get("course_basis", ""),
+            "dose_basis": (rule.cases or {}).get("dose_basis", ""),
+            "lost_after_days": (rule.cases or {}).get("lost_after_days"),
             "status": rule.status,
         }
 
