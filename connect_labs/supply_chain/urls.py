@@ -386,6 +386,22 @@ urlpatterns = [
     path("partners/", partner_views.PartnersView.as_view(), name="partners"),
     path("partners/plan/", partner_views.PartnerPlanView.as_view(), name="partner_plan"),
     path("partners/places/", partner_views.AssignPlacesView.as_view(), name="partner_places"),
+    path("distribution/plan/", distribution_views.DistributionPlanView.as_view(), name="distribution_plan"),
+    path(
+        "distribution/<int:distribution_id>/confirm-as-planned/",
+        distribution_views.DistributionConfirmAsPlannedView.as_view(),
+        name="distribution_confirm_as_planned",
+    ),
+    path(
+        "distribution/<int:distribution_id>/from-message/",
+        distribution_views.DistributionFromMessageView.as_view(),
+        name="distribution_from_message",
+    ),
+    path(
+        "distribution/lines/<int:line_id>/received/",
+        distribution_views.DistributionReceivedView.as_view(),
+        name="distribution_received",
+    ),
     # Alerts: who is told about what, and the log of what they were told.
     path("alerts/", alert_views.AlertListView.as_view(), name="alerts"),
     path("alerts/new/", alert_views.AlertCreateView.as_view(), name="alert_create"),

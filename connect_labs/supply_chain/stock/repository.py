@@ -494,7 +494,9 @@ class StockRepositoryMixin:
     # ---- distributions ---------------------------------------------------
 
     def list_distributions(self, opportunity_id=None, supply_point_id=None, limit=200):
-        qs = Distribution.objects.filter(program_id=self._require_program()).prefetch_related("lines")
+        qs = Distribution.objects.filter(program_id=self._require_program()).prefetch_related(
+            "lines", "documents", "movements"
+        )
         if opportunity_id is not None:
             qs = qs.filter(opportunity_id=opportunity_id)
         if supply_point_id is not None:
@@ -504,7 +506,7 @@ class StockRepositoryMixin:
     def get_distribution(self, distribution_id):
         return (
             Distribution.objects.filter(program_id=self._require_program(), pk=distribution_id)
-            .prefetch_related("lines")
+            .prefetch_related("lines", "documents", "movements")
             .first()
         )
 
@@ -528,6 +530,7 @@ class StockRepositoryMixin:
         distribution = Distribution.objects.create(
             program_id=self._require_program(),
             supply_point=source_point,
+            commodity=commodity,
             **_columns(Distribution, data),
         )
 
@@ -555,11 +558,195 @@ class StockRepositoryMixin:
                 item=self._resolve_item(line.get("item_id")),
                 batch=line.get("batch") or "",
                 quantity=line["quantity"],
+                quantity_given=line["quantity"],
                 quantity_unit=line["quantity_unit"],
             )
 
         posting.post_distribution(distribution, commodity)
         return _fresh(distribution)
+
+    def _destination(self, line, opportunity_id):
+        """The place a distribution line goes: by supply point id, or by a worker's Connect username."""
+        if line.get("to_supply_point_id") is not None:
+            return self._require_supply_point(line["to_supply_point_id"], "destination supply point")
+        if line.get("connect_username"):
+            found = self.get_supply_point_by_username(line["connect_username"], opportunity_id=opportunity_id)
+            if found is None:
+                raise ValueError(
+                    f"no supply point holds stock for {line['connect_username']!r} on this "
+                    "opportunity -- create one of kind user_held first, so the stock has "
+                    "somewhere to be"
+                )
+            return found
+        raise ValueError("each distribution line needs a to_supply_point_id or a connect_username")
+
+    @transaction.atomic
+    def plan_distribution(self, data):
+        """A handout run that has not happened yet: who is to get how much, from which store.
+
+        Nothing is posted to the ledger. The planned quantities are "committed" (promised, not
+        gone) until the run is confirmed with `confirm_distribution`. With `from_forecast`, the
+        lines are what the forecast says each field worker needs for the coming week, less what
+        they hold (`distribution.issue_plan`).
+        """
+        from connect_labs.supply_chain.data_access import _columns, _fresh
+        from connect_labs.supply_chain.distribution import issue_plan
+
+        commodity = self._require_commodity(data["commodity_slug"])
+        source_point = self._require_supply_point(data["supply_point_id"], "issuing supply point")
+        lines = list(data.get("lines") or [])
+        if data.get("from_forecast"):
+            lines = issue_plan.lines_for(self, commodity, data["opportunity_id"], data.get("item_id"))
+            if not lines:
+                raise ValueError(
+                    "the forecast has nothing to issue: no field worker needs stock this week, or the "
+                    "opportunity has no cases set up to forecast from. Give the lines yourself."
+                )
+        if not lines:
+            raise ValueError("a handout plan with no lines plans nothing; give it at least one line")
+        columns = _columns(Distribution, data)
+        columns.pop("message_text", None)
+        columns.pop("confirmed_on", None)
+        distribution = Distribution.objects.create(
+            program_id=self._require_program(), supply_point=source_point, commodity=commodity, **columns
+        )
+        for line in lines:
+            destination = self._destination(line, distribution.opportunity_id)
+            if destination.pk == source_point.pk:
+                raise ValueError("a handout has to go somewhere else than the store it leaves")
+            DistributionLine.objects.create(
+                distribution=distribution,
+                to_supply_point=destination,
+                connect_username=line.get("connect_username") or destination.connect_username,
+                item=self._resolve_item(line.get("item_id")),
+                batch=line.get("batch") or "",
+                quantity=line["quantity"],
+                quantity_unit=line["quantity_unit"],
+            )
+        return _fresh(distribution)
+
+    @transaction.atomic
+    def confirm_distribution(self, distribution_id, data):
+        """Say what was actually handed out on a planned run, and post it to the ledger.
+
+        Each confirmed line posts a movement for the quantity GIVEN, whatever was planned: the
+        ledger records what happened. Lines the confirmation does not mention stay planned, so a
+        partial message confirms part of the run. A line with a `line_id` is one of the plan; one
+        with only a destination is a handout nobody planned and is added (planned quantity 0).
+        The message the confirmation came from is kept on the run as its evidence.
+        """
+        from datetime import date
+
+        from connect_labs.supply_chain.data_access import _fresh
+
+        distribution = (
+            Distribution.objects.select_for_update()
+            .filter(program_id=self._require_program(), pk=distribution_id)
+            .first()
+        )
+        if distribution is None:
+            raise ValueError(f"distribution {distribution_id} does not exist in this programme")
+        given_lines = data.get("lines") or []
+        if not given_lines:
+            raise ValueError("a confirmation has to say what was given on at least one line")
+        confirmed_on = _as_day(data.get("confirmed_on") or date.today())
+        source = data.get("source") or "we_recorded"
+        org_id = data.get("recorded_by_org_id")
+        commodity = self._commodity_of_distribution(distribution)
+        planned = {line.pk: line for line in distribution.lines.select_for_update()}
+        seen = set()
+        for entry in given_lines:
+            given = entry["quantity_given"]
+            if entry.get("line_id") is not None:
+                line = planned.get(entry["line_id"])
+                if line is None:
+                    raise ValueError(f"line {entry['line_id']} is not on distribution {distribution_id}")
+                if line.pk in seen:
+                    raise ValueError(f"line {line.pk} is confirmed twice in one message")
+                if line.is_confirmed:
+                    raise ValueError(
+                        f"line {line.pk} ({line.to_supply_point.name}) was already confirmed as "
+                        f"{line.given} {line.quantity_unit}"
+                    )
+            else:
+                destination = self._destination(entry, distribution.opportunity_id)
+                line = DistributionLine.objects.create(
+                    distribution=distribution,
+                    to_supply_point=destination,
+                    connect_username=entry.get("connect_username") or destination.connect_username,
+                    item=self._resolve_item(entry.get("item_id")),
+                    batch=entry.get("batch") or "",
+                    quantity=0,
+                    quantity_unit=entry["quantity_unit"],
+                )
+            seen.add(line.pk)
+            line.quantity_given = given
+            if float(given) > 0:
+                movement = Movement(
+                    program_id=distribution.program_id,
+                    opportunity_id=distribution.opportunity_id,
+                    kind="distribution",
+                    occurred_on=confirmed_on,
+                    from_supply_point=distribution.supply_point,
+                    to_supply_point=line.to_supply_point,
+                    item=line.item,
+                    commodity=commodity,
+                    batch=line.batch,
+                    quantity=given,
+                    quantity_unit=line.quantity_unit,
+                    source=source,
+                    recorded_by_org_id=org_id,
+                    distribution=distribution,
+                )
+                movement.save()
+                line.movement = movement
+            line.save()
+        message = (data.get("message_text") or "").strip()
+        if message:
+            distribution.message_text = (
+                distribution.message_text + "\n\n" if distribution.message_text else ""
+            ) + message
+        distribution.confirmed_on = confirmed_on
+        distribution.save()
+        return _fresh(distribution)
+
+    def _commodity_of_distribution(self, distribution):
+        """The product a run is for: that of the movements it posted, else of its first line's item."""
+        if distribution.commodity_id:
+            return distribution.commodity
+        movement = distribution.movements.select_related("commodity").first()
+        if movement is not None:
+            return movement.commodity
+        for line in distribution.lines.select_related("item__commodity"):
+            if line.item_id:
+                return line.item.commodity
+        raise ValueError("this run does not say which product it is for")
+
+    @transaction.atomic
+    def confirm_distribution_receipt(self, line_id, data):
+        """The person a handout went to says what reached them. The other side of the same handover."""
+        from datetime import date
+
+        from connect_labs.supply_chain.data_access import _fresh
+
+        line = (
+            DistributionLine.objects.select_for_update()
+            .select_related("distribution", "to_supply_point")
+            .filter(distribution__program_id=self._require_program(), pk=line_id)
+            .first()
+        )
+        if line is None:
+            raise ValueError(f"distribution line {line_id} does not exist in this programme")
+        if line.quantity_received is not None:
+            raise ValueError(
+                f"{line.to_supply_point.name} already confirmed receiving {line.quantity_received} "
+                f"{line.quantity_unit} on {line.received_on}"
+            )
+        line.quantity_received = data["quantity_received"]
+        line.received_on = _as_day(data.get("received_on") or date.today())
+        line.received_by = (data.get("received_by") or line.connect_username or "")[:150]
+        line.save()
+        return _fresh(line.distribution)
 
     # ---- dispensing rules ------------------------------------------------
 

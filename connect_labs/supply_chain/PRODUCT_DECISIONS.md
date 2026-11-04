@@ -107,3 +107,20 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   one moved. Without it, the ones who would move are listed in the result.
 - **"Run by: not recorded" is fixed at setup**: `partner_places_assign` names the partner for places that name
   none, and never takes a place another partner already runs unless told to.
+
+## Handouts above the field worker (Sophie's RUTF feedback, "Recording handovers above the FLW")
+
+- **A handout is planned, then confirmed, and only the confirmed amount moves stock.** A planned
+  `Distribution` posts nothing; its lines count as committed until someone says what was given
+  (`distribution_confirm`). The ledger posts the quantity GIVEN, never the plan's. A run's status
+  (planned / partly confirmed / confirmed) is derived from its lines, not stored.
+- **Three figures per line, never merged:** planned (`quantity`), given (`quantity_given`) and
+  received (`quantity_received`, said by the receiver). A gap between any two is shown, not corrected.
+- **A message is read deterministically** (`distribution/messages.py`): one "Place - N cartons"
+  per line. Anything it cannot read or cannot place clearly is handed back for a person; it never
+  guesses and never adds up two lines for one place. The message is kept on the handout
+  (`message_text`); a photo is kept as a `Document` and its numbers are typed by a person. There is no
+  OCR or language model on this path: an AI that reads a photo over MCP calls `distribution_confirm`.
+- **"What to issue" comes through one function** (`distribution/issue_plan.py`), today the forecast's
+  coming-week need less what the worker holds. Repoint that function, not the screens, when the plan
+  is computed elsewhere.

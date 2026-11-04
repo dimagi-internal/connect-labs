@@ -264,6 +264,7 @@ def committed(program_id, supply_point, item=None):
         distribution__program_id=program_id,
         distribution__supply_point=supply_point,
         movement__isnull=True,
+        quantity_given__isnull=True,
     )
     if item is not None:
         lines = lines.filter(item=item)

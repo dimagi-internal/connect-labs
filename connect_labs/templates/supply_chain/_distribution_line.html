@@ -1,0 +1,38 @@
+{% load supply_chain_extras %}
+<tr>
+  <td class="px-4 py-2">
+    {{ line.name }}
+    {% if line.connect_username %}<span class="text-xs text-gray-600">({{ line.connect_username }})</span>{% endif %}
+    {% if line.unplanned %}<span class="text-xs text-amber-800">not on the plan</span>{% endif %}
+  </td>
+  <td class="px-4 py-2 tabular-nums text-gray-600">
+    {% if line.unplanned %}—{% else %}{{ line.quantity|qty:line.quantity_unit }}{% endif %}
+  </td>
+  <td class="px-4 py-2 tabular-nums">
+    {% if line.given_qty is None %}
+      <span class="text-amber-800 text-xs">not confirmed yet</span>
+    {% else %}
+      {{ line.quantity_given|qty:line.quantity_unit }}
+      {% if line.short_given %}<span class="text-xs text-amber-800">less than planned</span>
+      {% elif line.over_given %}<span class="text-xs text-amber-800">more than planned</span>{% endif %}
+    {% endif %}
+  </td>
+  <td class="px-4 py-2 text-xs">
+    {% if line.received_qty is not None %}
+      <span class="tabular-nums text-sm">{{ line.quantity_received|qty:line.quantity_unit }}</span>
+      {% if line.short_received %}<span class="text-amber-800">less than given</span>
+      {% elif line.over_received %}<span class="text-amber-800">more than given</span>
+      {% else %}<span class="text-teal-700">matches</span>{% endif %}
+      <span class="text-gray-600">{{ line.received_on|day }}{% if line.received_by %} · {{ line.received_by }}{% endif %}</span>
+    {% elif line.awaiting_receipt %}
+      <form method="post" action="{% url 'supply_chain:distribution_received' line.id %}" class="flex items-center gap-1">
+        {% csrf_token %}
+        <input type="number" name="quantity_received" min="0" step="any" required aria-label="Quantity received by {{ line.name }}"
+               class="w-20 border border-gray-300 rounded px-2 py-1 text-sm">
+        <button type="submit" class="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50">They received</button>
+      </form>
+    {% else %}
+      <span class="text-gray-600">—</span>
+    {% endif %}
+  </td>
+</tr>
