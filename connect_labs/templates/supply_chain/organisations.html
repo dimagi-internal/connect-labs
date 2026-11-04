@@ -24,8 +24,11 @@ until it is set.
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Organisations</h1>
     <p class="text-sm text-gray-600 mt-1 max-w-2xl">
-      Everyone labs needs to name — manufacturers, implementing partners, procurement agencies, us.
-      Shared across every programme: a change here shows everywhere this organisation appears.
+      Start here for <strong>partners</strong>: the local organisations that buy or hold stock on your behalf.
+      Each one needs an entry before it can be named as a buyer or as a place that keeps stock.
+      Manufacturers and traders are added from <a href="{% url 'supply_chain:suppliers' %}" class="text-brand-indigo hover:underline">Suppliers</a>
+      instead (New supplier finds or creates the company), so you do not need to add them here.
+      Everyone is shared across every programme: a change here shows everywhere this organisation appears.
     </p>
   </div>
   <div class="flex items-center gap-3">
@@ -33,7 +36,7 @@ until it is set.
        class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Merge two</a>
     <a href="{% url 'supply_chain:org_create' %}"
        class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
-      <i class="fa-solid fa-plus mr-1"></i> New organisation
+      <i class="fa-solid fa-plus mr-1"></i> Add a partner or organisation
     </a>
   </div>
 </div>
