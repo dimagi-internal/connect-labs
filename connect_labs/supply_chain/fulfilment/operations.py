@@ -282,6 +282,10 @@ _INVOICE_DATA = _data_with(
     reference={"type": "string"},
     issued_on=_DATE,
     status={"enum": list(records.INVOICE_STATUSES)},
+    # Who billed: the supplier (the default), or the partner billing us to be reimbursed.
+    direction={"enum": list(records.INVOICE_DIRECTIONS)},
+    # The day the invoice reached whoever has to pay it.
+    received_on=_DATE,
     currency={"type": "string", "minLength": 3, "maxLength": 3},
     amount=MONEY_NONZERO,
     quantity_billed=QUANTITY,
@@ -454,7 +458,9 @@ def invoice_list(access, contract_id=None, status=None):
 @register_operation(
     name="invoice_record",
     summary=(
-        "Record a supplier invoice. Give quantity_billed so the three-way match can compare it "
+        "Record an invoice: a supplier's (the default), or -- when the partner bought on our quote -- the "
+        "partner's invoice to us for reimbursement (direction=from_partner; it is not matched against the "
+        "supplier's bills). Give quantity_billed so the three-way match can compare it "
         "with what actually arrived — an invoice for more than was received is the single most "
         "common discrepancy, and the only thing that catches it is that comparison. Give unit_price "
         "and freight_amount as billed, so a bill above the contract is flagged. When the invoice says "

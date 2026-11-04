@@ -416,6 +416,8 @@ def invoice(obj) -> dict:
         "quantity_unit": obj.quantity_unit,
         "unit_price": _num(obj.unit_price),
         "freight_amount": _num(obj.freight_amount),
+        "direction": obj.direction,
+        "received_on": _date(obj.received_on),
         "payments": [
             {
                 "id": payment.pk,

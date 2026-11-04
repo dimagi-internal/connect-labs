@@ -209,6 +209,13 @@ class InvoiceRecordView(_UnderAContract):
     )
     submit_label = "Record invoice"
 
+    def get_initial(self):
+        initial = super().get_initial()
+        # "Record the partner's invoice" on an order the partner buys opens on the partner as the biller.
+        if self.request.GET.get("from") == "partner":
+            initial.setdefault("direction", "from_partner")
+        return initial
+
     def get_form_kwargs(self):
         # So the form can offer the order's unmatched payments (an advance) for
         # the invoice to acknowledge.
@@ -313,6 +320,15 @@ class PaymentRecordView(OperationFormView):
         billed = (
             f"{invoice.currency} {money_digits(invoice.amount)} billed" if invoice.amount is not None else "Billed"
         )
+        if invoice.direction == "from_partner":
+            # The partner paid the supplier on our quote and billed us: the payee is the partner.
+            partner = invoice.contract.partner_org or invoice.contract.buyer_org
+            context["title"] = f"Pay {partner.name if partner else 'the partner'}: {name}"
+            context["intro"] = (
+                f"{billed} to us by {partner.name if partner else 'the partner'} for order {invoice.contract}: "
+                "their reimbursement for buying on our quote. We pay the partner, not the supplier."
+            )
+            return context
         context["intro"] = (
             f"{billed} by {invoice.contract.supplier.name} for order {invoice.contract}. "
             "The invoice's status follows from what has been paid."
