@@ -94,6 +94,16 @@ class TestTheScreens:
         listing = client_in_programme.get(reverse("supply_chain:suppliers")).content.decode()
         assert "3 not on file" in listing
 
+    def test_the_list_flags_only_suppliers_asked_to_quote_or_awarded(self, client_in_programme, da, world):
+        _rutf(da)
+        op(da, "supplier_create", data={"name": "Idle Supplier"})
+        listing = client_in_programme.get(reverse("supply_chain:suppliers")).content.decode()
+        rows = {
+            name: row for row in listing.split("<tr") for name in ("Idle Supplier", "Sahel Chemicals") if name in row
+        }
+        assert "not on file" in rows["Sahel Chemicals"]
+        assert "not on file" not in rows["Idle Supplier"]
+
     def test_the_comparison_page_warns_before_awarding(self, client_in_programme, da, world):
         _rutf(da)
         body = client_in_programme.get(_compare_url(world)).content.decode()
