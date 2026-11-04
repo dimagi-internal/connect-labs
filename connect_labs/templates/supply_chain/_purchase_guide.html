@@ -1,0 +1,21 @@
+{% comment %}
+"How a purchase works": the steps in order, each linking to its page, with the programme's next step
+highlighted (supply_chain/guide.py decides which, from the records). Takes `purchase_guide`.
+{% endcomment %}
+{% if purchase_guide %}
+<details open data-testid="purchase-guide" class="mb-5 rounded-lg border border-gray-200 bg-white">
+  <summary class="cursor-pointer px-4 py-2 text-sm font-semibold text-gray-900">How a purchase works</summary>
+  <ol class="grid gap-2 px-4 pb-4 pt-1 text-sm sm:grid-cols-2 lg:grid-cols-3">
+    {% for step in purchase_guide %}
+    <li data-testid="guide-step" data-state="{% if step.next %}next{% elif step.done %}done{% else %}todo{% endif %}"
+        class="rounded-md border px-3 py-2 {% if step.next %}border-brand-indigo bg-indigo-50{% else %}border-gray-200{% endif %}">
+      <a href="{{ step.url }}" class="font-medium text-brand-indigo hover:underline"{% if step.next %} aria-current="step"{% endif %}>
+        {{ step.number }}. {{ step.title }}</a>
+      {% if step.done %}<span class="ml-1 text-teal-700" title="Done">&#10003;<span class="sr-only"> done</span></span>{% endif %}
+      {% if step.next %}<span class="ml-1 text-xs font-semibold uppercase tracking-wide text-brand-indigo">Next step</span>{% endif %}
+      <p class="text-xs text-gray-700">{{ step.what }}</p>
+    </li>
+    {% endfor %}
+  </ol>
+</details>
+{% endif %}

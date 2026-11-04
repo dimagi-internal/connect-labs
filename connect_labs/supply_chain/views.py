@@ -19,6 +19,7 @@ from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.banner import program_line
 from connect_labs.supply_chain.checks import course_applies_to_category, courses_carried_by_kits
+from connect_labs.supply_chain.guide import purchase_guide
 from connect_labs.supply_chain.history.as_of import as_of_view, end_of_day
 from connect_labs.supply_chain.history.timeline import answered_by, timeline_for_contract
 from connect_labs.supply_chain.landing import landing_url
@@ -546,6 +547,7 @@ class OrdersView(OperationBase):
                 )
         context["covered_by"] = covered_by
         context["progress"] = self._progress(context["contracts"])
+        context["purchase_guide"] = purchase_guide(self.request, _access(self.request).program_id)
         # Lateness from the same check the order page reads, so the list and the
         # page cannot disagree: "due 29 Aug" here beside "26 days past the
         # promised lead time" there read as two different orders.
