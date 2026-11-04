@@ -18,11 +18,17 @@ heard 12 Jun" is the record.
     <p class="text-sm text-gray-600 mt-1">
       Everyone on file for this programme, and how far each has got.
     </p>
+    <p class="text-sm text-gray-600 mt-1 max-w-2xl" data-testid="suppliers-vs-organisations">
+      To add a manufacturer or trader, use <strong>New supplier</strong>: it finds the company if labs already
+      knows it, or creates it. You do not need to add it under Organisations first. Organisations
+      is the separate list of <strong>partners who buy or hold stock on your behalf</strong>; they are not suppliers.
+    </p>
   </div>
   <div class="flex items-center gap-4">
     <p class="text-sm text-gray-600">{{ suppliers|length }} on file</p>
     <a href="{% url 'supply_chain:organisations' %}"
-       class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Organisations</a>
+       class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md"
+       title="Partners who buy or hold stock for the programme. Not needed to add a supplier.">Partners (Organisations)</a>
     <a href="{% url 'supply_chain:supplier_create' %}" class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
       <i class="fa-solid fa-plus mr-1"></i> New supplier
     </a>
