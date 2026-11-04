@@ -1072,7 +1072,7 @@ class ComparisonView(_Base):
             row.get("supplier_name") or "A supplier"
             for row in (comparison or {}).get("blocked") or []
             if any(
-                "tender's duty terms are not settled" in (b.get("fact") or b.get("label") or "").lower()
+                "tender's import duty is not chosen yet" in (b.get("fact") or b.get("label") or "").lower()
                 for b in row.get("blockers") or []
             )
         ]
@@ -1083,7 +1083,7 @@ class ComparisonView(_Base):
             for row in (comparison or {}).get("blocked") or []
             if (row.get("supplier_name") or "A supplier") in context["waiting_on_duty_terms"]
             and any(
-                "tender's duty terms are not settled" not in (b.get("fact") or b.get("label") or "").lower()
+                "tender's import duty is not chosen yet" not in (b.get("fact") or b.get("label") or "").lower()
                 for b in row.get("blockers") or []
             )
         ]
@@ -1461,7 +1461,7 @@ class _TenderInviteView(OperationActionView):
 
 class TenderInviteOrgView(_TenderInviteView):
     operation = "tender_invite_org"
-    success_message = "Invited. They can now see and bid on this tender while it is restricted."
+    success_message = "Marketplace access given. They can now see and bid on this tender while it is restricted."
 
 
 class TenderUninviteOrgView(_TenderInviteView):
@@ -1645,12 +1645,12 @@ class TenderImportEstimatesView(SupplyWriteMixin, View):
 class OutreachLogView(OperationFormView):
     operation = "outreach_log"
     form_class = OutreachForm
-    title = "Record a quote request"
+    title = "Ask for a quote"
     intro = (
         "That we asked this supplier to quote on this tender (not the same as giving them "
         "marketplace access). A log, not a state machine — asking again is a real event worth keeping."
     )
-    submit_label = "Record quote request"
+    submit_label = "Save"
 
     def fixed(self, **kwargs):
         return {"data": {"tender_id": int(kwargs["tender_id"])}}
@@ -1659,7 +1659,7 @@ class OutreachLogView(OperationFormView):
         return [
             {"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")},
             {"label": "Tender", "href": reverse("supply_chain:procurement_tender_detail", args=[kwargs["tender_id"]])},
-            {"label": "Record a quote request"},
+            {"label": "Ask for a quote"},
         ]
 
     def cancel_href(self, **kwargs):

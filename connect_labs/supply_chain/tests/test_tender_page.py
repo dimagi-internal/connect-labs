@@ -356,7 +356,7 @@ class TestOneHeaderOneTable:
         # Everyone is asked through outreach and no one through the marketplace: no second panel.
         assert 'data-testid="invited-suppliers"' not in body
         outreach_head = body.split('id="outreach"')[1].split("<table")[0]
-        assert "+ Record a quote request" in outreach_head
+        assert "+ Ask for a quote" in outreach_head
         if 'id="invite-org"' in body:
             assert 'id="invite-org"' in outreach_head
 

@@ -41,7 +41,7 @@ heard 12 Jun" is the record.
         <th scope="col" data-sort>Country</th>
         <th scope="col" data-sort>Status</th>
         {% if has_program_context %}
-          <th scope="col" class="text-right" data-sort>Invited</th>
+          <th scope="col" class="text-right" data-sort>Asked to quote</th>
           <th scope="col" class="text-right" data-sort>Quotes</th>
           <th scope="col" class="text-right" data-sort>Orders</th>
           <th scope="col" data-sort>Last dated record</th>
@@ -56,7 +56,7 @@ heard 12 Jun" is the record.
           <td {% if has_program_context %}{% edit_cell "supplier" supplier.id "type" supplier.type %}{% endif %}>{% if supplier.type == "donor" %}<span class="text-blue-900">Donor — supplies in kind</span>{% elif supplier.type %}{{ supplier.type|words|capfirst }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
           <td {% if has_program_context %}{% edit_cell "supplier" supplier.id "city" supplier.city %}{% endif %}>{{ supplier.city|default:"—" }}</td>
           <td {% if has_program_context %}{% edit_cell "supplier" supplier.id "country" supplier.country %}{% endif %}>{{ supplier.country|default:"—" }}</td>
-          <td class="text-gray-600">{{ supplier.status|humanise|default:"identified" }}</td>
+          <td class="text-gray-600" title="{{ supplier.status|supplier_status_note }}">{{ supplier.status|humanise|default:"identified" }}</td>
           {% if has_program_context %}
             <td class="num text-gray-700">{{ supplier.invitation_count }}</td>
             <td class="num text-gray-700">{{ supplier.quote_count }}</td>

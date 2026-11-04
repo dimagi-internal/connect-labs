@@ -213,11 +213,11 @@ class TestTheTenderPage:
 
     def test_an_awarded_tender_offers_no_invitation(self, da, base, client_in_program, invitable):
         open_body = _tender_page(client_in_program, base["tender"]["id"])
-        assert "Invite a registered supplier" in open_body
+        assert "Give a registered supplier marketplace access" in open_body
 
         Tender.objects.filter(pk=base["tender"]["id"]).update(status="awarded")
         body = _tender_page(client_in_program, base["tender"]["id"])
-        assert "Invite a registered supplier" not in body
+        assert "Give a registered supplier marketplace access" not in body
         assert "while it is open" not in body
 
 

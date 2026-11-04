@@ -168,7 +168,7 @@ def _base_unit_grams(quote: Quote, item: Item | None) -> int | Derived:
 # Why a quote whose Incoterm makes the import ours has no landed total yet: the
 # round has not said how it imports. questions.py maps it to a tender-owned
 # ("internal") action, so it is never asked of the supplier.
-ROUND_DUTY_TERMS_REASON = "import duty is ours to cost and the tender's duty terms are not settled"
+ROUND_DUTY_TERMS_REASON = "import duty is ours to cost and the tender's import duty is not chosen yet"
 
 
 def _duty_terms(quote: Quote, tender=None) -> str:

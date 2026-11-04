@@ -97,9 +97,9 @@ _REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
     # Before "duties": under an Incoterm that makes the import ours, duty is the
     # tender's cost to settle, never a supplier's question.
     (
-        "tender's duty terms are not settled",
+        "tender's import duty is not chosen yet",
         "duty_terms",
-        "Settle the tender's import duty terms -- who imports, and whether duty is waived or ours to pay. "
+        "Choose who pays import duty on the tender -- who imports, and whether duty is waived or ours to pay. "
         "Import is ours under this quote's Incoterm, so the supplier is not asked.",
         INTERNAL,
     ),

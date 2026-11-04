@@ -106,7 +106,7 @@ class TestTheTenderPageLine:
         body = _tender_page(client_in_program, world["tender"]["id"])
         pattern = r'data-testid="tender-duty-terms"[^>]*>(.*?)<span class="text-gray-600">Deadline'
         line = re.search(pattern, body, re.S).group(1)
-        assert " ".join(re.sub(r"<[^>]+>", "", line).split()).startswith("Not settled")
+        assert " ".join(re.sub(r"<[^>]+>", "", line).split()).startswith("Not chosen yet")
         _set(da, world, "buyer_waiver")
         body = _tender_page(client_in_program, world["tender"]["id"], "?duty_terms=changed")
         line = re.search(pattern, body, re.S).group(1)

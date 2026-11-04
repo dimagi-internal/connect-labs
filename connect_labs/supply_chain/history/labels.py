@@ -163,7 +163,7 @@ class Lookup:
 
 def model_label(model) -> str:
     if model._meta.auto_created:
-        return "Invitation"
+        return "Marketplace access"
     label = MODEL_LABELS.get(model.__name__) or str(model._meta.verbose_name)
     return label[:1].upper() + label[1:]
 
@@ -607,7 +607,7 @@ def sentence(model, action, changes, lookup) -> str:
     if model._meta.auto_created:
         values = changes if action == "delete" else {k: v[1] for k, v in changes.items()}
         org = _identity(model, values, lookup)
-        return f"Invitation to {org} withdrawn" if action == "delete" else f"Invited {org}"
+        return f"Marketplace access for {org} withdrawn" if action == "delete" else f"Gave {org} marketplace access"
     if action == "create":
         values = {k: v[1] for k, v in changes.items()}
         facts = _create_facts(model, values, lookup)

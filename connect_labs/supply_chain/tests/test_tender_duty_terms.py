@@ -78,7 +78,7 @@ def test_unsettled_terms_hold_every_buyer_import_quote_whatever_it_states(incote
     assert isinstance(extras, Unconfirmed)
     assert list(extras.reasons) == [ROUND_DUTY_TERMS_REASON]
     assert import_is_ours(quote)
-    assert round_duty_words(quote, _round("")) == "ours to cost (tender terms not settled)"
+    assert round_duty_words(quote, _round("")) == "ours to cost (import duty not chosen yet)"
 
 
 @pytest.mark.parametrize("incoterm", BUYER_IMPORT)
@@ -148,7 +148,7 @@ def test_a_buyer_import_term_with_no_duty_amount_waits_on_the_round(incoterm):
     assert audience_for_reason(ROUND_DUTY_TERMS_REASON) == INTERNAL
     assert key_for_reason(ROUND_DUTY_TERMS_REASON) == "duty_terms"
     assert gap_word(ROUND_DUTY_TERMS_REASON) == "tender duty terms"
-    assert round_duty_words(_quote(incoterm), UNSETTLED) == "ours to cost (tender terms not settled)"
+    assert round_duty_words(_quote(incoterm), UNSETTLED) == "ours to cost (import duty not chosen yet)"
 
 
 def test_delivered_duty_paid_and_unknown_terms_still_ask_the_supplier():

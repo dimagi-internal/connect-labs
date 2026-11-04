@@ -497,7 +497,7 @@ def freight_and_duties_for_incoterm(incoterm) -> tuple[str | None, str | None]:
 # question; delivered duty paid is the supplier's, as each quote states it.
 DUTY_TERMS = ("", "buyer_waiver", "buyer_pays", "supplier_ddp")
 DUTY_TERMS_LABELS = {
-    "": "not settled",
+    "": "not chosen yet",
     "buyer_waiver": "we import under the duty waiver",
     "buyer_pays": "we import and pay the duty",
     "supplier_ddp": "the supplier delivers duty paid",

@@ -29,11 +29,11 @@ four screens and an id held in your head.
     </p>
   </div>
   <div class="flex items-center gap-3">
-    <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+    <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700" title="{{ supplier.status|supplier_status_note }}">
       {{ supplier.status|humanise|default:"identified" }}
     </span>
     <a href="{% url 'supply_chain:supplier_edit' supplier.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Edit</a>
-    <a href="{% url 'supply_chain:supplier_market_invite' supplier.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Invite to the marketplace</a>
+    <a href="{% url 'supply_chain:supplier_market_invite' supplier.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Give marketplace access</a>
   </div>
 </div>
 
@@ -157,7 +157,7 @@ four screens and an id held in your head.
     </ul>
   {% else %}
     <p class="px-5 py-5 text-sm text-gray-600">
-      Nothing connects them to anything in the catalogue yet — no invitation,
+      Nothing connects them to anything in the catalogue yet — no request for a quote,
       no quote, no order.
     </p>
   {% endif %}
@@ -245,7 +245,7 @@ hundred are different claims, and a reader cannot tell them apart.
       {% endfor %}
     </ul>
   {% else %}
-    <p class="px-5 py-5 text-sm text-gray-600">We have never invited them to a tender.</p>
+    <p class="px-5 py-5 text-sm text-gray-600">We have never asked them for a quote.</p>
   {% endif %}
 </div>
 
