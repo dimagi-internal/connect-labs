@@ -275,6 +275,18 @@ class TestColdCache:
             assert status == 202
         assert task.delay.call_count == 1
 
+    def test_a_fill_that_stored_nothing_ends_the_wait(self):
+        """A source with no rows stores no cache, so it stays cold after every fill."""
+        from connect_labs.workflow.cache_warm import WarmSlot
+        from connect_labs.workflow.pipeline_query import warm_cache_key
+
+        config = _visit_config()
+        WarmSlot(warm_cache_key(OPP, config)).finish()
+        with patch("connect_labs.workflow.tasks.warm_pipelines") as task:
+            status, out = _post(config, {"alias": "answers"})
+        assert status == 200 and out["status"] == "ready" and out["rows"] == [] and out["total"] == 0
+        assert task.delay.call_count == 0
+
     def test_the_warm_task_runs_the_pipeline_and_releases_its_lock(self):
         from connect_labs.labs.analysis.pipeline import EVENT_RESULT
         from connect_labs.workflow import pipeline_reads

@@ -215,6 +215,74 @@ class TestAfterAFill:
         assert len(h.queued) == 1
 
 
+class TestWhatAFinishedFillMeans:
+    def test_a_target_whose_fill_failed_does_not_serve_the_rows_it_failed_to_replace(self):
+        with Harness() as h:
+            h.cached[OPP] = _result("old")
+            h.slot.finish("no export", forced=True, report={"visits": {str(OPP): {"error": "no export"}}})
+            visits = h.read(refresh="1").data["visits"]
+        assert visits["rows"] == [] and visits["metadata"]["per_opp"][str(OPP)]["error"] == "no export"
+
+    def test_a_fill_that_failed_before_any_target_is_an_error_not_an_empty_report(self):
+        with Harness() as h:
+            h.slot.finish("workflow 77 not found")
+            answer = h.read()
+            assert answer.status == 502 and "workflow 77 not found" in answer.error
+            assert h.slot.outcome() is None, "its Retry tries again"
+
+    def test_a_fill_of_the_pipelines_before_an_edit_says_nothing_about_them(self):
+        """Without this an edited, cold pipeline reads as empty for ten minutes."""
+        with Harness() as h:
+            h.slot.finish(configs="visits:an-older-version")
+            assert h.read().warming is not None
+        assert len(h.queued) == 1
+
+    def test_a_fill_of_these_pipelines_ends_the_wait(self):
+        with Harness() as h:
+            h.slot.finish(configs=pipeline_reads._configs_signature({"visits": h.config}))
+            assert h.read().warming is None
+        assert h.queued == []
+
+
+class TestSomeoneElsesRefresh:
+    def _refreshing(self, h):
+        h.read(refresh="1")
+        assert h.slot.state()["forced"] is True
+
+    def test_a_warm_cache_still_serves_a_plain_reader(self):
+        with Harness() as h:
+            h.cached[OPP] = _result("a")
+            self._refreshing(h)
+            assert len(h.read().data["visits"]["rows"]) == 1
+        assert len(h.queued) == 1
+
+    def test_a_cold_cache_waits_on_it_rather_than_queueing_another(self):
+        with Harness() as h:
+            self._refreshing(h)
+            assert h.read().warming is not None
+        assert len(h.queued) == 1
+
+    def test_a_plain_reader_does_not_spend_the_outcome_the_refresher_is_waiting_for(self):
+        with Harness() as h:
+            h.cached[OPP] = _result("a")
+            h.slot.finish(forced=True)
+            h.read()
+            assert h.read(refresh="1").warming is None
+        assert h.queued == []
+
+
+class TestAProgramOwnedWorkflow:
+    def test_the_fill_reads_the_workflow_where_it_lives(self):
+        definition = _definition()
+        definition.program_id = 176
+        with Harness(definition) as h:
+            request = _request()
+            request.labs_context = {"program_id": 176}
+            read_pipeline_data(request, DEF_ID)
+        assert h.queued[0]["definition_scope"] == {"program_id": 176}
+        assert h.queued[0]["scope"] == {"opportunity_id": OPP}
+
+
 class TestRefresh:
     def test_refresh_fills_even_when_the_cache_is_warm(self):
         with Harness() as h:

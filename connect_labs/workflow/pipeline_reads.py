@@ -78,8 +78,14 @@ def queue_fill(
     scope: dict,
     opportunity_ids: list,
     aliases: list[str] | None = None,
+    definition_scope: dict | None = None,
 ) -> None:
-    """Have the worker fill these pipelines, if no fill of them is under way."""
+    """Have the worker fill these pipelines, if no fill of them is under way.
+
+    `scope` is where the pipeline records are read. `definition_scope` is where the
+    workflow's own record is, when that differs: a program-owned workflow is only visible
+    in its program, while its pipelines are read in its first opportunity.
+    """
     from connect_labs.workflow.tasks import warm_pipelines
 
     slot.queue_once(
@@ -87,6 +93,7 @@ def queue_fill(
             (request.session.get("labs_oauth", {}) or {}).get("access_token"),
             definition_id=int(definition_id),
             scope=scope,
+            definition_scope=definition_scope,
             slot_key=slot.key,
             claim=claim,
             aliases=aliases,
@@ -94,7 +101,8 @@ def queue_fill(
             user_id=_viewer_id(request),
             params=_fill_params(request),
             visit_count=_visit_count(request),
-        )
+        ),
+        forced=request.GET.get("refresh") == "1",
     )
 
 
@@ -167,6 +175,13 @@ def probe_cchq_access(request, definition, opportunity_id: int, access_token: st
     except Exception as exc:  # noqa: BLE001 -- the probe failing says nothing about HQ; the fill will find out
         logger.warning("[PipelineRead] CCHQ probe failed: %s", exc)
     return None
+
+
+def _configs_signature(configs: dict) -> str:
+    """Which versions of a workflow's pipelines a fill read, to tell it from an edit."""
+    from connect_labs.labs.analysis.utils import get_config_hash
+
+    return ",".join(f"{alias}:{get_config_hash(config)}" for alias, config in sorted((configs or {}).items()))
 
 
 def _alias_metadata(*, pipeline_id, name, rows, opp_ids, per_opp, config) -> dict:
@@ -250,14 +265,16 @@ def read_pipeline_data(request, definition_id: int, *, on_read: Callable | None 
     opp_ids = definition.opportunity_ids or ([int(opportunity_id)] if opportunity_id else [])
 
     # A poll during a fill stops here. It is what a waiting page sends every few seconds,
-    # and everything below costs round trips.
+    # and everything below costs round trips. The exception is someone else's refresh:
+    # the cache that fill is replacing still serves this reader.
+    forced = request.GET.get("refresh") == "1"
     slot = workflow_fill_slot(definition_id, opp_ids)
-    if slot.state():
+    filling = slot.state()
+    if filling and (forced or not filling.get("forced")):
         return _waiting(slot)
 
     scope = {"opportunity_id": int(opportunity_id)} if opportunity_id else {"program_id": int(owning_program)}
-    finished = slot.outcome()
-    forced = request.GET.get("refresh") == "1"
+    finished = None if filling else slot.outcome()
     if forced and not (finished and finished.get("forced")):
         # A fill that ran for someone else's plain read is not the refresh asked for.
         finished = None
@@ -267,7 +284,14 @@ def read_pipeline_data(request, definition_id: int, *, on_read: Callable | None 
             refused = probe_cchq_access(request, definition, int(opportunity_id), access_token)
             if refused is not None:
                 return refused
-        queue_fill(request, slot, definition_id=definition_id, scope=scope, opportunity_ids=list(opp_ids))
+        queue_fill(
+            request,
+            slot,
+            definition_id=definition_id,
+            scope=scope,
+            definition_scope={"program_id": int(owning_program)} if owning_program else None,
+            opportunity_ids=list(opp_ids),
+        )
         return _waiting(slot)
 
     if forced and not finished:
@@ -281,6 +305,13 @@ def read_pipeline_data(request, definition_id: int, *, on_read: Callable | None 
         )
         if configs:
             resolve_join_hashes(configs)
+        # A fill of the pipelines as they were before an edit says nothing about these.
+        if finished and finished.get("configs") not in (None, _configs_signature(configs)):
+            finished = None
+        # It failed before it reached any pipeline: nothing below could say why.
+        if finished and finished.get("error") and not finished.get("report"):
+            slot.take_outcome()
+            return PipelineAnswer(error=f"The report's data could not be loaded: {finished['error']}", status=502)
         # `load: "on_demand"` sources are not shipped: render code queries them. One is
         # still filled when an eager pipeline JOINs it, which reads its computed cache.
         execute, on_demand = streamed_and_skipped_aliases(ordered, configs)
@@ -317,7 +348,8 @@ def read_pipeline_data(request, definition_id: int, *, on_read: Callable | None 
             for index, (key, opp, tag) in enumerate(targets, start=1):
                 reported = (report.get(alias) or {}).get(key) or {}
                 try:
-                    result = analysis.read_cached(config, opp)
+                    # A failed target shows its failure, not the older rows it failed to replace.
+                    result = None if reported.get("error") else analysis.read_cached(config, opp)
                     if result is None and finished and not reported.get("error"):
                         # The fill ran and this still reads as cold. A visit count that
                         # drifted must not read as no data.
@@ -327,7 +359,7 @@ def read_pipeline_data(request, definition_id: int, *, on_read: Callable | None 
                     per_opp[key] = failure_entry(exc)
                     continue
                 if result is None and not finished:
-                    return start_fill()
+                    return _waiting(slot) if filling else start_fill()
                 found = list(result.rows) if result else []
                 per_opp[key] = {"row_count": len(found), "from_cache": True, **reported}
                 rows.extend(serialize_pipeline_row(row, extra={"opportunity_id": tag}) for row in found)
@@ -355,8 +387,10 @@ def read_pipeline_data(request, definition_id: int, *, on_read: Callable | None 
                     config=config,
                 ),
             }
-        if finished:
-            slot.take_outcome()  # answered: this reader's next load starts over
+        if finished and (forced or not finished.get("forced")):
+            # Answered: this reader's next load starts over. A forced fill's outcome is
+            # left for the reader who asked for it, or that reader would fill again.
+            slot.take_outcome()
         return PipelineAnswer(data=pipelines)
     finally:
         pipeline_access.close()
@@ -408,6 +442,7 @@ def fill_pipelines(
     definition_id: int,
     scope: dict,
     slot_key: str,
+    definition_scope: dict | None = None,
     claim: str | None = None,
     aliases: list[str] | None = None,
     opportunity_ids: list[int] | None = None,
@@ -426,6 +461,7 @@ def fill_pipelines(
             outcome=outcome,
             definition_id=definition_id,
             scope=scope,
+            definition_scope=definition_scope,
             aliases=aliases,
             opportunity_ids=opportunity_ids,
             user_id=user_id,
@@ -441,6 +477,7 @@ def _fill(
     outcome: dict,
     definition_id: int,
     scope: dict,
+    definition_scope: dict | None,
     aliases: list[str] | None,
     opportunity_ids: list[int] | None,
     user_id: int | None,
@@ -475,7 +512,7 @@ def _fill(
         program_drive_scope,
         streamed_and_skipped_aliases,
     )
-    from connect_labs.workflow.pipeline_query import PipelineQueryError, cached_queryset
+    from connect_labs.workflow.pipeline_query import PipelineQueryError
     from connect_labs.workflow.tasks import _create_mock_request
     from connect_labs.workflow.views import _resolve_pipeline_sources_for_run
 
@@ -494,7 +531,7 @@ def _fill(
 
     pipeline_access = None
     try:
-        wf_access = WorkflowDataAccess(request=request)
+        wf_access = WorkflowDataAccess(request=_create_mock_request(access_token, **(definition_scope or scope)))
         try:
             definition = wf_access.get_definition(definition_id)
         finally:
@@ -512,6 +549,7 @@ def _fill(
         )
         if configs:
             resolve_join_hashes(configs)
+        outcome["configs"] = _configs_signature(configs)
 
         if aliases is None:
             wanted = streamed_and_skipped_aliases(ordered, configs)[0]
@@ -549,8 +587,6 @@ def _fill(
         warmed = []
         for step, (name, key, opp, _tag) in enumerate(plan, start=1):
             config = configs[name]
-            if name not in wanted and opp is not None and cached_queryset(config, opp) is not None:
-                continue  # a warm dependency needs nothing
 
             def say(message: str, **progress) -> None:
                 slot.report(message, stage_name=name, current_stage=step, total_stages=len(plan), **progress)

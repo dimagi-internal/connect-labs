@@ -3258,6 +3258,19 @@ def pipeline_query_api(request, definition_id):
             finished = None if slot.state() else slot.take_outcome()  # report once; the next call tries again
             if finished and finished.get("error"):
                 return error(f"Filling the {params['alias']} pipeline failed: {finished['error']}", 502)
+            if finished:
+                # It ran and stored nothing: a source with no rows. Filling again would poll forever.
+                return JsonResponse(
+                    {
+                        "status": "ready",
+                        "alias": params["alias"],
+                        "pipeline_id": pipeline_id,
+                        "rows": [],
+                        "total": 0,
+                        "limit": query["limit"],
+                        "offset": query["offset"],
+                    }
+                )
             scope = {"program_id": scope_program} if (scope_program and not scope_opp) else {}
             if not scope and not scope_opp and program_scope is not None:
                 scope = {"program_id": program_scope}

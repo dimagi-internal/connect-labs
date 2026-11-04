@@ -71,12 +71,13 @@ class WarmSlot:
         self.outcome_key = key + ":outcome"
         self.token = token
 
-    def claim(self) -> str | None:
-        """Take the slot, and return its token. None means a fill is already under way."""
+    def claim(self, **details: Any) -> str | None:
+        """Take the slot, and return its token. None means a fill is already under way.
+        `details` stay on the claim, for a reader deciding whether this fill is its own."""
         token = uuid.uuid4().hex
         taken = cache.add(
             self.key,
-            {"token": token, "message": None, "started_at": time.time(), "running": False},
+            {**details, "token": token, "message": None, "started_at": time.time(), "running": False},
             QUEUED_SECONDS,
         )
         if not taken:
@@ -84,13 +85,13 @@ class WarmSlot:
         self.token = token
         return token
 
-    def queue_once(self, enqueue: Callable[[str], Any]) -> None:
+    def queue_once(self, enqueue: Callable[[str], Any], **details: Any) -> None:
         """Have `enqueue(token)` queue the fill, if no fill is under way yet.
 
         If it cannot be queued, no task is coming, so no claim may stand: the next read
         hears why instead of polling for ten minutes on nothing.
         """
-        token = self.claim()
+        token = self.claim(**details)
         if token is None:
             return
         try:

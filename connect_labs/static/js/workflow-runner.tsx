@@ -261,6 +261,7 @@ function WorkflowRunner({
   );
   // The fill's progress while the pipelines are loading on the worker.
   const [pipelineWarming, setPipelineWarming] = useState<Warming | null>(null);
+  const cancelPipelineLoad = React.useRef<(() => void) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -456,7 +457,14 @@ function WorkflowRunner({
       );
     }
 
+    // A newer load replaces this one: a schema save reloads while a poll may be running,
+    // and the older answer must not land on top of the newer.
+    cancelPipelineLoad.current?.();
     let closed = false;
+    const cancel = () => {
+      closed = true;
+    };
+    cancelPipelineLoad.current = cancel;
     const read = async () => {
       const response = await fetch(url.toString(), {
         credentials: 'same-origin',
@@ -518,9 +526,7 @@ function WorkflowRunner({
         setError(`Loading the report's data failed: ${e?.message || e}`);
       });
 
-    return () => {
-      closed = true;
-    };
+    return cancel;
   }, [
     initialData.apiEndpoints.getPipelineData,
     applyScopeParams,
