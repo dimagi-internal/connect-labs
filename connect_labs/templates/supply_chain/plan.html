@@ -1,0 +1,302 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+{% comment %}
+The planning pages (Sophie Feintuch's RUTF feedback, "Combining Supply with our CBI dashboards"): one
+page per person and rhythm, all reading `stock_plan_view`. Every number is worked out step by step in
+plain words, and each step says where it came from.
+{% endcomment %}
+{% block supply_content %}
+{% if not has_program_context %}
+  <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
+    <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
+    <p class="text-sm text-message-warning-text/90">Choose a programme above. Plans belong to one.</p>
+  </div>
+{% elif not item %}
+  <p class="text-sm text-gray-600">No dispensing rule yet, so no visit has given anything out and there is nothing to plan from.</p>
+{% else %}
+
+<div class="flex flex-wrap items-end justify-between gap-4 mb-3">
+  <div>
+    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Plan: {{ item.name }}</h1>
+    <p class="text-sm text-gray-600 mt-1">
+      Worked out from the visits and from the handovers and receipts Supply has recorded, week by week.
+      {% if picture.scoped %}You see the places your own organisation runs.{% endif %}
+    </p>
+  </div>
+  {% if items|length > 1 %}
+    <div class="flex gap-2 text-sm">
+      {% for i in items %}
+        <a href="?item_id={{ i.id }}" class="px-2.5 py-1 rounded-full border {% if i.id == item.id %}bg-brand-indigo text-white border-brand-indigo{% else %}border-gray-300 text-gray-700 hover:bg-gray-50{% endif %}">{{ i.name }}</a>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+
+<div class="flex flex-wrap items-center gap-2 mb-5 text-sm" data-testid="plan-roles">
+  <span class="text-gray-600">For:</span>
+  {% for r in roles %}
+    <a href="{{ r.url }}?item_id={{ item.id }}"
+       class="px-2.5 py-1 rounded-full border {% if r.active %}bg-brand-indigo text-white border-brand-indigo{% else %}border-gray-300 text-gray-700 hover:bg-gray-50{% endif %}">{{ r.label }}</a>
+  {% endfor %}
+</div>
+
+{% if role == "supervisor" %}
+  <section class="mb-8" data-testid="plan-issue">
+    <h2 class="text-lg font-semibold text-brand-indigo">What to issue at the next handout</h2>
+    <p class="text-xs text-gray-600 mb-3">
+      For each field worker: the sachets their children will need this week, plus children expected to enrol, plus the
+      buffer, less what Supply's records say they hold. Open a row to see the steps and where each number came from.
+      Children leave the list when their course ends.
+    </p>
+    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+      <table class="min-w-[44rem] w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+          <tr>
+            <th class="text-left px-4 py-2">Field worker</th>
+            <th class="text-right px-4 py-2">Children in treatment</th>
+            <th class="text-right px-4 py-2">Holds now</th>
+            <th class="text-right px-4 py-2">Issue</th>
+            <th class="text-left px-4 py-2">Runs out</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for r in picture.issue %}
+            <tr>
+              <td class="px-4 py-2">
+                <details>
+                  <summary class="cursor-pointer text-brand-indigo">{{ r.name }}</summary>
+                  <ol class="mt-2 mb-1 space-y-1 text-xs text-gray-700 list-none pl-0">
+                    {% for s in r.steps %}
+                      <li><span class="font-medium">{% if s.sign %}{{ s.sign }} {% endif %}{{ s.label }}:</span> {{ s.value }}
+                        <span class="text-gray-600">&mdash; {{ s.source }}</span></li>
+                    {% endfor %}
+                    <li class="font-semibold">= {{ r.result }}</li>
+                  </ol>
+                </details>
+              </td>
+              <td class="px-4 py-2 text-right tabular-nums">{% if r.children is None %}&mdash;{% else %}{{ r.children }}{% endif %}</td>
+              <td class="px-4 py-2 text-right tabular-nums">{% if r.stock_known %}{{ r.held|floatformat:0 }}{% else %}not known{% endif %}</td>
+              <td class="px-4 py-2 text-right tabular-nums font-semibold">{{ r.to_issue }}</td>
+              <td class="px-4 py-2">{{ r.runs_dry_on|default:"not in the weeks ahead" }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="px-4 py-6 text-center text-gray-600">No field workers yet.</td></tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="bg-gray-50 text-sm font-semibold">
+          <tr><td class="px-4 py-2" colspan="3">To issue in all</td><td class="px-4 py-2 text-right tabular-nums">{{ picture.issue_total }}</td><td></td></tr>
+        </tfoot>
+      </table>
+      </div>
+    </div>
+    <p class="text-xs text-gray-600 mt-2">
+      Appetite tests are not counted: Supply does not hold them yet. What a worker holds is Supply's record of
+      handovers less visits, not the balance on their phone.
+    </p>
+  </section>
+
+  <section class="mb-8" data-testid="plan-short">
+    <h2 class="text-lg font-semibold text-brand-indigo">Who may run short this week</h2>
+    <p class="text-xs text-gray-600 mb-2">Field workers who hold less than their children and expected new children will need in the next seven days.</p>
+    {% if picture.short %}
+      <ul class="text-sm space-y-1">
+        {% for r in picture.short %}
+          <li><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:workers' %}">{{ r.name }}</a>:
+            holds {{ r.held|floatformat:0 }}, needs about {{ r.due|add:r.new|floatformat:0 }} this week{% if r.runs_dry_on %}; runs out {{ r.runs_dry_on }}{% endif %}.</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="text-sm text-gray-600">Nobody. Every field worker holds what the next seven days need.</p>
+    {% endif %}
+  </section>
+
+  <section class="mb-8" data-testid="plan-followup">
+    <h2 class="text-lg font-semibold text-brand-indigo">Stock follow-up</h2>
+    <p class="text-xs text-gray-600 mb-2">
+      The dose each field worker's children are actually given each day, against the protocol's
+      ({{ picture.dosing.0.protocol_per_day|default:"" }}{% if picture.dosing %} sachets a day{% endif %}),
+      from the days between each child's visits. Counts that do not match the records are on
+      <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:workers' %}">Workers</a>; missing or damaged stock is on
+      <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:issues' %}">Issues</a>.
+    </p>
+    {% if picture.dosing %}
+      <table class="text-sm w-full max-w-3xl">
+        <thead class="text-xs uppercase tracking-wide text-gray-600"><tr><th class="text-left py-1">Field worker</th><th class="text-right py-1">Children</th><th class="text-right py-1">Given a day</th><th class="text-left py-1 pl-4">Against the protocol</th></tr></thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for d in picture.dosing %}
+            <tr>
+              <td class="py-1">{{ d.name }}</td>
+              <td class="py-1 text-right tabular-nums">{{ d.children }}</td>
+              <td class="py-1 text-right tabular-nums">{% if d.per_day %}{{ d.per_day|floatformat:1 }}{% else %}&mdash;{% endif %}</td>
+              <td class="py-1 pl-4 {% if d.flag %}text-amber-800 font-medium{% endif %}">{{ d.verdict|capfirst }}{% if d.share %} ({{ d.share }}%){% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="text-sm text-gray-600">Not available: this needs the protocol's daily dose on the product and visits that follow children.</p>
+    {% endif %}
+    <p class="text-xs text-gray-600 mt-2">
+      Household leakage (sachets lowered between visits, not returned by household) is not here yet: Supply does not
+      hold per-household returns, so the dashboards' check has no source in Supply today.
+    </p>
+  </section>
+{% endif %}
+
+{% if role == "stores" %}
+  <section class="mb-8" data-testid="plan-stores">
+    <h2 class="text-lg font-semibold text-brand-indigo">Store restocking</h2>
+    <p class="text-xs text-gray-600 mb-3">
+      For each store: what its field workers and facilities below it will need over the next four weeks, whether
+      what it holds is enough until its next delivery, and the day it would run out if nothing arrives.
+    </p>
+    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+      <table class="min-w-[44rem] w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+          <tr>
+            <th class="text-left px-4 py-2">Store</th>
+            <th class="text-right px-4 py-2">Holds</th>
+            <th class="text-right px-4 py-2">Field workers below</th>
+            <th class="text-right px-4 py-2">They need in 4 weeks</th>
+            <th class="text-left px-4 py-2">Next delivery</th>
+            <th class="text-left px-4 py-2">Enough until then?</th>
+            <th class="text-left px-4 py-2">Runs out</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for s in picture.stores %}
+            <tr>
+              <td class="px-4 py-2">{{ s.name }}</td>
+              <td class="px-4 py-2 text-right tabular-nums">{{ s.own_on_hand.amount|default:"&mdash;"|floatformat:0 }}</td>
+              <td class="px-4 py-2 text-right tabular-nums">{{ s.workers }}</td>
+              <td class="px-4 py-2 text-right tabular-nums">{{ s.need_ahead|floatformat:0 }}</td>
+              <td class="px-4 py-2">{{ s.next_delivery|default:"none expected" }}</td>
+              <td class="px-4 py-2 {% if s.lasts_until_delivery == 'no' or s.lasts_until_delivery == 'no delivery planned' %}text-amber-800 font-medium{% endif %}">{{ s.lasts_until_delivery|capfirst }}</td>
+              <td class="px-4 py-2">{{ s.runs_dry_on|default:"not in the weeks ahead" }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="7" class="px-4 py-6 text-center text-gray-600">No stores with field workers below them yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+    <p class="text-xs text-gray-600 mt-2">
+      A store's need is what the field workers below it cannot cover from their own stock. Only deliveries with an
+      expected day count as arriving.
+    </p>
+  </section>
+{% endif %}
+
+{% if role == "programme" and picture.scoped %}
+  <p class="text-sm text-gray-700 max-w-3xl mb-8" data-testid="plan-programme-only">
+    This page adds up every partner's stock, so it is for the organisation that runs the programme.
+    Your own places are on the other two pages.
+  </p>
+{% endif %}
+{% if role == "programme" and not picture.scoped %}
+  {% with b=picture.break_even %}
+  <section class="mb-8" data-testid="plan-break-even">
+    <h2 class="text-lg font-semibold text-brand-indigo">Will we have enough?</h2>
+    <p class="text-sm text-gray-900 mb-3 max-w-3xl">{{ b.answer }}</p>
+    {% if b.known %}
+    <ol class="text-sm space-y-1 max-w-3xl list-decimal pl-5">
+      <li>Held across the whole network: <b>{{ b.held|floatformat:0 }}</b> sachets <span class="text-gray-600">&mdash; Supply's records: receipts and handovers less what visits gave out.</span></li>
+      <li>Less still owed to the <b>{{ b.in_treatment }}</b> children in treatment: <b>{{ b.owed|floatformat:0 }}</b> <span class="text-gray-600">&mdash; the rest of each child's course, from their visits.</span></li>
+      <li>Left for new children: <b>{{ b.left_for_new|floatformat:0 }}</b></li>
+      <li>Children still to come: <b>{{ b.children_to_come }}</b> <span class="text-gray-600">&mdash; the target of {{ b.target }} less the {{ b.children_so_far }} seen in the visits.</span></li>
+      <li>A full course is <b>{{ b.course|floatformat:0 }}</b> sachets, up to {{ b.max_visits }} visits <span class="text-gray-600">&mdash; {% if b.course_basis == "measured" %}the usual course of the {{ b.course_children }} children who finished{% else %}the protocol's course{% endif %}.</span></li>
+      <li>All of them at a full course would need <b>{{ b.needed_for_new|floatformat:0 }}</b>; the shortfall is <b>{{ b.to_buy|floatformat:0 }}</b>{% if b.on_order and b.on_order != "0" %}, or <b>{{ b.to_buy_with_orders|floatformat:0 }}</b> once the {{ b.on_order|floatformat:0 }} already on order arrive{% endif %}.</li>
+    </ol>
+    {% if b.visits_per_case is not None and b.children_to_come %}
+      <p class="text-sm mt-2">With what is left, each new child could have about <b>{{ b.visits_per_case }}</b> of {{ b.max_visits }} visits.</p>
+    {% endif %}
+    {% endif %}
+  </section>
+
+  <section class="mb-8" data-testid="plan-buy">
+    <h2 class="text-lg font-semibold text-brand-indigo">When and how much to buy next</h2>
+    <p class="text-sm text-gray-900 max-w-3xl">
+      {% if picture.break_even.known %}
+        {% if picture.break_even.to_buy and picture.break_even.to_buy != "0" %}
+          To reach the target, buy about <b>{{ picture.break_even.to_buy|floatformat:0 }}</b> more sachets. That is the quantity to carry into the next
+          <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_board' %}">tender</a>.
+        {% else %}
+          The stock left covers the target: nothing more is needed to reach it.
+        {% endif %}
+      {% else %}
+        Cannot be worked out until the break-even above can.
+      {% endif %}
+      {% if picture.stores %}
+        Across the stores, the soonest to run out is
+        {% with first=picture.stores.0 %}{{ first.name }}{% if first.runs_dry_on %} on {{ first.runs_dry_on }}{% else %} in no week ahead{% endif %}{% endwith %}.
+      {% endif %}
+    </p>
+  </section>
+  {% endwith %}
+
+  <section class="mb-8" data-testid="plan-account">
+    <h2 class="text-lg font-semibold text-brand-indigo">Can we account for every sachet?</h2>
+    {% if account %}
+      <p class="text-xs text-gray-600 mb-2">
+        Step by step from what arrived to where it is now. The first line is all that was received; every line after it
+        says where part of it is. The lines add up to the first.
+      </p>
+      <ol class="text-sm space-y-1 max-w-3xl list-decimal pl-5">
+        <li><b>{{ account.arrived }}</b> sachets arrived in all.</li>
+        {% for st in account.stages %}
+          <li><b>{{ st.amount }}</b>{% if st.percent is not None %} ({{ st.percent }}%){% endif %}: {{ st.label|lower }}. <span class="text-gray-600">{{ st.help }}</span></li>
+        {% endfor %}
+      </ol>
+      <p class="text-xs text-gray-600 mt-2">The full picture, week by week, is on <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:flow' %}?item_id={{ item.id }}">Where it went</a>.</p>
+    {% else %}
+      <p class="text-sm text-gray-600">Nothing has been received yet.</p>
+    {% endif %}
+  </section>
+{% endif %}
+
+<section class="mb-8" data-testid="plan-inputs">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <h2 class="text-lg font-semibold text-brand-indigo">The plan</h2>
+    <a href="{% url 'supply_chain:plan_inputs' %}?item_id={{ item.id }}" class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+      <i class="fa-solid fa-pen mr-1"></i> Change the plan
+    </a>
+  </div>
+  <p class="text-xs text-gray-600 mb-2">Three numbers you can change. A change is saved as the plan, with your name and the default left beside it.</p>
+  <dl class="grid md:grid-cols-3 gap-3 text-sm">
+    <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+      <dt class="text-xs text-gray-600">New children each field worker enrols a week</dt>
+      <dd class="text-lg font-semibold">{% if plan.enrolment_per_flw_per_week.value %}{{ plan.enrolment_per_flw_per_week.value|floatformat:"-2" }}{% else %}recent rate{% endif %}</dd>
+      <dd class="text-xs text-gray-600">default: {{ plan.enrolment_per_flw_per_week.default_text }}</dd>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+      <dt class="text-xs text-gray-600">Extra days of stock (buffer)</dt>
+      <dd class="text-lg font-semibold">{{ plan.buffer_days.value }}</dd>
+      <dd class="text-xs text-gray-600">default: {{ plan.buffer_days.default_text }}
+        {% if plan.buffer_days_by_point %}&middot; {{ plan.buffer_days_by_point|length }} place{{ plan.buffer_days_by_point|length|pluralize }} set separately{% endif %}
+        &middot; <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:plan_buffer_place' %}?item_id={{ item.id }}">set for one place</a></dd>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+      <dt class="text-xs text-gray-600">Target number of children</dt>
+      <dd class="text-lg font-semibold">{{ plan.target_cases.value }}</dd>
+      <dd class="text-xs text-gray-600">default: {{ plan.target_cases.default_text }}</dd>
+    </div>
+  </dl>
+  <h3 class="text-sm font-semibold text-gray-800 mt-4 mb-1">Who changed what</h3>
+  {% if history %}
+    <ul class="text-sm space-y-1">
+      {% for h in history %}
+        <li>{{ h.when|slice:":10" }}, <b>{{ h.who }}</b>:
+          {% for c in h.changes %}{{ c.label }} {% if c.was is not None and h.action != "create" %}{{ c.was }} &rarr; {% endif %}{{ c.now|default:"recent rate" }} <span class="text-gray-600">(default {{ c.default }})</span>{% if not forloop.last %}; {% endif %}{% endfor %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="text-sm text-gray-600">The plan has not been changed: every number is its default.</p>
+  {% endif %}
+</section>
+
+{% endif %}
+{% endblock %}

@@ -129,3 +129,21 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   went to (a facility, or a field worker's own holding on a link sent to their Connect username)
   offers "Confirm what you received". Each is shown only when there is something to confirm, goes through
   the same operation as the screens, and is recorded as the link's organisation's word.
+
+
+## The plan: what to issue, break-even, who sees what (Sophie's RUTF feedback, 2026-11)
+
+- **Supply adopts the CBI dashboards' method, fed by its own records.** What to issue a field worker is
+  the week's follow-ups and expected new children, plus the buffer, less what Supply's records say they
+  hold (never the phone's balance, never a typed-in starting stock); the break-even sets the stock left
+  after what children in treatment are owed against a full course for each child still to come up to
+  the target. All of it is the forecast's figures (`stock_forecast`) chosen and worded by
+  `plan/service.py`; there is no second forecast.
+- **Three numbers are the partner's, saved as the plan (`StockPlan`)**: new children per worker a week
+  (default: each worker's own recent rate), buffer in extra days (default 0, for everyone or one place)
+  and the target number of children (default 500; 2,500 in phase 3). A change is an attributed
+  `stock_plan_set` call; the default is shown beside it and the history lists who changed what.
+- **Pages are split by person and rhythm** (`/supply/plan/`: supervisor, weekly; `plan/stores/`: store
+  manager; `plan/programme/`: running organisation) over one operation, `stock_plan_view`, so a figure
+  cannot differ between them. Every number says where it came from.
+- **Not counted, and said so on the page**: appetite tests and household leakage (no source in Supply).

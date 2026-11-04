@@ -591,6 +591,17 @@ def stock_issue(obj) -> dict:
     }
 
 
+def stock_plan(obj) -> dict:
+    return {
+        "id": obj.pk,
+        "item_id": obj.item_id,
+        "enrolment_per_flw_per_week": _num(obj.enrolment_per_flw_per_week),
+        "buffer_days": obj.buffer_days,
+        "buffer_days_by_point": obj.buffer_days_by_point or {},
+        "target_cases": obj.target_cases,
+    }
+
+
 def stock_count(obj) -> dict:
     return {
         "id": obj.pk,

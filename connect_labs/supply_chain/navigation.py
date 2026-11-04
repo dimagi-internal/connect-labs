@@ -40,6 +40,7 @@ TAB_GROUPS = (
             ("supply_chain:programme_map", "Map"),
             ("supply_chain:distribution", "Distribution"),
             ("supply_chain:stock", "Stock"),
+            ("supply_chain:plan", "Plan"),
             ("supply_chain:workers", "Workers"),
             ("supply_chain:flow", "Where it went"),
             ("supply_chain:issues", "Issues"),
@@ -94,6 +95,10 @@ PAGE_PURPOSE = {
     "supply_chain:stock": (
         "How much of each product is where. Record stock moving in or out, "
         "or a count of what is actually on the shelf."
+    ),
+    "supply_chain:plan": (
+        "What to issue each field worker at the next handout, who is running short, and whether the stock left "
+        "covers the children still to come. The three numbers behind it are yours to change."
     ),
     "supply_chain:workers": "Each field worker's stock, and how long it will last at the pace they are working.",
     "supply_chain:flow": (
@@ -249,6 +254,10 @@ TAB_FOR_VIEW = {
     "supply_chain:distribution_from_message": "supply_chain:distribution",
     "supply_chain:distribution_received": "supply_chain:distribution",
     "supply_chain:issue_report": "supply_chain:issues",
+    "supply_chain:plan_stores": "supply_chain:plan",
+    "supply_chain:plan_programme": "supply_chain:plan",
+    "supply_chain:plan_inputs": "supply_chain:plan",
+    "supply_chain:plan_buffer_place": "supply_chain:plan",
     "supply_chain:issue_follow_up": "supply_chain:issues",
     "supply_chain:issue_resolve": "supply_chain:issues",
     "supply_chain:issue_evidence": "supply_chain:issues",
