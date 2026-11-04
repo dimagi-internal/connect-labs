@@ -34,6 +34,7 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.generic import TemplateView
 
+from connect_labs.supply_chain import award_policy
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.banner import program_line
 from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView, SupplyWriteMixin
@@ -1033,6 +1034,7 @@ class ComparisonView(_Base):
                     items[item_id] = self.op("item_get", item_id=item_id)
                 context["set_aside"].append({"quote": quote, "item": items.get(item_id)})
         context["comparison"] = comparison
+        context["award_reason_limit"] = award_policy.reason_limit(_access(self.request).program_id)
         # Who among those quoting lacks the usual qualifications for this product: said
         # on the page that awards, not found afterwards.
         context["qualification_gaps"] = (
@@ -1267,6 +1269,10 @@ class ComparisonView(_Base):
         except jsonschema.ValidationError as exc:
             context = self.get_context_data(tender_id=tender_id, **kwargs)
             context["award_error"] = exc.message
+            return self.render_to_response(context)
+        except award_policy.AwardReasonRequired as exc:
+            context = self.get_context_data(tender_id=tender_id, **kwargs)
+            context["award_error"] = str(exc)
             return self.render_to_response(context)
         except (TypeError, ValueError):
             context = self.get_context_data(tender_id=tender_id, **kwargs)
