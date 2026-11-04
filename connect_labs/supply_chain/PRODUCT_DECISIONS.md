@@ -130,7 +130,6 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   offers "Confirm what you received". Each is shown only when there is something to confirm, goes through
   the same operation as the screens, and is recorded as the link's organisation's word.
 
-
 ## The plan: what to issue, break-even, who sees what (Sophie's RUTF feedback, 2026-11)
 
 - **Supply adopts the CBI dashboards' method, fed by its own records.** What to issue a field worker is
