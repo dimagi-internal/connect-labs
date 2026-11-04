@@ -101,6 +101,34 @@ class TestAlertScreens:
         assert (sub.recipient_email, sub.supply_point_id) == ("evac@example.org", store.pk)
         assert sub.check_kinds == ["stock_below_minimum", "stock_stockout"]
 
+    def test_setting_up_alerts_for_every_partner_at_once_and_again_without_duplicates(self, scoped):
+        org = LabsOrg.objects.create(slug="partner-x", name="Partner X")
+        SupplyPoint.objects.create(
+            program_id=PROGRAM,
+            slug="x-store",
+            name="X store",
+            kind="central_store",
+            managed_by_org=org,
+            source="we_recorded",
+        )
+        page = scoped.get(reverse("supply_chain:alert_partner_setup")).content.decode()
+        assert "Partner X" in page and f"emails_{org.pk}" in page
+        data = {f"emails_{org.pk}": "a@example.org, b@example.org", "summary_emails": "boss@example.org"}
+        assert scoped.post(reverse("supply_chain:alert_partner_setup"), data).status_code == 302
+        assert AlertSubscription.objects.filter(partner_org=org).count() == 2
+        assert (
+            AlertSubscription.objects.filter(partner_org__isnull=True, recipient_email="boss@example.org").count() == 1
+        )
+        scoped.post(reverse("supply_chain:alert_partner_setup"), data)
+        assert AlertSubscription.objects.count() == 3, "safe to repeat"
+
+    def test_partner_setup_refuses_a_bad_address_and_an_empty_form(self, scoped):
+        bad = scoped.post(reverse("supply_chain:alert_partner_setup"), {"summary_emails": "not-an-address"})
+        assert bad.status_code == 200 and "is not an email address" in bad.content.decode()
+        empty = scoped.post(reverse("supply_chain:alert_partner_setup"), {})
+        assert empty.status_code == 200 and "at least one email address" in empty.content.decode()
+        assert not AlertSubscription.objects.exists()
+
     def test_creating_an_alert_for_myself(self, scoped, user):
         response = scoped.post(
             reverse("supply_chain:alert_create"),

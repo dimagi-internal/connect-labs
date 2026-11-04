@@ -324,9 +324,7 @@ class TestEveryWriteOperationHasAScreen:
     ALREADY_HAD_SCREENS = {"quote_record", "award_create", "tender_set_duty_terms"}
     # Pinning a workflow into the supply tabs is done by whoever built the workflow,
     # through the MCP tool, for now; a screen waits until people pin from the page.
-    # Setting up every partner's alerts at once is done by whoever sets the programme up, through the MCP tool;
-    # the alert form (partner picker) covers one alert at a time.
-    NO_SCREEN_YET = {"view_pin", "view_unpin", "alert_partner_setup"}
+    NO_SCREEN_YET = {"view_pin", "view_unpin"}
 
     def test_no_write_operation_is_left_without_one(self):
         from django.urls import get_resolver

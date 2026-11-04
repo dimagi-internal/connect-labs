@@ -146,6 +146,8 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   partner that runs it, else the nearest one above it.
 - **A partner's alert hears about its own places only** (`AlertSubscription.partner_org`); a check that
   touches none of its places is not sent to it. An alert with no partner is the summary across partners.
+- **Alerts for every partner are set up on a screen** (Alerts > "Set up for every partner", `alert_partner_setup`):
+  one box of addresses per partner that runs something, one for the daily summary; repeating it never duplicates.
 - **A channel that is not connected says so.** Email is shipped; WhatsApp is a declared channel with no
   provider behind it (needs a decision), and its notices are logged `no_channel`, never dropped or claimed sent.
 - **Planning alerts run the forecast, so a caller must ask for them by kind** (`delivery_after_stockout`,
