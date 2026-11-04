@@ -66,7 +66,10 @@ four screens and an id held in your head.
 
 <div class="grid gap-6 lg:grid-cols-3 mb-6">
   <div class="lg:col-span-2 bg-white border border-brand-border-light rounded-lg px-5 py-4">
-    <h2 class="text-base font-semibold text-gray-900">Who to talk to</h2>
+    <div class="flex items-baseline justify-between gap-3">
+      <h2 class="text-base font-semibold text-gray-900">Who to talk to</h2>
+      {% if has_program_context %}<a href="{% url 'supply_chain:supplier_contacts' supplier.id %}" class="text-sm text-brand-indigo hover:underline">Edit contacts</a>{% endif %}
+    </div>
     {% if supplier.contacts %}
       <ul class="mt-2 space-y-1.5">
         {% for contact in supplier.contacts %}
@@ -75,6 +78,7 @@ four screens and an id held in your head.
             {% if contact.email %}<span class="text-gray-700">{{ contact.email }}</span>{% endif %}
             {% if contact.phone %}<span class="text-gray-700">{{ contact.phone }}</span>{% endif %}
             {% if contact.role %}<span class="text-xs text-gray-600">· {{ contact.role|humanise }}</span>{% endif %}
+            {% if contact.use == "to" %}<span class="text-xs font-medium text-teal-700">· main contact</span>{% elif contact.use == "cc" %}<span class="text-xs text-gray-600">· copied</span>{% elif contact.use == "history" %}<span class="text-xs text-amber-800">· old, not emailed</span>{% endif %}
             {% if contact.note %}<div class="text-xs text-gray-600">{{ contact.note }}</div>{% endif %}
           </li>
         {% endfor %}
