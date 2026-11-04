@@ -168,6 +168,7 @@ CHECK_LABELS = {
     "stock_negative": "Dispensed more than was ever received",
     "stock_stockout": "No stock on hand",
     "stock_below_minimum": "Below its own minimum",
+    "stock_expiring": "Stock expiring soon or already expired",
     "item_fails_specification": "Fails the commodity specification",
     "shipment_overdue": "Shipment past its expected date",
     "shipment_documents_outstanding": "Documents it needs, not on file",
@@ -732,6 +733,7 @@ AGE_FROM = {
     "shipment_overdue": "past the expected date",
     "contract_delivery_overdue": "past the expected date",
     "consignment_overdue": "past the expected date",
+    "stock_expiring": "since the warning period began",
     "payment_unconfirmed": "since payment",
 }
 
@@ -1064,6 +1066,13 @@ VOCAB_LABELS = {
     **BUYER_LABELS,
     **SOURCE_LABELS,
     **CHECK_LABELS,
+    # stock issues: where one stands, and how it ended
+    "following_up": "being followed up",
+    "written_off": "written off",
+    "locked_room": "locked room",
+    "locked_box": "locked box or cupboard",
+    "separate_shelf": "separate shelf",
+    "facility_agreement": "agreement with the facility",
     # how a quote is priced
     "per_base_unit": "per single unit",
     "per_pack": "per pack",

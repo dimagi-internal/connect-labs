@@ -15,6 +15,7 @@ handlers:
 
 from django.db import transaction
 
+from connect_labs.supply_chain import records
 from connect_labs.supply_chain.models import Movement
 from connect_labs.supply_chain.stock.services import ledger
 from connect_labs.supply_chain.values import Quantity, Unconfirmed
@@ -258,5 +259,84 @@ def post_visit_reversal(original: Movement, *, reason: str) -> Movement:
         note=reason,
         source="connect_visit",
     )
+    movement.save()
+    return movement
+
+
+# ---- stock issues -----------------------------------------------------
+
+
+def _known_expiry(item, batch):
+    """The expiry any earlier movement gave this item's batch, or None."""
+    if item is None or not batch:
+        return None
+    return (
+        Movement.objects.filter(item=item, batch=batch)
+        .exclude(expiry=None)
+        .order_by("-occurred_on", "-id")
+        .values_list("expiry", flat=True)
+        .first()
+    )
+
+
+def _issue_item(issue):
+    """The trade item an issue's movements carry: the one named, else the point's only one.
+
+    Without it the loss would sit beside the point's stock under no item, and
+    the item-by-item balance would never see it leave.
+    """
+    if issue.item is not None:
+        return issue.item
+    sole = ledger.sole_item(issue.program_id, issue.supply_point)
+    return sole if sole is not None and sole.commodity_id == issue.commodity_id else None
+
+
+def post_issue_loss(issue) -> Movement:
+    """The stock leaving the shelf when an issue is reported: a loss (an expiry, for an expired batch)."""
+    item = _issue_item(issue)
+    movement = _movement(
+        issue,
+        kind=records.STOCK_ISSUE_MOVEMENT_KIND.get(issue.kind, "loss"),
+        quantity=issue.quantity,
+        unit=issue.quantity_unit,
+        item=item,
+        commodity=issue.commodity,
+        batch=issue.batch,
+        expiry=_known_expiry(item, issue.batch),
+        frm=issue.supply_point,
+        occurred_on=issue.occurred_on,
+        program_id=issue.program_id,
+        opportunity_id=issue.opportunity_id,
+        stock_issue=issue,
+    )
+    movement.reference = f"stock issue {issue.pk}"
+    movement.save()
+    return movement
+
+
+def post_issue_recovery(issue, *, quantity, occurred_on) -> Movement:
+    """Stock back on the shelf, linked to the issue it closes.
+
+    Found again is a `return`; a replacement from somewhere else is a `receipt`.
+    Either way it is an ordinary movement into the point that names the issue,
+    so the ledger shows the loss and its undoing side by side.
+    """
+    item = _issue_item(issue)
+    movement = _movement(
+        issue,
+        kind="receipt" if issue.outcome == "replaced" else "return",
+        quantity=quantity,
+        unit=issue.quantity_unit,
+        item=item,
+        commodity=issue.commodity,
+        batch=issue.batch,
+        expiry=_known_expiry(item, issue.batch),
+        to=issue.supply_point,
+        occurred_on=occurred_on,
+        program_id=issue.program_id,
+        opportunity_id=issue.opportunity_id,
+        stock_issue=issue,
+    )
+    movement.reference = f"stock issue {issue.pk} {issue.outcome}"
     movement.save()
     return movement

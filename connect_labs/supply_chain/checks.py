@@ -102,6 +102,8 @@ KIND_CATEGORIES = {
     # threshold -- a derived figure crossed a bound stored in the data
     "stock_stockout": "threshold",
     "stock_below_minimum": "threshold",
+    # The bound is the product's own warning period before a batch's expiry date.
+    "stock_expiring": "threshold",
     "item_fails_specification": "threshold",
     # The bound is a date the record itself holds: the shipment's expected
     # date, or the contract's signature plus its promised lead time.
@@ -1247,6 +1249,42 @@ def _stock(access, as_of, opportunity_id=None):
     return out
 
 
+def _expiring_stock(access, as_of, opportunity_id=None):
+    """Batches still on the shelf that expire inside the product's warning period, or already have.
+
+    One finding per store and batch. `since` is the day the warning period began
+    (expiry minus the warning days), so the age reads "N days since the warning started".
+    """
+    from connect_labs.supply_chain.stock.services import expiry
+
+    today = as_of or date.today()
+    out = []
+    for row in expiry.expiring_batches(access.program_id, today=today, opportunity_id=opportunity_id):
+        point = row["supply_point"]
+        out.append(
+            _check(
+                "stock_expiring",
+                subject_type="supply_point",
+                subject_id=point.pk,
+                label=f"{point.name} — batch {row['batch']}",
+                audience="internal",
+                facts={
+                    "batch": row["batch"],
+                    "expiry": row["expiry"].isoformat(),
+                    "days_left": row["days_left"],
+                    "expired": row["days_left"] < 0,
+                    "quantity": f"{decimal_string(row['quantity'])} {row['unit']}",
+                    "warning_days": row["warn_days"],
+                    "commodity": {"slug": row["commodity"].slug, "name": row["commodity"].name},
+                    "trade_item_id": row["item_id"],
+                },
+                since=row["expiry"] - timedelta(days=row["warn_days"]),
+                as_of=as_of,
+            )
+        )
+    return out
+
+
 def run_checks(access, *, opportunity_id=None, kinds=None, categories=None, as_of=None) -> list[dict]:
     """Run every check over this programme, unranked.
 
@@ -1256,6 +1294,7 @@ def run_checks(access, *, opportunity_id=None, kinds=None, categories=None, as_o
     """
     found = _sourcing(access, as_of) + _catalogue(access, as_of) + _fulfilment(access, as_of)
     found += _stock(access, as_of, opportunity_id=opportunity_id)
+    found += _expiring_stock(access, as_of, opportunity_id=opportunity_id)
     if kinds:
         wanted = set(kinds)
         found = [item for item in found if item["kind"] in wanted]

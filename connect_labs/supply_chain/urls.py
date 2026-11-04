@@ -13,6 +13,7 @@ from connect_labs.supply_chain.portfolio import views as portfolio_views
 from connect_labs.supply_chain.procurement import views as procurement_views
 from connect_labs.supply_chain.reference import views as reference_views
 from connect_labs.supply_chain.runner import views as runner_views
+from connect_labs.supply_chain.stock import issue_views
 from connect_labs.supply_chain.stock import views as stock_views
 from connect_labs.supply_chain.stock import visit_views
 from connect_labs.supply_chain.update_links import field as field_views
@@ -373,6 +374,12 @@ urlpatterns = [
         name="consignment_receive",
     ),
     path("distribution/", views.DistributionView.as_view(), name="distribution"),
+    # Stock that is missing, taken, damaged or expired, and who is responsible where it rests.
+    path("issues/", issue_views.IssuesView.as_view(), name="issues"),
+    path("issues/new/", issue_views.IssueReportView.as_view(), name="issue_report"),
+    path("issues/<int:issue_id>/follow-up/", issue_views.IssueFollowUpView.as_view(), name="issue_follow_up"),
+    path("issues/<int:issue_id>/close/", issue_views.IssueResolveView.as_view(), name="issue_resolve"),
+    path("issues/custodian/", issue_views.CustodianAssignView.as_view(), name="custodian_assign"),
     path("distribution/new/", distribution_views.DistributionRecordView.as_view(), name="distribution_record"),
     # Alerts: who is told about what, and the log of what they were told.
     path("alerts/", alert_views.AlertListView.as_view(), name="alerts"),
