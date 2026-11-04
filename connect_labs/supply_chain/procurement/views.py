@@ -1920,6 +1920,12 @@ class AwardDetailView(_Base):
         # The orders of this award as a set -- "4 of 5 partners have ordered" -- so the award is not read
         # as done after its first order.
         context["order_set"] = self.op("award_orders_progress", award_id=award.pk)
+        # The emails the award calls for (selected; a handover for each partner), drafted to copy into a mailbox.
+        context["selection_drafts"] = self.op("selection_drafts_render", award_id=award.pk)["drafts"]
+        # The trade item the winning quote describes, offered once, until the quote names one.
+        context["item_offer"] = (
+            None if award.quote.item_id else self.op("item_offer_from_quote", quote_id=award.quote_id)
+        )
         context["split_places"] = {
             p.get("key"): ", ".join(x for x in (p.get("name"), p.get("city")) if x)
             for p in (context["tender"] or {}).get("delivery_points") or []

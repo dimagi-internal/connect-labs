@@ -312,6 +312,14 @@ class ItemCreateView(_ItemScreen):
         initial = super().get_initial()
         # Arriving from a product page, that product is the answer. A picker
         # that opens already correct is one fewer thing to get wrong.
+        # Arriving from an award: the trade item its winning quote describes, as the supplier stated it.
+        quote_id = self.request.GET.get("from_quote")
+        if quote_id and str(quote_id).isdigit():
+            from connect_labs.supply_chain.procurement.services.selection import item_from_quote
+
+            quote = _access(self.request).get_quote(int(quote_id))
+            if quote is not None:
+                initial.update(item_from_quote(quote, quote.supplier, quote.commodity))
         slug = self.request.GET.get("product")
         if slug:
             found = Commodity.objects.filter(scope_key=_access(self.request).scope_key, slug=slug).first()
