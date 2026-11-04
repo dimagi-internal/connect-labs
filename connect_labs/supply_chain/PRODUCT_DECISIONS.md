@@ -194,4 +194,4 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
 - **Pages are split by person and rhythm** (`/supply/plan/`: supervisor, weekly; `plan/stores/`: store
   manager; `plan/programme/`: running organisation) over one operation, `stock_plan_view`, so a figure
   cannot differ between them. Every number says where it came from.
-- **Not counted, and said so on the page**: appetite tests and household leakage (no source in Supply).
+- **Household leakage and appetite tests are separate labelled streams on Where it went**, read at CBI's form paths (`CBI_HOUSEHOLD_PATHS`) and shown "not recorded" when the form gave no answer.

@@ -268,7 +268,7 @@ def ingest_visit_consumption(access, *, opportunity_id, visits, until=None, toda
             # Read on EVERY read, posted or not, so a case rule added later
             # reaches visits already read (the forecast's input, not the ledger's).
             answers.update(case_answers(rule.cases, form_json))
-            answers.update(household_answers(rule.reports, form_json))
+            answers.update(household_answers(rule, form_json))
 
         if _remember(
             seen, program_id, opportunity_id, visit, visit_id, point, on, status, form_name, outcomes, answers

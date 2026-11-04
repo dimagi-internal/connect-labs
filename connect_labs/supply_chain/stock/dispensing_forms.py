@@ -52,9 +52,11 @@ class DispensingRuleForm(forms.Form):
         widget=forms.Textarea(attrs={**TEXTAREA, "rows": 4}),
         help_text=_(
             'Optional: {"balance_paths": [...], "receipt": {"quantity_paths": [...], "date_paths": [...]}, '
-            '"household": {"returned_paths": [...], "leftover_paths": [...], "missing_paths": [...], '
-            '"reason_paths": [...]}}. The household paths are where the delivery form asks about empty sachets '
-            "returned, leftovers, and sachets missing or misused; Where it went totals them."
+            '"household": {"dispensed_paths": [...], "appetite_paths": [...], "returned_paths": [...], '
+            '"leftover_paths": [...], "missing_paths": [...], "misused_paths": [...], "reason_paths": [...]}}. '
+            "The household paths are where the delivery form asks about sachets dispensed, used in appetite "
+            "tests, returned empty, left over, missing or misused (with reasons); Where it went totals them. "
+            "A rule reading the CBI delivery app's dispensed-sachets answer is read at CBI's paths without this."
         ),
     )
     cases = forms.JSONField(

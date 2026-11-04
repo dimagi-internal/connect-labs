@@ -304,29 +304,29 @@ def _first_kept(answers, paths):
 
 
 def household(program_id: int, item, on_date: date) -> dict | None:
-    """What the delivery form says happened at the home, totalled; None when no rule asks it.
+    """What the delivery form says happened to the sachets, totalled; None when no rule asks it.
 
-    Read from the answers each visit kept at the paths the rule's `reports.household` names, so a
-    programme whose app does not ask a question simply has no figure for it, never a guess.
-    A rejected or duplicate visit says nothing. `visits` is how many visits answered at least one.
+    Read from the answers each visit kept at the paths the rule is read at (`household_paths`), so a
+    programme whose app does not ask a question simply has no figure for it (None, shown as "not
+    recorded"), never a zero or a guess. A blank or non-numeric answer is no answer. A rejected or
+    duplicate visit says nothing. `visits` is how many visits answered at least one.
     """
     from connect_labs.supply_chain.models import DispensingRule, WorkerVisit
-    from connect_labs.supply_chain.stock.services.dispensing import read_number
+    from connect_labs.supply_chain.stock.services.dispensing import household_paths, read_number
     from connect_labs.supply_chain.stock.services.visit_reader import REVERSING_STATUSES
 
     rules = [
-        rule
+        (rule, paths)
         for rule in DispensingRule.objects.filter(program_id=program_id, item=item, status="active")
-        if (rule.reports or {}).get("household")
+        if (paths := household_paths(rule))
     ]
     if not rules:
         return None
-    totals = {"returned": ZERO, "leftover": ZERO, "missing": ZERO}
-    answered = {"returned": False, "leftover": False, "missing": False}
+    totals = {key: ZERO for key in HOUSEHOLD_TOTALS}
+    answered = {key: False for key in HOUSEHOLD_TOTALS}
     reasons: dict[str, int] = {}
     visits = 0
-    for rule in rules:
-        paths = rule.reports["household"]
+    for rule, paths in rules:
         rows = (
             WorkerVisit.objects.filter(program_id=program_id, opportunity_id=rule.opportunity_id)
             .filter(visit_date__lte=on_date)
@@ -350,8 +350,28 @@ def household(program_id: int, item, on_date: date) -> dict | None:
     return {
         "visits": visits,
         **{key: (_number(totals[key]) if answered[key] else None) for key in totals},
+        "rows": [
+            {"key": key, "label": label, "caption": caption, "amount": _number(totals[key]) if answered[key] else None}
+            for key, label, caption in HOUSEHOLD_LINES
+        ],
         "reasons": [{"reason": r, "visits": n} for r, n in sorted(reasons.items(), key=lambda kv: (-kv[1], kv[0]))],
     }
+
+
+# The household streams, each its own line; a stream's path list in the rule is `<name>_paths`.
+HOUSEHOLD_TOTALS = ("dispensed", "appetite", "returned", "leftover", "missing", "misused")
+HOUSEHOLD_LINES = (
+    ("dispensed", "Dispensed to children", "Sachets the delivery form says were handed over at the visit."),
+    ("appetite", "Used in appetite tests", "Sachets opened to test a child's appetite, deducted from stock."),
+    (
+        "returned",
+        "Eaten (empty sachets returned)",
+        "Empty sachets the caregiver gave back: the sachets that were eaten.",
+    ),
+    ("leftover", "Leftover at the home", "Sachets still unopened at the home when the worker came back."),
+    ("missing", "Missing", "Sachets the caregiver could not account for. A loss, counted on its own."),
+    ("misused", "Misused", "Sachets used for something other than the child's treatment. A loss, counted on its own."),
+)
 
 
 def _number(value: Decimal):

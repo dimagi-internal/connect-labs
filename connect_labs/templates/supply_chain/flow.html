@@ -81,26 +81,26 @@ restocks them, then by name, never by how they are doing.
     {% if flow.household %}
       <div class="mt-4 max-w-3xl" data-testid="flow-household">
         <h3 class="text-sm font-semibold text-gray-900">In the household</h3>
-        <p class="text-xs text-gray-600">What the delivery form says happened to the sachets at the home, over {{ flow.household.visits }} visit{{ flow.household.visits|pluralize }} that answered.</p>
+        <p class="text-xs text-gray-600">What the delivery form says happened to the sachets at the home, over {{ flow.household.visits }} visit{{ flow.household.visits|pluralize }} that answered. Each is its own line and none is netted into another; "not recorded" means the form gave no answer, which is not the same as none.</p>
         <table class="w-full text-sm mt-2">
           <tbody class="divide-y divide-gray-100">
-            {% if flow.household.returned is not None %}<tr><th scope="row" class="text-left font-medium py-1.5 pr-3">Empty sachets returned</th><td class="text-right tabular-nums">{{ flow.household.returned|floatformat:"0g" }}</td></tr>{% endif %}
-            {% if flow.household.leftover is not None %}<tr><th scope="row" class="text-left font-medium py-1.5 pr-3">Leftover sachets at the home</th><td class="text-right tabular-nums">{{ flow.household.leftover|floatformat:"0g" }}</td></tr>{% endif %}
-            {% if flow.household.missing is not None %}<tr><th scope="row" class="text-left font-medium py-1.5 pr-3">Sachets missing or misused</th><td class="text-right tabular-nums">{{ flow.household.missing|floatformat:"0g" }}</td></tr>{% endif %}
+            {% for row in flow.household.rows %}
+              <tr><th scope="row" class="text-left font-medium py-1.5 pr-3">{{ row.label }}<div class="font-normal text-xs text-gray-600">{{ row.caption }}</div></th><td class="text-right tabular-nums align-top py-1.5">{% if row.amount is None %}<span class="text-gray-600">not recorded</span>{% else %}{{ row.amount|floatformat:"0g" }}{% endif %}</td></tr>
+            {% endfor %}
           </tbody>
         </table>
-        {% if flow.household.reasons %}
-          <p class="text-xs text-gray-600 mt-2">Reasons given:
+        <p class="text-xs text-gray-600 mt-2" data-testid="flow-household-reasons">
+          {% if flow.household.reasons %}Reasons given for misuse:
             {% for reason in flow.household.reasons %}{{ reason.reason }} ({{ reason.visits }}){% if not forloop.last %}, {% endif %}{% endfor %}.
-          </p>
-        {% endif %}
+          {% else %}Reasons given for misuse: none recorded.{% endif %}
+        </p>
       </div>
     {% else %}
       <div class="mt-4 rounded-md border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-700 max-w-3xl" data-testid="flow-household">
         <strong>In the household:</strong> not shown yet.
         <details class="text-xs text-gray-600 mt-1">
           <summary class="cursor-pointer">Why, and how to show it</summary>
-          <p class="mt-1">Empty sachets returned, leftovers, and sachets missing or misused (with reasons) come from the delivery form. This programme's dispensing rule does not yet say which form answers hold them, so nothing is shown here rather than a guess. Name them under "What the worker's app reports" on the <a href="{% url 'supply_chain:dispensing_rules' %}" class="text-brand-indigo hover:underline">Dispensing rules</a> page.</p>
+          <p class="mt-1">Sachets dispensed, used in appetite tests, eaten (empty sachets returned), left over, missing or misused (with reasons) come from the delivery form. This programme's dispensing rule does not yet say which form answers hold them, so nothing is shown here rather than a guess. Name them under "What the worker's app reports" on the <a href="{% url 'supply_chain:dispensing_rules' %}" class="text-brand-indigo hover:underline">Dispensing rules</a> page.</p>
         </details>
       </div>
     {% endif %}
