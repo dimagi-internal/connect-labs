@@ -326,13 +326,45 @@ class ProcurementRepositoryMixin:
     def create_outreach(self, data):
         from connect_labs.supply_chain.data_access import _columns, _fresh
 
-        return _fresh(
-            Outreach.objects.create(
-                tender=self._require_tender(data["tender_id"]),
-                supplier=self._resolve_supplier(data.get("supplier_id")),
-                **_columns(Outreach, data),
-            )
+        created = Outreach.objects.create(
+            tender=self._require_tender(data["tender_id"]),
+            supplier=self._resolve_supplier(data.get("supplier_id")),
+            **_columns(Outreach, data),
         )
+        self.sync_supplier_status(created.supplier)
+        return _fresh(created)
+
+    # The statuses the records decide. Declined, unusable and awarded are a person's call
+    # and are never touched.
+    _AUTO_STATUSES = ("identified", "contacted", "responsive", "quoting")
+
+    def sync_supplier_status(self, supplier):
+        """Move a supplier's status to what the outreach log and quotes show, so it cannot contradict them.
+
+        quoting: a live quote is on file. responsive: they replied (not "no reply" or a decline) but
+        have not quoted. contacted: a request to them was sent. A status only moves up from
+        "identified" as the records catch up, and is pulled back from responsive or quoting to
+        contacted when the records no longer back it (a reply that was "no reply", a voided quote).
+        It never drops to identified: that supplier may have been contacted outside the system.
+        """
+        if supplier is None or supplier.status not in self._AUTO_STATUSES:
+            return supplier
+        rows = list(Outreach.objects.filter(supplier=supplier))
+        quoted = Quote.objects.filter(supplier=supplier, voided=False, superseded_by__isnull=True).exists()
+        replied = any(r.responded and r.response_kind not in ("no_reply", "declined") for r in rows)
+        sent = any(r.sent_on for r in rows)
+        if quoted:
+            derived = "quoting"
+        elif replied:
+            derived = "responsive"
+        elif sent or supplier.status != "identified":
+            derived = "contacted"
+        else:
+            derived = "identified"
+        if derived != supplier.status:
+            supplier.status = derived
+            supplier.save(update_fields=["status", "updated_at"])
+        return supplier
 
     def delete_outreach(self, outreach_id):
         """Remove an invitation that was recorded in error.
@@ -351,8 +383,9 @@ class ProcurementRepositoryMixin:
         found = Outreach.objects.filter(tender__program_id=self._require_program(), pk=outreach_id).first()
         if found is None:
             raise ValueError(f"outreach {outreach_id} not found")
-        tender_id, supplier_id = found.tender_id, found.supplier_id
+        tender_id, supplier_id, supplier = found.tender_id, found.supplier_id, found.supplier
         found.delete()
+        self.sync_supplier_status(supplier)
         return {"deleted": True, "outreach_id": outreach_id, "tender_id": tender_id, "supplier_id": supplier_id}
 
     def update_outreach(self, outreach_id, data):
@@ -364,6 +397,7 @@ class ProcurementRepositoryMixin:
         for key, value in _columns(Outreach, data).items():
             setattr(found, key, value)
         found.save()
+        self.sync_supplier_status(found.supplier)
         return _fresh(found)
 
     # ---- quotes ---------------------------------------------------------
@@ -391,15 +425,15 @@ class ProcurementRepositoryMixin:
         supplier = self._resolve_supplier(data.get("supplier_id"))
         item = self._resolve_item(data.get("item_id"))
         self._refuse_suspected_duplicate(tender, supplier, commodity, item, data, distinct_from)
-        return _fresh(
-            Quote.objects.create(
-                tender=tender,
-                commodity=commodity,
-                supplier=supplier,
-                item=item,
-                **_columns(Quote, data),
-            )
+        created = Quote.objects.create(
+            tender=tender,
+            commodity=commodity,
+            supplier=supplier,
+            item=item,
+            **_columns(Quote, data),
         )
+        self.sync_supplier_status(supplier)
+        return _fresh(created)
 
     def _refuse_suspected_duplicate(self, tender, supplier, commodity, item, data, distinct_from):
         """Refuse a second live quote from one supplier on one line, unless the caller says it is a second offer.
@@ -526,6 +560,7 @@ class ProcurementRepositoryMixin:
         existing.voided = True
         existing.void_reason = reason
         existing.save(update_fields=["voided", "void_reason", "updated_at"])
+        self.sync_supplier_status(existing.supplier)
         return existing
 
     # ---- commitments: what we owe them -------------------------------------

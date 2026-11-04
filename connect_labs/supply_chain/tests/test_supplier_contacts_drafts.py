@@ -156,3 +156,57 @@ class TestTheProgressBarReachesComparing:
         assert tender_stage(self._t(past), invited=3, answered=1, today=date(2026, 9, 5))[0] == 2
         assert tender_stage(self._t(past), invited=3, answered=0, today=date(2026, 9, 5))[0] == 1
         assert tender_stage(self._t(date(2026, 9, 9)), invited=3, answered=1, today=date(2026, 9, 5))[0] == 1
+
+
+@pytest.mark.django_db
+class TestSupplierStatusFollowsTheRecords:
+    def _world(self):
+        from connect_labs.labs.access.scopes import SYSTEM
+        from connect_labs.supply_chain.data_access import SupplyDataAccess
+        from connect_labs.supply_chain.operations import call_operation
+
+        da = SupplyDataAccess(access_token="unused", program_id=10735, caller=SYSTEM)
+
+        def op(name, **payload):
+            return call_operation(name, da, payload)
+
+        op("commodity_upsert", data={"slug": "rutf", "name": "RUTF", "base_unit": "sachet", "pack_unit": "carton"})
+        tender = op("tender_create", data={"label": "T", "delivery_point": {"name": "S", "city": "Kano"}})
+        sup = op("supplier_create", data={"name": "Nutri K"})
+        return op, tender, sup
+
+    def _status(self, op, sup):
+        return op("supplier_get", supplier_id=sup["id"])["status"]
+
+    def test_the_status_cannot_say_responsive_while_the_log_says_no_reply(self):
+        op, tender, sup = self._world()
+        op("supplier_update", supplier_id=sup["id"], data={"status": "responsive"})
+        row = op("outreach_log", data={"tender_id": tender["id"], "supplier_id": sup["id"], "sent_on": "2026-09-01"})
+        assert self._status(op, sup) == "contacted"
+        op("outreach_update", outreach_id=row["id"], data={"responded": True, "response_kind": "no_reply"})
+        assert self._status(op, sup) == "contacted"
+        op("outreach_update", outreach_id=row["id"], data={"responded": True, "response_kind": "needs_info"})
+        assert self._status(op, sup) == "responsive"
+
+    def test_a_quote_makes_them_quoting_and_voiding_it_takes_that_back(self):
+        op, tender, sup = self._world()
+        op("outreach_log", data={"tender_id": tender["id"], "supplier_id": sup["id"], "sent_on": "2026-09-01"})
+        quote = op(
+            "quote_record",
+            data={
+                "tender_id": tender["id"],
+                "supplier_id": sup["id"],
+                "commodity_slug": "rutf",
+                "as_quoted_amount": "50",
+                "as_quoted_unit": "per_pack",
+            },
+        )
+        assert self._status(op, sup) == "quoting"
+        op("quote_void", quote_id=quote["id"], reason="mistake")
+        assert self._status(op, sup) == "contacted"
+
+    def test_a_decision_made_by_a_person_is_left_alone(self):
+        op, tender, sup = self._world()
+        op("supplier_update", supplier_id=sup["id"], data={"status": "declined"})
+        op("outreach_log", data={"tender_id": tender["id"], "supplier_id": sup["id"], "sent_on": "2026-09-01"})
+        assert self._status(op, sup) == "declined"
