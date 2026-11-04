@@ -52,6 +52,13 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   followed by one order per partner (`award_orders_create`), and the orders of one award are read as
   a set (`award_orders_progress`): an award is not done after its first order. A tender with no split is
   unchanged: one total quantity, delivery places as alternatives the supplier picks from.
+- **A draft tender is split on its own page, and sized on another** (2026-11-04, Sophie Feintuch's RUTF
+  feedback; `procurement/split_screens.py`). The split page is one row per partner (quantity, delivery
+  place, receiver, who buys) written through `tender_update`; a partner is offered only the places it
+  runs, plus the tender's own places. The total shown is the sum of the rows. The sizing page reads
+  `purchase_sizing` and prints its working in words; its button writes one partner's quantity through
+  `tender_update` and touches nothing else. Both pages exist only while the tender is a draft. The needed-by
+  area also says which delivery time the start-by date was counted with (`start_by_working`).
 - **An order is bought one of two ways, chosen per partner and per order** (`Contract.buying_model`):
   `programme_buys` (we buy and ship to the partner) or `partner_buys` (the partner buys on our
   negotiated quote and invoices us). Left unset it follows the buyer of record.

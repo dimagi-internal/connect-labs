@@ -43,13 +43,37 @@ def start_by(needed_by: date | None, lead: int | None, reply: int) -> date | Non
     return needed_by - timedelta(days=lead + reply)
 
 
+def working(needed: date, lead: int | None, lead_from: str, reply: int) -> str:
+    """The count-back in plain words, so a start-by date can be checked: which delivery time, and why that one."""
+    if lead is None:
+        return "No delivery time to count back with yet: say how long suppliers usually need, or wait for a quote."
+    source = (
+        "the longest delivery time a supplier has quoted"
+        if lead_from == "quote"
+        else "our own estimate of how long suppliers need"
+    )
+    return (
+        f"Counted back from {needed.strftime('%-d %b %Y')}: {lead} days for suppliers to deliver ({source}) "
+        f"+ {reply} days for them to reply."
+    )
+
+
 def timing(tender, quote_lead_times=(), today: date | None = None) -> dict:
     """{needed_by, start_by, lead_days, reply_days, late, note} for a tender; empty values when no needed-by date."""
     today = today or date.today()
     needed = tender.needed_by
     if needed is None:
-        return {"needed_by": None, "start_by": None, "lead_days": None, "reply_days": None, "late": False, "note": ""}
+        return {
+            "needed_by": None,
+            "start_by": None,
+            "lead_days": None,
+            "reply_days": None,
+            "late": False,
+            "note": "",
+            "working": "",
+        }
     lead = lead_days(tender, quote_lead_times)
+    lead_from = "quote" if any(d is not None for d in quote_lead_times) else "estimate"
     reply = reply_days(tender)
     start = start_by(needed, lead, reply)
     if start is None:
@@ -74,4 +98,5 @@ def timing(tender, quote_lead_times=(), today: date | None = None) -> dict:
         "reply_days": reply,
         "late": late,
         "note": note,
+        "working": working(needed, lead, lead_from, reply),
     }

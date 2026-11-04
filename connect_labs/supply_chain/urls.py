@@ -12,6 +12,7 @@ from connect_labs.supply_chain.network import views as network_views
 from connect_labs.supply_chain.partners import views as partner_views
 from connect_labs.supply_chain.plan import views as plan_views
 from connect_labs.supply_chain.portfolio import views as portfolio_views
+from connect_labs.supply_chain.procurement import split_screens
 from connect_labs.supply_chain.procurement import views as procurement_views
 from connect_labs.supply_chain.reference import people as people_views
 from connect_labs.supply_chain.reference import views as reference_views
@@ -155,6 +156,21 @@ urlpatterns = [
         "procurement/tenders/<int:tender_id>/edit/",
         procurement_views.TenderUpdateView.as_view(),
         name="procurement_tender_edit",
+    ),
+    path(
+        "procurement/tenders/<int:tender_id>/split/",
+        split_screens.TenderSplitsView.as_view(),
+        name="procurement_tender_splits",
+    ),
+    path(
+        "procurement/tenders/<int:tender_id>/sizing/",
+        split_screens.PurchaseSizingView.as_view(),
+        name="procurement_tender_sizing",
+    ),
+    path(
+        "procurement/tenders/<int:tender_id>/sizing/apply/",
+        split_screens.TenderSizingApplyView.as_view(),
+        name="procurement_tender_sizing_apply",
     ),
     path(
         "procurement/tenders/<int:tender_id>/open/",
