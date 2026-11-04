@@ -594,3 +594,23 @@ def test_the_portfolio_page_lists_what_to_chase_across_its_programmes(client, dj
     assert 'data-testid="portfolio-chase-list"' in body
     assert body.count('data-testid="chase-item"') >= 2
     assert NAMES[ONE] in body and NAMES[TWO] in body
+
+
+def test_a_programmes_map_narrows_to_one_partner_with_partner_in_the_address(client, django_user_model, in_programme):
+    from connect_labs.labs.models import LabsOrg
+
+    _sign_in(client, django_user_model, [ONE])
+    mine = LabsOrg.objects.create(slug="partner-a", name="Partner A")
+    theirs = LabsOrg.objects.create(slug="partner-b", name="Partner B")
+    for slug, org in (("a-store-of-a", mine), ("a-store-of-b", theirs)):
+        point = _store(ONE, slug=slug, lat=9.0, lng=8.0)
+        point.managed_by_org = org
+        point.save()
+    client.cookies["programme"] = str(ONE)
+
+    everyone = client.get(reverse("supply_chain:programme_map"))
+    assert {p["name"] for p in _payload(everyone)["programs"][0]["points"]} == {"A Store Of A", "A Store Of B"}
+
+    narrowed = client.get(reverse("supply_chain:programme_map"), {"partner": mine.pk})
+    assert [p["name"] for p in _payload(narrowed)["programs"][0]["points"]] == ["A Store Of A"]
+    assert "Partner B" in narrowed.content.decode(), "the switcher still lists every partner"

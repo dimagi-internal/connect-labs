@@ -382,8 +382,17 @@ def consignment_wire(c, scope):
     }
 
 
-def program_map(request, program_id, program) -> dict:
-    """One program's places, blockers and consignments in motion."""
+def _touches(mine, row) -> bool:
+    return row.get("from_supply_point_id") in mine or row.get("to_supply_point_id") in mine
+
+
+def program_map(request, program_id, program, partner_org_id=None) -> dict:
+    """One program's places, blockers and consignments in motion.
+
+    With `partner_org_id`, only what touches the places that organisation runs (`?partner=`, the same
+    narrowing as the Issues and Network pages): a place, a blocker, a route or an order stays when it
+    touches one of them, and a blocker that names no place cannot be said to be the partner's.
+    """
     access = _access(request, program_id)
     scope = f"?program_id={program_id}"
 
@@ -540,31 +549,48 @@ def program_map(request, program_id, program) -> dict:
         )
 
     consignments_out = [consignment_wire(c, scope) for c in on_the_road]
+    committed = [
+        {
+            "distribution_id": d["id"],
+            "reference": d["reference"],
+            "from_supply_point_id": d["supply_point_id"],
+            "to_supply_point_id": line["to_supply_point_id"],
+            "quantity": line["quantity"],
+            "quantity_unit": line["quantity_unit"],
+            "since": d["distributed_on"],
+        }
+        for d in call_operation("distribution_list", access, {"limit": 500})
+        for line in d["lines"]
+        if line["movement_id"] is None
+    ]
+    flows = _flows(program_id, date.today() - timedelta(days=FLOW_HISTORY_DAYS))
+    # Named in the chase list even when only one end of a route is the partner's.
+    chase_places = {p["id"]: {"name": p["name"], "managed_by": p["managed_by"]} for p in placed_points + unplaced}
+    if partner_org_id is not None:
+        from connect_labs.supply_chain.partners.scope import point_ids_of
+
+        mine = point_ids_of(program_id, partner_org_id)
+        placed_points = [p for p in placed_points if p["id"] in mine]
+        unplaced = [p for p in unplaced if p["id"] in mine]
+        moving = [m for m in moving if _touches(mine, m)]
+        consignments_out = [c for c in consignments_out if _touches(mine, c)]
+        committed = [c for c in committed if _touches(mine, c)]
+        orders = [o for o in orders if _touches(mine, o)]
+        flows = [f for f in flows if _touches(mine, f)]
+        every = [c for c in every if c.get("supply_point_id") in mine]
+        unlocated = []
 
     return {
         "program_id": program_id,
         "name": program.get("name") or f"Program {program_id}",
         "summary": call_operation("chain_summary", access, {}),
         "commodities": [{"slug": slug, "name": name} for slug, name in sorted(names.items(), key=lambda kv: kv[1])],
-        "flows": _flows(program_id, date.today() - timedelta(days=FLOW_HISTORY_DAYS)),
+        "flows": flows,
         # Allocated to a place and not yet moved: a distribution line with no
         # movement, which the ledger calls committed. Drawn as on its way.
         # Our own stock on the road between two of our places (models.Consignment).
         "consignments": consignments_out,
-        "committed": [
-            {
-                "distribution_id": d["id"],
-                "reference": d["reference"],
-                "from_supply_point_id": d["supply_point_id"],
-                "to_supply_point_id": line["to_supply_point_id"],
-                "quantity": line["quantity"],
-                "quantity_unit": line["quantity_unit"],
-                "since": d["distributed_on"],
-            }
-            for d in call_operation("distribution_list", access, {"limit": 500})
-            for line in d["lines"]
-            if line["movement_id"] is None
-        ],
+        "committed": committed,
         "checks": every,
         # What to chase, worded as what each item needs (chase.py): the Map's
         # Chase list tab draws this and the Overview reads the same function.
@@ -575,7 +601,7 @@ def program_map(request, program_id, program) -> dict:
             consignments=consignments_out,
             orders=orders,
             suppliers=suppliers,
-            places={p["id"]: {"name": p["name"], "managed_by": p["managed_by"]} for p in placed_points + unplaced},
+            places=chase_places,
             check_labels=_check_labels(),
         ),
         # The one headline for workers in trouble, worded by the server (#2344): the
@@ -625,7 +651,7 @@ def portfolio_programs(portfolio, reachable, *, everything=False):
     return programs, hidden
 
 
-def portfolio_map(request, portfolio, reachable, *, everything=False, cover_url=None) -> dict:
+def portfolio_map(request, portfolio, reachable, *, everything=False, cover_url=None, partner_org_id=None) -> dict:
     """Every reachable program in the portfolio's own order, plus what is hidden.
 
     With `everything`, every OTHER program the viewer can reach that has a
@@ -635,7 +661,7 @@ def portfolio_map(request, portfolio, reachable, *, everything=False, cover_url=
     """
     chosen, hidden = portfolio_programs(portfolio, reachable, everything=everything)
     programs = [
-        {**program_map(request, program_id, reachable[program_id]), "in_portfolio": in_portfolio}
+        {**program_map(request, program_id, reachable[program_id], partner_org_id), "in_portfolio": in_portfolio}
         for program_id, in_portfolio in chosen
     ]
     return {

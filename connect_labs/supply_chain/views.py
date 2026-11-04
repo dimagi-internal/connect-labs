@@ -1331,11 +1331,28 @@ class DistributionView(OperationBase):
             return context
         points = {p["id"]: p for p in self.op("supply_point_list", include_inactive=True)}
         context["points"] = points
-        context["runs"] = self.op("distribution_list")
-        context.update(page.handouts(context["runs"], points))
-        context["deliveries"] = page.deliveries(
-            self.op("consignment_list"), self.op("movement_list", kind="transfer", limit=300), points
-        )
+        runs = self.op("distribution_list")
+        consignments = self.op("consignment_list")
+        transfers = self.op("movement_list", kind="transfer", limit=300)
+        from connect_labs.supply_chain.partners.scope import partner_param, point_ids_of, switcher
+
+        chosen_partner = partner_param(self.request)
+        if chosen_partner is not None:
+            # A partner's own page: handouts that leave or reach a place it runs, and deliveries to or from one.
+            mine = point_ids_of(_access(self.request).program_id, chosen_partner)
+            runs = [
+                r
+                for r in runs
+                if r["supply_point_id"] in mine or any(line["to_supply_point_id"] in mine for line in r["lines"])
+            ]
+            consignments = [
+                c for c in consignments if c["from_supply_point_id"] in mine or c["to_supply_point_id"] in mine
+            ]
+            transfers = [t for t in transfers if t["from_supply_point_id"] in mine or t["to_supply_point_id"] in mine]
+        context["runs"] = runs
+        context.update(page.handouts(runs, points))
+        context["deliveries"] = page.deliveries(consignments, transfers, points)
+        context.update(switcher(self.request, _access(self.request).program_id))
         return context
 
 

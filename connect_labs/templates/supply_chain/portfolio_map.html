@@ -129,6 +129,7 @@ silently lacks.
       </div>
     </div>
   </div>
+  {% if programme_map %}<div class="mt-2">{% include "supply_chain/_partner_switcher.html" %}</div>{% endif %}
   <div class="pm-bar mt-2">
     {% if not programme_map %}<span class="pm-seg">
       <a href="?" class="{% if not everything %}pm-on{% endif %}">This portfolio</a>

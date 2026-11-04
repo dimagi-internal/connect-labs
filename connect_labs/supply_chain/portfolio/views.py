@@ -407,16 +407,23 @@ class ProgrammeMapView(TemplateView):
         from connect_labs.supply_chain.portfolio.map_data import portfolio_map
 
         context = super().get_context_data(**kwargs)
-        _, reachable, programme = _programme_in_view(self.request)
+        program_id, reachable, programme = _programme_in_view(self.request)
         from connect_labs.supply_chain.banner import program_line
         from connect_labs.supply_chain.navigation import supply_tabs
 
         context.update(portfolio=programme, programme_map=True, everything=False)
         context["supply_tabs"] = supply_tabs(self.request)
         context["supply_program_line"] = program_line(self.request)
+        from connect_labs.supply_chain.partners.scope import partner_param, switcher
+
         context["map_payload"] = portfolio_map(
-            self.request, programme, reachable, cover_url=reverse("supply_chain:programme_map_cover")
+            self.request,
+            programme,
+            reachable,
+            cover_url=reverse("supply_chain:programme_map_cover"),
+            partner_org_id=partner_param(self.request),
         )
+        context.update(switcher(self.request, program_id))
         context["mapbox_token"] = getattr(settings, "MAPBOX_TOKEN", "") or ""
         return context
 
