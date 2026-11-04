@@ -44,6 +44,8 @@ _SERIALIZERS = {
     models.SupplyPoint: serializers.supply_point,
     models.Movement: serializers.movement,
     models.StockCount: serializers.stock_count,
+    models.Custodian: serializers.custodian,
+    models.StockIssue: serializers.stock_issue,
     models.Distribution: serializers.distribution,
     models.Consignment: serializers.consignment,
 }
@@ -705,6 +707,7 @@ _COMMODITY_DATA = _data_with(
     base_per_pack=_NON_NEGATIVE_INT,
     base_unit_grams=_NON_NEGATIVE_INT,
     shelf_life_months_minimum=_NON_NEGATIVE_INT,
+    expiry_warning_days=_NON_NEGATIVE_INT,
     course_definition=_data_with(
         _open=True,
         base_units_per_day=QUANTITY,

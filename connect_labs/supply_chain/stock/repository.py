@@ -14,14 +14,22 @@ from django.db import transaction
 
 from connect_labs.supply_chain.models import (
     Consignment,
+    Custodian,
     DispensingRule,
     Distribution,
     DistributionLine,
     Movement,
     StockCount,
+    StockIssue,
     SupplyPoint,
 )
 from connect_labs.supply_chain.stock.services import posting
+
+
+def _as_day(value):
+    from datetime import date
+
+    return value if isinstance(value, date) else date.fromisoformat(str(value))
 
 
 class StockRepositoryMixin:
@@ -315,6 +323,173 @@ class StockRepositoryMixin:
         if count.kind == "override":
             posting.post_override(count, self._require_program())
         return _fresh(count)
+
+    # ---- custodians ------------------------------------------------------
+
+    def list_custodians(self, supply_point_id=None, current_only=False):
+        qs = Custodian.objects.filter(program_id=self._require_program())
+        if supply_point_id is not None:
+            qs = qs.filter(supply_point_id=supply_point_id)
+        if current_only:
+            qs = qs.filter(ended_on__isnull=True)
+        return list(qs)
+
+    def custodian_at(self, supply_point_id, on_date):
+        """The custodian responsible at this point on this day, or None."""
+        from django.db.models import Q
+
+        return (
+            Custodian.objects.filter(program_id=self._require_program(), supply_point_id=supply_point_id)
+            .filter(starts_on__lte=on_date)
+            .filter(Q(ended_on__isnull=True) | Q(ended_on__gt=on_date))
+            .first()
+        )
+
+    @transaction.atomic
+    def assign_custodian(self, data):
+        """Name who is responsible for a storage point from a day on, closing the one before.
+
+        The earlier row is ended, never edited away: who held the stock on any
+        past day stays answerable, and so does what security was in place.
+        """
+        from connect_labs.supply_chain.data_access import _columns, _fresh
+
+        point = self._require_supply_point(data["supply_point_id"])
+        starts_on = _as_day(data["starts_on"])
+        for current in Custodian.objects.select_for_update().filter(supply_point=point, ended_on__isnull=True):
+            if current.starts_on > starts_on:
+                raise ValueError(
+                    f"{current.name} has been custodian since {current.starts_on}, after {starts_on}; "
+                    "a new custodian cannot start before the one it replaces"
+                )
+            current.ended_on = starts_on
+            current.save(update_fields=["ended_on", "updated_at"])
+        custodian = Custodian.objects.create(
+            program_id=self._require_program(), supply_point=point, **_columns(Custodian, data)
+        )
+        return _fresh(custodian)
+
+    # ---- stock issues ----------------------------------------------------
+
+    def get_stock_issue(self, issue_id):
+        return (
+            StockIssue.objects.filter(program_id=self._require_program(), pk=issue_id)
+            .select_related("commodity", "supply_point", "item")
+            .first()
+        )
+
+    def list_stock_issues(self, supply_point_id=None, status=None, open_only=False, kind=None, limit=500):
+        qs = StockIssue.objects.filter(program_id=self._require_program()).select_related("commodity")
+        if supply_point_id is not None:
+            qs = qs.filter(supply_point_id=supply_point_id)
+        if status is not None:
+            qs = qs.filter(status=status)
+        if open_only:
+            qs = qs.exclude(status="resolved")
+        if kind is not None:
+            qs = qs.filter(kind=kind)
+        return list(qs[:limit])
+
+    @transaction.atomic
+    def report_stock_issue(self, data):
+        """Record a problem with stock and take the quantity off the shelf.
+
+        The loss is posted at once, linked to the issue: stock that is missing
+        is not on hand while it is being followed up, and a recovery puts it
+        back (see resolve_stock_issue). The responsible custodian is the one in
+        post at that point on that day, unless the caller names another.
+        """
+        from connect_labs.supply_chain.data_access import _columns, _fresh
+
+        data = dict(data)
+        point = self._require_supply_point(data["supply_point_id"])
+        occurred_on = _as_day(data["occurred_on"])
+        custodian_id = data.pop("custodian_id", None)
+        if custodian_id is not None:
+            custodian = Custodian.objects.filter(program_id=self._require_program(), pk=custodian_id).first()
+            if custodian is None:
+                raise ValueError(f"custodian {custodian_id} does not exist in this programme")
+        else:
+            custodian = self.custodian_at(point.pk, occurred_on)
+        issue = StockIssue.objects.create(
+            program_id=self._require_program(),
+            supply_point=point,
+            commodity=self._require_commodity(data["commodity_slug"]),
+            item=self._resolve_item(data.get("item_id")),
+            custodian=custodian,
+            **_columns(StockIssue, data),
+        )
+        issue.full_clean(
+            exclude=["supply_point", "commodity", "item", "custodian", "recorded_by_org", "outcome", "resolved_on"]
+        )
+        if issue.quantity <= 0:
+            raise ValueError("an issue is about some quantity of stock; a quantity of nothing is not an issue")
+        posting.post_issue_loss(issue)
+        return _fresh(issue)
+
+    @transaction.atomic
+    def update_stock_issue(self, issue_id, data):
+        """Follow-up on an open issue: move it to being followed up, add what is known, name who took it."""
+        from connect_labs.supply_chain.data_access import _fresh
+
+        issue = self._open_stock_issue(issue_id)
+        for field in ("status", "taken_by", "evidence", "reported_by", "note"):
+            if data.get(field) is not None:
+                setattr(issue, field, data[field])
+        if "custodian_id" in data and data["custodian_id"] is not None:
+            custodian = Custodian.objects.filter(program_id=self._require_program(), pk=data["custodian_id"]).first()
+            if custodian is None:
+                raise ValueError(f"custodian {data['custodian_id']} does not exist in this programme")
+            issue.custodian = custodian
+        issue.save()
+        return _fresh(issue)
+
+    @transaction.atomic
+    def resolve_stock_issue(self, issue_id, data):
+        """Close an issue as recovered, replaced or written off.
+
+        Recovered or replaced stock goes back on the ledger as a movement linked
+        to this issue (all of it unless `quantity_recovered` says less; the rest
+        stands as the loss already posted). Written off posts nothing more: the
+        loss recorded at report is the write-off.
+        """
+        from connect_labs.supply_chain.data_access import _fresh
+
+        issue = self._open_stock_issue(issue_id)
+        outcome = data["outcome"]
+        resolved_on = _as_day(data["resolved_on"])
+        if resolved_on < issue.occurred_on:
+            raise ValueError("an issue cannot be resolved before it happened")
+        issue.outcome = outcome
+        issue.status = "resolved"
+        issue.resolved_on = resolved_on
+        if data.get("note"):
+            issue.note = data["note"]
+        if outcome in ("recovered", "replaced"):
+            from decimal import Decimal
+
+            back = Decimal(str(data.get("quantity_recovered", issue.quantity)))
+            if back <= 0 or back > issue.quantity:
+                raise ValueError(f"{back} {issue.quantity_unit} cannot come back from an issue of {issue.quantity}")
+            issue.quantity_recovered = back
+            issue.save()
+            posting.post_issue_recovery(issue, quantity=back, occurred_on=resolved_on)
+        else:
+            issue.save()
+        return _fresh(issue)
+
+    def _open_stock_issue(self, issue_id):
+        issue = (
+            StockIssue.objects.select_for_update(of=("self",))
+            .filter(program_id=self._require_program(), pk=issue_id)
+            .select_related("commodity", "supply_point", "item")
+            .first()
+        )
+        if issue is None:
+            raise ValueError(f"stock issue {issue_id} does not exist in this programme")
+        if issue.status == "resolved":
+            raise ValueError(f"stock issue {issue_id} was already resolved ({issue.outcome})")
+        return issue
 
     # ---- distributions ---------------------------------------------------
 

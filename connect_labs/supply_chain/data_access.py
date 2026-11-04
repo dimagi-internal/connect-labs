@@ -43,6 +43,7 @@ from connect_labs.supply_chain.models import (
     Commodity,
     Consignment,
     Contract,
+    Custodian,
     DispensingRule,
     Distribution,
     DistributionLine,
@@ -55,6 +56,7 @@ from connect_labs.supply_chain.models import (
     Receipt,
     Shipment,
     StockCount,
+    StockIssue,
     Supplier,
     SupplyPoint,
     Tender,
@@ -450,7 +452,9 @@ class SupplyDataAccess(
                 reversals = gone.get(Movement._meta.label, 0)
                 DistributionLine.objects.filter(distribution__program_id=program_id).update(movement=None)
                 StockCount.objects.filter(program_id=program_id).update(adjustment_movement=None)
-                movements.update(distribution=None, receipt=None, shipment=None, stock_count=None, reverses=None)
+                movements.update(
+                    distribution=None, receipt=None, shipment=None, stock_count=None, stock_issue=None, reverses=None
+                )
                 Contract.objects.filter(program_id=program_id).update(duty_relief_document=None)
                 Quote.objects.filter(tender__program_id=program_id).update(superseded_by=None)
                 # Self-references are the same problem one table in: a
@@ -474,6 +478,9 @@ class SupplyDataAccess(
                 drop("alert subscriptions", AlertSubscription.objects.filter(program_id=program_id))
                 drop("documents", Document.objects.filter(program_id=program_id))
                 drop("stock counts", StockCount.objects.filter(program_id=program_id))
+                # An issue names its custodian, and both PROTECT the store.
+                drop("stock issues", StockIssue.objects.filter(program_id=program_id))
+                drop("custodians", Custodian.objects.filter(program_id=program_id))
                 drop("distributions", Distribution.objects.filter(program_id=program_id))
                 # A consignment holds its two ledger legs, so it goes before them.
                 drop("consignments", Consignment.objects.filter(program_id=program_id))

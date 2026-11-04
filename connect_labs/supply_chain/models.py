@@ -140,6 +140,8 @@ class Commodity(TimestampedModel):
     base_per_pack = models.IntegerField(null=True, blank=True)
     base_unit_grams = models.IntegerField(null=True, blank=True)
     shelf_life_months_minimum = models.IntegerField(null=True, blank=True)
+    # How many days before a batch of this product expires the programme wants a warning.
+    expiry_warning_days = models.PositiveIntegerField(default=90, db_default=90)
     spec_requirements = models.JSONField(default=list, blank=True)
     # {base_units_per_day, days_per_course, base_units_per_course, source}.
     # Empty is the normal starting state and is why per-course figures come
@@ -1390,6 +1392,12 @@ class Movement(SourcedModel):
     # True when any part of the quantity came from a protocol -- the form said
     # only THAT something was given -- rather than a number somebody entered.
     estimated = models.BooleanField(default=False, db_default=False)
+    # The stock issue this movement belongs to: the loss posted when it was
+    # reported, or the stock put back when it was recovered. Null for every
+    # earlier loss, which stays readable as the free-text note it always was.
+    stock_issue = models.ForeignKey(
+        "supply_chain.StockIssue", null=True, blank=True, on_delete=models.PROTECT, related_name="movements"
+    )
 
     objects = MovementQuerySet.as_manager()
 
@@ -1488,6 +1496,86 @@ class StockCount(SourcedModel):
         if self.kind == "override" and not (self.reason or "").strip():
             raise ValidationError(
                 {"reason": "An override asserts a figure over both the ledger and the last count; say why."}
+            )
+
+
+class Custodian(SourcedModel):
+    """The named person responsible for the stock at one storage point, for a period.
+
+    Kept as history: a change of custodian (or of security) is a new row that
+    closes the one before it, never an edit, so "who held the key on 3 March"
+    always has an answer. The row with no `ended_on` is the current one.
+    """
+
+    program_id = models.IntegerField(db_index=True)
+    supply_point = models.ForeignKey(SupplyPoint, on_delete=models.PROTECT, related_name="custodians")
+    name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=64, blank=True, default="")
+    role = models.CharField(max_length=128, blank=True, default="")
+    # Which of records.SECURITY_MEASURES are in place; the details go in `note`.
+    security_measures = models.JSONField(default=list, blank=True)
+    starts_on = models.DateField(db_index=True)
+    ended_on = models.DateField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-starts_on", "-id"]
+        indexes = [models.Index(fields=["supply_point", "starts_on"])]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def is_current(self) -> bool:
+        return self.ended_on is None
+
+
+class StockIssue(SourcedModel):
+    """Stock that is missing, taken, damaged, expired or otherwise not where it should be.
+
+    Replaces the free-text `loss` movement as the way to record a problem: it
+    says what, where, which batch, who was responsible and who reported it,
+    keeps the evidence, and ends in recovered, replaced or written off. The
+    ledger legs it causes are ordinary movements pointing back at it
+    (`Movement.stock_issue`), so a recovery puts the stock back linked to the
+    issue rather than as a separate record.
+    """
+
+    program_id = models.IntegerField(db_index=True)
+    opportunity_id = models.IntegerField(null=True, blank=True, db_index=True)
+    supply_point = models.ForeignKey(SupplyPoint, on_delete=models.PROTECT, related_name="stock_issues")
+    kind = models.CharField(max_length=16, choices=_choices(records.STOCK_ISSUE_KINDS))
+    # Who took it, when it is known and the kind is "taken".
+    taken_by = models.CharField(max_length=255, blank=True, default="")
+    occurred_on = models.DateField(db_index=True)
+    commodity = models.ForeignKey(Commodity, on_delete=models.PROTECT, related_name="stock_issues")
+    item = models.ForeignKey(Item, null=True, blank=True, on_delete=models.PROTECT, related_name="stock_issues")
+    batch = models.CharField(max_length=64, blank=True, default="")
+    quantity = models.DecimalField(**QTY)
+    quantity_unit = models.CharField(max_length=32)
+    # The custodian responsible at that point on that day (set for the caller when not named).
+    custodian = models.ForeignKey(Custodian, null=True, blank=True, on_delete=models.PROTECT, related_name="issues")
+    reported_by = models.CharField(max_length=255, blank=True, default="")
+    # A link, or a plain description of the photo or message that shows it.
+    evidence = models.TextField(blank=True, default="")
+    status = models.CharField(
+        max_length=16, default="open", choices=_choices(records.STOCK_ISSUE_STATUSES), db_index=True
+    )
+    outcome = models.CharField(max_length=16, blank=True, default="", choices=_choices(records.STOCK_ISSUE_OUTCOMES))
+    resolved_on = models.DateField(null=True, blank=True)
+    quantity_recovered = models.DecimalField(null=True, blank=True, **QTY)
+
+    class Meta:
+        ordering = ["-occurred_on", "-id"]
+        indexes = [models.Index(fields=["program_id", "status"])]
+
+    @property
+    def is_open(self) -> bool:
+        return self.status != "resolved"
+
+    def clean(self):
+        if self.status == "resolved" and not self.outcome:
+            raise ValidationError(
+                {"outcome": "A resolved issue says how it ended: recovered, replaced or written off."}
             )
 
 

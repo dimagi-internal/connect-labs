@@ -43,6 +43,8 @@ PATHS = {
     "DispensingRule": _direct,
     "WorkerVisit": _direct,
     "StockCount": _direct,
+    "Custodian": _direct,
+    "StockIssue": _direct,
     "Distribution": _direct,
     "Consignment": _direct,
     "AlertSubscription": _direct,

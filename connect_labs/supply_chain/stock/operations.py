@@ -128,6 +128,51 @@ _DISTRIBUTION_DATA = _data_with(
     note={"type": "string"},
 )
 
+_CUSTODIAN_DATA = _data_with(
+    ("supply_point_id", "name", "starts_on", "source"),
+    supply_point_id=ID,
+    name={"type": "string", "minLength": 1},
+    phone={"type": "string"},
+    role={"type": "string"},
+    security_measures={"type": "array", "items": {"enum": list(records.SECURITY_MEASURES)}, "uniqueItems": True},
+    starts_on=_DATE,
+    source={"enum": list(records.SOURCES)},
+    recorded_by_org_id=ID,
+    note={"type": "string"},
+)
+
+_STOCK_ISSUE_DATA = _data_with(
+    ("supply_point_id", "kind", "occurred_on", "commodity_slug", "quantity", "quantity_unit", "source"),
+    supply_point_id=ID,
+    kind={"enum": list(records.STOCK_ISSUE_KINDS)},
+    taken_by={"type": "string"},
+    occurred_on=_DATE,
+    commodity_slug={"type": "string", "minLength": 1},
+    item_id=ID,
+    batch={"type": "string"},
+    quantity=QUANTITY,
+    quantity_unit={"type": "string", "minLength": 1},
+    custodian_id=ID,
+    reported_by={"type": "string"},
+    evidence={"type": "string"},
+    opportunity_id=ID,
+    source={"enum": list(records.SOURCES)},
+    recorded_by_org_id=ID,
+    note={"type": "string"},
+)
+
+_STOCK_ISSUE_UPDATE = _data_with(
+    ("source",),
+    status={"enum": ["open", "following_up"]},
+    taken_by={"type": "string"},
+    evidence={"type": "string"},
+    reported_by={"type": "string"},
+    custodian_id=ID,
+    note={"type": "string"},
+    source={"enum": list(records.SOURCES)},
+    recorded_by_org_id=ID,
+)
+
 
 # ---- supply points -----------------------------------------------------
 
@@ -349,6 +394,133 @@ def stock_count_list(access, supply_point_id=None, item_id=None, kind=None, limi
 )
 def stock_count_record(access, data):
     return record(access.record_stock_count(data))
+
+
+# ---- custodians --------------------------------------------------------
+
+
+@register_operation(
+    name="custodian_list",
+    summary=(
+        "Who is responsible for the stock at a storage point, and what security is in place, kept as "
+        "history: the current custodian has no ended_on. Filter to one point, or to current custodians only."
+    ),
+    input_schema=obj({"supply_point_id": ID, "current_only": {"type": "boolean"}}),
+)
+def custodian_list(access, supply_point_id=None, current_only=False):
+    return [record(c) for c in access.list_custodians(supply_point_id=supply_point_id, current_only=current_only)]
+
+
+@register_operation(
+    name="custodian_assign",
+    summary=(
+        "Name the person responsible for a storage point (name, phone) and the security in place, from a day on. "
+        "The custodian before is ended that day, not overwritten, so who held the stock on any past day stays "
+        "answerable. Record the same person again to change the security."
+    ),
+    input_schema=obj({"data": _CUSTODIAN_DATA}, required=("data",)),
+    is_write=True,
+)
+def custodian_assign(access, data):
+    return record(access.assign_custodian(data))
+
+
+# ---- stock issues ------------------------------------------------------
+
+
+@register_operation(
+    name="stock_issue_list",
+    summary=(
+        "Stock issues — missing or taken, damaged, expired — newest first, each with its status and how it "
+        "ended. open_only leaves out the resolved ones."
+    ),
+    input_schema=obj(
+        {
+            "supply_point_id": ID,
+            "status": {"enum": list(records.STOCK_ISSUE_STATUSES)},
+            "kind": {"enum": list(records.STOCK_ISSUE_KINDS)},
+            "open_only": {"type": "boolean"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 2000},
+        }
+    ),
+)
+def stock_issue_list(access, supply_point_id=None, status=None, kind=None, open_only=False, limit=500):
+    return [
+        record(i)
+        for i in access.list_stock_issues(
+            supply_point_id=supply_point_id, status=status, kind=kind, open_only=open_only, limit=limit
+        )
+    ]
+
+
+@register_operation(
+    name="stock_issue_summary",
+    summary=(
+        "How many stock issues are still open, how many are being followed up, how old the oldest is, and the "
+        "same per partner (the organisation that runs the store). The figure the Overview shows."
+    ),
+    input_schema=obj({"opportunity_id": ID}),
+)
+def stock_issue_summary(access, opportunity_id=None):
+    from connect_labs.supply_chain.stock.services import issues
+
+    return issues.open_issue_summary(access._require_program(), opportunity_id=opportunity_id)
+
+
+@register_operation(
+    name="stock_issue_report",
+    summary=(
+        "Report stock that is missing, taken, damaged or expired: where, which batch, how much, when, who "
+        "reported it and the evidence. The quantity comes off the point's balance at once, linked to the issue, "
+        "and the custodian in post that day is recorded as responsible. Resolve it later; a recovery puts the "
+        "stock back linked to the issue."
+    ),
+    input_schema=obj({"data": _STOCK_ISSUE_DATA}, required=("data",)),
+    is_write=True,
+)
+def stock_issue_report(access, data):
+    return record(access.report_stock_issue(data))
+
+
+@register_operation(
+    name="stock_issue_update",
+    summary=(
+        "Follow up an open issue: set it to being followed up, record who took it, add evidence. "
+        "Resolve it with stock_issue_resolve."
+    ),
+    input_schema=obj({"issue_id": ID, "data": _STOCK_ISSUE_UPDATE}, required=("issue_id", "data")),
+    is_write=True,
+)
+def stock_issue_update(access, issue_id, data):
+    return record(access.update_stock_issue(issue_id, data))
+
+
+@register_operation(
+    name="stock_issue_resolve",
+    summary=(
+        "Close an issue as recovered, replaced or written off. Recovered or replaced stock goes back on the "
+        "ledger as a movement linked to the issue (all of it, or quantity_recovered); written off posts nothing "
+        "more, because the loss was posted when the issue was reported."
+    ),
+    input_schema=obj(
+        {
+            "issue_id": ID,
+            "data": _data_with(
+                ("outcome", "resolved_on", "source"),
+                outcome={"enum": list(records.STOCK_ISSUE_OUTCOMES)},
+                resolved_on=_DATE,
+                quantity_recovered=QUANTITY,
+                note={"type": "string"},
+                source={"enum": list(records.SOURCES)},
+                recorded_by_org_id=ID,
+            ),
+        },
+        required=("issue_id", "data"),
+    ),
+    is_write=True,
+)
+def stock_issue_resolve(access, issue_id, data):
+    return record(access.resolve_stock_issue(issue_id, data))
 
 
 # ---- distributions ----------------------------------------------------

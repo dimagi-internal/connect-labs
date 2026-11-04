@@ -1,0 +1,203 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% block supply_content %}
+{% if not has_program_context %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+    <p class="text-sm text-amber-900">Issues are programme-scoped.</p>
+  </div>
+{% else %}
+
+<div class="flex flex-wrap items-start justify-between gap-4">
+  <h2 class="text-lg font-semibold text-brand-indigo mb-1">
+    Issues{% if partner_name %} — {{ partner_name }}{% endif %}
+  </h2>
+  <a href="{% url 'supply_chain:issue_report' %}{% if partner_id %}?partner={{ partner_id }}{% endif %}"
+     class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+    <i class="fa-solid fa-plus mr-1"></i> Report an issue
+  </a>
+</div>
+<p class="text-xs text-gray-600 mb-4">
+  Stock that is missing, taken, damaged or expired. Report it where it happened: the quantity comes off that
+  place's stock straight away, so the figures show what is really there. An issue is open until it is followed up
+  and ends as recovered, replaced or written off; recovered stock goes back on the ledger linked to the issue.
+</p>
+
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-2xl font-semibold tabular-nums text-gray-900">{{ summary.total_open }}</div>
+    <div class="text-xs text-gray-600">open {{ summary.total_open|pluralize:"issue,issues" }}</div>
+  </div>
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-2xl font-semibold tabular-nums text-gray-900">{{ summary.open }}</div>
+    <div class="text-xs text-gray-600">not yet looked at</div>
+  </div>
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-2xl font-semibold tabular-nums text-gray-900">{{ summary.following_up }}</div>
+    <div class="text-xs text-gray-600">being followed up</div>
+  </div>
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-2xl font-semibold tabular-nums text-gray-900">
+      {% if summary.oldest_days is None %}—{% else %}{{ summary.oldest_days }}{% endif %}
+    </div>
+    <div class="text-xs text-gray-600">days since the oldest open issue happened</div>
+  </div>
+</div>
+
+<div class="flex flex-wrap items-center gap-2 mb-4 text-sm">
+  <span class="text-gray-600">Partner:</span>
+  <a href="{% url 'supply_chain:issues' %}{% if show_all %}?show=all{% endif %}"
+     class="px-2.5 py-1 rounded-full border {% if not partner_id %}bg-brand-indigo text-white border-brand-indigo{% else %}border-gray-300 text-gray-700 hover:bg-gray-50{% endif %}">
+    All partners ({{ summary.total_open }} open)
+  </a>
+  {% for p in partners %}
+    {% if p.org_id %}
+      <a href="{% url 'supply_chain:issues' %}?partner={{ p.org_id }}{% if show_all %}&show=all{% endif %}"
+         class="px-2.5 py-1 rounded-full border {% if partner_id == p.org_id %}bg-brand-indigo text-white border-brand-indigo{% else %}border-gray-300 text-gray-700 hover:bg-gray-50{% endif %}">
+        {{ p.name }} ({{ p.total_open }})
+      </a>
+    {% else %}
+      <span class="px-2.5 py-1 rounded-full border border-gray-200 text-gray-600">{{ p.name }} ({{ p.total_open }})</span>
+    {% endif %}
+  {% endfor %}
+  <span class="ml-auto">
+    {% if show_all %}
+      <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:issues' %}{% if partner_id %}?partner={{ partner_id }}{% endif %}">Only open issues</a>
+    {% else %}
+      <a class="text-brand-indigo hover:underline" href="?{% if partner_id %}partner={{ partner_id }}&{% endif %}show=all">Include resolved</a>
+    {% endif %}
+  </span>
+</div>
+
+<div class="bg-white border border-gray-200 rounded-lg mb-6 overflow-hidden">
+  <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+  <table class="min-w-[56rem] w-full text-sm">
+    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+      <tr>
+        <th class="text-left px-4 py-2">What happened</th>
+        <th class="text-left px-4 py-2">Where</th>
+        <th class="text-left px-4 py-2">How much</th>
+        <th class="text-left px-4 py-2">Date</th>
+        <th class="text-left px-4 py-2">Responsible</th>
+        <th class="text-left px-4 py-2">Reported by</th>
+        <th class="text-left px-4 py-2">Where it stands</th>
+        <th class="px-4 py-2"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for issue in issues %}
+        <tr>
+          <td class="px-4 py-2">
+            {{ issue.kind|words|capfirst }}
+            {% if issue.taken_by %}<div class="text-xs text-gray-600">by {{ issue.taken_by }}</div>{% endif %}
+            {% if issue.evidence %}<div class="text-xs text-gray-600 max-w-xs break-words">{{ issue.evidence|urlize }}</div>{% endif %}
+          </td>
+          <td class="px-4 py-2">{{ issue.point.name|default:"—" }}</td>
+          <td class="px-4 py-2 tabular-nums">
+            {{ issue.quantity|qty:issue.quantity_unit }}
+            {% if issue.batch %}<div class="text-xs text-gray-600">batch {{ issue.batch }}</div>{% endif %}
+          </td>
+          <td class="px-4 py-2 text-gray-600">{{ issue.occurred_on }}</td>
+          <td class="px-4 py-2">
+            {% if issue.custodian %}
+              {{ issue.custodian.name }}
+              {% if issue.custodian.phone %}<div class="text-xs text-gray-600">{{ issue.custodian.phone }}</div>{% endif %}
+            {% else %}<span class="text-gray-600">nobody named</span>{% endif %}
+          </td>
+          <td class="px-4 py-2 text-gray-600">{{ issue.reported_by|default:"—" }}</td>
+          <td class="px-4 py-2">
+            {{ issue.status|words|capfirst }}
+            {% if issue.outcome %}
+              <div class="text-xs text-gray-600">
+                {{ issue.outcome|words|capfirst }}{% if issue.resolved_on %}, {{ issue.resolved_on }}{% endif %}
+              </div>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2 text-xs whitespace-nowrap">
+            {% if issue.status != "resolved" %}
+              <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:issue_follow_up' issue.id %}">Follow up</a>
+              ·
+              <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:issue_resolve' issue.id %}">Close</a>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr>
+          <td colspan="8" class="px-4 py-6 text-center text-gray-600">
+            No {% if not show_all %}open {% endif %}issues{% if partner_name %} for {{ partner_name }}{% endif %}.
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<h3 class="text-base font-semibold text-brand-indigo mb-1">Who is responsible where stock is kept</h3>
+<p class="text-xs text-gray-600 mb-3">
+  A named person at each storage point confirms deliveries and owns the balance there, so a missing carton points
+  to a person and a day. Changing the custodian keeps the earlier one as history.
+</p>
+<div class="bg-white border border-gray-200 rounded-lg mb-6 overflow-hidden">
+  <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+  <table class="min-w-[44rem] w-full text-sm">
+    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+      <tr>
+        <th class="text-left px-4 py-2">Storage point</th>
+        <th class="text-left px-4 py-2">Responsible person</th>
+        <th class="text-left px-4 py-2">Security in place</th>
+        <th class="px-4 py-2"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for store in stores %}
+        <tr>
+          <td class="px-4 py-2">{{ store.point.name }}</td>
+          <td class="px-4 py-2">
+            {% if store.custodian %}
+              {{ store.custodian.name }}
+              <span class="text-xs text-gray-600">{{ store.custodian.phone }}{% if store.custodian.role %} · {{ store.custodian.role }}{% endif %}, since {{ store.custodian.starts_on }}</span>
+            {% else %}<span class="text-gray-600">nobody named</span>{% endif %}
+          </td>
+          <td class="px-4 py-2 text-gray-700">
+            {% for measure in store.custodian.security_measures %}{{ measure|words }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="text-gray-600">—</span>{% endfor %}
+            {% if store.custodian.note %}<div class="text-xs text-gray-600">{{ store.custodian.note }}</div>{% endif %}
+          </td>
+          <td class="px-4 py-2 text-xs whitespace-nowrap">
+            <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:custodian_assign' %}?supply_point={{ store.point.id }}">
+              {% if store.custodian %}Change{% else %}Name someone{% endif %}
+            </a>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4" class="px-4 py-6 text-center text-gray-600">No storage points yet. Add them on the Network page.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{% if legacy_losses %}
+  <h3 class="text-base font-semibold text-brand-indigo mb-1">Earlier losses, recorded as a note</h3>
+  <p class="text-xs text-gray-600 mb-3">
+    Before issues existed, a loss was a stock movement with a free-text note. They still count against the stock;
+    report a new problem as an issue instead.
+  </p>
+  <div class="bg-white border border-gray-200 rounded-lg mb-6 overflow-hidden">
+    <table class="w-full text-sm">
+      <tbody class="divide-y divide-gray-100">
+        {% for loss in legacy_losses %}
+          <tr>
+            <td class="px-4 py-2 text-gray-600">{{ loss.occurred_on }}</td>
+            <td class="px-4 py-2">{{ loss.point.name|default:"—" }}</td>
+            <td class="px-4 py-2 tabular-nums">{{ loss.quantity|qty:loss.quantity_unit }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ loss.note|default:"no note" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -75,6 +75,7 @@ def commodity(obj) -> dict:
         "base_per_pack": obj.base_per_pack,
         "base_unit_grams": obj.base_unit_grams,
         "shelf_life_months_minimum": obj.shelf_life_months_minimum,
+        "expiry_warning_days": obj.expiry_warning_days,
         "spec_requirements": obj.spec_requirements,
         "course_definition": obj.course_definition,
         "spec_reference": obj.spec_reference,
@@ -512,7 +513,47 @@ def movement(obj) -> dict:
             "shipment_id": obj.shipment_id,
             "distribution_id": obj.distribution_id,
             "stock_count_id": obj.stock_count_id,
+            "stock_issue_id": obj.stock_issue_id,
         },
+        **_sourced(obj),
+    }
+
+
+def custodian(obj) -> dict:
+    return {
+        "id": obj.pk,
+        "supply_point_id": obj.supply_point_id,
+        "name": obj.name,
+        "phone": obj.phone,
+        "role": obj.role,
+        "security_measures": list(obj.security_measures or []),
+        "starts_on": _date(obj.starts_on),
+        "ended_on": _date(obj.ended_on),
+        "current": obj.ended_on is None,
+        **_sourced(obj),
+    }
+
+
+def stock_issue(obj) -> dict:
+    return {
+        "id": obj.pk,
+        "supply_point_id": obj.supply_point_id,
+        "kind": obj.kind,
+        "taken_by": obj.taken_by,
+        "occurred_on": _date(obj.occurred_on),
+        "commodity_slug": obj.commodity.slug,
+        "item_id": obj.item_id,
+        "batch": obj.batch,
+        "quantity": _num(obj.quantity),
+        "quantity_unit": obj.quantity_unit,
+        "custodian_id": obj.custodian_id,
+        "reported_by": obj.reported_by,
+        "evidence": obj.evidence,
+        "status": obj.status,
+        "outcome": obj.outcome,
+        "resolved_on": _date(obj.resolved_on),
+        "quantity_recovered": _num(obj.quantity_recovered),
+        "opportunity_id": obj.opportunity_id,
         **_sourced(obj),
     }
 

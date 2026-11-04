@@ -126,6 +126,7 @@ class CommodityForm(KeyedUpsertForm):
             "base_per_pack",
             "base_unit_grams",
             "shelf_life_months_minimum",
+            "expiry_warning_days",
             "spec_reference",
             "unicef_material_number",
         ]
@@ -140,6 +141,7 @@ class CommodityForm(KeyedUpsertForm):
             "shelf_life_months_minimum": forms.NumberInput(attrs={**INPUT, "min": 0, "placeholder": "24"}),
             "spec_reference": forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. UNICEF S0000240")}),
             "unicef_material_number": forms.TextInput(attrs=INPUT),
+            "expiry_warning_days": forms.NumberInput(attrs={**INPUT, "min": 0, "placeholder": "90"}),
         }
         labels = {
             "slug": _("Short key"),
@@ -150,6 +152,7 @@ class CommodityForm(KeyedUpsertForm):
             "base_per_pack": _("Units per pack"),
             "base_unit_grams": _("Grams per unit"),
             "shelf_life_months_minimum": _("Minimum shelf life (months)"),
+            "expiry_warning_days": _("Warn before expiry (days)"),
             "spec_reference": _("Specification reference"),
             "unicef_material_number": _("UNICEF material number"),
         }
@@ -157,10 +160,16 @@ class CommodityForm(KeyedUpsertForm):
             "slug": _("Lower case, no spaces. Every quote and contract names the product by this."),
             "base_per_pack": _("The default. A trade item may differ, and that difference is the point of items."),
             "shelf_life_months_minimum": _("Sea freight and clearance routinely eat four months of it."),
+            "expiry_warning_days": _(
+                "How long before a batch expires the programme is warned about it. Allow enough time to use "
+                "it, move it to where it is needed, or replace it."
+            ),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Left empty it keeps the programme's current figure (90 days on a new product).
+        self.fields["expiry_warning_days"].required = False
         # The schema's enum, spelled for a reader. Kept here rather than on
         # the model because the model's own choices are the storage contract
         # and these are the wording, which changes more often.
@@ -214,6 +223,7 @@ class CommodityForm(KeyedUpsertForm):
             Fieldset(
                 str(_("The specification it is bought against")),
                 Field("shelf_life_months_minimum"),
+                Field("expiry_warning_days"),
                 Row(
                     Column("spec_reference"),
                     Column("unicef_material_number"),

@@ -81,3 +81,17 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
 
 - **A clone started over MCP must equal one made with the page's default button**
   (#2153).
+
+## Stock issues, custodians and expiry (Sophie's RUTF feedback, 2026-11)
+
+- **A problem with stock is a `StockIssue`, not a free-text `loss` note.** Reporting one posts the
+  loss at once, linked to the issue (`Movement.stock_issue`); a recovery or replacement posts the
+  stock back linked to the same issue; a write-off posts nothing more. Older `loss` movements with
+  only a note stay readable and are listed on the Issues page.
+- **A partner's Issues page is the same page filtered by `?partner=<org id>`.** A store belongs to
+  the organisation that runs it, else the nearest one above it in the network.
+  `stock.services.issues.open_issue_summary` (and the `stock_issue_summary` operation) is the one
+  count of open issues for every page.
+- **A custodian is history, not an edit.** Naming a new one ends the one before it that day.
+- **Expiry warnings are a check (`stock_expiring`), with the lead time on the product**
+  (`Commodity.expiry_warning_days`, 90 days to begin with), so alerts pick it up like any other.

@@ -41,6 +41,7 @@ TAB_GROUPS = (
             ("supply_chain:stock", "Stock"),
             ("supply_chain:workers", "Workers"),
             ("supply_chain:flow", "Where it went"),
+            ("supply_chain:issues", "Issues"),
         ),
     ),
     (
@@ -93,6 +94,10 @@ PAGE_PURPOSE = {
     "supply_chain:flow": (
         "Follow the stock from delivery to the children: how much is still held, "
         "how much has been handed on and how much is unaccounted for."
+    ),
+    "supply_chain:issues": (
+        "Stock that is missing, taken, damaged or expired. Report it where it happened, follow it up until it "
+        "is recovered, replaced or written off, and see who is responsible where stock is kept."
     ),
     "supply_chain:catalogue": (
         "What you buy. Set up each product once, and add the manufacturer's version " "(a trade item) when you buy it."
@@ -232,6 +237,10 @@ TAB_FOR_VIEW = {
     "supply_chain:consignment_receive": "supply_chain:stock",
     "supply_chain:stock_count_record": "supply_chain:stock",
     "supply_chain:distribution_record": "supply_chain:distribution",
+    "supply_chain:issue_report": "supply_chain:issues",
+    "supply_chain:issue_follow_up": "supply_chain:issues",
+    "supply_chain:issue_resolve": "supply_chain:issues",
+    "supply_chain:custodian_assign": "supply_chain:issues",
     "supply_chain:alert_check_now": "supply_chain:alerts",
     "supply_chain:alert_delete": "supply_chain:alerts",
     "supply_chain:supplier_mark_reviewed": "supply_chain:suppliers",
