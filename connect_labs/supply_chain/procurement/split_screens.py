@@ -25,7 +25,7 @@ from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.banner import program_line
 from connect_labs.supply_chain.form_views import OperationFormView, SupplyWriteMixin
 from connect_labs.supply_chain.forms import INPUT, SELECT, set_choices
-from connect_labs.supply_chain.models import SupplyPoint, Tender
+from connect_labs.supply_chain.models import PartnerPlan, SupplyPoint, Tender
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.stock.services.issues import partner_by_point
 
@@ -347,9 +347,10 @@ class PurchaseSizingView(SupplyWriteMixin, TemplateView):
         slug = get.get("product") or (lines[0]["commodity_slug"] if lines else "")
         line = next((line for line in lines if line["commodity_slug"] == slug), None)
         partners = {s["org_id"]: s["org_name"] for s in tender.partner_splits or []}
-        for org in LabsOrg.objects.filter(
-            pk__in={o for o in partner_by_point(_access(self.request).program_id).values() if o}
-        ):
+        program_id = _access(self.request).program_id
+        # The same partners the Partners page lists: those running a place and those with a plan stated.
+        stated = set(PartnerPlan.objects.filter(program_id=program_id).values_list("org_id", flat=True))
+        for org in LabsOrg.objects.filter(pk__in={o for o in partner_by_point(program_id).values() if o} | stated):
             partners.setdefault(org.pk, org.name)
         rows = [
             {

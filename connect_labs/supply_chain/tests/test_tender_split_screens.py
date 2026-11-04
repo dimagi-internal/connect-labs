@@ -209,3 +209,35 @@ class TestTheNeededByWorking:
         assert 'data-testid="start-by-working"' in body
         assert "60 days for suppliers to deliver (our own estimate" in body
         assert "14 days for them to reply" in body
+
+
+class TestTheSizingPagePartners:
+    def _body(self, client, world):
+        return client.get(
+            reverse("supply_chain:procurement_tender_sizing", args=[world["tender"]["id"]])
+        ).content.decode()
+
+    def test_a_partner_stated_on_the_partners_page_is_listed_without_a_place(self, client_in_programme, da, world):
+        from connect_labs.supply_chain.models import PartnerPlan
+        from connect_labs.supply_chain.partners.models import DISTRIBUTION_MODELS
+
+        other = op(da, "org_upsert", data={"slug": "p3", "name": "Partner 3"})
+        PartnerPlan.objects.create(
+            program_id=chlorine_world.PROGRAM,
+            org_id=other["id"],
+            distribution_model=DISTRIBUTION_MODELS[0],
+            starts_on=TODAY,
+        )
+        assert "Partner 3" in self._body(client_in_programme, world)
+
+    def test_the_empty_state_points_at_the_partners_page_not_the_network(self, client_in_programme, da, world):
+        from connect_labs.supply_chain.models import SupplyPoint
+
+        SupplyPoint.objects.update(managed_by_org_id=None)
+        body = self._body(client_in_programme, world)
+        assert "Network page" not in body
+        if "No partners are listed" in body:
+            assert reverse("supply_chain:partners") in body
+
+    def test_the_course_box_is_wide_enough_for_its_hint(self, client_in_programme, da, world):
+        assert 'placeholder="from the forecast" class="ml-1 w-44' in self._body(client_in_programme, world)
