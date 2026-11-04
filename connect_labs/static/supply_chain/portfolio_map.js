@@ -976,70 +976,14 @@
     { key: 'partner', label: 'Partners to chase' },
     { key: 'internal', label: 'Ours to answer' },
   ];
+  // Worded and counted on the server (supply_chain/portfolio/chase.py), so
+  // the Overview and this tab are one list.
   function chaseItems() {
     var items = [];
     programs.forEach(function (p) {
       if (state.prog && p.program_id !== state.prog) return;
-      p.checks.forEach(function (c) {
-        // Who to call: the supplier the check names, else -- for a supplier's
-        // question -- the name its own label leads with ("Nutriset — RUTF").
-        var who = (c.facts && c.facts.supplier && c.facts.supplier.name) || '';
-        if (
-          !who &&
-          c.audience === 'supplier' &&
-          (c.subject.label || '').indexOf(' — ') > 0
-        ) {
-          who = c.subject.label.split(' — ')[0];
-        }
-        items.push({
-          audience: c.audience,
-          who: who,
-          what: checkLabel(c.kind),
-          about: c.subject.label || '',
-          days: c.days_open,
-          href: c.href,
-          program: p.name,
-        });
-      });
-      (p.consignments || []).forEach(function (c) {
-        // A late one is already a consignment_overdue check above; this adds
-        // the one no check can see -- dispatched with no date given.
-        if (c.expected_on) return;
-        var from = placeByKey[p.program_id + ':' + c.from_supply_point_id];
-        var to = placeByKey[p.program_id + ':' + c.to_supply_point_id];
-        items.push({
-          audience: 'internal',
-          who: from ? from.managed_by : '',
-          what: 'On the road with no arrival date',
-          about:
-            (from ? from.name : '') +
-            ' → ' +
-            (to ? to.name : '') +
-            ' · ' +
-            fmt(c.quantity) +
-            ' ' +
-            c.quantity_unit,
-          days: daysLate(c.dispatched_on),
-          href: c.receive_url,
-          program: p.name,
-        });
-      });
-      p.orders.forEach(function (o) {
-        if (o.expected_on) return; // a late order is already a check above
-        var supplier = p.suppliers.filter(function (x) {
-          return x.id === o.supplier_id;
-        })[0];
-        items.push({
-          audience: 'supplier',
-          who: supplier ? supplier.name : '',
-          what: 'Owed, with no arrival date promised',
-          about:
-            (o.reference || 'Order #' + o.contract_id) +
-            (o.outstanding ? ' · ' + figure(o.outstanding).text : ''),
-          days: null,
-          href: o.url,
-          program: p.name,
-        });
+      (p.chase || []).forEach(function (i) {
+        items.push(i);
       });
     });
     return items;
@@ -1070,10 +1014,11 @@
         h +=
           '<div class="pm-row"><div class="min-w-0">' +
           '<div class="text-gray-900">' +
-          (i.who ? '<b>' + esc(i.who) + '</b> · ' : '') +
-          esc(i.what) +
+          esc(i.ask || i.what) +
           '</div>' +
           '<div class="pm-muted">' +
+          esc(i.what) +
+          ' · ' +
           esc(i.about) +
           (programs.length > 1 ? ' · ' + esc(i.program) : '') +
           '</div>' +
@@ -1103,8 +1048,7 @@
           .map(function (i) {
             return (
               '- ' +
-              (i.who ? i.who + ': ' : '') +
-              i.what +
+              (i.ask || i.what) +
               ' -- ' +
               i.about +
               (i.days != null ? ' (' + i.days + ' days)' : '')

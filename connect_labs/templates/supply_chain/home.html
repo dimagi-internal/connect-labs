@@ -2,7 +2,8 @@
 {% load supply_chain_extras %}
 
 {% comment %}
-All procurements (standing.py): one row per tender in progress and per active
+The programme at a glance: its next step, what to chase, how distribution
+stands, and every procurement (standing.py): one row per tender in progress and per active
 order, with its stage on the six steps, its next move and whose it is -- the
 moves from moves.py, the same lists the tender page shows. Ordered by last
 change, not ranked. The chain's counts, the checks and the full lists of
@@ -14,14 +15,14 @@ tenders and orders sit folded below.
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
     <h3 class="text-lg font-semibold text-blue-900 mb-1">No program selected</h3>
-    <p class="text-sm text-amber-900">Choose a program to see its procurements.</p>
+    <p class="text-sm text-amber-900">Choose a program to see its overview.</p>
   </div>
 {% else %}
 <div class="flex flex-col gap-5" data-testid="overview">
   <div class="flex flex-wrap items-end justify-between gap-4">
     <div class="flex flex-col gap-1">
       <div class="text-xs uppercase tracking-wide text-gray-600" data-testid="program-heading">{{ program_heading }}</div>
-      <h1 class="text-brand-deep-purple text-2xl font-semibold">Procurements</h1>
+      <h1 class="text-brand-deep-purple text-2xl font-semibold">Overview</h1>
       {% if supply_standing.role == "operator" %}
       <p class="text-sm text-amber-900" data-testid="standing-note">You are acting as platform support{% if supply_standing.runner %} for {{ supply_standing.runner.name }}{% endif %}. What you record is theirs, and history keeps your name.</p>
       {% elif supply_standing.role == "partner" %}
@@ -43,6 +44,9 @@ tenders and orders sit folded below.
   </div>
   {% include "supply_chain/_src_legend.html" with no_calc=1 %}
 
+  {% include "supply_chain/_overview_panels.html" %}
+
+  <h2 class="text-brand-deep-purple text-lg font-semibold" data-testid="buying-heading">Buying: tenders and orders</h2>
   <section id="supply-standing" class="border-brand-border-light overflow-hidden rounded-lg border bg-white" aria-label="All procurements">
     <div class="max-w-full overflow-x-auto" tabindex="0" role="region" aria-label="All procurements, scrolls sideways">
       <table data-testid="standing-table" class="phone-cards w-full min-w-[960px] table-fixed text-sm">
@@ -63,6 +67,7 @@ tenders and orders sit folded below.
                 <span class="text-xs text-gray-600">{% if row.kind == "tender" %}Tender{% else %}Order{% endif %}</span>
                 <a href="{{ row.url }}" class="text-brand-indigo text-[15px] font-semibold hover:underline">{{ row.title }}</a>
                 {% if row.sub %}<span class="text-xs text-gray-600" data-testid="row-sub">{{ row.sub }}</span>{% endif %}
+                {% if row.kind == "order" %}{% with model=buying_models|dictkey:row.contract_id %}{% if model %}<span class="text-xs text-gray-600" data-testid="row-buying-model">{{ model }}</span>{% endif %}{% endwith %}{% endif %}
               </div>
             </td>
             <td class="phone-lead phone-wide px-3 py-4" data-label="Stage">

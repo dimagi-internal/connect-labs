@@ -68,6 +68,11 @@ omissions.
     </div>
   {% endif %}
 
+  <section class="mb-6" data-testid="portfolio-chase-list" aria-label="To chase">
+    <h2 class="text-lg font-semibold text-gray-900 mb-2">To chase, across these programmes <span class="text-sm font-normal text-gray-600">{{ chase_count }}</span></h2>
+    {% include "supply_chain/_chase_list.html" with chase=chase multi=True %}
+  </section>
+
   {% for row in rows %}
     <section data-programme-id="{{ row.program_id }}"
              class="bg-white border border-gray-200 rounded-lg mb-5 overflow-hidden">
