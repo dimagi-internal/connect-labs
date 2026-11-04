@@ -87,11 +87,18 @@ def partners_set_up(points, contracts, exclude_org_ids=()) -> tuple[int, int]:
     return len(partners & holders), len(partners)
 
 
-def next_step(*, tenders, contracts, points, exclude_org_ids=(), today: date | None = None) -> dict:
+def next_step(
+    *, tenders, contracts, points, exclude_org_ids=(), today: date | None = None, tender_replies=None
+) -> dict:
     """The programme's next step as {"line", "segments", "next"}.
 
     "Partners: 3 of 5 set up · Tender: not created · Needed by Feb 2027, start by early Dec".
     `segments` are the parts of the line, `next` is the one thing to do now.
+
+    A tender that is collecting quotes comes first even when orders exist: a
+    re-quote opened after the first order is the live work, and "every order is
+    received" would send the reader to the wrong page. `tender_replies` is
+    {tender id: (suppliers asked, suppliers silent)}, for the sentence.
     """
     today = today or date.today()
     set_up, partners = partners_set_up(points, contracts, exclude_org_ids)
@@ -112,6 +119,8 @@ def next_step(*, tenders, contracts, points, exclude_org_ids=(), today: date | N
 
         split_set = order_set(tender, [c for c in contracts if c.get("tender_id") == tender["id"]])
 
+    collecting = max((t for t in live if t.get("status") == "open"), key=lambda t: t["id"], default=None)
+
     if placed:
         text = f"Orders: {len(placed)} placed"
         if split_set and split_set["text"]:
@@ -128,6 +137,14 @@ def next_step(*, tenders, contracts, points, exclude_org_ids=(), today: date | N
             nxt = "Place an order for " + ", ".join(split_set["waiting_partners"])
         elif partners and set_up < partners:
             nxt = "Set up the partners who have no warehouse yet, then record each delivery"
+        if collecting is not None:
+            name = collecting.get("label") or "The open tender"
+            asked, silent = (tender_replies or {}).get(collecting["id"], (0, 0))
+            segments.append(f"{name}: collecting quotes")
+            if asked and silent:
+                nxt = f"{name}: {asked - silent} of {asked} suppliers answered; chase the other {silent}"
+            else:
+                nxt = f"{name}: chase the suppliers who have not replied"
     elif tender is None:
         segments.append("Tender: not created")
         nxt = "Create a tender to ask suppliers for quotes"

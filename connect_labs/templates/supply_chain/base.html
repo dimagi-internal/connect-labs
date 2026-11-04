@@ -12,6 +12,9 @@ resolution would let it replace this whole block, nav included, rather than
 slot into it.
 {% endcomment %}
 
+{% comment %}The browser tab and history say where you are: "Overview — Supply" (the active tab's name), not the site-wide "Connect". A page can still set its own title block. The H1 structure of the shared base is left alone.{% endcomment %}
+{% block title %}{% for tab in supply_tabs %}{% if tab.active %}{{ tab.label }} — {% endif %}{% endfor %}Supply{% endblock %}
+
 {% block content %}
 {% comment %}Anything scrolled to -- by a link's anchor (#outreach, #owed, #history, an
 order's #fulfilment / #cost / #match / #where-now, a draft's anchor), by keyboard focus,
