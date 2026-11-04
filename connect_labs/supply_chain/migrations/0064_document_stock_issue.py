@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("supply_chain", "0062_stock_issues_custodians_expiry"),
+        ("supply_chain", "0063_partner_plans"),
     ]
 
     operations = [
