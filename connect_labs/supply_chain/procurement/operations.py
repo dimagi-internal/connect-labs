@@ -7,7 +7,7 @@ from datetime import date
 
 from django.db.models import Q
 
-from connect_labs.supply_chain import records
+from connect_labs.supply_chain import award_policy, records
 from connect_labs.supply_chain.operations import (
     _OUTREACH_DATA,
     _OUTREACH_DATA_CREATE,
@@ -978,6 +978,9 @@ def award_create(access, tender_id, quote_id, rationale="", decided_by=None, dec
         )
     decided = _decided_on(decided_on)
     snapshot = tender_compare(access, tender_id, quote.commodity_slug)
+    problem = award_policy.reason_problem(access._require_program(), snapshot, quote_id, rationale)
+    if problem:
+        raise award_policy.AwardReasonRequired(problem)
     return record(
         access.create_award(
             {
