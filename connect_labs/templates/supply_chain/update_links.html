@@ -1,4 +1,5 @@
 {% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
 
 {% comment %}
 Links issued to organisations that have no labs login, so they can record
@@ -12,7 +13,7 @@ apart. The token is shown once, when the link is issued.
 
 <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
   <div>
-    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Update links</h1>
+    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">{% term "update links" "Update links" %}</h1>
     <p class="text-sm text-gray-600 mt-1 max-w-2xl">
       Private links that let an organisation with no labs login record its own part — a supplier or
       stock-holding partner its orders, deliveries and stock, an approver its answer.

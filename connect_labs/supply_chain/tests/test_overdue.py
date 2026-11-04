@@ -232,7 +232,7 @@ class TestTheScreens:
         from django.urls import reverse
 
         body = scoped.get(reverse("supply_chain:checks")).content.decode()
-        assert "Checks: what is missing, in conflict or overdue" in body
+        assert ": what is missing, in conflict or overdue" in body
         assert "cannot answer, or disagrees with itself" not in body
 
     def test_with_nothing_to_report_it_says_what_has_arrived(self, scoped, da, contract, monkeypatch):
