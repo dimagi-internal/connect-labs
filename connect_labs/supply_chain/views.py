@@ -1489,6 +1489,11 @@ class SupplierDirectoryView(OperationBase):
             dates = [q["received_on"] for q in own_quotes if q.get("received_on")]
             dates += [o["sent_on"] for o in own_outreach if o.get("sent_on")]
             supplier["last_activity"] = max(dates) if dates else None
+            # A missing certificate only matters once we ask the supplier to quote or buy from them; on
+            # everyone else it reads "3 not on file" down the whole column and tells nobody apart. The
+            # supplier's own page keeps the full list.
+            if not (supplier["invitation_count"] or supplier["quote_count"] or supplier["contract_count"]):
+                supplier["usual_lacks"] = []
         return context
 
 
