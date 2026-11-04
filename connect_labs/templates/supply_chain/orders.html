@@ -9,6 +9,7 @@
   </div>
 {% else %}
 
+{% include "supply_chain/_purchase_guide.html" %}
 <div class="flex flex-wrap items-start justify-between gap-4">
   <h2 class="text-lg font-semibold text-brand-indigo mb-1">Orders</h2>
   {% if not supply_as_of %}{# a past day is read-only #}
