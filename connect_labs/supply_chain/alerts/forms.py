@@ -100,7 +100,7 @@ class AlertSubscriptionForm(forms.Form):
     )
     recipient = forms.ChoiceField(
         label=_("Send to"),
-        choices=[("me", _("Me")), ("email", _("An email address"))],
+        choices=[("me", _("Me")), ("email", _("An email address")), ("connect_message", _("A Connect message"))],
         initial="me",
         widget=forms.RadioSelect,
     )
@@ -111,6 +111,17 @@ class AlertSubscriptionForm(forms.Form):
         help_text=_(
             "Anyone with an address: you, a colleague, a partner or a donor. The email carries the facts "
             "and a link to each record."
+        ),
+    )
+    recipient_connect_username = forms.CharField(
+        label=_("Connect username"),
+        required=False,
+        max_length=64,
+        widget=forms.TextInput(attrs={**INPUT, "placeholder": "their Connect username"}),
+        help_text=_(
+            "The person's username in the Connect app. The message is sent as you, through Open Chat Studio, "
+            "so it needs your Open Chat Studio connection; they must have agreed to messages in the Connect "
+            "app. If it cannot be sent, the sent log says why."
         ),
     )
     recipient_name = forms.CharField(
@@ -139,7 +150,12 @@ class AlertSubscriptionForm(forms.Form):
                 "supply_point": subscription.supply_point_id,
                 "commodity": subscription.commodity_id,
                 "partner": subscription.partner_org_id,
-                "recipient": "me" if subscription.recipient_user_id else "email",
+                "recipient": (
+                    "me"
+                    if subscription.recipient_user_id
+                    else "connect_message" if subscription.channel == "connect_message" else "email"
+                ),
+                "recipient_connect_username": subscription.recipient_connect_username,
                 "recipient_email": subscription.recipient_email,
                 "recipient_name": subscription.recipient_name,
                 "cadence": subscription.cadence,
@@ -166,6 +182,7 @@ class AlertSubscriptionForm(forms.Form):
             self.fields["recipient"].choices = [
                 ("me", _("Me (%(email)s)") % {"email": user.email}),
                 ("email", _("An email address")),
+                ("connect_message", _("A Connect message")),
             ]
         # Someone else's alert: offer to leave its recipient alone, and make
         # that the default, so changing its cadence does not quietly move it
@@ -209,7 +226,7 @@ class AlertSubscriptionForm(forms.Form):
                 str(_("Who hears, and how often")),
                 Row(
                     Column("recipient"),
-                    Column("recipient_email", "recipient_name"),
+                    Column("recipient_email", "recipient_connect_username", "recipient_name"),
                     css_class="grid md:grid-cols-2 gap-x-6",
                 ),
                 "cadence",
@@ -225,6 +242,12 @@ class AlertSubscriptionForm(forms.Form):
             raise forms.ValidationError(_("Pick at least one check or movement — an alert has to watch something."))
         if cleaned.get("recipient") == "email" and not cleaned.get("recipient_email"):
             self.add_error("recipient_email", _("Give the address to send to."))
+        if cleaned.get("recipient") == "connect_message":
+            if not cleaned.get("recipient_connect_username"):
+                self.add_error("recipient_connect_username", _("Give the Connect username to message."))
+            user = getattr(self.access, "user", None) if self.access else None
+            if not getattr(user, "pk", None):
+                self.add_error("recipient", _("A Connect message is sent as you, so you need to be signed in."))
         if cleaned.get("recipient") == "me":
             user = getattr(self.access, "user", None) if self.access else None
             if not getattr(user, "pk", None):
@@ -242,8 +265,12 @@ class AlertSubscriptionForm(forms.Form):
             "partner_org_id": cleaned["partner"].pk if cleaned.get("partner") else None,
             "cadence": cleaned["cadence"],
         }
+        data["channel"] = "connect_message" if cleaned.get("recipient") == "connect_message" else "email"
         if cleaned.get("recipient") == "keep":
-            pass  # the recipient is left as it is
+            data.pop("channel")  # the recipient (and how it is reached) is left as it is
+        elif cleaned.get("recipient") == "connect_message":
+            data["recipient_connect_username"] = cleaned["recipient_connect_username"].strip()
+            data["recipient_name"] = (cleaned.get("recipient_name") or "").strip()
         elif cleaned.get("recipient") == "me":
             data["recipient_user_id"] = self.access.user.pk
         else:

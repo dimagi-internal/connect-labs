@@ -1,22 +1,23 @@
-"""How a notice leaves: one interface, email shipped, WhatsApp declared but not yet connected.
+"""How a notice leaves: one interface, two channels -- email, and a Connect message.
 
 A subscription names its `channel`. Email is delivered by `service.deliver` through labs' own sender
-(`utils.email`, docs/OUTBOUND_EMAIL.md). WhatsApp is the channel Sophie asked for beside email; labs has
-no WhatsApp provider to reuse today:
+(`utils.email`, docs/OUTBOUND_EMAIL.md).
 
-  * `utils/sms.py` is Twilio SMS for Connect ID one-time codes (a messaging service and sender ids
-    chosen for that), not a WhatsApp business sender with approved templates;
-  * Open Chat Studio is reached as the signed-in user's OAuth session
-    (`labs/integrations/ocs/api_client.py`, `trigger_bot`), not as a standing system sender.
+A **Connect message** goes to a person's Connect (PersonalID) username, through Open Chat Studio's
+`commcare_connect` channel -- the same delivery update links use (`update_links/delivery.py`). Labs calls
+Open Chat Studio *as a person*, so the sender is the person who set the alert up (`created_by`); there is no
+service identity. Every way it can fail is a status the log shows, with a plain reason, never a silent drop
+and never a claimed send:
 
-So a WhatsApp subscription can be set up today, and each notice for it is logged as
-`no_channel` rather than silently dropped or pretended sent. Connecting a provider means
-implementing `WhatsAppChannel.send` and nothing else here changes.
+  * `no_connection`  the sender's Open Chat Studio connection is missing or has expired;
+  * `no_chatbot`     no chatbot is chosen to send through (`SUPPLY_LINK_OCS_BOT`, as update links);
+  * `refused`        Open Chat Studio declined it -- its own reason is kept, e.g. the person has not
+                     agreed to messages in the Connect app.
 """
 
 from __future__ import annotations
 
-CHANNEL_NAMES = ("email", "whatsapp")
+CHANNEL_NAMES = ("email", "connect_message")
 
 
 class Channel:
@@ -28,8 +29,8 @@ class Channel:
     def available(self) -> tuple[bool, str]:
         raise NotImplementedError
 
-    def send(self, address: str, subject: str, text: str) -> str:
-        """Send one message. Returns the delivery status to log: `queued` when handed on."""
+    def send(self, subscription, address: str, subject: str, text: str) -> tuple[str, str]:
+        """Send one message. Returns (delivery status to log, plain note): `queued` when handed on."""
         raise NotImplementedError
 
 
@@ -46,20 +47,36 @@ class EmailChannel(Channel):
     # Email is sent by service.deliver, which keeps the HTML body and the programme-wide lock.
 
 
-class WhatsAppChannel(Channel):
-    name = "whatsapp"
-    label = "WhatsApp"
-    address_field = "recipient_phone"
-    reason = "no WhatsApp provider is connected to labs yet"
+class ConnectMessageChannel(Channel):
+    name = "connect_message"
+    label = "Connect message"
+    address_field = "recipient_connect_username"
 
     def available(self):
-        return False, self.reason
+        return True, ""
 
-    def send(self, address, subject, text):
-        return "no_channel"
+    def send(self, subscription, address, subject, text):
+        from connect_labs.supply_chain.update_links import delivery
+
+        sender = subscription.created_by
+        if sender is None or not getattr(sender, "pk", None):
+            return (
+                "no_connection",
+                "The person who set this alert up is no longer on labs, so there is nobody to send as.",
+            )
+        bot = delivery.default_bot()
+        if not bot:
+            return "no_chatbot", "No chatbot has been chosen to send Connect messages through."
+        try:
+            delivery.send_text(sender, bot=bot, username=address, text=f"{subject}\n\n{text}")
+        except delivery.NotConnected as error:
+            return "no_connection", str(error)
+        except delivery.DeliveryError as error:
+            return "refused", str(error)
+        return "queued", ""
 
 
-_CHANNELS = {c.name: c for c in (EmailChannel(), WhatsAppChannel())}
+_CHANNELS = {c.name: c for c in (EmailChannel(), ConnectMessageChannel())}
 
 
 def channel_for(name: str) -> Channel:

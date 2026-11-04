@@ -15,6 +15,7 @@ from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain import checks
 from connect_labs.supply_chain.alerts import service
 from connect_labs.supply_chain.alerts.models import AlertNotice, AlertSubscription
+from connect_labs.supply_chain.alerts.operations import serialize_subscription
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.models import SupplyPoint
 from connect_labs.supply_chain.operations import call_operation
@@ -114,22 +115,128 @@ class TestPartnerScoping:
         assert mine.partner_org_id == a.pk and mine.cadence == "immediate"
 
 
-class TestChannels:
-    def test_a_whatsapp_alert_needs_a_phone_number(self, da):
-        with pytest.raises(ValueError, match="phone number"):
-            op(da, "alert_subscription_create", data={"check_kinds": ["stock_never_reported"], "channel": "whatsapp"})
+class TestConnectMessageChannel:
+    """A Connect message goes to a Connect username, as the person who set the alert up."""
 
-    def test_a_whatsapp_notice_is_logged_as_not_sent_never_as_sent(self, da, world, sent):
+    DELIVERY = "connect_labs.supply_chain.update_links.delivery"
+
+    @pytest.fixture
+    def creator(self, django_user_model):
+        return django_user_model.objects.create(username="sender", email="sender@example.org", name="Sam Sender")
+
+    @pytest.fixture
+    def alert(self, da, creator):
         sub = op(
+            SupplyDataAccess(access_token="unused", program_id=PROGRAM, user=creator, caller=SYSTEM),
+            "alert_subscription_create",
+            data={
+                "check_kinds": ["stock_never_reported"],
+                "channel": "connect_message",
+                "recipient_connect_username": "amina.k",
+            },
+        )
+        return AlertSubscription.objects.get(pk=sub["id"])
+
+    def test_it_needs_a_connect_username(self, da):
+        with pytest.raises(ValueError, match="Connect username"):
+            op(
+                da,
+                "alert_subscription_create",
+                data={"check_kinds": ["stock_never_reported"], "channel": "connect_message"},
+            )
+
+    def test_the_alert_says_who_it_is_sent_as(self, alert):
+        serialized = serialize_subscription(alert)
+        assert serialized["channel"] == "connect_message"
+        assert serialized["recipient_connect_username"] == "amina.k"
+        assert serialized["sent_as"] == "Sam Sender"
+
+    def test_it_is_sent_through_the_update_link_delivery_as_the_creator(self, alert, creator, world, sent, settings):
+        settings.SUPPLY_LINK_OCS_BOT = "bot-1"
+        with patch(f"{self.DELIVERY}.send_text", return_value={}) as send_text:
+            service.run_alerts()
+        notices = AlertNotice.objects.filter(subscription=alert)
+        assert notices and {n.delivery for n in notices} == {"queued"}
+        assert {n.delivery_note for n in notices} == {""}
+        args = send_text.call_args
+        assert args.args[0] == creator
+        assert args.kwargs["bot"] == "bot-1" and args.kwargs["username"] == "amina.k"
+        assert sent == [], "a Connect message is not also an email"
+
+    def test_an_expired_connection_is_logged_with_its_reason_and_email_still_goes(
+        self, da, alert, world, sent, settings
+    ):
+        from connect_labs.supply_chain.update_links.delivery import NotConnected
+
+        settings.SUPPLY_LINK_OCS_BOT = "bot-1"
+        _subscribe(da, check_kinds=["stock_never_reported"], cadence="immediate", recipient_email="run@example.org")
+        reason = "Open Chat Studio is not connected for you — connect it, then try again."
+        with patch(f"{self.DELIVERY}.send_text", side_effect=NotConnected(reason)):
+            service.run_alerts()
+        notice = AlertNotice.objects.filter(subscription=alert).first()
+        assert notice.delivery == "no_connection" and notice.delivery_note == reason
+        assert sent, "the email alert is not held up by the failed Connect message"
+
+    def test_no_chatbot_chosen_is_logged_plainly(self, alert, world, settings):
+        settings.SUPPLY_LINK_OCS_BOT = ""
+        with patch(f"{self.DELIVERY}.send_text") as send_text:
+            service.run_alerts()
+        notice = AlertNotice.objects.filter(subscription=alert).first()
+        assert notice.delivery == "no_chatbot" and "chatbot" in notice.delivery_note
+        send_text.assert_not_called()
+
+    def test_a_recipient_who_has_not_agreed_is_reported_as_open_chat_studios_own_reason(self, alert, world, settings):
+        from connect_labs.supply_chain.update_links.delivery import DeliveryError
+
+        settings.SUPPLY_LINK_OCS_BOT = "bot-1"
+        refusal = "Open Chat Studio refused it: the user has not consented"
+        with patch(f"{self.DELIVERY}.send_text", side_effect=DeliveryError(refusal)):
+            service.run_alerts()
+        notice = AlertNotice.objects.filter(subscription=alert).first()
+        assert notice.delivery == "refused" and notice.delivery_note == refusal
+
+    def test_an_alert_whose_creator_has_gone_is_logged_not_dropped(self, da, world, settings):
+        settings.SUPPLY_LINK_OCS_BOT = "bot-1"
+        op(
             da,
             "alert_subscription_create",
-            data={"check_kinds": ["stock_never_reported"], "channel": "whatsapp", "recipient_phone": "+10000000000"},
+            data={
+                "check_kinds": ["stock_never_reported"],
+                "channel": "connect_message",
+                "recipient_connect_username": "x.y",
+            },
         )
-        assert sub["channel"] == "whatsapp" and sub["recipient_phone"] == "+10000000000"
-        service.run_alerts()
-        notices = AlertNotice.objects.all()
-        assert notices and {n.delivery for n in notices} == {"no_channel"}
-        assert sent == [], "no email goes out for a WhatsApp alert"
+        with patch(f"{self.DELIVERY}.send_text") as send_text:
+            service.run_alerts()
+        assert {n.delivery for n in AlertNotice.objects.all()} == {"no_connection"}
+        send_text.assert_not_called()
+
+    def test_partner_setup_can_message_connect_usernames(self, da, world):
+        a, *_ = world
+        made = op(
+            da, "alert_partner_setup", partners=[{"org_id": a.pk, "emails": [], "connect_usernames": ["amina.k"]}]
+        )
+        assert made["count"] == 1 and made["created"][0]["channel"] == "connect_message"
+
+    def test_old_whatsapp_alerts_become_connect_message_alerts_keeping_their_number(self):
+        import importlib
+
+        from django.apps import apps
+
+        migration = importlib.import_module("connect_labs.supply_chain.migrations.0069_alert_connect_message_channel")
+        old = AlertSubscription.objects.create(
+            program_id=PROGRAM,
+            check_kinds=["stock_never_reported"],
+            channel="whatsapp",
+            recipient_connect_username="+10000000000",
+        )
+        mail = AlertSubscription.objects.create(
+            program_id=PROGRAM, check_kinds=["stock_never_reported"], recipient_email="a@example.org"
+        )
+        migration.whatsapp_to_connect_message(apps, None)
+        old.refresh_from_db(), mail.refresh_from_db()
+        assert old.channel == "connect_message" and old.recipient_connect_username == "+10000000000"
+        assert mail.channel == "email"
 
 
 class TestPlanningChecks:

@@ -175,8 +175,13 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   delivery when either end is theirs. This narrows what a page lists; it is not an access boundary.
 - **A partner's alert hears about its own places only** (`AlertSubscription.partner_org`); a check that
   touches none of its places is not sent to it. An alert with no partner is the summary across partners.
-- **A channel that is not connected says so.** Email is shipped; WhatsApp is a declared channel with no
-  provider behind it (needs a decision), and its notices are logged `no_channel`, never dropped or claimed sent.
+- **Alerts never target WhatsApp (owner, 2026-11-04); the second channel is a Connect message.** Its recipient is
+  a person's Connect (PersonalID) username and delivery is `update_links/delivery.send_text` through the same
+  chatbot update links use. It is sent as the person who set the alert up (`created_by`, shown as "Sent as <name>"
+  on the alert). When that cannot happen the notice is logged with a plain reason, never dropped or claimed sent:
+  `no_connection` (their Open Chat Studio connection is missing or expired), `no_chatbot`, or `refused` carrying
+  Open Chat Studio's own reason (e.g. the recipient has not agreed to messages). Email alerts are unaffected.
+  Old WhatsApp alerts became Connect-message alerts with their number kept in the username box to correct.
 - **Planning alerts run the forecast, so a caller must ask for them by kind** (`delivery_after_stockout`,
   `tender_start_by`); the default list of checks does not pay for them.
 - **A delivery to a shared facility is a suggestion, sized from the forecast** (a few days of what its field

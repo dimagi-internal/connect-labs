@@ -92,7 +92,7 @@ The log says how each notice left, including when it did not: "email off" and
               </td>
               <td class="px-4 py-2 text-gray-700">
                 {{ sub.recipient }}
-                {% if sub.channel == "whatsapp" %}<div class="text-xs text-gray-600">{% if sub.recipient_name %}{{ sub.recipient_phone }} · {% endif %}by WhatsApp (not connected yet)</div>{% elif sub.recipient_email %}<div class="text-xs text-gray-600">{% if sub.recipient_name %}{{ sub.recipient_email }} · {% endif %}by email</div>{% endif %}
+                {% if sub.channel == "connect_message" %}<div class="text-xs text-gray-600">{% if sub.recipient_name %}{{ sub.recipient_connect_username }} · {% endif %}by Connect message · Sent as {% if sub.sent_as %}{{ sub.sent_as }}{% else %}nobody (the person who set it up has left){% endif %}</div>{% elif sub.recipient_email %}<div class="text-xs text-gray-600">{% if sub.recipient_name %}{{ sub.recipient_email }} · {% endif %}by email</div>{% endif %}
               </td>
               <td class="px-4 py-2 text-gray-700">
                 {% if sub.cadence == "daily_digest" %}once a day{% else %}as it happens{% endif %}
@@ -165,6 +165,9 @@ The log says how each notice left, including when it did not: "email off" and
                   <div class="text-xs text-gray-600 mt-0.5">to {{ notice.sent_to_name }}{% if notice.sent_to_name != notice.sent_to %} · {{ notice.sent_to }}{% endif %}</div>
                 {% elif notice.delivery == "pending" %}
                   <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">in the next digest</span>
+                {% elif notice.delivery == "no_connection" or notice.delivery == "no_chatbot" or notice.delivery == "refused" %}
+                  <span class="px-2 py-0.5 rounded-full text-xs bg-message-warning text-message-warning-text">not sent</span>
+                  <div class="text-xs text-gray-600 mt-0.5">{{ notice.delivery_note }}</div>
                 {% elif notice.delivery == "no_channel" %}
                   <span class="px-2 py-0.5 rounded-full text-xs bg-message-warning text-message-warning-text">not sent — that channel is not connected yet</span>
                 {% elif notice.delivery == "email_disabled" %}

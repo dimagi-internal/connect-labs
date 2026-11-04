@@ -28,12 +28,21 @@ CADENCES = ("immediate", "daily_digest")
 # bounce lands on the SNS topic (docs/OUTBOUND_EMAIL.md). The other two are
 # the honest answers when nothing was sent at all, so the log never claims a
 # delivery that did not happen -- the failure mode the console backend had.
-DELIVERY_STATUSES = ("pending", "queued", "email_disabled", "no_address", "no_channel")
+DELIVERY_STATUSES = (
+    "pending",
+    "queued",
+    "email_disabled",
+    "no_address",
+    "no_channel",  # old log rows only: a channel with no sender behind it
+    "no_connection",  # a Connect message whose sender's Open Chat Studio connection is missing or expired
+    "no_chatbot",  # a Connect message with no chatbot chosen to send through
+    "refused",  # Open Chat Studio declined it; the note carries its reason
+)
 
 NOTICE_KINDS = ("check", "movement")
 
-# How a notice leaves (alerts/channels.py): email is shipped, WhatsApp is declared and waits for a provider.
-CHANNELS = ("email", "whatsapp")
+# How a notice leaves (alerts/channels.py): email, or a Connect message to a person's Connect username.
+CHANNELS = ("email", "connect_message")
 
 
 def _choices(values):
@@ -81,8 +90,9 @@ class AlertSubscription(TimestampedModel):
     # for an email recipient -- a labs user already has a name. Without it the
     # alerts list and the sent log named an address, not the person it tells.
     recipient_name = models.CharField(max_length=255, blank=True, default="")
-    # A WhatsApp recipient is a phone number, not an address; exactly one of user, email, phone is set.
-    recipient_phone = models.CharField(max_length=32, blank=True, default="")
+    # A Connect-message recipient is a person's Connect (PersonalID) username; exactly one of user, email,
+    # username is set. The message is sent as `created_by`.
+    recipient_connect_username = models.CharField(max_length=64, blank=True, default="")
     channel = models.CharField(max_length=16, default="email", choices=_choices(CHANNELS))
     # Narrows to one partner's places (and the field workers below them), like supply_point does for one
     # place: that partner's staff hear about their own facilities and workers only. Blank is the whole
@@ -106,12 +116,12 @@ class AlertSubscription(TimestampedModel):
         ordering = ["-created_at"]
         constraints = [
             models.CheckConstraint(
-                condition=(Q(recipient_user__isnull=False) & Q(recipient_email="") & Q(recipient_phone=""))
+                condition=(Q(recipient_user__isnull=False) & Q(recipient_email="") & Q(recipient_connect_username=""))
                 | (
                     Q(recipient_user__isnull=True)
                     & (
-                        (~Q(recipient_email="") & Q(recipient_phone=""))
-                        | (Q(recipient_email="") & ~Q(recipient_phone=""))
+                        (~Q(recipient_email="") & Q(recipient_connect_username=""))
+                        | (Q(recipient_email="") & ~Q(recipient_connect_username=""))
                     )
                 ),
                 name="alert_subscription_has_one_recipient",
@@ -130,7 +140,7 @@ class AlertSubscription(TimestampedModel):
         """
         if self.recipient_user_id:
             return (self.recipient_user.email or "").strip()
-        return (self.recipient_phone if self.channel == "whatsapp" else self.recipient_email).strip()
+        return (self.recipient_connect_username if self.channel == "connect_message" else self.recipient_email).strip()
 
     @property
     def recipient_label(self) -> str:
@@ -145,7 +155,7 @@ class AlertSubscription(TimestampedModel):
             if name and name != user.username:
                 return name
             return user.email or user.username
-        return self.recipient_name or self.recipient_email or self.recipient_phone
+        return self.recipient_name or self.recipient_email or self.recipient_connect_username
 
 
 class AlertCheckState(models.Model):
@@ -198,6 +208,8 @@ class AlertNotice(models.Model):
     delivery = models.CharField(max_length=16, default="pending", choices=_choices(DELIVERY_STATUSES))
     sent_at = models.DateTimeField(null=True, blank=True)
     sent_to = models.CharField(max_length=254, blank=True, default="")
+    # Why a notice was not sent, in plain words, when the status alone does not say (a Connect message).
+    delivery_note = models.CharField(max_length=300, blank=True, default="")
 
     class Meta:
         ordering = ["-detected_at", "-id"]

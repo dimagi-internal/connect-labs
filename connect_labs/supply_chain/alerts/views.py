@@ -92,6 +92,9 @@ _NOT_SENT = {
     "email_disabled": "not sent — email is off",
     "no_address": "not sent — no address",
     "no_channel": "not sent — that channel is not connected yet",
+    "no_connection": "not sent — the Connect message could not be sent as its sender",
+    "no_chatbot": "not sent — no chatbot is chosen for Connect messages",
+    "refused": "not sent — the Connect message was refused",
 }
 
 
@@ -137,8 +140,9 @@ class AlertCreateView(_AlertScreen):
     operation = "alert_subscription_create"
     title = "New alert"
     intro = (
-        "Email someone when a check becomes true — stock below its minimum, a shipment overdue — or when "
-        "stock moves. Each email states what is now true and links to the record. It carries no advice "
+        "Email someone, or send them a Connect message, when a check becomes true — stock below its minimum, "
+        "a shipment overdue — or when stock moves. Each message states what is now true and links to the record. "
+        "It carries no advice "
         "and ranks nothing."
     )
     submit_label = "Create alert"
