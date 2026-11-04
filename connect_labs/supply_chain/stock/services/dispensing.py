@@ -147,6 +147,14 @@ def _values(values, what) -> list[str]:
     return clean
 
 
+# How the forecast sizes a course and a day's ration, set on the case rule by the programme.
+# Course: "expected" (from children who finished, the protocol's size as the upper limit and the
+# early fallback) or "protocol" (always the protocol's size). Dose: "protocol" (the protocol's
+# daily ration) or "delivered" (what visits show children actually get, once enough are seen).
+COURSE_BASES = ("expected", "protocol")
+DOSE_BASES = ("protocol", "delivered")
+
+
 def validate_cases(cases) -> dict:
     """What a CASE is on this opportunity, as it will be stored; {} for none.
 
@@ -156,7 +164,9 @@ def validate_cases(cases) -> dict:
     `exit`, and the exits that mean the course was finished are `complete`
     (what a measured course length is read from). A case not seen for
     `lost_after_days` is lost, whatever it last said. Read by the stock
-    forecast; nothing here changes what the ledger posts.
+    forecast; nothing here changes what the ledger posts. `course_basis` and
+    `dose_basis` (optional) are the programme's choice of how the forecast
+    sizes a course and a day's ration: see COURSE_BASES / DOSE_BASES.
     """
     if not cases:
         return {}
@@ -181,6 +191,12 @@ def validate_cases(cases) -> dict:
     lost = cases.get("lost_after_days", LOST_AFTER_DAYS)
     if isinstance(lost, bool) or not isinstance(lost, int) or not 1 <= lost <= 365:
         raise ValueError("lost_after_days must be a whole number of days from 1 to 365")
+    settings = {}
+    for key, allowed in (("course_basis", COURSE_BASES), ("dose_basis", DOSE_BASES)):
+        if cases.get(key) is not None:
+            if cases[key] not in allowed:
+                raise ValueError(f"{key} must be one of {', '.join(allowed)}")
+            settings[key] = cases[key]
     return {
         "enrol": clean_enrol,
         "outcome": {
@@ -190,6 +206,7 @@ def validate_cases(cases) -> dict:
             "complete": complete,
         },
         "lost_after_days": lost,
+        **settings,
     }
 
 
