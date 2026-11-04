@@ -229,3 +229,39 @@ def test_the_tender_terms_name_it_the_same(da, world, client_in_program):
     terms = _text(re.search(r'data-testid="waiver-evidence"[^>]*>(.*?)</span>', body, re.S).group(1))
     assert terms == "Duty exemption not on file"
     assert "waiver document" not in body
+
+
+@pytest.mark.django_db
+class TestAnExistingDdpTenderWithNoStoredChoice:
+    """Sophie: the tender asks for DDP but duty still showed "Not settled"."""
+
+    def _legacy_ddp(self, world):
+        # As saved before the choice was filled in on save: DDP asked, nothing chosen.
+        Tender.objects.filter(pk=world["tender"]["id"]).update(incoterm_requested="DDP", duty_terms="")
+        return Tender.objects.get(pk=world["tender"]["id"])
+
+    def test_reads_as_the_supplier_delivering_duty_paid_without_writing_it(self, da, world):
+        tender = self._legacy_ddp(world)
+        assert tender.duty_terms == "supplier_ddp" and tender.duty_terms_derived
+        assert Tender.objects.filter(pk=tender.pk, duty_terms="").exists()
+
+    def test_the_tender_page_says_so_instead_of_not_chosen(self, da, world, client_in_program):
+        self._legacy_ddp(world)
+        body = html.unescape(_tender_page(client_in_program, world["tender"]["id"]))
+        assert "The supplier delivers duty paid" in body and 'data-testid="duty-terms-derived"' in body
+        assert "Choose who pays" not in body
+
+    def test_a_person_can_still_override_it(self, da, world):
+        self._legacy_ddp(world)
+        op(da, "tender_set_duty_terms", tender_id=world["tender"]["id"], duty_terms="buyer_waiver")
+        tender = Tender.objects.get(pk=world["tender"]["id"])
+        assert tender.duty_terms == "buyer_waiver" and not tender.duty_terms_derived
+
+    def test_confirming_the_derived_choice_records_it(self, da, world):
+        self._legacy_ddp(world)
+        op(da, "tender_set_duty_terms", tender_id=world["tender"]["id"], duty_terms="supplier_ddp")
+        assert Tender.objects.filter(pk=world["tender"]["id"], duty_terms="supplier_ddp").exists()
+
+    def test_other_delivery_terms_stay_unchosen(self, da, world):
+        Tender.objects.filter(pk=world["tender"]["id"]).update(incoterm_requested="DAP", duty_terms="")
+        assert Tender.objects.get(pk=world["tender"]["id"]).duty_terms == ""
