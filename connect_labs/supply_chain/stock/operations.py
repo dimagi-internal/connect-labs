@@ -586,7 +586,7 @@ _DISTRIBUTION_PLAN_DATA = _data_with(
     distributed_on=_DATE,
     reference={"type": "string"},
     lines={"type": "array", "items": _PLAN_LINE},
-    # Fill the lines from the stock forecast: each field worker's need for the coming week, less what
+    # Fill the lines from the saved stock plan (stock_plan_view): what to issue each field worker this week, less what
     # they hold. Give this or lines, not both.
     from_forecast={"type": "boolean"},
     item_id=ID,
@@ -626,8 +626,8 @@ _DISTRIBUTION_CONFIRM_DATA = _data_with(
     summary=(
         "Plan a handout run that has not happened: which store it leaves, who is to get how much. "
         "Nothing moves in the ledger; the planned quantities count as committed until the run is "
-        "confirmed. Give lines, or from_forecast to fill them from the stock forecast (each worker's "
-        "need for the coming week less what they hold). Confirm it with distribution_confirm."
+        "confirmed. Give lines, or from_forecast to fill them from the saved stock plan (the per-worker "
+        "what-to-issue of stock_plan_view; the flag keeps its old name). Confirm it with distribution_confirm."
     ),
     input_schema=obj({"data": _DISTRIBUTION_PLAN_DATA}, required=("data",)),
     is_write=True,

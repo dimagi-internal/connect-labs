@@ -368,8 +368,11 @@ def dosing_rows(program_id, item, fc: dict) -> list[dict]:
 # ---- everything the pages and the operation read ----------------------------------------
 
 
-def compute(program_id, item, *, on_date=None, horizon_weeks=8, course_size=None) -> dict:
-    """The whole planning picture for one item, as the saved plan shapes it."""
+def compute(program_id, item, *, on_date=None, horizon_weeks=8, course_size=None, opportunity_ids=None) -> dict:
+    """The whole planning picture for one item, as the saved plan shapes it.
+
+    `opportunity_ids` narrows it to those opportunities (a handout is planned for one); None is all.
+    """
     plan = saved_plan(program_id, item)
     values = plan_values(plan)
     fc = forecasting.forecast(
@@ -379,6 +382,7 @@ def compute(program_id, item, *, on_date=None, horizon_weeks=8, course_size=None
         horizon_weeks=horizon_weeks,
         course_size_fallback=course_size,
         enrolment_per_week=values["enrolment_per_flw_per_week"]["value"],
+        opportunity_ids=opportunity_ids,
     )
     rows = issue_rows(fc, values)
     return {

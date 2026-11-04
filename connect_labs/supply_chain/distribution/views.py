@@ -181,12 +181,18 @@ class DistributionPlanView(DistributionRecordView):
     form_class = DistributionPlanForm
     title = "Plan a handout"
     intro = (
-        "One store, one handout day, one product. Tick the box to fill the list from what the forecast says each "
-        "field worker needs this week, or type the list. Nothing leaves the store until you confirm what was "
+        "One store, one handout day, one product. Tick the box to fill the list from the plan's what-to-issue "
+        "for each field worker this week, or type the list. Nothing leaves the store until you confirm what was "
         "actually given: the planned amounts only count as promised until then."
     )
     submit_label = "Save the plan"
-    empty_message = "Tick the box to fill the list from the forecast, or add at least one row."
+    empty_message = "Tick the box to fill the list from the plan, or add at least one row."
+
+    def get_initial(self):
+        initial = super().get_initial()
+        if self.request.GET.get("from_plan"):
+            initial["from_forecast"] = True
+        return initial
 
     def workers(self):
         # A handout can go to a facility as well as to a field worker.

@@ -586,8 +586,7 @@ class StockRepositoryMixin:
 
         Nothing is posted to the ledger. The planned quantities are "committed" (promised, not
         gone) until the run is confirmed with `confirm_distribution`. With `from_forecast`, the
-        lines are what the forecast says each field worker needs for the coming week, less what
-        they hold (`distribution.issue_plan`).
+        lines are the saved plan's what-to-issue for each field worker (`distribution.issue_plan`).
         """
         from connect_labs.supply_chain.data_access import _columns, _fresh
         from connect_labs.supply_chain.distribution import issue_plan
@@ -599,7 +598,7 @@ class StockRepositoryMixin:
             lines = issue_plan.lines_for(self, commodity, data["opportunity_id"], data.get("item_id"))
             if not lines:
                 raise ValueError(
-                    "the forecast has nothing to issue: no field worker needs stock this week, or the "
+                    "the plan has nothing to issue: no field worker needs stock this week, or the "
                     "opportunity has no cases set up to forecast from. Give the lines yourself."
                 )
         if not lines:
