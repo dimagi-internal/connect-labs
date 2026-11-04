@@ -189,6 +189,7 @@ TAB_FOR_VIEW = {
     "supply_chain:item_edit": "supply_chain:catalogue",
     "supply_chain:supplier_create": "supply_chain:suppliers",
     "supply_chain:supplier_edit": "supply_chain:suppliers",
+    "supply_chain:supplier_contacts": "supply_chain:suppliers",
     "supply_chain:org_create": "supply_chain:organisations",
     "supply_chain:org_edit": "supply_chain:organisations",
     "supply_chain:org_merge": "supply_chain:organisations",

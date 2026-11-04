@@ -1,0 +1,20 @@
+{% extends "supply_chain/operation_form.html" %}
+
+{% comment %}
+The rows of a supplier's contacts (or qualifications): one repeating block, in
+Django's add-a-row idiom (see _line_formset.html). The page frame is the shared
+write-screen shell; this only supplies the rows.
+{% endcomment %}
+
+{% block extra_fields %}
+  {% include "supply_chain/_line_formset.html" with formset=rows rows_id=rows_id columns=columns add_label=add_label %}
+  {% if suggestions %}
+    <div class="pt-4 border-t border-gray-100">
+      <h2 class="text-sm font-semibold text-gray-900">Usual ones to record</h2>
+      <p class="text-xs text-gray-600 mt-0.5">{{ suggestions_note }}</p>
+      <ul class="mt-2 text-sm text-gray-800 list-disc list-inside">
+        {% for suggestion in suggestions %}<li>{{ suggestion.name }}{% if suggestion.why %} <span class="text-xs text-gray-600">· {{ suggestion.why }}</span>{% endif %}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+{% endblock %}

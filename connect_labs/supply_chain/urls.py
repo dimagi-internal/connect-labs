@@ -12,6 +12,7 @@ from connect_labs.supply_chain.network import views as network_views
 from connect_labs.supply_chain.partners import views as partner_views
 from connect_labs.supply_chain.portfolio import views as portfolio_views
 from connect_labs.supply_chain.procurement import views as procurement_views
+from connect_labs.supply_chain.reference import people as people_views
 from connect_labs.supply_chain.reference import views as reference_views
 from connect_labs.supply_chain.runner import views as runner_views
 from connect_labs.supply_chain.stock import issue_views
@@ -94,6 +95,11 @@ urlpatterns = [
     path("suppliers/new/", reference_views.SupplierCreateView.as_view(), name="supplier_create"),
     path("suppliers/<int:supplier_id>/", views.SupplierDetailView.as_view(), name="supplier_detail"),
     path("suppliers/<int:supplier_id>/edit/", reference_views.SupplierUpdateView.as_view(), name="supplier_edit"),
+    path(
+        "suppliers/<int:supplier_id>/contacts/",
+        people_views.SupplierContactsView.as_view(),
+        name="supplier_contacts",
+    ),
     path(
         "suppliers/<int:supplier_id>/reviewed/",
         reference_views.SupplierMarkReviewedView.as_view(),
