@@ -51,9 +51,10 @@ portfolio/chase.py.
     <div class="rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="open-issues">
       <h3 class="text-sm font-semibold text-gray-900">Open stock issues</h3>
       {% if not d.issues.available %}
-        <p class="mt-1 text-sm text-gray-600" data-testid="issues-not-recorded">Missing, damaged and expired stock is not recorded in Supply yet. Open issues will show here once it is.</p>
+        <p class="mt-1 text-sm text-gray-600" data-testid="issues-not-recorded">Missing, damaged and expired stock is not recorded in Supply yet.</p>
       {% elif d.issues.items %}
-        <ul class="mt-1 text-sm text-gray-900">{% for i in d.issues.items %}<li data-testid="open-issue">{% if i.href %}<a class="hover:underline" href="{{ i.href }}">{{ i.title }}</a>{% else %}{{ i.title }}{% endif %} <span class="text-xs text-gray-600">{{ i.partner }}{% if i.status %} · {{ i.status }}{% endif %}</span></li>{% endfor %}</ul>
+        <ul class="mt-1 text-sm text-gray-900">{% for i in d.issues.items|slice:":8" %}<li data-testid="open-issue">{% if i.href %}<a class="hover:underline" href="{{ i.href }}">{{ i.title }}</a>{% else %}{{ i.title }}{% endif %} <span class="text-xs text-gray-600">{{ i.partner }}{% if i.status %} · {{ i.status }}{% endif %}{% if i.days_open is not None %} · {{ i.days_open }} day{{ i.days_open|pluralize }}{% endif %}</span></li>{% endfor %}</ul>
+        {% if d.issues.items|length > 8 %}<p class="mt-1 text-xs text-gray-600">and {{ d.issues.items|length|add:"-8" }} more, on <a class="underline" href="{% url 'supply_chain:issues' %}">Issues</a>, partner by partner.</p>{% endif %}
       {% else %}
         <p class="mt-1 text-sm text-gray-600">No open issues.</p>
       {% endif %}

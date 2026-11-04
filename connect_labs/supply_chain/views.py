@@ -1199,6 +1199,15 @@ class StockView(OperationBase):
                 and on_hand.get("amount") not in (None, "")
                 and (float(on_hand["amount"]) <= 0)
             )
+        from connect_labs.supply_chain.partners.scope import partner_param, point_ids_of, switcher
+
+        chosen_partner = partner_param(self.request)
+        if chosen_partner is not None:
+            mine = point_ids_of(_access(self.request).program_id, chosen_partner)
+            context["network"]["points"] = [
+                p for p in context["network"].get("points") or [] if p.get("supply_point_id") in mine
+            ]
+        context.update(switcher(self.request, _access(self.request).program_id))
         item = next((i for i in context["items"] if i["id"] == context["item_id"]), None)
         context["standing"] = self._standing(item) if item else None
         return context

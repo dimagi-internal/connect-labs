@@ -87,10 +87,11 @@ own arithmetic -- so workers sit in the tree under their store, behind one
       stores and field workers it supplies, so a store can be "ok" on its own shelf while the whole
       branch beneath it is "overstocked".
     </p>
+    {% include "supply_chain/_partner_switcher.html" %}
     {% for partner in partners %}
       <div class="mb-5" data-testid="partner-tree">
         {% if partners|length > 1 or partner.org_id %}
-          <h3 class="text-sm font-semibold text-gray-900 mb-1" data-testid="partner-name">{{ partner.name }}{% if not partner.org_id %} <span class="font-normal text-gray-600">(set who runs a point on its Edit page)</span>{% endif %}</h3>
+          <h3 class="text-sm font-semibold text-gray-900 mb-1" data-testid="partner-name">{{ partner.name }}{% if not partner.org_id %} <span class="font-normal text-gray-600">(say who runs it on the Partners page)</span>{% endif %}</h3>
         {% endif %}
         <ul class="bg-white border border-brand-border-light rounded-lg px-4 divide-y divide-gray-100">
           {% for node in partner.roots %}{% include 'supply_chain/_network_node.html' with node=node %}{% endfor %}

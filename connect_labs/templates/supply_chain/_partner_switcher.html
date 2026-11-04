@@ -1,0 +1,16 @@
+{% comment %}
+Partner first, with the programme roll-up: "All partners" is the roll-up, each partner below it is that
+partner's own view of the same page (?partner=<organisation id>). Needs the context from
+partners/scope.py `switcher`. Draws nothing when the programme has no partners to switch between.
+{% endcomment %}
+{% if partner_options %}
+<div class="flex flex-wrap items-center gap-2 mb-4 text-sm" data-testid="partner-switcher">
+  <span class="text-gray-600">Partner:</span>
+  <a href="{{ partner_all_href }}"
+     class="px-2.5 py-1 rounded-full border {% if not partner_id %}bg-brand-indigo text-white border-brand-indigo{% else %}border-gray-300 text-gray-700 hover:bg-gray-50{% endif %}">All partners</a>
+  {% for p in partner_options %}
+    <a href="{{ p.href }}"
+       class="px-2.5 py-1 rounded-full border {% if partner_id == p.org_id %}bg-brand-indigo text-white border-brand-indigo{% else %}border-gray-300 text-gray-700 hover:bg-gray-50{% endif %}">{{ p.name }}</a>
+  {% endfor %}
+</div>
+{% endif %}
