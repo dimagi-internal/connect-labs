@@ -15,9 +15,7 @@ def revoke(apps, schema_editor):
     UpdateLink = apps.get_model("supply_chain", "UpdateLink")
     now = timezone.now()
     for program_id, org_id in ProgrammeRunner.objects.values_list("program_id", "org_id"):
-        UpdateLink.objects.filter(program_id=program_id, org_id=org_id, revoked_at__isnull=True).update(
-            revoked_at=now
-        )
+        UpdateLink.objects.filter(program_id=program_id, org_id=org_id, revoked_at__isnull=True).update(revoked_at=now)
 
 
 class Migration(migrations.Migration):

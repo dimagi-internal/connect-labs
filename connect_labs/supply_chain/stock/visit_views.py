@@ -202,6 +202,13 @@ class WorkersView(OperationBase):
             row["band"] = band_of(row)
             row["unapproved_share"] = _share(row["unapproved"], row["dispensed"])
             row["estimated_share"] = _share(row["estimated"], row["dispensed"])
+        from connect_labs.supply_chain.partners.scope import partner_param, point_ids_of, switcher
+
+        chosen_partner = partner_param(self.request)
+        if chosen_partner is not None:
+            mine = point_ids_of(_access(self.request).program_id, chosen_partner)
+            data["workers"] = [w for w in data["workers"] if w.get("supply_point_id") in mine]
+        context.update(switcher(self.request, _access(self.request).program_id))
         # An unknown column is no choice at all: back to by name, A to Z.
         chosen = self.request.GET.get("sort") in SORTS
         sort = self.request.GET["sort"] if chosen else "name"

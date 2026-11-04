@@ -167,6 +167,7 @@ def _row(point_id, name, kind, status, days):
     return {"supply_point_id": point_id, "name": name, "kind": kind, "status": status, "days_to_stockout": days}
 
 
+@pytest.mark.django_db
 class TestTheDistributionOverview:
     def _overview(self):
         rows = [
@@ -200,7 +201,12 @@ class TestTheDistributionOverview:
 
 
 class TestOpenIssuesHook:
-    def test_not_recorded_until_the_issues_package_exists(self):
+    @pytest.mark.django_db
+    def test_with_the_issues_package_installed_no_issues_reads_as_none_open_not_as_not_recorded(self):
+        assert open_issues(1) == {"available": True, "items": []}
+
+    def test_without_an_issues_package_it_says_not_recorded(self, monkeypatch):
+        monkeypatch.setitem(sys.modules, "connect_labs.supply_chain.issues", None)
         assert open_issues(1) == {"available": False, "items": []}
 
     def test_it_lights_up_when_the_issues_package_provides_the_reader(self, monkeypatch):
@@ -223,6 +229,6 @@ class TestThePage:
         assert body.index('data-testid="chase-list"') < body.index('data-testid="distribution-overview"')
         assert body.index('data-testid="distribution-overview"') < body.index('data-testid="standing-table"')
 
-    def test_open_issues_say_they_are_not_recorded_yet(self, da, base, home_client):
+    def test_open_issues_no_longer_say_they_are_not_recorded(self, da, base, home_client):
         body = _home(home_client)
-        assert 'data-testid="issues-not-recorded"' in body
+        assert 'data-testid="issues-not-recorded"' not in body and "No open issues." in body

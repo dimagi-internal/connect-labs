@@ -24,6 +24,7 @@ from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.form_views import OperationFormView
 from connect_labs.supply_chain.models import SupplyPoint
 from connect_labs.supply_chain.network.forms import OrgForm, OrgMergeForm, SupplyPointForm
+from connect_labs.supply_chain.partners.scope import partner_param, switcher
 from connect_labs.supply_chain.views import OperationBase
 
 # The kinds, in the order a network reads top-down: siblings in the tree are
@@ -87,9 +88,17 @@ class NetworkView(OperationBase):
             tree_item=item,
             stock=stock,
             roots=roots,
-            partners=group_by_partner(roots, names),
+            partners=_only_partner(group_by_partner(roots, names), partner_param(self.request)),
+            **switcher(self.request, _access(self.request).program_id, names),
         )
         return context
+
+
+def _only_partner(groups, partner_id):
+    """One partner's tree when `?partner=` names one, else every partner's (the programme roll-up)."""
+    if partner_id is None:
+        return groups
+    return [g for g in groups if g["org_id"] == partner_id]
 
 
 _KIND_RANK = {kind: n for n, (kind, _) in enumerate(KIND_ORDER)}

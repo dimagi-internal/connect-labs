@@ -29,6 +29,7 @@ the worker reports that no store recorded is said on the worker's own row.
 {% elif not item %}
   <p class="text-sm text-gray-600">No dispensing rule yet, so no visit has moved any stock and there is nothing to show per worker.</p>
 {% else %}
+  {% include "supply_chain/_partner_switcher.html" %}
   <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
     <p class="text-sm text-gray-700">{{ item.name }}, in {{ data.unit|unit_plural }} · {{ rows|length }} worker{{ rows|length|pluralize }}</p>
     {% if items|length > 1 %}
