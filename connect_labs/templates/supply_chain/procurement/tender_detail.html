@@ -261,7 +261,7 @@ next action on anyone (design doc section 22).
       <div data-testid="draft"{% if d.anchor %} id="{{ d.anchor }}"{% endif %} data-supplier-id="{{ d.supplier_id }}" class="border border-gray-200 rounded-lg p-4 mt-3 scroll-mt-20">
         <p class="text-lg">
           <span class="font-semibold text-gray-900">{{ d.supplier_name }}</span>
-          <span class="text-base text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" %}Reminder{% elif d.kind == "reply" %}Our reply{% elif d.kind == "clarification" %}Duty terms clarification{% else %}Follow-up{% endif %}</span>{% if d.duty_terms and d.kind != "clarification" %} <span data-testid="draft-duty-terms" class="status-chip status-chip--neutral text-sm">+ duty terms</span>{% endif %}
+          <span class="text-base text-gray-600">· {% if d.kind == "request" %}Quote request{% elif d.kind == "reminder" and d.stale %}Long overdue: chase, close or re-issue{% elif d.kind == "reminder" %}Reminder{% elif d.kind == "reply" %}Our reply{% elif d.kind == "clarification" %}Duty terms clarification{% else %}Follow-up{% endif %}</span>{% if d.duty_terms and d.kind != "clarification" %} <span data-testid="draft-duty-terms" class="status-chip status-chip--neutral text-sm">+ duty terms</span>{% endif %}
         </p>
         {% if d.facts %}
           {% comment %}Why the draft is due, as a labelled row set apart from the card's
@@ -276,7 +276,7 @@ next action on anyone (design doc section 22).
         to her own mailbox at once.{% endcomment %}
         <div class="mt-2 grid grid-cols-[4.5rem_1fr_auto] items-start gap-x-2 gap-y-2 text-sm">
           <span class="pt-1 text-gray-600">To</span>
-          <div data-testid="draft-to-line" class="pt-1 text-gray-700">{% if d.to %}<span id="draft-to-{{ forloop.counter }}">{{ d.to }}</span>{% else %}<span class="text-gray-600">no address on file</span>{% endif %}</div>
+          <div data-testid="draft-to-line" class="pt-1 text-gray-700">{% if d.to %}<span id="draft-to-{{ forloop.counter }}">{{ d.to }}</span>{% else %}<span class="text-gray-600">no address on file</span>{% endif %}{% if d.cc %}<div data-testid="draft-cc-line" class="text-gray-600">Cc: {{ d.cc|join:", " }}</div>{% endif %}</div>
           <div>{% if d.to %}<button type="button" data-testid="copy-to"
                   class="px-2.5 py-1 text-xs border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md whitespace-nowrap"
                   onclick="navigator.clipboard.writeText(document.getElementById('draft-to-{{ forloop.counter }}').textContent); this.textContent='Copied';">
@@ -306,7 +306,7 @@ next action on anyone (design doc section 22).
         </div>
         {% if d.to %}
         <div class="mt-2 pl-[5rem]">
-          <a data-testid="open-in-mail" href="mailto:{{ d.to|urlencode:'@' }}?subject={{ d.subject|urlencode:'' }}&amp;body={{ d.text|urlencode:'' }}"
+          <a data-testid="open-in-mail" href="mailto:{{ d.to|urlencode:'@' }}?{% if d.cc %}cc={{ d.cc|join:','|urlencode:'@,' }}&amp;{% endif %}subject={{ d.subject|urlencode:'' }}&amp;body={{ d.text|urlencode:'' }}"
              class="inline-flex items-center px-3 py-1.5 text-sm border border-gray-300 text-brand-indigo hover:bg-gray-50 rounded-md"><i class="fa-regular fa-envelope mr-1.5"></i> Open in mail</a>
         </div>
         {% endif %}

@@ -317,3 +317,20 @@ def test_a_follow_up_can_be_marked_sent_on_the_suppliers_invitation(da, round_):
     assert not asked_since_quote(quote)
     op(da, mark["operation"], outreach_id=mark["outreach_id"], data=mark["data"])
     assert asked_since_quote(Quote.objects.get(pk=quote.pk))
+
+
+def test_a_request_unanswered_for_weeks_asks_whether_to_chase_close_or_reissue(da, round_):
+    later = op(
+        da, "tender_drafts_render", tender_id=round_["tender"]["id"], today=(TODAY + timedelta(days=35)).isoformat()
+    )
+    stale = by(later, "reminder")["Harmattan Foods"]
+    assert stale["stale"] is True
+    assert "chase once more" in stale["why"] and "close the invitation" in stale["why"]
+    assert "whether you still wish to quote" in stale["text"]
+    # The one asked 3 days before TODAY is 38 days old too, so a young one is checked on TODAY itself.
+    assert by(drafts(da, round_), "reminder")["Harmattan Foods"]["stale"] is False
+
+
+def test_a_supplier_noted_not_yet_contacted_gets_no_reminder(da, round_):
+    op(da, "supplier_update", supplier_id=round_["rows"]["silent"]["supplier_id"], data={"notes": "Not yet contacted"})
+    assert "Harmattan Foods" not in by(drafts(da, round_), "reminder")

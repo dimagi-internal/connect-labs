@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from connect_labs.supply_chain.models import Commodity, Quote, Supplier, Tender
+from connect_labs.supply_chain.procurement.services.contacts import greeting, recipients
 from connect_labs.supply_chain.procurement.services.questions import SUPPLIER, initial_request_facts, missing_facts
 from connect_labs.supply_chain.values import (
     day_text,
@@ -45,9 +46,11 @@ class Draft:
     # The address to send to, when the supplier's record holds one. None is
     # an answer: there is no address on file, and the page says so.
     to: str | None = None
+    # People copied on every email to this supplier (the supplier's "cc" contacts).
+    cc: tuple = ()
 
     def as_dict(self) -> dict:
-        return {"subject": self.subject, "text": self.text, "to": self.to}
+        return {"subject": self.subject, "text": self.text, "to": self.to, "cc": list(self.cc)}
 
 
 # ---- the parts every draft shares ----------------------------------------
@@ -57,23 +60,17 @@ def _numbered(facts) -> str:
     return "\n".join(f"{index}. {fact.text}" for index, fact in enumerate(facts, start=1))
 
 
-def _named_contact(supplier: Supplier) -> dict | None:
-    contacts = [c for c in (supplier.contacts or []) if isinstance(c, dict)]
-    return next((c for c in contacts if (c.get("name") or "").strip()), None)
-
-
 def _address(supplier: Supplier) -> str | None:
-    """The named contact's address, else the first address on file."""
-    contacts = [c for c in (supplier.contacts or []) if isinstance(c, dict)]
-    named = _named_contact(supplier)
-    if named and (named.get("email") or "").strip():
-        return named["email"].strip()
-    return next(((c.get("email") or "").strip() for c in contacts if (c.get("email") or "").strip()), None)
+    """The main contact's address, cleaned of any name or note written around it."""
+    return recipients(supplier).to
+
+
+def _cc(supplier: Supplier) -> tuple:
+    return tuple(recipients(supplier).cc)
 
 
 def _greeting(supplier: Supplier) -> str:
-    contact = _named_contact(supplier)
-    return f"Dear {contact['name'].strip()}," if contact else f"Dear {supplier.name},"
+    return greeting(supplier)
 
 
 def _sign_off(sender: Sender | None) -> list[str]:
@@ -256,7 +253,7 @@ def render_initial_request(
     lines += _reply_by(tender, today)
     lines += _sign_off(sender)
     subject = f"Quotation request: {quantity_text} of {_product(commodity)}, {_where_short(tender)}"
-    return Draft(subject=subject, text="\n".join(lines), to=_address(supplier))
+    return Draft(subject=subject, text="\n".join(lines), to=_address(supplier), cc=_cc(supplier))
 
 
 def _priced_per(quote: Quote, commodity: Commodity, item=None) -> str:
@@ -308,6 +305,7 @@ def render_followup(
             subject=f"Thank you for your quotation{dated}{_about(tender, commodity)}",
             text="\n".join(lines),
             to=_address(supplier),
+            cc=_cc(supplier),
         )
     lines = [
         _greeting(supplier),
@@ -322,6 +320,7 @@ def render_followup(
         subject=f"Follow-up on your quotation{dated}{_about(tender, commodity)}",
         text="\n".join(lines),
         to=_address(supplier),
+        cc=_cc(supplier),
     )
 
 
@@ -333,6 +332,7 @@ def render_reminder(
     sent_on: date,
     last_reminder_on: date | None = None,
     reminders_sent: int | None = None,
+    stale_days: int | None = None,
     sender: Sender | None = None,
     today: date | None = None,
 ) -> Draft:
@@ -382,9 +382,31 @@ def render_reminder(
             "",
             "If you are not able to quote this time, a short reply saying so would help us plan.",
         ]
+    if stale_days:
+        # Weeks of silence: the same "we have not yet heard" would read as if we had just
+        # asked. Say how long it has been and ask whether they still mean to quote.
+        lines = [
+            _greeting(supplier),
+            "",
+            f"It is now {stale_days} days since our request of {asked} for "
+            f"{_quantity_text(commodity, tender)} of {_product(commodity)}, {_where(tender)}, and we have not "
+            "had a reply.",
+            "",
+            "Could you tell us whether you still wish to quote? If we do not hear from you, we will close "
+            "your invitation for now. We are glad to send the request again with current terms if that is "
+            "more useful.",
+            *_sign_off(sender),
+        ]
+        return Draft(
+            subject=f"Are you still able to quote? Our request of {asked}{_about(tender, commodity)}",
+            text="\n".join(lines),
+            to=_address(supplier),
+            cc=_cc(supplier),
+        )
     lines += _sign_off(sender)
     return Draft(
         subject=f"Reminder: quotation request of {asked}{_about(tender, commodity)}",
         text="\n".join(lines),
         to=_address(supplier),
+        cc=_cc(supplier),
     )
