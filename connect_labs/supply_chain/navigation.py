@@ -245,6 +245,7 @@ TAB_FOR_VIEW = {
     "supply_chain:issue_report": "supply_chain:issues",
     "supply_chain:issue_follow_up": "supply_chain:issues",
     "supply_chain:issue_resolve": "supply_chain:issues",
+    "supply_chain:issue_evidence": "supply_chain:issues",
     "supply_chain:custodian_assign": "supply_chain:issues",
     "supply_chain:partner_plan": "supply_chain:partners",
     "supply_chain:partner_places": "supply_chain:partners",

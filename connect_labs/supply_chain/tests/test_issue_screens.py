@@ -206,3 +206,51 @@ def test_an_earlier_loss_with_a_note_is_still_shown(scoped, world):
     )
     html = scoped.get(reverse("supply_chain:issues")).content.decode()
     assert "dropped in the rain" in html and "Earlier losses" in html
+
+
+def _photo(name="shelf.jpg"):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    return SimpleUploadedFile(name, b"\xff\xd8\xff not really a photo", content_type="image/jpeg")
+
+
+def test_a_photo_given_with_the_report_is_kept_as_the_issues_evidence(scoped, world):
+    from connect_labs.supply_chain.models import Document
+
+    rutf, _partner, _other, mine, _theirs = world
+    response = scoped.post(reverse("supply_chain:issue_report"), {**report(mine, rutf), "upload": _photo()})
+
+    assert response.status_code == 302
+    issue = StockIssue.objects.get()
+    document = Document.objects.get()
+    assert (document.stock_issue_id, document.kind, document.filename) == (issue.pk, "photo", "shelf.jpg")
+    assert document.sha256 and document.is_stored
+    html = scoped.get(reverse("supply_chain:issues")).content.decode()
+    assert "Evidence for stock issue" in html and "Add a photo or message" in html
+
+
+def test_evidence_can_be_added_to_an_issue_later_by_file_or_link(scoped, world):
+    from connect_labs.supply_chain.models import Document
+
+    rutf, _partner, _other, mine, _theirs = world
+    scoped.post(reverse("supply_chain:issue_report"), report(mine, rutf))
+    issue = StockIssue.objects.get()
+    url = reverse("supply_chain:issue_evidence", args=[issue.pk])
+
+    assert scoped.get(url).status_code == 200
+    scoped.post(
+        url,
+        {"kind": "photo", "title": "Message", "external_url": "", "upload": _photo("msg.png"), "source": "document"},
+    )
+    scoped.post(
+        url, {"kind": "other", "title": "Chat", "external_url": "https://example.test/chat", "source": "document"}
+    )
+
+    assert set(Document.objects.filter(stock_issue=issue).values_list("filename", "external_url")) == {
+        ("msg.png", ""),
+        ("", "https://example.test/chat"),
+    }
+
+
+def test_evidence_for_another_programmes_issue_is_not_found(scoped, world):
+    assert scoped.get(reverse("supply_chain:issue_evidence", args=[999999])).status_code == 404
