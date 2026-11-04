@@ -97,7 +97,11 @@ restocks them, then by name, never by how they are doing.
       </div>
     {% else %}
       <div class="mt-4 rounded-md border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-700 max-w-3xl" data-testid="flow-household">
-        <strong>In the household:</strong> empty sachets returned, leftovers, and sachets missing or misused (with reasons) come from the delivery form. This programme's dispensing rule does not yet say which form answers hold them, so nothing is shown here rather than a guess. Name them under "What the worker's app reports" on the <a href="{% url 'supply_chain:dispensing_rules' %}" class="text-brand-indigo hover:underline">Dispensing rules</a> page.
+        <strong>In the household:</strong> not shown yet.
+        <details class="text-xs text-gray-600 mt-1">
+          <summary class="cursor-pointer">Why, and how to show it</summary>
+          <p class="mt-1">Empty sachets returned, leftovers, and sachets missing or misused (with reasons) come from the delivery form. This programme's dispensing rule does not yet say which form answers hold them, so nothing is shown here rather than a guess. Name them under "What the worker's app reports" on the <a href="{% url 'supply_chain:dispensing_rules' %}" class="text-brand-indigo hover:underline">Dispensing rules</a> page.</p>
+        </details>
       </div>
     {% endif %}
   </section>

@@ -35,7 +35,7 @@ def test_the_groups_are_the_ones_the_feedback_asked_for():
     by_group = {g: [label for _, label in tabs] for g, tabs in TAB_GROUPS}
     assert by_group[""] == ["Overview"]
     assert by_group["Buying"] == ["Sourcing", "Orders", "Suppliers"]
-    assert {"Catalogue", "Organisations", "Alerts", "Partner access"} <= set(by_group["Setup"])
+    assert {"Catalogue", "Organisations", "Alerts", "Team"} <= set(by_group["Setup"])
     assert {"Network", "Map", "Distribution", "Stock", "Where it went"} <= set(by_group["Distribution and stock"])
 
 

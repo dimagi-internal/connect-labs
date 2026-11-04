@@ -14,6 +14,15 @@ people are added -- by platform support or by one of its own admins.
       The people who act for this program: they tender, award, order and pay, and record first-hand.
       Admins can also change the team.
     </p>
+    <details class="text-sm text-gray-600 mt-1 max-w-2xl" data-testid="team-partner-access">
+      <summary class="cursor-pointer">How a partner gets access</summary>
+      <p class="mt-1">
+        A partner's staff are not added to this team. They record their own step through an
+        <a href="{% url 'supply_chain:update_links' %}" class="text-brand-indigo hover:underline">update link</a>
+        you send them, or by signing in to Connect as a member of their organisation. What they reach is scoped by the
+        plans and places you set on the <a href="{% url 'supply_chain:partners' %}" class="text-brand-indigo hover:underline">Partners</a> page.
+      </p>
+    </details>
   </div>
   {% if team %}
     <a href="{% url 'supply_chain:programme_team_add' %}" data-testid="team-add"

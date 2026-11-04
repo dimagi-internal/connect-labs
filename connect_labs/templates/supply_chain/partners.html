@@ -9,7 +9,7 @@
 {% else %}
 
 <div class="flex flex-wrap items-start justify-between gap-4">
-  <h2 class="text-lg font-semibold text-brand-indigo mb-1">Partners</h2>
+  <h2 class="text-lg font-semibold text-gray-900 mb-1">Partners</h2>
   <div class="flex gap-2">
     <a href="{% url 'supply_chain:partner_deliveries' %}" class="px-4 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Suggested deliveries</a>
     <a href="{% url 'supply_chain:partner_plan' %}"
@@ -18,10 +18,13 @@
     </a>
   </div>
 </div>
-<p class="text-xs text-gray-600 mb-4">
+<details class="text-xs text-gray-600 mb-4 max-w-3xl">
+  <summary class="cursor-pointer">What a partner's way of distributing changes</summary>
+  <p class="mt-1">
   Each partner runs its own network and says how it gets stock to its field workers. Network, stock, issues and
   alerts are then shown partner by partner, with a roll-up across all of them.
-</p>
+  </p>
+</details>
 
 {% if without_plan %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 mb-4 text-sm text-amber-900">

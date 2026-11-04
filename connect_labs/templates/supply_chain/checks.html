@@ -19,7 +19,7 @@ the record it is about, because that is where it gets answered.
   <div class="text-xs text-gray-600">
     <a class="hover:underline" href="{% url 'supply_chain:overview' %}">Overview</a> › Checks
   </div>
-  <h2 class="text-lg font-semibold text-brand-indigo">{% term "checks" "Checks" %}: what is missing, in conflict or overdue</h2>
+  <h2 class="text-lg font-semibold text-gray-900">{% term "checks" "Checks" %}: what is missing, in conflict or overdue</h2>
   <p class="text-sm text-gray-600 max-w-3xl">
     {{ checks.count }} check{{ checks.count|pluralize }}. Each is something nobody has told us yet, two
     records that disagree, or a figure past a limit you set. None is ranked and none says what to do.

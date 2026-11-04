@@ -21,8 +21,41 @@ function WorkflowUI({
   var src = (view && view.supply) || supply || {};
   var stock = src.stock;
   var stores = src.stores;
-  var courseSize = Number(cfg.course_size) || 0;
   var courseLabel = cfg.course_label || 'courses';
+  // One course, the same one the Forecast page uses: the expected course
+  // (measured from the children who finished) when the forecast has one, else
+  // the protocol's, else this report's own setting. A course taken from the
+  // setting alone read "52 children's courses" here beside the Forecast's
+  // 40-sachet expected course (supply_stock_forecast).
+  var forecastCourse =
+    (src.forecast &&
+      src.forecast.rows &&
+      src.forecast.rows[0] &&
+      src.forecast.rows[0].basis &&
+      src.forecast.rows[0].basis.course) ||
+    null;
+  var courseSize = 0;
+  var courseNote = '';
+  var forecastSize =
+    forecastCourse && forecastCourse.size !== null
+      ? Number(forecastCourse.size)
+      : 0;
+  if (forecastSize > 0) {
+    courseSize = forecastSize;
+    courseNote =
+      forecastCourse.basis === 'measured'
+        ? 'expected course of ' +
+          Math.round(forecastSize) +
+          ', from the ' +
+          forecastCourse.completed_cases +
+          ' children who finished'
+        : forecastCourse.basis === 'protocol'
+          ? 'protocol course of ' + Math.round(forecastSize)
+          : 'assumed course of ' + Math.round(forecastSize);
+  } else if (Number(cfg.course_size) > 0) {
+    courseSize = Number(cfg.course_size);
+    courseNote = 'assumed course of ' + Math.round(courseSize);
+  }
 
   var sFilter = React.useState(null);
   var filter = sFilter[0];
@@ -365,7 +398,13 @@ function WorkflowUI({
           </div>
           {courseSize > 0 && totals.on_hand !== undefined && (
             <div className="text-xs text-gray-500">
-              {'≈ ' + fmt(totals.on_hand / courseSize) + ' ' + courseLabel}
+              {'≈ ' +
+                fmt(totals.on_hand / courseSize) +
+                ' ' +
+                courseLabel +
+                ' (' +
+                courseNote +
+                ')'}
             </div>
           )}
         </div>

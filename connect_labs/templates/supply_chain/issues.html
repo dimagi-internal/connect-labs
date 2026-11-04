@@ -10,7 +10,7 @@
 {% else %}
 
 <div class="flex flex-wrap items-start justify-between gap-4">
-  <h2 class="text-lg font-semibold text-brand-indigo mb-1">
+  <h2 class="text-lg font-semibold text-gray-900 mb-1">
     Issues{% if partner_name %} — {{ partner_name }}{% endif %}
   </h2>
   <a href="{% url 'supply_chain:issue_report' %}{% if partner_id %}?partner={{ partner_id }}{% endif %}"
@@ -18,11 +18,14 @@
     <i class="fa-solid fa-plus mr-1"></i> Report an issue
   </a>
 </div>
-<p class="text-xs text-gray-600 mb-4">
+<details class="text-xs text-gray-600 mb-4 max-w-3xl">
+  <summary class="cursor-pointer">How an issue is followed up</summary>
+  <p class="mt-1">
   Stock that is missing, taken, damaged or expired. Report it where it happened: the quantity comes off that
   place's stock straight away, so the figures show what is really there. An issue is open until it is followed up
   and ends as recovered, replaced or written off; recovered stock goes back on the ledger linked to the issue.
-</p>
+  </p>
+</details>
 
 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
   <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
@@ -138,7 +141,7 @@
   </div>
 </div>
 
-<h3 class="text-base font-semibold text-brand-indigo mb-1">Who is responsible where stock is kept</h3>
+<h3 class="text-base font-semibold text-gray-900 mb-1">Who is responsible where stock is kept</h3>
 <p class="text-xs text-gray-600 mb-3">
   A named person at each storage point confirms deliveries and owns the balance there, so a missing carton points
   to a person and a day. Changing the custodian keeps the earlier one as history.
@@ -183,7 +186,7 @@
 </div>
 
 {% if legacy_losses %}
-  <h3 class="text-base font-semibold text-brand-indigo mb-1">Earlier losses, recorded as a note</h3>
+  <h3 class="text-base font-semibold text-gray-900 mb-1">Earlier losses, recorded as a note</h3>
   <p class="text-xs text-gray-600 mb-3">
     Before issues existed, a loss was a stock movement with a free-text note. They still count against the stock;
     report a new problem as an issue instead.

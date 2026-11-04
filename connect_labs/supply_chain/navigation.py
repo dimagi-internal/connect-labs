@@ -52,7 +52,7 @@ TAB_GROUPS = (
             ("supply_chain:catalogue", "Catalogue"),
             ("supply_chain:organisations", "Organisations"),
             ("supply_chain:alerts", "Alerts"),
-            ("supply_chain:programme_team", "Partner access"),
+            ("supply_chain:programme_team", "Team"),
             ("supply_chain:update_links", "Update links"),
         ),
     ),
@@ -113,11 +113,14 @@ PAGE_PURPOSE = {
         "What you buy. Set up each product once, and add the manufacturer's version " "(a trade item) when you buy it."
     ),
     "supply_chain:organisations": (
-        "The organisations in this programme, including partners who buy or hold stock "
+        "The organisations this programme uses, including partners who buy or hold stock "
         "on your behalf. To add a supplier you do not need this page: use Suppliers."
     ),
     "supply_chain:alerts": "Who is told, by email, when something in the chain changes or needs attention.",
-    "supply_chain:programme_team": "Who can act for this programme, and who can only look.",
+    "supply_chain:programme_team": (
+        "The people who act for this programme. Partners do not sign in here: they get access through "
+        "update links and their Connect sign-in."
+    ),
     "supply_chain:update_links": (
         "Private links that let a supplier or partner record their own step without signing in."
     ),

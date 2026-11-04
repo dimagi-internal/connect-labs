@@ -166,7 +166,9 @@ class TestOrganisations:
         """One registry for the whole of labs. A scoped list here would be the bug."""
         LabsOrg.objects.create(slug="a", name="Organisation A")
         LabsOrg.objects.create(slug="b", name="Organisation B")
-        body = scoped.get(reverse("supply_chain:organisations")).content.decode()
+        # The page opens on what this programme uses, and "Show all" reaches the rest (Sophie's RUTF feedback).
+        assert "Organisation A" not in scoped.get(reverse("supply_chain:organisations")).content.decode()
+        body = scoped.get(reverse("supply_chain:organisations") + "?show=all").content.decode()
         assert "Organisation A" in body
         assert "Organisation B" in body
 
@@ -342,7 +344,7 @@ class TestTheScreensAreReachable:
         assert reverse("supply_chain:organisations") in body
 
     def test_the_organisation_directory_offers_adding_editing_and_merging(self, scoped, org):
-        body = scoped.get(reverse("supply_chain:organisations")).content.decode()
+        body = scoped.get(reverse("supply_chain:organisations") + "?show=all").content.decode()
         assert reverse("supply_chain:org_create") in body
         assert reverse("supply_chain:org_merge") in body
         assert reverse("supply_chain:org_edit", args=[org.pk]) in body

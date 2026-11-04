@@ -42,7 +42,7 @@ plain words, and each step says where it came from.
 
 {% if role == "supervisor" %}
   <section class="mb-8" data-testid="plan-issue">
-    <h2 class="text-lg font-semibold text-brand-indigo">What to issue at the next handout</h2>
+    <h2 class="text-lg font-semibold text-gray-900">What to issue at the next handout</h2>
     <p class="text-xs text-gray-600 mb-3">
       For each field worker: the sachets their children will need this week, plus children expected to enrol, plus the
       buffer, less what Supply's records say they hold. Open a row to see the steps and where each number came from.
@@ -97,7 +97,7 @@ plain words, and each step says where it came from.
   </section>
 
   <section class="mb-8" data-testid="plan-short">
-    <h2 class="text-lg font-semibold text-brand-indigo">Who may run short this week</h2>
+    <h2 class="text-lg font-semibold text-gray-900">Who may run short this week</h2>
     <p class="text-xs text-gray-600 mb-2">Field workers who hold less than their children and expected new children will need in the next seven days.</p>
     {% if picture.short %}
       <ul class="text-sm space-y-1">
@@ -112,7 +112,7 @@ plain words, and each step says where it came from.
   </section>
 
   <section class="mb-8" data-testid="plan-followup">
-    <h2 class="text-lg font-semibold text-brand-indigo">Stock follow-up</h2>
+    <h2 class="text-lg font-semibold text-gray-900">Stock follow-up</h2>
     <p class="text-xs text-gray-600 mb-2">
       The dose each field worker's children are actually given each day, against the protocol's
       ({{ picture.dosing.0.protocol_per_day|default:"" }}{% if picture.dosing %} sachets a day{% endif %}),
@@ -146,7 +146,7 @@ plain words, and each step says where it came from.
 
 {% if role == "stores" %}
   <section class="mb-8" data-testid="plan-stores">
-    <h2 class="text-lg font-semibold text-brand-indigo">Store restocking</h2>
+    <h2 class="text-lg font-semibold text-gray-900">Store restocking</h2>
     <p class="text-xs text-gray-600 mb-3">
       For each store: what its field workers and facilities below it will need over the next four weeks, whether
       what it holds is enough until its next delivery, and the day it would run out if nothing arrives.
@@ -199,7 +199,7 @@ plain words, and each step says where it came from.
 {% if role == "programme" and not picture.scoped %}
   {% with b=picture.break_even %}
   <section class="mb-8" data-testid="plan-break-even">
-    <h2 class="text-lg font-semibold text-brand-indigo">Will we have enough?</h2>
+    <h2 class="text-lg font-semibold text-gray-900">Will we have enough?</h2>
     <p class="text-sm text-gray-900 mb-3 max-w-3xl">{{ b.answer }}</p>
     {% if b.known %}
     <ol class="text-sm space-y-1 max-w-3xl list-decimal pl-5">
@@ -217,7 +217,7 @@ plain words, and each step says where it came from.
   </section>
 
   <section class="mb-8" data-testid="plan-buy">
-    <h2 class="text-lg font-semibold text-brand-indigo">When and how much to buy next</h2>
+    <h2 class="text-lg font-semibold text-gray-900">When and how much to buy next</h2>
     <p class="text-sm text-gray-900 max-w-3xl">
       {% if picture.break_even.known %}
         {% if picture.break_even.to_buy and picture.break_even.to_buy != "0" %}
@@ -238,7 +238,7 @@ plain words, and each step says where it came from.
   {% endwith %}
 
   <section class="mb-8" data-testid="plan-account">
-    <h2 class="text-lg font-semibold text-brand-indigo">Can we account for every sachet?</h2>
+    <h2 class="text-lg font-semibold text-gray-900">Can we account for every sachet?</h2>
     {% if account %}
       <p class="text-xs text-gray-600 mb-2">
         Step by step from what arrived to where it is now. The first line is all that was received; every line after it
@@ -259,7 +259,7 @@ plain words, and each step says where it came from.
 
 <section class="mb-8" data-testid="plan-inputs">
   <div class="flex flex-wrap items-center justify-between gap-2">
-    <h2 class="text-lg font-semibold text-brand-indigo">The plan</h2>
+    <h2 class="text-lg font-semibold text-gray-900">The plan</h2>
     <a href="{% url 'supply_chain:plan_inputs' %}?item_id={{ item.id }}" class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
       <i class="fa-solid fa-pen mr-1"></i> Change the plan
     </a>
