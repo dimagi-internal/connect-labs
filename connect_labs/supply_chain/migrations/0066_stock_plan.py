@@ -7,10 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        # Also merges the three 0064s that landed in parallel (buying model; handover plans; document stock issue).
-        ("supply_chain", "0064_buying_model_and_needed_by"),
-        ("supply_chain", "0064_handover_plan_confirm_receive"),
-        ("supply_chain", "0064_document_stock_issue"),
+        ("supply_chain", "0065_merge_0064_leaves"),
     ]
 
     operations = [
