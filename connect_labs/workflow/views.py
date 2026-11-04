@@ -2902,6 +2902,10 @@ def _resolve_pipeline_rows_pipeline(request, definition_id: int, params: dict, w
         raise PipelineRowsError(f"no pipeline source with alias {alias!r}", status=404)
 
     pipeline_id = int(source["pipeline_id"])
+    # Where a fill on the worker finds this workflow again. A program-owned one is only
+    # visible in its program: looked up in the rows opportunity it is "workflow N not found".
+    owning_program = getattr(definition, "program_id", None)
+    params["definition_scope"] = {"program_id": int(owning_program)} if owning_program else None
     # Scoped to the WORKFLOW, not to the rows. A pipeline record lives with the
     # workflow that references it (unless its source names a `home_scope`), and
     # `PipelineDataAccess` already splits the two: the client's own scope governs
@@ -3279,6 +3283,7 @@ def pipeline_query_api(request, definition_id):
                 slot,
                 definition_id=definition_id,
                 scope=scope or {"opportunity_id": scope_opp or rows_opp},
+                definition_scope=params.get("definition_scope"),
                 opportunity_ids=[cache_scope],
                 aliases=[params["alias"]],
             )
