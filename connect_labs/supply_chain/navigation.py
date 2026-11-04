@@ -253,6 +253,7 @@ TAB_FOR_VIEW = {
     "supply_chain:custodian_assign": "supply_chain:issues",
     "supply_chain:partner_plan": "supply_chain:partners",
     "supply_chain:partner_places": "supply_chain:partners",
+    "supply_chain:partner_deliveries": "supply_chain:partners",
     "supply_chain:alert_check_now": "supply_chain:alerts",
     "supply_chain:alert_delete": "supply_chain:alerts",
     "supply_chain:supplier_mark_reviewed": "supply_chain:suppliers",

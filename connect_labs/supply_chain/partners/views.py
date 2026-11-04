@@ -102,3 +102,36 @@ class AssignPlacesView(_PartnerScreen):
         "pages. Pick the partner and tick the places it runs; places below them follow."
     )
     submit_label = "Assign"
+
+
+class DeliverySuggestionsView(OperationBase):
+    """A suggested delivery to each shared facility: a few days of what its field workers use, less what it holds.
+
+    On request only (it runs the forecast). A suggestion, nothing is recorded; filter with `?partner=` like
+    the other partner pages, `?days=` for the cover (7 to begin with).
+    """
+
+    template_name = "supply_chain/delivery_suggestions.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["has_program_context"] = has_program_context(self.request)
+        if not context["has_program_context"]:
+            return context
+        from connect_labs.supply_chain.partners.scope import partner_param, switcher
+        from connect_labs.supply_chain.stock.visit_views import chosen_item, rule_items
+
+        program_id = _access(self.request).program_id
+        items = rule_items(self.op)
+        item = chosen_item(self.request, items)
+        days = self.request.GET.get("days") or ""
+        cover = int(days) if days.isdigit() and 1 <= int(days) <= 60 else 7
+        context.update(items=items, item=item, cover_days=cover, **switcher(self.request, program_id))
+        if item is not None:
+            context["suggestions"] = self.op(
+                "stock_delivery_suggestion",
+                item_id=item["id"],
+                cover_days=cover,
+                **({"org_id": partner_param(self.request)} if partner_param(self.request) else {}),
+            )
+        return context

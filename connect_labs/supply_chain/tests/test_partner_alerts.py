@@ -188,3 +188,39 @@ class TestDeliverySuggestions:
         assert set(by_name) == {"PHC One", "PHC Two"}, "only shared facilities are sized"
         assert Decimal(by_name["PHC One"]["suggested"]) == 60  # 10/day x 7 days - 10 held
         assert Decimal(by_name["PHC Two"]["suggested"]) == 0  # already holds more than the cover
+
+
+def test_the_suggestions_page_sizes_facilities_from_the_forecast(client, django_user_model, monkeypatch):
+    from django.urls import reverse
+
+    from connect_labs.supply_chain import form_views, views  # noqa: F401
+    from connect_labs.supply_chain.api_views import _access as real_access
+    from connect_labs.supply_chain.partners import views as partner_views
+
+    client.force_login(django_user_model.objects.create_user(username="pm2", password="x", email="pm2@dimagi.com"))
+
+    def _scoped(request):
+        access = real_access(request)
+        access.program_id = PROGRAM
+        return access
+
+    for module in ("form_views", "views", "partners.views"):
+        monkeypatch.setattr(f"connect_labs.supply_chain.{module}.has_program_context", lambda request: True)
+        monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", _scoped)
+    monkeypatch.setattr(
+        "connect_labs.supply_chain.stock.visit_views.rule_items", lambda op: [{"id": 1, "name": "A Product"}]
+    )
+    monkeypatch.setattr(
+        partner_views.OperationBase,
+        "op",
+        lambda self, name, **payload: {
+            "unit": "sachet",
+            "facilities": [
+                {"name": "PHC One", "workers": 3, "uses_per_day": "10.0", "holds": "10", "suggested": "60"},
+            ],
+        },
+        raising=False,
+    )
+    page = client.get(reverse("supply_chain:partner_deliveries"))
+    body = page.content.decode()
+    assert page.status_code == 200 and "PHC One" in body and "60 sachet" in body

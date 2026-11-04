@@ -1,0 +1,66 @@
+{% extends 'supply_chain/base.html' %}
+
+{% block supply_content %}
+{% if not has_program_context %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+    <p class="text-sm text-amber-900">Suggested deliveries are programme-scoped.</p>
+  </div>
+{% else %}
+<h2 class="text-lg font-semibold text-brand-indigo mb-1">Suggested deliveries to shared facilities</h2>
+<p class="text-xs text-gray-600 mb-4">
+  A few days of what the field workers each facility supplies are expected to use (from the Forecast), less what the
+  facility already holds. Keeping stock low where many people can reach it leaves less to go missing. This is a
+  suggestion: nothing is recorded until you send the stock.
+  <a class="underline" href="{% url 'supply_chain:partners' %}">Back to Partners</a>
+</p>
+
+{% include "supply_chain/_partner_switcher.html" %}
+
+{% if not item %}
+  <p class="text-sm text-gray-700">No dispensing rule yet, so there is no forecast to size a delivery from.</p>
+{% else %}
+  <form method="get" class="flex flex-wrap items-center gap-3 mb-3 text-sm">
+    {% if partner_id %}<input type="hidden" name="partner" value="{{ partner_id }}">{% endif %}
+    {% if items|length > 1 %}
+      <label>Product
+        <select name="item_id" class="border border-gray-300 rounded px-2 py-1" onchange="this.form.submit()">
+          {% for i in items %}<option value="{{ i.id }}" {% if i.id == item.id %}selected{% endif %}>{{ i.name }}</option>{% endfor %}
+        </select>
+      </label>
+    {% endif %}
+    <label>Days of cover
+      <input type="number" name="days" min="1" max="60" value="{{ cover_days }}" class="border border-gray-300 rounded px-2 py-1 w-20">
+    </label>
+    <button type="submit" class="px-3 py-1 border border-gray-300 rounded-md hover:bg-gray-50">Update</button>
+  </form>
+
+  <div class="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+        <tr>
+          <th class="text-left px-4 py-2">Facility</th>
+          <th class="text-right px-4 py-2">Field workers</th>
+          <th class="text-right px-4 py-2">They use a day</th>
+          <th class="text-right px-4 py-2">It holds</th>
+          <th class="text-right px-4 py-2">Suggested delivery</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for f in suggestions.facilities %}
+          <tr>
+            <td class="px-4 py-2">{{ f.name }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ f.workers }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ f.uses_per_day }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ f.holds }}</td>
+            <td class="px-4 py-2 text-right tabular-nums font-semibold">{{ f.suggested }} {{ suggestions.unit }}{% if f.suggested == "0" %} <span class="font-normal text-gray-600">(holds enough)</span>{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="px-4 py-6 text-center text-gray-600">No shared facility supplies field workers with a forecast{% if partner_name %} for {{ partner_name }}{% endif %}.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+{% endif %}
+{% endblock %}
