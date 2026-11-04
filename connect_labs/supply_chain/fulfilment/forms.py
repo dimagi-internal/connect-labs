@@ -106,6 +106,7 @@ class ContractForm(ProvenancedForm):
             "item",
             "buyer_of_record",
             "buyer_org",
+            "buying_model",
             "reference",
             "signed_on",
             "status",
@@ -134,6 +135,7 @@ class ContractForm(ProvenancedForm):
             "item": forms.Select(attrs=SEARCHABLE),
             "buyer_of_record": forms.Select(attrs=SELECT),
             "buyer_org": forms.Select(attrs=SEARCHABLE),
+            "buying_model": forms.Select(attrs=SELECT),
             "reference": forms.TextInput(attrs={**INPUT, "placeholder": _("their PO number, or ours")}),
             "signed_on": forms.DateInput(attrs=DATE),
             "status": forms.Select(attrs=SELECT),
@@ -162,6 +164,7 @@ class ContractForm(ProvenancedForm):
             "item": _("Which trade item"),
             "buyer_of_record": _("Who is buying"),
             "buyer_org": _("Which organisation"),
+            "buying_model": _("How it is bought"),
             "reference": _("Reference"),
             "signed_on": _("Signed on"),
             "status": _("Status"),
@@ -188,6 +191,10 @@ class ContractForm(ProvenancedForm):
             "buyer_of_record": _(
                 "No default, deliberately. Import duty and VAT depend on who imports, so a landed "
                 "total worked out without this would have an invisible assumption inside it."
+            ),
+            "buying_model": _(
+                "We buy and ship to the partner, or the partner buys on our negotiated quote and invoices us. "
+                "Left empty, it follows who is buying."
             ),
             "item": _("Optional. Set it once you know whose product it is — that is what fixes the pack size."),
             "duty_relief_claimed": _(
@@ -264,6 +271,16 @@ class ContractForm(ProvenancedForm):
                 ("agency", _("A procurement agency is")),
             ],
         )
+        set_choices(
+            self,
+            "buying_model",
+            [
+                ("", _("Follows who is buying")),
+                ("programme_buys", _("We buy and ship to the partner")),
+                ("partner_buys", _("The partner buys on our quote and invoices us")),
+            ],
+            required=False,
+        )
         self.fields["unit_price_unit"].required = False
         set_choices(
             self,
@@ -315,7 +332,12 @@ class ContractForm(ProvenancedForm):
             Row(Column("supplier"), Column("commodity"), Column("item"), css_class="grid md:grid-cols-3 gap-x-6"),
             Fieldset(
                 str(_("Who is buying")),
-                Row(Column("buyer_of_record"), Column("buyer_org"), css_class="grid md:grid-cols-2 gap-x-6"),
+                Row(
+                    Column("buyer_of_record"),
+                    Column("buyer_org"),
+                    Column("buying_model"),
+                    css_class="grid md:grid-cols-3 gap-x-6",
+                ),
                 css_class="pt-2",
             ),
             Fieldset(

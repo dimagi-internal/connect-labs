@@ -582,6 +582,10 @@ _TENDER_DATA = _data_with(
     shelf_life_months_minimum=_NON_NEGATIVE_INT,
     duty_terms={"enum": list(records.DUTY_TERMS)},
     duty_estimate_percent={"type": ["number", "string", "null"]},
+    # When the goods must be in the partner's hands; the tender counts back from it to the day it must
+    # start. `lead_time_days_expected` stands in until a quote states a lead time.
+    needed_by={"type": ["string", "null"], "format": "date"},
+    lead_time_days_expected={"type": ["integer", "null"], "minimum": 0},
 )
 
 _ITEM_DATA = _data_with(
@@ -657,6 +661,9 @@ _CONTRACT_DATA = _data_with(
     promised_lead_time_days=_NON_NEGATIVE_INT,
     consideration={"enum": list(records.CONSIDERATIONS)},
     payment_terms={"enum": list(records.PAYMENT_TERMS)},
+    # How the order is bought: we buy and ship to the partner, or the partner buys on our quote and
+    # invoices us. Left out, it follows the buyer of record.
+    buying_model={"enum": ["", *records.BUYING_MODELS]},
     # Nullable because un-naming it is a real edit: the covering order was
     # recorded against the wrong short one.
     covers_shortfall_of_id=NULLABLE_ID,
