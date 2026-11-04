@@ -50,7 +50,7 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   quantity is then the sum of the splits. A supplier says whether its price holds "if bought as N
   purchases" (`Quote.price_holds_for_purchases`; blank means not said, never "no"). The award is
   followed by one order per partner (`award_orders_create`), and the orders of one award are read as
-  a set (`award_order_set`): an award is not done after its first order. A tender with no split is
+  a set (`award_orders_progress`): an award is not done after its first order. A tender with no split is
   unchanged: one total quantity, delivery places as alternatives the supplier picks from.
 - **An order is bought one of two ways, chosen per partner and per order** (`Contract.buying_model`):
   `programme_buys` (we buy and ship to the partner) or `partner_buys` (the partner buys on our
