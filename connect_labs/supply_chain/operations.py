@@ -47,6 +47,7 @@ _SERIALIZERS = {
     models.Custodian: serializers.custodian,
     models.PartnerPlan: serializers.partner_plan,
     models.StockIssue: serializers.stock_issue,
+    models.StockPlan: serializers.stock_plan,
     models.Distribution: serializers.distribution,
     models.Consignment: serializers.consignment,
 }

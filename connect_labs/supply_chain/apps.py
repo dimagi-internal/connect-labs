@@ -14,6 +14,7 @@ class SupplyChainConfig(AppConfig):
         from connect_labs.supply_chain.fulfilment import operations as fulfilment_operations  # noqa: F401
         from connect_labs.supply_chain.history import capture
         from connect_labs.supply_chain.partners import operations as partner_operations  # noqa: F401
+        from connect_labs.supply_chain.plan import operations as plan_operations  # noqa: F401
         from connect_labs.supply_chain.procurement import operations  # noqa: F401
         from connect_labs.supply_chain.runner import operations as runner_operations  # noqa: F401
         from connect_labs.supply_chain.stock import operations as stock_operations  # noqa: F401
