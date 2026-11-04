@@ -92,8 +92,16 @@ is folded away, each fold with its count.
       <span class="flex flex-wrap items-center gap-2" data-testid="tender-needed-by"><span class="text-gray-600">Needed by</span>
         <span class="px-1" {% edit_cell "tender" tender.id "needed_by" tender.needed_by %}>{% if tender.needed_by %}<span class="whitespace-nowrap font-medium text-gray-900">{{ tender.needed_by|day|slice:":-5" }}</span>{% else %}<span class="text-gray-600">not set</span>{% endif %}</span>
         {% if tender.start_by_note %}<span class="text-xs {% if tender.late_to_start %}text-message-warning-text font-medium{% else %}text-gray-600{% endif %}" data-testid="start-by-note">{{ tender.start_by_note }}</span>{% endif %}
+        {% if tender.needed_by %}<span class="text-xs text-gray-600" data-testid="start-by-working">{% if tender.start_by_working %}{{ tender.start_by_working }}{% endif %}{% if tender.lead_time_days_expected is not None %} Our estimate of the delivery time: {{ tender.lead_time_days_expected }} days (used until a supplier quotes its own).{% endif %}</span>{% endif %}
       </span>
     </section>
+    {% if tender.status == "draft" and not supply_as_of %}
+    <p class="text-sm" data-testid="split-links">
+      <a class="text-brand-indigo hover:underline" data-testid="split-edit-link" href="{% url 'supply_chain:procurement_tender_splits' tender.id %}">{% if tender.partner_splits %}Edit the split between partners{% else %}Split this tender between partners{% endif %}</a>
+      <span class="text-gray-300 mx-1">·</span>
+      <a class="text-brand-indigo hover:underline" data-testid="sizing-link" href="{% url 'supply_chain:procurement_tender_sizing' tender.id %}">How much to buy</a>
+    </p>
+    {% endif %}
     {% if tender.partner_splits %}
     <section class="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="partner-splits">
       <div class="px-4 py-2.5 border-b border-gray-100 text-xs font-semibold text-gray-600">Split by partner

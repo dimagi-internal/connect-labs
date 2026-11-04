@@ -1,0 +1,62 @@
+{% extends "supply_chain/base.html" %}
+
+{% block supply_content %}
+<nav class="text-sm text-gray-600 mb-3">
+  <a href="{% url 'supply_chain:procurement_tender_board' %}" class="text-brand-indigo hover:underline">Sourcing</a><span class="mx-1.5 text-gray-300">/</span>
+  <a href="{% url 'supply_chain:procurement_tender_detail' tender.id %}" class="text-brand-indigo hover:underline">{{ tender.label }}</a><span class="mx-1.5 text-gray-300">/</span>
+  <span class="text-gray-700">How much to buy</span>
+</nav>
+<div class="max-w-3xl space-y-4">
+  <div>
+    <h1 class="text-base font-semibold text-gray-900">How much to buy for each partner</h1>
+    <p class="text-sm text-gray-600 mt-0.5">Enter how many children each partner expects to treat. We multiply by what one child's course needs and add a
+      buffer for losses and delays. Stock a partner already holds is not taken off: subtract it yourself if you want to.</p>
+  </div>
+
+  <form method="get" class="bg-white border border-gray-200 rounded-lg p-4 space-y-3" data-testid="sizing-form">
+    {% if products|length > 1 %}
+    <label class="block text-sm text-gray-700">Product
+      <select name="product" class="ml-2 border border-gray-300 rounded-md px-2 py-1">{% for line in products %}<option value="{{ line.commodity_slug }}" {% if line.commodity_slug == product %}selected{% endif %}>{{ line.commodity_slug }}</option>{% endfor %}</select></label>
+    {% endif %}
+    <table class="w-full text-sm">
+      <thead class="text-xs text-gray-600"><tr><th class="text-left py-1">Partner</th><th class="text-left py-1">Children expected to be treated</th><th class="text-left py-1">Buffer for this partner (%)</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr><td class="py-1 pr-3 text-gray-900">{{ r.org_name }}</td>
+          <td class="py-1 pr-3"><input type="number" min="0" step="any" name="cases_{{ r.org_id }}" value="{{ r.cases }}" class="w-40 border border-gray-300 rounded-md px-2 py-1"></td>
+          <td class="py-1"><input type="number" min="0" step="any" name="buffer_{{ r.org_id }}" value="{{ r.buffer }}" placeholder="same as below" class="w-32 border border-gray-300 rounded-md px-2 py-1"></td></tr>
+      {% empty %}
+        <tr><td class="py-2 text-gray-600" colspan="3">No partner runs a place in this programme yet. Add them on the Network page first.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-700">
+      <label>Buffer for everyone (%) <input type="number" min="0" step="any" name="buffer" value="{{ buffer }}" placeholder="10" class="ml-1 w-20 border border-gray-300 rounded-md px-2 py-1"></label>
+      <label>What one child's course needs <input type="number" min="0" step="any" name="course" value="{{ course }}" placeholder="from the forecast" class="ml-1 w-28 border border-gray-300 rounded-md px-2 py-1"> <span class="text-xs text-gray-600">leave empty to use the forecast or the protocol</span></label>
+    </div>
+    <button type="submit" class="px-4 py-2 text-sm font-medium rounded-md text-white bg-brand-indigo hover:bg-brand-deep-purple">Work it out</button>
+  </form>
+
+  {% if error %}<p class="text-sm text-red-800 border border-red-200 bg-red-50 rounded-md px-3 py-2" data-testid="sizing-error">{{ error }}</p>{% endif %}
+
+  {% if sized %}
+  <section class="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="sizing-result">
+    <div class="px-4 py-2.5 border-b border-gray-100 text-sm text-gray-700">One child's course is <strong>{{ course_text }}</strong> base units, taken from {{ course_basis_text }}.</div>
+    <ul class="divide-y divide-gray-100">
+    {% for p in sized.partners %}
+      <li class="px-4 py-3 flex flex-wrap items-center justify-between gap-3" data-testid="sizing-row">
+        <div class="min-w-0"><div class="text-sm font-medium text-gray-900">{{ p.org_name }}: {{ p.figure_text }} {{ unit }}</div>
+          <div class="text-xs text-gray-600" data-testid="sizing-working">{{ p.sentence }}</div></div>
+        <form method="post" action="{% url 'supply_chain:procurement_tender_sizing_apply' tender.id %}">{% csrf_token %}
+          <input type="hidden" name="org_id" value="{{ p.org_id }}"><input type="hidden" name="commodity_slug" value="{{ product }}">
+          <input type="hidden" name="quantity" value="{{ p.figure }}"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button type="submit" class="px-3 py-1.5 text-sm border border-brand-indigo text-brand-indigo hover:bg-message-info rounded-md" {% if tender.status != "draft" %}disabled title="Only a draft tender can be split"{% endif %}>Use this as {{ p.org_name }}'s quantity</button></form>
+      </li>
+    {% endfor %}
+    </ul>
+    <div class="px-4 py-2.5 border-t border-gray-100 text-sm text-gray-900">All partners together: <strong>{{ total_text }}</strong> {{ unit }}</div>
+  </section>
+  {% endif %}
+  <p class="text-sm"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_splits' tender.id %}">Go to the split between partners</a></p>
+</div>
+{% endblock %}

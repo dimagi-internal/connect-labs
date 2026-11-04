@@ -143,7 +143,7 @@ def _tender_timing(obj) -> dict:
         "partner_splits": obj.partner_splits or [],
     }
     if obj.needed_by is None or not obj.pk:
-        return {**out, "start_by": None, "start_by_note": "", "late_to_start": False}
+        return {**out, "start_by": None, "start_by_note": "", "start_by_working": "", "late_to_start": False}
     lead_times = list(
         obj.quotes.filter(voided=False, superseded_by__isnull=True).values_list("lead_time_days", flat=True)
     )
@@ -152,6 +152,7 @@ def _tender_timing(obj) -> dict:
         **out,
         "start_by": _date(counted["start_by"]),
         "start_by_note": counted["note"],
+        "start_by_working": counted["working"],
         "late_to_start": counted["late"],
     }
 

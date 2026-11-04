@@ -1,0 +1,63 @@
+{% extends "supply_chain/operation_form.html" %}
+
+{% comment %}
+One row per partner. A place offered for a partner is one that partner runs (the options carry data-org and the
+script below hides the rest); the total is the sum of the quantities, shown as they are typed.
+{% endcomment %}
+
+{% block extra_fields %}
+<div class="pt-2" x-data="{ count: {{ splits.total_form_count }} }" data-testid="split-editor">
+  {{ splits.management_form }}
+  {% if splits.non_form_errors %}<p class="text-xs text-red-700 mb-2">{{ splits.non_form_errors|join:" " }}</p>{% endif %}
+
+  <div id="split-rows" class="space-y-3">
+    {% for row in splits %}
+      {% include "supply_chain/procurement/_split_row.html" with row=row %}
+    {% endfor %}
+  </div>
+
+  <template id="empty-split">{% include "supply_chain/procurement/_split_row.html" with row=splits.empty_form %}</template>
+
+  <button type="button" class="mt-3 text-sm text-brand-indigo hover:underline"
+          @click="
+            const host = document.createElement('div');
+            host.appendChild(document.getElementById('empty-split').content.cloneNode(true));
+            host.innerHTML = host.innerHTML.replaceAll('__prefix__', count);
+            document.getElementById('split-rows').appendChild(host.firstElementChild);
+            document.querySelector('[name=splits-TOTAL_FORMS]').value = ++count;
+            window.splitRefresh();
+          ">+ Add a partner</button>
+
+  <p class="mt-4 text-sm text-gray-900" data-testid="split-total">
+    Total asked of suppliers:
+    <strong><span id="split-total-number">{{ current_total|floatformat:"-4" }}</span></strong> {{ unit }}
+    <span class="text-xs text-gray-600">— the sum of the rows above. Saved: {{ current_total|floatformat:"-4" }} {{ unit }}.</span>
+  </p>
+  <p class="text-xs text-gray-600">Not sure how much each partner needs?
+    <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_sizing' tender.id %}">Work it out from target cases</a>.</p>
+</div>
+<script>
+  (function () {
+    function rows() { return document.querySelectorAll("#split-rows [data-split-row]"); }
+    window.splitRefresh = function () {
+      var total = 0;
+      rows().forEach(function (row) {
+        var org = row.querySelector("select[name$='-org']").value;
+        var place = row.querySelector("select[name$='-place']");
+        Array.prototype.forEach.call(place.options, function (o) {
+          var owner = o.getAttribute("data-org");
+          o.hidden = !!owner && owner !== org;
+          o.disabled = !!owner && owner !== org;
+        });
+        var gone = row.querySelector("input[name$='-DELETE']");
+        var q = parseFloat(row.querySelector("input[data-split-quantity]").value);
+        if (!(gone && gone.checked) && !isNaN(q)) { total += q; }
+      });
+      document.getElementById("split-total-number").textContent = total;
+    };
+    document.addEventListener("input", function (e) { if (e.target.closest("#split-rows")) { window.splitRefresh(); } });
+    document.addEventListener("change", function (e) { if (e.target.closest("#split-rows")) { window.splitRefresh(); } });
+    document.addEventListener("DOMContentLoaded", window.splitRefresh);
+  })();
+</script>
+{% endblock %}
