@@ -58,6 +58,7 @@ from connect_labs.supply_chain.models import (
     Shipment,
     StockCount,
     StockIssue,
+    StockPlan,
     Supplier,
     SupplyPoint,
     Tender,
@@ -472,6 +473,7 @@ class SupplyDataAccess(
                 from connect_labs.supply_chain.update_links.models import UpdateLink
 
                 # Rules PROTECT both the item and the store they name.
+                drop("stock plans", StockPlan.objects.filter(program_id=program_id))
                 drop("dispensing rules", DispensingRule.objects.filter(program_id=program_id))
                 # A remembered visit PROTECTs the worker point it was read against.
                 drop("worker visits", WorkerVisit.objects.filter(program_id=program_id))

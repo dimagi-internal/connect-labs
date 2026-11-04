@@ -456,8 +456,13 @@ def forecast(
     horizon_weeks: int = DEFAULT_HORIZON_WEEKS,
     scenario=1,
     course_size_fallback=None,
+    enrolment_per_week=None,
 ) -> dict:
-    """The forecast, as the `stock_forecast` operation returns it. See the module docstring."""
+    """The forecast, as the `stock_forecast` operation returns it. See the module docstring.
+
+    `enrolment_per_week`, when given, is the new children each worker is expected to enrol a
+    week, in place of each worker's own recent rate (the saved plan's choice, stock/services/plan.py).
+    """
     from connect_labs.supply_chain.stock.services.network import _expected_inbound
 
     horizon_weeks = max(1, min(int(horizon_weeks), MAX_HORIZON_WEEKS))
@@ -557,6 +562,8 @@ def forecast(
                 for i, given in enumerate(_lay(profile, size, left, first, horizon_weeks, already)):
                     committed[i] += given
             rate, rate_weeks = enrolment_rate(enrolled_by_point.get(point.pk, []), rule.active_from, anchor)
+            if enrolment_per_week is not None:
+                rate, rate_weeks = Decimal(str(enrolment_per_week)), 0
             if rate is not None and one_child is not None:
                 cohort = rate * scenario
                 for start in range(horizon_weeks):
@@ -612,6 +619,8 @@ def forecast(
         program_id, item, unit, roots, nodes, demand_of, worker_figures, horizon_weeks, anchor, _expected_inbound
     )
     programme["open_cases"] = sum(w["open_cases"] for w in workers)
+    # Every child the visits show was enrolled (or already in treatment), open or not: a target counts against this.
+    programme["children_seen"] = len(cases)
     # Counts summed from the unrounded figures, never from the rounded ones on the wire.
     programme["owed"] = _wire(sum((f["owed"] for f in worker_figures.values()), ZERO)) if rules else None
     # Of what is owed (the rest of each child's course), the share the horizon lays out:

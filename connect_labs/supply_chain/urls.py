@@ -10,6 +10,7 @@ from connect_labs.supply_chain.history.as_of import as_of_view
 from connect_labs.supply_chain.market import views as market_views
 from connect_labs.supply_chain.network import views as network_views
 from connect_labs.supply_chain.partners import views as partner_views
+from connect_labs.supply_chain.plan import views as plan_views
 from connect_labs.supply_chain.portfolio import views as portfolio_views
 from connect_labs.supply_chain.procurement import views as procurement_views
 from connect_labs.supply_chain.reference import people as people_views
@@ -386,6 +387,12 @@ urlpatterns = [
         name="consignment_receive",
     ),
     path("distribution/", views.DistributionView.as_view(), name="distribution"),
+    # What to issue, who is running short, enough until the next delivery, and what to buy next.
+    path("plan/", plan_views.PlanView.as_view(), name="plan"),
+    path("plan/stores/", plan_views.PlanStoresView.as_view(), name="plan_stores"),
+    path("plan/programme/", plan_views.PlanProgrammeView.as_view(), name="plan_programme"),
+    path("plan/change/", plan_views.PlanInputsView.as_view(), name="plan_inputs"),
+    path("plan/buffer/", plan_views.PlanBufferPlaceView.as_view(), name="plan_buffer_place"),
     # Stock that is missing, taken, damaged or expired, and who is responsible where it rests.
     path("issues/", issue_views.IssuesView.as_view(), name="issues"),
     path("issues/new/", issue_views.IssueReportView.as_view(), name="issue_report"),
@@ -477,6 +484,9 @@ _HAPPENED_ROUTES = {
     "workers/",
     "workers/<int:supply_point_id>/",
     "flow/",
+    "plan/",
+    "plan/stores/",
+    "plan/programme/",
 }
 
 

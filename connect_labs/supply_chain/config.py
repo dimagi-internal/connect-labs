@@ -77,6 +77,9 @@ SCHEMA = {
     "properties": {
         "tabs": {"type": "object", "additionalProperties": TAB},
         "landing": {"type": "string", "minLength": 1, "maxLength": 200},
+        # An award worth more than this many US dollars must say why. Unset (the default):
+        # a reason is never required.
+        "award_reason_required_above_usd": {"type": "number", "exclusiveMinimum": 0},
     },
     "additionalProperties": False,
 }
@@ -141,7 +144,10 @@ SUPPLY = register_namespace(
     Namespace(
         key="supply",
         label="Supply",
-        description="Which tabs Supply shows, and which workflow or page fills a tab.",
+        description=(
+            "Which tabs Supply shows, which workflow or page fills a tab, and the amount (US dollars) above "
+            "which an award must give its reason."
+        ),
         schema=SCHEMA,
         defaults={"tabs": {}},
         layers=frozenset({"organization", "program"}),
