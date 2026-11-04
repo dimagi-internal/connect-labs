@@ -433,6 +433,7 @@ def read_pipeline_rows(request, definition_id: int, params: dict, pipeline_acces
         slot,
         definition_id=definition_id,
         scope={"opportunity_id": int(scope_opp)} if scope_opp else {"program_id": params.get("scope_program_id")},
+        definition_scope=params.get("definition_scope"),
         opportunity_ids=[int(opportunity_id)],
         aliases=[params["alias"]],
     )

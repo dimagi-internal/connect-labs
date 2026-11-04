@@ -31,6 +31,7 @@ def _request(**params):
 def _definition(sources=None, opps=(523, 524)):
     definition = MagicMock()
     definition.opportunity_ids = list(opps)
+    definition.program_id = None
     definition.pipeline_sources = sources or [
         {"pipeline_id": 19776, "alias": "children"},
         {"pipeline_id": 19777, "alias": "visits"},
@@ -113,6 +114,17 @@ class TestItAnswersOnlyWhatWasAsked:
         assert pda.execute_pipeline.call_count == 0, "a read must never fill in the request"
         kwargs = pda.queued.call_args.kwargs
         assert kwargs["aliases"] == ["children"] and kwargs["opportunity_ids"] == [523]
+
+    def test_a_fill_for_a_program_owned_workflow_finds_it_in_its_program(self):
+        # The page asks for one opportunity's rows with only the program in its scope.
+        # Looked up in that opportunity, the worker answered "workflow N not found".
+        definition = _definition()
+        definition.program_id = 217
+        _body, status, pda = _call(cached=None, definition=definition, alias="children", rows_opportunity_id=524)
+        assert status == 202
+        kwargs = pda.queued.call_args.kwargs
+        assert kwargs["definition_scope"] == {"program_id": 217}
+        assert kwargs["opportunity_ids"] == [524]
 
 
 class TestTheStreamRelaysTheSameRead:
