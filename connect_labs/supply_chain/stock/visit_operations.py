@@ -76,6 +76,8 @@ _CASES = obj(
             required=("path", "open", "exit"),
         ),
         "lost_after_days": {"type": "integer", "minimum": 1, "maximum": 365},
+        "course_basis": {"enum": ["expected", "protocol"]},
+        "dose_basis": {"enum": ["protocol", "delivered"]},
     }
 )
 _RULE_DATA = obj(

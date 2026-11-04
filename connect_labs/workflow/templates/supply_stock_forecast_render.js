@@ -157,6 +157,7 @@ function WorkflowUI({
     measured: 'from visits',
     steady: 'then held at the last measured week',
     protocol: 'protocol',
+    delivered: 'what children are given',
     default: 'default',
   };
   if (!f.cases_configured) {
@@ -164,12 +165,34 @@ function WorkflowUI({
   } else {
     chips.push(
       course.size !== null && course.size !== undefined
-        ? 'course ' +
+        ? course.basis === 'measured'
+          ? 'expected course ' +
             fmt(num(course.size)) +
             ' ' +
             units +
-            ' · ' +
-            (BASIS_WORDS[course.basis] || course.basis)
+            ' · from the ' +
+            course.completed_cases +
+            ' children who finished' +
+            (course.protocol_size
+              ? ' (protocol limit ' + fmt(num(course.protocol_size)) + ')'
+              : '')
+          : course.basis === 'protocol'
+            ? 'course ' +
+              fmt(num(course.size)) +
+              ' ' +
+              units +
+              ' · the protocol’s length' +
+              (course.setting === 'protocol'
+                ? ', as the programme set'
+                : ' until enough children have finished (' +
+                  (course.completed_cases || 0) +
+                  ' so far)')
+            : 'course ' +
+              fmt(num(course.size)) +
+              ' ' +
+              units +
+              ' · ' +
+              (BASIS_WORDS[course.basis] || course.basis)
         : 'course unknown',
     );
     var profileBases = [];
@@ -206,14 +229,16 @@ function WorkflowUI({
     if (carried)
       chips.push(
         carried +
-          (carried === 1 ? ' child' : ' children') +
-          ' enrolled before the visits start',
+          (carried === 1 ? ' child’s' : ' children’s') +
+          ' enrolment came before the visit data begins, so their earlier ' +
+          units +
+          ' aren’t known',
       );
     if ((basis.lost_after_days || []).length)
       chips.push(
-        'not seen for ' +
+        'this forecast treats a child not seen for ' +
           basis.lost_after_days.join('/') +
-          ' days = out of treatment',
+          ' days as out of treatment (the programme can change this; it is not the definition of default)',
       );
   }
   if (f.data_to && f.anchor && (!f.as_of || f.data_to < f.as_of)) {
@@ -517,6 +542,12 @@ function WorkflowUI({
         </div>
       )}
 
+      <div className="text-sm text-gray-700" data-testid="forecast-audience">
+        Who this is for: the supervisor, weekly, before the Monday handout; the
+        partner’s manager, every few weeks; the programme team, monthly and
+        before each purchase. The numbers below are estimates from the visits so
+        far, and the assumptions beside them can be changed by the programme.
+      </div>
       <div className="flex flex-wrap items-center gap-2">
         {chips.map(function (c) {
           return (
@@ -627,8 +658,14 @@ function WorkflowUI({
             delivered.children +
             ' children.' +
             (rationAtProtocol
-              ? ' The forecast above assumes the protocol.'
-              : '')}
+              ? ' The forecast above assumes the protocol’s ' +
+                fmt(num(delivered.protocol_per_day)) +
+                ' a day; the programme can lay the plan at what children are given instead.'
+              : (basis.profile || []).some(function (p) {
+                    return p.basis === 'delivered';
+                  })
+                ? ' The forecast above is laid at this actual rate, not the protocol’s.'
+                : '')}
         </div>
       )}
 
