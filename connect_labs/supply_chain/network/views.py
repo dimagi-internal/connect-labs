@@ -80,11 +80,14 @@ class NetworkView(OperationBase):
         if item is not None:
             stock = self.op("network_tree", item_id=item["id"], **as_of_payload(self.request))
             _flatten(stock["roots"], figures)
+        roots = build_tree(points, figures)
+        names = {org["id"]: org["name"] for org in self.op("org_list")}
         context.update(
             tree_items=items,
             tree_item=item,
             stock=stock,
-            roots=build_tree(points, figures),
+            roots=roots,
+            partners=group_by_partner(roots, names),
         )
         return context
 
@@ -181,6 +184,38 @@ def build_tree(points, figures) -> list[dict]:
         if p["id"] not in visited:
             roots.append(node(p))
     return roots
+
+
+NO_PARTNER = "No partner recorded"
+
+
+def _partner_of(node):
+    """The organisation that runs this tree: the root's own, else the first point below it that names one."""
+    if node.get("managed_by_org_id"):
+        return node["managed_by_org_id"]
+    for child in node["store_children"] + node["worker_children"]:
+        found = _partner_of(child)
+        if found:
+            return found
+    return None
+
+
+def group_by_partner(roots, org_names) -> list[dict]:
+    """One tree per partner: [{name, org_id, roots}], partners by name, then the points no partner is recorded for.
+
+    Each point can name the organisation that runs it (`managed_by_org_id`);
+    a top store's partner is its own, else the first point below it that names
+    one. Points that name none are kept together, last, and labelled as such,
+    never folded into a partner's tree.
+    """
+    groups: dict = {}
+    for root in roots:
+        groups.setdefault(_partner_of(root), []).append(root)
+    named = sorted((org for org in groups if org), key=lambda org: (org_names.get(org) or "").lower())
+    out = [{"org_id": org, "name": org_names.get(org) or f"Organisation {org}", "roots": groups[org]} for org in named]
+    if None in groups:
+        out.append({"org_id": None, "name": NO_PARTNER, "roots": groups[None]})
+    return out
 
 
 class OrganisationDirectoryView(OperationBase):
