@@ -82,7 +82,20 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   against the band, in days. Before 7 days, say when the estimate will arrive and
   give the rate so far, never a bare "unknown".
 
-- **The forecast's course is the EXPECTED course once enough children have finished;
+- **Course length: a LOW and a HIGH estimate, and one rule for which the plan uses**
+  (2026-11-04, on Sophie Feintuch's feedback for programme 10172). Low = the median of
+  children who COMPLETED treatment (the case rule's `complete` exits only, never defaults,
+  deaths, referrals); high = the protocol's size. Children leave in the order they recover
+  or drop out, so the first finishers are the fastest and the low is a floor. Standard: the
+  plan uses the HIGH until the finishers are at least half the children enrolled
+  (`forecast.MEASURED_MIN_SHARE`), then the low; `course_basis: expected` forces the low,
+  `protocol` forces the high. Forecast, Plan, Stock review, break-even and purchase sizing
+  all read the one figure from `forecast.course_size`; both estimates are shown.
+- **One run-out date per field worker** (`forecast.worker_run_out`): the children they are
+  treating times the rest of their course at the daily dose, against what they hold; recent
+  pace only where they have no children on record, labelled. Forecast, Plan and Stock review
+  read it, none computes its own.
+- _Superseded by the two entries above:_ **The forecast's course is the EXPECTED course once enough children have finished;
   the protocol is its upper limit and the early fallback** (2026-11-04, Jonathan
   Jackson, on Sophie Feintuch's RUTF feedback; revisits "the protocol leads",
   #2386). The protocol's 168 sachets is the most a child can have (12 visits); using

@@ -184,8 +184,9 @@ def _values(values, what) -> list[str]:
 
 
 # How the forecast sizes a course and a day's ration, set on the case rule by the programme.
-# Course: "expected" (from children who finished, the protocol's size as the upper limit and the
-# early fallback) or "protocol" (always the protocol's size). Dose: "protocol" (the protocol's
+# Course: unset (the protocol's size, the HIGH estimate, until the children who completed treatment are
+# at least half of those enrolled, then their median, the LOW estimate), "expected" (the low estimate as
+# soon as five children have completed) or "protocol" (always the high estimate). Dose: "protocol" (the protocol's
 # daily ration) or "delivered" (what visits show children actually get, once enough are seen).
 COURSE_BASES = ("expected", "protocol")
 DOSE_BASES = ("protocol", "delivered")

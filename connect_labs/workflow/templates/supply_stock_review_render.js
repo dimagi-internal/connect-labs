@@ -43,15 +43,24 @@ function WorkflowUI({
   if (forecastSize > 0) {
     courseSize = forecastSize;
     courseNote =
-      forecastCourse.basis === 'measured'
-        ? 'expected course of ' +
+      (forecastCourse.chosen === 'low'
+        ? 'low estimate of ' +
           Math.round(forecastSize) +
           ', from the ' +
           forecastCourse.completed_cases +
           ' children who finished'
         : forecastCourse.basis === 'protocol'
-          ? 'protocol course of ' + Math.round(forecastSize)
-          : 'assumed course of ' + Math.round(forecastSize);
+          ? 'protocol (high) estimate of ' +
+            Math.round(forecastSize) +
+            ', as only ' +
+            (forecastCourse.completed_cases || 0) +
+            ' children have finished'
+          : 'assumed course of ' + Math.round(forecastSize)) +
+      (forecastCourse.low !== null &&
+      forecastCourse.low !== undefined &&
+      forecastCourse.chosen !== 'low'
+        ? ' (low estimate ' + Math.round(Number(forecastCourse.low)) + ')'
+        : '');
   } else if (Number(cfg.course_size) > 0) {
     courseSize = Number(cfg.course_size);
     courseNote = 'assumed course of ' + Math.round(courseSize);
@@ -159,21 +168,28 @@ function WorkflowUI({
     var f = forecastBy[r.opportunity_id + ':' + r.supply_point_id];
     var onHand = amount(r.on_hand);
     var base = (forecastRow && forecastRow.anchor) || fromDay;
-    if (f && f.basis === 'cases' && f.stock_known && base) {
-      if (onHand !== null && onHand <= 0)
-        return { days: 0, method: 'children', children: f.open_cases };
-      if (f.runs_dry_on)
+    // The forecast's own run_out is the one answer (forecast.worker_run_out): read it, never recompute.
+    if (f && f.run_out && f.stock_known && base) {
+      var ro = f.run_out;
+      if (ro.method === 'children') {
+        if (ro.date)
+          return {
+            days: Math.max(0, daysBetween(base, ro.date)),
+            method: 'children',
+            children: ro.children,
+          };
         return {
-          days: Math.max(0, daysBetween(base, f.runs_dry_on)),
+          days: forecastWeeks * 7,
           method: 'children',
-          children: f.open_cases,
+          children: ro.children,
+          beyond: true,
         };
-      return {
-        days: forecastWeeks * 7,
-        method: 'children',
-        children: f.open_cases,
-        beyond: true,
-      };
+      }
+      if (ro.date)
+        return {
+          days: Math.max(0, daysBetween(base, ro.date)),
+          method: 'pace',
+        };
     }
     return { days: amount(r.days_to_stockout), method: 'pace' };
   }

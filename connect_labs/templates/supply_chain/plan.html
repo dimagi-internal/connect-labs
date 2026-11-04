@@ -78,7 +78,7 @@ plain words, and each step says where it came from.
               <td class="px-4 py-2 text-right tabular-nums">{% if r.children is None %}&mdash;{% else %}{{ r.children }}{% endif %}</td>
               <td class="px-4 py-2 text-right tabular-nums">{% if r.stock_known %}{{ r.held|floatformat:0 }}{% else %}not known{% endif %}</td>
               <td class="px-4 py-2 text-right tabular-nums font-semibold">{{ r.to_issue }}</td>
-              <td class="px-4 py-2">{{ r.runs_dry_on|default:"not in the weeks ahead" }}</td>
+              <td class="px-4 py-2">{{ r.runs_dry_on|default:"not in the weeks ahead" }}{% if r.run_out_method == "pace" %} <span class="text-xs text-gray-600">(recent pace)</span>{% endif %}</td>
             </tr>
           {% empty %}
             <tr><td colspan="5" class="px-4 py-6 text-center text-gray-600">No field workers yet.</td></tr>
@@ -91,6 +91,8 @@ plain words, and each step says where it came from.
       </div>
     </div>
     <p class="text-xs text-gray-600 mt-2">
+      Runs out: days until each FLW runs out, based on the children they're treating &mdash; the same date the Forecast
+      and Stock review show. Where a worker has no children on record it is their recent pace, marked on the row.
       Appetite tests are not counted: Supply does not hold them yet. What a worker holds is Supply's record of
       handovers less visits, not the balance on their phone.
     </p>
@@ -207,7 +209,7 @@ plain words, and each step says where it came from.
       <li>Less still owed to the <b>{{ b.in_treatment }}</b> children in treatment: <b>{{ b.owed|floatformat:0 }}</b> <span class="text-gray-600">&mdash; the rest of each child's course, from their visits.</span></li>
       <li>Left for new children: <b>{{ b.left_for_new|floatformat:0 }}</b></li>
       <li>Children still to come: <b>{{ b.children_to_come }}</b> <span class="text-gray-600">&mdash; the target of {{ b.target }} less the {{ b.children_so_far }} seen in the visits.</span></li>
-      <li>A full course is <b>{{ b.course|floatformat:0 }}</b> sachets, up to {{ b.max_visits }} visits <span class="text-gray-600">&mdash; {% if b.course_basis == "measured" %}the usual course of the {{ b.course_children }} children who finished{% else %}the protocol's course{% endif %}.</span></li>
+      <li>A full course is <b>{{ b.course|floatformat:0 }}</b> sachets, up to {{ b.max_visits }} visits <span class="text-gray-600">&mdash; the plan uses the {% if b.course_chosen == "low" %}LOW estimate, measured from the {{ b.course_children }} children who completed treatment{% else %}HIGH estimate, the protocol's course{% endif %} ({{ b.course_reason }}). Low: {% if b.course_low %}{{ b.course_low|floatformat:0 }} sachets, from the {{ b.course_children }} children who completed treatment so far{% else %}not yet measured{% endif %}. High: {% if b.course_high %}{{ b.course_high|floatformat:0 }} sachets{% else %}unknown{% endif %}.</span></li>
       <li>All of them at a full course would need <b>{{ b.needed_for_new|floatformat:0 }}</b>; the shortfall is <b>{{ b.to_buy|floatformat:0 }}</b>{% if b.on_order and b.on_order != "0" %}, or <b>{{ b.to_buy_with_orders|floatformat:0 }}</b> once the {{ b.on_order|floatformat:0 }} already on order arrive{% endif %}.</li>
     </ol>
     {% if b.visits_per_case is not None and b.children_to_come %}

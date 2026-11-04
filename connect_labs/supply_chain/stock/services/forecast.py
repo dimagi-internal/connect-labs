@@ -77,6 +77,11 @@ from connect_labs.supply_chain.values import Quantity
 ZERO = Decimal(0)
 # Fewest cases a measured figure (a week of the profile, the course size) rests on.
 K_MIN = 5
+# The measured (low) course leads only once the children who finished are at least this share of
+# every child enrolled since the visits began. Children leave in the order they recover or drop out,
+# so the first to finish are the fastest: their average is a floor, not an expected course, until
+# most children who started have finished (Sophie Feintuch's feedback on programme 10172, 2026-11).
+MEASURED_MIN_SHARE = Decimal("0.5")
 ENROL_WEEKS = 3
 MIN_ENROL_WEEKS = 2
 HISTORY_WEEKS = 8
@@ -234,15 +239,21 @@ def read_cases(program_id, item, rules, anchor, unit) -> list[Case]:
 
 
 def course_size(cases, rules, item, fallback) -> dict:
-    """{size, basis, completed_cases, protocol_size, setting}: how long a child's course is expected to be.
+    """How long a child's course is taken to be, as a LOW and a HIGH estimate and the one the plan uses.
 
-    The expected length leads once `K_MIN` children have finished a course:
-    the median received by those who completed, never above the protocol's size
-    (the upper limit). Until then, and whenever the programme sets
-    `course_basis: protocol` on its case rule, the protocol's size; with
-    neither, the caller's, else unknown. `completed_cases` is how many children
-    the expected length rests on (revisits the 2026-10 "protocol leads" call, #2386:
-    168 sachets for everyone overstated need once dozens had exited).
+    {size, basis, low, high, chosen, completed_cases, enrolled_cases, protocol_size, setting, reason}
+
+    - **low**: the median sachets received by children who COMPLETED treatment (the case rule's
+      `outcome.complete`, e.g. recovered; never a default, death, referral or non-response), once
+      `K_MIN` have, and never above the protocol. None before that. Those children are the first to
+      leave, so this is a floor, not an expected course.
+    - **high**: the commodity's protocol size (`base_units_per_course`; else the caller's
+      `fallback`). None with neither.
+    - **size / chosen**: the figure every page uses (Forecast, Plan, Stock review, break-even,
+      purchase sizing). The programme chooses with `course_basis` on its case rule: `protocol` is
+      always the high; `expected` is the low as soon as there is one; unset (standard) is the high
+      until the finished children are at least `MEASURED_MIN_SHARE` of the children enrolled, and the
+      low after. With no high estimate the low is used when it exists, else the size is unknown.
     """
     complete = {rule.opportunity_id: set(rule.cases["outcome"].get("complete") or []) for rule in rules}
     finished = [
@@ -250,18 +261,45 @@ def course_size(cases, rules, item, fallback) -> dict:
         for c in cases
         if not c.carry_over and c.status == "exited" and c.outcome in complete.get(c.opportunity_id, ())
     ]
+    enrolled = sum(1 for c in cases if not c.carry_over)
     protocol = (item.commodity.course_definition or {}).get("base_units_per_course") if item.commodity_id else None
     protocol = Decimal(str(protocol)) if protocol else None
-    setting = _setting(rules, "course_basis", "expected")
-    known = {"protocol_size": _wire(protocol), "setting": setting, "completed_cases": len(finished)}
-    if len(finished) >= K_MIN and (setting == "expected" or not protocol):
-        expected = Decimal(median(finished))
-        return {"size": min(expected, protocol) if protocol else expected, "basis": MEASURED, **known}
-    if protocol:
-        return {"size": protocol, "basis": PROTOCOL, **known}
-    if fallback:
-        return {"size": Decimal(str(fallback)), "basis": DEFAULT, **known}
-    return {"size": None, "basis": UNKNOWN, **known}
+    high = protocol or (Decimal(str(fallback)) if fallback else None)
+    low = None
+    if len(finished) >= K_MIN:
+        low = Decimal(median(finished))
+        if protocol:
+            low = min(low, protocol)
+    setting = _setting(rules, "course_basis", "")
+    representative = bool(enrolled) and Decimal(len(finished)) >= MEASURED_MIN_SHARE * enrolled
+    known = {
+        "protocol_size": _wire(protocol),
+        "setting": setting or "standard",
+        "completed_cases": len(finished),
+        "enrolled_cases": enrolled,
+        "low": _wire(low),
+        "high": _wire(high),
+    }
+    if low is not None and (setting == "expected" or high is None or (setting != "protocol" and representative)):
+        reason = (
+            "as the programme set"
+            if setting == "expected"
+            else f"{len(finished)} of {enrolled} children have finished, enough to say what a course takes"
+        )
+        return {"size": low, "basis": MEASURED, "chosen": "low", "reason": reason, **known}
+    if high is not None:
+        basis = PROTOCOL if protocol else DEFAULT
+        if setting == "protocol":
+            reason = "as the programme set"
+        elif low is None:
+            reason = f"only {len(finished)} children have finished, too few to measure a course"
+        else:
+            reason = (
+                f"only {len(finished)} of {enrolled} children have finished, and the first to finish are "
+                "the fastest, so their figure is a floor"
+            )
+        return {"size": high, "basis": basis, "chosen": "high", "reason": reason, **known}
+    return {"size": None, "basis": UNKNOWN, "chosen": None, "reason": "no course length is known", **known}
 
 
 def _setting(rules, key, default):
@@ -417,6 +455,51 @@ def runs_dry(on_hand: Decimal | None, needs: list[Decimal], anchor: date) -> dat
             return anchor + timedelta(days=7 * i + max(days, 1))
         total += need
     return None
+
+
+def worker_run_out(basis, on_hand, committed, anchor, open_cases, pace_days, horizon_weeks) -> dict:
+    """The ONE answer to "when does this field worker run out": {date, days, method, children, beyond_horizon}.
+
+    Every page that says when a worker runs out (Forecast, Plan, Stock review) reads this and nothing
+    else. Caseload method: the children they are treating, each owed the rest of their course at the
+    daily dose (`committed`, week by week), against what they hold. Where the worker has no children
+    on record (no case rule, or no course length), the recent pace's days to stock-out instead,
+    `method: "pace"`. `date` is None when stock is unknown or lasts past the horizon (`beyond_horizon`).
+    """
+    if on_hand is None:
+        return {
+            "date": None,
+            "days": None,
+            "method": basis_method(basis),
+            "children": open_cases,
+            "beyond_horizon": False,
+        }
+    if basis == "cases":
+        dry = runs_dry(on_hand, committed, anchor)
+        return {
+            "date": _iso(dry),
+            "days": (dry - anchor).days if dry else None,
+            "method": "children",
+            "children": open_cases,
+            "beyond_horizon": dry is None,
+            "horizon_days": horizon_weeks * 7,
+        }
+    if on_hand <= 0:
+        return {"date": anchor.isoformat(), "days": 0, "method": "pace", "children": None, "beyond_horizon": False}
+    if isinstance(pace_days, Decimal):
+        dry = anchor + timedelta(days=int(pace_days))
+        return {
+            "date": dry.isoformat(),
+            "days": int(pace_days),
+            "method": "pace",
+            "children": None,
+            "beyond_horizon": False,
+        }
+    return {"date": None, "days": None, "method": "pace", "children": None, "beyond_horizon": False}
+
+
+def basis_method(basis) -> str:
+    return "children" if basis == "cases" else "pace"
 
 
 def gap_opens(wanted: list[Decimal], available: list[Decimal], anchor: date) -> date | None:
@@ -587,6 +670,9 @@ def forecast(
             "basis": basis,
         }
         wired = belief.wire(node)
+        run_out = worker_run_out(
+            basis, on_hand, committed, anchor, len(open_here), node.days_to_stockout, horizon_weeks
+        )
         workers.append(
             {
                 "supply_point_id": point.pk,
@@ -607,7 +693,12 @@ def forecast(
                     {"committed": _wire(c), "new": _wire(n), "need": _wire(c + n)} for c, n in zip(committed, new)
                 ],
                 "need_total": _wire(cumulative[-1]),
-                "runs_dry_on": _iso(runs_dry(on_hand, need, anchor)),
+                # The single run-out answer (worker_run_out); `runs_dry_on` is the same date, kept under
+                # the name the pages already read. With the children still to enrol counted, it is
+                # `runs_dry_with_enrolments_on`.
+                "run_out": run_out,
+                "runs_dry_on": run_out["date"],
+                "runs_dry_with_enrolments_on": _iso(runs_dry(on_hand, need, anchor)),
                 "shortfall_by_end": _wire(shortfall[-1]),
                 "given_out": [_wire(v) for v in history["by_point"].get(point.pk, [ZERO] * HISTORY_WEEKS)],
             }
