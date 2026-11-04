@@ -95,6 +95,10 @@ PAGE_PURPOSE = {
         "Follow the stock from delivery to the children: how much is still held, "
         "how much has been handed on and how much is unaccounted for."
     ),
+    "supply_chain:issues": (
+        "Stock that is missing, taken, damaged or expired. Report it where it happened, follow it up until it "
+        "is recovered, replaced or written off, and see who is responsible where stock is kept."
+    ),
     "supply_chain:catalogue": (
         "What you buy. Set up each product once, and add the manufacturer's version " "(a trade item) when you buy it."
     ),
