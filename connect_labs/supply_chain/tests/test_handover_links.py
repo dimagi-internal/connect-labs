@@ -233,8 +233,8 @@ class TestConfirmingManyPlacesAtOnce:
         line = DistributionLine.objects.get(distribution_id=two_places["id"], to_supply_point_id=world["wuse"]["id"])
         self.post(client, issued, line, "Garki PHC - 8 cartons")
         given = {
-            l.to_supply_point.name: l.quantity_given
-            for l in DistributionLine.objects.filter(distribution_id=two_places["id"])
+            row.to_supply_point.name: row.quantity_given
+            for row in DistributionLine.objects.filter(distribution_id=two_places["id"])
         }
         assert given == {"Wuse PHC": Decimal("12"), "Garki PHC": Decimal("8")}
         assert Movement.objects.filter(distribution_id=two_places["id"]).count() == 2
