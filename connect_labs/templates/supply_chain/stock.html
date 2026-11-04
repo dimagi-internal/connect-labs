@@ -40,6 +40,14 @@ for something they had.{% endcomment %}
   <a class="text-brand-indigo underline" href="{% url 'labs:workflow:list' %}">workflow templates</a>.
 </p>
 {% endif %}
+<div class="rounded-lg border border-gray-200 bg-white p-4 mb-4 text-sm text-gray-700 max-w-4xl" data-testid="stock-forms-explained">
+  <p class="font-medium text-gray-900 mb-1">Two ways to record stock</p>
+  <ul class="list-disc ml-5 space-y-1">
+    <li><strong>Stock in or out</strong>: something moved (a delivery, a handout, a loss).</li>
+    <li><strong>Count</strong>: what is actually on the shelf. A count is compared with the records and shows any difference. It replaces the records only if you mark it as an override.</li>
+  </ul>
+  <p class="mt-2"><strong>Which number counts?</strong> Supply's records are the official figure, for a field worker as much as for a store. A field worker's own balance on their phone is shown as a <em>self-report</em>, beside the records, with the difference. These forms are the fallback: regular handovers need the simpler route.</p>
+</div>
 <div class="flex items-baseline gap-3 mb-1">
   <h2 class="text-lg font-semibold text-brand-indigo">Stock across the network</h2>
   <span class="text-sm text-gray-600">
@@ -115,8 +123,8 @@ paragraphs of method above a one-row table.{% endcomment %}
     <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
       <tr>
         <th class="text-left px-4 py-2">Supply point</th>
-        <th class="text-left px-4 py-2">Ledger says</th>
-        <th class="text-left px-4 py-2" title="What somebody counted on the shelf, kept beside the ledger">Last count</th>
+        <th class="text-left px-4 py-2"title="Supply's records: the official figure">Records say (official)</th>
+        <th class="text-left px-4 py-2" title="What somebody counted on the shelf, or a field worker reported from their phone: a self-report, kept beside the records">Last count (self-report)</th>
         <th class="text-left px-4 py-2" title="What a store dispenses; for a store that only releases to others, what it releases">Demand / day</th>
         <th class="text-left px-4 py-2">Days of stock</th>
         <th class="text-left px-4 py-2">To reach its maximum</th>

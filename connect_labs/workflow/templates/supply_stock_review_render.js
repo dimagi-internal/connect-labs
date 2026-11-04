@@ -371,6 +371,11 @@ function WorkflowUI({
           <span className="text-sm font-semibold text-gray-900 mr-1">
             How long it lasts
           </span>
+          <span className="text-xs text-gray-600 mr-2">
+            Days until each worker runs out, at the pace of their last 14 days.
+            (The Forecast page instead uses the children each worker is
+            treating.)
+          </span>
           {BANDS.map(function (b) {
             var n = (rollup.runway || {})[b[0]] || 0;
             if (!n) return null;

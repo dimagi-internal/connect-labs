@@ -81,6 +81,12 @@ own arithmetic -- so workers sit in the tree under their store, behind one
         </form>
       {% endif %}
     </div>
+    <p class="text-xs text-gray-600 mb-2" data-testid="network-readings">
+      Two readings can look like they disagree. <strong>On its own shelf</strong> and its status chip
+      (ok, low) are about the store itself. <strong>With everything below it</strong> adds the
+      stores and field workers it supplies, so a store can be "ok" on its own shelf while the whole
+      branch beneath it is "overstocked".
+    </p>
     <ul class="bg-white border border-brand-border-light rounded-lg px-4 divide-y divide-gray-100">
       {% for node in roots %}{% include 'supply_chain/_network_node.html' with node=node %}{% endfor %}
     </ul>
