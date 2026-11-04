@@ -1032,3 +1032,26 @@ def test_the_stock_page_rates_workers_as_a_plan_per_point_would(client_in_progra
             assert g[key] == p[key], (g["name"], key, g[key], p[key])
     assert grouped == planned
     assert any(p["amc"] and p["amc"].get("amount") for p in grouped["points"])
+
+
+def test_the_flow_states_its_account_in_words_with_shares(da, world):
+    account = _flow(da, world)["account"]
+
+    stages = {stage["key"]: stage for stage in account["stages"]}
+    assert account["arrived"] == 300
+    # 300 reached the partner store, which passed all of it on; workers hold 230 and gave out 70.
+    assert stages["warehouse"]["amount"] == 0 and stages["flw"]["amount"] == 230
+    assert stages["given"]["amount"] == 70 and stages["given"]["percent"] == 23
+    assert stages["lost"]["amount"] == 0  # a stream that exists, saying nothing was lost
+    assert "shortfall" not in stages
+
+
+def test_the_flow_page_reads_as_sentences_before_the_diagram(client_in_program, world):
+    body = get(client_in_program, "flow")
+
+    assert 'data-testid="flow-account"' in body
+    for label in ("Arrived", "Still in warehouse", "At PHCs", "With FLWs", "Given out to children", "Lost or missing"):
+        assert label in body
+    assert "none recorded" in body
+    assert 'data-testid="flow-household"' in body
+    assert "Optional detail" in body

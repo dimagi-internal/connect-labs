@@ -50,7 +50,38 @@ restocks them, then by name, never by how they are doing.
     {% endif %}
   </div>
 
+  <section class="bg-white border border-brand-border-light rounded-lg p-4 mb-4" data-testid="flow-account">
+    <h2 class="text-base font-semibold text-gray-900">Can we account for every {{ flow.unit }}?</h2>
+    <p class="text-sm text-gray-600 mt-1">
+      Of the {{ flow.account.arrived|floatformat:"0g" }} {{ flow.unit|unit_plural }} of {{ item.name }} that have arrived, up to the end of the latest week:
+    </p>
+    <table class="w-full text-sm mt-3 max-w-3xl" data-testid="flow-account-table">
+      <thead class="text-xs uppercase tracking-wide text-gray-600"><tr>
+        <th scope="col" class="text-left py-1 pr-3">Where it is</th><th scope="col" class="text-right py-1 px-3">{{ flow.unit|unit_plural|capfirst }}</th><th scope="col" class="text-right py-1 pl-3">Share of arrivals</th>
+      </tr></thead>
+      <tbody class="divide-y divide-gray-100">
+        <tr><th scope="row" class="text-left font-medium py-1.5 pr-3">Arrived</th><td class="text-right tabular-nums px-3">{{ flow.account.arrived|floatformat:"0g" }}</td><td class="text-right pl-3 text-gray-600">100%</td></tr>
+        {% for stage in flow.account.stages %}
+          <tr>
+            <th scope="row" class="text-left font-medium py-1.5 pr-3">{{ stage.label }}<div class="font-normal text-xs text-gray-600">{{ stage.help }}</div></th>
+            <td class="text-right tabular-nums px-3 align-top py-1.5">{% if stage.amount == 0 and stage.key == "lost" %}none recorded{% else %}{{ stage.amount|floatformat:"0g" }}{% endif %}</td>
+            <td class="text-right pl-3 align-top py-1.5 text-gray-700">{% if stage.percent is not None %}{{ stage.percent }}%{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="text-xs text-gray-600 mt-2">Losses and count shortfalls are streams of their own: they are never netted into another line.</p>
+    <div class="mt-4 rounded-md border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-700 max-w-3xl" data-testid="flow-household">
+      <strong>In the household:</strong> empty sachets returned, leftovers, and sachets missing or misused (with reasons) come from the delivery form. None of this programme's visits carry those answers yet, so nothing is shown here rather than a guess.
+    </div>
+  </section>
+
   <div id="flow-root" class="bg-white border border-brand-border-light rounded-lg p-4">
+    <details>
+    <summary class="cursor-pointer text-sm font-medium text-brand-indigo mb-3">Optional detail: the diagram, week by week</summary>
+    <p class="text-xs text-gray-600 mb-3 max-w-3xl">
+      Each column is a step in the chain: arrivals, then the stores (each "Store" is a warehouse or store the stock passes through), then field workers, then where it ended. Plain blocks are stock that moved on; striped blocks are stock still held there at the end of the chosen week. Hover a block for its full name.
+    </p>
     <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4" data-testid="flow-tiles">
       {% for key, label in flow_tiles %}
         <div class="rounded-md border border-gray-200 px-3 py-2">
@@ -92,6 +123,7 @@ restocks them, then by name, never by how they are doing.
           <tbody class="divide-y divide-gray-100"></tbody>
         </table>
       </div>
+    </details>
     </details>
   </div>
   {{ flow|json_script:"flow-data" }}

@@ -211,6 +211,71 @@ def flow(program_id: int, item, *, on_date: date | None = None) -> dict:  # noqa
         "links": links,
         "adjusted": _number(adjusted),
         "left_out": {u: _number(v) for u, v in left_out.items()},
+        "account": account(links, points, adjusted),
+    }
+
+
+# The stages of the account, in the order stock travels. A label is the whole
+# message, so a reader never needs the diagram to know where stock is.
+ACCOUNT_STAGES = (
+    ("warehouse", "Still in warehouse", "Stock held at the warehouses and stores, not yet passed down."),
+    ("phc", "At PHCs", "Stock held at health facilities, waiting for field workers to collect it."),
+    ("flw", "With FLWs", "Stock held by field workers, not yet given to a child."),
+    ("given", "Given out to children", "What field workers' visits recorded as given out."),
+    ("lost", "Lost or missing", "Recorded losses and expiries."),
+    ("elsewhere", "Sent outside the network", "Stock passed to someone outside this network."),
+    ("shortfall", "Count shortfalls", "Net corrections made when a count did not match the records."),
+)
+
+
+def account(links, points, adjusted) -> dict:
+    """The whole account in words: what arrived, where it is now and where it went, with shares.
+
+    Read from the last week of every route, so it is the same total the
+    diagram ends on. A count correction is a stream of its own (a shortfall
+    when negative), never netted into another line.
+    """
+    kind_of = {f"p{p.pk}": p.kind for p in points}
+    held: dict[str, Decimal] = {}
+    arrived = given = lost = elsewhere = ZERO
+    for link in links:
+        final = Decimal(str(link["series"][-1]))
+        src, dst = link["source"], link["target"]
+        if src.startswith("c") or src == UNLINKED:
+            arrived += final
+        elif src in kind_of:
+            held[src] = held.get(src, ZERO) - final
+        if dst == GIVEN:
+            given += final
+        elif dst == LOST:
+            lost += final
+        elif dst == ELSEWHERE:
+            elsewhere += final
+        elif dst in kind_of:
+            held[dst] = held.get(dst, ZERO) + final
+    stage = {"warehouse": ZERO, "phc": ZERO, "flw": ZERO}
+    for key, amount in held.items():
+        kind = kind_of[key]
+        stage["flw" if kind == "user_held" else "phc" if kind == "facility" else "warehouse"] += amount
+    amounts = {**stage, "given": given, "lost": lost, "elsewhere": elsewhere, "shortfall": -adjusted}
+
+    def share(amount):
+        return int((amount / arrived * 100).quantize(Decimal(1))) if arrived > 0 else None
+
+    return {
+        "arrived": _number(arrived),
+        "stages": [
+            {
+                "key": key,
+                "label": label,
+                "help": help_,
+                "amount": _number(amounts[key]),
+                "percent": share(amounts[key]),
+            }
+            for key, label, help_ in ACCOUNT_STAGES
+            # Only the streams that exist are streams; the first five always read.
+            if key in ("warehouse", "phc", "flw", "given", "lost") or amounts[key] != 0
+        ],
     }
 
 
