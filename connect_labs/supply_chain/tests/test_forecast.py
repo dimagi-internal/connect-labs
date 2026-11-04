@@ -172,13 +172,14 @@ def test_committed_follows_the_profile_and_stops_at_the_course(world):
     # child-a has 112 left, child-d 136, both at 15 a week: child-a's runs out in week 8. child-d had
     # 14 of this week's 15 on 25 Sep, so the first week owes it 1.
     assert committed == [Decimal(16)] + [Decimal(30)] * 6 + [Decimal(22)]
-    assert out["basis"]["course"] == {
-        "size": "150",
-        "basis": "default",
-        "completed_cases": 1,
-        "protocol_size": None,
-        "setting": "expected",
-    }
+    course = out["basis"]["course"]
+    assert (course["size"], course["basis"], course["completed_cases"], course["protocol_size"]) == (
+        "150",
+        "default",
+        1,
+        None,
+    )
+    assert (course["setting"], course["chosen"], course["low"], course["high"]) == ("standard", "high", None, "150")
     assert {p["basis"] for p in out["basis"]["profile"]} == {"default"}
 
 
@@ -209,10 +210,13 @@ def test_a_scenario_of_nothing_leaves_only_what_is_committed(world):
 def test_a_worker_runs_dry_the_day_their_need_passes_their_stock(world):
     out = _run(world)
 
-    # acacia: 21, 40, then 45 against 72 -- 11 of the third week's 45 last 2 of its days.
-    assert _worker(out, "worker-acacia")["runs_dry_on"] == "2026-10-14"
-    # baobab: child-f had 10 of its first 15 on the anchor day, so 10, 25, then 30 against 40.
-    assert _worker(out, "worker-baobab")["runs_dry_on"] == "2026-10-14"
+    # The caseload answer: only the children already in treatment, never those yet to enrol.
+    # acacia: committed 16, 30, 30 against 72 -- 10 of the third week's 30 last 3 of its days.
+    assert _worker(out, "worker-acacia")["runs_dry_on"] == "2026-10-19"
+    # baobab: child-f had 10 of its first 15 on the anchor day: 5, 15, 15, then 5 of the fourth week's 15 against 40.
+    assert _worker(out, "worker-baobab")["runs_dry_on"] == "2026-10-22"
+    # With the children expected to enrol counted too, they run dry sooner; that is kept apart.
+    assert _worker(out, "worker-acacia")["runs_dry_with_enrolments_on"] == "2026-10-14"
     assert [w["name"] for w in out["workers"]] == ["worker-acacia", "worker-baobab"]  # soonest, then by name
     assert _worker(out, "worker-acacia")["shortfall_by_end"] == "326"
 
@@ -274,7 +278,7 @@ def test_visits_that_stop_early_move_the_anchor_back_and_say_so(world):
     out = _run(world, on_date=TODAY + timedelta(days=5))
 
     assert (out["as_of"], out["anchor"], out["data_to"]) == ("2026-10-03", "2026-09-28", "2026-09-28")
-    assert _worker(out, "worker-acacia")["runs_dry_on"] == "2026-10-14"
+    assert _worker(out, "worker-acacia")["runs_dry_on"] == "2026-10-19"
 
 
 def test_without_a_case_rule_the_forecast_is_the_workers_pace(world):
@@ -317,7 +321,7 @@ def test_the_operation_is_a_read_on_the_mcp_catalogue_and_returns_the_forecast(w
         "stock_forecast", da, {"item_id": world["item"].pk, "as_of": TODAY.isoformat(), "course_size": 150}
     )
 
-    assert _worker(out, "worker-acacia")["runs_dry_on"] == "2026-10-14"
+    assert _worker(out, "worker-acacia")["runs_dry_on"] == "2026-10-19"
     assert out["basis"]["course"]["basis"] == "default"
 
 
@@ -462,6 +466,7 @@ def test_a_programme_can_hold_the_course_at_the_protocol(world):
     out = forecast.course_size(_exited(world, (100, 120, 140, 150, 160)), [world["rule"]], world["item"], COURSE)
 
     assert (out["basis"], out["size"], out["setting"]) == ("protocol", Decimal(168), "protocol")
+    assert (out["chosen"], out["low"], out["high"]) == ("high", "140", "168")
 
 
 def test_the_plan_can_use_what_children_are_actually_given_instead_of_the_protocol_ration(world):
@@ -506,13 +511,15 @@ def test_the_course_is_measured_from_completed_cases_once_there_are_enough(world
         for n, received in enumerate((100, 120, 140, 150, 160))
     ]
 
-    assert forecast.course_size(cases, [world["rule"]], world["item"], COURSE) == {
-        "size": Decimal(140),
-        "basis": "measured",
-        "completed_cases": 5,
-        "protocol_size": None,
-        "setting": "expected",
-    }
+    out = forecast.course_size(cases, [world["rule"]], world["item"], COURSE)
+    assert (out["size"], out["basis"], out["completed_cases"], out["protocol_size"]) == (
+        Decimal(140),
+        "measured",
+        5,
+        None,
+    )
+    # No protocol: the caller's course is the high estimate, the measured one the low.
+    assert (out["low"], out["high"], out["chosen"]) == ("140", "150", "low")
 
 
 def test_a_protocol_on_the_commodity_sets_the_course_and_the_weekly_profile(world):
@@ -548,11 +555,159 @@ def test_the_forecast_page_says_which_course_it_uses_and_who_it_is_for():
         Path(forecast.__file__).parents[3] / "workflow" / "templates" / "supply_stock_forecast_render.js"
     ).read_text()
     for words in (
-        "expected course",
-        "children who finished",
-        "protocol limit",
+        "estimate (",
+        "children who finished so far",
+        "the protocol",
         "enrolment came before the visit data begins",
         "not the definition of default",
         "Who this is for",
     ):
         assert words in js
+
+
+# ---- course length: a low and a high estimate, one rule for which the plan uses (programme 10172) ----
+
+
+def _case(world, n, received, outcome, status, carry_over=False):
+    return forecast.Case(
+        key=(1, f"child-{n}"), opportunity_id=world["rule"].opportunity_id, supply_point_id=1,
+        enrolled_on=TODAY, enrol_point_id=1, carry_over=carry_over, last_seen=TODAY, outcome=outcome,
+        received=Decimal(received), status=status,
+    )  # fmt: skip
+
+
+def _protocol_168(world):
+    commodity = world["item"].commodity
+    commodity.course_definition = {"base_units_per_course": 168, "base_units_per_day": 2}
+    commodity.save()
+
+
+def test_only_children_who_completed_treatment_set_the_low_estimate(world):
+    _protocol_168(world)
+    rule = world["rule"]
+    rule.cases = {
+        **rule.cases,
+        "outcome": {**rule.cases["outcome"], "exit": ["recovered", "deceased", "defaulted"]},
+    }
+    # Five recovered at 40 each; ten defaults and deaths who took 3: they must not drag the low estimate down.
+    cases = [_case(world, n, 40, "recovered", "exited") for n in range(5)]
+    cases += [_case(world, 10 + n, 3, "defaulted" if n % 2 else "deceased", "exited") for n in range(10)]
+
+    out = forecast.course_size(cases, [rule], world["item"], None)
+
+    assert out["low"] == "40"
+    assert out["completed_cases"] == 5
+
+
+def test_few_finished_children_leave_the_plan_on_the_high_estimate_and_both_are_shown(world):
+    """The exited children so far are the fastest recoveries: a floor, not an expected course."""
+    _protocol_168(world)
+    # 25 recovered at 40 sachets, 186 still in treatment: the Sophie Feintuch / programme 10172 shape.
+    cases = [_case(world, n, 40, "recovered", "exited") for n in range(25)]
+    cases += [_case(world, 100 + n, 20, "enrolled", "open") for n in range(186)]
+
+    out = forecast.course_size(cases, [world["rule"]], world["item"], None)
+
+    assert (out["low"], out["high"]) == ("40", "168")
+    assert (out["chosen"], out["size"], out["basis"]) == ("high", Decimal(168), "protocol")
+    assert "25 of 211" in out["reason"]
+
+
+def test_the_low_estimate_leads_once_at_least_half_the_enrolled_children_have_finished(world):
+    _protocol_168(world)
+    cases = [_case(world, n, 120, "recovered", "exited") for n in range(6)]
+    cases += [_case(world, 100 + n, 20, "enrolled", "open") for n in range(6)]
+
+    out = forecast.course_size(cases, [world["rule"]], world["item"], None)
+
+    assert (out["chosen"], out["size"], out["basis"]) == ("low", Decimal(120), "measured")
+
+    # One fewer finisher than half: back to the high estimate.
+    cases.append(_case(world, 300, 20, "enrolled", "open"))
+    assert forecast.course_size(cases, [world["rule"]], world["item"], None)["chosen"] == "high"
+
+
+def test_the_programme_can_force_either_estimate(world):
+    _protocol_168(world)
+    cases = [_case(world, n, 40, "recovered", "exited") for n in range(5)]
+    cases += [_case(world, 100 + n, 20, "enrolled", "open") for n in range(50)]
+    rule = world["rule"]
+
+    rule.cases = {**rule.cases, "course_basis": "expected"}
+    assert forecast.course_size(cases, [rule], world["item"], None)["size"] == Decimal(40)
+
+    rule.cases = {**rule.cases, "course_basis": "protocol"}
+    assert forecast.course_size(cases, [rule], world["item"], None)["size"] == Decimal(168)
+
+
+def test_every_page_uses_the_chosen_course(world):
+    """Forecast, Plan and break-even read one figure, from forecast.course_size."""
+    from connect_labs.supply_chain.plan import service as plan
+
+    _protocol_168(world)
+    out = _run(world)
+    assert out["basis"]["course"]["chosen"] == "high"
+
+    picture = plan.compute(PROGRAM, world["item"], on_date=TODAY, course_size=COURSE)
+    assert picture["break_even"]["course"] == Decimal(out["basis"]["course"]["size"]) == Decimal(168)
+    assert picture["break_even"]["course_chosen"] == "high"
+    assert picture["break_even"]["course_low"] is None  # nobody has finished yet
+
+
+# ---- one answer to "who is running out" ----
+
+
+def test_a_worker_runs_out_on_the_children_they_are_treating_not_on_children_yet_to_enrol(world):
+    out = _run(world)
+    acacia = _worker(out, "worker-acacia")
+
+    # Caseload only: committed to open children against 72 held. The enrolment projection is kept apart.
+    committed = [Decimal(week["committed"]) for week in acacia["weeks"]]
+    assert acacia["run_out"]["method"] == "children"
+    assert acacia["run_out"]["children"] == acacia["open_cases"]
+    assert (
+        acacia["runs_dry_on"]
+        == acacia["run_out"]["date"]
+        == forecast._iso(forecast.runs_dry(Decimal(72), committed, date.fromisoformat(out["anchor"])))
+    )
+    assert acacia["runs_dry_with_enrolments_on"] is not None
+
+
+def test_a_worker_with_no_children_on_record_runs_out_at_their_recent_pace_and_says_so(world):
+    out = forecast.worker_run_out("pace", Decimal(60), [], TODAY, 0, Decimal(12), 8)
+    assert out["method"] == "pace"
+    assert out["date"] == (TODAY + timedelta(days=12)).isoformat()
+    assert out["days"] == 12
+
+    assert forecast.worker_run_out("pace", Decimal(0), [], TODAY, 0, None, 8)["date"] == TODAY.isoformat()
+    assert forecast.worker_run_out("cases", None, [Decimal(5)], TODAY, 3, None, 8)["date"] is None
+    beyond = forecast.worker_run_out("cases", Decimal(500), [Decimal(5)] * 8, TODAY, 3, None, 8)
+    assert (beyond["date"], beyond["beyond_horizon"]) == (None, True)
+
+
+def test_forecast_plan_and_stock_review_give_the_same_run_out_date_for_the_same_worker(world):
+    """Plan and the Stock review once disagreed for one worker (31 Oct vs 12 Nov); now all three read run_out."""
+    import json
+    from pathlib import Path
+
+    from connect_labs.supply_chain.plan import service as plan
+
+    # A saved plan with its own enrolment rate used to move the Plan's date and not the review's.
+    from connect_labs.supply_chain.plan.models import StockPlan
+
+    StockPlan.objects.create(program_id=PROGRAM, item=world["item"], enrolment_per_flw_per_week=Decimal(5))
+
+    forecast_page = _run(world)  # what the Forecast page and the Stock review's forecast source read
+    picture = plan.compute(PROGRAM, world["item"], on_date=TODAY, course_size=COURSE)
+
+    for name in ("worker-acacia", "worker-baobab"):
+        forecast_date = _worker(forecast_page, name)["runs_dry_on"]
+        plan_date = next(r for r in picture["issue"] if r["name"] == name)["runs_dry_on"]
+        plan_forecast_date = _worker(picture["forecast"], name)["runs_dry_on"]
+        assert forecast_date == plan_date == plan_forecast_date
+
+    # Stock review: its JS reads run_out and nothing else for a worker's date.
+    js = (Path(forecast.__file__).parents[3] / "workflow" / "templates" / "supply_stock_review_render.js").read_text()
+    assert "f.run_out" in js
+    assert "f.runs_dry_on" not in js
+    assert json.loads(json.dumps(_worker(forecast_page, "worker-acacia")["run_out"]))["method"] == "children"

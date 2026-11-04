@@ -27,7 +27,8 @@ def test_stock_review_reads_how_long_it_lasts_from_the_forecast_and_says_so():
     assert declaration_problems(sources) == []
     assert {s["source"] for s in sources} >= {"worker_stock", "stock_forecast"}
     render = supply_stock_review.TEMPLATE["render_code"]
-    assert "runs_dry_on" in render
+    # The one run-out answer (forecast.worker_run_out), read and never recomputed here.
+    assert "f.run_out" in render and "runs_dry_on" not in render
     assert "Days until each FLW runs out, based on the children they're" in render
     assert "at recent pace" in render
 
@@ -40,7 +41,8 @@ def test_stock_review_course_tile_uses_the_forecasts_expected_course_and_names_i
     render = supply_stock_review.TEMPLATE["render_code"]
     assert "src.forecast.rows[0].basis.course" in render
     assert "forecastCourse.completed_cases" in render
-    assert "expected course of" in render and "protocol course of" in render
+    # Both estimates are named, and which one the plan uses.
+    assert "low estimate of" in render and "protocol (high) estimate of" in render
     # The setting is only the last resort, and the tile never divides by it when the forecast has a course.
     assert render.index("forecastSize > 0") < render.index("Number(cfg.course_size) > 0")
     assert "totals.on_hand / courseSize" in render and "courseNote" in render

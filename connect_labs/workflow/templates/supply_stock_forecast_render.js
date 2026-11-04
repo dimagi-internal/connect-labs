@@ -165,34 +165,29 @@ function WorkflowUI({
   } else {
     chips.push(
       course.size !== null && course.size !== undefined
-        ? course.basis === 'measured'
-          ? 'expected course ' +
+        ? 'course ' +
             fmt(num(course.size)) +
             ' ' +
             units +
-            ' · from the ' +
-            course.completed_cases +
-            ' children who finished' +
-            (course.protocol_size
-              ? ' (protocol limit ' + fmt(num(course.protocol_size)) + ')'
-              : '')
-          : course.basis === 'protocol'
-            ? 'course ' +
-              fmt(num(course.size)) +
-              ' ' +
-              units +
-              ' · the protocol’s length' +
-              (course.setting === 'protocol'
-                ? ', as the programme set'
-                : ' until enough children have finished (' +
-                  (course.completed_cases || 0) +
-                  ' so far)')
-            : 'course ' +
-              fmt(num(course.size)) +
-              ' ' +
-              units +
-              ' · ' +
-              (BASIS_WORDS[course.basis] || course.basis)
+            ' · plan uses the ' +
+            (course.chosen === 'low' ? 'LOW' : 'HIGH') +
+            ' estimate (' +
+            course.reason +
+            ')' +
+            ' · low ' +
+            (course.low !== null && course.low !== undefined
+              ? fmt(num(course.low)) +
+                ', measured from the ' +
+                course.completed_cases +
+                ' children who finished so far'
+              : 'not yet, ' +
+                (course.completed_cases || 0) +
+                ' children have finished') +
+            ' · high ' +
+            (course.high !== null && course.high !== undefined
+              ? fmt(num(course.high)) +
+                (course.protocol_size ? ', the protocol' : ', assumed')
+              : 'unknown')
         : 'course unknown',
     );
     var profileBases = [];
@@ -778,7 +773,9 @@ function WorkflowUI({
         <div className="text-sm font-semibold text-gray-900 mb-2">
           Workers, soonest dry first{' '}
           <span className="font-normal text-xs text-gray-500">
-            on what each holds now, before any resupply
+            days until each FLW runs out, based on the children they’re treating
+            (the same date Plan and Stock review show), on what each holds now,
+            before any resupply
           </span>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
@@ -814,7 +811,9 @@ function WorkflowUI({
                       {!w.stock_known
                         ? 'stock unknown'
                         : dry
-                          ? 'dry ' + day(dry)
+                          ? (w.run_out && w.run_out.method === 'pace'
+                              ? 'at recent pace, dry '
+                              : 'dry ') + day(dry)
                           : 'not in ' + H + ' weeks'}
                     </div>
                     <div className="flex-1 min-w-0 text-xs text-gray-600 tabular-nums">

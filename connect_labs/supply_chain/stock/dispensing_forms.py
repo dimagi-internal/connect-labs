@@ -74,8 +74,8 @@ class DispensingRuleForm(forms.Form):
         required=False,
         label=_("How long a course is assumed to last"),
         choices=[
-            ("", _("Standard (expected length once children have finished, else the protocol's)")),
-            ("expected", _("Expected: what children who finished actually took")),
+            ("", _("Standard (the protocol's length, until at least half the enrolled children have finished)")),
+            ("expected", _("Expected: what children who completed treatment actually took, from the first few")),
             ("protocol", _("Protocol: always the protocol's full length")),
         ],
         widget=forms.Select(attrs=SELECT),
