@@ -101,6 +101,11 @@ urlpatterns = [
         name="supplier_contacts",
     ),
     path(
+        "suppliers/<int:supplier_id>/qualifications/",
+        people_views.SupplierQualificationsView.as_view(),
+        name="supplier_qualifications",
+    ),
+    path(
         "suppliers/<int:supplier_id>/reviewed/",
         reference_views.SupplierMarkReviewedView.as_view(),
         name="supplier_mark_reviewed",

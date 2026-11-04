@@ -15,9 +15,10 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from connect_labs.supply_chain.form_views import OperationFormView
-from connect_labs.supply_chain.forms import INPUT, SELECT, ScopedForm
-from connect_labs.supply_chain.models import Supplier
+from connect_labs.supply_chain.forms import DATE, INPUT, SELECT, ScopedForm
+from connect_labs.supply_chain.models import Commodity, Supplier
 from connect_labs.supply_chain.procurement.services.contacts import clean_email
+from connect_labs.supply_chain.reference import qualifications as quals
 from connect_labs.supply_chain.reference.views import _ScopedInstanceMixin
 
 # What a contact is used for, in the words a programme manager would use.
@@ -187,3 +188,84 @@ class SupplierContactsView(_ScopedInstanceMixin, OperationFormView):
 
     def redirect_to(self, result):
         return reverse("supply_chain:supplier_detail", args=[self.kwargs["supplier_id"]])
+
+
+class QualificationLineForm(forms.Form):
+    name = forms.CharField(
+        label=_("Qualification"),
+        max_length=200,
+        widget=forms.TextInput(
+            attrs={**INPUT, "list": "qualification-suggestions", "placeholder": _("e.g. UNICEF supplier approval")}
+        ),
+    )
+    expires_on = forms.DateField(
+        label=_("Valid until"), required=False, widget=forms.DateInput(attrs=DATE, format="%Y-%m-%d")
+    )
+    note = forms.CharField(
+        label=_("Note"),
+        max_length=500,
+        required=False,
+        widget=forms.TextInput(attrs={**INPUT, "placeholder": _("reference number, where the proof is kept")}),
+    )
+    source_index = forms.IntegerField(required=False, min_value=0, widget=forms.HiddenInput)
+
+
+QualificationLineFormSet = forms.formset_factory(QualificationLineForm, extra=0, min_num=0, can_delete=True)
+
+
+class SupplierQualificationsView(SupplierContactsView):
+    """What a supplier holds (approvals, registrations), and what is usually asked for."""
+
+    title = "Qualifications"
+    intro = (
+        "What this company holds that a buyer relies on: approvals, registrations, certificates. "
+        "It is a fact about the company, not about one quote, so it is kept here."
+    )
+    submit_label = "Save qualifications"
+    footnote = "Qualifications belong to the company, so a change here shows in every programme that buys from them."
+    prefix = "quals"
+    add_label = "+ Add a qualification"
+    columns = "minmax(0,2fr) minmax(0,1fr) minmax(0,2fr) auto"
+
+    def stored(self) -> list:
+        return [{"name": q} if isinstance(q, str) else q for q in (self.instance().qualifications or []) if q]
+
+    def formset(self, data=None):
+        initial = None if data else [{**q, "source_index": i} for i, q in enumerate(self.stored())]
+        return QualificationLineFormSet(data, initial=initial, prefix=self.prefix)
+
+    def merge(self, rows):
+        existing, kept = self.stored(), []
+        for row in rows.cleaned_data:
+            if not row or row.get("DELETE") or not (row.get("name") or "").strip():
+                continue
+            index = row.get("source_index")
+            source = existing[index] if index is not None and index < len(existing) else {}
+            entry = {k: v for k, v in source.items() if k not in ("name", "expires_on", "note")}
+            entry["name"] = row["name"].strip()
+            if row.get("expires_on"):
+                entry["expires_on"] = row["expires_on"].isoformat()
+            if (row.get("note") or "").strip():
+                entry["note"] = row["note"].strip()
+            kept.append(entry)
+        return kept
+
+    def problem(self, value) -> str:
+        return ""
+
+    def usual(self):
+        categories = Commodity.objects.filter(scope_key=self.access().scope_key).values_list("category", flat=True)
+        return quals.usual_for(dict.fromkeys(categories))
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        if context.get("has_program_context"):
+            usual = self.usual()
+            context["suggestions"] = [{"name": u.name, "why": u.why} for u in usual]
+            context["suggestions_note"] = (
+                "The usual ones for what this programme buys. Start typing a name to pick one." if usual else ""
+            )
+        return context
+
+    def fixed(self, **kwargs):
+        return {"supplier_id": int(kwargs["supplier_id"]), "data": {"qualifications": self._value}}

@@ -153,6 +153,7 @@ is folded away, each fold with its count.
       {% endif %}
       {% endif %}
     </div>
+    {% include "supply_chain/procurement/_qualification_gaps.html" with gap_moment="you ask for a quote or award" %}
     {% comment %}The row a form just saved (?changed=outreach-N) is marked, as before.{% endcomment %}
     <div class="sheet-wrap" role="region" aria-label="Suppliers">
       <table class="sheet" data-testid="supplier-table">

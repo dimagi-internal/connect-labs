@@ -27,6 +27,7 @@ from connect_labs.supply_chain.models import SupplierOffering
 from connect_labs.supply_chain.navigation import scoped_url, supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.services.compliance import kit_spec_verdict
+from connect_labs.supply_chain.reference import qualifications
 from connect_labs.supply_chain.runner import DIMAGI_ORG_SLUG, is_operator, running_org, standing
 from connect_labs.supply_chain.standing import move_counts, standing_rows
 
@@ -1436,7 +1437,12 @@ class SupplierDirectoryView(OperationBase):
         quotes = self.op("quote_list")
         outreach = self.op("outreach_list")
         contracts = self.op("contract_list")
+        lacks = {
+            g["supplier_id"]: g["lacks"]
+            for g in qualifications.gaps(suppliers, qualifications.categories_of(self.op("commodity_list")))
+        }
         for supplier in suppliers:
+            supplier["usual_lacks"] = lacks.get(supplier["id"], [])
             own_quotes = [q for q in quotes if q["supplier_id"] == supplier["id"]]
             own_outreach = [o for o in outreach if o["supplier_id"] == supplier["id"]]
             supplier["quote_count"] = len([q for q in own_quotes if not q["voided"]])
@@ -1471,6 +1477,9 @@ class SupplierDetailView(OperationBase):
         if supplier is None:
             raise Http404(f"no supplier {supplier_id} on file")
         context["supplier"] = supplier
+        if context["has_program_context"]:
+            lacking = qualifications.gaps([supplier], qualifications.categories_of(self.op("commodity_list")))
+            context["usual_lacks"] = lacking[0]["lacks"] if lacking else []
         context["offerings"] = (
             SupplierOffering.objects.filter(profile__org_id=supplier["org_id"]) if supplier.get("org_id") else []
         )

@@ -45,6 +45,7 @@ heard 12 Jun" is the record.
           <th scope="col" class="text-right" data-sort>Quotes</th>
           <th scope="col" class="text-right" data-sort>Orders</th>
           <th scope="col" data-sort>Last dated record</th>
+          <th scope="col" data-sort title="The approvals and registrations usually checked for what this programme buys">Qualifications to check</th>
         {% endif %}
         <th scope="col"><span class="sr-only">Open</span></th>
       </tr>
@@ -62,11 +63,12 @@ heard 12 Jun" is the record.
             <td class="num text-gray-700">{{ supplier.quote_count }}</td>
             <td class="num text-gray-700">{{ supplier.contract_count }}</td>
             <td class="text-gray-600">{% if supplier.last_activity %}{{ supplier.last_activity }}{% else %}nothing dated{% endif %}</td>
+            <td data-testid="usual-lacks" {% if supplier.usual_lacks %}class="text-amber-800" title="{{ supplier.usual_lacks|join:', ' }}"{% else %}class="text-gray-600"{% endif %}>{% if supplier.usual_lacks %}{{ supplier.usual_lacks|length }} not on file{% else %}—{% endif %}</td>
           {% endif %}
           <td class="text-right"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:supplier_detail' supplier.id %}">Open</a></td>
         </tr>
       {% empty %}
-        <tr><td colspan="10" class="py-6 text-center text-gray-600">No suppliers on file yet.</td></tr>
+        <tr><td colspan="11" class="py-6 text-center text-gray-600">No suppliers on file yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
