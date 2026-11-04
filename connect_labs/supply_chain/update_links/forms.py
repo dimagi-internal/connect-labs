@@ -39,6 +39,8 @@ __all__ = [
     "RecordStockCountForm",
     "RecordReleaseForm",
     "RecordAnswerForm",
+    "ConfirmHandoutForm",
+    "ConfirmReceivedForm",
     "PUBLIC_FORMS",
 ]
 
@@ -50,7 +52,7 @@ UNIT_BASIS = [
 ]
 
 # Dates that are almost always today, so the field starts there.
-TODAY_FIELDS = {"received_on", "counted_on", "occurred_on", "dispatched_on", "confirmed_on"}
+TODAY_FIELDS = {"received_on", "counted_on", "occurred_on", "dispatched_on", "confirmed_on", "handed_out_on"}
 
 
 def _tidy(helper_owner, *rows):
@@ -389,6 +391,10 @@ class PublicForm(forms.Form):
     for_priced = False
     # What the banner calls the record this action made: "Recorded: dispatch ...".
     done_noun = ""
+    # Shown only when there is something to act on. A handout to confirm is not
+    # something every link could ever do, so "not available right now" would
+    # read as an instruction on every supplier's page.
+    only_when_available = False
 
     def __init__(self, *args, scope=None, **kwargs):
         kwargs.setdefault("prefix", self.action)
@@ -834,6 +840,104 @@ class RecordAnswerForm(PublicForm):
         return self.fields["approval"].queryset.exists()
 
 
+def _handout_lines(scope, *, given):
+    """Lines of handouts this link can speak to, as a queryset.
+
+    `given=False`: lines still waiting for somebody to say what was handed out -- those leaving a store
+    the link covers, or going to a place it covers. `given=True`: lines handed out to a place the link
+    covers that nobody there has yet confirmed receiving. Always this programme's, and only its own
+    places: a link never reaches a handout that neither starts nor ends in its scope.
+    """
+    from django.db.models import Q
+
+    from connect_labs.supply_chain.models import DistributionLine
+
+    lines = DistributionLine.objects.filter(distribution__program_id=scope.link.program_id).select_related(
+        "distribution__supply_point", "to_supply_point"
+    )
+    points = scope.supply_points
+    if given:
+        return lines.filter(to_supply_point__in=points, quantity_given__gt=0, quantity_received__isnull=True)
+    return lines.filter(
+        Q(distribution__supply_point__in=points) | Q(to_supply_point__in=points),
+        quantity_given__isnull=True,
+        movement__isnull=True,
+    )
+
+
+class _HandoutLineChoice(forms.ModelChoiceField):
+    def label_from_instance(self, obj):
+        run = obj.distribution.reference or f"Handout {obj.distribution_id}"
+        planned = (
+            f", {quantity_digits(obj.quantity)} {unit_noun(obj.quantity_unit, obj.quantity)} planned"
+            if obj.quantity
+            else ""
+        )
+        if obj.quantity_given is not None:
+            planned = (
+                f", {quantity_digits(obj.quantity_given)} {unit_noun(obj.quantity_unit, obj.quantity_given)} given"
+            )
+        return f"{run} ({obj.distribution.distributed_on:%-d %b}): {obj.to_supply_point.name}{planned}"
+
+
+class ConfirmHandoutForm(PublicForm):
+    action = "confirm_handout"
+    title = _("Confirm what you handed out")
+    intro = _(
+        "Say how much you actually gave to a place on a planned handout. If it matches the list, enter the "
+        "planned amount; if you gave more or less, enter that. Stock moves by what you enter."
+    )
+    submit_label = _("Confirm handout")
+    done_noun = _("handout")
+    only_when_available = True
+
+    line = _HandoutLineChoice(label=_("Place on the handout"), queryset=None, widget=forms.Select(attrs=SELECT))
+    quantity_given = _quantity(_("Given"), allow_zero=True)
+    handed_out_on = forms.DateField(label=_("Handed out on"), widget=forms.DateInput(attrs=DATE))
+
+    def limit_to_scope(self, scope):
+        from connect_labs.supply_chain.models import DistributionLine
+
+        self.fields["line"].queryset = (
+            _handout_lines(scope, given=False) if scope is not None else DistributionLine.objects.none()
+        )
+
+    def rows(self):
+        return ["line", _pair("quantity_given", "handed_out_on")]
+
+    def is_available(self):
+        return self.fields["line"].queryset.exists()
+
+
+class ConfirmReceivedForm(PublicForm):
+    action = "confirm_received"
+    title = _("Confirm what you received")
+    intro = _(
+        "Say how much actually reached you from a handout. It is kept beside what the person handing out said they "
+        "gave, so a difference between the two shows up and can be followed."
+    )
+    submit_label = _("Confirm received")
+    done_noun = _("receipt of a handout")
+    only_when_available = True
+
+    line = _HandoutLineChoice(label=_("Handout"), queryset=None, widget=forms.Select(attrs=SELECT))
+    quantity_received = _quantity(_("Received"), allow_zero=True)
+    received_on = forms.DateField(label=_("Received on"), widget=forms.DateInput(attrs=DATE))
+
+    def limit_to_scope(self, scope):
+        from connect_labs.supply_chain.models import DistributionLine
+
+        self.fields["line"].queryset = (
+            _handout_lines(scope, given=True) if scope is not None else DistributionLine.objects.none()
+        )
+
+    def rows(self):
+        return ["line", _pair("quantity_received", "received_on")]
+
+    def is_available(self):
+        return self.fields["line"].queryset.exists()
+
+
 # In the order they appear on the page: the order, the money, the goods moving,
 # then what is on the shelf. An approver's answer first: an approver link
 # covers nothing else.
@@ -848,5 +952,7 @@ PUBLIC_FORMS = {
         RecordReceiptForm,
         RecordStockCountForm,
         RecordReleaseForm,
+        ConfirmHandoutForm,
+        ConfirmReceivedForm,
     )
 }
