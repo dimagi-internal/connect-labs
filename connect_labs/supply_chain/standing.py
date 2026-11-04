@@ -264,10 +264,24 @@ def awaiting_reply(program_id) -> dict:
     return {"suppliers": suppliers, "tenders": count}
 
 
+def ready_to_compare(tender, *, invited, answered, today=None) -> bool:
+    """An open tender is ready to compare without anyone closing it: every supplier asked has
+    replied, or the reply-by day has passed and at least one has. Comparing is possible at any
+    time; this is only when the progress bar says the tender has got there."""
+    if tender.status != "open" or not answered:
+        return False
+    if invited and answered >= invited:
+        return True
+    deadline = tender.response_deadline
+    return bool(deadline and deadline < (today or date.today()))
+
+
 def tender_stage(tender, *, invited=0, answered=0, quoted=None, awardee="", today=None):
     """(step index, words) for a tender not yet ordered."""
     if tender.status == "draft":
         return 0, "Draft · not yet sent"
+    if ready_to_compare(tender, invited=invited, answered=answered, today=today):
+        return 2, "Comparing · all replied" if invited and answered >= invited else "Comparing · deadline passed"
     if tender.status == "open":
         words = "Collecting quotes"
         if invited:

@@ -127,12 +127,23 @@ class ProcurementRepositoryMixin:
         from connect_labs.supply_chain.data_access import _columns, _delivery, _fresh, _listing
 
         data = _listing(data)
-        return _fresh(
-            Tender.objects.create(
-                program_id=self._require_program(),
-                **{"status": "draft", **_columns(Tender, _delivery(data))},
-            )
+        created = Tender.objects.create(
+            program_id=self._require_program(),
+            **{"status": "draft", **_columns(Tender, _delivery(data))},
         )
+        return _fresh(self._duty_from_delivery_term(created))
+
+    def _duty_from_delivery_term(self, tender):
+        """A tender that asks for DDP has said who pays the duty: the supplier delivers duty paid.
+
+        Only filled while nobody has chosen, and only for DDP, the one delivery term
+        that settles it; any other term leaves the choice (waiver or buyer pays) to a person.
+        """
+        if not tender.duty_terms and (tender.incoterm_requested or "").upper() == "DDP":
+            tender.duty_terms = "supplier_ddp"
+            tender.duty_terms_set_on = timezone.localdate()
+            tender.save(update_fields=["duty_terms", "duty_terms_set_on", "updated_at"])
+        return tender
 
     def update_tender(self, tender_id, data):
         from connect_labs.supply_chain.data_access import _columns, _delivery, _fresh, _listing
@@ -148,6 +159,8 @@ class ProcurementRepositoryMixin:
         for key, value in _columns(Tender, _delivery(data)).items():
             setattr(found, key, value)
         found.save()
+        if not duty:
+            self._duty_from_delivery_term(found)
         if duty:
             return self.set_tender_duty_terms(
                 tender_id, duty.get("duty_terms", found.duty_terms), duty.get("duty_estimate_percent")
@@ -254,7 +267,7 @@ class ProcurementRepositoryMixin:
             )
         found.status = "open"
         found.save(update_fields=["status", "updated_at"])
-        return found
+        return self._duty_from_delivery_term(found)
 
     def invite_org_to_tender(self, tender_id, org_id):
         """Put an organisation on a tender's invited list.
@@ -631,8 +644,8 @@ class ProcurementRepositoryMixin:
         from connect_labs.supply_chain.data_access import _columns, _fresh
         from connect_labs.supply_chain.moves import open_at_decision
 
-        if not data.get("rationale"):
-            raise ValueError("an award needs a rationale")
+        # The reason is optional (Sophie's RUTF feedback): recorded when given, never demanded.
+        data = {**data, "rationale": (data.get("rationale") or "").strip()}
         found = self._require_tender(data["tender_id"])
         quote = self.get_quote(data["quote_id"]) if data.get("quote_id") else None
         if data.get("quote_id") and quote is None:

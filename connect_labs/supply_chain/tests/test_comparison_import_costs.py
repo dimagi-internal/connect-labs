@@ -273,3 +273,19 @@ def test_an_undrafted_silent_supplier_offers_record_a_reply(da, world):
 def test_gap_tags_name_who_supplies_the_fact():
     assert supplies(rules.US) == "ours to fill"
     assert supplies(rules.SUPPLIERS) == "waiting"
+
+
+def test_our_estimates_are_asked_for_only_when_a_quote_leaves_them_out(da, world):
+    from connect_labs.supply_chain.procurement.views import _estimates_needed
+
+    tender_id = world["tender"]["id"]
+    program_id = PROGRAM
+
+    def needed():
+        return _estimates_needed(op(da, "tender_get", tender_id=tender_id), tender_id, program_id)
+
+    assert not needed()
+    _quote(da, world, "ddp", "DDP Kano", freight_basis="included", duties_basis="included")
+    assert not needed()  # the supplier imports and clears
+    _quote(da, world, "cpt", "CPT Kano", freight_basis="included")
+    assert needed()  # we import, so clearing is ours to estimate

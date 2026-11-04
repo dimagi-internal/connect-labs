@@ -159,14 +159,15 @@ def test_a_quote_on_terms_leaving_freight_to_us_keeps_the_estimate_open(da, worl
 
     Tender.objects.filter(pk=world["tender"]["id"]).update(incoterm_requested="CPT Kano")
     body = _tender_page(client_in_program, world["tender"]["id"])
-    freight = re.search(r'data-testid="freight-estimate"[^>]*>(.*?)</span>\s*</span>', body, re.S)
-    assert "included (CPT)" in _text(freight.group(0))
+    # No quote leaves clearing or freight to us yet, so the estimates line is not shown at all.
+    assert 'data-testid="import-estimates"' not in body
     op(
         da,
         "quote_record",
         data=_kanem_quote(world, freight_basis="not_specified", duties_basis="not_specified", incoterm="FCA Niamey"),
     )
     body = _tender_page(client_in_program, world["tender"]["id"])
+    assert 'data-testid="import-estimates"' in body
     assert 'data-testid="freight-in-price"' not in body
 
 
