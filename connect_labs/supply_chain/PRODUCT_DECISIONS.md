@@ -222,6 +222,9 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   `no_connection` (their Open Chat Studio connection is missing or expired), `no_chatbot`, or `refused` carrying
   Open Chat Studio's own reason (e.g. the recipient has not agreed to messages). Email alerts are unaffected.
   Old WhatsApp alerts became Connect-message alerts with their number kept in the username box to correct.
+- **Alerts for every partner are set up on a screen** (Alerts > "Set up for every partner", `alert_partner_setup`):
+  one box of email addresses per partner that runs something, one for the daily summary; repeating it never
+  duplicates. Connect-message recipients are still added per alert, or through the operation.
 - **Planning alerts run the forecast, so a caller must ask for them by kind** (`delivery_after_stockout`,
   `tender_start_by`); the default list of checks does not pay for them.
 - **A delivery to a shared facility is a suggestion, sized from the forecast** (a few days of what its field
