@@ -172,7 +172,7 @@ class TenderSplitsView(OperationFormView):
         orgs = LabsOrg.objects.filter(pk__in=ids).order_by("name")
         return [(str(o.pk), o.name) for o in orgs]
 
-    def place_options(self):
+        """(choices, owners): the tender's own places, then each partner's; owners maps a value to its partner."""
         """(choices, owners): the tender's own places, then each partner's places; owners maps a value to its partner."""
         program_id = _access(self.request).program_id
         choices = [
