@@ -9,6 +9,7 @@ import contextvars
 import json
 import logging
 import re
+import time
 from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -25,26 +26,28 @@ from django.views.generic import TemplateView
 from connect_labs.audit.data_access import AuditDataAccess
 from connect_labs.flags.data_access import FlagsDataAccess
 from connect_labs.labs import s3_export
-from connect_labs.labs.analysis.sse_streaming import AnalysisPipelineSSEMixin, BaseSSEStreamView
+from connect_labs.labs.analysis.sse_streaming import BaseSSEStreamView
 from connect_labs.labs.context import get_org_data, validate_context_access
 from connect_labs.labs.integrations.connect.api_client import LabsAPIError
 from connect_labs.labs.presentation import is_present_mode
 from connect_labs.tasks.data_access import TaskDataAccess
 from connect_labs.utils.feature_access import can_create_from_template, get_allowed_templates
 from connect_labs.workflow import declared_reads, public_shares
-from connect_labs.workflow.cache_warm import warming_response
+from connect_labs.workflow.cache_warm import warming_progress, warming_response
 from connect_labs.workflow.data_access import (
     PIPELINE_LOAD_VALUES,
     PipelineDataAccess,
     WorkflowDataAccess,
     accepted_after_completion,
-    on_demand_placeholder,
-    pipeline_read_targets,
     program_drive_scope,
-    serialize_pipeline_row,
-    streamed_and_skipped_aliases,
 )
 from connect_labs.workflow.page_mode import is_page as _is_page
+from connect_labs.workflow.pipeline_reads import (
+    pipeline_rows_slot,
+    queue_fill,
+    read_pipeline_data,
+    read_pipeline_rows,
+)
 from connect_labs.workflow.public_share_views import share_list_context
 from connect_labs.workflow.templates import (
     MULTI_OPTION_COERCERS,
@@ -2977,8 +2980,8 @@ def pipeline_rows_api(request, definition_id):
 
     Params: `alias` and an opportunity (both required), then any of `username`,
     `case_ids` (comma-separated, the pipeline's entity/baby key) and `limit`. The
-    read prefers the processed cache and falls back to executing THAT pipeline for
-    THAT opportunity -- never the whole cohort.
+    read is the processed cache, filled on a miss for THAT pipeline and THAT opportunity
+    -- never the whole cohort.
 
     Two different questions, which one param used to answer badly.
     `opportunity_id` is the SCOPE the workflow record is read in -- the context
@@ -2992,12 +2995,8 @@ def pipeline_rows_api(request, definition_id):
     `rows_opportunity_id` falls back to `opportunity_id`, so a single-opp caller
     (where the two genuinely coincide) is unchanged.
 
-    This transport answers in ONE shot and says nothing until it is done. When the
-    visit cache is cold that silence is the whole user experience: measured live on
-    2026-09-16, three of these ran 38.7s, 61.3s and 50.7s for one KMC worker while
-    the page showed a static "Loading cases..." and the demo was abandoned as
-    broken. `PipelineRowsStreamView` below is the same answer with the fetch's own
-    progress in front of it; prefer it for anything a person watches.
+    A cold cache answers 202 while the worker fills it (cache_warm.py): it can take
+    minutes, on a 1-vCPU web task everything else queues behind.
     """
     wf_access = None
     pipeline_access_box: list = []
@@ -3007,18 +3006,15 @@ def pipeline_rows_api(request, definition_id):
         pipeline_id, config = _resolve_pipeline_rows_pipeline(
             request, definition_id, params, wf_access, pipeline_access_box
         )
-        pipeline_access = pipeline_access_box[0]
-        opportunity_id = params["opportunity_id"]
-
-        cached = pipeline_access.get_cached_pipeline_result(pipeline_id, opportunity_id, config=config)
-        from_cache = cached is not None
-        if cached is None:
-            cached = pipeline_access.execute_pipeline(pipeline_id, opportunity_id, config=config)
-            if (cached.get("metadata") or {}).get("error"):
-                return JsonResponse({"error": cached["metadata"]["error"]}, status=502)
-
-        rows = _filter_pipeline_rows(cached.get("rows", []), params)
-        return JsonResponse({"rows": rows, "metadata": _pipeline_rows_metadata(params, pipeline_id, rows, from_cache)})
+        answer = read_pipeline_rows(request, definition_id, params, pipeline_access_box[0], pipeline_id, config)
+        if answer.warming is not None:
+            return warming_response(request, answer.warming, answer.waiting_message)
+        if answer.error:
+            return JsonResponse({"error": answer.error}, status=answer.status)
+        rows = _filter_pipeline_rows(answer.data["cached"].get("rows", []), params)
+        return JsonResponse(
+            {"rows": rows, "metadata": _pipeline_rows_metadata(params, pipeline_id, rows, answer.data["from_cache"])}
+        )
     except PipelineRowsError as exc:
         return JsonResponse({"error": exc.message}, status=exc.status)
     except Exception:
@@ -3083,35 +3079,16 @@ def case_states_api(request, definition_id):
         wf_access.close()
 
 
-class PipelineRowsStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
-    """`pipeline_rows_api`'s answer, with the fetch's own progress in front of it.
+class PipelineRowsStreamView(BaseSSEStreamView):
+    """`pipeline_rows_api`'s answer as events, for renders that open this route.
 
-    WHY THIS EXISTS
-
-    The framework already knew how to report a cold fetch: `AnalysisPipelineSSEMixin`
-    turns every page of the paginated Connect read into `Fetching visits: 3,200 /
-    8,900 rows (36%)`, and the runner paints it. But that progress rode the SAME SSE
-    stream as the rows, so a page that opted out of the payload
-    (`config.noPipelineStream`, added because streaming twelve opportunities' rows
-    was ~30 MB) silently opted out of the progress too. What replaced it --
-    `pipeline_rows_api` -- is a plain JSON view: one fetch, pending or resolved,
-    nothing to subscribe to.
-
-    So progress was coupled to bulk data delivery by accident of transport, and the
-    cost was paid by a person watching a blank table. This decouples them: the
-    events are the mixin's, unchanged; only the final payload is different, carrying
-    the SERVER-FILTERED rows (one worker's cases, one case's weighings) rather than
-    the cohort. Progress without the 30 MB.
-
-    The contract is `pipeline_rows_api`'s, resolved through the same helpers, so the
-    two transports cannot answer the same query differently. The last event is
-    either `{"data": {"rows": [...], "metadata": {...}}}` or `{"error": "..."}`.
-    Clients that cannot use EventSource can keep calling the JSON view; it is
-    unchanged, and `kmc_flw_review_render.js` falls back to it.
+    `kmc_flw_review` and `r2_revisit_analysis` do, and so do their forked live copies. It
+    does no work: it waits on the same read, says what the fill says, and sends the same
+    rows. The last event is either `{"data": {"rows": [...], "metadata": {...}}}` or
+    `{"error": "..."}`.
     """
 
     def stream_data(self, request):
-        from connect_labs.labs.analysis.pipeline import AnalysisPipeline
         from connect_labs.labs.analysis.sse_streaming import send_sse_event
 
         definition_id = self.kwargs.get("definition_id")
@@ -3124,41 +3101,18 @@ class PipelineRowsStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
             pipeline_id, config = _resolve_pipeline_rows_pipeline(
                 request, definition_id, params, wf_access, pipeline_access_box
             )
-            opportunity_id = params["opportunity_id"]
-
-            # `stream_analysis` checks the processed cache first and yields its
-            # result immediately on a hit, so a warm read still returns in one
-            # round trip -- the progress events only appear when there is
-            # genuinely something to wait for.
-            pipeline = AnalysisPipeline(request)
-            pipeline_stream = pipeline.stream_analysis(config, opportunity_id=opportunity_id)
-            yield from self.stream_pipeline_events(pipeline_stream, raise_on_error=True)
-
-            result = self._pipeline_result
-            if result is None:
-                yield send_sse_event("Error", error="the pipeline produced no result")
-                return
-            # The two transports reach their rows differently and this is the seam.
-            # `execute_pipeline` / `get_cached_pipeline_result` hand the JSON view
-            # dicts; `stream_analysis` hands this one pipeline row OBJECTS, whose
-            # `.get` is None -- so filtering them directly raised "'NoneType' object
-            # is not callable" on the first warm read in production. `serialize_
-            # pipeline_row` is the single producer of row dicts for exactly this
-            # reason (see its docstring): every payload path goes through it so their
-            # key sets cannot drift. `extra` is merged last, so the framework's
-            # opportunity tag wins over a pipeline field of the same name (#1306).
-            rows = _filter_pipeline_rows(
-                [
-                    serialize_pipeline_row(row, extra={"opportunity_id": opportunity_id})
-                    for row in (getattr(result, "rows", None) or [])
-                ],
-                params,
+            answer = yield from _relay_while_warming(
+                lambda: read_pipeline_rows(request, definition_id, params, pipeline_access_box[0], pipeline_id, config)
             )
+            if answer.error:
+                yield send_sse_event("Error", error=answer.error, data={"status": answer.status})
+                return
+            rows = _filter_pipeline_rows(answer.data["cached"].get("rows", []), params)
             yield send_sse_event(
                 "Complete",
                 data={
                     "rows": rows,
-                    "metadata": _pipeline_rows_metadata(params, pipeline_id, rows, self._pipeline_from_cache),
+                    "metadata": _pipeline_rows_metadata(params, pipeline_id, rows, answer.data["from_cache"]),
                 },
             )
         except PipelineRowsError as exc:
@@ -3175,6 +3129,36 @@ class PipelineRowsStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
                 access.close()
             if wf_access:
                 wf_access.close()
+
+
+# How often an old stream route looks at the fill it is relaying. A poll, like any reader's.
+RELAY_SECONDS = 3
+# The same patience as a polling client (components/workflow/warming.ts).
+RELAY_TIMEOUT_SECONDS = 30 * 60
+
+
+def _relay_while_warming(read):
+    """`read` until it stops being a fill to wait on, as events. Returns its final answer.
+
+    Only the stream routes need this. Their connection stays open but costs a thread
+    asleep, not a CPU: the work is on the worker.
+    """
+    from connect_labs.labs.analysis.sse_streaming import send_sse_event
+    from connect_labs.workflow.pipeline_reads import PipelineAnswer
+
+    deadline = time.monotonic() + RELAY_TIMEOUT_SECONDS
+    last = None
+    while True:
+        answer = read()
+        if answer.warming is None:
+            return answer
+        if time.monotonic() > deadline:
+            return PipelineAnswer(error="The data is still loading. Try again in a few minutes.", status=504)
+        message = warming_progress(answer.warming, answer.waiting_message)["message"]
+        if message != last:
+            last = message
+            yield send_sse_event(message)
+        time.sleep(RELAY_SECONDS)
 
 
 @login_required
@@ -3205,14 +3189,7 @@ def pipeline_query_api(request, definition_id):
     """
     from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import GDriveSourceError
     from connect_labs.labs.analysis.pipeline import AnalysisPipeline
-    from connect_labs.workflow.cache_warm import WarmSlot
-    from connect_labs.workflow.pipeline_query import (
-        PipelineQueryError,
-        cached_queryset,
-        parse_query,
-        run_query,
-        warm_cache_key,
-    )
+    from connect_labs.workflow.pipeline_query import PipelineQueryError, cached_queryset, parse_query, run_query
 
     def error(message, status):
         return JsonResponse({"status": "error", "error": message}, status=status)
@@ -3277,27 +3254,20 @@ def pipeline_query_api(request, definition_id):
         cache_scope = AnalysisPipeline.data_scope(config, rows_opp)
         qs = cached_queryset(config, cache_scope)
         if qs is None:
-            from connect_labs.workflow.tasks import warm_pipeline_query_cache
-
-            lock_key = warm_cache_key(cache_scope, config)
-            slot = WarmSlot(lock_key)
+            slot = pipeline_rows_slot(config, cache_scope)
             finished = None if slot.state() else slot.take_outcome()  # report once; the next call tries again
             if finished and finished.get("error"):
                 return error(f"Filling the {params['alias']} pipeline failed: {finished['error']}", 502)
             scope = {"program_id": scope_program} if (scope_program and not scope_opp) else {}
             if not scope and not scope_opp and program_scope is not None:
                 scope = {"program_id": program_scope}
-            scope = scope or {"opportunity_id": scope_opp or rows_opp}
-            slot.queue_once(
-                lambda claim: warm_pipeline_query_cache.delay(
-                    (request.session.get("labs_oauth", {}) or {}).get("access_token"),
-                    definition_id=int(definition_id),
-                    alias=params["alias"],
-                    opportunity_id=cache_scope,
-                    scope=scope,
-                    lock_key=lock_key,
-                    claim=claim,
-                )
+            queue_fill(
+                request,
+                slot,
+                definition_id=definition_id,
+                scope=scope or {"opportunity_id": scope_opp or rows_opp},
+                opportunity_ids=[cache_scope],
+                aliases=[params["alias"]],
             )
             return warming_response(
                 request,
@@ -4160,38 +4130,21 @@ def ocs_bots_api(request):
 @login_required
 @require_GET
 def get_pipeline_data_api(request, definition_id):
-    """
-    API endpoint to fetch pipeline data for a workflow.
+    """A workflow's eager pipelines: what the run page reads, polling while they fill.
 
-    Returns data from all pipeline sources defined in the workflow.
+    Answers 200 with `{alias: {rows, metadata}}`, or 202 while the worker fills a cold
+    cache (cache_warm.py). On-demand sources are withheld: render code queries them.
     """
-    labs_context = getattr(request, "labs_context", {})
-    opportunity_id = _coerce_int(labs_context.get("opportunity_id") or request.GET.get("opportunity_id"))
-
     try:
-        data_access = WorkflowDataAccess(request=request)
-        try:
-            if not opportunity_id:
-                # Program-owned workflows have no single owning opportunity in
-                # the request context — fall back to the first opp in the
-                # definition's own multi-opp list, same as PipelineDataStreamView.
-                definition = data_access.get_definition(definition_id)
-                fallback_ids = definition.opportunity_ids if definition else []
-                if not fallback_ids:
-                    return JsonResponse({"error": "opportunity_id required"}, status=400)
-                opportunity_id = fallback_ids[0]
-
-            # The page-load payload (the stream's JSON fallback): on-demand sources
-            # are withheld exactly as the stream withholds them.
-            pipeline_data = data_access.get_pipeline_data(definition_id, int(opportunity_id), skip_on_demand=True)
-        finally:
-            data_access.close()
-
-        return JsonResponse(pipeline_data)
-
+        answer = read_pipeline_data(request, definition_id)
     except Exception:
         logger.exception("Failed to fetch pipeline data for workflow %s", definition_id)
         return JsonResponse({"error": "An internal error occurred"}, status=500)
+    if answer.warming is not None:
+        return warming_response(request, answer.warming, answer.waiting_message)
+    if answer.error:
+        return JsonResponse({"error": answer.error, **answer.details}, status=answer.status)
+    return JsonResponse(answer.data)
 
 
 def _deployment_facts_for_render(deployment: dict | None) -> dict:
@@ -7025,23 +6978,19 @@ def open_run_state_api(request):
 
 
 class PipelineDataStreamView(BaseSSEStreamView):
-    """
-    SSE endpoint for streaming pipeline data loading progress.
+    """`get_pipeline_data_api`'s answer as events, for renders that open this route.
 
-    Inherits BaseSSEStreamView so heartbeat comments fire every 20s during
-    long silent periods (CCHQ pagination, visit cold-load, etc.). Without
-    heartbeats AWS ALB drops idle SSE connections after 60s — the user
-    sees the generic "Pipeline stream connection lost" with no diagnostic.
+    The run page polls now. Forked live copies and a few templates still open this
+    (`streamPipelineData`). It does no work: it waits on the same read, says what the
+    fill says, and sends the same payload, so a cold open costs a sleeping thread rather
+    than a CPU.
+
+    Heartbeats (BaseSSEStreamView) keep the connection alive through the wait.
     """
 
     def stream_data(self, request) -> Generator[str]:
-        """The stream, bracketed by ``pipeline_stream`` telemetry (#1575).
-
-        A start line before any work, a step line per pipeline read (rows, cache hit,
-        worker RSS so far), an end line in ``finally``. A worker OOM-killed mid-fan-out
-        leaves a start with no end, and its last step says how big it had grown --
-        the measurement #1575 asked for. Counts, config ids and memory only.
-        """
+        """The stream, bracketed by ``pipeline_stream`` telemetry (#1575): a start line,
+        a step line per pipeline read, an end line in ``finally``."""
         from connect_labs.utils.request_telemetry import StreamTrace
 
         trace = StreamTrace("pipeline_stream", definition_id=_coerce_int(self.kwargs.get("definition_id")))
@@ -7054,446 +7003,26 @@ class PipelineDataStreamView(BaseSSEStreamView):
             trace.end()
 
     def _stream_pipeline_data(self, request, trace) -> Generator[str]:
-        from connect_labs.labs.analysis.pipeline import AnalysisPipeline
-        from connect_labs.labs.analysis.sse_streaming import AnalysisPipelineSSEMixin, send_sse_event
+        from connect_labs.labs.analysis.sse_streaming import send_sse_event
 
-        # Django's View.dispatch() sets self.kwargs from URL path kwargs.
         definition_id = self.kwargs.get("definition_id")
-        labs_context = getattr(request, "labs_context", {})
-        # Program-owned workflows drive this stream by program_id (their runner
-        # carries no owning opportunity_id). Coerce a numeric opportunity_id and
-        # ignore the stringified `undefined`/`null` a program-scoped runner used
-        # to send — int("undefined") crashed the stream into a generic
-        # "internal error" before any pipeline ran. The spanned-opp fallback
-        # below (definition.opportunity_ids) then resolves scope correctly.
-        opportunity_id = _coerce_int(labs_context.get("opportunity_id") or request.GET.get("opportunity_id"))
-
         try:
-            # Check for OAuth token
-            labs_oauth = request.session.get("labs_oauth", {})
-            if not labs_oauth.get("access_token"):
-                yield send_sse_event("Error", error="No OAuth token found. Please log in to Connect.")
-                return
-
-            # First event, before ANY network I/O. Everything below this point
-            # — the definition fetch, and the CCHQ probe with its documented
-            # 1-2s cost — used to run while the runner still showed its static
-            # "Connecting to pipeline stream..." placeholder, because that text
-            # is only replaced when the first event lands. That read as a hang
-            # on exactly the slowest path (a freshly created multi-opp
-            # workflow). Emitting here also flushes the response headers, so
-            # the EventSource connection opens immediately.
+            # Before any work: flushes the headers, so the EventSource opens at once.
             yield send_sse_event("Loading workflow configuration...")
-
-            # Get workflow definition to find pipeline sources.
-            data_access = WorkflowDataAccess(request=request)
-            try:
-                definition = data_access.get_definition(definition_id)
-            finally:
-                data_access.close()
-
-            if not definition:
-                yield send_sse_event("Error", error=f"Workflow {definition_id} not found")
+            answer = yield from _relay_while_warming(
+                lambda: read_pipeline_data(request, definition_id, on_read=trace.step)
+            )
+            if answer.error:
+                yield send_sse_event("Error", error=answer.error, data=answer.details or None)
                 return
-
-            if not definition.pipeline_sources:
+            if not answer.data:
                 yield send_sse_event("No pipelines", data={"pipelines": {}})
                 return
-
-            # Program-owned workflows have no single owning opportunity in the
-            # request context — fall back to the first opp in the definition's
-            # own multi-opp list. This is only used to scope PipelineDataAccess
-            # auth calls (the pipeline records themselves are opportunity-owned
-            # regardless of who owns the workflow); the actual data pull below
-            # already iterates every id in opp_ids, not just this one.
-            # A program-owned workflow that spans NO opportunities is still runnable
-            # when what it reads is program-scoped (a program Drive source is read
-            # once for the program); its records are then read in the program scope.
-            owning_program_id = getattr(definition, "program_id", None)
-            if not opportunity_id:
-                fallback_ids = definition.opportunity_ids or []
-                if not fallback_ids and not owning_program_id:
-                    yield send_sse_event("Error", error="No opportunity selected")
-                    return
-                opportunity_id = fallback_ids[0] if fallback_ids else None
-
-            # Early CCHQ access probe — fail fast (1-2s) instead of letting
-            # the user wait through a 60s ALB timeout, before discovering
-            # CCHQ is unreachable mid-pipeline. Only fires if any pipeline
-            # source declares a cchq_forms data source.
-            if opportunity_id:
-                yield from self._maybe_probe_cchq_access(
-                    request, definition, int(opportunity_id), labs_oauth.get("access_token")
-                )
-
-            yield send_sse_event("Loading pipeline configurations...")
-
-            # Determine which opps to pull data from
-            opp_ids = definition.opportunity_ids or ([int(opportunity_id)] if opportunity_id else [])
-
-            # Execute each pipeline source with streaming.
-            pipeline_data = {}
-            pipeline_access = PipelineDataAccess(
-                request=request,
-                access_token=labs_oauth.get("access_token"),
-                **(
-                    {"opportunity_id": int(opportunity_id)}
-                    if opportunity_id
-                    else {"program_id": int(owning_program_id)}
-                ),
-            )
-            pipeline_access.use_sources(definition.pipeline_sources)
-
-            # Pre-resolve cross-pipeline JOIN config hashes and topologically
-            # sort so dependencies run before dependents. Without this, the
-            # visits pipeline (which JOINs registrations) would either:
-            # (a) fail with `resolved_config_hash not set`, because the
-            #     orchestration layer didn't compute the registrations hash, or
-            # (b) read an empty registrations cache, because registrations
-            #     hadn't run yet.
-            # Both happened on the first v3 deploy — see PR #135 deploy logs
-            # at 16:16 UTC: visits errored out with the resolved_config_hash
-            # message, while registrations downloaded after.
-            from connect_labs.labs.analysis.utils import resolve_join_hashes
-
-            access_token = labs_oauth.get("access_token")
-            ordered_sources, configs_by_alias = _resolve_pipeline_sources_for_run(
-                pipeline_access,
-                definition.pipeline_sources,
-                opp_ids=opp_ids,
-                request=request,
-                access_token=access_token,
-            )
-            if configs_by_alias:
-                resolve_join_hashes(configs_by_alias)
-            # `load: "on_demand"` sources are not shipped: render code queries them
-            # with actions.queryPipelineRows. One is still executed when an eager
-            # pipeline JOINs it, since that join reads its computed cache.
-            execute_aliases, on_demand_aliases = streamed_and_skipped_aliases(ordered_sources, configs_by_alias)
-
-            try:
-                for source in ordered_sources:
-                    pipeline_id = source.get("pipeline_id")
-                    alias = source.get("alias", f"pipeline_{pipeline_id}")
-
-                    if not pipeline_id:
-                        continue
-                    if alias in on_demand_aliases and alias not in execute_aliases:
-                        pipeline_data[alias] = on_demand_placeholder(source, opp_ids)
-                        continue
-
-                    pipeline_def = _resolve_pipeline_definition(
-                        pipeline_access, pipeline_id, opp_ids=opp_ids, request=request, access_token=access_token
-                    )
-                    if not pipeline_def:
-                        yield send_sse_event(f"Pipeline {pipeline_id} not found")
-                        pipeline_data[alias] = {
-                            "rows": [],
-                            "metadata": {
-                                "pipeline_id": pipeline_id,
-                                "pipeline_name": None,
-                                "row_count": 0,
-                                "opportunity_ids": list(opp_ids),
-                                "per_opp": {str(oid): {"error": "Pipeline not found"} for oid in opp_ids},
-                            },
-                        }
-                        continue
-
-                    merged_rows: list[dict] = []
-                    per_opp_meta: dict[str, dict] = {}
-
-                    # Use the JOIN-resolved config we built above so the visits
-                    # pipeline sees its registrations config_hash. Falling back to a
-                    # fresh parse would lose the resolved_config_hash patch.
-                    try:
-                        alias_config = configs_by_alias.get(alias) or pipeline_access._schema_to_config(
-                            pipeline_def.schema, pipeline_id
-                        )
-                    except Exception:
-                        alias_config = None
-                    # One read per opportunity -- or ONE for a program-scoped Drive
-                    # source, whose rows are the program's (tagged opportunity_id null).
-                    targets = pipeline_read_targets(alias_config, opp_ids)
-
-                    for i, (target_key, opp_id, row_tag) in enumerate(targets):
-                        mixin = AnalysisPipelineSSEMixin()
-                        suffix = f" (opp {i + 1}/{len(targets)})" if len(targets) > 1 else ""
-                        yield send_sse_event(f"Executing pipeline: {pipeline_def.name}{suffix}...")
-
-                        try:
-                            config = alias_config or pipeline_access._schema_to_config(
-                                pipeline_def.schema, pipeline_id
-                            )
-                            pipeline = AnalysisPipeline(request)
-                            pipeline_stream = pipeline.stream_analysis(config, opportunity_id=opp_id)
-                            logger.info(
-                                "[PipelineStream] Starting stream for pipeline %s, opp %s",
-                                pipeline_id,
-                                opp_id,
-                            )
-                            yield from mixin.stream_pipeline_events(pipeline_stream, raise_on_error=True)
-
-                            result = mixin._pipeline_result
-                            from_cache = mixin._pipeline_from_cache
-
-                            row_count = len(result.rows) if result else 0
-                            per_opp_meta[target_key] = {
-                                "row_count": row_count,
-                                "from_cache": from_cache,
-                            }
-                            trace.step(
-                                rows=row_count,
-                                pipeline_id=_coerce_int(pipeline_id),
-                                target=i + 1,
-                                targets=len(targets),
-                                from_cache=bool(from_cache),
-                                merged_rows=len(merged_rows) + row_count,
-                            )
-                            # Surfaced when SQLBackend rejected a raw-visit
-                            # refetch that came back suspiciously smaller than
-                            # what was already cached, and served the previous
-                            # (larger, still-good) data instead — see
-                            # AnalysisPipeline.stream_analysis, which attaches
-                            # this onto result.metadata for exactly this read.
-                            # Same "buried under per_opp" risk auth_error had
-                            # (see the alias-level aggregation below): a render
-                            # checking only pipelines[alias].metadata would
-                            # never see it if it stayed nested here alone.
-                            result_metadata = getattr(result, "metadata", None) if result else None
-                            raw_fetch_anomaly = (
-                                result_metadata.get("raw_fetch_anomaly") if isinstance(result_metadata, dict) else None
-                            )
-                            if raw_fetch_anomaly:
-                                per_opp_meta[target_key]["raw_fetch_anomaly"] = raw_fetch_anomaly
-
-                            if result:
-                                yield send_sse_event(f"Processing {alias} data ({target_key})...")
-                                # One shared serializer with the cached/snapshot
-                                # path, so the live and snapshot payloads cannot
-                                # drift apart again (ace#1657: this block used to
-                                # hand-roll its own dict and silently dropped
-                                # `status` and `flagged`).
-                                merged_rows.extend(
-                                    serialize_pipeline_row(row, extra={"opportunity_id": row_tag})
-                                    for row in result.rows
-                                )
-                        except Exception as e:
-                            from connect_labs.labs.analysis.backends.sql.cache import (
-                                CacheConcurrencyError,
-                                DuplicateSourceVisitsError,
-                            )
-                            from connect_labs.labs.integrations.commcare.api_client import CCHQAuthError
-
-                            logger.exception(
-                                "[PipelineStream] Pipeline %s failed for opp %s",
-                                pipeline_id,
-                                opp_id,
-                            )
-                            per_opp_entry = {"error": str(e)}
-                            trace.step(
-                                rows=0,
-                                pipeline_id=_coerce_int(pipeline_id),
-                                target=i + 1,
-                                targets=len(targets),
-                                failed=True,
-                            )
-                            if isinstance(e, CCHQAuthError):
-                                per_opp_entry["auth_error"] = "commcare_hq"
-                                per_opp_entry["auth_error_domain"] = e.domain
-                            if isinstance(e, DuplicateSourceVisitsError):
-                                # The source repeats visit ids: not a race, so it
-                                # must not take the "another run is in flight, retry"
-                                # branch below. The error text names the ids and says
-                                # a retry will not help; the per-opp failure path that
-                                # follows reports it, and the other opps still load.
-                                per_opp_entry["duplicate_visit_ids"] = e.duplicate_ids[:20]
-                            elif isinstance(e, CacheConcurrencyError):
-                                # Loud terminal error: another pipeline run for the
-                                # same (opportunity, config) collided with this one
-                                # in the cache layer. Re-running once the other
-                                # writer finishes will hit the cache cleanly.
-                                per_opp_entry["concurrent_run"] = True
-                                per_opp_entry["cache_table"] = e.table
-                                yield send_sse_event(
-                                    f"Pipeline '{pipeline_def.name}' aborted: another run "
-                                    f"for {target_key} is already in flight (collided on "
-                                    f"{e.table}). Wait a moment and retry — a cache hit "
-                                    f"is likely.",
-                                    error=str(e),
-                                    data={
-                                        "pipeline_alias": alias,
-                                        "pipeline_name": pipeline_def.name,
-                                        "pipeline_error": str(e)[:500],
-                                        "concurrent_run": True,
-                                        "cache_table": e.table,
-                                    },
-                                )
-                                # Stop the entire pipeline stream — don't proceed
-                                # to the next pipeline source. Any subsequent
-                                # writer would just collide too.
-                                per_opp_meta[target_key] = per_opp_entry
-                                pipeline_data[alias] = {
-                                    "rows": [],
-                                    "metadata": {
-                                        "pipeline_id": pipeline_id,
-                                        "pipeline_name": pipeline_def.name,
-                                        "row_count": 0,
-                                        "concurrent_run": True,
-                                        "cache_table": e.table,
-                                        "opportunity_ids": list(opp_ids),
-                                        "per_opp": per_opp_meta,
-                                    },
-                                }
-                                return
-                            per_opp_meta[target_key] = per_opp_entry
-                            # Surface per-pipeline failure to the FE with the
-                            # pipeline name so users see which one broke
-                            # rather than a generic "connection lost".
-                            yield send_sse_event(
-                                f"Pipeline '{pipeline_def.name}' failed for {target_key}: {str(e)[:200]}",
-                                data={
-                                    "pipeline_alias": alias,
-                                    "pipeline_name": pipeline_def.name,
-                                    "pipeline_error": str(e)[:500],
-                                },
-                            )
-
-                    # Aggregate per-opp errors up to the alias level so the FE
-                    # render can detect them with a single check
-                    # (pipelines[alias].metadata.auth_error). The V2 render's
-                    # auth-error gate looks here; the SSE path used to leave
-                    # the auth_error tag buried under per_opp[opp_id], where
-                    # the render didn't see it → the dashboard happily showed
-                    # "0 rows (none found)" instead of the auth panel.
-                    alias_metadata = {
-                        "pipeline_id": pipeline_id,
-                        "pipeline_name": pipeline_def.name,
-                        "row_count": len(merged_rows),
-                        "opportunity_ids": list(opp_ids),
-                        "per_opp": per_opp_meta,
-                    }
-                    if program_drive_scope(alias_config) is not None:
-                        # Read once for the program; its rows carry opportunity_id null.
-                        alias_metadata["program_id"] = program_drive_scope(alias_config)
-                        alias_metadata["read_once_for_program"] = True
-                    auth_failed_opps = [oid for oid, m in per_opp_meta.items() if m.get("auth_error") == "commcare_hq"]
-                    if auth_failed_opps:
-                        alias_metadata["auth_error"] = "commcare_hq"
-                        alias_metadata["auth_error_domain"] = next(
-                            (per_opp_meta[oid].get("auth_error_domain") for oid in auth_failed_opps),
-                            None,
-                        )
-                        alias_metadata["auth_authorize_url"] = "/labs/commcare/initiate/"
-                    # Same aggregation as auth_error above, for the raw-fetch
-                    # shrink guard: a flat list at the alias level so a generic
-                    # frontend check (any workflow, not just one with render
-                    # code that happens to dig into per_opp itself) can see it
-                    # with pipelines[alias].metadata.raw_fetch_anomalies.
-                    anomalous_opps = [oid for oid, m in per_opp_meta.items() if m.get("raw_fetch_anomaly")]
-                    if anomalous_opps:
-                        alias_metadata["raw_fetch_anomalies"] = [
-                            {"opportunity_id": oid, **per_opp_meta[oid]["raw_fetch_anomaly"]} for oid in anomalous_opps
-                        ]
-                    if alias in on_demand_aliases:
-                        # Executed only to fill the cache an eager pipeline JOINs.
-                        placeholder = on_demand_placeholder(source, opp_ids)
-                        placeholder["metadata"]["per_opp"] = per_opp_meta
-                        pipeline_data[alias] = placeholder
-                        continue
-                    pipeline_data[alias] = {
-                        "rows": merged_rows,
-                        "metadata": alias_metadata,
-                    }
-            finally:
-                pipeline_access.close()
-
-            # Send final complete event with all data
-            yield send_sse_event(
-                f"Loaded {sum(len(p.get('rows', [])) for p in pipeline_data.values())} records",
-                data={"pipelines": pipeline_data},
-            )
-
+            total = sum(len(p.get("rows", [])) for p in answer.data.values())
+            yield send_sse_event(f"Loaded {total} records", data={"pipelines": answer.data})
         except Exception:
             logger.exception("[PipelineStream] Error")
             yield send_sse_event("Error", error="An internal error occurred")
-
-    def _maybe_probe_cchq_access(self, request, definition, opportunity_id, access_token):
-        """If any pipeline source uses cchq_forms, ping CCHQ before the long pull.
-
-        Yields an SSE error event and returns early (caller halts) if CCHQ
-        is unreachable. The probe takes 1-2 seconds in the success case;
-        in the failure case we surface 'CommCare HQ unreachable' to the
-        user immediately instead of letting them wait 60+ seconds for the
-        ALB to drop the connection.
-        """
-        from connect_labs.labs.analysis.data_access import fetch_opportunity_metadata
-        from connect_labs.labs.analysis.sse_streaming import send_sse_event
-        from connect_labs.labs.integrations.commcare.api_client import CommCareDataAccess
-
-        # Reading each source's definition is itself a round trip per source,
-        # so say so rather than going quiet again.
-        yield send_sse_event("Checking data sources...")
-
-        # Any cchq_forms sources?
-        needs_cchq = False
-        for source in definition.pipeline_sources or []:
-            sid = source.get("pipeline_id")
-            if not sid:
-                continue
-            try:
-                pa = PipelineDataAccess(request=request, access_token=access_token, opportunity_id=opportunity_id)
-                pa.use_sources(definition.pipeline_sources)
-                try:
-                    pdef = pa.get_definition(sid)
-                finally:
-                    pa.close()
-                if pdef and pdef.schema and pdef.schema.get("data_source", {}).get("type") == "cchq_forms":
-                    needs_cchq = True
-                    break
-            except Exception:
-                # Don't block on probe-classification errors
-                continue
-        if not needs_cchq:
-            return
-
-        yield send_sse_event("Checking CommCare HQ access...")
-
-        try:
-            metadata = fetch_opportunity_metadata(access_token, opportunity_id)
-            cc_domain = metadata.get("cc_domain")
-            if not cc_domain:
-                yield send_sse_event(
-                    "Error",
-                    error=("Opportunity has no CommCare domain configured. " "Contact your project admin."),
-                )
-                return
-            client = CommCareDataAccess(request, cc_domain)
-            if not client.verify_hq_access():
-                # send_sse_event(message, data, error) — extra fields go in data,
-                # NOT as kwargs. (My first attempt passed cchq_auth_required as
-                # a kwarg and it crashed with "unexpected keyword argument", so
-                # the probe failed silently and the user saw "0 rows" instead
-                # of the auth panel — even though verify_hq_access correctly
-                # detected the 403.)
-                yield send_sse_event(
-                    "Error",
-                    error=(
-                        "CommCare HQ access denied. The OAuth token may have "
-                        "expired or you may have lost access to the project. "
-                        "Re-authorize at /labs/commcare/initiate/?next=/labs/overview/."
-                    ),
-                    data={
-                        "cchq_auth_required": True,
-                        "authorize_url": "/labs/commcare/initiate/?next=/labs/overview/",
-                        "domain": cc_domain,
-                    },
-                )
-                return
-        except Exception as e:
-            # Probe itself failed (network, etc.) — surface but don't block.
-            # The downstream pipeline will still attempt and may succeed.
-            logger.warning("[PipelineStream] CCHQ probe failed: %s", e)
-            yield send_sse_event(f"Warning: could not verify CommCare HQ access ({type(e).__name__}). Continuing...")
 
 
 @login_required

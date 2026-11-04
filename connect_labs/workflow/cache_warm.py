@@ -1,19 +1,24 @@
 """Filling a cold cache off the request: the one protocol every reader shares.
 
-A cold cache on a big opportunity takes minutes to fill and pins a CPU while it does.
-Run inside a web request, that work outlives the load balancer's patience, keeps going
-after the viewer has left, and competes with every other request on a 1-vCPU task. On
-2026-11-03 two viewers of one report held a web task at 100% for most of 17 minutes
-(#2810). So no request fills a cache. The protocol:
+**A read answers from the cache, or it says a fill is under way. It never fills.** A cold
+cache on a big opportunity takes minutes to fill and pins a CPU while it does. Run inside
+a web request, that work outlives the viewer and competes with every other request on a
+1-vCPU task: on 2026-11-03 two viewers of one report held a web task at 100% for most of
+17 minutes (#2810). The protocol:
 
     the endpoint  claims the slot and queues a Celery task, then answers 202
-                  `{status: "warming", message, elapsed_seconds, retry_after_ms}`
+                  `{status: "warming", message, progress, elapsed_seconds, retry_after_ms}`
     the task      fills the cache, says what it is doing, leaves an outcome
     the client    asks again until the answer stops being 202
-                  (components/workflow/warming.ts, which the sandbox host applies to
-                  every read a render makes, so no render has to know)
+                  (components/workflow/warming.ts, used by the runner, and by the sandbox
+                  host for every read a render makes, so no render has to know)
 
 A slot is one fill. Concurrent readers share it: the first claims it, the rest watch.
+
+`progress` is `TaskProgress` (static/js/task-progress.ts), from the same
+`build_task_progress` that translates a Celery job's state, so a fill and a job say the
+same thing in the same fields. It lives here rather than in Celery's result backend
+because a reader joins a fill by what it fills, and may arrive before the task has started.
 
 **A dead worker cannot strand a reader.** A running task's claim is short and kept alive
 by a heartbeat, so a task killed by a deploy loses its claim within minutes and the next
@@ -25,6 +30,8 @@ missing: one export failed, or an opportunity really has no visits. An endpoint 
 simply warmed again would poll forever, so a finished slot keeps its outcome for a while
 and the endpoint answers from it. Reading a failure with `take_outcome` spends it, so
 that the reader's Retry really does try again.
+
+Design: docs/superpowers/specs/2026-11-03-one-loading-path-design.md
 """
 
 from __future__ import annotations
@@ -39,6 +46,8 @@ from typing import Any
 
 from django.core.cache import cache
 from django.http import JsonResponse
+
+from connect_labs.labs.analysis.sse_streaming import build_task_progress
 
 logger = logging.getLogger(__name__)
 
@@ -104,9 +113,13 @@ class WarmSlot:
         current = self.state()
         return bool(current and self.token and current.get("token") != self.token)
 
-    def report(self, message: str) -> None:
-        """Say what the task is doing now. A reader sees it on its next poll."""
-        self._write({"message": str(message)[:200]})
+    def report(self, message: str, **progress: Any) -> None:
+        """Say what the task is doing now. A reader sees it on its next poll.
+
+        `progress` takes what `set_task_progress` takes (`stage_name`, `current_stage`,
+        `total_stages`, `processed`, `total`), and what it leaves out reads as unknown.
+        """
+        self._write({"message": str(message)[:200], "progress": progress})
 
     def _write(self, changes: dict[str, Any]) -> None:
         if self.superseded():
@@ -122,8 +135,9 @@ class WarmSlot:
     def running(self) -> Iterator[dict[str, Any]]:
         """Hold the claim while the body runs, then release it and leave the outcome.
 
-        Yields the outcome: set its `error` to report a failure. An exception out of the
-        body is reported too, and still raised.
+        Yields the outcome: set its `error` to report a failure, and any other key to
+        leave it for the reader. An exception out of the body is reported too, and still
+        raised.
 
         The heartbeat is a thread because the slow part is one long blocking download
         that has nothing to tick from. If the process dies, so does the thread, and the
@@ -152,13 +166,13 @@ class WarmSlot:
         finally:
             stop.set()
             thread.join(timeout=5)
-            self.finish(outcome["error"])
+            self.finish(outcome["error"], **{k: v for k, v in outcome.items() if k != "error"})
 
-    def finish(self, error: str | None = None) -> None:
+    def finish(self, error: str | None = None, **details: Any) -> None:
         """Release the claim and leave what happened for the next reader."""
         if self.superseded():
             return
-        cache.set(self.outcome_key, {"error": error[:500] if error else None}, OUTCOME_SECONDS)
+        cache.set(self.outcome_key, {"error": error[:500] if error else None, **details}, OUTCOME_SECONDS)
         cache.delete(self.key)
 
     def outcome(self) -> dict[str, Any] | None:
@@ -173,22 +187,29 @@ class WarmSlot:
         return found
 
 
-def warming_response(request, state: dict[str, Any] | None, message: str) -> JsonResponse:
-    """The 202 a reader polls on. `message` is the wording until the task has its own.
-
-    A reader outside the sandbox host does not poll. That happens only with
-    LABS_WORKFLOW_SANDBOX=off, the emergency switch, and its render reads `error`, so
-    the emergency path says something true instead of "no figures in the answer".
-    """
+def warming_progress(state: dict[str, Any] | None, message: str) -> dict[str, Any]:
+    """What a fill is doing, in the shape every kind of progress takes. `message` is the
+    wording until the task has its own."""
     state = state or {}
-    started = state.get("started_at")
     wording = state.get("message") or message
-    body: dict[str, Any] = {
-        "status": "warming",
+    started = state.get("started_at")
+    return {
         "message": wording,
+        "progress": build_task_progress("PROGRESS", {**(state.get("progress") or {}), "message": wording}),
         "elapsed_seconds": max(0, int(time.time() - started)) if started else 0,
         "retry_after_ms": RETRY_AFTER_MS,
     }
+
+
+def warming_response(request, state: dict[str, Any] | None, message: str) -> JsonResponse:
+    """The 202 a reader polls on.
+
+    A reader that neither polls nor is the runner reads `error`. That happens only with
+    LABS_WORKFLOW_SANDBOX=off, the emergency switch, so the emergency path says something
+    true instead of "no figures in the answer". `error` beside a 202 means nothing to a
+    reader that does poll.
+    """
+    body: dict[str, Any] = {"status": "warming", **warming_progress(state, message)}
     if not request.headers.get("x-labs-sandbox-for"):
-        body["error"] = f"{wording} Reload this page in a few minutes."
+        body["error"] = f"{body['message']} Reload this page in a few minutes."
     return JsonResponse(body, status=202)

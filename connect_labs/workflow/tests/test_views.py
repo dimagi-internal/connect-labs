@@ -1169,7 +1169,7 @@ class TestPipelineDataProgramOwnedFallback:
         request.session = {"labs_oauth": {"access_token": "t"}}
 
         mock_definition = MagicMock(pipeline_sources=[], opportunity_ids=[1973, 1976, 1978, 1982])
-        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+        with patch("connect_labs.workflow.data_access.WorkflowDataAccess") as MockWDA:
             MockWDA.return_value.get_definition.return_value = mock_definition
 
             view = PipelineDataStreamView()
@@ -1189,19 +1189,20 @@ class TestPipelineDataProgramOwnedFallback:
         request.labs_context = {"program_id": 176}
         request.session = {"labs_oauth": {"access_token": "t"}}
 
-        mock_definition = MagicMock(opportunity_ids=[1973, 1976, 1978, 1982])
-        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
-            mock_wda = MagicMock()
-            MockWDA.return_value = mock_wda
-            mock_wda.get_definition.return_value = mock_definition
-            mock_wda.get_pipeline_data.return_value = {"audit_reports": {"rows": [], "metadata": {}}}
-
+        sources = [{"pipeline_id": 7, "alias": "audit_reports", "load": "on_demand"}]
+        mock_definition = MagicMock(pipeline_sources=sources, opportunity_ids=[1973, 1976, 1978, 1982])
+        with (
+            patch("connect_labs.workflow.data_access.WorkflowDataAccess") as MockWDA,
+            patch("connect_labs.workflow.data_access.PipelineDataAccess") as MockPDA,
+            patch("connect_labs.workflow.views._resolve_pipeline_sources_for_run", return_value=(sources, {})),
+        ):
+            MockWDA.return_value.get_definition.return_value = mock_definition
             response = get_pipeline_data_api(request, definition_id=5181)
 
         assert response.status_code == 200
-        assert json.loads(response.content) == {"audit_reports": {"rows": [], "metadata": {}}}
+        assert json.loads(response.content)["audit_reports"]["rows"] == []
         # Fell back to the first id in the definition's opportunity_ids, not a 400.
-        mock_wda.get_pipeline_data.assert_called_once_with(5181, 1973, skip_on_demand=True)
+        assert MockPDA.call_args.kwargs["opportunity_id"] == 1973
 
     def test_get_pipeline_data_api_still_400s_with_no_context_at_all(self, dimagi_user, rf: RequestFactory):
         """Single-opp workflow with genuinely no context anywhere still 400s
@@ -1213,8 +1214,8 @@ class TestPipelineDataProgramOwnedFallback:
         request.labs_context = {}
         request.session = {"labs_oauth": {"access_token": "t"}}
 
-        mock_definition = MagicMock(opportunity_ids=[])
-        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+        mock_definition = MagicMock(opportunity_ids=[], program_id=None)
+        with patch("connect_labs.workflow.data_access.WorkflowDataAccess") as MockWDA:
             MockWDA.return_value.get_definition.return_value = mock_definition
 
             response = get_pipeline_data_api(request, definition_id=42)
@@ -1687,15 +1688,8 @@ class TestFlwDailySummaryHistoryApi:
 
 
 class TestPipelineStreamSpeaksBeforeItBlocks:
-    """The runner shows a static "Connecting to pipeline stream..." placeholder
-    until the first SSE event lands, so anything the stream does before its
-    first yield is invisible dead air.
-
-    It used to fetch the workflow definition and then run the CCHQ probe —
-    whose own docstring budgets 1-2s, on top of a round trip per pipeline
-    source — before saying anything at all. On the slowest path, a freshly
-    created multi-opp workflow, that read as a hang rather than as progress.
-    """
+    """A render's EventSource shows nothing until the first event lands, so anything
+    the stream does before its first yield is invisible dead air."""
 
     def test_first_event_arrives_before_the_definition_is_fetched(self, dimagi_user, rf: RequestFactory):
         import json
@@ -1720,31 +1714,6 @@ class TestPipelineStreamSpeaksBeforeItBlocks:
             ), "the stream went to the network before telling the user anything"
 
         assert first.get("message"), f"first event carried no status message: {first!r}"
-
-    def test_the_cchq_probe_announces_itself_before_scanning_sources(self, dimagi_user, rf: RequestFactory):
-        """The probe reads every pipeline source's definition — a round trip
-        each — before it even decides whether CCHQ is involved."""
-        import json
-
-        from connect_labs.workflow.views import PipelineDataStreamView
-
-        request = rf.get("/labs/workflow/api/5181/pipeline-data/stream/")
-        request.user = dimagi_user
-        request.session = {"labs_oauth": {"access_token": "t"}}
-        definition = MagicMock(pipeline_sources=[{"pipeline_id": 7}])
-
-        view = PipelineDataStreamView()
-        with patch("connect_labs.workflow.views.PipelineDataAccess") as MockPDA:
-            MockPDA.return_value.get_definition.return_value = MagicMock(schema={"data_source": {"type": "visits"}})
-
-            probe = view._maybe_probe_cchq_access(request, definition, 1973, "t")
-            first = json.loads(next(probe)[len("data: ") :])
-
-            assert (
-                MockPDA.return_value.get_definition.call_count == 0
-            ), "the probe read a pipeline definition before reporting progress"
-
-        assert "data source" in (first.get("message") or "").lower()
 
 
 class TestWorkflowRunViewRecoversAProgramOwnedDefinition:

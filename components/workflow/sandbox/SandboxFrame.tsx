@@ -17,7 +17,7 @@ import {
 import type { FramePayload } from './protocol';
 import { checkFetch, type RouteContext } from './routes';
 import type { Warming } from '../warming';
-import { WarmingStrip } from './WarmingStrip';
+import { LoadingStrip } from '../LoadingStrip';
 
 /** What the runner does for a workflow drawn in the frame (phase 2). */
 export interface WorkflowHostProps {
@@ -272,7 +272,13 @@ export function SandboxFrame(props: SandboxFrameProps) {
           {renderError}
         </div>
       )}
-      {firstWarming && <WarmingStrip warming={firstWarming} />}
+      {firstWarming && (
+        <LoadingStrip
+          message={firstWarming.message}
+          progress={firstWarming.progress}
+          elapsedSeconds={firstWarming.elapsedSeconds}
+        />
+      )}
       <div ref={containerRef} data-testid="page-sandbox" />
       {notices.length > 0 && (
         <div

@@ -180,6 +180,22 @@ def build_task_progress(state: str, info: dict | None) -> dict:
     return {"status": state.lower(), "message": f"Status: {state}"}
 
 
+def download_progress(event_data: dict) -> dict:
+    """A pipeline's EVENT_DOWNLOAD in `set_task_progress` terms. The one wording of it.
+
+    `total` is None for sources that don't pre-announce a row count (cchq_forms streams
+    page-by-page with no upfront tally). None and missing mean the same: progress with
+    no denominator.
+    """
+    rows = event_data.get("rows", 0)
+    total = event_data.get("total") or 0
+    if total > 0:
+        message = f"Fetching visits: {rows:,} / {total:,} rows ({int(rows / total * 100)}%)"
+    else:
+        message = f"Fetching visits: {rows:,} rows..."
+    return {"message": message, "processed": rows, "total": total}
+
+
 def send_sse_event(message: str, data: dict | None = None, error: str | None = None) -> str:
     """
     Format a message as a Server-Sent Event.
@@ -485,16 +501,7 @@ class AnalysisPipelineSSEMixin:
             elif event_type == EVENT_DOWNLOAD:
                 # Fetch progress event - yield immediately for real-time UI updates
                 # Each page from the paginated API triggers one event (page size set in ExportAPIClient).
-                rows_so_far = event_data.get("rows", 0)
-                # `total` is None for sources that don't pre-announce a row count
-                # (cchq_forms streams page-by-page with no upfront tally). Treat
-                # None and missing identically — show progress without a denominator.
-                expected_count = event_data.get("total") or 0
-                if expected_count > 0:
-                    pct = int(rows_so_far / expected_count * 100)
-                    message = f"Fetching visits: {rows_so_far:,} / {expected_count:,} rows ({pct}%)"
-                else:
-                    message = f"Fetching visits: {rows_so_far:,} rows..."
+                message = download_progress(event_data)["message"]
                 logger.debug(f"[SSE Mixin] Fetch progress: {message}")
                 yield send_sse_func(message)
 

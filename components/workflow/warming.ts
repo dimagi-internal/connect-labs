@@ -2,17 +2,21 @@
  * The client half of connect_labs/workflow/cache_warm.py: a cold cache answers 202
  * `{status: "warming"}` while a background task fills it, and the reader asks again.
  *
- * One loop, used by the sandbox host for every read a render makes and by
- * `actions.queryPipelineRows`. A render never sees a 202: its `fetch` just takes as long
- * as the fill takes, while the host shows the viewer what is happening (WarmingStrip).
- * That is what lets a report written before this existed, or forked from one, work
- * unchanged.
+ * One loop, used by the runner for a page's pipelines and `actions.queryPipelineRows`,
+ * and by the sandbox host for every read a render makes. A render never sees a 202: its
+ * `fetch` just takes as long as the fill takes, while the host shows the viewer what is
+ * happening (LoadingStrip). That is what lets a report written before this existed, or
+ * forked from one, work unchanged.
  */
+
+import type { TaskProgress } from '../../connect_labs/static/js/task-progress';
 
 export interface Warming {
   message: string;
   elapsedSeconds: number;
   retryAfterMs: number;
+  /** The fill's progress, in the shape every kind of loading reports. */
+  progress?: TaskProgress;
 }
 
 export const DEFAULT_RETRY_AFTER_MS = 5000;
@@ -32,6 +36,7 @@ export function warmingFrom(status: number, data: unknown): Warming | null {
     message: String(d.message || 'Loading…'),
     elapsedSeconds: Number(d.elapsed_seconds) || 0,
     retryAfterMs: Number(d.retry_after_ms) || DEFAULT_RETRY_AFTER_MS,
+    progress: d.progress as TaskProgress | undefined,
   };
 }
 

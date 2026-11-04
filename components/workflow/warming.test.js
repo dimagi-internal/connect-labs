@@ -115,3 +115,17 @@ describe('pollWhileWarming', () => {
     expect(read.mock.calls.length).toBeLessThan(7);
   });
 });
+
+describe('warmingFrom: the fill progress', () => {
+  it('carries the progress the server reports', () => {
+    const progress = {
+      status: 'running',
+      message: 'm',
+      processed: 3,
+      total: 9,
+    };
+    expect(warmingFrom(202, { ...WARMING, progress }).progress).toEqual(
+      progress,
+    );
+  });
+});
