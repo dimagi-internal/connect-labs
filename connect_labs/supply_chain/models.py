@@ -1592,9 +1592,31 @@ class Distribution(SourcedModel):
     supply_point = models.ForeignKey(SupplyPoint, on_delete=models.PROTECT, related_name="distributions_out")
     distributed_on = models.DateField(db_index=True)
     reference = models.CharField(max_length=64, blank=True, default="")
+    # The message the partner sent saying what they handed out (a pasted WhatsApp
+    # message, an email), kept as it arrived: it is the evidence for the quantities
+    # confirmed from it.
+    message_text = models.TextField(blank=True, default="", db_default="")
+    # The product the run is for. A run that has not moved yet has no movement to say so.
+    commodity = models.ForeignKey(Commodity, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    # The day the handout was confirmed. Empty while it is still only a plan.
+    confirmed_on = models.DateField(null=True, blank=True)
 
     class Meta:
         ordering = ["-distributed_on", "-id"]
+
+    @property
+    def status(self) -> str:
+        """planned (nothing confirmed yet), partly_confirmed, or confirmed.
+
+        Derived from the lines, never stored: a line is confirmed once somebody has
+        said what was actually given (`quantity_given`), or it posted a movement
+        when it was recorded (every run recorded before plans existed).
+        """
+        lines = list(self.lines.all())
+        done = sum(1 for line in lines if line.is_confirmed)
+        if not lines or done == 0:
+            return "planned"
+        return "confirmed" if done == len(lines) else "partly_confirmed"
 
 
 class DistributionLine(models.Model):
@@ -1608,6 +1630,25 @@ class DistributionLine(models.Model):
     movement = models.OneToOneField(
         Movement, null=True, blank=True, on_delete=models.PROTECT, related_name="distribution_line"
     )
+    # `quantity` is what was planned to go. What was actually given is said by whoever
+    # handed it out; what arrived is said by the person who got it. All three are kept,
+    # because a gap between any two is the finding.
+    quantity_given = models.DecimalField(null=True, blank=True, **QTY)
+    quantity_received = models.DecimalField(null=True, blank=True, **QTY)
+    received_on = models.DateField(null=True, blank=True)
+    # Who said it arrived (a Connect username, or the name of the person who did).
+    received_by = models.CharField(max_length=150, blank=True, default="", db_default="")
+
+    @property
+    def is_confirmed(self) -> bool:
+        return self.quantity_given is not None or self.movement_id is not None
+
+    @property
+    def given(self):
+        """What was actually given: the confirmed figure, else the planned one for a line that already moved."""
+        if self.quantity_given is not None:
+            return self.quantity_given
+        return self.quantity if self.movement_id is not None else None
 
 
 class DispensingRule(TimestampedModel):

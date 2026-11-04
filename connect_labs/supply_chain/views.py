@@ -19,6 +19,7 @@ from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.banner import program_line
 from connect_labs.supply_chain.checks import course_applies_to_category, courses_carried_by_kits
+from connect_labs.supply_chain.distribution import page
 from connect_labs.supply_chain.guide import purchase_guide
 from connect_labs.supply_chain.history.as_of import as_of_view, end_of_day
 from connect_labs.supply_chain.history.timeline import answered_by, timeline_for_contract
@@ -1314,8 +1315,13 @@ class DistributionView(OperationBase):
         context["has_program_context"] = has_program_context(self.request)
         if not context["has_program_context"]:
             return context
+        points = {p["id"]: p for p in self.op("supply_point_list", include_inactive=True)}
+        context["points"] = points
         context["runs"] = self.op("distribution_list")
-        context["points"] = {p["id"]: p for p in self.op("supply_point_list", include_inactive=True)}
+        context.update(page.handouts(context["runs"], points))
+        context["deliveries"] = page.deliveries(
+            self.op("consignment_list"), self.op("movement_list", kind="transfer", limit=300), points
+        )
         return context
 
 

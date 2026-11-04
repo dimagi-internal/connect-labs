@@ -1,0 +1,9 @@
+<div class="px-4 py-3 border-t border-gray-100 text-xs text-gray-700 bg-gray-50/60">
+  <span class="font-medium">Kept as evidence:</span>
+  {% if run.document_ids %}{{ run.document_ids|length }} file{{ run.document_ids|length|pluralize }} (a photo or list);{% endif %}
+  {% if run.message_text %}
+    <details class="inline"><summary class="inline cursor-pointer underline">the message</summary>
+      <pre class="whitespace-pre-wrap mt-1 font-sans text-gray-800">{{ run.message_text }}</pre>
+    </details>
+  {% endif %}
+</div>

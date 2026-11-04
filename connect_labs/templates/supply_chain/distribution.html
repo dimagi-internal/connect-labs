@@ -11,65 +11,164 @@
 
 <div class="flex flex-wrap items-start justify-between gap-4">
   <h2 class="text-lg font-semibold text-brand-indigo mb-1">Distribution</h2>
-  <a href="{% url 'supply_chain:distribution_record' %}"
-     class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
-    <i class="fa-solid fa-plus mr-1"></i> Record a run
-  </a>
+  <div class="flex flex-wrap gap-2">
+    <a href="{% url 'supply_chain:distribution_plan' %}"
+       class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+      <i class="fa-solid fa-plus mr-1"></i> Plan a handout
+    </a>
+    <a href="{% url 'supply_chain:distribution_record' %}"
+       class="px-4 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">
+      Record a handout that already happened
+    </a>
+  </div>
 </div>
-<p class="text-xs text-gray-600 mb-4">
-  Each run posts one movement per line, so a worker's stock on hand is a ledger
-  balance rather than a separate figure. A worker is a supply point, which is
-  why moving stock to one is the same operation as moving it between stores.
+<p class="text-xs text-gray-600 mb-4 max-w-3xl">
+  The chain, in order: stock reaches a store or facility (<a href="#deliveries" class="underline">deliveries</a>),
+  then goes out to field workers in a weekly handout. A handout is planned first, then confirmed with what was
+  actually given (from a WhatsApp message, a photo of the paper list, or one button), and the person who received
+  it can confirm too, so each handover is recorded from both sides. Only confirmed amounts move stock.
 </p>
 
-{% for run in runs %}
-  <div class="bg-white border border-gray-200 rounded-lg mb-3 overflow-hidden">
+<h3 id="waiting" class="text-sm font-semibold text-gray-900 mt-5 mb-2">Handouts waiting to be confirmed</h3>
+{% for run in waiting %}
+  <div class="bg-white border border-amber-200 rounded-lg mb-3 overflow-hidden">
     <div class="px-4 py-2.5 border-b border-gray-100 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-      <span class="font-medium text-gray-900">{{ run.reference|default:"Run" }}</span>
-      <span class="text-sm text-gray-600">{{ run.distributed_on }}</span>
+      <span class="font-medium text-gray-900">{{ run.reference|default:"Handout" }}</span>
+      <span class="text-sm text-gray-600">planned for {{ run.distributed_on|day }}</span>
       <span class="text-sm text-gray-600">
         from {{ points|dictkey:run.supply_point_id|dictkey:"name"|default:run.supply_point_id }}
       </span>
+      <span class="text-xs text-amber-800 ml-auto">
+        {% if run.status == "partly_confirmed" %}partly confirmed: {{ run.to_confirm }} of {{ run.lines|length }} places still waiting
+        {% else %}nothing confirmed yet{% endif %}
+      </span>
+    </div>
+    <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+    <table class="min-w-[36rem] w-full text-sm">
+      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+        <tr>
+          <th class="text-left px-4 py-2">To</th>
+          <th class="text-left px-4 py-2">Planned</th>
+          <th class="text-left px-4 py-2">Given</th>
+          <th class="text-left px-4 py-2">Received</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for line in run.lines %}
+          {% include "supply_chain/_distribution_line.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <div class="px-4 py-3 border-t border-gray-100 flex flex-wrap items-center gap-3">
+      <a href="{% url 'supply_chain:distribution_from_message' run.id %}"
+         class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+        Record from a message or a photo of the list
+      </a>
+      <form method="post" action="{% url 'supply_chain:distribution_confirm_as_planned' run.id %}">
+        {% csrf_token %}
+        <button type="submit" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">
+          Confirm everything as planned
+        </button>
+      </form>
+      <span class="text-xs text-gray-600">Confirming as planned says every place got exactly what the list says.</span>
+    </div>
+    {% if run.document_ids or run.message_text %}
+      {% include "supply_chain/_distribution_evidence.html" %}
+    {% endif %}
+  </div>
+{% empty %}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-4 text-sm text-gray-600 mb-3">
+    No handouts are waiting. Plan the next one with “Plan a handout”.
+  </div>
+{% endfor %}
+
+<h3 id="done" class="text-sm font-semibold text-gray-900 mt-6 mb-2">Handouts done</h3>
+{% for run in done %}
+  <div class="bg-white border border-gray-200 rounded-lg mb-3 overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-gray-100 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <span class="font-medium text-gray-900">{{ run.reference|default:"Run" }}</span>
+      <span class="text-sm text-gray-600">{{ run.distributed_on|day }}</span>
+      <span class="text-sm text-gray-600">
+        from {{ points|dictkey:run.supply_point_id|dictkey:"name"|default:run.supply_point_id }}
+      </span>
+      {% if run.differences %}
+        <span class="text-xs text-amber-800">different from the plan at {{ run.differences }} place{{ run.differences|pluralize }}</span>
+      {% endif %}
+      {% if run.not_received %}
+        <span class="text-xs text-amber-800">received amount differs from what was given at {{ run.not_received }} place{{ run.not_received|pluralize }}</span>
+      {% endif %}
       <span class="text-xs text-gray-600 ml-auto">
         {{ run.lines|length }} line{{ run.lines|length|pluralize }} ·
         told by {{ run.source|source_label }}{% if not run.witnessed %} (reported, not witnessed){% endif %}
       </span>
     </div>
-    {% comment %}
-    A scroll container is not focusable by default, so a keyboard-only user
-    cannot reach the columns it hides -- which re-creates the
-    unreachable-column bug for the people least able to work around it.
-    tabindex makes it a tab stop; the labelled region tells a screen reader
-    what it is once focused.
-    {% endcomment %}
-    <div class="overflow-x-auto" tabindex="0" role="region"
-         aria-label="Table, scrolls sideways">
-    <table class="min-w-[44rem] w-full text-sm">
+    <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+    <table class="min-w-[36rem] w-full text-sm">
       <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
         <tr>
           <th class="text-left px-4 py-2">To</th>
-          <th class="text-left px-4 py-2">Batch</th>
-          <th class="text-left px-4 py-2">Quantity</th>
-          <th class="text-left px-4 py-2">Posted to the ledger</th>
+          <th class="text-left px-4 py-2">Planned</th>
+          <th class="text-left px-4 py-2">Given</th>
+          <th class="text-left px-4 py-2">Received</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
         {% for line in run.lines %}
+          {% include "supply_chain/_distribution_line.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% if run.document_ids or run.message_text %}
+      {% include "supply_chain/_distribution_evidence.html" %}
+    {% endif %}
+  </div>
+{% empty %}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-6 text-center text-gray-600">
+    No handouts recorded yet.
+  </div>
+{% endfor %}
+
+<h3 id="deliveries" class="text-sm font-semibold text-gray-900 mt-8 mb-1">Deliveries to stores and facilities</h3>
+<p class="text-xs text-gray-600 mb-2 max-w-3xl">
+  The step before a handout: stock sent from a warehouse to a facility or another store. To record one, use
+  <a href="{% url 'supply_chain:consignment_dispatch' %}" class="underline">send stock</a>; when it arrives, say so on the
+  <a href="{% url 'supply_chain:stock' %}" class="underline">Stock</a> page.
+</p>
+{% if deliveries %}
+  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden mb-6">
+    <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+    <table class="min-w-[40rem] w-full text-sm">
+      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+        <tr>
+          <th class="text-left px-4 py-2">Sent</th>
+          <th class="text-left px-4 py-2">From</th>
+          <th class="text-left px-4 py-2">To</th>
+          <th class="text-left px-4 py-2">Quantity</th>
+          <th class="text-left px-4 py-2">Where it is</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for d in deliveries %}
           <tr>
-            <td class="px-4 py-2">
-              {{ points|dictkey:line.to_supply_point_id|dictkey:"name"|default:line.connect_username }}
-              {% if line.connect_username %}
-                <span class="text-xs text-gray-600">({{ line.connect_username }})</span>
-              {% endif %}
-            </td>
-            <td class="px-4 py-2 text-gray-600">{{ line.batch|default:"—" }}</td>
-            <td class="px-4 py-2 tabular-nums">{{ line.quantity|qty:line.quantity_unit }}</td>
+            <td class="px-4 py-2">{{ d.date|day|default:"—" }}</td>
+            <td class="px-4 py-2">{{ d.from|default:"—" }}</td>
+            <td class="px-4 py-2">{{ d.to|default:"—" }}</td>
+            <td class="px-4 py-2 tabular-nums">{{ d.quantity|qty:d.unit }}</td>
             <td class="px-4 py-2 text-xs">
-              {% if line.movement_id %}
-                <span class="text-teal-700">movement {{ line.movement_id }}</span>
+              {% if d.kind == "transfer" %}
+                <span class="text-gray-600">moved, no journey recorded</span>
+              {% elif d.status == "received" %}
+                {% if d.short %}
+                  <span class="text-amber-800">arrived {{ d.received_on|day }}, short: {{ d.quantity_received|qty:d.unit }} received</span>
+                {% else %}
+                  <span class="text-teal-700">arrived {{ d.received_on|day }}</span>
+                {% endif %}
               {% else %}
-                <span class="text-amber-800">committed, not yet moved</span>
+                <span class="text-amber-800">on the road{% if d.expected_on %}, expected {{ d.expected_on|day }}{% endif %}</span>
               {% endif %}
+              · told by {{ d.source|source_label }}
             </td>
           </tr>
         {% endfor %}
@@ -77,10 +176,10 @@
     </table>
     </div>
   </div>
-{% empty %}
-  <div class="bg-white border border-gray-200 rounded-lg px-4 py-6 text-center text-gray-600">
-    No distribution runs recorded yet.
+{% else %}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-4 text-sm text-gray-600 mb-6">
+    No deliveries to stores or facilities recorded yet.
   </div>
-{% endfor %}
+{% endif %}
 {% endif %}
 {% endblock %}

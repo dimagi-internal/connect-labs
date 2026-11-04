@@ -18,7 +18,7 @@ from connect_labs.supply_chain.forms import DATE, INPUT, SEARCHABLE, to_payload
 from connect_labs.supply_chain.fulfilment.forms import ProvenancedForm
 from connect_labs.supply_chain.models import Commodity, Distribution, Item, SupplyPoint
 
-__all__ = ["DistributionForm", "DistributionLineFormSet"]
+__all__ = ["DistributionForm", "DistributionLineFormSet", "DistributionPlanForm", "DistributionPlanLineFormSet"]
 
 
 class DistributionForm(ProvenancedForm):
@@ -122,4 +122,39 @@ class DistributionLineForm(forms.Form):
 
 DistributionLineFormSet = forms.formset_factory(
     DistributionLineForm, extra=0, min_num=1, validate_min=True, can_delete=True
+)
+
+
+class DistributionPlanForm(DistributionForm):
+    """A handout that has not happened yet: where it leaves from, on what day, for which product."""
+
+    from_forecast = forms.BooleanField(
+        label=_("Fill the list from what each worker needs this week"),
+        required=False,
+        help_text=_(
+            "Uses the forecast: each field worker's need for the coming week, less what they already "
+            "hold. Leave it unticked to type the list yourself."
+        ),
+    )
+
+    class Meta(DistributionForm.Meta):
+        labels = {**DistributionForm.Meta.labels, "distributed_on": _("Handout day")}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper.layout = Layout(
+            Row(Column("supply_point"), Column("commodity"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Row(
+                Column("distributed_on"),
+                Column("opportunity_id"),
+                Column("reference"),
+                css_class="grid md:grid-cols-3 gap-x-6",
+            ),
+            Field("from_forecast"),
+            Field("source"),
+        )
+
+
+DistributionPlanLineFormSet = forms.formset_factory(
+    DistributionLineForm, extra=0, min_num=0, validate_min=False, can_delete=True
 )

@@ -621,20 +621,30 @@ def distribution(obj) -> dict:
         "id": obj.pk,
         "supply_point_id": obj.supply_point_id,
         "opportunity_id": obj.opportunity_id,
+        "commodity_slug": obj.commodity.slug if obj.commodity_id else None,
         "distributed_on": _date(obj.distributed_on),
+        "confirmed_on": _date(obj.confirmed_on),
+        "status": obj.status,
         "reference": obj.reference,
+        "message_text": obj.message_text,
         "lines": [
             {
+                "id": line.pk,
                 "to_supply_point_id": line.to_supply_point_id,
                 "connect_username": line.connect_username,
                 "item_id": line.item_id,
                 "batch": line.batch,
                 "quantity": _num(line.quantity),
+                "quantity_given": _num(line.given),
+                "quantity_received": _num(line.quantity_received),
+                "received_on": _date(line.received_on),
+                "received_by": line.received_by,
                 "quantity_unit": line.quantity_unit,
                 "movement_id": line.movement_id,
             }
             for line in obj.lines.all()
         ],
+        "document_ids": [doc.pk for doc in obj.documents.all()],
         "movement_ids": [m.pk for m in obj.movements.all()],
         **_sourced(obj),
     }

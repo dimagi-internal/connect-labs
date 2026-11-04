@@ -25,6 +25,7 @@ from connect_labs.supply_chain.operations import (
     register_operation,
 )
 from connect_labs.supply_chain.stock.services import ledger, network, resupply, soh
+from connect_labs.supply_chain.values import quantity_digits
 
 _DATE = {"type": "string", "format": "date"}
 
@@ -565,6 +566,163 @@ def distribution_get(access, distribution_id):
 )
 def distribution_record(access, data):
     return record(access.record_distribution(data))
+
+
+_PLAN_LINE = _data_with(
+    ("quantity", "quantity_unit"),
+    to_supply_point_id=ID,
+    connect_username={"type": "string"},
+    item_id=ID,
+    batch={"type": "string"},
+    quantity=QUANTITY,
+    quantity_unit={"type": "string", "minLength": 1},
+)
+
+_DISTRIBUTION_PLAN_DATA = _data_with(
+    ("supply_point_id", "opportunity_id", "commodity_slug", "distributed_on", "source"),
+    supply_point_id=ID,
+    opportunity_id=ID,
+    commodity_slug={"type": "string", "minLength": 1},
+    distributed_on=_DATE,
+    reference={"type": "string"},
+    lines={"type": "array", "items": _PLAN_LINE},
+    # Fill the lines from the stock forecast: each field worker's need for the coming week, less what
+    # they hold. Give this or lines, not both.
+    from_forecast={"type": "boolean"},
+    item_id=ID,
+    source={"enum": list(records.SOURCES)},
+    recorded_by_org_id=ID,
+    note={"type": "string"},
+)
+
+_DISTRIBUTION_CONFIRM_DATA = _data_with(
+    ("lines",),
+    confirmed_on=_DATE,
+    lines={
+        "type": "array",
+        "minItems": 1,
+        "items": _data_with(
+            ("quantity_given",),
+            # A line of the plan, by its id. Leave it out for a handout nobody planned; then name the
+            # place (to_supply_point_id or connect_username) and quantity_unit.
+            line_id=ID,
+            to_supply_point_id=ID,
+            connect_username={"type": "string"},
+            item_id=ID,
+            batch={"type": "string"},
+            quantity_given={"type": ["number", "string"], "minimum": 0},
+            quantity_unit={"type": "string", "minLength": 1},
+        ),
+    },
+    # The message the confirmation was read from, kept as the run's evidence.
+    message_text={"type": "string"},
+    source={"enum": list(records.SOURCES)},
+    recorded_by_org_id=ID,
+)
+
+
+@register_operation(
+    name="distribution_plan",
+    summary=(
+        "Plan a handout run that has not happened: which store it leaves, who is to get how much. "
+        "Nothing moves in the ledger; the planned quantities count as committed until the run is "
+        "confirmed. Give lines, or from_forecast to fill them from the stock forecast (each worker's "
+        "need for the coming week less what they hold). Confirm it with distribution_confirm."
+    ),
+    input_schema=obj({"data": _DISTRIBUTION_PLAN_DATA}, required=("data",)),
+    is_write=True,
+)
+def distribution_plan(access, data):
+    return record(access.plan_distribution(data))
+
+
+@register_operation(
+    name="distribution_confirm",
+    summary=(
+        "Say what was actually handed out on a planned run (from a WhatsApp message, a photo of a paper "
+        "list, a form, or the plan as it stood). Each line you confirm posts a movement for the quantity "
+        "GIVEN, which may differ from the plan: the difference is shown, not hidden. Lines you leave out "
+        "stay planned. Add a line without line_id for a handout nobody planned. Pass the message as "
+        "message_text to keep it as evidence; attach a photo with document_attach and distribution_id."
+    ),
+    input_schema=obj(
+        {"distribution_id": ID, "data": _DISTRIBUTION_CONFIRM_DATA}, required=("distribution_id", "data")
+    ),
+    is_write=True,
+)
+def distribution_confirm(access, distribution_id, data):
+    return record(access.confirm_distribution(distribution_id, data))
+
+
+@register_operation(
+    name="distribution_receipt_confirm",
+    summary=(
+        "The other side of a handout: the person it went to (a field worker or facility) says how much "
+        "reached them. Kept beside what the giver said was given, so a gap between the two is visible."
+    ),
+    input_schema=obj(
+        {
+            "line_id": ID,
+            "data": _data_with(
+                ("quantity_received",),
+                quantity_received={"type": ["number", "string"], "minimum": 0},
+                received_on=_DATE,
+                received_by={"type": "string", "maxLength": 150},
+            ),
+        },
+        required=("line_id", "data"),
+    ),
+    is_write=True,
+)
+def distribution_receipt_confirm(access, line_id, data):
+    return record(access.confirm_distribution_receipt(line_id, data))
+
+
+@register_operation(
+    name="distribution_message_match",
+    summary=(
+        "Read a handout message (a pasted WhatsApp text or email: one 'Place - N cartons' per line) and "
+        "match it against a planned run. Returns, per planned line, what the message says was given and "
+        "the difference from the plan, plus names it could not place and lines it could not read. Writes "
+        "nothing: confirm what it found with distribution_confirm. Do not use it for a photo; read the photo "
+        "yourself and call distribution_confirm."
+    ),
+    input_schema=obj(
+        {"distribution_id": ID, "text": {"type": "string", "minLength": 1}}, required=("distribution_id", "text")
+    ),
+)
+def distribution_message_match(access, distribution_id, text):
+    from connect_labs.supply_chain.distribution import messages
+
+    run = access.get_distribution(distribution_id)
+    if run is None:
+        raise ValueError(f"distribution {distribution_id} does not exist in this programme")
+    read = messages.read_message(text)
+    planned = [
+        {
+            "line_id": line.pk,
+            "name": line.to_supply_point.name,
+            "quantity": line.quantity,
+            "unit": line.quantity_unit,
+        }
+        for line in run.lines.select_related("to_supply_point")
+        if not line.is_confirmed
+    ]
+    matched = messages.match_to_plan(read["entries"], planned)
+
+    def plain(row):
+        out = {k: (quantity_digits(v) if hasattr(v, "quantize") else v) for k, v in row.items()}
+        gap = row.get("difference")
+        if gap:
+            out["difference_text"] = f"{quantity_digits(abs(gap))} {'fewer' if gap < 0 else 'more'} than planned"
+        return out
+
+    return {
+        "distribution_id": run.pk,
+        "lines": [plain(row) for row in matched["lines"]],
+        "extras": [plain(row) for row in matched["extras"]],
+        "unread": read["unread"],
+    }
 
 
 # ---- derived reads ----------------------------------------------------
