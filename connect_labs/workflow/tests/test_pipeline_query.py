@@ -253,13 +253,13 @@ class TestColdCache:
 
     def test_a_cold_cache_is_warmed_in_the_background_once(self):
         config = _visit_config()
-        with patch("connect_labs.workflow.tasks.warm_pipeline_query_cache") as task:
+        with patch("connect_labs.workflow.tasks.warm_pipelines") as task:
             status, out = _post(config, {"alias": "answers"})
             assert status == 202 and out["status"] == "warming" and out["retry_after_ms"] > 0
             _post(config, {"alias": "answers"})
         assert task.delay.call_count == 1
         kwargs = task.delay.call_args.kwargs
-        assert kwargs["alias"] == "answers" and kwargs["opportunity_id"] == OPP
+        assert kwargs["aliases"] == ["answers"] and kwargs["opportunity_ids"] == [OPP]
         assert kwargs["scope"] == {"opportunity_id": OPP}
 
     def test_a_failed_warm_is_reported_then_retried(self):
@@ -268,15 +268,28 @@ class TestColdCache:
 
         config = _visit_config()
         WarmSlot(warm_cache_key(OPP, config)).finish("Drive said no")
-        with patch("connect_labs.workflow.tasks.warm_pipeline_query_cache") as task:
+        with patch("connect_labs.workflow.tasks.warm_pipelines") as task:
             status, out = _post(config, {"alias": "answers"})
             assert status == 502 and "Drive said no" in out["error"]
             status, _out = _post(config, {"alias": "answers"})
             assert status == 202
         assert task.delay.call_count == 1
 
+    def test_a_fill_that_stored_nothing_ends_the_wait(self):
+        """A source with no rows stores no cache, so it stays cold after every fill."""
+        from connect_labs.workflow.cache_warm import WarmSlot
+        from connect_labs.workflow.pipeline_query import warm_cache_key
+
+        config = _visit_config()
+        WarmSlot(warm_cache_key(OPP, config)).finish()
+        with patch("connect_labs.workflow.tasks.warm_pipelines") as task:
+            status, out = _post(config, {"alias": "answers"})
+        assert status == 200 and out["status"] == "ready" and out["rows"] == [] and out["total"] == 0
+        assert task.delay.call_count == 0
+
     def test_the_warm_task_runs_the_pipeline_and_releases_its_lock(self):
-        from connect_labs.workflow import pipeline_query
+        from connect_labs.labs.analysis.pipeline import EVENT_RESULT
+        from connect_labs.workflow import pipeline_reads
         from connect_labs.workflow.cache_warm import WarmSlot
 
         config = _visit_config()
@@ -292,16 +305,17 @@ class TestColdCache:
             ),
             patch("connect_labs.labs.analysis.pipeline.AnalysisPipeline") as pipeline,
         ):
-            out = pipeline_query.warm_pipeline_cache(
+            pipeline.return_value.stream_analysis.return_value = iter([(EVENT_RESULT, MagicMock(metadata={}))])
+            out = pipeline_reads.fill_pipelines(
                 "tok",
                 definition_id=DEF_ID,
-                alias="answers",
-                opportunity_id=OPP,
+                aliases=["answers"],
+                opportunity_ids=[OPP],
                 scope={"opportunity_id": OPP},
-                lock_key="lock",
+                slot_key="lock",
             )
-        assert out == {"warmed": ["answers"]}
-        pipeline.return_value.stream_analysis_ignore_events.assert_called_once_with(config, OPP)
+        assert out == {"warmed": ["answers"], "failed": []}
+        pipeline.return_value.stream_analysis.assert_called_once_with(config, OPP)
         assert cache.get("lock") is None
 
 
@@ -341,16 +355,6 @@ class TestOnDemandSources:
     def test_the_stream_withholds_on_demand_rows(self):
         from connect_labs.workflow.views import PipelineDataStreamView
 
-        class FakeMixin:
-            def __init__(self):
-                from connect_labs.labs.analysis.models import EntityRow
-
-                self._pipeline_result = MagicMock(rows=[EntityRow(entity_id="4.12", total_visits=3)])
-                self._pipeline_from_cache = True
-
-            def stream_pipeline_events(self, *a, **k):
-                return iter(())
-
         request = RequestFactory().get(f"/labs/workflow/api/{DEF_ID}/pipeline-data/stream/?opportunity_id={OPP}")
         request.user = MagicMock(is_authenticated=True)
         request.labs_context = {"opportunity_id": OPP}
@@ -363,14 +367,17 @@ class TestOnDemandSources:
         pipeline_def = MagicMock(schema={"terminal_stage": "entity"})
         pipeline_def.name = "summary"
         with (
-            patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA,
-            patch("connect_labs.workflow.views.PipelineDataAccess"),
+            patch("connect_labs.workflow.data_access.WorkflowDataAccess") as MockWDA,
+            patch("connect_labs.workflow.data_access.PipelineDataAccess"),
             patch("connect_labs.workflow.views._resolve_pipeline_definition", return_value=pipeline_def) as resolve,
             patch("connect_labs.workflow.views._resolve_pipeline_sources_for_run", return_value=(sources, {})),
-            patch.object(PipelineDataStreamView, "_maybe_probe_cchq_access", return_value=iter(())),
             patch("connect_labs.labs.analysis.pipeline.AnalysisPipeline") as pipeline,
-            patch("connect_labs.labs.analysis.sse_streaming.AnalysisPipelineSSEMixin", FakeMixin),
         ):
+            from connect_labs.labs.analysis.models import EntityRow
+
+            pipeline.return_value.read_cached.return_value = MagicMock(
+                rows=[EntityRow(entity_id="4.12", total_visits=3)]
+            )
             MockWDA.return_value.get_definition.return_value = definition
             view = PipelineDataStreamView()
             view.kwargs = {"definition_id": DEF_ID}
@@ -379,6 +386,6 @@ class TestOnDemandSources:
         pipelines = [e for e in events if (e.get("data") or {}).get("pipelines")][-1]["data"]["pipelines"]
         assert pipelines["answers"]["rows"] == [] and pipelines["answers"]["metadata"]["on_demand"] is True
         assert len(pipelines["by_question"]["rows"]) == 1
-        # The on-demand pipeline was never executed.
-        assert pipeline.return_value.stream_analysis.call_count == 1
+        # The on-demand pipeline was never read.
+        assert pipeline.return_value.read_cached.call_count == 1
         assert [c.args[1] for c in resolve.call_args_list] == [23787]

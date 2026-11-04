@@ -1409,38 +1409,11 @@ var getStatusColor = function (statusId) {
 };
 ```
 
-### SSE Pipeline Data Loading
+### How report data loads
 
-Pipeline data is typically loaded automatically by the workflow runner and passed via the `pipelines` prop. However, for streaming large datasets or custom loading, use `window.WORKFLOW_API_ENDPOINTS`:
+**A read answers from the cache, or it says a fill is under way. It never fills.** A cold read queues one Celery task and answers 202; the reader asks again until it has the data. The design is `docs/superpowers/specs/2026-11-03-one-loading-path-design.md`, and `workflow/cache_warm.py` has the protocol.
 
-```javascript
-var _loading = React.useState(true);
-var loading = _loading[0];
-var setLoading = _loading[1];
-var _data = React.useState([]);
-var data = _data[0];
-var setData = _data[1];
-
-React.useEffect(function () {
-  var url = window.WORKFLOW_API_ENDPOINTS?.streamPipelineData;
-  if (!url) {
-    setLoading(false);
-    return;
-  }
-  var es = new EventSource(url);
-  es.onmessage = function (e) {
-    var msg = JSON.parse(e.data);
-    if (msg.complete) {
-      setData(msg.data.pipelines?.visits?.rows || []);
-      setLoading(false);
-      es.close();
-    }
-  };
-  return function () {
-    es.close();
-  };
-}, []);
-```
+Render code needs none of this. The runner loads a page's pipelines into the `pipelines` prop, and in the sandbox `fetch` just takes as long as the fill takes, with the host's progress strip above the frame. To read rows yourself, `fetch` `pipeline-rows/`, or use `actions.queryPipelineRows` for an on-demand source. `pipeline-data/stream/` and `pipeline-rows/stream/` keep working for renders that already open them (`window.WORKFLOW_API_ENDPOINTS.streamPipelineData`). They relay the same read as events, so don't write new code against them.
 
 ### Chart.js (window.Chart)
 
@@ -1692,7 +1665,7 @@ This exact symptom — every pipeline reports `row_count: 0`, `metadata.error` i
 2. **CommCare HQ OAuth expired or was denied, and the fetcher swallowed the failure instead of raising.** `CommCareDataAccess.fetch_cases`/`fetch_forms` normally retry once after a 401/403 (token refresh) and raise `CCHQAuthError` if that still fails — but any fetcher that _doesn't_ follow this pattern, or any non-auth HTTP/network error mid-pagination, can silently return a partial or empty list that looks like a legitimate result. If you're adding a new `cchq_*` fetcher, mirror `fetch_forms`'s retry-then-raise pattern exactly, and consider whether callers need `raise_on_http_error`-style strictness (default should tolerate partial results _only_ if there's a caller that already handles that gracefully — most report pipelines should NOT tolerate it, since a silent partial result is indistinguishable from "this domain genuinely has zero records").
 3. **The SSE mixin silently drops error events — this is the one most likely to make (1) and (2) invisible even after they're fixed.** `AnalysisPipelineSSEMixin.stream_pipeline_events` (`connect_labs/labs/analysis/sse_streaming.py`) only recognizes `EVENT_STATUS`/`EVENT_DOWNLOAD`/`EVENT_RESULT`. When `AnalysisPipeline.stream_analysis`'s own top-level `except Exception` catches something and yields `(EVENT_ERROR, {...})`, that event matches none of the mixin's branches and is silently discarded — `self._pipeline_result` stays `None` (reported by every caller as `row_count: 0`), and `self._pipeline_from_cache` can even end up `True` as a pure side effect of an earlier, unrelated status message containing the word "cache". **If you've confirmed a real exception is being raised inside `stream_analysis` (e.g. by temporarily adding a `print`/log statement right where the exception is caught) but it never reaches the browser, this is why.** The fix is an opt-in `raise_on_error=True` flag on `stream_pipeline_events` (default `False` — five other Labs features share this mixin and have never handled a raised exception from it, so changing the default would be an unreviewed behavior change for all of them). `workflow/views.py`'s multi-opp per-opp execution loop passes `raise_on_error=True`; if you're calling this mixin from a new call site and want real errors instead of silent empty results, do the same — but verify your own call site already wraps the `yield from mixin.stream_pipeline_events(...)` call in a `try/except` first, since raising will now propagate there.
 
-**Fastest way to tell these apart without deploying anything:** open `/labs/workflow/api/<definition_id>/pipeline-data/stream/?<opportunity_id=X|program_id=X>&refresh=1` directly in a browser tab (bypasses the frontend UI — the `refresh=1` query param forces a live fetch, skipping the pipeline cache, which is otherwise a 1-hour-TTL `PIPELINE_CACHE_TTL_HOURS` cache that would keep serving a stale prior result and make it look like nothing changed after a fix deploys). Read the raw SSE text directly — every `"message"` line is a real progress/error string from the pipeline, and the final `"complete": true` payload's `metadata.per_opp[oppId]` is where **multi-opp errors actually live** (not `metadata.error`/`metadata.auth_error` directly — those are the single-opp/whole-stream-level shape). A render-code error banner that only checks `waMeta.error`/`waMeta.auth_error` will miss a real per-opp error entirely for a multi-opp workflow — check `metadata.per_opp[oppId].error` too (see the `per_opp` shape documented in [§8 Render-code contract](#render-code-contract) above).
+**Fastest way to tell these apart without deploying anything:** open `/labs/workflow/api/<definition_id>/pipeline-data/stream/?<opportunity_id=X|program_id=X>&refresh=1` directly in a browser tab (bypasses the frontend UI — the `refresh=1` query param queues a forced fill on the worker, skipping the pipeline cache, which is otherwise a 1-hour-TTL `PIPELINE_CACHE_TTL_HOURS` cache that would keep serving a stale prior result and make it look like nothing changed after a fix deploys). Read the raw SSE text directly — every `"message"` line is what the fill says it is doing, the fill's own log lines are in `/ecs/labs-jj-worker`, and the final `"complete": true` payload's `metadata.per_opp[oppId]` is where **multi-opp errors actually live** (not `metadata.error`/`metadata.auth_error` directly — those are the single-opp/whole-stream-level shape). A render-code error banner that only checks `waMeta.error`/`waMeta.auth_error` will miss a real per-opp error entirely for a multi-opp workflow — check `metadata.per_opp[oppId].error` too (see the `per_opp` shape documented in [§8 Render-code contract](#render-code-contract) above).
 
 ## 9. Saved-runs templates
 
@@ -2187,7 +2160,7 @@ Pass `source_workflow_id` (+ its scope) to get that sharing; without it each ins
 
 A report that fetches its figures from the semantic endpoint and never streams its pipelines (`noPipelineStream`) would otherwise depend on someone else filling the visit cache, which is held for 90 minutes. With `config.warm_cache_on_read: true`, the semantic endpoint (`api/<id>/semantic/`) and the live snapshot preview (`api/run/<id>/snapshot/preview/`) have any of the workflow's opportunities with no live cached visits filled, using the same `ensure_visit_cache` as the `workflow_ensure_visit_cache` MCP tool, so an in-progress run of a report that streams no pipelines never tells its reader to open some other page first. It is opt-in, so a multi-opportunity report never queues a download of every opportunity by accident. `kmc_opp_report` sets it.
 
-**The fill never runs in the request** (`workflow/cache_warm.py`). A cold read queues a Celery task and answers 202 `{status: "warming", message, elapsed_seconds, retry_after_ms}` at once; a second viewer joins the same fill. **Render code does nothing:** in the sandbox every `fetch` passes through the host, which asks again until the answer is final (`components/workflow/warming.ts`) and shows the viewer the stage and elapsed time above the frame (`WarmingStrip`). To the render, the read just takes as long as the fill takes, then answers 200 or fails. The fill keeps going if the viewer leaves. A task killed by a deploy loses its claim within minutes and the next poll queues another. A fill that finishes with the data still missing ends the wait: the preview answers 502 naming the failure and its Retry tries again; the semantic endpoint answers with its `cold_cache` / `partial_cache` flags. A partial cache answers at once with its flag and fills behind it. `actions.queryPipelineRows` uses the same protocol for an on-demand source.
+**The fill never runs in the request** (`workflow/cache_warm.py`). A cold read queues a Celery task and answers 202 `{status: "warming", message, progress, elapsed_seconds, retry_after_ms}` at once; a second viewer joins the same fill. **Render code does nothing:** in the sandbox every `fetch` passes through the host, which asks again until the answer is final (`components/workflow/warming.ts`) and shows the viewer the stage and elapsed time above the frame (`WarmingStrip`). To the render, the read just takes as long as the fill takes, then answers 200 or fails. The fill keeps going if the viewer leaves. A task killed by a deploy loses its claim within minutes and the next poll queues another. A fill that finishes with the data still missing ends the wait: the preview answers 502 naming the failure and its Retry tries again; the semantic endpoint answers with its `cold_cache` / `partial_cache` flags. A partial cache answers at once with its flag and fills behind it. `actions.queryPipelineRows` uses the same protocol for an on-demand source.
 
 ### Handing a saved run down (`hands_down_to_opportunity_reports` / `receives_hand_down`)
 

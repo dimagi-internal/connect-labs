@@ -1366,30 +1366,13 @@ def warm_visit_cache(
 
 
 @celery_app.task(acks_late=False, max_retries=0)
-def warm_pipeline_query_cache(
-    access_token: str,
-    *,
-    definition_id: int,
-    alias: str,
-    opportunity_id: int,
-    scope: dict,
-    lock_key: str,
-    claim: str | None = None,
-) -> dict:
-    """Fill one pipeline's cache so `actions.queryPipelineRows` can answer from it.
+def warm_pipelines(access_token: str, **kwargs) -> dict:
+    """Fill a workflow's pipelines for a reader polling on a 202 (cache_warm.py).
 
-    Queued by `views.pipeline_query_api` on a cold cache; the work and its gates
-    are `pipeline_query.warm_pipeline_cache`'s. Off the request thread because a
-    cold build of a large source outlives the load balancer's idle timeout.
+    `pipeline_reads.fill_pipelines` has the arguments, the work and its gates. Not
+    retried and not redelivered: a worker lost mid-walk loses its claim within minutes,
+    and the reader's next poll queues a new one.
     """
-    from connect_labs.workflow.pipeline_query import warm_pipeline_cache
+    from connect_labs.workflow.pipeline_reads import fill_pipelines
 
-    return warm_pipeline_cache(
-        access_token,
-        definition_id=definition_id,
-        alias=alias,
-        opportunity_id=opportunity_id,
-        scope=scope,
-        lock_key=lock_key,
-        claim=claim,
-    )
+    return fill_pipelines(access_token, **kwargs)

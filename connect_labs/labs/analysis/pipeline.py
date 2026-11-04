@@ -474,6 +474,50 @@ class AnalysisPipeline:
             return False
         return True
 
+    def _expected_count_for_cache(self, config: AnalysisPipelineConfig, opp_id: int) -> int:
+        """The visit count a cached result is validated against, 0 meaning trust its TTL.
+
+        - CommCare forms and cases have far fewer rows than Connect visits.
+        - A filtered config reuses the cache rather than re-downloading on a filter
+          change; `expires_at` handles staleness.
+        - labs_audits holds one row per AUDITED visit, a small fraction of the
+          opportunity's visits, so the visit count says nothing about it.
+        """
+        no_count = config.data_source.type in ("cchq_forms", "cchq_cases", "ocs_sessions", "gdrive", "labs_audits")
+        return 0 if (no_count or config.filters) else self.expected_visits_for(opp_id)
+
+    @staticmethod
+    def _never_served_from_cache(config: AnalysisPipelineConfig) -> bool:
+        """Read as a particular person (an MCP caller's own OCS token): never from the
+        cache, which the data source is not part of the key of and which a web dashboard
+        may have filled under the server's team key -- every bot's sessions. Fetching
+        fresh is what makes "what you can see in OCS" hold."""
+        return config.data_source.type == "ocs_sessions" and bool(config.data_source.bearer_token)
+
+    def read_cached(self, config: AnalysisPipelineConfig, opportunity_id: int | None = None):
+        """The result this read may be served from, or None when it is cold. Never fills.
+
+        `stream_analysis` is this plus a fill, and uses the same rule, so a read and the
+        fill behind it cannot disagree about what counts as cold.
+        """
+        opp_id = self.data_scope(config, opportunity_id or self.opportunity_id)
+        if not opp_id:
+            return None
+        self._check_drive_access(config, opp_id)
+        if self._never_served_from_cache(config):
+            return None
+        expected = self._expected_count_for_cache(config, opp_id)
+        tolerance = self.cache_tolerance_pct
+        if config.terminal_stage == CacheStage.AGGREGATED:
+            result = self.backend.get_cached_flw_result(opp_id, config, expected, tolerance_pct=tolerance)
+        elif config.terminal_stage == CacheStage.ENTITY:
+            result = self.backend.get_cached_entity_result(opp_id, config, expected, tolerance_pct=tolerance)
+        else:
+            result = self.backend.get_cached_visit_result(opp_id, config, expected, tolerance_pct=tolerance)
+        if result and not self._cached_result_still_serves(config, opp_id):
+            return None
+        return result or None
+
     def _record_gdrive_result(self, config: AnalysisPipelineConfig, opp_id: int) -> None:
         """Record which Drive files ``config``'s just-built result came from (no-op for
         every other source). See ``gdrive_freshness``."""
@@ -802,27 +846,8 @@ class AnalysisPipeline:
             yield (EVENT_STATUS, {"message": f"Checking {stage_name}-level cache..."})
 
             tolerance = self.cache_tolerance_pct
-            # For CCHQ form sources, don't validate against opportunity visit count
-            # (CCHQ forms have far fewer rows than Connect visits)
-            # For filtered configs, skip strict tolerance — filter changes should reuse
-            # existing cache, not re-download. The expires_at TTL handles staleness.
-            is_cchq = config.data_source.type in ("cchq_forms", "cchq_cases")
-            is_ocs = config.data_source.type == "ocs_sessions"
-            is_gdrive = config.data_source.type == "gdrive"
-            # labs_audits holds one row per AUDITED visit, a small fraction of the
-            # opportunity's visits, so the visit count says nothing about it: the
-            # cache is trusted for its TTL, like OCS sessions.
-            is_labs_audits = config.data_source.type == "labs_audits"
-            expected_count = (
-                0
-                if (is_cchq or is_ocs or is_gdrive or is_labs_audits or has_filters)
-                else self.expected_visits_for(opp_id)
-            )
-            # Read as a particular person (an MCP caller's own OCS token): never from the
-            # cache, which the data source is not part of the key of and which a web
-            # dashboard may have filled under the server's team key -- every bot's
-            # sessions. Fetching fresh is what makes "what you can see in OCS" hold.
-            if is_ocs and config.data_source.bearer_token:
+            expected_count = self._expected_count_for_cache(config, opp_id)
+            if self._never_served_from_cache(config):
                 force_refresh = True
             if not force_refresh:
                 cached_result = _get_cached_for_stage(expected_count)

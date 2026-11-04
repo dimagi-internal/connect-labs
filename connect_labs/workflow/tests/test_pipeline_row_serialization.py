@@ -159,15 +159,6 @@ def _preview_rows(rows):
 def _live_rows(rows, rf: RequestFactory):
     """Serialize via the real live SSE code path, parsing the emitted events."""
 
-    class FakeMixin:
-        def __init__(self):
-            self._pipeline_result = MagicMock()
-            self._pipeline_result.rows = rows
-            self._pipeline_from_cache = False
-
-        def stream_pipeline_events(self, *args, **kwargs):
-            return iter(())
-
     request = rf.get("/labs/workflow/api/5230/pipeline-data/stream/?opportunity_id=10046")
     request.user = MagicMock(is_authenticated=True)
     request.labs_context = {"opportunity_id": OPP_ID}
@@ -181,17 +172,16 @@ def _live_rows(rows, rf: RequestFactory):
     pipeline_def.name = "Visit performance data"
 
     with (
-        patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA,
-        patch("connect_labs.workflow.views.PipelineDataAccess"),
+        patch("connect_labs.workflow.data_access.WorkflowDataAccess") as MockWDA,
+        patch("connect_labs.workflow.data_access.PipelineDataAccess"),
         patch("connect_labs.workflow.views._resolve_pipeline_definition", return_value=pipeline_def),
         patch(
             "connect_labs.workflow.views._resolve_pipeline_sources_for_run",
             return_value=(definition.pipeline_sources, {}),
         ),
-        patch.object(PipelineDataStreamView, "_maybe_probe_cchq_access", return_value=iter(())),
-        patch("connect_labs.labs.analysis.pipeline.AnalysisPipeline"),
-        patch("connect_labs.labs.analysis.sse_streaming.AnalysisPipelineSSEMixin", FakeMixin),
+        patch("connect_labs.labs.analysis.pipeline.AnalysisPipeline") as pipeline,
     ):
+        pipeline.return_value.read_cached.return_value = MagicMock(rows=rows)
         MockWDA.return_value.get_definition.return_value = definition
         view = PipelineDataStreamView()
         view.kwargs = {"definition_id": 5230}

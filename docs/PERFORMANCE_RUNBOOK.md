@@ -61,10 +61,14 @@ re-run narrow around it to size it** — a 10-minute saturation that is obvious 
 | MCP is `stateless_http=True` | No sticky sessions required; any task can serve any request. |
 | `occurred_at` in the audit trail is **flush** time | Never infer latency or ordering from it. `request_id` is the only honest grouping key. |
 
-**A cold visit cache fills on the worker, not the web tier** (`workflow/cache_warm.py`,
-since #2810). A report's cold read answers 202 and `warm_visit_cache` does the download in
-`/ecs/labs-jj-worker`, so `via visit_cache.py` and the walk's lines are there now. A
-pipeline stream (`pipeline-data/stream`) still fills in its web request.
+**A cold cache fills on the worker, never the web tier** (`workflow/cache_warm.py`, since
+#2810). A cold read answers 202 and `warm_pipelines` or `warm_visit_cache` does the download
+in `/ecs/labs-jj-worker`, so the walk's lines are there now. A long `pipeline-data/stream`
+is a viewer waiting, not work: it holds a sleeping thread. Web CPU on a warm read of a big
+report is building its JSON, which is the one heavy thing left in a request.
+
+**Worker CPU is now where a cold open shows up.** It has 1 vCPU and concurrency 6, and a big
+walk slows other Celery tasks. If that hurts, give fills their own queue.
 
 **The prior that is right most often:** it is the web tier, and the cause is one
 request path doing N remote calls. The database is usually innocent — during the

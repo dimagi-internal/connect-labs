@@ -18,7 +18,9 @@ import {
   WarmingTimeout,
   pollWhileWarming,
   warmingFrom,
+  type Warming,
 } from '@/components/workflow/warming';
+import { LoadingStrip } from '@/components/workflow/LoadingStrip';
 import { createAgentSelection } from '@/components/workflow/agentSelection';
 import type { FramePayload } from '@/components/workflow/sandbox/protocol';
 import type { RouteContext } from '@/components/workflow/sandbox/routes';
@@ -242,7 +244,7 @@ function WorkflowRunner({
   );
   // Opt-in per definition (`config.renderWhileLoading`): a drill-style page
   // whose headline comes from a saved report should not sit behind the
-  // pipeline stream's 20-second (warm) or 6-minute (cold) first event. The
+  // pipelines' 20-second (warm) or 6-minute (cold) load. The
   // gate below stays the default because most render code assumes every
   // pipeline alias is present once it mounts.
   const renderWhileLoading = Boolean(
@@ -257,6 +259,9 @@ function WorkflowRunner({
     (definition?.config as Record<string, unknown> | undefined)
       ?.noPipelineStream,
   );
+  // The fill's progress while the pipelines are loading on the worker.
+  const [pipelineWarming, setPipelineWarming] = useState<Warming | null>(null);
+  const cancelPipelineLoad = React.useRef<(() => void) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -313,13 +318,13 @@ function WorkflowRunner({
     // owning opportunity_id, so applyScopeParams sends program_id instead and
     // the BE verifies program membership. Without this a program-scoped runner
     // sent no scope at all and the CCHQ provider could never clear, wedging the
-    // pipeline stream behind the missingAuth gate.
+    // pipeline load behind the missingAuth gate.
     applyScopeParams(url.searchParams);
     // Tell the BE which providers we actually gate on so it can skip probes
     // this workflow doesn't need.
     url.searchParams.set('requires', authRequiresParam);
     // Fail-open timeout: the gate already treats a fetch error as "let the
-    // template try" (the pipeline stream re-surfaces any real auth problem),
+    // template try" (the pipeline load re-surfaces any real auth problem),
     // so if the BE probe hangs on a slow/blipping Connect we abort rather than
     // leave the user staring at the "Checking authorization…" spinner.
     const controller = new AbortController();
@@ -399,15 +404,16 @@ function WorkflowRunner({
   // Check if we're in edit mode
   const isEditMode = initialData.is_edit_mode === true;
 
-  // Stream pipeline data via SSE - shows progress during loading
-  const streamPipelineData = useCallback(() => {
-    if (!initialData.apiEndpoints.streamPipelineData) return;
+  // A page's pipelines: from the cache, or by polling while the worker fills it
+  // (cache_warm.py), showing what the fill says it is doing.
+  const loadPipelineData = useCallback(() => {
+    if (!initialData.apiEndpoints.getPipelineData) return;
     if (!definition.pipeline_sources?.length) return;
 
-    setPipelineLoadingStatus('Connecting to pipeline stream...');
+    setPipelineLoadingStatus('Loading the data...');
 
     const url = new URL(
-      initialData.apiEndpoints.streamPipelineData,
+      initialData.apiEndpoints.getPipelineData,
       window.location.origin,
     );
     // Opportunity workflows scope by opportunity_id; program-owned workflows
@@ -416,7 +422,7 @@ function WorkflowRunner({
     // interpolated `opportunity_id=undefined`, which crashed the stream with a
     // generic internal error before any pipeline ran.
     applyScopeParams(url.searchParams);
-    // Forward tolerance param from page URL to pipeline stream
+    // Forward tolerance param from page URL to the read
     const pageParams = new URLSearchParams(window.location.search);
     const tolerance = pageParams.get('tolerance');
     if (tolerance) {
@@ -424,7 +430,7 @@ function WorkflowRunner({
     }
     // Same forwarding for the raw-fetch-anomaly banner's action links
     // (?refresh=1 / ?accept_low_count=1 on the PAGE url) — AnalysisPipeline
-    // reads these off the SSE endpoint's own request.GET, so without this
+    // reads these off the read's own request.GET, so without this
     // forward they'd have no effect no matter how the page got reloaded.
     //
     // Both are honored ONCE, then stripped from the visible URL; the in-flight
@@ -451,195 +457,83 @@ function WorkflowRunner({
       );
     }
 
-    const eventSource = new EventSource(url.toString());
-
-    // Track last-received message + receipt timestamp so the onerror handler
-    // can surface useful diagnostics instead of the generic
-    // "Pipeline stream connection lost".
-    let lastMessage: string | null = null;
-    let lastMessageAt: number | null = null;
-    let receivedAny = false;
-    // Set once the payload lands, so the onerror fallback below can tell a
-    // stream that failed from one that finished and then dropped its socket.
-    let gotPipelines = false;
-    const startTs = Date.now();
-
-    eventSource.onmessage = (event) => {
+    // A newer load replaces this one: a schema save reloads while a poll may be running,
+    // and the older answer must not land on top of the newer.
+    cancelPipelineLoad.current?.();
+    let closed = false;
+    const cancel = () => {
+      closed = true;
+    };
+    cancelPipelineLoad.current = cancel;
+    const read = async () => {
+      const response = await fetch(url.toString(), {
+        credentials: 'same-origin',
+      });
+      let data: Record<string, unknown> = {};
       try {
-        const data = JSON.parse(event.data);
-        receivedAny = true;
-        lastMessageAt = Date.now();
-
-        if (data.error) {
-          setPipelineLoadingStatus(null);
-          // CCHQ auth-required signal — emitted when the BE detects via
-          // verify_hq_access that CCHQ rejected the token even though our
-          // local timestamp said it was valid. Note: the typed payload
-          // (cchq_auth_required, authorize_url, domain) is nested under
-          // `data.data` per send_sse_event's wire format, NOT at the top
-          // level. Earlier the check was on `data.cchq_auth_required` and
-          // never fired even when the BE was emitting the right signal.
-          //
-          // Recovery: force-mark CommCare HQ as inactive in our local
-          // auth status and re-show the framework gate. The gate's
-          // "Authorize CommCare HQ" button is the right next click for
-          // the user.
-          const payload = data.data || {};
-          if (payload.cchq_auth_required) {
-            setAuthStatus((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    commcare_hq: {
-                      ...(prev.commcare_hq || {
-                        label: 'CommCare HQ',
-                      }),
-                      active: false,
-                      // Prefer the URL refreshAuthStatus already computed
-                      // with next=<this page>. The backend's payload.authorize_url
-                      // here is a generic fallback (it has no notion of which
-                      // page the user is actually on) and previously always won
-                      // this fallback chain since it's practically always truthy
-                      // — which sent users who re-authorized mid-run off to a
-                      // different, unrelated screen instead of back to their run.
-                      authorize_url:
-                        prev.commcare_hq?.authorize_url ||
-                        payload.authorize_url ||
-                        `/labs/commcare/initiate/?next=${encodeURIComponent(
-                          window.location.pathname + window.location.search,
-                        )}`,
-                    },
-                  }
-                : prev,
-            );
-            // Don't set the small error banner — the framework gate panel
-            // we just reopened is the more useful UI.
-          } else if (payload.concurrent_run) {
-            // Cache-layer concurrency conflict: another tab/session is
-            // running the same pipeline and got there first. Re-running
-            // once their write finishes will hit cache cleanly.
-            setError(
-              `Another pipeline run for this opportunity is already in ` +
-                `progress (collided on ${payload.cache_table}). Wait ~30s ` +
-                `for it to finish, then click Retry — the cached result ` +
-                `should load instantly.`,
-            );
-          } else {
-            setError(data.error);
-          }
-          eventSource.close();
-          return;
-        }
-
-        // Progress update - show status message
-        if (data.message) {
-          lastMessage = data.message;
-          setPipelineLoadingStatus(data.message);
-        }
-
-        // Data complete - update state and allow render
-        if (data.data?.pipelines) {
-          gotPipelines = true;
-          setPipelineData(data.data.pipelines);
-          setPipelineLoadingStatus(null);
-          eventSource.close();
-        }
-      } catch (e) {
-        console.error(
-          '[WorkflowRunner] Failed to parse pipeline SSE event:',
-          e,
-        );
+        data = await response.json();
+      } catch {
+        throw new Error(`The server answered ${response.status}.`);
       }
+      return { response, data };
     };
-
-    eventSource.onerror = () => {
-      setPipelineLoadingStatus(null);
-      // Build a descriptive error so users know what was happening when
-      // the connection dropped. EventSource onerror fires for any
-      // connection close including: backend process crash (OOM, exception),
-      // ALB idle timeout (60s of silence), and network blips. We can't
-      // distinguish from the browser side — be honest about the
-      // possibilities and direct ops at the right place to look.
-      const elapsedSec = Math.round((Date.now() - startTs) / 1000);
-      let detail: string;
-      if (!receivedAny) {
-        detail =
-          `No events received after ${elapsedSec}s. The server may be ` +
-          `unreachable, or the SSE endpoint failed to start. Try reload.`;
-      } else if (lastMessage) {
-        const sinceLastSec = lastMessageAt
-          ? Math.round((Date.now() - lastMessageAt) / 1000)
-          : null;
-        const sinceLast =
-          sinceLastSec !== null ? ` (${sinceLastSec}s since last update)` : '';
-        detail =
-          `Connection ended while: "${lastMessage}"${sinceLast}. ` +
-          `Possible causes: (a) backend process crashed (out-of-memory ` +
-          `during a large fetch is the usual culprit — check ECS web ` +
-          `logs for "SIGKILL" or "Worker was killed"), (b) backend ` +
-          `raised an exception (check logs for traceback), (c) AWS ALB ` +
-          `idle-timed-out the SSE stream after 60s of silence. ` +
-          `Try reload — cached data should make the second attempt much faster.`;
-      } else {
-        detail = `Connection dropped after ${elapsedSec}s. Try reload.`;
-      }
-      eventSource.close();
-
-      // The stream is the fast path, not the only one.
-      //
-      // Observed in production on 2026-09-17: the SSE endpoint emitted its
-      // first event ("Loading workflow configuration...", 75 bytes) and then
-      // the connection closed with NO error event -- so the worker died
-      // rather than raising, since an exception would have sent one. It
-      // reproduced on two unrelated workflows (13005 and 12898), i.e. it was
-      // the transport, not any one report. Meanwhile the NON-streaming
-      // endpoint serving the identical payload was measured healthy
-      // throughout: ~157 MB in 110-150s, every pipeline complete, repeatedly.
-      //
-      // Every workflow report was therefore unusable while its data sat one
-      // URL away. So a failed stream now retries over plain JSON before
-      // showing the user an error. `detail` is still reported if that fails
-      // too, so a genuine outage reads the same as it did before.
-      if (gotPipelines) return;
-      const directUrl = new URL(url.toString());
-      directUrl.pathname = directUrl.pathname.replace(/stream\/?$/, '');
-      setPipelineLoadingStatus(
-        'Live updates failed - loading the data directly instead. ' +
-          'This can take a few minutes on a large report; leave the tab open.',
-      );
-      fetch(directUrl.toString(), { credentials: 'same-origin' })
-        .then((r) => {
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          return r.json();
-        })
-        .then((payload) => {
-          const pipelines = payload?.pipelines ?? payload;
-          if (
-            !pipelines ||
-            typeof pipelines !== 'object' ||
-            !Object.keys(pipelines).length
-          ) {
-            throw new Error('response carried no pipeline data');
-          }
-          setPipelineData(pipelines);
-          setPipelineLoadingStatus(null);
-        })
-        .catch((e) => {
-          setPipelineLoadingStatus(null);
-          setError(
-            `${detail} Loading directly also failed: ${e?.message || e}.`,
+    pollWhileWarming(read, {
+      warmingOf: ({ response, data }) => warmingFrom(response.status, data),
+      // A deploy replaces the web tasks under a long wait; that says nothing about the fill.
+      isBlip: ({ response }) => response.status >= 502,
+      onWarming: (warming) => {
+        setPipelineWarming(warming);
+        setPipelineLoadingStatus(warming.message);
+      },
+      stopped: () => closed,
+    })
+      .then(({ response, data }) => {
+        if (closed) return;
+        setPipelineWarming(null);
+        setPipelineLoadingStatus(null);
+        if (response.ok) {
+          setPipelineData(data as Record<string, PipelineResult>);
+        } else if (data.cchq_auth_required) {
+          // HQ rejected the token although our local timestamp said it was valid.
+          // Reopen the framework gate, whose "Authorize CommCare HQ" button is the right
+          // next click. Prefer the URL refreshAuthStatus computed with next=<this page>:
+          // the server's is a generic one that knows nothing about where the user was.
+          setAuthStatus((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  commcare_hq: {
+                    ...(prev.commcare_hq || { label: 'CommCare HQ' }),
+                    active: false,
+                    authorize_url:
+                      prev.commcare_hq?.authorize_url ||
+                      String(data.authorize_url || '') ||
+                      `/labs/commcare/initiate/?next=${encodeURIComponent(
+                        window.location.pathname + window.location.search,
+                      )}`,
+                  },
+                }
+              : prev,
           );
-        });
-    };
+        } else {
+          setError(String(data.error || `HTTP ${response.status}`));
+        }
+      })
+      .catch((e) => {
+        if (closed) return;
+        setPipelineWarming(null);
+        setPipelineLoadingStatus(null);
+        setError(`Loading the report's data failed: ${e?.message || e}`);
+      });
 
-    return () => eventSource.close();
+    return cancel;
   }, [
-    initialData.apiEndpoints.streamPipelineData,
+    initialData.apiEndpoints.getPipelineData,
     applyScopeParams,
     definition.pipeline_sources,
   ]);
 
-  // Load pipeline data on mount via SSE streaming.
+  // Load pipeline data on mount.
   // Gated on the framework auth check passing — no point hammering CCHQ
   // pipelines if the user's CCHQ token is rejected; surfacing the
   // "Authorize" gate at the top is faster and clearer.
@@ -661,7 +555,7 @@ function WorkflowRunner({
       definition.pipeline_sources?.length &&
       !Object.keys(pipelineData).length
     ) {
-      const cleanup = streamPipelineData();
+      const cleanup = loadPipelineData();
       return cleanup;
     }
   }, [
@@ -669,7 +563,7 @@ function WorkflowRunner({
     noPipelineStream,
     definition.pipeline_sources,
     pipelineData,
-    streamPipelineData,
+    loadPipelineData,
     authChecking,
     missingAuth.length,
   ]);
@@ -903,8 +797,8 @@ function WorkflowRunner({
     setSelectedPipelineId(null);
     setSelectedPipelineData(null);
     // Refresh pipeline data in case schema changed
-    streamPipelineData();
-  }, [streamPipelineData]);
+    loadPipelineData();
+  }, [loadPipelineData]);
 
   // Handle state updates
   const handleUpdateState = useCallback(
@@ -1912,21 +1806,23 @@ function WorkflowRunner({
                   </div>
                 </div>
               ) : pipelineLoadingStatus && !renderWhileLoading ? (
-                <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-                  <i className="fa-solid fa-spinner fa-spin text-2xl mb-3" />
-                  <p className="text-sm">{pipelineLoadingStatus}</p>
-                </div>
+                <LoadingStrip
+                  message={pipelineLoadingStatus}
+                  progress={pipelineWarming?.progress}
+                  elapsedSeconds={pipelineWarming?.elapsedSeconds}
+                />
               ) : (
                 <>
                   {/* A workflow that opts in renders while its pipelines load and
-                      shows the stream's progress as a strip, not a blank page.
+                      shows the load's progress as a strip, not a blank page.
                       Its render code must tolerate `pipelines[alias]` being
-                      absent until the stream completes. */}
+                      absent until the load completes. */}
                   {renderWhileLoading && pipelineLoadingStatus && (
-                    <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-3">
-                      <i className="fa-solid fa-spinner fa-spin" />
-                      <span>{pipelineLoadingStatus}</span>
-                    </div>
+                    <LoadingStrip
+                      message={pipelineLoadingStatus}
+                      progress={pipelineWarming?.progress}
+                      elapsedSeconds={pipelineWarming?.elapsedSeconds}
+                    />
                   )}
                   {rawFetchAnomalies.length > 0 && (
                     <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 mb-4 space-y-3">
@@ -2107,7 +2003,7 @@ function WorkflowRunner({
                 onClose={handleReturnToWorkflow}
                 onSave={() => {
                   // Re-stream pipeline data - may have become stale after schema change
-                  streamPipelineData();
+                  loadPipelineData();
                 }}
                 apiEndpoints={{
                   getDefinition: `/labs/workflow/api/pipeline/${selectedPipelineId}/`,
@@ -2181,7 +2077,7 @@ function WorkflowRunner({
                       loadPipelineForEditing(pipelineId);
                     }
                     // Also refresh workflow pipeline data
-                    streamPipelineData();
+                    loadPipelineData();
                   }
                 } catch (e) {
                   console.error('Failed to update pipeline schema:', e);

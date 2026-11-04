@@ -149,16 +149,22 @@ def _stream(config, *, definition, labs_context):
     request.user = MagicMock(is_authenticated=True)
     request.labs_context = labs_context
     request.session = {"labs_oauth": {"access_token": "tok"}}
+    from connect_labs.workflow.pipeline_reads import fill_pipelines
+
     with (
-        patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA,
-        patch("connect_labs.workflow.views.PipelineDataAccess") as MockPDA,
+        patch("connect_labs.workflow.data_access.WorkflowDataAccess") as MockWDA,
+        patch("connect_labs.workflow.data_access.PipelineDataAccess") as MockPDA,
         patch("connect_labs.workflow.views._resolve_pipeline_definition", return_value=_pipeline_def()),
         patch(
             "connect_labs.workflow.views._resolve_pipeline_sources_for_run",
             return_value=(definition.pipeline_sources, {"answers": config}),
         ),
-        patch.object(views.PipelineDataStreamView, "_maybe_probe_cchq_access", return_value=iter(())),
+        # The worker, run in place: the read queues, the fill fills, the next read answers.
+        patch("connect_labs.workflow.tasks.warm_pipelines") as task,
+        patch("connect_labs.workflow.pipeline_reads.probe_cchq_access", return_value=None),
+        patch.object(views.time, "sleep"),
     ):
+        task.delay.side_effect = lambda token, **kwargs: fill_pipelines(token, **kwargs)
         MockWDA.return_value.get_definition.return_value = definition
         view = views.PipelineDataStreamView()
         view.kwargs = {"definition_id": DEF_ID}
@@ -241,16 +247,16 @@ def test_a_per_opportunity_pipeline_in_a_multi_opp_workflow_still_needs_an_oppor
 
 def test_a_cold_program_source_is_warmed_under_the_program_key(drive, monkeypatch):  # noqa: F811
     cache.clear()
-    with patch("connect_labs.workflow.tasks.warm_pipeline_query_cache") as task:
+    with patch("connect_labs.workflow.tasks.warm_pipelines") as task:
         status, out, _ = _query(_config(), {"alias": "answers"}, monkeypatch=monkeypatch)
     assert status == 202, out
     kwargs = task.delay.call_args.kwargs
-    assert kwargs["opportunity_id"] == gf.program_cache_scope(PROGRAM)
+    assert kwargs["opportunity_ids"] == [gf.program_cache_scope(PROGRAM)]
     assert kwargs["scope"] == {"program_id": PROGRAM}
 
 
 def test_the_warm_task_reads_a_program_source_in_the_program_scope(drive, owner):  # noqa: F811
-    from connect_labs.workflow import pipeline_query
+    from connect_labs.workflow import pipeline_query, pipeline_reads
 
     config = _config()
     WarmSlot("lock").claim()
@@ -264,14 +270,14 @@ def test_the_warm_task_reads_a_program_source_in_the_program_scope(drive, owner)
             return_value=(_definition().pipeline_sources, {"answers": config}),
         ),
     ):
-        out = pipeline_query.warm_pipeline_cache(
+        out = pipeline_reads.fill_pipelines(
             "tok",
             definition_id=DEF_ID,
-            alias="answers",
-            opportunity_id=gf.program_cache_scope(PROGRAM),
+            aliases=["answers"],
+            opportunity_ids=[gf.program_cache_scope(PROGRAM)],
             scope={"program_id": PROGRAM},
-            lock_key="lock",
+            slot_key="lock",
         )
-    assert out == {"warmed": ["answers"]}, out
+    assert out == {"warmed": ["answers"], "failed": []}, out
     assert pda_cls.call_args.kwargs.get("program_id") == PROGRAM
     assert pipeline_query.cached_queryset(config, gf.program_cache_scope(PROGRAM)).count() == 3
