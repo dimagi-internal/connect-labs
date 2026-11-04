@@ -31,6 +31,10 @@ The log says how each notice left, including when it did not: "email off" and
           <i class="fa-solid fa-rotate mr-1"></i> Check now
         </button>
       </form>
+      <a href="{% url 'supply_chain:alert_partner_setup' %}"
+         class="px-4 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">
+        Set up for every partner
+      </a>
       <a href="{% url 'supply_chain:alert_create' %}"
          class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
         <i class="fa-solid fa-plus mr-1"></i> New alert

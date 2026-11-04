@@ -179,6 +179,7 @@ TAB_FOR_VIEW = {
     # The checks are the overview's second panel, read in full.
     "supply_chain:checks": "supply_chain:home",
     "supply_chain:alert_create": "supply_chain:alerts",
+    "supply_chain:alert_partner_setup": "supply_chain:alerts",
     "supply_chain:alert_edit": "supply_chain:alerts",
     "supply_chain:update_link_issue": "supply_chain:update_links",
     "supply_chain:update_link_revoke": "supply_chain:update_links",

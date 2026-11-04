@@ -15,7 +15,7 @@ from django.utils.dateparse import parse_datetime
 from django.utils.decorators import method_decorator
 from django.views import View
 
-from connect_labs.supply_chain.alerts.forms import AlertSubscriptionForm
+from connect_labs.supply_chain.alerts.forms import AlertPartnerSetupForm, AlertSubscriptionForm
 from connect_labs.supply_chain.alerts.models import AlertSubscription
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView
@@ -142,6 +142,26 @@ class AlertCreateView(_AlertScreen):
         "and ranks nothing."
     )
     submit_label = "Create alert"
+
+
+class AlertPartnerSetupView(_AlertScreen):
+    """Alerts for every partner at once, and the one summary across them."""
+
+    operation = "alert_partner_setup"
+    form_class = AlertPartnerSetupForm
+    title = "Set up alerts for every partner"
+    intro = (
+        "Each partner's own staff are told about its facilities and field workers only; one daily summary covers "
+        "all partners. Fill in the addresses you have and leave the rest. Submitting this again never creates the "
+        "same alert twice, so you can come back and add people."
+    )
+    submit_label = "Set up the alerts"
+
+    def form_valid(self, form):
+        if not form.payload()["partners"] and not form.payload()["summary_emails"]:
+            form.add_error(None, "Give at least one email address.")
+            return self.form_invalid(form)
+        return super().form_valid(form)
 
 
 class AlertUpdateView(_AlertScreen):

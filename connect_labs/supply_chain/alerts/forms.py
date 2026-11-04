@@ -16,7 +16,7 @@ from connect_labs.supply_chain.alerts.models import CADENCES
 from connect_labs.supply_chain.forms import INPUT, SEARCHABLE, SELECT
 from connect_labs.supply_chain.models import Commodity, SupplyPoint
 
-__all__ = ["AlertSubscriptionForm", "check_kind_choices"]
+__all__ = ["AlertPartnerSetupForm", "AlertSubscriptionForm", "check_kind_choices"]
 
 # What kind of finding each is, in words a procurement lead uses. "a fact
 # nobody supplied" and "past a bound in your own data" read as machine output
@@ -256,3 +256,74 @@ class AlertSubscriptionForm(forms.Form):
             # defaults read better than an explicit null.
             data = {key: value for key, value in data.items() if value is not None}
         return data
+
+
+class AlertPartnerSetupForm(forms.Form):
+    """Alerts for every partner at once: whom each partner's staff are told, and who gets the one summary.
+
+    One box per partner that runs something in the programme (addresses separated by commas or new
+    lines), and one for the summary across partners. Saved by `alert_partner_setup`, which leaves an alert
+    that already exists as it is, so submitting this twice does no harm.
+    """
+
+    summary_emails = forms.CharField(
+        label=_("Daily summary across all partners"),
+        required=False,
+        widget=forms.Textarea(attrs={**INPUT, "rows": 2, "class": "base-input !h-auto min-h-16 py-2"}),
+        help_text=_(
+            "Who in the running organisation gets one email a day covering every partner, including where the "
+            "records and the counts disagree and when the next tender should start."
+        ),
+    )
+
+    def __init__(self, *args, access=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.partners = []
+        program_id = getattr(access, "program_id", None) if access else None
+        if program_id:
+            from connect_labs.supply_chain.stock.services.issues import partner_by_point
+
+            running = {org for org in partner_by_point(program_id).values() if org}
+            self.partners = list(LabsOrg.objects.filter(pk__in=running).order_by("name"))
+        for org in self.partners:
+            self.fields[f"emails_{org.pk}"] = forms.CharField(
+                label=_("%(name)s: tell these people about its own places") % {"name": org.name},
+                required=False,
+                widget=forms.Textarea(attrs={**INPUT, "rows": 2, "class": "base-input !h-auto min-h-16 py-2"}),
+                help_text=_("Stock out, below minimum, expiring, negative, or a delivery after stock runs out."),
+            )
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+        self.helper.layout = Layout(*[f"emails_{org.pk}" for org in self.partners], "summary_emails")
+
+    @staticmethod
+    def _addresses(text):
+        from django.core.exceptions import ValidationError
+        from django.core.validators import validate_email
+
+        found = [a.strip() for a in (text or "").replace(";", ",").replace("\n", ",").split(",") if a.strip()]
+        for address in found:
+            try:
+                validate_email(address)
+            except ValidationError:
+                raise forms.ValidationError(_("“%(a)s” is not an email address.") % {"a": address})
+        return found
+
+    def clean(self):
+        cleaned = super().clean()
+        for name in [f"emails_{org.pk}" for org in self.partners] + ["summary_emails"]:
+            if name in cleaned:
+                try:
+                    cleaned[name] = self._addresses(cleaned[name])
+                except forms.ValidationError as exc:
+                    self.add_error(name, exc)
+        return cleaned
+
+    def payload(self) -> dict:
+        partners = [
+            {"org_id": org.pk, "emails": self.cleaned_data.get(f"emails_{org.pk}") or []}
+            for org in self.partners
+            if self.cleaned_data.get(f"emails_{org.pk}")
+        ]
+        return {"partners": partners, "summary_emails": self.cleaned_data.get("summary_emails") or []}
