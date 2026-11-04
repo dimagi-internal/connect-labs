@@ -444,3 +444,25 @@ class TestThePayloadShape:
         schema names, so a rename here would be a bug, not a fix."""
         payload = self._form(managed_by_org=org.pk).payload()
         assert payload["managed_by_org_id"] == org.pk
+
+
+def test_the_network_is_one_tree_per_partner_and_names_the_points_no_partner_runs(scoped, org):
+    other = LabsOrg.objects.create(slug="cbi", name="CBI", country="NG")
+    SupplyPoint.objects.create(
+        program_id=PROGRAM, slug="a", name="Nutriset store", kind="central_store", source="we_recorded",
+        managed_by_org=org,
+    )  # fmt: skip
+    SupplyPoint.objects.create(
+        program_id=PROGRAM, slug="b", name="CBI warehouse", kind="central_store", source="we_recorded",
+        managed_by_org=other,
+    )  # fmt: skip
+    SupplyPoint.objects.create(
+        program_id=PROGRAM, slug="c", name="Orphan store", kind="central_store", source="we_recorded"
+    )
+
+    html = scoped.get(reverse("supply_chain:network")).content.decode()
+
+    assert html.count('data-testid="partner-tree"') == 3
+    names = [m for m in ("CBI", "Nutriset", "No partner recorded") if m in html]
+    assert names == ["CBI", "Nutriset", "No partner recorded"]
+    assert html.index("CBI warehouse") < html.index("Nutriset store") < html.index("Orphan store")
