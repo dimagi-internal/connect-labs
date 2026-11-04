@@ -567,6 +567,28 @@ class Tender(TimestampedModel):
     def __str__(self):
         return self.label
 
+    @classmethod
+    def from_db(cls, db, field_names, values):
+        """A tender that asks for DDP and has no stored duty choice reads as "the supplier delivers duty paid".
+
+        Derived at read time, never written: tenders saved before the choice was
+        filled in on save would otherwise keep saying "Not chosen yet" under a
+        delivery term that already answers it. A person's stored choice always
+        wins; `duty_terms_derived` lets the writer treat the derived value as
+        not yet recorded.
+        """
+        obj = super().from_db(db, field_names, values)
+        if (
+            "duty_terms" in obj.__dict__
+            and not obj.duty_terms
+            and (obj.__dict__.get("incoterm_requested") or "").strip().upper() == "DDP"
+        ):
+            obj.duty_terms = "supplier_ddp"
+            obj.duty_terms_derived = True
+        return obj
+
+    duty_terms_derived = False
+
     @property
     def delivery_point(self):
         """The first place, for readers written when a tender had exactly one."""

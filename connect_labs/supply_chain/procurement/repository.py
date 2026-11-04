@@ -207,7 +207,7 @@ class ProcurementRepositoryMixin:
                 raise ValueError(f"duty_estimate_percent {duty_estimate_percent!r} is not a number") from exc
             if estimate < 0:
                 raise ValueError("duty_estimate_percent cannot be negative")
-        if found.duty_terms == duty_terms and found.duty_estimate_percent == estimate:
+        if found.duty_terms == duty_terms and found.duty_estimate_percent == estimate and not found.duty_terms_derived:
             return _fresh(found)
         day = date.fromisoformat(on) if isinstance(on, str) else (on or timezone.localdate())
         found.duty_terms = duty_terms
