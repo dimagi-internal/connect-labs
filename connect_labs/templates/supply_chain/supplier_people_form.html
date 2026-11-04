@@ -9,6 +9,7 @@ write-screen shell; this only supplies the rows.
 {% block extra_fields %}
   {% include "supply_chain/_line_formset.html" with formset=rows rows_id=rows_id columns=columns add_label=add_label %}
   {% if suggestions %}
+    <datalist id="qualification-suggestions">{% for suggestion in suggestions %}<option value="{{ suggestion.name }}"></option>{% endfor %}</datalist>
     <div class="pt-4 border-t border-gray-100">
       <h2 class="text-sm font-semibold text-gray-900">Usual ones to record</h2>
       <p class="text-xs text-gray-600 mt-0.5">{{ suggestions_note }}</p>

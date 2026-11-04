@@ -101,6 +101,11 @@ urlpatterns = [
         name="supplier_contacts",
     ),
     path(
+        "suppliers/<int:supplier_id>/qualifications/",
+        people_views.SupplierQualificationsView.as_view(),
+        name="supplier_qualifications",
+    ),
+    path(
         "suppliers/<int:supplier_id>/reviewed/",
         reference_views.SupplierMarkReviewedView.as_view(),
         name="supplier_mark_reviewed",
@@ -386,6 +391,7 @@ urlpatterns = [
     path("issues/new/", issue_views.IssueReportView.as_view(), name="issue_report"),
     path("issues/<int:issue_id>/follow-up/", issue_views.IssueFollowUpView.as_view(), name="issue_follow_up"),
     path("issues/<int:issue_id>/close/", issue_views.IssueResolveView.as_view(), name="issue_resolve"),
+    path("issues/<int:issue_id>/evidence/", issue_views.IssueEvidenceView.as_view(), name="issue_evidence"),
     path("issues/custodian/", issue_views.CustodianAssignView.as_view(), name="custodian_assign"),
     path("distribution/new/", distribution_views.DistributionRecordView.as_view(), name="distribution_record"),
     # How each partner distributes, and who runs which place.

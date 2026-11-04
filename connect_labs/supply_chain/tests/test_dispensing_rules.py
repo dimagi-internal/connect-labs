@@ -606,3 +606,13 @@ def test_the_edit_form_shows_the_saved_forecast_settings(scoped, da, world):
     body = scoped.get(reverse("supply_chain:dispensing_rule_edit", args=[rule["id"]])).content.decode()
     assert re.search(r'<option value="protocol"\s+selected', body)
     assert 'value="28"' in body
+
+
+def test_a_rule_keeps_the_household_paths_it_names_and_refuses_others(da, world):
+    saved = upsert(da, world, reports={"household": {"returned_paths": ["form.returned"]}})
+    assert saved["reports"]["household"] == {"returned_paths": ["form.returned"]}
+
+    with pytest.raises(ValueError, match="form_json path"):
+        upsert(da, world, reports={"household": {"returned_paths": ["returned"]}})
+    with pytest.raises(Exception, match="household|additional"):
+        upsert(da, world, reports={"household": {"weight": ["form.w"]}})

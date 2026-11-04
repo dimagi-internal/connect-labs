@@ -544,3 +544,16 @@ def test_re_reading_visits_with_gps_writes_and_places_nothing_new(da, rutf, rutf
     read(da, visits)
 
     assert Revision.objects.count() == revisions
+
+
+def test_a_visit_keeps_the_household_answers_a_rule_names(da, rutf, rutf_rule):
+    rutf_rule.reports = {"household": {"returned_paths": ["form.returned"], "reason_paths": ["form.why"]}}
+    rutf_rule.save()
+
+    read(da, [visit(9001, answers={RUTF_PATH: "14", "form.returned": "3", "form.why": "shared", "form.other": "x"})])
+
+    assert WorkerVisit.objects.get(visit_id="9001").answers == {
+        RUTF_PATH: "14",
+        "form.returned": "3",
+        "form.why": "shared",
+    }

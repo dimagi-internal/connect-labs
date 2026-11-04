@@ -54,6 +54,8 @@
   <div class="border-message-error-border/50 bg-message-error text-message-error-text rounded-lg border px-3.5 py-2.5 text-sm" role="alert" data-testid="award-error">Could not award: {{ award_error }}</div>
   {% endif %}
 
+  {% include "supply_chain/procurement/_qualification_gaps.html" with gap_moment="you award" %}
+
   {% if awards %}
   <div class="border-brand-border-light flex flex-wrap items-baseline gap-x-3.5 gap-y-2 rounded-lg border bg-white px-5 py-3 text-sm" data-testid="awards">
     <span class="status-chip status-chip--primary">Awarded</span>

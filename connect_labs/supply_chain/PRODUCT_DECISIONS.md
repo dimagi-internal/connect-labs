@@ -138,3 +138,9 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   `tender_start_by`); the default list of checks does not pay for them.
 - **A delivery to a shared facility is a suggestion, sized from the forecast** (a few days of what its field
   workers use, 7 to begin with, less what it holds), never recorded as an order.
+
+- **Confirming through an update link uses the existing link, with no new sign-in.** A link covering a
+  store (or a place on a handout) offers "Confirm what you handed out"; a link covering the place it
+  went to (a facility, or a field worker's own holding on a link sent to their Connect username)
+  offers "Confirm what you received". Each is shown only when there is something to confirm, goes through
+  the same operation as the screens, and is recorded as the link's organisation's word.
