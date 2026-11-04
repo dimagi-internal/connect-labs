@@ -28,30 +28,18 @@ on the Stock page.
 </div>
 
 {% comment %}
-The three-level identity explanation used to open the page as five lines of
-prose, which made a catalogue read as documentation. It is genuinely load
-bearing -- conflating the levels is how a per-sachet figure goes wrong -- so
-it is kept, one click away, for the reader who wants it rather than in front
-of the reader who does not.
+The three levels as the steps you take, not definitions (Sophie's RUTF feedback): product, then trade
+item, and why there is no "add batch". The identity is load bearing -- conflating the levels is how a
+per-sachet figure goes wrong -- so it stays on the page, as a short numbered list.
 {% endcomment %}
-<details class="mb-6 max-w-3xl">
-  <summary class="text-sm text-brand-indigo cursor-pointer hover:underline
-                  focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-indigo">
-    What you buy: products, trade items and batches
-  </summary>
-  <p class="text-sm text-gray-600 mt-2 leading-relaxed">
-    <b>Product:</b> what you need and how it is used ("RUTF, 92&nbsp;g sachet,
-    2 a day"). <b>Trade item:</b> a specific manufacturer's version of it, with
-    their carton size, shelf life and barcode. Add one for each product you
-    actually buy &mdash; when you place an order, once per manufacturer's
-    product, not once per quote. <b>Batch:</b> one delivery of a trade item,
-    with its expiry and certificate. You don't add batches here; they are
-    recorded when stock is received or sent on (see
-    <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:stock' %}">Stock</a>).
-    Every supplier's RUTF is held to the same product, so a per&#8209;sachet
-    figure stays comparable.
-  </p>
-</details>
+<ol data-testid="catalogue-steps" class="mb-6 max-w-3xl space-y-1.5 text-sm text-gray-700">
+  <li><b>1. Add a product</b> once: what you need and how it is used ("RUTF, 92&nbsp;g sachet, 2 a day").</li>
+  <li><b>2. Add a {% term "trade item" %}</b> when you place an order, once for each manufacturer's version
+    you actually buy (not once per quote): their carton size, shelf life and barcode.</li>
+  <li><b>3. Batches are not added here.</b> A {% term "batch" %} is a physical delivery, with the expiry
+    date and certificate that arrive with the goods, so it is recorded when stock is received or sent on
+    (see <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:stock' %}">Stock</a>).</li>
+</ol>
 
 {% for product in products %}
   <div class="bg-white border border-brand-border-light rounded-lg mb-4 overflow-hidden">
