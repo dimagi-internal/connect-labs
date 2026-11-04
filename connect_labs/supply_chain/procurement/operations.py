@@ -1008,7 +1008,7 @@ def _decided_on(value):
 
 
 @register_operation(
-    name="award_order_set",
+    name="award_orders_progress",
     summary=(
         "The orders of one award read as a set: how many partners have ordered, how much of the quantity is "
         'ordered ("4 of 5 partners have ordered · 1,800 of 2,000 cartons"), which partners are still waiting, '
@@ -1016,7 +1016,7 @@ def _decided_on(value):
     ),
     input_schema=obj({"award_id": ID}, required=("award_id",)),
 )
-def award_order_set(access, award_id):
+def award_orders_progress(access, award_id):
     from connect_labs.supply_chain.procurement.services.splits import order_set
 
     award = access.get_award(award_id)

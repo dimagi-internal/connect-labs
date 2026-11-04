@@ -156,7 +156,7 @@ class TestOrdersFollowTheSplit:
         ours = op(da, "org_upsert", data={"slug": "us", "name": "The programme"})
         monkeypatch.setattr(runner, "running_org", lambda program_id: LabsOrg.objects.get(pk=ours["id"]))
         quote, award = _award(da, world, holds=3)
-        before = op(da, "award_order_set", award_id=award["id"])
+        before = op(da, "award_orders_progress", award_id=award["id"])
         assert before["text"] == "0 of 3 partners have ordered · 0 of 2,000 cartons" and not before["complete"]
 
         made = op(da, "award_orders_create", award_id=award["id"])
@@ -165,7 +165,7 @@ class TestOrdersFollowTheSplit:
         first = by_partner[world["orgs"][0]["id"]]
         assert first["buyer_org_id"] == world["orgs"][0]["id"] and first["buyer_of_record"] == "partner_org"
         assert first["buying_model"] == "partner_buys" and first["quantity"] == "400" and first["unit_price"] == "52.4"
-        done = op(da, "award_order_set", award_id=award["id"])
+        done = op(da, "award_orders_progress", award_id=award["id"])
         assert done["complete"] and done["partners_ordered"] == 3
         # the partner we buy for: we are the buyer, the partner is who it is for
         third = by_partner[world["orgs"][2]["id"]]
