@@ -104,6 +104,10 @@ KIND_CATEGORIES = {
     "stock_below_minimum": "threshold",
     # The bound is the product's own warning period before a batch's expiry date.
     "stock_expiring": "threshold",
+    # Looking ahead, from the forecast and the tender's start-by date (partners/planning.py). Run only
+    # when a caller names them in `kinds`, because the forecast is not cheap.
+    "delivery_after_stockout": "threshold",
+    "tender_start_by": "threshold",
     "item_fails_specification": "threshold",
     # The bound is a date the record itself holds: the shipment's expected
     # date, or the contract's signature plus its promised lead time.
@@ -1295,6 +1299,12 @@ def run_checks(access, *, opportunity_id=None, kinds=None, categories=None, as_o
     found = _sourcing(access, as_of) + _catalogue(access, as_of) + _fulfilment(access, as_of)
     found += _stock(access, as_of, opportunity_id=opportunity_id)
     found += _expiring_stock(access, as_of, opportunity_id=opportunity_id)
+    if kinds:
+        from connect_labs.supply_chain.partners.planning import PLANNING_KINDS, planning_checks
+
+        planning = [k for k in kinds if k in PLANNING_KINDS]
+        if planning:
+            found += planning_checks(access, as_of, planning)
     if kinds:
         wanted = set(kinds)
         found = [item for item in found if item["kind"] in wanted]

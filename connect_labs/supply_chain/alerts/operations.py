@@ -16,7 +16,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 
 from connect_labs.supply_chain import records
-from connect_labs.supply_chain.alerts.models import CADENCES, AlertNotice, AlertSubscription
+from connect_labs.supply_chain.alerts.models import CADENCES, CHANNELS, AlertNotice, AlertSubscription
 from connect_labs.supply_chain.operations import ID, NULLABLE_ID, _data_with, obj, register_operation
 
 _SUBSCRIPTION_DATA = _data_with(
@@ -28,6 +28,9 @@ _SUBSCRIPTION_DATA = _data_with(
     recipient_user_id=NULLABLE_ID,
     recipient_email={"type": "string", "format": "email"},
     recipient_name={"type": "string", "maxLength": 255},
+    partner_org_id={"type": ["integer", "null"]},
+    channel={"enum": list(CHANNELS)},
+    recipient_phone={"type": "string", "maxLength": 32},
     cadence={"enum": list(CADENCES)},
     active={"type": "boolean"},
 )
@@ -47,6 +50,10 @@ def serialize_subscription(sub) -> dict:
         "recipient_user_id": sub.recipient_user_id,
         "recipient_email": sub.recipient_email,
         "recipient_name": sub.recipient_name,
+        "recipient_phone": sub.recipient_phone,
+        "channel": sub.channel,
+        "partner_org_id": sub.partner_org_id,
+        "partner_name": sub.partner_org.name if sub.partner_org_id else None,
         "recipient": sub.recipient_label,
         "cadence": sub.cadence,
         "active": sub.active,
@@ -78,7 +85,7 @@ def serialize_notice(notice) -> dict:
 
 def _subscriptions(access):
     return AlertSubscription.objects.filter(program_id=access._require_program()).select_related(
-        "supply_point", "commodity", "recipient_user"
+        "supply_point", "commodity", "recipient_user", "partner_org"
     )
 
 
@@ -135,7 +142,28 @@ def _apply(access, sub, data, creating):
         else:
             sub.commodity = None
 
-    if creating or "recipient_user_id" in data or "recipient_email" in data:
+    if "partner_org_id" in data:
+        if data["partner_org_id"] is None:
+            sub.partner_org = None
+        else:
+            from connect_labs.labs.models import LabsOrg
+
+            sub.partner_org = LabsOrg.objects.filter(pk=data["partner_org_id"]).first()
+            if sub.partner_org is None:
+                raise ValueError(f"organisation {data['partner_org_id']} does not exist")
+    if "channel" in data:
+        sub.channel = data["channel"]
+
+    if sub.channel == "whatsapp":
+        # A WhatsApp alert goes to a phone number, not to a labs user or an email address.
+        phone = (data.get("recipient_phone", sub.recipient_phone) or "").strip()
+        if not phone:
+            raise ValueError("a WhatsApp alert needs the phone number to message (recipient_phone)")
+        sub.recipient_phone, sub.recipient_user, sub.recipient_email = phone, None, ""
+        if "recipient_name" in data:
+            sub.recipient_name = (data["recipient_name"] or "").strip()
+    elif creating or "recipient_user_id" in data or "recipient_email" in data:
+        sub.recipient_phone = ""
         # On an update, naming one kind of recipient replaces the other, so
         # switching from a user to an address is one field, not two.
         user_id, email = sub.recipient_user_id, sub.recipient_email
@@ -176,7 +204,7 @@ def _apply(access, sub, data, creating):
             sub.recipient_user = None
             sub.recipient_email = email
 
-    if "recipient_name" in data and not sub.recipient_user_id:
+    if "recipient_name" in data and not sub.recipient_user_id and sub.channel != "whatsapp":
         sub.recipient_name = (data["recipient_name"] or "").strip()
 
     if not (sub.check_kinds or sub.movement_kinds):

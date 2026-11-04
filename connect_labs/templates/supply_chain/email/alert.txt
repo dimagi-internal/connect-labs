@@ -7,7 +7,8 @@ New checks ({{ checks|length }})
 {% for notice in checks %}
 - {{ notice.subject_kind|words }} ({{ notice.subject.category|category_label }})
   About: {{ notice.subject.type|default:"record"|words }} {{ notice.subject.id }} — {{ notice.subject.label }}
-  {% if notice.since %}True since: {{ notice.since|date:"Y-m-d" }}
+  {% if notice.subject.partner %}Partner: {{ notice.subject.partner }}
+  {% endif %}  {% if notice.since %}True since: {{ notice.since|date:"Y-m-d" }}
   {% endif %}{% for key, value in notice.facts|fact_rows %}{{ key|capfirst }}: {{ value }}
   {% endfor %}Record: {{ notice.record_url }}
 {% endfor %}{% endif %}{% if movements %}
