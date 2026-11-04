@@ -364,6 +364,20 @@ class DomainHomeView(OperationBase):
             f"Program {program_id}",
         )
 
+    @staticmethod
+    def _tender_replies(access, tenders) -> dict:
+        """{tender id: (suppliers asked, suppliers silent)} for tenders collecting quotes."""
+        from connect_labs.supply_chain.moves import silent_suppliers
+
+        out = {}
+        for tender in tenders:
+            if tender.get("status") != "open":
+                continue
+            outreach = access.list_outreach(tender_id=tender["id"])
+            silent = silent_suppliers(outreach, access.list_quotes(tender_id=tender["id"]))
+            out[tender["id"]] = (len({o.supplier_id for o in outreach}), len(silent))
+        return out
+
     def _add_programme_picture(self, context, access, program_id, org):
         """The next step, and the distribution side (partners, field workers, issues)."""
         from connect_labs.supply_chain.overview import buying_model_label, distribution_overview, next_step
@@ -374,6 +388,7 @@ class DomainHomeView(OperationBase):
             contracts=context["contracts"],
             points=points,
             exclude_org_ids=[org.pk] if org is not None else (),
+            tender_replies=self._tender_replies(access, context["tenders"]),
         )
         org_ids = {p["managed_by_org_id"] for p in points if p.get("managed_by_org_id")}
         names = dict(LabsOrg.objects.filter(pk__in=org_ids).values_list("id", "name")) if org_ids else {}

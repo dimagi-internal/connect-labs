@@ -232,3 +232,29 @@ class TestThePage:
     def test_open_issues_no_longer_say_they_are_not_recorded(self, da, base, home_client):
         body = _home(home_client)
         assert 'data-testid="issues-not-recorded"' not in body and "No open issues." in body
+
+
+class TestAnOpenTenderWinsOverReceivedOrders:
+    def test_a_requote_collecting_quotes_beats_every_order_received(self):
+        contracts = [{"id": 1, "status": "received", "buyer_org_id": None}]
+        step = next_step(
+            tenders=[{"id": 1, "status": "awarded"}, {"id": 2, "status": "open", "label": "Feb Re-quote"}],
+            contracts=contracts,
+            points=[],
+            tender_replies={2: (7, 6)},
+        )
+        assert step["next"] == "Feb Re-quote: 1 of 7 suppliers answered; chase the other 6"
+        assert "Feb Re-quote: collecting quotes" in step["line"]
+        assert "Every order is received" not in step["next"]
+
+    def test_with_no_reply_figures_it_still_names_the_tender(self):
+        contracts = [{"id": 1, "status": "received", "buyer_org_id": None}]
+        step = next_step(
+            tenders=[{"id": 2, "status": "open", "label": "Feb Re-quote"}], contracts=contracts, points=[]
+        )
+        assert step["next"] == "Feb Re-quote: chase the suppliers who have not replied"
+
+    def test_orders_alone_still_say_every_order_is_received(self):
+        contracts = [{"id": 1, "status": "received", "buyer_org_id": None}]
+        step = next_step(tenders=[{"id": 1, "status": "awarded"}], contracts=contracts, points=[])
+        assert step["next"] == "Every order is received: check the stock and the payments"

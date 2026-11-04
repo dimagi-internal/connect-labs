@@ -20,7 +20,13 @@ from __future__ import annotations
 from datetime import date
 
 # Who each audience is, when the check does not name a person or company.
-_AUDIENCE_NOUN = {"supplier": "the supplier", "partner": "the partner", "internal": ""}
+# "internal" has no one to name, so a sentence that reaches it with no subject
+# says "whoever has it" rather than leaving a gap ("Check the count with : ...").
+_AUDIENCE_NOUN = {"supplier": "the supplier", "partner": "the partner", "internal": "whoever has it"}
+
+# Checks about a place or a worker's stock: the subject's label IS the name of
+# the person to ask (a supply point such as "flw_007"), and no supplier is named.
+_NAMED_BY_SUBJECT = {"stock_never_reported", "stock_variance", "stock_negative"}
 
 # What each kind of check needs, written for someone who is not a supply
 # specialist. `{who}` is the supplier or partner it names, or the audience's
@@ -62,6 +68,10 @@ def _who(check: dict) -> str:
     if named:
         return named
     label = (check.get("subject") or {}).get("label") or ""
+    if check.get("kind") in _NAMED_BY_SUBJECT:
+        return label
+    if check.get("kind") == "commitment_open":
+        return ((check.get("facts") or {}).get("owed_to") or {}).get("name") or ""
     if check.get("audience") == "supplier" and " — " in label[1:]:
         return label.split(" — ")[0]
     return ""

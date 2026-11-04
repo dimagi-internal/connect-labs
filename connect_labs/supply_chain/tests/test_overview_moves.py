@@ -252,8 +252,14 @@ class TestMoveCounts:
         assert expected >= 1
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
         count = _text(re.search(r'data-testid="standing-our-moves">(.*?)</div>', body, re.S).group(1))
-        assert count.startswith(f"{expected} to do")
+        assert count.startswith(f"{expected} to do in Buying")
         assert "on you" not in count
+
+    def test_the_page_title_names_the_page_not_just_connect(self, da, world, client_in_program):
+        body = client_in_program.get(reverse("supply_chain:home")).content.decode()
+        assert "<title>Overview — Supply</title>" in body
+        checks = client_in_program.get(reverse("supply_chain:checks")).content.decode()
+        assert re.search(r"<title>[^<]+ — Supply</title>", checks)
 
     def test_each_rows_whose_chips_sum_to_the_heading(self, da, world, client_in_program):
         _held_on_our_form_m(da, world)

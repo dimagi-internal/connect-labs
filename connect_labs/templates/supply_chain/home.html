@@ -37,7 +37,7 @@ tenders and orders sit folded below.
       <div class="stat-tile flex-row items-center gap-2" data-testid="workers-below-minimum"><span class="text-sm{% if below.below %} text-amber-900 font-medium{% else %} text-gray-700{% endif %}">{{ below.line }}</span></div>
       {% endif %}{% endwith %}
       {% if not supply_as_of %}
-      <div class="stat-tile flex-row items-center gap-2" data-testid="standing-our-moves"><span class="stat-tile-value">{{ move_counts.ours }}</span><span class="status-chip status-chip--ours">to do</span></div>
+      <div class="stat-tile flex-row items-center gap-2" data-testid="standing-our-moves"><span class="stat-tile-value">{{ move_counts.ours }}</span><span class="status-chip status-chip--ours" title="Steps on the tenders and orders listed under Buying. The checks that need an answer are counted separately, in Ours to answer.">to do in Buying</span></div>
       <div class="stat-tile flex-row items-center gap-2" data-testid="standing-their-moves"><span class="stat-tile-value">{{ move_counts.theirs }}</span><span class="status-chip status-chip--theirs">waiting on suppliers</span></div>
       {% endif %}
     </div>
