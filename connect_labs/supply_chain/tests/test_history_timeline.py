@@ -458,7 +458,10 @@ class TestTenderTimeline:
         op(da, "tender_uninvite_org", AUG_28, tender_id=base["tender"]["id"], org_id=org_id)
         sentences = [e.sentence for e in timeline_for_tender(base["tender"]["id"], program_id=PROGRAM)]
 
-        assert sentences[:2] == ["Invitation to Northwind Foods withdrawn", "Invited Northwind Foods"]
+        assert sentences[:2] == [
+            "Marketplace access for Northwind Foods withdrawn",
+            "Gave Northwind Foods marketplace access",
+        ]
 
     def test_one_calls_create_and_update_of_one_record_read_as_one_line(self, da, base):
         """The handler's second save is bookkeeping to a reader, not a second event."""

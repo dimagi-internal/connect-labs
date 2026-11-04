@@ -12,7 +12,7 @@ from connect_labs.supply_chain.templatetags.supply_chain_extras import supplies
 
 
 def test_one_fact_is_named_and_several_are_counted():
-    assert moves.facts_chip(["tender duty terms"], moves.US) == "duty terms · ours to settle"
+    assert moves.facts_chip(["tender duty terms"], moves.US) == "duty terms · ours to choose"
     assert (
         moves.facts_chip(["exchange rate", "freight estimate", "duty exemption"], moves.US) == "3 facts · ours to fill"
     )

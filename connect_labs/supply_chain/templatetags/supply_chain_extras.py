@@ -1574,7 +1574,7 @@ EVIDENCE_LABELS = {
     "quoted": "Quoted",
     "quoted_superseded": "Quoted, since superseded",
     "quoted_voided": "Quoted, since withdrawn",
-    "invited": "Invited",
+    "invited": "Asked to quote",
     "named_as_manufacturer": "Named as the manufacturer",
     "declared": "Says they sell it",
 }
@@ -2037,6 +2037,7 @@ def edit_cell(context, kind, record_id, name, value=None):
         f'data-edit-label="{escape(cell.label)}"',
         f'data-edit-value="{escape(shown)}"',
         'tabindex="0"',
+        f'title="Click to edit: {escape(cell.label)}"',
     ]
     if cell.choices:
         import json
@@ -2083,3 +2084,21 @@ def term(word, shown=""):
         note,
         text,
     )
+
+
+# What each supplier status means, in a few words: the status pill and table cell carry it as a hover note, so
+# "Responsive" no longer needs the person to have seen the edit form's options.
+SUPPLIER_STATUS_NOTES = {
+    "identified": "We know they exist; nobody has written to them yet.",
+    "contacted": "We have written to them.",
+    "responsive": "They replied, but have not given a quote yet.",
+    "quoting": "They are giving a quote.",
+    "awarded": "We chose them on a tender.",
+    "declined": "They said no.",
+    "unusable": "We will not use them.",
+}
+
+
+@register.filter
+def supplier_status_note(status):
+    return SUPPLIER_STATUS_NOTES.get(status or "identified", "")

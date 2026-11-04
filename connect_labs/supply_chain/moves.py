@@ -56,7 +56,7 @@ TO_ASK = "to_ask"
 # terms to settle, any other figure of ours to fill.
 OWNER_CHIP = {SUPPLIERS: "waiting", TO_ASK: "to ask"}
 OURS_TO_ATTACH = "ours to attach"
-OURS_TO_SETTLE = "ours to settle"
+OURS_TO_SETTLE = "ours to choose"
 OURS_TO_FILL = "ours to fill"
 # The gaps that are documents (named as records names every document kind) and our terms;
 # every other gap of ours is a figure to fill.

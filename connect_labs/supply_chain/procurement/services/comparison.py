@@ -869,7 +869,7 @@ def round_duty_words(quote, tender) -> str:
         # The Incoterm makes the import ours and the tender has not said how:
         # the duty is our cost to settle, not a figure the supplier owes --
         # and not one a figure the supplier wrote can settle either.
-        return "ours to cost (tender terms not settled)"
+        return "ours to cost (import duty not chosen yet)"
     if terms in ("buyer_waiver", "buyer_pays") and not buyer_imports(quote):
         # The supplier imports (DDP): its own duty figure stands, said on the
         # delivery line as the quote's word -- the tender's waiver cannot reach it.

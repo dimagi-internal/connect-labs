@@ -56,7 +56,7 @@ is folded away, each fold with its count.
       <span class="flex flex-wrap items-center gap-2">
         <span class="text-gray-600">Import duty</span>
         <span data-testid="tender-duty-terms"{% if duty_terms_changed %} data-changed{% endif %} class="px-1" {% edit_cell "tender" tender.id "duty_terms" tender.duty_terms %}>
-          {% if not tender.duty_terms %}<span class="status-chip status-chip--ours">Not settled</span>{% else %}{% include "supply_chain/_src.html" with src=status.terms.duty_src %}<span class="font-medium text-gray-900">{{ tender.duty_terms|duty_terms_words|capfirst }}</span>{% if tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %} · estimate {{ tender.duty_estimate_percent|floatformat:"-2" }}%{% else %} · <span class="text-message-warning-text font-medium">estimate not recorded</span>{% endif %}{% endif %}{% if duty_terms_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% endif %}
+          {% if not tender.duty_terms %}<span class="status-chip status-chip--ours">Not chosen yet</span>{% else %}{% include "supply_chain/_src.html" with src=status.terms.duty_src %}<span class="font-medium text-gray-900">{{ tender.duty_terms|duty_terms_words|capfirst }}</span>{% if tender.duty_terms == "buyer_pays" %}{% if tender.duty_estimate_percent %} · estimate {{ tender.duty_estimate_percent|floatformat:"-2" }}%{% else %} · <span class="text-message-warning-text font-medium">estimate not recorded</span>{% endif %}{% endif %}{% if duty_terms_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}{% endif %}
         </span>
         {% comment %}Who set the terms and when, and the waiver's evidence: each its own field
         beside the terms, not run on after them.{% endcomment %}
@@ -130,24 +130,24 @@ is folded away, each fold with its count.
       or, while the tender takes bids, one sent through the supplier marketplace.{% endcomment %}
       {% if invitable_orgs and not tender_is_over %}
       <details data-testid="invite-menu" class="relative text-sm">
-        <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden text-brand-indigo hover:underline">+ Record a quote request</summary>
+        <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden text-brand-indigo hover:underline">+ Ask for a quote</summary>
         <div class="absolute right-0 z-10 mt-1 w-80 rounded-md border border-gray-200 bg-white p-3 shadow-sm">
-          <a href="{% url 'supply_chain:procurement_outreach_log' tender.id %}" class="block text-brand-indigo hover:underline">Record a quote request you sent</a>
+          <a href="{% url 'supply_chain:procurement_outreach_log' tender.id %}" class="block text-brand-indigo hover:underline">Ask for a quote (record the email you sent)</a>
           <form method="post" action="{% url 'supply_chain:procurement_tender_invite_org' tender.id %}" class="mt-3 flex flex-wrap items-center gap-2">
             {% csrf_token %}
-            <label for="invite-org" class="basis-full text-gray-700">Invite a registered supplier on the marketplace</label>
+            <label for="invite-org" class="basis-full text-gray-700">Give a registered supplier marketplace access</label>
             {% comment %}Nothing chosen until somebody chooses: a preselected first name was one
             click from inviting a supplier nobody picked.{% endcomment %}
             <select id="invite-org" name="org" required class="text-sm border border-gray-300 rounded-md px-2 py-1 flex-1">
               <option value="" selected>Choose a supplier…</option>
               {% for org in invitable_orgs %}<option value="{{ org.pk }}">{{ org.name }}</option>{% endfor %}
             </select>
-            <button type="submit" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Invite</button>
+            <button type="submit" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Give access</button>
           </form>
         </div>
       </details>
       {% else %}
-      <a href="{% url 'supply_chain:procurement_outreach_log' tender.id %}" class="text-sm text-brand-indigo hover:underline">+ Record a quote request</a>
+      <a href="{% url 'supply_chain:procurement_outreach_log' tender.id %}" class="text-sm text-brand-indigo hover:underline">+ Ask for a quote</a>
       {% endif %}
       {% endif %}
     </div>
@@ -204,7 +204,7 @@ is folded away, each fold with its count.
     </div>
     {% if invited_orgs %}
     <div data-testid="invited-suppliers" class="text-sm">
-      <h3 class="text-sm font-semibold text-gray-900">Invited on the marketplace</h3>
+      <h3 class="text-sm font-semibold text-gray-900">Given marketplace access</h3>
       <ul class="mt-2 text-sm">
         {% for org in invited_orgs %}
           <li class="flex items-center gap-3 py-1">

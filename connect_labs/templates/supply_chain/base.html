@@ -19,6 +19,14 @@ or by a recorder aiming at an element with no id (the stage bar) -- clears the f
 4rem top bar. It was set only on headings and elements with an id, so a scroll to
 anything else landed under the bar, slicing through the tender's title above it.{% endcomment %}
 {% comment %}A table row a link lands on (#outreach-N) clears the bar and its table's header row too, so the row arrives under the column names that say what it holds.{% endcomment %}
+<style>
+  /* A value you can click and type into (cells.py, cell_edit.js) says so: a dotted underline, a pencil and a
+     tinted background on hover or focus, and "add" where it is empty. One rule for every editable value in Supply. */
+  .supply-page [data-edit] { cursor: text; text-decoration: underline dotted #6b7280; text-underline-offset: 3px; border-radius: 2px; }
+  .supply-page [data-edit]:hover, .supply-page [data-edit]:focus-visible { background: #eef2ff; text-decoration-style: solid; text-decoration-color: #4f46e5; }
+  .supply-page [data-edit]:hover::after, .supply-page [data-edit]:focus-visible::after { content: " \270E"; color: #4f46e5; font-size: 0.8em; text-decoration: none; display: inline-block; }
+  .supply-page [data-edit]:empty::before { content: "add"; color: #6b7280; }
+</style>
 <style>.supply-page, .supply-page * { scroll-margin-top: 5rem; } .supply-page tr[id] { scroll-margin-top: 7.5rem; }</style>
 {% comment %}Below sm a table marked `phone-cards` stops scrolling sideways (where the column a reader came
 for fell off the screen) and becomes one card per row: the `phone-title` cell first, then the

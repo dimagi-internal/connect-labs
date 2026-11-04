@@ -36,7 +36,7 @@ def _text(fragment):
 
 def test_ours_say_what_closing_them_takes():
     assert moves.facts_chip(["duty exemption"], moves.US) == "duty exemption · ours to attach"
-    assert moves.facts_chip(["tender duty terms"], moves.US) == "duty terms · ours to settle"
+    assert moves.facts_chip(["tender duty terms"], moves.US) == "duty terms · ours to choose"
     assert moves.facts_chip(["exchange rate"], moves.US) == "exchange rate · ours to fill"
     assert moves.facts_chip(["freight estimate", "clearing estimate"], moves.US) == "2 facts · ours to fill"
     # Facts of different kinds are a figure to fill, never one of them.

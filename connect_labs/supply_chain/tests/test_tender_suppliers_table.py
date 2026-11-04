@@ -65,7 +65,7 @@ class TestOneSuppliersTable:
         assert body.count('data-testid="supplier-table"') == 1
         # The day a supplier replied is a column of its own again, edited in place (2026-10-05).
         assert re.search(r'<th scope="col"[^>]*>Replied</th>', body)
-        assert "+ Record a quote request" in body
+        assert "+ Ask for a quote" in body
         rows = _rows(body)
         assert len(rows) == 2
         for supplier_id, row in rows.items():

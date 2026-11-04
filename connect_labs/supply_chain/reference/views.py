@@ -419,7 +419,7 @@ class SupplierMarketInviteView(OperationFormView):
 
     operation = "supplier_market_invite"
     form_class = SupplierMarketInviteForm
-    title = "Invite to the supplier marketplace"
+    title = "Give marketplace access"
     intro = (
         "A one-time link, valid for 30 days, for someone at this supplier. They sign in to labs with "
         "their own Connect account, open it, and can then keep the company's profile and what it offers "

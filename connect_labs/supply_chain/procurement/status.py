@@ -1153,7 +1153,7 @@ def _duty_cell(tender, quote, gaps, src) -> dict:
 
     terms = tender.duty_terms or ""
     if _ROUND_DUTY in gaps:
-        return {"v": "our terms: not settled", "gap": True, "src": "", "owner": rules.US, "label": _ROUND_DUTY}
+        return {"v": "our terms: not chosen yet", "gap": True, "src": "", "owner": rules.US, "label": _ROUND_DUTY}
     if not buyer_imports(quote):
         if quote.duties_basis == "included" or (quote.incoterm or "").upper().startswith("DDP"):
             return {"v": "in price (supplier)", "gap": False, "src": src}
