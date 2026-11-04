@@ -2115,3 +2115,9 @@ SUPPLIER_STATUS_NOTES = {
 @register.filter
 def supplier_status_note(status):
     return SUPPLIER_STATUS_NOTES.get(status or "identified", "")
+
+
+@register.filter
+def first_next_step(steps):
+    """The purchase-guide step marked next, or None when every step is done."""
+    return next((s for s in steps or [] if s.get("next")), None)
