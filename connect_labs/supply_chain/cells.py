@@ -106,6 +106,7 @@ KINDS: dict[str, Kind] = {
         {
             "label": Cell("name"),
             "response_deadline": Cell("deadline", DATE, clearable=True),
+            "needed_by": Cell("needed by", DATE, clearable=True),
             # Each of these has its own operation, so it is attributed the way its form is.
             "duty_terms": Cell("import duty", CHOICE, tuple(records.DUTY_TERMS_LABELS.items())),
             "clearing_estimate_per_unit": Cell("clearing estimate (USD per unit)", MONEY, clearable=True),
@@ -121,6 +122,11 @@ KINDS: dict[str, Kind] = {
             "unit_price": Cell("unit price", MONEY),
             "currency": Cell("currency"),
             "status": Cell("status", CHOICE, _pairs(records.CONTRACT_STATUSES)),
+            "buying_model": Cell(
+                "how it is bought",
+                CHOICE,
+                _pairs(records.BUYING_MODELS, {"programme_buys": "we buy", "partner_buys": "partner buys"}),
+            ),
             "signed_on": Cell("signed", DATE, clearable=True),
             "promised_lead_time_days": Cell("promised lead time (days)", INT),
         },

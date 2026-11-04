@@ -551,6 +551,11 @@ class Tender(TimestampedModel):
     clearing_estimate_per_unit = models.DecimalField(null=True, blank=True, **MONEY)
     freight_estimate_per_unit = models.DecimalField(null=True, blank=True, **MONEY)
     import_estimates_set_on = models.DateField(null=True, blank=True)
+    # When the goods must be in the partner's hands, and how long suppliers usually need to deliver
+    # when no quote has said yet. With these the tender counts back to the day it must start
+    # (procurement/services/timing.py). Both optional: a tender without them is as it was.
+    needed_by = models.DateField(null=True, blank=True)
+    lead_time_days_expected = models.IntegerField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -889,6 +894,11 @@ class Contract(SourcedModel):
     # then reads as covered, by name, rather than as open for ever.
     covers_shortfall_of = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="shortfall_covered_by"
+    )
+    # How this order is bought (records.BUYING_MODELS): we buy and ship to the partner, or the partner
+    # buys on our quote and invoices us. Blank until somebody says (or the buyer of record implies it).
+    buying_model = models.CharField(
+        max_length=16, blank=True, default="", db_default="", choices=_choices(records.BUYING_MODELS)
     )
 
     class Meta:

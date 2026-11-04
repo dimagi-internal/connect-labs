@@ -34,7 +34,7 @@ from django.db.models import Q
 
 from connect_labs.labs.access.scopes import UNKNOWABLE, Caller, may_use
 from connect_labs.labs.models import LabsOrg
-from connect_labs.supply_chain import scopes
+from connect_labs.supply_chain import records, scopes
 from connect_labs.supply_chain.fulfilment.repository import FulfilmentRepositoryMixin
 from connect_labs.supply_chain.history.context import capture_suspended
 from connect_labs.supply_chain.history.models import OperationCall, Revision
@@ -734,6 +734,11 @@ class SupplyDataAccess(
         buyer = self.get_org(data["buyer_org_id"])
         if buyer is None:
             raise ValueError(f"organisation {data['buyer_org_id']} does not exist")
+        data = {
+            **data,
+            "buying_model": data.get("buying_model")
+            or records.BUYING_MODEL_FOR_BUYER.get(data.get("buyer_of_record"), ""),
+        }
         _refuse_a_price_on_what_is_not_bought(data.get("consideration") or "priced", data.get("unit_price"))
         if data.get("award_id") is not None:
             self._require_approved_award(data["award_id"])

@@ -60,6 +60,8 @@ class TenderForm(ScopedForm):
         fields = [
             "label",
             "response_deadline",
+            "needed_by",
+            "lead_time_days_expected",
             "reminder_interval_days",
             "shelf_life_months_minimum",
             "incoterm_requested",
@@ -79,6 +81,8 @@ class TenderForm(ScopedForm):
             "visibility": forms.Select(attrs=SELECT),
             "label": forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. Tender 1 — RUTF, 500 cartons")}),
             "response_deadline": forms.DateInput(attrs=DATE),
+            "needed_by": forms.DateInput(attrs=DATE),
+            "lead_time_days_expected": forms.NumberInput(attrs={**INPUT, "min": 0}),
             "reminder_interval_days": forms.NumberInput(attrs={**INPUT, "min": 0}),
             "shelf_life_months_minimum": forms.NumberInput(attrs={**INPUT, "min": 0}),
             "incoterm_requested": forms.TextInput(attrs={**INPUT, "placeholder": "DAP", "maxlength": 16}),
@@ -91,6 +95,8 @@ class TenderForm(ScopedForm):
         labels = {
             "label": _("What to call this tender"),
             "response_deadline": _("Replies wanted by"),
+            "needed_by": _("Needed by (in the partner's hands)"),
+            "lead_time_days_expected": _("How long suppliers usually need to deliver (days)"),
             "reminder_interval_days": _("Chase every (days)"),
             "shelf_life_months_minimum": _("Minimum shelf life (months)"),
             "incoterm_requested": _("Terms asked for (Incoterm)"),
@@ -105,6 +111,13 @@ class TenderForm(ScopedForm):
             "duty_estimate_percent": _("Our duty estimate (% of the goods)"),
         }
         help_texts = {
+            "needed_by": _(
+                "The day the goods must be with the partner. The tender counts back from it, through the "
+                "delivery time and the time suppliers get to reply, to the day it must start."
+            ),
+            "lead_time_days_expected": _(
+                "Used until a quote states its own lead time; the longest quoted lead time wins once there is one."
+            ),
             "shelf_life_months_minimum": _("Sea freight and clearance routinely eat four months of it."),
             "reminder_interval_days": _("Leave empty and nobody is chased automatically."),
             "owner_org": _("An organisation publishing this as its own tender. Its people can then run the listing."),
@@ -131,6 +144,7 @@ class TenderForm(ScopedForm):
             Row(
                 Column("response_deadline"), Column("reminder_interval_days"), css_class="grid md:grid-cols-2 gap-x-6"
             ),
+            Row(Column("needed_by"), Column("lead_time_days_expected"), css_class="grid md:grid-cols-2 gap-x-6"),
             Row(
                 Column("shelf_life_months_minimum"),
                 Column("incoterm_requested"),

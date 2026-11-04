@@ -71,6 +71,13 @@ STOCK_TYPES = (MOVEMENT_TYPE, STOCK_COUNT_TYPE, DISTRIBUTION_TYPE)
 # schema that then threw the value away. Gone.
 BUYER_OF_RECORD = ("programme_org", "partner_org", "agency")
 
+# How an order is bought, chosen per partner and per order (Sophie's RUTF feedback, "How buying
+# works for us"). `programme_buys`: we buy and ship to the partner. `partner_buys`: the partner buys
+# on our negotiated quote and invoices us. The Overview reads this key (overview.BUYING_MODEL_LABELS).
+BUYING_MODELS = ("programme_buys", "partner_buys")
+# What an order is bought as when nobody says: follows who the buyer of record is.
+BUYING_MODEL_FOR_BUYER = {"programme_org": "programme_buys", "partner_org": "partner_buys"}
+
 # Who told us. Required on every fulfilment, network and stock record
 # (design doc section 17.3) -- a fact we did not witness is a claim.
 SOURCES = (

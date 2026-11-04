@@ -133,6 +133,25 @@ def supplier(obj) -> dict:
     }
 
 
+def _tender_timing(obj) -> dict:
+    """needed_by, start_by and the note that counts back from them (procurement/services/timing.py)."""
+    from connect_labs.supply_chain.procurement.services.timing import timing
+
+    out = {"needed_by": _date(obj.needed_by), "lead_time_days_expected": obj.lead_time_days_expected}
+    if obj.needed_by is None or not obj.pk:
+        return {**out, "start_by": None, "start_by_note": "", "late_to_start": False}
+    lead_times = list(
+        obj.quotes.filter(voided=False, superseded_by__isnull=True).values_list("lead_time_days", flat=True)
+    )
+    counted = timing(obj, lead_times)
+    return {
+        **out,
+        "start_by": _date(counted["start_by"]),
+        "start_by_note": counted["note"],
+        "late_to_start": counted["late"],
+    }
+
+
 def tender(obj) -> dict:
     return {
         "id": obj.pk,
@@ -164,6 +183,7 @@ def tender(obj) -> dict:
             str(obj.freight_estimate_per_unit) if obj.freight_estimate_per_unit is not None else None
         ),
         "import_estimates_set_on": _date(obj.import_estimates_set_on),
+        **_tender_timing(obj),
     }
 
 
@@ -304,6 +324,7 @@ def contract(obj) -> dict:
         "consideration": obj.consideration,
         "payment_terms": obj.payment_terms,
         "covers_shortfall_of_id": obj.covers_shortfall_of_id,
+        "buying_model": obj.buying_model,
         **_sourced(obj),
     }
 

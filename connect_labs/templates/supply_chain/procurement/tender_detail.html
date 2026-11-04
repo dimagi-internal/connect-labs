@@ -88,6 +88,11 @@ is folded away, each fold with its count.
       {% endif %}
       <span class="flex items-center gap-2"><span class="text-gray-600">Deadline</span>
         <span class="px-1" data-testid="tender-deadline" {% edit_cell "tender" tender.id "response_deadline" tender.response_deadline %}>{% if tender.response_deadline %}<span class="whitespace-nowrap font-medium text-gray-900" title="{{ tender.response_deadline|day }}">{{ tender.response_deadline|day|slice:":-5" }}</span>{% if deadline_passed %} · <span data-testid="deadline-passed" class="text-message-warning-text whitespace-nowrap font-medium">{{ deadline_passed.days }} day{{ deadline_passed.days|pluralize }} past</span>{% endif %}{% else %}<span class="text-gray-600">not set</span>{% endif %}</span></span>
+      {% comment %}Needed by: the day the goods must be with the partner, counted back to the day this tender must start.{% endcomment %}
+      <span class="flex flex-wrap items-center gap-2" data-testid="tender-needed-by"><span class="text-gray-600">Needed by</span>
+        <span class="px-1" {% edit_cell "tender" tender.id "needed_by" tender.needed_by %}>{% if tender.needed_by %}<span class="whitespace-nowrap font-medium text-gray-900">{{ tender.needed_by|day|slice:":-5" }}</span>{% else %}<span class="text-gray-600">not set</span>{% endif %}</span>
+        {% if tender.start_by_note %}<span class="text-xs {% if tender.late_to_start %}text-message-warning-text font-medium{% else %}text-gray-600{% endif %}" data-testid="start-by-note">{{ tender.start_by_note }}</span>{% endif %}
+      </span>
     </section>
 
     <ol class="stage-bar" data-testid="stage-bar" aria-label="Stage">
