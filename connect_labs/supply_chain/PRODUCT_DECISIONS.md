@@ -124,3 +124,8 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
 - **"What to issue" comes through one function** (`distribution/issue_plan.py`), today the forecast's
   coming-week need less what the worker holds. Repoint that function, not the screens, when the plan
   is computed elsewhere.
+- **Confirming through an update link uses the existing link, with no new sign-in.** A link covering a
+  store (or a place on a handout) offers "Confirm what you handed out"; a link covering the place it
+  went to (a facility, or a field worker's own holding on a link sent to their Connect username)
+  offers "Confirm what you received". Each is shown only when there is something to confirm, goes through
+  the same operation as the screens, and is recorded as the link's organisation's word.
