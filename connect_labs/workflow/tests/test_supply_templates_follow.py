@@ -30,3 +30,17 @@ def test_stock_review_reads_how_long_it_lasts_from_the_forecast_and_says_so():
     assert "runs_dry_on" in render
     assert "Days until each FLW runs out, based on the children they're" in render
     assert "at recent pace" in render
+
+
+def test_stock_review_course_tile_uses_the_forecasts_expected_course_and_names_its_basis():
+    """The 'With workers' tile counted courses at the report's own setting (168 -> 52 courses) while the
+    Forecast page's expected course was 40 sachets: one label, two courses."""
+    from connect_labs.workflow.templates import supply_stock_review
+
+    render = supply_stock_review.TEMPLATE["render_code"]
+    assert "src.forecast.rows[0].basis.course" in render
+    assert "forecastCourse.completed_cases" in render
+    assert "expected course of" in render and "protocol course of" in render
+    # The setting is only the last resort, and the tile never divides by it when the forecast has a course.
+    assert render.index("forecastSize > 0") < render.index("Number(cfg.course_size) > 0")
+    assert "totals.on_hand / courseSize" in render and "courseNote" in render

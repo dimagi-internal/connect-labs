@@ -19,7 +19,7 @@ uses, so nothing ships purged.
   <a class="hover:underline" href="{% url 'supply_chain:stock' %}">Stock</a> › movements
 </div>
 <div class="flex items-baseline gap-3 mb-1">
-  <h2 class="text-lg font-semibold text-brand-indigo">
+  <h2 class="text-lg font-semibold text-gray-900">
     {% if point %}What moved in and out of {{ point.name }}{% else %}Every movement{% endif %}
   </h2>
   {% if item %}<span class="text-sm text-gray-600">{{ item.name }}</span>{% endif %}

@@ -22,7 +22,7 @@ checks feed cannot disagree about what is outstanding.
     <a class="hover:underline" href="{% url 'supply_chain:order_detail' contract.id %}">{{ contract.reference|default:"no reference" }}</a> ›
     Shipment {{ shipment.reference|default:shipment.id }}
   </div>
-  <h2 class="text-lg font-semibold text-brand-indigo">
+  <h2 class="text-lg font-semibold text-gray-900">
     Shipment {{ shipment.reference|default:shipment.id }}
     <span class="text-sm font-normal text-gray-600">from
       <a href="{% url 'supply_chain:supplier_detail' supplier.id %}" class="text-brand-indigo hover:underline">{{ supplier.name }}</a>

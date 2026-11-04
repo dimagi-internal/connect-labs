@@ -11,19 +11,24 @@
 
 {% include "supply_chain/_purchase_guide.html" %}
 <div class="flex flex-wrap items-start justify-between gap-4">
-  <h2 class="text-lg font-semibold text-brand-indigo mb-1">Orders</h2>
+  <h2 class="text-lg font-semibold text-gray-900 mb-1">Orders</h2>
   {% if not supply_as_of %}{# a past day is read-only #}
   <a href="{% url 'supply_chain:contract_create' %}" class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
     <i class="fa-solid fa-plus mr-1"></i> New order
   </a>
   {% endif %}
 </div>
-<p data-testid="orders-intro" class="mb-4 max-w-3xl text-sm text-gray-700">
-  Choosing a supplier and placing the order are separate steps, because the organisation that chooses
-  isn't always the one that buys. For example, you pick the supplier and a local partner places and pays
-  for the order. Each order records who bought it, because import duty and tax fall on whoever brings
-  the goods in.
-</p>
+<div data-testid="orders-intro" class="mb-4 max-w-3xl text-sm text-gray-700">
+  <p>Choosing a supplier and placing the order are separate steps.</p>
+  <details class="text-gray-600">
+    <summary class="cursor-pointer">Why they are separate</summary>
+    <p class="mt-1">
+      The organisation that chooses isn't always the one that buys. For example, you pick the supplier and a local
+      partner places and pays for the order. Each order records who bought it, because import duty and tax fall on
+      whoever brings the goods in.
+    </p>
+  </details>
+</div>
 
 {% comment %}
 One order to a row, one value to a cell. The order's own facts -- its reference, quantity,

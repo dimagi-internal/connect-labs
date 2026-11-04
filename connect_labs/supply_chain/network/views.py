@@ -24,6 +24,7 @@ from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.form_views import OperationFormView
 from connect_labs.supply_chain.models import SupplyPoint
 from connect_labs.supply_chain.network.forms import OrgForm, OrgMergeForm, SupplyPointForm
+from connect_labs.supply_chain.network.org_scope import narrow
 from connect_labs.supply_chain.partners.scope import partner_param, switcher
 from connect_labs.supply_chain.views import OperationBase
 
@@ -239,9 +240,22 @@ class OrganisationDirectoryView(OperationBase):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        orgs = self.op("org_list")
-        context["orgs"] = orgs
-        context["linked"] = sum(1 for o in orgs if o.get("connect_organization_id"))
+        everyone = self.op("org_list")
+        show_all = self.request.GET.get("show") == "all"
+        orgs, total = narrow(
+            everyone,
+            _access(self.request).program_id,
+            show_all=show_all,
+            query=self.request.GET.get("q", ""),
+        )
+        context.update(
+            orgs=orgs,
+            linked=sum(1 for o in orgs if o.get("connect_organization_id")),
+            total_orgs=total,
+            show_all=show_all,
+            query=self.request.GET.get("q", "").strip(),
+            has_program_context=has_program_context(self.request),
+        )
         return context
 
 

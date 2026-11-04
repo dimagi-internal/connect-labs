@@ -10,7 +10,7 @@
 {% else %}
 
 <div class="flex flex-wrap items-start justify-between gap-4">
-  <h2 class="text-lg font-semibold text-brand-indigo mb-1">Distribution</h2>
+  <h2 class="text-lg font-semibold text-gray-900 mb-1">Distribution</h2>
   <div class="flex flex-wrap gap-2">
     <a href="{% url 'supply_chain:distribution_plan' %}"
        class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
@@ -27,12 +27,15 @@
   </div>
 </div>
 {% include "supply_chain/_partner_switcher.html" %}
-<p class="text-xs text-gray-600 mb-4 max-w-3xl">
+<details class="text-xs text-gray-600 mb-4 max-w-3xl">
+  <summary class="cursor-pointer">How a handout is recorded</summary>
+  <p class="mt-1">
   The chain, in order: stock reaches a store or facility (<a href="#deliveries" class="underline">deliveries</a>),
   then goes out to field workers in a weekly handout. A handout is planned first, then confirmed with what was
   actually given (from a WhatsApp message, a photo of the paper list, or one button), and the person who received
   it can confirm too, so each handover is recorded from both sides. Only confirmed amounts move stock.
-</p>
+  </p>
+</details>
 
 <h3 id="waiting" class="text-sm font-semibold text-gray-900 mt-5 mb-2">Handouts waiting to be confirmed</h3>
 {% for run in waiting %}
