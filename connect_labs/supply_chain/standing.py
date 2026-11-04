@@ -457,6 +457,7 @@ def _order_rows(program_id, today, until, own_org_id, *, only=None, keep_done=Fa
     for invoice_id, contract_id, status, amount in (
         Invoice.objects.filter(contract_id__in=ids)
         .exclude(status="rejected")
+        .exclude(direction="from_partner")
         .values_list("pk", "contract_id", "status", "amount")
     ):
         invoiced.add(contract_id)

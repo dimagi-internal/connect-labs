@@ -327,7 +327,7 @@ def invoice_moves(contract, today) -> list[Move]:
     total = next((line for line in above if line.get("field") == "total"), None)
     refs = list(dict.fromkeys(line.get("invoice") for line in above if line.get("invoice")))
     if not refs:
-        invoices = [i for i in contract.invoices.all() if i.status != "rejected"]
+        invoices = [i for i in contract.invoices.all() if i.status != "rejected" and i.direction != "from_partner"]
         refs = [i.reference or str(i.pk) for i in invoices[-1:]]
     detail = (
         f"{currency} {money_digits(total['difference'])} above agreed".strip()

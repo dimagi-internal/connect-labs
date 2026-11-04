@@ -104,7 +104,12 @@ def _advance_state(contract, ordered, billed, paid):
 
 
 def _invoiced(contract):
-    rows = contract.invoices.exclude(status="rejected").values("quantity_unit").annotate(total=Sum("quantity_billed"))
+    rows = (
+        contract.invoices.exclude(status="rejected")
+        .exclude(direction="from_partner")
+        .values("quantity_unit")
+        .annotate(total=Sum("quantity_billed"))
+    )
     return {row["quantity_unit"]: (row["total"] or ZERO) for row in rows if row["quantity_unit"]}
 
 
@@ -140,10 +145,20 @@ def three_way_match(contract) -> dict:
     invoiced = _in_unit(ledger.collapse(_invoiced(contract), contract.item, None), in_order_unit, contract.item)
     unit = in_order_unit
 
-    billed = contract.invoices.exclude(status="rejected").aggregate(total=Sum("amount"))["total"] or ZERO
+    billed = (
+        contract.invoices.exclude(status="rejected")
+        .exclude(direction="from_partner")
+        .aggregate(total=Sum("amount"))["total"]
+        or ZERO
+    )
     # Every payment on the order, matched to an invoice or not: an advance
     # paid on a pro-forma is money paid before any invoice existed.
-    paid = Payment.objects.filter(contract=contract).aggregate(total=Sum("amount"))["total"] or ZERO
+    paid = (
+        Payment.objects.filter(contract=contract)
+        .exclude(invoice__direction="from_partner")
+        .aggregate(total=Sum("amount"))["total"]
+        or ZERO
+    )
 
     shortfall = None
     status = "unknown"

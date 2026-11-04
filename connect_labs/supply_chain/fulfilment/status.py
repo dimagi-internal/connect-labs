@@ -88,7 +88,7 @@ def order_status(
     priced = contract.get("consideration", "priced") == "priced"
     received_any = bool(receipts) or (_amount(match.get("received")) or 0) > 0
     received_full = match.get("status") in RECEIVED_IN_FULL or contract.get("status") in ("received", "closed")
-    live_invoices = [i for i in invoices if i.get("status") != "rejected"]
+    live_invoices = [i for i in invoices if i.get("status") != "rejected" and i.get("direction") != "from_partner"]
     paid_all = bool(live_invoices) and all(i.get("status") == "paid" for i in live_invoices)
     if not priced:
         paid_all = received_full  # nothing is billed on a donated or bundled order

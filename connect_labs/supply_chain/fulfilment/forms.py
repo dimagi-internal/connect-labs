@@ -447,8 +447,10 @@ class InvoiceForm(ProvenancedForm):
     class Meta:
         model = Invoice
         fields = [
+            "direction",
             "reference",
             "issued_on",
+            "received_on",
             "status",
             "currency",
             "amount",
@@ -460,6 +462,8 @@ class InvoiceForm(ProvenancedForm):
         widgets = {
             "unit_price": forms.NumberInput(attrs=MONEY_INPUT),
             "freight_amount": forms.NumberInput(attrs=MONEY_INPUT),
+            "direction": forms.Select(attrs=SELECT),
+            "received_on": forms.DateInput(attrs=DATE),
             "reference": forms.TextInput(attrs={**INPUT, "placeholder": _("their invoice number")}),
             "issued_on": forms.DateInput(attrs=DATE),
             "status": forms.Select(attrs=SELECT),
@@ -469,6 +473,8 @@ class InvoiceForm(ProvenancedForm):
             "quantity_unit": forms.TextInput(attrs={**INPUT, "placeholder": _("e.g. carton")}),
         }
         labels = {
+            "direction": _("Who is billing"),
+            "received_on": _("Reached us on"),
             "reference": _("Invoice number"),
             "issued_on": _("Issued on"),
             "status": _("Status"),
@@ -519,8 +525,18 @@ class InvoiceForm(ProvenancedForm):
             "status",
             [(value, str(value).replace("_", " ").capitalize()) for value in records.INVOICE_STATUSES],
         )
+        set_choices(
+            self,
+            "direction",
+            [
+                ("from_supplier", _("The supplier, billing the buyer")),
+                ("from_partner", _("The partner, billing us to be reimbursed")),
+            ],
+            required=False,
+        )
         currency_select(self, "currency")
         self.helper.layout = Layout(
+            Row(Column("direction"), Column("received_on"), css_class="grid md:grid-cols-2 gap-x-6"),
             Row(Column("reference"), Column("issued_on"), Column("status"), css_class="grid md:grid-cols-3 gap-x-6"),
             Row(Column("amount"), Column("currency"), css_class="grid md:grid-cols-2 gap-x-6"),
             Row(Column("quantity_billed"), Column("quantity_unit"), css_class="grid md:grid-cols-2 gap-x-6"),

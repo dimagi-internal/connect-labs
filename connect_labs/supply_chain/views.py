@@ -970,7 +970,11 @@ class OrderDetailView(OperationBase):
         # arrived and never where.
         points = self.op("supply_point_list")
         context["supply_points"] = {p["id"]: p["name"] for p in points}
-        context["invoices"] = self.op("invoice_list", contract_id=contract_id)
+        every_invoice = self.op("invoice_list", contract_id=contract_id)
+        # The supplier's bills, matched against what was ordered and received; and -- when the partner
+        # bought on our quote -- the partner's invoice to us, which is a reimbursement, not a bill.
+        context["invoices"] = [i for i in every_invoice if i.get("direction") != "from_partner"]
+        context["partner_invoices"] = [i for i in every_invoice if i.get("direction") == "from_partner"]
         # The order's evidence includes what was filed against its consignments:
         # four import documents on file read "Nothing attached" here (the
         # dispenser import), because they hang off the shipment.
