@@ -742,8 +742,8 @@ class SupplierForm(ScopedForm):
             "status",
             [
                 ("identified", _("Identified — we know they exist")),
-                ("contacted", _("Contacted")),
-                ("responsive", _("Responsive")),
+                ("contacted", _("Contacted — we have written to them")),
+                ("responsive", _("Responsive — replied, no quote yet")),
                 ("quoting", _("Quoting")),
                 ("awarded", _("Awarded")),
                 ("declined", _("Declined")),

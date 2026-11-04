@@ -64,7 +64,7 @@ is folded away, each fold with its count.
         {% if tender.duty_terms == "buyer_waiver" %}<span data-testid="waiver-evidence" class="whitespace-nowrap text-xs text-gray-600">{{ "duty_exemption"|document_kind|capfirst }} {% if waiver_on_file %}on file{% else %}<span class="text-message-warning-text font-medium">not on file</span>{% endif %}</span>{% if not waiver_on_file and not supply_as_of %} <span class="text-xs text-gray-600">·</span> <a class="text-xs text-brand-indigo font-semibold hover:underline" data-testid="duty-exemption-attach" href="{% url 'supply_chain:program_document_attach' %}?kind=duty_exemption&next={{ request.path|urlencode }}">Attach</a>{% endif %}{% endif %}
         {% if not supply_as_of %}
         <details class="relative" data-testid="duty-terms-settle">
-          <summary class="button button-sm outline-style list-none [&::-webkit-details-marker]:hidden" role="button" data-testid="duty-terms-open" aria-label="{% if tender.duty_terms %}Change{% else %}Settle{% endif %} import duty">{% if tender.duty_terms %}Change{% else %}Settle{% endif %}</summary>
+          <summary class="button button-sm outline-style list-none [&::-webkit-details-marker]:hidden" role="button" data-testid="duty-terms-open" aria-label="{% if tender.duty_terms %}Change{% else %}Choose who pays{% endif %} import duty">{% if tender.duty_terms %}Change{% else %}Choose who pays{% endif %}</summary>
           <form method="post" action="{% url 'supply_chain:procurement_tender_duty_terms' tender.id %}" class="border-brand-border-light absolute left-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 shadow-sm">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.path }}#duty-terms">
@@ -130,9 +130,9 @@ is folded away, each fold with its count.
       or, while the tender takes bids, one sent through the supplier marketplace.{% endcomment %}
       {% if invitable_orgs and not tender_is_over %}
       <details data-testid="invite-menu" class="relative text-sm">
-        <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden text-brand-indigo hover:underline">+ Record an invitation</summary>
+        <summary class="cursor-pointer list-none [&::-webkit-details-marker]:hidden text-brand-indigo hover:underline">+ Record a quote request</summary>
         <div class="absolute right-0 z-10 mt-1 w-80 rounded-md border border-gray-200 bg-white p-3 shadow-sm">
-          <a href="{% url 'supply_chain:procurement_outreach_log' tender.id %}" class="block text-brand-indigo hover:underline">Record an invitation you sent</a>
+          <a href="{% url 'supply_chain:procurement_outreach_log' tender.id %}" class="block text-brand-indigo hover:underline">Record a quote request you sent</a>
           <form method="post" action="{% url 'supply_chain:procurement_tender_invite_org' tender.id %}" class="mt-3 flex flex-wrap items-center gap-2">
             {% csrf_token %}
             <label for="invite-org" class="basis-full text-gray-700">Invite a registered supplier on the marketplace</label>
@@ -147,7 +147,7 @@ is folded away, each fold with its count.
         </div>
       </details>
       {% else %}
-      <a href="{% url 'supply_chain:procurement_outreach_log' tender.id %}" class="text-sm text-brand-indigo hover:underline">+ Record an invitation</a>
+      <a href="{% url 'supply_chain:procurement_outreach_log' tender.id %}" class="text-sm text-brand-indigo hover:underline">+ Record a quote request</a>
       {% endif %}
       {% endif %}
     </div>

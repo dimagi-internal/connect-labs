@@ -754,7 +754,12 @@ def comparison_grid(
             for g in our_gaps:
                 if g == _ROUND_DUTY:
                     actions.append(
-                        {"label": "Settle duty terms", "href": "#duty-terms", "owner": rules.US, "terms": True}
+                        {
+                            "label": "Choose who pays import duty",
+                            "href": "#duty-terms",
+                            "owner": rules.US,
+                            "terms": True,
+                        }
                     )
                 elif g in _ESTIMATE_GAPS:
                     actions.append(

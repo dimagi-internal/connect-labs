@@ -37,19 +37,19 @@ of the reader who does not.
 <details class="mb-6 max-w-3xl">
   <summary class="text-sm text-brand-indigo cursor-pointer hover:underline
                   focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-indigo">
-    Why a product, a trade item and a batch are three different things
+    What you buy: products, trade items and batches
   </summary>
   <p class="text-sm text-gray-600 mt-2 leading-relaxed">
-    A <b>product</b> is a specification — "RUTF, 92&nbsp;g sachet, 150 to the
-    carton" — and nobody can ship you one. A <b>trade item</b> is one
-    manufacturer's product against that specification, with its own SKU and
-    GTIN, and is what you actually order. A <b>batch</b> is the lot that
-    arrived, and carries the expiry and the certificate; it appears under
-    <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:stock' %}">Stock</a>.
-    So every supplier's RUTF is the same 92&nbsp;g sachet because the product
-    says so and each trade item is checked against it — while their SKUs stay
-    their own. Conflating any two is how a per&#8209;sachet figure silently
-    goes wrong.
+    <b>Product:</b> what you need and how it is used ("RUTF, 92&nbsp;g sachet,
+    2 a day"). <b>Trade item:</b> a specific manufacturer's version of it, with
+    their carton size, shelf life and barcode. Add one for each product you
+    actually buy &mdash; when you place an order, once per manufacturer's
+    product, not once per quote. <b>Batch:</b> one delivery of a trade item,
+    with its expiry and certificate. You don't add batches here; they are
+    recorded when stock is received or sent on (see
+    <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:stock' %}">Stock</a>).
+    Every supplier's RUTF is held to the same product, so a per&#8209;sachet
+    figure stays comparable.
   </p>
 </details>
 
