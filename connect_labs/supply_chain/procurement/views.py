@@ -67,6 +67,7 @@ from connect_labs.supply_chain.procurement.forms import (
 )
 from connect_labs.supply_chain.procurement.operations import DEFAULT_REMINDER_INTERVAL_DAYS
 from connect_labs.supply_chain.procurement.services.comparison import RANKING_RULE
+from connect_labs.supply_chain.reference import qualifications
 from connect_labs.supply_chain.values import day_text, possessive, quantity_phrase, unit_noun
 from connect_labs.supply_chain.views import mark_changed, owed_context
 
@@ -460,7 +461,16 @@ class TenderDetailView(_Base):
             dict.fromkeys(context["supplier_names"].get(o.get("supplier_id"), "Supplier") for o in outreach)
         )
         context["tender_is_over"] = tender.get("status") in ("closed", "awarded")
-        context["commodity_names"] = _commodity_names(self.op("commodity_list"))
+        commodities = self.op("commodity_list")
+        context["commodity_names"] = _commodity_names(commodities)
+        # Who lacks the usual qualifications for what this tender buys, among
+        # those already asked or quoting -- said before asking for a quote or awarding.
+        context["qualification_gaps"] = qualifications.gaps_among(
+            lambda: self.op("supplier_list"),
+            asked | quoted,
+            commodities,
+            [ln.get("commodity_slug") for ln in tender.get("lines") or []],
+        )
         # What the tender buys, a line at a time, with a kit's contents when
         # the tender states them -- the fact its comparison ranks against.
         context["buys"] = [
@@ -1023,6 +1033,18 @@ class ComparisonView(_Base):
                     items[item_id] = self.op("item_get", item_id=item_id)
                 context["set_aside"].append({"quote": quote, "item": items.get(item_id)})
         context["comparison"] = comparison
+        # Who among those quoting lacks the usual qualifications for this product: said
+        # on the page that awards, not found afterwards.
+        context["qualification_gaps"] = (
+            qualifications.gaps_among(
+                lambda: self.op("supplier_list"),
+                {row.get("supplier_id") for row in comparison.get("all_rows") or []},
+                commodities,
+                [commodity],
+            )
+            if comparison
+            else []
+        )
         # Which offers an AI entered, so each carries the same indigo AI pill as
         # the timeline and the overview -- the reader checks those first.
         context["ai_quotes"] = (

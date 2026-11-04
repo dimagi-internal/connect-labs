@@ -1,0 +1,14 @@
+{% comment %}
+Who lacks the qualifications a buyer usually checks for this product (UNICEF approval,
+national registration, a certificate per batch). Said before asking for a quote or awarding,
+not found afterwards. Shown, never used to rank or hide: it is a question to ask the supplier.
+{% endcomment %}
+{% if qualification_gaps %}
+<div class="border-message-warning-border/50 bg-message-warning text-message-warning-text rounded-lg border px-3.5 py-2.5 text-sm" data-testid="qualification-gaps">
+  <strong>Qualifications to check before {{ gap_moment|default:"you ask or award" }}:</strong>
+  {% for gap in qualification_gaps %}
+    <a class="underline" href="{% url 'supply_chain:supplier_detail' gap.supplier_id %}">{{ gap.name }}</a> has no record of {{ gap.lacks|join:", " }}{% if not forloop.last %};{% else %}.{% endif %}
+  {% endfor %}
+  Open the supplier to record what they hold.
+</div>
+{% endif %}
