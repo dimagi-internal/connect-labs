@@ -18,16 +18,12 @@
   </a>
   {% endif %}
 </div>
-{% comment %}Behind a disclosure, so the table sits directly under its heading.{% endcomment %}
-<details class="text-xs text-gray-600 mb-4">
-  <summary class="cursor-pointer text-brand-indigo">About orders</summary>
-  <p class="mt-1">
-    An award is a decision; a contract is a commitment. They are separate because
-    the organisation that decides is often not the one that buys — and because import
-    duty and VAT fall on whoever imports, the buyer of record changes the landed
-    cost rather than just the paperwork.
-  </p>
-</details>
+<p data-testid="orders-intro" class="mb-4 max-w-3xl text-sm text-gray-700">
+  Choosing a supplier and placing the order are separate steps, because the organisation that chooses
+  isn't always the one that buys. For example, you pick the supplier and a local partner places and pays
+  for the order. Each order records who bought it, because import duty and tax fall on whoever brings
+  the goods in.
+</p>
 
 {% comment %}
 One order to a row, one value to a cell. The order's own facts -- its reference, quantity,
