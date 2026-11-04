@@ -172,7 +172,13 @@ def test_committed_follows_the_profile_and_stops_at_the_course(world):
     # child-a has 112 left, child-d 136, both at 15 a week: child-a's runs out in week 8. child-d had
     # 14 of this week's 15 on 25 Sep, so the first week owes it 1.
     assert committed == [Decimal(16)] + [Decimal(30)] * 6 + [Decimal(22)]
-    assert out["basis"]["course"] == {"size": "150", "basis": "default", "completed_cases": 1}
+    assert out["basis"]["course"] == {
+        "size": "150",
+        "basis": "default",
+        "completed_cases": 1,
+        "protocol_size": None,
+        "setting": "expected",
+    }
     assert {p["basis"] for p in out["basis"]["profile"]} == {"default"}
 
 
@@ -418,20 +424,67 @@ def test_what_children_are_given_is_measured_over_the_days_between_their_visits(
     assert forecast.delivered_ration(cases[:4], Decimal(2)) is None
 
 
-def test_the_course_follows_the_protocol_over_what_completed_cases_measured(world):
-    commodity = world["item"].commodity
-    commodity.course_definition = {"base_units_per_course": 168, "base_units_per_day": 2}
-    commodity.save()
-    cases = [
+def _exited(world, received_each):
+    return [
         forecast.Case(
             key=(1, f"child-{n}"), opportunity_id=world["rule"].opportunity_id, supply_point_id=1,
             enrolled_on=TODAY, enrol_point_id=1, carry_over=False, last_seen=TODAY, outcome="recovered",
             received=Decimal(received), status="exited",
         )  # fmt: skip
-        for n, received in enumerate((100, 120, 140, 150, 160))
+        for n, received in enumerate(received_each)
     ]
 
-    assert forecast.course_size(cases, [world["rule"]], world["item"], COURSE)["basis"] == "protocol"
+
+def test_the_expected_course_leads_once_enough_children_finished_with_the_protocol_as_its_limit(world):
+    """The 2026-11 revisit of "the protocol leads" (#2386): 168 for everyone overstates need."""
+    commodity = world["item"].commodity
+    commodity.course_definition = {"base_units_per_course": 168, "base_units_per_day": 2}
+    commodity.save()
+
+    out = forecast.course_size(_exited(world, (100, 120, 140, 150, 160)), [world["rule"]], world["item"], COURSE)
+    assert (out["basis"], out["size"], out["completed_cases"], out["protocol_size"]) == ("measured", 140, 5, "168")
+
+    # Never above the protocol's size, however long the children took.
+    out = forecast.course_size(_exited(world, (200, 210, 220, 230, 240)), [world["rule"]], world["item"], COURSE)
+    assert (out["basis"], out["size"]) == ("measured", Decimal(168))
+
+    # Fewer than K_MIN finished: the protocol's size, until there is enough to go on.
+    out = forecast.course_size(_exited(world, (100, 120, 140)), [world["rule"]], world["item"], COURSE)
+    assert (out["basis"], out["size"], out["completed_cases"]) == ("protocol", Decimal(168), 3)
+
+
+def test_a_programme_can_hold_the_course_at_the_protocol(world):
+    commodity = world["item"].commodity
+    commodity.course_definition = {"base_units_per_course": 168, "base_units_per_day": 2}
+    commodity.save()
+    world["rule"].cases = {**world["rule"].cases, "course_basis": "protocol"}
+
+    out = forecast.course_size(_exited(world, (100, 120, 140, 150, 160)), [world["rule"]], world["item"], COURSE)
+
+    assert (out["basis"], out["size"], out["setting"]) == ("protocol", Decimal(168), "protocol")
+
+
+def test_the_plan_can_use_what_children_are_actually_given_instead_of_the_protocol_ration(world):
+    commodity = world["item"].commodity
+    commodity.course_definition = {"base_units_per_course": 120, "base_units_per_day": 2}
+    commodity.save()
+    world["rule"].cases = {**world["rule"].cases, "dose_basis": "delivered"}
+    world["rule"].save()
+
+    out = _run(world)
+
+    assert out["basis"]["dose_setting"] == "delivered"
+    assert out["basis"]["children_enrolled_before_visits"] is not None
+
+
+def test_a_ration_taken_from_the_visits_lays_the_plan_at_what_children_are_given():
+    anchor = date(2026, 9, 28)
+    cases = [_visited(n, 8, 13, anchor=anchor) for n in range(5)]
+    per_day = Decimal(forecast.delivered_ration(cases, Decimal(2))["per_day"])
+
+    profile = forecast.delivery_profile(cases, anchor, Decimal(168), per_day, forecast.DELIVERED)
+
+    assert (profile.week(0), profile.basis(0)) == (Decimal("1.6") * 7, "delivered")
 
 
 def test_what_is_owed_says_how_much_of_it_the_horizon_lays_out(world):
@@ -457,6 +510,8 @@ def test_the_course_is_measured_from_completed_cases_once_there_are_enough(world
         "size": Decimal(140),
         "basis": "measured",
         "completed_cases": 5,
+        "protocol_size": None,
+        "setting": "expected",
     }
 
 
@@ -469,3 +524,35 @@ def test_a_protocol_on_the_commodity_sets_the_course_and_the_weekly_profile(worl
 
     assert (out["basis"]["course"]["size"], out["basis"]["course"]["basis"]) == ("120", "protocol")
     assert (out["basis"]["profile"][3]["sachets"], out["basis"]["profile"][3]["basis"]) == ("14", "protocol")
+
+
+def test_the_programmes_course_and_dose_choices_are_kept_and_checked():
+    from connect_labs.supply_chain.stock.services.dispensing import validate_cases
+
+    base = {
+        "enrol": {"forms": [], "path": "form.enrol", "equals": "yes"},
+        "outcome": {"path": "form.outcome", "open": ["on"], "exit": ["done"], "complete": ["done"]},
+    }
+
+    kept = validate_cases({**base, "course_basis": "protocol", "dose_basis": "delivered"})
+    assert (kept["course_basis"], kept["dose_basis"]) == ("protocol", "delivered")
+    assert "course_basis" not in validate_cases(base)
+    with pytest.raises(ValueError, match="course_basis"):
+        validate_cases({**base, "course_basis": "whatever"})
+
+
+def test_the_forecast_page_says_which_course_it_uses_and_who_it_is_for():
+    from pathlib import Path
+
+    js = (
+        Path(forecast.__file__).parents[3] / "workflow" / "templates" / "supply_stock_forecast_render.js"
+    ).read_text()
+    for words in (
+        "expected course",
+        "children who finished",
+        "protocol limit",
+        "enrolment came before the visit data begins",
+        "not the definition of default",
+        "Who this is for",
+    ):
+        assert words in js

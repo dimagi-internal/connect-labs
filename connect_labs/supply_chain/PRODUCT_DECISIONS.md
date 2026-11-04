@@ -63,6 +63,20 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   against the band, in days. Before 7 days, say when the estimate will arrive and
   give the rate so far, never a bare "unknown".
 
+- **The forecast's course is the EXPECTED course once enough children have finished;
+  the protocol is its upper limit and the early fallback** (2026-11-04, Jonathan
+  Jackson, on Sophie Feintuch's RUTF feedback; revisits "the protocol leads",
+  #2386). The protocol's 168 sachets is the most a child can have (12 visits); using
+  it for everyone overstates need once dozens of children have exited. From
+  `forecast.K_MIN` children who completed, the course is their median, never above
+  the protocol. Every forecast says which it used and how many children it rests on.
+  The programme can hold it at the protocol (`course_basis: protocol` on the case
+  rule). The daily ration likewise defaults to the protocol's, and the programme may
+  lay the plan at what visits show children are given (`dose_basis: delivered`);
+  that actual rate is always shown beside it. "Not seen for N days = out of
+  treatment" is the forecast's own rule (`lost_after_days`), programme-settable, and
+  is not the definition of default.
+
 ## Synthetic clones
 
 - **A clone started over MCP must equal one made with the page's default button**

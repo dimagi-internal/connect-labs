@@ -21,14 +21,17 @@ Where each input comes from:
 - **Received** is the standing consumption the visit reader posted for each of
   the child's visits: a rejected visit's sachets were put back, so they are
   not received.
-- **Course size**, in order: the commodity's protocol
-  (`course_definition.base_units_per_course`), measured (the median received by
-  cases that completed, once there are `K_MIN` of them), the caller's
-  `course_size`. Each answer says which it is; with none, nothing is committed
-  or projected.
+- **Course size**, in order: expected (the median received by cases that
+  completed, once there are `K_MIN` of them, never above the protocol's size),
+  the commodity's protocol (`course_definition.base_units_per_course`; also the
+  choice when the case rule says `course_basis: protocol`), the caller's
+  `course_size`. Each answer says which it is and how many children it rests on;
+  with none, nothing is committed or projected.
 - **Delivery profile**: the protocol's daily figure, every week, when the
   commodity states one (owner's call 2026-10-12, #2386: the forecast is what
-  children are meant to receive). Otherwise measured from cases in treatment
+  children are meant to receive) -- or, when the case rule says
+  `dose_basis: delivered` and enough children have been seen twice, the rate
+  they are actually given. Otherwise measured from cases in treatment
   for all of week k when `K_MIN` of them were, else the last week measured,
   else a tenth of the course a week. A course is laid along it, never past
   its size.
@@ -81,6 +84,7 @@ MAX_HORIZON_WEEKS = 26
 DEFAULT_HORIZON_WEEKS = 8
 
 MEASURED, PROTOCOL, DEFAULT, STEADY, UNKNOWN = "measured", "protocol", "default", "steady", "unknown"
+DELIVERED = "delivered"
 
 
 @dataclass
@@ -230,11 +234,15 @@ def read_cases(program_id, item, rules, anchor, unit) -> list[Case]:
 
 
 def course_size(cases, rules, item, fallback) -> dict:
-    """{size, basis, completed_cases}: protocol, else measured, else the caller's, else unknown.
+    """{size, basis, completed_cases, protocol_size, setting}: how long a child's course is expected to be.
 
-    The protocol leads (owner's call, #2386): the forecast is what a child in
-    treatment is meant to receive. What the visits show children actually
-    receive is reported beside it (`delivered_ration`), never folded into it.
+    The expected length leads once `K_MIN` children have finished a course:
+    the median received by those who completed, never above the protocol's size
+    (the upper limit). Until then, and whenever the programme sets
+    `course_basis: protocol` on its case rule, the protocol's size; with
+    neither, the caller's, else unknown. `completed_cases` is how many children
+    the expected length rests on (revisits the 2026-10 "protocol leads" call, #2386:
+    168 sachets for everyone overstated need once dozens had exited).
     """
     complete = {rule.opportunity_id: set(rule.cases["outcome"].get("complete") or []) for rule in rules}
     finished = [
@@ -243,13 +251,25 @@ def course_size(cases, rules, item, fallback) -> dict:
         if not c.carry_over and c.status == "exited" and c.outcome in complete.get(c.opportunity_id, ())
     ]
     protocol = (item.commodity.course_definition or {}).get("base_units_per_course") if item.commodity_id else None
+    protocol = Decimal(str(protocol)) if protocol else None
+    setting = _setting(rules, "course_basis", "expected")
+    known = {"protocol_size": _wire(protocol), "setting": setting, "completed_cases": len(finished)}
+    if len(finished) >= K_MIN and (setting == "expected" or not protocol):
+        expected = Decimal(median(finished))
+        return {"size": min(expected, protocol) if protocol else expected, "basis": MEASURED, **known}
     if protocol:
-        return {"size": Decimal(str(protocol)), "basis": PROTOCOL, "completed_cases": len(finished)}
-    if len(finished) >= K_MIN:
-        return {"size": Decimal(median(finished)), "basis": MEASURED, "completed_cases": len(finished)}
+        return {"size": protocol, "basis": PROTOCOL, **known}
     if fallback:
-        return {"size": Decimal(str(fallback)), "basis": DEFAULT, "completed_cases": len(finished)}
-    return {"size": None, "basis": UNKNOWN, "completed_cases": len(finished)}
+        return {"size": Decimal(str(fallback)), "basis": DEFAULT, **known}
+    return {"size": None, "basis": UNKNOWN, **known}
+
+
+def _setting(rules, key, default):
+    """The programme's choice on its case rules: the first rule that states one, else the default."""
+    for rule in rules:
+        if (rule.cases or {}).get(key):
+            return rule.cases[key]
+    return default
 
 
 @dataclass
@@ -269,7 +289,7 @@ class Profile:
         return MEASURED if k in self.measured else self.fallback_basis
 
 
-def delivery_profile(cases, anchor, course, per_day_protocol) -> Profile:
+def delivery_profile(cases, anchor, course, per_day_protocol, ration_basis=PROTOCOL) -> Profile:
     """The ration a child is laid along: the protocol's, every week, when the commodity states one.
 
     Otherwise measured week by week from cases seen in treatment for the whole
@@ -280,7 +300,7 @@ def delivery_profile(cases, anchor, course, per_day_protocol) -> Profile:
     actually given is `delivered_ration`, said beside the forecast.
     """
     if per_day_protocol:
-        return Profile({}, Decimal(str(per_day_protocol)) * 7, PROTOCOL)
+        return Profile({}, Decimal(str(per_day_protocol)) * 7, ration_basis)
     sums: dict[int, Decimal] = {}
     counts: dict[int, int] = {}
     for case in cases:
@@ -473,7 +493,16 @@ def forecast(
     course = course_size(cases, rules, item, course_size_fallback)
     size = course["size"]
     per_day = (item.commodity.course_definition or {}).get("base_units_per_day") if item.commodity_id else None
-    profile = delivery_profile(cases, anchor, size, per_day)
+    delivered = delivered_ration(cases, per_day)
+    # The programme may lay the plan at what children are actually given instead of the protocol's ration.
+    use_delivered = _setting(rules, "dose_basis", "protocol") == "delivered" and delivered is not None
+    profile = delivery_profile(
+        cases,
+        anchor,
+        size,
+        Decimal(delivered["per_day"]) if use_delivered else per_day,
+        DELIVERED if use_delivered else PROTOCOL,
+    )
     weeks = [
         {
             "start": (anchor + timedelta(days=7 * i + 1)).isoformat(),
@@ -622,7 +651,9 @@ def forecast(
                 for k in range(horizon_weeks)
             ],
             # Beside the protocol, never in it: what the visits show children are given (#2386).
-            "delivered": delivered_ration(cases, per_day),
+            "delivered": delivered,
+            "dose_setting": _setting(rules, "dose_basis", "protocol"),
+            "children_enrolled_before_visits": sum(1 for c in cases if c.carry_over),
             "enrolment_weeks": ENROL_WEEKS,
             "lost_after_days": sorted({rule.cases["lost_after_days"] for rule in rules}),
             "scenario": _wire(scenario),
