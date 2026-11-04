@@ -124,3 +124,17 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
 - **"What to issue" comes through one function** (`distribution/issue_plan.py`), today the forecast's
   coming-week need less what the worker holds. Repoint that function, not the screens, when the plan
   is computed elsewhere.
+
+## Per partner first, alerts, and looking ahead (Sophie's RUTF feedback, 2026-11)
+
+- **Network, Stock, Workers, Issues and Alerts are per partner first, with a programme roll-up**: the same
+  page filtered by `?partner=<org id>` (`partners/scope.py`), no new access model. A place belongs to the
+  partner that runs it, else the nearest one above it.
+- **A partner's alert hears about its own places only** (`AlertSubscription.partner_org`); a check that
+  touches none of its places is not sent to it. An alert with no partner is the summary across partners.
+- **A channel that is not connected says so.** Email is shipped; WhatsApp is a declared channel with no
+  provider behind it (needs a decision), and its notices are logged `no_channel`, never dropped or claimed sent.
+- **Planning alerts run the forecast, so a caller must ask for them by kind** (`delivery_after_stockout`,
+  `tender_start_by`); the default list of checks does not pay for them.
+- **A delivery to a shared facility is a suggestion, sized from the forecast** (a few days of what its field
+  workers use, 7 to begin with, less what it holds), never recorded as an order.
