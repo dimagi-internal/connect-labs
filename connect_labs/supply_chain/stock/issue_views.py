@@ -7,11 +7,15 @@ form whose places are only its own. Without the filter it is the roll-up across
 every partner.
 """
 
+import base64
+
 from django.http import Http404
+from django.shortcuts import redirect
 from django.urls import reverse
 
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.form_views import OperationFormView
+from connect_labs.supply_chain.fulfilment.forms import DocumentForm
 from connect_labs.supply_chain.stock.issue_forms import (
     CustodianForm,
     StockIssueFollowUpForm,
@@ -28,6 +32,19 @@ _NOT_STORAGE = ("in_transit",)
 def _partner_param(request):
     value = request.GET.get("partner") or ""
     return int(value) if value.isdigit() else None
+
+
+def _evidence_payload(upload, *, issue_id, source) -> dict:
+    """A document_attach payload for a photo or message file kept against one issue."""
+    return {
+        "kind": "photo" if (upload.content_type or "").startswith("image/") else "other",
+        "title": f"Evidence for stock issue {issue_id}",
+        "filename": upload.name,
+        "content_type": upload.content_type or "application/octet-stream",
+        "content_base64": base64.b64encode(upload.read()).decode(),
+        "stock_issue_id": issue_id,
+        "source": source,
+    }
 
 
 def _issues_url(partner_org_id=None):
@@ -58,8 +75,18 @@ class IssuesView(OperationBase):
             listed = [i for i in listed if owner.get(i["supply_point_id"]) == partner]
         custodians = {c["supply_point_id"]: c for c in self.op("custodian_list", current_only=True)}
         by_id = {c["id"]: c for c in self.op("custodian_list")}
+        evidence = {}
+        for document in self.op("document_list"):
+            issue_id = document["links"].get("stock_issue_id")
+            if issue_id is not None:
+                evidence.setdefault(issue_id, []).append(document)
         rows = [
-            {**issue, "point": points.get(issue["supply_point_id"]), "custodian": by_id.get(issue["custodian_id"])}
+            {
+                **issue,
+                "point": points.get(issue["supply_point_id"]),
+                "custodian": by_id.get(issue["custodian_id"]),
+                "documents": evidence.get(issue["id"], []),
+            }
             for issue in listed
         ]
         legacy = [
@@ -105,6 +132,25 @@ class IssueReportView(OperationFormView):
         kwargs["partner_org_id"] = _partner_param(self.request)
         return kwargs
 
+    def form_valid(self, form):
+        self._upload = form.cleaned_data.get("upload")
+        return super().form_valid(form)
+
+    def succeeded(self, result):
+        """Keep a photo or message given with the report as the issue's first evidence.
+
+        The issue is already saved, so a file the store refuses does not undo it: the person lands on the
+        screen that adds evidence, with the reason, rather than losing the report.
+        """
+        upload = getattr(self, "_upload", None)
+        if upload is None:
+            return super().succeeded(result)
+        try:
+            self.op("document_attach", data=_evidence_payload(upload, issue_id=result["id"], source=result["source"]))
+        except ValueError:
+            return redirect(reverse("supply_chain:issue_evidence", args=[result["id"]]))
+        return super().succeeded(result)
+
     def get_initial(self):
         initial = super().get_initial()
         point = self.request.GET.get("supply_point") or ""
@@ -120,6 +166,54 @@ class IssueReportView(OperationFormView):
 
     def redirect_to(self, result):
         return _issues_url(_partner_param(self.request))
+
+
+class IssueEvidenceView(OperationFormView):
+    """A photo, a screenshot of the message, or a link, kept with a stock issue as evidence."""
+
+    operation = "document_attach"
+    form_class = DocumentForm
+    title = "Add evidence to a stock issue"
+    submit_label = "Add it"
+    footnote = "Over 12 MB, store the file elsewhere and give a link."
+
+    def issue(self):
+        from connect_labs.supply_chain.models import StockIssue
+
+        found = (
+            StockIssue.objects.filter(pk=self.kwargs["issue_id"], program_id=_access(self.request).program_id)
+            .select_related("supply_point", "commodity")
+            .first()
+        )
+        if found is None:
+            raise Http404(f"no stock issue {self.kwargs['issue_id']} in this programme")
+        return found
+
+    @property
+    def intro(self):
+        issue = self.issue()
+        return (
+            f"Evidence for the {issue.get_kind_display().lower()} stock at {issue.supply_point.name} on "
+            f"{issue.occurred_on}: a photo, a screenshot of the WhatsApp message, or a link to it."
+        )
+
+    def get_initial(self):
+        initial = super().get_initial()
+        initial["kind"] = "photo"
+        return initial
+
+    def fixed(self, **kwargs):
+        self.issue()
+        return {"data": {"stock_issue_id": int(kwargs["issue_id"])}}
+
+    def breadcrumb(self, **kwargs):
+        return [{"label": "Issues", "href": _issues_url()}, {"label": self.title}]
+
+    def cancel_href(self, **kwargs):
+        return _issues_url()
+
+    def redirect_to(self, result):
+        return _issues_url()
 
 
 class _OnAnIssue(OperationFormView):

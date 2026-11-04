@@ -293,6 +293,8 @@ DOCUMENT_LINKS = (
     # is the same kind of fact as a goods received note, one step further on
     "distribution",
     "stock_count",
+    # a photo or a screenshot of the message that shows stock missing, taken or damaged
+    "stock_issue",
     "supply_point",
     # the organisations and things themselves: a certification, a spec sheet, a
     # photograph of the product

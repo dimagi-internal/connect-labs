@@ -41,6 +41,25 @@ def storage_points(form, partner_org_id=None):
 class StockIssueReportForm(ProvenancedForm):
     """Stock that is missing, taken, damaged or expired."""
 
+    upload = forms.FileField(
+        label=_("A photo or the message"),
+        required=False,
+        widget=forms.ClearableFileInput(
+            attrs={
+                "accept": "image/*,.pdf",
+                "class": (
+                    "block w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded "
+                    "file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 "
+                    "hover:file:bg-blue-100"
+                ),
+            }
+        ),
+        help_text=_(
+            "A photo, or a screenshot of the WhatsApp message, kept with the issue as evidence. "
+            "You can also add more later from the Issues page."
+        ),
+    )
+
     class Meta:
         model = StockIssue
         fields = [
@@ -113,6 +132,7 @@ class StockIssueReportForm(ProvenancedForm):
             Row(Column("quantity"), Column("quantity_unit"), css_class="grid md:grid-cols-2 gap-x-6"),
             Row(Column("reported_by"), css_class="grid md:grid-cols-2 gap-x-6"),
             Field("evidence"),
+            Field("upload"),
             Field("source"),
         )
 
@@ -126,7 +146,7 @@ class StockIssueReportForm(ProvenancedForm):
         return cleaned
 
     def payload(self) -> dict:
-        data = to_payload(self.cleaned_data)
+        data = to_payload({k: v for k, v in self.cleaned_data.items() if k != "upload"})
         commodity = self.cleaned_data.get("commodity")
         if commodity is not None:
             data["commodity_slug"] = commodity.slug

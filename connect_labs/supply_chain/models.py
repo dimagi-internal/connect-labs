@@ -1153,6 +1153,9 @@ class Document(SourcedModel):
     stock_count = models.ForeignKey(
         "supply_chain.StockCount", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
     )
+    stock_issue = models.ForeignKey(
+        "supply_chain.StockIssue", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
+    )
     item = models.ForeignKey(
         "supply_chain.Item", null=True, blank=True, on_delete=models.CASCADE, related_name="documents"
     )
