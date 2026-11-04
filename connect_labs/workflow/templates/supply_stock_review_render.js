@@ -105,18 +105,57 @@ function WorkflowUI({
     // worker), or none given out at all. Each row says which.
     ['not_yet', 'No run-out date yet', 'bg-gray-300'],
   ];
-  function bandOf(r) {
+  // How long it lasts leads with the CASELOAD method: the forecast's run-dry date
+  // for each worker, from the children they are treating (supply_stock_forecast).
+  // A worker the forecast has no children for, or a page with no forecast source,
+  // falls back to the pace of their last days, and the row says so.
+  var forecastRow =
+    (src.forecast && src.forecast.rows && src.forecast.rows[0]) || null;
+  var forecastBy = {};
+  ((forecastRow && forecastRow.workers) || []).forEach(function (w) {
+    forecastBy[w.opportunity_id + ':' + w.supply_point_id] = w;
+  });
+  function daysBetween(fromIso, toIso) {
+    var a = new Date(String(fromIso).slice(0, 10) + 'T00:00:00');
+    var b = new Date(String(toIso).slice(0, 10) + 'T00:00:00');
+    return Math.round((b - a) / 86400000);
+  }
+  var forecastWeeks = (forecastRow && forecastRow.horizon_weeks) || 8;
+  // {days, method, children, beyond}: days null when nothing can be said.
+  function runway(r) {
+    var f = forecastBy[r.opportunity_id + ':' + r.supply_point_id];
+    var onHand = amount(r.on_hand);
+    var base = (forecastRow && forecastRow.anchor) || fromDay;
+    if (f && f.basis === 'cases' && f.stock_known && base) {
+      if (onHand !== null && onHand <= 0)
+        return { days: 0, method: 'children', children: f.open_cases };
+      if (f.runs_dry_on)
+        return {
+          days: Math.max(0, daysBetween(base, f.runs_dry_on)),
+          method: 'children',
+          children: f.open_cases,
+        };
+      return {
+        days: forecastWeeks * 7,
+        method: 'children',
+        children: f.open_cases,
+        beyond: true,
+      };
+    }
+    return { days: amount(r.days_to_stockout), method: 'pace' };
+  }
+  function bandOf(r, days) {
     var onHand = amount(r.on_hand);
     if (onHand !== null && onHand <= 0) return 'out';
-    var d = amount(r.days_to_stockout);
-    if (d === null) return 'not_yet';
-    if (d < 7) return 'under_week';
-    if (d < 21) return 'one_to_three_weeks';
-    if (d < 42) return 'three_to_six_weeks';
+    if (days === null) return 'not_yet';
+    if (days < 7) return 'under_week';
+    if (days < 21) return 'one_to_three_weeks';
+    if (days < 42) return 'three_to_six_weeks';
     return 'over_six_weeks';
   }
   var rows = stock.rows.map(function (r) {
     var amc = amount(r.amc);
+    var run = runway(r);
     return {
       raw: r,
       key: r.opportunity_id + ':' + r.supply_point_id,
@@ -134,9 +173,19 @@ function WorkflowUI({
       perDay: amc !== null ? amc / 30 : amount(r.rate_per_day_so_far),
       rateDays: r.rate_days,
       rateWindow: r.rate_window_days,
-      days: amount(r.days_to_stockout),
-      band: bandOf(r),
+      days: run.days,
+      method: run.method,
+      children: run.children,
+      beyond: !!run.beyond,
+      band: bandOf(r, run.days),
     };
+  });
+  var bandCounts = {};
+  rows.forEach(function (r) {
+    bandCounts[r.band] = (bandCounts[r.band] || 0) + 1;
+  });
+  var usesChildren = rows.some(function (r) {
+    return r.method === 'children';
   });
   rows.sort(function (a, b) {
     var da = a.band === 'out' ? -1 : a.days === null ? 1e9 : a.days;
@@ -372,12 +421,19 @@ function WorkflowUI({
             How long it lasts
           </span>
           <span className="text-xs text-gray-600 mr-2">
-            Days until each worker runs out, at the pace of their last 14 days.
-            (The Forecast page instead uses the children each worker is
-            treating.)
+            Days until each FLW runs out, based on the children they're
+            treating.
+            {rows.some(function (r) {
+              return r.method === 'pace';
+            }) &&
+              (usesChildren
+                ? ' Where we do not know their children yet, it is their recent pace instead, marked on the row.'
+                : " We do not know their children yet, so this is each FLW's recent pace (their last " +
+                  paceWindow +
+                  ' days).')}
           </span>
           {BANDS.map(function (b) {
-            var n = (rollup.runway || {})[b[0]] || 0;
+            var n = bandCounts[b[0]] || 0;
             if (!n) return null;
             var on = filter === b[0];
             return (
@@ -457,18 +513,29 @@ function WorkflowUI({
                         {fmt(r.onHand) + ' ' + units + ' held'}
                         {r.band === 'out'
                           ? ' · out of stock'
-                          : r.days !== null
-                            ? ' · ' +
-                              daysLeft(r.days) +
-                              (fromDay ? ', runs out ' + addDays(r.days) : '')
-                            : r.rateDays
-                              ? ' · given out on ' +
-                                r.rateDays +
-                                (r.rateDays === 1 ? ' day' : ' days') +
-                                ' so far, ' +
-                                (r.raw.rate_days_needed || 7) +
-                                ' needed for a run-out date'
-                              : ' · nothing given out lately, so no run-out date'}
+                          : r.beyond
+                            ? ' · lasts beyond the ' +
+                              forecastWeeks +
+                              ' weeks looked at, for ' +
+                              r.children +
+                              ' children'
+                            : r.days !== null
+                              ? ' · ' +
+                                daysLeft(r.days) +
+                                (fromDay
+                                  ? ', runs out ' + addDays(r.days)
+                                  : '') +
+                                (r.method === 'children'
+                                  ? ', for ' + r.children + ' children'
+                                  : ', at recent pace')
+                              : r.rateDays
+                                ? ' · given out on ' +
+                                  r.rateDays +
+                                  (r.rateDays === 1 ? ' day' : ' days') +
+                                  ' so far, ' +
+                                  (r.raw.rate_days_needed || 7) +
+                                  ' needed for a run-out date'
+                                : ' · nothing given out lately, so no run-out date'}
                         {r.perDay !== null && (
                           <span className={early ? 'text-gray-400' : ''}>
                             {' · ' +

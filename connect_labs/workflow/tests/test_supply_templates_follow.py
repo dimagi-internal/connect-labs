@@ -17,3 +17,16 @@ def test_a_supply_report_follows_the_deployed_template(key):
     definition, _render, _pipelines = create_workflow_from_template(dao, key, request=None, opportunity_ids=[10113])
     assert definition.data["render_source"] == {"template": key}
     assert TEMPLATES[key]["follow_template"] is True
+
+
+def test_stock_review_reads_how_long_it_lasts_from_the_forecast_and_says_so():
+    from connect_labs.workflow.supply_sources import declaration_problems
+    from connect_labs.workflow.templates import supply_stock_review
+
+    sources = supply_stock_review.DEFINITION["supply_sources"]
+    assert declaration_problems(sources) == []
+    assert {s["source"] for s in sources} >= {"worker_stock", "stock_forecast"}
+    render = supply_stock_review.TEMPLATE["render_code"]
+    assert "runs_dry_on" in render
+    assert "Days until each FLW runs out, based on the children they're" in render
+    assert "at recent pace" in render
