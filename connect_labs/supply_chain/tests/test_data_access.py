@@ -230,9 +230,18 @@ class TestQuotes:
 
 
 class TestAwards:
-    def test_an_award_needs_a_rationale(self, da, open_tender):
-        with pytest.raises(ValueError, match="needs a rationale"):
-            da.create_award({"tender_id": open_tender.pk, "rationale": ""})
+    def test_an_award_does_not_need_a_rationale(self, da, open_tender):
+        supplier = da.create_supplier({"name": "Harmattan Foods"})
+        quote = da.create_quote(
+            {
+                "tender_id": open_tender.pk,
+                "commodity_slug": "rutf",
+                "supplier_id": supplier.pk,
+                "as_quoted_amount": "50.00",
+            }
+        )
+        award = da.create_award({"tender_id": open_tender.pk, "quote_id": quote.pk, "rationale": ""})
+        assert award.rationale == ""
 
     def test_an_award_takes_its_supplier_and_commodity_from_the_quote(self, da, open_tender):
         supplier = da.create_supplier({"name": "Harmattan Foods"})

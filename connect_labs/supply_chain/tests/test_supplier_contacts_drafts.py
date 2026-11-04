@@ -5,6 +5,8 @@ THIS REPOSITORY IS PUBLIC. Every name and address here is invented.
 
 from datetime import date
 
+import pytest
+
 from connect_labs.supply_chain.models import Supplier
 from connect_labs.supply_chain.procurement.operations import (
     _noted_not_contacted,
@@ -111,3 +113,46 @@ def test_a_supplier_noted_not_yet_contacted_is_not_chased():
     assert _noted_not_contacted(supplier([], notes="Not yet contacted"), [FakeRow()])
     assert _noted_not_contacted(supplier([]), [FakeRow("not yet contacted - waiting for approval")])
     assert not _noted_not_contacted(supplier([], notes="Called twice"), [FakeRow()])
+
+
+@pytest.mark.django_db
+class TestDutyFollowsTheDeliveryTerm:
+    def test_a_tender_asking_for_ddp_has_its_duty_settled(self):
+        from connect_labs.labs.access.scopes import SYSTEM
+        from connect_labs.supply_chain.data_access import SupplyDataAccess
+        from connect_labs.supply_chain.operations import call_operation
+
+        da = SupplyDataAccess(access_token="unused", program_id=10734, caller=SYSTEM)
+        ddp = call_operation(
+            "tender_create",
+            da,
+            {"data": {"label": "DDP", "delivery_point": {"name": "S", "city": "Kano", "incoterm_requested": "DDP"}}},
+        )
+        cif = call_operation(
+            "tender_create",
+            da,
+            {"data": {"label": "CIF", "delivery_point": {"name": "S", "city": "Kano", "incoterm_requested": "CIF"}}},
+        )
+        assert ddp["duty_terms"] == "supplier_ddp"
+        assert cif["duty_terms"] == ""
+
+
+class TestTheProgressBarReachesComparing:
+    def _t(self, deadline=None, status="open"):
+        from connect_labs.supply_chain.models import Tender
+
+        return Tender(id=1, program_id=1, label="T", status=status, response_deadline=deadline)
+
+    def test_everyone_replied_moves_it_to_comparing(self):
+        from connect_labs.supply_chain.standing import tender_stage
+
+        assert tender_stage(self._t(), invited=3, answered=3)[0] == 2
+        assert tender_stage(self._t(), invited=3, answered=2)[0] == 1
+
+    def test_a_passed_deadline_with_a_reply_moves_it_to_comparing(self):
+        from connect_labs.supply_chain.standing import tender_stage
+
+        past = date(2026, 9, 1)
+        assert tender_stage(self._t(past), invited=3, answered=1, today=date(2026, 9, 5))[0] == 2
+        assert tender_stage(self._t(past), invited=3, answered=0, today=date(2026, 9, 5))[0] == 1
+        assert tender_stage(self._t(date(2026, 9, 9)), invited=3, answered=1, today=date(2026, 9, 5))[0] == 1

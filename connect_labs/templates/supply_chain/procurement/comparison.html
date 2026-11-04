@@ -127,11 +127,12 @@
                         {% for q in award_options %}<option value="{{ q.quote_id }}"{% if q.quote_id == award_choice_id %} selected{% endif %}>{{ q.name }}{% if q.item %} · {{ q.item }}{% endif %}{% if q.landed %} · {{ q.landed }}{% endif %}</option>{% endfor %}
                       </select>
                     </label>
-                    <label class="flex flex-col gap-0.5 text-xs text-gray-600 min-w-0 flex-1 basis-64" for="award-rationale">Why this offer
+                    <label class="flex flex-col gap-0.5 text-xs text-gray-600 min-w-0 flex-1 basis-64" for="award-rationale">Why this offer (optional)
                       {% comment %}"Decided on" stays empty until the buyer starts an award -- a date
                       already in it read as a decision already made; typing the reason fills
                       it with today, and an empty one is recorded as today anyway.{% endcomment %}
-                      <input type="text" id="award-rationale" name="rationale" placeholder="the reason, in a sentence" required
+                      <datalist id="award-reasons"><option value="Lowest delivered price"><option value="Only quote with everything stated"><option value="Shortest lead time"></datalist>
+                      <input type="text" id="award-rationale" name="rationale" placeholder="e.g. lowest delivered price" list="award-reasons"
                              oninput="var d=document.getElementById('award-decided-on'); if (d &amp;&amp; !d.value) { d.value = '{{ today }}'; }"
                              class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-900">
                     </label>

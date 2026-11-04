@@ -20,7 +20,7 @@ from django.urls import reverse
 
 from connect_labs.supply_chain import moves as rules
 from connect_labs.supply_chain.records import document_kind_label, document_not_on_file, waived_duty
-from connect_labs.supply_chain.standing import STAGES, stage_bars
+from connect_labs.supply_chain.standing import STAGES, ready_to_compare, stage_bars
 from connect_labs.supply_chain.values import money_digits, quantity_phrase, unit_noun
 
 PERSON, AI, CALC = "person", "ai", "calc"
@@ -498,6 +498,8 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         index = 6 if received and contract.status in ("received", "closed") else 5
     elif tender.status == "draft":
         index = 0
+    elif ready_to_compare(tender, invited=len(invited), answered=len(replied), today=today):
+        index = 2
     elif tender.status == "open":
         index = 1
     elif tender.status == "awarded":

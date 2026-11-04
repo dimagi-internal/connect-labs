@@ -398,6 +398,7 @@ class TenderDetailView(_Base):
         lines = [line for line in tender.get("lines") or [] if isinstance(line, dict)]
         context["estimate_unit"] = unit_noun(lines[0].get("quantity_unit")) if len(lines) == 1 else "unit"
         context["freight_in_price"] = _freight_in_price(tender, tender_id, _access(self.request).program_id)
+        context["estimates_needed"] = _estimates_needed(tender, tender_id, _access(self.request).program_id)
         if tender.get("import_estimates_set_on"):
             from connect_labs.supply_chain.history.timeline import import_estimates_set_by
 
@@ -644,6 +645,21 @@ class QuoteDetailView(_Base):
                 for slug in [part.get("commodity_slug")]
             )
         return context
+
+
+def _estimates_needed(tender, tender_id, program_id) -> bool:
+    """Whether our clearing and freight estimates have anything to do on this tender.
+
+    True once one is recorded, or a live quote leaves clearing or freight to us (an
+    importer-clears or E/F-term quote). Otherwise the header does not ask for them.
+    """
+    from connect_labs.supply_chain.models import Quote
+    from connect_labs.supply_chain.procurement.services.pricing import clearing_applies, freight_is_ours
+
+    if tender.get("clearing_estimate_per_unit") is not None or tender.get("freight_estimate_per_unit") is not None:
+        return True
+    quotes = Quote.objects.filter(tender_id=tender_id, tender__program_id=program_id)
+    return any(q.is_live and (clearing_applies(q) or freight_is_ours(q)) for q in quotes)
 
 
 def _freight_in_price(tender, tender_id, program_id) -> str:

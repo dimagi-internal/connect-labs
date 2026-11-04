@@ -75,8 +75,9 @@ is folded away, each fold with its count.
       </span>
       {% comment %}Our own import estimates beside the duty: clearing & forwarding on every quote we
       import, freight to the delivery point on E and F terms. Per unit of the tender's line.{% endcomment %}
+      {% if estimates_needed %}
       <span class="flex flex-wrap items-center gap-2" id="import-estimates" data-testid="import-estimates"{% if estimates_changed %} data-changed{% endif %}>
-        <span class="text-gray-600">Our estimates</span>
+        <span class="text-gray-600" title="Your estimate of clearing and freight per {{ estimate_unit }}, for quotes that do not include them.">Your estimate of clearing and freight per {{ estimate_unit }}, for quotes that do not include them:</span>
         <span class="text-gray-600">clearing</span>
         <span data-testid="clearing-estimate" class="px-1" {% edit_cell "tender" tender.id "clearing_estimate_per_unit" tender.clearing_estimate_per_unit %}>{% if tender.clearing_estimate_per_unit is not None %}<span class="font-medium text-gray-900">USD {{ tender.clearing_estimate_per_unit|floatformat:2 }} / {{ estimate_unit }}</span>{% else %}<span class="status-chip status-chip--ours">Not recorded</span>{% endif %}</span>
         <span class="text-gray-600">· freight</span>
@@ -84,6 +85,7 @@ is folded away, each fold with its count.
         {% if tender.import_estimates_set_on %}<span class="whitespace-nowrap text-xs text-gray-600" data-testid="import-estimates-set">{% include "supply_chain/_src.html" with src="person" %}{{ tender.import_estimates_set_on|day|slice:":-5" }}{% if import_estimates_set_by %} · {{ import_estimates_set_by }}{% endif %}</span>{% endif %}
         {% if estimates_changed %}{% include "supply_chain/procurement/_new_tag.html" %}{% endif %}
       </span>
+      {% endif %}
       <span class="flex items-center gap-2"><span class="text-gray-600">Deadline</span>
         <span class="px-1" data-testid="tender-deadline" {% edit_cell "tender" tender.id "response_deadline" tender.response_deadline %}>{% if tender.response_deadline %}<span class="whitespace-nowrap font-medium text-gray-900" title="{{ tender.response_deadline|day }}">{{ tender.response_deadline|day|slice:":-5" }}</span>{% if deadline_passed %} · <span data-testid="deadline-passed" class="text-message-warning-text whitespace-nowrap font-medium">{{ deadline_passed.days }} day{{ deadline_passed.days|pluralize }} past</span>{% endif %}{% else %}<span class="text-gray-600">not set</span>{% endif %}</span></span>
     </section>

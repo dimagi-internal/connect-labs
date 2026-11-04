@@ -921,7 +921,7 @@ def tender_outstanding_questions(access, tender_id, commodity_slug):
 @register_operation(
     name="award_create",
     summary=(
-        "Award a tender to a quote. Requires a rationale and freezes the "
+        'Award a tender to a quote. A rationale is optional ("lowest delivered price" is the usual one). Freezes the '
         "comparison as it stood at the moment of decision, with what was still open on the tender "
         "(deadline days left, silent suppliers, replies we owe) -- an award before the deadline is allowed. "
         "Once every line of a draft or open tender has an award, the tender's status becomes awarded; "
@@ -931,18 +931,18 @@ def tender_outstanding_questions(access, tender_id, commodity_slug):
         {
             "tender_id": ID,
             "quote_id": ID,
-            "rationale": {"type": "string", "minLength": 1},
+            "rationale": {"type": "string"},
             "decided_by": {"type": "string"},
             # The day the decision was made, which is often not the day it
             # is recorded -- the meeting was in July, the entry is today. It
             # defaults to today, and may not be a day that has not come.
             "decided_on": {"type": "string", "format": "date"},
         },
-        required=("tender_id", "quote_id", "rationale"),
+        required=("tender_id", "quote_id"),
     ),
     is_write=True,
 )
-def award_create(access, tender_id, quote_id, rationale, decided_by=None, decided_on=None):
+def award_create(access, tender_id, quote_id, rationale="", decided_by=None, decided_on=None):
     """The decision of record — validate at least as hard as every other write.
 
     Every other write operation reference-checks what it points at
