@@ -203,6 +203,9 @@ def test_the_system_escape_hatch_is_greppable():
         "supply_chain/demo/phones.py",
         # The clone's tabs and home pages: run by that seeder; refuses the same way before it writes a setting.
         "supply_chain/demo/clone_pages.py",
+        # Tidies imported suppliers: operator-run through its command, one programme named on the
+        # command line, shows its changes first and writes only with --apply, through supplier_update.
+        "supply_chain/management/commands/supply_tidy_suppliers.py",
         # The alert beat task: no user, reads only programmes that already
         # hold a subscription a member created.
         "supply_chain/alerts/service.py",
