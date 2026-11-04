@@ -88,9 +88,7 @@ class AlertSubscription(TimestampedModel):
     # place: that partner's staff hear about their own facilities and workers only. Blank is the whole
     # programme -- the summary across partners. PROTECT so deleting an organisation can never widen an
     # alert from one partner to everything.
-    partner_org = models.ForeignKey(
-        "labs.LabsOrg", null=True, blank=True, on_delete=models.PROTECT, related_name="+"
-    )
+    partner_org = models.ForeignKey("labs.LabsOrg", null=True, blank=True, on_delete=models.PROTECT, related_name="+")
     cadence = models.CharField(max_length=16, default="immediate", choices=_choices(CADENCES))
     active = models.BooleanField(default=True)
     created_by = models.ForeignKey(
@@ -111,7 +109,10 @@ class AlertSubscription(TimestampedModel):
                 condition=(Q(recipient_user__isnull=False) & Q(recipient_email="") & Q(recipient_phone=""))
                 | (
                     Q(recipient_user__isnull=True)
-                    & ((~Q(recipient_email="") & Q(recipient_phone="")) | (Q(recipient_email="") & ~Q(recipient_phone="")))
+                    & (
+                        (~Q(recipient_email="") & Q(recipient_phone=""))
+                        | (Q(recipient_email="") & ~Q(recipient_phone=""))
+                    )
                 ),
                 name="alert_subscription_has_one_recipient",
             )

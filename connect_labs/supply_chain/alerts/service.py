@@ -310,7 +310,7 @@ def detect_checks(subscription, found: list[dict], now) -> int:
 
 
 def _owners(subscription):
-    """({point id: organisation id}, {organisation id: name}) -- who runs each place, to name the partner in a notice."""
+    """({point id: organisation id}, {organisation id: name}): who runs each place, to name the partner in a notice."""
     from connect_labs.labs.models import LabsOrg
     from connect_labs.supply_chain.stock.services.issues import partner_by_point
 
