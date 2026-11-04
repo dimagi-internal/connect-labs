@@ -126,3 +126,23 @@ def partner_places_assign(access, org_id, supply_point_ids, only_unassigned=True
         access._require_program(), _org(org_id), supply_point_ids, only_unassigned=only_unassigned
     )
     return {"assigned": [{"id": p.pk, "name": p.name} for p in changed], "count": len(changed)}
+
+
+@register_operation(
+    name="stock_delivery_suggestion",
+    summary=(
+        "A suggested delivery to each shared facility: a few days (cover_days, 7 to begin with) of what the field "
+        "workers it supplies use, from the forecast, less what the facility already holds. Keeps stock low where "
+        "many people can reach it. A suggestion only -- nothing is recorded. Filter to one partner with org_id."
+    ),
+    input_schema=obj(
+        {"item_id": ID, "cover_days": {"type": "integer", "minimum": 1, "maximum": 60}, "org_id": ID},
+        required=("item_id",),
+    ),
+)
+def stock_delivery_suggestion(access, item_id, cover_days=7, org_id=None):
+    from connect_labs.supply_chain.partners import planning
+
+    return planning.delivery_suggestions(
+        access._require_program(), access._resolve_item(item_id), cover_days=cover_days, org_id=org_id
+    )

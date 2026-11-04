@@ -10,6 +10,7 @@ from crispy_forms.layout import Column, Fieldset, Layout, Row
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
+from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain import records
 from connect_labs.supply_chain.alerts.models import CADENCES
 from connect_labs.supply_chain.forms import INPUT, SEARCHABLE, SELECT
@@ -80,6 +81,16 @@ class AlertSubscriptionForm(forms.Form):
         widget=forms.Select(attrs=SEARCHABLE),
         help_text=_("Leave empty for the whole programme."),
     )
+    partner = forms.ModelChoiceField(
+        label=_("Only this partner's places"),
+        required=False,
+        queryset=LabsOrg.objects.none(),
+        widget=forms.Select(attrs=SEARCHABLE),
+        help_text=_(
+            "A partner's facilities and field workers alert its own staff. Leave empty for the whole programme: "
+            "the summary across partners."
+        ),
+    )
     commodity = forms.ModelChoiceField(
         label=_("Only for this product"),
         required=False,
@@ -127,6 +138,7 @@ class AlertSubscriptionForm(forms.Form):
                 "movement_kinds": list(subscription.movement_kinds or []),
                 "supply_point": subscription.supply_point_id,
                 "commodity": subscription.commodity_id,
+                "partner": subscription.partner_org_id,
                 "recipient": "me" if subscription.recipient_user_id else "email",
                 "recipient_email": subscription.recipient_email,
                 "recipient_name": subscription.recipient_name,
@@ -139,8 +151,15 @@ class AlertSubscriptionForm(forms.Form):
         if program_id:
             self.fields["supply_point"].queryset = SupplyPoint.objects.filter(program_id=program_id).order_by("name")
             self.fields["commodity"].queryset = Commodity.objects.filter(scope_key=f"prog:{program_id}")
+            from connect_labs.supply_chain.stock.services.issues import partner_by_point
+
+            running = {org for org in partner_by_point(program_id).values() if org}
+            if subscription is not None and subscription.partner_org_id:
+                running.add(subscription.partner_org_id)
+            self.fields["partner"].queryset = LabsOrg.objects.filter(pk__in=running).order_by("name")
         self.fields["supply_point"].empty_label = _("Anywhere in the programme")
         self.fields["commodity"].empty_label = _("Any product")
+        self.fields["partner"].empty_label = _("Every partner")
 
         user = getattr(access, "user", None) if access else None
         if getattr(user, "email", ""):
@@ -179,7 +198,12 @@ class AlertSubscriptionForm(forms.Form):
             ),
             Fieldset(
                 str(_("Narrow it")),
-                Row(Column("supply_point"), Column("commodity"), css_class="grid md:grid-cols-2 gap-x-6"),
+                Row(
+                    Column("partner"),
+                    Column("supply_point"),
+                    Column("commodity"),
+                    css_class="grid md:grid-cols-3 gap-x-6",
+                ),
             ),
             Fieldset(
                 str(_("Who hears, and how often")),
@@ -215,6 +239,7 @@ class AlertSubscriptionForm(forms.Form):
             "movement_kinds": list(cleaned.get("movement_kinds") or []),
             "supply_point_id": cleaned["supply_point"].pk if cleaned.get("supply_point") else None,
             "commodity_slug": cleaned["commodity"].slug if cleaned.get("commodity") else None,
+            "partner_org_id": cleaned["partner"].pk if cleaned.get("partner") else None,
             "cadence": cleaned["cadence"],
         }
         if cleaned.get("recipient") == "keep":
