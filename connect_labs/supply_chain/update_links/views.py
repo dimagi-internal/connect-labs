@@ -414,6 +414,7 @@ class UpdateLinkPublicView(LinkRequestMixin):
                 if not form.is_available()
                 and form is not bound
                 and not form.for_approvers
+                and not form.only_when_available
                 and form.action not in recorded_here
             ],
             "all_answered": any(form.for_approvers for form in forms)

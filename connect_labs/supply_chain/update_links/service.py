@@ -414,6 +414,39 @@ def _record_answer(scope, data):
     return "approval_decide", payload, Action.UPDATE
 
 
+def _confirm_handout(scope, data):
+    """Whoever handed stock out says how much they gave, through `distribution_confirm`."""
+    from connect_labs.supply_chain.update_links.forms import _handout_lines
+
+    line = _require(_handout_lines(scope, given=False), data.get("line"), "handout")
+    payload = {
+        "distribution_id": line.distribution_id,
+        "data": {
+            "confirmed_on": _iso(data.get("handed_out_on") or timezone.localdate()),
+            "lines": [{"line_id": line.pk, "quantity_given": str(data["quantity_given"])}],
+            **_provenance(scope),
+        },
+    }
+    return "distribution_confirm", payload, Action.UPDATE
+
+
+def _confirm_received(scope, data):
+    """The receiver says how much reached them: the other side of the same handover."""
+    from connect_labs.supply_chain.update_links.forms import _handout_lines
+
+    line = _require(_handout_lines(scope, given=True), data.get("line"), "handout")
+    payload = {
+        "line_id": line.pk,
+        "data": {
+            "quantity_received": str(data["quantity_received"]),
+            "received_on": _iso(data.get("received_on") or timezone.localdate()),
+            # Who said it: the person the link was sent to, else the organisation behind it.
+            "received_by": scope.link.connect_username or scope.link.org.name,
+        },
+    }
+    return "distribution_receipt_confirm", payload, Action.UPDATE
+
+
 def _attach_answer_document(link, data, result):
     """The approver's signed letter -- uploaded, or linked -- held against the approval it records."""
     url = (data.get("document_url") or "").strip()
@@ -459,6 +492,8 @@ ACTIONS = {
     "record_receipt": _record_receipt,
     "record_stock_count": _record_stock_count,
     "record_release": _record_release,
+    "confirm_handout": _confirm_handout,
+    "confirm_received": _confirm_received,
 }
 
 
@@ -566,7 +601,22 @@ def _describe_approval(rid):
     return text
 
 
+def _describe_handout(rid):
+    from connect_labs.supply_chain.models import Distribution
+
+    run = Distribution.objects.filter(pk=rid).prefetch_related("lines").first()
+    if run is None:
+        return ""
+    lines = list(run.lines.all())
+    given = sum(1 for line in lines if line.is_confirmed)
+    received = sum(1 for line in lines if line.quantity_received is not None)
+    name = run.reference or f"Handout {run.pk}"
+    return f"{name}: {given} of {len(lines)} places confirmed as given, {received} as received"
+
+
 _DESCRIBERS = {
+    "distribution_confirm": _describe_handout,
+    "distribution_receipt_confirm": _describe_handout,
     "approval_decide": _describe_approval,
     "receipt_record": _describe_receipt,
     "movement_record": _describe_movement,
@@ -632,6 +682,8 @@ RECORD_NOUNS = {
     "record_receipt": "Goods received",
     "record_stock_count": "Stock count",
     "record_release": "Release",
+    "confirm_handout": "Handout confirmed",
+    "confirm_received": "Handout received",
 }
 
 
@@ -649,6 +701,8 @@ HAPPENED_ON_FIELDS = {
     "record_receipt": "received_on",
     "record_stock_count": "counted_on",
     "record_release": "occurred_on",
+    "confirm_handout": "handed_out_on",
+    "confirm_received": "received_on",
 }
 
 
