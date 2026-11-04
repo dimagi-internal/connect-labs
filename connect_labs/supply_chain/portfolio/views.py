@@ -44,6 +44,8 @@ from connect_labs.labs.access.scopes import Caller
 from connect_labs.labs.context import get_org_data
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
+from connect_labs.supply_chain.portfolio.chase import grouped
+from connect_labs.supply_chain.portfolio.map_data import program_chase
 from connect_labs.supply_chain.portfolio.models import Portfolio
 from connect_labs.supply_chain.views import checks_by_audience
 
@@ -98,6 +100,11 @@ class PortfolioView(TemplateView):
                 continue
             rows.append(self._row(program_id, reachable[program_id]))
 
+        # What to chase across every programme shown, in the words the Overview
+        # and the Map use (chase.py). Each item names its programme.
+        every = [item for row in rows for item in row["chase"]]
+        context["chase"] = grouped(every)
+        context["chase_count"] = len(every)
         context["portfolio"] = portfolio
         context["rows"] = rows
         context["hidden"] = hidden
@@ -147,6 +154,7 @@ class PortfolioView(TemplateView):
             "commodity_count": len(commodities),
             "summary": summary,
             "checks": checks,
+            "chase": program_chase(access, program_id, programme.get("name") or f"Programme {program_id}"),
             "checks_by_audience": checks_by_audience(checks, scope=scope),
             # Read ONCE and handed to both readers below. It was called twice
             # when only `_awaited` needed it; the situation needs the same

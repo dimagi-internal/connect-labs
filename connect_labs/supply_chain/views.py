@@ -15,6 +15,7 @@ from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView
 
 from connect_labs.labs.context import get_org_data
+from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.banner import program_line
 from connect_labs.supply_chain.checks import course_applies_to_category, courses_carried_by_kits
@@ -335,6 +336,8 @@ class DomainHomeView(OperationBase):
         # The buyer of record by name: "programme org" is the role, not who.
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}
 
+        self._add_programme_picture(context, access, program_id, org)
+
         # Not on a past date: the checks read today's date and reference rows
         # a rewind leaves live, so the template says so instead of showing
         # today's answers under a past date.
@@ -342,7 +345,47 @@ class DomainHomeView(OperationBase):
             checks = self.op("checks_list")
             context["checks"] = checks
             context["checks_by_audience"] = checks_by_audience(checks)
+            # The same list, in the same words, as the Map's Chase list tab.
+            from connect_labs.supply_chain.portfolio.chase import grouped
+            from connect_labs.supply_chain.portfolio.map_data import program_chase
+
+            chase = program_chase(access, int(program_id), self._plain_name(program_id))
+            context["chase"] = grouped(chase)
+            context["chase_count"] = len(chase)
         return context
+
+    def _plain_name(self, program_id) -> str:
+        programs = get_org_data(self.request).get("programs") or []
+        return next(
+            (p.get("name") for p in programs if str(p.get("id")) == str(program_id) and p.get("name")),
+            f"Program {program_id}",
+        )
+
+    def _add_programme_picture(self, context, access, program_id, org):
+        """The next step, and the distribution side (partners, field workers, issues)."""
+        from connect_labs.supply_chain.overview import buying_model_label, distribution_overview, next_step
+
+        points = self.op("supply_point_list")
+        context["next_step"] = next_step(
+            tenders=context["tenders"],
+            contracts=context["contracts"],
+            points=points,
+            exclude_org_ids=[org.pk] if org is not None else (),
+        )
+        org_ids = {p["managed_by_org_id"] for p in points if p.get("managed_by_org_id")}
+        names = dict(LabsOrg.objects.filter(pk__in=org_ids).values_list("id", "name")) if org_ids else {}
+        context["distribution"] = distribution_overview(
+            program_id=int(program_id),
+            stock_points=self.op("network_stock")["points"],
+            points=points,
+            org_names=names,
+            worker_href=lambda row: scoped_url(
+                self.request, "supply_chain:worker_detail", row["supply_point_id"], program_id=program_id
+            ),
+        )
+        context["map_url"] = scoped_url(self.request, "supply_chain:programme_map", program_id=program_id)
+        context["workers_url"] = scoped_url(self.request, "supply_chain:workers", program_id=program_id)
+        context["buying_models"] = {c["id"]: buying_model_label(c) for c in context["contracts"]}
 
 
 # Overview as /supply/ serves it, with a past date as every other records page has one.

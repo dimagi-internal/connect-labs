@@ -40,6 +40,7 @@ from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain import records
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.operations import call_operation
+from connect_labs.supply_chain.portfolio.chase import chase_items
 from connect_labs.supply_chain.stock.services.belief import workers_below_minimum
 
 # A shipment in one of these has left and has not arrived. The domain's own
@@ -293,6 +294,94 @@ def portfolio_cover(request, portfolio, reachable, commodity_slug, *, everything
     }
 
 
+def _check_labels():
+    from connect_labs.supply_chain.templatetags.supply_chain_extras import CHECK_LABELS
+
+    return CHECK_LABELS
+
+
+def program_chase(access, program_id, program_name) -> list[dict]:
+    """One programme's chase list, read straight from the records.
+
+    For screens that are not the map (the Overview). It builds the same lists
+    the map builds, through the same helpers, and hands them to the same
+    `chase_items`, so the two cannot word or count an item differently.
+    """
+    scope = f"?program_id={program_id}"
+    points = call_operation("supply_point_list", access, {})
+    stock = {row["supply_point_id"]: row for row in call_operation("network_stock", access, {})["points"]}
+    contracts = {c["id"]: c for c in call_operation("contract_list", access, {})}
+    suppliers = {s["id"]: s for s in call_operation("supplier_list", access, {})}
+    on_the_road = call_operation("consignment_list", access, {"status": "dispatched"})
+    orgs = {
+        o["id"]: o["name"]
+        for o in LabsOrg.objects.filter(
+            pk__in={p["managed_by_org_id"] for p in points if p["managed_by_org_id"]}
+        ).values("id", "name")
+    }
+    checks = [_check_wire(c, scope=scope) for c in call_operation("checks_list", access, {})["checks"]]
+    orders, _ = open_orders(contracts, stock, scope)
+    return chase_items(
+        program_id=program_id,
+        program_name=program_name,
+        checks=checks,
+        consignments=[consignment_wire(c, scope) for c in on_the_road],
+        orders=orders,
+        suppliers=suppliers,
+        places={p["id"]: {"name": p["name"], "managed_by": orgs.get(p["managed_by_org_id"], "")} for p in points},
+        check_labels=_check_labels(),
+    )
+
+
+def open_orders(contracts, stock, scope):
+    """(orders, supplier ids): every order with something still to come.
+
+    Shared by the map and the chase list so both read an order the same way.
+    """
+    owed = {
+        expected["contract_id"]: expected for row in stock.values() for expected in row.get("expected_inbound") or []
+    }
+    orders, supplier_ids = [], set()
+    for contract in contracts.values():
+        if contract["status"] in _NOT_OPEN:
+            continue
+        expected = owed.get(contract["id"]) or {}
+        supplier_ids.add(contract["supplier_id"])
+        orders.append(
+            {
+                "contract_id": contract["id"],
+                "reference": contract["reference"],
+                "status": contract["status"],
+                "supplier_id": contract["supplier_id"],
+                "to_supply_point_id": contract["delivery_supply_point_id"],
+                "outstanding": expected.get("outstanding"),
+                "item_name": expected.get("item_name") or "",
+                # Already ISO on the wire; None when no date was ever promised.
+                "expected_on": expected.get("expected_on"),
+                "overdue": bool(expected.get("overdue")),
+                "url": reverse("supply_chain:order_detail", args=[contract["id"]]) + scope,
+            }
+        )
+    return orders, supplier_ids
+
+
+def consignment_wire(c, scope):
+    """One of our own consignments on the road, as the map and the chase list read it."""
+    return {
+        "consignment_id": c["id"],
+        "reference": c["reference"],
+        "from_supply_point_id": c["from_supply_point_id"],
+        "to_supply_point_id": c["to_supply_point_id"],
+        "commodity_slug": c["commodity_slug"],
+        "quantity": c["quantity"],
+        "quantity_unit": c["quantity_unit"],
+        "dispatched_on": c["dispatched_on"],
+        "expected_on": c["expected_on"],
+        "overdue": bool(c["expected_on"] and c["expected_on"] < date.today().isoformat()),
+        "receive_url": reverse("supply_chain:consignment_receive", args=[c["id"]]) + scope,
+    }
+
+
 def program_map(request, program_id, program) -> dict:
     """One program's places, blockers and consignments in motion."""
     access = _access(request, program_id)
@@ -431,30 +520,7 @@ def program_map(request, program_id, program) -> dict:
     # to the store it is owed to. What is outstanding and when it was promised
     # come from network_stock's own expected_inbound, so the map and the
     # Stock page cannot disagree about what is owed.
-    owed = {
-        expected["contract_id"]: expected for row in stock.values() for expected in row.get("expected_inbound") or []
-    }
-    orders, supplier_ids = [], set()
-    for contract in contracts.values():
-        if contract["status"] in _NOT_OPEN:
-            continue
-        expected = owed.get(contract["id"]) or {}
-        supplier_ids.add(contract["supplier_id"])
-        orders.append(
-            {
-                "contract_id": contract["id"],
-                "reference": contract["reference"],
-                "status": contract["status"],
-                "supplier_id": contract["supplier_id"],
-                "to_supply_point_id": contract["delivery_supply_point_id"],
-                "outstanding": expected.get("outstanding"),
-                "item_name": expected.get("item_name") or "",
-                # Already ISO on the wire; None when no date was ever promised.
-                "expected_on": expected.get("expected_on"),
-                "overdue": bool(expected.get("overdue")),
-                "url": reverse("supply_chain:order_detail", args=[contract["id"]]) + scope,
-            }
-        )
+    orders, supplier_ids = open_orders(contracts, stock, scope)
     for shipment in moving:
         supplier_ids.add((contracts.get(shipment["contract_id"]) or {}).get("supplier_id"))
     located_suppliers = []
@@ -473,6 +539,8 @@ def program_map(request, program_id, program) -> dict:
             }
         )
 
+    consignments_out = [consignment_wire(c, scope) for c in on_the_road]
+
     return {
         "program_id": program_id,
         "name": program.get("name") or f"Program {program_id}",
@@ -482,22 +550,7 @@ def program_map(request, program_id, program) -> dict:
         # Allocated to a place and not yet moved: a distribution line with no
         # movement, which the ledger calls committed. Drawn as on its way.
         # Our own stock on the road between two of our places (models.Consignment).
-        "consignments": [
-            {
-                "consignment_id": c["id"],
-                "reference": c["reference"],
-                "from_supply_point_id": c["from_supply_point_id"],
-                "to_supply_point_id": c["to_supply_point_id"],
-                "commodity_slug": c["commodity_slug"],
-                "quantity": c["quantity"],
-                "quantity_unit": c["quantity_unit"],
-                "dispatched_on": c["dispatched_on"],
-                "expected_on": c["expected_on"],
-                "overdue": bool(c["expected_on"] and c["expected_on"] < date.today().isoformat()),
-                "receive_url": reverse("supply_chain:consignment_receive", args=[c["id"]]) + scope,
-            }
-            for c in on_the_road
-        ],
+        "consignments": consignments_out,
         "committed": [
             {
                 "distribution_id": d["id"],
@@ -513,6 +566,18 @@ def program_map(request, program_id, program) -> dict:
             if line["movement_id"] is None
         ],
         "checks": every,
+        # What to chase, worded as what each item needs (chase.py): the Map's
+        # Chase list tab draws this and the Overview reads the same function.
+        "chase": chase_items(
+            program_id=program_id,
+            program_name=program.get("name") or f"Program {program_id}",
+            checks=every,
+            consignments=consignments_out,
+            orders=orders,
+            suppliers=suppliers,
+            places={p["id"]: {"name": p["name"], "managed_by": p["managed_by"]} for p in placed_points + unplaced},
+            check_labels=_check_labels(),
+        ),
         # The one headline for workers in trouble, worded by the server (#2344): the
         # map counts blockers and places with one, and calls them that.
         "workers_below_minimum": workers_below_minimum(stock.values()),

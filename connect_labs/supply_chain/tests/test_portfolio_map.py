@@ -549,3 +549,48 @@ def test_a_programmes_map_cover_answers_for_that_programme_only(client, django_u
 
     assert response.status_code == 200
     assert list(response.json()["programs"]) == [str(ONE)]
+
+
+# ---------------------------------------------------------------------------
+# 5. The chase list is one list: the Map draws what the Overview and the
+#    portfolio page read (portfolio/chase.py).
+# ---------------------------------------------------------------------------
+
+
+def test_the_map_carries_the_chase_list_worded_as_what_each_item_needs(client, django_user_model):
+    """MUTATED: `chase` dropped from `program_map` -- the Map's Chase list tab drew nothing, red."""
+    _sign_in(client, django_user_model, [ONE])
+    store = _store(ONE, slug="a-waiting-store", lat=9.0, lng=8.0)
+    _order_to(store, lead_time_days=10)
+
+    program = _payload(client.get(_url(_portfolio([ONE]))))["programs"][0]
+
+    asks = {item["ask"] for item in program["chase"]}
+    assert "Ask A Placeholder Supplier when the order will arrive" in asks
+    assert all(item["program_id"] == ONE and item["audience"] for item in program["chase"])
+
+
+def test_the_overview_reads_the_same_chase_list_as_the_map(client, django_user_model):
+    from connect_labs.supply_chain.portfolio.map_data import _access, program_chase
+
+    _sign_in(client, django_user_model, [ONE])
+    store = _store(ONE, slug="a-waiting-store", lat=9.0, lng=8.0)
+    _order_to(store, lead_time_days=10)
+    portfolio = _portfolio([ONE])
+    response = client.get(_url(portfolio))
+    request = response.wsgi_request
+
+    on_the_map = _payload(response)["programs"][0]["chase"]
+    read_directly = program_chase(_access(request, ONE), ONE, NAMES[ONE])
+
+    assert on_the_map == read_directly
+
+
+def test_the_portfolio_page_lists_what_to_chase_across_its_programmes(client, django_user_model):
+    _sign_in(client, django_user_model, [ONE, TWO])
+    for pid in (ONE, TWO):
+        _order_to(_store(pid, slug=f"a-waiting-store-{pid}", lat=9.0, lng=8.0), lead_time_days=10)
+    body = client.get(reverse("supply_chain:portfolio", args=[_portfolio([ONE, TWO]).slug])).content.decode()
+    assert 'data-testid="portfolio-chase-list"' in body
+    assert body.count('data-testid="chase-item"') >= 2
+    assert NAMES[ONE] in body and NAMES[TWO] in body
