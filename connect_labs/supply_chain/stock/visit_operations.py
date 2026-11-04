@@ -55,9 +55,12 @@ _REPORTS = obj(
         # Where the delivery form asks what happened at the home (Where it went totals these).
         "household": obj(
             {
+                "dispensed_paths": _PATHS,
+                "appetite_paths": _PATHS,
                 "returned_paths": _PATHS,
                 "leftover_paths": _PATHS,
                 "missing_paths": _PATHS,
+                "misused_paths": _PATHS,
                 "reason_paths": _PATHS,
             }
         ),

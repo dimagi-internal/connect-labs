@@ -141,11 +141,43 @@ def validate_reports(reports) -> dict:
 # list of form paths (the first answered wins, as everywhere else); a programme names the paths its
 # own app uses, and leaves out any it does not ask.
 HOUSEHOLD_FIELDS = (
-    ("returned_paths", "empty sachets returned"),
+    ("dispensed_paths", "sachets dispensed"),
+    ("appetite_paths", "sachets used in appetite tests"),
+    ("returned_paths", "empty sachets returned (eaten)"),
     ("leftover_paths", "leftover sachets"),
-    ("missing_paths", "sachets missing or misused"),
-    ("reason_paths", "the reason sachets were missing or misused"),
+    ("missing_paths", "sachets missing"),
+    ("misused_paths", "sachets misused"),
+    ("reason_paths", "the reasons sachets were misused"),
 )
+
+# The paths CBI's stock pipeline reads in the released RUTF delivery app (supplied by the programme,
+# 2026-11-04). A rule that reads this app's dispensed-sachets answer and names no household block of
+# its own is read at these; a rule that names a block is read at exactly what it names.
+_RUTF_PAST_WEEK = "form.visit_2_or_greater.rutf_adherence.rutf_in_the_past_week"
+CBI_DISPENSED_PATHS = (
+    "form.rutf_dispensing.rutf_sachets_dispensed",
+    "form.visit_1.rutf_dispensing.rutf_sachets_dispensed",
+)
+CBI_HOUSEHOLD_PATHS = {
+    "dispensed_paths": list(CBI_DISPENSED_PATHS),
+    "appetite_paths": ["form.var.appetite_test_stock_deduction", "form.screening_outcome.rutf_stock_deduction"],
+    "returned_paths": [f"{_RUTF_PAST_WEEK}.empty_sachets"],
+    "leftover_paths": [f"{_RUTF_PAST_WEEK}.leftover_rutf_number"],
+    "missing_paths": [f"{_RUTF_PAST_WEEK}.packets_missing"],
+    "misused_paths": [f"{_RUTF_PAST_WEEK}.misused_rutf_amount"],
+    "reason_paths": [f"{_RUTF_PAST_WEEK}.misused_RUTF"],
+}
+
+
+def household_paths(rule) -> dict:
+    """The household paths a rule is read at: the block it names, else CBI's when it reads CBI's form."""
+    named = (rule.reports or {}).get("household")
+    if named:
+        return named
+    for line in rule.lines or []:
+        if set(line.get("paths") or []) & set(CBI_DISPENSED_PATHS):
+            return CBI_HOUSEHOLD_PATHS
+    return {}
 
 
 def validate_household(household) -> dict:
@@ -160,11 +192,12 @@ def validate_household(household) -> dict:
     return clean
 
 
-def household_answers(reports, form_json) -> dict:
-    """{path: raw answer} for the household paths a rule names, so a flow can total them later."""
+def household_answers(rule, form_json) -> dict:
+    """{path: raw answer} for the household paths a rule is read at, so a flow can total them later."""
     found = {}
+    paths = household_paths(rule)
     for key, _ in HOUSEHOLD_FIELDS:
-        for path in ((reports or {}).get("household") or {}).get(key) or []:
+        for path in paths.get(key) or []:
             value = _answer(form_json, path)
             if value is not None:
                 found[path] = value

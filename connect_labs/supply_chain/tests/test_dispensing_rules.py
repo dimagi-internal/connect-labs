@@ -616,3 +616,14 @@ def test_a_rule_keeps_the_household_paths_it_names_and_refuses_others(da, world)
         upsert(da, world, reports={"household": {"returned_paths": ["returned"]}})
     with pytest.raises(Exception, match="household|additional"):
         upsert(da, world, reports={"household": {"weight": ["form.w"]}})
+
+
+def test_a_rule_keeps_every_household_path_the_cbi_form_names(da, world):
+    from connect_labs.supply_chain.stock.services.dispensing import CBI_HOUSEHOLD_PATHS
+
+    saved = upsert(da, world, reports={"household": CBI_HOUSEHOLD_PATHS})
+
+    assert saved["reports"]["household"] == CBI_HOUSEHOLD_PATHS
+    assert CBI_HOUSEHOLD_PATHS["misused_paths"] == [
+        "form.visit_2_or_greater.rutf_adherence.rutf_in_the_past_week.misused_rutf_amount"
+    ]

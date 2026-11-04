@@ -557,3 +557,14 @@ def test_a_visit_keeps_the_household_answers_a_rule_names(da, rutf, rutf_rule):
         "form.returned": "3",
         "form.why": "shared",
     }
+
+
+def test_a_visit_on_the_cbi_form_keeps_the_cbi_household_answers_without_a_block(da, rutf, rutf_rule):
+    rutf_rule.reports = {}
+    rutf_rule.lines = [{"kind": "stated", "paths": [RUTF_PATH], "unit": "sachet"}]
+    rutf_rule.save()
+    past_week = "form.visit_2_or_greater.rutf_adherence.rutf_in_the_past_week"
+
+    read(da, [visit(9002, answers={RUTF_PATH: "14", f"{past_week}.packets_missing": "2", "form.other": "x"})])
+
+    assert WorkerVisit.objects.get(visit_id="9002").answers == {RUTF_PATH: "14", f"{past_week}.packets_missing": "2"}

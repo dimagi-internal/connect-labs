@@ -742,6 +742,9 @@ HOUSEHOLD = {
     "returned_paths": ["form.returned"],
     "leftover_paths": ["form.left"],
     "missing_paths": ["form.missing"],
+    "misused_paths": ["form.misused"],
+    "dispensed_paths": ["form.dispensed"],
+    "appetite_paths": ["form.appetite"],
     "reason_paths": ["form.why"],
 }
 
@@ -749,8 +752,11 @@ HOUSEHOLD = {
 def _household_visits(world):
     DispensingRule.objects.update(reports={"household": HOUSEHOLD})
     for visit_id, answers in (
-        ("v-worker-baobab", {"form.returned": "4", "form.left": "2", "form.missing": "1", "form.why": "shared"}),
-        ("v-worker-acacia", {"form.returned": "6", "form.missing": "3", "form.why": "shared"}),
+        (
+            "v-worker-baobab",
+            {"form.returned": "4", "form.left": "2", "form.missing": "1", "form.misused": "2", "form.why": "shared"},
+        ),
+        ("v-worker-acacia", {"form.returned": "6", "form.missing": "3", "form.why": "shared", "form.appetite": "1"}),
     ):
         kept = WorkerVisit.objects.filter(visit_id=visit_id).first()
         if kept is not None:
@@ -765,6 +771,7 @@ def test_the_flow_totals_what_the_delivery_form_says_happened_at_home(da, world)
     household = _flow(da, world)["household"]
 
     assert household["returned"] == 10 and household["leftover"] == 2 and household["missing"] == 4
+    assert household["misused"] == 2 and household["appetite"] == 1 and household["dispensed"] is None
     assert household["reasons"] == [{"reason": "shared", "visits": 2}]
     assert household["visits"] == 2
 
@@ -778,6 +785,7 @@ def test_a_question_the_form_does_not_ask_has_no_figure_not_zero(da, world):
     household = _flow(da, world)["household"]
 
     assert household["returned"] == 5 and household["leftover"] is None and household["missing"] is None
+    assert household["misused"] is None and household["rows"][-1]["amount"] is None
 
 
 def test_a_rejected_visit_adds_nothing_to_the_household_figures(da, world):
@@ -791,8 +799,16 @@ def test_the_flow_page_shows_the_household_when_the_rule_names_it(client_in_prog
     _household_visits(world)
     body = get(client_in_program, "flow")
 
-    assert "Empty sachets returned" in body and "Sachets missing or misused" in body
-    assert "Reasons given" in body and "shared (2)" in body
+    for label in (
+        "Eaten (empty sachets returned)",
+        "Leftover at the home",
+        "Missing",
+        "Misused",
+        "Used in appetite tests",
+    ):
+        assert label in body
+    assert "Dispensed to children" in body and "not recorded" in body
+    assert "Reasons given for misuse" in body and "shared (2)" in body
 
 
 # ---- the stock page's movement list --------------------------------------
@@ -1113,3 +1129,53 @@ def test_the_flow_page_reads_as_sentences_before_the_diagram(client_in_program, 
     assert "none recorded" in body
     assert 'data-testid="flow-household"' in body
     assert "flow-svg" not in body
+
+
+CBI_PAST_WEEK = "form.visit_2_or_greater.rutf_adherence.rutf_in_the_past_week"
+
+
+def test_a_rule_reading_the_cbi_form_is_read_at_cbis_household_paths(da, world):
+    """Sophie's paths, exactly, with no household block named: blanks are unknown, never zero."""
+    DispensingRule.objects.update(
+        reports={},
+        lines=[
+            {
+                "kind": "stated",
+                "paths": ["form.rutf_dispensing.rutf_sachets_dispensed"],
+                "unit": "sachet",
+            }
+        ],
+    )
+    for visit_id, answers in (
+        (
+            "v-worker-baobab",
+            {
+                "form.rutf_dispensing.rutf_sachets_dispensed": "14",
+                "form.var.appetite_test_stock_deduction": "1",
+                f"{CBI_PAST_WEEK}.empty_sachets": "9",
+                f"{CBI_PAST_WEEK}.leftover_rutf_number": "3",
+                f"{CBI_PAST_WEEK}.packets_missing": "1",
+                f"{CBI_PAST_WEEK}.misused_rutf_amount": "2",
+                f"{CBI_PAST_WEEK}.misused_RUTF": "sold",
+            },
+        ),
+        (
+            "v-worker-acacia",
+            {
+                "form.visit_1.rutf_dispensing.rutf_sachets_dispensed": "7",
+                "form.screening_outcome.rutf_stock_deduction": "7",
+                f"{CBI_PAST_WEEK}.empty_sachets": "",
+                f"{CBI_PAST_WEEK}.misused_RUTF": "  ",
+            },
+        ),
+    ):
+        kept = WorkerVisit.objects.filter(visit_id=visit_id).first()
+        kept.answers = {**kept.answers, **answers}
+        kept.save()
+
+    household = _flow(da, world)["household"]
+
+    assert household["dispensed"] == 21 and household["appetite"] == 8
+    assert household["returned"] == 9 and household["leftover"] == 3
+    assert household["missing"] == 1 and household["misused"] == 2
+    assert household["reasons"] == [{"reason": "sold", "visits": 1}]
