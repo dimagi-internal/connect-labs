@@ -36,6 +36,7 @@ TAB_GROUPS = (
         "Distribution and stock",
         (
             ("supply_chain:network", "Network"),
+            ("supply_chain:partners", "Partners"),
             ("supply_chain:programme_map", "Map"),
             ("supply_chain:distribution", "Distribution"),
             ("supply_chain:stock", "Stock"),
@@ -83,6 +84,10 @@ PAGE_PURPOSE = {
     "supply_chain:network": (
         "Where stock is kept, from the central warehouse down to health workers. "
         "Add places and see what each one holds."
+    ),
+    "supply_chain:partners": (
+        "How each partner gets stock to its field workers (through facilities, straight to them, or a mix), "
+        "and which partner runs which place. Setting this up builds the partner's network."
     ),
     "supply_chain:programme_map": "The same places on a map, coloured by whether anything needs attention.",
     "supply_chain:distribution": "Handouts: what was planned to go to each place, and what was actually given out.",
@@ -241,6 +246,8 @@ TAB_FOR_VIEW = {
     "supply_chain:issue_follow_up": "supply_chain:issues",
     "supply_chain:issue_resolve": "supply_chain:issues",
     "supply_chain:custodian_assign": "supply_chain:issues",
+    "supply_chain:partner_plan": "supply_chain:partners",
+    "supply_chain:partner_places": "supply_chain:partners",
     "supply_chain:alert_check_now": "supply_chain:alerts",
     "supply_chain:alert_delete": "supply_chain:alerts",
     "supply_chain:supplier_mark_reviewed": "supply_chain:suppliers",

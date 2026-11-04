@@ -95,3 +95,15 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
 - **A custodian is history, not an edit.** Naming a new one ends the one before it that day.
 - **Expiry warnings are a check (`stock_expiring`), with the lead time on the product**
   (`Commodity.expiry_warning_days`, 90 days to begin with), so alerts pick it up like any other.
+
+## Partners: how each distributes, and who runs which place (Sophie's RUTF feedback, 2026-11)
+
+- **Each partner states how it distributes** (`PartnerPlan`: through facilities, straight to field workers, or
+  a mix) and its network is built from that (`partner_plan_set` with `build_network`): a warehouse the partner
+  runs, a minimum and maximum stock at each place (lower nearer the field worker), field workers under the
+  right point. A hand-set band is never overwritten.
+- **A change of model is a dated change of plan, never field workers quietly moved.** The plan before ends the
+  day the new one starts; field workers move only when asked (`move_workers`), and the plan's note names each
+  one moved. Without it, the ones who would move are listed in the result.
+- **"Run by: not recorded" is fixed at setup**: `partner_places_assign` names the partner for places that name
+  none, and never takes a place another partner already runs unless told to.
