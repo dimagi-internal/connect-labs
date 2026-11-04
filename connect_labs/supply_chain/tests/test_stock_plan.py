@@ -238,3 +238,36 @@ def test_a_partner_sees_only_the_places_their_organisation_runs_and_no_programme
 
 def test_the_programme_itself_is_not_scoped(world):
     assert _view(world)["scoped"] is False
+
+
+def test_a_handout_filled_from_the_plan_follows_the_saved_plan(world):
+    """The Plan page's what-to-issue is what the handout is filled with, buffer and all."""
+    import time_machine
+
+    from connect_labs.supply_chain.models import Distribution
+
+    with time_machine.travel(TODAY, tick=False):
+        _filled_from_the_plan(world, Distribution)
+
+
+def _filled_from_the_plan(world, Distribution):
+    _op("stock_plan_set", data={"item_id": world["item"].pk, "buffer_days": 60})
+    expected = {
+        r["supply_point_id"]: int(r["to_issue"])
+        for r in _op("stock_plan_view", item_id=world["item"].pk, horizon_weeks=1)["issue"]
+        if r["to_issue"] > 0
+    }
+    assert expected, "the world should leave at least one worker needing stock"
+    run = _op(
+        "distribution_plan",
+        data={
+            "supply_point_id": world["store"].pk,
+            "opportunity_id": world["rule"].opportunity_id,
+            "commodity_slug": world["item"].commodity.slug,
+            "distributed_on": TODAY.isoformat(),
+            "source": "we_recorded",
+            "from_forecast": True,
+        },
+    )
+    lines = Distribution.objects.get(pk=run["id"]).lines.all()
+    assert {line.to_supply_point_id: int(line.quantity) for line in lines} == expected

@@ -297,6 +297,12 @@ class TestPlanningAHandout:
         assert run.status == "planned" and run.commodity_id == rutf.pk
         assert not Movement.objects.filter(distribution=run).exists()
 
+    def test_the_page_offers_to_generate_the_handout_from_the_plan(self, scoped, warehouse, rutf, places):
+        body = scoped.get(reverse("supply_chain:distribution")).content.decode()
+        assert "Generate this week" in body and "distribution/plan/?from_plan=1" in body
+        form = scoped.get(reverse("supply_chain:distribution_plan") + "?from_plan=1").content.decode()
+        assert 'name="from_forecast"' in form and "checked" in form.split('name="from_forecast"')[1][:200]
+
     def test_a_plan_with_no_list_and_no_forecast_is_refused(self, scoped, warehouse, rutf, places):
         response = scoped.post(reverse("supply_chain:distribution_plan"), self.post(warehouse))
         assert response.status_code == 200
@@ -305,5 +311,5 @@ class TestPlanningAHandout:
     def test_asking_for_the_forecast_with_nothing_to_forecast_says_so(self, scoped, warehouse, rutf, places):
         response = scoped.post(reverse("supply_chain:distribution_plan"), self.post(warehouse, from_forecast="on"))
         assert response.status_code == 200
-        assert "the forecast has nothing to issue" in response.content.decode()
+        assert "the plan has nothing to issue" in response.content.decode()
         assert not Distribution.objects.filter(reference="Monday").exists()

@@ -133,9 +133,11 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   guesses and never adds up two lines for one place. The message is kept on the handout
   (`message_text`); a photo is kept as a `Document` and its numbers are typed by a person. There is no
   OCR or language model on this path: an AI that reads a photo over MCP calls `distribution_confirm`.
-- **"What to issue" comes through one function** (`distribution/issue_plan.py`), today the forecast's
-  coming-week need less what the worker holds. Repoint that function, not the screens, when the plan
-  is computed elsewhere.
+- **"What to issue" comes through one function** (`distribution/issue_plan.py`), now the saved plan's
+  per-worker what-to-issue (`plan.service`, the rows of `stock_plan_view`), so a handout filled "from the
+  plan" and the Plan page cannot disagree. The operation flag keeps its old name `from_forecast`. The
+  Distribution page has a "Generate this week's handout from the plan" action (opens the plan form
+  with the box ticked).
 
 ## Per partner first, alerts, and looking ahead (Sophie's RUTF feedback, 2026-11)
 

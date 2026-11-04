@@ -129,11 +129,11 @@ class DistributionPlanForm(DistributionForm):
     """A handout that has not happened yet: where it leaves from, on what day, for which product."""
 
     from_forecast = forms.BooleanField(
-        label=_("Fill the list from what each worker needs this week"),
+        label=_("Fill the list from this week's plan"),
         required=False,
         help_text=_(
-            "Uses the forecast: each field worker's need for the coming week, less what they already "
-            "hold. Leave it unticked to type the list yourself."
+            "Uses the saved plan (Plan page): what each field worker should be given this week, less what "
+            "Supply's records say they already hold. Leave it unticked to type the list yourself."
         ),
     )
 

@@ -16,6 +16,10 @@
        class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
       <i class="fa-solid fa-plus mr-1"></i> Plan a handout
     </a>
+    <a href="{% url 'supply_chain:distribution_plan' %}?from_plan=1"
+       class="px-4 py-2 text-sm border border-brand-indigo text-brand-indigo hover:bg-gray-50 rounded-md">
+      <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Generate this week's handout from the plan
+    </a>
     <a href="{% url 'supply_chain:distribution_record' %}"
        class="px-4 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">
       Record a handout that already happened
