@@ -268,9 +268,9 @@ class _OrgScreen(OperationFormView):
 class OrgCreateView(_OrgScreen):
     title = "New organisation"
     intro = (
-        "Anyone labs needs to name: a manufacturer, an implementing partner, a procurement "
-        "agency, us. One registry for the whole of labs — an organisation is the same body "
-        "in every programme it appears in."
+        "Usually a partner that buys or holds stock for the programme, or a procurement agency. "
+        "(A manufacturer or trader is added from Suppliers instead.) One registry for the whole of "
+        "labs — an organisation is the same body in every programme it appears in."
     )
     submit_label = "Add organisation"
 
