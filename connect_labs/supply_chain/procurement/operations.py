@@ -1028,6 +1028,160 @@ def award_orders_progress(access, award_id):
 
 
 @register_operation(
+    name="selection_drafts_render",
+    summary=(
+        "The emails to send once a tender is awarded, drafted: a `selection` to the winning supplier (\"you've been "
+        'selected", naming the partners it will coordinate with, copying them) and, on a tender split by partner, a '
+        "`handover` to each partner -- the supplier's main contact, the winning quotation, that partner's quantity "
+        "and price, and the delivery details. Nothing is sent; the person copies them into their own mailbox."
+    ),
+    input_schema=obj({"award_id": ID}, required=("award_id",)),
+)
+def selection_drafts_render(access, award_id):
+    from connect_labs.supply_chain.procurement.services.selection import render_handover, render_selection
+    from connect_labs.supply_chain.procurement.services.splits import splits_for
+
+    award = access.get_award(award_id)
+    if award is None:
+        raise ValueError(f"award {award_id} not found")
+    tender, quote, supplier, commodity = award.tender, award.quote, award.supplier, award.commodity
+    splits = splits_for(record(tender), commodity.slug)
+    sender = _sender(access)
+    drafts = [
+        {
+            "kind": "selection",
+            "label": f"Tell {supplier.name} it was selected",
+            **render_selection(award, tender, quote, supplier, commodity, splits, sender=sender).as_dict(),
+        }
+    ]
+    for split in splits:
+        drafts.append(
+            {
+                "kind": "handover",
+                "org_id": split["org_id"],
+                "label": f"Hand over to {split['org_name']}",
+                **render_handover(award, tender, quote, supplier, commodity, split, sender=sender).as_dict(),
+            }
+        )
+    return {"award_id": award.pk, "drafts": drafts}
+
+
+@register_operation(
+    name="purchase_sizing",
+    summary=(
+        "Size a purchase per partner: target cases x the course, plus a buffer, in base units and packs, with the "
+        "working shown. The course is the forecast's expected course once enough children have finished, else the "
+        "protocol's, unless you pass course_units. Stock already held is not netted off. Reads only."
+    ),
+    input_schema=obj(
+        {
+            "commodity_slug": {"type": "string"},
+            "partners": {
+                "type": "array",
+                "items": obj(
+                    {
+                        "org_id": ID,
+                        "target_cases": {"type": "number", "minimum": 0},
+                        "buffer_percent": {"type": "number", "minimum": 0},
+                    },
+                    required=("org_id", "target_cases"),
+                ),
+            },
+            "buffer_percent": {"type": "number", "minimum": 0},
+            "course_units": {"type": "number", "exclusiveMinimum": 0},
+            "item_id": ID,
+        },
+        required=("commodity_slug", "partners"),
+    ),
+)
+def purchase_sizing(access, commodity_slug, partners, buffer_percent=None, course_units=None, item_id=None):
+    from decimal import Decimal
+
+    from connect_labs.supply_chain.procurement.services.sizing import DEFAULT_BUFFER_PERCENT, size_purchase
+
+    commodity = access.get_commodity(commodity_slug)
+    if commodity is None:
+        raise ValueError(f"commodity {commodity_slug!r} not found")
+    item = access.get_item(item_id) if item_id else None
+    basis, completed = "given", None
+    if course_units is None:
+        course_units, basis, completed = _expected_course(access, commodity, item)
+    if course_units is None:
+        raise ValueError(
+            "the product has no course length: give course_units, or set the product's course definition "
+            "(base_units_per_course)"
+        )
+    base_per_pack = (item.base_per_pack if item is not None else None) or commodity.base_per_pack
+    names = {}
+    for partner in partners:
+        org = access.get_org(partner["org_id"])
+        if org is None:
+            raise ValueError(f"organisation {partner['org_id']} does not exist")
+        names[partner["org_id"]] = org.name
+    result = size_purchase(
+        [{**p, "org_name": names[p["org_id"]]} for p in partners],
+        course_units,
+        Decimal(str(buffer_percent)) if buffer_percent is not None else DEFAULT_BUFFER_PERCENT,
+        base_per_pack,
+    )
+    return {
+        **result,
+        "course_basis": basis,
+        "completed_cases": completed,
+        "buffer_percent": str(buffer_percent if buffer_percent is not None else DEFAULT_BUFFER_PERCENT),
+    }
+
+
+def _expected_course(access, commodity, item):
+    """(course in base units, basis, children it rests on): the forecast's, else the protocol's, else None."""
+    from connect_labs.supply_chain.models import DispensingRule
+    from connect_labs.supply_chain.stock.services import belief, forecast
+
+    rules = list(
+        DispensingRule.objects.filter(
+            program_id=access.program_id, item__commodity=commodity, status="active"
+        ).exclude(cases={})
+    )
+    by_item = {}
+    for rule in rules:
+        by_item.setdefault(rule.item_id, []).append(rule)
+    chosen = item.pk if item is not None and item.pk in by_item else next(iter(by_item), None)
+    if chosen is not None:
+        found = access.get_item(chosen)
+        item_rules = by_item[chosen]
+        cases = forecast.read_cases(access.program_id, found, item_rules, date.today(), belief.unit_of(found))
+        course = forecast.course_size(cases, item_rules, found, None)
+        if course["size"] is not None:
+            return course["size"], course["basis"], course["completed_cases"]
+    protocol = (commodity.course_definition or {}).get("base_units_per_course")
+    return (protocol, "protocol", 0) if protocol else (None, "unknown", None)
+
+
+@register_operation(
+    name="item_offer_from_quote",
+    summary=(
+        "The trade item a quote describes, pre-filled from what the supplier stated (pack size, sachet weight, "
+        "shelf life) and nothing it did not, for the person to confirm and add. `already_linked` says whether the "
+        "quote already names a trade item. Reads only."
+    ),
+    input_schema=obj({"quote_id": ID}, required=("quote_id",)),
+)
+def item_offer_from_quote(access, quote_id):
+    from connect_labs.supply_chain.procurement.services.selection import item_from_quote
+
+    quote = access.get_quote(quote_id)
+    if quote is None:
+        raise ValueError(f"quote {quote_id} not found")
+    offer = item_from_quote(quote, quote.supplier, quote.commodity)
+    return {
+        "quote_id": quote.pk,
+        "already_linked": quote.item_id is not None,
+        "item": {k: v for k, v in offer.items() if k != "commodity"},
+        "commodity_slug": quote.commodity.slug,
+    }
+
+
+@register_operation(
     name="award_orders_create",
     summary=(
         "Draft one order per partner of a tender split by partner, from the award: each order carries that "
