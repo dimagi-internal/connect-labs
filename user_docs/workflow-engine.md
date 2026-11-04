@@ -155,6 +155,9 @@ This means each workflow appears in exactly one place. If you cannot find a work
 !!! note "Drilling into worker visits from a program-level report"
     When you open a worker's case in the worker review from a programme report created at program level, their visits now load correctly. Previously, this could show a "pipeline not found" error; this has been fixed and visit data loads as expected.
 
+!!! note "Program-owned reports loading their data"
+    Program-owned workflows — such as the CHC Work Area Tracker — load all of their pipeline data correctly when you open them. Previously, if a pipeline's data had not yet been cached, the report could show a "workflow not found" error and display no rows at all. This is now fixed: the report fetches its data under the program context and shows rows as expected.
+
 ### Embedded workflows
 
 Certain workflows and pages can be shown inside another system's interface — for example, inside Connect — without the person needing to sign in to Labs separately. The embedded view displays exactly the same report the person would see if they opened Labs directly, but without the Labs menus or navigation chrome.
@@ -211,9 +214,4 @@ One deliberate difference from the normal page: a header row set to stay fixed a
 
 #### Dialogs in the sandbox
 
-When you open a dialog inside a sandboxed workflow or page — such as a detail panel, an image viewer, a confirmation box, or any other modal — it now covers the entire window, including the Labs header and side menu, exactly as it does on a regular run page:
-
-- The dimmed background extends over the Labs header and navigation, so they are no longer left bright behind an open dialog.
-- The dialog is centred in the full window and can use its full height, so a tall dialog opened near the top of a page will no longer have its title and close button cut off above the report area.
-
-Closing the dialog returns the
+When you open a dialog inside a sandboxed workflow or page — such as a detail panel, an image viewer, a confirmation box, or any other modal — it now covers the entire window, including the
