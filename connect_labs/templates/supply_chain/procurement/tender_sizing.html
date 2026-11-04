@@ -26,13 +26,13 @@
           <td class="py-1 pr-3"><input type="number" min="0" step="any" name="cases_{{ r.org_id }}" value="{{ r.cases }}" class="w-40 border border-gray-300 rounded-md px-2 py-1"></td>
           <td class="py-1"><input type="number" min="0" step="any" name="buffer_{{ r.org_id }}" value="{{ r.buffer }}" placeholder="same as below" class="w-32 border border-gray-300 rounded-md px-2 py-1"></td></tr>
       {% empty %}
-        <tr><td class="py-2 text-gray-600" colspan="3">No partner runs a place in this programme yet. Add them on the Network page first.</td></tr>
+        <tr><td class="py-2 text-gray-600" colspan="3">No partners are listed for this programme yet. Add them on the <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:partners' %}">Partners page</a> first.</td></tr>
       {% endfor %}
       </tbody>
     </table>
     <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-700">
       <label>Buffer for everyone (%) <input type="number" min="0" step="any" name="buffer" value="{{ buffer }}" placeholder="10" class="ml-1 w-20 border border-gray-300 rounded-md px-2 py-1"></label>
-      <label>What one child's course needs <input type="number" min="0" step="any" name="course" value="{{ course }}" placeholder="from the forecast" class="ml-1 w-28 border border-gray-300 rounded-md px-2 py-1"> <span class="text-xs text-gray-600">leave empty to use the forecast or the protocol</span></label>
+      <label>What one child's course needs <input type="number" min="0" step="any" name="course" value="{{ course }}" placeholder="from the forecast" class="ml-1 w-44 border border-gray-300 rounded-md px-2 py-1"> <span class="text-xs text-gray-600">leave empty to use the forecast or the protocol</span></label>
     </div>
     <button type="submit" class="px-4 py-2 text-sm font-medium rounded-md text-white bg-brand-indigo hover:bg-brand-deep-purple">Work it out</button>
   </form>
