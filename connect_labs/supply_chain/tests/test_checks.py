@@ -151,7 +151,7 @@ class TestSourcing:
 
         # The underlying facts are still readable -- just not as checks.
         assert op(da, "outreach_list", tender_id=tender["id"])[0]["responded"] is False
-        assert op(da, "supplier_list")[0]["status"] == "identified"
+        assert op(da, "supplier_list")[0]["status"] == "contacted"  # a request was sent, so the records now say so
 
 
 class TestFulfilment:
