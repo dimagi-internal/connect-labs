@@ -2,9 +2,8 @@
 {% load static supply_chain_extras %}
 {% comment %}
 Where one item went, from `stock_flow`: what arrived, through each store, to
-each field worker, to what their visits gave out. Drawn by
-static/supply_chain/flow.js from the payload below, one week at a time; the
-slider and Play step through the weeks without asking the server again.
+each field worker, to what their visits gave out. Said in words and one stacked bar, from the account `stock_flow` returns; the
+week-by-week routes stay in the operation's payload for other readers.
 
 Facts only (September design §22): workers are ordered by the store that
 restocks them, then by name, never by how they are doing.
@@ -13,7 +12,7 @@ restocks them, then by name, never by how they are doing.
 <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Where it went</h1>
-    <p class="text-sm text-gray-600 mt-1">Every unit that arrived, through the stores to each field worker, to what their visits gave out.</p>
+    <p class="text-sm text-gray-600 mt-1">Every unit that arrived: how much is still in the warehouse, at health facilities, with field workers, given to children, or lost.</p>
   </div>
   {% if has_program_context %}
     {% pinned_tab "supply_chain:workers" as workers_tab %}
@@ -55,6 +54,14 @@ restocks them, then by name, never by how they are doing.
     <p class="text-sm text-gray-600 mt-1">
       Of the {{ flow.account.arrived|floatformat:"0g" }} {{ flow.unit|unit_plural }} of {{ item.name }} that have arrived, up to the end of the latest week:
     </p>
+    <div class="mt-3 max-w-3xl" data-testid="flow-bar">
+      <div class="flex h-6 w-full overflow-hidden rounded-md border border-gray-200" role="img" aria-label="Where the {{ flow.unit|unit_plural }} are: {% for stage in flow.account.stages %}{% if stage.share %}{{ stage.label }} {{ stage.percent }}%{% if not forloop.last %}, {% endif %}{% endif %}{% endfor %}">
+        {% for stage in flow.account.stages %}{% if stage.share %}<div style="width: {{ stage.share }}%; background: {{ stage.color }};" title="{{ stage.label }}: {{ stage.amount|floatformat:'0g' }}"></div>{% endif %}{% endfor %}
+      </div>
+      <ul class="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-700">
+        {% for stage in flow.account.stages %}{% if stage.share %}<li><span class="inline-block w-3 h-3 rounded-sm align-middle mr-1" style="background: {{ stage.color }};"></span>{{ stage.label }} {{ stage.percent }}%</li>{% endif %}{% endfor %}
+      </ul>
+    </div>
     <table class="w-full text-sm mt-3 max-w-3xl" data-testid="flow-account-table">
       <thead class="text-xs uppercase tracking-wide text-gray-600"><tr>
         <th scope="col" class="text-left py-1 pr-3">Where it is</th><th scope="col" class="text-right py-1 px-3">{{ flow.unit|unit_plural|capfirst }}</th><th scope="col" class="text-right py-1 pl-3">Share of arrivals</th>
@@ -71,66 +78,31 @@ restocks them, then by name, never by how they are doing.
       </tbody>
     </table>
     <p class="text-xs text-gray-600 mt-2">Losses and count shortfalls are streams of their own: they are never netted into another line.</p>
-    <div class="mt-4 rounded-md border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-700 max-w-3xl" data-testid="flow-household">
-      <strong>In the household:</strong> empty sachets returned, leftovers, and sachets missing or misused (with reasons) come from the delivery form. None of this programme's visits carry those answers yet, so nothing is shown here rather than a guess.
-    </div>
+    {% if flow.household %}
+      <div class="mt-4 max-w-3xl" data-testid="flow-household">
+        <h3 class="text-sm font-semibold text-gray-900">In the household</h3>
+        <p class="text-xs text-gray-600">What the delivery form says happened to the sachets at the home, over {{ flow.household.visits }} visit{{ flow.household.visits|pluralize }} that answered.</p>
+        <table class="w-full text-sm mt-2">
+          <tbody class="divide-y divide-gray-100">
+            {% if flow.household.returned is not None %}<tr><th scope="row" class="text-left font-medium py-1.5 pr-3">Empty sachets returned</th><td class="text-right tabular-nums">{{ flow.household.returned|floatformat:"0g" }}</td></tr>{% endif %}
+            {% if flow.household.leftover is not None %}<tr><th scope="row" class="text-left font-medium py-1.5 pr-3">Leftover sachets at the home</th><td class="text-right tabular-nums">{{ flow.household.leftover|floatformat:"0g" }}</td></tr>{% endif %}
+            {% if flow.household.missing is not None %}<tr><th scope="row" class="text-left font-medium py-1.5 pr-3">Sachets missing or misused</th><td class="text-right tabular-nums">{{ flow.household.missing|floatformat:"0g" }}</td></tr>{% endif %}
+          </tbody>
+        </table>
+        {% if flow.household.reasons %}
+          <p class="text-xs text-gray-600 mt-2">Reasons given:
+            {% for reason in flow.household.reasons %}{{ reason.reason }} ({{ reason.visits }}){% if not forloop.last %}, {% endif %}{% endfor %}.
+          </p>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="mt-4 rounded-md border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-700 max-w-3xl" data-testid="flow-household">
+        <strong>In the household:</strong> empty sachets returned, leftovers, and sachets missing or misused (with reasons) come from the delivery form. This programme's dispensing rule does not yet say which form answers hold them, so nothing is shown here rather than a guess. Name them under "What the worker's app reports" on the <a href="{% url 'supply_chain:dispensing_rules' %}" class="text-brand-indigo hover:underline">Dispensing rules</a> page.
+      </div>
+    {% endif %}
   </section>
 
-  <div id="flow-root" class="bg-white border border-brand-border-light rounded-lg p-4">
-    <details>
-    <summary class="cursor-pointer text-sm font-medium text-brand-indigo mb-3">Optional detail: the diagram, week by week</summary>
-    <p class="text-xs text-gray-600 mb-3 max-w-3xl">
-      Each column is a step in the chain: arrivals, then the stores (each "Store" is a warehouse or store the stock passes through), then field workers, then where it ended. Plain blocks are stock that moved on; striped blocks are stock still held there at the end of the chosen week. Hover a block for its full name.
-    </p>
-    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4" data-testid="flow-tiles">
-      {% for key, label in flow_tiles %}
-        <div class="rounded-md border border-gray-200 px-3 py-2">
-          <div class="text-[11px] uppercase tracking-wide text-gray-600">{{ label }}</div>
-          <div class="text-xl font-semibold text-gray-900 tabular-nums" data-tile="{{ key }}">—</div>
-        </div>
-      {% endfor %}
-    </div>
-    <div class="flex flex-wrap items-center gap-3 mb-3">
-      <div class="inline-flex rounded-md border border-gray-300 overflow-hidden" role="group" aria-label="What to draw">
-        <button type="button" data-flow-view="workers" aria-pressed="true" class="px-3 py-1.5 text-sm">Close up on the workers</button>
-        <button type="button" data-flow-view="all" aria-pressed="false" class="px-3 py-1.5 text-sm border-l border-gray-300">The whole chain</button>
-      </div>
-      <button type="button" id="flow-play" class="px-3 py-1.5 rounded-md bg-brand-indigo text-white text-sm font-medium">Play</button>
-      <label for="flow-week" class="sr-only">Week</label>
-      <input type="range" id="flow-week" min="0" value="0" step="1" class="flex-1 min-w-[12rem] accent-indigo-600">
-      <span id="flow-week-label" class="text-sm text-gray-700 tabular-nums min-w-[10rem]" aria-live="polite"></span>
-    </div>
-    <p id="flow-scroll-hint" class="text-xs text-gray-600 mb-1" hidden>Scroll sideways to follow it to the workers and the visits →</p>
-    <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Flow diagram, scrolls sideways">
-      <svg id="flow-svg" role="img" aria-labelledby="flow-svg-title" class="block"><title id="flow-svg-title">Where {{ item.name }} went</title></svg>
-    </div>
-    <div class="flex flex-wrap gap-x-5 gap-y-1 mt-3 text-xs text-gray-600">
-      <span><span class="inline-block w-3 h-3 rounded-sm align-middle mr-1" style="background:#818cf8"></span>moved down the chain</span>
-      <span><span class="inline-block w-3 h-3 rounded-sm align-middle mr-1" style="background:#34d399"></span>given out at visits</span>
-      <span><span class="inline-block w-3 h-3 rounded-sm align-middle mr-1" style="background:#f87171"></span>lost, expired or sent elsewhere</span>
-      <span><span class="inline-block w-3 h-3 rounded-sm align-middle mr-1 border border-gray-400" style="background:repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb 2px,#fff 2px,#fff 4px)"></span>still held there</span>
-    </div>
-    {% if flow.adjusted %}<p class="text-xs text-gray-600 mt-2">Corrections to balances ({{ flow.adjusted }} {{ flow.unit|unit_plural }} net) are not drawn: they move nothing.</p>{% endif %}
-    {% for unit, amount in flow.left_out.items %}<p class="text-xs text-amber-900 mt-1">Left off: {{ amount }} recorded in {{ unit|unit_plural }}, which {{ item.name }} gives no way to convert.</p>{% endfor %}
-    <details class="mt-3 text-sm">
-      <summary class="cursor-pointer text-brand-indigo">The figures behind this diagram</summary>
-      <div class="overflow-x-auto mt-2" tabindex="0" role="region" aria-label="Flow figures, scrolls sideways">
-        <table class="min-w-[36rem] w-full text-sm" id="flow-table">
-          <caption class="sr-only">For each place, what reached it, what it sent on and what it still holds, to the end of the chosen week.</caption>
-          <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
-            <tr><th scope="col" class="text-left px-3 py-2">Place</th><th scope="col" class="text-right px-3 py-2">Reached it</th><th scope="col" class="text-right px-3 py-2">Sent on or given out</th><th scope="col" class="text-right px-3 py-2">Still there</th></tr>
-          </thead>
-          <tbody class="divide-y divide-gray-100"></tbody>
-        </table>
-      </div>
-    </details>
-    </details>
-  </div>
-  {{ flow|json_script:"flow-data" }}
+  {% if flow.adjusted %}<p class="text-xs text-gray-600">Corrections to balances ({{ flow.adjusted }} {{ flow.unit|unit_plural }} net) move nothing and are not counted above.</p>{% endif %}
+  {% for unit, amount in flow.left_out.items %}<p class="text-xs text-amber-900 mt-1">Left off: {{ amount }} recorded in {{ unit|unit_plural }}, which {{ item.name }} gives no way to convert.</p>{% endfor %}
 {% endif %}
-{% endblock %}
-
-{% block inline_javascript %}
-  {{ block.super }}
-  {% if flow.weeks %}<script src="{% static 'supply_chain/flow.js' %}"></script>{% endif %}
 {% endblock %}

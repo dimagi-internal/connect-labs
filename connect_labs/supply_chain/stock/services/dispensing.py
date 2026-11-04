@@ -132,7 +132,43 @@ def validate_reports(reports) -> dict:
             "quantity_paths": _paths(receipt.get("quantity_paths"), "the receipt quantity"),
             "date_paths": _paths(receipt.get("date_paths"), "the receipt date"),
         }
+    if reports.get("household"):
+        clean["household"] = validate_household(reports["household"])
     return clean
+
+
+# What happened to the sachets once they reached the home, as the delivery form asks it. Each is a
+# list of form paths (the first answered wins, as everywhere else); a programme names the paths its
+# own app uses, and leaves out any it does not ask.
+HOUSEHOLD_FIELDS = (
+    ("returned_paths", "empty sachets returned"),
+    ("leftover_paths", "leftover sachets"),
+    ("missing_paths", "sachets missing or misused"),
+    ("reason_paths", "the reason sachets were missing or misused"),
+)
+
+
+def validate_household(household) -> dict:
+    """The household block as it will be stored: only the paths named, each a list of `form.` paths."""
+    clean = {}
+    for key, what in HOUSEHOLD_FIELDS:
+        if household.get(key):
+            clean[key] = _paths(household[key], f"the household block, {what}")
+    unknown = sorted(set(household) - {key for key, _ in HOUSEHOLD_FIELDS})
+    if unknown:
+        raise ValueError(f"the household block does not know {', '.join(unknown)}")
+    return clean
+
+
+def household_answers(reports, form_json) -> dict:
+    """{path: raw answer} for the household paths a rule names, so a flow can total them later."""
+    found = {}
+    for key, _ in HOUSEHOLD_FIELDS:
+        for path in ((reports or {}).get("household") or {}).get(key) or []:
+            value = _answer(form_json, path)
+            if value is not None:
+                found[path] = value
+    return found
 
 
 LOST_AFTER_DAYS = 21
