@@ -32,7 +32,7 @@ works, not a stock-out. The red alarm stays for points meant to hold stock.
     {% if node.kind != "user_held" %}<span class="text-xs text-gray-600">{{ node.kind|words }}</span>{% endif %}
     {% if node.status != 'active' %}<span class="px-1.5 py-0.5 rounded text-[11px] bg-gray-100 text-gray-600">inactive</span>{% endif %}
     {% if node.stock %}
-      <span class="text-sm text-gray-900 tabular-nums">{% if node.kind != "user_held" %}here: {% endif %}{{ node.stock.on_hand|figure_text }} on hand</span>
+      <span class="text-sm text-gray-900 tabular-nums">{% if node.kind != "user_held" %}On its own shelf: {% endif %}{{ node.stock.on_hand|figure_text }} on hand</span>
       {% if node.passes_on %}
         <span class="text-xs text-gray-600" data-testid="passes-on">passes stock on</span>
       {% else %}

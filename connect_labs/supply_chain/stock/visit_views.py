@@ -147,9 +147,19 @@ SORTS = {
 
 COLUMNS = (
     ("name", "Worker", ""),
-    ("on_hand", "On hand", "the ledger: issued minus dispensed"),
-    ("days_to_stockout", "Days to stock-out", ""),
-    ("variance", "Count − ledger on count day", "negative: fewer counted than the ledger held that day"),
+    ("on_hand", "On hand", "Supply's records (official): issued minus given out"),
+    (
+        "days_to_stockout",
+        "Days to stock-out",
+        "days until this worker runs out, at their own pace over the last 14 days "
+        "(the Forecast instead uses the children they are treating)",
+    ),
+    (
+        "variance",
+        "Count − ledger on count day",
+        "the worker's own count (a self-report) less Supply's records; "
+        "negative means fewer counted than the records held",
+    ),
     ("days_since_checked", "Days since checked", ""),
     ("unapproved", "Unapproved", "share of dispensing on visits not yet approved"),
     ("estimated", "Estimated", "share of dispensing from protocol quantities"),

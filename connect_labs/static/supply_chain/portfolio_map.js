@@ -37,9 +37,12 @@
   var ATTN = {
     // "Has a blocker", not "Blocked": a count of places with a blocker is not a
     // count of workers in trouble, which is the one headline (#2344).
-    blocked: { label: 'Has a blocker', color: '#ef4444' },
-    waiting: { label: 'Waiting on an answer', color: '#f59e0b' },
-    clear: { label: 'Nothing open', color: '#94a3b8' },
+    blocked: {
+      label: 'Overdue, a count mismatch or low stock',
+      color: '#ef4444',
+    },
+    waiting: { label: 'Waiting on a reply', color: '#f59e0b' },
+    clear: { label: 'Nothing needs attention', color: '#94a3b8' },
   };
   var STAGES = [
     { key: 'source', label: 'Source' },
@@ -852,7 +855,11 @@
       '<h5>Run by</h5>' +
       orgs
         .map(function (o) {
-          return box('orgs', o, o || 'Not recorded');
+          return box(
+            'orgs',
+            o,
+            o || 'No partner recorded for this place (set it on the place)',
+          );
         })
         .join('') +
       '<button type="button" class="pm-link text-sm mt-2" id="pm-clear">Clear filters</button>';
@@ -2766,6 +2773,7 @@
       .join('');
     h +=
       '<details><summary style="cursor:pointer;opacity:.7;list-style:none">More…</summary>' +
+      '<div style="opacity:.8;margin:3px 0;max-width:230px">Small dots for field workers show where their visits are, not where they live.</div>' +
       row(
         '<span class="pm-dot" style="background:#94a3b8;opacity:.5"></span>',
         'Faded: location known only roughly',
@@ -2806,8 +2814,22 @@
     document.getElementById('pm-legend').innerHTML = h;
   }
 
+  // "Only show places that need attention" with nothing to show would look like
+  // a button that does nothing; say so instead.
+  function renderAttentionEmpty() {
+    var el = document.getElementById('pm-attn-empty');
+    if (!el) return;
+    var shown = state.attention
+      ? places.filter(function (pt) {
+          return visiblePlace(pt, false);
+        }).length
+      : 1;
+    el.hidden = shown > 0;
+  }
+
   function update(fit) {
     renderLegend();
+    renderAttentionEmpty();
     renderBar();
     renderPanel();
     drawMap(fit);
