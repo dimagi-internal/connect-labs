@@ -137,7 +137,11 @@ def _tender_timing(obj) -> dict:
     """needed_by, start_by and the note that counts back from them (procurement/services/timing.py)."""
     from connect_labs.supply_chain.procurement.services.timing import timing
 
-    out = {"needed_by": _date(obj.needed_by), "lead_time_days_expected": obj.lead_time_days_expected}
+    out = {
+        "needed_by": _date(obj.needed_by),
+        "lead_time_days_expected": obj.lead_time_days_expected,
+        "partner_splits": obj.partner_splits or [],
+    }
     if obj.needed_by is None or not obj.pk:
         return {**out, "start_by": None, "start_by_note": "", "late_to_start": False}
     lead_times = list(
@@ -232,6 +236,7 @@ def quote(obj) -> dict:
         "received_on": _date(obj.received_on),
         "supplier_reference": obj.supplier_reference,
         "payment_terms": obj.payment_terms,
+        "price_holds_for_purchases": obj.price_holds_for_purchases,
         "voided": obj.voided,
         "void_reason": obj.void_reason,
         "version": obj.version,
@@ -325,6 +330,7 @@ def contract(obj) -> dict:
         "payment_terms": obj.payment_terms,
         "covers_shortfall_of_id": obj.covers_shortfall_of_id,
         "buying_model": obj.buying_model,
+        "partner_org_id": obj.partner_org_id,
         **_sourced(obj),
     }
 

@@ -94,6 +94,26 @@ is folded away, each fold with its count.
         {% if tender.start_by_note %}<span class="text-xs {% if tender.late_to_start %}text-message-warning-text font-medium{% else %}text-gray-600{% endif %}" data-testid="start-by-note">{{ tender.start_by_note }}</span>{% endif %}
       </span>
     </section>
+    {% if tender.partner_splits %}
+    <section class="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="partner-splits">
+      <div class="px-4 py-2.5 border-b border-gray-100 text-xs font-semibold text-gray-600">Split by partner
+        <span class="font-normal ml-2">one delivery, quantity and receiver per partner; the award and orders follow it</span></div>
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600"><tr>
+          <th class="text-left px-4 py-2">Partner</th><th class="text-left px-4 py-2">Quantity</th>
+          <th class="text-left px-4 py-2">Delivered to</th><th class="text-left px-4 py-2">Receiver</th><th class="text-left px-4 py-2">Bought</th></tr></thead>
+        <tbody class="divide-y divide-gray-100">
+        {% for split in tender.partner_splits %}
+          <tr><td class="px-4 py-2 text-gray-900">{{ split.org_name }}</td>
+            <td class="px-4 py-2 tabular-nums">{{ split.quantity }} {{ split.quantity_unit }}</td>
+            <td class="px-4 py-2 text-gray-700">{{ split.delivery_point_key|default:"—" }}</td>
+            <td class="px-4 py-2 text-gray-700">{{ split.receiver_name|default:"—" }}{% if split.receiver_contact %} <span class="text-xs text-gray-600">{{ split.receiver_contact }}</span>{% endif %}</td>
+            <td class="px-4 py-2 text-gray-700">{{ split.buying_model|words }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
 
     <ol class="stage-bar" data-testid="stage-bar" aria-label="Stage">
       {% for s in status.stages %}

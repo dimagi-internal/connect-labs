@@ -170,6 +170,7 @@ TAB_FOR_VIEW = {
     # tab and the nav read as though you had left the domain.
     "supply_chain:procurement_quote_detail": "supply_chain:procurement_tender_board",
     "supply_chain:award_detail": "supply_chain:procurement_tender_board",
+    "supply_chain:award_orders_create": "supply_chain:procurement_tender_board",
     "supply_chain:product_detail": "supply_chain:catalogue",
     "supply_chain:item_detail": "supply_chain:catalogue",
     "supply_chain:supplier_detail": "supply_chain:suppliers",

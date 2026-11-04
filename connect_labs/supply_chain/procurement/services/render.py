@@ -226,6 +226,27 @@ def _note_worth_saying(note: str, rest_of_email: str) -> str:
 # ---- the three drafts -----------------------------------------------------
 
 
+def _split_paragraph(tender: Tender, commodity: Commodity) -> list[str]:
+    """When the quantity is split between partners: who gets how much, and the price question."""
+    splits = [s for s in tender.partner_splits or [] if s.get("commodity_slug") == commodity.slug]
+    if len(splits) < 2:
+        return []
+    out = ["", f"The quantity is split between {len(splits)} deliveries:"]
+    for split in splits:
+        place = next((p for p in tender.delivery_points or [] if p.get("key") == split.get("delivery_point_key")), {})
+        where = ", ".join(x for x in (place.get("name"), place.get("city")) if x)
+        who = f" (receiver: {split['receiver_name']})" if split.get("receiver_name") else ""
+        out.append(
+            f"- {quantity_phrase(split['quantity'], split.get('quantity_unit'))}"
+            + (f" to {where}" if where else "")
+            + who
+        )
+    out.append(
+        f"Please quote per delivery, or confirm that your price holds if we buy as {len(splits)} separate purchases."
+    )
+    return out
+
+
 def render_initial_request(
     commodity: Commodity,
     tender: Tender,
@@ -241,6 +262,7 @@ def render_initial_request(
     lines = [_greeting(supplier), "", opening]
     if len(places) > 1:
         lines += ["", "Please say which of these places your price covers; you may quote a different price for each."]
+    lines += _split_paragraph(tender, commodity)
     note = _note_worth_saying(tender.notes_to_supplier, "\n".join([opening, _numbered(facts)]))
     if note:
         lines += ["", note]
