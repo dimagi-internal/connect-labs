@@ -146,6 +146,27 @@ the award, so the page says so where the order button would otherwise be.
   {% endif %}
 </div>
 
+{% if item_offer %}
+<div class="bg-white border border-gray-200 rounded-lg px-4 py-3 mb-4 text-sm" data-testid="item-offer">
+  <span class="font-semibold text-gray-900">Add the trade item for this product.</span>
+  <span class="text-gray-700">The winning quotation says what the manufacturer's version looks like; it can fill in the form for you, and you add the manufacturer's own code.</span>
+  <a class="text-brand-indigo hover:underline ml-1" href="{% url 'supply_chain:item_create' %}?product={{ item_offer.commodity_slug }}&amp;from_quote={{ award.quote_id }}">Add it from the quotation</a>
+</div>
+{% endif %}
+
+<details class="bg-white border border-gray-200 rounded-lg mb-4" id="selection-drafts" data-testid="selection-drafts">
+  <summary class="px-4 py-2.5 cursor-pointer text-xs font-semibold text-gray-600">Emails for this award <span class="font-normal ml-1">the selection email to the supplier{% if order_set.partners_total %}, and a handover for each partner{% endif %}; nothing is sent from here</span></summary>
+  {% for d in selection_drafts %}
+  <div class="border-t border-gray-100 px-4 py-3" data-testid="selection-draft" data-kind="{{ d.kind }}">
+    <p class="font-semibold text-gray-900">{{ d.label }}</p>
+    <p class="text-sm text-gray-700 mt-1">To {% if d.to %}{{ d.to }}{% else %}<span class="text-gray-600">no address on file</span>{% endif %}{% if d.cc %} · Cc {{ d.cc|join:", " }}{% endif %}</p>
+    <p class="text-sm text-gray-700">Subject: {{ d.subject }}</p>
+    <textarea readonly rows="12" class="base-input h-auto text-sm w-full font-sans py-2 leading-snug mt-1" onfocus="this.select()">{{ d.text }}</textarea>
+    {% if d.to %}<a class="text-sm text-brand-indigo hover:underline" href="mailto:{{ d.to|urlencode:'@' }}?{% if d.cc %}cc={{ d.cc|join:','|urlencode:'@,' }}&amp;{% endif %}subject={{ d.subject|urlencode:'' }}&amp;body={{ d.text|urlencode:'' }}">Open in mail</a>{% endif %}
+  </div>
+  {% endfor %}
+</details>
+
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
   <div class="px-4 py-2.5 border-b border-gray-100 flex items-baseline justify-between">
     <span class="text-xs font-semibold text-gray-600">Ordered against it</span>
