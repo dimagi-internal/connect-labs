@@ -30,10 +30,17 @@ _SUBSCRIPTION_DATA = _data_with(
     recipient_name={"type": "string", "maxLength": 255},
     partner_org_id={"type": ["integer", "null"]},
     channel={"enum": list(CHANNELS)},
-    recipient_phone={"type": "string", "maxLength": 32},
+    recipient_connect_username={"type": "string", "maxLength": 64},
     cadence={"enum": list(CADENCES)},
     active={"type": "boolean"},
 )
+
+
+def _person_name(user) -> str:
+    name = getattr(user, "name", "") or ""
+    if name and name != user.username:
+        return name
+    return user.email or user.username
 
 
 def serialize_subscription(sub) -> dict:
@@ -50,7 +57,7 @@ def serialize_subscription(sub) -> dict:
         "recipient_user_id": sub.recipient_user_id,
         "recipient_email": sub.recipient_email,
         "recipient_name": sub.recipient_name,
-        "recipient_phone": sub.recipient_phone,
+        "recipient_connect_username": sub.recipient_connect_username,
         "channel": sub.channel,
         "partner_org_id": sub.partner_org_id,
         "partner_name": sub.partner_org.name if sub.partner_org_id else None,
@@ -58,6 +65,7 @@ def serialize_subscription(sub) -> dict:
         "cadence": sub.cadence,
         "active": sub.active,
         "created_by_id": sub.created_by_id,
+        "sent_as": _person_name(sub.created_by) if sub.created_by_id else None,
         "created_at": sub.created_at.isoformat() if sub.created_at else None,
         "last_digest_sent_at": sub.last_digest_sent_at.isoformat() if sub.last_digest_sent_at else None,
     }
@@ -77,6 +85,7 @@ def serialize_notice(notice) -> dict:
         "delivery": notice.delivery,
         "sent_at": notice.sent_at.isoformat() if notice.sent_at else None,
         "sent_to": notice.sent_to,
+        "delivery_note": notice.delivery_note,
     }
 
 
@@ -85,7 +94,7 @@ def serialize_notice(notice) -> dict:
 
 def _subscriptions(access):
     return AlertSubscription.objects.filter(program_id=access._require_program()).select_related(
-        "supply_point", "commodity", "recipient_user", "partner_org"
+        "supply_point", "commodity", "recipient_user", "partner_org", "created_by"
     )
 
 
@@ -154,16 +163,18 @@ def _apply(access, sub, data, creating):
     if "channel" in data:
         sub.channel = data["channel"]
 
-    if sub.channel == "whatsapp":
-        # A WhatsApp alert goes to a phone number, not to a labs user or an email address.
-        phone = (data.get("recipient_phone", sub.recipient_phone) or "").strip()
-        if not phone:
-            raise ValueError("a WhatsApp alert needs the phone number to message (recipient_phone)")
-        sub.recipient_phone, sub.recipient_user, sub.recipient_email = phone, None, ""
+    if sub.channel == "connect_message":
+        # A Connect message goes to a person's Connect username, not to a labs user or an email address.
+        username = (data.get("recipient_connect_username", sub.recipient_connect_username) or "").strip()
+        if not username:
+            raise ValueError(
+                "a Connect message alert needs the Connect username to message (recipient_connect_username)"
+            )
+        sub.recipient_connect_username, sub.recipient_user, sub.recipient_email = username, None, ""
         if "recipient_name" in data:
             sub.recipient_name = (data["recipient_name"] or "").strip()
     elif creating or "recipient_user_id" in data or "recipient_email" in data:
-        sub.recipient_phone = ""
+        sub.recipient_connect_username = ""
         # On an update, naming one kind of recipient replaces the other, so
         # switching from a user to an address is one field, not two.
         user_id, email = sub.recipient_user_id, sub.recipient_email
@@ -204,7 +215,7 @@ def _apply(access, sub, data, creating):
             sub.recipient_user = None
             sub.recipient_email = email
 
-    if "recipient_name" in data and not sub.recipient_user_id and sub.channel != "whatsapp":
+    if "recipient_name" in data and not sub.recipient_user_id and sub.channel != "connect_message":
         sub.recipient_name = (data["recipient_name"] or "").strip()
 
     if not (sub.check_kinds or sub.movement_kinds):
@@ -234,7 +245,9 @@ def alert_subscription_list(access, include_inactive=True):
     name="alert_subscription_create",
     summary=(
         "Subscribe a labs user (yourself) or any email address — an upstream donor, a partner — to "
-        "alerts. check_kinds are checks_list kinds: only checks that are NEW since the last alert are "
+        "alerts, or send them as a Connect message (channel connect_message, recipient_connect_username: a "
+        "person's Connect username; it is sent as the person who sets the alert up). "
+        "check_kinds are checks_list kinds: only checks that are NEW since the last alert are "
         "sent, so a check that stays true is one email. movement_kinds send each matching ledger "
         "movement recorded from now on. cadence is immediate or daily_digest. Emails state the fact "
         "and link to the record; they never advise."
@@ -288,7 +301,9 @@ def alert_subscription_delete(access, subscription_id):
     summary=(
         "What the alerts found and whether it went out: each notice's check or movement, its facts, "
         "the link it carried, and its delivery — queued, pending (a digest not yet due), "
-        "email_disabled or no_address. Newest first."
+        "email_disabled, no_address, or for a Connect message no_connection (the sender's Open Chat Studio "
+        "connection is missing or expired), no_chatbot, or refused — with delivery_note giving the reason. "
+        "Newest first."
     ),
     input_schema=obj(
         {
@@ -319,7 +334,8 @@ SUMMARY_EXTRA_CHECKS = ("stock_variance", "tender_start_by")
     name="alert_partner_setup",
     summary=(
         "Set up alerts per partner: each partner's facilities and field workers alert ITS staff "
-        "(partners: one entry per partner with the emails to tell), and one daily summary across all partners "
+        "(partners: one entry per partner with the emails to tell, and optionally Connect usernames to message — "
+        "sent as you, the person setting this up), and one daily summary across all partners "
         "goes to the running organisation (summary_emails). Stock out, below minimum, expiring, negative, and "
         "'a delivery arrives after stock runs out' for partners; the summary adds ledger/count disagreements and "
         "'time to start the next tender'. Safe to repeat: an alert that already exists is left as it is."
@@ -329,29 +345,36 @@ SUMMARY_EXTRA_CHECKS = ("stock_variance", "tender_start_by")
             "partners": {
                 "type": "array",
                 "items": obj(
-                    {"org_id": ID, "emails": {"type": "array", "items": {"type": "string", "format": "email"}}},
+                    {
+                        "org_id": ID,
+                        "emails": {"type": "array", "items": {"type": "string", "format": "email"}},
+                        "connect_usernames": {"type": "array", "items": {"type": "string", "minLength": 1}},
+                    },
                     required=("org_id", "emails"),
                 ),
             },
             "summary_emails": {"type": "array", "items": {"type": "string", "format": "email"}},
+            "summary_connect_usernames": {"type": "array", "items": {"type": "string", "minLength": 1}},
         }
     ),
     is_write=True,
 )
-def alert_partner_setup(access, partners=(), summary_emails=()):
+def alert_partner_setup(access, partners=(), summary_emails=(), summary_connect_usernames=()):
     from connect_labs.labs.models import LabsOrg
     from connect_labs.supply_chain.alerts.service import ledger_head
 
     program_id = access._require_program()
     created = []
 
-    def ensure(label, partner, email, kinds, cadence):
+    def ensure(label, partner, email, kinds, cadence, username=""):
         sub, made = AlertSubscription.objects.get_or_create(
             program_id=program_id,
             label=label,
             partner_org=partner,
             recipient_email=email,
+            recipient_connect_username=username,
             defaults={
+                "channel": "connect_message" if username else "email",
                 "check_kinds": list(kinds),
                 "cadence": cadence,
                 "created_by": _caller_user(access),
@@ -368,7 +391,18 @@ def alert_partner_setup(access, partners=(), summary_emails=()):
         for email in entry["emails"]:
             validate_email(email)
             ensure(f"{org.name}: stock alerts", org, email.strip(), PARTNER_CHECKS, "immediate")
+        for username in entry.get("connect_usernames") or ():
+            ensure(f"{org.name}: stock alerts", org, "", PARTNER_CHECKS, "immediate", username.strip())
     for email in summary_emails:
         validate_email(email)
         ensure("Summary across partners", None, email.strip(), PARTNER_CHECKS + SUMMARY_EXTRA_CHECKS, "daily_digest")
+    for username in summary_connect_usernames:
+        ensure(
+            "Summary across partners",
+            None,
+            "",
+            PARTNER_CHECKS + SUMMARY_EXTRA_CHECKS,
+            "daily_digest",
+            username.strip(),
+        )
     return {"created": created, "count": len(created)}

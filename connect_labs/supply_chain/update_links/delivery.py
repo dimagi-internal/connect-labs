@@ -26,6 +26,10 @@ class DeliveryError(Exception):
     """The message did not go. ``str()`` is written to be shown to the person who asked."""
 
 
+class NotConnected(DeliveryError):
+    """The sender's Open Chat Studio connection is missing or has expired."""
+
+
 def default_bot() -> str:
     """The chatbot links are sent through unless the issuer picks another (settings.SUPPLY_LINK_OCS_BOT)."""
     return getattr(settings, "SUPPLY_LINK_OCS_BOT", "") or ""
@@ -60,7 +64,7 @@ def send_text(sender, *, bot: str, username: str, text: str, session_data: dict 
     client = OCSDataAccess(user=sender)
     try:
         if not client.check_token_valid():
-            raise DeliveryError("Open Chat Studio is not connected for you — connect it, then try again.")
+            raise NotConnected("Open Chat Studio is not connected for you — connect it, then try again.")
         return client.trigger_bot(
             identifier=username,
             platform=PLATFORM,

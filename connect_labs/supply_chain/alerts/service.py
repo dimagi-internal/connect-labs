@@ -454,15 +454,17 @@ def deliver(now, program_id=None) -> int:
         if subscription.cadence == "daily_digest" and not _digest_due(subscription, now):
             continue
         address = subscription.recipient_address
+        note = ""
         if not address:
             status = "no_address"
         elif subscription.channel != "email":
-            # A channel other than email goes through its own sender (alerts/channels.py). Until a provider
-            # is connected that is an honest `no_channel` in the log, never a silent drop or a claimed send.
+            # A channel other than email goes through its own sender (alerts/channels.py). A failure is a
+            # status with a plain reason in the log, never a silent drop or a claimed send, and it never
+            # stops the other subscriptions' email from going out.
             from connect_labs.supply_chain.alerts.channels import channel_for
 
             subject, text, _html = render_email(subscription, notices)
-            status = channel_for(subscription.channel).send(address, subject, text)
+            status, note = channel_for(subscription.channel).send(subscription, address, subject, text)
         elif not email_enabled():
             # Recorded as not sent, and not left pending: when mail is turned
             # back on, a backlog of stale alerts is not what anybody wants.
@@ -473,7 +475,7 @@ def deliver(now, program_id=None) -> int:
             status = "queued"
             emails += 1
         AlertNotice.objects.filter(pk__in=[n.pk for n in notices]).update(
-            delivery=status, sent_at=now, sent_to=address or ""
+            delivery=status, sent_at=now, sent_to=address or "", delivery_note=note
         )
         if subscription.cadence == "daily_digest":
             AlertSubscription.objects.filter(pk=subscription.pk).update(last_digest_sent_at=now)
