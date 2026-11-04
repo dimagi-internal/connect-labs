@@ -2043,3 +2043,43 @@ def edit_cell(context, kind, record_id, name, value=None):
 
         attrs.append(f'data-edit-choices="{escape(json.dumps([words for _, words in cell.choices]))}"')
     return mark_safe(" ".join(attrs))
+
+
+@register.filter(name="tab_groups")
+def tab_groups_filter(tabs):
+    """The header's tabs as groups (navigation.tab_groups)."""
+    from connect_labs.supply_chain.navigation import tab_groups
+
+    return tab_groups(list(tabs or []))
+
+
+@register.filter(name="page_purpose")
+def page_purpose_filter(tabs):
+    """The one line saying what the page in view is for (navigation.PAGE_PURPOSE), or ""."""
+    from connect_labs.supply_chain.navigation import page_purpose
+
+    return page_purpose(list(tabs or []))
+
+
+@register.simple_tag
+def term(word, shown=""):
+    """A word this domain uses in its own way, with its plain meaning on hover (navigation.GLOSSARY).
+
+    `{% term "trade item" %}` -> the words underlined with a dotted line and a
+    `title` note. An unknown word is rendered plain rather than raising: a typo
+    in a template must not take a page down (tests/test_glossary.py closes the set).
+    """
+    from django.utils.html import format_html
+
+    from connect_labs.supply_chain.navigation import GLOSSARY
+
+    text = shown or word
+    note = GLOSSARY.get(str(word).lower())
+    if not note:
+        return text
+    return format_html(
+        '<abbr title="{}" data-testid="term" '
+        'class="no-underline border-b border-dotted border-gray-500 cursor-help">{}</abbr>',
+        note,
+        text,
+    )

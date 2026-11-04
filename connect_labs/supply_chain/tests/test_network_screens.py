@@ -351,11 +351,12 @@ class TestTheScreensAreReachable:
         body = scoped.get(reverse("supply_chain:network")).content.decode()
         assert reverse("supply_chain:network") in body
 
-    def test_organisations_read_as_part_of_suppliers_rather_than_unhighlighting_the_nav(self, scoped):
+    def test_organisations_is_a_tab_of_its_own_under_setup(self, scoped):
         """A page under no tab makes the nav read as though you have left the domain."""
-        from connect_labs.supply_chain.navigation import TAB_FOR_VIEW
+        from connect_labs.supply_chain.navigation import GROUP_OF_TAB, TAB_FOR_VIEW
 
-        assert TAB_FOR_VIEW["supply_chain:organisations"] == "supply_chain:suppliers"
+        assert GROUP_OF_TAB["supply_chain:organisations"] == "Setup"
+        assert TAB_FOR_VIEW["supply_chain:org_edit"] == "supply_chain:organisations"
 
 
 class TestACallerWhoActsForNobody:

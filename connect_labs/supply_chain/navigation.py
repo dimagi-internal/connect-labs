@@ -6,29 +6,134 @@ docstring: importing it would make `call_operation` unpatchable from those
 tests and let them run real operations against production. Nothing here
 touches the domain, so it is safe for both view modules to import.
 
-Ordered the way the work runs: what we can buy, how we buy it, what was
-ordered, what is on hand, where it went.
+Grouped (TAB_GROUPS) the way the work divides: buying, distribution and stock, setup.
 """
 
 from django.urls import reverse
 
-SUPPLY_TABS = (
-    ("supply_chain:home", "Overview"),
-    ("supply_chain:catalogue", "Catalogue"),
-    ("supply_chain:suppliers", "Suppliers"),
-    ("supply_chain:procurement_tender_board", "Sourcing"),
-    ("supply_chain:orders", "Orders"),
-    ("supply_chain:network", "Network"),
-    ("supply_chain:programme_map", "Map"),
-    ("supply_chain:stock", "Stock"),
-    ("supply_chain:workers", "Workers"),
-    ("supply_chain:flow", "Where it went"),
-    ("supply_chain:distribution", "Distribution"),
-    # After the chain, because they cut across it: who is told when something
-    # in it changes, and how a supplier records its own part.
-    ("supply_chain:alerts", "Alerts"),
-    ("supply_chain:update_links", "Update links"),
+# The tabs, grouped the way the work divides (Sophie's feedback, "Structure and
+# wording across the site"): buying happens a few times a year and is run by the
+# programme; distribution and stock is weekly and is partly the partners'; setup
+# is shared by both. To add a tab, add one line to its group here -- the flat
+# `SUPPLY_TABS` below, the grouped header, Settings' tab list and the hidden-tab
+# check all follow. A tab a programme pins from Settings joins the group of the
+# tab it sits after.
+HOME = "supply_chain:home"
+OVERVIEW = "supply_chain:overview"
+
+TAB_GROUPS = (
+    # Overview stands alone: no group name over it.
+    ("", (("supply_chain:home", "Overview"),)),
+    (
+        "Buying",
+        (
+            ("supply_chain:procurement_tender_board", "Sourcing"),
+            ("supply_chain:orders", "Orders"),
+            ("supply_chain:suppliers", "Suppliers"),
+        ),
+    ),
+    (
+        "Distribution and stock",
+        (
+            ("supply_chain:network", "Network"),
+            ("supply_chain:programme_map", "Map"),
+            ("supply_chain:distribution", "Distribution"),
+            ("supply_chain:stock", "Stock"),
+            ("supply_chain:workers", "Workers"),
+            ("supply_chain:flow", "Where it went"),
+        ),
+    ),
+    (
+        "Setup",
+        (
+            ("supply_chain:catalogue", "Catalogue"),
+            ("supply_chain:organisations", "Organisations"),
+            ("supply_chain:alerts", "Alerts"),
+            ("supply_chain:programme_team", "Partner access"),
+            ("supply_chain:update_links", "Update links"),
+        ),
+    ),
 )
+
+SUPPLY_TABS = tuple(tab for _, tabs in TAB_GROUPS for tab in tabs)
+
+GROUP_OF_TAB = {name: group for group, tabs in TAB_GROUPS for name, _ in tabs}
+
+# One line per page: what it is for and what you do there, in plain words for a
+# programme manager or partner staff member. Shown under the tabs on the tab's
+# own page (not on the records one level below it).
+PAGE_PURPOSE = {
+    "supply_chain:home": (
+        "Where the programme stands: what is open, what is waiting on someone, "
+        "and what the records cannot answer yet."
+    ),
+    "supply_chain:procurement_tender_board": (
+        "How you ask suppliers for prices. Create a tender (a request for quotes), "
+        "ask suppliers to quote, record their replies, compare and choose."
+    ),
+    "supply_chain:orders": (
+        "What was actually ordered, and who bought it. Place an order once a supplier "
+        "is chosen, then record the invoice, payment, shipping and delivery."
+    ),
+    "supply_chain:suppliers": (
+        "The companies you may buy from. Add a manufacturer or trader, and see what "
+        "has been asked of them and what they have said."
+    ),
+    "supply_chain:network": (
+        "Where stock is kept, from the central warehouse down to health workers. "
+        "Add places and see what each one holds."
+    ),
+    "supply_chain:programme_map": "The same places on a map, coloured by whether anything needs attention.",
+    "supply_chain:distribution": "Handouts: what was planned to go to each place, and what was actually given out.",
+    "supply_chain:stock": (
+        "How much of each product is where. Record stock moving in or out, "
+        "or a count of what is actually on the shelf."
+    ),
+    "supply_chain:workers": "Each field worker's stock, and how long it will last at the pace they are working.",
+    "supply_chain:flow": (
+        "Follow the stock from delivery to the children: how much is still held, "
+        "how much has been handed on and how much is unaccounted for."
+    ),
+    "supply_chain:catalogue": (
+        "What you buy. Set up each product once, and add the manufacturer's version " "(a trade item) when you buy it."
+    ),
+    "supply_chain:organisations": (
+        "The organisations in this programme, including partners who buy or hold stock "
+        "on your behalf. To add a supplier you do not need this page: use Suppliers."
+    ),
+    "supply_chain:alerts": "Who is told, by email, when something in the chain changes or needs attention.",
+    "supply_chain:programme_team": "Who can act for this programme, and who can only look.",
+    "supply_chain:update_links": (
+        "Private links that let a supplier or partner record their own step without signing in."
+    ),
+}
+
+# Words this domain uses in its own way. `{% term "trade item" %}` (supply_chain_extras)
+# wraps one in a dotted underline with this as its hover note; standard supply
+# words (incoterm, GRN, SKU...) are left to the reader.
+GLOSSARY = {
+    "trade item": (
+        "One manufacturer's version of a product: their carton size, shelf life and barcode. "
+        "Add one for each product you actually buy."
+    ),
+    "checks": (
+        "Things the records cannot answer or that disagree with each other, such as an order "
+        "with no invoice or a count that does not match the movements."
+    ),
+    "buyer of record": (
+        "The organisation that places the order and brings the goods in. "
+        "Import duty and tax fall on whoever that is."
+    ),
+    "update links": (
+        "A private link you send to someone outside the programme so they can record "
+        "their own step (a shipment, a delivery) without signing in."
+    ),
+    "tender": (
+        "A request for quotes: what you want to buy, how much, where it should be delivered, "
+        "and by when suppliers should reply."
+    ),
+    "batch": "One delivery of a trade item, with its expiry date and certificate.",
+}
 
 # Pages that belong under a tab without being it, so the tab still reads as
 # current when you are one level in.
@@ -37,9 +142,8 @@ TAB_FOR_VIEW = {
     # open on another tab (landing.py).
     "supply_chain:overview": "supply_chain:home",
     "supply_chain:programme_runner": "supply_chain:home",
-    "supply_chain:programme_team": "supply_chain:home",
-    "supply_chain:programme_team_add": "supply_chain:home",
-    "supply_chain:programme_team_remove": "supply_chain:home",
+    "supply_chain:programme_team_add": "supply_chain:programme_team",
+    "supply_chain:programme_team_remove": "supply_chain:programme_team",
     "supply_chain:dispensing_rules": "supply_chain:stock",
     "supply_chain:worker_detail": "supply_chain:workers",
     "supply_chain:dispensing_rule_create": "supply_chain:stock",
@@ -56,9 +160,6 @@ TAB_FOR_VIEW = {
     "supply_chain:supplier_detail": "supply_chain:suppliers",
     "supply_chain:order_detail": "supply_chain:orders",
     "supply_chain:shipment_detail": "supply_chain:orders",
-    # Organisations are infrastructure rather than a daily destination, so they
-    # read as part of Suppliers rather than taking a tab of their own.
-    "supply_chain:organisations": "supply_chain:suppliers",
     # The checks are the overview's second panel, read in full.
     "supply_chain:checks": "supply_chain:home",
     "supply_chain:alert_create": "supply_chain:alerts",
@@ -78,9 +179,9 @@ TAB_FOR_VIEW = {
     "supply_chain:item_edit": "supply_chain:catalogue",
     "supply_chain:supplier_create": "supply_chain:suppliers",
     "supply_chain:supplier_edit": "supply_chain:suppliers",
-    "supply_chain:org_create": "supply_chain:suppliers",
-    "supply_chain:org_edit": "supply_chain:suppliers",
-    "supply_chain:org_merge": "supply_chain:suppliers",
+    "supply_chain:org_create": "supply_chain:organisations",
+    "supply_chain:org_edit": "supply_chain:organisations",
+    "supply_chain:org_merge": "supply_chain:organisations",
     "supply_chain:procurement_tender_create": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_tender_edit": "supply_chain:procurement_tender_board",
     "supply_chain:procurement_tender_open": "supply_chain:procurement_tender_board",
@@ -270,17 +371,18 @@ def pinned_replacement(request, tab_name: str) -> dict | None:
 
 def supply_tabs(request) -> list[dict]:
     match = request.resolver_match
-    current = match.view_name if match else ""
-    current = TAB_FOR_VIEW.get(current, current)
+    own_view = match.view_name if match else ""
+    current = TAB_FOR_VIEW.get(own_view, own_view)
     current_slug = (match.kwargs or {}).get("slug") if match and current == "supply_chain:workflow_view" else None
     pins = _pinned(request)
     replacing = {p.replaces: p for p in pins if p.replaces}
 
-    def pin_tab(pin, also_active=False):
+    def pin_tab(pin, also_active=False, group=""):
         return {
             "url": scoped_url(request, "supply_chain:workflow_view", [pin.slug], pin.program_id),
             "label": pin.label,
             "active": current_slug == pin.slug or also_active,
+            "group": group,
         }
 
     hidden = hidden_tabs(request)
@@ -292,11 +394,16 @@ def supply_tabs(request) -> list[dict]:
         pin = replacing.get(name)
         if pin is not None:
             # The pinned workflow stands in for this tab; its own page ("classic view") still counts as here.
-            tabs.append(pin_tab(pin, also_active=current == name))
+            tabs.append(pin_tab(pin, also_active=current == name, group=GROUP_OF_TAB.get(name, "")))
         else:
             # Overview's tab names Overview, not the front door that may open elsewhere.
             href = scoped_url(request, "supply_chain:overview" if name == "supply_chain:home" else name)
-            tabs.append({"url": href, "label": label, "active": name == current})
+            tab = {"url": href, "label": label, "active": name == current, "group": GROUP_OF_TAB.get(name, "")}
+            # The page's one-line purpose, on the tab's own page only: a record one level
+            # below it (a tender, an order) leads with itself.
+            if (name == own_view or (name == HOME and own_view == OVERVIEW)) and name in PAGE_PURPOSE:
+                tab["purpose"] = PAGE_PURPOSE[name]
+            tabs.append(tab)
         keys.append(name)
     # Tabs a programme ADDS sit after the tab they name (`after`), by default with
     # the stock pages; one naming a tab that is not there goes at the end.
@@ -306,6 +413,29 @@ def supply_tabs(request) -> list[dict]:
         # After any added tab already placed behind the same anchor, so position order holds.
         while at < len(keys) and keys[at].startswith("pin:"):
             at += 1
-        tabs.insert(at, pin_tab(pin))
+        # Same group as the tab it follows.
+        tabs.insert(at, pin_tab(pin, group=tabs[at - 1]["group"] if at else ""))
         keys.insert(at, f"pin:{pin.slug}")
     return tabs
+
+
+def tab_groups(tabs: list[dict]) -> list[dict]:
+    """`supply_tabs` as [{label, tabs}], one entry per run of tabs in the same group.
+
+    The header draws each group under its name. Consecutive tabs only, so a
+    tab a programme pinned into the middle of a group stays in it and the
+    order Settings chose is never rearranged.
+    """
+    groups: list[dict] = []
+    for tab in tabs:
+        label = tab.get("group", "")
+        if groups and groups[-1]["label"] == label:
+            groups[-1]["tabs"].append(tab)
+        else:
+            groups.append({"label": label, "tabs": [tab]})
+    return groups
+
+
+def page_purpose(tabs: list[dict]) -> str:
+    """The one-line purpose of the page being viewed, or "" when it is not a tab's own page."""
+    return next((t["purpose"] for t in tabs if t.get("purpose")), "")
