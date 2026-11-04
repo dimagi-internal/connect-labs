@@ -182,3 +182,66 @@ class TestTheReceiverConfirms:
         )
         line.refresh_from_db()
         assert line.quantity_received is None
+
+
+class TestConfirmingManyPlacesAtOnce:
+    @pytest.fixture
+    def two_places(self, da, world):
+        garki = op(
+            da,
+            "supply_point_upsert",
+            data={
+                "slug": "garki",
+                "name": "Garki PHC",
+                "kind": "facility",
+                "source": "we_recorded",
+                "managed_by_org_id": world["partner"]["id"],
+            },
+        )
+        run = op(
+            da,
+            "distribution_plan",
+            data={
+                "supply_point_id": world["store"]["id"],
+                "opportunity_id": OPPORTUNITY,
+                "commodity_slug": "rutf",
+                "distributed_on": "2026-11-16",
+                "reference": "Second handout",
+                "source": "we_recorded",
+                "lines": [
+                    {"to_supply_point_id": world["wuse"]["id"], "quantity": "12", "quantity_unit": "carton"},
+                    {"to_supply_point_id": garki["id"], "quantity": "10", "quantity_unit": "carton"},
+                ],
+            },
+        )
+        return run
+
+    def post(self, client, issued, line, other_places):
+        return client.post(
+            url(issued),
+            {
+                "action": "confirm_handout",
+                "confirm_handout-line": line.pk,
+                "confirm_handout-quantity_given": "12",
+                "confirm_handout-handed_out_on": "2026-11-16",
+                "confirm_handout-other_places": other_places,
+            },
+        )
+
+    def test_one_submission_confirms_the_chosen_place_and_the_others_named(self, client, da, world, two_places):
+        issued = link_for(da, world, world["store"])
+        line = DistributionLine.objects.get(distribution_id=two_places["id"], to_supply_point_id=world["wuse"]["id"])
+        self.post(client, issued, line, "Garki PHC - 8 cartons")
+        given = {
+            row.to_supply_point.name: row.quantity_given
+            for row in DistributionLine.objects.filter(distribution_id=two_places["id"])
+        }
+        assert given == {"Wuse PHC": Decimal("12"), "Garki PHC": Decimal("8")}
+        assert Movement.objects.filter(distribution_id=two_places["id"]).count() == 2
+
+    def test_an_unreadable_or_unknown_place_confirms_nothing(self, client, da, world, two_places):
+        issued = link_for(da, world, world["store"])
+        line = DistributionLine.objects.get(distribution_id=two_places["id"], to_supply_point_id=world["wuse"]["id"])
+        response = self.post(client, issued, line, "Nowhere Clinic - 3 cartons")
+        assert "Nowhere Clinic" in response.content.decode()
+        assert not Movement.objects.filter(distribution_id=two_places["id"]).exists()

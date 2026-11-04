@@ -894,6 +894,16 @@ class ConfirmHandoutForm(PublicForm):
     line = _HandoutLineChoice(label=_("Place on the handout"), queryset=None, widget=forms.Select(attrs=SELECT))
     quantity_given = _quantity(_("Given"), allow_zero=True)
     handed_out_on = forms.DateField(label=_("Handed out on"), widget=forms.DateInput(attrs=DATE))
+    other_places = forms.CharField(
+        label=_("Other places on the same handout (optional)"),
+        required=False,
+        max_length=4000,
+        help_text=_(
+            "One place a line, with what you gave: “Wuse PHC - 12 cartons”. Only places on the same handout as "
+            "the one above. A place you leave out stays planned."
+        ),
+        widget=forms.Textarea(attrs={**INPUT, "rows": 4, "class": "base-input !h-auto min-h-16 py-2"}),
+    )
 
     def limit_to_scope(self, scope):
         from connect_labs.supply_chain.models import DistributionLine
@@ -903,7 +913,45 @@ class ConfirmHandoutForm(PublicForm):
         )
 
     def rows(self):
-        return ["line", _pair("quantity_given", "handed_out_on")]
+        return ["line", _pair("quantity_given", "handed_out_on"), "other_places"]
+
+    def clean(self):
+        """Read the other places against the same handout's waiting places, or say which line could not be."""
+        cleaned = super().clean()
+        line, text = cleaned.get("line"), (cleaned.get("other_places") or "").strip()
+        cleaned["other_lines"] = []
+        if line is None or not text:
+            return cleaned
+        from connect_labs.supply_chain.distribution import messages
+
+        waiting = list(_handout_lines(self.scope, given=False).filter(distribution_id=line.distribution_id))
+        waiting = [w for w in waiting if w.pk != line.pk]
+        read = messages.read_message(text)
+        planned = [
+            {"line_id": w.pk, "name": w.to_supply_point.name, "quantity": w.quantity, "unit": w.quantity_unit}
+            for w in waiting
+        ]
+        matched = messages.match_to_plan(read["entries"], planned)
+        problems = [f"Could not read “{raw}”. Write it as: Place - amount." for raw in read["unread"]]
+        problems += [
+            f"“{extra['raw']}”: {extra['reason']}, or not a place left on this handout." for extra in matched["extras"]
+        ]
+        for row in matched["lines"]:
+            if row["status"] == "unit_differs":
+                problems.append(
+                    f"“{row['heard_as']}”: the plan counts {row['name']} in {row['unit']}s. Check the unit."
+                )
+            elif row["given"] is not None:
+                cleaned["other_lines"].append({"line_id": row["line_id"], "quantity_given": str(row["given"])})
+        if problems:
+            self.add_error("other_places", problems)
+            cleaned["other_lines"] = []
+        return cleaned
+
+    def payload(self) -> dict:
+        data = super().payload()
+        data.pop("other_places", None)
+        return data
 
     def is_available(self):
         return self.fields["line"].queryset.exists()

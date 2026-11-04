@@ -164,7 +164,11 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   store (or a place on a handout) offers "Confirm what you handed out"; a link covering the place it
   went to (a facility, or a field worker's own holding on a link sent to their Connect username)
   offers "Confirm what you received". Each is shown only when there is something to confirm, goes through
-  the same operation as the screens, and is recorded as the link's organisation's word.
+  the same operation as the screens, and is recorded as the link's organisation's word. "Confirm what you
+  handed out" takes many places in one submission: the chosen place, plus an optional box of "Place - amount"
+  lines for other places on the SAME handout (read by `distribution/messages.py`; anything unreadable or not
+  clearly one waiting place refuses the whole submission with the line named). A different handout is a
+  second submission, because one submission is one operation call.
 
 ## The plan: what to issue, break-even, who sees what (Sophie's RUTF feedback, 2026-11)
 
