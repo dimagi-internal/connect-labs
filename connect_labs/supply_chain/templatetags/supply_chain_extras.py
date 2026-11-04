@@ -169,6 +169,8 @@ CHECK_LABELS = {
     "stock_stockout": "No stock on hand",
     "stock_below_minimum": "Below its own minimum",
     "stock_expiring": "Stock expiring soon or already expired",
+    "delivery_after_stockout": "A delivery arrives after the stock runs out",
+    "tender_start_by": "Time to start the next tender",
     "item_fails_specification": "Fails the commodity specification",
     "shipment_overdue": "Shipment past its expected date",
     "shipment_documents_outstanding": "Documents it needs, not on file",
@@ -734,6 +736,8 @@ AGE_FROM = {
     "contract_delivery_overdue": "past the expected date",
     "consignment_overdue": "past the expected date",
     "stock_expiring": "since the warning period began",
+    "delivery_after_stockout": "since the stock was due to run out",
+    "tender_start_by": "since the warning period began",
     "payment_unconfirmed": "since payment",
 }
 

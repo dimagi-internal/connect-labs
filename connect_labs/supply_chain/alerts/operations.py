@@ -16,7 +16,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 
 from connect_labs.supply_chain import records
-from connect_labs.supply_chain.alerts.models import CADENCES, AlertNotice, AlertSubscription
+from connect_labs.supply_chain.alerts.models import CADENCES, CHANNELS, AlertNotice, AlertSubscription
 from connect_labs.supply_chain.operations import ID, NULLABLE_ID, _data_with, obj, register_operation
 
 _SUBSCRIPTION_DATA = _data_with(
@@ -28,6 +28,9 @@ _SUBSCRIPTION_DATA = _data_with(
     recipient_user_id=NULLABLE_ID,
     recipient_email={"type": "string", "format": "email"},
     recipient_name={"type": "string", "maxLength": 255},
+    partner_org_id={"type": ["integer", "null"]},
+    channel={"enum": list(CHANNELS)},
+    recipient_phone={"type": "string", "maxLength": 32},
     cadence={"enum": list(CADENCES)},
     active={"type": "boolean"},
 )
@@ -47,6 +50,10 @@ def serialize_subscription(sub) -> dict:
         "recipient_user_id": sub.recipient_user_id,
         "recipient_email": sub.recipient_email,
         "recipient_name": sub.recipient_name,
+        "recipient_phone": sub.recipient_phone,
+        "channel": sub.channel,
+        "partner_org_id": sub.partner_org_id,
+        "partner_name": sub.partner_org.name if sub.partner_org_id else None,
         "recipient": sub.recipient_label,
         "cadence": sub.cadence,
         "active": sub.active,
@@ -78,7 +85,7 @@ def serialize_notice(notice) -> dict:
 
 def _subscriptions(access):
     return AlertSubscription.objects.filter(program_id=access._require_program()).select_related(
-        "supply_point", "commodity", "recipient_user"
+        "supply_point", "commodity", "recipient_user", "partner_org"
     )
 
 
@@ -135,7 +142,28 @@ def _apply(access, sub, data, creating):
         else:
             sub.commodity = None
 
-    if creating or "recipient_user_id" in data or "recipient_email" in data:
+    if "partner_org_id" in data:
+        if data["partner_org_id"] is None:
+            sub.partner_org = None
+        else:
+            from connect_labs.labs.models import LabsOrg
+
+            sub.partner_org = LabsOrg.objects.filter(pk=data["partner_org_id"]).first()
+            if sub.partner_org is None:
+                raise ValueError(f"organisation {data['partner_org_id']} does not exist")
+    if "channel" in data:
+        sub.channel = data["channel"]
+
+    if sub.channel == "whatsapp":
+        # A WhatsApp alert goes to a phone number, not to a labs user or an email address.
+        phone = (data.get("recipient_phone", sub.recipient_phone) or "").strip()
+        if not phone:
+            raise ValueError("a WhatsApp alert needs the phone number to message (recipient_phone)")
+        sub.recipient_phone, sub.recipient_user, sub.recipient_email = phone, None, ""
+        if "recipient_name" in data:
+            sub.recipient_name = (data["recipient_name"] or "").strip()
+    elif creating or "recipient_user_id" in data or "recipient_email" in data:
+        sub.recipient_phone = ""
         # On an update, naming one kind of recipient replaces the other, so
         # switching from a user to an address is one field, not two.
         user_id, email = sub.recipient_user_id, sub.recipient_email
@@ -176,7 +204,7 @@ def _apply(access, sub, data, creating):
             sub.recipient_user = None
             sub.recipient_email = email
 
-    if "recipient_name" in data and not sub.recipient_user_id:
+    if "recipient_name" in data and not sub.recipient_user_id and sub.channel != "whatsapp":
         sub.recipient_name = (data["recipient_name"] or "").strip()
 
     if not (sub.check_kinds or sub.movement_kinds):
@@ -274,3 +302,73 @@ def alert_log_list(access, subscription_id=None, limit=100):
     if subscription_id is not None:
         qs = qs.filter(subscription_id=subscription_id)
     return [serialize_notice(n) for n in qs[:limit]]
+
+
+# What a partner's own staff hear about, and what the summary across partners adds.
+PARTNER_CHECKS = (
+    "stock_stockout",
+    "stock_below_minimum",
+    "stock_expiring",
+    "stock_negative",
+    "delivery_after_stockout",
+)
+SUMMARY_EXTRA_CHECKS = ("stock_variance", "tender_start_by")
+
+
+@register_operation(
+    name="alert_partner_setup",
+    summary=(
+        "Set up alerts per partner: each partner's facilities and field workers alert ITS staff "
+        "(partners: one entry per partner with the emails to tell), and one daily summary across all partners "
+        "goes to the running organisation (summary_emails). Stock out, below minimum, expiring, negative, and "
+        "'a delivery arrives after stock runs out' for partners; the summary adds ledger/count disagreements and "
+        "'time to start the next tender'. Safe to repeat: an alert that already exists is left as it is."
+    ),
+    input_schema=obj(
+        {
+            "partners": {
+                "type": "array",
+                "items": obj(
+                    {"org_id": ID, "emails": {"type": "array", "items": {"type": "string", "format": "email"}}},
+                    required=("org_id", "emails"),
+                ),
+            },
+            "summary_emails": {"type": "array", "items": {"type": "string", "format": "email"}},
+        }
+    ),
+    is_write=True,
+)
+def alert_partner_setup(access, partners=(), summary_emails=()):
+    from connect_labs.labs.models import LabsOrg
+    from connect_labs.supply_chain.alerts.service import ledger_head
+
+    program_id = access._require_program()
+    created = []
+
+    def ensure(label, partner, email, kinds, cadence):
+        sub, made = AlertSubscription.objects.get_or_create(
+            program_id=program_id,
+            label=label,
+            partner_org=partner,
+            recipient_email=email,
+            defaults={
+                "check_kinds": list(kinds),
+                "cadence": cadence,
+                "created_by": _caller_user(access),
+                "movements_seen_through": ledger_head(program_id),
+            },
+        )
+        if made:
+            created.append(serialize_subscription(_require_subscription(access, sub.pk)))
+
+    for entry in partners:
+        org = LabsOrg.objects.filter(pk=entry["org_id"]).first()
+        if org is None:
+            raise ValueError(f"organisation {entry['org_id']} does not exist")
+        for email in entry["emails"]:
+            validate_email(email)
+            ensure(f"{org.name}: stock alerts", org, email.strip(), PARTNER_CHECKS, "immediate")
+    for email in summary_emails:
+        validate_email(email)
+        ensure("Summary across partners", None, email.strip(), PARTNER_CHECKS + SUMMARY_EXTRA_CHECKS, "daily_digest")
+    return {"created": created, "count": len(created)}

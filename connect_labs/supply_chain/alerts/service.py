@@ -145,12 +145,27 @@ def _subject_scope(subject_type, subject_id, facts):
     return None
 
 
-def _within_filters(subscription, scope) -> bool:
-    if subscription.supply_point_id is None and subscription.commodity_id is None:
+def _partner_points(subscription):
+    """The points the subscription's partner runs (workers below its places included), or None for no partner."""
+    if subscription.partner_org_id is None:
+        return None
+    from connect_labs.supply_chain.partners.scope import point_ids_of
+
+    return point_ids_of(subscription.program_id, subscription.partner_org_id)
+
+
+def _within_filters(subscription, scope, partner_points=None) -> bool:
+    if subscription.supply_point_id is None and subscription.commodity_id is None and partner_points is None:
         return True
     if scope is None:
         return False
     points, commodities = scope
+    # A partner's alert is about ITS places: a check that touches none of them (a tender, a supplier) is not
+    # for its staff -- the summary across partners, which names no partner, is where those go.
+    if partner_points is not None and not (points & partner_points):
+        return False
+    if subscription.supply_point_id is None and subscription.commodity_id is None:
+        return True
     if subscription.supply_point_id is not None and subscription.supply_point_id not in points:
         return False
     if subscription.commodity_id is not None and subscription.commodity_id not in commodities:
@@ -228,16 +243,22 @@ def detect_checks(subscription, found: list[dict], now) -> int:
     if not wanted:
         return 0
 
+    partner_points = _partner_points(subscription)
+    owners = _owners(subscription)
     current = {}
     for check in found:
         if check["kind"] not in wanted:
             continue
         subject = check.get("subject") or {}
         scope = None
-        if subscription.supply_point_id is not None or subscription.commodity_id is not None:
+        if (
+            subscription.supply_point_id is not None
+            or subscription.commodity_id is not None
+            or partner_points is not None
+        ):
             scope = _subject_scope(subject.get("type"), subject.get("id"), check.get("facts"))
-        if _within_filters(subscription, scope):
-            current[check_key(check)] = check
+        if _within_filters(subscription, scope, partner_points):
+            current[check_key(check)] = (check, scope)
 
     open_states = {
         state.check_key: state for state in AlertCheckState.objects.filter(subscription=subscription, cleared_at=None)
@@ -253,10 +274,11 @@ def detect_checks(subscription, found: list[dict], now) -> int:
         AlertCheckState.objects.filter(pk__in=still).update(last_seen_at=now)
 
     queued = 0
-    for key, check in current.items():
+    for key, (check, scope) in current.items():
         if key in open_states:
             continue
         subject = check.get("subject") or {}
+        partner = _partner_name(owners, subject, scope)
         try:
             with transaction.atomic():
                 AlertCheckState.objects.create(
@@ -267,7 +289,12 @@ def detect_checks(subscription, found: list[dict], now) -> int:
                     program_id=subscription.program_id,
                     kind="check",
                     subject_kind=check["kind"],
-                    subject={**subject, "category": check.get("category"), "audience": check.get("audience")},
+                    subject={
+                        **subject,
+                        "category": check.get("category"),
+                        "audience": check.get("audience"),
+                        **({"partner": partner} if partner else {}),
+                    },
                     facts=check.get("facts") or {},
                     since=_parse_date(check.get("since")),
                     record_url=record_url(
@@ -280,6 +307,26 @@ def detect_checks(subscription, found: list[dict], now) -> int:
             continue
         queued += 1
     return queued
+
+
+def _owners(subscription):
+    """({point id: organisation id}, {organisation id: name}): who runs each place, to name the partner in a notice."""
+    from connect_labs.labs.models import LabsOrg
+    from connect_labs.supply_chain.stock.services.issues import partner_by_point
+
+    owner = partner_by_point(subscription.program_id)
+    names = dict(LabsOrg.objects.filter(pk__in={o for o in owner.values() if o}).values_list("pk", "name"))
+    return owner, names
+
+
+def _partner_name(owners, subject, scope) -> str:
+    """The partner a notice is about, by the places it touches -- empty when it touches none or several."""
+    owner, names = owners
+    points = set(scope[0]) if scope else set()
+    if not points and subject.get("type") == "supply_point" and subject.get("id") is not None:
+        points = {subject["id"]}
+    found = {owner.get(pk) for pk in points} - {None}
+    return names.get(next(iter(found)), "") if len(found) == 1 else ""
 
 
 def _movement_facts(movement) -> dict:
@@ -317,12 +364,13 @@ def detect_movements(subscription, now) -> int:
     )
     head = subscription.movements_seen_through
     queued = 0
+    partner_points = _partner_points(subscription)
     for movement in fresh:
         head = max(head, movement.pk)
         if movement.kind not in wanted:
             continue
         scope = ({movement.from_supply_point_id, movement.to_supply_point_id} - {None}, {movement.commodity_id})
-        if not _within_filters(subscription, scope):
+        if not _within_filters(subscription, scope, partner_points):
             continue
         point_id = movement.to_supply_point_id or movement.from_supply_point_id
         reversal = "reversal of " if movement.reverses_id else ""
@@ -408,6 +456,13 @@ def deliver(now, program_id=None) -> int:
         address = subscription.recipient_address
         if not address:
             status = "no_address"
+        elif subscription.channel != "email":
+            # A channel other than email goes through its own sender (alerts/channels.py). Until a provider
+            # is connected that is an honest `no_channel` in the log, never a silent drop or a claimed send.
+            from connect_labs.supply_chain.alerts.channels import channel_for
+
+            subject, text, _html = render_email(subscription, notices)
+            status = channel_for(subscription.channel).send(address, subject, text)
         elif not email_enabled():
             # Recorded as not sent, and not left pending: when mail is turned
             # back on, a backlog of stale alerts is not what anybody wants.

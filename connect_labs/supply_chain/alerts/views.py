@@ -91,6 +91,7 @@ _NOT_SENT = {
     "pending": "in the next digest",
     "email_disabled": "not sent — email is off",
     "no_address": "not sent — no address",
+    "no_channel": "not sent — that channel is not connected yet",
 }
 
 

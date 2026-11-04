@@ -11,6 +11,7 @@
 <div class="flex flex-wrap items-start justify-between gap-4">
   <h2 class="text-lg font-semibold text-brand-indigo mb-1">Partners</h2>
   <div class="flex gap-2">
+    <a href="{% url 'supply_chain:partner_deliveries' %}" class="px-4 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Suggested deliveries</a>
     <a href="{% url 'supply_chain:partner_plan' %}"
        class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
       <i class="fa-solid fa-plus mr-1"></i> State how a partner distributes
