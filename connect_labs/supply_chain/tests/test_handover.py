@@ -297,6 +297,24 @@ class TestPlanningAHandout:
         assert run.status == "planned" and run.commodity_id == rutf.pk
         assert not Movement.objects.filter(distribution=run).exists()
 
+    def test_the_page_narrows_to_one_partner_with_partner_in_the_address(self, scoped, warehouse, rutf, places):
+        from connect_labs.labs.models import LabsOrg
+
+        first, second = LabsOrg.objects.create(slug="org-a", name="Org A"), LabsOrg.objects.create(
+            slug="org-b", name="Org B"
+        )
+        for place, org in zip(places, (first, second)):
+            place.managed_by_org = org
+            place.save()
+        one = planned_run(scoped, warehouse, rutf, places[:1], quantities=(12,))
+        Distribution.objects.filter(pk=one["id"]).update(reference="Handout for A")
+        planned_run(scoped, warehouse, rutf, places[1:], quantities=(10,))
+        everyone = scoped.get(reverse("supply_chain:distribution")).content.decode()
+        assert "Handout for A" in everyone and "Monday handout" in everyone
+        narrowed = scoped.get(reverse("supply_chain:distribution"), {"partner": first.pk}).content.decode()
+        assert "Handout for A" in narrowed and "Monday handout" not in narrowed
+        assert "Org B" in narrowed, "the switcher still lists every partner"
+
     def test_the_page_offers_to_generate_the_handout_from_the_plan(self, scoped, warehouse, rutf, places):
         body = scoped.get(reverse("supply_chain:distribution")).content.decode()
         assert "Generate this week" in body and "distribution/plan/?from_plan=1" in body

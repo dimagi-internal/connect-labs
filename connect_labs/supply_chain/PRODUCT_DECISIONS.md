@@ -151,6 +151,11 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
 - **Network, Stock, Workers, Issues and Alerts are per partner first, with a programme roll-up**: the same
   page filtered by `?partner=<org id>` (`partners/scope.py`), no new access model. A place belongs to the
   partner that runs it, else the nearest one above it.
+- **The Map and the Distribution page take `?partner=` too**, with the same switcher. On the programme Map a place,
+  blocker, route or order stays when it touches a place that partner runs; a blocker naming no place is the
+  roll-up's, not the partner's. The headline counts in the Map's summary stay programme-wide. On Distribution
+  a handout stays when it leaves or reaches one of the partner's places (the whole handout, every line), and a
+  delivery when either end is theirs. This narrows what a page lists; it is not an access boundary.
 - **A partner's alert hears about its own places only** (`AlertSubscription.partner_org`); a check that
   touches none of its places is not sent to it. An alert with no partner is the summary across partners.
 - **A channel that is not connected says so.** Email is shipped; WhatsApp is a declared channel with no
