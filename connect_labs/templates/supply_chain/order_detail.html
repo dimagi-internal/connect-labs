@@ -640,6 +640,37 @@ was ordered. Before, the page showed this order's half and a link to the other.
   </div>
 </div>
 {% endif %}
+{% comment %}Model (b): the partner paid the supplier and invoices us. Its delivery to us and our payment to the
+partner are tracked here, apart from the supplier's bills above, which the match above reads.{% endcomment %}
+{% if contract.buying_model == "partner_buys" and contract.consideration == "priced" or partner_invoices %}
+<div class="flex flex-wrap items-baseline justify-between gap-2 pt-4" id="partner-invoices" data-testid="partner-invoices">
+  <h3 class="text-base font-semibold text-brand-deep-purple">The partner's invoice to us <span class="text-sm font-normal tabular-nums text-gray-600">{{ partner_invoices|length }}</span></h3>
+  {% if not supply_as_of %}<a href="{% url 'supply_chain:invoice_record' contract.id %}?from=partner" class="text-sm text-brand-indigo hover:underline">+ Record the partner's invoice</a>{% endif %}
+</div>
+<p class="text-sm text-gray-600 mb-2">The partner paid the supplier on our quote and bills us to be reimbursed. We pay the partner, not the supplier.</p>
+{% if partner_invoices %}
+<div class="overflow-hidden rounded-lg border border-gray-100"><div class="overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600"><tr>
+      <th class="text-left px-4 py-2">Invoice</th><th class="text-left px-4 py-2">Issued</th><th class="text-left px-4 py-2">Reached us</th>
+      <th class="text-right px-4 py-2">Amount</th><th class="text-left px-4 py-2">Status</th><th class="text-left px-4 py-2">Paid to the partner</th><th class="px-4 py-2"><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody class="divide-y divide-gray-100">
+    {% for invoice in partner_invoices %}
+      <tr data-testid="partner-invoice">
+        <td class="px-4 py-2 font-medium text-gray-900">{{ invoice.reference|default:invoice.id }}</td>
+        <td class="px-4 py-2 text-gray-600 whitespace-nowrap">{{ invoice.issued_on|day|default:"—" }}</td>
+        <td class="px-4 py-2 text-gray-600 whitespace-nowrap">{% if invoice.received_on %}{{ invoice.received_on|day }}{% else %}not yet{% endif %}</td>
+        <td class="px-4 py-2 text-right tabular-nums">{% if invoice.amount %}{{ invoice.currency }} {{ invoice.amount|money }}{% else %}—{% endif %}</td>
+        <td class="px-4 py-2 text-gray-700">{{ invoice.status|humanise }}</td>
+        <td class="px-4 py-2 text-gray-700">{% for payment in invoice.payments %}{{ payment.currency }} {{ payment.amount|money }} on {{ payment.paid_on|day }}{% if payment.confirmed_by_payee_on %} · confirmed by the partner {{ payment.confirmed_by_payee_on|day }}{% else %} · <a href="{% url 'supply_chain:payment_confirm' payment.id %}" class="text-brand-indigo hover:underline">record the partner's confirmation</a>{% endif %}{% if not forloop.last %}<br>{% endif %}{% empty %}<span class="text-gray-600">nothing paid yet</span>{% endfor %}</td>
+        <td class="px-4 py-2 text-right whitespace-nowrap">{% if not supply_as_of %}{% if invoice.status != "paid" %}<a href="{% url 'supply_chain:payment_record' invoice.id %}" class="text-brand-indigo hover:underline">Pay the partner</a> <span class="text-gray-300">·</span> {% endif %}<a href="{% url 'supply_chain:invoice_edit' invoice.id %}" class="text-brand-indigo hover:underline">Edit</a>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% endif %}
+{% endif %}
     </div>
   </details>
 

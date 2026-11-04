@@ -201,6 +201,12 @@ CONTRACT_STATUSES = (
     "cancelled",
 )
 
+# Who the invoice is from. `from_supplier`: the supplier bills the buyer. `from_partner`: under the
+# "partner buys on our quote" model, the partner who paid the supplier bills us to be reimbursed
+# (Sophie's RUTF feedback). A reimbursement is a second money chain, not a second bill from the
+# supplier, so the three-way match and the price check read `from_supplier` invoices only.
+INVOICE_DIRECTIONS = ("from_supplier", "from_partner")
+
 INVOICE_STATUSES = ("received", "queried", "approved", "part_paid", "paid", "rejected")
 
 # The documents that certify what is in a consignment, as opposed to the ones

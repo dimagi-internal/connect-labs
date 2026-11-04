@@ -1036,6 +1036,15 @@ class Invoice(SourcedModel):
     amount = models.DecimalField(null=True, blank=True, **MONEY)
     quantity_billed = models.DecimalField(null=True, blank=True, **QTY)
     quantity_unit = models.CharField(max_length=32, blank=True, default="")
+    # Who billed (records.INVOICE_DIRECTIONS): the supplier, or -- when the partner bought on our quote --
+    # the partner billing us to be reimbursed. And the day the invoice reached whoever has to pay it.
+    direction = models.CharField(
+        max_length=16,
+        default="from_supplier",
+        db_default="from_supplier",
+        choices=_choices(records.INVOICE_DIRECTIONS),
+    )
+    received_on = models.DateField(null=True, blank=True)
     # The price the invoice charges, per `quantity_unit`, and the freight line
     # it bills -- the two figures a supplier can move between the quote and
     # the bill. With them the order can say the invoice is above the

@@ -771,7 +771,7 @@ def _invoice_above_contract(contract, costed, as_of):
     Quantity is invoice_over_billed's; this is price. The supplier is who
     can explain a bill, so it is theirs to answer.
     """
-    invoices = [i for i in contract.invoices.all() if i.status != "rejected"]
+    invoices = [i for i in contract.invoices.all() if i.status != "rejected" and i.direction != "from_partner"]
     if not invoices or contract.consideration != "priced":
         return None
     findings = []
