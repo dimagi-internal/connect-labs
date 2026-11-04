@@ -1642,12 +1642,12 @@ class TenderImportEstimatesView(SupplyWriteMixin, View):
 class OutreachLogView(OperationFormView):
     operation = "outreach_log"
     form_class = OutreachForm
-    title = "Record an invitation"
+    title = "Record a quote request"
     intro = (
-        "That we asked this supplier to quote on this tender. A log, not a state machine — "
-        "re-inviting is a real event worth keeping."
+        "That we asked this supplier to quote on this tender (not the same as giving them "
+        "marketplace access). A log, not a state machine — asking again is a real event worth keeping."
     )
-    submit_label = "Record invitation"
+    submit_label = "Record quote request"
 
     def fixed(self, **kwargs):
         return {"data": {"tender_id": int(kwargs["tender_id"])}}
@@ -1656,7 +1656,7 @@ class OutreachLogView(OperationFormView):
         return [
             {"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")},
             {"label": "Tender", "href": reverse("supply_chain:procurement_tender_detail", args=[kwargs["tender_id"]])},
-            {"label": "Record an invitation"},
+            {"label": "Record a quote request"},
         ]
 
     def cancel_href(self, **kwargs):

@@ -36,7 +36,7 @@
       {% if tender.duty_terms == "buyer_waiver" %}<span class="text-xs text-gray-600" data-testid="waiver-evidence">· {{ "duty_exemption"|document_kind|capfirst }} {% if waiver_on_file %}on file{% else %}not on file{% endif %}</span>{% if not waiver_on_file and not supply_as_of %}<span class="text-xs text-gray-600">·</span><a class="text-brand-indigo font-semibold hover:underline" data-testid="duty-exemption-attach" href="{% url 'supply_chain:program_document_attach' %}?kind=duty_exemption&next={{ request.path|urlencode }}">Attach</a>{% endif %}{% endif %}
       {% if not supply_as_of %}
       <details class="relative">
-        <summary data-testid="duty-terms-change" role="button" class="text-brand-indigo cursor-pointer list-none font-semibold hover:underline [&::-webkit-details-marker]:hidden">{% if tender.duty_terms %}Change{% else %}Settle{% endif %}</summary>
+        <summary data-testid="duty-terms-change" role="button" class="text-brand-indigo cursor-pointer list-none font-semibold hover:underline [&::-webkit-details-marker]:hidden">{% if tender.duty_terms %}Change{% else %}Choose who pays{% endif %}</summary>
         <form method="post" action="{% url 'supply_chain:procurement_tender_duty_terms' tender_id %}" class="border-brand-border-light absolute right-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 shadow-sm">
           {% csrf_token %}
           <input type="hidden" name="next" value="{{ request.get_full_path }}">
