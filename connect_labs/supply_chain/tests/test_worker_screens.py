@@ -729,12 +729,70 @@ def test_the_flow_as_of_a_day_stops_on_that_day(da, world):
     assert ("worker-baobab", "Given out at visits") not in final
 
 
-def test_the_flow_page_draws_from_the_payload_and_has_its_tab(client_in_program, world):
+def test_the_flow_page_has_its_tab_and_a_readable_bar_instead_of_a_scrolling_diagram(client_in_program, world):
     body = get(client_in_program, "flow")
 
-    assert 'id="flow-data"' in body and "supply_chain/flow.js" in body
     assert "Where it went" in body
-    assert 'data-tile="given"' in body
+    assert 'data-testid="flow-bar"' in body
+    assert "Given out to children 23%" in body
+    assert "flow-svg" not in body and "supply_chain/flow.js" not in body
+
+
+HOUSEHOLD = {
+    "returned_paths": ["form.returned"],
+    "leftover_paths": ["form.left"],
+    "missing_paths": ["form.missing"],
+    "reason_paths": ["form.why"],
+}
+
+
+def _household_visits(world):
+    DispensingRule.objects.update(reports={"household": HOUSEHOLD})
+    for visit_id, answers in (
+        ("v-worker-baobab", {"form.returned": "4", "form.left": "2", "form.missing": "1", "form.why": "shared"}),
+        ("v-worker-acacia", {"form.returned": "6", "form.missing": "3", "form.why": "shared"}),
+    ):
+        kept = WorkerVisit.objects.filter(visit_id=visit_id).first()
+        if kept is not None:
+            kept.answers = {**kept.answers, **answers}
+            kept.save()
+
+
+def test_the_flow_totals_what_the_delivery_form_says_happened_at_home(da, world):
+    assert _flow(da, world)["household"] is None
+    _household_visits(world)
+
+    household = _flow(da, world)["household"]
+
+    assert household["returned"] == 10 and household["leftover"] == 2 and household["missing"] == 4
+    assert household["reasons"] == [{"reason": "shared", "visits": 2}]
+    assert household["visits"] == 2
+
+
+def test_a_question_the_form_does_not_ask_has_no_figure_not_zero(da, world):
+    DispensingRule.objects.update(reports={"household": {"returned_paths": ["form.returned"]}})
+    kept = WorkerVisit.objects.filter(visit_id="v-worker-baobab").first()
+    kept.answers = {**kept.answers, "form.returned": "5"}
+    kept.save()
+
+    household = _flow(da, world)["household"]
+
+    assert household["returned"] == 5 and household["leftover"] is None and household["missing"] is None
+
+
+def test_a_rejected_visit_adds_nothing_to_the_household_figures(da, world):
+    DispensingRule.objects.update(reports={"household": {"returned_paths": ["form.returned"]}})
+    WorkerVisit.objects.filter(visit_id="v-rejected").update(answers={"form.returned": "99"})
+
+    assert _flow(da, world)["household"]["returned"] is None
+
+
+def test_the_flow_page_shows_the_household_when_the_rule_names_it(client_in_program, world):
+    _household_visits(world)
+    body = get(client_in_program, "flow")
+
+    assert "Empty sachets returned" in body and "Sachets missing or misused" in body
+    assert "Reasons given" in body and "shared (2)" in body
 
 
 # ---- the stock page's movement list --------------------------------------
@@ -1054,4 +1112,4 @@ def test_the_flow_page_reads_as_sentences_before_the_diagram(client_in_program, 
         assert label in body
     assert "none recorded" in body
     assert 'data-testid="flow-household"' in body
-    assert "Optional detail" in body
+    assert "flow-svg" not in body

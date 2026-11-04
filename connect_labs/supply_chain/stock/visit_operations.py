@@ -52,6 +52,15 @@ _REPORTS = obj(
     {
         "balance_paths": _PATHS,
         "receipt": obj({"quantity_paths": _PATHS, "date_paths": _PATHS}, required=("quantity_paths", "date_paths")),
+        # Where the delivery form asks what happened at the home (Where it went totals these).
+        "household": obj(
+            {
+                "returned_paths": _PATHS,
+                "leftover_paths": _PATHS,
+                "missing_paths": _PATHS,
+                "reason_paths": _PATHS,
+            }
+        ),
     }
 )
 _ANSWERS = {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}

@@ -216,16 +216,6 @@ class WorkersView(OperationBase):
         return context
 
 
-# The figures above the flow, each filled by flow.js for the week on view.
-FLOW_TILES = (
-    ("arrived", "Arrived"),
-    ("stores", "In the stores"),
-    ("workers", "With workers"),
-    ("given", "Given out at visits"),
-    ("lost", "Lost or sent elsewhere"),
-)
-
-
 class StockFlowView(OperationBase):
     """Where one item went, from what arrived to what the visits gave out, week by week (`stock_flow`)."""
 
@@ -245,7 +235,6 @@ class StockFlowView(OperationBase):
 
             flow["unit_plural"] = unit_plural(flow["unit"])
             context["flow"] = flow
-            context["flow_tiles"] = FLOW_TILES
         return context
 
 

@@ -50,7 +50,12 @@ class DispensingRuleForm(forms.Form):
         required=False,
         label=_("What the worker's app reports"),
         widget=forms.Textarea(attrs={**TEXTAREA, "rows": 4}),
-        help_text=_('Optional: {"balance_paths": [...], "receipt": {"quantity_paths": [...], "date_paths": [...]}}'),
+        help_text=_(
+            'Optional: {"balance_paths": [...], "receipt": {"quantity_paths": [...], "date_paths": [...]}, '
+            '"household": {"returned_paths": [...], "leftover_paths": [...], "missing_paths": [...], '
+            '"reason_paths": [...]}}. The household paths are where the delivery form asks about empty sachets '
+            "returned, leftovers, and sachets missing or misused; Where it went totals them."
+        ),
     )
     cases = forms.JSONField(
         required=False,

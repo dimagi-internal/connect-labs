@@ -212,6 +212,7 @@ def flow(program_id: int, item, *, on_date: date | None = None) -> dict:  # noqa
         "adjusted": _number(adjusted),
         "left_out": {u: _number(v) for u, v in left_out.items()},
         "account": account(links, points, adjusted),
+        "household": household(program_id, item, on_date),
     }
 
 
@@ -226,6 +227,18 @@ ACCOUNT_STAGES = (
     ("elsewhere", "Sent outside the network", "Stock passed to someone outside this network."),
     ("shortfall", "Count shortfalls", "Net corrections made when a count did not match the records."),
 )
+
+
+# One colour per stage for the bar; the label beside it carries the meaning, so colour never has to.
+STAGE_COLORS = {
+    "warehouse": "#4f46e5",
+    "phc": "#818cf8",
+    "flw": "#06b6d4",
+    "given": "#10b981",
+    "lost": "#ef4444",
+    "elsewhere": "#f59e0b",
+    "shortfall": "#9ca3af",
+}
 
 
 def account(links, points, adjusted) -> dict:
@@ -271,11 +284,73 @@ def account(links, points, adjusted) -> dict:
                 "help": help_,
                 "amount": _number(amounts[key]),
                 "percent": share(amounts[key]),
+                # Width on the stacked bar: exact, not the rounded percent; nothing for a stream with none.
+                "share": float(round(amounts[key] / arrived * 100, 2)) if arrived > 0 and amounts[key] > 0 else 0,
+                "color": STAGE_COLORS[key],
             }
             for key, label, help_ in ACCOUNT_STAGES
             # Only the streams that exist are streams; the first five always read.
             if key in ("warehouse", "phc", "flw", "given", "lost") or amounts[key] != 0
         ],
+    }
+
+
+def _first_kept(answers, paths):
+    """The first of `paths` a visit kept an answer for (`answers` is {path: raw answer}), else None."""
+    for path in paths or []:
+        if answers.get(path) is not None:
+            return answers[path]
+    return None
+
+
+def household(program_id: int, item, on_date: date) -> dict | None:
+    """What the delivery form says happened at the home, totalled; None when no rule asks it.
+
+    Read from the answers each visit kept at the paths the rule's `reports.household` names, so a
+    programme whose app does not ask a question simply has no figure for it, never a guess.
+    A rejected or duplicate visit says nothing. `visits` is how many visits answered at least one.
+    """
+    from connect_labs.supply_chain.models import DispensingRule, WorkerVisit
+    from connect_labs.supply_chain.stock.services.dispensing import read_number
+    from connect_labs.supply_chain.stock.services.visit_reader import REVERSING_STATUSES
+
+    rules = [
+        rule
+        for rule in DispensingRule.objects.filter(program_id=program_id, item=item, status="active")
+        if (rule.reports or {}).get("household")
+    ]
+    if not rules:
+        return None
+    totals = {"returned": ZERO, "leftover": ZERO, "missing": ZERO}
+    answered = {"returned": False, "leftover": False, "missing": False}
+    reasons: dict[str, int] = {}
+    visits = 0
+    for rule in rules:
+        paths = rule.reports["household"]
+        rows = (
+            WorkerVisit.objects.filter(program_id=program_id, opportunity_id=rule.opportunity_id)
+            .filter(visit_date__lte=on_date)
+            .exclude(status__in=REVERSING_STATUSES)
+            .values_list("answers", flat=True)
+        )
+        for answers in rows:
+            answers = answers or {}
+            got = False
+            for key in totals:
+                amount = read_number(_first_kept(answers, paths.get(f"{key}_paths")))
+                if amount is not None:
+                    totals[key] += amount
+                    answered[key] = got = True
+            reason = _first_kept(answers, paths.get("reason_paths"))
+            if reason is not None and str(reason).strip():
+                text = str(reason).strip()
+                reasons[text] = reasons.get(text, 0) + 1
+                got = True
+            visits += got
+    return {
+        "visits": visits,
+        **{key: (_number(totals[key]) if answered[key] else None) for key in totals},
+        "reasons": [{"reason": r, "visits": n} for r, n in sorted(reasons.items(), key=lambda kv: (-kv[1], kv[0]))],
     }
 
 
