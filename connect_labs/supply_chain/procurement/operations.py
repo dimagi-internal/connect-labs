@@ -219,6 +219,18 @@ def reminder_render(access, outreach_id, commodity_slug=None, today=None):
 
 DEFAULT_REMINDER_INTERVAL_DAYS = 7
 
+
+def stale_after_days(interval: int) -> int:
+    """Silence this long (four reminder intervals, at least four weeks) is no longer a
+    reminder's business: the person is asked whether to chase, close or re-issue."""
+    return max(4 * interval, 28)
+
+
+def _noted_not_contacted(supplier, rows) -> bool:
+    notes = [getattr(supplier, "notes", "")] + [getattr(r, "notes", "") for r in rows]
+    return any("not yet contacted" in (n or "").lower() for n in notes)
+
+
 # The order drafts are listed in: the order a tender runs, then by name.
 # Deliberately not an urgency ranking (design doc section 22).
 # A clarification of the tender's terms comes last: it goes to every invited
@@ -336,6 +348,10 @@ def _requests_and_reminders(access, tender, commodities, quotes, day, interval, 
                     )
                 )
             continue
+        if _noted_not_contacted(supplier, rows):
+            # The notes say nobody has written to this supplier yet; a reminder would
+            # chase a message that was never sent.
+            continue
         latest = max(sent, key=lambda r: r.sent_on)
         reminded = max((r.last_reminder_on for r in rows if r.last_reminder_on), default=None)
         since = max(latest.sent_on, reminded) if reminded else latest.sent_on
@@ -347,7 +363,19 @@ def _requests_and_reminders(access, tender, commodities, quotes, day, interval, 
         why += f". A reminder is due every {_days(interval)}" + (
             " (the default: this tender sets no reminder interval)." if is_default else ", as this tender sets."
         )
+        stale_days = (day - latest.sent_on).days
+        stale = stale_days >= stale_after_days(interval)
+        if stale:
+            why = (
+                f"Asked on {day_text(latest.sent_on)} ({_days(day - latest.sent_on)} ago) with no reply"
+                + (f", last chased {_days(day - reminded)} ago" if reminded else "")
+                + ". This has gone quiet for too long for the usual reminder: decide whether to chase "
+                "once more (send this draft), close the invitation, or re-issue the request with "
+                "current terms."
+            )
         facts = [_fact("Asked", day_text(latest.sent_on))]
+        if stale:
+            facts.append(_fact("Decide", "chase, close or re-issue"))
         if reminded:
             facts.append(_fact("Last reminded", day_text(reminded)))
         facts.append(_fact("Due every", _days(interval) + (" (default)" if is_default else "")))
@@ -359,6 +387,7 @@ def _requests_and_reminders(access, tender, commodities, quotes, day, interval, 
                 sent_on=latest.sent_on,
                 last_reminder_on=reminded,
                 reminders_sent=_reminders_sent(access, rows) if reminded else 0,
+                stale_days=stale_days if stale else None,
                 sender=sender,
                 today=day,
             )
@@ -372,6 +401,7 @@ def _requests_and_reminders(access, tender, commodities, quotes, day, interval, 
                     facts=facts,
                     outreach_id=latest.pk,
                     mark_sent=_mark_sent(latest.pk, day),
+                    stale=stale,
                 )
             )
     return drafts
