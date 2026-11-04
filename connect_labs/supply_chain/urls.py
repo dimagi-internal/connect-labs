@@ -239,6 +239,11 @@ urlpatterns = [
         name="award_detail",
     ),
     path(
+        "procurement/awards/<int:award_id>/orders/",
+        procurement_views.AwardOrdersCreateView.as_view(),
+        name="award_orders_create",
+    ),
+    path(
         "procurement/awards/<int:award_id>/approvals/new/",
         procurement_views.ApprovalRequestView.as_view(),
         name="approval_request",

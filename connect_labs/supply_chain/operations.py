@@ -464,6 +464,8 @@ _QUOTE_DATA = _data_with(
     fx_rate_to_usd=MONEY,
     shelf_life_months_stated=_NON_NEGATIVE_INT,
     lead_time_days=_NON_NEGATIVE_INT,
+    # On a tender split by partner: the supplier says the price holds if bought as this many purchases.
+    price_holds_for_purchases=_NON_NEGATIVE_INT,
     # How the goods reach the buyer: delivered to the tender's places named
     # in delivery_point_keys, or collected from pickup_location. A collected
     # bid's buyer_transport_amount is the buyer's own transport cost.
@@ -585,6 +587,31 @@ _TENDER_DATA = _data_with(
     # When the goods must be in the partner's hands; the tender counts back from it to the day it must
     # start. `lead_time_days_expected` stands in until a quote states a lead time.
     needed_by={"type": ["string", "null"], "format": "date"},
+    # A tender sourced on behalf of partners: per partner a quantity, a delivery place (the partner's
+    # warehouse) and who receives it. The tender's line quantity becomes the total of the splits.
+    # An empty list takes the split off.
+    partner_splits={
+        "type": "array",
+        "items": _data_with(
+            ("org_id", "quantity"),
+            org_id=ID,
+            commodity_slug={"type": "string"},
+            quantity=QUANTITY,
+            quantity_unit={"type": "string"},
+            delivery_point_key={"type": "string"},
+            delivery_point=_data_with(
+                _open=True,
+                name={"type": "string"},
+                city={"type": "string"},
+                country={"type": "string"},
+                country_name={"type": "string"},
+            ),
+            receiver_name={"type": "string"},
+            receiver_contact={"type": "string"},
+            buying_model={"enum": list(records.BUYING_MODELS)},
+            supply_point_id=NULLABLE_ID,
+        ),
+    },
     lead_time_days_expected={"type": ["integer", "null"], "minimum": 0},
 )
 
@@ -667,6 +694,8 @@ _CONTRACT_DATA = _data_with(
     # Nullable because un-naming it is a real edit: the covering order was
     # recorded against the wrong short one.
     covers_shortfall_of_id=NULLABLE_ID,
+    # The partner an order is for (the buyer when the partner buys; the receiver when we buy for it).
+    partner_org_id=NULLABLE_ID,
     source={"enum": list(records.SOURCES)},
     recorded_by_org_id=ID,
     signed_on={"type": ["string", "null"], "format": "date"},

@@ -105,8 +105,17 @@ def next_step(*, tenders, contracts, points, exclude_org_ids=(), today: date | N
     # The tender in play: the newest one.
     tender = max(live, key=lambda t: t["id"]) if live else None
 
+    # A tender split by partner is not ordered until every partner has: "4 of 5 partners have ordered".
+    split_set = None
+    if tender is not None and tender.get("partner_splits"):
+        from connect_labs.supply_chain.procurement.services.splits import order_set
+
+        split_set = order_set(tender, [c for c in contracts if c.get("tender_id") == tender["id"]])
+
     if placed:
         text = f"Orders: {len(placed)} placed"
+        if split_set and split_set["text"]:
+            text = f"Orders: {split_set['text']}"
         if received:
             text += f" · {len(received)} received"
         segments.append(text)
@@ -115,7 +124,9 @@ def next_step(*, tenders, contracts, points, exclude_org_ids=(), today: date | N
             if len(received) < len(placed)
             else "Every order is received: check the stock and the payments"
         )
-        if partners and set_up < partners:
+        if split_set and split_set["waiting_partners"]:
+            nxt = "Place an order for " + ", ".join(split_set["waiting_partners"])
+        elif partners and set_up < partners:
             nxt = "Set up the partners who have no warehouse yet, then record each delivery"
     elif tender is None:
         segments.append("Tender: not created")

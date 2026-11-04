@@ -1008,6 +1008,104 @@ def _decided_on(value):
 
 
 @register_operation(
+    name="award_order_set",
+    summary=(
+        "The orders of one award read as a set: how many partners have ordered, how much of the quantity is "
+        'ordered ("4 of 5 partners have ordered · 1,800 of 2,000 cartons"), which partners are still waiting, '
+        "and whether the award is complete. An award is not done after its first order."
+    ),
+    input_schema=obj({"award_id": ID}, required=("award_id",)),
+)
+def award_order_set(access, award_id):
+    from connect_labs.supply_chain.procurement.services.splits import order_set
+
+    award = access.get_award(award_id)
+    if award is None:
+        raise ValueError(f"award {award_id} not found")
+    tender = record(access.get_tender(award.tender_id))
+    contracts = [record(c) for c in access.list_contracts(tender_id=award.tender_id) if c.award_id == award.pk]
+    return order_set(tender, contracts, award.commodity.slug)
+
+
+@register_operation(
+    name="award_orders_create",
+    summary=(
+        "Draft one order per partner of a tender split by partner, from the award: each order carries that "
+        "partner's quantity, the awarded quote's price and terms, the partner's delivery place and the buying "
+        "model chosen for that partner. Where the partner buys it is the buyer; where we buy it is us, with the "
+        "partner as the receiver. A partner who already has an order on this award is left alone, so calling it "
+        "again fills in only the partners still waiting. Refused while an approval stands against the award."
+    ),
+    input_schema=obj({"award_id": ID}, required=("award_id",)),
+    is_write=True,
+)
+def award_orders_create(access, award_id):
+    from connect_labs.supply_chain.procurement.services.splits import order_set, splits_for
+    from connect_labs.supply_chain.runner import running_org
+
+    award = access.get_award(award_id)
+    if award is None:
+        raise ValueError(f"award {award_id} not found")
+    tender = record(access.get_tender(award.tender_id))
+    slug = award.commodity.slug
+    splits = splits_for(tender, slug)
+    if not splits:
+        raise ValueError(
+            "this tender is not split by partner: place the order with contract_create, or name the partners "
+            "with tender_update partner_splits first"
+        )
+    existing = [record(c) for c in access.list_contracts(tender_id=award.tender_id) if c.award_id == award.pk]
+    waiting = set(order_set(tender, existing, slug)["waiting_org_ids"])
+    quote = award.quote
+    made = []
+    for split in splits:
+        if split["org_id"] not in waiting:
+            continue
+        if split["buying_model"] == "partner_buys":
+            buyer_of_record, buyer_id = "partner_org", split["org_id"]
+        else:
+            ours = running_org(access.program_id)
+            if ours is None:
+                raise ValueError(
+                    "the programme has no running organisation yet, so an order we buy for a partner has no "
+                    "buyer: declare it first, or set that partner to buy on our quote"
+                )
+            buyer_of_record, buyer_id = "programme_org", ours.pk
+        point = tender_place(tender, split)
+        data = {
+            "award_id": award.pk,
+            "tender_id": award.tender_id,
+            "commodity_slug": slug,
+            "supplier_id": award.supplier_id,
+            "item_id": quote.item_id,
+            "buyer_of_record": buyer_of_record,
+            "buyer_org_id": buyer_id,
+            "partner_org_id": split["org_id"],
+            "buying_model": split["buying_model"],
+            "quantity": split["quantity"],
+            "quantity_unit": split["quantity_unit"],
+            "currency": quote.as_quoted_currency or "USD",
+            "incoterm": quote.incoterm or tender.get("incoterm_requested") or "",
+            "promised_lead_time_days": quote.lead_time_days,
+            "delivery_supply_point_id": split.get("supply_point_id"),
+            "source": "we_recorded",
+            "note": f"For {split['org_name']}" + (f", delivered to {point}" if point else ""),
+        }
+        if quote.as_quoted_amount is not None and quote.as_quoted_unit != "per_lot_total":
+            data.update(unit_price=str(quote.as_quoted_amount), unit_price_unit=quote.as_quoted_unit)
+        made.append(record(access.create_contract(data)))
+    return made
+
+
+def tender_place(tender, split):
+    """The split's delivery place as a short phrase: "Kano warehouse, Kano"."""
+    place = next(
+        (p for p in tender.get("delivery_points") or [] if p.get("key") == split.get("delivery_point_key")), {}
+    )
+    return ", ".join(x for x in (place.get("name"), place.get("city")) if x)
+
+
+@register_operation(
     name="award_list",
     summary="List awards for this programme, each with its frozen comparison snapshot and rationale.",
     input_schema=obj({"tender_id": ID}),
