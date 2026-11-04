@@ -1,6 +1,6 @@
 # One way to load report data
 
-Status: building. Follows #2814 and the CPU page in #2810.
+Status: live since #2816. Follows #2814 and the CPU page in #2810.
 
 ## The problem
 
@@ -85,6 +85,8 @@ a reader that finds it answers rather than filling again:
   count check off (`get_cached_result_only`). A visit count that drifted must not read
   as an empty report.
 - `refresh=1` is satisfied only by a fill that was itself forced.
+- A plain reader during a forced fill is served from the old cache while it can. Once one finds a pipeline cold, polls wait without reading, for the rest of that fill.
+- Only the visits export is validated against the visit count. Other sources' rows are not visits, so they rely on `expires_at`.
 
 ## Limits
 

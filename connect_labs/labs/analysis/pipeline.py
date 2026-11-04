@@ -40,7 +40,7 @@ from django.conf import settings
 from django.http import HttpRequest
 from django.utils import timezone
 
-from connect_labs.labs.analysis.config import AnalysisPipelineConfig, CacheStage
+from connect_labs.labs.analysis.config import USER_VISITS_SOURCE, AnalysisPipelineConfig, CacheStage
 from connect_labs.labs.analysis.models import EntityAnalysisResult, FLWAnalysisResult, VisitAnalysisResult
 
 logger = logging.getLogger(__name__)
@@ -477,14 +477,14 @@ class AnalysisPipeline:
     def _expected_count_for_cache(self, config: AnalysisPipelineConfig, opp_id: int) -> int:
         """The visit count a cached result is validated against, 0 meaning trust its TTL.
 
-        - CommCare forms and cases have far fewer rows than Connect visits.
+        - Only the visits export has a row per visit. Every other source's rows are
+          something else (work areas, forms, cases, audits), so the visit count says
+          nothing about them, and comparing it would call a full cache cold forever.
         - A filtered config reuses the cache rather than re-downloading on a filter
           change; `expires_at` handles staleness.
-        - labs_audits holds one row per AUDITED visit, a small fraction of the
-          opportunity's visits, so the visit count says nothing about it.
         """
-        no_count = config.data_source.type in ("cchq_forms", "cchq_cases", "ocs_sessions", "gdrive", "labs_audits")
-        return 0 if (no_count or config.filters) else self.expected_visits_for(opp_id)
+        counts_visits = config.data_source.type == USER_VISITS_SOURCE
+        return self.expected_visits_for(opp_id) if counts_visits and not config.filters else 0
 
     @staticmethod
     def _never_served_from_cache(config: AnalysisPipelineConfig) -> bool:

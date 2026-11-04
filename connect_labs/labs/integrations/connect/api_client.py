@@ -475,7 +475,12 @@ class LabsRecordAPIClient:
             return None
 
         except httpx.HTTPError as e:
-            logger.error(f"Failed to fetch record {record_id}: {e}", exc_info=True)
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 404:
+                # An answer, not a fault: readers look in a scope and fall back to another,
+                # and the raise below tells a caller that minds.
+                logger.info(f"Record {record_id} not found in this scope")
+            else:
+                logger.error(f"Failed to fetch record {record_id}: {e}", exc_info=True)
             raise _wrap_http_error(f"Failed to fetch record {record_id}: {e}", e) from e
 
     @_audited(_AuditAction.READ)

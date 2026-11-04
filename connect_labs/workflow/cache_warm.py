@@ -69,6 +69,7 @@ class WarmSlot:
         slot acts for whichever fill holds it."""
         self.key = key
         self.outcome_key = key + ":outcome"
+        self.cold_key = key + ":cold"
         self.token = token
 
     def claim(self, **details: Any) -> str | None:
@@ -107,6 +108,21 @@ class WarmSlot:
             return found
         # A claim written before this format, still live across a deploy.
         return {"message": None, "started_at": None}
+
+    def note_cold(self, state: dict[str, Any]) -> None:
+        """A reader that could have been served through this fill found it cannot.
+
+        Refreshing leaves the old cache serving readers, but finding out what is still
+        warm means loading it, which on a big report is seconds of web CPU. One reader
+        pays that once per fill; the polls after it just wait. In its own key because
+        the task rewrites the claim as it reports.
+        """
+        if state.get("token"):
+            cache.set(self.cold_key, state["token"], QUEUED_SECONDS)
+
+    def known_cold(self, state: dict[str, Any]) -> bool:
+        """Whether a reader already found this fill's data cold. A later fill starts over."""
+        return bool(state.get("token")) and cache.get(self.cold_key) == state["token"]
 
     def superseded(self) -> bool:
         """This task's claim lapsed while it queued and a newer fill holds the slot.

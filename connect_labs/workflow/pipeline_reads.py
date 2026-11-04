@@ -266,11 +266,11 @@ def read_pipeline_data(request, definition_id: int, *, on_read: Callable | None 
 
     # A poll during a fill stops here. It is what a waiting page sends every few seconds,
     # and everything below costs round trips. The exception is someone else's refresh:
-    # the cache that fill is replacing still serves this reader.
+    # the cache that fill is replacing still serves this reader, until one finds it can't.
     forced = request.GET.get("refresh") == "1"
     slot = workflow_fill_slot(definition_id, opp_ids)
     filling = slot.state()
-    if filling and (forced or not filling.get("forced")):
+    if filling and (forced or not filling.get("forced") or slot.known_cold(filling)):
         return _waiting(slot)
 
     scope = {"opportunity_id": int(opportunity_id)} if opportunity_id else {"program_id": int(owning_program)}
@@ -359,7 +359,10 @@ def read_pipeline_data(request, definition_id: int, *, on_read: Callable | None 
                     per_opp[key] = failure_entry(exc)
                     continue
                 if result is None and not finished:
-                    return _waiting(slot) if filling else start_fill()
+                    if not filling:
+                        return start_fill()
+                    slot.note_cold(filling)
+                    return _waiting(slot)
                 found = list(result.rows) if result else []
                 per_opp[key] = {"row_count": len(found), "from_cache": True, **reported}
                 rows.extend(serialize_pipeline_row(row, extra={"opportunity_id": tag}) for row in found)
