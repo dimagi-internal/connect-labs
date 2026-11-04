@@ -64,7 +64,9 @@ def _deliveries_after_stockout(access, today, _check) -> list[dict]:
         except Exception:  # noqa: BLE001 -- a forecast that cannot be worked out is no finding
             continue
         dry = {
-            s["supply_point_id"]: s["runs_dry_on"] for s in result.get("stores", []) if s.get("runs_dry_on") is not None
+            s["supply_point_id"]: s["runs_dry_on"]
+            for s in result.get("stores", [])
+            if s.get("runs_dry_on") is not None
         }
         if not dry:
             continue
@@ -100,21 +102,23 @@ def _deliveries_after_stockout(access, today, _check) -> list[dict]:
 
 
 def _tenders_to_start(access, today, _check) -> list[dict]:
-    """HOOK: a tender still in draft whose `start_by` date is near or past.
+    """A tender still in draft whose start-by day (counted back from its needed-by date) is near or past.
 
-    `Tender.start_by` is added by the buying package (the tender's needed-by date, counted back through
-    lead time and reply time). Until that column exists this finds nothing, which is not the same as
-    'no tender is late'.
+    The day comes from `procurement.services.timing`, the same count the tender page shows; a tender with
+    no needed-by date, or no lead time to count back with, has none and is not a finding.
     """
     from connect_labs.supply_chain.models import Tender
+    from connect_labs.supply_chain.procurement.services.timing import timing
 
-    if not hasattr(Tender, "start_by"):
-        return []
     out = []
-    for tender in Tender.objects.filter(program_id=access.program_id, status="draft", start_by__isnull=False):
-        if tender.start_by > today + timedelta(days=START_WARNING_DAYS):
+    for tender in Tender.objects.filter(program_id=access.program_id, status="draft", needed_by__isnull=False):
+        lead_times = list(
+            tender.quotes.filter(voided=False, superseded_by__isnull=True).values_list("lead_time_days", flat=True)
+        )
+        counted = timing(tender, lead_times, today=today)
+        start_by = counted["start_by"]
+        if start_by is None or start_by > today + timedelta(days=START_WARNING_DAYS):
             continue
-        late = (today - tender.start_by).days
         out.append(
             _check(
                 "tender_start_by",
@@ -122,8 +126,13 @@ def _tenders_to_start(access, today, _check) -> list[dict]:
                 subject_id=tender.pk,
                 label=tender.label,
                 audience="internal",
-                facts={"start_by": tender.start_by.isoformat(), "days_late": max(late, 0)},
-                since=tender.start_by - timedelta(days=START_WARNING_DAYS),
+                facts={
+                    "needed_by": tender.needed_by.isoformat(),
+                    "start_by": start_by.isoformat(),
+                    "days_late": max((today - start_by).days, 0),
+                    "note": counted["note"],
+                },
+                since=start_by - timedelta(days=START_WARNING_DAYS),
                 as_of=today,
             )
         )

@@ -167,8 +167,20 @@ class TestPlanningChecks:
         ):
             assert checks.run_checks(da, kinds=["delivery_after_stockout"]) == []
 
-    def test_the_tender_start_by_hook_finds_nothing_until_the_column_exists(self, da):
-        assert checks.run_checks(da, kinds=["tender_start_by"]) == []
+    def test_a_draft_tender_past_its_start_by_day_is_a_check_and_one_with_time_in_hand_is_not(self, da):
+        from connect_labs.supply_chain.models import Tender
+
+        today = date.today()
+        late = Tender.objects.create(
+            program_id=PROGRAM, label="Late tender", needed_by=today + timedelta(days=40), lead_time_days_expected=60
+        )
+        Tender.objects.create(
+            program_id=PROGRAM, label="Roomy tender", needed_by=today + timedelta(days=400), lead_time_days_expected=60
+        )
+        Tender.objects.create(program_id=PROGRAM, label="No date")
+        found = checks.run_checks(da, kinds=["tender_start_by"])
+        assert [c["subject"]["id"] for c in found] == [late.pk]
+        assert found[0]["facts"]["days_late"] > 0 and "Late to start" in found[0]["facts"]["note"]
 
 
 class TestDeliverySuggestions:
