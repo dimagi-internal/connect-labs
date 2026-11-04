@@ -419,11 +419,17 @@ def _confirm_handout(scope, data):
     from connect_labs.supply_chain.update_links.forms import _handout_lines
 
     line = _require(_handout_lines(scope, given=False), data.get("line"), "handout")
+    # More places on the same handout, already matched by name; each must still be one this link can speak to.
+    waiting = {w.pk for w in _handout_lines(scope, given=False).filter(distribution_id=line.distribution_id)}
+    others = [o for o in data.get("other_lines") or [] if o["line_id"] in waiting and o["line_id"] != line.pk]
+    if len(others) != len(data.get("other_lines") or []):
+        raise OutOfScope("one of those places is not on this handout")
     payload = {
         "distribution_id": line.distribution_id,
         "data": {
             "confirmed_on": _iso(data.get("handed_out_on") or timezone.localdate()),
-            "lines": [{"line_id": line.pk, "quantity_given": str(data["quantity_given"])}],
+            "lines": [{"line_id": line.pk, "quantity_given": str(data["quantity_given"])}]
+            + [{"line_id": other["line_id"], "quantity_given": other["quantity_given"]} for other in others],
             **_provenance(scope),
         },
     }
