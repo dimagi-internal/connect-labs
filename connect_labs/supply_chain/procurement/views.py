@@ -614,6 +614,9 @@ class QuoteDetailView(_Base):
         quote = detail["quote"]
         context["quote"] = quote
         context["tender"] = self.op("tender_get", tender_id=quote["tender_id"])
+        from connect_labs.supply_chain.procurement.services.splits import split_price_status
+
+        context["split_price"] = split_price_status(context["tender"], quote)
         context["supplier"] = self.op("supplier_get", supplier_id=quote["supplier_id"])
         # The product quoted, so each derived figure names its unit the way the
         # comparison's header does ("USD per jerry can") rather than "per pack".
@@ -1575,6 +1578,19 @@ class TenderOpenView(OperationActionView):
         return reverse("supply_chain:procurement_tender_detail", args=[kwargs["tender_id"]])
 
 
+class AwardOrdersCreateView(OperationActionView):
+    """One draft order per partner of a tender split by partner, from the award."""
+
+    operation = "award_orders_create"
+    success_message = "Orders drafted, one for each partner who had none."
+
+    def fixed(self, **kwargs):
+        return {"award_id": int(kwargs["award_id"])}
+
+    def redirect_to(self, **kwargs):
+        return reverse("supply_chain:award_detail", args=[kwargs["award_id"]])
+
+
 class TenderCloseView(OperationActionView):
     operation = "tender_close"
     success_message = "Tender closed to further quotes."
@@ -1901,6 +1917,13 @@ class AwardDetailView(_Base):
         context["contracts"] = [
             c for c in self.op("contract_list", tender_id=detail["tender_id"]) if c["award_id"] == award.pk
         ]
+        # The orders of this award as a set -- "4 of 5 partners have ordered" -- so the award is not read
+        # as done after its first order.
+        context["order_set"] = self.op("award_orders_progress", award_id=award.pk)
+        context["split_places"] = {
+            p.get("key"): ", ".join(x for x in (p.get("name"), p.get("city")) if x)
+            for p in (context["tender"] or {}).get("delivery_points") or []
+        }
         # The offer the award froze, read from the comparison it was chosen
         # from rather than recomputed here -- so the award and the ranking can
         # never disagree about the money. Without it the award named a kit, a

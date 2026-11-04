@@ -126,12 +126,25 @@ class ProcurementRepositoryMixin:
     def create_tender(self, data):
         from connect_labs.supply_chain.data_access import _columns, _delivery, _fresh, _listing
 
-        data = _listing(data)
+        data = self._with_splits(_listing(data))
         created = Tender.objects.create(
             program_id=self._require_program(),
             **{"status": "draft", **_columns(Tender, _delivery(data))},
         )
         return _fresh(self._duty_from_delivery_term(created))
+
+    def _with_splits(self, data, found=None):
+        """`data` with its partner splits checked, and the lines and places made to agree with them."""
+        if "partner_splits" not in data:
+            return data
+        from connect_labs.supply_chain.procurement.services.splits import apply_splits
+
+        data = dict(data)
+        lines = data.get("lines", found.lines if found else [])
+        points = data.get("delivery_points", found.delivery_points if found else [])
+        splits, lines, points = apply_splits(self, data["partner_splits"], lines, points)
+        data.update(partner_splits=splits, lines=lines, delivery_points=points)
+        return data
 
     def _duty_from_delivery_term(self, tender):
         """A tender that asks for DDP has said who pays the duty: the supplier delivers duty paid.
@@ -151,7 +164,7 @@ class ProcurementRepositoryMixin:
         found = self.get_tender(tender_id)
         if found is None:
             raise ValueError(f"tender {tender_id} not found")
-        data = _listing(data, tender=found)
+        data = self._with_splits(_listing(data, tender=found), found)
         # Duty terms go through their own setter, which stamps the day they
         # were settled -- the edit page and an answer set them the same way.
         data = dict(data)

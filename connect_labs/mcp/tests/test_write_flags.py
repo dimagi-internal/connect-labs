@@ -49,6 +49,7 @@ MUTATING_VERBS = {
 NOT_A_WRITE: dict[str, str] = {
     "microplans_bulk_create_status": "polls a bulk-create task; reads only",
     "supply_chain_award_list": "lists awards; reads only",
+    "supply_chain_award_orders_progress": "reads how far an award is ordered; reads only",
     "supply_chain_update_link_list": "lists supplier update links ('update link' is a noun); reads only",
     "synthetic_clone_profile": (
         "writes an aggregate-stats profile bundle to storage, not labs records; registered "

@@ -169,12 +169,26 @@ the award, so the page says so where the order button would otherwise be.
         {% if approval.status == "declined" %}declined on {{ approval.decided_on|day }} — ask again if they relent{% else %}asked {{ approval.requested_on|day }} and not yet answered{% endif %}{% if not forloop.last %}; and {% endif %}{% endfor %}.
     </div>
   {% endif %}
+  {% comment %}The orders of this award as a set: an award is not done after its first order.{% endcomment %}
+  {% if order_set.text %}
+    <div class="px-4 py-2.5 border-b border-gray-100 text-sm" data-testid="award-order-set">
+      <span class="font-medium text-gray-900">{{ order_set.text }}</span>
+      {% if order_set.complete %}<span class="status-chip status-chip--done ml-2">all ordered</span>
+      {% elif order_set.waiting_partners %}<span class="text-gray-600 ml-2">Still to order: {{ order_set.waiting_partners|join:", " }}</span>{% endif %}
+      {% if order_set.waiting_partners and not blocking %}
+        <form method="post" action="{% url 'supply_chain:award_orders_create' award.id %}" class="inline ml-3">{% csrf_token %}
+          <button type="submit" class="text-brand-indigo hover:underline">Draft an order for each of them</button>
+        </form>
+      {% endif %}
+    </div>
+  {% endif %}
   {% if contracts %}
     <ul class="divide-y divide-gray-100">
       {% for contract in contracts %}
         <li class="px-4 py-2.5 text-sm">
           <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.id %}">{{ contract.reference|default:"order" }} {{ contract.id }}</a>
           <span class="text-gray-600">· {{ contract.status|humanise }}</span>
+          {% if contract.buying_model %}<span class="text-gray-600">· {{ contract.buying_model|words }}</span>{% endif %}
         </li>
       {% endfor %}
     </ul>

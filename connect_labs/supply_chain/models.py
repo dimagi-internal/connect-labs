@@ -556,6 +556,10 @@ class Tender(TimestampedModel):
     # (procurement/services/timing.py). Both optional: a tender without them is as it was.
     needed_by = models.DateField(null=True, blank=True)
     lead_time_days_expected = models.IntegerField(null=True, blank=True)
+    # Per partner, for a programme that sources on behalf of partners: a quantity, the partner's
+    # warehouse as the delivery place, and who receives it (procurement/services/splits.py). Empty for an
+    # ordinary tender, which keeps its one total quantity.
+    partner_splits = models.JSONField(default=list, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -673,6 +677,9 @@ class Quote(TimestampedModel):
     # loading". A contract's payment_terms is the agreed category; this is
     # what was offered.
     payment_terms = models.CharField(max_length=255, blank=True, default="", db_default="")
+    # "The price holds if bought as N purchases": what the supplier said about a tender split by
+    # partner. Blank when the supplier did not say, which is not the same as no.
+    price_holds_for_purchases = models.IntegerField(null=True, blank=True)
 
     voided = models.BooleanField(default=False)
     void_reason = models.TextField(blank=True, default="")
@@ -899,6 +906,11 @@ class Contract(SourcedModel):
     # buys on our quote and invoices us. Blank until somebody says (or the buyer of record implies it).
     buying_model = models.CharField(
         max_length=16, blank=True, default="", db_default="", choices=_choices(records.BUYING_MODELS)
+    )
+    # The partner this order is for. For an order the partner buys it is the buyer; for one we buy and
+    # ship to the partner it is the receiver. What a split tender's order set counts by.
+    partner_org = models.ForeignKey(
+        "labs.LabsOrg", null=True, blank=True, on_delete=models.PROTECT, related_name="supply_contracts_for"
     )
 
     class Meta:
