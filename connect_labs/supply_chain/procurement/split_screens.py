@@ -173,7 +173,7 @@ class TenderSplitsView(OperationFormView):
         return [(str(o.pk), o.name) for o in orgs]
 
         """(choices, owners): the tender's own places, then each partner's; owners maps a value to its partner."""
-        """(choices, owners): the tender's own places, then each partner's places; owners maps a value to its partner."""
+        """(choices, owners): the tender's own places, then each partner's; owners maps a value to its partner."""
         program_id = _access(self.request).program_id
         choices = [
             (f"dp:{p['key']}", p.get("name") or p.get("city") or p["key"])
