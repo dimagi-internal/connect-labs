@@ -17,6 +17,7 @@ from connect_labs.supply_chain.alerts import operations as _alert_operations  # 
 from connect_labs.supply_chain.data_access import SupplyDataAccess
 from connect_labs.supply_chain.fulfilment import operations as _fulfilment_operations  # noqa: F401
 from connect_labs.supply_chain.operations import agent_operations, call_operation
+from connect_labs.supply_chain.partners import operations as _partner_operations  # noqa: F401
 from connect_labs.supply_chain.procurement import operations as _procurement_operations  # noqa: F401
 from connect_labs.supply_chain.runner import operations as _runner_operations  # noqa: F401
 from connect_labs.supply_chain.stock import operations as _stock_operations  # noqa: F401

@@ -534,6 +534,18 @@ def custodian(obj) -> dict:
     }
 
 
+def partner_plan(obj) -> dict:
+    return {
+        "id": obj.pk,
+        "org_id": obj.org_id,
+        "distribution_model": obj.distribution_model,
+        "starts_on": _date(obj.starts_on),
+        "ended_on": _date(obj.ended_on),
+        "current": obj.ended_on is None,
+        **_sourced(obj),
+    }
+
+
 def stock_issue(obj) -> dict:
     return {
         "id": obj.pk,

@@ -1775,6 +1775,9 @@ from connect_labs.supply_chain.alerts.models import AlertCheckState, AlertNotice
 # (Revision). Same registration pattern as the three imports above.
 from connect_labs.supply_chain.history.models import OperationCall, Revision  # noqa: E402,F401
 
+# How each partner distributes, as dated history (Sophie's RUTF feedback).
+from connect_labs.supply_chain.partners.models import PartnerPlan  # noqa: E402,F401
+
 # `Portfolio` is the ONE model in this app with no programme scope, and it says
 # why in its own docstring. Read it before adding a `program_id` to it.
 from connect_labs.supply_chain.portfolio.models import Portfolio  # noqa: E402,F401

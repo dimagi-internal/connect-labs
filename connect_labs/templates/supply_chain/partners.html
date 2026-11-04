@@ -1,0 +1,83 @@
+{% extends 'supply_chain/base.html' %}
+
+{% block supply_content %}
+{% if not has_program_context %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+    <p class="text-sm text-amber-900">Partners are programme-scoped.</p>
+  </div>
+{% else %}
+
+<div class="flex flex-wrap items-start justify-between gap-4">
+  <h2 class="text-lg font-semibold text-brand-indigo mb-1">Partners</h2>
+  <div class="flex gap-2">
+    <a href="{% url 'supply_chain:partner_plan' %}"
+       class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+      <i class="fa-solid fa-plus mr-1"></i> State how a partner distributes
+    </a>
+  </div>
+</div>
+<p class="text-xs text-gray-600 mb-4">
+  Each partner runs its own network and says how it gets stock to its field workers. Network, stock, issues and
+  alerts are then shown partner by partner, with a roll-up across all of them.
+</p>
+
+{% if without_plan %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 mb-4 text-sm text-amber-900">
+    {{ without_plan|length }} partner{{ without_plan|length|pluralize }} without a stated way of distributing:
+    {% for p in without_plan %}<a class="underline" href="{% url 'supply_chain:partner_plan' %}?org={{ p.org_id }}">{{ p.name }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}.
+  </div>
+{% endif %}
+
+{% for p in partners %}
+  <section class="bg-white border border-gray-200 rounded-lg p-4 mb-3">
+    <div class="flex flex-wrap items-start justify-between gap-2">
+      <div>
+        <h3 class="text-base font-semibold text-gray-900">{{ p.name }}</h3>
+        <p class="text-sm text-gray-700">
+          {% if p.current %}{{ p.current_label }} <span class="text-gray-600">(since {{ p.current.starts_on }})</span>
+          {% else %}<span class="text-gray-600">No way of distributing stated yet.</span>{% endif %}
+        </p>
+        <p class="text-xs text-gray-600">
+          {{ p.places }} place{{ p.places|pluralize }}, {{ p.workers }} field worker{{ p.workers|pluralize }} ·
+          <a class="underline" href="{% url 'supply_chain:network' %}">Network</a> ·
+          <a class="underline" href="{% url 'supply_chain:issues' %}?partner={{ p.org_id }}">Issues</a>
+        </p>
+      </div>
+      <a href="{% url 'supply_chain:partner_plan' %}?org={{ p.org_id }}" class="text-sm underline text-brand-indigo">
+        {% if p.current %}Change the plan{% else %}State the plan{% endif %}
+      </a>
+    </div>
+    {% if p.history|length > 1 %}
+      <details class="mt-2 text-xs text-gray-600">
+        <summary class="cursor-pointer">History of changes of plan</summary>
+        <ul class="mt-1 space-y-1">
+          {% for h in p.history %}
+            <li>
+              {{ h.plan.starts_on }}{% if h.plan.ended_on %} to {{ h.plan.ended_on }}{% else %} onwards{% endif %}:
+              {{ h.label }}{% if h.plan.note %} — {{ h.plan.note|linebreaksbr }}{% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </details>
+    {% endif %}
+  </section>
+{% empty %}
+  <div class="bg-white border border-gray-200 rounded-lg p-4 text-sm text-gray-700 mb-3">
+    No partner is recorded in this programme yet. State how the first one distributes and its network is set up.
+  </div>
+{% endfor %}
+
+{% if unassigned %}
+  <section class="bg-white border border-gray-200 rounded-lg p-4 mt-4">
+    <h3 class="text-base font-semibold text-gray-900">Places with no partner</h3>
+    <p class="text-xs text-gray-600 mb-2">
+      These read "Run by: not recorded" and are left out of every partner's own pages.
+      {% for place in unassigned|slice:":12" %}{{ place.name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if unassigned|length > 12 %} and {{ unassigned|length|add:"-12" }} more{% endif %}.
+    </p>
+    <a href="{% url 'supply_chain:partner_places' %}" class="text-sm underline text-brand-indigo">Assign them to a partner</a>
+  </section>
+{% endif %}
+
+{% endif %}
+{% endblock %}

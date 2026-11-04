@@ -9,6 +9,7 @@ from connect_labs.supply_chain.fulfilment import views as fulfilment_views
 from connect_labs.supply_chain.history.as_of import as_of_view
 from connect_labs.supply_chain.market import views as market_views
 from connect_labs.supply_chain.network import views as network_views
+from connect_labs.supply_chain.partners import views as partner_views
 from connect_labs.supply_chain.portfolio import views as portfolio_views
 from connect_labs.supply_chain.procurement import views as procurement_views
 from connect_labs.supply_chain.reference import views as reference_views
@@ -381,6 +382,10 @@ urlpatterns = [
     path("issues/<int:issue_id>/close/", issue_views.IssueResolveView.as_view(), name="issue_resolve"),
     path("issues/custodian/", issue_views.CustodianAssignView.as_view(), name="custodian_assign"),
     path("distribution/new/", distribution_views.DistributionRecordView.as_view(), name="distribution_record"),
+    # How each partner distributes, and who runs which place.
+    path("partners/", partner_views.PartnersView.as_view(), name="partners"),
+    path("partners/plan/", partner_views.PartnerPlanView.as_view(), name="partner_plan"),
+    path("partners/places/", partner_views.AssignPlacesView.as_view(), name="partner_places"),
     # Alerts: who is told about what, and the log of what they were told.
     path("alerts/", alert_views.AlertListView.as_view(), name="alerts"),
     path("alerts/new/", alert_views.AlertCreateView.as_view(), name="alert_create"),
