@@ -7,6 +7,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("supply_chain", "0067_split_tenders"),
+        ("supply_chain", "0067_alert_partner_and_channel"),
     ]
 
     operations = [
