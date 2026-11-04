@@ -124,7 +124,7 @@ def test_the_comparison_names_the_waiver_document_and_its_chip(da, world, client
     assert duty.startswith("Import duty: we import under the duty waiver")
     assert "· Duty exemption not on file · Attach" in duty
     legend = _text(re.search(r'data-testid="owner-legend"[^>]*>(.*?)</span></span>', body, re.S).group(0))
-    assert "to do" not in legend and "ours to attach · settle · fill" in legend
+    assert "to do" not in legend and "ours to attach · choose · fill" in legend
     if 'data-testid="waiver-pending"' not in body:
         pytest.skip("this world's quote does not leave the import to us")
     pending = re.search(
@@ -212,3 +212,12 @@ def test_a_corrected_price_keeps_its_note(da, world, client_in_program):
         r'data-testid="quote-fixes"[^>]*>(.*?)</div>', _history(client_in_program, world["tender"]["id"]), re.S
     )
     assert any("since corrected" in f for f in fixes)
+
+
+@pytest.mark.django_db
+def test_the_comparison_says_it_scrolls_sideways(da, world, client_in_program):
+    op(da, "quote_record", data=_kanem_quote(world, incoterm="CPT Kano"))
+    url = reverse("supply_chain:procurement_comparison", args=[world["tender"]["id"]]) + "?commodity=rutf"
+    body = client_in_program.get(url).content.decode()
+    assert 'data-testid="comparison-scroll-hint"' in body
+    assert "settle" not in body.split("owner-legend", 1)[1][:400]
