@@ -1,10 +1,15 @@
+{% load supply_chain_extras %}
 {% comment %}
 "How a purchase works": the steps in order, each linking to its page, with the programme's next step
 highlighted (supply_chain/guide.py decides which, from the records). Takes `purchase_guide`.
+Open by default only while a step remains; once every step is done, or on a page whose own list is the
+point (`collapsed`), it folds to one line -- "All N steps done" or "Next: <step>" -- and stays expandable.
 {% endcomment %}
 {% if purchase_guide %}
-<details open data-testid="purchase-guide" class="mb-5 rounded-lg border border-gray-200 bg-white">
-  <summary class="cursor-pointer px-4 py-2 text-sm font-semibold text-gray-900">How a purchase works</summary>
+{% with next_step=purchase_guide|first_next_step %}
+<details {% if next_step and not collapsed %}open {% endif %}data-testid="purchase-guide" class="mb-5 rounded-lg border border-gray-200 bg-white">
+  <summary class="cursor-pointer px-4 py-2 text-sm font-semibold text-gray-900">How a purchase works
+    <span class="ml-2 font-normal text-gray-700" data-testid="guide-summary">&middot; {% if next_step %}Next: {{ next_step.title }}{% else %}All {{ purchase_guide|length }} steps done{% endif %}</span></summary>
   <ol class="grid gap-2 px-4 pb-4 pt-1 text-sm sm:grid-cols-2 lg:grid-cols-3">
     {% for step in purchase_guide %}
     <li data-testid="guide-step" data-state="{% if step.next %}next{% elif step.done %}done{% else %}todo{% endif %}"
@@ -18,4 +23,5 @@ highlighted (supply_chain/guide.py decides which, from the records). Takes `purc
     {% endfor %}
   </ol>
 </details>
+{% endwith %}
 {% endif %}
