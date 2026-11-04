@@ -140,6 +140,10 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   guesses and never adds up two lines for one place. The message is kept on the handout
   (`message_text`); a photo is kept as a `Document` and its numbers are typed by a person. There is no
   OCR or language model on this path: an AI that reads a photo over MCP calls `distribution_confirm`.
+- **A message in sachets against a plan in cartons (or the reverse) is converted, not just flagged**, using the
+  trade item's carton size (the product's when the line names no item), when the size is known and the
+  sum is whole (1,800 sachets at 150 is 12 cartons; 1,000 is not, so that is still flagged for a person).
+  The screen says how it converted. An unknown carton size is flagged exactly as before.
 - **"What to issue" comes through one function** (`distribution/issue_plan.py`), now the saved plan's
   per-worker what-to-issue (`plan.service`, the rows of `stock_plan_view`), so a handout filled "from the
   plan" and the Plan page cannot disagree. The operation flag keeps its old name `from_forecast`. The

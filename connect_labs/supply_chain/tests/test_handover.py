@@ -138,6 +138,37 @@ class TestReadingAMessage:
         matched = reader.match_to_plan(reader.read_message("Wuse PHC - 300 sachets")["entries"], planned)
         assert matched["lines"][0]["status"] == "unit_differs"
 
+    PACK = {"base": "sachet", "pack": "carton", "per_pack": 150}
+
+    def test_sachets_are_converted_to_cartons_when_the_carton_size_is_known(self):
+        planned = [{"line_id": 1, "name": "Wuse PHC", "quantity": 12, "unit": "carton", "pack": self.PACK}]
+        matched = reader.match_to_plan(reader.read_message("Wuse PHC - 1800 sachets")["entries"], planned)
+        row = matched["lines"][0]
+        assert row["status"] == "matches" and row["given"] == Decimal("12")
+        assert row["converted_from"]["unit"] == "sachet" and row["converted_from"]["per_pack"] == 150
+
+    def test_a_converted_amount_that_differs_is_shown_as_a_difference_in_the_plans_unit(self):
+        planned = [{"line_id": 1, "name": "Wuse PHC", "quantity": 12, "unit": "carton", "pack": self.PACK}]
+        row = reader.match_to_plan(reader.read_message("Wuse PHC - 1650 sachets")["entries"], planned)["lines"][0]
+        assert row["status"] == "differs" and row["difference"] == Decimal("-1")
+
+    def test_cartons_against_a_plan_in_sachets_are_converted_too(self):
+        planned = [{"line_id": 1, "name": "Wuse PHC", "quantity": 300, "unit": "sachet", "pack": self.PACK}]
+        row = reader.match_to_plan(reader.read_message("Wuse PHC - 2 cartons")["entries"], planned)["lines"][0]
+        assert row["status"] == "matches" and row["given"] == Decimal("300")
+
+    def test_a_part_carton_or_an_unknown_size_is_still_flagged_not_guessed(self):
+        planned = [{"line_id": 1, "name": "Wuse PHC", "quantity": 12, "unit": "carton", "pack": self.PACK}]
+        row = reader.match_to_plan(reader.read_message("Wuse PHC - 1000 sachets")["entries"], planned)["lines"][0]
+        assert row["status"] == "unit_differs"
+        no_size = [{"line_id": 1, "name": "Wuse PHC", "quantity": 12, "unit": "carton", "pack": None}]
+        assert (
+            reader.match_to_plan(reader.read_message("Wuse PHC - 1800 sachets")["entries"], no_size)["lines"][0][
+                "status"
+            ]
+            == "unit_differs"
+        )
+
     def test_two_places_that_could_be_either_are_not_guessed(self):
         planned = [
             {"line_id": 1, "name": "Garki Ward A", "quantity": 5, "unit": "carton"},
@@ -163,6 +194,25 @@ class TestPlanThenConfirm:
         assert Distribution.objects.get(pk=run["id"]).status == "confirmed"
         assert Movement.objects.filter(distribution_id=run["id"]).count() == 2
         assert ledger.committed(PROGRAM, warehouse).amount == 0, "once given it is no longer only promised"
+
+    def test_a_message_in_sachets_is_converted_with_the_products_carton_size(self, scoped, warehouse, rutf, places):
+        rutf.base_per_pack = 150
+        rutf.save()
+        run = planned_run(scoped, warehouse, rutf, places)
+        page = scoped.post(
+            reverse("supply_chain:distribution_from_message", args=[run["id"]]),
+            {"step": "read", "text": "Wuse PHC - 1800 sachets"},
+        )
+        body = page.content.decode()
+        assert "matches the plan" in body and "1,800 sachets at 150 to the carton is 12 cartons" in body
+
+    def test_a_message_in_sachets_is_flagged_when_the_carton_size_is_not_known(self, scoped, warehouse, rutf, places):
+        run = planned_run(scoped, warehouse, rutf, places)
+        page = scoped.post(
+            reverse("supply_chain:distribution_from_message", args=[run["id"]]),
+            {"step": "read", "text": "Wuse PHC - 1800 sachets"},
+        )
+        assert "is not known" in page.content.decode()
 
     def test_a_message_confirms_part_of_the_run_and_is_kept(self, scoped, warehouse, rutf, places):
         run = planned_run(scoped, warehouse, rutf, places)

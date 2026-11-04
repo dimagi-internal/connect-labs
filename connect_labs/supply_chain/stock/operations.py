@@ -678,11 +678,21 @@ def distribution_receipt_confirm(access, line_id, data):
     return record(access.confirm_distribution_receipt(line_id, data))
 
 
+def _pack_of(item, commodity):
+    """The carton size of a handed-out product: {base, pack, per_pack}, from the trade item else the product."""
+    for source in (item, commodity):
+        if source is not None and source.base_per_pack and source.base_unit and source.pack_unit:
+            return {"base": source.base_unit, "pack": source.pack_unit, "per_pack": source.base_per_pack}
+    return None
+
+
 @register_operation(
     name="distribution_message_match",
     summary=(
         "Read a handout message (a pasted WhatsApp text or email: one 'Place - N cartons' per line) and "
-        "match it against a planned run. Returns, per planned line, what the message says was given and "
+        "match it against a planned run. A line counted in sachets where the plan is in cartons (or the "
+        "reverse) is converted with the product's carton size when the size is known and the sum is exact; "
+        "otherwise it is flagged. Returns, per planned line, what the message says was given and "
         "the difference from the plan, plus names it could not place and lines it could not read. Writes "
         "nothing: confirm what it found with distribution_confirm. Do not use it for a photo; read the photo "
         "yourself and call distribution_confirm."
@@ -704,14 +714,22 @@ def distribution_message_match(access, distribution_id, text):
             "name": line.to_supply_point.name,
             "quantity": line.quantity,
             "unit": line.quantity_unit,
+            "pack": _pack_of(line.item, run.commodity),
         }
-        for line in run.lines.select_related("to_supply_point")
+        for line in run.lines.select_related("to_supply_point", "item")
         if not line.is_confirmed
     ]
     matched = messages.match_to_plan(read["entries"], planned)
 
     def plain(row):
         out = {k: (quantity_digits(v) if hasattr(v, "quantize") else v) for k, v in row.items()}
+        if row.get("converted_from"):
+            was = row["converted_from"]
+            out["converted_from"] = {**was, "quantity": quantity_digits(was["quantity"])}
+            out["converted_text"] = (
+                f"{quantity_digits(was['quantity'])} {was['unit']}s at {was['per_pack']} to the "
+                f"{row['unit']} is {quantity_digits(row['given'])} {row['unit']}s"
+            )
         gap = row.get("difference")
         if gap:
             out["difference_text"] = f"{quantity_digits(abs(gap))} {'fewer' if gap < 0 else 'more'} than planned"
