@@ -10,6 +10,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ("labs", "0040_labs_data_reader_login"),
         ("supply_chain", "0064_buying_model_and_needed_by"),
+        ("supply_chain", "0064_document_stock_issue"),
         ("supply_chain", "0064_handover_plan_confirm_receive"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
