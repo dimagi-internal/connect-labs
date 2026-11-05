@@ -23,7 +23,7 @@ OVERVIEW = "supply_chain:overview"
 
 TAB_GROUPS = (
     # Overview stands alone: no group name over it.
-    ("", (("supply_chain:home", "Overview"),)),
+    ("", (("supply_chain:home", "Overview"), ("supply_chain:start_here", "Start here"))),
     (
         "Buying",
         (
@@ -69,6 +69,10 @@ PAGE_PURPOSE = {
     "supply_chain:home": (
         "Where the programme stands: what is open, what is waiting on someone, "
         "and what the records cannot answer yet."
+    ),
+    "supply_chain:start_here": (
+        "What each part of Supply is for, the steps by moment (once, each purchase, weekly, monthly), "
+        "and where each kind of person starts."
     ),
     "supply_chain:procurement_tender_board": (
         "How you ask suppliers for prices. Create a tender (a request for quotes), "
