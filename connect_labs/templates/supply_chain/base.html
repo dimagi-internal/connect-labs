@@ -23,12 +23,20 @@ or by a recorder aiming at an element with no id (the stage bar) -- clears the f
 anything else landed under the bar, slicing through the tender's title above it.{% endcomment %}
 {% comment %}A table row a link lands on (#outreach-N) clears the bar and its table's header row too, so the row arrives under the column names that say what it holds.{% endcomment %}
 <style>
-  /* A value you can click and type into (cells.py, cell_edit.js) says so: a dotted underline, a pencil and a
-     tinted background on hover or focus, and "add" where it is empty. One rule for every editable value in Supply. */
-  .supply-page [data-edit] { cursor: text; text-decoration: underline dotted #6b7280; text-underline-offset: 3px; border-radius: 2px; }
-  .supply-page [data-edit]:hover, .supply-page [data-edit]:focus-visible { background: #eef2ff; text-decoration-style: solid; text-decoration-color: #4f46e5; }
-  .supply-page [data-edit]:hover::after, .supply-page [data-edit]:focus-visible::after { content: " \270E"; color: #4f46e5; font-size: 0.8em; text-decoration: none; display: inline-block; }
+  /* A value you can click and type into (cells.py, cell_edit.js), one rule for every editable value in Supply. */
+  /* Quiet at rest, so a table reads as figures and not as a page of links: the dotted underline appears on the row
+     a reader is on (hover or keyboard focus), and the value itself takes a tint and a pencil. */
+  .supply-page [data-edit] { cursor: text; text-underline-offset: 3px; border-radius: 2px; }
+  .supply-page tr:hover [data-edit], .supply-page tr:focus-within [data-edit], .supply-page [data-edit]:focus-visible { text-decoration: underline dotted #9ca3af; }
+  .supply-page [data-edit]:hover, .supply-page [data-edit]:focus-visible { background: #eef0fb; text-decoration: underline solid #3843d0; }
+  .supply-page [data-edit]:hover::after, .supply-page [data-edit]:focus-visible::after { content: " \270E"; color: #3843d0; font-size: 0.8em; text-decoration: none; display: inline-block; }
   .supply-page [data-edit]:empty::before { content: "add"; color: #6b7280; }
+  /* Every Supply table: column names in sentence case at one quiet size (several tables set uppercase, tracked
+     headers of their own), figures aligned on the top line of a row so a two-line cell does not float the rest. */
+  .supply-page table > thead th { text-transform: none !important; letter-spacing: normal !important; font-size: 0.75rem; font-weight: 600; color: #5b6072; vertical-align: bottom; }
+  .supply-page table.sheet > tbody > tr > td, .supply-page table.sheet > tbody > tr > th { vertical-align: top; padding-top: 0.75rem; padding-bottom: 0.75rem; }
+  .supply-page .sheet-wrap { border-color: #e4e3ea; box-shadow: 0 1px 2px rgb(22 0 109 / 0.04); }
+  .supply-page h2 { letter-spacing: -0.01em; }
 </style>
 <style>.supply-page, .supply-page * { scroll-margin-top: 5rem; } .supply-page tr[id] { scroll-margin-top: 7.5rem; }</style>
 {% comment %}Below sm a table marked `phone-cards` stops scrolling sideways (where the column a reader came

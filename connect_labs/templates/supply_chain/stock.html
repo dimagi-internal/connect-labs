@@ -15,76 +15,36 @@ one of them would destroy the only signal it had.
   </div>
 {% else %}
 
-{% include "supply_chain/_partner_switcher.html" %}
-
-{% comment %}A past date is read-only: its banner says so, so the record controls go with it.{% endcomment %}
-{% if not supply_as_of %}
-<div class="flex flex-wrap items-center justify-end gap-2 mb-3">
-  <a href="{% url 'supply_chain:stock_count_record' %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Record a count</a>
-  <a href="{% url 'supply_chain:movement_record' %}" class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
-    <i class="fa-solid fa-plus mr-1"></i> Record stock in or out
-  </a>
-</div>
-{% endif %}
-
-{% comment %}One line, and only where it is news: a programme with the review pinned
-already has it as a tab, and telling it to go and create one sent people looking
-for something they had.{% endcomment %}
-{% pinned_tab "supply_chain:workers" as stock_review_tab %}
-{% if stock_review_tab %}
-<p class="mb-4 text-sm text-gray-700">
-  Who runs out soonest, and whether the figures add up:
-  <a class="text-brand-indigo underline" href="{{ stock_review_tab.url }}">{{ stock_review_tab.label }}</a>.
-</p>
-{% else %}
-<p class="mb-4 text-sm text-gray-700">
-  For who runs out soonest, create a <strong>Supply Stock Review</strong> from the
-  <a class="text-brand-indigo underline" href="{% url 'labs:workflow:list' %}">workflow templates</a>.
-</p>
-{% endif %}
-<div class="rounded-lg border border-gray-200 bg-white p-4 mb-4 text-sm text-gray-700 max-w-4xl" data-testid="stock-forms-explained">
-  <p class="font-medium text-gray-900 mb-1">Two ways to record stock</p>
-  <ul class="list-disc ml-5 space-y-1">
-    <li><strong>Stock in or out</strong>: something moved (a delivery, a handout, a loss).</li>
-    <li><strong>Count</strong>: what is actually on the shelf. A count is compared with the records and shows any difference. It replaces the records only if you mark it as an override.</li>
-  </ul>
-  <p class="mt-2"><strong>Which number counts?</strong> Supply's records are the official figure.</p>
-  <details class="mt-1 text-gray-600">
-    <summary class="cursor-pointer">More on records and self-reports</summary>
-    <p class="mt-1">This holds for a field worker as much as for a store. A field worker's own balance on their phone is shown as a <em>self-report</em>, beside the records, with the difference. These forms are the fallback: regular handovers need the simpler route.</p>
-  </details>
-</div>
-<div class="flex items-baseline gap-3 mb-1">
-  <h2 class="text-lg font-semibold text-gray-900">Stock across the network</h2>
-  <span class="text-sm text-gray-600">
+<div class="mb-4 flex flex-wrap items-end justify-between gap-4">
+<div>
+  <h2 class="text-xl font-semibold text-brand-deep-purple">Stock across the network</h2>
+  <p class="mt-0.5 text-sm text-gray-600">
     {% comment %}Filtered to one opportunity the table holds only its workers, not the stores --
     "20 supply points" here beside Network's "22 points" read as two answers.{% endcomment %}
     {{ network.summary.points }} supply point{{ network.summary.points|pluralize }}{% if opportunity_id %} in opportunity {{ opportunity_id }}{% endif %} ·
     {{ network.summary.never_reported }} {% if network.summary.never_reported == 1 %}has{% else %}have{% endif %} no count yet
-  </span>
+  </p>
 </div>
-{% comment %}How the figures are worked out, a click away: open by default it was two
-paragraphs of method above a one-row table.{% endcomment %}
-<details class="text-xs text-gray-600 mb-4">
-<summary class="cursor-pointer text-gray-700">How cover is measured</summary>
-<p class="mt-1">
-  Cover is days of stock: what is on hand, at the rate this point has been
-  using it (from {{ min_rate_days }} days of use on). It is measured against each
-  point's own minimum and maximum, so "below its band" means below what this
-  programme set. Goods in
-  transit are excluded: they are real, but they are not cover.
-  Each point is topped up to its maximum; below its minimum it is overdue.
-  A point with none above it in the network is restocked by reordering from its supplier.
-</p>
-</details>
+{% comment %}A past date is read-only: its banner says so, so the record controls go with it.{% endcomment %}
+{% if not supply_as_of %}
+<div class="flex flex-wrap items-center gap-2">
+  <a href="{% url 'supply_chain:stock_count_record' %}" class="px-3.5 py-2 text-sm font-medium bg-white border border-gray-300 text-gray-800 hover:border-gray-400 rounded-md">Record a count</a>
+  <a href="{% url 'supply_chain:movement_record' %}" class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+    <i class="fa-solid fa-plus text-xs"></i> Record stock in or out
+  </a>
+</div>
+{% endif %}
+</div>
+
+{% include "supply_chain/_partner_switcher.html" %}
 
 {% if items|length > 1 %}
   <div class="flex items-center gap-2 mb-4 text-sm">
-    <span class="text-gray-600">Trade item</span>
-    <a href="?" class="px-2 py-1 rounded border {% if not item_id %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 text-gray-700{% endif %}">All</a>
+    <span class="text-gray-600">Trade item:</span>
+    <a href="?" class="px-2.5 py-1 rounded-full border {% if not item_id %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 text-gray-700 hover:bg-gray-50{% endif %}">All</a>
     {% for item in items %}
       <a href="?item_id={{ item.id }}"
-         class="px-2 py-1 rounded border {% if item_id == item.id %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 text-gray-700{% endif %}">{{ item.name }}</a>
+         class="px-2.5 py-1 rounded-full border {% if item_id == item.id %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 text-gray-700 hover:bg-gray-50{% endif %}">{{ item.name }}</a>
     {% endfor %}
   </div>
 {% endif %}
@@ -115,7 +75,22 @@ paragraphs of method above a one-row table.{% endcomment %}
   </div>
 {% endif %}
 
-<div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+<style>
+  /* Trouble reads at the start of a row, not only in the last column: a coloured edge on the supply point's cell. */
+  .stock-table > tbody > tr > td.phone-title { box-shadow: inset 3px 0 0 transparent; }
+  .stock-table > tbody > tr[data-state~="stockout"] > td.phone-title,
+  .stock-table > tbody > tr[data-state~="negative"] > td.phone-title { box-shadow: inset 3px 0 0 #dc2626; }
+  .stock-table > tbody > tr[data-state~="below_min"] > td.phone-title { box-shadow: inset 3px 0 0 #d97706; }
+  .stock-table > tbody > tr > td { vertical-align: top; }
+  .stock-table > tbody > tr:hover > td { background: #fafafb; }
+  .stock-chip { display: inline-flex; align-items: center; gap: 0.375rem; white-space: nowrap; border-radius: 9999px; padding: 0.125rem 0.625rem; font-size: 0.75rem; line-height: 1.25rem; font-weight: 600; }
+  .stock-chip::before { content: ""; width: 0.4375rem; height: 0.4375rem; border-radius: 9999px; background: currentColor; }
+  .stock-chip--ok { background: #ecfdf5; color: #047857; }
+  .stock-chip--warn { background: #fffbeb; color: #b45309; }
+  .stock-chip--bad { background: #fef2f2; color: #b91c1c; }
+  .stock-chip--quiet { background: #f3f4f6; color: #4b5563; }
+</style>
+<div class="bg-white border rounded-lg overflow-hidden" style="border-color:#e4e3ea;box-shadow:0 1px 2px rgb(22 0 109 / 0.04)">
   {% comment %}
   A scroll container is not focusable by default, so a keyboard-only user
   cannot reach the columns it hides -- which re-creates the
@@ -125,28 +100,28 @@ paragraphs of method above a one-row table.{% endcomment %}
   {% endcomment %}
   <div class="overflow-x-auto" tabindex="0" role="region"
        aria-label="Table, scrolls sideways">
-  <table class="phone-cards min-w-[44rem] w-full text-sm" data-testid="stock-table">
-    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+  <table class="stock-table phone-cards min-w-[44rem] w-full text-sm" style="min-width:63rem" data-testid="stock-table">
+    <thead class="bg-gray-50 text-xs text-gray-600 border-b border-gray-200">
       <tr>
-        <th class="text-left px-4 py-2">Supply point</th>
-        <th class="text-left px-4 py-2"title="Supply's records: the official figure">Records say (official)</th>
-        <th class="text-left px-4 py-2" title="What somebody counted on the shelf, or a field worker reported from their phone: a self-report, kept beside the records">Last count (self-report)</th>
-        <th class="text-left px-4 py-2" title="What a store dispenses; for a store that only releases to others, what it releases">Demand / day</th>
-        <th class="text-left px-4 py-2">Days of stock</th>
-        <th class="text-left px-4 py-2">To reach its maximum</th>
-        <th class="text-left px-4 py-2" title="Against the minimum and maximum days of stock this programme set for the point">Enough stock?</th>
+        <th style="min-width:10.5rem" class="text-left px-4 py-2">Supply point</th>
+        <th style="min-width:10rem" class="text-left px-4 py-2" title="Supply's records: the official figure">Records say (official)</th>
+        <th style="min-width:8rem" class="text-left px-4 py-2" title="What somebody counted on the shelf, or a field worker reported from their phone: a self-report, kept beside the records">Last count (self-report)</th>
+        <th style="min-width:8.5rem" class="text-left px-4 py-2" title="What a store dispenses; for a store that only releases to others, what it releases">Demand / day</th>
+        <th style="min-width:9rem" class="text-left px-4 py-2">Days of stock</th>
+        <th style="min-width:9.5rem" class="text-left px-4 py-2">To reach its maximum</th>
+        <th style="min-width:7.5rem" class="text-left px-4 py-2" title="Against the minimum and maximum days of stock this programme set for the point">Enough stock?</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-100">
       {% for point in network.points %}
-        <tr>
-          <td class="phone-title px-4 py-2.5">
+        <tr data-state="{{ point.status }}{% if point.stocked_out %} stockout{% endif %}">
+          <td class="phone-title px-4 py-3">
             <div class="font-medium text-gray-900">{{ point.name }}</div>
             <div class="text-xs text-gray-600">
               {{ point.kind|humanise }}{% if point.admin_area %} · {{ point.admin_area }}{% endif %}
             </div>
           </td>
-          <td class="px-4 py-2.5 tabular-nums" data-label="Ledger says" data-ledger="{{ point.supply_point_id }}">
+          <td class="px-4 py-3 tabular-nums" data-label="Ledger says" data-ledger="{{ point.supply_point_id }}">
             {% comment %}
             An item counted whole in its single unit (a kit: one packet is one
             course) leads with that unit, packs beneath; anything else leads with
@@ -195,7 +170,7 @@ paragraphs of method above a one-row table.{% endcomment %}
               </div>
             {% endfor %}
           </td>
-          <td class="px-4 py-2.5 tabular-nums" data-label="Last count">
+          <td class="px-4 py-3 tabular-nums" data-label="Last count">
             {% if point.reported %}
               {{ point.reported|figure_text }}
               <div class="text-xs text-gray-600">{{ point.reported_kind|words|capfirst }} · {{ point.reported_on|day }}</div>
@@ -208,19 +183,19 @@ paragraphs of method above a one-row table.{% endcomment %}
           rate: one neutral cell, not three "Unconfirmed" and a "cannot be assessed".{% endcomment %}
           {% comment %}Zero on hand is a stock-out whatever the rate: saying only "cover
           can't be computed" beside a 0 read as if the store's state were unknown.{% endcomment %}
-          <td colspan="4" class="phone-lead px-4 py-2.5 text-gray-600" data-label="Enough stock?">{% if point.stocked_out %}<span class="font-semibold text-orange-700">Stocked out</span> — nothing on hand; no consumption yet to measure cover against{% else %}No consumption yet — cover can't be computed{% endif %}</td>
+          <td colspan="4" class="phone-lead px-4 py-3 text-gray-600" data-label="Enough stock?">{% if point.stocked_out %}<span class="stock-chip stock-chip--bad">Stocked out</span> — nothing on hand; no consumption yet to measure cover against{% else %}No consumption yet — cover can't be computed{% endif %}</td>
           {% else %}
-          <td class="px-4 py-2.5 tabular-nums text-gray-600" data-label="Demand / day">
+          <td class="px-4 py-3 tabular-nums text-gray-600" data-label="Demand / day">
             {{ point.amc|per_day }}{% if point.amc.amount %} <span class="text-xs text-gray-600">{% if point.amc_basis == "releases" %}released{% else %}dispensed{% endif %} a day</span><div class="text-xs text-gray-600" data-testid="pace-window">{{ point|pace_window }}</div>{% endif %}
             {% if point.amc_in_display_unit %}<div class="text-xs text-gray-600">(= {{ point.amc_in_display_unit|demand_text }} a month)</div>{% endif %}
           </td>
           {% comment %}Durable equipment: said once, in the demand column. Repeating
           "durable — not forecast" in every forecast column read as three findings.{% endcomment %}
           {% if point.status == "durable" %}
-          <td class="px-4 py-2.5 text-gray-600" data-label="Days of stock">—</td>
-          <td class="px-4 py-2.5 text-gray-600" data-label="To reach its maximum">—</td>
+          <td class="px-4 py-3 text-gray-600" data-label="Days of stock">—</td>
+          <td class="px-4 py-3 text-gray-600" data-label="To reach its maximum">—</td>
           {% else %}
-          <td class="px-4 py-2.5 tabular-nums text-gray-600" data-label="Days of stock">
+          <td class="px-4 py-3 tabular-nums text-gray-600" data-label="Days of stock">
             {% comment %}Days, counted the way Workers, a worker's page and Stock review count them: whole
             days still in hand, never rounded up. Months-of-cover times 30, rounded, read "10 days" here
             beside "9 days" there for the same worker on the same day.{% endcomment %}
@@ -243,7 +218,7 @@ paragraphs of method above a one-row table.{% endcomment %}
               </div>
             {% endif %}
           </td>
-          <td class="px-4 py-2.5 tabular-nums text-gray-600" data-label="To reach its maximum">
+          <td class="px-4 py-3 tabular-nums text-gray-600" data-label="To reach its maximum">
             {% comment %}Send or reorder: the same top-up, acted on by the point above,
             or -- at the top of the network -- by an order to the supplier. Rounded up
             to a whole counted unit: nobody sends 0.88 of a jerry can.{% endcomment %}
@@ -256,26 +231,29 @@ paragraphs of method above a one-row table.{% endcomment %}
             {% endif %}
             {% comment %}Grey, as under months of stock: no rate yet is not a threshold
             crossed, and the same sentence read red here and grey beside it.{% endcomment %}
+            {% comment %}The same reason already said under days of stock is not said twice in one row.{% endcomment %}
+            {% if point.resupply_quantity|unconfirmed_reasons != point.months_of_stock|unconfirmed_reasons %}
             {% for reason in point.resupply_quantity|unconfirmed_reasons %}
               <div class="text-xs text-gray-600 mt-0.5">{{ reason }}</div>
             {% endfor %}
+            {% endif %}
           </td>
           {% endif %}
-          <td class="phone-lead px-4 py-2.5" data-label="Enough stock?">
+          <td class="phone-lead px-4 py-3" data-label="Enough stock?">
             {% if point.status == "ok" %}
-              <span class="text-xs font-semibold uppercase tracking-wide text-teal-700 bg-teal-50 border border-teal-200 rounded px-1.5 py-0.5">within</span>
+              <span class="stock-chip stock-chip--ok">within</span>
             {% elif point.status == "below_min" %}
-              <span class="text-xs font-semibold uppercase tracking-wide text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">below min</span>
+              <span class="stock-chip stock-chip--warn">below min</span>
             {% elif point.status == "stockout" %}
-              <span class="text-xs font-semibold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">none left</span>
+              <span class="stock-chip stock-chip--bad">none left</span>
             {% elif point.status == "negative" %}
-              <span class="text-xs font-semibold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">negative</span>
+              <span class="stock-chip stock-chip--bad">negative</span>
               <div class="text-xs text-red-700 mt-0.5">more left here than ever arrived</div>
             {% elif point.status == "durable" %}
-              <span class="text-xs font-semibold uppercase tracking-wide text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">durable</span>
+              <span class="stock-chip stock-chip--quiet">durable</span>
               <div class="text-xs text-gray-600 mt-0.5">held, not consumed — no cover to assess</div>
             {% elif point.status == "overstocked" %}
-              <span class="text-xs font-semibold uppercase tracking-wide text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">over max</span>
+              <span class="stock-chip stock-chip--quiet">over max</span>
             {% else %}
               {% comment %}
               `unknown` covers more than one cause -- too little consumption
@@ -283,7 +261,7 @@ paragraphs of method above a one-row table.{% endcomment %}
               Naming one of them here would be a guess; the reason is already
               spelled out in the columns to the left.
               {% endcomment %}
-              <span class="text-xs text-gray-600">cannot be assessed</span>
+              <span class="stock-chip stock-chip--quiet">cannot be assessed</span>
             {% endif %}
           </td>
           {% endif %}
@@ -298,7 +276,52 @@ paragraphs of method above a one-row table.{% endcomment %}
   </div>
 </div>
 
-<details class="text-xs text-gray-600 mt-3">
+<section class="mt-8 grid gap-6 border-t border-gray-200 pt-6 md:grid-cols-2" aria-label="How to read this page">
+<div class="space-y-3 max-w-xl">
+<div class="text-sm text-gray-700" data-testid="stock-forms-explained">
+  <p class="font-medium text-gray-900 mb-1">Two ways to record stock</p>
+  <ul class="list-disc ml-5 space-y-1">
+    <li><strong>Stock in or out</strong>: something moved (a delivery, a handout, a loss).</li>
+    <li><strong>Count</strong>: what is actually on the shelf. A count is compared with the records and shows any difference. It replaces the records only if you mark it as an override.</li>
+  </ul>
+  <p class="mt-2"><strong>Which number counts?</strong> Supply's records are the official figure.</p>
+  <details class="mt-1 text-gray-600">
+    <summary class="cursor-pointer">More on records and self-reports</summary>
+    <p class="mt-1">This holds for a field worker as much as for a store. A field worker's own balance on their phone is shown as a <em>self-report</em>, beside the records, with the difference. These forms are the fallback: regular handovers need the simpler route.</p>
+  </details>
+</div>
+</div>
+<div class="space-y-2 max-w-xl text-sm text-gray-700">
+{% comment %}One line, and only where it is news: a programme with the review pinned
+already has it as a tab, and telling it to go and create one sent people looking
+for something they had.{% endcomment %}
+{% pinned_tab "supply_chain:workers" as stock_review_tab %}
+{% if stock_review_tab %}
+<p class="mb-4 text-sm text-gray-700">
+  Who runs out soonest, and whether the figures add up:
+  <a class="text-brand-indigo underline" href="{{ stock_review_tab.url }}">{{ stock_review_tab.label }}</a>.
+</p>
+{% else %}
+<p class="mb-4 text-sm text-gray-700">
+  For who runs out soonest, create a <strong>Supply Stock Review</strong> from the
+  <a class="text-brand-indigo underline" href="{% url 'labs:workflow:list' %}">workflow templates</a>.
+</p>
+{% endif %}
+{% comment %}How the figures are worked out, a click away: open by default it was two
+paragraphs of method above a one-row table.{% endcomment %}
+<details class="text-sm text-gray-600">
+<summary class="cursor-pointer text-gray-700">How cover is measured</summary>
+<p class="mt-1">
+  Cover is days of stock: what is on hand, at the rate this point has been
+  using it (from {{ min_rate_days }} days of use on). It is measured against each
+  point's own minimum and maximum, so "below its band" means below what this
+  programme set. Goods in
+  transit are excluded: they are real, but they are not cover.
+  Each point is topped up to its maximum; below its minimum it is overdue.
+  A point with none above it in the network is restocked by reordering from its supplier.
+</p>
+</details>
+<details class="text-sm text-gray-600">
 <summary class="cursor-pointer text-gray-700">Where demand comes from</summary>
 <p class="mt-1">
   Demand is read from the consumption movements on each store's ledger, whoever
@@ -308,5 +331,7 @@ paragraphs of method above a one-row table.{% endcomment %}
   override with a reason.
 </p>
 </details>
+</div>
+</section>
 {% endif %}
 {% endblock %}
