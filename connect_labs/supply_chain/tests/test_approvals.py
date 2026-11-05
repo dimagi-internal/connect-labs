@@ -203,7 +203,7 @@ class TestAnOrderMayNotRestOnAnUnapprovedAward:
         first = _request(da, world)
         op(da, "approval_decide", approval_id=first["id"], status="declined")
         second = _request(da, world, requested_on=TODAY.isoformat())
-        with pytest.raises(ValueError, match=f"asked {TODAY.isoformat()}"):
+        with pytest.raises(ValueError, match=f"asked {TODAY.day} {TODAY.strftime('%b %Y')}"):
             _order(da, world)
         op(da, "approval_decide", approval_id=second["id"], status="approved")
         assert _order(da, world)["award_id"] == world["award"]["id"]

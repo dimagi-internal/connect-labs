@@ -21,7 +21,7 @@ stored, so it cannot be shown again.
     <h1 class="text-base font-semibold text-gray-900">Link issued for {{ link.org_name }}</h1>
     <p class="text-sm text-gray-600 mt-0.5">
       Send this to them however you normally would. It opens with no labs account, and lets them
-      record only what it covers below. It works until {{ link.expires_at|slice:":10" }}, or until you revoke it.
+      record only what it covers below. It works until {{ link.expires_at|day }}, or until you revoke it.
     </p>
   </div>
 

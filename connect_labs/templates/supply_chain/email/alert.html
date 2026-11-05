@@ -22,7 +22,7 @@ styles because mail clients drop stylesheets.
         <div style="margin-top:4px;">{{ notice.subject.label }}
           <span style="color:#666666;">({{ notice.subject.type|words }} {{ notice.subject.id }})</span></div>
         {% if notice.subject.partner %}<div style="color:#666666;margin-top:4px;">Partner: {{ notice.subject.partner }}</div>{% endif %}
-        {% if notice.since %}<div style="color:#666666;margin-top:4px;">True since {{ notice.since|date:"Y-m-d" }}</div>{% endif %}
+        {% if notice.since %}<div style="color:#666666;margin-top:4px;">True since {{ notice.since|day }}</div>{% endif %}
         {% if notice.facts %}
           <table style="margin-top:6px;font-size:13px;border-collapse:collapse;">
             {% for key, value in notice.facts|fact_rows %}
@@ -42,7 +42,7 @@ styles because mail clients drop stylesheets.
         <div style="font-weight:bold;">{% if notice.facts.reverses_visit %}Consumption reversed (visit {{ notice.facts.reverses_visit }}){% else %}{{ notice.subject_kind|words|capfirst }}{% endif %}:
           {{ notice.facts.quantity|qty:notice.facts.quantity_unit }} of {{ notice.facts.commodity }}</div>
         <div style="color:#666666;margin-top:4px;">
-          {% if notice.facts.from %}from {{ notice.facts.from }} {% endif %}{% if notice.facts.to %}{% if notice.facts.reverses_visit %}back into{% else %}to{% endif %} {{ notice.facts.to }} {% endif %}on {{ notice.facts.occurred_on }}
+          {% if notice.facts.from %}from {{ notice.facts.from }} {% endif %}{% if notice.facts.to %}{% if notice.facts.reverses_visit %}back into{% else %}to{% endif %} {{ notice.facts.to }} {% endif %}on {{ notice.facts.occurred_on|day }}
           {% if notice.facts.batch %}· batch {{ notice.facts.batch }}{% endif %}
         </div>
         <div style="color:#666666;margin-top:4px;">Source: {{ notice.facts.source|source_label }}{% if notice.facts.recorded_by %} ({{ notice.facts.recorded_by }}){% endif %}</div>

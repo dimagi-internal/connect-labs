@@ -339,3 +339,96 @@ class TestTheOverviewLoads:
         assert "40 cartons at North Star \u00b7 Warehouse expire 15 Jan 2027: issue these first" in body
         # The header counts the rows the list shows, not the checks behind them.
         assert re.search(r"To chase <span[^>]*>\s*2\s*</span>", body)
+
+
+# ---- stores are named by partner on the pages that show them ----------------------------------------------
+
+
+@pytest.mark.django_db
+class TestStoresNamedByPartnerOnThePages:
+    def _world(self, da, base):
+        partner = ts.op(da, "org_upsert", ts.AUG_3, data={"slug": "ns", "name": "North Star"})
+        store = ts.op(
+            da,
+            "supply_point_upsert",
+            ts.AUG_3,
+            data={
+                "slug": "ns-wh",
+                "name": "Warehouse",
+                "kind": "central_store",
+                "managed_by_org_id": partner["id"],
+                "source": "we_recorded",
+            },
+        )
+        return partner, store
+
+    def test_the_tag_prefixes_the_partner_and_leaves_workers_alone(self, da, base):
+        from django.template import Context, Template
+        from django.test import RequestFactory
+
+        partner, store = self._world(da, base)
+        request = RequestFactory().get("/supply/")
+        request.labs_context = {"program_id": ts.PROGRAM}
+        out = Template(
+            "{% load supply_chain_extras %}{% store_label sid 'Warehouse' %}|{% store_label 0 'Elsewhere' %}"
+        ).render(Context({"request": request, "sid": store["id"]}))
+        assert out == "North Star · Warehouse|Elsewhere"
+
+    def test_the_tag_without_a_request_just_prints_the_name(self):
+        from django.template import Context, Template
+
+        assert (
+            Template("{% load supply_chain_extras %}{% store_label 1 'Warehouse' %}").render(Context()) == "Warehouse"
+        )
+
+    def test_the_issues_panel_says_whose_warehouse_it_is(self, da, base):
+        from connect_labs.supply_chain.issues import open_issues
+
+        partner, store = self._world(da, base)
+        ts.op(
+            da,
+            "movement_record",
+            ts.AUG_3,
+            data={
+                "kind": "adjustment",
+                "to_supply_point_id": store["id"],
+                "occurred_on": "2026-08-03",
+                "commodity_slug": "rutf",
+                "quantity": "100",
+                "quantity_unit": "carton",
+                "batch": "B1",
+                "source": "we_recorded",
+            },
+        )
+        ts.op(
+            da,
+            "stock_issue_report",
+            ts.AUG_20,
+            data={
+                "supply_point_id": store["id"],
+                "kind": "missing",
+                "occurred_on": "2026-08-20",
+                "commodity_slug": "rutf",
+                "quantity": "8",
+                "quantity_unit": "carton",
+                "batch": "B1",
+                "reported_by": "A supervisor",
+                "source": "we_recorded",
+            },
+        )
+        (row,) = open_issues(ts.PROGRAM)
+        assert "at North Star · Warehouse" in row["title"]
+
+    def test_the_issues_and_plan_and_flow_pages_load(self, client_in_program, da, base):
+        self._world(da, base)
+        for name in ("issues", "plan", "plan_stores", "flow"):
+            response = client_in_program.get(reverse(f"supply_chain:{name}"))
+            assert response.status_code == 200, name
+
+    def test_where_it_went_names_a_store_by_its_partner(self, da, base):
+        from connect_labs.supply_chain.models import SupplyPoint
+        from connect_labs.supply_chain.stock.services.flow import _shown_names
+
+        partner, store = self._world(da, base)
+        points = list(SupplyPoint.objects.filter(pk=store["id"]))
+        assert _shown_names(ts.PROGRAM, points) == {store["id"]: "North Star · Warehouse"}

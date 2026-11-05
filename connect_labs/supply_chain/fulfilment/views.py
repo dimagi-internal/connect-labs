@@ -25,7 +25,7 @@ from connect_labs.supply_chain.fulfilment.forms import (
     ProgramDocumentForm,
 )
 from connect_labs.supply_chain.models import Contract, Invoice
-from connect_labs.supply_chain.values import money_digits
+from connect_labs.supply_chain.values import day_text, money_digits
 
 
 def _contract(request, contract_id):
@@ -132,7 +132,7 @@ class ContractCreateView(_ContractScreen):
         if award is not None:
             context["intro"] = (
                 f"Against the award to {award.supplier.name} for {award.commodity.name}, decided "
-                f"{award.decided_on or 'undated'}. {self.intro}"
+                f"{day_text(award.decided_on) or 'undated'}. {self.intro}"
             )
         return context
 

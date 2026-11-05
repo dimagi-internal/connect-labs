@@ -44,7 +44,7 @@ invitation evidence and so "send an invitation" is not the way to start it.
                 text-amber-800 bg-amber-50 border border-amber-200
               {% endif %}">{{ claim.basis|evidence_label }}</span>
             {% if claim.last_heard %}
-              <span class="ml-auto text-xs text-gray-600">last dated record {{ claim.last_heard }}</span>
+              <span class="ml-auto text-xs text-gray-600">last dated record {{ claim.last_heard|day }}</span>
             {% endif %}
           </div>
 
@@ -54,7 +54,7 @@ invitation evidence and so "send an invitation" is not the way to start it.
                 <span class="text-gray-600 min-w-[10rem]">{{ evidence.kind|evidence_label }}</span>
                 <span>
                   {{ evidence.detail }}
-                  {% if evidence.on %}<span class="text-gray-600">· {{ evidence.on }}</span>{% endif %}
+                  {% if evidence.on %}<span class="text-gray-600">· {{ evidence.on|day }}</span>{% endif %}
                   {% if evidence.quote_id %}
                     · <a class="text-brand-indigo hover:underline"
                          href="{% url 'supply_chain:procurement_quote_detail' evidence.quote_id %}">quote {{ evidence.quote_id }}</a>

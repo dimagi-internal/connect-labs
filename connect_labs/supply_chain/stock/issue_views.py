@@ -24,7 +24,7 @@ from connect_labs.supply_chain.stock.issue_forms import (
     StockIssueResolveForm,
 )
 from connect_labs.supply_chain.stock.services import issues as issue_service
-from connect_labs.supply_chain.values import plain_number
+from connect_labs.supply_chain.values import day_text, plain_number
 from connect_labs.supply_chain.views import OperationBase
 
 # Places stock rests that a custodian can be named for.
@@ -206,7 +206,7 @@ class IssueEvidenceView(OperationFormView):
         issue = self.issue()
         return (
             f"Evidence for the {issue.get_kind_display().lower()} stock at {issue.supply_point.name} on "
-            f"{issue.occurred_on}: a photo, a screenshot of the WhatsApp message, or a link to it."
+            f"{day_text(issue.occurred_on)}: a photo, a screenshot of the WhatsApp message, or a link to it."
         )
 
     def get_initial(self):

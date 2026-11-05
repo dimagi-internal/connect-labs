@@ -41,7 +41,7 @@ four screens and an id held in your head.
   <div class="mb-5 rounded-lg border {% if supplier.reviewed_on %}border-gray-200 bg-white{% else %}border-message-warning-border/50 bg-message-warning{% endif %} p-3 flex flex-wrap items-center justify-between gap-3">
     <p class="text-sm {% if not supplier.reviewed_on %}text-message-warning-text{% else %}text-gray-600{% endif %}">
       {% if supplier.reviewed_on %}
-        Registered itself on the supplier marketplace; reviewed on {{ supplier.reviewed_on }}.
+        Registered itself on the supplier marketplace; reviewed on {{ supplier.reviewed_on|day }}.
       {% else %}
         <strong>Self-registered, not yet reviewed.</strong> This supplier found your tender on the supplier marketplace and bid on it; nobody on the team has looked at them yet. Their quotes count, and are flagged, until you do.
       {% endif %}
@@ -106,7 +106,7 @@ four screens and an id held in your head.
       <ul class="mt-2 space-y-1 text-sm text-gray-800 list-disc list-inside">
         {% for qualification in supplier.qualifications %}
           <li>{{ qualification.name|default:qualification }}
-            {% if qualification.expires_on %}<span class="text-xs text-gray-600">to {{ qualification.expires_on }}</span>{% endif %}
+            {% if qualification.expires_on %}<span class="text-xs text-gray-600">to {{ qualification.expires_on|day }}</span>{% endif %}
           </li>
         {% endfor %}
       </ul>
@@ -165,7 +165,7 @@ four screens and an id held in your head.
             {% elif supply.basis == 'quoted' %}text-brand-indigo bg-indigo-50 border border-indigo-200
             {% else %}text-amber-800 bg-amber-50 border border-amber-200{% endif %}">{{ supply.basis|evidence_label }}</span>
           <span class="text-xs text-gray-600">{{ supply.evidence|length }} record{{ supply.evidence|length|pluralize }}</span>
-          {% if supply.last_heard %}<span class="ml-auto text-xs text-gray-600">last dated {{ supply.last_heard }}</span>{% endif %}
+          {% if supply.last_heard %}<span class="ml-auto text-xs text-gray-600">last dated {{ supply.last_heard|day }}</span>{% endif %}
         </li>
       {% endfor %}
     </ul>
@@ -243,7 +243,7 @@ hundred are different claims, and a reader cannot tell them apart.
           <a class="text-brand-indigo hover:underline"
              href="{% url 'supply_chain:procurement_tender_detail' invitation.tender_id %}">{{ invitation.tender.label|default:invitation.tender_id }}</a>
           <span class="text-gray-600">
-            · {% if invitation.sent_on %}sent {{ invitation.sent_on }}{% else %}no date recorded{% endif %}
+            · {% if invitation.sent_on %}sent {{ invitation.sent_on|day }}{% else %}no date recorded{% endif %}
             {% if invitation.channel %}· {{ invitation.channel|humanise }}{% endif %}
           </span>
           <span class="ml-2 text-xs font-medium
@@ -252,7 +252,7 @@ hundred are different claims, and a reader cannot tell them apart.
             {% else %}no reply{% endif %}
           </span>
           {% if invitation.last_reminder_on %}
-            <span class="text-xs text-gray-600">· last chased {{ invitation.last_reminder_on }}</span>
+            <span class="text-xs text-gray-600">· last chased {{ invitation.last_reminder_on|day }}</span>
           {% endif %}
           {% if invitation.notes %}<div class="text-xs text-gray-600 mt-0.5">{{ invitation.notes }}</div>{% endif %}
         </li>

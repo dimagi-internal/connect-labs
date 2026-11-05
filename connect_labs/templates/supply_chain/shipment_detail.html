@@ -31,8 +31,8 @@ checks feed cannot disagree about what is outstanding.
   <p class="text-sm text-gray-600">
     {{ shipment.status|humanise }}
     {% if shipment.is_in_transit %}<span class="text-amber-800">· not received yet, so not counted as stock</span>{% endif %}
-    {% if shipment.dispatched_on %} · dispatched {{ shipment.dispatched_on }}{% endif %}
-    {% if shipment.expected_on %} · expected {{ shipment.expected_on }}{% endif %}
+    {% if shipment.dispatched_on %} · dispatched {{ shipment.dispatched_on|day }}{% endif %}
+    {% if shipment.expected_on %} · expected {{ shipment.expected_on|day }}{% endif %}
     {% if shipment.carrier %} · {{ shipment.carrier }}{% endif %}
     · how we know: {{ shipment.source|source_label }}
   </p>
@@ -48,7 +48,7 @@ checks feed cannot disagree about what is outstanding.
 {% if late %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning px-4 py-3 mb-3 text-sm text-message-warning-text">
     <strong>{{ late.facts.days_late }} day{{ late.facts.days_late|pluralize }} past its expected date</strong>
-    of {{ late.facts.expected_on }}, and not yet received.
+    of {{ late.facts.expected_on|day }}, and not yet received.
   </div>
 {% endif %}
 
@@ -123,7 +123,7 @@ checks feed cannot disagree about what is outstanding.
               <tr>
                 <td class="px-4 py-2 text-gray-700">
                   {{ charge.kind|humanise|capfirst }}
-                  <div class="text-xs text-gray-600">to {{ orgs|dictkey:charge.payee_org_id|dictkey:"name" }}{% if charge.paid_on %} · paid {{ charge.paid_on }}{% else %} · not yet paid{% endif %}</div>
+                  <div class="text-xs text-gray-600">to {{ orgs|dictkey:charge.payee_org_id|dictkey:"name" }}{% if charge.paid_on %} · paid {{ charge.paid_on|day }}{% else %} · not yet paid{% endif %}</div>
                 </td>
                 <td class="px-4 py-2 text-right tabular-nums">
                   {{ charge.currency }} {{ charge.amount|money }}

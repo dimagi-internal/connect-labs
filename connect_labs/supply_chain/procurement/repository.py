@@ -869,11 +869,13 @@ class ProcurementRepositoryMixin:
         award = self.get_award(award_id)
         if award is None:
             raise ValueError(f"award {award_id} does not exist in this programme")
+        from connect_labs.supply_chain.values import day_text
+
         for approval in self.blocking_approvals(award):
             if approval.status == "requested":
                 raise ValueError(
                     f"the award to {award.supplier.name} is awaiting {possessive(approval.approver_org.name)} "
-                    f"{approval.role} approval (asked {approval.requested_on}); an order cannot be placed "
+                    f"{approval.role} approval (asked {day_text(approval.requested_on)}); an order cannot be placed "
                     "against it until they have answered"
                 )
             if approval.status == "declined":
