@@ -459,8 +459,11 @@ class TenderDetailView(_Base):
         asked = {o.get("supplier_id") for o in outreach if o.get("supplier_id")}
         quoted = {q.get("supplier_id") for q in context["quotes"] if not q.get("voided")}
         answered = {o.get("supplier_id") for o in outreach if o.get("responded")}
-        context["outreach_asked"] = len(asked)
-        context["outreach_replied"] = len(asked & (answered | quoted))
+        # A supplier who quoted unasked (a marketplace bid) is a row of the table: counted, so the
+        # heading never says "0 of 0 answered" above a row with a quote.
+        everyone = asked | quoted
+        context["outreach_asked"] = len(everyone)
+        context["outreach_replied"] = len(everyone & (answered | quoted))
         # Who was asked, from the outreach, for the invited panel when nobody
         # is on the marketplace invitation list.
         context["asked_names"] = list(
@@ -574,7 +577,55 @@ class TenderDetailView(_Base):
             "invited": len(outreach),
         }
         context["canopy_panel"] = _quotes_panel(self.request, tender_id, [q.get("id") for q in current])
+        context.update(_award_on_tender(tender_id, found, context["quotes"], context.get("status")))
         return context
+
+
+def _award_on_tender(tender_id, tender, quotes, status) -> dict:
+    """The award, shown on the tender it ends: who won, the emails and orders it calls for, and the split table.
+
+    Sophie Feintuch's round-2 walk, "Split tender page": a just-awarded tender said "Draft emails: 0, nothing due"
+    and linked the award only from the comparison. The award is the main page after an award, so it is said
+    first, with its emails counted, and the split table reads as the set of orders it is.
+    """
+    from connect_labs.supply_chain.models import Award
+    from connect_labs.supply_chain.procurement.services.award_orders import split_progress
+
+    out = {"award_card": None, "split": None, "price_holds": ""}
+    if tender is None:
+        return out
+    award = (
+        Award.objects.filter(tender_id=tender_id, tender__program_id=tender.program_id)
+        .select_related("supplier", "quote")
+        .order_by("-pk")
+        .first()
+    )
+    progress = (status or {}).get("split_progress") or split_progress(tender)
+    out["split"] = progress
+    live = [q for q in quotes if not q.get("voided") and not q.get("superseded_by_quote_id")]
+    stated = (
+        award.quote.price_holds_for_purchases
+        if award
+        else (live[0].get("price_holds_for_purchases") if len(live) == 1 else None)
+    )
+    if progress and progress["total"] > 1:
+        n = progress["total"]
+        if stated is None:
+            out["price_holds"] = f"Not said whether the price holds if bought as {n} purchases"
+        elif stated >= n:
+            out["price_holds"] = f"Supplier confirmed the price holds for the split ({n} purchases)"
+        else:
+            out["price_holds"] = f"Supplier's price holds for up to {stated} purchases; the split needs {n}"
+    if award is not None:
+        emails = 1 + (len(progress["partners"]) if progress else 0)
+        out["award_card"] = {
+            "id": award.pk,
+            "supplier": award.supplier.name,
+            "decided_on": award.decided_on,
+            "emails": emails,
+            "handovers": emails - 1,
+        }
+    return out
 
 
 class QuoteDetailView(_Base):
@@ -1948,6 +1999,7 @@ class AwardDetailView(_Base):
             rows = list(comparison.get("comparable") or []) + list(comparison.get("all_rows") or [])
             context["awarded_row"] = next((r for r in rows if r.get("quote_id") == award.quote_id), None)
             context["awarded_columns"] = table_columns(comparison)
+        context.update(_award_page_extras(self.op, award, context, getattr(self.request, "supply_as_of", None)))
         # How many the money is for. "USD 760.00 landed" means nothing without
         # it, and the comparison's own column says only "(this tender)".
         sought = self.op("tender_get", tender_id=detail["tender_id"]) or {}
@@ -1956,6 +2008,61 @@ class AwardDetailView(_Base):
                 context["tender_quantity"] = quantity_phrase(line["quantity"], line.get("quantity_unit"))
                 break
         return context
+
+
+# Cost columns that rest on the course length, and the places a cost figure is shown to.
+_COURSE_KEYS = ("usd_per_course", "usd_per_child_treated")
+_PER_UNIT_KEYS = ("usd_per_base_unit",)
+
+
+def _award_page_extras(op, award, context, as_of) -> dict:
+    """The award page's title, costs to the cent, and orders named by partner with one status each.
+
+    Sophie Feintuch's round-2 walk, "Award page": the title read "rutf"; a cost read "per course USD 58.7104"
+    without saying which course; an order row read "DEMO-PO-RCI-001 329" and said "confirmed" where every other
+    page said "in transit".
+    """
+    from connect_labs.supply_chain.procurement.services.award_orders import buying_words, order_words
+    from connect_labs.supply_chain.templatetags.supply_chain_extras import humanise, money_text
+
+    tender = context.get("tender") or {}
+    out = {"award_title": f"Award: {context['supplier']['name']}, {tender.get('label') or ''}".rstrip(", ")}
+    commodity = award.commodity
+    out["awarded_what"] = context.get("awarded_item") or commodity.name
+    course = commodity.base_units_per_course
+    base = unit_noun(commodity.base_unit) or "unit"
+    phrase = f"at the full {course}-{base} course" if course else ""
+    figures, seen = [], set()
+    row = context.get("awarded_row")
+    for column in context.get("awarded_columns") or []:
+        cell = ((row or {}).get("figures") or {}).get(column["key"]) if row else None
+        if not cell or cell.get("unconfirmed") or cell.get("amount") is None:
+            continue
+        text = money_text(cell, 3 if column["key"] in _PER_UNIT_KEYS else 2)
+        note = phrase if column["key"] in _COURSE_KEYS else ""
+        if column["key"] in _COURSE_KEYS and (text, note) in seen:
+            continue
+        seen.add((text, note))
+        figures.append({"label": column["label"], "text": text, "note": note})
+    out["award_figures"] = figures
+    contracts = context.get("contracts") or []
+    orgs = {o["id"]: o["name"] for o in op("org_list")}
+    program_id = award.tender.program_id
+    states = order_words(program_id, [c["id"] for c in contracts], as_of)
+    out["order_rows"] = [
+        {
+            "id": c["id"],
+            "reference": c.get("reference") or f"Order {c['id']}",
+            "partner": orgs.get(c.get("partner_org_id") or c.get("buyer_org_id"), ""),
+            "quantity": (
+                quantity_phrase(c["quantity"], c.get("quantity_unit")) if c.get("quantity") not in (None, "") else ""
+            ),
+            "status": (states.get(c["id"]) or ("", False))[0] or humanise(c.get("status")).capitalize(),
+            "buying": buying_words(c.get("buying_model")),
+        }
+        for c in contracts
+    ]
+    return out
 
 
 class _AwardScreen(OperationFormView):

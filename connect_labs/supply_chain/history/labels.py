@@ -45,6 +45,8 @@ FIELD_LABELS = {
 # supply screens say "order", never "contract".
 MODEL_LABELS = {
     "Contract": "Order",
+    # A goods received note is a delivery to a person reading the history; its code is not a name.
+    "Receipt": "Delivery",
     "AwardApproval": "Approval request",
     # Something we owe a counterparty: their question, or our promise.
     "Commitment": "To do",
@@ -479,7 +481,12 @@ def _identity(model, values, lookup) -> str:
         "AwardApproval": lambda: name_org(values.get("approver_org_id")),
         "Contract": lambda: values.get("reference") or "",
         "Shipment": lambda: values.get("reference") or "",
-        "Receipt": lambda: values.get("reference") or "",
+        # Where it arrived ("North Star warehouse"), not the note's code ("DEMO-GRN-NSCH-001").
+        "Receipt": lambda: (
+            lookup.name(m.SupplyPoint, values.get("supply_point_id"))
+            if values.get("supply_point_id")
+            else values.get("reference") or ""
+        ),
         "Invoice": lambda: values.get("reference") or "",
         "Charge": lambda: words(values.get("kind") or "").capitalize() if values.get("kind") else "",
         "Payment": lambda: _cash(values),

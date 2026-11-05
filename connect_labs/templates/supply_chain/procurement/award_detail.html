@@ -23,8 +23,8 @@ the award, so the page says so where the order button would otherwise be.
   </div>
   {% comment %}What was chosen is the heading; who supplies it follows. On a tender where one
   distributor offered two kits, "Awarded to Harmattan" did not say which.{% endcomment %}
-  <h2 class="text-lg font-semibold text-gray-900">{{ awarded_item|default:award.commodity_slug|words }}</h2>
-  <p class="text-sm text-gray-700">
+  <h1 class="text-lg font-semibold text-gray-900" data-testid="award-title">{{ award_title }}</h1>
+  <p class="text-sm text-gray-700">{{ awarded_what }}.
     Awarded to
     <a href="{% url 'supply_chain:supplier_detail' supplier.id %}" class="text-brand-indigo hover:underline">{{ supplier.name }}</a>
   </p>
@@ -50,12 +50,8 @@ the award, so the page says so where the order button would otherwise be.
   {% if awarded_row %}
     <div class="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
       {% if tender_quantity %}<span class="text-gray-800">{{ tender_quantity }}</span>{% endif %}
-      {% for column in awarded_columns %}
-        {% with cell=awarded_row.figures|dictkey:column.key %}
-          {% if not cell.unconfirmed and cell.amount is not None %}
-            <span class="text-gray-800"><span class="text-gray-600">{{ column.label }}</span> <span class="tabular-nums">{{ cell|money_text }}</span></span>
-          {% endif %}
-        {% endwith %}
+      {% for f in award_figures %}
+        <span class="text-gray-800" data-testid="award-figure"><span class="text-gray-600">{{ f.label }}</span> <span class="tabular-nums">{{ f.text }}</span>{% if f.note %} <span class="text-gray-600">{{ f.note }}</span>{% endif %}</span>
       {% endfor %}
     </div>
     {% include "supply_chain/procurement/_specification.html" with specification=awarded_row.specification %}
@@ -203,13 +199,14 @@ the award, so the page says so where the order button would otherwise be.
       {% endif %}
     </div>
   {% endif %}
-  {% if contracts %}
+  {% if order_rows %}
     <ul class="divide-y divide-gray-100">
-      {% for contract in contracts %}
-        <li class="px-4 py-2.5 text-sm">
-          <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.id %}">{{ contract.reference|default:"order" }} {{ contract.id }}</a>
-          <span class="text-gray-600">· {{ contract.status|humanise }}</span>
-          {% if contract.buying_model %}<span class="text-gray-600">· {{ contract.buying_model|words }}</span>{% endif %}
+      {% for row in order_rows %}
+        <li class="px-4 py-2.5 text-sm" data-testid="award-order-row">
+          <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' row.id %}">{% if row.partner %}{{ row.partner }}{% if row.quantity %} · {{ row.quantity }}{% endif %}{% else %}{{ row.reference }}{% endif %}</a>
+          <span class="text-gray-600">· {{ row.status }}</span>
+          {% if row.buying %}<span class="text-gray-600">· {{ row.buying }}</span>{% endif %}
+          {% if row.partner %}<span class="text-xs text-gray-600">({{ row.reference }})</span>{% endif %}
         </li>
       {% endfor %}
     </ul>

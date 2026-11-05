@@ -80,6 +80,10 @@ def build(da, monkeypatch, *, ordered=("north", "river"), holds=3, contacts=True
             "as_quoted_unit": "per_pack",
             "quantity_basis": "2000",
             "quantity_basis_unit": "carton",
+            "base_per_pack_stated": 150,
+            "pack_spec_source": "stated_on_quote",
+            "freight_basis": "included",
+            "duties_basis": "included",
             **({"price_holds_for_purchases": holds} if holds is not None else {}),
         },
     )
@@ -108,6 +112,7 @@ def build(da, monkeypatch, *, ordered=("north", "river"), holds=3, contacts=True
 
 def deliver(da, world, key, *, day="2026-10-22", batch="DEMO-B1"):
     contract = world["contracts"][key]
+    op(da, "contract_update", contract_id=contract["id"], data={"status": "placed"})
     shipment = op(
         da,
         "shipment_record",
@@ -152,6 +157,7 @@ def deliver(da, world, key, *, day="2026-10-22", batch="DEMO-B1"):
 
 def in_transit(da, world, key, *, expected="2026-11-20"):
     contract = world["contracts"][key]
+    op(da, "contract_update", contract_id=contract["id"], data={"status": "placed"})
     return op(
         da,
         "shipment_record",
