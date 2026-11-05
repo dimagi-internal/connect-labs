@@ -487,6 +487,7 @@ def _fulfilment(access, as_of):
                 audience="supplier",
                 facts={
                     "status": shipment.status,
+                    "contract_id": shipment.contract_id,
                     "supplier": _supplier_fact(shipment.contract.supplier),
                     # Which delivery it is, in words: the tender it was bought through ("Round 1").
                     "tender": shipment.contract.tender.label if shipment.contract.tender_id else "",

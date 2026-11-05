@@ -30,7 +30,7 @@ from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.services.compliance import kit_spec_verdict
 from connect_labs.supply_chain.reference import qualifications
 from connect_labs.supply_chain.runner import DIMAGI_ORG_SLUG, is_operator, running_org, standing
-from connect_labs.supply_chain.standing import move_counts, standing_rows
+from connect_labs.supply_chain.standing import add_open_check_moves, move_counts, standing_rows
 
 
 @method_decorator(login_required, name="dispatch")
@@ -347,6 +347,10 @@ class DomainHomeView(OperationBase):
         if as_of is None:
             checks = self.op("checks_list")
             context["checks"] = checks
+            # What the chase list says an order still owes is that order's next move too.
+            add_open_check_moves(context["standing"], checks["checks"])
+            context["move_counts"] = move_counts(context["standing"])
+            context["standing_our_moves"] = context["move_counts"]["ours"]
             context["checks_by_audience"] = checks_by_audience(checks)
             # The same list, in the same words, as the Map's Chase list tab.
             from connect_labs.supply_chain.portfolio.chase import grouped
@@ -582,6 +586,20 @@ class OrdersView(OperationBase):
         context["item_names"] = {i["id"]: i["name"] for i in self.op("item_list")}
         context["orgs"] = {o["id"]: o for o in self.op("org_list")}
         context["suppliers"] = {s["id"]: s for s in self.op("supplier_list")}
+        # One status style, the Overview row's own words for the order ("In transit · expected 20 Nov",
+        # "Received", "Paid"), so a list and a row cannot call one order two things.
+        from connect_labs.supply_chain.standing import _order_rows
+
+        context["order_steps"] = {
+            r.contract_id: r.label
+            for r in _order_rows(
+                _access(self.request).program_id,
+                getattr(self.request, "supply_as_of", None) or timezone.localdate(),
+                getattr(self.request, "supply_as_of", None),
+                None,
+                keep_done=True,
+            )
+        }
         return context
 
 
