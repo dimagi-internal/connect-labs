@@ -573,11 +573,13 @@ def failed_alert_items(program_id, program_name="", today=None) -> list[dict]:
         items.append(
             {
                 "source": "alert_failure",
+                "kind": "alert_failure",
                 "audience": "internal",
                 "who": sender,
                 "what": "An alert could not be sent",
                 "ask": ask,
                 "about": sub.label or f"Alert {sub.pk}",
+                "amount": "",
                 "days": (today - notice.detected_at.date()).days,
                 "href": _url("alerts", program_id=program_id),
                 "program": program_name,
