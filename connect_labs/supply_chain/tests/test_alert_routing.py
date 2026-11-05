@@ -116,6 +116,10 @@ def test_an_alert_that_failed_to_send_is_a_chase_list_item(da, world):
         check_labels={}, alert_failures=[item],
     )  # fmt: skip
     assert [i["what"] for i in items] == ["An alert could not be sent"]
+    from connect_labs.supply_chain.portfolio.chase import grouped
+
+    [section] = grouped(items)  # the Overview draws it under "Ours to answer"
+    assert section["audience"] == "internal" and section["items"][0]["ask"] == item["ask"]
 
 
 def test_an_alert_that_works_again_is_not_on_the_chase_list(da, world):
