@@ -137,3 +137,51 @@ def test_the_contact_form_saves_and_the_partners_card_shows_it(scoped, partner):
     assert "Ada Lead" in body and "ada@example.org" in body
     again = scoped.get(reverse("supply_chain:partner_contact") + f"?org={partner.pk}").content.decode()
     assert "sam@example.org" in again
+
+
+def test_the_partner_card_is_the_partners_home(scoped, partner):
+    """Contact, buying model, places with custodian, handout rhythm and a status line, loaded once."""
+    from datetime import date, timedelta
+
+    from connect_labs.supply_chain.models import Custodian, Distribution
+
+    store = SupplyPoint.objects.create(
+        program_id=PROGRAM,
+        slug="wh3",
+        name="Partner B warehouse",
+        kind="central_store",
+        managed_by_org=partner,
+        source="we_recorded",
+    )
+    SupplyPoint.objects.create(
+        program_id=PROGRAM, slug="phc3", name="PHC 3", kind="facility", parent=store, source="we_recorded"
+    )
+    Custodian.objects.create(
+        program_id=PROGRAM,
+        supply_point=store,
+        name="Kay Keeper",
+        phone="123",
+        security_measures=["locked_box"],
+        starts_on=date.today() - timedelta(days=30),
+        source="we_recorded",
+    )
+    for days_ago in (28, 14):
+        Distribution.objects.create(
+            program_id=PROGRAM,
+            opportunity_id=1,
+            supply_point=store,
+            distributed_on=date.today() - timedelta(days=days_ago),
+            source="we_recorded",
+        )
+    _op(
+        "partner_profile_set",
+        data={"org_id": partner.pk, "contact_name": "Ada Lead", "default_buying_model": "partner_buys"},
+    )
+    page = scoped.get(reverse("supply_chain:partners"))
+    body = page.content.decode()
+    assert page.status_code == 200
+    assert "Kay Keeper" in body and "Locked box" in body and "no custodian named" in body
+    assert "The partner buys on our quote and invoices us" in body
+    assert "About every 14 days from Partner B warehouse" in body
+    assert "Add a partner" in body and "State how a partner distributes" not in body
+    assert "no open issues" in body

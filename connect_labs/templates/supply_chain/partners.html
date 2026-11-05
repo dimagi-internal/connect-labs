@@ -14,15 +14,16 @@
     <a href="{% url 'supply_chain:partner_deliveries' %}" class="px-4 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Suggested deliveries</a>
     <a href="{% url 'supply_chain:partner_plan' %}"
        class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
-      <i class="fa-solid fa-plus mr-1"></i> State how a partner distributes
+      <i class="fa-solid fa-plus mr-1"></i> Add a partner
     </a>
   </div>
 </div>
 <details class="text-xs text-gray-600 mb-4 max-w-3xl">
-  <summary class="cursor-pointer">What a partner's way of distributing changes</summary>
+  <summary class="cursor-pointer">What a partner's card is for</summary>
   <p class="mt-1">
-  Each partner runs its own network and says how it gets stock to its field workers. Network, stock, issues and
-  alerts are then shown partner by partner, with a roll-up across all of them.
+  Each card is one local partner (LLO): who to write to, how it distributes, its places and who looks after
+  each, and a line on how it stands today. Network, stock, issues and alerts are then shown partner by partner,
+  with a roll-up across all of them.
   </p>
 </details>
 
@@ -46,6 +47,18 @@
           {% if p.contact.name or p.contact.email %}Main contact: {{ p.contact.name|default:"(no name)" }}{% if p.contact.email %} · {{ p.contact.email }}{% endif %}{% if p.contact.phone %} · {{ p.contact.phone }}{% endif %}
           {% else %}<span class="text-amber-800">No main contact recorded:</span> <a class="underline" href="{% url 'supply_chain:partner_contact' %}?org={{ p.org_id }}">add one</a> so award emails have someone to address.{% endif %}
         </p>
+        {% if p.contact.copy_to %}<p class="text-xs text-gray-600">Copy: {% for c in p.contact.copy_to %}{{ c.name|default:c.email }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+        {% if p.contact.connect_username %}<p class="text-xs text-gray-600">Connect username for alerts: {{ p.contact.connect_username }}</p>{% endif %}
+        <p class="text-sm text-gray-700">
+          {% if p.status %}Stock: {{ p.status.stock_text }} ·
+          {% if p.status.workers_running_out %}<span class="text-amber-800">{{ p.status.workers_running_out }} of {{ p.status.workers }} field workers running out</span>{% else %}{{ p.status.workers }} field worker{{ p.status.workers|pluralize }}, none running out{% endif %} ·
+          {% if p.status.open_issues %}<a class="underline" href="{% url 'supply_chain:issues' %}?partner={{ p.org_id }}">{{ p.status.open_issues }} open issue{{ p.status.open_issues|pluralize }}</a>{% else %}no open issues{% endif %}
+          {% else %}No stock recorded yet.{% endif %}
+        </p>
+        <p class="text-xs text-gray-600">
+          {% if p.buying_label %}Usually: {{ p.buying_label }} · {% else %}Buying model not set (<a class="underline" href="{% url 'supply_chain:partner_contact' %}?org={{ p.org_id }}">set it</a>) · {% endif %}
+          Hands out stock: {{ p.rhythm }}
+        </p>
         <p class="text-xs text-gray-600">
           {{ p.places }} place{{ p.places|pluralize }}, {{ p.workers }} field worker{{ p.workers|pluralize }} ·
           <a class="underline" href="{% url 'supply_chain:network' %}">Network</a> ·
@@ -59,6 +72,19 @@
         </a>
       </div>
     </div>
+    {% if p.place_list %}
+      <details class="mt-2 text-xs text-gray-700" open>
+        <summary class="cursor-pointer">Its places and who looks after them</summary>
+        <ul class="mt-1 space-y-1">
+          {% for place in p.place_list %}
+            <li>{{ place.name }}:
+              {% if place.custodian %}{{ place.custodian.name }}{% if place.custodian.phone %} ({{ place.custodian.phone }}){% endif %}{% if place.kept %}, kept: {{ place.kept }}{% endif %}
+              {% else %}<span class="text-amber-800">no custodian named</span> · <a class="underline" href="{% url 'supply_chain:custodian_assign' %}">name one</a>{% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </details>
+    {% endif %}
     {% if p.history|length > 1 %}
       <details class="mt-2 text-xs text-gray-600">
         <summary class="cursor-pointer">History of changes of plan</summary>
