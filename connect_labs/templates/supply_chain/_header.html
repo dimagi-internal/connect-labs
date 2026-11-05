@@ -20,6 +20,7 @@ for a past day. Plain CSS in `_rail.html`, so nothing waits on the stylesheet be
   <button type="button" class="supply-rail-toggle" data-supply-rail-toggle aria-controls="supply-rail" aria-expanded="true"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> <span data-label>Show menu</span></button>
   {% with purpose=supply_tabs|page_purpose %}{% if purpose %}<p data-testid="page-purpose" class="supply-purpose">{{ purpose }}</p>{% endif %}{% endwith %}
 </div>
+{% if acl_scoped %}<p data-testid="acl-scoped-note" class="mb-3 text-sm text-gray-700">You are seeing the part of this programme you are involved in: your own bids, the orders and deliveries that concern you, and the stores you run.</p>{% endif %}
 <details data-testid="supply-tabs-phone" class="supply-tabs-phone">
   <summary class="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border bg-white border-gray-300 text-gray-700">
     <span class="sr-only">Supply section:</span>

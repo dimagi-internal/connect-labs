@@ -54,6 +54,7 @@ READ_OPERATION_MODELS = {
     "supply_point_list": "SupplyPoint",
     "supply_point_get": "SupplyPoint",
     "movement_list": "Movement",
+    "outreach_list": "Outreach",
 }
 
 
@@ -92,6 +93,10 @@ def observe_read(operation, access) -> None:
         name = READ_OPERATION_MODELS.get(operation.name)
         if name is None or not _sampled():
             return
+        from connect_labs.supply_chain import access_enforce
+
+        if access_enforce.is_enforced(operation.name, access):
+            return  # already scoped for real: what scope() would hide is hidden, there is nothing to observe
         from connect_labs.supply_chain import models
 
         model = getattr(models, name)

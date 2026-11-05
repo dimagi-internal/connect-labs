@@ -18,6 +18,7 @@ from django.db import transaction
 
 from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain import gs1
+from connect_labs.supply_chain.access_enforce import restrict
 from connect_labs.supply_chain.models import Commodity, Item, Supplier
 
 
@@ -71,7 +72,7 @@ class ReferenceRepositoryMixin:
         return _fresh(obj)
 
     def _suppliers(self):
-        return self._reference(Supplier).select_related("org", "org__supplier_profile")
+        return restrict(self, self._reference(Supplier), Supplier).select_related("org", "org__supplier_profile")
 
     def list_suppliers(self, search: str | None = None):
         """The companies linked into this program as suppliers.

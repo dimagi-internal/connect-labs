@@ -35,6 +35,7 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from connect_labs.supply_chain import award_policy
+from connect_labs.supply_chain.access_enforce import page_is_scoped
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.banner import program_line
 from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView, SupplyWriteMixin
@@ -253,6 +254,7 @@ class _Base(TemplateView):
         context = super().get_context_data(**kwargs)
         context["supply_tabs"] = supply_tabs(self.request)
         context["supply_program_line"] = program_line(self.request)
+        context["acl_scoped"] = page_is_scoped(self.request, has_program_context, _access)
         return context
 
 
@@ -267,11 +269,18 @@ class TenderBoardView(_Base):
         # (labs_context = {}), not a bug -- see api_views.has_program_context.
         context["tenders"] = self.op("tender_list") if context["has_program_context"] else []
         if context["has_program_context"]:
-            context.update(guide_context(self.request, _access(self.request).program_id))
+            if not context["acl_scoped"]:
+                # The purchase guide is the running organisation's checklist, drawn from programme-wide facts and
+                # naming every tender: a partner under read enforcement is not shown it.
+                context.update(guide_context(self.request, _access(self.request).program_id))
             from connect_labs.supply_chain.procurement.sourcing import marketplace_in_use, sourcing_rows
 
             program_id = _access(self.request).program_id
             context["rows"] = sourcing_rows(program_id, getattr(self.request, "supply_as_of", None) or date.today())
+            if context["acl_scoped"]:
+                # `sourcing_rows` reads the tables itself; a partner keeps only the tenders it is allowed to list.
+                visible = {t["id"] for t in context["tenders"]}
+                context["rows"] = [row for row in context["rows"] if row["id"] in visible]
             context["marketplace_in_use"] = marketplace_in_use(program_id)
         return context
 

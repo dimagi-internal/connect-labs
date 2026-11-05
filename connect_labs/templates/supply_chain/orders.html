@@ -78,7 +78,7 @@ shipments (received, due, late) is not a cell anyone types into.
         </tr>
         {% endwith %}
       {% empty %}
-        <tr><td colspan="12" class="py-6 text-center text-gray-600">No contracts yet. An award on its own commits nothing.</td></tr>
+        <tr><td colspan="12" class="py-6 text-center text-gray-600">{% if acl_scoped %}You have no orders in this programme.{% else %}No contracts yet. An award on its own commits nothing.{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

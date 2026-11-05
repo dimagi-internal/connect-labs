@@ -25,6 +25,7 @@ from datetime import date
 from django.db import transaction
 from django.utils import timezone
 
+from connect_labs.supply_chain.access_enforce import restrict
 from connect_labs.supply_chain.models import (
     Award,
     AwardApproval,
@@ -115,7 +116,7 @@ class ProcurementRepositoryMixin:
         return self._resolve_tender(tender_id)
 
     def _tenders(self):
-        return Tender.objects.filter(program_id=self._require_program())
+        return restrict(self, Tender.objects.filter(program_id=self._require_program()), Tender)
 
     def list_tenders(self):
         return list(self._tenders().all())
@@ -324,14 +325,15 @@ class ProcurementRepositoryMixin:
     # ---- outreach -------------------------------------------------------
 
     def list_outreach(self, tender_id=None):
-        qs = Outreach.objects.filter(tender__program_id=self._require_program())
+        qs = restrict(self, Outreach.objects.filter(tender__program_id=self._require_program()), Outreach)
         if tender_id is not None:
             qs = qs.filter(tender_id=tender_id)
         return list(qs.select_related("supplier__org__supplier_profile").all())
 
     def get_outreach(self, outreach_id):
         return (
-            Outreach.objects.filter(tender__program_id=self._require_program(), pk=outreach_id)
+            restrict(self, Outreach.objects.filter(tender__program_id=self._require_program()), Outreach)
+            .filter(pk=outreach_id)
             .select_related("tender", "supplier__org__supplier_profile")
             .first()
         )
@@ -416,8 +418,12 @@ class ProcurementRepositoryMixin:
     # ---- quotes ---------------------------------------------------------
 
     def _quotes(self):
-        return Quote.objects.filter(tender__program_id=self._require_program()).select_related(
-            "commodity", "superseded_by", "supersedes"
+        return restrict(
+            self,
+            Quote.objects.filter(tender__program_id=self._require_program()).select_related(
+                "commodity", "superseded_by", "supersedes"
+            ),
+            Quote,
         )
 
     def list_quotes(self, tender_id=None):
@@ -579,7 +585,9 @@ class ProcurementRepositoryMixin:
     # ---- commitments: what we owe them -------------------------------------
 
     def list_commitments(self, tender_id=None, contract_id=None, open_only=False):
-        qs = Commitment.objects.filter(program_id=self._require_program()).select_related("owed_to_org")
+        qs = restrict(self, Commitment.objects.filter(program_id=self._require_program()), Commitment).select_related(
+            "owed_to_org"
+        )
         if tender_id is not None:
             qs = qs.filter(tender_id=tender_id)
         if contract_id is not None:
@@ -590,7 +598,8 @@ class ProcurementRepositoryMixin:
 
     def get_commitment(self, commitment_id):
         return (
-            Commitment.objects.filter(program_id=self._require_program(), pk=commitment_id)
+            restrict(self, Commitment.objects.filter(program_id=self._require_program()), Commitment)
+            .filter(pk=commitment_id)
             .select_related("owed_to_org")
             .first()
         )
@@ -678,7 +687,9 @@ class ProcurementRepositoryMixin:
     # ---- awards ---------------------------------------------------------
 
     def list_awards(self, tender_id=None):
-        qs = Award.objects.filter(tender__program_id=self._require_program()).select_related("commodity")
+        qs = restrict(self, Award.objects.filter(tender__program_id=self._require_program()), Award).select_related(
+            "commodity"
+        )
         if tender_id is not None:
             qs = qs.filter(tender_id=tender_id)
         return list(qs.all())
@@ -686,7 +697,11 @@ class ProcurementRepositoryMixin:
     def get_award(self, award_id):
         """Scoped through the tender's programme, so a document cannot be
         attached to another programme's award."""
-        return Award.objects.filter(tender__program_id=self._require_program(), pk=award_id).first()
+        return (
+            restrict(self, Award.objects.filter(tender__program_id=self._require_program()), Award)
+            .filter(pk=award_id)
+            .first()
+        )
 
     def create_award(self, data):
         from connect_labs.supply_chain.data_access import _columns, _fresh
@@ -740,9 +755,11 @@ class ProcurementRepositoryMixin:
     # ---- approvals ------------------------------------------------------
 
     def list_approvals(self, award_id=None, status=None):
-        qs = AwardApproval.objects.filter(award__tender__program_id=self._require_program()).select_related(
-            "approver_org"
-        )
+        qs = restrict(
+            self,
+            AwardApproval.objects.filter(award__tender__program_id=self._require_program()),
+            AwardApproval,
+        ).select_related("approver_org")
         if award_id is not None:
             qs = qs.filter(award_id=award_id)
         if status is not None:
@@ -753,7 +770,12 @@ class ProcurementRepositoryMixin:
         """Scoped through the award's tender, so a document cannot be attached
         to another programme's approval."""
         return (
-            AwardApproval.objects.filter(award__tender__program_id=self._require_program(), pk=approval_id)
+            restrict(
+                self,
+                AwardApproval.objects.filter(award__tender__program_id=self._require_program()),
+                AwardApproval,
+            )
+            .filter(pk=approval_id)
             .select_related("approver_org")
             .first()
         )

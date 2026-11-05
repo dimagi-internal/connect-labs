@@ -16,6 +16,7 @@ from django.views.generic import TemplateView
 
 from connect_labs.labs.context import get_org_data
 from connect_labs.labs.models import LabsOrg
+from connect_labs.supply_chain.access_enforce import page_is_scoped, scoped_reads
 from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.banner import program_line
 from connect_labs.supply_chain.checks import course_applies_to_category, courses_carried_by_kits
@@ -24,7 +25,7 @@ from connect_labs.supply_chain.guide import guide_context
 from connect_labs.supply_chain.history.as_of import as_of_view, end_of_day
 from connect_labs.supply_chain.history.timeline import answered_by, timeline_for_contract
 from connect_labs.supply_chain.landing import landing_url
-from connect_labs.supply_chain.models import SupplierOffering
+from connect_labs.supply_chain.models import Contract, Outreach, Quote, SupplierOffering
 from connect_labs.supply_chain.navigation import scoped_url, supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.services.compliance import kit_spec_verdict
@@ -42,6 +43,7 @@ class OperationBase(TemplateView):
         context = super().get_context_data(**kwargs)
         context["supply_tabs"] = supply_tabs(self.request)
         context["supply_program_line"] = program_line(self.request)
+        context["acl_scoped"] = page_is_scoped(self.request, has_program_context, _access)
         return context
 
 
@@ -378,8 +380,9 @@ class DomainHomeView(OperationBase):
         for tender in tenders:
             if tender.get("status") != "open":
                 continue
-            outreach = access.list_outreach(tender_id=tender["id"])
-            silent = silent_suppliers(outreach, access.list_quotes(tender_id=tender["id"]))
+            with scoped_reads(access, Outreach, Quote):  # a partner counts only its own (relationship ACL)
+                outreach = access.list_outreach(tender_id=tender["id"])
+                silent = silent_suppliers(outreach, access.list_quotes(tender_id=tender["id"]))
             # Only a supplier somebody has written to can be chased; one never contacted is owed its first
             # request, which is a different action (and the reminder logic skips it the same way).
             not_yet_asked = [pk for pk, rows in silent.items() if never_contacted(rows)]
@@ -619,7 +622,6 @@ def _link_updates(contract_id, program_id):
     URL; the second caller to arrive with an unauthorised one would have got
     an answer. Now it says which programme, and cannot.
     """
-    from connect_labs.supply_chain.models import Contract
     from connect_labs.supply_chain.update_links import service
 
     contract = Contract.objects.filter(pk=contract_id, program_id=program_id).first()
@@ -1130,7 +1132,8 @@ class OrderDetailView(OperationBase):
             today=today,
         )
         access = _access(self.request)
-        record = access.get_contract(contract_id) if access.program_id else None
+        with scoped_reads(access, Contract):
+            record = access.get_contract(contract_id) if access.program_id else None
         context["moves_ours"], context["moves_theirs"] = rules.contract_moves(record, today) if record else ([], [])
         if contract.get("tender_id"):
             context["tender_label"] = (self.op("tender_get", tender_id=contract["tender_id"]) or {}).get("label", "")

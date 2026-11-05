@@ -27,6 +27,7 @@ from django.core.files.storage import default_storage
 from django.db import transaction
 
 from connect_labs.supply_chain import records
+from connect_labs.supply_chain.access_enforce import restrict
 from connect_labs.supply_chain.models import (
     Charge,
     Document,
@@ -122,9 +123,9 @@ class FulfilmentRepositoryMixin:
     # ---- shipments -------------------------------------------------------
 
     def list_shipments(self, contract_id=None, status=None):
-        qs = Shipment.objects.filter(contract__program_id=self._require_program()).prefetch_related(
-            "lines", "documents"
-        )
+        qs = restrict(
+            self, Shipment.objects.filter(contract__program_id=self._require_program()), Shipment
+        ).prefetch_related("lines", "documents")
         if contract_id is not None:
             qs = qs.filter(contract_id=contract_id)
         if status is not None:
@@ -133,7 +134,8 @@ class FulfilmentRepositoryMixin:
 
     def get_shipment(self, shipment_id):
         return (
-            Shipment.objects.filter(contract__program_id=self._require_program(), pk=shipment_id)
+            restrict(self, Shipment.objects.filter(contract__program_id=self._require_program()), Shipment)
+            .filter(pk=shipment_id)
             .prefetch_related("lines", "documents")
             .first()
         )
@@ -203,7 +205,7 @@ class FulfilmentRepositoryMixin:
 
     def list_charges(self, shipment_id=None, contract_id=None):
         qs = (
-            Charge.objects.filter(shipment__contract__program_id=self._require_program())
+            restrict(self, Charge.objects.filter(shipment__contract__program_id=self._require_program()), Charge)
             .select_related("payee_org")
             .prefetch_related("documents")
         )
@@ -216,7 +218,8 @@ class FulfilmentRepositoryMixin:
     def get_charge(self, charge_id):
         """Scoped through the shipment's contract, like every row below it."""
         return (
-            Charge.objects.filter(shipment__contract__program_id=self._require_program(), pk=charge_id)
+            restrict(self, Charge.objects.filter(shipment__contract__program_id=self._require_program()), Charge)
+            .filter(pk=charge_id)
             .select_related("payee_org")
             .first()
         )
@@ -238,9 +241,9 @@ class FulfilmentRepositoryMixin:
     # ---- receipts --------------------------------------------------------
 
     def list_receipts(self, contract_id=None, supply_point_id=None):
-        qs = Receipt.objects.filter(supply_point__program_id=self._require_program()).prefetch_related(
-            "lines", "documents"
-        )
+        qs = restrict(
+            self, Receipt.objects.filter(supply_point__program_id=self._require_program()), Receipt
+        ).prefetch_related("lines", "documents")
         if contract_id is not None:
             qs = qs.filter(contract_id=contract_id)
         if supply_point_id is not None:
@@ -249,7 +252,8 @@ class FulfilmentRepositoryMixin:
 
     def get_receipt(self, receipt_id):
         return (
-            Receipt.objects.filter(supply_point__program_id=self._require_program(), pk=receipt_id)
+            restrict(self, Receipt.objects.filter(supply_point__program_id=self._require_program()), Receipt)
+            .filter(pk=receipt_id)
             .prefetch_related("lines", "documents")
             .first()
         )
@@ -336,9 +340,9 @@ class FulfilmentRepositoryMixin:
     # ---- invoices and payments ------------------------------------------
 
     def list_invoices(self, contract_id=None, status=None):
-        qs = Invoice.objects.filter(contract__program_id=self._require_program()).prefetch_related(
-            "payments", "documents"
-        )
+        qs = restrict(
+            self, Invoice.objects.filter(contract__program_id=self._require_program()), Invoice
+        ).prefetch_related("payments", "documents")
         if contract_id is not None:
             qs = qs.filter(contract_id=contract_id)
         if status is not None:
@@ -359,7 +363,8 @@ class FulfilmentRepositoryMixin:
 
     def get_invoice(self, invoice_id):
         return (
-            Invoice.objects.filter(contract__program_id=self._require_program(), pk=invoice_id)
+            restrict(self, Invoice.objects.filter(contract__program_id=self._require_program()), Invoice)
+            .filter(pk=invoice_id)
             .prefetch_related("payments", "documents")
             .first()
         )

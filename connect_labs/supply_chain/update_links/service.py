@@ -117,6 +117,9 @@ def _org_contracts(program_id, org_id):
         [org_id],
         program_id=program_id,
         relations=(Relation.SUPPLIER, Relation.BUYER, Relation.RECEIVER),
+        # Phase 2 widened RECEIVER (an order's partner_org, points below a managed one). A link keeps the
+        # reach it always had: widening what a link can record against is a product decision, not this one.
+        extended=False,
     ).exclude(status__in=_NOT_YET_OR_NO_LONGER)
 
 

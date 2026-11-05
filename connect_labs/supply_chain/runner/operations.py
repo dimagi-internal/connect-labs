@@ -75,6 +75,29 @@ def programme_runner_set(access, org_id, note=""):
     return _describe(access)
 
 
+@register_operation(
+    name="access_preview",
+    summary=(
+        "Preview as partner (runner only, read-only): for an organisation (org_id, the LABS id from org_list), how "
+        "many "
+        "rows of each table (tenders, suppliers, quotes, awards, approvals, orders, shipments, charges, receipts, "
+        "invoices, commitments, outreach, supply points, stock movements) it would see in this programme once "
+        "read enforcement is on, against the programme's total. Check this BEFORE setting acl_enforce_reads to true "
+        "in the programme's Supply settings (labs_config_set, namespace 'supply', scope program). The organisation "
+        "that runs the programme sees everything. Aggregates, history and exports are not covered yet."
+    ),
+    input_schema=obj({"org_id": ID}, required=("org_id",)),
+)
+def access_preview(access, org_id):
+    from connect_labs.supply_chain.access_preview import preview
+    from connect_labs.supply_chain.runner import refusal, standing
+
+    held = standing(access)
+    if not held.is_programme:
+        raise PermissionDenied(refusal(access, held))
+    return preview(access._require_program(), org_id)
+
+
 # ---- the running organisation's team ----------------------------------------
 #
 # A running organisation takes no marketplace invitations (design §8, C1), so
