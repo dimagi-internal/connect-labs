@@ -18,8 +18,14 @@ from connect_labs.supply_chain.partners.forms import (
     copy_to_text,
 )
 from connect_labs.supply_chain.partners.models import DISTRIBUTION_MODEL_LABELS
+from connect_labs.supply_chain.partners.status import handout_rhythm, partner_places, partner_status
 from connect_labs.supply_chain.stock.services.issues import partner_by_point
 from connect_labs.supply_chain.views import OperationBase
+
+BUYING_LABELS = {
+    "programme_buys": "We buy and ship to the partner",
+    "partner_buys": "The partner buys on our quote and invoices us",
+}
 
 
 class PartnersView(OperationBase):
@@ -43,6 +49,9 @@ class PartnersView(OperationBase):
             if org:
                 row = counts.setdefault(org, {"places": 0, "workers": 0})
                 row["workers" if point["kind"] == "user_held" else "places"] += 1
+        status = partner_status(program_id)
+        places = partner_places(program_id)
+        profiles = services.profiles_by_partner(program_id)
         partners = []
         for org_id in sorted(org_ids, key=lambda pk: (names.get(pk) or "").lower()):
             history = [p for p in plans if p.org_id == org_id]
@@ -57,6 +66,13 @@ class PartnersView(OperationBase):
                         {"plan": p, "label": DISTRIBUTION_MODEL_LABELS[p.distribution_model]} for p in history
                     ],
                     "contact": services.main_contact(program_id, org_id),
+                    "profile": profiles.get(org_id),
+                    "buying_label": (
+                        BUYING_LABELS.get(profiles[org_id].default_buying_model, "") if org_id in profiles else ""
+                    ),
+                    "place_list": places.get(org_id, []),
+                    "rhythm": handout_rhythm(program_id, org_id, profiles.get(org_id)),
+                    "status": status.get(org_id),
                     **counts.get(org_id, {"places": 0, "workers": 0}),
                 }
             )
