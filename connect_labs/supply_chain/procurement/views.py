@@ -39,7 +39,7 @@ from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.banner import program_line
 from connect_labs.supply_chain.form_views import OperationActionView, OperationFormView, SupplyWriteMixin
 from connect_labs.supply_chain.fulfilment.forms import DocumentForm
-from connect_labs.supply_chain.guide import purchase_guide
+from connect_labs.supply_chain.guide import guide_context
 from connect_labs.supply_chain.history.timeline import (
     ai_entered_quotes,
     corrections_for_quotes,
@@ -267,7 +267,12 @@ class TenderBoardView(_Base):
         # (labs_context = {}), not a bug -- see api_views.has_program_context.
         context["tenders"] = self.op("tender_list") if context["has_program_context"] else []
         if context["has_program_context"]:
-            context["purchase_guide"] = purchase_guide(self.request, _access(self.request).program_id)
+            context.update(guide_context(self.request, _access(self.request).program_id))
+            from connect_labs.supply_chain.procurement.sourcing import marketplace_in_use, sourcing_rows
+
+            program_id = _access(self.request).program_id
+            context["rows"] = sourcing_rows(program_id, getattr(self.request, "supply_as_of", None) or date.today())
+            context["marketplace_in_use"] = marketplace_in_use(program_id)
         return context
 
 

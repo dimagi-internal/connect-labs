@@ -297,11 +297,18 @@ def tender_stage(tender, *, invited=0, answered=0, quoted=None, awardee="", toda
     return 2, words
 
 
-def _tender_rows(program_id, today, until):
-    from connect_labs.supply_chain.models import Award, Commitment, Outreach, Quote, Tender
+def _tender_rows(program_id, today, until, *, ordered=False):
+    """A row per tender in progress. `ordered` also takes the tenders already ordered (the Sourcing list)."""
+    from connect_labs.supply_chain.models import Award, Commitment, Contract, Outreach, Quote, Tender
 
-    tenders = list(Tender.objects.filter(program_id=program_id).exclude(contracts__isnull=False).distinct())
+    found = Tender.objects.filter(program_id=program_id)
+    if not ordered:
+        found = found.exclude(contracts__isnull=False)
+    tenders = list(found.distinct())
     ids = [t.pk for t in tenders]
+    contracted_ids = set(
+        Contract.objects.filter(tender_id__in=ids).exclude(status="cancelled").values_list("tender_id", flat=True)
+    )
     outreach, quotes, owed, awards = {}, {}, {}, {}
     for o in Outreach.objects.filter(tender_id__in=ids).select_related("supplier__org"):
         outreach.setdefault(o.tender_id, []).append(o)
@@ -328,7 +335,7 @@ def _tender_rows(program_id, today, until):
             answered=rules.questions_answered_on(answers.get(tender.pk, [])),
             sent=rules.replies_sent_on(answers.get(tender.pk, [])),
             provisional=bool(award and award.provisional),
-            contracted=False,
+            contracted=tender.pk in contracted_ids,
         )
         # Inside the tender's own row its name is already said: the decide move drops it.
         for m in ours:

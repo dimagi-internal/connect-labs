@@ -39,36 +39,38 @@
   {% endcomment %}
   <div class="overflow-x-auto" tabindex="0" role="region"
        aria-label="Table, scrolls sideways">
-  <table class="min-w-[44rem] w-full divide-y divide-gray-200">
+  <table class="min-w-[56rem] w-full divide-y divide-gray-200" data-testid="tender-table">
     <thead class="bg-gray-50">
       <tr>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Tender</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Status</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Response deadline</th>
-        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Lines</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Stage</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Quotes in</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Local partners (LLOs)</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Needed by</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Next move</th>
         <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider"></th>
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-200">
-      {% for tender in tenders %}
-      <tr>
-        <td class="px-4 py-2 text-sm font-medium text-gray-900">{{ tender.label }}</td>
-        <td class="px-4 py-2 text-sm text-gray-600">{{ tender.status|title }}{% if tender.visibility == "private" %} <span class="ml-1 px-1.5 py-0.5 rounded text-xs bg-gray-100 border">Restricted</span>{% endif %}</td>
-        <td class="px-4 py-2 text-sm text-gray-600">{{ tender.response_deadline|default:"not set" }}</td>
-        <td class="px-4 py-2 text-sm text-gray-600">
-          {% for line in tender.lines %}{{ line.commodity_slug }}{% if not forloop.last %}, {% endif %}{% endfor %}
-        </td>
+      {% for tender in rows %}
+      <tr data-testid="tender-row">
+        <td class="px-4 py-2 text-sm text-gray-900"><a class="font-medium text-brand-indigo hover:underline" href="{{ tender.url }}">{{ tender.label }}</a>
+          <div class="text-xs text-gray-600">{% for p in tender.products %}{{ p.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</div></td>
+        <td class="px-4 py-2 text-sm text-gray-700" data-testid="tender-stage">{{ tender.stage }}{% if tender.stage_detail %}<div class="text-xs text-gray-600">{{ tender.stage_detail }}</div>{% endif %}{% if tender.deadline %}<div class="text-xs text-gray-600">{{ tender.deadline }}</div>{% endif %}
+          {% if tender.restricted and marketplace_in_use %}<span class="mt-1 inline-block px-1.5 py-0.5 rounded text-xs bg-gray-100 border" title="Only the suppliers you invited can see this tender on the supplier marketplace.">Invited suppliers only</span>{% endif %}</td>
+        <td class="px-4 py-2 text-sm text-gray-700" data-testid="tender-quotes">{{ tender.quotes }}</td>
+        <td class="px-4 py-2 text-sm text-gray-700" data-testid="tender-partners">{% for name in tender.partners %}{{ name }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="text-gray-600">&mdash;</span>{% endfor %}</td>
+        <td class="px-4 py-2 text-sm text-gray-700 whitespace-nowrap">{{ tender.needed_by|default:"not set" }}</td>
+        <td class="px-4 py-2 text-sm text-gray-700" data-testid="tender-next">{% if tender.next_move %}{{ tender.next_move }}{% if tender.next_whose %}<div class="text-xs text-gray-600">{{ tender.next_whose }}</div>{% endif %}{% endif %}{% for line in tender.to_do %}<div>To do: {{ line }}</div>{% endfor %}{% if not tender.next_move and not tender.to_do %}<span class="text-gray-600">Nothing to do</span>{% endif %}</td>
         <td class="px-4 py-2 text-sm whitespace-nowrap">
-          <a href="{% url 'supply_chain:procurement_tender_detail' tender.id %}"
-             class="text-brand-indigo hover:underline mr-3">Detail</a>
-          {% for line in tender.lines %}
-            <a href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ line.commodity_slug }}"
-               class="text-brand-indigo hover:underline mr-3">Compare {{ line.commodity_slug }}</a>
+          {% for p in tender.products %}
+            <a href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ p.slug }}"
+               class="text-brand-indigo hover:underline mr-3">Compare{% if tender.products|length > 1 %} {{ p.name }}{% endif %}</a>
           {% endfor %}
         </td>
       </tr>
       {% empty %}
-      <tr><td colspan="5" class="px-4 py-6 text-center text-gray-600">No tenders yet.</td></tr>
+      <tr><td colspan="7" class="px-4 py-6 text-center text-gray-600">No tenders yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

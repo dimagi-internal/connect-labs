@@ -59,14 +59,19 @@ def test_a_later_step_never_leaves_an_earlier_one_open():
 def test_the_sourcing_page_shows_the_guide_with_the_next_step_marked(client_in_programme):
     from connect_labs.supply_chain.models import Tender
 
-    Tender.objects.create(program_id=pinned.PROGRAM, label="Round 1", status="open")
+    Tender.objects.create(
+        program_id=pinned.PROGRAM,
+        label="Round 1",
+        status="open",
+        lines=[{"commodity_slug": "rutf", "quantity": "100", "quantity_unit": "carton"}],
+    )
     body = client_in_programme.get(reverse("supply_chain:procurement_tender_board")).content.decode()
 
     assert 'data-testid="purchase-guide"' in body and "How a purchase works" in body
     assert body.count('data-testid="guide-step"') == len(STEPS)
     assert body.count('data-state="next"') == 1
     marked = body.split('data-state="next"', 1)[1].split("</li>", 1)[0]
-    assert "Record replies" in marked and "Next step" in marked
+    assert "Review suppliers" in marked and "Next step" in marked
     assert reverse("supply_chain:orders") in body
 
 
