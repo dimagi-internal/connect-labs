@@ -2,8 +2,9 @@
 
 When canopy acts for a visitor, its gateway adds a signed statement to every request
 (canopy-web spec ``2026-10-22-sensitive-data-agents-design`` §6): which agent is calling,
-whether its capability is set to handle sensitive data (`data: sensitive`, and who set it), on
-which runner and its flags in force, in a conversation with which requirements. The canopy SDK verifies it
+whether the profile it runs in (the statement's `capability`) is set to handle sensitive data
+(`data: sensitive`, and who set it), on which runner and its flags in force, in a
+conversation with which requirements. The canopy SDK verifies it
 (``canopy_sdk.django.execution.verify_execution``, dimagi-canopy >= 0.13): signature,
 issuer, audience, a 60-second life, a single-use ``jti``, and binding to the DPoP key
 and access token of THIS request.

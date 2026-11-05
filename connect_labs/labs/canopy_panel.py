@@ -132,7 +132,7 @@ def call_sensitive_data_clearance() -> Clearance:
     """Whether THIS call (canopy acting for a visitor) may be given sensitive data.
 
     Labs' own conditions for the agent canopy's verified statement names, then the
-    statement's: the capability declared to handle sensitive data, ``sensitive_data`` in
+    statement's: the profile (its ``capability``) declared to handle sensitive data, ``sensitive_data`` in
     force on a runner in sensitive-data mode, a conversation that requires it
     (``Execution.sensitive_clearance``).
     """
