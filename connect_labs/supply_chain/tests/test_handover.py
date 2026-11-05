@@ -367,7 +367,7 @@ class TestPlanningAHandout:
 
     def test_the_page_offers_to_generate_the_handout_from_the_plan(self, scoped, warehouse, rutf, places):
         body = scoped.get(reverse("supply_chain:distribution")).content.decode()
-        assert "Generate this week" in body and "distribution/plan/?from_plan=1" in body
+        assert "Fill in this week" in body and "distribution/plan/?from_plan=1" in body
         form = scoped.get(reverse("supply_chain:distribution_plan") + "?from_plan=1").content.decode()
         assert 'name="from_forecast"' in form and "checked" in form.split('name="from_forecast"')[1][:200]
 
@@ -381,3 +381,39 @@ class TestPlanningAHandout:
         assert response.status_code == 200
         assert "the plan has nothing to issue" in response.content.decode()
         assert not Distribution.objects.filter(reference="Monday").exists()
+
+
+class TestReceiptForAWholeRun:
+    def _confirmed(self, scoped, warehouse, rutf, places):
+        run = planned_run(scoped, warehouse, rutf, places)
+        scoped.post(reverse("supply_chain:distribution_confirm_as_planned", args=[run["id"]]))
+        return run
+
+    def test_all_received_as_given_in_one_step(self, scoped, warehouse, rutf, places):
+        run = self._confirmed(scoped, warehouse, rutf, places)
+        page = scoped.get(reverse("supply_chain:distribution")).content.decode()
+        assert "All received as given" in page and "They received" not in page
+        response = scoped.post(reverse("supply_chain:distribution_received_all", args=[run["id"]]))
+        assert response.status_code == 302
+        quantities = {line.quantity_received for line in DistributionLine.objects.filter(distribution_id=run["id"])}
+        assert quantities == {Decimal("12"), Decimal("10")}
+        assert "All received as given" not in scoped.get(reverse("supply_chain:distribution")).content.decode()
+
+    def test_exceptions_override_only_the_lines_named(self, scoped, warehouse, rutf, places):
+        run = self._confirmed(scoped, warehouse, rutf, places)
+        short = DistributionLine.objects.get(distribution_id=run["id"], to_supply_point=places[1])
+        scoped.post(reverse("supply_chain:distribution_received_all", args=[run["id"]]), {f"received_{short.pk}": "7"})
+        short.refresh_from_db()
+        other = DistributionLine.objects.get(distribution_id=run["id"], to_supply_point=places[0])
+        assert short.quantity_received == Decimal("7") and other.quantity_received == Decimal("12")
+
+    def test_the_run_names_its_partner_and_says_who_reported_it(self, scoped, warehouse, rutf, places):
+        from connect_labs.labs.models import LabsOrg
+
+        org = LabsOrg.objects.create(slug="org-z", name="Org Z")
+        warehouse.managed_by_org = org
+        warehouse.save()
+        self._confirmed(scoped, warehouse, rutf, places)
+        body = scoped.get(reverse("supply_chain:distribution")).content.decode()
+        assert "· Org Z" in body and "Recorded by us" in body
+        assert "told by" not in body and "Plan one by hand" in body

@@ -678,6 +678,50 @@ def distribution_receipt_confirm(access, line_id, data):
     return record(access.confirm_distribution_receipt(line_id, data))
 
 
+@register_operation(
+    name="distribution_receipt_confirm_all",
+    summary=(
+        "Confirm receipt for a whole handout in one step: every line that was given and not yet confirmed "
+        "received counts as received exactly as given, except the lines named in exceptions "
+        "({line_id: quantity actually received}). Lines already confirmed are left alone."
+    ),
+    input_schema=obj(
+        {
+            "distribution_id": ID,
+            "exceptions": {
+                "type": "object",
+                "additionalProperties": {"type": ["number", "string"], "minimum": 0},
+            },
+            "received_by": {"type": "string", "maxLength": 150},
+        },
+        required=("distribution_id",),
+    ),
+    is_write=True,
+)
+def distribution_receipt_confirm_all(access, distribution_id, exceptions=None, received_by=""):
+    from django.db import transaction
+
+    from connect_labs.supply_chain.models import Distribution
+
+    run = Distribution.objects.filter(program_id=access._require_program(), pk=distribution_id).first()
+    if run is None:
+        raise ValueError(f"distribution {distribution_id} does not exist in this programme")
+    exceptions = {str(k): v for k, v in (exceptions or {}).items()}
+    unknown = set(exceptions) - {str(line.pk) for line in run.lines.all()}
+    if unknown:
+        raise ValueError(f"lines {', '.join(sorted(unknown))} are not on this handout")
+    with transaction.atomic():
+        for line in run.lines.all():
+            if line.quantity_received is not None or line.quantity_given is None or line.quantity_given <= 0:
+                continue
+            quantity = exceptions.get(str(line.pk), line.quantity_given)
+            data = {"quantity_received": quantity}
+            if received_by:
+                data["received_by"] = received_by
+            access.confirm_distribution_receipt(line.pk, data)
+    return record(Distribution.objects.get(pk=distribution_id))
+
+
 def _pack_of(item, commodity):
     """The carton size of a handed-out product: {base, pack, per_pack}, from the trade item else the product."""
     for source in (item, commodity):

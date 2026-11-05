@@ -14,11 +14,11 @@
   <div class="flex flex-wrap gap-2">
     <a href="{% url 'supply_chain:distribution_plan' %}"
        class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
-      <i class="fa-solid fa-plus mr-1"></i> Plan a handout
+      <i class="fa-solid fa-plus mr-1"></i> Plan one by hand
     </a>
     <a href="{% url 'supply_chain:distribution_plan' %}?from_plan=1"
        class="px-4 py-2 text-sm border border-brand-indigo text-brand-indigo hover:bg-gray-50 rounded-md">
-      <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Generate this week's handout from the plan
+      <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Fill in this week's from the plan
     </a>
     <a href="{% url 'supply_chain:distribution_record' %}"
        class="px-4 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">
@@ -46,6 +46,7 @@
       <span class="text-sm text-gray-600">
         from {{ points|dictkey:run.supply_point_id|dictkey:"name"|default:run.supply_point_id }}
       </span>
+      {% if run.partner_name %}<span class="text-sm text-gray-700">· {{ run.partner_name }}</span>{% endif %}
       <span class="text-xs text-amber-800 ml-auto">
         {% if run.status == "partly_confirmed" %}partly confirmed: {{ run.to_confirm }} of {{ run.lines|length }} places still waiting
         {% else %}nothing confirmed yet{% endif %}
@@ -87,7 +88,7 @@
   </div>
 {% empty %}
   <div class="bg-white border border-gray-200 rounded-lg px-4 py-4 text-sm text-gray-600 mb-3">
-    No handouts are waiting. Plan the next one with “Plan a handout”.
+    No handouts are waiting. Plan the next one with “Plan one by hand” or “Fill in this week's from the plan”.
   </div>
 {% endfor %}
 
@@ -100,6 +101,7 @@
       <span class="text-sm text-gray-600">
         from {{ points|dictkey:run.supply_point_id|dictkey:"name"|default:run.supply_point_id }}
       </span>
+      {% if run.partner_name %}<span class="text-sm text-gray-700">· {{ run.partner_name }}</span>{% endif %}
       {% if run.differences %}
         <span class="text-xs text-amber-800">different from the plan at {{ run.differences }} place{{ run.differences|pluralize }}</span>
       {% endif %}
@@ -108,7 +110,7 @@
       {% endif %}
       <span class="text-xs text-gray-600 ml-auto">
         {{ run.lines|length }} line{{ run.lines|length|pluralize }} ·
-        told by {{ run.source|source_label }}{% if not run.witnessed %} (reported, not witnessed){% endif %}
+        {{ run.source|known_from }}
       </span>
     </div>
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
@@ -128,6 +130,19 @@
       </tbody>
     </table>
     </div>
+    {% if run.awaiting_receipt %}
+      <form id="receive-{{ run.id }}" method="post" action="{% url 'supply_chain:distribution_received_all' run.id %}"
+            class="px-4 py-3 border-t border-gray-100 flex flex-wrap items-center gap-3">
+        {% csrf_token %}
+        <button type="submit" class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+          All received as given
+        </button>
+        <span class="text-xs text-gray-600">
+          Confirms receipt at the {{ run.awaiting_receipt }} place{{ run.awaiting_receipt|pluralize }} still open. If someone received a different
+          amount, type it in the "Received" column first; only those places differ.
+        </span>
+      </form>
+    {% endif %}
     {% if run.document_ids or run.message_text %}
       {% include "supply_chain/_distribution_evidence.html" %}
     {% endif %}
@@ -176,7 +191,7 @@
               {% else %}
                 <span class="text-amber-800">on the road{% if d.expected_on %}, expected {{ d.expected_on|day }}{% endif %}</span>
               {% endif %}
-              · told by {{ d.source|source_label }}
+              · {{ d.source|known_from }}
             </td>
           </tr>
         {% endfor %}

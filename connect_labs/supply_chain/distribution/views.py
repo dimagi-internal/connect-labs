@@ -179,7 +179,7 @@ class DistributionPlanView(DistributionRecordView):
 
     operation = "distribution_plan"
     form_class = DistributionPlanForm
-    title = "Plan a handout"
+    title = "Plan one by hand"
     intro = (
         "One store, one handout day, one product. Tick the box to fill the list from the plan's what-to-issue "
         "for each field worker this week, or type the list. Nothing leaves the store until you confirm what was "
@@ -283,6 +283,25 @@ class DistributionReceivedView(OperationActionView):
                 **({"received_by": self.request.POST["received_by"]} if self.request.POST.get("received_by") else {}),
             },
         }
+
+    def redirect_to(self, **kwargs):
+        return reverse("supply_chain:distribution")
+
+
+class DistributionReceivedAllView(OperationActionView):
+    """One button for a whole run: everything reached the people it was given to, with exceptions."""
+
+    operation = "distribution_receipt_confirm_all"
+    success_message = "Receipt confirmed for the whole handout."
+
+    def fixed(self, **kwargs):
+        run = _run(self.request, kwargs["distribution_id"])
+        exceptions = {}
+        for line in run.lines.all():
+            raw = (self.request.POST.get(f"received_{line.pk}") or "").strip()
+            if raw:
+                exceptions[str(line.pk)] = raw
+        return {"distribution_id": run.pk, "exceptions": exceptions}
 
     def redirect_to(self, **kwargs):
         return reverse("supply_chain:distribution")

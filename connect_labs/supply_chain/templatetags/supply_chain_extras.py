@@ -474,6 +474,23 @@ def unit_plural(unit):
     return unit_noun(unit, 2)
 
 
+KNOWN_FROM = {
+    "we_recorded": "Recorded by us",
+    "partner_reported": "Reported by the partner",
+    "supplier_reported": "Reported by the supplier",
+    "forwarder_reported": "Reported by the forwarder",
+    "commcare_form": "From a CommCare form",
+    "connect_visit": "From a Connect visit",
+    "document": "From a document",
+}
+
+
+@register.filter
+def known_from(source):
+    """Who said so, as a short phrase: "Reported by the partner" (never "told by a partner told us")."""
+    return KNOWN_FROM.get(source, str(source or "").replace("_", " ").capitalize())
+
+
 @register.filter
 def source_label(source):
     return SOURCE_LABELS.get(source, str(source or "").replace("_", " "))

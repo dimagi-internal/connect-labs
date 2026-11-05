@@ -18,6 +18,8 @@ def _line_view(line, points):
     return {
         **line,
         "name": place.get("name") or line.get("connect_username") or f"place {line['to_supply_point_id']}",
+        # The worker's name and their username are often the same word: say it once.
+        "show_username": bool(line.get("connect_username")) and line.get("connect_username") != place.get("name"),
         "planned_qty": planned,
         "given_qty": given,
         "received_qty": received,
@@ -31,7 +33,7 @@ def _line_view(line, points):
     }
 
 
-def handouts(runs, points) -> dict:
+def handouts(runs, points, partner_of=None) -> dict:
     """Split runs into those still to be confirmed and those done, with each line's differences."""
     waiting, done = [], []
     for run in runs:
@@ -39,6 +41,8 @@ def handouts(runs, points) -> dict:
         view = {
             **run,
             "lines": lines,
+            "partner_name": (partner_of or {}).get(run["supply_point_id"]),
+            "awaiting_receipt": sum(1 for line in lines if line["awaiting_receipt"]),
             "differences": sum(1 for line in lines if line["short_given"] or line["over_given"] or line["unplanned"]),
             "not_received": sum(1 for line in lines if line["short_received"] or line["over_received"]),
             "to_confirm": sum(1 for line in lines if line["given_qty"] is None),
