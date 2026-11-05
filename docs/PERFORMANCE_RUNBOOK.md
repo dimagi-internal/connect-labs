@@ -359,7 +359,7 @@ after all three waits):
 | Dominant term | Conclusion | Fix shape |
 | --- | --- | --- |
 | `outbound_ms` | we are waiting on an upstream, usually Connect | cache/batch the call, or move it off the request path; if Connect itself is slow, that is a Connect bug — file it there |
-| `db_ms` | a genuinely expensive query, not an N+1 (the count would be low) | read the plan; index or narrow it |
+| `db_ms` | a genuinely expensive query, not an N+1 (the count would be low) | `db_slowest_ms` and `db_slowest_sql` name the worst statement, with its literals removed (the scrubbed copy keeps only the ms and `db_slowest_fp`); read the plan; index or narrow it. RDS keeps no slow-query log, so this line is the record |
 | `retry_wait_ms` | we are sleeping between retries, so the upstream is FAILING, not merely slow | fix the upstream, or reconsider the backoff; `retry_waits` is the attempt count minus one |
 | `self_ms` | our own Python — **but see the caveat below before you believe it** | profile the view |
 

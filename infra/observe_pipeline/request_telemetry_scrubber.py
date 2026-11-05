@@ -21,8 +21,8 @@ MS = ("duration_ms", "db_ms", "outbound_ms", "self_ms", "cpu_ms", "retry_wait_ms
 SPEC = {
     "slow_request": (
         "route",
-        ("route", "method", "reason"),
-        ("status", "sampled", "streaming", "db_queries", "outbound_calls", "retry_waits") + MS + MEM,
+        ("route", "method", "reason", "db_slowest_fp"),
+        ("status", "sampled", "streaming", "db_queries", "db_slowest_ms", "outbound_calls", "retry_waits") + MS + MEM,
     ),
     "stream_end": (
         "route",
