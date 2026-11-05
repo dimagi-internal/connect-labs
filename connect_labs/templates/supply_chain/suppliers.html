@@ -68,7 +68,7 @@ heard 12 Jun" is the record.
             <td class="num text-gray-700">{{ supplier.invitation_count }}</td>
             <td class="num text-gray-700">{{ supplier.quote_count }}</td>
             <td class="num text-gray-700">{{ supplier.contract_count }}</td>
-            <td class="text-gray-600">{% if supplier.last_activity %}{{ supplier.last_activity }}{% else %}nothing dated{% endif %}</td>
+            <td class="text-gray-600">{% if supplier.last_activity %}{{ supplier.last_activity|day }}{% else %}nothing dated{% endif %}</td>
             <td data-testid="usual-lacks" {% if supplier.usual_lacks %}class="text-amber-800" title="{{ supplier.usual_lacks|join:', ' }}"{% else %}class="text-gray-600"{% endif %}>{% if supplier.usual_lacks %}{{ supplier.usual_lacks|length }} not on file{% else %}—{% endif %}</td>
           {% endif %}
           <td class="text-right"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:supplier_detail' supplier.id %}">Open</a></td>

@@ -390,7 +390,7 @@ plain words, and each step says where it came from.
   {% if history %}
     <ul class="text-sm space-y-1">
       {% for h in history %}
-        <li>{{ h.when|slice:":10" }}, <b>{{ h.who }}</b>:
+        <li>{{ h.when|day }}, <b>{{ h.who }}</b>:
           {% for c in h.changes %}{{ c.label }} {% if c.was is not None and h.action != "create" %}{{ c.was }} &rarr; {% endif %}{{ c.now|default:"recent rate" }} <span class="text-gray-600">(default {{ c.default }})</span>{% if not forloop.last %}; {% endif %}{% endfor %}
         </li>
       {% endfor %}

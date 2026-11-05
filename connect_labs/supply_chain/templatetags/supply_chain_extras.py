@@ -271,6 +271,41 @@ def sort_key(value) -> str:
     return str(value)
 
 
+def _store_owners(request) -> dict:
+    """{supply point id: (partner name, kind)} for the programme in view, worked out once per request."""
+    if request is None:
+        return {}
+    cached = getattr(request, "_supply_store_owners", None)
+    if cached is not None:
+        return cached
+    owners: dict = {}
+    program_id = (getattr(request, "labs_context", None) or {}).get("program_id")
+    if program_id:
+        from connect_labs.labs.models import LabsOrg
+        from connect_labs.supply_chain.models import SupplyPoint
+        from connect_labs.supply_chain.stock.services.issues import partner_by_point
+
+        by_point = partner_by_point(int(program_id))
+        names = dict(LabsOrg.objects.filter(pk__in={o for o in by_point.values() if o}).values_list("pk", "name"))
+        kinds = dict(SupplyPoint.objects.filter(program_id=int(program_id)).values_list("pk", "kind"))
+        owners = {pk: (names.get(org_id, ""), kinds.get(pk)) for pk, org_id in by_point.items()}
+    request._supply_store_owners = owners
+    return owners
+
+
+@register.simple_tag(takes_context=True)
+def store_label(context, point_id, name):
+    """A store's name led by the partner that runs it ("North Star \u00b7 Warehouse"), on every page that shows one.
+
+    Round 2, "Name stores by partner everywhere" (naming.store_name is the rule). A worker or a place no partner
+    runs keeps its own name.
+    """
+    from connect_labs.supply_chain.naming import store_name
+
+    owner = _store_owners(context.get("request")).get(point_id)
+    return store_name(name or "", owner[1], owner[0]) if owner else (name or "")
+
+
 @register.filter
 def explain_term(text, term):
     """`text` with the word `term` explained on hover when it is one the chase list knows (chase.HINTS)."""
@@ -511,6 +546,9 @@ def source_label(source):
     return SOURCE_LABELS.get(source, str(source or "").replace("_", " "))
 
 
+_ISO_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
 def _fact_text(value):
     if isinstance(value, dict):
         if "kind" in value and isinstance(value.get("owed_by"), dict):
@@ -528,6 +566,9 @@ def _fact_text(value):
         return "; ".join(_fact_text(v) for v in value) or "none"
     if value is None or value == "":
         return "—"
+    if isinstance(value, str) and _ISO_DAY.fullmatch(value):
+        # A date a fact carries ("2026-07-08") by the one date rule.
+        return _plain_day(value)
     if isinstance(value, str) and _DECIMAL.fullmatch(value):
         # A derived quantity ("83.7209") by the one quantity rule. Only a
         # value with a point: whole numbers here are as often ids as counts,
@@ -782,6 +823,11 @@ AGE_FROM = {
 }
 
 
+def _plain_day(value):
+    """An ISO date as the one date rule writes it ("2026-09-05" -> "5 Sep 2026"); anything else as it came."""
+    return day(value) or ""
+
+
 @register.filter
 def check_age(check):
     """ "19 days past the expected date, 2026-09-05" -- the age and what it counts from."""
@@ -791,8 +837,8 @@ def check_age(check):
     phrase = AGE_FROM.get(check.get("kind"))
     noun = "day" if days == 1 else "days"
     if phrase:
-        return f"{days} {noun} {phrase}, {check.get('since')}"
-    return f"{days} {noun} since {check.get('since')}"
+        return f"{days} {noun} {phrase}, {_plain_day(check.get('since'))}"
+    return f"{days} {noun} since {_plain_day(check.get('since'))}"
 
 
 @register.filter

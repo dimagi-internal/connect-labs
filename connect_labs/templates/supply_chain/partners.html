@@ -1,4 +1,5 @@
 {% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
 
 {% block supply_content %}
 {% if not has_program_context %}
@@ -40,7 +41,7 @@
       <div>
         <h3 class="text-base font-semibold text-gray-900">{{ p.name }}</h3>
         <p class="text-sm text-gray-700">
-          {% if p.current %}{{ p.current_label }} <span class="text-gray-600">(since {{ p.current.starts_on }})</span>
+          {% if p.current %}{{ p.current_label }} <span class="text-gray-600">(since {{ p.current.starts_on|day }})</span>
           {% else %}<span class="text-gray-600">No way of distributing stated yet.</span>{% endif %}
         </p>
         <p class="text-sm text-gray-700">
@@ -91,7 +92,7 @@
         <ul class="mt-1 space-y-1">
           {% for h in p.history %}
             <li>
-              {{ h.plan.starts_on }}{% if h.plan.ended_on %} to {{ h.plan.ended_on }}{% else %} onwards{% endif %}:
+              {{ h.plan.starts_on|day }}{% if h.plan.ended_on %} to {{ h.plan.ended_on|day }}{% else %} onwards{% endif %}:
               {{ h.label }}{% if h.plan.note %} — {{ h.plan.note|linebreaksbr }}{% endif %}
             </li>
           {% endfor %}

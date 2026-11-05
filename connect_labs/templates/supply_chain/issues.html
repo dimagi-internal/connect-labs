@@ -112,12 +112,12 @@
               <div class="text-xs text-amber-800">Nobody has logged a follow-up yet.</div>
             {% endif %}
           </td>
-          <td class="px-4 py-2">{{ issue.point.name|default:"—" }}</td>
+          <td class="px-4 py-2">{% store_label issue.point.id issue.point.name as place %}{{ place|default:"—" }}</td>
           <td class="px-4 py-2 tabular-nums">
             {{ issue.quantity|qty:issue.quantity_unit }}
             {% if issue.batch %}<div class="text-xs text-gray-600">batch {{ issue.batch }}</div>{% endif %}
           </td>
-          <td class="px-4 py-2 text-gray-600">{{ issue.occurred_on }}</td>
+          <td class="px-4 py-2 text-gray-600">{{ issue.occurred_on|day }}</td>
           <td class="px-4 py-2">
             {% if issue.custodian %}
               {{ issue.custodian.name }}
@@ -129,7 +129,7 @@
             {{ issue.status|words|capfirst }}
             {% if issue.outcome %}
               <div class="text-xs text-gray-600">
-                {{ issue.outcome|words|capfirst }}{% if issue.resolved_on %}, {{ issue.resolved_on }}{% endif %}
+                {{ issue.outcome|words|capfirst }}{% if issue.resolved_on %}, {{ issue.resolved_on|day }}{% endif %}
               </div>
             {% endif %}
           </td>
@@ -175,11 +175,11 @@
     <tbody class="divide-y divide-gray-100">
       {% for store in stores %}
         <tr>
-          <td class="px-4 py-2">{{ store.point.name }}{% if store.at_home %} <span class="text-xs text-gray-600">(field worker, keeps stock at home)</span>{% endif %}</td>
+          <td class="px-4 py-2">{% store_label store.point.id store.point.name %}{% if store.at_home %} <span class="text-xs text-gray-600">(field worker, keeps stock at home)</span>{% endif %}</td>
           <td class="px-4 py-2">
             {% if store.custodian %}
               {{ store.custodian.name }}
-              <span class="text-xs text-gray-600">{{ store.custodian.phone }}{% if store.custodian.role %} · {{ store.custodian.role }}{% endif %}, since {{ store.custodian.starts_on }}</span>
+              <span class="text-xs text-gray-600">{{ store.custodian.phone }}{% if store.custodian.role %} · {{ store.custodian.role }}{% endif %}, since {{ store.custodian.starts_on|day }}</span>
             {% else %}<span class="text-gray-600">nobody named</span>{% endif %}
           </td>
           <td class="px-4 py-2 text-gray-700">
@@ -211,8 +211,8 @@
       <tbody class="divide-y divide-gray-100">
         {% for loss in legacy_losses %}
           <tr>
-            <td class="px-4 py-2 text-gray-600">{{ loss.occurred_on }}</td>
-            <td class="px-4 py-2">{{ loss.point.name|default:"—" }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ loss.occurred_on|day }}</td>
+            <td class="px-4 py-2">{% store_label loss.point.id loss.point.name as place %}{{ place|default:"—" }}</td>
             <td class="px-4 py-2 tabular-nums">{{ loss.quantity|qty:loss.quantity_unit }}</td>
             <td class="px-4 py-2 text-gray-600">{{ loss.note|default:"no note" }}</td>
           </tr>

@@ -158,7 +158,7 @@ The log says how each notice left, including when it did not: "email off" and
               </td>
               <td class="px-4 py-2">
                 <a href="{{ notice.record_url }}" class="text-brand-indigo hover:underline">{% if notice.subject.label %}{{ notice.subject.label }}{% else %}{{ notice.subject.type|words|capfirst }}{% endif %}</a>
-                {% if notice.since %}<div class="text-xs text-gray-600">since {{ notice.since }}</div>{% endif %}
+                {% if notice.since %}<div class="text-xs text-gray-600">since {{ notice.since|day }}</div>{% endif %}
               </td>
               <td class="px-4 py-2 text-gray-700">{{ notice.subscription_name }}</td>
               <td class="px-4 py-2">

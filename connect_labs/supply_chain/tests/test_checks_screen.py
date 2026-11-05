@@ -57,7 +57,7 @@ class TestCheckFactsReadAsWords:
         rows = dict(check_facts(_late_delivery()))
         assert rows["Promised lead time"] == "60 days"
         assert rows["Outstanding"] == "400 jerry cans"
-        assert rows["Signed"] == "2026-04-27"
+        assert rows["Signed"] == "27 Apr 2026"
         assert rows["Status"] == "placed"
 
     def test_what_the_header_already_says_is_not_said_again(self):
@@ -184,18 +184,18 @@ class TestACheckSaysWhatItsAgeCountsFrom:
     def test_a_late_shipment_is_aged_past_its_expected_date(self):
         from connect_labs.supply_chain.templatetags.supply_chain_extras import check_age
 
-        assert check_age(self._check("shipment_overdue")) == "19 days past the expected date, 2026-09-05"
+        assert check_age(self._check("shipment_overdue")) == "19 days past the expected date, 5 Sep 2026"
 
     def test_outstanding_documents_are_aged_from_the_dispatch(self):
         from connect_labs.supply_chain.templatetags.supply_chain_extras import check_age
 
         check = self._check("shipment_documents_outstanding", days=1, since="2026-08-15")
-        assert check_age(check) == "1 day since dispatch, 2026-08-15"
+        assert check_age(check) == "1 day since dispatch, 15 Aug 2026"
 
     def test_a_kind_without_a_phrase_still_reads(self):
         from connect_labs.supply_chain.templatetags.supply_chain_extras import check_age
 
-        assert check_age(self._check("stock_variance", days=3)) == "3 days since 2026-09-05"
+        assert check_age(self._check("stock_variance", days=3)) == "3 days since 5 Sep 2026"
         assert check_age({"kind": "stock_variance", "days_open": None}) == ""
 
     def test_documents_owed_by_others_are_ours_to_chase(self):

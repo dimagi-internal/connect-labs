@@ -90,7 +90,7 @@ the record it is about, because that is where it gets answered.
           {% for shipment in arrived %}
             <li class="text-sm text-gray-700">
               <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:shipment_detail' shipment.id %}">{{ shipment.reference|default:shipment.id }}</a>
-              <span class="text-xs text-gray-600">— {{ shipment.status|humanise }}{% if shipment.expected_on %} · expected {{ shipment.expected_on }}{% endif %}{% if shipment.required %} · {{ shipment.on_file }} of {{ shipment.required }} documents on file{% endif %}</span>
+              <span class="text-xs text-gray-600">— {{ shipment.status|humanise }}{% if shipment.expected_on %} · expected {{ shipment.expected_on|day }}{% endif %}{% if shipment.required %} · {{ shipment.on_file }} of {{ shipment.required }} documents on file{% endif %}</span>
             </li>
           {% endfor %}
         </ul>

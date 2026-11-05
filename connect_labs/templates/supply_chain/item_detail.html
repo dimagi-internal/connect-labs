@@ -292,7 +292,7 @@ sachets are in the carton, and neither does a balance.
                 <td class="px-4 py-2.5 tabular-nums">
                   {% if point.reported %}
                     {{ point.reported|figure_text }}
-                    <div class="text-xs text-gray-600">{{ point.reported_kind|humanise }} · {{ point.reported_on }}</div>
+                    <div class="text-xs text-gray-600">{{ point.reported_kind|humanise }} · {{ point.reported_on|day }}</div>
                   {% else %}
                     <span class="text-gray-600">never</span>
                   {% endif %}

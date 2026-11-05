@@ -90,6 +90,17 @@ def _route(row) -> tuple[str, str, int] | None:
     return None
 
 
+def _shown_names(program_id, points) -> dict:
+    """{point id: name as shown}: a store led by the partner that runs it ("North Star \u00b7 Warehouse")."""
+    from connect_labs.labs.models import LabsOrg
+    from connect_labs.supply_chain.naming import store_name
+    from connect_labs.supply_chain.stock.services.issues import partner_by_point
+
+    owners = partner_by_point(program_id)
+    names = dict(LabsOrg.objects.filter(pk__in={o for o in owners.values() if o}).values_list("pk", "name"))
+    return {p.pk: store_name(p.name, p.kind, names.get(owners.get(p.pk))) for p in points}
+
+
 def _depths(points) -> dict[int, int]:
     by_id = {p.pk: p for p in points}
     depths = {}
@@ -180,16 +191,17 @@ def flow(program_id: int, item, *, on_date: date | None = None, point_ids=None) 
     store_depth = max((depths[p.pk] for p in points if p.kind != "user_held"), default=-1)
     worker_column = store_depth + 2
     nodes = []
+    shown = _shown_names(program_id, points)
     for point in points:
         is_worker = point.kind == "user_held"
         nodes.append(
             {
                 "id": f"p{point.pk}",
-                "name": point.name,
+                "name": shown[point.pk],
                 "kind": "worker" if is_worker else "store",
                 "column": worker_column if is_worker else depths[point.pk] + 1,
                 "parent": f"p{point.parent_id}" if point.parent_id else None,
-                "parent_name": point.parent.name if point.parent_id else "",
+                "parent_name": shown.get(point.parent_id) or (point.parent.name if point.parent_id else ""),
                 "url": (
                     reverse("supply_chain:worker_detail", args=[point.pk]) + f"?item_id={item.pk}"
                     if is_worker

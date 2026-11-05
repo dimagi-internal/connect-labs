@@ -46,7 +46,7 @@ uses, so nothing ships purged.
     <tbody class="divide-y divide-gray-100">
       {% for movement in movements %}
         <tr>
-          <td class="px-4 py-2.5 text-gray-600" data-label="Date">{{ movement.occurred_on }}</td>
+          <td class="px-4 py-2.5 text-gray-600" data-label="Date">{{ movement.occurred_on|day }}</td>
           <td class="phone-title px-4 py-2.5">
             {% comment %}A reversal is consumption INTO the worker: a rejected visit's
             stock put back. Said as what it is, never as a consumption or a

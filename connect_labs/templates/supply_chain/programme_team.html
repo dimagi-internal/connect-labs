@@ -1,4 +1,5 @@
 {% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
 
 {% comment %}
 The running organisation's team: the people who act for the program (#2458).
@@ -48,7 +49,7 @@ people are added -- by platform support or by one of its own admins.
             <td class="px-4 py-2 text-gray-900">{{ member.name }}</td>
             <td class="px-4 py-2 text-gray-700">{{ member.email }}</td>
             <td class="px-4 py-2 text-gray-700">{{ member.role|capfirst }}</td>
-            <td class="px-4 py-2 text-gray-700">{{ member.added_on }}</td>
+            <td class="px-4 py-2 text-gray-700">{{ member.added_on|day }}</td>
             <td class="px-4 py-2 text-right whitespace-nowrap">
               <form method="post" action="{% url 'supply_chain:programme_team_remove' member.user_id %}" class="inline"
                     onsubmit="return confirm('Take {{ member.name|escapejs }} off the team?')">

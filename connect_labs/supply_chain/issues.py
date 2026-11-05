@@ -9,6 +9,7 @@ from datetime import date
 from django.urls import reverse
 
 from connect_labs.supply_chain.models import StockIssue
+from connect_labs.supply_chain.naming import store_name
 from connect_labs.supply_chain.stock.services import posting
 from connect_labs.supply_chain.stock.services.expiry import expiry_words
 from connect_labs.supply_chain.stock.services.issues import NO_PARTNER, partner_by_point
@@ -46,7 +47,8 @@ def open_issues(program_id) -> list[dict]:
             {
                 "title": (
                     f"{kind}: {plain_number(issue.quantity)} {issue.quantity_unit} "
-                    f"of {issue.commodity.name} at {issue.supply_point.name}"
+                    f"of {issue.commodity.name} at "
+                    f"{store_name(issue.supply_point.name, issue.supply_point.kind, names.get(org_id))}"
                 ),
                 "partner": names.get(org_id, NO_PARTNER) if org_id else NO_PARTNER,
                 "status": _STATUS.get(issue.status, issue.status),
