@@ -9,7 +9,13 @@ point (`collapsed`), it folds to one line -- "All N steps done" or "Next: <step>
 {% with next_step=purchase_guide|first_next_step %}
 <details {% if next_step and not collapsed %}open {% endif %}data-testid="purchase-guide" class="mb-5 rounded-lg border border-gray-200 bg-white">
   <summary class="cursor-pointer px-4 py-2 text-sm font-semibold text-gray-900">How a purchase works
-    <span class="ml-2 font-normal text-gray-700" data-testid="guide-summary">&middot; {% if next_step %}Next: {{ next_step.title }}{% else %}All {{ purchase_guide|length }} steps done{% endif %}</span></summary>
+    <span class="ml-2 font-normal text-gray-700" data-testid="guide-summary">&middot; {% if guide_tender %}{{ guide_tender.label }}: {% endif %}{% if next_step %}Next: {{ next_step.title }}{% else %}All {{ purchase_guide|length }} steps done{% endif %}</span></summary>
+  {% if guide_tenders|length > 1 %}
+  <p class="px-4 pt-1 text-xs text-gray-700" data-testid="guide-tenders">Steps for:
+    {% for chip in guide_tenders %}{% if chip.current %}<strong class="text-gray-900">{{ chip.label }}</strong>{% else %}<a class="text-brand-indigo hover:underline" href="{{ chip.url }}">{{ chip.label }}</a>{% endif %}{% if chip.next %} <span class="text-gray-600">(next: {{ chip.next }})</span>{% elif not chip.current %} <span class="text-gray-600">(all done)</span>{% endif %}{% if not forloop.last %} &middot; {% endif %}{% endfor %}
+  </p>
+  {% endif %}
+  {% if guide_tender %}<p class="px-4 pt-1 text-xs text-gray-700">A step is ticked only when this tender has done it.</p>{% endif %}
   <ol class="grid gap-2 px-4 pb-4 pt-1 text-sm sm:grid-cols-2 lg:grid-cols-3">
     {% for step in purchase_guide %}
     <li data-testid="guide-step" data-state="{% if step.next %}next{% elif step.done %}done{% else %}todo{% endif %}"
