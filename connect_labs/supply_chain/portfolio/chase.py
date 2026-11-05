@@ -124,6 +124,7 @@ def chase_items(
     places: dict,
     check_labels: dict,
     today: date | None = None,
+    alert_failures: list[dict] = (),
     tenders: list[dict] = (),
     contracts: list[dict] = (),
     issues: list[dict] = (),
@@ -208,6 +209,10 @@ def chase_items(
             }
         )
     items += _partner_items(tenders, contracts, issues, program_name, program_id)
+    # An alert that could not send (a sender's connection expired, no chatbot, no address) sits in the alert
+    # log otherwise: `alert_failures` is its own source (alerts.service.failed_alert_items), so wording and
+    # routing of the rest can change without losing it.
+    items.extend(alert_failures)
     return items
 
 

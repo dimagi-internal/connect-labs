@@ -16,8 +16,10 @@ The log says how each notice left, including when it did not: "email off" and
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Alerts</h1>
     <p class="text-sm text-gray-600 mt-1 max-w-2xl">
-      An email when a check becomes true or stock moves. Each states what is now true and links to the
-      record — no advice, no ranking. A check that stays true is sent once.
+      A message, by email or as a Connect message, when something you chose to watch becomes true or stock moves.
+      Each states what is now true and links to the record — no advice, no ranking. Something that stays true is
+      sent once; if it clears and comes back, it is sent again. A message that could not be sent shows in the sent
+      log and on the Overview chase list.
     </p>
   </div>
   {% if has_program_context %}
@@ -75,7 +77,7 @@ The log says how each notice left, including when it did not: "email off" and
               <td class="px-4 py-2">
                 <div class="flex flex-wrap gap-1">
                   {% for kind in sub.check_kinds %}
-                    <span class="px-1.5 py-0.5 rounded bg-indigo-50 text-brand-indigo text-xs">{{ kind|check_label }}</span>
+                    <span class="px-1.5 py-0.5 rounded bg-indigo-50 text-brand-indigo text-xs">{{ kind|watch_label }}</span>
                   {% endfor %}
                   {% for kind in sub.movement_kinds %}
                     <span class="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-xs">{{ kind|words|capfirst }} movements</span>
@@ -147,7 +149,7 @@ The log says how each notice left, including when it did not: "email off" and
               <td class="px-4 py-2 text-gray-700 whitespace-nowrap">{{ notice.detected|date:"j M Y, H:i" }}</td>
               <td class="px-4 py-2">
                 {% if notice.kind == "check" %}
-                  <span class="px-1.5 py-0.5 rounded bg-indigo-50 text-brand-indigo text-xs">{{ notice.subject_kind|check_label }}</span>
+                  <span class="px-1.5 py-0.5 rounded bg-indigo-50 text-brand-indigo text-xs">{{ notice.subject_kind|watch_label }}</span>
                   {% if notice.readout %}<div class="text-xs text-gray-600 mt-0.5">{{ notice.readout }}</div>{% endif %}
                 {% else %}
                   <span class="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-xs">{{ notice.subject_kind|words|capfirst }}</span>

@@ -29,6 +29,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from datetime import timedelta
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.core.cache import cache
@@ -155,6 +156,43 @@ def _partner_points(subscription):
     return point_ids_of(subscription.program_id, subscription.partner_org_id)
 
 
+# A field worker's count that differs from the records by this much or less is for the partner's supervisor to
+# sort out with them, not for the daily summary across partners (ace: "5 of its 7 notices"). Larger gaps, and
+# any gap at a store, still reach the summary too.
+SMALL_FLW_GAP = Decimal(10)
+
+
+def small_flw_gap(check: dict, kinds_by_point=None) -> bool:
+    """Whether this is a field worker's count gap small enough to be their partner's supervisor's to chase."""
+    from connect_labs.supply_chain.models import SupplyPoint
+
+    if check.get("kind") != "stock_variance":
+        return False
+    facts, subject = check.get("facts") or {}, check.get("subject") or {}
+    if subject.get("type") != "supply_point" or facts.get("reconcilable") is False:
+        return False
+    try:
+        gap = abs(Decimal(str(facts.get("variance"))))
+    except (InvalidOperation, TypeError):
+        return False
+    if kinds_by_point is None:
+        kind = SupplyPoint.objects.filter(pk=subject.get("id")).values_list("kind", flat=True).first()
+    else:
+        kind = kinds_by_point.get(subject.get("id"))
+    return kind == "user_held" and gap <= SMALL_FLW_GAP
+
+
+def _partner_hears_instead(subscription, check, owners, partner_watchers) -> bool:
+    """A summary across partners leaves out a small FLW count gap when its partner's own alert carries it."""
+    if subscription.partner_org_id is not None or subscription.supply_point_id is not None:
+        return False
+    if not small_flw_gap(check):
+        return False
+    owner, _names = owners
+    org = owner.get((check.get("subject") or {}).get("id"))
+    return org is not None and org in partner_watchers
+
+
 def _within_filters(subscription, scope, partner_points=None) -> bool:
     if subscription.supply_point_id is None and subscription.commodity_id is None and partner_points is None:
         return True
@@ -246,9 +284,17 @@ def detect_checks(subscription, found: list[dict], now) -> int:
 
     partner_points = _partner_points(subscription)
     owners = _owners(subscription)
+    # Partners whose own (active, partner-scoped) alert watches count gaps: their supervisors hear small ones.
+    partner_watchers = set(
+        AlertSubscription.objects.filter(program_id=subscription.program_id, active=True, partner_org__isnull=False)
+        .filter(check_kinds__contains=["stock_variance"])
+        .values_list("partner_org_id", flat=True)
+    )
     current = {}
     for check in found:
         if check["kind"] not in wanted:
+            continue
+        if _partner_hears_instead(subscription, check, owners, partner_watchers):
             continue
         subject = check.get("subject") or {}
         scope = None
@@ -481,6 +527,64 @@ def deliver(now, program_id=None) -> int:
         if subscription.cadence == "daily_digest":
             AlertSubscription.objects.filter(pk=subscription.pk).update(last_digest_sent_at=now)
     return emails
+
+
+# How a notice fails to leave, and what the person who looks after the alert has to do about it.
+FAILED_DELIVERIES = ("no_connection", "no_chatbot", "refused", "no_address")
+
+
+def failed_alert_items(program_id, program_name="", today=None) -> list[dict]:
+    """One chase-list item for each active alert whose newest notice could not be sent.
+
+    The chase list's `alert_failure` source. An alert that fails (the sender's Open Chat Studio connection
+    has expired, say) was only ever visible in the alert log; this puts it where the programme looks. An
+    alert whose later notice went out is working again and is not listed.
+    """
+    from datetime import date
+
+    today = today or date.today()
+    latest: dict = {}
+    for notice in (
+        AlertNotice.objects.filter(program_id=program_id, subscription__active=True)
+        .exclude(delivery="pending")
+        .select_related("subscription__created_by")
+        .order_by("detected_at", "pk")
+    ):
+        latest[notice.subscription_id] = notice
+    items = []
+    for notice in latest.values():
+        if notice.delivery not in FAILED_DELIVERIES:
+            continue
+        sub = notice.subscription
+        sender = ""
+        if sub.created_by_id:
+            sender = getattr(sub.created_by, "name", "") or sub.created_by.username
+        if notice.delivery == "no_connection":
+            ask = (
+                f"Ask {sender or 'whoever set up the alert'} to reconnect Open Chat Studio, so "
+                f"'{sub.label or 'the alert'}' can send again"
+            )
+        elif notice.delivery == "no_chatbot":
+            ask = f"Choose a chatbot to send Connect messages through, so '{sub.label or 'the alert'}' can send"
+        elif notice.delivery == "no_address":
+            ask = f"Give '{sub.label or 'the alert'}' somebody to send to: it has no address"
+        else:
+            ask = f"'{sub.label or 'The alert'}' was refused: {notice.delivery_note or 'no reason was given'}"
+        items.append(
+            {
+                "source": "alert_failure",
+                "audience": "internal",
+                "who": sender,
+                "what": "An alert could not be sent",
+                "ask": ask,
+                "about": sub.label or f"Alert {sub.pk}",
+                "days": (today - notice.detected_at.date()).days,
+                "href": _url("alerts", program_id=program_id),
+                "program": program_name,
+                "program_id": program_id,
+            }
+        )
+    return items
 
 
 def found_so_far(program_id) -> dict:

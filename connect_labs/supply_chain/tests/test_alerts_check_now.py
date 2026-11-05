@@ -48,7 +48,7 @@ class TestCheckAlertsNow:
             subscription_id=sub["id"], subject_kind="commodity_course_undefined"
         ).exists()
         assert "Checked now:" in body and "new notice" in body
-        assert "No ration table" in body  # in the log, as words
+        assert "A product has no course length set" in body  # in the log, as words
 
     def test_asking_twice_reports_nothing_new_the_second_time(self, client_in_programme, da):
         from connect_labs.supply_chain.alerts.models import AlertNotice

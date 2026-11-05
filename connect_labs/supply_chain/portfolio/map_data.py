@@ -306,6 +306,12 @@ def _open_issues(program_id):
     return open_issues(program_id)
 
 
+def _failed_alert_items(program_id, program_name):
+    from connect_labs.supply_chain.alerts.service import failed_alert_items
+
+    return failed_alert_items(program_id, program_name)
+
+
 def program_chase(access, program_id, program_name) -> list[dict]:
     """One programme's chase list, read straight from the records.
 
@@ -327,6 +333,7 @@ def program_chase(access, program_id, program_name) -> list[dict]:
     }
     checks = [_check_wire(c, scope=scope) for c in call_operation("checks_list", access, {})["checks"]]
     orders, _ = open_orders(contracts, stock, scope)
+    from connect_labs.supply_chain.alerts.service import failed_alert_items
     from connect_labs.supply_chain.issues import open_issues
 
     return chase_items(
@@ -341,6 +348,7 @@ def program_chase(access, program_id, program_name) -> list[dict]:
         tenders=call_operation("tender_list", access, {}),
         contracts=list(contracts.values()),
         issues=open_issues(program_id),
+        alert_failures=failed_alert_items(program_id, program_name),
     )
 
 
@@ -622,6 +630,7 @@ def program_map(request, program_id, program, partner_org_id=None) -> dict:
                     "tenders": call_operation("tender_list", access, {}),
                     "contracts": list(contracts.values()),
                     "issues": _open_issues(program_id),
+                    "alert_failures": _failed_alert_items(program_id, program.get("name") or ""),
                 }
             ),
         ),

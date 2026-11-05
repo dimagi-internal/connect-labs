@@ -729,6 +729,14 @@ def check_label(kind):
 
 
 @register.filter
+def watch_label(kind):
+    """What an alert watches, in plain words (alerts/labels.py): the Alerts page's own names for a check."""
+    from connect_labs.supply_chain.alerts.labels import watch_label as label
+
+    return label(kind)
+
+
+@register.filter
 def audience_label(audience):
     return AUDIENCE_LABELS.get(audience, audience)
 
