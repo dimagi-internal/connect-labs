@@ -155,7 +155,7 @@ class TestTheAsOfControl:
 
     def test_the_chain_says_program(self, da, base, home_client, lineless_order):
         body = _home(home_client)
-        chain = body[body.index('data-testid="fold-chain"') : body.index('data-testid="fold-checks"')]
+        chain = body[body.index('data-testid="fold-chain"') : body.index('data-testid="overview-links"')]
         assert "bought by the program" in chain
         assert "programme" not in chain.lower()
 
@@ -227,7 +227,7 @@ class TestAShipmentWithNoLinesIsStillOnTheRoad:
         self, da, base, home_client, lineless_order
     ):
         past = _home(home_client, as_of="2026-08-25")
-        assert _chain_cell(past, "Dispatched") == "1"
+        assert _chain_cell(past, "Shipped") == "1"
         assert _chain_cell(past, "In transit") == "600 cartons"
 
     def test_once_received_it_is_not(self, da, base, home_client, lineless_order):

@@ -357,7 +357,7 @@ def test_network_and_overview_print_the_same_below_minimum_headline(client_in_pr
     headline = text_of(tree_line.group(1)).strip().lstrip("· ")
     assert headline == "1 of 2 workers below minimum at their own 14-day pace"
     assert text_of(overview_line.group(1)).strip() == headline
-    assert re.search(r'data-testid="open-checks">.*?open check', overview, re.S)
+    assert re.search(r'data-testid="open-checks"[^>]*>Every check, with its facts', overview, re.S)
     assert "Checks <span" not in overview
 
 

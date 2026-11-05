@@ -126,9 +126,8 @@ class TestTheNextStep:
             exclude_org_ids=[12],
             today=date(2026, 11, 4),
         )
-        assert (
-            step["line"]
-            == "Partners: 1 of 2 set up · Tender: drafted, not sent · Needed by Feb 2027, start by early Dec"
+        assert step["line"] == (
+            "Local partners (LLOs): 1 of 2 set up · Tender: drafted, not sent · Needed by Feb 2027, start by early Dec"
         )
 
     def test_without_a_needed_by_date_the_line_is_just_shorter(self):
@@ -142,7 +141,7 @@ class TestTheNextStep:
             {"id": 3, "status": "draft", "buyer_org_id": None},
         ]
         step = next_step(tenders=[{"id": 1, "status": "awarded"}], contracts=contracts, points=[])
-        assert step["line"] == "Orders: 2 placed · 1 received"
+        assert step["line"] == "Orders with no tender: 2 orders placed · 1 received"
         assert step["next"] == "Record each delivery as it arrives"
 
 

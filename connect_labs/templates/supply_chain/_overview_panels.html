@@ -24,17 +24,17 @@ portfolio/chase.py.
 </section>
 
 <section class="flex flex-col gap-3" data-testid="distribution-overview" aria-label="Distribution">
-  <h2 class="text-brand-deep-purple text-lg font-semibold">Distribution: partners and field workers</h2>
+  <h2 class="text-brand-deep-purple text-lg font-semibold">Distribution: local partners (LLOs) and field workers</h2>
   {% with d=distribution %}
   <div class="grid gap-3 md:grid-cols-3">
     <div class="rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="low-partners">
-      <h3 class="text-sm font-semibold text-gray-900">Partners running low</h3>
+      <h3 class="text-sm font-semibold text-gray-900">Local partners (LLOs) running low</h3>
       {% if not d.has_network %}
         <p class="mt-1 text-sm text-gray-600">No warehouses or field workers are set up yet.</p>
       {% elif d.low_partners %}
         <ul class="mt-1 text-sm text-gray-900">{% for p in d.low_partners %}<li data-testid="low-partner"><b>{{ p.name }}</b> · {{ p.low }} of {{ p.places }} place{{ p.places|pluralize }} below minimum</li>{% endfor %}</ul>
       {% else %}
-        <p class="mt-1 text-sm text-gray-600">No partner has a place below its minimum.</p>
+        <p class="mt-1 text-sm text-gray-600">No local partner has a place below its minimum.</p>
       {% endif %}
     </div>
     <div class="rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="dry-this-week">

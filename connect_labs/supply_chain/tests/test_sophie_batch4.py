@@ -279,9 +279,11 @@ def dispatched_order(da, base):
 
 
 def _contracts_status(body, reference):
-    table = body[body.index('data-testid="fold-contracts"') :]
-    row = next(r for r in re.findall(r"<tr>.*?</tr>", table, re.S) if reference in r)
-    return [" ".join(c.split()) for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)][3]
+    """The stage the Overview's own row gives this order, as words ("Delivering in transit")."""
+    rows = re.findall(r'<tr data-testid="overview-row" data-kind="order".*?</tr>', body, re.S)
+    row = next(r for r in rows if reference in r)
+    stage = re.search(r'data-testid="row-stage">(.*?)</span></span>', row, re.S).group(1)
+    return " ".join(re.sub(r"<[^>]+>", " ", stage).split())
 
 
 def _in_transit(body):
@@ -293,7 +295,7 @@ def _in_transit(body):
 class TestAPastDateAgreesWithItself:
     def test_between_dispatch_and_receipt(self, da, base, home_client, dispatched_order):
         past = _home(home_client, as_of="2026-08-25")
-        assert _contracts_status(past, "PO-ONROAD").endswith("in transit")
+        assert _contracts_status(past, "PO-ONROAD").lower().endswith("in transit")
         assert _in_transit(past) == "600 cartons"
 
     def test_a_shipment_with_a_dispatch_day_is_on_the_road_until_delivered(self):
@@ -306,7 +308,7 @@ class TestAPastDateAgreesWithItself:
 
     def test_once_received(self, da, base, home_client, dispatched_order):
         live = _home(home_client)
-        assert not _contracts_status(live, "PO-ONROAD").endswith("in transit")
+        assert not _contracts_status(live, "PO-ONROAD").lower().endswith("in transit")
         assert _in_transit(live) != "600 cartons"
 
 

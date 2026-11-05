@@ -66,10 +66,7 @@ GROUP_OF_TAB = {name: group for group, tabs in TAB_GROUPS for name, _ in tabs}
 # programme manager or partner staff member. Shown under the tabs on the tab's
 # own page (not on the records one level below it).
 PAGE_PURPOSE = {
-    "supply_chain:home": (
-        "Where the programme stands: what is open, what is waiting on someone, "
-        "and what the records cannot answer yet."
-    ),
+    "supply_chain:home": ("What is open, what is waiting on someone, and what the records cannot answer yet."),
     "supply_chain:start_here": (
         "What each part of Supply is for, the steps by moment (once, each purchase, weekly, monthly), "
         "and where each kind of person starts."
@@ -117,12 +114,12 @@ PAGE_PURPOSE = {
         "What you buy. Set up each product once, and add the manufacturer's version " "(a trade item) when you buy it."
     ),
     "supply_chain:organisations": (
-        "The organisations this programme uses, including partners who buy or hold stock "
+        "The organisations this program uses, including partners who buy or hold stock "
         "on your behalf. To add a supplier you do not need this page: use Suppliers."
     ),
     "supply_chain:alerts": "Who is told, by email, when something in the chain changes or needs attention.",
     "supply_chain:programme_team": (
-        "The people who act for this programme. Partners do not sign in here: they get access through "
+        "The people who act for this program. Partners do not sign in here: they get access through "
         "update links and their Connect sign-in."
     ),
     "supply_chain:update_links": (
@@ -147,7 +144,7 @@ GLOSSARY = {
         "Import duty and tax fall on whoever that is."
     ),
     "update links": (
-        "A private link you send to someone outside the programme so they can record "
+        "A private link you send to someone outside the program so they can record "
         "their own step (a shipment, a delivery) without signing in."
     ),
     "tender": (

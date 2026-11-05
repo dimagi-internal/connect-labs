@@ -92,7 +92,7 @@ def next_step(
 ) -> dict:
     """The programme's next step as {"line", "segments", "next"}.
 
-    "Partners: 3 of 5 set up · Tender: not created · Needed by Feb 2027, start by early Dec".
+    "Local partners (LLOs): 3 of 5 set up · Tender: not created · Needed by Feb 2027, start by early Dec".
     `segments` are the parts of the line, `next` is the one thing to do now.
 
     A tender that is collecting quotes comes first even when orders exist: a
@@ -105,7 +105,7 @@ def next_step(
     segments, nxt = [], ""
 
     if partners:
-        segments.append(f"Partners: {set_up} of {partners} set up")
+        segments.append(f"Local partners (LLOs): {set_up} of {partners} set up")
     placed = [c for c in contracts if c.get("status") not in _ORDER_NOT_PLACED]
     received = [c for c in placed if c.get("status") in ("received", "closed")]
     live = [t for t in tenders if t.get("status") != "cancelled"]
@@ -122,12 +122,9 @@ def next_step(
     collecting = max((t for t in live if t.get("status") == "open"), key=lambda t: t["id"], default=None)
 
     if placed:
-        text = f"Orders: {len(placed)} placed"
-        if split_set and split_set["text"]:
-            text = f"Orders: {split_set['text']}"
-        if received:
-            text += f" · {len(received)} received"
-        segments.append(text)
+        # One segment per tender, named: a split tender's "2 of 3 partners have ordered" must not read as if it
+        # were the round-1 order's, and the received count belongs to the tender whose orders arrived.
+        segments.extend(_order_segments(placed, live, contracts))
         nxt = (
             "Record each delivery as it arrives"
             if len(received) < len(placed)
@@ -177,6 +174,32 @@ def next_step(
                 text += " (late to start)"
         segments.append(text)
     return {"line": " · ".join(segments), "segments": segments, "next": nxt}
+
+
+def _order_segments(placed, live, contracts) -> list[str]:
+    """One line per tender: "Round 1: 1 order placed · 1 received", "Split tender: 2 of 3 partners have ordered"."""
+    from connect_labs.supply_chain.procurement.services.splits import order_set
+
+    by_tender: dict = {}
+    for contract in placed:
+        by_tender.setdefault(contract.get("tender_id"), []).append(contract)
+    named = {t["id"]: t for t in live}
+    out = []
+    for tender_id in sorted(by_tender, key=lambda k: (k is None, k or 0)):
+        group = by_tender[tender_id]
+        tender = named.get(tender_id)
+        if tender is None:
+            name = "Orders with no tender" if tender_id is None else f"Tender {tender_id}"
+        else:
+            name = tender.get("label") or f"Tender {tender_id}"
+        text = f"{len(group)} order{'' if len(group) == 1 else 's'} placed"
+        if tender is not None and tender.get("partner_splits"):
+            text = order_set(tender, [c for c in contracts if c.get("tender_id") == tender_id])["text"] or text
+        received = sum(1 for c in group if c.get("status") in ("received", "closed"))
+        if received:
+            text += f" · {received} received"
+        out.append(f"{name}: {text}")
+    return out
 
 
 def _start_words(day: date) -> str:

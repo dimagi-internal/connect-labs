@@ -104,7 +104,7 @@ class PortfolioView(TemplateView):
         # and the Map use (chase.py). Each item names its programme.
         every = [item for row in rows for item in row["chase"]]
         context["chase"] = grouped(every)
-        context["chase_count"] = len(every)
+        context["chase_count"] = sum(len(group["items"]) for group in context["chase"])
         context["portfolio"] = portfolio
         context["rows"] = rows
         context["hidden"] = hidden

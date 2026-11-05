@@ -367,8 +367,8 @@ class TestTheOverview:
         live = _home(home_client)
         past = _home(home_client, as_of="2026-08-25")
 
-        assert 'data-testid="checks-as-of-note"' not in live
-        assert "Checks are worked out for today; back to today to see them." in past
+        # The checks are one link, not a panel: on a past date the link is left out rather than showing today's.
+        assert 'data-testid="open-checks"' in live and 'data-testid="open-checks"' not in past
 
 
 # ---- 7. the public listing, seen by its own program -----------------------

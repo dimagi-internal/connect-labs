@@ -69,7 +69,7 @@ class TestTheAwaitingCountIsTheTablesCount:
         assert summary["rfq_issued"]["invitations"] == 4
         assert summary["rfq_issued"]["awaiting_reply"] == _listed_silent()
 
-        rfq = next(cell for cell in source_stages(summary) if cell.get("label") == "RFQ issued")
+        rfq = next(cell for cell in source_stages(summary) if cell.get("label") == "Suppliers asked")
         assert "2 awaiting a reply on 1 open tender" in str(rfq)
 
     def test_the_page_says_what_it_counted(self, da, base, home_client):
