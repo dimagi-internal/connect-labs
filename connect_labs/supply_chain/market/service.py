@@ -28,8 +28,9 @@ from django.db.models import Q
 from connect_labs.audit_trail.models import Action
 from connect_labs.audit_trail.service import record as audit_record
 from connect_labs.labs.access.scopes import SYSTEM
-from connect_labs.supply_chain import records
+from connect_labs.supply_chain import access_relations, records
 from connect_labs.supply_chain import scopes as synthetic_scopes
+from connect_labs.supply_chain.access_relations import Relation
 from connect_labs.supply_chain.models import (
     Award,
     Commodity,
@@ -332,8 +333,11 @@ def _own_quotes(orgs):
     or change it through the marketplace. A bid is private from other programs
     as well as from other suppliers.
     """
+    # Through the relationship layer (the supplier relation of a Quote); pinned equal to the
+    # hand-written filter this replaced by tests/test_access_relations_equivalence.py.
     return (
-        Quote.objects.filter(supplier__org__in=orgs, entered_by="supplier")
+        access_relations.rows_for(Quote, orgs, relations=(Relation.SUPPLIER,))
+        .filter(entered_by="supplier")
         .select_related("tender", "commodity", "supplier__org", "item")
         .order_by("-created_at")
     )
