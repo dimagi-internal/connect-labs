@@ -615,6 +615,54 @@ def test_a_slow_neighbour_is_not_blamed_on_labs():
     assert "labs-jj-canopy-web-tg" in slow and "not labs-jj-web" in slow
 
 
+_NOV5_LATENCY_PAGE = {"name": "labs-jj-alb-latency-high", "at": "2026-11-05T17:48:04Z"}
+
+
+def test_a_latency_page_with_a_quiet_alb_still_names_the_saturated_database():
+    """#2876: labs at 63s and RDS at 99%, while the whole ALB's p95 read 3.93s because it
+    pools canopy-web and the rest. The DB branch sat behind the whole-ALB test."""
+    verdict = perf_triage.judge(
+        _snapshot(
+            alb_p95_peak_s=3.93,
+            alb_p95_slow_periods=0,
+            alb_p95_by_target_group={"labs-jj-target-group": 63.0, "labs-jj-canopy-web-tg": 1.2},
+            db_cpu_peak_pct=99.5,
+            db_cpu_saturated_periods=3,
+            paged_in_window=[_NOV5_LATENCY_PAGE],
+        )
+    )
+    assert verdict["verdict"] == "db_saturated"
+    slow = [f for f in verdict["findings"] if f.startswith("SLOW TARGET GROUP")]
+    assert slow and "labs-jj-target-group p95 63.0s" in slow[0]
+    assert "3.93s" in slow[0]
+
+
+def test_a_slow_group_with_no_latency_page_stays_a_finding():
+    """On sparse traffic one slow page IS a group's p95, which is why the alarm needs 40+
+    requests (#2768). Without that page, the slow group must not move the verdict."""
+    verdict = perf_triage.judge(
+        _snapshot(
+            alb_p95_peak_s=3.0,
+            alb_p95_by_target_group={"labs-jj-target-group": 14.0},
+            db_cpu_peak_pct=99.5,
+            db_cpu_saturated_periods=3,
+            paged_in_window=[],
+        )
+    )
+    assert verdict["verdict"] == "healthy"
+    assert any(f.startswith("SLOW TARGET GROUP") for f in verdict["findings"])
+
+
+def test_a_cpu_page_alone_does_not_read_as_a_latency_incident():
+    verdict = perf_triage.judge(
+        _snapshot(
+            web_cpu_peak_pct=100.0,
+            paged_in_window=[{"name": "labs-jj-web-cpu-high-actionable", "at": "2026-11-03T12:02:42Z"}],
+        )
+    )
+    assert verdict["verdict"] == "paged_below_sustained"
+
+
 def test_reads_default_to_the_read_only_observe_role():
     """connect-labs#2770: every read here is allowed to labs-jj-observe-readonly, so
     the admin `labs` SSO session is an override, never the default."""

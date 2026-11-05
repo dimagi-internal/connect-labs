@@ -242,6 +242,7 @@ HEAVY_REQUEST_LIMIT = 5
 SCALE_OUT_BOOT_MINUTES = 3
 PAGE_LOOKBACK_MINUTES = 8
 CPU_PAGE_ALARMS = {"labs-jj-web-cpu-high-actionable"}
+LATENCY_PAGE_ALARM = "labs-jj-alb-latency-high"
 SCALE_OUTS_LISTED = 10
 
 
@@ -444,9 +445,9 @@ def collect(hours: int) -> dict:
     )
 
     # The same p95, split by target group. labs-jj-alb fronts canopy-web, ace-web
-    # and umami as well as the labs web tier, and the alarm reads the
-    # LoadBalancer-wide series -- so "the ALB is slow" does not yet say WHOSE
-    # requests were slow. On 2026-10-23 the latency page landed while a sibling
+    # and umami as well as the labs web tier, and the alarm reads labs' target group
+    # alone -- so the LoadBalancer-wide series above can sit far below the number
+    # that paged. On 2026-10-23 the latency page landed while a sibling
     # was mid-incident on canopy-web (same ALB, same DB); one split showed labs
     # at 17-30s and canopy-web at 1-3s, i.e. a separate incident.
     tg_metrics = _aws(
@@ -680,21 +681,30 @@ def judge(d: dict) -> dict:
         next_step = "Inspect /ecs/labs-jj-worker for the running task; the web tier is collateral."
 
     p95 = d["alb_p95_peak_s"]
-    if p95 and p95 > ALB_P95_SLOW_S:
+    alb_slow = bool(p95 and p95 > ALB_P95_SLOW_S)
+    if alb_slow:
         findings.append(
             f"USER-VISIBLE LATENCY: ALB p95 peaked at {p95:.1f}s across "
             f"{d['alb_p95_slow_periods']} period(s); median p95 is normally "
             f"{BASELINE['alb_p95_median_s']}s."
         )
-        slow_tgs = {tg: s for tg, s in (d.get("alb_p95_by_target_group") or {}).items() if s and s > ALB_P95_SLOW_S}
-        if slow_tgs:
-            findings.append(
-                "SLOW TARGET GROUP(S): "
-                + ", ".join(f"{tg} p95 {s:.1f}s" for tg, s in sorted(slow_tgs.items(), key=lambda kv: -kv[1]))
-                + ". Everything else behind the ALB stayed under "
-                f"{ALB_P95_SLOW_S:.0f}s, so start with "
-                + ("the labs web tier." if "labs-jj-target-group" in slow_tgs else "THAT service, not labs-jj-web.")
-            )
+    # Read per target group whatever the whole ALB says. Its p95 pools every service, so
+    # on 2026-11-05 labs at 63s read as a 3.93s ALB and an RDS-at-99% page came out
+    # "healthy" (#2876). A slow group alone is a finding, not a verdict: on sparse traffic
+    # one slow page IS a group's p95, the reason the alarm needs 40+ requests (#2768). So
+    # the verdict moves only when the alarm that applies that gate has paged.
+    slow_tgs = {tg: s for tg, s in (d.get("alb_p95_by_target_group") or {}).items() if s and s > ALB_P95_SLOW_S}
+    if slow_tgs:
+        findings.append(
+            "SLOW TARGET GROUP(S): "
+            + ", ".join(f"{tg} p95 {s:.1f}s" for tg, s in sorted(slow_tgs.items(), key=lambda kv: -kv[1]))
+            + ". Everything else behind the ALB stayed under "
+            f"{ALB_P95_SLOW_S:.0f}s, so start with "
+            + ("the labs web tier." if "labs-jj-target-group" in slow_tgs else "THAT service, not labs-jj-web.")
+            + ("" if alb_slow else f" The whole ALB's p95 peaked at {p95 or 0:.2f}s, which pools every service.")
+        )
+    latency_paged = any(row["name"] == LATENCY_PAGE_ALARM for row in d.get("paged_in_window") or [])
+    if alb_slow or latency_paged:
         db_sat = d.get("db_cpu_saturated_periods") or 0
         if verdict == "healthy" and db_sat:
             # The database IS the slow dependency. Without this branch the tool
