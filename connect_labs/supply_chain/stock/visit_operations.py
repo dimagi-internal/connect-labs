@@ -256,16 +256,21 @@ def worker_stock(access, item_id, opportunity_id=None, as_of=None, window_days=N
     summary=(
         "Where one item went, week by week: from what arrived (by the order its receipt belongs to), through "
         "each store, to each field worker, to what their visits gave out -- plus anything lost, expired or sent "
-        "outside the network. `nodes` are the places (column 0 the arrivals, the last the ends); `links` carry "
+        "outside the network (taken, expired and damaged stock are their own streams, not one lost total). Filter "
+        "to one partner with org_id: only the routes that start or end at a place it runs. `nodes` are the "
+        "places (column 0 the arrivals, the last the ends); `links` carry "
         "the running total moved along each route at the end of every week in `weeks`, in the item's single "
         "unit. Adjustments are counted in `adjusted`, not drawn. as_of reads a past day."
     ),
-    input_schema=obj({"item_id": ID, "as_of": _DATE}, required=("item_id",)),
+    input_schema=obj({"item_id": ID, "as_of": _DATE, "org_id": ID}, required=("item_id",)),
 )
-def stock_flow(access, item_id, as_of=None):
+def stock_flow(access, item_id, as_of=None, org_id=None):
+    from connect_labs.supply_chain.partners.scope import point_ids_of
     from connect_labs.supply_chain.stock.services.flow import flow
 
-    return flow(access._require_program(), access._resolve_item(item_id), on_date=_on(as_of))
+    program_id = access._require_program()
+    mine = point_ids_of(program_id, org_id) if org_id is not None else None
+    return flow(program_id, access._resolve_item(item_id), on_date=_on(as_of), point_ids=mine)
 
 
 @register_operation(

@@ -12,7 +12,7 @@ restocks them, then by name, never by how they are doing.
 <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Where it went</h1>
-    <p class="text-sm text-gray-600 mt-1">Every unit that arrived: how much is still in the warehouse, at health facilities, with field workers, given to children, or lost.</p>
+    <p class="text-sm text-gray-600 mt-1">Every unit that arrived: how much is still in the warehouse, at health facilities, with field workers, given to children, or gone: lost or missing, taken, expired or damaged.</p>
   </div>
   {% if has_program_context %}
     {% pinned_tab "supply_chain:workers" as workers_tab %}
@@ -31,16 +31,19 @@ restocks them, then by name, never by how they are doing.
 {% elif not item %}
   <p class="text-sm text-gray-600">No dispensing rule yet, so no visit has given anything out and there is no flow to show.</p>
 {% elif not flow.weeks %}
+  {% include "supply_chain/_partner_switcher.html" %}
   <div class="bg-white border border-brand-border-light rounded-lg px-5 py-8 text-center">
-    <p class="text-sm text-gray-600">No {{ item.name }} has moved yet.</p>
+    <p class="text-sm text-gray-600">No {{ item.name }} has moved yet{% if partner_name %} at {{ partner_name }}{% endif %}.</p>
   </div>
 {% else %}
+  {% include "supply_chain/_partner_switcher.html" %}
   <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
     <p class="text-sm text-gray-700">{{ item.name }}, in {{ flow.unit|unit_plural }}</p>
     {% if items|length > 1 %}
       <form method="get" class="text-sm">
         <label for="flow-item" class="sr-only">Item</label>
         {% if supply_as_of %}<input type="hidden" name="as_of" value="{{ supply_as_of|date:'Y-m-d' }}">{% endif %}
+        {% if partner_id %}<input type="hidden" name="partner" value="{{ partner_id }}">{% endif %}
         <select id="flow-item" name="item_id" onchange="this.form.submit()" class="rounded-md border border-gray-300 px-2 py-1">
           {% for choice in items %}<option value="{{ choice.id }}" {% if choice.id == item.id %}selected{% endif %}>{{ choice.name }}</option>{% endfor %}
         </select>
