@@ -439,6 +439,11 @@ urlpatterns = [
         name="distribution_from_message",
     ),
     path(
+        "distribution/<int:distribution_id>/received-all/",
+        distribution_views.DistributionReceivedAllView.as_view(),
+        name="distribution_received_all",
+    ),
+    path(
         "distribution/lines/<int:line_id>/received/",
         distribution_views.DistributionReceivedView.as_view(),
         name="distribution_received",

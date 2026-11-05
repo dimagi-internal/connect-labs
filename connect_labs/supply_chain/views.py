@@ -1365,7 +1365,13 @@ class DistributionView(OperationBase):
             ]
             transfers = [t for t in transfers if t["from_supply_point_id"] in mine or t["to_supply_point_id"] in mine]
         context["runs"] = runs
-        context.update(page.handouts(runs, points))
+        from connect_labs.labs.models import LabsOrg
+        from connect_labs.supply_chain.stock.services.issues import partner_by_point
+
+        owner = partner_by_point(_access(self.request).program_id)
+        org_names = dict(LabsOrg.objects.filter(pk__in={o for o in owner.values() if o}).values_list("pk", "name"))
+        partner_of = {pk: org_names.get(org) for pk, org in owner.items() if org}
+        context.update(page.handouts(runs, points, partner_of))
         context["deliveries"] = page.deliveries(consignments, transfers, points)
         context.update(switcher(self.request, _access(self.request).program_id))
         return context
