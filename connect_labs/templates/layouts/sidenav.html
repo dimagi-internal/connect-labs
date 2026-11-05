@@ -82,6 +82,11 @@ accessibility tree); from md up it is always visible.
             {% url 'solicitations:public_list' as solicitations_url %}
             {% include "components/sidenav-items.html" with name='Solicitations' icon='bullhorn' target=solicitations_url namespace='solicitations' %}
             {% url 'supply_chain:market' as supply_market_url %}
+            {% if request.user.is_authenticated %}
+                {# The programme's supply chain. Its pages draw their own menu beside this bar (supply_chain/_rail.html); this item says where you are. #}
+                {% url 'supply_chain:home' as supply_home_url %}
+                {% include "components/sidenav-items.html" with name='Supply' icon='boxes-stacked' target=supply_home_url namespace='supply_chain' except_prefix=supply_market_url %}
+            {% endif %}
             {% include "components/sidenav-items.html" with name='Supply marketplace' icon='store' target=supply_market_url path_prefix=supply_market_url %}
         </div>
         {% if request.user.is_authenticated %}

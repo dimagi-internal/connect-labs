@@ -96,6 +96,8 @@ silently lacks.
   </style>
 {% endblock %}
 
+{% block header %}{% if not present_mode %}{% include 'layouts/header.html' with header_trail_template='supply_chain/_trail.html' %}{% endif %}{% endblock header %}
+
 {% block content %}
 {% if programme_map %}
   {% comment %}A programme's own map keeps the supply header and tabs every other supply page has;

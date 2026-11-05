@@ -5,9 +5,14 @@
 <header class="fixed top-0 left-0 md:left-16 right-0 bg-gray-100 z-30 h-16">
     <div class="flex items-center justify-between w-full h-full pl-16 pr-4 md:px-4 py-2">
         <!-- Left Section: Module Name -->
+        {% if header_trail_template %}
+        {# A section that says where you are in it (supply_chain/_trail.html) in place of the site name. #}
+        {% include header_trail_template %}
+        {% else %}
         <h1 class="text-lg text-brand-deep-purple font-medium truncate min-w-0 mr-3">
             <a href="{% url 'labs:overview' %}" class="hover:underline">{{ header_title|default:"Connect Labs" }}</a>
         </h1>
+        {% endif %}
 
         {% if request.user.is_authenticated %}
         <!-- Right Section: Org, Profile Dropdown -->

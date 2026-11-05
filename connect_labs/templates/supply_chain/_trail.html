@@ -1,0 +1,14 @@
+{% comment %}The header's trail on a supply page (layouts/header.html): Connect Labs, Supply (this programme's front page, so
+the programme travels with the link), then the page you are on. The site name stays first so the way back out is where it
+always was.{% endcomment %}
+<nav aria-label="Breadcrumb" data-testid="supply-trail" class="min-w-0 mr-3">
+  <ol class="flex items-center gap-2 text-sm text-gray-600 min-w-0">
+    <li class="hidden sm:block"><a href="{% url 'labs:overview' %}" class="hover:text-brand-deep-purple hover:underline">Connect Labs</a></li>
+    <li class="hidden sm:block" aria-hidden="true">/</li>
+    <li><a href="{% if supply_tabs %}{{ supply_tabs.0.url }}{% else %}{% url 'supply_chain:home' %}{% endif %}" class="hover:text-brand-deep-purple hover:underline">Supply</a></li>
+    {% for tab in supply_tabs %}{% if tab.active %}
+    <li aria-hidden="true">/</li>
+    <li class="truncate min-w-0"><span aria-current="page" class="text-base font-semibold text-brand-deep-purple">{{ tab.label }}</span></li>
+    {% endif %}{% endfor %}
+  </ol>
+</nav>

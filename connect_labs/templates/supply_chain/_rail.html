@@ -7,45 +7,52 @@ is remembered in this browser (localStorage "supplyRail"). Below 768px the rail 
 Plain CSS rather than utilities, so nothing waits on the stylesheet being rebuilt.{% endcomment %}
 {% supply_settings_url as settings_url %}
 <style>
-  /* The rail is part of the page, not a card on it: a full-height panel against the Labs sidebar, divided from the
-     content by one hairline, scrolling inside itself so the last tabs are never cut off at the foot of the window. */
-  .supply-shell { display: grid; grid-template-columns: 14.5rem minmax(0, 1fr); column-gap: 2rem; max-width: 96rem; margin: -1.25rem 0 0 -1rem; padding: 0 0.5rem 3rem 0; transition: grid-template-columns .2s ease, column-gap .2s ease; }
-  .supply-shell[data-rail="closed"] { grid-template-columns: 0 minmax(0, 1fr); column-gap: 1.5rem; }
-  .supply-main { min-width: 0; padding-top: 1.5rem; }
-  .supply-rail { position: sticky; top: 4rem; align-self: start; height: calc(100vh - 4rem); width: 14.5rem; overflow: hidden; border-right: 1px solid #e7e5e4; background: #fbfbfa; transition: opacity .15s ease, transform .2s ease; }
+  /* The rail is the second level of the Labs sidebar, not a panel on the page: it runs the full height of the window
+     from the very top, flush against the purple bar (whose Supply item is lit), and the Labs header moves over to start
+     after it. It scrolls inside itself so the last tabs are never cut off at the foot of the window. Its grid column
+     only holds the space open; the rail itself is fixed, so the page is left-aligned beside it rather than centred. */
+  .supply-shell { display: grid; grid-template-columns: 14.5rem minmax(0, 1fr); column-gap: 2rem; margin: -1.25rem 0 0 -1rem; padding: 0 0.5rem 3rem 0; transition: grid-template-columns .2s ease, column-gap .2s ease; }
+  #content:has(.supply-shell) { max-width: none; margin-left: 0; margin-right: 0; }
+  @media (min-width: 768px) {
+    body:has(.supply-shell[data-rail="open"]) > div > header.fixed { left: 18.5rem; }
+    body:has(.supply-shell) > div > header.fixed { transition: left .2s ease; border-bottom: 1px solid #e7e5e4; background: #f5f5f4; }
+    body:has(.supply-shell) > div > header.fixed > div { padding-left: 2rem; }
+  }
+  .supply-shell[data-rail="closed"] { grid-template-columns: 0 minmax(0, 1fr); column-gap: 2rem; }
+  .supply-main { grid-column: 2; min-width: 0; max-width: 90rem; padding-top: 1.5rem; }
+  .supply-rail { position: fixed; top: 0; left: 4rem; z-index: 31; height: 100vh; width: 14.5rem; overflow: hidden; background: #efedf8; transition: opacity .15s ease, transform .2s ease; }
   .supply-rail-scroll { height: 100%; overflow-y: auto; overscroll-behavior: contain; padding: 1.25rem 0.75rem 1.5rem; display: flex; flex-direction: column; scrollbar-width: thin; }
   .supply-shell[data-rail="closed"] .supply-rail { opacity: 0; transform: translateX(-1.5rem); pointer-events: none; visibility: hidden; }
-  .supply-rail-head { display: flex; align-items: flex-start; gap: 0.5rem; padding: 0 0.25rem 1rem 0.625rem; margin-bottom: 0.25rem; border-bottom: 1px solid #ecebe9; }
+  .supply-rail-head { display: flex; align-items: flex-start; gap: 0.5rem; padding: 0 0.25rem 1rem 0.625rem; margin-bottom: 0.25rem; border-bottom: 1px solid #dfdcef; }
   .supply-rail-head > div { flex: 1 1 auto; min-width: 0; }
   .supply-rail-head h1 { margin: 0; font-size: 1.25rem; line-height: 1.75rem; font-weight: 600; letter-spacing: -0.01em; color: #16006d; }
   .supply-banner-line { margin: 0.25rem 0 0; font-size: 0.75rem; line-height: 1.35; color: #6b6f80; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .supply-rail-close { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; margin-top: 0.125rem; border: 0; border-radius: 0.375rem; background: transparent; color: #6b6f80; cursor: pointer; }
-  .supply-rail-close:hover { background: #efeef0; color: #16006d; }
+  .supply-rail-close:hover { background: #e2def2; color: #16006d; }
   .supply-rail-close:focus-visible, .supply-rail-toggle:focus-visible, .supply-tab:focus-visible { outline: 2px solid #3843d0; outline-offset: 1px; }
   .supply-tabs-bar { display: block; }
   .supply-tab-group { padding-top: 0.75rem; }
-  .supply-tab-group-name { display: block; margin: 0 0 0.25rem; padding: 0 0.625rem; font-size: 0.75rem; line-height: 1rem; font-weight: 600; color: #8a8d9b; }
+  .supply-tab-group-name { display: block; margin: 0 0 0.25rem; padding: 0 0.625rem; font-size: 0.75rem; line-height: 1rem; font-weight: 600; color: #626678; }
   .supply-tab { position: relative; display: block; padding: 0.375rem 0.625rem; border-radius: 0.375rem; font-size: 0.875rem; line-height: 1.25rem; color: #3b3f52; text-decoration: none; }
-  .supply-tab:hover { background: #f1f0f2; color: #16006d; }
-  .supply-tab.is-active { background: #fff; color: #16006d; font-weight: 600; box-shadow: 0 0 0 1px #dedde6, 0 1px 2px rgb(22 0 109 / 0.08); color: #3843d0; }
-  .supply-rail-foot { margin-top: auto; padding: 1rem 0.625rem 0; border-top: 1px solid #ecebe9; font-size: 0.8125rem; }
+  .supply-tab:hover { background: #e2def2; color: #16006d; }
+  .supply-tab.is-active { background: #fff; color: #16006d; font-weight: 600; box-shadow: 0 1px 2px rgb(22 0 109 / 0.12); color: #3843d0; }
+  .supply-rail-foot { margin-top: auto; padding: 1rem 0.625rem 0; border-top: 1px solid #dfdcef; font-size: 0.8125rem; }
   .supply-tabs-bar + .supply-rail-foot { margin-top: 1.25rem; }
   .supply-rail-foot a { display: block; padding: 0.3125rem 0; color: #3843d0; text-decoration: none; }
   .supply-rail-foot a:hover { text-decoration: underline; text-underline-offset: 2px; }
   .supply-rail-foot [data-as-of-form] { flex-wrap: wrap; gap: 0.375rem; margin-bottom: 0.75rem; }
-  .supply-rail-foot [data-as-of-form] label { width: 100%; font-size: 0.75rem; font-weight: 600; color: #8a8d9b; }
+  .supply-rail-foot [data-as-of-form] label { width: 100%; font-size: 0.75rem; font-weight: 600; color: #626678; }
   .supply-rail-foot [data-as-of-form] input[name="as_of"] { flex: 1 1 0; width: auto; min-width: 0; background: #fff; }
   /* The main column's first line: the page's purpose, and -- only while the rail is hidden -- the button that brings it back. */
   .supply-toolbar { display: flex; align-items: center; gap: 0.75rem; margin: 0 0 1.25rem; min-height: 2rem; }
   .supply-rail-toggle { flex: none; display: none; align-items: center; gap: 0.375rem; padding: 0.3125rem 0.75rem; border: 1px solid #d6d5dc; border-radius: 0.375rem; background: #fff; font-size: 0.8125rem; line-height: 1.25rem; color: #3b3f52; white-space: nowrap; cursor: pointer; }
   .supply-rail-toggle:hover { border-color: #b9b8c4; color: #16006d; }
   .supply-shell[data-rail="closed"] .supply-rail-toggle { display: inline-flex; }
-  .supply-shell[data-rail="closed"] .supply-main { padding-left: 1.5rem; }
   .supply-purpose { margin: 0; flex: 1 1 auto; min-width: 0; max-width: 46rem; font-size: 0.9375rem; line-height: 1.5; color: #555a6e; }
   @media (prefers-reduced-motion: reduce) { .supply-shell, .supply-rail { transition: none; } }
   @media (max-width: 767px) {
     .supply-shell, .supply-shell[data-rail="closed"] { grid-template-columns: minmax(0, 1fr); margin: 0; padding: 0 0 1.5rem; }
-    .supply-shell[data-rail="closed"] .supply-main { padding-left: 0; }
+    .supply-main, .supply-shell[data-rail="closed"] .supply-main { grid-column: 1; padding-left: 0; }
     .supply-rail, .supply-rail-toggle, .supply-shell[data-rail="closed"] .supply-rail-toggle { display: none; }
   }
 </style>

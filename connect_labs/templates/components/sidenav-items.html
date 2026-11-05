@@ -2,7 +2,8 @@
 {% comment %}
 An item is selected when the page is in its URL namespace, or — for an item that
 shares a namespace with pages it does not own, like the supplier market inside
-supply_chain — when the path is under `path_prefix`.
+supply_chain — when the path is under `path_prefix`. `except_prefix` is the reverse: an item that owns a
+namespace except for the paths under it (Supply, which does not own the supplier market).
 {% endcomment %}
 <a href="{{ target }}" class="flex rounded-lg items-center p-2 hover:bg-brand-sunset-light transition-all duration-300 relative group">
     <!-- Icon Container with Fixed Width -->
@@ -11,7 +12,7 @@ supply_chain — when the path is under `path_prefix`.
             {# Two hands in two skin tones -- a drawing, since no icon font has one. #}
             <img src="{% static 'images/handshake.svg' %}" alt="" class="w-6 h-6">
         {% else %}
-            <i class="fa-solid fa-{{ icon }} {% if request.resolver_match.namespace == namespace or path_prefix and path_prefix in request.path %}text-brand-marigold{% endif %}"></i>
+            <i class="fa-solid fa-{{ icon }} {% if request.resolver_match.namespace == namespace and not except_prefix or request.resolver_match.namespace == namespace and except_prefix not in request.path or path_prefix and path_prefix in request.path %}text-brand-marigold{% endif %}"></i>
         {% endif %}
     </div>
 
@@ -30,7 +31,7 @@ supply_chain — when the path is under `path_prefix`.
 
     <!-- Selected -->
 
-     {% if request.resolver_match.namespace == namespace or path_prefix and path_prefix in request.path %}
+     {% if request.resolver_match.namespace == namespace and not except_prefix or request.resolver_match.namespace == namespace and except_prefix not in request.path or path_prefix and path_prefix in request.path %}
      <div class="absolute left-0 top-0 w-full h-full bg-brand-mango/20 rounded-lg"></div>
      <div class="absolute right-0 w-1 h-1/2 top-1/2 -translate-y-1/2 bg-brand-mango rounded-2xl"></div>
      {% endif %}
