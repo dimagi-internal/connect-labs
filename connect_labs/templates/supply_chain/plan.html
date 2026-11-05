@@ -43,58 +43,81 @@ plain words, and each step says where it came from.
 {% if role == "supervisor" %}
   <section class="mb-8" data-testid="plan-issue">
     <h2 class="text-lg font-semibold text-gray-900">What to issue at the next handout</h2>
-    <p class="text-xs text-gray-600 mb-3">
-      For each field worker: the sachets their children will need this week, plus children expected to enrol, plus the
-      buffer, less what Supply's records say they hold. Open a row to see the steps and where each number came from.
-      Children leave the list when their course ends.
+    <p class="text-sm text-gray-800 mb-1" data-testid="plan-handout">
+      Handout on <b>{{ picture.handout.on|day }}</b>{% if picture.handout.planned %} (the next one planned){% else %} (today: none is planned yet){% endif %}.
+      Next handout after it: <b>{{ picture.handout.next_on|day }}</b>.
+      {% if picture.handout.data_to %}Based on visits up to {{ picture.handout.data_to|day }}.{% endif %}
     </p>
-    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
-      <table class="min-w-[44rem] w-full text-sm">
-        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
-          <tr>
-            <th class="text-left px-4 py-2">Field worker</th>
-            <th class="text-right px-4 py-2">Children in treatment</th>
-            <th class="text-right px-4 py-2">Holds now</th>
-            <th class="text-right px-4 py-2">Issue</th>
-            <th class="text-left px-4 py-2">Runs out</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-          {% for r in picture.issue %}
+    <p class="text-sm text-gray-800 mb-1" data-testid="plan-buffer">
+      Buffer: <b>{{ plan.buffer_days.value }} day{{ plan.buffer_days.value|pluralize }}</b>
+      <span class="text-gray-600">(extra stock on top of what is needed until the next handout; with 0, each field worker is planned to reach zero just as the next handout arrives)</span>
+      &middot; <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:plan_inputs' %}?item_id={{ item.id }}">change</a>
+    </p>
+    <p class="text-xs text-gray-600 mb-3">
+      For each field worker: the sachets their children will need from this handout to the next, plus children
+      expected to enrol, plus appetite tests, plus the buffer, less what they will still hold at the handout.
+      Open a row to see the steps and where each number came from. Children leave the list when their course ends.
+      Each place's total is what it has to pack.
+    </p>
+    {% for partner in picture.issue_groups %}
+      <h3 class="text-sm font-semibold text-gray-900 mt-4 mb-1">{{ partner.name }} <span class="font-normal text-gray-600">&middot; to issue in all: {{ partner.to_issue|floatformat:0 }}</span></h3>
+      {% for place in partner.places %}
+      <div class="bg-white border border-gray-200 rounded-lg overflow-hidden mb-3">
+        <div class="px-4 py-2 bg-gray-50 border-b border-gray-100 flex justify-between text-sm">
+          <span class="font-medium text-gray-900">{{ place.name }}</span>
+          <span class="text-gray-700">Pack <b>{{ place.to_issue|floatformat:0 }}</b> sachets</span>
+        </div>
+        <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+        <table class="min-w-[44rem] w-full text-sm">
+          <thead class="text-xs uppercase tracking-wide text-gray-600">
             <tr>
-              <td class="px-4 py-2">
-                <details>
-                  <summary class="cursor-pointer text-brand-indigo">{{ r.name }}</summary>
-                  <ol class="mt-2 mb-1 space-y-1 text-xs text-gray-700 list-none pl-0">
-                    {% for s in r.steps %}
-                      <li><span class="font-medium">{% if s.sign %}{{ s.sign }} {% endif %}{{ s.label }}:</span> {{ s.value }}
-                        <span class="text-gray-600">&mdash; {{ s.source }}</span></li>
-                    {% endfor %}
-                    <li class="font-semibold">= {{ r.result }}</li>
-                  </ol>
-                </details>
-              </td>
-              <td class="px-4 py-2 text-right tabular-nums">{% if r.children is None %}&mdash;{% else %}{{ r.children }}{% endif %}</td>
-              <td class="px-4 py-2 text-right tabular-nums">{% if r.stock_known %}{{ r.held|floatformat:0 }}{% else %}not known{% endif %}</td>
-              <td class="px-4 py-2 text-right tabular-nums font-semibold">{{ r.to_issue }}</td>
-              <td class="px-4 py-2">{{ r.runs_dry_on|default:"not in the weeks ahead" }}{% if r.run_out_method == "pace" %} <span class="text-xs text-gray-600">(recent pace)</span>{% endif %}</td>
+              <th class="text-left px-4 py-2">Field worker</th>
+              <th class="text-right px-4 py-2">Children in treatment</th>
+              <th class="text-right px-4 py-2">Holds at the handout</th>
+              <th class="text-right px-4 py-2">Issue</th>
+              <th class="text-left px-4 py-2">Lasts after the handout</th>
             </tr>
-          {% empty %}
-            <tr><td colspan="5" class="px-4 py-6 text-center text-gray-600">No field workers yet.</td></tr>
-          {% endfor %}
-        </tbody>
-        <tfoot class="bg-gray-50 text-sm font-semibold">
-          <tr><td class="px-4 py-2" colspan="3">To issue in all</td><td class="px-4 py-2 text-right tabular-nums">{{ picture.issue_total }}</td><td></td></tr>
-        </tfoot>
-      </table>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for r in place.rows %}
+              <tr>
+                <td class="px-4 py-2">
+                  <details>
+                    <summary class="cursor-pointer text-brand-indigo">{{ r.name }}</summary>
+                    <ol class="mt-2 mb-1 space-y-1 text-xs text-gray-700 list-none pl-0">
+                      {% for s in r.steps %}
+                        <li><span class="font-medium">{% if s.sign %}{{ s.sign }} {% endif %}{{ s.label }}:</span> {{ s.value }}
+                          <span class="text-gray-600">&mdash; {{ s.source }}</span></li>
+                      {% endfor %}
+                      <li class="font-semibold">= {{ r.result }}</li>
+                    </ol>
+                  </details>
+                </td>
+                <td class="px-4 py-2 text-right tabular-nums">{% if r.children is None %}&mdash;{% else %}{{ r.children }}{% endif %}</td>
+                <td class="px-4 py-2 text-right tabular-nums">{% if r.stock_known %}{{ r.held|floatformat:0 }}{% else %}not known{% endif %}</td>
+                <td class="px-4 py-2 text-right tabular-nums font-semibold">{{ r.to_issue }}</td>
+                <td class="px-4 py-2 {% if not r.covers_next_handout %}text-amber-800 font-medium{% endif %}">
+                  {% if not r.stock_known %}not known
+                  {% elif r.lasts_days is None %}beyond the weeks ahead
+                  {% else %}{{ r.lasts_days }} day{{ r.lasts_days|pluralize }}, to {{ r.lasts_until|day }}{% endif %}
+                  {% if r.stock_known %}<span class="text-xs {% if r.covers_next_handout %}text-gray-600{% endif %}">{% if r.covers_next_handout %}(reaches the next handout){% else %}(short of the next handout on {{ picture.handout.next_on|day }}){% endif %}</span>{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
       </div>
-    </div>
+      {% endfor %}
+    {% empty %}
+      <p class="text-sm text-gray-600 px-1 py-4">No field workers yet.</p>
+    {% endfor %}
     <p class="text-xs text-gray-600 mt-2">
-      Runs out: days until each FLW runs out, based on the children they're treating &mdash; the same date the Forecast
-      and Stock review show. Where a worker has no children on record it is their recent pace, marked on the row.
-      Appetite tests are not counted: Supply does not hold them yet. What a worker holds is Supply's record of
-      handovers less visits, not the balance on their phone.
+      Lasts after the handout: how long what they will hold plus what is issued lasts at their children's pace,
+      counted from the handout. It is a planning figure, not a warning; "short of the next handout" is the one
+      to act on. Appetite tests are included where the app records them, at the average of the last four weeks.
+      What a worker holds is Supply's record of handovers less visits and less what they will use before the handout,
+      not the balance on their phone.
     </p>
   </section>
 
@@ -116,9 +139,9 @@ plain words, and each step says where it came from.
   <section class="mb-8" data-testid="plan-followup">
     <h2 class="text-lg font-semibold text-gray-900">Stock follow-up</h2>
     <p class="text-xs text-gray-600 mb-2">
-      The dose each field worker's children are actually given each day, against the protocol's
-      ({{ picture.dosing.0.protocol_per_day|default:"" }}{% if picture.dosing %} sachets a day{% endif %}),
-      from the days between each child's visits. Counts that do not match the records are on
+      What each field worker's children were given, against the protocol.
+      {% if picture.dosing.0.basis == "app" %}Compared with the amount the app itself worked out for each visit (it allows for sachets a household still had), so only real gaps are flagged.
+      {% else %}Compared with the protocol's flat {{ picture.dosing.0.protocol_per_day|default:"" }} sachets a day, from the days between each child's visits. This is a rough check: it does not allow for sachets a household still had, so it flags nearly everyone. It becomes exact once this opportunity's protocol-amount question is set on its dispensing rule (household paths).{% endif %} Counts that do not match the records are on
       <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:workers' %}">Workers</a>; missing or damaged stock is on
       <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:issues' %}">Issues</a>.
     </p>
@@ -150,44 +173,61 @@ plain words, and each step says where it came from.
   <section class="mb-8" data-testid="plan-stores">
     <h2 class="text-lg font-semibold text-gray-900">Store restocking</h2>
     <p class="text-xs text-gray-600 mb-3">
-      For each store: what its field workers and facilities below it will need over the next four weeks, whether
-      what it holds is enough until its next delivery, and the day it would run out if nothing arrives.
+      For each store, four weeks ahead: what the field workers and facilities below it will need, how much of that they
+      already hold, what the store must supply, what it holds, and so how much to send it. Stores are grouped by the
+      partner that runs them.
     </p>
-    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    {% for g in picture.store_groups %}
+    <h3 class="text-sm font-semibold text-gray-900 mt-4 mb-1">{{ g.name }}</h3>
+    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden mb-3">
       <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
-      <table class="min-w-[44rem] w-full text-sm">
+      <table class="min-w-[56rem] w-full text-sm">
         <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
           <tr>
             <th class="text-left px-4 py-2">Store</th>
-            <th class="text-right px-4 py-2">Holds</th>
-            <th class="text-right px-4 py-2">Field workers below</th>
             <th class="text-right px-4 py-2">They need in 4 weeks</th>
+            <th class="text-right px-4 py-2">Of that, workers hold</th>
+            <th class="text-right px-4 py-2">Store must supply</th>
+            <th class="text-right px-4 py-2">Store holds</th>
+            <th class="text-right px-4 py-2">Send</th>
             <th class="text-left px-4 py-2">Next delivery</th>
             <th class="text-left px-4 py-2">Enough until then?</th>
-            <th class="text-left px-4 py-2">Runs out</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
-          {% for s in picture.stores %}
+          {% for s in g.rows %}
             <tr>
-              <td class="px-4 py-2">{{ s.name }}</td>
-              <td class="px-4 py-2 text-right tabular-nums">{{ s.own_on_hand.amount|default:"&mdash;"|floatformat:0 }}</td>
-              <td class="px-4 py-2 text-right tabular-nums">{{ s.workers }}</td>
-              <td class="px-4 py-2 text-right tabular-nums">{{ s.need_ahead|floatformat:0 }}</td>
-              <td class="px-4 py-2">{% if s.next_delivery %}{{ s.next_delivery|day }}{% elif s.no_delivery_reason %}{% if s.no_delivery_reason.href %}<a class="text-brand-indigo hover:underline" href="{{ s.no_delivery_reason.href }}">{{ s.no_delivery_reason.text }}</a>{% else %}{{ s.no_delivery_reason.text }}{% endif %}{% else %}none expected{% endif %}</td>
-              <td class="px-4 py-2 {% if s.lasts_until_delivery == 'no' or s.lasts_until_delivery == 'no delivery planned' %}text-amber-800 font-medium{% endif %}">{{ s.lasts_until_delivery|capfirst }}</td>
-              <td class="px-4 py-2">{{ s.runs_dry_on|default:"not in the weeks ahead" }}</td>
+              <td class="px-4 py-2">{{ s.name }}<div class="text-xs text-gray-600">{{ s.workers }} field worker{{ s.workers|pluralize }} below</div></td>
+              <td class="px-4 py-2 text-right tabular-nums">{{ s.need_ahead|floatformat:0 }} {{ s.unit }}</td>
+              <td class="px-4 py-2 text-right tabular-nums">{{ s.below_hold|floatformat:0 }}</td>
+              <td class="px-4 py-2 text-right tabular-nums">{{ s.to_supply|floatformat:0 }}</td>
+              <td class="px-4 py-2 text-right tabular-nums">{{ s.own|floatformat:0 }}{% if s.arriving_in_weeks and s.arriving_in_weeks != "0" %}<div class="text-xs text-gray-600">+ {{ s.arriving_in_weeks|floatformat:0 }} arriving</div>{% endif %}</td>
+              <td class="px-4 py-2 text-right tabular-nums font-semibold {% if s.send_needed %}text-amber-800{% endif %}">{{ s.send|floatformat:0 }}</td>
+              <td class="px-4 py-2">
+                {% if s.next_delivery %}{{ s.next_delivery|day }}
+                {% elif s.no_delivery_reason %}none expected: {% if s.no_delivery_reason.href %}<a class="underline text-brand-indigo" href="{{ s.no_delivery_reason.href }}">{{ s.no_delivery_reason.text }}</a>{% else %}{{ s.no_delivery_reason.text }}{% endif %}
+                {% else %}none expected{% endif %}
+              </td>
+              <td class="px-4 py-2 {% if s.lasts_until_delivery == 'no' or s.lasts_until_delivery == 'no delivery planned' %}text-amber-800 font-medium{% endif %}">
+                {{ s.lasts_until_delivery|capfirst }}
+                <div class="text-xs text-gray-600 font-normal">
+                  {% if s.runs_dry_on %}runs out {{ s.runs_dry_on|day }}, at the children's need after what workers already hold{% else %}does not run out in the weeks ahead{% endif %}
+                </div>
+              </td>
             </tr>
-          {% empty %}
-            <tr><td colspan="7" class="px-4 py-6 text-center text-gray-600">No stores with field workers below them yet.</td></tr>
           {% endfor %}
         </tbody>
       </table>
       </div>
     </div>
+    {% empty %}
+      <p class="text-sm text-gray-600 px-1 py-4">No stores with field workers below them yet.</p>
+    {% endfor %}
     <p class="text-xs text-gray-600 mt-2">
-      A store's need is what the field workers below it cannot cover from their own stock. Only deliveries with an
-      expected day count as arriving.
+      Each row adds up: what they need, less what the field workers already hold, is what the store must supply; less
+      what it holds and what is expected within the four weeks, is what to send. "Runs out" is counted from the same
+      figures, week by week, so a store that holds less than the total need can still last longer when its workers hold
+      stock. Only deliveries with an expected day count as arriving; supplier deliveries on the road count too.
     </p>
   </section>
 {% endif %}
@@ -202,38 +242,68 @@ plain words, and each step says where it came from.
   {% with b=picture.break_even %}
   <section class="mb-8" data-testid="plan-break-even">
     <h2 class="text-lg font-semibold text-gray-900">Will we have enough?</h2>
-    <p class="text-sm text-gray-900 mb-3 max-w-3xl">{{ b.answer }}</p>
+    {% if b.children %}
+    <h3 class="text-sm font-semibold text-gray-800 mt-2 mb-1">1. The children</h3>
+    <ul class="text-sm space-y-1 max-w-3xl list-disc pl-5" data-testid="plan-children">
+      <li><b>{{ b.children.seen|floatformat:"0g" }}</b> children seen in the visits so far: <b>{{ b.children.exited|floatformat:"0g" }}</b> have exited treatment{% if b.children.lost %}, <b>{{ b.children.lost|floatformat:"0g" }}</b> were lost to follow-up{% endif %} and <b>{{ b.children.in_treatment|floatformat:"0g" }}</b> are still in treatment.</li>
+      <li>The {{ b.children.in_treatment|floatformat:"0g" }} in treatment have received <b>{{ b.children.received_so_far|floatformat:"0g" }}</b> sachets so far{% if b.children.received_each %} (about {{ b.children.received_each|floatformat:"0" }} each){% endif %}.</li>
+      <li>The target is <b>{{ b.children.target|floatformat:"0g" }}</b> children, so <b>{{ b.children.to_enrol|floatformat:"0g" }}</b> are still to enrol.</li>
+      <li>Stock held across the whole network: <b>{{ b.held|floatformat:"0g" }}</b> sachets <span class="text-gray-600">&mdash; Supply's records: receipts and handovers less what visits gave out.</span>{% if b.on_order and b.on_order != "0" %} Already on order: <b>{{ b.on_order|floatformat:"0g" }}</b>.{% endif %}</li>
+    </ul>
+    <h3 class="text-sm font-semibold text-gray-800 mt-4 mb-1">2. Is it enough? Two cases</h3>
+    <div class="grid md:grid-cols-2 gap-3 max-w-5xl">
+      {% for c in b.cases %}
+      <div class="bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm" data-testid="plan-case-{{ c.key }}">
+        <p class="font-medium text-gray-900 mb-1">{{ c.label }}</p>
+        <ol class="space-y-1 list-decimal pl-5">
+          <li>Still owed to the {{ b.children.in_treatment|floatformat:"0g" }} in treatment: <b>{{ c.owed|floatformat:"0g" }}</b> <span class="text-gray-600">(a course of {{ c.course|floatformat:"0g" }} less what each has had)</span></li>
+          <li>For the {{ b.children.to_enrol|floatformat:"0g" }} still to enrol: <b>{{ c.need_new|floatformat:"0g" }}</b> <span class="text-gray-600">({{ b.children.to_enrol|floatformat:"0g" }} &times; {{ c.course|floatformat:"0g" }})</span></li>
+          <li>Needed in all: <b>{{ c.total_need|floatformat:"0g" }}</b>; held: <b>{{ c.held|floatformat:"0g" }}</b></li>
+        </ol>
+        <p class="mt-2 font-semibold {% if c.covers %}text-teal-700{% else %}text-amber-800{% endif %}">
+          {% if c.covers %}Yes, enough. {{ c.held|floatformat:"0g" }} held covers {{ c.total_need|floatformat:"0g" }}.
+          {% else %}Not enough: {{ c.to_buy|floatformat:"0g" }} more sachets needed{% if c.on_order and c.on_order != "0" %}, or {{ c.to_buy_with_orders|floatformat:"0g" }} once the {{ c.on_order|floatformat:"0g" }} on order arrive{% endif %}.{% endif %}
+        </p>
+      </div>
+      {% endfor %}
+    </div>
+    {% if not b.known %}<p class="text-sm text-gray-900 mt-3 max-w-3xl">{{ b.answer }}</p>{% endif %}
     {% if b.known %}
-    <ol class="text-sm space-y-1 max-w-3xl list-decimal pl-5">
-      <li>Held across the whole network: <b>{{ b.held|floatformat:0 }}</b> sachets <span class="text-gray-600">&mdash; Supply's records: receipts and handovers less what visits gave out.</span></li>
-      <li>Less still owed to the <b>{{ b.in_treatment }}</b> children in treatment: <b>{{ b.owed|floatformat:0 }}</b> <span class="text-gray-600">&mdash; the rest of each child's course, from their visits.</span></li>
-      <li>Left for new children: <b>{{ b.left_for_new|floatformat:0 }}</b></li>
-      <li>Children still to come: <b>{{ b.children_to_come }}</b> <span class="text-gray-600">&mdash; the target of {{ b.target }} less the {{ b.children_so_far }} seen in the visits.</span></li>
-      <li>A full course is <b>{{ b.course|floatformat:0 }}</b> sachets, up to {{ b.max_visits }} visits <span class="text-gray-600">&mdash; the plan uses the {% if b.course_chosen == "low" %}LOW estimate, measured from the {{ b.course_children }} children who completed treatment{% else %}HIGH estimate, the protocol's course{% endif %} ({{ b.course_reason }}). Low: {% if b.course_low %}{{ b.course_low|floatformat:0 }} sachets, from the {{ b.course_children }} children who completed treatment so far{% else %}not yet measured{% endif %}. High: {% if b.course_high %}{{ b.course_high|floatformat:0 }} sachets{% else %}unknown{% endif %}.</span></li>
-      <li>All of them at a full course would need <b>{{ b.needed_for_new|floatformat:0 }}</b>; the shortfall is <b>{{ b.to_buy|floatformat:0 }}</b>{% if b.on_order and b.on_order != "0" %}, or <b>{{ b.to_buy_with_orders|floatformat:0 }}</b> once the {{ b.on_order|floatformat:0 }} already on order arrive{% endif %}.</li>
-    </ol>
-    {% if b.visits_per_case is not None and b.children_to_come %}
-      <p class="text-sm mt-2">With what is left, each new child could have about <b>{{ b.visits_per_case }}</b> of {{ b.max_visits }} visits.</p>
+    <p class="text-xs text-gray-600 mt-3 max-w-3xl">
+      At the course the visits measure ({% if b.course_chosen == "low" %}the low estimate, from the {{ b.course_children|floatformat:"0g" }} children who completed treatment{% else %}the protocol's course{% endif %}:
+      {{ b.course|floatformat:"0g" }} sachets) the answer is: {{ b.answer }}
+    </p>
     {% endif %}
+    {% else %}
+    <p class="text-sm text-gray-900 mb-3 max-w-3xl">{{ b.answer }}</p>
     {% endif %}
   </section>
 
   <section class="mb-8" data-testid="plan-buy">
     <h2 class="text-lg font-semibold text-gray-900">When and how much to buy next</h2>
+    {% if b.next_tender %}
+      <p class="text-sm text-gray-900 max-w-3xl mb-2" data-testid="plan-next-tender">{{ b.next_tender.text }}</p>
+    {% endif %}
     <p class="text-sm text-gray-900 max-w-3xl">
-      {% if picture.break_even.known %}
-        {% if picture.break_even.to_buy and picture.break_even.to_buy != "0" %}
-          To reach the target, buy about <b>{{ picture.break_even.to_buy|floatformat:0 }}</b> more sachets. That is the quantity to carry into the next
+      {% if b.known and b.cases %}
+        {% for c in b.cases %}{% if not c.covers %}
+          If every remaining child needs {% if c.key == "carton" %}a full carton{% else %}the maximum {{ c.course|floatformat:"0g" }} sachets{% endif %}, buy about <b>{{ c.to_buy|floatformat:"0g" }}</b> more sachets.{% else %}
+          Stock covers the case where every remaining child needs {% if c.key == "carton" %}a full carton{% else %}the maximum course{% endif %}.{% endif %}
+        {% endfor %}
+        The quantity to carry into the next <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_board' %}">tender</a> is the larger of the two.
+      {% elif b.known %}
+        {% if b.to_buy and b.to_buy != "0" %}
+          To reach the target, buy about <b>{{ b.to_buy|floatformat:"0g" }}</b> more sachets, in the next
           <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_board' %}">tender</a>.
         {% else %}
           The stock left covers the target: nothing more is needed to reach it.
         {% endif %}
       {% else %}
-        Cannot be worked out until the break-even above can.
+        Cannot be worked out until the question above can.
       {% endif %}
       {% if picture.stores %}
         Across the stores, the soonest to run out is
-        {% with first=picture.stores.0 %}{{ first.name }}{% if first.runs_dry_on %} on {{ first.runs_dry_on }}{% else %} in no week ahead{% endif %}{% endwith %}.
+        {% with first=picture.stores.0 %}{{ first.name }}{% if first.runs_dry_on %} on {{ first.runs_dry_on|day }}{% else %} in no week ahead{% endif %}{% endwith %}.
       {% endif %}
     </p>
   </section>

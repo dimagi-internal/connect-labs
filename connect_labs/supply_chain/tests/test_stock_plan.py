@@ -74,7 +74,7 @@ def test_what_to_issue_is_the_week_less_what_the_records_say_is_held(world):
     assert Decimal(acacia["held"]) == Decimal(72)
     assert int(acacia["to_issue"]) == max(0, int(-(-(need - 72) // 1)))
     labels = [s["label"] for s in acacia["steps"]]
-    assert labels == ["Children due a follow-up", "New children expected", "Appetite tests", "Buffer", "Held now"]
+    assert labels == ["Children due a follow-up", "New children expected", "Appetite tests", "Buffer", "Held at the handout"]
     assert all(s["source"] for s in acacia["steps"])  # each number says where it came from
 
 

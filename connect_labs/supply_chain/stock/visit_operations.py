@@ -62,6 +62,7 @@ _REPORTS = obj(
                 "missing_paths": _PATHS,
                 "misused_paths": _PATHS,
                 "reason_paths": _PATHS,
+                "protocol_paths": _PATHS,
             }
         ),
     }
