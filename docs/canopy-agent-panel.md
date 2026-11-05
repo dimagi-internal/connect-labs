@@ -434,19 +434,18 @@ creates an account from an assertion, and there is no domain list to configure
 on either side.
 
 **The page's resource picks what the agent may do.** A conversation on a labs page
-runs in whichever capability of the agent's published interface names that page's
-`resource` (canopy-web#942). ACE's `marketplace` capability names
-`labs-marketplace://*` and carries `current_page`, the `marketplace_*` read tools,
-`Skill`, and its Drive tools; everything else — including anyone who emails ACE —
-stays in `ask`.
+runs in whichever of the agent's connected sites names that page's `resource`
+(canopy-web#942). ACE's `marketplace` connected site names `labs-marketplace://*`
+and carries `current_page`, the `marketplace_*` read tools, `Skill`, and its Drive
+tools; everything else — including anyone who emails ACE — stays in read mode.
 
-So **a new labs surface needs a capability, or the panel can only chat.** Declaring
-a resource nothing matches falls back to `ask`, which for ACE is an email door: no
-page tool, no `Skill`. That is how the first live run ended with the agent trying
+So **a new labs surface needs a connected site, or the panel can only chat.**
+Declaring a resource nothing matches falls back to read mode, which for ACE is the
+email profile: no page tool, no `Skill`. That is how the first live run ended with the agent trying
 `screencapture`. These settings are edited on the agent's canopy page (Settings → Channels), or with
 `canopy agent read-mode` and `canopy agent sites` — never a file in the agent's repo.
 
-Two things a capability cannot fix, learned the same way: a confined turn has no
+Two things a connected site cannot fix, learned the same way: a confined turn has no
 `AskUserQuestion`, so an agent must ask in the chat; and a Drive write needs a
 `parentFolderId` the agent can actually discover.
 
@@ -470,7 +469,7 @@ contract is in `connect_labs/workflow/WORKFLOW_REFERENCE.md` §14. What is speci
 to canopy:
 
 - **Nothing about workflows is configured on canopy's side.** ACE's `connect`
-  capability names the connect-labs SITE. A conversation on any labs page reaches
+  connected site names the connect-labs SITE. A conversation on any labs page reaches
   labs' tools through canopy's gateway, as the visitor, and the agent learns what
   they are from labs' own tool list and descriptions. Labs alone decides what each
   page may do: the page's scopes (`PAGE_SCOPES`, here `workflow:read` +

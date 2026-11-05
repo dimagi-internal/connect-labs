@@ -69,7 +69,7 @@ passes. A run of the whole suite takes 10-15 minutes and costs real agent turns.
    `connect_labs/mcp/tools/labsdata.py`), the results card
    (`connect_labs/mcp/ui/data_result.html`), the run tools
    (`connect_labs/workflow/agent_sharing.py`), the agent's own skill (the labsdata agent:
-   `dimagi-internal/labsdata` `skills/answer-data/SKILL.md`; ace: its labs capability), or
+   `dimagi-internal/labsdata` `skills/answer-data/SKILL.md`; ace: its labs connected site), or
    setup (canopy identity, Labs Admin › Canopy agents).
 
 ## Scenarios
@@ -185,7 +185,7 @@ dialog, so `page_showQuery` and `page_proposeSave` are checked from what the per
   counts as a refused error), so `tool`, `reads_none_of` and `no_errors` see it as they see a
   direct call. On a laptop runner ace's token is still on disk; there the withholding is ace's
   helper and its instructions. `data-outside-selection` tests the same on the Data page, whose
-  agent runs confined for everyone (its capability handles sensitive data).
+  agent runs confined for everyone (its profile handles sensitive data).
 
 - Spaces' teammate and lock-out rules need a second synthetic person (one who holds the
   sources, one who misses one); not covered yet.
