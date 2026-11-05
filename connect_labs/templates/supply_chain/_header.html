@@ -17,7 +17,7 @@ for a past day. Plain CSS in `_rail.html`, so nothing waits on the stylesheet be
 </style>
 {% supply_settings_url as settings_url %}
 <div class="supply-toolbar">
-  <button type="button" class="supply-rail-toggle" data-supply-rail-toggle aria-controls="supply-rail" aria-expanded="true"><span aria-hidden="true">&#9776;</span> <span data-label>Hide menu</span></button>
+  <button type="button" class="supply-rail-toggle" data-supply-rail-toggle aria-controls="supply-rail" aria-expanded="true"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> <span data-label>Show menu</span></button>
   {% with purpose=supply_tabs|page_purpose %}{% if purpose %}<p data-testid="page-purpose" class="supply-purpose">{{ purpose }}</p>{% endif %}{% endwith %}
 </div>
 <details data-testid="supply-tabs-phone" class="supply-tabs-phone">
