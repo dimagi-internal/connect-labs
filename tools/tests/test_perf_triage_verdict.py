@@ -82,6 +82,112 @@ def test_no_page_and_no_saturation_stays_healthy():
     assert perf_triage.judge(_snapshot(paged_in_window=[]))["verdict"] == "healthy"
 
 
+# The real 2026-11-05 08:51Z page (#2872): the CLI renders times in the caller's offset.
+_NOV5_ACTIVITIES = [
+    {
+        "StartTime": "2026-11-05T01:46:37.350000-07:00",
+        "Description": "Setting desired count to 4.",
+        "Cause": "monitor alarm TargetTracking-x-AlarmHigh-02 in state ALARM triggered policy labs-jj-web-mem70",
+    },
+    {
+        "StartTime": "2026-11-05T01:43:37.378000-07:00",
+        "Description": "Setting desired count to 3.",
+        "Cause": "monitor alarm TargetTracking-x-AlarmHigh-02 in state ALARM triggered policy labs-jj-web-mem70",
+    },
+    {
+        "StartTime": "2026-11-03T18:39:41.939000-07:00",
+        "Description": "Setting desired count to 2.",
+        "Cause": "monitor alarm TargetTracking-x-AlarmLow-e3 in state ALARM triggered policy labs-jj-web-cpu60",
+    },
+]
+_NOV5_PAGE = {"name": "labs-jj-web-cpu-high-actionable", "at": "2026-11-05T08:51:25Z"}
+
+
+def _nov5_scale_outs():
+    return perf_triage._scale_outs_from_activities(_NOV5_ACTIVITIES, datetime(2026, 11, 4, tzinfo=timezone.utc))
+
+
+def _cpu_minutes(values):
+    return [{"Timestamp": f"2026-11-05T01:{minute}:00-07:00", "Maximum": value} for minute, value in values.items()]
+
+
+def test_scale_outs_are_utc_oldest_first_and_exclude_scale_ins():
+    assert _nov5_scale_outs() == [
+        {"at": "2026-11-05T08:43:37Z", "to": 3, "policy": "labs-jj-web-mem70"},
+        {"at": "2026-11-05T08:46:37Z", "to": 4, "policy": "labs-jj-web-mem70"},
+    ]
+
+
+def test_scale_outs_before_since_are_dropped():
+    since = datetime(2026, 11, 5, 8, 45, tzinfo=timezone.utc)
+    assert [row["to"] for row in perf_triage._scale_outs_from_activities(_NOV5_ACTIVITIES, since)] == [4]
+
+
+def test_two_boots_three_minutes_apart_are_recognised():
+    points = _cpu_minutes({"44": 100.0, "45": 100.0, "46": 2.0, "47": 100.0, "48": 100.0, "49": 14.0})
+    shape = perf_triage._boot_shape(_NOV5_PAGE, points, _nov5_scale_outs())
+    assert shape["breaching_minutes"] == ["08:44", "08:45", "08:47", "08:48"]
+    assert [row["to"] for row in shape["scale_outs"]] == [3, 4]
+
+
+def test_one_breaching_minute_outside_a_boot_means_a_real_pin():
+    points = _cpu_minutes({"44": 100.0, "45": 100.0, "50": 95.0})
+    assert perf_triage._boot_shape(_NOV5_PAGE, points, _nov5_scale_outs()) is None
+
+
+def test_a_page_with_no_scale_out_is_not_boot_shaped():
+    """2026-11-03 12:02Z: a real pin from a request, with no scale-out anywhere near."""
+    assert perf_triage._boot_shape(_NOV5_PAGE, _cpu_minutes({"44": 100.0, "45": 100.0}), []) is None
+
+
+def test_no_breaching_minute_is_not_boot_shaped():
+    assert perf_triage._boot_shape(_NOV5_PAGE, _cpu_minutes({"44": 12.0}), _nov5_scale_outs()) is None
+
+
+def _boot_snapshot(**overrides):
+    shape = {
+        "name": _NOV5_PAGE["name"],
+        "at": _NOV5_PAGE["at"],
+        "breaching_minutes": ["08:44", "08:45", "08:47", "08:48"],
+        "scale_outs": _nov5_scale_outs(),
+    }
+    return _snapshot(
+        web_cpu_peak_pct=100.0,
+        paged_in_window=[_NOV5_PAGE],
+        boot_shaped_pages=[shape],
+        scale_outs=_nov5_scale_outs(),
+        **overrides,
+    )
+
+
+def test_a_page_that_is_all_boots_gets_its_own_verdict():
+    verdict = perf_triage.judge(_boot_snapshot())
+    assert verdict["verdict"] == "paged_by_task_boots"
+    assert any(f.startswith("BOOT-SHAPED PAGE: labs-jj-web-cpu-high-actionable") for f in verdict["findings"])
+    assert "do not hunt a request path" in verdict["next_step"]
+
+
+def test_a_second_unexplained_page_keeps_the_general_verdict():
+    snapshot = _boot_snapshot()
+    snapshot["paged_in_window"] = [_NOV5_PAGE, {"name": _NOV5_PAGE["name"], "at": "2026-11-05T07:00:00Z"}]
+    assert perf_triage.judge(snapshot)["verdict"] == "paged_below_sustained"
+
+
+def test_boots_do_not_mask_a_named_tier():
+    assert perf_triage.judge(_boot_snapshot(web_cpu_saturated_periods=6))["verdict"] == "web_saturated"
+
+
+def test_scale_outs_are_listed_under_any_verdict():
+    verdict = perf_triage.judge(_snapshot(paged_in_window=[], scale_outs=_nov5_scale_outs()))
+    assert verdict["verdict"] == "healthy"
+    assert "SCALE-OUT: web to 3 tasks at 2026-11-05T08:43:37Z (labs-jj-web-mem70)." in verdict["findings"]
+
+
+def test_a_failed_scale_out_read_is_not_silence():
+    verdict = perf_triage.judge(_snapshot(scale_outs_error="AccessDenied"))
+    assert any(f.startswith("SCALE-OUTS UNREAD: AccessDenied") for f in verdict["findings"])
+
+
 def test_only_alarms_that_page_count_and_times_become_utc():
     """The raw child has no actions; the CLI prints local offsets."""
     items = [

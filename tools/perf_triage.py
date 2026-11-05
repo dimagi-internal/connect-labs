@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -235,6 +236,13 @@ SUSTAINED_MINUTES = 15
 REQUEST_TELEMETRY_GROUP = "/labs-jj/observe/request-telemetry"
 HEAVY_REQUEST_MS = 60_000
 HEAVY_REQUEST_LIMIT = 5
+# A boot breached within this many minutes of its scale-out in 40 of 40 cases,
+# 2026-10-21 to 11-05 (#2872). The look-back covers the alarm's 5 evaluated
+# minutes plus the ~3 minutes it took to fire on 11-05.
+SCALE_OUT_BOOT_MINUTES = 3
+PAGE_LOOKBACK_MINUTES = 8
+CPU_PAGE_ALARMS = {"labs-jj-web-cpu-high-actionable"}
+SCALE_OUTS_LISTED = 10
 
 
 def _sustained(points, threshold, period, min_minutes=SUSTAINED_MINUTES, key="Average"):
@@ -281,6 +289,64 @@ def _paged_from_history(items, paging) -> list[dict]:
         if item.get("AlarmName") in paging and item.get("HistorySummary", "").endswith("to ALARM")
     ]
     return sorted(paged, key=lambda row: row["at"])
+
+
+def _scale_outs_from_activities(items, since) -> list[dict]:
+    """Web scale-outs at or after `since`, oldest first, in UTC.
+
+    Target tracking names the direction only in its alarm: AlarmHigh adds capacity,
+    AlarmLow removes it, whichever policy fired.
+    """
+    rows = []
+    for item in items:
+        cause = item.get("Cause", "")
+        if "AlarmHigh" not in cause:
+            continue
+        at = datetime.fromisoformat(item["StartTime"]).astimezone(timezone.utc)
+        if at < since:
+            continue
+        desired = re.search(r"desired count to (\d+)", item.get("Description", ""))
+        policy = re.search(r"triggered policy (\S+)", cause)
+        rows.append(
+            {
+                "at": at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "to": int(desired.group(1)) if desired else None,
+                "policy": policy.group(1) if policy else None,
+            }
+        )
+    return sorted(rows, key=lambda row: row["at"])
+
+
+def _boot_shape(page, cpu_points, scale_outs) -> dict | None:
+    """The page's scale-outs, if EVERY breaching minute before it sits inside a boot.
+
+    A new task pins Maximum while it starts, and the service metric cannot tell that
+    from a task pinned serving traffic. Two boots 3 minutes apart score 4 of 5, which
+    is the CPU page, with nothing wrong on the running tasks (#2872). One breaching
+    minute outside a boot window returns None: that is a pin this cannot explain.
+    """
+    breaching = sorted(
+        datetime.fromisoformat(p["Timestamp"]).astimezone(timezone.utc).replace(second=0, microsecond=0)
+        for p in cpu_points
+        if p.get("Maximum", 0) >= WEB_CPU_SATURATED
+    )
+    if not breaching:
+        return None
+    used = {}
+    for minute in breaching:
+        for scale_out in scale_outs:
+            begins = datetime.strptime(scale_out["at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc, second=0)
+            if begins <= minute <= begins + timedelta(minutes=SCALE_OUT_BOOT_MINUTES):
+                used[scale_out["at"]] = scale_out
+                break
+        else:
+            return None
+    return {
+        "name": page["name"],
+        "at": page["at"],
+        "breaching_minutes": [m.strftime("%H:%M") for m in breaching],
+        "scale_outs": list(used.values()),
+    }
 
 
 def _heaviest_from_events(events, limit=HEAVY_REQUEST_LIMIT) -> list[dict]:
@@ -463,6 +529,38 @@ def collect(hours: int) -> dict:
         )
     except Exception as exc:  # the verdict must survive this read, and must say it failed
         heaviest_requests_error = str(exc)[:200]
+    scale_outs, scale_outs_error, boot_shaped_pages = [], None, []
+    try:
+        since = datetime.strptime(start, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        scale_outs = _scale_outs_from_activities(
+            _aws(
+                [
+                    "application-autoscaling",
+                    "describe-scaling-activities",
+                    "--service-namespace",
+                    "ecs",
+                    "--resource-id",
+                    f"service/{CLUSTER}/{WEB_SERVICE}",
+                ]
+            ).get("ScalingActivities", []),
+            since - timedelta(minutes=PAGE_LOOKBACK_MINUTES + SCALE_OUT_BOOT_MINUTES),
+        )
+        for page in [row for row in paged_in_window if row["name"] in CPU_PAGE_ALARMS][:5]:
+            page_at = datetime.strptime(page["at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            points = _metric(
+                "AWS/ECS",
+                "CPUUtilization",
+                ecs_dims(WEB_SERVICE),
+                (page_at - timedelta(minutes=PAGE_LOOKBACK_MINUTES)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                page["at"],
+                60,
+                stats=["Maximum"],
+            )
+            shape = _boot_shape(page, points, scale_outs)
+            if shape:
+                boot_shaped_pages.append(shape)
+    except Exception as exc:  # same contract as the heavy-request read above
+        scale_outs_error = str(exc)[:200]
     svc = _aws(["ecs", "describe-services", "--cluster", CLUSTER, "--services", WEB_SERVICE])
     service = svc.get("services", [{}])[0]
 
@@ -511,6 +609,9 @@ def collect(hours: int) -> dict:
         "paged_in_window": paged_in_window,
         "heaviest_requests": heaviest_requests,
         "heaviest_requests_error": heaviest_requests_error,
+        "scale_outs": scale_outs,
+        "scale_outs_error": scale_outs_error,
+        "boot_shaped_pages": boot_shaped_pages,
         "web_desired_count": service.get("desiredCount"),
         "web_running_count": service.get("runningCount"),
         "recent_ecs_events": [e["message"] for e in service.get("events", [])[:5]],
@@ -731,6 +832,21 @@ def judge(d: dict) -> dict:
             "Read any HEAVY REQUEST lines above first, lining each one's start and end up against "
             "per-minute CPU (Maximum, --period 60). Then runbook section 1."
         )
+        shapes = d.get("boot_shaped_pages") or []
+        for shape in shapes:
+            boots = ", ".join(f"{s['at']} (to {s['to']} tasks, {s['policy']})" for s in shape["scale_outs"])
+            findings.append(
+                f"BOOT-SHAPED PAGE: {shape['name']} at {shape['at']}. Every breaching minute "
+                f"({', '.join(shape['breaching_minutes'])}) sits inside a task boot after a scale-out: {boots}."
+            )
+        if shapes and {row["at"] for row in paged} == {shape["at"] for shape in shapes}:
+            verdict = "paged_by_task_boots"
+            next_step = (
+                "This page is new tasks starting, so do not hunt a request path; HEAVY REQUEST lines "
+                "here did not cause it unless their cpu_s fills the minute. Confirm the minutes between "
+                "boots are low (per-minute CPU, Maximum), then read memory, since a mem70 scale-out says "
+                "memory rose. Runbook section 1, 'Was it a scale-out?'."
+            )
 
     if verdict == "healthy":
         # Distinguish a transient peak from sustained saturation explicitly. A
@@ -757,6 +873,15 @@ def judge(d: dict) -> dict:
         next_step = (
             "No sustained performance problem in this window. Widen --hours before concluding "
             "it never happened -- a window that starts after an incident ended looks clean."
+        )
+
+    scale_outs = d.get("scale_outs") or []
+    for row in scale_outs[-SCALE_OUTS_LISTED:]:
+        findings.append(f"SCALE-OUT: web to {row['to']} tasks at {row['at']} ({row['policy']}).")
+    if d.get("scale_outs_error"):
+        findings.append(
+            f"SCALE-OUTS UNREAD: {d['scale_outs_error']}. This is a failed read, not evidence that no "
+            "task booted, so a CPU page here may still be boots."
         )
 
     for row in d.get("heaviest_requests") or []:

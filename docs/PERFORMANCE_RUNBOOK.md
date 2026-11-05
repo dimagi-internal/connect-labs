@@ -40,6 +40,9 @@ CPU never ran `SUSTAINED_MINUTES` consecutive minutes. The CPU page is 4 of 5
 one-minute datapoints, so a real 4-minute pin lands here. It is not a clean bill
 of health: line the `HEAVY REQUEST` rows up against per-minute CPU.
 
+**Verdict `paged_by_task_boots`:** every breaching minute before every page in the
+window sits inside a task boot after a scale-out. See "Was it a scale-out?" in §1.
+
 Any window works; the metric period widens automatically past 120h to stay under
 CloudWatch's 1440-datapoint cap, and the verdict header prints the period it used.
 A wider period averages short spikes away, so **widen to find an incident, then
@@ -160,6 +163,23 @@ At `Maximum` over a 300s period a "period" was not a duration at all, so the old
 and the reason for #1647. Under the deployed `Period: 60` / 4-of-5 a breaching "period" **is** one
 breaching minute, so the count means what it says; the `evaluatedDatapoints` read above is still
 the right first move on any firing you cannot account for. Record firings of this shape on #1512.
+
+### Was it a scale-out? A new task pins the metric while it boots
+
+`labs-jj-deploy-in-progress` suppresses boots from a deploy. Boots from autoscaling are not
+suppressed, and the metric cannot tell them apart from a pin. `tools/perf_triage.py` prints every
+`SCALE-OUT` and returns `paged_by_task_boots` when each breaching minute before a CPU page sits
+inside a boot.
+
+Measured 2026-10-21 to 11-05: all 40 scale-outs breached 90% within 5 minutes, usually for 1-2
+minutes. A single boot cannot reach 4 of 5. Two boots about 3 minutes apart can, shaped
+`100 100 2 100 100`, and target tracking spaces them about that far apart. Of 14 such pairs, one
+scored 4 and paged: 2026-11-05 08:51Z (#2872). The low minute between boots is the tell, because a
+request pinning a running task does not drop to 2% and come back.
+
+A boot-shaped page does not mean nothing happened. `labs-jj-web-mem70` scaling out means memory
+rose, so read memory and worker kills as below. It does mean there is no request path to hunt for
+this page. A task ECS replaced after a crash is not a scale-out, so it stays `paged_below_sustained`.
 
 ### A CPU page can be a LAGGING proxy for a memory problem
 
