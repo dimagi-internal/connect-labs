@@ -31,7 +31,7 @@ is folded away, each fold with its count.
         {% for line in tender.lines %}
         <a data-testid="compare-quotes" class="button button-md {% if status.primary == 'compare' %}primary-dark{% else %}outline-style{% endif %}" href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ line.commodity_slug }}">Compare quotes{% if tender.lines|length > 1 %}: {{ commodity_names|dictkey:line.commodity_slug|default:line.commodity_slug }}{% endif %}</a>
         {% endfor %}
-        {% if not supply_as_of %}
+        {% if not supply_as_of and tender.status != "awarded" %}
         <details class="relative{% if status.primary != 'compare' %} order-first{% endif %}" id="decide" data-testid="decide-menu">
           <summary class="button button-md {% if status.primary == 'compare' %}outline-style{% else %}primary-dark{% endif %} list-none [&::-webkit-details-marker]:hidden" role="button" data-testid="decide-open">{% if tender.status == "draft" %}Open or edit{% elif status.primary == "decide" %}Decide: extend, close or award{% else %}Extend or close{% endif %}</summary>
           <div class="border-brand-border-light absolute right-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 text-sm shadow-sm">
@@ -103,24 +103,39 @@ is folded away, each fold with its count.
       <a class="text-brand-indigo hover:underline" data-testid="sizing-link" href="{% url 'supply_chain:procurement_tender_sizing' tender.id %}">How much to buy</a>
     </p>
     {% endif %}
+    {% if award_card %}
+    <section class="rounded-lg border border-brand-indigo bg-indigo-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3" data-testid="award-card">
+      <div class="text-sm text-gray-900"><span class="font-semibold">Awarded to {{ award_card.supplier }}</span>{% if award_card.decided_on %} on {{ award_card.decided_on|day }}{% endif %}.
+        <span class="text-gray-700">{{ award_card.emails }} email{{ award_card.emails|pluralize }} to send (the selection email{% if award_card.handovers %} and {{ award_card.handovers }} handover{{ award_card.handovers|pluralize }}{% endif %}), and the orders and costs, are on the award page.</span></div>
+      <a class="button button-md primary-dark" data-testid="award-link" href="{% url 'supply_chain:award_detail' award_card.id %}">Open the award</a>
+    </section>
+    {% endif %}
     {% if tender.partner_splits %}
     <section class="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="partner-splits">
-      <div class="px-4 py-2.5 border-b border-gray-100 text-xs font-semibold text-gray-600">Split by partner
+      <div class="px-4 py-2.5 border-b border-gray-100 text-xs font-semibold text-gray-600">Split by local partner (LLO)
         <span class="font-normal ml-2">one delivery, quantity and receiver per partner; the award and orders follow it</span></div>
+      {% if split and split.ordered %}
+      <div class="px-4 py-2 border-b border-gray-100 text-sm" data-testid="split-progress"><span class="font-medium text-gray-900">{{ split.words }}</span>
+        {% for line in split.to_do %}<span class="ml-3 text-message-warning-text font-medium" data-testid="split-todo">To do: {{ line }}</span>{% endfor %}</div>
+      {% endif %}
+      {% if price_holds %}<p class="px-4 py-2 border-b border-gray-100 text-sm text-gray-700" data-testid="split-price-holds">{{ price_holds }}</p>{% endif %}
+      <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
       <table class="w-full text-sm">
         <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600"><tr>
           <th class="text-left px-4 py-2">Partner</th><th class="text-left px-4 py-2">Quantity</th>
-          <th class="text-left px-4 py-2">Delivered to</th><th class="text-left px-4 py-2">Receiver</th><th class="text-left px-4 py-2">Bought</th></tr></thead>
+          <th class="text-left px-4 py-2">Delivered to</th><th class="text-left px-4 py-2">Receiver</th><th class="text-left px-4 py-2">Who buys</th>{% if split and split.ordered %}<th class="text-left px-4 py-2">Order</th>{% endif %}</tr></thead>
         <tbody class="divide-y divide-gray-100">
-        {% for split in tender.partner_splits %}
-          <tr><td class="px-4 py-2 text-gray-900">{{ split.org_name }}</td>
-            <td class="px-4 py-2 tabular-nums">{{ split.quantity }} {{ split.quantity_unit }}</td>
-            <td class="px-4 py-2 text-gray-700">{{ split.delivery_point_key|default:"—" }}</td>
-            <td class="px-4 py-2 text-gray-700">{{ split.receiver_name|default:"—" }}{% if split.receiver_contact %} <span class="text-xs text-gray-600">{{ split.receiver_contact }}</span>{% endif %}</td>
-            <td class="px-4 py-2 text-gray-700">{{ split.buying_model|words }}</td></tr>
+        {% for p in split.partners %}
+          <tr data-testid="split-row"><td class="px-4 py-2 text-gray-900">{{ p.org_name }}</td>
+            <td class="px-4 py-2 tabular-nums">{{ p.quantity }}</td>
+            <td class="px-4 py-2 text-gray-700">{{ p.place|default:"—" }}</td>
+            <td class="px-4 py-2 text-gray-700">{{ p.receiver|default:"—" }}{% if p.receiver_contact %} <span class="text-xs text-gray-600">{{ p.receiver_contact }}</span>{% endif %}</td>
+            <td class="px-4 py-2 text-gray-700">{{ p.buying }}</td>
+            {% if split.ordered %}<td class="px-4 py-2 text-gray-700" data-testid="split-order">{% if p.url %}<a class="text-brand-indigo hover:underline" href="{{ p.url }}">{{ p.status }}</a>{% else %}<span class="text-message-warning-text font-medium">{{ p.status }}</span>{% endif %}</td>{% endif %}</tr>
         {% endfor %}
         </tbody>
       </table>
+      </div>
     </section>
     {% endif %}
 
@@ -187,7 +202,7 @@ is folded away, each fold with its count.
       {% endif %}
       {% endif %}
     </div>
-    {% include "supply_chain/procurement/_qualification_gaps.html" with gap_moment="you ask for a quote or award" %}
+    {% include "supply_chain/procurement/_qualification_gaps.html" with gap_moment="you ask for a quote or award" after_award=award_card %}
     {% comment %}The row a form just saved (?changed=outreach-N) is marked, as before.{% endcomment %}
     <div class="sheet-wrap" role="region" aria-label="Suppliers">
       <table class="sheet" data-testid="supplier-table">
@@ -290,7 +305,7 @@ rather than by urgency -- the product drafts when asked; it does not press a
 next action on anyone (design doc section 22).
 {% endcomment %}
 <details id="drafts" class="fold scroll-mt-20">
-  <summary>Draft emails <span class="text-sm font-normal tabular-nums text-gray-600">{{ drafts.drafts|length }}</span>{% if drafts_breakdown %} <span data-testid="drafts-breakdown" class="text-sm font-normal text-gray-600">{{ drafts_breakdown }}</span>{% endif %}</summary>
+  <summary>Draft emails <span class="text-sm font-normal tabular-nums text-gray-600">{{ drafts.drafts|length }}</span>{% if drafts_breakdown %} <span data-testid="drafts-breakdown" class="text-sm font-normal text-gray-600">{{ drafts_breakdown }}</span>{% endif %}{% if award_card %} <span data-testid="award-emails-note" class="text-sm font-normal text-gray-600">&middot; plus {{ award_card.emails }} award email{{ award_card.emails|pluralize }} on <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' award_card.id %}#selection-drafts">the award page</a></span>{% endif %}</summary>
   <div class="fold-body">
     {% for d in drafts.drafts %}
       {% comment %}Each draft is its own card headed by who it goes to, so one draft's
@@ -373,7 +388,7 @@ next action on anyone (design doc section 22).
         {% endif %}
       </div>
     {% empty %}
-      <p class="text-sm text-gray-600 mt-2">Nothing is due on this tender today.</p>
+      <p class="text-sm text-gray-600 mt-2">{% if award_card %}No quote or chase emails are due. The selection email{% if award_card.handovers %} and handovers{% endif %} are on <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' award_card.id %}#selection-drafts">the award page</a>.{% else %}Nothing is due on this tender today.{% endif %}</p>
     {% endfor %}
   </div>
 </details>

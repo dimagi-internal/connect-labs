@@ -494,7 +494,15 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
             .values_list("received_on", flat=True)
             .first()
         )
-    if contract is not None:
+    from connect_labs.supply_chain.procurement.services.award_orders import split_progress
+
+    # A tender split between partners is ordered and delivered as a SET: one partner's order is not "done".
+    progress = split_progress(tender, today) if contract is not None else None
+    if progress is not None:
+        index = (
+            6 if progress["delivered"] == progress["total"] else 5 if progress["ordered"] == progress["total"] else 4
+        )
+    elif contract is not None:
         index = 6 if received and contract.status in ("received", "closed") else 5
     elif tender.status == "draft":
         index = 0
@@ -523,8 +531,20 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         collecting_note or "—",
         "—",
         (awardee + (" · provisional" if provisional and contract is None else "")) if awardee else "—",
-        (contract.reference or f"Order {contract.pk}") if contract is not None else "—",
-        f"received {_day(received)}" if received else "—",
+        (
+            f"{progress['ordered']} of {progress['total']} ordered"
+            if progress
+            else (contract.reference or f"Order {contract.pk}") if contract is not None else "—"
+        ),
+        (
+            (
+                f"{progress['delivered']} of {progress['total']} delivered"
+                if progress and progress["delivered"]
+                else "—"
+            )
+            if progress
+            else (f"received {_day(received)}" if received else "—")
+        ),
     ]
     stages = [
         {"name": name, "note": note, "state": state} for name, note, state in zip(STAGES, notes, stage_bars(index))
@@ -552,6 +572,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
         "ours": ours,
         "theirs": theirs,
         "terms": terms,
+        "split_progress": progress,
         "related_order": related_order(tender, today, own_org_id=own_org_id),
         "quoted": quoted,
         "priced": priced,

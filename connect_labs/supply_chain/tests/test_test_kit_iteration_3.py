@@ -131,7 +131,9 @@ class TestTheComparisonAndTheAward:
 
     def test_the_award_is_headed_by_what_was_chosen(self, scoped, world):
         body = scoped.get(reverse("supply_chain:award_detail", args=[world["award"]["id"]])).content.decode()
-        assert '<h2 class="text-lg font-semibold text-gray-900">Lumen FC-50 kit</h2>' in body
+        # The title names the award; what was chosen (the kit, not the product's slug) follows it.
+        assert 'data-testid="award-title">Award: ' in body
+        assert "Lumen FC-50 kit.\n" in body
 
     def test_a_pending_approval_offers_a_link_prefilled_to_that_question(self, scoped, world):
         body = scoped.get(reverse("supply_chain:award_detail", args=[world["award"]["id"]])).content.decode()
