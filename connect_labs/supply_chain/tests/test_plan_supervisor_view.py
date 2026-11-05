@@ -202,3 +202,65 @@ def test_the_running_page_loads_with_children_cases_and_commas(page, world):
     assert 'data-testid="plan-case-carton"' in html and "full carton (150 sachets)" in html
     assert "495" in html and "74,250" in html  # 150 x 495, with its comma
     assert 'data-testid="plan-next-tender"' in html
+
+
+# ---- plan inputs: a target per partner, the recent rate as a number -------------------------
+
+
+def test_a_target_per_partner_replaces_the_programme_wide_one_with_their_sum(world):
+    org_a = LabsOrg.objects.create(slug="target-a", name="Target A")
+    org_b = LabsOrg.objects.create(slug="target-b", name="Target B")
+    world["store"].managed_by_org = org_a
+    world["store"].save()
+    _op(
+        "stock_plan_set",
+        data={"item_id": world["item"].pk, "target_cases_by_partner": {str(org_a.pk): 300, str(org_b.pk): 200}},
+    )
+    got = _op("stock_plan_get", item_id=world["item"].pk)["plan"]
+    assert got["target_effective"] == 500 and got["target_cases_by_partner"] == {
+        str(org_a.pk): 300,
+        str(org_b.pk): 200,
+    }
+    be = _view(world)["break_even"]
+    assert be["target"] == 500
+    rows = {p["name"]: p for p in be["children"]["partners"]}
+    assert rows["Target A"]["target"] == 300 and rows["Target A"]["to_enrol"] == 300 - rows["Target A"]["seen"]
+    assert rows["Target B"]["seen"] == 0 and rows["Target B"]["to_enrol"] == 200
+    _op("stock_plan_set", data={"item_id": world["item"].pk, "target_cases_by_partner": {}, "target_cases": 1000})
+    assert _op("stock_plan_get", item_id=world["item"].pk)["plan"]["target_effective"] == 1000
+
+
+def test_a_partner_target_for_an_unknown_organisation_is_refused(world):
+    with pytest.raises(ValueError, match="no such organisation"):
+        _op("stock_plan_set", data={"item_id": world["item"].pk, "target_cases_by_partner": {"999999": 5}})
+
+
+def test_the_change_screen_sets_one_target_per_partner(page, world):
+    org = LabsOrg.objects.create(slug="target-c", name="Target C")
+    world["store"].managed_by_org = org
+    world["store"].save()
+    url = f"{reverse('supply_chain:plan_inputs')}?item_id={world['item'].pk}"
+    assert "Target C: children to treat" in page.get(url).content.decode()
+    done = page.post(
+        url,
+        {
+            "buffer_days": "0",
+            "target_cases": "500",
+            f"target_partner_{org.pk}": "250",
+            "enrolment_per_flw_per_week": "",
+        },
+    )
+    assert done.status_code == 302
+    assert _op("stock_plan_get", item_id=world["item"].pk)["plan"]["target_cases_by_partner"] == {str(org.pk): 250}
+    assert "250" in page.get(url).content.decode()
+
+
+def test_the_recent_rate_is_shown_as_a_number_next_to_its_words(page, world):
+    world["item"].commodity.course_definition = {"base_units_per_course": 150, "base_units_per_day": 2}
+    world["item"].commodity.save()
+    view = _view(world)
+    assert view["recent_rate"]["workers"] >= 1 and Decimal(view["recent_rate"]["per_flw_per_week"]) > 0
+    world["item"].commodity.course_definition = {"base_units_per_course": 150, "base_units_per_day": 2}
+    world["item"].commodity.save()
+    html = page.get(reverse("supply_chain:plan")).content.decode()
+    assert "recent rate:" in html and "the average of" in html and "field workers" in html

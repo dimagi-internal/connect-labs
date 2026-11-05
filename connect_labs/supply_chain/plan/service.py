@@ -52,6 +52,10 @@ INPUTS = {
     },
     "buffer_days": {"label": "Extra days of stock (buffer)", "default_text": f"{DEFAULT_BUFFER_DAYS} days"},
     "target_cases": {"label": "Target number of children", "default_text": f"{DEFAULT_TARGET_CASES:,}"},
+    "target_cases_by_partner": {
+        "label": "Target for each partner",
+        "default_text": "one target for the whole programme",
+    },
 }
 
 
@@ -85,6 +89,7 @@ def plan_values(plan: StockPlan | None) -> dict:
     buffer_days = plan.buffer_days if plan else DEFAULT_BUFFER_DAYS
     by_point = dict(plan.buffer_days_by_point or {}) if plan else {}
     target = plan.target_cases if plan else DEFAULT_TARGET_CASES
+    by_partner = {str(k): int(v) for k, v in (plan.target_cases_by_partner or {}).items()} if plan else {}
     return {
         "enrolment_per_flw_per_week": {
             "value": rate,
@@ -99,6 +104,9 @@ def plan_values(plan: StockPlan | None) -> dict:
             "is_default": buffer_days == DEFAULT_BUFFER_DAYS,
         },
         "buffer_days_by_point": by_point,
+        "target_cases_by_partner": by_partner,
+        # What the programme means to treat in all: the partners' own targets added up when any is set.
+        "target_effective": sum(by_partner.values()) if by_partner else target,
         "target_cases": {
             "value": target,
             "default": DEFAULT_TARGET_CASES,
@@ -427,6 +435,9 @@ def break_even(fc: dict, plan_vals: dict, *, cases=None, item=None, program_id=N
     out = _break_even(fc, plan_vals)
     if cases is not None:
         children = children_summary(fc, cases, out["target"])
+        children["partners"] = (
+            children_by_partner(program_id, cases, plan_vals["target_cases_by_partner"]) if program_id else []
+        )
         on_order = out["on_order"]
         out["children"] = children
         out["cases"] = two_cases(fc, cases, children, out["held"], on_order, item)
@@ -441,7 +452,7 @@ def _break_even(fc: dict, plan_vals: dict) -> dict:
     held = _d(programme["on_hand"]) or ZERO
     owed = _d(programme.get("owed"))
     seen = programme.get("children_seen") or 0
-    target = plan_vals["target_cases"]["value"]
+    target = plan_vals["target_effective"]
     to_come = max(0, target - seen)
     on_order = sum((_d(o["quantity"]) or ZERO for o in programme["inbound"] if o["counted"]), ZERO)
     out = {
@@ -501,6 +512,46 @@ def _break_even(fc: dict, plan_vals: dict) -> dict:
 
 FULL_CARTON_SACHETS = 150
 MAX_WEEKS = 12
+
+
+def children_by_partner(program_id, cases, targets: dict) -> list[dict]:
+    """Each partner's children: seen, in treatment, and (where it has a target) still to enrol up to it."""
+    from connect_labs.labs.models import LabsOrg
+    from connect_labs.supply_chain.stock.services.issues import partner_by_point
+
+    owner = partner_by_point(program_id)
+    rows: dict = {}
+    for case in cases:
+        org = owner.get(case.supply_point_id)
+        row = rows.setdefault(org, {"org_id": org, "seen": 0, "in_treatment": 0, "exited": 0})
+        row["seen"] += 1
+        row["in_treatment"] += case.status == "open"
+        row["exited"] += case.status == "exited"
+    for org in {int(k) for k in targets}:
+        rows.setdefault(org, {"org_id": org, "seen": 0, "in_treatment": 0, "exited": 0})
+    names = dict(LabsOrg.objects.filter(pk__in=[o for o in rows if o]).values_list("pk", "name"))
+    out = []
+    for org, row in rows.items():
+        target = targets.get(str(org))
+        out.append(
+            {
+                **row,
+                "name": names.get(org, "No partner recorded"),
+                "target": target,
+                "to_enrol": max(0, target - row["seen"]) if target is not None else None,
+            }
+        )
+    return sorted(out, key=lambda r: r["name"].lower())
+
+
+def recent_enrolment(fc: dict) -> dict:
+    """The recent rate as a number: new children a week per field worker, from their own recent enrolments."""
+    rates = [_d(w["enrolled_per_week"]) for w in fc["workers"] if w.get("enrolled_per_week") is not None]
+    return {
+        "per_flw_per_week": (sum(rates, ZERO) / len(rates)) if rates else None,
+        "workers": len(rates),
+        "all_workers": len(fc["workers"]),
+    }
 
 
 def children_summary(fc: dict, cases, target: int) -> dict:
@@ -885,6 +936,7 @@ def compute(program_id, item, *, on_date=None, horizon_weeks=8, course_size=None
         "issue_total": sum(r["to_issue"] for r in rows),
         "short": running_short(rows),
         "break_even": break_even(fc, values, cases=cases, item=item, program_id=program_id, today=today),
+        "recent_rate": recent_enrolment(fc),
         "stores": stores,
         "store_groups": group_stores(program_id, stores),
         "dosing": dosing_rows(program_id, item, fc, cases=cases),

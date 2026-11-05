@@ -636,6 +636,7 @@ def stock_plan(obj) -> dict:
         "enrolment_per_flw_per_week": _num(obj.enrolment_per_flw_per_week),
         "buffer_days": obj.buffer_days,
         "buffer_days_by_point": obj.buffer_days_by_point or {},
+        "target_cases_by_partner": obj.target_cases_by_partner or {},
         "target_cases": obj.target_cases,
     }
 
