@@ -1,0 +1,61 @@
+{% extends 'supply_chain/base.html' %}
+
+{% comment %}
+"Start here": what each group of tabs is for, the steps by moment (each linking to its page, ticked from the
+program's own records, supply_chain/start_here.py), and where each kind of person goes. A side-menu item;
+nothing sends anyone through it.
+{% endcomment %}
+
+{% block supply_content %}
+{% if not has_program_context %}
+  <p class="text-sm text-gray-700">Choose a program above to see where it stands.</p>
+{% else %}
+<div class="flex flex-col gap-6" data-testid="start-here">
+  <div>
+    <h1 class="text-brand-deep-purple text-2xl font-semibold">Start here</h1>
+    <p class="mt-1 max-w-2xl text-sm text-gray-700">What each part of Supply is for, and the steps in the order you do them. A tick means the records show it has been done in this program. An experienced buyer can skip this page.</p>
+  </div>
+
+  <section aria-label="What each group of tabs is for" data-testid="start-groups">
+    <h2 class="text-brand-deep-purple text-lg font-semibold">What the tabs are for</h2>
+    <ul class="mt-2 grid gap-2 md:grid-cols-2">
+      {% for g in groups %}
+      <li class="rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm" data-testid="start-group"><b class="text-gray-900">{{ g.label }}</b> <span class="text-gray-700">{{ g.lines }}</span></li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section aria-label="The steps by moment" class="flex flex-col gap-4" data-testid="start-moments">
+    <h2 class="text-brand-deep-purple text-lg font-semibold">The steps, by moment</h2>
+    {% for moment in moments %}
+    <div class="rounded-lg border border-gray-200 bg-white" data-testid="start-moment" data-moment="{{ moment.key }}">
+      <h3 class="border-b border-gray-100 px-4 py-2 text-sm font-semibold text-gray-900">{{ moment.title }} <span class="font-normal text-gray-600">· {{ moment.when }}</span></h3>
+      <ol class="divide-y divide-gray-100">
+        {% for step in moment.steps %}
+        <li class="flex flex-wrap items-baseline gap-x-3 px-4 py-2 text-sm{% if step == moment.next %} bg-indigo-50{% endif %}" data-testid="start-step" data-state="{% if step.done is None %}check{% elif step.done %}done{% elif step == moment.next %}next{% else %}todo{% endif %}">
+          <span class="w-5 shrink-0 text-center">{% if step.done %}<span class="text-teal-700" title="Done">&#10003;<span class="sr-only"> done</span></span>{% elif step.done is None %}<span class="text-gray-600" aria-hidden="true">&#8635;</span>{% else %}<span class="text-gray-600" aria-hidden="true">&#9675;</span>{% endif %}</span>
+          <a href="{{ step.url }}" class="font-medium text-brand-indigo hover:underline">{{ step.title }}</a>
+          {% if step == moment.next %}<span class="text-xs font-semibold uppercase tracking-wide text-brand-indigo">Next</span>{% endif %}
+          {% if step.note %}<span class="text-xs text-gray-600">{{ step.note }}</span>{% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section aria-label="Where each person goes" data-testid="start-roles">
+    <h2 class="text-brand-deep-purple text-lg font-semibold">Where each person starts</h2>
+    <div class="mt-2 grid gap-3 md:grid-cols-3">
+      {% for role in roles %}
+      <div class="rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="start-role" data-role="{{ role.key }}">
+        <h3 class="text-sm font-semibold text-gray-900">{{ role.title }}</h3>
+        <p class="text-xs text-gray-600">{{ role.what }}</p>
+        <ul class="mt-2 text-sm">{% for p in role.pages %}<li><a class="text-brand-indigo hover:underline" href="{{ p.url }}">{{ p.label }}</a></li>{% endfor %}</ul>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+{% endif %}
+{% endblock %}

@@ -2,7 +2,7 @@ from django.conf import settings
 from django.urls import path, re_path
 from django.views.generic import RedirectView
 
-from connect_labs.supply_chain import api_views, cells, views
+from connect_labs.supply_chain import api_views, cells, start_here, views
 from connect_labs.supply_chain.alerts import views as alert_views
 from connect_labs.supply_chain.distribution import views as distribution_views
 from connect_labs.supply_chain.fulfilment import views as fulfilment_views
@@ -38,6 +38,7 @@ urlpatterns = [
     # right here. Overview's own tab links to overview/, so it never bounces on.
     path("", views.supply_front_door, name="home"),
     path("overview/", views.DomainHomeView.as_view(), name="overview"),
+    path("start-here/", start_here.StartHereView.as_view(), name="start_here"),
     path("runner/", runner_views.ProgrammeRunnerView.as_view(), name="programme_runner"),
     path("team/", runner_views.ProgrammeTeamView.as_view(), name="programme_team"),
     path("team/add/", runner_views.ProgrammeTeamAddView.as_view(), name="programme_team_add"),

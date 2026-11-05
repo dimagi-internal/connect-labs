@@ -33,7 +33,7 @@ def test_every_tab_is_in_exactly_one_group():
 def test_the_groups_are_the_ones_the_feedback_asked_for():
     assert [g for g, _ in TAB_GROUPS] == ["", "Buying", "Distribution and stock", "Setup"]
     by_group = {g: [label for _, label in tabs] for g, tabs in TAB_GROUPS}
-    assert by_group[""] == ["Overview"]
+    assert by_group[""] == ["Overview", "Start here"]
     assert by_group["Buying"] == ["Sourcing", "Orders", "Suppliers"]
     assert {"Catalogue", "Organisations", "Alerts", "Team"} <= set(by_group["Setup"])
     assert {"Network", "Map", "Distribution", "Stock", "Where it went"} <= set(by_group["Distribution and stock"])
