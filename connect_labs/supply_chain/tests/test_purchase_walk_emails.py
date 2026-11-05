@@ -120,3 +120,22 @@ def test_the_award_page_renders_the_emails(client_in_programme, da, monkeypatch)
     assert response.status_code == 200
     body = response.content.decode()
     assert "certificate of analysis for each batch" in body and "North Star&#x27;s share is below" in body
+
+
+def test_the_lead_and_copies_come_from_the_partners_card(da, monkeypatch):
+    from connect_labs.labs.models import LabsOrg
+    from connect_labs.supply_chain.partners.services import set_profile
+
+    world = walk.build(da, monkeypatch, ordered=())
+    set_profile(
+        da.program_id,
+        LabsOrg.objects.get(pk=world["orgs"]["north"]["id"]),
+        contact_name="Ngozi Eze",
+        contact_email="ngozi@northstar.example",
+        copy_to=[{"name": "Ops", "email": "ops@northstar.example"}],
+    )
+    drafts = _drafts(da, world)
+    north = next(d for d in drafts if d["kind"] == "handover" and "North Star" in d["label"])
+    assert north["to"] == "ngozi@northstar.example"
+    assert set(north["cc"]) == {"north@example.org", "ops@northstar.example"}
+    assert {"ngozi@northstar.example", "ops@northstar.example"} <= set(drafts[0]["cc"])
