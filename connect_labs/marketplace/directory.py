@@ -324,6 +324,35 @@ _SHEET_ID = re.compile(r"/spreadsheets/d/([A-Za-z0-9_-]{20,})")
 
 
 @dataclass
+class DirectoryForm:
+    """One form of a round: one row of the EOI/RFP tab.
+
+    ``key`` is the row's own Slug. It names the form wherever a submission has
+    to be told apart from another form's row of the same number: the stored
+    response, and the EOI Response Mapping tab's "Round Slug" column.
+    """
+
+    key: str
+    label: str = ""
+    form_url: str = ""
+    response_spreadsheet_id: str = ""
+    response_tab: str = ""
+    column_map: dict = field(default_factory=dict)
+    source_row: int | None = None
+    owned_columns: dict = field(default_factory=dict)
+
+    def as_json(self) -> dict:
+        return {
+            "key": self.key,
+            "label": self.label,
+            "form_url": self.form_url[:1000],
+            "response_spreadsheet_id": self.response_spreadsheet_id,
+            "response_tab": self.response_tab,
+            "column_map": self.column_map,
+        }
+
+
+@dataclass
 class DirectoryRound:
     slug: str
     title: str
@@ -347,6 +376,10 @@ class DirectoryRound:
     # Written to by ``eoi._write_access_columns``; a header that is absent has
     # no entry and is never written, rather than written to a guessed column.
     owned_columns: dict = field(default_factory=dict)
+    # Every form this round runs, in sheet order. The fields above that belong
+    # to a form (form_url, the response sheet, source_row) are the first one's,
+    # so a one-form round reads exactly as it always has.
+    forms: list[DirectoryForm] = field(default_factory=list)
 
 
 ROUND_COLUMNS = (
@@ -370,6 +403,10 @@ ROUND_COLUMNS = (
 )
 # The columns labs writes. Optional to read: a missing one is simply not written.
 LABS_ACCESS = "Labs Access"
+# Optional. Rows that name the same Round are the forms of one round — an
+# announcement run as an English and a French form is one call, reviewed and
+# scored as one. Blank means the row is a round of its own, under its Slug.
+ROUND = "Round"
 LABS_ACCESS_CHECKED = "Labs Access Checked"
 NEXT_STEP = "Next Step"
 
@@ -378,15 +415,21 @@ def parse_rounds(rows: list[list[str]]) -> tuple[list[DirectoryRound], list[str]
     """The EOI/RFP tab as rounds, plus the rows that could not be used.
 
     One row is one *form*. A single announcement can run several — the Malaria
-    RFI ran four and the 2026 Readers round ran an English and a French one —
-    and modelling the announcement as the round made those invisible, because a
-    round with no responses of its own is not a round.
+    RFI ran four and the 2026 Readers round ran an English and a French one.
+    By default each row is its own round, because a form with no responses of
+    its own must still be visible. Rows that share a value in the optional
+    Round column are instead the forms of ONE round: one page, one set of
+    criteria, one queue of submissions, each submission remembering its form.
     """
-    cols = Columns(rows, ROUNDS_TAB, required=ROUND_COLUMNS, optional=(LABS_ACCESS, LABS_ACCESS_CHECKED, NEXT_STEP))
+    cols = Columns(
+        rows, ROUNDS_TAB, required=ROUND_COLUMNS, optional=(LABS_ACCESS, LABS_ACCESS_CHECKED, NEXT_STEP, ROUND)
+    )
     owned = {h: cols.letter(h) for h in (LABS_ACCESS, LABS_ACCESS_CHECKED, NEXT_STEP) if cols.letter(h)}
     out: list[DirectoryRound] = []
     skipped: list[str] = []
     seen: set[str] = set()
+    by_round: dict[str, DirectoryRound] = {}
+    names: dict[str, list[str]] = {}
 
     for index, row in enumerate(rows[1:], start=2):
         slug = cols.get(row, "Slug")
@@ -400,6 +443,7 @@ def parse_rounds(rows: list[list[str]]) -> tuple[list[DirectoryRound], list[str]
             skipped.append(f"row {index}: slug {slug!r} is already used above — slugs must be unique")
             continue
         seen.add(slug)
+        round_slug = cols.get(row, ROUND).strip() or slug
 
         raw_map = cols.get(row, "Column Map")
         column_map: dict = {}
@@ -409,40 +453,123 @@ def parse_rounds(rows: list[list[str]]) -> tuple[list[DirectoryRound], list[str]
             except ValueError:
                 skipped.append(f"row {index} ({slug}): Column Map is not valid JSON — falling back to auto-detect")
 
-        kind = cols.get(row, "Announcement Type").strip().lower()
-        status = cols.get(row, "Status").strip().lower()
         sheet_link = cols.get(row, "Response Sheet Link")
         found = _SHEET_ID.search(sheet_link)
-
-        out.append(
-            DirectoryRound(
-                slug=slug,
-                title=title or slug,
-                solicitation_type="rfp" if kind.startswith("rfp") else "eoi",
-                # "Published" means the call is live; anything else we treat as
-                # closed rather than guessing at a third state.
-                status="active" if status.startswith("publish") else "closed",
-                published_on=cols.get(row, "Published Date"),
-                application_deadline=cols.get(row, "Application Deadline"),
-                decision_on=cols.get(row, "Selection Decision Date"),
-                expected_start_date=cols.get(row, "Program Start Date"),
-                expected_end_date=cols.get(row, "Program End Date"),
-                target_countries=cols.get(row, "Target Countries / Regions"),
-                announcement_url=cols.get(row, "Announcement Link"),
-                form_url=cols.get(row, "Form Link"),
-                response_spreadsheet_id=found.group(1) if found else "",
-                response_tab=cols.get(row, "Response Tab"),
-                column_map=column_map,
-                notes=cols.get(row, "Notes"),
-                # Connect's own delivery_type, decided by a human — the sheet is
-                # the master, so labs reads this rather than guessing a program
-                # from the round's title.
-                delivery_type=programs.canonical(cols.get(row, "Connect Programme")),
-                source_row=index,
-                owned_columns=dict(owned),
-            )
+        form = DirectoryForm(
+            key=slug,
+            label=title or slug,
+            form_url=cols.get(row, "Form Link"),
+            response_spreadsheet_id=found.group(1) if found else "",
+            response_tab=cols.get(row, "Response Tab"),
+            column_map=column_map,
+            source_row=index,
+            owned_columns=dict(owned),
         )
-    return out, skipped
+
+        existing = by_round.get(round_slug)
+        if existing is not None:
+            existing.forms.append(form)
+            names[round_slug].append(title or slug)
+            for header, attr, value in _round_level(cols, row):
+                if value and getattr(existing, attr) != value:
+                    skipped.append(
+                        f"row {index} ({slug}): {header} differs from the first form of round "
+                        f"{round_slug!r} — the first form's value is used for the round"
+                    )
+            continue
+
+        kind = cols.get(row, "Announcement Type").strip().lower()
+        status = cols.get(row, "Status").strip().lower()
+        round_ = DirectoryRound(
+            slug=round_slug,
+            title=title or slug,
+            solicitation_type="rfp" if kind.startswith("rfp") else "eoi",
+            # "Published" means the call is live; anything else we treat as
+            # closed rather than guessing at a third state.
+            status="active" if status.startswith("publish") else "closed",
+            published_on=cols.get(row, "Published Date"),
+            application_deadline=cols.get(row, "Application Deadline"),
+            decision_on=cols.get(row, "Selection Decision Date"),
+            expected_start_date=cols.get(row, "Program Start Date"),
+            expected_end_date=cols.get(row, "Program End Date"),
+            target_countries=cols.get(row, "Target Countries / Regions"),
+            announcement_url=cols.get(row, "Announcement Link"),
+            form_url=form.form_url,
+            response_spreadsheet_id=form.response_spreadsheet_id,
+            response_tab=form.response_tab,
+            column_map=column_map,
+            notes=cols.get(row, "Notes"),
+            # Connect's own delivery_type, decided by a human — the sheet is
+            # the master, so labs reads this rather than guessing a program
+            # from the round's title.
+            delivery_type=programs.canonical(cols.get(row, "Connect Programme")),
+            source_row=index,
+            owned_columns=dict(owned),
+            forms=[form],
+        )
+        by_round[round_slug] = round_
+        names[round_slug] = [title or slug]
+        out.append(round_)
+
+    # A Round value that is also another round's own Slug would make one URL
+    # mean two things. Refuse the group rather than guess which was meant.
+    form_keys = {f.key: r.slug for r in out for f in r.forms}
+    kept = []
+    for round_ in out:
+        owner = form_keys.get(round_.slug)
+        if owner is not None and owner != round_.slug:
+            skipped.append(
+                f"round {round_.slug!r}: that slug is also a form of round {owner!r} — "
+                "a Round value must not be another row's Slug"
+            )
+            continue
+        if len(round_.forms) > 1:
+            round_.title, labels = _shared_title(names[round_.slug])
+            for form, label in zip(round_.forms, labels):
+                form.label = label
+        kept.append(round_)
+    return kept, skipped
+
+
+# The columns that describe the round rather than one of its forms. When a
+# round has several forms they should agree; the first form's value is used.
+_ROUND_LEVEL = (
+    ("Status", "status"),
+    ("Application Deadline", "application_deadline"),
+    ("Connect Programme", "delivery_type"),
+)
+
+
+def _round_level(cols: Columns, row: list[str]):
+    for header, attr in _ROUND_LEVEL:
+        value = cols.get(row, header)
+        if attr == "status":
+            value = "active" if value.strip().lower().startswith("publish") else "closed"
+        elif attr == "delivery_type":
+            value = programs.canonical(value)
+        yield header, attr, value
+
+
+def _shared_title(names: list[str]) -> tuple[str, list[str]]:
+    """A multi-form round's title, and a short label for each form.
+
+    "Community Health RFI 2026 — English" and "... — French" are one round,
+    "Community Health RFI 2026", whose forms are "English" and "French". Where
+    the names share no useful prefix the first name is the title and each form
+    keeps its whole name.
+    """
+    prefix = names[0]
+    for name in names[1:]:
+        while not name.startswith(prefix):
+            prefix = prefix[:-1]
+    # Cut back to a word boundary, then shed the separator.
+    if not all(len(n) == len(prefix) or not n[len(prefix)].isalnum() for n in names) or not prefix:
+        prefix = prefix.rsplit(" ", 1)[0] if " " in prefix else ""
+    title = prefix.rstrip(" -—–:|(/,")
+    if len(title) < 4:
+        return names[0], list(names)
+    labels = [n[len(title) :].strip(" -—–:|()/,") or n for n in names]
+    return title, labels
 
 
 # ======================================================================

@@ -1252,7 +1252,9 @@ class ResponseDetailView(SignedInPage):
                 ),
                 "qa_pairs": [
                     {"question": q.get("text", ""), "answer": (response.responses or {}).get(q.get("id", ""), "")}
-                    for q in (past_calls.form_questions(solicitation) if is_round else solicitation.questions or [])
+                    for q in (
+                        past_calls.form_questions(solicitation, response) if is_round else solicitation.questions or []
+                    )
                 ],
             }
         )
@@ -1404,7 +1406,7 @@ class ReviewView(SignedInPage):
             }
         else:
             hidden = response.ai_proposed_scores
-        questions = past_calls.form_questions(solicitation) if is_round else solicitation.questions or []
+        questions = past_calls.form_questions(solicitation, response) if is_round else solicitation.questions or []
         ctx.update(
             {
                 "response": response,

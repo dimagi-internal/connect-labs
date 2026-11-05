@@ -287,6 +287,15 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.WARNING(f"  round skipped: slug {slug!r} belongs to a solicitation that is not a round")
             )
+        for slug in stats["folded"]:
+            self.stdout.write(f"  {slug}: was a round of its own, now a form of its group — submissions moved")
+        for slug in stats["fold_refused"]:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"  {slug}: grouped under another round but has reviewing work of its own "
+                    "(criteria, a summary or scored versions) — left as it is; merge it by hand"
+                )
+            )
         self.stdout.write(self.style.SUCCESS(f"{stats['rounds']} rounds"))
 
         results = eoi.check_access(directory.read_tab, write_back_to=rounds, spreadsheet_id=sid)
@@ -294,7 +303,7 @@ class Command(BaseCommand):
         for result in results:
             if result["state"] != "ok":
                 self.stdout.write(self.style.WARNING(f"  {result['slug']}: {result['state']} — {result['detail']}"))
-        self.stdout.write(f"{len(readable)} of {len(results)} rounds readable")
+        self.stdout.write(f"{len(readable)} of {len(results)} forms readable")
 
         if not opts["eoi"]:
             return
@@ -313,9 +322,21 @@ class Command(BaseCommand):
             self.stdout.write(f"  {len(verdicts)} human verdicts to apply")
 
         totals = {"submissions": 0, "matched": 0, "unmatched": 0}
+        # A round ingests every form that could be read; one unreadable form
+        # must not hold back the others' submissions.
+        readable_forms: dict = {}
         for result in readable:
-            round_ = eoi.Solicitation.objects.get(slug=result["slug"])
-            rows = directory.read_tab(round_.response_spreadsheet_id, round_.response_tab or "Form Responses 1")
+            readable_forms.setdefault(result["slug"], []).append(result.get("form", result["slug"]))
+        for slug, keys in readable_forms.items():
+            round_ = eoi.Solicitation.objects.get(slug=slug)
+            forms = {f["key"]: f for f in round_.directory_forms}
+            rows = {
+                key: directory.read_tab(
+                    forms[key]["response_spreadsheet_id"], forms[key].get("response_tab") or "Form Responses 1"
+                )
+                for key in keys
+                if key in forms
+            }
             got = eoi.ingest_round(round_, rows, human_verdicts=verdicts)
             for key in totals:
                 totals[key] += got[key]

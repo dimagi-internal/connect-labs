@@ -213,6 +213,7 @@ class TestEarlierRoundsAreEvidence:
         SolicitationResponse.objects.create(
             solicitation=round_,
             llo_entity=org,
+            source_form="demo-2026",  # what migration 0025 gives an imported row
             source_row=2,
             org_name="EHA CLINIC REACH PROGRAM",
             submitted_by_email="eha@example.invalid",
@@ -347,6 +348,8 @@ class TestAccessWriteBack:
         rounds, _ = parse_rounds(ROUND_ROWS)
         for r in rounds:
             r.source_row = None
+            for form in r.forms:
+                form.source_row = None
         check_access(lambda sid, tab: [["Timestamp"]], write_back_to=rounds, spreadsheet_id="sheet-id")
         assert written == []
 
@@ -413,3 +416,132 @@ def test_a_round_slug_owned_by_a_call_is_reported_not_imported():
     call.refresh_from_db()
     assert call.title == "An owner's call" and call.source == SOURCE_LABS
     assert Solicitation.objects.directory_rounds().filter(slug="other-2026").exists()
+
+
+def _grouped_rows():
+    header = HEADER + ["Round"]
+    base = ROUND_ROWS[1]
+
+    def form(slug, name, sheet):
+        row = list(base) + [""] * (len(header) - len(base))
+        row[0], row[1], row[12] = slug, name, f"https://docs.google.com/spreadsheets/d/{sheet}"
+        row[header.index("Round")] = "chp-2026"
+        return row
+
+    return [
+        header,
+        form("chp-2026-en", "CHP RFI — English", "sheetEN0123456789abcdefghij"),
+        form("chp-2026-fr", "CHP RFI — French", "sheetFR0123456789abcdefghij"),
+    ]
+
+
+FR_RESPONSES = [
+    ["Horodateur", "Nom de l'organisation", "Courriel du contact", "Pays"],
+    ["3/6/2026 09:00:00", "Fenwick Trust", "a@example.invalid", "Sénégal"],
+]
+
+
+@pytest.mark.django_db
+class TestARoundWithSeveralForms:
+    @pytest.fixture
+    def grouped(self, db):
+        rounds, _ = parse_rounds(_grouped_rows())
+        upsert_rounds(rounds)
+        return Solicitation.objects.get(slug="chp-2026"), rounds
+
+    def test_one_round_records_both_forms(self, grouped):
+        round_, _ = grouped
+        assert Solicitation.objects.directory_rounds().count() == 1
+        assert [f["key"] for f in round_.directory_forms] == ["chp-2026-en", "chp-2026-fr"]
+
+    def test_both_forms_ingest_into_the_one_round_with_row_2_kept_apart(self, grouped):
+        round_, _ = grouped
+        stats = ingest_round(round_, {"chp-2026-en": RESPONSES, "chp-2026-fr": FR_RESPONSES})
+        assert stats["submissions"] == 3
+        assert set(round_.responses.filter(source_row=2).values_list("source_form", flat=True)) == {
+            "chp-2026-en",
+            "chp-2026-fr",
+        }
+        fr = round_.responses.get(source_form="chp-2026-fr")
+        assert fr.org_name == "Fenwick Trust"
+        assert "sheetFR0123456789abcdefghij" in fr.source_url
+
+    def test_the_round_holds_every_forms_questions(self, grouped):
+        round_, _ = grouped
+        ingest_round(round_, {"chp-2026-en": RESPONSES, "chp-2026-fr": FR_RESPONSES})
+        round_.refresh_from_db()
+        texts = [q["text"] for q in round_.questions]
+        assert "Organization name" in texts and "Nom de l'organisation" in texts
+
+    def test_each_form_is_checked_and_the_round_takes_the_worst(self, grouped):
+        round_, _ = grouped
+
+        def read(sid, tab):
+            if sid == "sheetFR0123456789abcdefghij":
+                raise PermissionError("403")
+            return [["Timestamp"]]
+
+        results = check_access(read)
+        assert {(r["form"], r["state"]) for r in results} == {
+            ("chp-2026-en", ACCESS_OK),
+            ("chp-2026-fr", ACCESS_DENIED),
+        }
+        round_.refresh_from_db()
+        assert round_.sa_access_state == ACCESS_DENIED
+        assert {f["key"]: f["sa_access_state"] for f in round_.forms} == {
+            "chp-2026-en": ACCESS_OK,
+            "chp-2026-fr": ACCESS_DENIED,
+        }
+
+    def test_each_form_s_own_row_gets_its_own_verdict(self, grouped):
+        from connect_labs.marketplace import directory
+
+        _, rounds = grouped
+        written = []
+        directory.update_cells = lambda sid, updates: written.extend(updates)  # noqa: E731
+
+        def read(sid, tab):
+            if sid == "sheetFR0123456789abcdefghij":
+                raise PermissionError("403")
+            return [["Timestamp"]]
+
+        check_access(read, write_back_to=rounds, spreadsheet_id="sheet-id")
+        by_range = {rng.split("!")[1]: values[0][0] for rng, values in written}
+        assert "OK" in by_range["P2"]
+        assert "NO ACCESS" in by_range["P3"]
+        assert "share the response sheet" in by_range["T3"]
+
+    def test_a_reimport_keeps_each_forms_verified_access(self, grouped):
+        round_, _ = grouped
+        check_access(lambda sid, tab: [["Timestamp"]])
+        rounds, _ = parse_rounds(_grouped_rows())
+        upsert_rounds(rounds)
+        round_.refresh_from_db()
+        assert {f["sa_access_state"] for f in round_.forms} == {ACCESS_OK}
+
+    def test_a_form_imported_earlier_as_its_own_round_is_folded_in(self, db):
+        # Yesterday each form was a round of its own.
+        header, en, fr = _grouped_rows()
+        alone = [header] + [r[:-1] + [""] for r in (en, fr)]
+        rounds, _ = parse_rounds(alone)
+        upsert_rounds(rounds)
+        ingest_round(Solicitation.objects.get(slug="chp-2026-fr"), FR_RESPONSES)
+
+        rounds, _ = parse_rounds(_grouped_rows())
+        stats = upsert_rounds(rounds)
+
+        assert sorted(stats["folded"]) == ["chp-2026-en", "chp-2026-fr"]
+        assert list(Solicitation.objects.directory_rounds().values_list("slug", flat=True)) == ["chp-2026"]
+        moved = Solicitation.objects.get(slug="chp-2026").responses.get()
+        assert moved.source_form == "chp-2026-fr"
+
+    def test_a_form_round_with_criteria_of_its_own_is_not_merged_by_machine(self, db):
+        header, en, fr = _grouped_rows()
+        rounds, _ = parse_rounds([header] + [r[:-1] + [""] for r in (en, fr)])
+        upsert_rounds(rounds)
+        Solicitation.objects.filter(slug="chp-2026-fr").update(evaluation_criteria=[{"id": "c1"}])
+
+        rounds, _ = parse_rounds(_grouped_rows())
+        stats = upsert_rounds(rounds)
+        assert stats["fold_refused"] == ["chp-2026-fr"]
+        assert Solicitation.objects.filter(slug="chp-2026-fr").exists()

@@ -203,16 +203,20 @@
               <i class="fa-solid fa-up-right-from-square text-[11px]"></i> Announcement
             </a>
           {% endif %}
-          {% if round.form_url %}
-            <a href="{{ round.form_url }}" target="_blank" rel="noopener noreferrer" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
-              <i class="fa-solid fa-up-right-from-square text-[11px]"></i> Google Form
-            </a>
-          {% endif %}
-          {% if can_read and round.response_spreadsheet_id %}
-            <a href="https://docs.google.com/spreadsheets/d/{{ round.response_spreadsheet_id }}" target="_blank" rel="noopener noreferrer" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
-              <i class="fa-solid fa-up-right-from-square text-[11px]"></i> Response sheet
-            </a>
-          {% endif %}
+          {% with forms=round.directory_forms %}
+            {% for form in forms %}
+              {% if form.form_url %}
+                <a href="{{ form.form_url }}" target="_blank" rel="noopener noreferrer" data-testid="round-form-link" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
+                  <i class="fa-solid fa-up-right-from-square text-[11px]"></i> Google Form{% if forms|length > 1 %} — {{ form.label }}{% endif %}
+                </a>
+              {% endif %}
+              {% if can_read and form.response_spreadsheet_id %}
+                <a href="https://docs.google.com/spreadsheets/d/{{ form.response_spreadsheet_id }}" target="_blank" rel="noopener noreferrer" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
+                  <i class="fa-solid fa-up-right-from-square text-[11px]"></i> Response sheet{% if forms|length > 1 %} — {{ form.label }}{% endif %}
+                </a>
+              {% endif %}
+            {% endfor %}
+          {% endwith %}
           <div class="text-[12px] text-gray-400 pt-1">
             {% if round.published_on %}Published {{ round.published_on|date:"j M Y" }}{% endif %}
             {% if round.application_deadline %} · deadline {{ round.application_deadline|date:"j M Y" }}{% endif %}
