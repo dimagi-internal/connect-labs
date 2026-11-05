@@ -326,8 +326,11 @@ PARTNER_CHECKS = (
     "stock_expiring",
     "stock_negative",
     "delivery_after_stockout",
+    # Small count gaps at a field worker are for the partner's supervisor (the summary leaves them out when
+    # a partner's own alert carries them: alerts/service.small_flw_gap).
+    "stock_variance",
 )
-SUMMARY_EXTRA_CHECKS = ("stock_variance", "tender_start_by")
+SUMMARY_EXTRA_CHECKS = ("tender_start_by",)
 
 
 @register_operation(
@@ -336,9 +339,10 @@ SUMMARY_EXTRA_CHECKS = ("stock_variance", "tender_start_by")
         "Set up alerts per partner: each partner's facilities and field workers alert ITS staff "
         "(partners: one entry per partner with the emails to tell, and optionally Connect usernames to message — "
         "sent as you, the person setting this up), and one daily summary across all partners "
-        "goes to the running organisation (summary_emails). Stock out, below minimum, expiring, negative, and "
-        "'a delivery arrives after stock runs out' for partners; the summary adds ledger/count disagreements and "
-        "'time to start the next tender'. Safe to repeat: an alert that already exists is left as it is."
+        "goes to the running organisation (summary_emails). Stock out, below minimum, expiring, negative, "
+        "'runs out before its next delivery' and count gaps for partners (a small field-worker count gap goes to "
+        "the partner's supervisor, not the summary); the summary adds 'time to start the next tender'. Safe to "
+        "repeat: an alert that already exists is left as it is."
     ),
     input_schema=obj(
         {

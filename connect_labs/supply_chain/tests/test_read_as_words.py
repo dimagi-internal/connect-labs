@@ -690,4 +690,4 @@ class TestAlertChips:
             data={"check_kinds": ["stock_below_minimum"], "recipient_email": "stores@example.org"},
         )
         body = client_in_programme.get(reverse("supply_chain:alerts")).content.decode()
-        assert "Below its own minimum" in body
+        assert "A place holds less than its minimum" in body

@@ -35,7 +35,7 @@ class TestAlertChecksReadAsWords:
             assert "a fact nobody supplied" not in label
             assert "bound in your own data" not in label
         labels = dict(check_kind_choices())
-        assert labels["stock_below_minimum"].startswith("Below its own minimum")
+        assert labels["stock_below_minimum"].startswith("A place holds less than its minimum")
 
     def test_the_sent_log_readout_says_how_far_below(self):
         readout = check_readout(

@@ -39,9 +39,9 @@ def check_kind_choices():
 
     order = {category: index for index, category in enumerate(CATEGORIES)}
     kinds = sorted(KIND_CATEGORIES.items(), key=lambda pair: (order.get(pair[1], 99), pair[0]))
-    from connect_labs.supply_chain.templatetags.supply_chain_extras import check_label
+    from connect_labs.supply_chain.alerts.labels import watch_label
 
-    return [(kind, f"{check_label(kind)} — {_CATEGORY_WORDS.get(category, category)}") for kind, category in kinds]
+    return [(kind, f"{watch_label(kind)} — {_CATEGORY_WORDS.get(category, category)}") for kind, category in kinds]
 
 
 class _PointChoice(forms.ModelChoiceField):
@@ -63,8 +63,8 @@ class AlertSubscriptionForm(forms.Form):
         choices=(),
         widget=forms.CheckboxSelectMultiple,
         help_text=_(
-            "Each is emailed once, when it becomes true. A check that stays true is not sent again; one "
-            "that clears and comes back is news again."
+            "Each is sent once, when it becomes true (by email or as a Connect message, as you choose below). One "
+            "that stays true is not sent again; one that clears and comes back is news again."
         ),
     )
     movement_kinds = forms.MultipleChoiceField(
