@@ -30,7 +30,16 @@ def build(da, monkeypatch, *, ordered=("north", "river"), holds=3, contacts=True
         },
     )
     item = op(da, "item_upsert", data={"sku": "RUTF-CTN", "name": "RUTF carton", "commodity_slug": "rutf"})
-    supplier = op(da, "supplier_create", data={"name": "Dabs Nutritional Products Ltd"})
+    supplier = op(
+        da,
+        "supplier_create",
+        data={
+            "name": "Dabs Nutritional Products Ltd",
+            "contacts": [
+                {"name": "Jane Okoro", "email": "jane@dabs.example", "phone": "+234 800 000 0000", "use": "to"}
+            ],
+        },
+    )
     ours = op(da, "org_upsert", data={"slug": "us", "name": "The programme"})
     monkeypatch.setattr(runner, "running_org", lambda program_id: LabsOrg.objects.get(pk=ours["id"]))
     names = {"north": "North Star", "river": "Riverbend", "savanna": "Savanna"}

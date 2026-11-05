@@ -28,6 +28,7 @@ from connect_labs.supply_chain.forms import INPUT, SELECT, set_choices
 from connect_labs.supply_chain.models import PartnerPlan, SupplyPoint, Tender
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.stock.services.issues import partner_by_point
+from connect_labs.supply_chain.values import unit_noun
 
 BUYING_CHOICES = [
     ("partner_buys", _("The partner buys, on our negotiated quote")),
@@ -308,6 +309,9 @@ SPLIT_FIELDS = (
 
 COURSE_BASIS_WORDS = {
     "given": "the figure you gave",
+    "pack_per_child": (
+        "one carton a child, this programme's default (change it here, or in the programme's Supply settings)"
+    ),
     "protocol": "the product's protocol (no forecast yet from children who have finished)",
     "forecast": "the forecast, from children who have finished their course",
 }
@@ -404,8 +408,8 @@ class PurchaseSizingView(SupplyWriteMixin, TemplateView):
             row["figure"] = row["packs"] if in_packs else row["units"]
             row["figure_text"] = _plain_number(row["figure"])
             row["sentence"] = (
-                f"{_plain_number(row['target_cases'])} children x {_plain_number(row['course_units'])} per child's "
-                f"course = {_plain_number(_number(row['target_cases']) * _number(row['course_units']))}; "
+                f"{_plain_number(row['target_cases'])} children x {_plain_number(row['course_units'])} per child = "
+                f"{_plain_number(_number(row['target_cases']) * _number(row['course_units']))}; "
                 f"plus a {_plain_number(row['buffer_percent'])}% buffer = {_plain_number(row['units'])} "
                 f"{commodity.get('base_unit') or 'units'}"
                 + (
@@ -421,6 +425,7 @@ class PurchaseSizingView(SupplyWriteMixin, TemplateView):
             in_packs=in_packs,
             course_basis_text=COURSE_BASIS_WORDS.get(result["course_basis"], result["course_basis"]),
             course_text=_plain_number(result["partners"][0]["course_units"]),
+            base_unit_text=unit_noun(commodity.get("base_unit"), 2) or "units",
             total_text=_plain_number(result["total_packs"] if in_packs else result["total_units"]),
             changed=get.get("changed", ""),
         )

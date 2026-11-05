@@ -90,9 +90,12 @@ class TestTheScreens:
     def test_the_supplier_page_and_list_say_what_is_not_on_file(self, client_in_programme, da, world):
         _rutf(da)
         detail = client_in_programme.get(reverse("supply_chain:supplier_detail", args=[world["supplier"]["id"]]))
-        assert "National product registration" in detail.content.decode()
+        # Only the batch certificate is required by default; UNICEF and registration are a programme's choice.
+        body = detail.content.decode()
+        assert "Certificate of analysis for each batch" in body
+        assert "National product registration" not in body and "UNICEF supplier approval" not in body
         listing = client_in_programme.get(reverse("supply_chain:suppliers")).content.decode()
-        assert "3 not on file" in listing
+        assert "1 not on file" in listing
 
     def test_the_list_flags_only_suppliers_asked_to_quote_or_awarded(self, client_in_programme, da, world):
         _rutf(da)
@@ -107,11 +110,13 @@ class TestTheScreens:
     def test_the_comparison_page_warns_before_awarding(self, client_in_programme, da, world):
         _rutf(da)
         body = client_in_programme.get(_compare_url(world)).content.decode()
-        assert 'data-testid="qualification-gaps"' in body and "Sahel Chemicals" in body
+        # one line pointing at the tender page, not the whole warning again
+        assert 'data-testid="qualification-gaps-note"' in body and "Sahel Chemicals" in body
+        assert 'data-testid="qualification-gaps"' not in body
 
     def test_no_warning_when_the_product_has_no_usual_list(self, client_in_programme, da, world):
         body = client_in_programme.get(_compare_url(world)).content.decode()
-        assert 'data-testid="qualification-gaps"' not in body
+        assert 'data-testid="qualification-gaps-note"' not in body
 
     def test_the_tender_page_names_who_lacks_them(self, client_in_programme, da, world):
         _rutf(da)
@@ -119,3 +124,42 @@ class TestTheScreens:
             reverse("supply_chain:procurement_tender_detail", args=[world["tender"]["id"]])
         ).content.decode()
         assert 'data-testid="qualification-gaps"' in body
+
+
+class TestWhichChecksAProgrammeRequires:
+    def _set(self, da, checks):
+        from connect_labs.scope_config.models import ScopeConfig
+        from connect_labs.supply_chain.config import SUPPLY
+
+        ScopeConfig.objects.update_or_create(
+            scope_type="program",
+            scope_key=str(da.program_id),
+            namespace=SUPPLY.key,
+            defaults={"data": {"required_supplier_checks": checks}},
+        )
+
+    def test_only_the_batch_certificate_is_required_by_default(self):
+        assert q.required_keys(None) == ("certificate",)
+        assert [u.key for u in q.usual_for(["therapeutic_food"], q.required_keys(None))] == ["certificate"]
+
+    def test_a_supplier_holding_the_certificate_is_not_flagged_for_the_rest(self):
+        suppliers = [{"id": 1, "name": "Has Certificate", "qualifications": [{"name": "certificate of analysis"}]}]
+        assert q.gaps(suppliers, ["therapeutic_food"], TODAY) == []
+
+    def test_a_programme_can_require_more_or_none(self, da):
+        self._set(da, ["unicef", "certificate"])
+        assert q.required_keys(da.program_id) == ("unicef", "certificate")
+        suppliers = [{"id": 1, "name": "None Held", "qualifications": []}]
+        got = q.gaps(suppliers, ["therapeutic_food"], TODAY, da.program_id)
+        assert got[0]["lacks"] == ["UNICEF supplier approval", "Certificate of analysis for each batch"]
+        self._set(da, [])
+        assert q.gaps(suppliers, ["therapeutic_food"], TODAY, da.program_id) == []
+
+    def test_the_tender_page_warns_only_on_what_is_required(self, client_in_programme, da, world):
+        _rutf(da)
+        self._set(da, ["unicef"])
+        body = client_in_programme.get(
+            reverse("supply_chain:procurement_tender_detail", args=[world["tender"]["id"]])
+        ).content.decode()
+        warn = body.split('data-testid="qualification-gaps"', 1)[1].split("</div>", 1)[0]
+        assert "UNICEF supplier approval" in warn and "Certificate of analysis" not in warn

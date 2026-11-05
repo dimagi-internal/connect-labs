@@ -59,3 +59,26 @@ def size_purchase(partners, course_units, buffer_percent=DEFAULT_BUFFER_PERCENT,
         "total_packs": total_packs if base_per_pack else None,
         "base_per_pack": base_per_pack,
     }
+
+
+SETTING = "purchase_packs_per_child"
+DEFAULT_PACKS_PER_CHILD = Decimal("1")
+
+
+def packs_per_child(program_id) -> Decimal:
+    """How many packs (cartons) one child is sized at: the programme's own setting, else one.
+
+    Sophie Feintuch's round-2 walk, "Purchase sizing": the default was the measured course (40 sachets in the
+    demo), which is a floor because the fastest recoveries finish first. A carton a child (150 sachets) is the
+    default, and the programme may change it in its Supply settings.
+    """
+    from connect_labs.scope_config.models import ScopeConfig
+    from connect_labs.supply_chain.config import SUPPLY
+
+    row = ScopeConfig.objects.filter(scope_type="program", scope_key=str(program_id), namespace=SUPPLY.key).first()
+    raw = (row.data if row else {}).get(SETTING)
+    try:
+        value = Decimal(str(raw)) if raw is not None else DEFAULT_PACKS_PER_CHILD
+    except Exception:  # noqa: BLE001 -- a malformed setting falls back to the default
+        return DEFAULT_PACKS_PER_CHILD
+    return value if value > 0 else DEFAULT_PACKS_PER_CHILD

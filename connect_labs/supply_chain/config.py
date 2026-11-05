@@ -80,6 +80,16 @@ SCHEMA = {
         # An award worth more than this many US dollars must say why. Unset (the default):
         # a reason is never required.
         "award_reason_required_above_usd": {"type": "number", "exclusiveMinimum": 0},
+        # Which supplier checks this programme requires, and so warns about: any of "unicef",
+        # "registration", "certificate" (a certificate of analysis for each batch). Unset: the batch
+        # certificate only. An empty list requires none.
+        "required_supplier_checks": {
+            "type": "array",
+            "items": {"enum": ["unicef", "registration", "certificate"]},
+            "uniqueItems": True,
+        },
+        # How many packs (cartons) one child needs, the default a purchase is sized on. Unset: 1.
+        "purchase_packs_per_child": {"type": "number", "exclusiveMinimum": 0},
     },
     "additionalProperties": False,
 }

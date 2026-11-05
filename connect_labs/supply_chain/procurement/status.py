@@ -1018,14 +1018,18 @@ def comparison_grid(
         unit_noun(line_unit) if line_qty else f"{unit_noun(rows[0].get('pack_unit') or 'pack')}" if rows else "pack"
     )
     facts = [
-        ("landed", f"Landed per {pack_label}", "calculated"),
+        ("landed", f"Delivered cost per {pack_label}", "price + freight + clearing + duty, calculated"),
         ("price", "Quoted price", "as quoted"),
         ("pack", "Pack", "as quoted"),
         ("term", "Delivery term", "as quoted · who imports"),
         ("freight", "Freight", "quote or term"),
-        ("clearing", "Clearing & forwarding", "our estimate"),
+        (
+            "clearing",
+            "Clearing and handling at the port",
+            "our estimate · the agent who gets the goods through customs",
+        ),
         ("duty", "Import duty", "tender terms"),
-        ("fx", "Exchange rate", "recorded by us"),
+        ("fx", "Exchange rate to USD", "recorded by us · turns a quote in another currency into dollars"),
     ]
     if lowest is not None:
         facts.insert(1, ("vs_lowest", "Above lowest", f"per {pack_label}"))

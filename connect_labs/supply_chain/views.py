@@ -1504,7 +1504,11 @@ class SupplierDirectoryView(OperationBase):
         contracts = self.op("contract_list")
         lacks = {
             g["supplier_id"]: g["lacks"]
-            for g in qualifications.gaps(suppliers, qualifications.categories_of(self.op("commodity_list")))
+            for g in qualifications.gaps(
+                suppliers,
+                qualifications.categories_of(self.op("commodity_list")),
+                program_id=_access(self.request).program_id,
+            )
         }
         for supplier in suppliers:
             supplier["usual_lacks"] = lacks.get(supplier["id"], [])
@@ -1548,7 +1552,11 @@ class SupplierDetailView(OperationBase):
             raise Http404(f"no supplier {supplier_id} on file")
         context["supplier"] = supplier
         if context["has_program_context"]:
-            lacking = qualifications.gaps([supplier], qualifications.categories_of(self.op("commodity_list")))
+            lacking = qualifications.gaps(
+                [supplier],
+                qualifications.categories_of(self.op("commodity_list")),
+                program_id=_access(self.request).program_id,
+            )
             context["usual_lacks"] = lacking[0]["lacks"] if lacking else []
         context["offerings"] = (
             SupplierOffering.objects.filter(profile__org_id=supplier["org_id"]) if supplier.get("org_id") else []

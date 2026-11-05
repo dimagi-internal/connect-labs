@@ -47,14 +47,17 @@
     </div>
     {% if grid and grid.quotes and not grid.like_for_like %}<a href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#import-estimates" data-testid="clearing-not-recorded" class="status-chip status-chip--ours px-3 py-1 text-sm hover:underline">Clearing estimate not recorded · quotes we import are shown excl. clearing</a>{% endif %}
     </div>
-    {% if grid and grid.quotes %}<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600"><span class="inline-flex items-center gap-x-3" data-testid="owner-legend"><span class="inline-flex items-center gap-1"><span class="status-chip status-chip--fact">ours to attach · choose · fill</span>ours</span><span class="inline-flex items-center gap-1"><span class="status-chip status-chip--fact">to ask</span>ours to ask</span><span class="inline-flex items-center gap-1"><span class="status-chip status-chip--theirs">waiting</span>on the supplier</span></span>{% include "supply_chain/_src_legend.html" %}</div>{% endif %}
+    {% if grid and grid.quotes %}<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600"><span class="inline-flex items-center gap-x-3" data-testid="owner-legend">{% if grid_legend.ours %}<span class="inline-flex items-center gap-1"><span class="status-chip status-chip--fact">ours to attach · choose · fill</span>ours</span>{% endif %}{% if grid_legend.to_ask %}<span class="inline-flex items-center gap-1"><span class="status-chip status-chip--fact">to ask</span>ours to ask</span>{% endif %}{% if grid_legend.waiting %}<span class="inline-flex items-center gap-1"><span class="status-chip status-chip--theirs">waiting</span>on the supplier</span>{% endif %}</span>{% include "supply_chain/_src_legend.html" %}</div>{% endif %}
   </div>
 
   {% if award_error %}
   <div class="border-message-error-border/50 bg-message-error text-message-error-text rounded-lg border px-3.5 py-2.5 text-sm" role="alert" data-testid="award-error">Could not award: {{ award_error }}</div>
   {% endif %}
 
-  {% include "supply_chain/procurement/_qualification_gaps.html" with gap_moment="you award" %}
+  {% comment %}Said in full once, on the tender page; here a line pointing back, not the whole warning again.{% endcomment %}
+  {% if qualification_gaps %}
+  <p class="text-sm text-message-warning-text" data-testid="qualification-gaps-note">A check you require is missing for {% for gap in qualification_gaps %}{{ gap.name }}{% if not forloop.last %}, {% endif %}{% endfor %}. <a class="underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#outreach">What to ask for is on the tender page.</a></p>
+  {% endif %}
 
   {% if awards %}
   <div class="border-brand-border-light flex flex-wrap items-baseline gap-x-3.5 gap-y-2 rounded-lg border bg-white px-5 py-3 text-sm" data-testid="awards">

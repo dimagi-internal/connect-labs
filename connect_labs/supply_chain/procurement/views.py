@@ -479,6 +479,7 @@ class TenderDetailView(_Base):
             asked | quoted,
             commodities,
             [ln.get("commodity_slug") for ln in tender.get("lines") or []],
+            program_id=_access(self.request).program_id,
         )
         # What the tender buys, a line at a time, with a kit's contents when
         # the tender states them -- the fact its comparison ranks against.
@@ -1102,6 +1103,7 @@ class ComparisonView(_Base):
                 {row.get("supplier_id") for row in comparison.get("all_rows") or []},
                 commodities,
                 [commodity],
+                program_id=_access(self.request).program_id,
             )
             if comparison
             else []
@@ -1265,6 +1267,17 @@ class ComparisonView(_Base):
                 draft_anchors=draft_anchors(drafts),
                 waiver_on_file=context.get("waiver_on_file", True),
             )
+            # The key says only what appears on this grid: a mark nobody carries is not explained.
+            from connect_labs.supply_chain import moves as _rules
+
+            grid_quotes = context["grid"]["quotes"]
+            context["grid_legend"] = {
+                "ours": any(q.get("ours_actions") for q in grid_quotes),
+                "to_ask": any(
+                    a.get("owner") == _rules.TO_ASK for q in grid_quotes for a in q.get("ours_actions") or []
+                ),
+                "waiting": any(q.get("theirs_actions") for q in grid_quotes),
+            }
             context["grid_blocked_by_terms"] = [q["name"] for q in context["grid"]["quotes"] if q["blocked_by_terms"]]
             # ONE award block for the tender, offering every live quote not already awarded: the grid's,
             # cheapest landed price first, then any offer holding different contents, listed below the

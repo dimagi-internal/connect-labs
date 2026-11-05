@@ -123,6 +123,20 @@ class TestTheChecksReadRightForAnImport:
         kinds = {c["kind"] for c in op(da, "checks_list")["checks"]}
         assert "shipment_without_certificate" in kinds
 
+    def test_a_programme_that_does_not_require_the_batch_certificate_is_not_flagged(self, da, world):
+        from connect_labs.scope_config.models import ScopeConfig
+        from connect_labs.supply_chain.config import SUPPLY
+
+        ScopeConfig.objects.create(
+            scope_type="program",
+            scope_key=str(da.program_id),
+            namespace=SUPPLY.key,
+            data={"required_supplier_checks": ["unicef"]},
+        )
+        _shipment(da, world, required=[])
+        kinds = {c["kind"] for c in op(da, "checks_list")["checks"]}
+        assert "shipment_without_certificate" not in kinds
+
 
 class TestImportDocumentKinds:
     def test_the_clearance_documents_are_kinds_a_document_can_be(self):

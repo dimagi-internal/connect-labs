@@ -471,6 +471,12 @@ def _fulfilment(access, as_of):
     out += _unevidenced_deliveries(access, as_of)
     out += _unaccounted_quantity(access, as_of)
 
+    # Only where the programme requires a certificate of analysis for each batch (its Supply settings;
+    # the batch certificate is what a RUTF programme asks of every supplier by default).
+    from connect_labs.supply_chain.reference.qualifications import required_keys
+
+    if "certificate" not in required_keys(access.program_id):
+        uncertified = []
     for shipment in uncertified:
         out.append(
             _check(
