@@ -459,7 +459,9 @@ def _fulfilment(access, as_of):
         # for one on top kept a "missing document" on the checks list after the
         # consignment's own checklist read nothing outstanding.
         .filter(required_documents=[])
-        .select_related("contract__supplier__org__supplier_profile", "contract__commodity", "contract__item")
+        .select_related(
+            "contract__supplier__org__supplier_profile", "contract__commodity", "contract__item", "contract__tender"
+        )
     )
     out += _late_shipments(access, as_of)
     out += _open_commitments(access, as_of)
@@ -477,7 +479,12 @@ def _fulfilment(access, as_of):
                 subject_id=shipment.pk,
                 label=_shipment_label(shipment),
                 audience="supplier",
-                facts={"status": shipment.status},
+                facts={
+                    "status": shipment.status,
+                    "supplier": _supplier_fact(shipment.contract.supplier),
+                    # Which delivery it is, in words: the tender it was bought through ("Round 1").
+                    "tender": shipment.contract.tender.label if shipment.contract.tender_id else "",
+                },
                 since=shipment.dispatched_on,
                 as_of=as_of,
             )

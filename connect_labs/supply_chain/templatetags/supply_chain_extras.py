@@ -271,6 +271,14 @@ def sort_key(value) -> str:
 
 
 @register.filter
+def explain_term(text, term):
+    """`text` with the word `term` explained on hover when it is one the chase list knows (chase.HINTS)."""
+    from connect_labs.supply_chain.portfolio.chase import hint_html
+
+    return hint_html(str(text), term)
+
+
+@register.filter
 def day(value):
     """A date by the one date rule (values.day_text): "2026-09-17" -> "17 Sep 2026".
 
@@ -891,7 +899,7 @@ def _open_and_awarded(evaluation):
 
 
 def evaluation_value(evaluation):
-    """The Evaluation headline: quotes with a landed price of quotes received, on rounds still being evaluated.
+    """The Compared headline: quotes with a delivered price of quotes received, on rounds still being evaluated.
 
     A count of a computed figure, not a verdict on which quotes may be compared. An awarded
     tender is not added in: "1 of 4" mixed one open tender's count with another tender's awarded
@@ -908,19 +916,19 @@ def evaluation_value(evaluation):
 def evaluation_words(evaluation) -> str:
     """The Evaluation cell's caption: what the headline counts, round by round, and awarded tenders apart.
 
-    "quotes with a landed price on RUTF round 2 · awarded: RUTF round 1". Several open
+    "quotes with a delivered price on RUTF round 2 · awarded: RUTF round 1". Several open
     rounds are broken down one by one ("RUTF round 3: 0 of 2 · RUTF round 2: 1 of 3
-    quotes with a landed price"), each reading back to its own comparison page.
+    quotes with a delivered price"), each reading back to its own comparison page.
     """
     open_rounds, awarded = _open_and_awarded(evaluation)
     if not open_rounds and not awarded:
-        return "quotes with a landed price"
+        return "quotes with a delivered price"
     if len(open_rounds) == 1:
-        head = f"quotes with a landed price on {open_rounds[0]['label']}"
+        head = f"quotes with a delivered price on {open_rounds[0]['label']}"
     elif open_rounds:
         head = (
             " · ".join(f"{p['label']}: {p.get('priced', 0)} of {p['of']}" for p in open_rounds)
-            + " quotes with a landed price"
+            + " quotes with a delivered price"
         )
     else:
         head = "no tender open for evaluation"
@@ -930,7 +938,7 @@ def evaluation_words(evaluation) -> str:
 
 
 def quotation_words(quotations) -> str:
-    """The Quotations caption: live quotes per tender, newest first, so each reads back to its tender."""
+    """The Quotes in caption: live quotes per tender, newest first, so each reads back to its tender."""
     parts = quotations.get("by_tender") or []
     if len(parts) < 2:
         return "live" + (f" on {parts[0]['label']}" if parts else "")
@@ -950,21 +958,21 @@ def source_stages(source):
 
     return [
         _cell(
-            "Demand",
+            "Tenders",
             source["demand"]["tenders"],
             _plural(source["demand"]["open"], "open tender"),
             sourcing,
         ),
         _cell(
-            "RFQ issued",
+            "Suppliers asked",
             source["rfq_issued"]["invitations"],
             _awaiting_words(source["rfq_issued"]),
             sourcing,
         ),
-        _cell("Quotations", source["quotations"]["live"], quotation_words(source["quotations"]), sourcing),
-        _cell("Evaluation", evaluation_value(evaluation), evaluation_words(evaluation), sourcing),
+        _cell("Quotes in", source["quotations"]["live"], quotation_words(source["quotations"]), sourcing),
+        _cell("Compared", evaluation_value(evaluation), evaluation_words(evaluation), sourcing),
         _cell(
-            "Award",
+            "Awarded",
             source["award"]["count"],
             (
                 f"{source['award']['provisional']} provisional — chosen while quotes still lacked facts"
@@ -982,26 +990,26 @@ def order_stages(order):
     orders = reverse("supply_chain:orders")
     return [
         _cell(
-            "Contract",
+            "Orders placed",
             order["contract"]["count"],
             ", ".join(f"{n} bought by {buyer_label(buyer)}" for buyer, n in buyers.items()) or None,
             orders,
         ),
         _cell(
-            "Orders without a PO number",
+            "Orders with no order number",
             order["contract"]["without_reference"],
-            "we do not hold the PO number" if order["contract"]["without_reference"] else None,
+            "we do not hold the order number" if order["contract"]["without_reference"] else None,
             orders,
         ),
         _cell(
-            "Dispatched",
+            "Shipped",
             order["dispatched"]["shipments"],
             _dispatched_note(order["dispatched"]),
             orders,
         ),
-        _cell("Received", order["received"]["receipts"], "goods received notes", orders),
+        _cell("Received", order["received"]["receipts"], "deliveries recorded", orders),
         _cell(
-            "Invoiced",
+            "Billed",
             order["invoiced"]["count"],
             _invoiced_note(order["invoiced"]) if order["invoiced"]["count"] else None,
             orders,
@@ -1024,30 +1032,51 @@ def _invoiced_note(invoiced) -> str:
     return " · ".join(p for p in parts if p) or "0 unpaid"
 
 
+def _in_base_unit(cell, pack, note):
+    """A stock figure in the loose unit every other figure uses (sachets), with the whole cartons it makes in the note.
+
+    "1,288.4 cartons" beside "8,940 sachets" was two units on one row (round 2, "One unit"). With the pack known the
+    figure becomes sachets, and the note says "1,288 cartons and 60 sachets". Without it the cell is left as it is.
+    """
+    if not pack or not cell or "amount" not in cell or cell.get("unit") != pack["pack_unit"]:
+        return cell, note
+    amount = _as_decimal(cell["amount"])
+    if amount is None or not amount.is_finite():
+        return cell, note
+    loose = (amount * pack["per_pack"]).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    cartons, rest = divmod(int(loose), int(pack["per_pack"]))
+    split = qty(cartons, pack["pack_unit"]) + (f" and {qty(rest, pack['base_unit'])}" if rest else "")
+    return {**cell, "amount": loose, "unit": pack["base_unit"]}, f"{split} · {note}"
+
+
 @register.filter
 def deliver_stages(deliver):
     cover = deliver["cover"]
     needs = cover.get("below_min", 0) + cover.get("stockout", 0) + cover.get("negative", 0)
     stock = reverse("supply_chain:stock")
     distribution = reverse("supply_chain:distribution")
+    on_hand, on_hand_note = _in_base_unit(deliver["on_hand"], deliver.get("pack"), "excludes goods in transit")
+    in_transit, in_transit_note = _in_base_unit(
+        deliver["in_transit"], deliver.get("pack"), "not counted as stock on hand"
+    )
     return [
         _cell(
-            "Network",
+            "Places holding stock",
             deliver["network"]["supply_points"],
-            f"supply points · {deliver['network']['user_held']} field workers",
+            f"places · {deliver['network']['user_held']} field workers",
             stock,
         ),
         # A quantity needs a unit, and a unit needs a commodity -- so a cell
         # with neither says what would make it computable rather than showing
         # a bare dash, which reads as "zero" or "broken".
-        _quantity_cell("On hand", deliver["on_hand"], "excludes goods in transit", stock),
-        _quantity_cell("In transit", deliver["in_transit"], "not counted as stock on hand", stock),
-        _cell("Distributed", deliver["distributions"]["runs"], "resupply runs", distribution),
-        _quantity_cell("Dispensed", deliver["consumed"], "derived from visits", distribution),
+        _quantity_cell("On hand", on_hand, on_hand_note, stock),
+        _quantity_cell("In transit", in_transit, in_transit_note, stock),
+        _cell("Handed out", deliver["distributions"]["runs"], "handouts", distribution),
+        _quantity_cell("Given to children", deliver["consumed"], "worked out from visits", distribution),
         _cell(
-            "Below reorder level",
+            "Running low",
             needs,
-            f"supply points · {deliver['network']['never_reported']} never reported",
+            f"places below their minimum · {deliver['network']['never_reported']} never reported",
             stock,
         ),
     ]

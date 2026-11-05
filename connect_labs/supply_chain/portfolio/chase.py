@@ -17,7 +17,12 @@ anyone words it.
 
 from __future__ import annotations
 
+import re
 from datetime import date
+from decimal import Decimal, InvalidOperation
+
+from connect_labs.supply_chain.naming import store_name
+from connect_labs.supply_chain.values import day_text
 
 # Who each audience is, when the check does not name a person or company.
 # "internal" has no one to name, so a sentence that reaches it with no subject
@@ -33,7 +38,7 @@ _NAMED_BY_SUBJECT = {"stock_never_reported", "stock_variance", "stock_negative"}
 # plain noun when it names none. Kinds with no sentence use their label.
 ASK = {
     "quote_not_comparable": "Ask {who} for the facts missing from their quote",
-    "contract_cost_unconfirmed": "Get the price details still missing, so the total cost can be worked out",
+    "contract_cost_unconfirmed": "Ask {who} for the price details still missing, so the total cost can be worked out",
     "contract_reference_unknown": "Record the purchase order number",
     "duty_relief_unevidenced": "Get proof that the duty exemption was granted",
     "shipment_without_certificate": "Ask {who} for the batch certificate",
@@ -55,6 +60,67 @@ ASK = {
     "stock_negative": "Check with {who}: more was given out than was ever received",
 }
 
+# What each kind says about itself, in the words a programme manager would use (Sophie, round 2, "Plain words").
+# `{who}` is the person or company the row is about; the row's own facts fill the rest in `_say`.
+SAYS = {
+    "payment_unconfirmed": "{who} hasn't confirmed they received payment",
+    "shipment_without_certificate": "No batch certificate on file",
+    "stock_variance": "{who}'s count is below the records",
+    "stock_negative": "{who} gave out more than was ever received",
+    "stock_never_reported": "{who} has never reported their stock",
+}
+
+# Hover explanations for the words a non-specialist will not know.
+HINTS = {
+    "batch certificate": (
+        "The manufacturer's quality test result for one batch of product: what was made, when it expires, "
+        "and that it passed. We ask for one with every delivery."
+    ),
+}
+
+# FLW counts that differ from the records are the partner's supervisor's to check, not ours.
+_COUNT_GAPS = ("stock_variance", "stock_negative", "stock_never_reported")
+# Hand-written codes (DEMO-SHP-NSCH-001, PO-9): never the name of someone to ask.
+_CODE = re.compile(r"^[A-Z0-9]+(?:[-_/][A-Z0-9]+)+$|^[A-Z]*\d[\w-]*$")
+
+
+def _looks_like_code(text: str) -> bool:
+    text = (text or "").strip()
+    return bool(text) and " " not in text and bool(_CODE.match(text))
+
+
+def hint_html(text: str, term: str):
+    """`text` with the first `term` in it underlined and explained on hover (HINTS), as safe HTML."""
+    from django.utils.html import escape, format_html
+    from django.utils.safestring import mark_safe
+
+    start = text.lower().find(term.lower()) if term else -1
+    if start < 0 or term.lower() not in HINTS:
+        return escape(text)
+    return format_html(
+        '{}<abbr title="{}" class="cursor-help underline decoration-dotted">{}</abbr>{}',
+        mark_safe(escape(text[:start])),
+        HINTS[term.lower()],
+        text[start : start + len(term)],
+        mark_safe(escape(text[start + len(term) :])),
+    )
+
+
+def _num(value) -> str:
+    """ "1288.4000" -> "1,288.4", "4E+1" -> "40": a figure as a person writes it."""
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return str(value)
+    if number == number.to_integral_value():
+        return f"{int(number):,}"
+    return f"{number.normalize():,f}"
+
+
+def _plural(count, noun: str) -> str:
+    return f"{_num(count)} {noun}{'' if Decimal(str(count)) == 1 else 's'}"
+
+
 CHASE_GROUPS = (
     ("supplier", "Suppliers to chase"),
     ("partner", "Partners to chase"),
@@ -73,7 +139,9 @@ def _who(check: dict) -> str:
     if check.get("kind") == "commitment_open":
         return ((check.get("facts") or {}).get("owed_to") or {}).get("name") or ""
     if check.get("audience") == "supplier" and " — " in label[1:]:
-        return label.split(" — ")[0]
+        # "DABS — RUTF" leads with the company; "DEMO-SHP-001 — RUTF — DABS" leads with a code and ends with it.
+        parts = [part.strip() for part in label.split(" — ")]
+        return parts[-1] if _looks_like_code(parts[0]) else parts[0]
     return ""
 
 
@@ -91,26 +159,140 @@ def _days_since(iso: str | None, today: date) -> int | None:
     return (today - date.fromisoformat(iso)).days
 
 
-def _expiring(check: dict, about: str, today: date):
-    """(what, ask, about, days) for a batch near or past its expiry date.
+def _about(label: str, who: str) -> str:
+    """The subject's label without any record code and without the name already given as `who`."""
+    parts = [part.strip() for part in (label or "").split(" — ")]
+    kept = [part for part in parts if part and not _looks_like_code(part) and part != who]
+    return " · ".join(kept)
 
-    Said with the same words and the same age as the Overview's issues panel (`expiry_words`): a batch
-    still in date is "Expiring soon" and has no age, only a date to act by; only a past date is "Expired",
-    aged from the day it expired. (The age used to run from the start of the warning period.)
-    """
-    from connect_labs.supply_chain.stock.services.expiry import expiry_words
 
+def _gap(check: dict) -> tuple[Decimal, str, str] | None:
+    """(size, unit, "below" or "above") of a count that disagrees with the records, or None."""
     facts = check.get("facts") or {}
-    expiry = facts.get("expiry")
-    if not expiry:
-        return "Stock expiring soon or already expired", "Check the batch's expiry date", about, check.get("days_open")
-    said = expiry_words(date.fromisoformat(expiry), today)
-    quantity = facts.get("quantity") or "the stock"
-    if said["expired"]:
-        ask = f"Move or write off the {quantity} that expired: take it off the shelf so it is not handed out"
-        return said["label"], ask, f"{about} · {said['when']}", said["days"]
-    ask = f"Use the {quantity} first, or move it to where it will be used, before it expires"
-    return said["label"], ask, f"{about} · {said['when']}", None
+    if check.get("kind") != "stock_variance" or not facts.get("reconcilable", True):
+        return None
+    try:
+        variance = Decimal(str(facts["variance"]))
+    except (KeyError, InvalidOperation, ValueError):
+        return None
+    if variance == 0:
+        return None
+    return abs(variance), facts.get("unit") or "", "below" if variance < 0 else "above"
+
+
+def _money(facts: dict) -> str:
+    if facts.get("amount") in (None, ""):
+        return ""
+    return f"{facts.get('currency') or ''} {_num(facts['amount'])}".strip()
+
+
+def _duty_topics(check: dict) -> list[str]:
+    """What a supplier is being asked for, from the reasons a cost cannot be worked out: duty, VAT, freight, price."""
+    text = " ".join((check.get("facts") or {}).get("reasons") or []).lower()
+    topics = []
+    if "duty" in text:
+        topics.append("duty")
+    if "vat" in text:
+        topics.append("VAT")
+    if "freight" in text:
+        topics.append("freight")
+    if "unit price" in text or "included" in text or "quantity" in text:
+        topics.append("price")
+    return topics
+
+
+def _describe(check: dict, who: str, place: dict, today: date) -> dict:
+    """How one check reads on the list: audience, the next action, the plain statement, the amount, a hover.
+
+    Routing (round 2): a count gap or missing duty and VAT is not "ours". The first goes to the partner that runs
+    the place (its supervisor), the second to the supplier. Everything else keeps the audience the check carries.
+    """
+    kind = check["kind"]
+    facts = check.get("facts") or {}
+    audience = check["audience"]
+    partner = place.get("managed_by") or ""
+    subject = (check.get("subject") or {}).get("label") or ""
+    out = {"audience": audience, "who": who, "hint_term": ""}
+
+    if kind in _COUNT_GAPS and partner:
+        gap = _gap(check)
+        out["audience"], out["who"] = "partner", partner
+        if kind == "stock_variance":
+            out["ask"] = f"Ask {partner}'s supervisor to check {subject}'s count"
+            out["what"] = (
+                f"{subject}'s count is {_plural(gap[0], gap[1] or 'unit')} {gap[2]} the records"
+                if gap
+                else f"{subject}'s count cannot be compared with the records"
+            )
+            out["amount"] = f"{_plural(gap[0], gap[1] or 'unit')} {gap[2]}" if gap else ""
+        elif kind == "stock_negative":
+            out["ask"] = f"Ask {partner}'s supervisor how {subject} gave out more than they received"
+            out["what"] = f"{subject} has given out more than was ever received"
+            out["amount"] = ""
+        else:
+            out["ask"] = f"Ask {partner}'s supervisor to get {subject} to report their stock"
+            out["what"] = f"{subject} has never reported their stock"
+            out["amount"] = ""
+        out["about"] = subject
+        out["gap"] = gap
+        return out
+
+    if kind == "contract_cost_unconfirmed":
+        topics = _duty_topics(check)
+        if topics:
+            out["audience"] = "supplier"
+            # Its label ("DABS \u2014 RUTF") leads with the company, which `_who` only reads for a supplier's check.
+            who = who or _who({**check, "audience": "supplier"})
+            out["who"] = who
+            noun = " and ".join(topics) if topics != ["price"] else "price"
+            out["ask"] = f"Ask {who or 'the supplier'} for the {noun} details still missing, for the total cost"
+            out["what"] = f"The {noun} details are missing, so the total cost cannot be worked out"
+            out["about"] = _about(subject, who)
+            return out
+
+    if kind == "stock_expiring" and facts.get("expiry"):
+        from connect_labs.supply_chain.stock.services.expiry import expiry_words
+
+        # One rule for "Expired" and "Expiring soon" on every page (expiry_words): a batch in date is a warning
+        # with a date to act by and no age; only a past date is expired, aged from the day it expired.
+        said = expiry_words(date.fromisoformat(facts["expiry"]), today)
+        quantity = facts.get("quantity") or ""
+        number, _, unit = quantity.partition(" ")
+        shown = _plural(number, unit) if number and unit else (quantity or "the stock")
+        store = store_name(place.get("name") or subject.split(" \u2014 ")[0], place.get("kind"), partner)
+        when = day_text(date.fromisoformat(facts["expiry"]))
+        if said["expired"]:
+            out["ask"] = f"{shown} at {store} expired {when}: take them off the shelf"
+            out["days"], out["age_text"] = said["days"], ""
+        else:
+            out["ask"] = f"{shown} at {store} expire {when}: issue these first"
+            out["days"], out["age_text"] = None, f"expires {when}"
+        out["what"] = f"{said['label']} \u00b7 batch {facts.get('batch')}"
+        out["amount"] = shown
+        out["about"] = store
+        if partner:
+            out["audience"], out["who"] = "partner", partner
+        return out
+
+    if kind == "shipment_without_certificate":
+        tender = facts.get("tender") or ""
+        delivery = f"the {tender} delivery" if tender else "this delivery"
+        out["ask"] = f"Ask {who or 'the supplier'} for the batch certificate for {delivery}"
+        out["what"] = SAYS[kind]
+        out["hint_term"] = "batch certificate"
+        out["about"] = _about(subject, who)
+        return out
+
+    if kind == "payment_unconfirmed":
+        out["ask"] = ask_for(kind, audience, who, subject)
+        out["what"] = SAYS[kind].format(who=who or "The supplier")
+        out["amount"] = _money(facts)
+        out["about"] = _about(subject, who)
+        return out
+
+    out["ask"] = ask_for(kind, audience, who, subject)
+    out["about"] = _about(subject, who) if audience == "supplier" else subject
+    return out
 
 
 def chase_items(
@@ -132,7 +314,7 @@ def chase_items(
 
     `checks` are the wire form the map builds (`_check_wire`), `consignments`
     and `orders` the map's own lists, `suppliers` and `places` are keyed by id
-    (a place carries `name` and `managed_by`).
+    (a place carries `name`, `kind` and `managed_by`, the partner that runs it).
     """
     today = today or date.today()
     items = []
@@ -147,19 +329,22 @@ def chase_items(
             check = {**check, "audience": "internal"}
         who = _who(check)
         what = label_of(check["kind"])
-        ask = ask_for(check["kind"], check["audience"], who, what)
-        about = (check.get("subject") or {}).get("label") or ""
-        days = check.get("days_open")
-        if check["kind"] == "stock_expiring":
-            what, ask, about, days = _expiring(check, about, today)
+        subject = check.get("subject") or {}
+        place = places.get(subject.get("id")) if subject.get("type") == "supply_point" else None
+        described = _describe(check, who, place or {}, today)
         items.append(
             {
-                "audience": check["audience"],
-                "who": who,
-                "what": what,
-                "ask": ask,
-                "about": about,
-                "days": days,
+                "kind": check["kind"],
+                "audience": described["audience"],
+                "who": described["who"],
+                "what": described.get("what") or what,
+                "ask": described["ask"],
+                "about": described.get("about", (check.get("subject") or {}).get("label") or ""),
+                "amount": described.get("amount", ""),
+                "hint_term": described.get("hint_term", ""),
+                "gap": described.get("gap"),
+                "days": described["days"] if "days" in described else check.get("days_open"),
+                "age_text": described.get("age_text", ""),
                 "href": check.get("href") or "",
                 "program": program_name,
                 "program_id": program_id,
@@ -176,12 +361,14 @@ def chase_items(
         who = origin.get("managed_by") or ""
         items.append(
             {
+                "kind": "consignment_no_date",
                 "audience": "internal",
                 "who": who,
                 "what": "On the road with no arrival date",
                 "ask": f"Ask {who} when the stock will arrive" if who else "Find out when the stock will arrive",
-                "about": f"{origin.get('name', '')} → {destination.get('name', '')} · "
-                f"{consignment['quantity']} {consignment['quantity_unit']}",
+                "about": f"{store_name(origin.get('name', ''), origin.get('kind'), origin.get('managed_by'))} → "
+                f"{store_name(destination.get('name', ''), destination.get('kind'), destination.get('managed_by'))}",
+                "amount": _plural(consignment["quantity"], consignment["quantity_unit"]),
                 "days": _days_since(consignment.get("dispatched_on"), today),
                 "href": consignment.get("receive_url") or "",
                 "program": program_name,
@@ -196,11 +383,13 @@ def chase_items(
         who = supplier.get("name") or ""
         items.append(
             {
+                "kind": "order_no_date",
                 "audience": "supplier",
                 "who": who,
                 "what": "Owed, with no arrival date promised",
                 "ask": f"Ask {who or 'the supplier'} for an arrival date",
                 "about": order.get("reference") or f"Order #{order['contract_id']}",
+                "amount": "",
                 "days": None,
                 "href": order.get("url") or "",
                 "program": program_name,
@@ -263,8 +452,113 @@ def _partner_items(tenders, contracts, issues, program_name, program_id) -> list
     return items
 
 
+
+def _oldest_first(items: list[dict]) -> list[dict]:
+    """An item with no age sorts last: not knowing how long it has waited is not the same as being new."""
+    return sorted(items, key=lambda i: -(i["days"] if i["days"] is not None else -1))
+
+
+def _merge_gaps(who: str, items: list[dict]) -> dict:
+    """One row for a partner's FLW count gaps: "North Star: 5 FLWs 7-9 sachets below records"."""
+    gaps = [i["gap"] for i in items if i.get("gap")]
+    head = {**items[0], "days": max((i["days"] for i in items if i["days"] is not None), default=None)}
+    names = [i["about"] for i in items]
+    count = _plural(len(items), "FLW")
+    head["parts"] = [
+        {"text": i["what"], "href": i["href"], "days": i["days"], "amount": i.get("amount", "")} for i in items
+    ]
+    head["ask"] = f"Ask {who}'s supervisor to recount: {count} to check"
+    head["about"] = ", ".join(names)
+    if gaps:
+        unit = gaps[0][1] or "unit"
+        lo, hi = min(g[0] for g in gaps), max(g[0] for g in gaps)
+        sizes = _num(lo) if lo == hi else f"{_num(lo)}\u2013{_num(hi)}"
+        direction = gaps[0][2] if len({g[2] for g in gaps}) == 1 else "different from"
+        noun = unit if hi == 1 else f"{unit}s"
+        head["what"] = f"{who}: {count} {sizes} {noun} {direction} records"
+        head["amount"] = f"{sizes} {noun} {direction}"
+    else:
+        head["what"] = f"{who}: {count} to check against the records"
+        head["amount"] = ""
+    head["href"] = ""
+    return head
+
+
+def _merge_per_contact(who: str, items: list[dict]) -> dict:
+    """One row for everything to ask one supplier or partner, so a single message covers it."""
+    ordered = _oldest_first(items)
+    # Identical asks (three orders with prices missing) read once, with how many.
+    seen: dict[str, dict] = {}
+    for item in ordered:
+        slot = seen.setdefault(item["ask"], {**item, "count": 0})
+        slot["count"] += 1
+    parts = list(seen.values())
+    head = dict(ordered[0])
+    head["days"] = max((i["days"] for i in items if i["days"] is not None), default=None)
+    head["parts"] = [
+        {
+            "text": p["ask"] + (f" ({p['count']} orders)" if p["count"] > 1 else ""),
+            "href": p["href"] if p["count"] == 1 else "",
+            "days": p["days"],
+            "amount": p.get("amount", ""),
+            "hint_term": p.get("hint_term", ""),
+        }
+        for p in parts
+    ]
+    if len(parts) == 1:
+        only = parts[0]
+        head["ask"] = only["ask"] + (f" ({only['count']} orders)" if only["count"] > 1 else "")
+        head["parts"] = []
+        head["href"] = only["href"] if only["count"] == 1 else ""
+        head["about"] = only["about"] if only["count"] == 1 else ""
+    else:
+        head["ask"] = f"Ask {who}: {len(parts)} things to cover in one message"
+        head["what"] = f"{len(items)} open items with {who}"
+        head["about"] = ""
+        head["href"] = ""
+        head["amount"] = ""
+        head["hint_term"] = ""
+    return head
+
+
+def merge_rows(items: list[dict]) -> list[dict]:
+    """Collapse items to one row per supplier or partner, so one email covers them (round 2, "Group items").
+
+    FLW count gaps become one row per partner with the size of the gap; everything else for the same company
+    becomes one row listing each ask. An item that names nobody is only merged with an identical one.
+    """
+    rows: list[dict] = []
+    keyed: dict[tuple, list[dict]] = {}
+    order: list[tuple] = []
+    for item in items:
+        if item["audience"] == "partner" and item.get("gap") is not None and item["who"]:
+            key = ("gaps", item["audience"], item["who"])
+        elif item["who"] and item["audience"] in ("supplier", "partner"):
+            key = ("who", item["audience"], item["who"])
+        else:
+            key = ("ask", item["audience"], item["ask"], item["who"])
+        if key not in keyed:
+            order.append(key)
+        keyed.setdefault(key, []).append(item)
+    for key in order:
+        group = keyed[key]
+        if key[0] == "gaps":
+            rows.append(_merge_gaps(key[2], group))
+        elif key[0] == "who" and (len(group) > 1):
+            rows.append(_merge_per_contact(key[2], group))
+        elif key[0] == "ask" and len(group) > 1:
+            head = dict(group[0])
+            head["ask"] = f"{head['ask']} ({len(group)} items)"
+            head["days"] = max((i["days"] for i in group if i["days"] is not None), default=None)
+            head["href"] = ""
+            rows.append(head)
+        else:
+            rows.append(group[0])
+    return rows
+
+
 def grouped(items: list[dict]) -> list[dict]:
-    """The items by audience, oldest first, empty groups left out.
+    """The rows by audience, oldest first, empty groups left out, one row per supplier or partner.
 
     An item with no age sorts last: not knowing how long it has waited is not
     the same as being new.
@@ -272,11 +566,15 @@ def grouped(items: list[dict]) -> list[dict]:
     out = []
     known = {audience for audience, _ in CHASE_GROUPS}
     for audience, label in CHASE_GROUPS:
-        group = sorted(
-            # An item of an audience with no section of its own is still shown, under "Ours to answer".
-            (i for i in items if i["audience"] == audience or (audience == "internal" and i["audience"] not in known)),
-            key=lambda i: -(i["days"] if i["days"] is not None else -1),
-        )
+        # An item of an audience with no section of its own is still shown, under "Ours to answer".
+        mine = [i for i in items if i["audience"] == audience or (audience == "internal" and i["audience"] not in known)]
+        group = _oldest_first(merge_rows(mine))
+        for row in group:
+            # The template reads these on every row and every part; a missing key is an error there.
+            for slot in (row, *row.get("parts", [])):
+                slot.setdefault("hint_term", "")
+                slot.setdefault("amount", "")
+                slot.setdefault("age_text", "")
         if group:
             out.append({"audience": audience, "label": label, "items": group})
     return out

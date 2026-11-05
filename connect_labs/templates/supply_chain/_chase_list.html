@@ -1,8 +1,10 @@
+{% load supply_chain_extras %}
 {% comment %}
 The chase list: what is stuck, who can unblock it, and what to ask them. One
 source with the Map's "Chase list" tab (supply_chain/portfolio/chase.py).
-Context: `chase` -- the groups from chase.grouped(); `multi` -- name the
-programme on each line (the portfolio page spans several).
+Context: `chase` -- the groups from chase.grouped() (one row per supplier or partner, so one message covers it);
+`multi` -- name the programme on each line (the portfolio page spans several).
+Every row says what to do, how much is at stake and how long it has waited.
 {% endcomment %}
 {% for group in chase %}
 <div data-testid="chase-group" data-audience="{{ group.audience }}">
@@ -11,10 +13,15 @@ programme on each line (the portfolio page spans several).
     {% for item in group.items %}
     <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-4 py-2.5" data-testid="chase-item">
       <div class="min-w-0">
-        <div class="text-sm text-gray-900" data-testid="chase-ask">{% if item.href %}<a class="hover:underline" href="{{ item.href }}">{{ item.ask }}</a>{% else %}{{ item.ask }}{% endif %}</div>
+        <div class="text-sm text-gray-900" data-testid="chase-ask">{% if item.href %}<a class="hover:underline" href="{{ item.href }}">{{ item.ask|explain_term:item.hint_term }}</a>{% else %}{{ item.ask|explain_term:item.hint_term }}{% endif %}</div>
+        {% if item.parts %}
+        <ul class="mt-0.5 list-disc pl-5 text-xs text-gray-700" data-testid="chase-parts">
+          {% for part in item.parts %}<li>{% if part.href %}<a class="hover:underline" href="{{ part.href }}">{{ part.text|explain_term:part.hint_term }}</a>{% else %}{{ part.text|explain_term:part.hint_term }}{% endif %}{% if part.amount %} <span class="text-gray-600">· {{ part.amount }}</span>{% endif %}{% if part.days is not None %} <span class="text-gray-600">· {{ part.days }} day{{ part.days|pluralize }}</span>{% endif %}</li>{% endfor %}
+        </ul>
+        {% endif %}
         <div class="text-xs text-gray-600">{{ item.what }}{% if item.about %} · {{ item.about }}{% endif %}{% if multi %} · {{ item.program }}{% endif %}</div>
       </div>
-      <div class="whitespace-nowrap text-xs text-gray-600">{% if item.days is not None %}{{ item.days }} day{{ item.days|pluralize }} open{% endif %}</div>
+      <div class="whitespace-nowrap text-right text-xs text-gray-600" data-testid="chase-meta">{% if item.amount %}<span data-testid="chase-amount">{{ item.amount }}</span> · {% endif %}{% if item.days is not None %}{{ item.days }} day{{ item.days|pluralize }} open{% else %}no date recorded{% endif %}</div>
     </li>
     {% endfor %}
   </ul>

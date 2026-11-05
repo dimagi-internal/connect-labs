@@ -247,6 +247,13 @@ def _deliver(access, commodity=None, item=None, opportunity_id=None, disagreemen
         },
         "on_hand": on_hand,
         "in_transit": in_transit,
+        # How the one trade item is packed, so a page can say every figure in one unit (sachets) and
+        # still say how many whole cartons that is. None unless exactly one trade item is in view.
+        "pack": (
+            {"pack_unit": item.pack_unit, "base_unit": item.base_unit, "per_pack": item.base_per_pack}
+            if item is not None and item.base_per_pack and item.pack_unit and item.base_unit
+            else None
+        ),
         "distributions": {"runs": Distribution.objects.filter(program_id=program_id).count()},
         "consumed": consumed,
         # From each point's OWN min/max band, so "below minimum" means below

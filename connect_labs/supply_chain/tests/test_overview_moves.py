@@ -151,7 +151,7 @@ class TestTheOrderRow:
 class TestTheEvaluationCaption:
     """Finding #3/#19 (DDD unanswered-round 2026-10-03): the headline counts open rounds only,
     says what it counts, and lists awarded rounds apart. Since 2026-10-07 it counts quotes with a
-    landed price -- data -- not the comparison's verdict on which are comparable: each round below
+    delivered price -- data -- not the comparison's verdict on which are comparable: each round below
     carries a different `comparable`, so reading it instead would change every figure."""
 
     def test_one_open_round_reads_as_its_own_comparison_page(self):
@@ -160,7 +160,7 @@ class TestTheEvaluationCaption:
             "by_tender": [{"label": "R", "comparable": 0, "priced": 2, "of": 3, "awarded": False}],
         }
         assert evaluation_value(evaluation) == "2 of 3"
-        assert evaluation_words(evaluation) == "quotes with a landed price on R"
+        assert evaluation_words(evaluation) == "quotes with a delivered price on R"
 
     def test_an_awarded_round_is_listed_apart_not_added_in(self):
         evaluation = {
@@ -172,7 +172,7 @@ class TestTheEvaluationCaption:
         }
         assert evaluation_value(evaluation) == "2 of 3"
         words = evaluation_words(evaluation)
-        assert words == "quotes with a landed price on RUTF round 2 · awarded: RUTF round 1"
+        assert words == "quotes with a delivered price on RUTF round 2 · awarded: RUTF round 1"
         assert "provisional" not in words
 
     def test_several_open_rounds_read_one_by_one(self):
@@ -183,11 +183,11 @@ class TestTheEvaluationCaption:
             ]
         }
         assert evaluation_value(evaluation) == "4 of 5"
-        assert evaluation_words(evaluation) == "R3: 1 of 2 · R2: 3 of 3 quotes with a landed price"
+        assert evaluation_words(evaluation) == "R3: 1 of 2 · R2: 3 of 3 quotes with a delivered price"
 
     def test_no_round_yet_reads_the_program_totals(self):
         assert evaluation_value({"comparable": 0, "priced": 2, "of": 4}) == "2 of 4"
-        assert evaluation_words({"comparable": 0, "priced": 2, "of": 4}) == "quotes with a landed price"
+        assert evaluation_words({"comparable": 0, "priced": 2, "of": 4}) == "quotes with a delivered price"
 
 
 class TestTheQuotationCaption:
@@ -212,8 +212,8 @@ class TestTheChainLabels:
             }
         )
         labels = [c["label"] for c in cells]
-        assert "Below reorder level" in labels and "Under its band" not in labels
-        assert cells[0]["sub"].startswith("supply points")
+        assert "Running low" in labels and "Below reorder level" not in labels and "Under its band" not in labels
+        assert cells[0]["label"] == "Places holding stock" and cells[0]["sub"].startswith("places")
 
 
 def _standing_row(ours=(), theirs=()):

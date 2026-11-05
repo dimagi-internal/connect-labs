@@ -39,6 +39,7 @@ from connect_labs.labs.access.scopes import Caller
 from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain import records
 from connect_labs.supply_chain.data_access import SupplyDataAccess
+from connect_labs.supply_chain.naming import partner_of_point
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.portfolio.chase import chase_items
 from connect_labs.supply_chain.stock.services.belief import workers_below_minimum
@@ -319,6 +320,7 @@ def program_chase(access, program_id, program_name) -> list[dict]:
     contracts = {c["id"]: c for c in call_operation("contract_list", access, {})}
     suppliers = {s["id"]: s for s in call_operation("supplier_list", access, {})}
     on_the_road = call_operation("consignment_list", access, {"status": "dispatched"})
+    by_id = {p["id"]: p for p in points}
     orgs = {
         o["id"]: o["name"]
         for o in LabsOrg.objects.filter(
@@ -336,7 +338,15 @@ def program_chase(access, program_id, program_name) -> list[dict]:
         consignments=[consignment_wire(c, scope) for c in on_the_road],
         orders=orders,
         suppliers=suppliers,
-        places={p["id"]: {"name": p["name"], "managed_by": orgs.get(p["managed_by_org_id"], "")} for p in points},
+        places={
+            p["id"]: {
+                "name": p["name"],
+                "kind": p.get("kind"),
+                # The partner that runs it, or the nearest place above it that names one (a worker's partner).
+                "managed_by": partner_of_point(p, by_id, orgs),
+            }
+            for p in points
+        },
         check_labels=_check_labels(),
         tenders=call_operation("tender_list", access, {}),
         contracts=list(contracts.values()),

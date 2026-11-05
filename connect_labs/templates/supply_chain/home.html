@@ -42,8 +42,6 @@ tenders and orders sit folded below.
       {% endif %}
     </div>
   </div>
-  {% include "supply_chain/_src_legend.html" with no_calc=1 %}
-
   {% include "supply_chain/_overview_panels.html" %}
 
   <h2 class="text-brand-deep-purple text-lg font-semibold" data-testid="buying-heading">Buying: tenders and orders</h2>
@@ -74,7 +72,7 @@ tenders and orders sit folded below.
               <div class="flex flex-col gap-1.5">
                 <div class="stage-minibar" aria-hidden="true">{% for b in row.bars %}<div class="stage-seg stage-seg--{{ b }}"></div>{% endfor %}</div>
                 <span class="flex flex-col text-xs" data-testid="row-stage"><span class="font-semibold text-gray-900" data-testid="row-stage-name">{{ row.stage_name }}</span>{% if row.stage_detail %}<span class="text-gray-600">{{ row.stage_detail }}</span>{% endif %}{% if row.deadline_note %}<span class="text-gray-700" data-testid="row-deadline">{{ row.deadline_note }}</span>{% endif %}</span>
-                {% comment %}How many quotes are in, and beneath it how many have a landed price: data, not a
+                {% comment %}How many quotes are in, and beneath it how many have a delivered price: data, not a
                 verdict on which may be compared -- the comparison shows the figures.{% endcomment %}
                 {% if row.quotes_chip %}{% with parts=row.quotes_chip|dot_parts %}<span class="status-chip status-chip--neutral self-start" data-testid="row-quotes">{{ parts.0 }}</span>{% if parts.1 %}<span class="text-xs text-gray-700" data-testid="row-quotes-priced">{{ parts.1 }}</span>{% endif %}{% endwith %}{% endif %}
               </div>
@@ -111,9 +109,10 @@ tenders and orders sit folded below.
     </div>
   </section>
   <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600" data-testid="stage-key"><span>Tender stages: Requested · Collecting quotes · Comparing · Awarding · Ordered · Delivery</span><span data-testid="order-stage-key">Order stages: Awarded · Ordered · Dispatched · In transit or at customs · Received · Paid</span><span class="inline-flex items-center gap-1.5"><span class="stage-seg stage-seg--done inline-block w-5" aria-hidden="true"></span>done</span><span class="inline-flex items-center gap-1.5"><span class="stage-seg stage-seg--now inline-block w-5" aria-hidden="true"></span>current step</span><span class="inline-flex items-center gap-1.5"><span class="stage-seg inline-block w-5" aria-hidden="true"></span>to come</span></div>
+  {% include "supply_chain/_src_legend.html" with no_calc=1 %}
 
   <details class="fold" data-testid="fold-chain">
-    <summary>The chain <span class="text-sm font-normal text-gray-600">records at each stage</span></summary>
+    <summary>Counts at each stage <span class="text-sm font-normal text-gray-600">what has been recorded so far</span></summary>
     <div class="fold-body">
 {% if commodities|length > 1 %}
   <div class="flex items-center gap-2 mb-4 text-sm">
@@ -126,155 +125,18 @@ tenders and orders sit folded below.
   </div>
 {% endif %}
 
-{% include "supply_chain/_phase.html" with phase="Source" accent="#3843d0" stages=summary.source|source_stages %}
-{% include "supply_chain/_phase.html" with phase="Order" accent="#818cf8" stages=summary.order|order_stages %}
-{% include "supply_chain/_phase.html" with phase="Deliver" accent="#14b8a6" stages=summary.deliver|deliver_stages %}
+{% include "supply_chain/_phase.html" with phase="Buying" accent="#3843d0" stages=summary.source|source_stages %}
+{% include "supply_chain/_phase.html" with phase="Ordering" accent="#818cf8" stages=summary.order|order_stages %}
+{% include "supply_chain/_phase.html" with phase="Delivery and stock" accent="#14b8a6" stages=summary.deliver|deliver_stages %}
 
     </div>
   </details>
 
-  <details class="fold" data-testid="fold-checks">
-    {% comment %}"open checks", said as what they are: facts missing or in conflict, not a count of workers in trouble (#2344).{% endcomment %}
-    <summary data-testid="open-checks"><span class="tabular-nums">{% if checks.count %}{{ checks.count }}{% else %}0{% endif %}</span> open check{{ checks.count|pluralize }}</summary>
-    <div class="fold-body">
-{% if supply_as_of %}
-  {% comment %}
-  The checks are worked out from the records against today's date and from
-  reference rows a rewind does not touch, so on a past date they would be
-  today's answers under a past date's banner. Said once, not shown.
-  {% endcomment %}
-  <p data-testid="checks-as-of-note" class="text-xs text-gray-600 mt-2">Checks are worked out for today; back to today to see them.</p>
-{% elif checks.count %}
-  <p class="text-sm mb-3"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:checks' %}">Every check, with its facts</a></p>
-  <div class="grid gap-3 sm:grid-cols-3 mb-2">
-    {% for group in checks_by_audience %}
-      {% if group.items %}
-        <a href="{{ group.href|default:'#' }}"
-           class="group flex items-baseline gap-3 bg-white border border-brand-border-light rounded-lg
-                  px-4 py-3 hover:bg-message-info focus-visible:outline-2
-                  focus-visible:outline-offset-2 focus-visible:outline-brand-indigo transition-colors">
-          <span class="text-2xl font-semibold text-brand-indigo tabular-nums leading-none
-                       group-hover:text-brand-deep-purple">{{ group.items|length }}</span>
-          <span>
-            <span class="block text-sm text-gray-900">{{ group.headline }}</span>
-            <span class="block text-xs text-gray-600">{{ group.audience|audience_label }} · open check{{ group.items|length|pluralize }}</span>
-          </span>
-        </a>
-      {% endif %}
-    {% endfor %}
-  </div>
-{% endif %}
-
-    </div>
-  </details>
-
-  <details class="fold" data-testid="fold-tenders">
-    <summary>All tenders <span class="text-sm font-normal tabular-nums text-gray-600">{{ tenders|length }}</span></summary>
-    <div class="fold-body">
-<div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-  {% comment %}
-  A scroll container is not focusable by default, so a keyboard-only user
-  cannot reach the columns it hides -- which re-creates the
-  unreachable-column bug for the people least able to work around it.
-  tabindex makes it a tab stop; the labelled region tells a screen reader
-  what it is once focused.
-  {% endcomment %}
-  <div class="overflow-x-auto" tabindex="0" role="region"
-       aria-label="Table, scrolls sideways">
-  <table class="min-w-[44rem] w-full text-sm">
-    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
-      <tr>
-        <th class="text-left px-4 py-2">Tender</th>
-        <th class="text-left px-4 py-2">Status</th>
-        <th class="text-left px-4 py-2">Deliver to</th>
-        <th class="text-left px-4 py-2">Response deadline</th>
-        <th class="px-4 py-2"></th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-gray-100">
-      {% for tender in tenders %}
-        <tr>
-          <td class="px-4 py-2.5 font-medium text-gray-900">{{ tender.label }}</td>
-          <td class="px-4 py-2.5">{% if tender.id in provisional_tender_ids %}awarded, provisional{% else %}{{ tender.status|humanise }}{% endif %}</td>
-          <td class="px-4 py-2.5 text-gray-600">
-            {{ tender.delivery_point|place_text }}
-          </td>
-          <td class="px-4 py-2.5 text-gray-600">{{ tender.response_deadline|day|default:"—" }}</td>
-          <td class="px-4 py-2.5 text-right">
-            <a class="text-brand-indigo hover:underline"
-               href="{% url 'supply_chain:procurement_tender_detail' tender.id %}">Open</a>
-          </td>
-        </tr>
-      {% empty %}
-        <tr><td colspan="5" class="px-4 py-6 text-center text-gray-600">No tenders yet.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
-</div>
-
-    </div>
-  </details>
-{% if contracts %}
-  <details class="fold" data-testid="fold-contracts">
-  <summary>All orders <span class="text-sm font-normal tabular-nums text-gray-600">{{ contracts|length }}</span></summary>
-  <div class="fold-body">
-  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-    {% comment %}
-    A scroll container is not focusable by default, so a keyboard-only user
-    cannot reach the columns it hides -- which re-creates the
-    unreachable-column bug for the people least able to work around it.
-    tabindex makes it a tab stop; the labelled region tells a screen reader
-    what it is once focused.
-    {% endcomment %}
-    <div class="overflow-x-auto" tabindex="0" role="region"
-         aria-label="Table, scrolls sideways">
-    <table class="min-w-[44rem] w-full text-sm">
-      <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
-        <tr>
-          <th class="text-left px-4 py-2">Reference</th>
-          <th class="text-left px-4 py-2">Buyer of record</th>
-          <th class="text-left px-4 py-2">Quantity</th>
-          <th class="text-left px-4 py-2">Status</th>
-          <th class="text-left px-4 py-2">Told by</th>
-          <th class="px-4 py-2"></th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-gray-100">
-        {% for contract in contracts %}
-          <tr>
-            <td class="px-4 py-2.5 font-medium text-gray-900">
-              {{ contract.reference|default:"—" }}
-            </td>
-            <td class="px-4 py-2.5">
-              {{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:"" }}
-              <div class="text-xs text-gray-600">{{ contract.buyer_of_record|buyer_label }}</div>
-              {% if contract.duty_relief_claimed and not contract.duty_relief_evidenced %}
-                <span class="ml-1 text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded px-1.5 py-0.5">
-                  relief unevidenced
-                </span>
-              {% endif %}
-            </td>
-            <td class="px-4 py-2.5 text-gray-600">{{ contract.quantity|qty:contract.quantity_unit }}</td>
-            {% comment %}The stage the overview's own row gives this order, so the two
-            tables say the same thing -- on a past date too, where the stored
-            status is the rewound record's and the stage is read from its
-            shipments, receipts and payments.{% endcomment %}
-            <td class="px-4 py-2.5">{% with stage=order_stages|dictkey:contract.id %}{% if stage %}{{ stage }}{% else %}{{ contract.status|humanise }}{% endif %}{% endwith %}</td>
-            <td class="px-4 py-2.5 text-xs text-gray-600">{{ contract.source|humanise }}</td>
-            <td class="px-4 py-2.5 text-right">
-              <a class="text-brand-indigo hover:underline"
-                 href="{% url 'supply_chain:order_detail' contract.id %}">Open</a>
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-  </div>
-  </div>
-  </details>
-  {% endif %}
+  {% comment %}The checks, the tenders and the orders are each one click away, not repeated here: the chase list above is
+  the checks that someone can act on, and the buying table is every tender and order in progress.{% endcomment %}
+  <p class="text-sm text-gray-700" data-testid="overview-links">
+    {% if not supply_as_of and checks.count %}<a class="text-brand-indigo hover:underline" data-testid="open-checks" href="{% url 'supply_chain:checks' %}">Every check, with its facts ({{ checks.count }})</a> · {% endif %}<a class="text-brand-indigo hover:underline" data-testid="all-tenders-link" href="{% url 'supply_chain:procurement_tender_board' %}">All tenders ({{ tenders|length }})</a> · <a class="text-brand-indigo hover:underline" data-testid="all-orders-link" href="{% url 'supply_chain:orders' %}">All orders ({{ contracts|length }})</a>
+  </p>
 </div>
 {% endif %}
 {% endblock %}

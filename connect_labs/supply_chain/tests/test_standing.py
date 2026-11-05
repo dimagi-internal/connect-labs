@@ -512,7 +512,7 @@ class TestHomePage:
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
 
         standing = body.index('id="supply-standing"')
-        assert standing < body.index("The chain")
+        assert standing < body.index("Counts at each stage")
         table = body[standing : body.index("</table>", standing)]
         assert reverse("supply_chain:procurement_tender_detail", args=[tender["id"]]) in table
         assert reverse("supply_chain:order_detail", args=[contract["id"]]) in table
@@ -572,5 +572,5 @@ class TestHomePageHooks:
         past = client_in_program.get(url, {"as_of": "2026-08-25"}).content.decode()
 
         assert "PO-1" not in live.split('id="supply-standing"')[1].split("</table>")[0]
-        assert "Delivering · in transit" in past
+        assert re.search(r'data-testid="row-stage-name">\s*In transit', past)
         assert 'data-testid="as-of-banner"' in past and 'data-testid="as-of-control"' in past
