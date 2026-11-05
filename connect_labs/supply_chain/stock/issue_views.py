@@ -251,7 +251,7 @@ class _OnAnIssue(OperationFormView):
         issue = self.issue()
         context["intro"] = (
             f"{issue.get_kind_display().capitalize()}: {plain_number(issue.quantity)} {issue.quantity_unit} of "
-            f"{issue.commodity.name} at {issue.supply_point.name}, {issue.occurred_on}."
+            f"{issue.commodity.name} at {issue.supply_point.name}, {day_text(issue.occurred_on)}."
         )
         return context
 
