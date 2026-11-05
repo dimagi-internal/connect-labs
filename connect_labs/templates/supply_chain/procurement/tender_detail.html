@@ -129,7 +129,7 @@ is folded away, each fold with its count.
       <li class="stage--{{ s.state }}" data-stage-state="{{ s.state }}"{% if s.state == "now" %} aria-current="step"{% endif %}>
         <div class="stage-seg stage-seg--{{ s.state }}"></div>
         <div class="stage-name">{{ s.name }}</div>
-        <div class="stage-note">{% if s.note != "—" %}{% for part in s.note|dot_parts %}<span class="block whitespace-nowrap">{% if forloop.first %}{% include "supply_chain/_src.html" with src="calc" %}{% endif %}{{ part }}</span>{% endfor %}{% else %}{{ s.note }}{% endif %}</div>
+        <div class="stage-note">{% if s.note != "—" %}{% for part in s.note|dot_parts %}<span class="block {% if part|length > 18 %}break-words{% else %}whitespace-nowrap{% endif %}">{% if forloop.first %}{% include "supply_chain/_src.html" with src="calc" %}{% endif %}{{ part }}</span>{% endfor %}{% else %}{{ s.note }}{% endif %}</div>
       </li>
       {% endfor %}
     </ol>

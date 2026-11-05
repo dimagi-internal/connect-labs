@@ -354,7 +354,8 @@ class DomainHomeView(OperationBase):
 
             chase = program_chase(access, int(program_id), self._plain_name(program_id))
             context["chase"] = grouped(chase)
-            context["chase_count"] = len(chase)
+            # The header says what the list below shows: counted from the rows drawn, never from the raw items.
+            context["chase_count"] = sum(len(group["items"]) for group in context["chase"])
         return context
 
     def _plain_name(self, program_id) -> str:
@@ -366,8 +367,8 @@ class DomainHomeView(OperationBase):
 
     @staticmethod
     def _tender_replies(access, tenders) -> dict:
-        """{tender id: (suppliers asked, suppliers silent)} for tenders collecting quotes."""
-        from connect_labs.supply_chain.moves import silent_suppliers
+        """{tender id: (suppliers invited, silent ones to chase, silent ones never contacted)} for open tenders."""
+        from connect_labs.supply_chain.moves import never_contacted, silent_suppliers
 
         out = {}
         for tender in tenders:
@@ -375,7 +376,14 @@ class DomainHomeView(OperationBase):
                 continue
             outreach = access.list_outreach(tender_id=tender["id"])
             silent = silent_suppliers(outreach, access.list_quotes(tender_id=tender["id"]))
-            out[tender["id"]] = (len({o.supplier_id for o in outreach}), len(silent))
+            # Only a supplier somebody has written to can be chased; one never contacted is owed its first
+            # request, which is a different action (and the reminder logic skips it the same way).
+            not_yet_asked = [pk for pk, rows in silent.items() if never_contacted(rows)]
+            out[tender["id"]] = (
+                len({o.supplier_id for o in outreach}),
+                len(silent) - len(not_yet_asked),
+                len(not_yet_asked),
+            )
         return out
 
     def _add_programme_picture(self, context, access, program_id, org):

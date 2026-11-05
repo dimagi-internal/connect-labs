@@ -271,3 +271,32 @@ def _filled_from_the_plan(world, Distribution):
     )
     lines = Distribution.objects.get(pk=run["id"]).lines.all()
     assert {line.to_supply_point_id: int(line.quantity) for line in lines} == expected
+
+
+def test_who_may_run_short_adds_the_two_parts_of_the_need_rather_than_joining_them(page, world, monkeypatch):
+    """'flw_018 needs about 7123' was 71 and 23 joined as text by the template's `|add`; the sum is 94."""
+    from django.template.defaultfilters import floatformat
+    from django.urls import reverse
+
+    from connect_labs.supply_chain.plan import service
+
+    seen = []
+
+    def every_worker_as_short(rows):
+        # List everyone, so the line renders whatever this world's stock happens to be, with a whole
+        # number due and a fractional one new: the shape (71 and 23.4) that `|add` read as "7123.4".
+        for row in rows:
+            row["due"], row["new"] = Decimal(71), Decimal("23.4")
+            row["need_week"] = row["due"] + row["new"]
+        seen.extend(rows)
+        return list(rows)
+
+    monkeypatch.setattr(service, "running_short", every_worker_as_short)
+    html = page.get(reverse("supply_chain:plan")).content.decode()
+    assert seen and "needs about" in html
+    for row in seen:
+        total = floatformat(row["due"] + row["new"], 0)
+        assert total == "94"
+        assert f"needs about {total} this week" in html
+        joined = f"{floatformat(row['due'], 0)}{floatformat(row['new'], 0)}"
+        assert joined == "7123" and f"needs about {joined}" not in html

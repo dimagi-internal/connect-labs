@@ -113,6 +113,27 @@ class TestSelectionAndHandover:
         assert "Partner 2: 600 cartons" in text and "ordered and paid by us" in text
         assert "[your name]" in text  # no signed-in person here: a visible gap, not a bare sign-off
 
+    @pytest.mark.parametrize(
+        "name, username, email, signed",
+        [
+            ("Sophie Feintuch", "sfeintuch", "sfeintuch@dimagi.com", "Sophie Feintuch"),
+            # A person whose profile holds no name but their login: signed, not left as a placeholder.
+            ("sophie.feintuch", "sophie.feintuch", "sophie.feintuch@dimagi.com", "Sophie Feintuch"),
+            ("", "hauwa_bello", "hauwa@example.org", "Hauwa Bello"),
+            # A service account is never signed.
+            ("ace", "ace", "ace@dimagi-ai.com", "[your name]"),
+        ],
+    )
+    def test_the_emails_are_signed_by_the_person_viewing_them(
+        self, django_user_model, world, name, username, email, signed
+    ):
+        user = django_user_model.objects.create(name=name, username=username, email=email)
+        access = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM, user=user)
+        drafts = op(access, "selection_drafts_render", award_id=world["award"]["id"])["drafts"]
+        assert drafts and all(signed in d["text"] for d in drafts)
+        if signed != "[your name]":
+            assert all("[your name]" not in d["text"] for d in drafts)
+
     def test_each_partner_gets_a_handover_with_its_own_quantity_and_price(self, da, world):
         drafts = op(da, "selection_drafts_render", award_id=world["award"]["id"])["drafts"]
         handovers = [d for d in drafts if d["kind"] == "handover"]
@@ -212,3 +233,21 @@ class TestPurchaseSizing:
         assert got["partners"][0]["units"] == "1848" and got["partners"][0]["packs"] == 13
         with pytest.raises(ValueError):
             size_purchase([{"target_cases": -1}], 168)
+
+
+class TestAStoreWithNothingComingSaysWhy:
+    def test_a_partner_that_has_not_ordered_its_share_is_named_with_a_link_to_the_award(self, da, world):
+        from django.urls import reverse
+
+        from connect_labs.labs.models import LabsOrg
+        from connect_labs.supply_chain.models import SupplyPoint
+        from connect_labs.supply_chain.plan.service import no_delivery_reasons
+
+        partner = LabsOrg.objects.get(slug="p2")
+        store = SupplyPoint.objects.create(
+            program_id=PROGRAM, slug="p2-wh", name="Partner 2 warehouse", kind="central_store", managed_by_org=partner,
+            source="we_recorded",
+        )  # fmt: skip
+        reasons = no_delivery_reasons(PROGRAM)
+        assert reasons[store.pk]["text"] == "Partner 2 hasn't ordered yet"
+        assert reasons[store.pk]["href"] == reverse("supply_chain:award_detail", args=[world["award"]["id"]])

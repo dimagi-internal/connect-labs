@@ -291,8 +291,17 @@ def _issue_item(issue):
     return sole if sole is not None and sole.commodity_id == issue.commodity_id else None
 
 
-def post_issue_loss(issue) -> Movement:
-    """The stock leaving the shelf when an issue is reported: a loss (an expiry, for an expired batch)."""
+def batch_expiry(issue):
+    """The expiry date on file for an issue's batch, or None when none is known."""
+    return _known_expiry(_issue_item(issue), issue.batch)
+
+
+def post_issue_loss(issue, occurred_on=None) -> Movement:
+    """The stock leaving the shelf when an issue is reported: a loss (an expiry, for an expired batch).
+
+    `occurred_on` is the day it left when that is not the day the issue was reported: a warning
+    ("expiring") that is later written off.
+    """
     item = _issue_item(issue)
     movement = _movement(
         issue,
@@ -304,7 +313,7 @@ def post_issue_loss(issue) -> Movement:
         batch=issue.batch,
         expiry=_known_expiry(item, issue.batch),
         frm=issue.supply_point,
-        occurred_on=issue.occurred_on,
+        occurred_on=occurred_on or issue.occurred_on,
         program_id=issue.program_id,
         opportunity_id=issue.opportunity_id,
         stock_issue=issue,

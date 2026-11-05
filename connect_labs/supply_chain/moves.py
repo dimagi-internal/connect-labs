@@ -361,6 +361,25 @@ def collecting(tender, *, provisional=False, contracted=False) -> bool:
     return tender.status == "open" or (tender.status == "awarded" and provisional and not contracted)
 
 
+def noted_not_contacted(supplier, rows) -> bool:
+    """True when the notes on the supplier or its invitations say nobody has written to it yet."""
+    notes = [getattr(supplier, "notes", "")] + [getattr(r, "notes", "") for r in rows]
+    return any("not yet contacted" in (n or "").lower() for n in notes)
+
+
+def never_contacted(rows) -> bool:
+    """True when no request has actually gone to this supplier: nothing sent, or the notes say so.
+
+    The reminder logic (`tender_drafts_render`) skips exactly these -- a reminder would chase a message that
+    was never sent -- and drafts the first request instead. The Overview counts "suppliers to chase" by
+    the same rule, so it cannot ask for a chase the reminders have been told not to make.
+    """
+    rows = list(rows)
+    if not rows:
+        return True
+    return not any(r.sent_on for r in rows) or noted_not_contacted(rows[0].supplier, rows)
+
+
 def silent_suppliers(outreach, quotes) -> dict:
     """{supplier id: [outreach rows]} for every invited supplier with no reply and no live quote."""
     quoted = {q.supplier_id for q in quotes if q.is_live}

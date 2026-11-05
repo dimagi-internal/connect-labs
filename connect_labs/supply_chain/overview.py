@@ -139,10 +139,15 @@ def next_step(
             nxt = "Set up the partners who have no warehouse yet, then record each delivery"
         if collecting is not None:
             name = collecting.get("label") or "The open tender"
-            asked, silent = (tender_replies or {}).get(collecting["id"], (0, 0))
+            asked, silent, *rest = (tender_replies or {}).get(collecting["id"], (0, 0))
+            not_asked = rest[0] if rest else 0
             segments.append(f"{name}: collecting quotes")
-            if asked and silent:
-                nxt = f"{name}: {asked - silent} of {asked} suppliers answered; chase the other {silent}"
+            if asked and (silent or not_asked):
+                nxt = f"{name}: {asked - silent - not_asked} of {asked} suppliers answered"
+                if silent:
+                    nxt += f"; chase {'the other ' if not not_asked else ''}{silent}"
+                if not_asked:
+                    nxt += f"; {not_asked} not yet written to (send them the request)"
             else:
                 nxt = f"{name}: chase the suppliers who have not replied"
     elif tender is None:

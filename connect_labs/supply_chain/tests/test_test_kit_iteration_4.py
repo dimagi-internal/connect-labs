@@ -78,6 +78,14 @@ class TestDecidedByIsNotTheAccount:
             # Nothing on file prefills nothing, rather than falling back to
             # the login the way `get_display_name` does.
             ("", "ace", "ace@dimagi-ai.com", ""),
+            # A machine login on the agents' domain is never a name, whatever its handle.
+            ("bot7", "bot7", "bot7@dimagi-ai.com", ""),
+            # A PERSON whose Connect profile has no name is stored with their login as the name (oauth_views).
+            # They are somebody and must be able to sign: written readably, never "[your name]".
+            ("sophie.feintuch", "sophie.feintuch", "sophie.feintuch@dimagi.com", "Sophie Feintuch"),
+            ("sfeintuch", "sfeintuch", "sfeintuch@dimagi.com", "sfeintuch"),
+            # A person whose name is blank: their login, rather than a blank signature.
+            ("", "hauwa_bello", "hauwa@example.org", "Hauwa Bello"),
         ],
     )
     def test_only_a_person_s_own_name_is_offered(self, django_user_model, name, username, email, prefilled):

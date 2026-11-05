@@ -115,6 +115,24 @@ def decimal_string(value) -> str:
     return str(trimmed)
 
 
+def plain_number(value) -> str:
+    """A number for a person to read: no scientific notation, trailing zeros trimmed, thousands separated.
+
+    Decimal.normalize() alone writes 40 as "4E+1", and f-string interpolation of that is what a page
+    showed ("4E+1 carton"); this is the one spelling for a quantity inside a sentence. For the JSON wire
+    use `decimal_string` (no separators).
+    """
+    if not isinstance(value, Decimal):
+        try:
+            value = Decimal(str(value))
+        except Exception:
+            return str(value)
+    trimmed = value.normalize()
+    if trimmed == trimmed.to_integral_value():
+        trimmed = trimmed.quantize(Decimal("1"))
+    return f"{trimmed:,f}"
+
+
 def to_wire(value: Derived | DerivedQuantity) -> dict:
     """The one JSON wire shape for a derived figure.
 

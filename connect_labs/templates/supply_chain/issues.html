@@ -92,7 +92,10 @@
       {% for issue in issues %}
         <tr>
           <td class="px-4 py-2">
-            {{ issue.kind|words|capfirst }}
+            {% if issue.kind == "expiring" %}
+              Expiring soon
+              <div class="text-xs text-amber-800">A warning, not a loss: still in date, so nothing is taken off stock. Use it first, or move it.</div>
+            {% else %}{{ issue.kind|words|capfirst }}{% endif %}
             {% if issue.taken_by %}<div class="text-xs text-gray-600">by {{ issue.taken_by }}</div>{% endif %}
             {% if issue.evidence %}<div class="text-xs text-gray-600 max-w-xs break-words">{{ issue.evidence|urlize }}</div>{% endif %}
             {% for document in issue.documents %}

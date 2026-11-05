@@ -300,6 +300,12 @@ def _check_labels():
     return CHECK_LABELS
 
 
+def _open_issues(program_id):
+    from connect_labs.supply_chain.issues import open_issues
+
+    return open_issues(program_id)
+
+
 def program_chase(access, program_id, program_name) -> list[dict]:
     """One programme's chase list, read straight from the records.
 
@@ -321,6 +327,8 @@ def program_chase(access, program_id, program_name) -> list[dict]:
     }
     checks = [_check_wire(c, scope=scope) for c in call_operation("checks_list", access, {})["checks"]]
     orders, _ = open_orders(contracts, stock, scope)
+    from connect_labs.supply_chain.issues import open_issues
+
     return chase_items(
         program_id=program_id,
         program_name=program_name,
@@ -330,6 +338,9 @@ def program_chase(access, program_id, program_name) -> list[dict]:
         suppliers=suppliers,
         places={p["id"]: {"name": p["name"], "managed_by": orgs.get(p["managed_by_org_id"], "")} for p in points},
         check_labels=_check_labels(),
+        tenders=call_operation("tender_list", access, {}),
+        contracts=list(contracts.values()),
+        issues=open_issues(program_id),
     )
 
 
@@ -603,6 +614,16 @@ def program_map(request, program_id, program, partner_org_id=None) -> dict:
             suppliers=suppliers,
             places=chase_places,
             check_labels=_check_labels(),
+            # The whole programme's partner items, as on the Overview; a partner's own map shows its checks only.
+            **(
+                {}
+                if partner_org_id is not None
+                else {
+                    "tenders": call_operation("tender_list", access, {}),
+                    "contracts": list(contracts.values()),
+                    "issues": _open_issues(program_id),
+                }
+            ),
         ),
         # The one headline for workers in trouble, worded by the server (#2344): the
         # map counts blockers and places with one, and calls them that.

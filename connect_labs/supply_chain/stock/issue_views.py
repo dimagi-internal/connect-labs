@@ -23,6 +23,7 @@ from connect_labs.supply_chain.stock.issue_forms import (
     StockIssueResolveForm,
 )
 from connect_labs.supply_chain.stock.services import issues as issue_service
+from connect_labs.supply_chain.values import plain_number
 from connect_labs.supply_chain.views import OperationBase
 
 # Places stock rests that a custodian can be named for.
@@ -238,7 +239,7 @@ class _OnAnIssue(OperationFormView):
         context = super().get_context_data(**kwargs)
         issue = self.issue()
         context["intro"] = (
-            f"{issue.get_kind_display().capitalize()}: {issue.quantity.normalize()} {issue.quantity_unit} of "
+            f"{issue.get_kind_display().capitalize()}: {plain_number(issue.quantity)} {issue.quantity_unit} of "
             f"{issue.commodity.name} at {issue.supply_point.name}, {issue.occurred_on}."
         )
         return context
