@@ -1,89 +1,25 @@
 {% load supply_chain_extras %}
-{% comment %}
-The supply banner, the programme tabs and "view as of": every supply page's header.
-Included by base.html, and by the programme map -- a full-width page on the root
-base -- so the map keeps the same header and tabs as every other supply page.
-{% endcomment %}
-{% comment %}Below sm (#2375) the banner is one line and the tabs fold into one "Supply" menu: fourteen
-tabs wrapped onto five rows and, with the banner, pushed every number on the page below a
-phone's fold. A <details> menu of plain links rather than a <select>: it needs no script, the
-as-of script in base.html carries a past date on to its links like any other, and a link
-opens in a new tab like any other. Plain CSS here rather than utilities, so nothing waits on
-the stylesheet being rebuilt, and here rather than in base.html, so the programme map --
-which includes this header outside base.html -- folds too.{% endcomment %}
+{% comment %}The top of a supply page's main column (the navigation itself is the left rail, `_rail.html`): a toolbar with the
+button that slides the rail in and out and the page's one-line purpose, then below 768px the Supply menu (a <details> of
+plain links: no script, the as-of script in base.html carries a past date on to its links like any other), then the banner
+for a past day. Plain CSS in `_rail.html`, so nothing waits on the stylesheet being rebuilt.{% endcomment %}
 <style>
-  /* One slim strip for the title, then one bar of tabs (grouped, with the group's name inline) and the "view as of"
-     control at its right: about 110px of header where the tall banner + three rows of buttons took ~330px. Plain CSS
-     rather than utilities, so nothing waits on the stylesheet being rebuilt. */
-  .supply-banner { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; padding: 0.5rem 1rem; border-radius: 0.75rem; }
-  .supply-banner-text { display: flex; align-items: baseline; gap: 0.75rem; min-width: 0; flex: 1 1 auto; }
-  .supply-banner-text h1 { margin: 0; font-size: 1.125rem; line-height: 1.5rem; font-weight: 700; color: #fff; }
-  .supply-banner-line { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem; font-weight: 500; opacity: 0.92; }
-  .supply-banner-links { display: flex; align-items: center; gap: 1rem; flex: 0 0 auto; font-size: 0.8125rem; }
-  .supply-banner-links a { color: rgb(255 255 255 / 0.9); text-decoration: underline; text-underline-offset: 2px; }
-  .supply-banner-links a:hover { color: #fff; }
-  .supply-tabs-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.75rem; }
-  .supply-tabs-bar { display: flex; flex-wrap: wrap; align-items: center; row-gap: 0.125rem; column-gap: 0.25rem; flex: 1 1 auto; min-width: 0; font-size: 0.875rem; border-bottom: 1px solid #e5e7eb; }
-  .supply-tab-group { display: flex; flex-wrap: nowrap; align-items: center; gap: 0; }
-  .supply-tab-group + .supply-tab-group { margin-left: 0.5rem; }
-  .supply-tab-group-name { margin-right: 0.125rem; font-size: 0.625rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #6b7280; white-space: nowrap; }
-  .supply-tab { padding: 0.375rem 0.4rem; border-bottom: 2px solid transparent; margin-bottom: -1px; color: #374151; white-space: nowrap; text-decoration: none; }
-  .supply-tab:hover { color: #1e1b4b; background: #f3f4f6; border-radius: 0.375rem 0.375rem 0 0; }
-  .supply-tab.is-active { color: #3730a3; font-weight: 600; border-bottom-color: #4f46e5; }
-  .supply-asof { flex: 0 0 auto; }
-  .supply-banner [data-as-of-form] { gap: 0.5rem; }
-  .supply-banner [data-as-of-form] label { color: rgb(255 255 255 / 0.9); font-weight: 500; font-size: 0.8125rem; white-space: nowrap; }
-  .supply-banner [data-as-of-form] input[name="as_of"] { width: 8.5rem; padding: 0.125rem 0.5rem; background: rgb(255 255 255 / 0.95); color: #111827; }
-  .supply-banner [data-as-of-form] button { padding: 0.125rem 0.625rem; background: rgb(255 255 255 / 0.15); border-color: rgb(255 255 255 / 0.5); color: #fff; }
-  .supply-banner [data-as-of-form] button:hover { background: rgb(255 255 255 / 0.28); }
-  .supply-purpose { margin: -0.25rem 0 0.75rem; max-width: 64rem; font-size: 0.875rem; color: #4b5563; }
   .supply-tabs-phone { display: none; }
   .supply-tabs-phone > summary { list-style: none; cursor: pointer; }
   .supply-tabs-phone > summary::-webkit-details-marker { display: none; }
   .supply-tabs-phone[open] > summary .supply-tabs-caret { transform: rotate(180deg); }
   .supply-tabs-phone > nav { position: absolute; left: 0; z-index: 30; margin-top: 0.25rem; width: 14rem; max-width: calc(100vw - 2rem); padding: 0.25rem 0; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); }
-  @media (max-width: 639px) {
-    .supply-banner { padding: 0.5rem 0.75rem !important; margin-bottom: 0.75rem !important; gap: 0.75rem !important; }
-    .supply-banner-text { flex-direction: row !important; align-items: baseline; gap: 0.5rem; min-width: 0; }
-    .supply-banner-text h1 { font-size: 1rem !important; line-height: 1.5rem; margin: 0 !important; }
-    .supply-banner-line { margin: 0 !important; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .supply-banner-tagline { display: none; }
-    .supply-banner-market { display: none; }
-    .supply-tabs-row { margin-bottom: 1rem !important; align-items: center !important; flex-wrap: nowrap !important; }
-    .supply-tabs-wide { display: none !important; }
-    .supply-tabs-phone { display: block; position: relative; flex-shrink: 0; }
-    .supply-banner [data-testid="as-of-slot"] { min-width: 0; flex: 0 0 auto; }
-    .supply-banner [data-as-of-form] label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-    .supply-banner [data-as-of-form] input[name="as_of"] { width: 6.5rem; min-width: 0; }
+  @media (max-width: 767px) {
+    .supply-tabs-phone { display: block; position: relative; margin-bottom: 0.75rem; }
+    .supply-toolbar { display: block; }
+    .supply-purpose { display: none; }
   }
 </style>
-{% comment %}The banner is one slim strip on every page: the title, which program and who buys for it, and the
-marketplace and Settings links at the right. (It was a tall block with a tagline, and with three rows of tab
-buttons under it pushed every page's content below the fold.) `compact_banner` is kept for callers that pass it;
-the strip is already compact.{% endcomment %}
 {% supply_settings_url as settings_url %}
-<div data-testid="supply-banner" class="supply-banner profile-bg bg-brand-indigo text-white">
-  <div class="supply-banner-text">
-    <h1>Supply</h1>
-    {% comment %}Which program, and who buys for it in that role (banner.py): said on
-    every supply page, so no screen leaves whose purchasing it is to be guessed.{% endcomment %}
-    {% if supply_program_line %}<p data-testid="supply-program-line" title="{{ supply_program_line }}" class="supply-banner-line">{{ supply_program_line }}</p>{% endif %}
-  </div>
-  <div class="supply-asof" data-testid="as-of-slot">{% include 'supply_chain/_as_of_bar.html' with as_of_part="form" %}</div>
-  <div class="supply-banner-links">
-    {% if settings_url %}<a data-testid="supply-settings" href="{{ settings_url }}" title="Which tabs this programme shows, and what fills them" class="supply-tabs-wide">Settings</a>{% endif %}
-    {% comment %}Above the program tabs, because it is above programs: what suppliers see of every open tender.{% endcomment %}
-    <a href="{% url 'supply_chain:market' %}" class="supply-banner-market">Supplier marketplace</a>
-  </div>
+<div class="supply-toolbar">
+  <button type="button" class="supply-rail-toggle" data-supply-rail-toggle aria-controls="supply-rail" aria-expanded="true"><span aria-hidden="true">&#9776;</span> <span data-label>Hide menu</span></button>
+  {% with purpose=supply_tabs|page_purpose %}{% if purpose %}<p data-testid="page-purpose" class="supply-purpose">{{ purpose }}</p>{% endif %}{% endwith %}
 </div>
-
-{% comment %}
-The chain in order, so the nav reads the way the work runs: what we can buy,
-how we buy it, what was ordered, what is on hand, where it went.
-{% endcomment %}
-{% comment %}"View as of" sits at the right of the tabs, so a page's own title leads the
-page rather than a date control above it.{% endcomment %}
-<div class="supply-tabs-row">
 <details data-testid="supply-tabs-phone" class="supply-tabs-phone">
   <summary class="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border bg-white border-gray-300 text-gray-700">
     <span class="sr-only">Supply section:</span>
@@ -102,21 +38,5 @@ page rather than a date control above it.{% endcomment %}
     <a href="{% url 'supply_chain:market' %}" class="block px-3 py-2 border-t border-gray-100 text-brand-indigo">Supplier marketplace</a>
   </nav>
 </details>
-{% comment %}Tabs in groups (navigation.TAB_GROUPS): each group's name sits above its tabs, so
-thirteen tabs read as four places rather than one row to scan.{% endcomment %}
-<nav data-testid="supply-tabs" class="supply-tabs-wide supply-tabs-bar" aria-label="Supply">
-  {% for group in supply_tabs|tab_groups %}
-  <div data-testid="supply-tab-group" data-group="{{ group.label }}" class="supply-tab-group">
-    {% if group.label %}<span class="supply-tab-group-name">{{ group.label }}</span>{% endif %}
-    {% for tab in group.tabs %}
-    <a href="{{ tab.url }}"{% if tab.active %} aria-current="page"{% endif %} class="supply-tab{% if tab.active %} is-active{% endif %}">{{ tab.label }}</a>
-    {% endfor %}
-  </div>
-  {% endfor %}
-</nav>
-</div>
-
-{% comment %}One line saying what this page is for (navigation.PAGE_PURPOSE), on a tab's own page.{% endcomment %}
-{% with purpose=supply_tabs|page_purpose %}{% if purpose %}<p data-testid="page-purpose" class="supply-purpose">{{ purpose }}</p>{% endif %}{% endwith %}
 
 {% include 'supply_chain/_as_of_bar.html' with as_of_part="banner" %}

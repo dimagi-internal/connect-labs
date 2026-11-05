@@ -100,7 +100,9 @@ silently lacks.
 {% if programme_map %}
   {% comment %}A programme's own map keeps the supply header and tabs every other supply page has;
   a portfolio's map spans programmes, so it has none.{% endcomment %}
-  <div class="max-w-7xl mx-auto px-4 pt-6">{% include 'supply_chain/_header.html' %}</div>
+  <div class="supply-shell" data-rail="open">
+  {% include 'supply_chain/_rail.html' %}
+  <div class="supply-page supply-main">{% include 'supply_chain/_header.html' %}
 {% endif %}
 <div{% if programme_map %} class="pm-col"{% endif %}>
 <div class="pm-head px-4 pt-4 pb-3">
@@ -161,6 +163,7 @@ silently lacks.
   <aside class="pm-side" id="pm-side" aria-label="Details"></aside>
 </div>
 </div>
+{% if programme_map %}</div></div>{% endif %}
 
 {{ map_payload|json_script:"pm-data" }}
 {% endblock %}
