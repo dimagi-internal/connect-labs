@@ -267,9 +267,10 @@ def _describe(check: dict, who: str, place: dict, today: date) -> dict:
         else:
             out["ask"] = f"{shown} at {store} expire {when}: issue these first"
             out["days"], out["age_text"] = None, f"expires {when}"
-        out["what"] = f"{said['label']} \u00b7 batch {facts.get('batch')}"
+        out["what"] = said["label"]
         out["amount"] = shown
-        out["about"] = store
+        batch = f"batch {facts['batch']}" if facts.get("batch") else ""
+        out["about"] = " \u00b7 ".join(part for part in (store, batch, said["when"]) if part)
         if partner:
             out["audience"], out["who"] = "partner", partner
         return out
@@ -452,7 +453,6 @@ def _partner_items(tenders, contracts, issues, program_name, program_id) -> list
     return items
 
 
-
 def _oldest_first(items: list[dict]) -> list[dict]:
     """An item with no age sorts last: not knowing how long it has waited is not the same as being new."""
     return sorted(items, key=lambda i: -(i["days"] if i["days"] is not None else -1))
@@ -567,7 +567,9 @@ def grouped(items: list[dict]) -> list[dict]:
     known = {audience for audience, _ in CHASE_GROUPS}
     for audience, label in CHASE_GROUPS:
         # An item of an audience with no section of its own is still shown, under "Ours to answer".
-        mine = [i for i in items if i["audience"] == audience or (audience == "internal" and i["audience"] not in known)]
+        mine = [
+            i for i in items if i["audience"] == audience or (audience == "internal" and i["audience"] not in known)
+        ]
         group = _oldest_first(merge_rows(mine))
         for row in group:
             # The template reads these on every row and every part; a missing key is an error there.

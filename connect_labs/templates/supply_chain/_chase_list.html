@@ -21,7 +21,7 @@ Every row says what to do, how much is at stake and how long it has waited.
         {% endif %}
         <div class="text-xs text-gray-600">{{ item.what }}{% if item.about %} · {{ item.about }}{% endif %}{% if multi %} · {{ item.program }}{% endif %}</div>
       </div>
-      <div class="whitespace-nowrap text-right text-xs text-gray-600" data-testid="chase-meta">{% if item.amount %}<span data-testid="chase-amount">{{ item.amount }}</span> · {% endif %}{% if item.days is not None %}{{ item.days }} day{{ item.days|pluralize }} open{% else %}no date recorded{% endif %}</div>
+      <div class="whitespace-nowrap text-right text-xs text-gray-600" data-testid="chase-meta">{% if item.amount %}<span data-testid="chase-amount">{{ item.amount }}</span> · {% endif %}{% if item.days is not None %}{{ item.days }} day{{ item.days|pluralize }} open{% elif item.age_text %}{{ item.age_text }}{% else %}no date recorded{% endif %}</div>
     </li>
     {% endfor %}
   </ul>
