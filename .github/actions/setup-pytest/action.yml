@@ -37,15 +37,31 @@ runs:
   steps:
     # ~18s of every run went on `apt-get update` plus a download of the same
     # three packages. Cache the .debs and unpack them instead.
+    #
+    # The key carries the OS RELEASE, not just `runner.os` (which is only
+    # "Linux"). .debs built for one Ubuntu release do not install on the next:
+    # when ubuntu-latest moved to 26.04, the 24.04 debs under the old
+    # release-less key restored on every run, failed `dpkg -i`, and fell back to
+    # apt -- and because an exact hit is never re-saved, they would have kept
+    # restoring forever. One run spent 23 minutes downloading from a crawling
+    # mirror (#2901). Per-release keys mean a new image builds its own debs once.
+    - name: Identify the OS release
+      id: os
+      shell: bash
+      run: |
+        . /etc/os-release
+        echo "release=${ID}-${VERSION_ID}" >> "$GITHUB_OUTPUT"
+
     - name: Cache the geo packages
       uses: actions/cache@v4
       with:
         path: /tmp/geo-debs
         # Bump the version suffix to force a refetch; the runner image's own
-        # base libraries move under us occasionally.
+        # base libraries move under us occasionally, even within one release.
         # v2 (2026-09-30): the v1 debs pinned libcurl4-gnutls-dev to a
         # libcurl the runner image had moved past, and every run failed.
-        key: geo-debs-${{ runner.os }}-v2
+        # v3 (2026-11-05): the OS release joined the key (#2901).
+        key: geo-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.os.outputs.release }}-v3
 
     - name: Install Geo Dependencies
       # --no-install-recommends: Django reaches libgdal/libgeos through ctypes, so
@@ -61,6 +77,27 @@ runs:
       shell: bash
       run: |
         set -u
+        # Every apt call that touches the network is bounded. A mirror that
+        # crawls (10-38 kB/s, #2901) never trips apt's own timeouts, because
+        # bytes keep arriving; only a wall-clock limit catches it. On a timeout
+        # or failure, switch from the runner's regional mirror to the main
+        # Ubuntu archive and try once more. (Composite-action steps cannot take
+        # `timeout-minutes`, so the bound lives here.)
+        APT_OPTS=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+        switched_mirror=0
+        use_main_archive() {
+          [ "$switched_mirror" = 1 ] && return 1
+          switched_mirror=1
+          echo "::warning title=Geo packages::apt was slow or failed on the runner's mirror; retrying against archive.ubuntu.com"
+          sudo sed -i -E 's#https?://[a-z0-9.-]*archive\.ubuntu\.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' \
+            /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null || true
+          sudo apt-get update "${APT_OPTS[@]}"
+        }
+        apt_net() {
+          sudo timeout 240 apt-get "${APT_OPTS[@]}" "$@" && return 0
+          use_main_archive && sudo timeout 240 apt-get "${APT_OPTS[@]}" "$@"
+        }
+
         install_from_apt() {
           # Only Ubuntu's own archive is needed here. The runner image also
           # carries third-party lists (Chrome, Edge, ...) and a hash-sum
@@ -69,17 +106,17 @@ runs:
           # depend on, so they are dropped before the update, which also retries.
           sudo grep -lE 'dl\.google\.com|packages\.microsoft\.com' \
             /etc/apt/sources.list.d/* 2>/dev/null | xargs -r sudo rm -f
-          sudo apt-get update -o Acquire::Retries=3
+          apt_net update
           # A stale cache can fail `dpkg -i` halfway and leave packages
           # unpacked but unconfigured. apt then refuses every install until
           # that is resolved, so the fallback failed exactly when it was
           # needed (2026-09-30: libcurl4-gnutls-dev against a newer libcurl).
           # Let apt repair it first -- it replaces the stale versions.
           sudo dpkg --configure -a || true
-          sudo apt-get install -y -f --no-install-recommends -o Acquire::Retries=3
+          apt_net install -y -f --no-install-recommends
           # apt refuses to use an archives dir without a `partial` inside it.
           sudo rm -rf /tmp/geo-debs && mkdir -p /tmp/geo-debs/partial
-          sudo apt-get install -y --no-install-recommends \
+          apt_net install -y --no-install-recommends \
             -o Dir::Cache::archives=/tmp/geo-debs \
             binutils \
             gdal-bin \
@@ -90,7 +127,12 @@ runs:
 
         if compgen -G '/tmp/geo-debs/*.deb' > /dev/null; then
           echo "Restoring geo packages from cache"
-          sudo dpkg -i /tmp/geo-debs/*.deb || install_from_apt
+          if ! sudo dpkg -i /tmp/geo-debs/*.deb; then
+            # An exact hit is never re-saved, so a cache that fails here fails
+            # on every run until its key changes. Say so where it is seen.
+            echo "::warning title=Stale geo-deb cache::The cached .debs (${{ steps.os.outputs.release }}) no longer install on this runner image; fell back to apt. Bump the version suffix on the geo-debs cache key in .github/actions/setup-pytest/action.yml."
+            install_from_apt
+          fi
         else
           install_from_apt
         fi
