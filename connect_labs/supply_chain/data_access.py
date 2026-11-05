@@ -59,6 +59,7 @@ from connect_labs.supply_chain.models import (
     Shipment,
     StockCount,
     StockIssue,
+    StockIssueFollowUp,
     StockPlan,
     Supplier,
     SupplyPoint,
@@ -483,6 +484,7 @@ class SupplyDataAccess(
                 drop("documents", Document.objects.filter(program_id=program_id))
                 drop("stock counts", StockCount.objects.filter(program_id=program_id))
                 # An issue names its custodian, and both PROTECT the store.
+                drop("issue follow-ups", StockIssueFollowUp.objects.filter(program_id=program_id))
                 drop("stock issues", StockIssue.objects.filter(program_id=program_id))
                 drop("custodians", Custodian.objects.filter(program_id=program_id))
                 drop("partner plans", PartnerPlan.objects.filter(program_id=program_id))

@@ -19,6 +19,7 @@ from connect_labs.supply_chain.fulfilment.forms import DocumentForm
 from connect_labs.supply_chain.stock.issue_forms import (
     CustodianForm,
     StockIssueFollowUpForm,
+    StockIssueLogForm,
     StockIssueReportForm,
     StockIssueResolveForm,
 )
@@ -96,14 +97,24 @@ class IssuesView(OperationBase):
             if not m["caused_by"].get("stock_issue_id")
             and (partner is None or owner.get(m["from_supply_point_id"]) == partner)
         ]
+        # A field worker keeps stock at home for a partner that hands out straight to workers: they are the
+        # custodian there, and how the stock is kept (a lockable box, say) is recorded like any store's.
+        from connect_labs.supply_chain.partners.services import plans_by_partner
+
+        at_home = {
+            org
+            for org, plan in plans_by_partner(_access(self.request).program_id).items()
+            if plan.distribution_model in ("direct_to_workers", "mixed")
+        }
         stores = [
-            {"point": p, "custodian": custodians.get(p["id"])}
+            {"point": p, "custodian": custodians.get(p["id"]), "at_home": p["kind"] == "user_held"}
             for p in points.values()
-            if p["kind"] != "user_held"
-            and p["kind"] not in _NOT_STORAGE
+            if p["kind"] not in _NOT_STORAGE
             and p["status"] == "active"
             and (partner is None or owner.get(p["id"]) == partner)
+            and (p["kind"] != "user_held" or p["id"] in custodians or (owner.get(p["id"]) in at_home))
         ]
+        stores.sort(key=lambda s: (s["at_home"], s["point"]["name"]))
         context.update(
             summary=summary,
             partner_id=partner,
@@ -262,6 +273,23 @@ class IssueFollowUpView(_OnAnIssue):
     form_class = StockIssueFollowUpForm
     title = "Follow up a stock issue"
     submit_label = "Save"
+
+
+class IssueLogView(_OnAnIssue):
+    """Add a line to an issue's follow-up log: who, what was done, when."""
+
+    operation = "stock_issue_follow_up_add"
+    form_class = StockIssueLogForm
+    title = "Log a follow-up"
+    submit_label = "Add to the log"
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs.pop("instance", None)
+        return kwargs
+
+    def fixed(self, **kwargs):
+        return {"issue_id": int(kwargs["issue_id"])}
 
 
 class IssueResolveView(_OnAnIssue):

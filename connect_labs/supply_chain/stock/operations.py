@@ -455,6 +455,55 @@ def stock_issue_list(access, supply_point_id=None, status=None, kind=None, open_
 
 
 @register_operation(
+    name="stock_issue_follow_up_add",
+    summary=(
+        "Add a line to a stock issue's follow-up log: who is following up, what was done and when "
+        '("3 Nov: called the clinic; 8 cartons to be returned"). The first line moves an issue nobody had looked '
+        "at to being followed up. Only for an issue that is still open; read the log with stock_issue_list."
+    ),
+    input_schema=obj(
+        {
+            "issue_id": ID,
+            "data": _data_with(
+                ("by", "note"),
+                by={"type": "string", "minLength": 1, "maxLength": 255},
+                note={"type": "string", "minLength": 1},
+                followed_on=_DATE,
+            ),
+        },
+        required=("issue_id", "data"),
+    ),
+    is_write=True,
+)
+def stock_issue_follow_up_add(access, issue_id, data):
+    from datetime import date
+
+    from django.db import transaction
+
+    from connect_labs.supply_chain.models import StockIssue, StockIssueFollowUp
+
+    with transaction.atomic():
+        issue = (
+            StockIssue.objects.select_for_update().filter(program_id=access._require_program(), pk=issue_id).first()
+        )
+        if issue is None:
+            raise ValueError(f"stock issue {issue_id} does not exist in this programme")
+        if issue.status == "resolved":
+            raise ValueError("this issue is closed; a follow-up log is for issues still being dealt with")
+        line = StockIssueFollowUp.objects.create(
+            program_id=issue.program_id,
+            issue=issue,
+            followed_on=date.fromisoformat(data["followed_on"]) if data.get("followed_on") else date.today(),
+            by=data["by"].strip(),
+            note=data["note"].strip(),
+        )
+        if issue.status == "open":
+            issue.status = "following_up"
+            issue.save()
+    return record(line)
+
+
+@register_operation(
     name="stock_issue_summary",
     summary=(
         "How many stock issues are still open, how many are being followed up, how old the oldest is, and the "

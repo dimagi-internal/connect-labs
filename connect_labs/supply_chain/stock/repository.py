@@ -379,7 +379,11 @@ class StockRepositoryMixin:
         )
 
     def list_stock_issues(self, supply_point_id=None, status=None, open_only=False, kind=None, limit=500):
-        qs = StockIssue.objects.filter(program_id=self._require_program()).select_related("commodity")
+        qs = (
+            StockIssue.objects.filter(program_id=self._require_program())
+            .select_related("commodity")
+            .prefetch_related("follow_ups")
+        )
         if supply_point_id is not None:
             qs = qs.filter(supply_point_id=supply_point_id)
         if status is not None:

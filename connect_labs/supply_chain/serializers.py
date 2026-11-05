@@ -612,7 +612,20 @@ def stock_issue(obj) -> dict:
         "resolved_on": _date(obj.resolved_on),
         "quantity_recovered": _num(obj.quantity_recovered),
         "opportunity_id": obj.opportunity_id,
+        "follow_ups": [
+            {"id": f.pk, "followed_on": _date(f.followed_on), "by": f.by, "note": f.note} for f in obj.follow_ups.all()
+        ],
         **_sourced(obj),
+    }
+
+
+def stock_issue_follow_up(obj) -> dict:
+    return {
+        "id": obj.pk,
+        "issue_id": obj.issue_id,
+        "followed_on": _date(obj.followed_on),
+        "by": obj.by,
+        "note": obj.note,
     }
 
 
