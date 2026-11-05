@@ -14,13 +14,16 @@ import time
 from unittest.mock import MagicMock, patch
 
 import pytest
+from django.db import connection
 
 from connect_labs.utils import request_telemetry
 from connect_labs.utils.request_telemetry import (
     RequestStats,
     RequestTelemetryMiddleware,
     current_stats,
+    normalize_sql,
     record_outbound_call,
+    sql_shape_fields,
 )
 
 
@@ -726,6 +729,94 @@ class TestUnbiasedSample:
         type(broken).path = property(lambda self: (_ for _ in ()).throw(RuntimeError("no path")))
 
         assert _middleware(lambda r: "ok")(broken) == "ok"
+
+
+class TestSlowestStatement:
+    """#2810: db_ms said 108s went to Postgres, and nothing said which statement.
+
+    RDS has no slow-query log, so this line is the only after-the-fact record.
+    """
+
+    def test_the_slowest_statement_wins_and_all_the_time_is_still_counted(self):
+        stats = RequestStats()
+        stats.note_query("SELECT fast", 5.0)
+        stats.note_query("SELECT slow", 3000.0)
+        stats.note_query("SELECT medium", 40.0)
+
+        assert stats.db_slowest_sql == "SELECT slow"
+        assert stats.db_slowest_ms == 3000.0
+        assert stats.db_ms == 3045.0
+
+    @pytest.mark.django_db
+    def test_a_real_query_reaches_the_line(self, request_obj, caplog):
+        def view(_request):
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 41 + 1 AS answer")
+            return "ok"
+
+        caplog.set_level("WARNING")
+        with patch.object(request_telemetry, "SLOW_REQUEST_MS", 0):
+            _middleware(view)(request_obj)
+
+        line = _lines(caplog)[0]
+        assert line["db_slowest_sql"] == "SELECT ? + ? AS answer"
+        assert len(line["db_slowest_fp"]) == 12
+        assert line["db_slowest_ms"] <= line["db_ms"]
+
+    def test_a_request_with_no_queries_names_no_statement(self, request_obj, caplog):
+        caplog.set_level("WARNING")
+        with patch.object(request_telemetry, "SLOW_REQUEST_MS", 0):
+            _middleware(lambda r: "ok")(request_obj)
+
+        line = _lines(caplog)[0]
+        assert line["db_slowest_ms"] == 0
+        assert "db_slowest_sql" not in line
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT * FROM t WHERE username = 'amina.b'",
+            "SELECT * FROM t WHERE username = 'o''amina.b'",
+            "SELECT * FROM t WHERE username = E'amina\\'.b'",
+            "SELECT * FROM t WHERE username = $$amina.b$$",
+            "SELECT * FROM t WHERE username = $tag$amina.b$tag$",
+            "SELECT * FROM t /* amina.b */ WHERE 1 = 1",
+            "SELECT * FROM t -- amina.b\nWHERE 1 = 1",
+            "SELECT * FROM t WHERE username = 'amina.b",
+        ],
+    )
+    def test_no_literal_value_survives(self, sql):
+        assert "amina" not in normalize_sql(sql)
+
+    def test_numbers_go_and_identifiers_stay(self):
+        sql = (
+            "SELECT visit_id, COALESCE(NULLIF(form_json->'form'->>'ward', '')) AS ward_2 "
+            "FROM labs_raw_visit_cache WHERE opportunity_id = 1487 AND pipeline_id = -1"
+        )
+
+        assert normalize_sql(sql) == (
+            "SELECT visit_id, COALESCE(NULLIF(form_json->?->>?, ?)) AS ward_2 "
+            "FROM labs_raw_visit_cache WHERE opportunity_id = ? AND pipeline_id = -?"
+        )
+
+    def test_one_shape_has_one_fingerprint_whatever_the_opportunity(self):
+        first = sql_shape_fields("SELECT a FROM t WHERE opportunity_id = 1487")
+        second = sql_shape_fields("SELECT a FROM t WHERE opportunity_id = 874")
+        other = sql_shape_fields("SELECT b FROM t WHERE opportunity_id = 874")
+
+        assert first["db_slowest_fp"] == second["db_slowest_fp"]
+        assert first["db_slowest_fp"] != other["db_slowest_fp"]
+
+    def test_a_long_select_list_keeps_the_from_and_the_where(self):
+        columns = ", ".join(f"col_name_{chr(97 + i % 26)}" for i in range(300))
+        fields = sql_shape_fields(f"SELECT {columns} FROM labs_raw_visit_cache WHERE opportunity_id = 1")
+
+        assert len(fields["db_slowest_sql"]) < 450
+        assert fields["db_slowest_sql"].startswith("SELECT col_name_a")
+        assert fields["db_slowest_sql"].endswith("FROM labs_raw_visit_cache WHERE opportunity_id = ?")
+
+    def test_a_non_string_statement_does_not_break_the_line(self):
+        assert normalize_sql(b"SELECT 1") != ""
 
 
 class TestRetryWaitIsNotOurCpu:

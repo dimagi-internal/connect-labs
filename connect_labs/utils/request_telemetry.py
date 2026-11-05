@@ -154,10 +154,12 @@ from __future__ import annotations
 
 import contextvars
 import functools
+import hashlib
 import json
 import logging
 import os
 import random
+import re
 import sys
 import time
 from collections import Counter
@@ -231,6 +233,45 @@ _KNOWN_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OP
 # the cap only guards against a pathological regex pattern.
 _MAX_ROUTE_LEN = 200
 
+# The slowest statement's SHAPE, for a line whose db_ms dominates. RDS keeps no
+# record of this: log_min_duration_statement is -1, Performance Insights is off and
+# pg_stat_statements is cumulative and evicts (135,845 evictions by 2026-11-05), so
+# "which query took 108s of that request?" had no answer after the fact (#2810).
+#
+# Every literal goes, because this builder inlines opportunity ids and filter values
+# into the SQL and the raw log must not gain them. So a JSON path reads
+# `form_json->?->>?` while its alias survives (`AS ward`). The head and the tail are
+# both kept: a long select list would otherwise push FROM and WHERE off the end.
+_SLOWEST_SQL_HEAD_CHARS = 240
+_SLOWEST_SQL_TAIL_CHARS = 160
+_SQL_COMMENT = re.compile(r"/\*.*?\*/|--[^\n]*", re.DOTALL)
+_SQL_STRING = re.compile(r"(?:\b[eE])?'(?:[^'\\]|''|\\.)*'")
+_SQL_DOLLAR_STRING = re.compile(r"\$([A-Za-z_]\w*|)\$.*?\$\1\$", re.DOTALL)
+_SQL_NUMBER = re.compile(r"(?<![\w\"$])\d+(?:\.\d+)?(?![\w\"])")
+_SQL_SPACE = re.compile(r"\s+")
+
+
+def normalize_sql(sql) -> str:
+    """The statement with every literal removed and whitespace collapsed."""
+    text = sql if isinstance(sql, str) else str(sql)
+    text = _SQL_COMMENT.sub(" ", text)
+    text = _SQL_DOLLAR_STRING.sub("?", text)
+    # An unterminated quote would slip past _SQL_STRING with its value intact, so
+    # cut at any quote still standing rather than log what follows it.
+    text = _SQL_STRING.sub("?", text).split("'", 1)[0]
+    text = _SQL_NUMBER.sub("?", text)
+    return _SQL_SPACE.sub(" ", text).strip()
+
+
+def sql_shape_fields(sql) -> dict[str, str]:
+    """``db_slowest_fp`` (hash of the whole shape) and ``db_slowest_sql`` (bounded)."""
+    shape = normalize_sql(sql)
+    limit = _SLOWEST_SQL_HEAD_CHARS + _SLOWEST_SQL_TAIL_CHARS
+    bounded = shape
+    if len(shape) > limit:
+        bounded = f"{shape[:_SLOWEST_SQL_HEAD_CHARS]} ... {shape[-_SLOWEST_SQL_TAIL_CHARS:]}"
+    return {"db_slowest_fp": hashlib.sha1(shape.encode()).hexdigest()[:12], "db_slowest_sql": bounded}
+
 
 @dataclass
 class RequestStats:
@@ -241,6 +282,10 @@ class RequestStats:
     outbound_ms: float = 0.0
     db_queries: int = 0
     db_ms: float = 0.0
+    # Kept raw and normalized only when a line is written, so a healthy request pays
+    # one comparison per query rather than a regex pass.
+    db_slowest_ms: float = 0.0
+    db_slowest_sql: object = None
     # Deliberate waits we chose to take (retry backoff), billed away from the
     # residual so a sleep does not read as our CPU. See ``record_retry_wait``.
     retry_waits: int = 0
@@ -248,6 +293,12 @@ class RequestStats:
 
     def top_outbound(self, n: int = 3) -> dict[str, int]:
         return dict(self.outbound_by_host.most_common(n))
+
+    def note_query(self, sql, elapsed_ms: float) -> None:
+        self.db_ms += elapsed_ms
+        if elapsed_ms >= self.db_slowest_ms:
+            self.db_slowest_ms = elapsed_ms
+            self.db_slowest_sql = sql
 
 
 # A ContextVar rather than thread-local: labs runs on UvicornWorker, where sync
@@ -923,7 +974,7 @@ class RequestTelemetryMiddleware:
             try:
                 return execute(sql, params, many, context)
             finally:
-                stats.db_ms += (time.perf_counter() - q_started) * 1000
+                stats.note_query(sql, (time.perf_counter() - q_started) * 1000)
 
         response = None
         try:
@@ -1005,6 +1056,10 @@ class RequestTelemetryMiddleware:
             "outbound_by_host": stats.top_outbound(),
             "db_queries": stats.db_queries,
             "db_ms": int(stats.db_ms),
+            # Which statement, when db_ms is the answer (#2810). db_slowest_sql stays
+            # in this raw stream; the scrubbed copy keeps only the ms and the hash.
+            "db_slowest_ms": int(stats.db_slowest_ms),
+            **(sql_shape_fields(stats.db_slowest_sql) if stats.db_slowest_sql is not None else {}),
             # Deliberate backoff sleeps on the request thread (#1435). Broken out
             # of the residual because a sleep is not our CPU, and counted because
             # retry_waits > 0 is what identifies the tail as upstream retries.

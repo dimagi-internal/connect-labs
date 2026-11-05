@@ -286,6 +286,15 @@ def test_telemetry_keeps_route_method_status_and_numbers_only(monkeypatch):
     _no_sentinel(rec)
 
 
+def test_telemetry_keeps_the_slowest_statements_ms_and_hash_but_never_its_sql(monkeypatch):
+    mod, _ = _load("request_telemetry_scrubber", monkeypatch)
+    rec = mod.scrub(_telemetry_line(db_slowest_ms=3000, db_slowest_fp="a1b2c3d4e5f6", db_slowest_sql=SENTINEL))
+    assert rec["db_slowest_ms"] == 3000
+    assert rec["db_slowest_fp"] == "a1b2c3d4e5f6"
+    assert "db_slowest_sql" not in rec
+    _no_sentinel(rec)
+
+
 def test_unknown_event_is_dropped(monkeypatch):
     mod, _ = _load("request_telemetry_scrubber", monkeypatch)
     assert mod.scrub(_telemetry_line(event="audit")) is None
