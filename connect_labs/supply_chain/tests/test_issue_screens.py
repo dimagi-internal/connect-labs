@@ -266,3 +266,100 @@ def test_expiring_soon_is_a_warning_on_the_issues_page_and_takes_nothing_off_sto
     assert page.status_code == 200
     html = page.content.decode()
     assert "Expiring soon" in html and "A warning, not a loss" in html
+
+
+# ---- the follow-up log and field workers who keep stock at home ---------------------------
+
+
+def test_a_follow_up_log_line_names_who_what_and_when_and_moves_the_issue_on(scoped, world):
+    rutf, _partner, _other, mine, _theirs = world
+    scoped.post(reverse("supply_chain:issue_report"), report(mine, rutf))
+    issue = StockIssue.objects.get()
+    url = reverse("supply_chain:issue_log", args=[issue.pk])
+    assert scoped.get(url).status_code == 200
+    done = scoped.post(
+        url, {"by": "A Supervisor", "followed_on": "2026-11-03", "note": "called the clinic; 8 cartons to be returned"}
+    )
+    assert done.status_code == 302
+    issue.refresh_from_db()
+    assert issue.status == "following_up"
+    [line] = issue.follow_ups.all()
+    assert (line.by, str(line.followed_on)) == ("A Supervisor", "2026-11-03")
+    html = scoped.get(reverse("supply_chain:issues")).content.decode()
+    assert 'data-testid="issue-log"' in html and "3 Nov 2026" in html and "8 cartons to be returned" in html
+    assert "Log a follow-up" in html
+
+
+def test_a_closed_issue_takes_no_more_log_lines(scoped, world):
+    rutf, _partner, _other, mine, _theirs = world
+    scoped.post(reverse("supply_chain:issue_report"), report(mine, rutf))
+    issue = StockIssue.objects.get()
+    StockIssue.objects.filter(pk=issue.pk).update(status="resolved", outcome="written_off")
+    response = scoped.post(
+        reverse("supply_chain:issue_log", args=[issue.pk]), {"by": "A", "followed_on": "2026-11-03", "note": "x"}
+    )
+    assert response.status_code == 200 and not issue.follow_ups.exists()
+
+
+def test_the_log_is_on_the_operation_so_the_api_and_mcp_read_it_too(scoped, world):
+    from connect_labs.labs.access.scopes import SYSTEM
+    from connect_labs.supply_chain.data_access import SupplyDataAccess
+    from connect_labs.supply_chain.operations import call_operation
+
+    rutf, _partner, _other, mine, _theirs = world
+    scoped.post(reverse("supply_chain:issue_report"), report(mine, rutf))
+    issue = StockIssue.objects.get()
+    access = SupplyDataAccess(access_token="placeholder", program_id=PROGRAM, caller=SYSTEM)
+    call_operation(
+        "stock_issue_follow_up_add",
+        access,
+        {"issue_id": issue.pk, "data": {"by": "A Person", "note": "asked for a photo", "followed_on": "2026-11-04"}},
+    )
+    [listed] = [i for i in call_operation("stock_issue_list", access, {}) if i["id"] == issue.pk]
+    assert listed["follow_ups"] == [
+        {
+            "id": listed["follow_ups"][0]["id"],
+            "followed_on": "2026-11-04",
+            "by": "A Person",
+            "note": "asked for a photo",
+        }
+    ]
+
+
+def test_a_field_worker_who_keeps_stock_at_home_can_be_the_custodian(scoped, world):
+    from connect_labs.supply_chain.models import PartnerPlan
+
+    _rutf, partner, _other, mine, _theirs = world
+    worker = SupplyPoint.objects.create(
+        program_id=PROGRAM,
+        slug="flw-home",
+        name="flw_home",
+        kind="user_held",
+        parent=mine,
+        connect_username="flw_home",
+        source="we_recorded",
+    )
+    PartnerPlan.objects.create(
+        program_id=PROGRAM,
+        org=partner,
+        distribution_model="direct_to_workers",
+        starts_on=date(2026, 1, 1),
+        source="we_recorded",
+    )
+    html = scoped.get(reverse("supply_chain:issues")).content.decode()
+    assert "flw_home" in html and "keeps stock at home" in html
+    posted = scoped.post(
+        reverse("supply_chain:custodian_assign"),
+        {
+            "supply_point": worker.pk,
+            "name": "Home Worker",
+            "starts_on": "2026-11-01",
+            "security_measures": ["locked_box"],
+            "note": "a lockable box under the bed",
+            "source": "partner_reported",
+        },
+    )
+    assert posted.status_code == 302, posted.context["form"].errors if posted.context else None
+    assert Custodian.objects.get(supply_point=worker).security_measures == ["locked_box"]
+    again = scoped.get(reverse("supply_chain:issues")).content.decode()
+    assert "Home Worker" in again and "a lockable box under the bed" in again

@@ -1635,6 +1635,26 @@ class StockIssue(SourcedModel):
             )
 
 
+class StockIssueFollowUp(TimestampedModel):
+    """One line of an issue's follow-up log: who followed up, what was done, and when.
+
+    "3 Nov: called the clinic; 8 cartons to be returned". Append-only, newest read first; the issue's own
+    status says where it stands, this says what has been done about it.
+    """
+
+    program_id = models.IntegerField(db_index=True)
+    issue = models.ForeignKey(StockIssue, on_delete=models.CASCADE, related_name="follow_ups")
+    followed_on = models.DateField()
+    by = models.CharField(max_length=255)
+    note = models.TextField()
+
+    class Meta:
+        ordering = ["-followed_on", "-id"]
+
+    def __str__(self):
+        return f"{self.followed_on}: {self.by}"
+
+
 class Distribution(SourcedModel):
     """One resupply run from a store out to field workers.
 

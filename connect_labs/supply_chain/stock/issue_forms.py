@@ -184,6 +184,35 @@ class StockIssueFollowUpForm(ProvenancedForm):
         )
 
 
+class StockIssueLogForm(forms.Form):
+    """One line of the follow-up log: who followed up, what was done, and when."""
+
+    by = forms.CharField(label=_("Who is following up"), max_length=255, widget=forms.TextInput(attrs=INPUT))
+    followed_on = forms.DateField(label=_("Date"), widget=forms.DateInput(attrs=DATE))
+    note = forms.CharField(
+        label=_("What was done"),
+        widget=forms.Textarea(
+            attrs={**TEXTAREA, "rows": 3, "placeholder": _("e.g. called the clinic; 8 cartons to be returned")}
+        ),
+    )
+
+    def __init__(self, *args, access=None, instance=None, **kwargs):
+        from crispy_forms.helper import FormHelper
+
+        super().__init__(*args, **kwargs)
+        self.fields["followed_on"].initial = date.today()
+        self.helper = FormHelper(self)
+        self.helper.form_tag = False
+        self.helper.disable_csrf = True
+        self.helper.layout = Layout(
+            Row(Column("by"), Column("followed_on"), css_class="grid md:grid-cols-2 gap-x-6"), Field("note")
+        )
+
+    def payload(self) -> dict:
+        data = self.cleaned_data
+        return {"by": data["by"], "followed_on": data["followed_on"].isoformat(), "note": data["note"]}
+
+
 class StockIssueResolveForm(ProvenancedForm):
     """How it ended: recovered, replaced or written off."""
 
@@ -267,7 +296,10 @@ class CustodianForm(ProvenancedForm):
         }
         help_texts = {
             "starts_on": _("The person before is recorded as ending on this day, so the history is kept."),
-            "note": _("For example, who holds the key, or what the agreement with the facility says."),
+            "note": _(
+                "For example, who holds the key, what the agreement with the facility says, or, for a field worker "
+                "who keeps stock at home, that it is in a lockable box."
+            ),
         }
 
     def __init__(self, *args, **kwargs):

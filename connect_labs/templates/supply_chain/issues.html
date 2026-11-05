@@ -102,6 +102,15 @@
               <div class="text-xs"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:document_open' document.id %}" target="_blank" rel="noopener noreferrer">{{ document.title|default:document.filename|default:"evidence" }}</a></div>
             {% endfor %}
             <div class="text-xs"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:issue_evidence' issue.id %}">Add a photo or message</a></div>
+            {% if issue.follow_ups %}
+              <ul class="mt-1 space-y-0.5 text-xs text-gray-700 border-l-2 border-gray-200 pl-2" data-testid="issue-log">
+                {% for line in issue.follow_ups %}
+                  <li><b>{{ line.followed_on|day }}</b>, {{ line.by }}: {{ line.note }}</li>
+                {% endfor %}
+              </ul>
+            {% elif issue.status != "resolved" %}
+              <div class="text-xs text-amber-800">Nobody has logged a follow-up yet.</div>
+            {% endif %}
           </td>
           <td class="px-4 py-2">{{ issue.point.name|default:"—" }}</td>
           <td class="px-4 py-2 tabular-nums">
@@ -126,7 +135,9 @@
           </td>
           <td class="px-4 py-2 text-xs whitespace-nowrap">
             {% if issue.status != "resolved" %}
-              <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:issue_follow_up' issue.id %}">Follow up</a>
+              <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:issue_log' issue.id %}">Log a follow-up</a>
+              ·
+              <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:issue_follow_up' issue.id %}">Edit details</a>
               ·
               <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:issue_resolve' issue.id %}">Close</a>
             {% endif %}
@@ -147,7 +158,8 @@
 <h3 class="text-base font-semibold text-gray-900 mb-1">Who is responsible where stock is kept</h3>
 <p class="text-xs text-gray-600 mb-3">
   A named person at each storage point confirms deliveries and owns the balance there, so a missing carton points
-  to a person and a day. Changing the custodian keeps the earlier one as history.
+  to a person and a day. Where a partner's field workers keep stock at home, the field worker is the custodian and
+  the security says how it is kept (for example, a lockable box). Changing the custodian keeps the earlier one as history.
 </p>
 <div class="bg-white border border-gray-200 rounded-lg mb-6 overflow-hidden">
   <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
@@ -163,7 +175,7 @@
     <tbody class="divide-y divide-gray-100">
       {% for store in stores %}
         <tr>
-          <td class="px-4 py-2">{{ store.point.name }}</td>
+          <td class="px-4 py-2">{{ store.point.name }}{% if store.at_home %} <span class="text-xs text-gray-600">(field worker, keeps stock at home)</span>{% endif %}</td>
           <td class="px-4 py-2">
             {% if store.custodian %}
               {{ store.custodian.name }}
