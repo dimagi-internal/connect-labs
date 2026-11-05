@@ -443,8 +443,8 @@ stays in `ask`.
 So **a new labs surface needs a capability, or the panel can only chat.** Declaring
 a resource nothing matches falls back to `ask`, which for ACE is an email door: no
 page tool, no `Skill`. That is how the first live run ended with the agent trying
-`screencapture`. The interface is edited on the agent's canopy page, or with
-`canopy agent interface get|set --slug <agent>` — never a file in the agent's repo.
+`screencapture`. These settings are edited on the agent's canopy page (Settings → Channels), or with
+`canopy agent read-mode` and `canopy agent sites` — never a file in the agent's repo.
 
 Two things a capability cannot fix, learned the same way: a confined turn has no
 `AskUserQuestion`, so an agent must ask in the chat; and a Drive write needs a
