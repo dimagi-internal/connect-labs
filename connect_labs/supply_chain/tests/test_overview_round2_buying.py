@@ -80,7 +80,7 @@ def split(da, base):
 class TestASplitTenderIsOneRow:
     def test_the_tender_row_lists_every_partner_including_the_one_who_has_not_ordered(self, da, split):
         rows = standing_rows(PROGRAM, ts.TODAY)
-        (tender_row,) = [r for r in rows if r.kind == "tender"]
+        (tender_row,) = (r for r in rows if r.kind == "tender")
         assert [(p["name"], p["state"]) for p in tender_row.partners] == [
             ("North Star", "ordered"),
             ("Riverbend", "ordered"),
