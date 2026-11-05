@@ -254,3 +254,15 @@ def test_evidence_can_be_added_to_an_issue_later_by_file_or_link(scoped, world):
 
 def test_evidence_for_another_programmes_issue_is_not_found(scoped, world):
     assert scoped.get(reverse("supply_chain:issue_evidence", args=[999999])).status_code == 404
+
+
+def test_expiring_soon_is_a_warning_on_the_issues_page_and_takes_nothing_off_stock(scoped, world):
+    rutf, _partner, _other, mine, _theirs = world
+    response = scoped.post(reverse("supply_chain:issue_report"), report(mine, rutf, kind="expiring", quantity="40"))
+    assert response.status_code == 302, getattr(response, "context", None) and response.context["form"].errors
+    issue = StockIssue.objects.get()
+    assert issue.kind == "expiring" and not Movement.objects.filter(stock_issue=issue).exists()
+    page = scoped.get(reverse("supply_chain:issues"))
+    assert page.status_code == 200
+    html = page.content.decode()
+    assert "Expiring soon" in html and "A warning, not a loss" in html

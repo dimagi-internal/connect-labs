@@ -105,7 +105,7 @@ plain words, and each step says where it came from.
       <ul class="text-sm space-y-1">
         {% for r in picture.short %}
           <li><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:workers' %}">{{ r.name }}</a>:
-            holds {{ r.held|floatformat:0 }}, needs about {{ r.due|add:r.new|floatformat:0 }} this week{% if r.runs_dry_on %}; runs out {{ r.runs_dry_on }}{% endif %}.</li>
+            holds {{ r.held|floatformat:0 }}, needs about {{ r.need_week|floatformat:0 }} this week{% if r.runs_dry_on %}; runs out {{ r.runs_dry_on }}{% endif %}.</li>
         {% endfor %}
       </ul>
     {% else %}
@@ -174,7 +174,7 @@ plain words, and each step says where it came from.
               <td class="px-4 py-2 text-right tabular-nums">{{ s.own_on_hand.amount|default:"&mdash;"|floatformat:0 }}</td>
               <td class="px-4 py-2 text-right tabular-nums">{{ s.workers }}</td>
               <td class="px-4 py-2 text-right tabular-nums">{{ s.need_ahead|floatformat:0 }}</td>
-              <td class="px-4 py-2">{{ s.next_delivery|default:"none expected" }}</td>
+              <td class="px-4 py-2">{% if s.next_delivery %}{{ s.next_delivery|day }}{% elif s.no_delivery_reason %}{% if s.no_delivery_reason.href %}<a class="text-brand-indigo hover:underline" href="{{ s.no_delivery_reason.href }}">{{ s.no_delivery_reason.text }}</a>{% else %}{{ s.no_delivery_reason.text }}{% endif %}{% else %}none expected{% endif %}</td>
               <td class="px-4 py-2 {% if s.lasts_until_delivery == 'no' or s.lasts_until_delivery == 'no delivery planned' %}text-amber-800 font-medium{% endif %}">{{ s.lasts_until_delivery|capfirst }}</td>
               <td class="px-4 py-2">{{ s.runs_dry_on|default:"not in the weeks ahead" }}</td>
             </tr>

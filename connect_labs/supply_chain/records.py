@@ -181,12 +181,14 @@ CONSIGNMENT_STATUSES = ("dispatched", "received")
 # Stock that is not where the records say it is. "missing" and "taken" are
 # kept apart because a carton somebody knowingly moved is a different
 # conversation from one nobody can account for; `taken_by` names who, when known.
-STOCK_ISSUE_KINDS = ("missing", "taken", "damaged", "expired", "other")
+# "expiring" is a WARNING, not a loss: the batch is still in date (use it first, or move it), so nothing
+# comes off stock. Only a batch past its expiry date is "expired", and only that is taken off the shelf.
+STOCK_ISSUE_KINDS = ("missing", "taken", "damaged", "expired", "expiring", "other")
 # open -> being followed up -> resolved, and a resolved issue says how it ended.
 STOCK_ISSUE_STATUSES = ("open", "following_up", "resolved")
 STOCK_ISSUE_OUTCOMES = ("recovered", "replaced", "written_off")
 # The ledger kind each issue is posted as when it leaves the shelf.
-STOCK_ISSUE_MOVEMENT_KIND = {"expired": "expiry"}
+STOCK_ISSUE_MOVEMENT_KIND = {"expired": "expiry", "expiring": "expiry"}
 
 # What keeps stock safe at a storage point. Several can apply at once.
 SECURITY_MEASURES = ("locked_room", "locked_box", "separate_shelf", "facility_agreement", "none")

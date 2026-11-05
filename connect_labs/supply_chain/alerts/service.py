@@ -54,6 +54,7 @@ from connect_labs.supply_chain.models import (
     StockCount,
     Tender,
 )
+from connect_labs.supply_chain.values import decimal_string
 from connect_labs.utils.email import email_enabled, send_labs_email
 
 logger = logging.getLogger(__name__)
@@ -331,7 +332,7 @@ def _partner_name(owners, subject, scope) -> str:
 
 def _movement_facts(movement) -> dict:
     facts = {
-        "quantity": str(movement.quantity.normalize()) if movement.quantity is not None else None,
+        "quantity": decimal_string(movement.quantity) if movement.quantity is not None else None,
         "quantity_unit": movement.quantity_unit,
         "commodity": movement.commodity.name,
         "item": movement.item.name if movement.item_id else "",

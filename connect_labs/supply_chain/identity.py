@@ -26,6 +26,7 @@ Three ways in, and each knows the user:
 """
 
 import logging
+import re
 
 from connect_labs.labs.models import LabsOrg
 from connect_labs.utils.dimagi_user import is_dimagi_user
@@ -395,16 +396,42 @@ def find_or_mint_supplier_org(name: str, *, country: str = "", connect_organizat
     return org
 
 
+# Accounts that are a machine, not a person. Connect gives a sign-in with no given and family name no
+# name at all, and labs then stores the login itself as the user's name (`oauth_views`: `... or username`),
+# so "the name is the handle" is true of every such PERSON as well as of a service account. Only the second
+# must never sign an email; the first is somebody who has to be able to.
+SERVICE_ACCOUNT_HANDLES = frozenset({"ace", "canopy", "canopy-probe"})
+SERVICE_ACCOUNT_DOMAINS = frozenset({"dimagi-ai.com"})
+
+
+def is_service_account(user) -> bool:
+    """True for a machine login (the agents' mailboxes, the canopy probe), by handle or by mail domain."""
+    username = (user.get_username() or "").strip().lower()
+    email = (getattr(user, "email", "") or "").strip().lower()
+    local, _, domain = email.partition("@")
+    return bool({username, local} & SERVICE_ACCOUNT_HANDLES) or domain in SERVICE_ACCOUNT_DOMAINS
+
+
+def _readable(handle: str) -> str:
+    """A person's handle as a name: "sophie.feintuch" -> "Sophie Feintuch"; one without a break as written."""
+    words = [w for w in re.split(r"[._\-\s]+", handle) if w]
+    return " ".join(w[:1].upper() + w[1:] for w in words) if len(words) > 1 else handle
+
+
 def person_name(user) -> str:
-    """The signed-in person's own name, or "" when all we have is a handle.
+    """The signed-in person's own name, or "" when there is no person to sign as.
 
     `User.name` is free text, and on a shared or service account it holds the
     login itself. Prefilled into "Decided by", that read as though somebody
     called "ace" had made the purchasing decision -- the exact reading the
-    field exists to prevent. A name that IS the account's handle is not a
-    person's name, so nothing is prefilled and the decider types who decided.
-    The same rule signs a drafted email: a signature reading "ace" is worse
-    than a visible "[your name]".
+    field exists to prevent. So a service account's handle is never a name
+    (nothing is prefilled; the decider types who decided; a drafted email
+    shows a visible "[your name]" rather than signing "ace").
+
+    A PERSON whose Connect profile has no name is different: labs stored their
+    login as their name, and refusing it left every email they drafted signed
+    "[your name]" (reported on the award emails, 5 Nov 2026). Their login is
+    all we know of them, so it signs, written readably.
     """
     if user is None:
         return ""
@@ -421,7 +448,13 @@ def person_name(user) -> str:
         (getattr(user, "email", "") or "").split("@")[0].strip().lower(),
     }
     handles.discard("")
-    return "" if name.lower() in handles else name
+    if not name or name.lower() in handles:
+        if is_service_account(user):
+            return ""
+        # A person with no name on their profile: their login is all there is, and a blank name signs "[your name]".
+        login = name or (user.get_username() or "").strip() or (sorted(handles)[0] if handles else "")
+        return _readable(login) if login else ""
+    return name
 
 
 def acting_org_name(access) -> str:

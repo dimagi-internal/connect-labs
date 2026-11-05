@@ -91,6 +91,28 @@ def _days_since(iso: str | None, today: date) -> int | None:
     return (today - date.fromisoformat(iso)).days
 
 
+def _expiring(check: dict, about: str, today: date):
+    """(what, ask, about, days) for a batch near or past its expiry date.
+
+    Said with the same words and the same age as the Overview's issues panel (`expiry_words`): a batch
+    still in date is "Expiring soon" and has no age, only a date to act by; only a past date is "Expired",
+    aged from the day it expired. (The age used to run from the start of the warning period.)
+    """
+    from connect_labs.supply_chain.stock.services.expiry import expiry_words
+
+    facts = check.get("facts") or {}
+    expiry = facts.get("expiry")
+    if not expiry:
+        return "Stock expiring soon or already expired", "Check the batch's expiry date", about, check.get("days_open")
+    said = expiry_words(date.fromisoformat(expiry), today)
+    quantity = facts.get("quantity") or "the stock"
+    if said["expired"]:
+        ask = f"Move or write off the {quantity} that expired: take it off the shelf so it is not handed out"
+        return said["label"], ask, f"{about} · {said['when']}", said["days"]
+    ask = f"Use the {quantity} first, or move it to where it will be used, before it expires"
+    return said["label"], ask, f"{about} · {said['when']}", None
+
+
 def chase_items(
     *,
     program_id: int,
@@ -102,6 +124,9 @@ def chase_items(
     places: dict,
     check_labels: dict,
     today: date | None = None,
+    tenders: list[dict] = (),
+    contracts: list[dict] = (),
+    issues: list[dict] = (),
 ) -> list[dict]:
     """Every open thing in one programme that someone has to chase.
 
@@ -116,16 +141,25 @@ def chase_items(
         return check_labels.get(kind) or kind.replace("_", " ")
 
     for check in checks:
+        # Audiences the list has no section for ("ours": a check that is ours to chase) belong to "Ours to
+        # answer": the header counts every item, and none may fall out of the groups unseen.
+        if check["audience"] not in dict(CHASE_GROUPS):
+            check = {**check, "audience": "internal"}
         who = _who(check)
         what = label_of(check["kind"])
+        ask = ask_for(check["kind"], check["audience"], who, what)
+        about = (check.get("subject") or {}).get("label") or ""
+        days = check.get("days_open")
+        if check["kind"] == "stock_expiring":
+            what, ask, about, days = _expiring(check, about, today)
         items.append(
             {
                 "audience": check["audience"],
                 "who": who,
                 "what": what,
-                "ask": ask_for(check["kind"], check["audience"], who, what),
-                "about": (check.get("subject") or {}).get("label") or "",
-                "days": check.get("days_open"),
+                "ask": ask,
+                "about": about,
+                "days": days,
                 "href": check.get("href") or "",
                 "program": program_name,
                 "program_id": program_id,
@@ -173,6 +207,59 @@ def chase_items(
                 "program_id": program_id,
             }
         )
+    items += _partner_items(tenders, contracts, issues, program_name, program_id)
+    return items
+
+
+def _partner_items(tenders, contracts, issues, program_name, program_id) -> list[dict]:
+    """Things only a local partner (LLO) can do next: order its share of a split tender, report on a diversion.
+
+    "Savanna hasn't ordered" is the partner's to do, not ours: the supplier is waiting on the partner, and so are
+    we. An issue about stock taken or missing at a partner's place is followed up with that partner.
+    """
+    from connect_labs.supply_chain.procurement.services.splits import order_set, splits_for
+
+    items = []
+    for tender in tenders:
+        if tender.get("status") != "awarded" or not splits_for(tender):
+            continue
+        mine = [c for c in contracts if c.get("tender_id") == tender.get("id")]
+        waiting_orgs = set(order_set(tender, mine)["waiting_org_ids"])
+        for split in splits_for(tender):
+            if split["org_id"] not in waiting_orgs:
+                continue
+            quantity = f"{split.get('quantity')} {split.get('quantity_unit') or ''}".strip()
+            items.append(
+                {
+                    "audience": "partner",
+                    "who": split["org_name"],
+                    "what": "Has not ordered yet",
+                    "ask": f"Ask {split['org_name']} to place their order for {tender.get('label') or 'the tender'}",
+                    "about": f"{tender.get('label') or 'Tender'} · {quantity}",
+                    "days": None,
+                    "href": "",
+                    "program": program_name,
+                    "program_id": program_id,
+                }
+            )
+    for issue in issues:
+        if issue.get("kind") not in ("taken", "missing") or not issue.get("partner"):
+            continue
+        if issue["partner"] == "no partner recorded":
+            continue
+        items.append(
+            {
+                "audience": "partner",
+                "who": issue["partner"],
+                "what": "Stock issue still open",
+                "ask": f"Ask {issue['partner']} for an update: {issue['title']}",
+                "about": issue.get("status") or "",
+                "days": issue.get("days_open"),
+                "href": issue.get("href") or "",
+                "program": program_name,
+                "program_id": program_id,
+            }
+        )
     return items
 
 
@@ -183,9 +270,11 @@ def grouped(items: list[dict]) -> list[dict]:
     the same as being new.
     """
     out = []
+    known = {audience for audience, _ in CHASE_GROUPS}
     for audience, label in CHASE_GROUPS:
         group = sorted(
-            (i for i in items if i["audience"] == audience),
+            # An item of an audience with no section of its own is still shown, under "Ours to answer".
+            (i for i in items if i["audience"] == audience or (audience == "internal" and i["audience"] not in known)),
             key=lambda i: -(i["days"] if i["days"] is not None else -1),
         )
         if group:

@@ -84,3 +84,35 @@ def expiring_batches(program_id, *, today=None, opportunity_id=None) -> list[dic
         )
     out.sort(key=lambda r: (r["expiry"], r["supply_point"].name, r["batch"]))
     return out
+
+
+def expiry_words(expiry, today=None) -> dict:
+    """How a batch's expiry date is said everywhere (the chase list, the Overview's issues, Issues).
+
+    {"expired": bool, "label": "Expired" | "Expiring soon", "days": days past (expired) or to go (soon),
+    "when": "expired 3 days ago, on 2 Nov 2026" | "expires in 71 days, on 15 Jan 2027"}. Only a date in the
+    past is "Expired"; today and later is still in date, so "Expiring soon" -- one rule, so two pages
+    cannot call the same batch by two names or count its age from two different days.
+    """
+    from connect_labs.supply_chain.values import day_text
+
+    today = today or date.today()
+    days = (today - expiry).days
+    if days > 0:
+        return {
+            "expired": True,
+            "label": "Expired",
+            "days": days,
+            "when": f"expired {days} day{'' if days == 1 else 's'} ago, on {day_text(expiry)}",
+        }
+    ahead = -days
+    return {
+        "expired": False,
+        "label": "Expiring soon",
+        "days": ahead,
+        "when": (
+            "expires today"
+            if ahead == 0
+            else f"expires in {ahead} day{'' if ahead == 1 else 's'}, on {day_text(expiry)}"
+        ),
+    }

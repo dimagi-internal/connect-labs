@@ -115,6 +115,21 @@ def _expected_inbound(program_id, points, item=None, as_of=None):
         contracts = contracts.filter(item=item)
     today = as_of or date.today()
 
+    # A supplier's shipment on the road is the best date there is for what is coming: it says when THAT
+    # consignment arrives, where the contract's promised lead time is only a promise (and is often blank).
+    # Without it a store waiting on a delivery in transit read "none expected".
+    from connect_labs.supply_chain.models import Shipment
+
+    shipment_dates: dict[int, date] = {}
+    for contract_id, expected in (
+        Shipment.objects.filter(contract_id__in=[c.pk for c in contracts])
+        .filter(Shipment.in_transit_q())
+        .exclude(expected_on=None)
+        .values_list("contract_id", "expected_on")
+    ):
+        if contract_id not in shipment_dates or expected < shipment_dates[contract_id]:
+            shipment_dates[contract_id] = expected
+
     by_point: dict[int, list] = {}
     for contract in contracts:
         match = three_way_match(contract)
@@ -125,8 +140,8 @@ def _expected_inbound(program_id, points, item=None, as_of=None):
             continue
         if isinstance(outstanding, Quantity) and outstanding.amount <= 0:
             continue
-        expected_on = None
-        if contract.signed_on is not None and contract.promised_lead_time_days is not None:
+        expected_on = shipment_dates.get(contract.pk)
+        if expected_on is None and contract.signed_on is not None and contract.promised_lead_time_days is not None:
             expected_on = contract.signed_on + timedelta(days=contract.promised_lead_time_days)
         by_point.setdefault(contract.delivery_supply_point_id, []).append(
             {

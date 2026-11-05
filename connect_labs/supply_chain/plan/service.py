@@ -201,6 +201,9 @@ def issue_rows(fc: dict, plan_vals: dict) -> list[dict]:
                 "children": children,
                 "due": due,
                 "new": new,
+                # One number for "needs about": the two parts added here, never in the template, where
+                # `|add` on text joins them ("71" + "23" read "7123").
+                "need_week": due + new,
                 "buffer_days": days,
                 "buffer": buffer,
                 "held": held,
@@ -295,8 +298,47 @@ def break_even(fc: dict, plan_vals: dict) -> dict:
 # ---- stores ---------------------------------------------------------------------------
 
 
-def store_rows(fc: dict, weeks=4) -> list[dict]:
-    """Each store: what the workers below it will need, whether it lasts until its next delivery, and for how long."""
+def no_delivery_reasons(program_id) -> dict[int, dict]:
+    """{supply point id: {"text", "href"}} for stores whose partner has been awarded a share and has not ordered it.
+
+    "Savanna hasn't ordered yet", linked to the award: the answer to "why is nothing coming?" in words,
+    where the table would otherwise say only "none expected".
+    """
+    from django.urls import reverse
+
+    from connect_labs.labs.models import LabsOrg
+    from connect_labs.supply_chain.models import Contract, Tender
+    from connect_labs.supply_chain.operations import record
+    from connect_labs.supply_chain.procurement.services.splits import order_set
+    from connect_labs.supply_chain.stock.services.issues import partner_by_point
+
+    owner = partner_by_point(program_id)
+    reasons: dict[int, dict] = {}
+    tenders = Tender.objects.filter(program_id=program_id, status="awarded").prefetch_related("awards")
+    for tender in tenders:
+        if not tender.partner_splits:
+            continue
+        award = next(iter(tender.awards.all()), None)
+        wire = record(tender)
+        contracts = [record(c) for c in Contract.objects.filter(program_id=program_id, tender=tender)]
+        waiting = set(order_set(wire, contracts)["waiting_org_ids"])
+        names = dict(LabsOrg.objects.filter(pk__in=waiting).values_list("pk", "name"))
+        for point_id, org_id in owner.items():
+            if org_id in waiting and point_id not in reasons:
+                reasons[point_id] = {
+                    "text": f"{names.get(org_id, 'The partner')} hasn't ordered yet",
+                    "href": reverse("supply_chain:award_detail", args=[award.pk]) if award else "",
+                }
+    return reasons
+
+
+def store_rows(fc: dict, weeks=4, reasons: dict | None = None) -> list[dict]:
+    """Each store: what the workers below it will need, whether it lasts until its next delivery, and for how long.
+
+    `reasons` ({point id: {"text", "href"}}, from `no_delivery_reasons`) says in words why a store with
+    nothing coming has nothing coming.
+    """
+    reasons = reasons or {}
     next_delivery: dict[int, str] = {}
     for order in fc["programme"]["inbound"]:
         if order["expected_on"] and not order["overdue"]:
@@ -316,6 +358,7 @@ def store_rows(fc: dict, weeks=4) -> list[dict]:
                 **s,
                 "need_ahead": sum((_d(v) or ZERO for v in s["need"][:weeks]), ZERO),
                 "next_delivery": arrives,
+                "no_delivery_reason": None if arrives else reasons.get(s["supply_point_id"]),
                 "lasts_until_delivery": lasts,
             }
         )
@@ -398,7 +441,7 @@ def compute(program_id, item, *, on_date=None, horizon_weeks=8, course_size=None
         "issue_total": sum(r["to_issue"] for r in rows),
         "short": running_short(rows),
         "break_even": break_even(fc, values),
-        "stores": store_rows(fc),
+        "stores": store_rows(fc, reasons=no_delivery_reasons(program_id)),
         "dosing": dosing_rows(program_id, item, fc),
     }
 

@@ -54,6 +54,7 @@ from connect_labs.supply_chain.models import (
     StockCount,
     SupplyPoint,
 )
+from connect_labs.supply_chain.values import plain_number
 
 __all__ = [
     "BatchLineFormSet",
@@ -763,7 +764,7 @@ class ConsignmentReceiveForm(ScopedForm):
             self.fields["quantity_received"].initial = self.instance.quantity
             self.fields["quantity_received"].help_text = _(
                 "It left with %(quantity)s %(unit)s. Anything less is written off as lost on the way."
-            ) % {"quantity": self.instance.quantity.normalize(), "unit": self.instance.quantity_unit}
+            ) % {"quantity": plain_number(self.instance.quantity), "unit": self.instance.quantity_unit}
         self.helper.layout = Layout(
             Row(Column("received_on"), Column("quantity_received"), css_class="grid md:grid-cols-2 gap-x-6")
         )

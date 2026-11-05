@@ -424,7 +424,15 @@ class StockRepositoryMixin:
         )
         if issue.quantity <= 0:
             raise ValueError("an issue is about some quantity of stock; a quantity of nothing is not an issue")
-        posting.post_issue_loss(issue)
+        if issue.kind in ("expired", "expiring"):
+            # Only stock past its date is expired. A batch still in date is a warning to use it first or
+            # move it, however it was reported: nothing leaves the shelf for it.
+            expiry = posting.batch_expiry(issue)
+            if issue.kind == "expired" and expiry is not None and expiry > issue.occurred_on:
+                issue.kind = "expiring"
+                issue.save(update_fields=["kind", "updated_at"])
+        if issue.kind != "expiring":
+            posting.post_issue_loss(issue)
         return _fresh(issue)
 
     @transaction.atomic
@@ -465,7 +473,13 @@ class StockRepositoryMixin:
         issue.resolved_on = resolved_on
         if data.get("note"):
             issue.note = data["note"]
-        if outcome in ("recovered", "replaced"):
+        if issue.kind == "expiring":
+            # A warning took nothing off the shelf. Written off means it did expire: the loss is posted now.
+            # Anything else (used first, moved) leaves the stock where it is, so there is nothing to put back.
+            issue.save()
+            if outcome == "written_off":
+                posting.post_issue_loss(issue, occurred_on=resolved_on)
+        elif outcome in ("recovered", "replaced"):
             from decimal import Decimal
 
             back = Decimal(str(data.get("quantity_recovered", issue.quantity)))

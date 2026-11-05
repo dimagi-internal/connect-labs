@@ -227,8 +227,9 @@ def stale_after_days(interval: int) -> int:
 
 
 def _noted_not_contacted(supplier, rows) -> bool:
-    notes = [getattr(supplier, "notes", "")] + [getattr(r, "notes", "") for r in rows]
-    return any("not yet contacted" in (n or "").lower() for n in notes)
+    from connect_labs.supply_chain.moves import noted_not_contacted
+
+    return noted_not_contacted(supplier, rows)
 
 
 # The order drafts are listed in: the order a tender runs, then by name.

@@ -34,6 +34,7 @@ from connect_labs.supply_chain.stock.forms import (
     ShipmentStatusForm,
     StockCountForm,
 )
+from connect_labs.supply_chain.values import plain_number
 
 
 def _shipment(request, shipment_id):
@@ -587,7 +588,7 @@ class ConsignmentReceiveView(OperationFormView):
         context = super().get_context_data(**kwargs)
         c = self.consignment()
         context["intro"] = (
-            f"{c.quantity.normalize()} {c.quantity_unit} from {c.from_supply_point.name} "
+            f"{plain_number(c.quantity)} {c.quantity_unit} from {c.from_supply_point.name} "
             f"to {c.to_supply_point.name}, dispatched {c.dispatched_on}."
         )
         return context

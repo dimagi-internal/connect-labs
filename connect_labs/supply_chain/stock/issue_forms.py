@@ -17,7 +17,8 @@ KIND_CHOICES = [
     ("missing", _("Missing — cannot be found")),
     ("taken", _("Taken — someone moved it")),
     ("damaged", _("Damaged")),
-    ("expired", _("Expired")),
+    ("expired", _("Expired — past its expiry date")),
+    ("expiring", _("Expiring soon — still in date (a warning: nothing comes off stock)")),
     ("other", _("Something else")),
 ]
 SECURITY_CHOICES = [

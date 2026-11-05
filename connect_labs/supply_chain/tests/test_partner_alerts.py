@@ -295,11 +295,11 @@ class TestDeliverySuggestions:
         item = SimpleNamespace(pk=1, name="A Product")
         stores = [
             {"supply_point_id": 1, "name": "PHC One", "kind": "facility", "workers": 3,
-             "need": ["70"], "own_on_hand": "10", "runs_dry_on": None},
+             "need": ["70"], "own_on_hand": {"amount": "10", "unit": "sachet"}, "runs_dry_on": None},
             {"supply_point_id": 2, "name": "PHC Two", "kind": "facility", "workers": 2,
-             "need": ["70"], "own_on_hand": "500", "runs_dry_on": None},
+             "need": ["70"], "own_on_hand": {"amount": "500", "unit": "sachet"}, "runs_dry_on": None},
             {"supply_point_id": 3, "name": "Warehouse", "kind": "central_store", "workers": 5,
-             "need": ["700"], "own_on_hand": "0", "runs_dry_on": None},
+             "need": ["700"], "own_on_hand": {"amount": "0", "unit": "sachet"}, "runs_dry_on": None},
         ]  # fmt: skip
         with patch.object(planning, "_forecast", return_value={"stores": stores, "unit": "sachet"}):
             out = planning.delivery_suggestions(PROGRAM, item, cover_days=7)
@@ -307,6 +307,59 @@ class TestDeliverySuggestions:
         assert set(by_name) == {"PHC One", "PHC Two"}, "only shared facilities are sized"
         assert Decimal(by_name["PHC One"]["suggested"]) == 60  # 10/day x 7 days - 10 held
         assert Decimal(by_name["PHC Two"]["suggested"]) == 0  # already holds more than the cover
+
+
+def _forecast_with_real_shape():
+    """The forecast's store rows as live data carries them: stock is {"amount", "unit"} or None, never a number."""
+    return {
+        "unit": "sachet",
+        "stores": [
+            {"supply_point_id": 1, "name": "PHC One", "kind": "facility", "workers": 3,
+             "need": ["70"], "own_on_hand": {"amount": "10", "unit": "sachet"}, "runs_dry_on": None},
+            {"supply_point_id": 2, "name": "PHC Unknown", "kind": "facility", "workers": 2,
+             "need": ["70"], "own_on_hand": None, "runs_dry_on": None},
+        ],
+    }  # fmt: skip
+
+
+def test_the_mcp_tool_reads_the_forecasts_amount_dicts(da):
+    item = SimpleNamespace(pk=1, name="A Product")
+    with (
+        patch.object(planning, "_forecast", return_value=_forecast_with_real_shape()),
+        patch.object(SupplyDataAccess, "_resolve_item", return_value=item),
+    ):
+        out = op(da, "stock_delivery_suggestion", item_id=1, cover_days=7)
+    by_name = {r["name"]: r for r in out["facilities"]}
+    assert by_name["PHC One"]["holds"] == "10" and by_name["PHC One"]["suggested"] == "60"
+    assert by_name["PHC Unknown"]["holds"] == "0" and by_name["PHC Unknown"]["suggested"] == "70"
+
+
+def test_the_suggestions_page_loads_with_the_forecasts_real_shape(client, django_user_model, monkeypatch):
+    from django.urls import reverse
+
+    from connect_labs.supply_chain import form_views, views  # noqa: F401
+    from connect_labs.supply_chain.api_views import _access as real_access
+
+    client.force_login(django_user_model.objects.create_user(username="pm3", password="x", email="pm3@dimagi.com"))
+
+    def _scoped(request):
+        access = real_access(request)
+        access.program_id = PROGRAM
+        return access
+
+    for module in ("form_views", "views", "partners.views"):
+        monkeypatch.setattr(f"connect_labs.supply_chain.{module}.has_program_context", lambda request: True)
+        monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", _scoped)
+    monkeypatch.setattr(
+        "connect_labs.supply_chain.stock.visit_views.rule_items", lambda op: [{"id": 1, "name": "A Product"}]
+    )
+    monkeypatch.setattr(planning, "_forecast", lambda *a, **k: _forecast_with_real_shape())
+    monkeypatch.setattr(
+        SupplyDataAccess, "_resolve_item", lambda self, item_id: SimpleNamespace(pk=1, name="A Product")
+    )
+    page = client.get(reverse("supply_chain:partner_deliveries"))
+    body = page.content.decode()
+    assert page.status_code == 200 and "PHC One" in body and "60 sachet" in body
 
 
 def test_the_suggestions_page_sizes_facilities_from_the_forecast(client, django_user_model, monkeypatch):

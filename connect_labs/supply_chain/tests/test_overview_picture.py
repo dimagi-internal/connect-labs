@@ -229,6 +229,16 @@ class TestThePage:
         assert body.index('data-testid="chase-list"') < body.index('data-testid="distribution-overview"')
         assert body.index('data-testid="distribution-overview"') < body.index('data-testid="standing-table"')
 
+    def test_the_chase_header_counts_the_rows_it_shows(self, da, base, home_client):
+        import re
+
+        _open(da, base["tender"]["id"])
+        _outreach(da, base["tender"]["id"], base["supplier"]["id"], "2026-09-01")
+        body = _home(home_client)
+        header = re.search(r'To chase.*?tabular-nums text-gray-600">(\d+)</span>', body, re.S)
+        assert header, "the chase list has a header count"
+        assert int(header.group(1)) == body.count('data-testid="chase-item"')
+
     def test_open_issues_no_longer_say_they_are_not_recorded(self, da, base, home_client):
         body = _home(home_client)
         assert 'data-testid="issues-not-recorded"' not in body and "No open issues." in body

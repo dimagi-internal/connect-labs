@@ -49,8 +49,9 @@ def open_issue_summary(program_id, *, opportunity_id=None, today=None) -> dict:
     """Counts of the issues still being dealt with, in total and per partner.
 
     `open` is not yet looked at, `following_up` is being chased; `total_open` is
-    both. `oldest_days` is the age of the oldest unresolved issue (None when there
-    are none). `by_partner` lists every partner with at least one, most first.
+    both. `expiring_soon` counts the warnings among them (batches still in date), and `quantity_by_unit`
+    leaves them out: it is what has gone, and they have not. `oldest_days` is the age of the oldest
+    unresolved issue (None when there are none). `by_partner` lists every partner with at least one, most first.
     """
     from connect_labs.labs.models import LabsOrg
 
@@ -69,7 +70,8 @@ def open_issue_summary(program_id, *, opportunity_id=None, today=None) -> dict:
         by_status[issue.status] += 1
         by_kind[issue.kind] += 1
         per_partner[owner.get(issue.supply_point_id)][issue.status] += 1
-        quantity[issue.quantity_unit] += issue.quantity
+        if issue.kind != "expiring":  # a warning is stock still on the shelf, not stock gone
+            quantity[issue.quantity_unit] += issue.quantity
 
     names = dict(LabsOrg.objects.filter(pk__in=[k for k in per_partner if k is not None]).values_list("pk", "name"))
     partners = [
@@ -88,6 +90,8 @@ def open_issue_summary(program_id, *, opportunity_id=None, today=None) -> dict:
         "following_up": by_status["following_up"],
         "oldest_days": max(((today - i.occurred_on).days for i in issues), default=None),
         "by_kind": dict(by_kind),
+        # Still in date: to use first or move, nothing taken off stock.
+        "expiring_soon": by_kind["expiring"],
         "quantity_by_unit": {unit: str(total) for unit, total in quantity.items()},
         "by_partner": partners,
     }

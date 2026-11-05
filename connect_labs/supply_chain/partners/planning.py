@@ -11,6 +11,8 @@ does not pay for them on every load (cf. #2825).
 from datetime import date, timedelta
 from decimal import Decimal
 
+from connect_labs.supply_chain.values import decimal_string
+
 PLANNING_KINDS = ("delivery_after_stockout", "tender_start_by")
 
 # How many days before a tender's start_by date the warning begins.
@@ -142,6 +144,13 @@ def _tenders_to_start(access, today, _check) -> list[dict]:
 # ---- sizing a delivery to a shared facility ------------------------------------------------------------
 
 
+def _stock_amount(value) -> Decimal:
+    """A forecast stock figure as a number: it arrives as {"amount", "unit"}, or None when unknown."""
+    if isinstance(value, dict):
+        value = value.get("amount")
+    return Decimal(0) if value in (None, "") else Decimal(str(value))
+
+
 def delivery_suggestions(program_id, item, *, cover_days=DEFAULT_COVER_DAYS, today=None, org_id=None) -> dict:
     """Suggested delivery to each facility: `cover_days` of what the field workers it supplies use, less what it holds.
 
@@ -164,7 +173,7 @@ def delivery_suggestions(program_id, item, *, cover_days=DEFAULT_COVER_DAYS, tod
         weekly = Decimal(store["need"][0]) if store["need"] and store["need"][0] is not None else Decimal(0)
         per_day = weekly / 7
         wanted = per_day * cover_days
-        held = Decimal(store["own_on_hand"]) if store["own_on_hand"] not in (None, "") else Decimal(0)
+        held = _stock_amount(store["own_on_hand"])
         suggested = max(Decimal(0), wanted - max(held, Decimal(0)))
         rows.append(
             {
@@ -173,7 +182,7 @@ def delivery_suggestions(program_id, item, *, cover_days=DEFAULT_COVER_DAYS, tod
                 "workers": store["workers"],
                 "uses_per_day": str(per_day.quantize(Decimal("0.1"))),
                 "cover_days": cover_days,
-                "holds": str(held.normalize()),
+                "holds": decimal_string(held),
                 "suggested": str(suggested.quantize(Decimal("1"))),
                 "runs_dry_on": store.get("runs_dry_on"),
             }
