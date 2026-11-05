@@ -39,6 +39,15 @@ _PLAN_DATA = obj(
             ),
         },
         "target_cases": {"type": "integer", "minimum": 1, "maximum": 1000000},
+        "target_cases_by_partner": {
+            "type": "object",
+            "additionalProperties": {"type": "integer", "minimum": 1, "maximum": 1000000},
+            "description": (
+                "How many children each partner means to treat, keyed by its organisation id; replaces the "
+                "set. When any is set the programme's target is their sum. An empty object goes back to one "
+                "programme-wide target."
+            ),
+        },
     },
     required=("item_id",),
 )
@@ -50,6 +59,7 @@ _UNSET = {
     "buffer_days": (service.DEFAULT_BUFFER_DAYS,),
     "buffer_days_by_point": ({},),
     "target_cases": (service.DEFAULT_TARGET_CASES,),
+    "target_cases_by_partner": ({},),
 }
 
 
@@ -70,6 +80,7 @@ def history(program_id, plan):
         "enrolment_per_flw_per_week": service.INPUTS["enrolment_per_flw_per_week"]["default_text"],
         "buffer_days": service.INPUTS["buffer_days"]["default_text"],
         "target_cases": service.INPUTS["target_cases"]["default_text"],
+        "target_cases_by_partner": service.INPUTS["target_cases_by_partner"]["default_text"],
         "buffer_days_by_point": "the same for everyone",
     }
     out = []
@@ -114,8 +125,8 @@ def _wire(value):
     summary=(
         "The saved stock plan for one item: how many new children each field worker is expected to enrol a week "
         "(default: each worker's own recent rate), the buffer in extra days (for everyone, or for named workers "
-        "and facilities; default 0) and the target number of children (default 500), each with the default "
-        "beside it, plus who changed what and when. Nothing saved yet reads as all defaults. Read-only."
+        "and facilities; default 0) and the target number of children (default 500, or one per partner), each with "
+        "the default beside it, plus who changed what and when. Nothing saved yet reads as all defaults. Read-only."
     ),
     input_schema=obj({"item_id": ID}, required=("item_id",)),
 )
@@ -156,6 +167,15 @@ def stock_plan_set(access, data):
         fields["buffer_days_by_point"] = data["buffer_days_by_point"]
     if "target_cases" in data:
         fields["target_cases"] = data["target_cases"]
+    if "target_cases_by_partner" in data:
+        from connect_labs.labs.models import LabsOrg
+
+        asked = data["target_cases_by_partner"]
+        found = LabsOrg.objects.filter(pk__in=[int(k) for k in asked if str(k).isdigit()]).values_list("pk", flat=True)
+        unknown = sorted(set(asked) - {str(pk) for pk in found})
+        if unknown:
+            raise ValueError(f"no such organisation: {', '.join(unknown)}")
+        fields["target_cases_by_partner"] = data["target_cases_by_partner"]
     # One save, so the history reads as one change by one person (a create then an edit would be two).
     plan = service.saved_plan(program_id, item)
     if plan is None:

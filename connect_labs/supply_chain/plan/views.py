@@ -46,7 +46,7 @@ class PlanView(OperationBase):
         weeks = {"horizon_weeks": 26} if self.role == "programme" else {}
         picture = self.op("stock_plan_view", item_id=item["id"], **weeks, **as_of_payload(self.request))
         history = self.op("stock_plan_get", item_id=item["id"])["history"]
-        fc_unit = picture["break_even"].get("ration_per_visit")
+        fc_unit = (picture["break_even"] or {}).get("ration_per_visit")
         context.update(picture=picture, plan=picture["plan"], history=history, ration=fc_unit)
         if self.role == "programme" and not picture["scoped"]:
             flow = self.op("stock_flow", item_id=item["id"], **as_of_payload(self.request))

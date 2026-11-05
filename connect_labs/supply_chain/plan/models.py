@@ -22,6 +22,9 @@ class StockPlan(TimestampedModel):
     buffer_days_by_point = models.JSONField(default=dict, blank=True)
     # How many children the programme means to treat in all (500 now, 2,500 in phase 3).
     target_cases = models.PositiveIntegerField(default=500)
+    # A target per partner, {"<organisation id>": children}. When any is set, the programme's target is their
+    # sum and `target_cases` stays as the programme-wide figure it was before partners were given their own.
+    target_cases_by_partner = models.JSONField(default=dict, blank=True)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["program_id", "item"], name="uniq_stock_plan_program_item")]

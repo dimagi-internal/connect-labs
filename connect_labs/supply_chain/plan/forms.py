@@ -1,6 +1,7 @@
 """The screens that change the stock plan: its three inputs, and a buffer for one place."""
 
 from crispy_forms.helper import FormHelper
+from crispy_forms.layout import Field, Layout
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
@@ -45,7 +46,10 @@ class PlanInputsForm(_PlanForm):
         max_value=1000000,
         initial=service.DEFAULT_TARGET_CASES,
         widget=forms.NumberInput(attrs=INPUT),
-        help_text=_("How many children the programme means to treat in all: 500 now, 2,500 in phase 3."),
+        help_text=_(
+            "How many children the programme means to treat in all: 500 now, 2,500 in phase 3. Ignored once a "
+            "partner below has a target of its own: the programme's target is then their sum."
+        ),
     )
 
     def __init__(self, *args, item_id=None, **kwargs):
@@ -56,6 +60,31 @@ class PlanInputsForm(_PlanForm):
             if self.access
             else None
         )
+        # One optional target for each partner that runs something in the programme (or already has one).
+        from connect_labs.labs.models import LabsOrg
+        from connect_labs.supply_chain.stock.services.issues import partner_by_point
+
+        program_id = getattr(self.access, "program_id", None)
+        saved = dict(plan.target_cases_by_partner or {}) if plan else {}
+        org_ids = ({o for o in partner_by_point(program_id).values() if o} if program_id else set()) | {
+            int(k) for k in saved
+        }
+        self.partner_fields = []
+        for org in LabsOrg.objects.filter(pk__in=org_ids).order_by("name"):
+            name = f"target_partner_{org.pk}"
+            self.fields[name] = forms.IntegerField(
+                label=_("%(partner)s: children to treat") % {"partner": org.name},
+                required=False,
+                min_value=1,
+                max_value=1000000,
+                widget=forms.NumberInput(attrs=INPUT),
+                help_text=_("Leave empty to give this partner no target of its own."),
+            )
+            self.partner_fields.append((org.pk, name))
+            if plan is not None and not self.is_bound and str(org.pk) in saved:
+                self.initial[name] = saved[str(org.pk)]
+        if self.partner_fields:
+            self.helper.layout = Layout(*(Field(name) for name in self.fields))
         if plan is not None and not self.is_bound:
             self.initial.update(
                 enrolment_per_flw_per_week=plan.enrolment_per_flw_per_week,
@@ -71,6 +100,9 @@ class PlanInputsForm(_PlanForm):
             "enrolment_per_flw_per_week": None if rate is None else float(rate),
             "buffer_days": data["buffer_days"],
             "target_cases": data["target_cases"],
+            "target_cases_by_partner": {
+                str(org_id): data[name] for org_id, name in self.partner_fields if data.get(name)
+            },
             "item_id": self.item_id,
         }
 

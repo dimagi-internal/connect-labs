@@ -248,6 +248,15 @@ plain words, and each step says where it came from.
       <li><b>{{ b.children.seen|floatformat:"0g" }}</b> children seen in the visits so far: <b>{{ b.children.exited|floatformat:"0g" }}</b> have exited treatment{% if b.children.lost %}, <b>{{ b.children.lost|floatformat:"0g" }}</b> were lost to follow-up{% endif %} and <b>{{ b.children.in_treatment|floatformat:"0g" }}</b> are still in treatment.</li>
       <li>The {{ b.children.in_treatment|floatformat:"0g" }} in treatment have received <b>{{ b.children.received_so_far|floatformat:"0g" }}</b> sachets so far{% if b.children.received_each %} (about {{ b.children.received_each|floatformat:"0" }} each){% endif %}.</li>
       <li>The target is <b>{{ b.children.target|floatformat:"0g" }}</b> children, so <b>{{ b.children.to_enrol|floatformat:"0g" }}</b> are still to enrol.</li>
+      {% if b.children.partners %}
+      <li>By partner:
+        <ul class="list-disc pl-5">
+          {% for p in b.children.partners %}
+            <li>{{ p.name }}: {{ p.seen|floatformat:"0g" }} seen, {{ p.in_treatment|floatformat:"0g" }} in treatment{% if p.target %}; target {{ p.target|floatformat:"0g" }}, so {{ p.to_enrol|floatformat:"0g" }} still to enrol{% else %}; no target of its own{% endif %}</li>
+          {% endfor %}
+        </ul>
+      </li>
+      {% endif %}
       <li>Stock held across the whole network: <b>{{ b.held|floatformat:"0g" }}</b> sachets <span class="text-gray-600">&mdash; Supply's records: receipts and handovers less what visits gave out.</span>{% if b.on_order and b.on_order != "0" %} Already on order: <b>{{ b.on_order|floatformat:"0g" }}</b>.{% endif %}</li>
     </ul>
     <h3 class="text-sm font-semibold text-gray-800 mt-4 mb-1">2. Is it enough? Two cases</h3>
@@ -340,8 +349,8 @@ plain words, and each step says where it came from.
   <dl class="grid md:grid-cols-3 gap-3 text-sm">
     <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
       <dt class="text-xs text-gray-600">New children each field worker enrols a week</dt>
-      <dd class="text-lg font-semibold">{% if plan.enrolment_per_flw_per_week.value %}{{ plan.enrolment_per_flw_per_week.value|floatformat:"-2" }}{% else %}recent rate{% endif %}</dd>
-      <dd class="text-xs text-gray-600">default: {{ plan.enrolment_per_flw_per_week.default_text }}</dd>
+      <dd class="text-lg font-semibold">{% if plan.enrolment_per_flw_per_week.value %}{{ plan.enrolment_per_flw_per_week.value|floatformat:"-2" }}{% else %}recent rate: {% if picture.recent_rate.per_flw_per_week %}{{ picture.recent_rate.per_flw_per_week|floatformat:"-2" }}{% else %}not known yet{% endif %}{% endif %}</dd>
+      <dd class="text-xs text-gray-600">default: {{ plan.enrolment_per_flw_per_week.default_text }}{% if picture.recent_rate.workers %}; the recent rate is the average of {{ picture.recent_rate.workers }} of {{ picture.recent_rate.all_workers }} field workers (new children a week each, from their own last weeks of enrolment){% endif %}</dd>
     </div>
     <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
       <dt class="text-xs text-gray-600">Extra days of stock (buffer)</dt>
@@ -352,8 +361,11 @@ plain words, and each step says where it came from.
     </div>
     <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
       <dt class="text-xs text-gray-600">Target number of children</dt>
-      <dd class="text-lg font-semibold">{{ plan.target_cases.value }}</dd>
-      <dd class="text-xs text-gray-600">default: {{ plan.target_cases.default_text }}</dd>
+      <dd class="text-lg font-semibold">{{ plan.target_effective|floatformat:"0g" }}</dd>
+      <dd class="text-xs text-gray-600">
+        {% if plan.target_cases_by_partner %}the partners' own targets added up (each is set below; the programme-wide {{ plan.target_cases.value|floatformat:"0g" }} is not used){% else %}one target for the whole programme; default: {{ plan.target_cases.default_text }}{% endif %}
+        &middot; <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:plan_inputs' %}?item_id={{ item.id }}">set one per partner</a>
+      </dd>
     </div>
   </dl>
   <h3 class="text-sm font-semibold text-gray-800 mt-4 mb-1">Who changed what</h3>
