@@ -148,6 +148,10 @@ HOUSEHOLD_FIELDS = (
     ("missing_paths", "sachets missing"),
     ("misused_paths", "sachets misused"),
     ("reason_paths", "the reasons sachets were misused"),
+    # The amount the app itself says should be given at this visit (it subtracts what the household still
+    # has). The Plan page's dosing check compares what was given against it. No default: CBI's path is not
+    # among the known ones, so a programme names it on its rule or the check falls back to a flat daily dose.
+    ("protocol_paths", "the protocol amount the app worked out for the visit"),
 )
 
 # The paths CBI's stock pipeline reads in the released RUTF delivery app (supplied by the programme,

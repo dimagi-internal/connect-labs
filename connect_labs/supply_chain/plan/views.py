@@ -42,7 +42,9 @@ class PlanView(OperationBase):
         context.update(items=items, item=item)
         if item is None:
             return context
-        picture = self.op("stock_plan_view", item_id=item["id"], **as_of_payload(self.request))
+        # The running organisation looks further ahead: when stock runs out may be months away.
+        weeks = {"horizon_weeks": 26} if self.role == "programme" else {}
+        picture = self.op("stock_plan_view", item_id=item["id"], **weeks, **as_of_payload(self.request))
         history = self.op("stock_plan_get", item_id=item["id"])["history"]
         fc_unit = picture["break_even"].get("ration_per_visit")
         context.update(picture=picture, plan=picture["plan"], history=history, ration=fc_unit)
