@@ -462,35 +462,6 @@ def household(program_id: int, item, on_date: date, point_ids=None) -> dict | No
     }
 
 
-def appetite_by_worker(program_id: int, item, anchor: date, weeks: int = 3) -> dict[int, Decimal]:
-    """{supply point id: sachets a week} used in appetite tests at the worker's visits, over the last `weeks` weeks.
-
-    Read at the same household paths Where it went reads (`household_paths`, `appetite_paths`), so the Plan
-    and Where it went cannot disagree about them. A worker with none recorded is simply absent.
-    """
-    from connect_labs.supply_chain.models import DispensingRule, WorkerVisit
-    from connect_labs.supply_chain.stock.services.dispensing import household_paths, read_number
-    from connect_labs.supply_chain.stock.services.visit_reader import REVERSING_STATUSES
-
-    since = anchor - timedelta(days=7 * weeks - 1)
-    out: dict[int, Decimal] = {}
-    for rule in DispensingRule.objects.filter(program_id=program_id, item=item, status="active"):
-        paths = (household_paths(rule) or {}).get("appetite_paths")
-        if not paths:
-            continue
-        rows = (
-            WorkerVisit.objects.filter(program_id=program_id, opportunity_id=rule.opportunity_id)
-            .filter(visit_date__gte=since, visit_date__lte=anchor)
-            .exclude(status__in=REVERSING_STATUSES)
-            .values_list("supply_point_id", "answers")
-        )
-        for point_id, answers in rows:
-            amount = read_number(_first_kept(answers or {}, paths))
-            if amount is not None and point_id is not None:
-                out[point_id] = out.get(point_id, ZERO) + amount
-    return {point: total / weeks for point, total in out.items()}
-
-
 # The household streams a rule's `<name>_paths` read. `not_yet_checked` is worked out, not read.
 HOUSEHOLD_TOTALS = ("dispensed", "appetite", "returned", "leftover", "missing", "misused")
 HOUSEHOLD_LINES = (

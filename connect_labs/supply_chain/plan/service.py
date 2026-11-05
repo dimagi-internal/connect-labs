@@ -18,7 +18,8 @@ What to issue one field worker at the next handout, week-long:
   + children expected to enrol (the enrolment rate times the first week's ration)
   + appetite tests                  (not in Supply's data today: shown as not counted)
   + buffer                          (buffer days / 7 of the two lines above)
-  - what Supply's records say they hold
+  - what they hold                  (the official figure: the phone balance until the partner's handovers are
+                                     recorded, then Supply's records; official_stock.official_flw_stock)
   = to issue (never below nothing, in whole sachets)
 
 A child leaves the list when their course ends: the forecast stops supplying a child at
@@ -34,7 +35,9 @@ from decimal import Decimal
 
 from connect_labs.supply_chain.models import DispensingRule
 from connect_labs.supply_chain.plan.models import StockPlan
+from connect_labs.supply_chain.stock.services import flow as flowing
 from connect_labs.supply_chain.stock.services import forecast as forecasting
+from connect_labs.supply_chain.values import iso_day_text
 
 ZERO = Decimal(0)
 DEFAULT_TARGET_CASES = 500
@@ -66,6 +69,35 @@ def _plain(value: Decimal | None, places=0) -> str:
         return "not known"
     rounded = value.quantize(Decimal(1) if places == 0 else Decimal(10) ** -places)
     return f"{rounded:,}"
+
+
+def run_out_text(iso: str | None, today: date | None = None, data_to: str | None = None) -> dict:
+    """A run-out date as a page says it: "30 Oct 2026", and whether it is already behind us.
+
+    The demo's visits stop on 23 Oct but the page is read on 5 Nov: a run-out date of 30 Oct is not in the
+    future, so it reads "may already have run out" rather than as a date still to come. `data_to` is the last
+    day the figures rest on; it is said beside the flag.
+    """
+    if not iso:
+        return {"text": "not in the weeks ahead", "past": False}
+    today = today or date.today()
+    day = date.fromisoformat(iso[:10])
+    text = iso_day_text(day)
+    if day < today:
+        upto = f" (figures run to {iso_day_text(data_to)})" if data_to else ""
+        return {"text": f"{text}: may already have run out{upto}", "past": True}
+    return {"text": text, "past": False}
+
+
+def as_of_note(fc: dict) -> dict:
+    """What day the figures run to: "Based on visits up to 23 Oct 2026"."""
+    data_to = fc.get("data_to")
+    return {
+        "data_to": data_to,
+        "text": (
+            f"Based on visits up to {iso_day_text(data_to)}" if data_to else "No visits yet to base the figures on"
+        ),
+    }
 
 
 def _whole_up(value: Decimal) -> int:
@@ -233,7 +265,7 @@ def _step(label, value, source, sign=""):
 
 
 def issue_rows(  # noqa: C901
-    fc: dict, plan_vals: dict, *, offset_days=0, cadence=None, appetite=None, handout_on=None
+    fc: dict, plan_vals: dict, *, offset_days=0, cadence=None, appetite=None, handout_on=None, today=None
 ) -> list[dict]:
     """One row per field worker: the steps to what to issue at the handout, and how long that lasts.
 
@@ -262,7 +294,12 @@ def issue_rows(  # noqa: C901
         appetite_week = appetite.get(w["supply_point_id"])
         tests = (appetite_week or ZERO) * Decimal(length) / 7
         used_before = need_between(need_weeks, 0, offset_days)
-        held_now = _d(w["on_hand"]) if known else None
+        official = w["official_stock"]
+        held_now = _d(official["amount"]) if known else None
+        stock_source = (
+            f"{'the phone balance' if official['source'] == 'phone' else 'Supply’s records'}: {official['note']}"
+        )
+        run = run_out_text(w["run_out"]["date"], today, fc.get("data_to"))
         held = max(ZERO, held_now - used_before) if known else None
         days = _buffer_for(plan_vals, w["supply_point_id"])
         buffer = (due + new + tests) * Decimal(days) / length
@@ -309,7 +346,7 @@ def issue_rows(  # noqa: C901
                 _step(
                     "Held at the handout",
                     "not known" if not known else f"{_plain(held)} sachets",
-                    "Supply's records of handovers and receipts, less what visits gave out"
+                    stock_source
                     + (
                         f", less about {_plain(used_before)} used between the last visit data and the handout"
                         if offset_days
@@ -335,7 +372,7 @@ def issue_rows(  # noqa: C901
                 _step(
                     "Held at the handout",
                     "not known" if not known else f"{_plain(held)} sachets",
-                    "Supply's records",
+                    stock_source,
                     "-",
                 ),
             ]
@@ -357,6 +394,12 @@ def issue_rows(  # noqa: C901
                 "held": held,
                 "held_on_records": held_now,
                 "stock_known": known,
+                "stock_source": official["source"],
+                "stock_phone": _d(official["phone"]),
+                "stock_phone_on": official["phone_on"],
+                "stock_records": _d(official["records"]),
+                "stock_differs": official["differs"],
+                "stock_note": official["note"],
                 "to_issue": issue,
                 "window_days": length,
                 # How long the stock lasts once handed out (days after the handout), and whether that
@@ -366,6 +409,8 @@ def issue_rows(  # noqa: C901
                 "covers_next_handout": bool(known and (lasts is None or lasts >= length)),
                 # The forecast's one run-out answer for this worker (forecast.worker_run_out).
                 "runs_dry_on": w["run_out"]["date"],
+                "runs_dry_text": run["text"],
+                "runs_dry_past": run["past"],
                 "run_out_method": w["run_out"]["method"],
                 "short": short,
                 "steps": steps,
@@ -508,7 +553,19 @@ def children_summary(fc: dict, cases, target: int) -> dict:
     open_cases = [c for c in cases if c.status == "open"]
     seen = fc["programme"].get("children_seen") or len(cases)
     received = sum((c.received for c in open_cases), ZERO)
+    meaning = fc["programme"].get("children") or {}
+    text = ""
+    if meaning:
+        text = (
+            f"{meaning['seen']:,} children seen in all: {meaning['enrolled']:,} enrolled since the visits began "
+            f"and {meaning['carried_over']:,} already in treatment before them. {meaning['in_treatment']:,} are in "
+            f"treatment now and {meaning['finished']:,} have finished."
+        )
     return {
+        "text": text,
+        "enrolled": meaning.get("enrolled"),
+        "carried_over": meaning.get("carried_over"),
+        "finished": meaning.get("finished"),
         "seen": seen,
         "exited": sum(1 for c in cases if c.status == "exited"),
         "lost": sum(1 for c in cases if c.status == "lost"),
@@ -647,7 +704,9 @@ def no_delivery_reasons(program_id) -> dict[int, dict]:
     return reasons
 
 
-def store_rows(fc: dict, weeks=4, reasons: dict | None = None, owner=None) -> list[dict]:
+def store_rows(
+    fc: dict, weeks=4, reasons: dict | None = None, owner=None, today=None, status_labels: dict | None = None
+) -> list[dict]:
     """Each store: what the workers below it will need, what they already hold, what to send, and whether it lasts.
 
     Every row adds up: the workers below need `need_ahead` over the weeks ahead; they already hold
@@ -696,6 +755,17 @@ def store_rows(fc: dict, weeks=4, reasons: dict | None = None, owner=None) -> li
                 "send": send,
                 "send_needed": send > 0,
                 "next_delivery": arrives,
+                "runs_dry_text": run_out_text(dry, today, fc.get("data_to"))["text"],
+                # The orders on their way here, each with the one status label (standing.order_status_labels).
+                "incoming": [
+                    {
+                        "reference": o.get("reference") or "",
+                        "expected_on": o.get("expected_on"),
+                        "status": (status_labels or {}).get(o.get("contract_id"), ""),
+                    }
+                    for o in fc["programme"]["inbound"]
+                    if o["supply_point_id"] == s["supply_point_id"]
+                ],
                 "lasts_until_delivery": lasts,
                 "no_delivery_reason": None if arrives else reasons.get(s["supply_point_id"]),
                 "unit": fc.get("unit") or "",
@@ -806,7 +876,9 @@ def dosing_rows(program_id, item, fc: dict, cases=None) -> list[dict]:
             {
                 "supply_point_id": w["supply_point_id"],
                 "name": w["name"],
+                # Children seen at least twice (a dose needs two visits), not those in treatment now.
                 "children": measured["children"] if measured else 0,
+                "in_treatment": w["open_cases"],
                 "per_day": _d(measured["per_day"]) if measured else None,
                 "protocol_per_day": protocol,
                 "share": share,
@@ -820,6 +892,13 @@ def dosing_rows(program_id, item, fc: dict, cases=None) -> list[dict]:
 
 
 # ---- everything the pages and the operation read ----------------------------------------
+
+
+def _order_labels(program_id, fc: dict) -> dict:
+    """The status label of every order on its way to a store, from the one place that words it."""
+    from connect_labs.supply_chain.standing import order_status_labels
+
+    return order_status_labels(program_id, [o.get("contract_id") for o in fc["programme"]["inbound"]])
 
 
 def compute(program_id, item, *, on_date=None, horizon_weeks=8, course_size=None, opportunity_ids=None) -> dict:
@@ -858,7 +937,13 @@ def compute(program_id, item, *, on_date=None, horizon_weeks=8, course_size=None
     appetite = appetite_per_week(program_id, item, anchor)
     from connect_labs.supply_chain.stock.services.issues import partner_by_point
 
-    stores = store_rows(fc, reasons=no_delivery_reasons(program_id), owner=partner_by_point(program_id))
+    stores = store_rows(
+        fc,
+        reasons=no_delivery_reasons(program_id),
+        owner=partner_by_point(program_id),
+        today=today,
+        status_labels=_order_labels(program_id, fc),
+    )
     rows = issue_rows(
         fc,
         values,
@@ -866,9 +951,12 @@ def compute(program_id, item, *, on_date=None, horizon_weeks=8, course_size=None
         cadence=cadence,
         appetite=appetite,
         handout_on=window["handout_on"],
+        today=today,
     )
     return {
         "forecast": fc,
+        "as_of_note": as_of_note(fc),
+        "household": flowing.household(program_id, item, anchor),
         "plan": values,
         "handout": {
             "on": window["handout_on"].isoformat(),
@@ -955,4 +1043,5 @@ def scope_to(picture: dict, points: set[int]) -> dict:
         ],
         "dosing": [d for d in picture["dosing"] if d["supply_point_id"] in points],
         "break_even": None,
+        "household": None,
     }

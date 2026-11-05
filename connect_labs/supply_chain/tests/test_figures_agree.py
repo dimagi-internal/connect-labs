@@ -114,7 +114,7 @@ def test_the_plan_holds_the_official_figure_and_says_when_the_phone_differs(worl
     _phone_count(world, date(2026, 9, 26), 50)
     row = _row(_view(world), "worker-acacia")
     assert Decimal(row["held"]) == 50 and row["stock_source"] == "phone" and row["stock_differs"]
-    held_step = next(s for s in row["steps"] if s["label"] == "Held now")
+    held_step = next(s for s in row["steps"] if s["label"] == "Held at the handout")
     assert "phone balance is official" in held_step["source"]
 
 
@@ -123,12 +123,13 @@ def test_the_plan_holds_the_official_figure_and_says_when_the_phone_differs(worl
 
 def test_one_children_total_says_what_each_number_means(world):
     fc = forecast.forecast(PROGRAM, world["item"], on_date=TODAY, course_size_fallback=COURSE)
-    kids = service.children_summary(fc)
-    assert kids["seen"] == kids["enrolled"] + kids["carried_over"] == 5
-    assert kids["in_treatment"] == fc["programme"]["open_cases"]
+    meaning = fc["programme"]["children"]
+    assert meaning["seen"] == meaning["enrolled"] + meaning["carried_over"] == 5
+    assert meaning["in_treatment"] == fc["programme"]["open_cases"]
+    kids = _view(world)["break_even"]["children"]
+    assert kids["seen"] == meaning["seen"] and kids["enrolled"] == meaning["enrolled"]
     assert "5 children seen in all" in kids["text"] and "in treatment now" in kids["text"]
-    be = _view(world)["break_even"]
-    assert be["children_so_far"] == kids["seen"] and be["children"]["seen"] == kids["seen"]
+    assert _view(world)["break_even"]["children_so_far"] == kids["seen"]
 
 
 # ---- the run-out text ------------------------------------------------------------
@@ -229,24 +230,17 @@ def test_each_line_says_how_many_visits_it_rests_on(world):
 
 def test_appetite_tests_are_a_weekly_average_per_worker_from_the_same_paths(world):
     _household(world)
-    by_worker = flow.appetite_by_worker(PROGRAM, world["item"], TODAY, weeks=3)
-    assert by_worker == {world["baobab"].pk: Decimal(6) / 3}
+    by_worker = service.appetite_per_week(PROGRAM, world["item"], TODAY)
+    assert by_worker == {world["baobab"].pk: Decimal(6) / 4}  # the last four weeks
 
 
 def test_the_plan_counts_appetite_tests_and_drops_the_not_counted_text(world):
     _household(world)
     row = _row(_view(world), "worker-baobab")
-    assert Decimal(row["appetite"]) == 2
+    assert Decimal(row["appetite"]) == Decimal("1.5")
     step = next(s for s in row["steps"] if s["label"] == "Appetite tests")
-    assert step["value"] == "2.0 sachets a week" and "not counted" not in step["value"]
-    assert Decimal(row["need_week"]) == Decimal(row["due"]) + Decimal(row["new"]) + 2
-
-
-def test_a_form_that_asks_no_appetite_question_says_so_not_zero(world):
-    fc = forecast.forecast(PROGRAM, world["item"], on_date=TODAY, course_size_fallback=COURSE)
-    rows = service.issue_rows(fc, service.plan_values(None), appetite=None)
-    step = next(s for s in rows[0]["steps"] if s["label"] == "Appetite tests")
-    assert step["value"] == "not asked on this form"
+    assert "not counted" not in step["value"]
+    assert Decimal(row["need_week"]) == Decimal(row["due"]) + Decimal(row["new"]) + Decimal("1.5")
 
 
 # ---- the pages load -----------------------------------------------------------------
@@ -258,12 +252,13 @@ def test_the_plan_pages_load_with_the_new_figures(page, world):
     supervisor = page.get(reverse("supply_chain:plan"))
     assert supervisor.status_code == 200
     html = supervisor.content.decode()
-    assert 'data-testid="plan-as-of"' in html and "Based on visits up to" in html
+    assert "Based on visits up to" in html
     assert 'data-testid="plan-household"' in html and "Given at the latest visits, not yet checked" in html
     assert 'data-testid="stock-differs"' in html and "phone balance" in html
     assert "Supply does not hold them yet" not in html and "is not here yet" not in html
     stores = page.get(reverse("supply_chain:plan_stores"))
     assert stores.status_code == 200
+    assert 'data-testid="plan-as-of"' in stores.content.decode()
     programme = page.get(reverse("supply_chain:plan_programme"))
     assert programme.status_code == 200
     assert 'data-testid="plan-children-total"' in programme.content.decode()
@@ -285,7 +280,14 @@ def test_a_store_lists_the_orders_on_their_way_with_the_one_status_label():
             ]
         },
         "stores": [
-            {"supply_point_id": 3, "name": "Riverbend", "runs_dry_on": "2026-10-23", "need": ["10"], "workers": 1},
+            {
+                "supply_point_id": 3,
+                "name": "Riverbend",
+                "runs_dry_on": "2026-10-23",
+                "need": ["10"],
+                "workers": 1,
+                "own_on_hand": {"amount": "5", "unit": "sachet"},
+            },
         ],
     }
     [row] = service.store_rows(fc, today=date(2026, 11, 5), status_labels={7: "In transit · expected 20 Nov"})

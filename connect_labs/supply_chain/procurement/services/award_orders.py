@@ -22,10 +22,9 @@ def order_words(program_id, contract_ids, today=None) -> dict:
     ids = [i for i in contract_ids if i]
     if not ids:
         return {}
-    from connect_labs.supply_chain.standing import _order_rows
+    from connect_labs.supply_chain.standing import order_status_words
 
-    rows = _order_rows(program_id, today or date.today(), None, None, only=ids, keep_done=True)
-    return {r.contract_id: (r.label, r.stage_index == 6) for r in rows}
+    return order_status_words(program_id, ids, today=today or date.today())
 
 
 def place_name(tender, split: dict) -> str:

@@ -1986,15 +1986,6 @@ class AwardDetailView(_Base):
         context["contracts"] = [
             c for c in self.op("contract_list", tender_id=detail["tender_id"]) if c["award_id"] == award.pk
         ]
-        # One status for an order, the Overview's and the Plan's (standing.order_status_labels): the order's
-        # own status says it was placed ("confirmed"), not where the goods are.
-        from connect_labs.supply_chain.standing import order_status_labels
-
-        labels = order_status_labels(award.tender.program_id, [c["id"] for c in context["contracts"]])
-        for contract in context["contracts"]:
-            contract["status_label"] = (
-                labels.get(contract["id"]) or str(contract["status"]).replace("_", " ").capitalize()
-            )
         # The orders of this award as a set -- "4 of 5 partners have ordered" -- so the award is not read
         # as done after its first order.
         context["order_set"] = self.op("award_orders_progress", award_id=award.pk)

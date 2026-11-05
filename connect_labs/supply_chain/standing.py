@@ -560,13 +560,13 @@ def _order_rows(program_id, today, until, own_org_id, *, only=None, keep_done=Fa
     return rows
 
 
-def order_status_labels(program_id, contract_ids, *, today=None, own_org_id=None) -> dict[int, str]:
-    """{contract id: the order's status in words}: the ONE place an order's status label is made.
+def order_status_words(program_id, contract_ids, *, today=None, own_org_id=None) -> dict[int, tuple[str, bool]]:
+    """{contract id: (status in words, delivered)}: the ONE place an order's status label is made.
 
-    "In transit · expected 20 Nov", "Received", "Paid", "Ordered". The Overview's orders, the award page
-    and the Plan's store view all read this, so one order cannot be "in transit" on one page,
-    "confirmed" on another and "none expected" on a third (Sophie Feintuch, round 2, Riverbend's order).
-    Contract.status ("confirmed") says the order was placed, not where the goods are.
+    "In transit · expected 20 Nov", "Received", "Paid", "Ordered". The Overview's orders, the award page,
+    the split tender page and the Plan's store view all read this, so one order cannot be "in transit" on
+    one page, "confirmed" on another and "none expected" on a third (Sophie Feintuch, round 2, Riverbend's
+    order). Contract.status ("confirmed") says the order was placed, not where the goods are.
     """
     from datetime import date
 
@@ -574,7 +574,13 @@ def order_status_labels(program_id, contract_ids, *, today=None, own_org_id=None
     if not ids:
         return {}
     rows = _order_rows(program_id, today or date.today(), None, own_org_id, only=ids, keep_done=True)
-    return {row.contract_id: row.label for row in rows if row.contract_id is not None}
+    return {row.contract_id: (row.label, row.stage_index == 6) for row in rows if row.contract_id is not None}
+
+
+def order_status_labels(program_id, contract_ids, *, today=None, own_org_id=None) -> dict[int, str]:
+    """{contract id: status in words}: `order_status_words` without the delivered flag."""
+    found = order_status_words(program_id, contract_ids, today=today, own_org_id=own_org_id)
+    return {pk: words for pk, (words, _) in found.items()}
 
 
 def _order_step(contract, shipments, received_shipments, received, paid, *, held=False) -> str:

@@ -102,5 +102,7 @@ def test_an_order_has_one_status_on_the_award_page_and_the_overview(da, world, c
     assert overview.label == label  # the Overview says it the same way
 
     body = client_in_program.get(reverse("supply_chain:award_detail", args=[award["id"]])).content.decode()
-    assert 'data-testid="award-order-status"' in body and "In transit · expected 20 Nov" in body
-    assert "· Confirmed" not in body and "· confirmed" not in body
+    row = body[body.index('data-testid="award-order-row"') :]
+    row = row[: row.index("</li>")]
+    assert "In transit · expected 20 Nov" in row
+    assert "· Confirmed" not in row and "· confirmed" not in row
