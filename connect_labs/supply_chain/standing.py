@@ -22,6 +22,7 @@ from connect_labs.supply_chain import moves as rules
 from connect_labs.supply_chain import records
 from connect_labs.supply_chain.history.labels import actor_label, is_ai
 from connect_labs.supply_chain.history.timeline import contract_scope_revisions, tender_scope_revisions
+from connect_labs.supply_chain.values import quantity_phrase
 
 # The six steps every procurement moves through, tender to delivery.
 # Steps, not outcomes: an order held at customs is in its Delivery step, which a step named
@@ -74,6 +75,15 @@ class Row:
     # An order's bar is the order page's own six steps (ORDER_BAR), not the tender's:
     # read against the tender's steps, an order held at customs looked delivered.
     bar_index: int | None = None
+    # The local partner an order is for, by name and id (an order of a split tender, or one a partner buys).
+    partner: str = ""
+    partner_org_id: int | None = None
+    # A split tender's row lists each partner's own order beneath it: [{name, quantity, status, url, state}].
+    partners: list = field(default_factory=list)
+    # An order that belongs to a split tender is drawn beneath that tender's row, not as a row of its own.
+    under_tender: int | None = None
+    # Delivered, paid and nothing owed: no longer active, kept only so a split tender can count it as done.
+    finished: bool = False
 
     @property
     def bars(self) -> list[str]:
@@ -136,9 +146,124 @@ def standing_rows(program_id: int, today: date, *, until: date | None = None, ow
     `own_org_id` is the organisation the program acts as (identity.resolve_org);
     an order bought by anyone else says so on its row.
     """
-    rows = _tender_rows(program_id, today, until) + _order_rows(program_id, today, until, own_org_id)
+    rows = _tender_rows(program_id, today, until) + _order_rows(program_id, today, until, own_org_id, keep_done=True)
+    _gather_split_tenders(rows)
+    # A finished order is no longer active, unless it is a partner's order under a split tender still in progress.
+    rows = [r for r in rows if not (r.kind == "order" and r.finished and r.under_tender is None)]
+    done = {r.tender_id for r in rows if r.kind == "tender" and r.partners and r.stage_index == 6}
+    rows = [r for r in rows if r.tender_id not in done]
     rows.sort(key=lambda r: (r.last_change_at is not None, r.last_change_at or datetime.min), reverse=True)
     return rows
+
+
+def _gather_split_tenders(rows) -> None:
+    """A tender split by partner is ONE row, with each partner's order beneath it (round 2, "Buying table").
+
+    Includes the partners who have not ordered yet ("Savanna: not ordered yet"), so the row reads as the
+    whole set: 2 of 3 ordered, 1 delivered. The order rows stay in `rows` (their moves still count) but are
+    marked `under_tender` so the page draws them once, under the tender.
+    """
+    by_tender = {}
+    for row in rows:
+        if row.kind == "order" and row.tender_id is not None:
+            by_tender.setdefault(row.tender_id, []).append(row)
+    for row in rows:
+        if row.kind != "tender" or not getattr(row, "_splits", None):
+            continue
+        orders = by_tender.get(row.tender_id, [])
+        taken = set()
+        for split in row._splits:
+            order = next((o for o in orders if o.partner_org_id == split["org_id"] and id(o) not in taken), None)
+            quantity = quantity_phrase(split["quantity"], split.get("quantity_unit") or "")
+            if order is None:
+                row.partners.append(
+                    {
+                        "name": split["org_name"],
+                        "quantity": quantity,
+                        "status": "Not ordered yet",
+                        "url": "",
+                        "state": "waiting",
+                    }
+                )
+                continue
+            taken.add(id(order))
+            order.under_tender = row.tender_id
+            row.partners.append(
+                {
+                    "name": split["org_name"],
+                    "quantity": quantity,
+                    "status": order.label,
+                    "url": order.url,
+                    "state": "done" if order.bar_index is not None and order.bar_index >= 5 else "ordered",
+                }
+            )
+        # An order for someone not in the split is still listed beneath, by its own partner.
+        for order in orders:
+            if id(order) not in taken:
+                order.under_tender = row.tender_id
+                row.partners.append(
+                    {
+                        "name": order.partner or order.buyer or "Order",
+                        "quantity": "",
+                        "status": order.label,
+                        "url": order.url,
+                        "state": "ordered",
+                    }
+                )
+        ordered = sum(1 for p in row.partners if p["state"] != "waiting")
+        waiting = [p["name"] for p in row.partners if p["state"] == "waiting"]
+        if orders:
+            # Past awarding: ordered, then delivered once every partner's order is.
+            all_in = not waiting and all(o.finished or (o.bar_index or 0) >= 5 for o in orders)
+            row.stage_index = 6 if all_in and all(o.finished for o in orders) else 4
+            row.stage = (
+                "Delivered · every partner"
+                if row.stage_index == 6
+                else f"Ordered · {ordered} of {len(row._splits)} partners"
+            )
+        row._split_line = f"Ordered {ordered} of {len(row._splits)}" + (
+            " · To do: " + ", ".join(f"{n} to order" for n in waiting) if waiting else ""
+        )
+        row.sub = " · ".join(part for part in (row.sub, row._split_line) if part)
+
+
+# What each open check on an order reads as when the order's own row names it: (what to ask, for the move).
+_CHECK_MOVES = {
+    "payment_unconfirmed": "{who} has not confirmed they received payment",
+    "shipment_without_certificate": "{who} has not sent the batch certificate",
+}
+
+
+def add_open_check_moves(rows, checks) -> None:
+    """Put on an order's row what the chase list says it still owes, so "Next move" agrees with the chase list.
+
+    A received order is not finished while the supplier has not confirmed payment or sent the batch
+    certificate: both are on the chase list, so both are the row's move too (round 2, "Buying table"). They
+    are the supplier's to do, so they count as waiting on suppliers. `checks` are `checks_list` rows.
+    """
+    from connect_labs.supply_chain.portfolio.chase import ask_for
+
+    by_contract: dict[int, list] = {}
+    for check in checks or []:
+        facts = check.get("facts") or {}
+        if check.get("kind") in _CHECK_MOVES and facts.get("contract_id") is not None:
+            by_contract.setdefault(facts["contract_id"], []).append(check)
+    for row in rows:
+        if row.kind != "order":
+            continue
+        for check in by_contract.get(row.contract_id, []):
+            who = ((check.get("facts") or {}).get("supplier") or {}).get("name") or ""
+            row.theirs.append(
+                rules.Move(
+                    rules.SUPPLIERS,
+                    rules.RULE_OPEN_CHECK,
+                    ask_for(check["kind"], "supplier", who, check["kind"]),
+                    detail=_CHECK_MOVES[check["kind"]].format(who=who or "The supplier"),
+                    href=row.url,
+                    contract_id=row.contract_id,
+                    party=who,
+                )
+            )
 
 
 def move_counts(rows) -> dict:
@@ -301,10 +426,13 @@ def _tender_rows(program_id, today, until, *, ordered=False):
     """A row per tender in progress. `ordered` also takes the tenders already ordered (the Sourcing list)."""
     from connect_labs.supply_chain.models import Award, Commitment, Contract, Outreach, Quote, Tender
 
-    found = Tender.objects.filter(program_id=program_id)
-    if not ordered:
-        found = found.exclude(contracts__isnull=False)
-    tenders = list(found.distinct())
+    # A tender with orders is done and drops off the list -- unless it was split by partner: that one stays,
+    # as one row with its partners' orders beneath it, until every partner's order is delivered and paid.
+    tenders = [
+        t
+        for t in Tender.objects.filter(program_id=program_id).distinct()
+        if ordered or t.partner_splits or not t.contracts.exists()
+    ]
     ids = [t.pk for t in tenders]
     contracted_ids = set(
         Contract.objects.filter(tender_id__in=ids).exclude(status="cancelled").values_list("tender_id", flat=True)
@@ -355,29 +483,29 @@ def _tender_rows(program_id, today, until, *, ordered=False):
             )
             if part
         )
-        rows.append(
-            Row(
-                kind="tender",
-                title=tender.label,
-                url=reverse("supply_chain:procurement_tender_detail", args=[tender.pk]),
-                tender_id=tender.pk,
-                stage_index=index,
-                stage=stage,
-                sub=sub,
-                # Under the stage, the deadline the tender page's bar reads -- unless the row's decide
-                # move already says it passed: the deadline is said once on a row.
-                deadline_note=(
-                    ""
-                    if tender.status == "awarded" or any(m.rule == rules.RULE_DEADLINE for m in ours)
-                    else deadline_note(tender.response_deadline, today)
-                ),
-                ours=ours,
-                theirs=theirs,
-                missing=_missing_facts(tender, quotes.get(tender.pk, [])),
-                **_quote_count(tender, quotes.get(tender.pk, [])),
-                **_last_change(tender_scope_revisions(tender.pk, program_id=program_id, until=until, orders=False)),
-            )
+        row = Row(
+            kind="tender",
+            title=tender.label,
+            url=reverse("supply_chain:procurement_tender_detail", args=[tender.pk]),
+            tender_id=tender.pk,
+            stage_index=index,
+            stage=stage,
+            sub=sub,
+            # Under the stage, the deadline the tender page's bar reads -- unless the row's decide
+            # move already says it passed: the deadline is said once on a row.
+            deadline_note=(
+                ""
+                if tender.status == "awarded" or any(m.rule == rules.RULE_DEADLINE for m in ours)
+                else deadline_note(tender.response_deadline, today)
+            ),
+            ours=ours,
+            theirs=theirs,
+            missing=_missing_facts(tender, quotes.get(tender.pk, [])),
+            **_quote_count(tender, quotes.get(tender.pk, [])),
+            **_last_change(tender_scope_revisions(tender.pk, program_id=program_id, until=until, orders=False)),
         )
+        row._splits = tender.partner_splits or []
+        rows.append(row)
     return rows
 
 
@@ -444,7 +572,7 @@ def _order_rows(program_id, today, until, own_org_id, *, only=None, keep_done=Fa
     found = Contract.objects.filter(program_id=program_id).exclude(status="cancelled")
     if only is not None:
         found = found.filter(pk__in=only)
-    contracts = list(found.select_related("supplier__org", "buyer_org", "tender"))
+    contracts = list(found.select_related("supplier__org", "buyer_org", "partner_org", "tender"))
     ids = [c.pk for c in contracts]
     shipments = {}
     for s in Shipment.objects.filter(contract_id__in=ids):
@@ -512,7 +640,8 @@ def _order_rows(program_id, today, until, own_org_id, *, only=None, keep_done=Fa
         ]
         bar_index = next((i for i, d in enumerate(bar_done) if not d), len(bar_done))
         # Done on both counts and nothing owed: no longer an active order.
-        if delivered and contract.pk in paid and not ours and not keep_done:
+        finished = delivered and contract.pk in paid and not ours
+        if finished and not keep_done:
             continue
         index = 4 if contract.status == "draft" else 6 if delivered else 5
         stage = "Ordered · " + words if index == 4 else ("Delivered · " if delivered else "Delivering · ") + words
@@ -531,10 +660,23 @@ def _order_rows(program_id, today, until, own_org_id, *, only=None, keep_done=Fa
         sub = " · ".join(
             p for p in (f"from {origin}" if origin else "", quantity, f"bought by {buyer}" if buyer else "") if p
         )
+        partner = (
+            contract.partner_org.name if contract.partner_org_id and contract.partner_org_id != own_org_id else ""
+        )
+        # "North Star · 900 cartons from DABS": an order for a partner leads with the partner, then what and from
+        # whom; the order's reference moves to the line beneath.
+        if partner and quantity:
+            headline = f"{partner} · {quantity} from {contract.supplier.name}"
+            sub = " · ".join(p for p in (title, sub) if p)
+        else:
+            headline = f"{title} · {contract.supplier.name}"
         rows.append(
             Row(
                 kind="order",
-                title=f"{title} · {contract.supplier.name}",
+                finished=finished,
+                partner=partner,
+                partner_org_id=contract.partner_org_id,
+                title=headline,
                 url=reverse("supply_chain:order_detail", args=[contract.pk]),
                 stage_index=index,
                 bar_index=bar_index,
@@ -583,7 +725,7 @@ def _order_step(contract, shipments, received_shipments, received, paid, *, held
     if full:
         return "Paid" if paid else "Received"
     if received:
-        return "Received, part"
+        return "Part received"
     if any(_dispatched(s) for s in shipments):
         return "Dispatched"
     return "Ordered"

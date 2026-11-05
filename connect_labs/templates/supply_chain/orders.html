@@ -42,6 +42,7 @@ shipments (received, due, late) is not a cell anyone types into.
       <tr>
         <th scope="col" data-sort>Reference</th>
         <th scope="col" data-sort>Supplier</th>
+        <th scope="col" data-sort>For partner</th>
         <th scope="col" data-sort>{% term "buyer of record" "Buyer of record" %}</th>
         <th scope="col" class="text-right" data-sort>Quantity</th>
         <th scope="col" class="text-right" data-sort>Received</th>
@@ -61,6 +62,7 @@ shipments (received, due, late) is not a cell anyone types into.
             {% if contract.reference %}<span>{{ contract.reference }}</span>{% else %}<span class="status-chip status-chip--ours">we do not hold it</span>{% endif %}
           </th>
           <td><a href="{% url 'supply_chain:supplier_detail' contract.supplier_id %}" class="text-brand-indigo hover:underline">{{ suppliers|dictkey:contract.supplier_id|dictkey:"name"|default:contract.supplier_id }}</a>{% if contract.item_id %}<span class="sub">{{ item_names|dictkey:contract.item_id }}</span>{% endif %}</td>
+          <td data-testid="order-partner">{% if contract.partner_org_id %}<span class="text-gray-900">{{ orgs|dictkey:contract.partner_org_id|dictkey:"name"|default:"" }}</span>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
           <td>
             <span class="text-gray-900">{{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:"" }}</span>
             <span class="sub">{{ contract.buyer_of_record|buyer_label }}</span>
@@ -71,9 +73,8 @@ shipments (received, due, late) is not a cell anyone types into.
           <td class="num" data-sort-value="{{ contract.unit_price|sort_key }}" {% edit_cell "contract" contract.id "unit_price" contract.unit_price %}>{% if contract.unit_price %}{{ contract.unit_price|money }}{% if contract.unit_price_unit %}<span class="sub">{{ contract.unit_price_unit|humanise }}</span>{% endif %}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
           <td {% edit_cell "contract" contract.id "currency" contract.currency %}>{{ contract.currency|default:"—" }}</td>
           <td {% edit_cell "contract" contract.id "status" contract.status %}>
-            <span class="text-gray-900">{{ contract.status|humanise|capfirst }}</span>
+            <span class="text-gray-900" data-testid="order-status">{% with step=order_steps|dictkey:contract.id %}{% if step %}{{ step }}{% else %}{{ contract.status|humanise|capfirst }}{% endif %}{% endwith %}</span>
             {% if progress.due_on %}<span class="sub">due {{ progress.due_on|date:"j M Y" }}</span>{% endif %}
-            {% if progress.shipment_status %}<span class="sub" data-testid="order-shipment">{{ progress.shipment_status|humanise }}{% if progress.shipment_expected_on %}, expected {{ progress.shipment_expected_on|date:"j M Y" }}{% endif %}</span>{% endif %}
             {% with overdue=late|dictkey:contract.id %}{% if overdue %}<span class="sub font-semibold text-message-warning-text">{{ overdue.facts.days_late }} day{{ overdue.facts.days_late|pluralize }} past due</span>{% endif %}{% endwith %}
             {% comment %}The two halves of a covered shortfall, named on both rows.{% endcomment %}
             {% with covers=covered_by|dictkey:contract.id %}{% if covers %}<span class="sub text-message-success-text">shortfall covered by {{ covers|join:", " }}</span>{% endif %}{% endwith %}
@@ -87,7 +88,7 @@ shipments (received, due, late) is not a cell anyone types into.
         </tr>
         {% endwith %}
       {% empty %}
-        <tr><td colspan="11" class="py-6 text-center text-gray-600">No contracts yet. An award on its own commits nothing.</td></tr>
+        <tr><td colspan="12" class="py-6 text-center text-gray-600">No contracts yet. An award on its own commits nothing.</td></tr>
       {% endfor %}
     </tbody>
   </table>

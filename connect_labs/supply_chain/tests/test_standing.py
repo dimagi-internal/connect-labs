@@ -558,7 +558,9 @@ class TestHomePageHooks:
         assert body.count('data-testid="overview-row"') == 3
         assert body.count(f'data-tender-id="{tender["id"]}"') == 1
         assert 'data-testid="ai-badge"' in body
-        assert body.count('data-testid="whose"') == 1
+        # The tender row, and the order row: its shipment has no batch certificate, which the chase list names
+        # and so the order's next move does too (waiting on the supplier).
+        assert body.count('data-testid="whose"') == 2
         assert 'data-testid="standing-our-moves"' in body
 
     def test_as_of_an_earlier_day_a_delivered_and_paid_order_is_in_transit(self, client_in_program, da, base):

@@ -102,6 +102,7 @@ RULE_OWED = "owed"
 RULE_DEADLINE = "deadline"
 RULE_INVOICE = "invoice check"
 RULE_NO_REPLY = "no reply"
+RULE_OPEN_CHECK = "open check"
 
 # Rule (e)'s two states, and the chip the second reads as wherever a supplier is listed.
 SILENT = "silent"
@@ -114,6 +115,7 @@ RULE_TITLES = {
     RULE_DEADLINE: "The tender is still open after its response deadline.",
     RULE_INVOICE: "An invoice bills more than its order agreed.",
     RULE_NO_REPLY: "An invited supplier has not quoted, and has no question open to us.",
+    RULE_OPEN_CHECK: "A supplier still owes something on this order: the same item is on the chase list.",
 }
 
 

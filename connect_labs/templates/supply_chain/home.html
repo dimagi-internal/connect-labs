@@ -59,12 +59,15 @@ tenders and orders sit folded below.
         </thead>
         <tbody class="divide-y divide-gray-100">
           {% for row in standing %}
+          {% if not row.under_tender %}
           <tr data-testid="overview-row" data-kind="{{ row.kind }}"{% if row.tender_id %} data-tender-id="{{ row.tender_id }}"{% endif %} class="align-top">
             <td class="phone-title px-5 py-4">
               <div class="flex flex-col gap-0.5">
                 <span class="text-xs text-gray-600">{% if row.kind == "tender" %}Tender{% else %}Order{% endif %}</span>
                 <a href="{{ row.url }}" class="text-brand-indigo text-[15px] font-semibold hover:underline">{{ row.title }}</a>
                 {% if row.sub %}<span class="text-xs text-gray-600" data-testid="row-sub">{{ row.sub }}</span>{% endif %}
+                {% comment %}A split tender is one row; each local partner's own order sits beneath it, including the partners who have not ordered yet.{% endcomment %}
+                {% if row.partners %}<ul class="mt-1 flex flex-col gap-0.5 text-xs" data-testid="row-partners">{% for p in row.partners %}<li data-testid="row-partner" data-state="{{ p.state }}" class="flex flex-wrap gap-x-1.5">{% if p.url %}<a class="font-medium text-brand-indigo hover:underline" href="{{ p.url }}">{{ p.name }}</a>{% else %}<span class="font-medium text-gray-900">{{ p.name }}</span>{% endif %}{% if p.quantity %}<span class="text-gray-600">· {{ p.quantity }}</span>{% endif %}<span class="{% if p.state == 'waiting' %}font-medium text-message-warning-text{% else %}text-gray-700{% endif %}">· {{ p.status }}</span></li>{% endfor %}</ul>{% endif %}
                 {% if row.kind == "order" %}{% with model=buying_models|dictkey:row.contract_id %}{% if model %}<span class="text-xs text-gray-600" data-testid="row-buying-model">{{ model }}</span>{% endif %}{% endwith %}{% endif %}
               </div>
             </td>
@@ -101,6 +104,7 @@ tenders and orders sit folded below.
               {% else %}<span class="text-gray-600">—</span>{% endif %}
             </td>
           </tr>
+          {% endif %}
           {% empty %}
           <tr><td colspan="5" class="px-5 py-5 text-gray-600">No tenders or orders in progress.</td></tr>
           {% endfor %}

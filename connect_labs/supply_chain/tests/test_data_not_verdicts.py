@@ -243,6 +243,7 @@ class TestSheetsSort:
         assert _sortable(table) == [
             "Reference",
             "Supplier",
+            "For partner",
             "Buyer of record",
             "Quantity",
             "Received",
