@@ -260,6 +260,7 @@ TAB_FOR_VIEW = {
     "supply_chain:distribution_confirm_as_planned": "supply_chain:distribution",
     "supply_chain:distribution_from_message": "supply_chain:distribution",
     "supply_chain:distribution_received": "supply_chain:distribution",
+    "supply_chain:distribution_received_all": "supply_chain:distribution",
     "supply_chain:issue_report": "supply_chain:issues",
     "supply_chain:plan_stores": "supply_chain:plan",
     "supply_chain:plan_programme": "supply_chain:plan",
