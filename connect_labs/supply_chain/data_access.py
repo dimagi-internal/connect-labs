@@ -53,6 +53,7 @@ from connect_labs.supply_chain.models import (
     Movement,
     Outreach,
     PartnerPlan,
+    PartnerProfile,
     Quote,
     Receipt,
     Shipment,
@@ -485,6 +486,7 @@ class SupplyDataAccess(
                 drop("stock issues", StockIssue.objects.filter(program_id=program_id))
                 drop("custodians", Custodian.objects.filter(program_id=program_id))
                 drop("partner plans", PartnerPlan.objects.filter(program_id=program_id))
+                drop("partner profiles", PartnerProfile.objects.filter(program_id=program_id))
                 drop("distributions", Distribution.objects.filter(program_id=program_id))
                 # A consignment holds its two ledger legs, so it goes before them.
                 drop("consignments", Consignment.objects.filter(program_id=program_id))

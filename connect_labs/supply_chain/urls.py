@@ -427,6 +427,7 @@ urlpatterns = [
     path("partners/", partner_views.PartnersView.as_view(), name="partners"),
     path("partners/plan/", partner_views.PartnerPlanView.as_view(), name="partner_plan"),
     path("partners/deliveries/", partner_views.DeliverySuggestionsView.as_view(), name="partner_deliveries"),
+    path("partners/contact/", partner_views.PartnerProfileView.as_view(), name="partner_contact"),
     path("partners/places/", partner_views.AssignPlacesView.as_view(), name="partner_places"),
     path("distribution/plan/", distribution_views.DistributionPlanView.as_view(), name="distribution_plan"),
     path(

@@ -577,6 +577,21 @@ def partner_plan(obj) -> dict:
     }
 
 
+def partner_profile(obj) -> dict:
+    return {
+        "id": obj.pk,
+        "org_id": obj.org_id,
+        "contact_name": obj.contact_name,
+        "contact_email": obj.contact_email,
+        "contact_phone": obj.contact_phone,
+        "contact_connect_username": obj.contact_connect_username,
+        "copy_to": list(obj.copy_to or []),
+        "default_buying_model": obj.default_buying_model,
+        "handout_every_days": obj.handout_every_days,
+        "handout_from_id": obj.handout_from_id,
+    }
+
+
 def stock_issue(obj) -> dict:
     return {
         "id": obj.pk,

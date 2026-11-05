@@ -11,7 +11,12 @@ from connect_labs.supply_chain.api_views import _access, has_program_context
 from connect_labs.supply_chain.form_views import OperationFormView
 from connect_labs.supply_chain.models import PartnerPlan, SupplyPoint
 from connect_labs.supply_chain.partners import services
-from connect_labs.supply_chain.partners.forms import AssignPlacesForm, PartnerPlanForm
+from connect_labs.supply_chain.partners.forms import (
+    AssignPlacesForm,
+    PartnerPlanForm,
+    PartnerProfileForm,
+    copy_to_text,
+)
 from connect_labs.supply_chain.partners.models import DISTRIBUTION_MODEL_LABELS
 from connect_labs.supply_chain.stock.services.issues import partner_by_point
 from connect_labs.supply_chain.views import OperationBase
@@ -51,6 +56,7 @@ class PartnersView(OperationBase):
                     "history": [
                         {"plan": p, "label": DISTRIBUTION_MODEL_LABELS[p.distribution_model]} for p in history
                     ],
+                    "contact": services.main_contact(program_id, org_id),
                     **counts.get(org_id, {"places": 0, "workers": 0}),
                 }
             )
@@ -90,6 +96,37 @@ class PartnerPlanView(_PartnerScreen):
         org = self.request.GET.get("org") or ""
         if org.isdigit():
             initial["org"] = int(org)
+        return initial
+
+
+class PartnerProfileView(_PartnerScreen):
+    operation = "partner_profile_set"
+    form_class = PartnerProfileForm
+    title = "A partner's contact and defaults"
+    intro = (
+        "Who we write to at this partner (award emails and handovers go to the main contact, with the people "
+        "to copy), where alerts sent as a Connect message go, how we usually buy for it, and how often and "
+        "from where it hands out stock."
+    )
+    submit_label = "Save"
+
+    def get_initial(self):
+        initial = super().get_initial()
+        org = self.request.GET.get("org") or ""
+        if org.isdigit():
+            initial["org"] = int(org)
+            profile = services.profile_of(_access(self.request).program_id, int(org))
+            if profile:
+                initial.update(
+                    contact_name=profile.contact_name,
+                    contact_email=profile.contact_email,
+                    contact_phone=profile.contact_phone,
+                    contact_connect_username=profile.contact_connect_username,
+                    copy_to=copy_to_text(profile.copy_to),
+                    default_buying_model=profile.default_buying_model,
+                    handout_every_days=profile.handout_every_days,
+                    handout_from=profile.handout_from_id,
+                )
         return initial
 
 

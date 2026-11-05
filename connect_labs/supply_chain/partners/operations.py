@@ -146,3 +146,64 @@ def stock_delivery_suggestion(access, item_id, cover_days=7, org_id=None):
     return planning.delivery_suggestions(
         access._require_program(), access._resolve_item(item_id), cover_days=cover_days, org_id=org_id
     )
+
+
+_PROFILE_DATA = _data_with(
+    ("org_id",),
+    org_id=ID,
+    contact_name={"type": "string"},
+    contact_email={"type": "string"},
+    contact_phone={"type": "string"},
+    contact_connect_username={"type": "string"},
+    copy_to={
+        "type": "array",
+        "items": obj({"name": {"type": "string"}, "email": {"type": "string"}}, required=("email",)),
+    },
+    default_buying_model={"enum": ["", *records.BUYING_MODELS]},
+    handout_every_days={"type": ["integer", "null"], "minimum": 1, "maximum": 365},
+    handout_from_id={"type": ["integer", "null"]},
+)
+
+
+@register_operation(
+    name="partner_profile_list",
+    summary=(
+        "Each partner's main contact (name, email, phone, Connect username for alerts), the people to copy, "
+        "its default buying model, how often it hands out stock and from where. Filter to one partner by org_id."
+    ),
+    input_schema=obj({"org_id": ID}),
+)
+def partner_profile_list(access, org_id=None):
+    from connect_labs.supply_chain.models import PartnerProfile
+
+    profiles = PartnerProfile.objects.filter(program_id=access._require_program())
+    if org_id is not None:
+        profiles = profiles.filter(org_id=org_id)
+    return [record(p) for p in profiles]
+
+
+@register_operation(
+    name="partner_profile_set",
+    summary=(
+        "Say who a partner's main contact is (name, email, phone, Connect username that alerts go to), who to "
+        "copy, its default buying model, and how often and from where it hands out stock. Only the fields you "
+        "send change. Award emails and handovers are addressed to this contact."
+    ),
+    input_schema=obj({"data": _PROFILE_DATA}, required=("data",)),
+    is_write=True,
+)
+def partner_profile_set(access, data):
+    from connect_labs.supply_chain.models import SupplyPoint
+
+    program_id = access._require_program()
+    org = _org(data["org_id"])
+    fields = {k: v for k, v in data.items() if k not in ("org_id", "handout_from_id")}
+    for email in [fields.get("contact_email", "")] + [c["email"] for c in fields.get("copy_to") or []]:
+        if email and "@" not in email:
+            raise ValueError(f"'{email}' is not an email address")
+    if "handout_from_id" in data:
+        place = data["handout_from_id"]
+        if place is not None and not SupplyPoint.objects.filter(program_id=program_id, pk=place).exists():
+            raise ValueError(f"supply point {place} is not in this programme")
+        fields["handout_from_id"] = place
+    return record(services.set_profile(program_id, org, **fields))
