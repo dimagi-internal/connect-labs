@@ -12,6 +12,31 @@ opens in a new tab like any other. Plain CSS here rather than utilities, so noth
 the stylesheet being rebuilt, and here rather than in base.html, so the programme map --
 which includes this header outside base.html -- folds too.{% endcomment %}
 <style>
+  /* One slim strip for the title, then one bar of tabs (grouped, with the group's name inline) and the "view as of"
+     control at its right: about 110px of header where the tall banner + three rows of buttons took ~330px. Plain CSS
+     rather than utilities, so nothing waits on the stylesheet being rebuilt. */
+  .supply-banner { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; padding: 0.5rem 1rem; border-radius: 0.75rem; }
+  .supply-banner-text { display: flex; align-items: baseline; gap: 0.75rem; min-width: 0; flex: 1 1 auto; }
+  .supply-banner-text h1 { margin: 0; font-size: 1.125rem; line-height: 1.5rem; font-weight: 700; color: #fff; }
+  .supply-banner-line { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem; font-weight: 500; opacity: 0.92; }
+  .supply-banner-links { display: flex; align-items: center; gap: 1rem; flex: 0 0 auto; font-size: 0.8125rem; }
+  .supply-banner-links a { color: rgb(255 255 255 / 0.9); text-decoration: underline; text-underline-offset: 2px; }
+  .supply-banner-links a:hover { color: #fff; }
+  .supply-tabs-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.75rem; }
+  .supply-tabs-bar { display: flex; flex-wrap: wrap; align-items: center; row-gap: 0.125rem; column-gap: 0.25rem; flex: 1 1 auto; min-width: 0; font-size: 0.875rem; border-bottom: 1px solid #e5e7eb; }
+  .supply-tab-group { display: flex; flex-wrap: nowrap; align-items: center; gap: 0; }
+  .supply-tab-group + .supply-tab-group { margin-left: 0.5rem; }
+  .supply-tab-group-name { margin-right: 0.125rem; font-size: 0.625rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #6b7280; white-space: nowrap; }
+  .supply-tab { padding: 0.375rem 0.4rem; border-bottom: 2px solid transparent; margin-bottom: -1px; color: #374151; white-space: nowrap; text-decoration: none; }
+  .supply-tab:hover { color: #1e1b4b; background: #f3f4f6; border-radius: 0.375rem 0.375rem 0 0; }
+  .supply-tab.is-active { color: #3730a3; font-weight: 600; border-bottom-color: #4f46e5; }
+  .supply-asof { flex: 0 0 auto; }
+  .supply-banner [data-as-of-form] { gap: 0.5rem; }
+  .supply-banner [data-as-of-form] label { color: rgb(255 255 255 / 0.9); font-weight: 500; font-size: 0.8125rem; white-space: nowrap; }
+  .supply-banner [data-as-of-form] input[name="as_of"] { width: 8.5rem; padding: 0.125rem 0.5rem; background: rgb(255 255 255 / 0.95); color: #111827; }
+  .supply-banner [data-as-of-form] button { padding: 0.125rem 0.625rem; background: rgb(255 255 255 / 0.15); border-color: rgb(255 255 255 / 0.5); color: #fff; }
+  .supply-banner [data-as-of-form] button:hover { background: rgb(255 255 255 / 0.28); }
+  .supply-purpose { margin: -0.25rem 0 0.75rem; max-width: 64rem; font-size: 0.875rem; color: #4b5563; }
   .supply-tabs-phone { display: none; }
   .supply-tabs-phone > summary { list-style: none; cursor: pointer; }
   .supply-tabs-phone > summary::-webkit-details-marker { display: none; }
@@ -27,27 +52,29 @@ which includes this header outside base.html -- folds too.{% endcomment %}
     .supply-tabs-row { margin-bottom: 1rem !important; align-items: center !important; flex-wrap: nowrap !important; }
     .supply-tabs-wide { display: none !important; }
     .supply-tabs-phone { display: block; position: relative; flex-shrink: 0; }
-    .supply-tabs-row [data-testid="as-of-slot"] { min-width: 0; }
-    .supply-tabs-row [data-as-of-form] label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-    .supply-tabs-row [data-as-of-form] input[name="as_of"] { width: 7.5rem; min-width: 0; }
+    .supply-banner [data-testid="as-of-slot"] { min-width: 0; flex: 0 0 auto; }
+    .supply-banner [data-as-of-form] label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .supply-banner [data-as-of-form] input[name="as_of"] { width: 6.5rem; min-width: 0; }
   }
 </style>
-{% comment %}`compact_banner`: a record's own page (a tender) lets its title and first
-section lead -- the banner shrinks to a strip and drops its tagline.{% endcomment %}
-<div data-testid="supply-banner" class="supply-banner flex gap-4 items-center {% if compact_banner %}px-4 py-2 mb-4{% else %}p-4 mb-6{% endif %} profile-bg bg-brand-indigo rounded-2xl">
-  <div class="supply-banner-text flex {% if compact_banner %}flex-wrap items-baseline gap-x-3{% else %}flex-col justify-center{% endif %} text-white">
-    <h1 class="{% if compact_banner %}text-base{% else %}text-2xl mb-1{% endif %} font-bold">Supply</h1>
+{% comment %}The banner is one slim strip on every page: the title, which program and who buys for it, and the
+marketplace and Settings links at the right. (It was a tall block with a tagline, and with three rows of tab
+buttons under it pushed every page's content below the fold.) `compact_banner` is kept for callers that pass it;
+the strip is already compact.{% endcomment %}
+{% supply_settings_url as settings_url %}
+<div data-testid="supply-banner" class="supply-banner profile-bg bg-brand-indigo text-white">
+  <div class="supply-banner-text">
+    <h1>Supply</h1>
     {% comment %}Which program, and who buys for it in that role (banner.py): said on
     every supply page, so no screen leaves whose purchasing it is to be guessed.{% endcomment %}
-    {% if supply_program_line %}<p data-testid="supply-program-line" title="{{ supply_program_line }}" class="supply-banner-line text-sm font-medium{% if not compact_banner %} mb-1{% endif %}">{{ supply_program_line }}</p>{% endif %}
-    {% if not compact_banner %}
-    <p class="supply-banner-tagline text-sm opacity-90">
-      Source commodities, compare quotes on one basis, and track what reaches whom.
-    </p>
-    {% endif %}
+    {% if supply_program_line %}<p data-testid="supply-program-line" title="{{ supply_program_line }}" class="supply-banner-line">{{ supply_program_line }}</p>{% endif %}
   </div>
-  {% comment %}Above the program tabs, because it is above programs: what suppliers see of every open tender.{% endcomment %}
-  <a href="{% url 'supply_chain:market' %}" class="supply-banner-market ml-auto text-sm text-white/90 hover:text-white underline underline-offset-2">Supplier marketplace</a>
+  <div class="supply-asof" data-testid="as-of-slot">{% include 'supply_chain/_as_of_bar.html' with as_of_part="form" %}</div>
+  <div class="supply-banner-links">
+    {% if settings_url %}<a data-testid="supply-settings" href="{{ settings_url }}" title="Which tabs this programme shows, and what fills them" class="supply-tabs-wide">Settings</a>{% endif %}
+    {% comment %}Above the program tabs, because it is above programs: what suppliers see of every open tender.{% endcomment %}
+    <a href="{% url 'supply_chain:market' %}" class="supply-banner-market">Supplier marketplace</a>
+  </div>
 </div>
 
 {% comment %}
@@ -56,8 +83,7 @@ how we buy it, what was ordered, what is on hand, where it went.
 {% endcomment %}
 {% comment %}"View as of" sits at the right of the tabs, so a page's own title leads the
 page rather than a date control above it.{% endcomment %}
-<div class="supply-tabs-row flex flex-wrap items-start gap-x-4 gap-y-2 mb-6">
-{% supply_settings_url as settings_url %}
+<div class="supply-tabs-row">
 <details data-testid="supply-tabs-phone" class="supply-tabs-phone">
   <summary class="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border bg-white border-gray-300 text-gray-700">
     <span class="sr-only">Supply section:</span>
@@ -78,24 +104,19 @@ page rather than a date control above it.{% endcomment %}
 </details>
 {% comment %}Tabs in groups (navigation.TAB_GROUPS): each group's name sits above its tabs, so
 thirteen tabs read as four places rather than one row to scan.{% endcomment %}
-<nav data-testid="supply-tabs" class="supply-tabs-wide flex flex-wrap items-end gap-x-5 gap-y-3 text-sm">
+<nav data-testid="supply-tabs" class="supply-tabs-wide supply-tabs-bar" aria-label="Supply">
   {% for group in supply_tabs|tab_groups %}
-  <div data-testid="supply-tab-group" data-group="{{ group.label }}">
-    {% if group.label %}<p class="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-600">{{ group.label }}</p>{% endif %}
-    <div class="flex flex-wrap gap-2">
-      {% for tab in group.tabs %}
-      <a href="{{ tab.url }}"
-         class="px-3 py-1.5 rounded-md border {% if tab.active %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 hover:bg-gray-50 text-gray-700{% endif %}">{{ tab.label }}</a>
-      {% endfor %}
-    </div>
+  <div data-testid="supply-tab-group" data-group="{{ group.label }}" class="supply-tab-group">
+    {% if group.label %}<span class="supply-tab-group-name">{{ group.label }}</span>{% endif %}
+    {% for tab in group.tabs %}
+    <a href="{{ tab.url }}"{% if tab.active %} aria-current="page"{% endif %} class="supply-tab{% if tab.active %} is-active{% endif %}">{{ tab.label }}</a>
+    {% endfor %}
   </div>
   {% endfor %}
 </nav>
-{% if settings_url %}<a data-testid="supply-settings" href="{{ settings_url }}" title="Which tabs this programme shows, and what fills them" class="supply-tabs-wide px-3 py-1.5 text-sm rounded-md text-brand-indigo hover:underline">Settings</a>{% endif %}
-<div class="ml-auto" data-testid="as-of-slot">{% include 'supply_chain/_as_of_bar.html' with as_of_part="form" %}</div>
 </div>
 
 {% comment %}One line saying what this page is for (navigation.PAGE_PURPOSE), on a tab's own page.{% endcomment %}
-{% with purpose=supply_tabs|page_purpose %}{% if purpose %}<p data-testid="page-purpose" class="-mt-3 mb-4 text-sm text-gray-700 max-w-3xl">{{ purpose }}</p>{% endif %}{% endwith %}
+{% with purpose=supply_tabs|page_purpose %}{% if purpose %}<p data-testid="page-purpose" class="supply-purpose">{{ purpose }}</p>{% endif %}{% endwith %}
 
 {% include 'supply_chain/_as_of_bar.html' with as_of_part="banner" %}

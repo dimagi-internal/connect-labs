@@ -72,8 +72,8 @@ def _tabs(client, name="supply_chain:catalogue"):
     # The tabs a wide screen shows; a phone folds the same links into a menu (#2375).
     nav = body.split('<nav data-testid="supply-tabs"', 1)[1].split("</nav>", 1)[0]
     out = []
-    for href, cls, label in re.findall(r'<a href="([^"]+)"\s+class="([^"]*)">([^<]+)</a>', nav):
-        out.append((href, "bg-brand-indigo text-white" in cls, label))
+    for href, cls, label in re.findall(r'<a href="([^"]+)"[^>]*?\sclass="([^"]*)">([^<]+)</a>', nav):
+        out.append((href, "is-active" in cls.split(), label))
     return out
 
 
