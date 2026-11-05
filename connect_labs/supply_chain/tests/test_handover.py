@@ -395,7 +395,7 @@ class TestReceiptForAWholeRun:
         assert "All received as given" in page and "They received" not in page
         response = scoped.post(reverse("supply_chain:distribution_received_all", args=[run["id"]]))
         assert response.status_code == 302
-        quantities = {l.quantity_received for l in DistributionLine.objects.filter(distribution_id=run["id"])}
+        quantities = {line.quantity_received for line in DistributionLine.objects.filter(distribution_id=run["id"])}
         assert quantities == {Decimal("12"), Decimal("10")}
         assert "All received as given" not in scoped.get(reverse("supply_chain:distribution")).content.decode()
 
