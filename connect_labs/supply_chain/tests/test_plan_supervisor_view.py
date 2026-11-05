@@ -264,3 +264,20 @@ def test_the_recent_rate_is_shown_as_a_number_next_to_its_words(page, world):
     world["item"].commodity.save()
     html = page.get(reverse("supply_chain:plan")).content.decode()
     assert "recent rate:" in html and "the average of" in html and "field workers" in html
+
+
+def test_a_partner_loads_all_three_plan_pages_without_error(page, world, monkeypatch):
+    """The grouped rows, the store groups and the children view are cut to a partner's own places too."""
+    from connect_labs.supply_chain.runner import Standing
+
+    partner = LabsOrg.objects.create(slug="scoped-p", name="Scoped P", connect_organization_id=4242)
+    world["store"].managed_by_org = partner
+    world["store"].save()
+    monkeypatch.setattr("connect_labs.supply_chain.runner.standing", lambda access: Standing("partner", None))
+    monkeypatch.setattr("connect_labs.supply_chain.identity.caller_org_ids", lambda access: {4242})
+    for name in ("plan", "plan_stores", "plan_programme"):
+        response = page.get(reverse(f"supply_chain:{name}"))
+        assert response.status_code == 200, name
+    html = page.get(reverse("supply_chain:plan")).content.decode()
+    assert "Scoped P" in html and "worker-acacia" in html
+    assert "your own organisation runs" in html
