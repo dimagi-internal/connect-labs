@@ -8,7 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("labs", "0040_labs_data_reader_login"),
-        ("supply_chain", "0069_alert_connect_message_channel"),
+        ("supply_chain", "0070_stock_issue_expiring_kind"),
     ]
 
     operations = [
