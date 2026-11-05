@@ -258,7 +258,13 @@ def call_operation(
         require_programme_standing(access, operation)
     payload = stamp_provenance(access, operation, payload)
     if not operation.is_write:
-        return operation.handler(access, **payload)
+        result = operation.handler(access, **payload)
+        # Shadow mode (relationship ACL phase 1): log what a relationship scope would hide. Never
+        # alters or blocks the result; see access_shadow.py.
+        from connect_labs.supply_chain.access_shadow import observe_read
+
+        observe_read(operation, access)
+        return result
     return run_recorded(
         operation,
         access,

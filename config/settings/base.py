@@ -749,6 +749,12 @@ OCS_API_KEY = env("OCS_API_KEY", default="")
 # default when a link is issued. Empty = the issuer must choose one.
 SUPPLY_LINK_OCS_BOT = env("SUPPLY_LINK_OCS_BOT", default="")
 
+# Supply's relationship ACL, phase 1: log what a relationship-based scope WOULD hide from a
+# partner-standing reader, change nothing (supply_chain/access_shadow.py). One read in
+# SUPPLY_ACL_SHADOW_SAMPLE is observed; 1 observes every read.
+SUPPLY_ACL_SHADOW = env.bool("SUPPLY_ACL_SHADOW", default=True)
+SUPPLY_ACL_SHADOW_SAMPLE = env.int("SUPPLY_ACL_SHADOW_SAMPLE", default=20)
+
 # Scale Image Validation API Configuration (KMC weight verification)
 # ------------------------------------------------------------------------------
 SCALE_VALIDATION_API_URL = env(

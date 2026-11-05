@@ -32,7 +32,9 @@ from django.utils import timezone
 from connect_labs.audit_trail.models import Action
 from connect_labs.audit_trail.service import record as audit_record
 from connect_labs.labs.access.scopes import SYSTEM
+from connect_labs.supply_chain import access_relations
 from connect_labs.supply_chain import scopes as synthetic_scopes
+from connect_labs.supply_chain.access_relations import Relation
 from connect_labs.supply_chain.models import (
     AwardApproval,
     Contract,
@@ -103,14 +105,19 @@ _NOT_YET_OR_NO_LONGER = ("draft", "cancelled")
 def _org_contracts(program_id, org_id):
     """Orders involving the organisation, resolved now: it supplies them, buys
     them, or they are delivered to a store it runs. Nothing else -- not another
-    order of the same supplier's that names some other organisation."""
-    return (
-        Contract.objects.filter(program_id=program_id)
-        .filter(
-            Q(supplier__org_id=org_id) | Q(buyer_org_id=org_id) | Q(delivery_supply_point__managed_by_org_id=org_id)
-        )
-        .exclude(status__in=_NOT_YET_OR_NO_LONGER)
-    )
+    order of the same supplier's that names some other organisation.
+
+    Expressed through the relationship layer (`access_relations`): the supplier,
+    buyer and receiver relations of a Contract, and not its tender-owner one, which
+    a link has never covered. Pinned equal to the hand-written query this replaced
+    by tests/test_access_relations_equivalence.py.
+    """
+    return access_relations.rows_for(
+        Contract,
+        [org_id],
+        program_id=program_id,
+        relations=(Relation.SUPPLIER, Relation.BUYER, Relation.RECEIVER),
+    ).exclude(status__in=_NOT_YET_OR_NO_LONGER)
 
 
 def _org_points(program_id, org_id):
