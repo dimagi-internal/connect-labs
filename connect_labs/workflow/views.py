@@ -6,6 +6,7 @@ as LabsRecord objects with React component code for rendering.
 """
 
 import contextvars
+import hashlib
 import json
 import logging
 import re
@@ -17,6 +18,7 @@ import httpx
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.cache import cache
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse, StreamingHttpResponse
 from django.utils import timezone as dj_timezone
 from django.views import View
@@ -3031,6 +3033,50 @@ def pipeline_rows_api(request, definition_id):
             wf_access.close()
 
 
+# One case's answer costs a whole-opportunity evaluation: the entity key is computed, so
+# it is applied after Layer 1 and every visit of the opportunity is extracted first. The
+# case panel also asks again each time it remounts. On 2026-11-05, 32 requests for ONE
+# case, about 48s each, took RDS to 99% and paged labs-jj-alb-latency-high (#2876). So a
+# viewer's answer is kept briefly, and overlapping reads wait for the one already running.
+CASE_STATES_ANSWER_SECONDS = 10 * 60
+CASE_STATES_FILL_SECONDS = 3 * 60
+CASE_STATES_WAIT_SECONDS = 2 * 60
+CASE_STATES_POLL_SECONDS = 1.0
+
+
+def _case_states_once(key, compute):
+    """`compute()`'s answer, run by at most one request per `key` at a time.
+
+    Failures raise and are not kept, so the next reader tries again. A cache that is down
+    (`IGNORE_EXCEPTIONS` makes it refuse quietly) must not leave anyone waiting on a fill
+    that does not exist, so a refused claim with no fill to wait for computes directly.
+    """
+    fill_key = f"{key}:fill"
+    deadline = time.monotonic() + CASE_STATES_WAIT_SECONDS
+    nobody_filling = False
+    while True:
+        answer = cache.get(key)
+        if answer is not None:
+            return answer
+        if cache.add(fill_key, 1, CASE_STATES_FILL_SECONDS):
+            try:
+                answer = compute()
+                cache.set(key, answer, CASE_STATES_ANSWER_SECONDS)
+                return answer
+            finally:
+                cache.delete(fill_key)
+        if cache.get(fill_key) is None:
+            # Once is a fill that just ended. Twice running, nothing can hold a claim.
+            if nobody_filling:
+                return compute()
+            nobody_filling = True
+            continue
+        nobody_filling = False
+        if time.monotonic() >= deadline:
+            return {"case_state": None, "reason": "busy"}
+        time.sleep(CASE_STATES_POLL_SECONDS)
+
+
 @login_required
 @require_GET
 def case_states_api(request, definition_id):
@@ -3041,6 +3087,27 @@ def case_states_api(request, definition_id):
     -- ``case_state`` the most urgent one the case is in, or null."""
     from connect_labs.semantic import case_states
     from connect_labs.workflow.snapshot_builders import case_context, case_rows
+
+    def read_answer(definition, opportunity_id, case_id, token):
+        r = case_context(definition, opportunity_id=opportunity_id, access_token=token, request=request)
+        catalog = case_states.catalog(r["props_doc"])
+        if not catalog:
+            return {"case_state": None, "reason": "no_case_states"}
+        rows = case_rows(r, opportunity_id=opportunity_id, entity_ids=[case_id])
+        if not rows:
+            return {"case_state": None, "reason": "no_such_case"}
+        row = rows[0]
+        held = case_states.true_case_states(row, catalog)
+        if not held:
+            return {"case_state": None, "case_states": [], "username": row.get("username")}
+        state = held[0]
+        return {
+            "case_state": state["name"],
+            "label": state["label"],
+            "facts": case_states.facts(state, row),
+            "case_states": [s["name"] for s in held],
+            "username": row.get("username"),
+        }
 
     opportunity_id = _coerce_int(request.GET.get("rows_opportunity_id"))
     case_id = (request.GET.get("case_id") or "").strip()
@@ -3055,27 +3122,11 @@ def case_states_api(request, definition_id):
         if opportunity_id not in spanned:
             return JsonResponse({"error": "this workflow does not span that opportunity"}, status=403)
         token = (request.session.get("labs_oauth", {}) or {}).get("access_token")
-        r = case_context(definition, opportunity_id=opportunity_id, access_token=token, request=request)
-        catalog = case_states.catalog(r["props_doc"])
-        if not catalog:
-            return JsonResponse({"case_state": None, "reason": "no_case_states"})
-        rows = case_rows(r, opportunity_id=opportunity_id, entity_ids=[case_id])
-        if not rows:
-            return JsonResponse({"case_state": None, "reason": "no_such_case"})
-        row = rows[0]
-        held = case_states.true_case_states(row, catalog)
-        if not held:
-            return JsonResponse({"case_state": None, "case_states": [], "username": row.get("username")})
-        state = held[0]
-        return JsonResponse(
-            {
-                "case_state": state["name"],
-                "label": state["label"],
-                "facts": case_states.facts(state, row),
-                "case_states": [s["name"] for s in held],
-                "username": row.get("username"),
-            }
-        )
+        # Per viewer, because the read resolves the workflow's pipelines as the person.
+        # The id is hashed because it comes straight from the query string.
+        parts = (request.user.username, definition_id, opportunity_id, case_id, dj_timezone.now().date())
+        key = "case-states:" + hashlib.sha256(repr(parts).encode()).hexdigest()
+        return JsonResponse(_case_states_once(key, lambda: read_answer(definition, opportunity_id, case_id, token)))
     except Exception:
         logger.exception("Failed to read the case states for definition %s", definition_id)
         return JsonResponse({"error": "An internal error occurred"}, status=500)
