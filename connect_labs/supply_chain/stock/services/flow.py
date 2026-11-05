@@ -229,9 +229,26 @@ def flow(program_id: int, item, *, on_date: date | None = None, point_ids=None) 
         "links": links,
         "adjusted": _number(adjusted),
         "left_out": {u: _number(v) for u, v in left_out.items()},
-        "account": account(links, points, adjusted, mine=point_ids),
-        "household": household(program_id, item, on_date, point_ids=point_ids),
+        "account": (acct := account(links, points, adjusted, mine=point_ids)),
+        "household": _with_records(household(program_id, item, on_date, point_ids=point_ids), acct),
+        "flw_stock": _flw_stock(program_id, item, on_date, point_ids),
     }
+
+
+def _flw_stock(program_id, item, on_date, point_ids=None) -> dict:
+    """With the field workers: the official figure and both sides (official_stock.flw_totals), as numbers."""
+    from connect_labs.supply_chain.stock.services import official_stock
+
+    t = official_stock.flw_totals(program_id, item, on_date, point_ids=point_ids)
+    return {k: (_number(v) if isinstance(v, Decimal) else v) for k, v in t.items()}
+
+
+def _with_records(home: dict | None, acct: dict) -> dict | None:
+    """The household figures with the stock records' 'given out' beside them, so one line can say why they differ."""
+    if home is None:
+        return None
+    given = next((st["amount"] for st in acct["stages"] if st["key"] == "given"), None)
+    return {**home, "given_in_records": given}
 
 
 # The stages of the account, in the order stock travels. A label is the whole
@@ -346,6 +363,11 @@ def _first_kept(answers, paths):
     return None
 
 
+def _reason_tokens(raw) -> list[str]:
+    """The reasons a multi-select answer holds: CommCare stores one answer as space-separated choice names."""
+    return [token for token in str(raw).split() if token] if raw is not None else []
+
+
 def household(program_id: int, item, on_date: date, point_ids=None) -> dict | None:
     """What the delivery form says happened to the sachets, totalled; None when no rule asks it.
 
@@ -353,6 +375,14 @@ def household(program_id: int, item, on_date: date, point_ids=None) -> dict | No
     programme whose app does not ask a question simply has no figure for it (None, shown as "not
     recorded"), never a zero or a guess. A blank or non-numeric answer is no answer. A rejected or
     duplicate visit says nothing. `visits` is how many visits answered at least one.
+
+    The reasons answer is a multi-select, so it is split into one reason per choice. A caregiver who
+    answers "none" has told us nothing was misused: that is a RECORDED ZERO for the misused line at that
+    visit (when the number itself was left blank), counted in `no_misuse_visits`, not a reason.
+
+    The lines add up: eaten + leftover + missing + misused is what could be checked, and the rest of
+    what was dispensed is each child's latest ration, which cannot be checked until their next visit
+    (`not_yet_checked`, the manager dashboard's reading).
     """
     from connect_labs.supply_chain.models import DispensingRule, WorkerVisit
     from connect_labs.supply_chain.stock.services.dispensing import household_paths, read_number
@@ -367,7 +397,9 @@ def household(program_id: int, item, on_date: date, point_ids=None) -> dict | No
         return None
     totals = {key: ZERO for key in HOUSEHOLD_TOTALS}
     answered = {key: False for key in HOUSEHOLD_TOTALS}
+    answered_visits = {key: 0 for key in HOUSEHOLD_TOTALS}
     reasons: dict[str, int] = {}
+    no_misuse = 0
     visits = 0
     for rule, paths in rules:
         rows = (
@@ -381,33 +413,88 @@ def household(program_id: int, item, on_date: date, point_ids=None) -> dict | No
         for answers in rows:
             answers = answers or {}
             got = False
+            seen_here = set()
             for key in totals:
                 amount = read_number(_first_kept(answers, paths.get(f"{key}_paths")))
                 if amount is not None:
                     totals[key] += amount
                     answered[key] = got = True
-            reason = _first_kept(answers, paths.get("reason_paths"))
-            if reason is not None and str(reason).strip():
-                text = str(reason).strip()
-                reasons[text] = reasons.get(text, 0) + 1
+                    answered_visits[key] += 1
+                    seen_here.add(key)
+            tokens = _reason_tokens(_first_kept(answers, paths.get("reason_paths")))
+            if tokens:
                 got = True
+                real = [t for t in tokens if t.lower() != "none"]
+                if not real:
+                    # "None" is an answer: nothing misused. Record the zero if the number was left blank.
+                    no_misuse += 1
+                    if "misused" not in seen_here:
+                        answered["misused"] = True
+                        answered_visits["misused"] += 1
+                for token in dict.fromkeys(real):
+                    label = token.replace("_", " ")
+                    reasons[label] = reasons.get(label, 0) + 1
             visits += got
+    amounts = {key: (totals[key] if answered[key] else None) for key in totals}
+    checked_keys = ("returned", "leftover", "missing", "misused")
+    checked = sum((totals[k] for k in checked_keys if answered[k]), ZERO)
+    dispensed = amounts["dispensed"]
+    amounts["not_yet_checked"] = max(ZERO, dispensed - checked) if dispensed is not None else None
+    out_rows = []
+    for key, label, caption in HOUSEHOLD_LINES:
+        amount = amounts[key]
+        out_rows.append(
+            {
+                "key": key,
+                "label": label,
+                "caption": caption,
+                "amount": _number(amount) if amount is not None else None,
+                "visits": answered_visits.get(key),
+            }
+        )
     return {
         "visits": visits,
-        **{key: (_number(totals[key]) if answered[key] else None) for key in totals},
-        "rows": [
-            {"key": key, "label": label, "caption": caption, "amount": _number(totals[key]) if answered[key] else None}
-            for key, label, caption in HOUSEHOLD_LINES
-        ],
+        **{key: (_number(v) if v is not None else None) for key, v in amounts.items()},
+        "checked": _number(checked),
+        "rows": out_rows,
+        "no_misuse_visits": no_misuse,
         "reasons": [{"reason": r, "visits": n} for r, n in sorted(reasons.items(), key=lambda kv: (-kv[1], kv[0]))],
     }
 
 
-# The household streams, each its own line; a stream's path list in the rule is `<name>_paths`.
+def appetite_by_worker(program_id: int, item, anchor: date, weeks: int = 3) -> dict[int, Decimal]:
+    """{supply point id: sachets a week} used in appetite tests at the worker's visits, over the last `weeks` weeks.
+
+    Read at the same household paths Where it went reads (`household_paths`, `appetite_paths`), so the Plan
+    and Where it went cannot disagree about them. A worker with none recorded is simply absent.
+    """
+    from connect_labs.supply_chain.models import DispensingRule, WorkerVisit
+    from connect_labs.supply_chain.stock.services.dispensing import household_paths, read_number
+    from connect_labs.supply_chain.stock.services.visit_reader import REVERSING_STATUSES
+
+    since = anchor - timedelta(days=7 * weeks - 1)
+    out: dict[int, Decimal] = {}
+    for rule in DispensingRule.objects.filter(program_id=program_id, item=item, status="active"):
+        paths = (household_paths(rule) or {}).get("appetite_paths")
+        if not paths:
+            continue
+        rows = (
+            WorkerVisit.objects.filter(program_id=program_id, opportunity_id=rule.opportunity_id)
+            .filter(visit_date__gte=since, visit_date__lte=anchor)
+            .exclude(status__in=REVERSING_STATUSES)
+            .values_list("supply_point_id", "answers")
+        )
+        for point_id, answers in rows:
+            amount = read_number(_first_kept(answers or {}, paths))
+            if amount is not None and point_id is not None:
+                out[point_id] = out.get(point_id, ZERO) + amount
+    return {point: total / weeks for point, total in out.items()}
+
+
+# The household streams a rule's `<name>_paths` read. `not_yet_checked` is worked out, not read.
 HOUSEHOLD_TOTALS = ("dispensed", "appetite", "returned", "leftover", "missing", "misused")
 HOUSEHOLD_LINES = (
-    ("dispensed", "Dispensed to children", "Sachets the delivery form says were handed over at the visit."),
-    ("appetite", "Used in appetite tests", "Sachets opened to test a child's appetite, deducted from stock."),
+    ("dispensed", "Dispensed to children", "Sachets the delivery form says were handed over at the visits."),
     (
         "returned",
         "Eaten (empty sachets returned)",
@@ -416,6 +503,16 @@ HOUSEHOLD_LINES = (
     ("leftover", "Leftover at the home", "Sachets still unopened at the home when the worker came back."),
     ("missing", "Missing", "Sachets the caregiver could not account for. A loss, counted on its own."),
     ("misused", "Misused", "Sachets used for something other than the child's treatment. A loss, counted on its own."),
+    (
+        "not_yet_checked",
+        "Given at the latest visits, not yet checked",
+        "Each child's latest ration cannot be checked until the next visit: dispensed less the four lines above.",
+    ),
+    (
+        "appetite",
+        "Used in appetite tests",
+        "Sachets opened to test a child's appetite, taken off stock. Not part of the lines above.",
+    ),
 )
 
 

@@ -560,6 +560,23 @@ def _order_rows(program_id, today, until, own_org_id, *, only=None, keep_done=Fa
     return rows
 
 
+def order_status_labels(program_id, contract_ids, *, today=None, own_org_id=None) -> dict[int, str]:
+    """{contract id: the order's status in words}: the ONE place an order's status label is made.
+
+    "In transit · expected 20 Nov", "Received", "Paid", "Ordered". The Overview's orders, the award page
+    and the Plan's store view all read this, so one order cannot be "in transit" on one page,
+    "confirmed" on another and "none expected" on a third (Sophie Feintuch, round 2, Riverbend's order).
+    Contract.status ("confirmed") says the order was placed, not where the goods are.
+    """
+    from datetime import date
+
+    ids = [int(i) for i in contract_ids if i is not None]
+    if not ids:
+        return {}
+    rows = _order_rows(program_id, today or date.today(), None, own_org_id, only=ids, keep_done=True)
+    return {row.contract_id: row.label for row in rows if row.contract_id is not None}
+
+
 def _order_step(contract, shipments, received_shipments, received, paid, *, held=False) -> str:
     """The order page's own step name for where the order is: "At customs — held", "Received", "Paid".
 

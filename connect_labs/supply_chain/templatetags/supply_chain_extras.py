@@ -10,6 +10,7 @@ from connect_labs.supply_chain.values import (
     _as_decimal,
     day_text,
     is_counted_unit,
+    iso_day_text,
     money_digits,
     possessive,
     quantity_digits,
@@ -337,6 +338,12 @@ def days_ago_and_day(value, now):
     day = timezone.localdate(value)
     short = f"{day.day} {day.strftime('%b')}"
     return relative if relative == (day_text(day) or "") else f"{relative} · {short}"
+
+
+@register.filter
+def iso_day(value):
+    """ "2026-10-30" (or a date) as "30 Oct 2026", the one date format."""
+    return iso_day_text(value)
 
 
 @register.filter

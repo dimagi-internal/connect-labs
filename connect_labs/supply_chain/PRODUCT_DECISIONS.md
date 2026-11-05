@@ -213,3 +213,12 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   manager; `plan/programme/`: running organisation) over one operation, `stock_plan_view`, so a figure
   cannot differ between them. Every number says where it came from.
 - **Household leakage and appetite tests are separate labelled streams on Where it went**, read at CBI's form paths (`CBI_HOUSEHOLD_PATHS`) and shown "not recorded" when the form gave no answer.
+
+## Round 2: figures that agree (Sophie Feintuch, 5 Nov 2026)
+
+- **Official stock figure for a field worker** (`stock/services/official_stock.official_flw_stock`): the phone balance until the worker's partner has at least one confirmed handout run in the ledger, then Supply's records. Both are always shown and a difference is flagged. The Forecast plans from it, so the Plan, Stock review and Where it went agree.
+- **One children total** (`forecast._children`, `plan.service.children_summary`): seen = enrolled since the visits began + already in treatment before; in treatment is who is open now. "Children seen twice" (the dose check) is not "in treatment".
+- **Household lines add up**: eaten + leftover + missing + misused + "given at the latest visits, not yet checked" = dispensed. "None" to the misuse question is a recorded zero; the reasons answer is a multi-select and is split.
+- **Appetite tests** are in the Plan's what-to-issue (a worker's weekly average over 3 weeks, read at the same household paths as Where it went).
+- **One order status label** (`standing.order_status_labels`): the Overview, the award page and the Plan's store view read it.
+- **Dates** run "30 Oct 2026", and a run-out date behind today reads "may already have run out", with "Based on visits up to ..." beside the figures.

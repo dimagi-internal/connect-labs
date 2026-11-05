@@ -46,3 +46,17 @@ def test_stock_review_course_tile_uses_the_forecasts_expected_course_and_names_i
     # The setting is only the last resort, and the tile never divides by it when the forecast has a course.
     assert render.index("forecastSize > 0") < render.index("Number(cfg.course_size) > 0")
     assert "totals.on_hand / courseSize" in render and "courseNote" in render
+
+
+def test_stock_review_and_forecast_say_which_figure_is_official_and_what_day_they_run_to():
+    from connect_labs.workflow.templates import supply_stock_forecast, supply_stock_review
+
+    review = supply_stock_review.TEMPLATE["render_code"]
+    forecast = supply_stock_forecast.TEMPLATE["render_code"]
+    # The official figure (phone until the partner's handovers are recorded) is the forecast's, never recomputed.
+    assert "official_stock" in review and "Official figure" in review
+    assert "official_stock" in forecast and "phone balance" in forecast
+    # The day the visits stop, and a date behind us flagged; one date format with the year.
+    assert "Based on visits up to" in review and "based on visits up to" in forecast
+    assert "may already have run out" in forecast
+    assert "'en-GB'" in review and "'en-GB'" in forecast
