@@ -1023,7 +1023,11 @@ def comparison_grid(
         ("pack", "Pack", "as quoted"),
         ("term", "Delivery term", "as quoted · who imports"),
         ("freight", "Freight", "quote or term"),
-        ("clearing", "Clearing and handling at the port", "our estimate · the agent who gets the goods through customs"),
+        (
+            "clearing",
+            "Clearing and handling at the port",
+            "our estimate · the agent who gets the goods through customs",
+        ),
         ("duty", "Import duty", "tender terms"),
         ("fx", "Exchange rate to USD", "recorded by us · turns a quote in another currency into dollars"),
     ]

@@ -309,7 +309,9 @@ SPLIT_FIELDS = (
 
 COURSE_BASIS_WORDS = {
     "given": "the figure you gave",
-    "pack_per_child": "one carton a child, this programme's default (change it here, or in the programme's Supply settings)",
+    "pack_per_child": (
+        "one carton a child, this programme's default (change it here, or in the programme's Supply settings)"
+    ),
     "protocol": "the product's protocol (no forecast yet from children who have finished)",
     "forecast": "the forecast, from children who have finished their course",
 }

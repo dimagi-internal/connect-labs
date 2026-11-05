@@ -70,7 +70,11 @@ def test_a_handover_goes_to_the_partners_lead_with_the_receiver_copied(da, monke
     monkeypatch.setattr(
         selection,
         "_partner_lead",
-        lambda tender, split: {"name": "Ngozi Eze", "email": "ngozi@northstar.example", "copy_to": ["ops@northstar.example"]},
+        lambda tender, split: {
+            "name": "Ngozi Eze",
+            "email": "ngozi@northstar.example",
+            "copy_to": ["ops@northstar.example"],
+        },
     )
     handover = next(d for d in _drafts(da, world) if d["kind"] == "handover")
     assert handover["to"] == "ngozi@northstar.example"
@@ -101,8 +105,9 @@ def test_a_handover_without_a_recorded_shipment_says_the_date_is_only_the_quoted
     from connect_labs.supply_chain.models import Quote
 
     Quote.objects.filter(pk=world["quote"]["id"]).update(lead_time_days=30)
-    from connect_labs.supply_chain.models import Award
     from datetime import date
+
+    from connect_labs.supply_chain.models import Award
 
     Award.objects.filter(pk=world["award"]["id"]).update(decided_on=date(2026, 10, 1))
     handover = next(d for d in _drafts(da, world) if d["kind"] == "handover")

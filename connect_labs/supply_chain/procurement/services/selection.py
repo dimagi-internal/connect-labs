@@ -105,13 +105,14 @@ MIN_SHELF_LIFE_MONTHS = 18
 
 
 def _copied_phrase(splits, reached) -> str:
-    """" (they are copied here)" only for partners with an address in play; the rest are named, not claimed."""
+    """ " (they are copied here)" only for partners with an address in play; the rest are named, not claimed."""
     copied = [s["org_name"] for s in splits if reached[id(s)]]
     if len(copied) == len(splits):
         return " (they are copied here)"
     if not copied:
         return " (we will introduce you to each by email)"
-    return f" ({', '.join(copied)} {'is' if len(copied) == 1 else 'are'} copied here; we will introduce you to the others)"
+    verb = "is" if len(copied) == 1 else "are"
+    return f" ({', '.join(copied)} {verb} copied here; we will introduce you to the others)"
 
 
 def _partner_line(tender, split) -> str:
@@ -196,7 +197,8 @@ def render_handover(award, tender, quote, supplier, commodity, split, *, sender:
     lines = [
         f"Dear {who},",
         "",
-        f"{supplier.name} has been selected to supply {commodity.name}. {possessive(split['org_name'])} share is below.",
+        f"{supplier.name} has been selected to supply {commodity.name}. "
+        f"{possessive(split['org_name'])} share is below.",
         "",
         f"Supplier: {supplier.name}" + (f"; main contact {contact}" if contact else ""),
         *([f"Supplier phone: {phone}"] if phone else []),
@@ -210,7 +212,13 @@ def render_handover(award, tender, quote, supplier, commodity, split, *, sender:
         + (_place(tender, split) or "to be confirmed")
         + (f"; receiver {split['receiver_name']}" if split.get("receiver_name") else ""),
         *(
-            [f"Expected: {day_text(expected)}" if firm else f"Expected: about {day_text(expected)} (the quoted lead time)"]
+            [
+                (
+                    f"Expected: {day_text(expected)}"
+                    if firm
+                    else f"Expected: about {day_text(expected)} (the quoted lead time)"
+                )
+            ]
             if expected
             else []
         ),

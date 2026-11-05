@@ -43,7 +43,13 @@ def test_the_qualification_warning_is_a_line_pointing_back_not_the_whole_banner(
     op(
         da,
         "commodity_upsert",
-        data={"slug": "rutf", "name": "RUTF", "base_unit": "sachet", "pack_unit": "carton", "category": "therapeutic_food"},
+        data={
+            "slug": "rutf",
+            "name": "RUTF",
+            "base_unit": "sachet",
+            "pack_unit": "carton",
+            "category": "therapeutic_food",
+        },
     )
     world = walk.build(da, monkeypatch, ordered=())
     body = _page(client_in_programme, world)

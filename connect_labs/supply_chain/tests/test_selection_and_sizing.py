@@ -217,7 +217,10 @@ class TestPurchaseSizing:
         from connect_labs.supply_chain.config import SUPPLY
 
         ScopeConfig.objects.create(
-            scope_type="program", scope_key=str(da.program_id), namespace=SUPPLY.key, data={"purchase_packs_per_child": 0.5}
+            scope_type="program",
+            scope_key=str(da.program_id),
+            namespace=SUPPLY.key,
+            data={"purchase_packs_per_child": 0.5},
         )
         got = op(
             da,
@@ -231,7 +234,12 @@ class TestPurchaseSizing:
         op(
             da,
             "commodity_upsert",
-            data={"slug": "zinc2", "name": "Zinc 2", "base_unit": "tablet", "course_definition": {"base_units_per_course": 10}},
+            data={
+                "slug": "zinc2",
+                "name": "Zinc 2",
+                "base_unit": "tablet",
+                "course_definition": {"base_units_per_course": 10},
+            },
         )
         got = op(
             da,

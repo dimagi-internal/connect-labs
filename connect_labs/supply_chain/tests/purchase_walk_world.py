@@ -35,7 +35,9 @@ def build(da, monkeypatch, *, ordered=("north", "river"), holds=3, contacts=True
         "supplier_create",
         data={
             "name": "Dabs Nutritional Products Ltd",
-            "contacts": [{"name": "Jane Okoro", "email": "jane@dabs.example", "phone": "+234 800 000 0000", "use": "to"}],
+            "contacts": [
+                {"name": "Jane Okoro", "email": "jane@dabs.example", "phone": "+234 800 000 0000", "use": "to"}
+            ],
         },
     )
     ours = op(da, "org_upsert", data={"slug": "us", "name": "The programme"})
