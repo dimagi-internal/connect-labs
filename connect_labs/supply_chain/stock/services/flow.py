@@ -28,7 +28,7 @@ Facts only: nothing here ranks a worker or judges a store (September design
 from datetime import date, timedelta
 from decimal import Decimal
 
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.db.models.functions import TruncWeek
 from django.urls import reverse
 
@@ -41,13 +41,23 @@ ZERO = Decimal(0)
 
 GIVEN = "given"
 LOST = "lost"
+TAKEN = "taken"
+EXPIRED = "expired"
+DAMAGED = "damaged"
 ELSEWHERE = "elsewhere"
 UNLINKED = "unlinked"
 SINKS = {
     GIVEN: "Given out at visits",
-    LOST: "Lost or expired",
+    LOST: "Lost or missing",
+    TAKEN: "Taken",
+    EXPIRED: "Expired",
+    DAMAGED: "Damaged",
     ELSEWHERE: "Sent outside the network",
 }
+# What a stock issue of each kind is drawn as when its stock leaves the shelf. Taken, expired and damaged
+# are different problems (a diversion, a date, a breakage), so each is its own stream; the rest of the
+# losses (missing, other, a loss recorded with no issue) stay "lost or missing".
+ISSUE_STREAM = {"taken": TAKEN, "expired": EXPIRED, "damaged": DAMAGED}
 # Most weeks a page draws: a programme older than this starts its slider here.
 MAX_WEEKS = 104
 
@@ -66,7 +76,11 @@ def _route(row) -> tuple[str, str, int] | None:
     if frm is not None:
         if kind == "consumption":
             return f"p{frm}", GIVEN, 1
-        return f"p{frm}", LOST if kind in ("loss", "expiry") else ELSEWHERE, 1
+        if kind == "expiry":
+            return f"p{frm}", EXPIRED, 1
+        if kind == "loss":
+            return f"p{frm}", ISSUE_STREAM.get(row.get("stock_issue__kind"), LOST), 1
+        return f"p{frm}", ELSEWHERE, 1
     if to is not None:
         if kind == "consumption":
             # A reversal: a rejected visit's stock put back in the bag.
@@ -94,14 +108,18 @@ def _contract_label(contract) -> str:
     return f"Order from {supplier}" + (f" ({contract.reference})" if contract.reference else "")
 
 
-def flow(program_id: int, item, *, on_date: date | None = None) -> dict:  # noqa: C901
+def flow(program_id: int, item, *, on_date: date | None = None, point_ids=None) -> dict:  # noqa: C901
+    """`point_ids` narrows the flow to the movements that start or end at those places (one partner's)."""
     on_date = on_date or date.today()
     unit = unit_of(item)
+    movements = Movement.objects.filter(program_id=program_id, item=item, occurred_on__lte=on_date)
+    if point_ids is not None:
+        movements = movements.filter(Q(from_supply_point_id__in=point_ids) | Q(to_supply_point_id__in=point_ids))
     rows = list(
-        Movement.objects.filter(program_id=program_id, item=item, occurred_on__lte=on_date)
-        .annotate(week=TruncWeek("occurred_on"))
+        movements.annotate(week=TruncWeek("occurred_on"))
         .values(
             "kind",
+            "stock_issue__kind",
             "from_supply_point_id",
             "to_supply_point_id",
             "quantity_unit",
@@ -211,8 +229,8 @@ def flow(program_id: int, item, *, on_date: date | None = None) -> dict:  # noqa
         "links": links,
         "adjusted": _number(adjusted),
         "left_out": {u: _number(v) for u, v in left_out.items()},
-        "account": account(links, points, adjusted),
-        "household": household(program_id, item, on_date),
+        "account": account(links, points, adjusted, mine=point_ids),
+        "household": household(program_id, item, on_date, point_ids=point_ids),
     }
 
 
@@ -223,7 +241,10 @@ ACCOUNT_STAGES = (
     ("phc", "At PHCs", "Stock held at health facilities, waiting for field workers to collect it."),
     ("flw", "With FLWs", "Stock held by field workers, not yet given to a child."),
     ("given", "Given out to children", "What field workers' visits recorded as given out."),
-    ("lost", "Lost or missing", "Recorded losses and expiries."),
+    ("lost", "Lost or missing", "Stock recorded as missing, or lost with no reason given."),
+    ("taken", "Taken", "Stock someone took: diversions, recorded as stock issues."),
+    ("expired", "Expired", "Stock that passed its expiry date and came off the shelf."),
+    ("damaged", "Damaged", "Stock recorded as damaged."),
     ("elsewhere", "Sent outside the network", "Stock passed to someone outside this network."),
     ("shortfall", "Count shortfalls", "Net corrections made when a count did not match the records."),
 )
@@ -236,12 +257,15 @@ STAGE_COLORS = {
     "flw": "#06b6d4",
     "given": "#10b981",
     "lost": "#ef4444",
+    "taken": "#b91c1c",
+    "expired": "#f97316",
+    "damaged": "#a16207",
     "elsewhere": "#f59e0b",
     "shortfall": "#9ca3af",
 }
 
 
-def account(links, points, adjusted) -> dict:
+def account(links, points, adjusted, mine=None) -> dict:
     """The whole account in words: what arrived, where it is now and where it went, with shares.
 
     Read from the last week of every route, so it is the same total the
@@ -250,11 +274,13 @@ def account(links, points, adjusted) -> dict:
     """
     kind_of = {f"p{p.pk}": p.kind for p in points}
     held: dict[str, Decimal] = {}
-    arrived = given = lost = elsewhere = ZERO
+    arrived = given = lost = elsewhere = taken = expired = damaged = ZERO
+    # With `mine`, only the places named count as where stock is; stock another partner sent in is an arrival.
+    inside = {f"p{pk}" for pk in mine} if mine is not None else None
     for link in links:
         final = Decimal(str(link["series"][-1]))
         src, dst = link["source"], link["target"]
-        if src.startswith("c") or src == UNLINKED:
+        if src.startswith("c") or src == UNLINKED or (inside is not None and src in kind_of and src not in inside):
             arrived += final
         elif src in kind_of:
             held[src] = held.get(src, ZERO) - final
@@ -262,15 +288,32 @@ def account(links, points, adjusted) -> dict:
             given += final
         elif dst == LOST:
             lost += final
+        elif dst == TAKEN:
+            taken += final
+        elif dst == EXPIRED:
+            expired += final
+        elif dst == DAMAGED:
+            damaged += final
         elif dst == ELSEWHERE:
             elsewhere += final
-        elif dst in kind_of:
+        elif dst in kind_of and (inside is None or dst in inside):
             held[dst] = held.get(dst, ZERO) + final
     stage = {"warehouse": ZERO, "phc": ZERO, "flw": ZERO}
     for key, amount in held.items():
+        if inside is not None and key not in inside:
+            continue
         kind = kind_of[key]
         stage["flw" if kind == "user_held" else "phc" if kind == "facility" else "warehouse"] += amount
-    amounts = {**stage, "given": given, "lost": lost, "elsewhere": elsewhere, "shortfall": -adjusted}
+    amounts = {
+        **stage,
+        "given": given,
+        "lost": lost,
+        "taken": taken,
+        "expired": expired,
+        "damaged": damaged,
+        "elsewhere": elsewhere,
+        "shortfall": -adjusted,
+    }
 
     def share(amount):
         return int((amount / arrived * 100).quantize(Decimal(1))) if arrived > 0 else None
@@ -303,7 +346,7 @@ def _first_kept(answers, paths):
     return None
 
 
-def household(program_id: int, item, on_date: date) -> dict | None:
+def household(program_id: int, item, on_date: date, point_ids=None) -> dict | None:
     """What the delivery form says happened to the sachets, totalled; None when no rule asks it.
 
     Read from the answers each visit kept at the paths the rule is read at (`household_paths`), so a
@@ -333,6 +376,8 @@ def household(program_id: int, item, on_date: date) -> dict | None:
             .exclude(status__in=REVERSING_STATUSES)
             .values_list("answers", flat=True)
         )
+        if point_ids is not None:
+            rows = rows.filter(supply_point_id__in=point_ids)
         for answers in rows:
             answers = answers or {}
             got = False

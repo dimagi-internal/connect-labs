@@ -237,9 +237,17 @@ class StockFlowView(OperationBase):
         item = chosen_item(self.request, items)
         context.update(items=items, item=item)
         if item is not None:
-            flow = self.op("stock_flow", item_id=item["id"], **as_of_payload(self.request))
+            from connect_labs.supply_chain.partners.scope import partner_param, switcher
             from connect_labs.supply_chain.templatetags.supply_chain_extras import unit_plural
 
+            chosen = partner_param(self.request)
+            flow = self.op(
+                "stock_flow",
+                item_id=item["id"],
+                **as_of_payload(self.request),
+                **({"org_id": chosen} if chosen else {}),
+            )
+            context.update(switcher(self.request, _access(self.request).program_id))
             flow["unit_plural"] = unit_plural(flow["unit"])
             context["flow"] = flow
         return context
