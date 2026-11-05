@@ -141,6 +141,24 @@ firm's behalf).
      auto-detection, with a warning.
    - `Connect Programme`: Connect's `delivery_type` for the round, canonicalised
      by `marketplace/programs.canonical`.
+   - `Round` (optional column): one row is one *form*. Rows that put the same
+     value in `Round` are the forms of ONE round, published at
+     `/labs/marketplace/rounds/<Round>/` — e.g. an English and a French form
+     for one call. Each row keeps its own `Slug`, `Form Link`, `Response Sheet
+     Link`, `Response Tab` and `Column Map`; the round-level columns (`Status`,
+     dates, `Connect Programme`, `Notes`) come from the group's first row, and
+     a later row that disagrees is reported. The round's title is the rows'
+     shared name prefix ("Community Health RFI 2026 — English" / "— French" →
+     "Community Health RFI 2026", forms "English" and "French"). Each submission
+     records its form (`SolicitationResponse.source_form`, the row's `Slug`),
+     and a human verdict on the `EOI Response Mapping` tab names the form's
+     `Slug` in its `Round Slug` column. Blank `Round` = the row is a round of
+     its own under its `Slug`, as before. A `Round` value that is itself a form
+     of another round is refused.
+   - Grouping rows that were already imported as rounds of their own folds
+     them in: their submissions move to the new round and the old rounds are
+     deleted. A form-round that already has criteria, a summary or scored
+     versions is not merged by machine — the import reports it and leaves it.
 2. Share the response sheet with
    `connect-labs-sa@connect-labs.iam.gserviceaccount.com` (Viewer).
 3. Wait for the 04:20 beat run, or run it by hand:
@@ -148,7 +166,9 @@ firm's behalf).
    `make manage CMD="marketplace_import --eoi"` to ingest.
 4. Read the result. In the command output, a readable round prints
    `<slug>: N submissions, M matched, K unmatched`. On the sheet, `Labs Access`
-   should read `OK — readable` and `Next Step` should be empty. Unmatched submissions
+   should read `OK — readable` and `Next Step` should be empty. Each form's row gets
+   its own verdict; the round ingests every readable form even while another is
+   unreadable. Unmatched submissions
    wait for a person's verdict on the `EOI Response Mapping` tab (`/labs/marketplace/unmatched/`).
 5. Set the criteria (below) before reviewing.
 

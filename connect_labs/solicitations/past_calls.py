@@ -50,13 +50,22 @@ def queryset():
     return Solicitation.objects.directory_rounds().exclude(_still_open())
 
 
-def form_questions(call) -> list[dict]:
+def form_questions(call, response=None) -> list[dict]:
     """The round's questions as its form asked them.
 
     The response sheet's header is the question list, and Google Forms puts a
     Timestamp column at the front that nobody was asked to fill in.
+
+    A round that ran several forms (an English and a French one) holds every
+    form's questions. Given a ``response``, only the questions its own form
+    asked are returned, so an English submission is not shown the French
+    questions as blanks.
     """
-    return [q for q in (call.questions or []) if q.get("text", "").strip().lower() != "timestamp"]
+    questions = [q for q in (call.questions or []) if q.get("text", "").strip().lower() != "timestamp"]
+    if response is not None and len(call.directory_forms) > 1:
+        answered = response.responses or {}
+        questions = [q for q in questions if q.get("id") in answered]
+    return questions
 
 
 def ran_on(call) -> datetime.date | None:

@@ -23,6 +23,7 @@ from connect_labs.solicitations.local_models import (
     ACCESS_DENIED,
     ACCESS_MISSING,
     ACCESS_OK,
+    ACCESS_UNKNOWN,
     Solicitation,
     SolicitationResponse,
 )
@@ -66,6 +67,10 @@ def upsert_rounds(rounds) -> dict:
     # owns them: that is what lets its members read the responses.
     owner = dimagi_org()
     taken = set(Solicitation.objects.calls().filter(slug__in=[r.slug for r in rounds]).values_list("slug", flat=True))
+    existing_forms = dict(
+        Solicitation.objects.directory_rounds().filter(slug__in=[r.slug for r in rounds]).values_list("slug", "forms")
+    )
+    stats["folded"], stats["fold_refused"] = [], []
     for row in rounds:
         if row.slug in taken:
             stats["collisions"].append(row.slug)
@@ -80,15 +85,60 @@ def upsert_rounds(rounds) -> dict:
             "response_spreadsheet_id": row.response_spreadsheet_id,
             "response_tab": row.response_tab,
             "column_map": row.column_map,
+            "forms": _forms_json(row, existing_forms.get(row.slug)),
             "notes": row.notes,
             "delivery_type": row.delivery_type,
             "owner_org": owner,
         }
         for name in DATE_FIELDS:
             defaults[name] = _date(getattr(row, name))
-        Solicitation.objects.directory_rounds().update_or_create(slug=row.slug, defaults=defaults)
+        round_, _ = Solicitation.objects.directory_rounds().update_or_create(slug=row.slug, defaults=defaults)
         stats["rounds"] += 1
+        _fold_forms_imported_as_rounds(round_, row, stats)
     return stats
+
+
+def _forms_json(row, previous) -> list[dict]:
+    """The round's forms as stored, keeping each one's last verified access
+    state — that is labs' finding, not the sheet's, and a re-import of the
+    sheet must not wipe it."""
+    states = {f.get("key"): f.get("sa_access_state") for f in (previous or [])}
+    forms = getattr(row, "forms", None) or []
+    out = []
+    for form in forms:
+        data = form.as_json()
+        data["sa_access_state"] = states.get(form.key) or ACCESS_UNKNOWN
+        out.append(data)
+    return out
+
+
+def _fold_forms_imported_as_rounds(round_, row, stats) -> None:
+    """A form that was imported as a round of its own before it was grouped.
+
+    Grouping two rows under one Round is the sheet saying they are one call,
+    so the earlier one-form round has to stop being listed as a call of its
+    own. Its submissions move across, keyed by its slug, which is also the key
+    its human verdicts on the EOI Response Mapping tab already use. A round
+    that carries reviewing work of its own — criteria, a summary, scored
+    versions — is not merged by a machine; it is reported and left alone.
+    """
+    for form in getattr(row, "forms", None) or []:
+        if form.key == round_.slug:
+            continue
+        old = Solicitation.objects.directory_rounds().filter(slug=form.key).first()
+        if old is None:
+            continue
+        if old.evaluation_criteria or old.summary_url or old.rubric_versions.exists():
+            stats["fold_refused"].append(form.key)
+            continue
+        with transaction.atomic():
+            old.responses.filter(source_row__isnull=False).update(solicitation=round_, source_form=form.key)
+            if old.responses.exists():
+                stats["fold_refused"].append(form.key)
+                transaction.set_rollback(True)
+                continue
+            old.delete()
+        stats["folded"].append(form.key)
 
 
 ACCESS_LABELS = {
@@ -111,25 +161,38 @@ def check_access(read_tab, *, write_back_to=None, spreadsheet_id=None) -> list[d
     """
     results = []
     for round_ in Solicitation.objects.directory_rounds():
-        if not round_.response_spreadsheet_id:
-            state, detail = ACCESS_MISSING, "no response sheet recorded"
-        else:
-            try:
-                read_tab(round_.response_spreadsheet_id, round_.response_tab or "Form Responses 1")
-                state, detail = ACCESS_OK, "readable"
-            except Exception as exc:  # noqa: BLE001 — the message is the useful part
-                state, detail = ACCESS_DENIED, str(exc)[:200]
-        round_.sa_access_state = state
+        forms = [dict(f) for f in round_.directory_forms]
+        for form in forms:
+            sheet = form.get("response_spreadsheet_id")
+            if not sheet:
+                state, detail = ACCESS_MISSING, "no response sheet recorded"
+            else:
+                try:
+                    read_tab(sheet, form.get("response_tab") or "Form Responses 1")
+                    state, detail = ACCESS_OK, "readable"
+                except Exception as exc:  # noqa: BLE001 — the message is the useful part
+                    state, detail = ACCESS_DENIED, str(exc)[:200]
+            form["sa_access_state"] = state
+            results.append(
+                {"slug": round_.slug, "form": form["key"], "state": state, "detail": detail, "source_row": None}
+            )
+        # The round's own state is its worst form's: one unreadable form is
+        # still something a person has to do, even while the others ingest.
+        states = {f["sa_access_state"] for f in forms}
+        round_.sa_access_state = next((s for s in (ACCESS_MISSING, ACCESS_DENIED) if s in states), ACCESS_OK)
         round_.sa_access_checked_at = timezone.now()
-        round_.save(update_fields=["sa_access_state", "sa_access_checked_at"])
-        results.append({"slug": round_.slug, "state": state, "detail": detail, "source_row": None})
+        fields = ["sa_access_state", "sa_access_checked_at"]
+        if round_.forms:
+            round_.forms = forms
+            fields.append("forms")
+        round_.save(update_fields=fields)
 
     if write_back_to and spreadsheet_id:
         _write_access_columns(results, write_back_to, spreadsheet_id)
     return results
 
 
-def next_step_for(round_) -> str:
+def next_step_for(round_, form: dict | None = None) -> str:
     """The one action outstanding on this round, as a person would say it.
 
     A status column tells you what is true; it does not tell you what to do
@@ -140,9 +203,10 @@ def next_step_for(round_) -> str:
     Derived, never typed: a hand-written to-do goes stale the moment the thing
     it describes is done, and then reads as work outstanding forever.
     """
-    if round_.sa_access_state == ACCESS_MISSING:
+    state = form.get("sa_access_state") if form else round_.sa_access_state
+    if state == ACCESS_MISSING:
         return "YOU: add the Response Sheet Link — the form has no responses sheet recorded"
-    if round_.sa_access_state == ACCESS_DENIED:
+    if state == ACCESS_DENIED:
         return f"YOU: share the response sheet with {_SA_EMAIL} (Viewer is enough)"
     if not round_.delivery_type:
         return "YOU: set the Connect Programme — see the EOI/RFP tab notes for the allowed values"
@@ -168,12 +232,19 @@ def _write_access_columns(results, rounds, spreadsheet_id) -> None:
     """
     from connect_labs.marketplace import directory
 
-    by_slug = {r.slug: r for r in rounds if r.source_row}
+    # Each form is its own row on the tab, so each gets its own verdict.
+    by_form = {}
+    for r in rounds:
+        for form in getattr(r, "forms", None) or []:
+            if form.source_row:
+                by_form[(r.slug, form.key)] = form
+        if not getattr(r, "forms", None) and r.source_row:
+            by_form[(r.slug, r.slug)] = r
     stamp = timezone.now().strftime("%Y-%m-%d %H:%M UTC")
     saved = {r.slug: r for r in Solicitation.objects.directory_rounds()}
     updates = []
     for result in results:
-        parsed = by_slug.get(result["slug"])
+        parsed = by_form.get((result["slug"], result.get("form", result["slug"])))
         if parsed is None:
             continue
         row, owned = parsed.source_row, parsed.owned_columns
@@ -183,7 +254,7 @@ def _write_access_columns(results, rounds, spreadsheet_id) -> None:
         }
         round_ = saved.get(result["slug"])
         if round_ is not None:
-            values[directory.NEXT_STEP] = next_step_for(round_)
+            values[directory.NEXT_STEP] = next_step_for(round_, {"sa_access_state": result["state"]})
         for header, value in values.items():
             letter = owned.get(header)
             if letter:
@@ -192,11 +263,31 @@ def _write_access_columns(results, rounds, spreadsheet_id) -> None:
 
 
 def ingest_round(round_: Solicitation, rows, human_verdicts=None) -> dict:
-    """Store one round's submissions, matched to organisations where certain."""
+    """Store one round's submissions, matched to organisations where certain.
+
+    ``rows`` is a response sheet, or ``{form key: response sheet}`` for a round
+    that runs several forms; a bare sheet is the round's first form.
+    """
     from connect_labs.labs.models import LabsOrg
     from connect_labs.marketplace.models import OrgContact
 
-    questions, submissions = response_reader.parse_submissions(rows, round_.column_map or None)
+    forms = {f["key"]: f for f in round_.directory_forms}
+    sheets = rows if isinstance(rows, dict) else {next(iter(forms)): rows}
+    questions, submissions = [], []
+    seen_questions = set()
+    for key, sheet_rows in sheets.items():
+        form = forms.get(key, {})
+        form_questions, form_submissions = response_reader.parse_submissions(
+            sheet_rows, form.get("column_map") or None
+        )
+        for q in form_questions:
+            if q.id not in seen_questions:
+                seen_questions.add(q.id)
+                questions.append(q)
+        for sub in form_submissions:
+            sub.form_key = key
+            sub.spreadsheet_id = form.get("response_spreadsheet_id", "")
+        submissions.extend(form_submissions)
 
     by_email = {c.email.lower(): c.org for c in OrgContact.objects.select_related("org")}
     by_name = {}
@@ -241,7 +332,9 @@ def ingest_round(round_: Solicitation, rows, human_verdicts=None) -> dict:
         round_.questions = [{"id": q.id, "text": q.text, "column": q.column} for q in questions]
 
         for sub in submissions:
-            sub.round_slug = round_.slug
+            # The key a human verdict is filed under: the form's own Slug,
+            # which for a one-form round is the round's.
+            sub.round_slug = sub.form_key
             org, state, basis = match_submission(
                 sub,
                 by_email=by_email,
@@ -251,6 +344,7 @@ def ingest_round(round_: Solicitation, rows, human_verdicts=None) -> dict:
             )
             SolicitationResponse.objects.update_or_create(
                 solicitation=round_,
+                source_form=sub.form_key,
                 source_row=sub.source_row,
                 defaults={
                     "llo_entity": org,
@@ -263,9 +357,9 @@ def ingest_round(round_: Solicitation, rows, human_verdicts=None) -> dict:
                     "country_as_submitted": sub.country[:300],
                     "website_as_submitted": sub.website[:500],
                     "source_url": (
-                        f"https://docs.google.com/spreadsheets/d/{round_.response_spreadsheet_id}"
+                        f"https://docs.google.com/spreadsheets/d/{sub.spreadsheet_id}"
                         f"/edit#gid=0&range=A{sub.source_row}"
-                        if round_.response_spreadsheet_id
+                        if sub.spreadsheet_id
                         else ""
                     ),
                     "match_state": state,

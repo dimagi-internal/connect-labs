@@ -221,6 +221,13 @@ class Solicitation(models.Model):
     response_spreadsheet_id = models.CharField(max_length=120, blank=True, default="")
     response_tab = models.CharField(max_length=120, blank=True, default="")
     column_map = models.JSONField(default=dict, blank=True)
+    # A directory round that runs more than one form (an English and a French
+    # Google Form for one call) lists every one here, in sheet order:
+    # [{key, label, form_url, response_spreadsheet_id, response_tab,
+    #   column_map, sa_access_state}]. The single-form fields above stay the
+    # first form's. Empty on a round imported before forms were recorded —
+    # read through `directory_forms`, never directly.
+    forms = models.JSONField(default=list, blank=True)
     notes = models.TextField(blank=True, default="")
 
     # Written by `marketplace_import --check-access`, which verifies a real read
@@ -247,6 +254,24 @@ class Solicitation(models.Model):
         from connect_labs.marketplace.programs import label
 
         return label(self.delivery_type) if self.delivery_type else ""
+
+    @property
+    def directory_forms(self) -> list[dict]:
+        """Every form this round runs. A round recorded before rounds could
+        have several forms has exactly one: its own fields, keyed by its slug."""
+        if self.forms:
+            return self.forms
+        return [
+            {
+                "key": self.slug,
+                "label": self.title,
+                "form_url": self.form_url,
+                "response_spreadsheet_id": self.response_spreadsheet_id,
+                "response_tab": self.response_tab,
+                "column_map": self.column_map,
+                "sa_access_state": self.sa_access_state,
+            }
+        ]
 
     def __str__(self) -> str:
         return f"{self.title} ({self.get_solicitation_type_display()})"
@@ -456,6 +481,10 @@ class SolicitationResponse(models.Model):
     # submissions; the (solicitation, source_row) constraint still holds for
     # imports, because NULLs never collide.
     source_row = models.IntegerField(null=True, blank=True)
+    # Which of the round's forms the row is in: that form's Slug on the
+    # directory sheet. Two forms each have a row 2, so the row alone is not
+    # an identity. Blank for web submissions.
+    source_form = models.CharField(max_length=120, blank=True, default="")
     source_url = models.CharField(max_length=1000, blank=True, default="")
     country_as_submitted = models.CharField(max_length=300, blank=True, default="")
     website_as_submitted = models.CharField(max_length=500, blank=True, default="")
@@ -483,7 +512,9 @@ class SolicitationResponse(models.Model):
     class Meta:
         ordering = ["-submission_date", "source_row"]
         constraints = [
-            models.UniqueConstraint(fields=["solicitation", "source_row"], name="uniq_response_per_source_row"),
+            models.UniqueConstraint(
+                fields=["solicitation", "source_form", "source_row"], name="uniq_response_per_form_row"
+            ),
             # One draft per person per call: a second save edits the first,
             # even when two requests race (`create_response` re-fetches).
             models.UniqueConstraint(

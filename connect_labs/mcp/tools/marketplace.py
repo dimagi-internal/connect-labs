@@ -316,8 +316,11 @@ def marketplace_round_responses(user, slug: str, include_contacts: bool = False)
     personal = set() if include_contacts else personal_question_ids(questions, round_.column_map)
     shown = [q for q in questions if q["id"] not in personal]
 
-    rows = round_.responses.select_related("llo_entity").order_by("source_row")
+    rows = round_.responses.select_related("llo_entity").order_by("source_form", "source_row")
     total = rows.count()
+    # A round with several forms holds each form's questions; a submission
+    # answers only its own form's, so only those are listed against it.
+    multi_form = len(round_.directory_forms) > 1
     out = []
     for response in rows[:MAX_RESPONSES]:
         answers = response.responses or {}
@@ -325,6 +328,8 @@ def marketplace_round_responses(user, slug: str, include_contacts: bool = False)
             # What `create_review` and `list_reviews` take.
             "response_id": response.pk,
             "source_row": response.source_row,
+            # Which of the round's forms (its Slug on the directory sheet).
+            "form": response.source_form,
             "org_name": response.org_name,
             # The directory organisation, only where the import was certain;
             # an unmatched submission says so rather than borrowing a near name.
@@ -335,7 +340,9 @@ def marketplace_round_responses(user, slug: str, include_contacts: bool = False)
             "website": response.website_as_submitted,
             # `question_id` is what a review's evidence cites (`create_review` claims).
             "answers": [
-                {"question_id": q["id"], "question": q["text"], "answer": answers.get(q["id"], "")} for q in shown
+                {"question_id": q["id"], "question": q["text"], "answer": answers.get(q["id"], "")}
+                for q in shown
+                if not multi_form or q["id"] in answers
             ],
         }
         if include_contacts:
