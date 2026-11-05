@@ -174,6 +174,37 @@ def test_a_read_stops_waiting_rather_than_starting_a_second_evaluation(clean_cac
     computed.assert_not_called()
 
 
+def test_a_fill_that_finished_just_before_the_claim_is_not_repeated(clean_cache):
+    from connect_labs.workflow import views
+
+    computed = MagicMock()
+    with patch.object(views.cache, "get", side_effect=[None, {"case_state": "theirs"}]):
+        assert views._case_states_once("k", computed) == {"case_state": "theirs"}
+    computed.assert_not_called()
+
+
+def test_a_fill_past_its_lease_leaves_the_newer_claim_alone(clean_cache):
+    from connect_labs.workflow import views
+
+    def outlives_its_lease():
+        cache.set("k:fill", "a newer reader's claim", 60)
+        raise RuntimeError("slow and then failed")
+
+    # The wait's deadline, the claim, then the lease check long after the claim ran out.
+    clock = [0.0, 0.0, views.CASE_STATES_FILL_SECONDS + 1.0]
+    with patch.object(views.time, "monotonic", side_effect=clock), pytest.raises(RuntimeError):
+        views._case_states_once("k", outlives_its_lease)
+    assert cache.get("k:fill") == "a newer reader's claim"
+
+
+def test_a_failed_fill_within_its_lease_releases_the_claim(clean_cache):
+    from connect_labs.workflow import views
+
+    with pytest.raises(RuntimeError):
+        views._case_states_once("k", MagicMock(side_effect=RuntimeError("failed")))
+    assert cache.get("k:fill") is None
+
+
 def test_a_cache_that_is_down_still_answers(clean_cache):
     """`IGNORE_EXCEPTIONS` makes a dead Redis refuse every claim without raising, and a
     reader must not sit out the wait for a fill that cannot exist."""

@@ -81,9 +81,10 @@ class TestDimensionSetIsClosed:
         assert set(line) == ALLOWED_DIMENSIONS | METRIC_NAMES | {"_aws"}
 
     def test_no_user_derived_value_appears_anywhere_in_the_line(self, client, emf):
-        client.get("/labs/workflow/4242/runs/secret-run/?opportunity_id=99&email=a@b.org")
+        # Long enough not to turn up by chance in the line's millisecond timestamp or latency.
+        client.get("/labs/workflow/4242/runs/secret-run/?opportunity_id=987654321&email=a@b.org")
         raw = json.dumps(_only(emf()))
-        for leaked in ("4242", "secret-run", "opportunity_id", "99", "a@b.org"):
+        for leaked in ("4242", "secret-run", "opportunity_id", "987654321", "a@b.org"):
             assert leaked not in raw
 
 

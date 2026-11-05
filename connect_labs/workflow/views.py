@@ -3059,12 +3059,18 @@ def _case_states_once(key, compute):
         if answer is not None:
             return answer
         if cache.add(fill_key, 1, CASE_STATES_FILL_SECONDS):
+            claimed_at = time.monotonic()
             try:
-                answer = compute()
-                cache.set(key, answer, CASE_STATES_ANSWER_SECONDS)
+                # A fill may have finished between the read above and this claim.
+                answer = cache.get(key)
+                if answer is None:
+                    answer = compute()
+                    cache.set(key, answer, CASE_STATES_ANSWER_SECONDS)
                 return answer
             finally:
-                cache.delete(fill_key)
+                # Past its lease the claim may be another reader's, so leave it to expire.
+                if time.monotonic() - claimed_at < CASE_STATES_FILL_SECONDS:
+                    cache.delete(fill_key)
         if cache.get(fill_key) is None:
             # Once is a fill that just ended. Twice running, nothing can hold a claim.
             if nobody_filling:
