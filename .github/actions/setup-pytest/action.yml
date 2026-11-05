@@ -95,7 +95,12 @@ runs:
         }
         apt_net() {
           sudo timeout 240 apt-get "${APT_OPTS[@]}" "$@" && return 0
-          use_main_archive && sudo timeout 240 apt-get "${APT_OPTS[@]}" "$@"
+          use_main_archive && sudo timeout 240 apt-get "${APT_OPTS[@]}" "$@" && return 0
+          # The step runs under `bash -e`, so this fails it: minutes, not the
+          # 20+ a crawling mirror would take. Mirror speed varies per runner,
+          # so a re-run usually gets a fast one (and then saves the cache).
+          echo "::error title=Geo packages::apt could not fetch the geo packages in time from either mirror. This is the runner's network, not your change: re-run the job."
+          return 1
         }
 
         install_from_apt() {
