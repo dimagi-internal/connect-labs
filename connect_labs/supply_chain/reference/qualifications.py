@@ -20,22 +20,26 @@ class Usual:
     name: str
     why: str
     words: tuple[str, ...]
+    key: str = ""
 
 
 _UNICEF = Usual(
     "UNICEF supplier approval",
     "UNICEF approves RUTF makers; many funders and governments accept only approved ones.",
     ("unicef",),
+    "unicef",
 )
 _REGISTRATION = Usual(
     "National product registration",
     "The product must be registered with the health regulator of the country it is delivered to.",
     ("registration", "registered", "nafdac", "regulator"),
+    "registration",
 )
 _CERTIFICATE = Usual(
     "Certificate of analysis for each batch",
     "A lab certificate that comes with every batch, so quality can be checked on arrival.",
     ("certificate", "analysis", "coa"),
+    "certificate",
 )
 
 USUAL_BY_CATEGORY: dict[str, tuple[Usual, ...]] = {
@@ -44,11 +48,39 @@ USUAL_BY_CATEGORY: dict[str, tuple[Usual, ...]] = {
 }
 
 
-def usual_for(categories) -> list[Usual]:
-    """The usual qualifications for these product categories, each once, in order."""
+# What a programme requires of a supplier unless it says otherwise (its Supply settings,
+# `required_supplier_checks`). A certificate of analysis for each batch is asked of every RUTF
+# supplier; UNICEF approval and national registration are checks a programme chooses to require
+# (Sophie Feintuch's round-2 walk: "UNICEF approval and national registration are not required for us").
+SETTING = "required_supplier_checks"
+DEFAULT_REQUIRED = ("certificate",)
+CHECK_KEYS = ("unicef", "registration", "certificate")
+
+
+def required_keys(program_id) -> tuple[str, ...]:
+    """The checks this programme requires: its own setting, else the batch certificate alone."""
+    if not program_id:
+        return DEFAULT_REQUIRED
+    from connect_labs.scope_config.models import ScopeConfig
+    from connect_labs.supply_chain.config import SUPPLY
+
+    row = ScopeConfig.objects.filter(scope_type="program", scope_key=str(program_id), namespace=SUPPLY.key).first()
+    raw = (row.data if row else {}).get(SETTING)
+    if not isinstance(raw, list):
+        return DEFAULT_REQUIRED
+    return tuple(k for k in CHECK_KEYS if k in raw)
+
+
+def usual_for(categories, required=None) -> list[Usual]:
+    """The usual qualifications for these product categories, each once, in order.
+
+    `required` (keys) limits them to the checks a programme requires; None is every usual one.
+    """
     seen, out = set(), []
     for category in categories:
         for usual in USUAL_BY_CATEGORY.get(category, ()):
+            if required is not None and usual.key not in required:
+                continue
             if usual.name not in seen:
                 seen.add(usual.name)
                 out.append(usual)
@@ -89,13 +121,13 @@ def missing(qualifications, usual, today=None) -> list[tuple[Usual, str]]:
     return out
 
 
-def gaps(suppliers, categories, today=None) -> list[dict]:
+def gaps(suppliers, categories, today=None, program_id=None) -> list[dict]:
     """Suppliers (dicts with id, name, qualifications) lacking any usual qualification.
 
-    ``[{"supplier_id", "name", "lacks": ["UNICEF supplier approval", ...]}]``; a supplier
-    that holds them all is not listed, and with no usual list for the products, nobody is.
+    ``[{"supplier_id", "name", "lacks": ["Certificate of analysis ...", ...]}]`` over the checks the programme
+    requires; a supplier that holds them all is not listed, and with none required, nobody is.
     """
-    usual = usual_for(categories)
+    usual = usual_for(categories, required_keys(program_id))
     if not usual:
         return []
     out = []
@@ -124,11 +156,11 @@ def categories_of(commodities, slugs=None) -> list[str]:
     )
 
 
-def gaps_among(list_suppliers, supplier_ids, commodities, slugs, today=None) -> list[dict]:
+def gaps_among(list_suppliers, supplier_ids, commodities, slugs, today=None, program_id=None) -> list[dict]:
     """`gaps` for the suppliers with these ids, asking for the supplier list only if
     the products have a usual list at all (most do not)."""
     categories = categories_of(commodities, slugs)
-    if not usual_for(categories):
+    if not usual_for(categories, required_keys(program_id)):
         return []
     wanted = set(supplier_ids)
-    return gaps([s for s in list_suppliers() if s["id"] in wanted], categories, today)
+    return gaps([s for s in list_suppliers() if s["id"] in wanted], categories, today, program_id)

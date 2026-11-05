@@ -1070,9 +1070,10 @@ def selection_drafts_render(access, award_id):
 @register_operation(
     name="purchase_sizing",
     summary=(
-        "Size a purchase per partner: target cases x the course, plus a buffer, in base units and packs, with the "
-        "working shown. The course is the forecast's expected course once enough children have finished, else the "
-        "protocol's, unless you pass course_units. Stock already held is not netted off. Reads only."
+        "Size a purchase per partner: target cases x what one child needs, plus a buffer, in base units and packs, "
+        "with the working shown. One child is sized at one pack (carton) unless the programme's Supply settings "
+        "say otherwise (purchase_packs_per_child) or you pass course_units; a product with no pack size falls back "
+        "to the forecast's expected course, else the protocol's. Stock already held is not netted off. Reads only."
     ),
     input_schema=obj(
         {
@@ -1105,6 +1106,14 @@ def purchase_sizing(access, commodity_slug, partners, buffer_percent=None, cours
         raise ValueError(f"commodity {commodity_slug!r} not found")
     item = access.get_item(item_id) if item_id else None
     basis, completed = "given", None
+    base_per_pack = (item.base_per_pack if item is not None else None) or commodity.base_per_pack
+    if course_units is None and base_per_pack:
+        # A pack (a carton) a child, the programme's default: the measured course is a floor, because the
+        # fastest recoveries finish first.
+        from connect_labs.supply_chain.procurement.services.sizing import packs_per_child
+
+        course_units = Decimal(str(base_per_pack)) * packs_per_child(access.program_id)
+        basis = "pack_per_child"
     if course_units is None:
         course_units, basis, completed = _expected_course(access, commodity, item)
     if course_units is None:
@@ -1112,7 +1121,6 @@ def purchase_sizing(access, commodity_slug, partners, buffer_percent=None, cours
             "the product has no course length: give course_units, or set the product's course definition "
             "(base_units_per_course)"
         )
-    base_per_pack = (item.base_per_pack if item is not None else None) or commodity.base_per_pack
     names = {}
     for partner in partners:
         org = access.get_org(partner["org_id"])

@@ -9,7 +9,7 @@
 <div class="max-w-3xl space-y-4">
   <div>
     <h1 class="text-base font-semibold text-gray-900">How much to buy for each partner</h1>
-    <p class="text-sm text-gray-600 mt-0.5">Enter how many children each partner expects to treat. We multiply by what one child's course needs and add a
+    <p class="text-sm text-gray-600 mt-0.5">Enter how many children each partner expects to treat. We multiply by what one child needs (by default one carton, 150 sachets) and add a
       buffer for losses and delays. Stock a partner already holds is not taken off: subtract it yourself if you want to.</p>
   </div>
 
@@ -32,7 +32,7 @@
     </table>
     <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-700">
       <label>Buffer for everyone (%) <input type="number" min="0" step="any" name="buffer" value="{{ buffer }}" placeholder="10" class="ml-1 w-20 border border-gray-300 rounded-md px-2 py-1"></label>
-      <label>What one child's course needs <input type="number" min="0" step="any" name="course" value="{{ course }}" placeholder="from the forecast" class="ml-1 w-44 border border-gray-300 rounded-md px-2 py-1"> <span class="text-xs text-gray-600">leave empty to use the forecast or the protocol</span></label>
+      <label>How much one child needs <input type="number" min="0" step="any" name="course" value="{{ course }}" placeholder="one carton" class="ml-1 w-44 border border-gray-300 rounded-md px-2 py-1"> <span class="text-xs text-gray-600">leave empty for one carton a child; the measured course is a floor, because the fastest recoveries finish first</span></label>
     </div>
     <button type="submit" class="px-4 py-2 text-sm font-medium rounded-md text-white bg-brand-indigo hover:bg-brand-deep-purple">Work it out</button>
   </form>
@@ -41,7 +41,7 @@
 
   {% if sized %}
   <section class="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="sizing-result">
-    <div class="px-4 py-2.5 border-b border-gray-100 text-sm text-gray-700">One child's course is <strong>{{ course_text }}</strong> base units, taken from {{ course_basis_text }}.</div>
+    <div class="px-4 py-2.5 border-b border-gray-100 text-sm text-gray-700">Each child is sized at <strong>{{ course_text }}</strong> {{ base_unit_text }}, taken from {{ course_basis_text }}.</div>
     <ul class="divide-y divide-gray-100">
     {% for p in sized.partners %}
       <li class="px-4 py-3 flex flex-wrap items-center justify-between gap-3" data-testid="sizing-row">

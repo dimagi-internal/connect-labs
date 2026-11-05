@@ -232,7 +232,7 @@ class TestSheetsSort:
         grid = re.search(r'<table class="sheet" data-testid="comparison-grid">.*?</table>', body, re.S).group(0)
         labels = _sortable(grid)
         assert labels[0] == "Supplier"
-        assert any(label.startswith("Landed per") for label in labels)
+        assert any(label.startswith("Delivered cost per") for label in labels)
         assert any(label.startswith("Quoted price") for label in labels)
         assert re.search(r'data-testid="grid-quote" data-sort-value="Kanem Foods Rehearsal"', grid)
 

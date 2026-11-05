@@ -166,10 +166,10 @@ class TestTheSizingPage:
     def test_it_shows_the_working_in_plain_words(self, client_in_programme, world):
         pid = world["orgs"][0]["id"]
         body = client_in_programme.get(self._url(world, **{f"cases_{pid}": 1000})).content.decode()
-        assert "1,000 children x 120 per child&#x27;s course = 120,000" in body or "1,000 children x 120" in body
-        # 120000 x 1.10 = 132000 sachets = 880 cartons of 150
-        assert "Partner 1: 880 carton" in body
-        assert "the product&#x27;s protocol" in body
+        assert "1,000 children x 150 per child = 150,000" in body
+        # 150000 x 1.10 = 165000 sachets = 1,100 cartons of 150: one carton a child by default
+        assert "Partner 1: 1,100 carton" in body
+        assert "one carton a child" in body
 
     def test_the_button_drops_the_figure_into_that_partners_split(self, client_in_programme, da, world):
         pid = world["orgs"][0]["id"]
@@ -240,4 +240,4 @@ class TestTheSizingPagePartners:
             assert reverse("supply_chain:partners") in body
 
     def test_the_course_box_is_wide_enough_for_its_hint(self, client_in_programme, da, world):
-        assert 'placeholder="from the forecast" class="ml-1 w-44' in self._body(client_in_programme, world)
+        assert 'placeholder="one carton" class="ml-1 w-44' in self._body(client_in_programme, world)

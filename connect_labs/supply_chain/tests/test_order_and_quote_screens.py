@@ -169,7 +169,7 @@ class TestAFigureHeaderNamesItsUnitInWords:
         _comparable_pair(da, world)
         body = client_in_programme.get(_compare_url(world)).content.decode()
         grid = re.search(r'<table [^>]*data-testid="comparison-grid".*?</table>', body, re.S).group(0)
-        assert re.search(r">Landed per jerry can<", grid)
+        assert re.search(r">Delivered cost per jerry can<", grid)
         assert "jerry_can" not in grid
 
     def test_the_operation_labels_its_columns_the_same_way(self, da, world):

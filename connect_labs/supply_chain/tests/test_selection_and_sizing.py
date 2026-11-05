@@ -204,12 +204,42 @@ class TestPurchaseSizing:
                 {"org_id": world["orgs"][1]["id"], "target_cases": 100, "buffer_percent": 0},
             ],
         )
-        assert got["course_basis"] == "protocol"
+        # One carton (150 sachets) a child by default, not the measured or protocol course.
+        assert got["course_basis"] == "pack_per_child"
         first, second = got["partners"]
-        assert first["units"] == "92400" and first["packs"] == 616  # 500 x 168 x 1.10 = 92,400 sachets
-        assert second["units"] == "16800" and second["packs"] == 112
-        assert got["total_packs"] == 728
-        assert "500 cases x 168 + 10% buffer = 92,400 base units = 616 packs of 150" in first["working"]
+        assert first["units"] == "82500" and first["packs"] == 550  # 500 x 150 x 1.10 = 82,500 sachets
+        assert second["units"] == "15000" and second["packs"] == 100
+        assert got["total_packs"] == 650
+        assert "500 cases x 150 + 10% buffer = 82,500 base units = 550 packs of 150" in first["working"]
+
+    def test_the_programme_can_change_the_default_packs_per_child(self, da, world):
+        from connect_labs.scope_config.models import ScopeConfig
+        from connect_labs.supply_chain.config import SUPPLY
+
+        ScopeConfig.objects.create(
+            scope_type="program", scope_key=str(da.program_id), namespace=SUPPLY.key, data={"purchase_packs_per_child": 0.5}
+        )
+        got = op(
+            da,
+            "purchase_sizing",
+            commodity_slug="rutf",
+            partners=[{"org_id": world["orgs"][0]["id"], "target_cases": 100, "buffer_percent": 0}],
+        )
+        assert got["partners"][0]["units"] == "7500" and got["course_basis"] == "pack_per_child"
+
+    def test_a_product_with_no_pack_size_still_uses_its_protocol_course(self, da, world):
+        op(
+            da,
+            "commodity_upsert",
+            data={"slug": "zinc2", "name": "Zinc 2", "base_unit": "tablet", "course_definition": {"base_units_per_course": 10}},
+        )
+        got = op(
+            da,
+            "purchase_sizing",
+            commodity_slug="zinc2",
+            partners=[{"org_id": world["orgs"][0]["id"], "target_cases": 10, "buffer_percent": 0}],
+        )
+        assert got["course_basis"] == "protocol" and got["partners"][0]["units"] == "100"
 
     def test_a_given_course_overrides_and_is_said_so(self, da, world):
         got = op(

@@ -88,7 +88,7 @@ def test_no_clearing_estimate_does_not_block_but_labels_the_figure(da, world):
     assert landed["cells"][column]["qualifier"] == "excl. clearing"
     assert landed["cells"][column]["v"] == "USD 50.00"
     clearing = next(r for r in grid["rows"] if r["key"] == "clearing")
-    assert clearing["label"] == "Clearing & forwarding"
+    assert clearing["label"] == "Clearing and handling at the port"
     assert clearing["cells"][column]["gap"] and clearing["cells"][column]["owner"] == "us"
     chips = [c["label"] for c in grid["quotes"][column]["chips"]]
     # The open estimate is the quote's one chip: a fact and whose it is, beside its shown figure.
