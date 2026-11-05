@@ -197,3 +197,45 @@ def as_day(value):
 
 def today():
     return date.today()
+
+
+def profile_of(program_id, org_id):
+    """The partner's profile row (contact, defaults), or None when nothing is recorded yet."""
+    from connect_labs.supply_chain.models import PartnerProfile
+
+    return PartnerProfile.objects.filter(program_id=program_id, org_id=org_id).first()
+
+
+def profiles_by_partner(program_id) -> dict:
+    """{org id: PartnerProfile} for every partner with a profile."""
+    from connect_labs.supply_chain.models import PartnerProfile
+
+    return {p.org_id: p for p in PartnerProfile.objects.filter(program_id=program_id)}
+
+
+def main_contact(program_id, org_id) -> dict:
+    """Who to write to at a partner: {"name", "email", "phone", "connect_username", "copy_to": [...]}.
+
+    The one place award emails and handovers learn a partner's contact. Every key is present; a
+    partner with no profile (or no email) returns empty strings, so a caller can say "no main contact
+    recorded" instead of claiming someone is copied.
+    """
+    profile = profile_of(program_id, org_id)
+    return {
+        "name": profile.contact_name if profile else "",
+        "email": profile.contact_email if profile else "",
+        "phone": profile.contact_phone if profile else "",
+        "connect_username": profile.contact_connect_username if profile else "",
+        "copy_to": list(profile.copy_to or []) if profile else [],
+    }
+
+
+def set_profile(program_id, org, **fields):
+    """Create or update the partner's profile. Only the keys given change."""
+    from connect_labs.supply_chain.models import PartnerProfile
+
+    profile, _ = PartnerProfile.objects.get_or_create(program_id=program_id, org=org)
+    for key, value in fields.items():
+        setattr(profile, key, value)
+    profile.save()
+    return profile

@@ -42,15 +42,22 @@
           {% if p.current %}{{ p.current_label }} <span class="text-gray-600">(since {{ p.current.starts_on }})</span>
           {% else %}<span class="text-gray-600">No way of distributing stated yet.</span>{% endif %}
         </p>
+        <p class="text-sm text-gray-700">
+          {% if p.contact.name or p.contact.email %}Main contact: {{ p.contact.name|default:"(no name)" }}{% if p.contact.email %} · {{ p.contact.email }}{% endif %}{% if p.contact.phone %} · {{ p.contact.phone }}{% endif %}
+          {% else %}<span class="text-amber-800">No main contact recorded:</span> <a class="underline" href="{% url 'supply_chain:partner_contact' %}?org={{ p.org_id }}">add one</a> so award emails have someone to address.{% endif %}
+        </p>
         <p class="text-xs text-gray-600">
           {{ p.places }} place{{ p.places|pluralize }}, {{ p.workers }} field worker{{ p.workers|pluralize }} ·
           <a class="underline" href="{% url 'supply_chain:network' %}">Network</a> ·
           <a class="underline" href="{% url 'supply_chain:issues' %}?partner={{ p.org_id }}">Issues</a>
         </p>
       </div>
-      <a href="{% url 'supply_chain:partner_plan' %}?org={{ p.org_id }}" class="text-sm underline text-brand-indigo">
-        {% if p.current %}Change the plan{% else %}State the plan{% endif %}
-      </a>
+      <div class="text-sm flex gap-3">
+        <a href="{% url 'supply_chain:partner_contact' %}?org={{ p.org_id }}" class="underline text-brand-indigo">Contact and defaults</a>
+        <a href="{% url 'supply_chain:partner_plan' %}?org={{ p.org_id }}" class="underline text-brand-indigo">
+          {% if p.current %}Change the plan{% else %}State the plan{% endif %}
+        </a>
+      </div>
     </div>
     {% if p.history|length > 1 %}
       <details class="mt-2 text-xs text-gray-600">

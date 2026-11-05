@@ -1873,7 +1873,7 @@ from connect_labs.supply_chain.alerts.models import AlertCheckState, AlertNotice
 from connect_labs.supply_chain.history.models import OperationCall, Revision  # noqa: E402,F401
 
 # How each partner distributes, as dated history (Sophie's RUTF feedback).
-from connect_labs.supply_chain.partners.models import PartnerPlan  # noqa: E402,F401
+from connect_labs.supply_chain.partners.models import PartnerPlan, PartnerProfile  # noqa: E402,F401
 
 # The saved stock plan (target cases, buffer, enrolment rate): plan/models.py.
 from connect_labs.supply_chain.plan.models import StockPlan  # noqa: E402,F401
