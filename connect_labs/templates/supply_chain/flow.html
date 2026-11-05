@@ -81,21 +81,37 @@ restocks them, then by name, never by how they are doing.
       </tbody>
     </table>
     <p class="text-xs text-gray-600 mt-2">Losses and count shortfalls are streams of their own: they are never netted into another line.</p>
+    {% if flow.flw_stock.workers %}
+      <p class="text-xs text-gray-700 mt-2 max-w-3xl" data-testid="flow-flw-stock">
+        With field workers, the official figure is <b>{{ flow.flw_stock.official|floatformat:"0g" }}</b> {{ flow.unit|unit_plural }}: each worker's phone balance until their partner's handovers are recorded in Supply, then Supply's records.
+        Supply's records alone say {{ flow.flw_stock.records|floatformat:"0g" }}; phones say {{ flow.flw_stock.phone|floatformat:"0g" }}{% if flow.flw_stock.differing %}; {{ flow.flw_stock.differing }} of {{ flow.flw_stock.workers }} workers differ{% endif %}.
+        The stage above counts Supply's records.
+      </p>
+    {% endif %}
     {% if flow.household %}
       <div class="mt-4 max-w-3xl" data-testid="flow-household">
         <h3 class="text-sm font-semibold text-gray-900">In the household</h3>
-        <p class="text-xs text-gray-600">What the delivery form says happened to the sachets at the home, over {{ flow.household.visits }} visit{{ flow.household.visits|pluralize }} that answered. Each is its own line and none is netted into another; "not recorded" means the form gave no answer, which is not the same as none.</p>
+        <p class="text-xs text-gray-600">What the delivery form says happened to the sachets at the home, over {{ flow.household.visits }} visit{{ flow.household.visits|pluralize }} that answered. The lines add up to what was dispensed; "not recorded" means the form gave no answer, which is not the same as none.</p>
+        {% with given=flow.household.given_in_records %}
+        {% if flow.household.dispensed is not None and given is not None and given != flow.household.dispensed %}
+          <p class="text-xs text-gray-700 mt-1" data-testid="flow-given-reconcile">
+            Why two figures for what was given to children: the stock records above show {{ given|floatformat:"0g" }} sachets taken off the field workers' stock
+            at visits; the delivery form says {{ flow.household.dispensed|floatformat:"0g" }} were dispensed, the number the worker typed at the visit. The records count what Supply's ledger holds; the form counts what the worker reported.
+          </p>
+        {% endif %}
+        {% endwith %}
         <table class="w-full text-sm mt-2">
           <tbody class="divide-y divide-gray-100">
             {% for row in flow.household.rows %}
-              <tr><th scope="row" class="text-left font-medium py-1.5 pr-3">{{ row.label }}<div class="font-normal text-xs text-gray-600">{{ row.caption }}</div></th><td class="text-right tabular-nums align-top py-1.5">{% if row.amount is None %}<span class="text-gray-600">not recorded</span>{% else %}{{ row.amount|floatformat:"0g" }}{% endif %}</td></tr>
+              <tr {% if row.key == "not_yet_checked" %}class="bg-gray-50"{% endif %}><th scope="row" class="text-left font-medium py-1.5 pr-3">{{ row.label }}<div class="font-normal text-xs text-gray-600">{{ row.caption }}</div></th><td class="text-right tabular-nums align-top py-1.5">{% if row.amount is None %}<span class="text-gray-600">not recorded</span>{% else %}{{ row.amount|floatformat:"0g" }}{% if row.visits is not None and row.key != "dispensed" %}<div class="text-xs font-normal text-gray-600">from {{ row.visits|floatformat:"0g" }} visit{{ row.visits|pluralize }}</div>{% endif %}{% endif %}</td></tr>
             {% endfor %}
           </tbody>
         </table>
         <p class="text-xs text-gray-600 mt-2" data-testid="flow-household-reasons">
+          {% if flow.household.no_misuse_visits %}Caregivers answering "none" to misuse: {{ flow.household.no_misuse_visits|floatformat:"0g" }} visit{{ flow.household.no_misuse_visits|pluralize }} (recorded as zero misused).{% endif %}
           {% if flow.household.reasons %}Reasons given for misuse:
             {% for reason in flow.household.reasons %}{{ reason.reason }} ({{ reason.visits }}){% if not forloop.last %}, {% endif %}{% endfor %}.
-          {% else %}Reasons given for misuse: none recorded.{% endif %}
+          {% elif not flow.household.no_misuse_visits %}Reasons given for misuse: none recorded.{% endif %}
         </p>
       </div>
     {% else %}

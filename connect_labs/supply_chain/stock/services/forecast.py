@@ -69,7 +69,7 @@ from statistics import median
 from django.db.models import Sum
 
 from connect_labs.supply_chain.models import DispensingRule, Movement, WorkerVisit
-from connect_labs.supply_chain.stock.services import belief, ledger
+from connect_labs.supply_chain.stock.services import belief, issues, ledger, official_stock
 from connect_labs.supply_chain.stock.services.dispensing import form_matches
 from connect_labs.supply_chain.stock.services.visit_reader import REVERSING_STATUSES
 from connect_labs.supply_chain.values import Quantity
@@ -284,7 +284,10 @@ def course_size(cases, rules, item, fallback) -> dict:
         reason = (
             "as the programme set"
             if setting == "expected"
-            else f"{len(finished)} of {enrolled} children have finished, enough to say what a course takes"
+            else (
+                f"{len(finished)} of the {enrolled} children enrolled since the visits began have finished, "
+                "enough to say what a course takes"
+            )
         )
         return {"size": low, "basis": MEASURED, "chosen": "low", "reason": reason, **known}
     if high is not None:
@@ -295,7 +298,8 @@ def course_size(cases, rules, item, fallback) -> dict:
             reason = f"only {len(finished)} children have finished, too few to measure a course"
         else:
             reason = (
-                f"only {len(finished)} of {enrolled} children have finished, and the first to finish are "
+                f"only {len(finished)} of the {enrolled} children enrolled since the visits began have finished, "
+                "and the first to finish are "
                 "the fastest, so their figure is a floor"
             )
         return {"size": high, "basis": basis, "chosen": "high", "reason": reason, **known}
@@ -617,6 +621,11 @@ def forecast(
     ]
     history = _history(program_id, item, unit, in_scope, anchor)
 
+    # Which figure is official for each worker: the phone balance until the partner's handovers are
+    # recorded, then Supply's records (official_stock.official_flw_stock).
+    handover_partners = official_stock.partners_with_handovers(program_id)
+    partner_of = issues.partner_by_point(program_id)
+
     workers = []
     worker_figures: dict[int, dict] = {}
     for node in nodes:
@@ -627,7 +636,13 @@ def forecast(
             continue
         # A balance below zero is records that ran ahead of deliveries: nothing to
         # give out, at every level. One that cannot be read is said, not guessed.
-        known = _amount(node.on_hand)
+        official = official_stock.official_flw_stock(
+            records=_amount(node.on_hand),
+            phone=_amount(node.reported),
+            partner_has_handovers=partner_of.get(point.pk) in handover_partners,
+            phone_on=node.reported_on.isoformat() if node.reported_on else None,
+        )
+        known = official["official"]
         on_hand = max(known, ZERO) if known is not None else None
         rule = rule_by_opp.get(point.opportunity_id)
         committed = [ZERO] * horizon_weeks
@@ -682,6 +697,16 @@ def forecast(
                 "parent_supply_point_id": point.parent_id,
                 "basis": basis,
                 "on_hand": wired["on_hand"],
+                # The figure the forecast plans from, with both sides beside it (official_stock).
+                "official_stock": {
+                    "amount": _wire(on_hand),
+                    "source": official["source"],
+                    "records": _wire(official["records"]),
+                    "phone": _wire(official["phone"]),
+                    "phone_on": official["phone_on"],
+                    "differs": official["differs"],
+                    "note": official["note"],
+                },
                 "stock_known": on_hand is not None,
                 "dispensed": wired["dispensed"],
                 "open_cases": len(open_here),
@@ -712,6 +737,7 @@ def forecast(
     programme["open_cases"] = sum(w["open_cases"] for w in workers)
     # Every child the visits show was enrolled (or already in treatment), open or not: a target counts against this.
     programme["children_seen"] = len(cases)
+    programme["children"] = _children(cases, course)
     # Counts summed from the unrounded figures, never from the rounded ones on the wire.
     programme["owed"] = _wire(sum((f["owed"] for f in worker_figures.values()), ZERO)) if rules else None
     # Of what is owed (the rest of each child's course), the share the horizon lays out:
@@ -949,6 +975,28 @@ def _programme(
         "inbound_by_week": [_wire(v) for v in arriving],
         "runs_dry_on": _iso(gap_opens(wanted, available, anchor)),
         "shortfall_by_end": _wire(gap[-1]),
+    }
+
+
+def _children(cases, course) -> dict:
+    """The one children count every page quotes, with what each number means.
+
+    seen            every child the visits show (enrolled in the visits, or already in treatment before them)
+    enrolled        of those, children whose enrolment visit is in the data
+    carried_over    already in treatment before the visits began
+    in_treatment    still open now (seen within the lost-after days, no exit recorded)
+    exited, lost    left treatment / not seen for too long
+    finished        exited as recovered (what the measured course rests on)
+    """
+    carried = sum(1 for c in cases if c.carry_over)
+    return {
+        "seen": len(cases),
+        "enrolled": len(cases) - carried,
+        "carried_over": carried,
+        "in_treatment": sum(1 for c in cases if c.status == "open"),
+        "exited": sum(1 for c in cases if c.status == "exited"),
+        "lost": sum(1 for c in cases if c.status == "lost"),
+        "finished": course["completed_cases"],
     }
 
 

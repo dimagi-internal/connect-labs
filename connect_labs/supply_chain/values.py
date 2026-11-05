@@ -276,6 +276,20 @@ def day_text(value) -> str:
     return date_format(value, DAY_FORMAT)
 
 
+def iso_day_text(value) -> str:
+    """A date, or an ISO "2026-10-30" string, by the one date rule ("30 Oct 2026"); "" for none."""
+    if not value:
+        return ""
+    if isinstance(value, str):
+        from datetime import date
+
+        try:
+            value = date.fromisoformat(value[:10])
+        except ValueError:
+            return value
+    return day_text(value)
+
+
 def is_counted_unit(unit: str | None) -> bool:
     """Whether a unit is counted out whole -- a jerry can, a carton, a sachet.
 

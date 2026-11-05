@@ -610,7 +610,7 @@ def test_few_finished_children_leave_the_plan_on_the_high_estimate_and_both_are_
 
     assert (out["low"], out["high"]) == ("40", "168")
     assert (out["chosen"], out["size"], out["basis"]) == ("high", Decimal(168), "protocol")
-    assert "25 of 211" in out["reason"]
+    assert "25 of the 211 children enrolled since the visits began" in out["reason"]
 
 
 def test_the_low_estimate_leads_once_at_least_half_the_enrolled_children_have_finished(world):

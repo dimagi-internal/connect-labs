@@ -1179,3 +1179,25 @@ def test_a_rule_reading_the_cbi_form_is_read_at_cbis_household_paths(da, world):
     assert household["returned"] == 9 and household["leftover"] == 3
     assert household["missing"] == 1 and household["misused"] == 2
     assert household["reasons"] == [{"reason": "sold", "visits": 1}]
+
+
+def test_where_it_went_adds_the_household_lines_up_and_says_why_two_given_figures_differ(client_in_program, world):
+    DispensingRule.objects.update(reports={"household": {**HOUSEHOLD, "dispensed_paths": ["form.dispensed"]}})
+    for visit_id, answers in (
+        ("v-worker-baobab", {"form.dispensed": "100", "form.returned": "40", "form.left": "5", "form.why": "none"}),
+        ("v-worker-acacia", {"form.dispensed": "50", "form.missing": "3", "form.why": "sold shared_with_family"}),
+    ):
+        kept = WorkerVisit.objects.filter(visit_id=visit_id).first()
+        kept.answers = {**kept.answers, **answers}
+        kept.save()
+    body = get(client_in_program, "flow")
+
+    assert "Given at the latest visits, not yet checked" in body
+    assert 'data-testid="flow-given-reconcile"' in body and "Why two figures" in body
+    assert "Caregivers answering" in body and "sold (1)" in body and "shared with family (1)" in body
+
+
+def test_where_it_went_states_the_official_figure_for_field_workers_with_both_sides(client_in_program, world):
+    body = get(client_in_program, "flow")
+    assert 'data-testid="flow-flw-stock"' in body and "the official figure is" in body
+    assert "Supply's records alone say" in body

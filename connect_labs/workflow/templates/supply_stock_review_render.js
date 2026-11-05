@@ -90,7 +90,11 @@ function WorkflowUI({
   function day(iso) {
     if (!iso) return '';
     var d = new Date(String(iso).slice(0, 10) + 'T00:00:00');
-    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    return d.toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
   }
   // A run-out date counts from the day the figures were measured on: the
   // page's as-of day when rewound, else the server's today. Never the
@@ -105,7 +109,11 @@ function WorkflowUI({
     if (!fromDay) return '';
     var d = new Date(String(fromDay).slice(0, 10) + 'T00:00:00');
     d.setDate(d.getDate() + Math.floor(n));
-    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    return d.toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
   }
   // Whole days still in hand, never rounded up: the count Workers, a worker's
   // page and Stock show (days_text). Rounded here, 9.85 read "10 days left"
@@ -211,6 +219,9 @@ function WorkflowUI({
       name: r.name,
       opp: r.opportunity_id,
       onHand: amount(r.on_hand),
+      official:
+        forecastBy[r.opportunity_id + ':' + r.supply_point_id] &&
+        forecastBy[r.opportunity_id + ':' + r.supply_point_id].official_stock,
       issued: amount(r.issued),
       given: amount(r.dispensed),
       unapproved: amount(r.unapproved),
@@ -390,6 +401,11 @@ function WorkflowUI({
           (belief.below_minimum_line) so Network, the map and Overview say the
           same count in the same words (#2344). The bands further down are how
           long stock lasts, a different measure, and are labelled so. */}
+      {forecastRow && forecastRow.data_to && (
+        <div className="text-xs text-gray-600" data-testid="stock-as-of">
+          {'Based on visits up to ' + day(forecastRow.data_to) + '.'}
+        </div>
+      )}
       {rollup.below_minimum && rollup.below_minimum.workers > 0 && (
         <div
           className={
@@ -717,6 +733,7 @@ function WorkflowUI({
                 <th className="text-left px-3 py-2">Worker</th>
                 <th className="text-right px-3 py-2">Issued</th>
                 <th className="text-right px-3 py-2">Given out</th>
+                <th className="text-right px-3 py-2">Official figure</th>
                 <th className="text-right px-3 py-2">Ledger says held</th>
                 <th className="text-right px-3 py-2">They counted</th>
                 <th className="text-right px-3 py-2">Ledger that day</th>
@@ -740,6 +757,25 @@ function WorkflowUI({
                       </td>
                       <td className="px-3 py-1.5 text-right tabular-nums">
                         {fmt(r.given)}
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">
+                        {r.official ? fmt(amount(r.official.amount)) : '—'}
+                        {r.official && (
+                          <div
+                            className={
+                              'text-xs ' +
+                              (r.official.differs
+                                ? 'text-amber-800'
+                                : 'text-gray-500')
+                            }
+                            title={r.official.note}
+                          >
+                            {(r.official.source === 'phone'
+                              ? 'phone balance'
+                              : 'Supply records') +
+                              (r.official.differs ? ', differs' : '')}
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-1.5 text-right tabular-nums">
                         {fmt(r.onHand)}

@@ -89,7 +89,18 @@ function WorkflowUI({
   function day(iso) {
     if (!iso) return '';
     var d = new Date(String(iso).slice(0, 10) + 'T00:00:00');
-    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    // One date format everywhere in Supply: "30 Oct 2026".
+    return d.toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  }
+  // A date already behind us is not a warning still to come: the page says it may already have happened.
+  function isPast(iso) {
+    if (!iso) return false;
+    var d = new Date(String(iso).slice(0, 10) + 'T23:59:59');
+    return d.getTime() < new Date().getTime();
   }
 
   var source = override || loaded;
@@ -236,8 +247,8 @@ function WorkflowUI({
           ' days as out of treatment (the programme can change this; it is not the definition of default)',
       );
   }
-  if (f.data_to && f.anchor && (!f.as_of || f.data_to < f.as_of)) {
-    chips.push('data to ' + day(f.data_to));
+  if (f.data_to) {
+    chips.push('based on visits up to ' + day(f.data_to));
   } else {
     chips.push('from ' + day(f.anchor));
   }
@@ -813,12 +824,36 @@ function WorkflowUI({
                         : dry
                           ? (w.run_out && w.run_out.method === 'pace'
                               ? 'at recent pace, dry '
-                              : 'dry ') + day(dry)
+                              : 'dry ') +
+                            day(dry) +
+                            (isPast(dry) ? ' (may already have run out)' : '')
                           : 'not in ' + H + ' weeks'}
                     </div>
                     <div className="flex-1 min-w-0 text-xs text-gray-600 tabular-nums">
-                      {fmt(num(w.on_hand)) +
-                        ' held · ' +
+                      {fmt(
+                        num(
+                          w.official_stock
+                            ? w.official_stock.amount
+                            : w.on_hand,
+                        ),
+                      ) +
+                        ' held' +
+                        (w.official_stock
+                          ? ' (' +
+                            (w.official_stock.source === 'phone'
+                              ? 'phone balance'
+                              : 'Supply records') +
+                            (w.official_stock.differs
+                              ? '; ' +
+                                (w.official_stock.source === 'phone'
+                                  ? 'Supply says ' +
+                                    fmt(num(w.official_stock.records))
+                                  : 'phone says ' +
+                                    fmt(num(w.official_stock.phone)))
+                              : '') +
+                            ')'
+                          : '') +
+                        ' · ' +
                         fmt(num(w.need_total)) +
                         ' needed' +
                         (w.basis === 'cases'
