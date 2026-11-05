@@ -46,6 +46,7 @@ PATHS = {
     "Custodian": _direct,
     "StockIssue": _direct,
     "PartnerPlan": _direct,
+    "PartnerProfile": _direct,
     "StockPlan": _direct,
     "Distribution": _direct,
     "Consignment": _direct,
