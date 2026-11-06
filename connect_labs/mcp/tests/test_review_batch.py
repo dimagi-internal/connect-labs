@@ -104,6 +104,20 @@ def test_a_proposal_writes_nothing_and_groups_what_would_be_written(round_, memb
     assert labels == ["Recommended (1)", "Not recommended (1)"]
 
 
+def test_the_card_names_a_response_with_no_name_of_its_own(round_, member):
+    """Found on the live RUTF round: its responses have an empty org_name, so the card lines were blank."""
+    _, raw = member
+    first, second = list(round_.responses.order_by("source_row"))
+    SolicitationResponse.objects.filter(pk=first.pk).update(org_name="")
+    SolicitationResponse.objects.filter(pk=second.pk).update(org_name="", llo_entity=None)
+    out = _ok(_propose(raw, _batch(round_)))
+    changes = StagedEdit.objects.get(pk=out["change_id"]).preview["changes"]
+    lines = "\n".join(c["diff"] for c in changes)
+    assert "+ Fenwick Trust --" in lines, "named by the directory organisation it matched"
+    assert f"+ response {second.pk} --" in lines, "and by its id when nothing names it"
+    assert "+  --" not in lines
+
+
 def test_confirm_writes_each_review_as_the_persons_ai_pass_once(round_, member):
     user, raw = member
     change_id = _ok(_propose(raw, _batch(round_, summary_url="https://docs.example/report")))["change_id"]

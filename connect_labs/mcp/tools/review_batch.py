@@ -222,7 +222,12 @@ def preview(user, tool: str, arguments: dict) -> dict:
             "BAD_REQUEST",
             f"{len(failures)} of {len(reviews)} reviews would be refused, so nothing was proposed. {shown}",
         )
-    names = {r.pk: r.org_name for r in round_.responses.filter(pk__in=[r["response_id"] for r in reviews])}
+    # A response can arrive with no name of its own (the form's name column left empty); the
+    # directory organisation it was matched to names it, else say which response it is.
+    names = {
+        r.pk: r.org_name or (r.llo_entity.name if r.llo_entity else "") or f"response {r.pk}"
+        for r in round_.responses.filter(pk__in=[r["response_id"] for r in reviews]).select_related("llo_entity")
+    }
     changes = []
     for key in _OUTCOME_ORDER:
         group = [r for r in reviews if (r.get("outcome") or "") == key]
