@@ -314,6 +314,41 @@ def _outcome_figures(counts, undecided):
     ]
 
 
+# What the round page's AI-review button sends to the canopy agent. The agent
+# reads which round from the page state; these words only have to say what is
+# wanted, in terms its review skills describe ("AI-review a marketplace EOI
+# round"; "write the round's evaluation criteria"). Kept here, not in a
+# template, so a test can pin them.
+AI_REVIEW_ASK = (
+    "Start the AI review of this EOI round: score every response on the round's criteria and write the shortlist."
+)
+CRITERIA_ASK = (
+    "This EOI round has no evaluation criteria yet. Propose criteria for it from its responses, "
+    "for me to approve, so the AI review can start."
+)
+
+
+def _ai_review_button(round_):
+    """The label, hint and words for the round page's AI-review button."""
+    if round_.evaluation_criteria:
+        return {
+            "ai_review_label": "Start AI review",
+            "ai_review_hint": (
+                "Asks the assistant to score every response on this round's criteria and write an AI review "
+                "of each here, plus a shortlist report. Earlier AI reviews are replaced; people's reviews stay."
+            ),
+            "ai_review_ask": AI_REVIEW_ASK,
+        }
+    return {
+        "ai_review_label": "Propose criteria",
+        "ai_review_hint": (
+            "This round has no evaluation criteria yet. Asks the assistant to propose them from the "
+            "responses, for you to approve, before the AI review can start."
+        ),
+        "ai_review_ask": CRITERIA_ASK,
+    }
+
+
 @login_required
 @MARKETPLACE_CHROME
 def round_detail(request, slug):
@@ -346,6 +381,7 @@ def round_detail(request, slug):
             "unresolved_count": sum(1 for a in applicants if a["outcome"] == "unresolved"),
             "mix": mix,
             "reviewed": reviewed,
+            **_ai_review_button(round_),
             # The header both of the round's pages share.
             "outcomes": _outcome_figures(
                 reviewed.get("outcomes", {}), len(applicants) - sum(reviewed.get("outcomes", {}).values())
