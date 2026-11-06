@@ -105,6 +105,7 @@ def value(service: str, country: str, total_usd: float, reached: int) -> dict:
         "cost_per_person": (total_usd / reached) if reached else None,
         "model_x": None,
         "model_cost_per_person": None,
+        "model_deaths_per_100k": None,
         "x": None,
         "deaths_averted": None,
         "cost_per_death": None,
@@ -120,6 +121,8 @@ def value(service: str, country: str, total_usd: float, reached: int) -> dict:
     cell = loc[key]
     out["model_x"] = cell["x"]
     out["model_cost_per_person"] = cell["unit_cost"]
+    # Per person reached; the page's what-if controls recompute deaths from it.
+    out["model_deaths_per_100k"] = cell["deaths_per_100k"]
     if not reached or total_usd <= 0:
         out["status"] = STATUS_NOTHING_DELIVERED
         return out

@@ -43,6 +43,14 @@
   .cea .notes { font-size:12.5px; color:var(--muted); line-height:1.55; }
   .cea .notes b { color:var(--ink); }
   .cea a { color:#4338ca; }
+  .cea .whatif .wi-top { display:flex; flex-wrap:wrap; gap:10px 22px; margin:6px 0 12px; font-size:13px; }
+  .cea .whatif label { display:flex; flex-direction:column; gap:4px; color:var(--muted); font-size:12px; }
+  .cea .whatif select, .cea .whatif input, .cea #controls select, .cea #controls input[type=number] { border:1px solid var(--rule); border-radius:6px; padding:5px 8px; font-size:13px; color:var(--ink); background:#fff; }
+  .cea .wi-unit { display:flex; align-items:center; gap:4px; color:var(--ink); }
+  .cea .wi-unit input { width:80px; }
+  .cea table.wi-models { width:auto; }
+  .cea table.wi-models th { position:static; cursor:default; }
+  .cea table.wi-models td input { width:90px; }
   .cea .btn { font-size:13px; padding:5px 11px; border:1px solid #d1d5db; border-radius:6px; background:#fff; text-decoration:none; color:var(--ink); }
 </style>
 {% endblock %}
@@ -67,17 +75,52 @@
 
   <div class="tiles" id="tiles"></div>
 
+  <div class="card whatif" id="whatif">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <div><h2>What if</h2>
+        <p class="sub">Change the inputs and every multiple, total and rank below recomputes. Your settings are kept in the link, so a
+          scenario can be shared.</p></div>
+      <button type="button" class="btn" id="wi-reset">Reset to the models</button>
+    </div>
+    <div class="wi-top">
+      <label>Cost basis
+        <select id="wi-basis">
+          <option value="actual">What Connect paid, plus any extra cost below</option>
+          <option value="model">The model's own price (location only)</option>
+        </select></label>
+      <label>Rank by
+        <select id="wi-rank">
+          <option value="x">Multiple of GiveWell's benchmark</option>
+          <option value="deaths_averted">Deaths averted</option>
+          <option value="cost_per_death">Cost per death averted (lowest first)</option>
+          <option value="total_usd">Total cost</option>
+        </select></label>
+      <label>GiveWell bar <span class="wi-unit"><input type="number" id="wi-bar" min="1" step="0.5"> x</span></label>
+    </div>
+    <table class="wi-models">
+      <thead><tr><th></th>
+        <th title="Added to what Connect paid, per person reached: commodities, supervision, running costs bought outside Connect">Extra cost per person</th>
+        <th title="The share of the model's effect on deaths you think this delivery achieves">Effect, % of model</th>
+        <th title="The share of the counted people you believe are distinct people reached">People counted, %</th>
+        <th>Model price</th></tr></thead>
+      <tbody id="wi-rows"></tbody>
+    </table>
+  </div>
+
   <div class="controls" id="controls">
     <span style="color:var(--muted)">Show:</span>
     <label class="chip"><input type="checkbox" data-model="chc" checked><span class="sw" style="background:var(--chc)"></span>Child Health Campaign</label>
     <label class="chip"><input type="checkbox" data-model="mbw" checked><span class="sw" style="background:var(--mbw)"></span>Mother Baby Wellness</label>
     <label class="chip"><input type="checkbox" data-model="kc" checked><span class="sw" style="background:var(--kc)"></span>Kangaroo Care</label>
     <label class="chip"><input type="checkbox" id="active-only">Active only</label>
+    <label class="chip"><input type="checkbox" id="modelled-only">Modelled only</label>
+    <select id="country"><option value="">All countries</option></select>
+    <label class="chip">Min. spend $<input type="number" id="min-spend" min="0" step="1000" style="width:90px"></label>
     <input type="search" id="q" placeholder="Filter by opportunity, partner or country">
   </div>
 
   <div class="card">
-    <h2>Ranked by multiple at actual cost</h2>
+    <h2 id="rank-title">Ranked by multiple at actual cost</h2>
     <p class="sub">Bar = the opportunity's multiple at what it really cost per person. Hollow tick = the model's multiple for that
       country at the model's default price, so the gap between them is what price did. Bar height scales with total spend.</p>
     <div id="rank-wrap"><svg id="rank"></svg></div>
@@ -184,8 +227,95 @@
     return D.models[k].label + " " + usd(D.models[k].price) + " per " + D.models[k].unit;
   }).join("; ");
 
+  // ---------- what-if inputs ----------
+  var DEF = { basis: "actual", rank: "x", bar: D.bar_x, m: {} };
+  Object.keys(D.models).forEach(function (k) { DEF.m[k] = { extra: 0, effect: 100, reach: 100 }; });
+  var W = JSON.parse(JSON.stringify(DEF));
+  (function readUrl() {
+    var p = new URLSearchParams(location.search);
+    if (p.get("basis")) W.basis = p.get("basis");
+    if (p.get("rank")) W.rank = p.get("rank");
+    if (p.get("bar")) W.bar = +p.get("bar") || W.bar;
+    Object.keys(W.m).forEach(function (k) {
+      ["extra", "effect", "reach"].forEach(function (f) { var v = p.get(k + "_" + f); if (v !== null && v !== "" && !isNaN(+v)) W.m[k][f] = +v; });
+    });
+  })();
+  function writeUrl() {
+    var p = new URLSearchParams();
+    if (W.basis !== DEF.basis) p.set("basis", W.basis);
+    if (W.rank !== DEF.rank) p.set("rank", W.rank);
+    if (W.bar !== DEF.bar) p.set("bar", W.bar);
+    Object.keys(W.m).forEach(function (k) { ["extra", "effect", "reach"].forEach(function (f) { if (W.m[k][f] !== DEF.m[k][f]) p.set(k + "_" + f, W.m[k][f]); }); });
+    var q = p.toString();
+    try { history.replaceState(null, "", location.pathname + (q ? "?" + q : "")); } catch (e) { /* a sandboxed frame: the scenario still applies */ }
+  }
+  var wiRows = document.getElementById("wi-rows");
+  wiRows.innerHTML = Object.keys(D.models).map(function (k) {
+    var m = D.models[k];
+    return '<tr><td><span class="sw" style="background:' + COL[k] + ';margin-right:6px"></span>' + esc(m.label) + '</td>' +
+      '<td><span class="wi-unit">$<input type="number" min="0" step="0.1" data-k="' + k + '" data-f="extra"></span></td>' +
+      '<td><span class="wi-unit"><input type="number" min="0" max="300" step="5" data-k="' + k + '" data-f="effect">%</span></td>' +
+      '<td><span class="wi-unit"><input type="number" min="1" max="100" step="5" data-k="' + k + '" data-f="reach">%</span></td>' +
+      '<td style="color:#6b7280">' + usd(m.price) + " per " + esc(m.unit) + "</td></tr>";
+  }).join("");
+  function fillInputs() {
+    document.getElementById("wi-basis").value = W.basis;
+    document.getElementById("wi-rank").value = W.rank;
+    document.getElementById("wi-bar").value = W.bar;
+    wiRows.querySelectorAll("input").forEach(function (i) { i.value = W.m[i.dataset.k][i.dataset.f]; i.disabled = W.basis === "model" && i.dataset.f === "extra"; });
+  }
+  fillInputs();
+  document.getElementById("wi-basis").addEventListener("change", function (e) { W.basis = e.target.value; fillInputs(); writeUrl(); draw(); });
+  document.getElementById("wi-rank").addEventListener("change", function (e) { W.rank = e.target.value; writeUrl(); draw(); });
+  document.getElementById("wi-bar").addEventListener("input", function (e) { var v = +e.target.value; if (v > 0) { W.bar = v; BAR = v; writeUrl(); draw(); } });
+  wiRows.addEventListener("input", function (e) {
+    var i = e.target; if (!i.dataset.k) return;
+    var v = +i.value; if (i.value === "" || isNaN(v) || v < 0) return;
+    W.m[i.dataset.k][i.dataset.f] = v; writeUrl(); draw();
+  });
+  document.getElementById("wi-reset").addEventListener("click", function () {
+    W = JSON.parse(JSON.stringify(DEF)); BAR = W.bar; fillInputs(); writeUrl(); draw();
+  });
+  BAR = W.bar;
+
+  // Recompute one row from the server's inputs and the what-if settings. Same arithmetic as pulse/cea.py:
+  // multiple = model multiple x effect x model price / cost per person (leveraging is 1 in every model).
+  function compute(base) {
+    var r = Object.assign({}, base);
+    if (base.model_x == null || !base.reached || base.total_usd <= 0) return r;
+    var s = W.m[base.model] || DEF.m[base.model];
+    var eff = s.effect / 100, people = base.reached * s.reach / 100;
+    if (people <= 0) return r;
+    var cost = W.basis === "model" ? base.model_cost_per_person * people : base.total_usd + s.extra * people;
+    r.reached = people;
+    r.cost_per_person = cost / people;
+    r.x = base.model_x * eff * base.model_cost_per_person / r.cost_per_person;
+    r.deaths_averted = people * base.model_deaths_per_100k / 100000 * eff;
+    r.cost_per_death = r.deaths_averted ? cost / r.deaths_averted : null;
+    r.cost_used = cost;
+    r.clears_bar = r.x >= BAR;
+    return r;
+  }
+  var RANK_LABEL = { x: "multiple of GiveWell's benchmark", deaths_averted: "deaths averted", cost_per_death: "cost per death averted", total_usd: "total cost" };
+  function rankRows(rows) {
+    var m = rows.filter(function (r) { return r.status === "modelled"; });
+    var k = W.rank, dir = k === "cost_per_death" ? 1 : -1;
+    m.sort(function (a, b) { return ((a[k] || 0) - (b[k] || 0)) * dir; });
+    m.forEach(function (r, i) { r.rank = i + 1; });
+    var rest = rows.filter(function (r) { return r.status !== "modelled"; });
+    rest.forEach(function (r) { r.rank = null; });
+    return m.concat(rest);
+  }
+
   // ---------- filters ----------
-  var state = { models: { chc: true, mbw: true, kc: true }, active: false, q: "" };
+  var state = { models: { chc: true, mbw: true, kc: true }, active: false, q: "", modelled: false, country: "", minSpend: 0 };
+  var csel = document.getElementById("country");
+  Array.from(new Set(D.rows.map(function (r) { return r.country_name; }))).sort().forEach(function (c) {
+    var o = document.createElement("option"); o.value = c; o.textContent = c; csel.appendChild(o);
+  });
+  csel.addEventListener("change", function (e) { state.country = e.target.value; draw(); });
+  document.getElementById("modelled-only").addEventListener("change", function (e) { state.modelled = e.target.checked; draw(); });
+  document.getElementById("min-spend").addEventListener("input", function (e) { state.minSpend = +e.target.value || 0; draw(); });
   document.querySelectorAll("#controls input[data-model]").forEach(function (cb) {
     cb.addEventListener("change", function () { state.models[cb.dataset.model] = cb.checked; draw(); });
   });
@@ -193,6 +323,9 @@
   document.getElementById("q").addEventListener("input", function (e) { state.q = e.target.value.toLowerCase(); draw(); });
   function passes(r) {
     if (state.active && !r.active) return false;
+    if (state.modelled && r.status !== "modelled") return false;
+    if (state.country && r.country_name !== state.country) return false;
+    if (state.minSpend && r.total_usd < state.minSpend) return false;
     if (r.model && !state.models[r.model]) return false;
     if (state.q) {
       var hay = (r.name + " " + r.org_slug + " " + r.country_name + " " + r.service_name).toLowerCase();
@@ -206,15 +339,16 @@
     var m = rows.filter(function (r) { return r.status === "modelled"; });
     var spend = rows.reduce(function (a, r) { return a + r.total_usd; }, 0);
     var mspend = m.reduce(function (a, r) { return a + r.total_usd; }, 0);
-    var px = mspend ? m.reduce(function (a, r) { return a + r.x * r.total_usd; }, 0) / mspend : null;
+    var used = m.reduce(function (a, r) { return a + (r.cost_used || r.total_usd); }, 0);
+    var px = used ? m.reduce(function (a, r) { return a + r.x * (r.cost_used || r.total_usd); }, 0) / used : null;
     var deaths = m.reduce(function (a, r) { return a + r.deaths_averted; }, 0);
     var clear = m.filter(function (r) { return r.clears_bar; }).length;
     var t = [
       ["Opportunities", num(rows.length), num(m.length) + " with a model"],
       ["Total spend", usd(spend), usd(mspend) + " modelled (" + (spend ? Math.round(100 * mspend / spend) : 0) + "%)"],
-      ["Portfolio multiple", xfmt(px), "spend-weighted, modelled only"],
+      ["Portfolio multiple", xfmt(px), W.basis === "model" ? "at the models' prices" : "cost-weighted, modelled only"],
       ["Clear GiveWell's bar", num(clear) + " / " + num(m.length), BAR + "x benchmark"],
-      ["Deaths averted (modelled)", "~" + num(deaths, 0), mspend && deaths ? usd(mspend / deaths) + " per death" : ""],
+      ["Deaths averted (modelled)", "~" + num(deaths, 0), used && deaths ? usd(used / deaths) + " per death" : ""],
     ];
     document.getElementById("tiles").innerHTML = t.map(function (x) {
       return '<div class="tile"><div class="k">' + x[0] + '</div><div class="v">' + x[1] + '</div><div class="s">' + x[2] + "</div></div>";
@@ -414,7 +548,9 @@
 
   var current = [];
   function draw() {
-    current = D.rows.filter(passes);
+    current = rankRows(D.rows.filter(passes).map(compute));
+    document.getElementById("rank-title").textContent = "Ranked by " + RANK_LABEL[W.rank] +
+      (W.basis === "model" ? ", at the models' prices" : ", at what each opportunity cost");
     tiles(current); rankChart(current); scatter(current); noModel(current); table(current);
     if (mapReady) { map.getSource("opps").setData(geo(current)); fit(); }
   }
