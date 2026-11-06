@@ -68,6 +68,8 @@ class TestValue:
         mw = cea.models()["countries"]["MW"]["mbw"]
         out = cea.value("mbw", "mw", total_usd=20_000, reached=1_000)
         assert out["deaths_averted"] == pytest.approx(1_000 * mw["deaths_per_100k"] / 100_000)
+        # The page's what-if controls recompute deaths from this, so it ships with every modelled row.
+        assert out["model_deaths_per_100k"] == mw["deaths_per_100k"]
         assert out["cost_per_death"] == pytest.approx(20_000 / out["deaths_averted"])
 
     def test_bar(self):
