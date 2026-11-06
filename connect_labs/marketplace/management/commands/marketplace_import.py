@@ -321,6 +321,17 @@ class Command(BaseCommand):
         if verdicts:
             self.stdout.write(f"  {len(verdicts)} human verdicts to apply")
 
+        # Each form's choices, grids and sections, from the forms shared with
+        # the service account (`form_structure`). Unreadable is not fatal: the
+        # questions then stay text boxes, as they were before.
+        from connect_labs.marketplace import form_structure
+
+        try:
+            shared = form_structure.shared_forms()
+        except Exception as exc:  # noqa: BLE001
+            shared = []
+            self.stdout.write(self.style.WARNING(f"  could not list shared Google Forms: {exc}"))
+
         totals = {"submissions": 0, "matched": 0, "unmatched": 0}
         # A round ingests every form that could be read; one unreadable form
         # must not hold back the others' submissions.
@@ -337,13 +348,18 @@ class Command(BaseCommand):
                 for key in keys
                 if key in forms
             }
-            got = eoi.ingest_round(round_, rows, human_verdicts=verdicts)
+            got = eoi.ingest_round(round_, rows, human_verdicts=verdicts, shared_forms=shared)
             for key in totals:
                 totals[key] += got[key]
             self.stdout.write(
                 f"  {round_.slug}: {got['submissions']} submissions, "
                 f"{got['matched']} matched, {got['unmatched']} unmatched"
             )
+            for key, matched in got["structure"].items():
+                if matched is None:
+                    self.stdout.write(f"    {key}: form not shared with the service account; questions shown as text")
+                else:
+                    self.stdout.write(f"    {key}: {matched} questions take their form's choices and sections")
         self.stdout.write(
             self.style.SUCCESS(
                 f"{totals['submissions']} submissions — {totals['matched']} matched to an organisation, "

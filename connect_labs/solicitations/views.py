@@ -249,6 +249,44 @@ def _area_picker(request, name, *, initial=(), limits=(), input_id="", empty_tex
     return picker
 
 
+# Question types answered by picking, drawn as choices rather than boxes.
+CHOICE_TYPES = ("multiple_choice", "checkboxes")
+
+
+def question_blocks(question_fields) -> list[dict]:
+    """The questions as the form lays them out: section headings, single
+    questions, and a grid's rows gathered into one table.
+
+    A Google Form grid arrives as one question per row (the response sheet has
+    a column per row), each carrying ``grid`` (`marketplace.form_structure`).
+    Consecutive rows of one grid become one block, so "rank these 1st, 2nd,
+    3rd" reads as the table it was, not six separate questions.
+    """
+    blocks: list[dict] = []
+    for qf in question_fields:
+        question = qf["question"]
+        if question.get("section"):
+            blocks.append({"kind": "section", **question["section"]})
+        grid = question.get("grid")
+        if not grid:
+            blocks.append({"kind": "question", **qf})
+            continue
+        last = blocks[-1] if blocks else None
+        if not (last and last["kind"] == "grid" and last["id"] == grid.get("id")):
+            last = {
+                "kind": "grid",
+                "id": grid.get("id"),
+                "title": grid.get("title", ""),
+                "help": grid.get("help", ""),
+                "columns": grid.get("columns", []),
+                "multi": question.get("type") == "checkboxes",
+                "rows": [],
+            }
+            blocks.append(last)
+        last["rows"].append({"label": grid.get("row", ""), **qf})
+    return blocks
+
+
 def _compact_round_widgets(form, questions) -> None:
     """Size a round's read-only fields to what was answered on its Google Form.
 
@@ -263,7 +301,7 @@ def _compact_round_widgets(form, questions) -> None:
 
     for q in questions or []:
         field = form.fields.get(f"question_{q.get('id', '')}")
-        if field is None:
+        if field is None or q.get("type") in CHOICE_TYPES:
             continue
         if q.get("long", True):
             field.widget = django_forms.Textarea(attrs={"rows": 3, "class": "base-input !h-auto py-2 resize-y"})
@@ -1125,6 +1163,7 @@ class RespondView(SignedInPage):
             round_forms=round_forms,
             form=form,
             question_fields=question_fields,
+            question_blocks=question_blocks(question_fields),
             mapbox_token=settings.MAPBOX_TOKEN or "",
             is_demo=demo.is_demo_org(solicitation.owner_org),
             area_picker=self._area_picker(solicitation, my_response, form),

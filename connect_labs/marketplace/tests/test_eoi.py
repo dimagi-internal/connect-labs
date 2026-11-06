@@ -69,6 +69,27 @@ class TestUpsertRounds:
     def test_every_round_is_owned_by_dimagi(self, round_):
         assert round_.owner_org.slug == "dimagi"
 
+    def test_a_shared_form_gives_the_questions_their_choices(self, round_):
+        form = {
+            "linkedSheetId": round_.directory_forms[0]["response_spreadsheet_id"],
+            "items": [
+                {
+                    "title": "Organization name",
+                    "questionItem": {"question": {"required": True, "textQuestion": {}}},
+                }
+            ],
+        }
+        stats = ingest_round(round_, RESPONSES, shared_forms=[form])
+        assert stats["structure"] == {round_.directory_forms[0]["key"]: 1}
+        round_.refresh_from_db()
+        assert round_.questions[1]["type"] == "text" and round_.questions[1]["required"] is True
+
+    def test_an_unshared_form_leaves_text_boxes_and_says_so(self, round_):
+        stats = ingest_round(round_, RESPONSES)
+        assert list(stats["structure"].values()) == [None]
+        round_.refresh_from_db()
+        assert "type" not in round_.questions[1]
+
     def test_is_idempotent(self, round_):
         rounds, _ = parse_rounds(ROUND_ROWS)
         upsert_rounds(rounds)
