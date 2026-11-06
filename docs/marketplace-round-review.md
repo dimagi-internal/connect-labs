@@ -94,7 +94,13 @@ Code: `marketplace/directory.py` (parsing), `marketplace/eoi.py`
   `questions` from the header, matches each submission to a `LabsOrg` (exact
   contact email, exact normalised name, an earlier round's matched email, or a
   human verdict from the `EOI Response Mapping` tab; `marketplace/matching.py`),
-  and stamps `last_ingested_at`.
+  and stamps `last_ingested_at`. It then reads each form's **public page** (the
+  `Form Link`, as a respondent sees it; `marketplace/form_structure.py`) to give
+  the questions their choices, grids, sections, help text and required flags.
+  No form is shared with labs: the Forms API would need edit rights, which a
+  read does not justify. A form whose page can't be read (closed, sign-in only,
+  or a layout change) is named in the import output, and its questions stay
+  text boxes.
 - Each round's response sheet is a separate file and must be shared explicitly
   with `connect-labs-sa@connect-labs.iam.gserviceaccount.com` (`eoi._SA_EMAIL`).
   Viewer access is enough. An unreadable sheet is recorded as `denied` (or `missing`
