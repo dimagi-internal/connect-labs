@@ -50,7 +50,7 @@ def queryset():
     return Solicitation.objects.directory_rounds().exclude(_still_open())
 
 
-def form_questions(call, response=None) -> list[dict]:
+def form_questions(call, response=None, form_key=None) -> list[dict]:
     """The round's questions as its form asked them.
 
     The response sheet's header is the question list, and Google Forms puts a
@@ -59,12 +59,16 @@ def form_questions(call, response=None) -> list[dict]:
     A round that ran several forms (an English and a French one) holds every
     form's questions. Given a ``response``, only the questions its own form
     asked are returned, so an English submission is not shown the French
-    questions as blanks.
+    questions as blanks. Given a ``form_key``, only the questions that form
+    asked: the import records them on each question as ``forms``, and a
+    question imported before it did is kept.
     """
     questions = [q for q in (call.questions or []) if q.get("text", "").strip().lower() != "timestamp"]
     if response is not None and len(call.directory_forms) > 1:
         answered = response.responses or {}
         questions = [q for q in questions if q.get("id") in answered]
+    if form_key and len(call.directory_forms) > 1:
+        questions = [q for q in questions if form_key in q.get("forms", [form_key])]
     return questions
 
 

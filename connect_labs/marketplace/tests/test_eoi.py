@@ -473,6 +473,23 @@ class TestARoundWithSeveralForms:
         texts = [q["text"] for q in round_.questions]
         assert "Organization name" in texts and "Nom de l'organisation" in texts
 
+    def test_each_question_records_the_forms_that_asked_it(self, grouped):
+        round_, _ = grouped
+        ingest_round(round_, {"chp-2026-en": RESPONSES, "chp-2026-fr": FR_RESPONSES})
+        round_.refresh_from_db()
+        forms = {q["text"]: q["forms"] for q in round_.questions}
+        assert forms["Organization name"] == ["chp-2026-en"]
+        assert forms["Nom de l'organisation"] == ["chp-2026-fr"]
+
+    def test_each_question_records_whether_it_was_answered_at_length(self, grouped):
+        round_, _ = grouped
+        long_fr = [FR_RESPONSES[0], FR_RESPONSES[1][:3] + ["Sénégal, " + "x" * 120]]
+        ingest_round(round_, {"chp-2026-en": RESPONSES, "chp-2026-fr": long_fr})
+        round_.refresh_from_db()
+        long = {q["text"]: q["long"] for q in round_.questions}
+        assert long["Pays"] is True
+        assert long["Nom de l'organisation"] is False
+
     def test_each_form_is_checked_and_the_round_takes_the_worst(self, grouped):
         round_, _ = grouped
 

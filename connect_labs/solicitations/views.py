@@ -243,6 +243,28 @@ def _area_picker(request, name, *, initial=(), limits=(), input_id="", empty_tex
     return picker
 
 
+def _compact_round_widgets(form, questions) -> None:
+    """Size a round's read-only fields to what was answered on its Google Form.
+
+    The respond form gives every question ten rows, for drafting a long answer.
+    A round's copy only shows what it asked, so a question answered in a few
+    words (a name, a year, a phone number) is a one-line box and one answered
+    in prose a three-row area. The import sets ``long``
+    (`marketplace.eoi._long_answer_ids`); a question imported before it did is
+    shown as prose.
+    """
+    from django import forms as django_forms
+
+    for q in questions or []:
+        field = form.fields.get(f"question_{q.get('id', '')}")
+        if field is None:
+            continue
+        if q.get("long", True):
+            field.widget = django_forms.Textarea(attrs={"rows": 3, "class": "base-input !h-auto py-2 resize-y"})
+        else:
+            field.widget = django_forms.TextInput(attrs={"class": "base-input"})
+
+
 def _posted_areas(raw) -> list[dict]:
     """Areas a form posted, resolved again so a re-rendered map can draw them ([] if they no longer resolve)."""
     try:
@@ -1055,7 +1077,9 @@ class RespondView(SignedInPage):
             questions=solicitation.questions,
             plans=solicitation.plans,
             org_choices=[(o.slug, o.name) for o in orgs],
-            pick_areas=_picks_areas(solicitation),
+            # A round's read-only copy shows the map too, as what answering in
+            # labs would ask; nothing posted to a round is kept (403).
+            pick_areas=_picks_areas(solicitation) or _is_round(solicitation),
             data=data,
             initial=initial,
         )
@@ -1067,10 +1091,16 @@ class RespondView(SignedInPage):
                 criteria_by_question.setdefault(q_id, []).append(criterion)
         question_fields = []
         is_round = _is_round(solicitation)
+        round_forms, form_key = self._round_forms(solicitation) if is_round else ([], None)
+        questions = past_calls.form_questions(solicitation, form_key=form_key) if is_round else solicitation.questions
+        if is_round:
+            _compact_round_widgets(form, questions)
         if is_round or not solicitation.can_accept_responses:
-            for field in form.fields.values():
-                field.widget.attrs["disabled"] = True
-        for question in past_calls.form_questions(solicitation) if is_round else solicitation.questions or []:
+            for name, field in form.fields.items():
+                # The round's map stays live: picking on it is the preview.
+                if not (is_round and name == "service_areas"):
+                    field.widget.attrs["disabled"] = True
+        for question in questions or []:
             field_name = f"question_{question.get('id', '')}"
             question_fields.append(
                 {
@@ -1086,6 +1116,7 @@ class RespondView(SignedInPage):
             already_submitted=my_response is not None and my_response.status != "draft",
             not_accepting=is_round or not solicitation.can_accept_responses,
             is_directory_round=is_round,
+            round_forms=round_forms,
             form=form,
             question_fields=question_fields,
             mapbox_token=settings.MAPBOX_TOKEN or "",
@@ -1095,9 +1126,36 @@ class RespondView(SignedInPage):
         )
         return ctx
 
+    def _round_forms(self, solicitation):
+        """A round's forms to switch between (an English and a French one), and the one shown.
+
+        Each form asked its own questions in its own language, so the copy shows
+        one form at a time: ``?form=<key>``, else the first.
+        """
+        forms_ = solicitation.directory_forms
+        keys = [f.get("key") for f in forms_]
+        chosen = self.request.GET.get("form")
+        form_key = chosen if chosen in keys else (keys[0] if keys else None)
+        if len(forms_) < 2:
+            return [], form_key
+        return [
+            {"key": f.get("key"), "label": f.get("label") or f.get("key"), "active": f.get("key") == form_key}
+            for f in forms_
+        ], form_key
+
     def _area_picker(self, solicitation, my_response, form):
-        """The map for picking where you would work, when this call asks (and is open)."""
-        if "service_areas" not in form.fields or _is_round(solicitation) or not solicitation.can_accept_responses:
+        """The map for picking where you would work, when this call asks (and is open).
+
+        A round's read-only copy shows it too, empty and live: what answering in
+        labs would ask of an organisation. Nothing picked there is kept.
+        """
+        if "service_areas" not in form.fields:
+            return None
+        if _is_round(solicitation):
+            return _area_picker(
+                self.request, "respond", input_id="id_service_areas", empty_text="No areas picked yet."
+            )
+        if not solicitation.can_accept_responses:
             return None
         if form.is_bound:
             initial = _posted_areas(form.data.get("service_areas"))

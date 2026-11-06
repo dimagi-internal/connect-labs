@@ -319,3 +319,55 @@ def test_member_of_dimagi_gets_no_management_of_past_calls(client, world):
     assert access.can_manage(member, world["round"]) is False
     body = login(client, member).get(url("past_detail", slug="chc-2025")).content.decode()
     assert url("edit", pk=world["round"].pk) not in body
+
+
+def _two_form_round():
+    return make_round(
+        slug="rfi-2026",
+        status="active",
+        forms=[
+            {"key": "rfi-2026-en", "label": "RFI (English)"},
+            {"key": "rfi-2026-fr", "label": "RFI (French)"},
+        ],
+        questions=[
+            {"id": "timestamp", "text": "Timestamp", "column": 0, "forms": ["rfi-2026-en", "rfi-2026-fr"]},
+            {"id": "org", "text": "Organization name", "column": 1, "forms": ["rfi-2026-en"], "long": False},
+            {"id": "why", "text": "Why this programme?", "column": 2, "forms": ["rfi-2026-en"], "long": True},
+            {"id": "nom", "text": "Nom de l'organisation", "column": 1, "forms": ["rfi-2026-fr"], "long": False},
+        ],
+    )
+
+
+def test_a_two_form_round_shows_one_form_at_a_time(client, world):
+    round_ = _two_form_round()
+    login(client, world["user"])
+    body = client.get(url("respond", pk=round_.pk)).content.decode()
+    assert "Organization name" in body and "Nom de l&#x27;organisation" not in body
+    assert 'data-testid="round-form-switcher"' in body
+    body = client.get(url("respond", pk=round_.pk) + "?form=rfi-2026-fr").content.decode()
+    assert "Nom de l&#x27;organisation" in body and "Organization name" not in body
+
+
+def test_a_round_s_short_answers_are_one_line_and_its_prose_three_rows(client, world):
+    round_ = _two_form_round()
+    login(client, world["user"])
+    form = client.get(url("respond", pk=round_.pk)).context["form"]
+    assert form.fields["question_org"].widget.input_type == "text"
+    assert form.fields["question_why"].widget.attrs["rows"] == 3
+
+
+def test_a_round_s_copy_offers_the_area_map_as_a_preview(client, world):
+    round_ = _two_form_round()
+    login(client, world["user"])
+    response = client.get(url("respond", pk=round_.pk))
+    body = response.content.decode()
+    assert 'data-testid="round-area-picker"' in body
+    assert "disabled" not in str(response.context["form"]["service_areas"])
+    # Still nothing answers a round here.
+    assert client.post(url("respond", pk=round_.pk), {"service_areas": "[]"}).status_code == 403
+
+
+def test_a_one_form_round_has_no_switcher(client, world):
+    login(client, world["user"])
+    body = client.get(url("respond", pk=world["round"].pk)).content.decode()
+    assert 'data-testid="round-form-switcher"' not in body
