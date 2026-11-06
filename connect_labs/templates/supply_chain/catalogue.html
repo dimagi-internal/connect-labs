@@ -32,7 +32,8 @@ The three levels as the steps you take, not definitions (Sophie's RUTF feedback)
 item, and why there is no "add batch". The identity is load bearing -- conflating the levels is how a
 per-sachet figure goes wrong -- so it stays on the page, as a short numbered list.
 {% endcomment %}
-<ol data-testid="catalogue-steps" class="mb-6 max-w-3xl space-y-1.5 text-sm text-gray-700">
+<details class="mb-5 max-w-3xl text-sm text-gray-700"><summary class="cursor-pointer text-gray-600">How the catalogue works</summary>
+<ol data-testid="catalogue-steps" class="mt-2 space-y-1.5">
   <li><b>1. Add a product</b> once: what you need and how it is used ("RUTF, 92&nbsp;g sachet, 2 a day").</li>
   <li><b>2. Add a {% term "trade item" %}</b> when you place an order, once for each manufacturer's version
     you actually buy (not once per quote): their carton size, shelf life and barcode.</li>
@@ -40,6 +41,7 @@ per-sachet figure goes wrong -- so it stays on the page, as a short numbered lis
     date and certificate that arrive with the goods, so it is recorded when stock is received or sent on
     (see <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:stock' %}">Stock</a>).</li>
 </ol>
+</details>
 
 {% for product in products %}
   <div class="bg-white border border-brand-border-light rounded-lg mb-4 overflow-hidden">

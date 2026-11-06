@@ -77,7 +77,7 @@ class TestAnArrivalDateThatIsKnown:
         line = _consignment_lines(_stock_page(scoped))
         assert "overdue since" in line, line
         # And it does NOT claim the date is unknown: it is known, and passed.
-        assert "no arrival date" not in line.lower()
+        assert "no date given" not in line.lower()
 
 
 class TestAnArrivalDateThatIsNot:
@@ -85,7 +85,7 @@ class TestAnArrivalDateThatIsNot:
         _undated_donation(world)
         line = _consignment_lines(_stock_page(scoped))
         assert "expected:" in line, "the scenario needs the consignment to be owed at all"
-        assert "no arrival date has been given" in line.lower(), line
+        assert "no date given" in line.lower(), line
 
     def test_it_is_not_dressed_as_overdue(self, scoped, world):
         """Unknown is not late. A date nobody promised cannot have been missed.

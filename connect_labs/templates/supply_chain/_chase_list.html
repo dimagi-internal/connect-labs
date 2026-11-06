@@ -15,11 +15,14 @@ Every row says what to do, how much is at stake and how long it has waited.
       <div class="min-w-0">
         <div class="text-sm text-gray-900" data-testid="chase-ask">{% if item.href %}<a class="hover:underline" href="{{ item.href }}">{{ item.ask|explain_term:item.hint_term }}</a>{% else %}{{ item.ask|explain_term:item.hint_term }}{% endif %}</div>
         {% if item.parts %}
-        <ul class="mt-0.5 list-disc pl-5 text-xs text-gray-700" data-testid="chase-parts">
+        <details class="mt-0.5 text-xs text-gray-700"><summary class="cursor-pointer text-gray-600">{{ item.what }}{% if item.about %} · {{ item.about }}{% endif %}{% if multi %} · {{ item.program }}{% endif %}</summary>
+        <ul class="mt-0.5 list-disc pl-5" data-testid="chase-parts">
           {% for part in item.parts %}<li>{% if part.href %}<a class="hover:underline" href="{{ part.href }}">{{ part.text|explain_term:part.hint_term }}</a>{% else %}{{ part.text|explain_term:part.hint_term }}{% endif %}{% if part.amount %} <span class="text-gray-600">· {{ part.amount }}</span>{% endif %}{% if part.days is not None %} <span class="text-gray-600">· {{ part.days }} day{{ part.days|pluralize }}</span>{% endif %}</li>{% endfor %}
         </ul>
-        {% endif %}
+        </details>
+        {% else %}
         <div class="text-xs text-gray-600">{{ item.what }}{% if item.about %} · {{ item.about }}{% endif %}{% if multi %} · {{ item.program }}{% endif %}</div>
+        {% endif %}
       </div>
       <div class="whitespace-nowrap text-right text-xs text-gray-600" data-testid="chase-meta">{% if item.amount %}<span data-testid="chase-amount">{{ item.amount }}</span> · {% endif %}{% if item.days is not None %}{{ item.days }} day{{ item.days|pluralize }} open{% elif item.age_text %}{{ item.age_text }}{% else %}no date recorded{% endif %}</div>
     </li>

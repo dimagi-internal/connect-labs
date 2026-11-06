@@ -66,65 +66,27 @@ GROUP_OF_TAB = {name: group for group, tabs in TAB_GROUPS for name, _ in tabs}
 # programme manager or partner staff member. Shown under the tabs on the tab's
 # own page (not on the records one level below it).
 PAGE_PURPOSE = {
-    "supply_chain:home": ("What is open, what is waiting on someone, and what the records cannot answer yet."),
-    "supply_chain:start_here": (
-        "What each part of Supply is for, the steps by moment (once, each purchase, weekly, monthly), "
-        "and where each kind of person starts."
-    ),
-    "supply_chain:procurement_tender_board": (
-        "How you ask suppliers for prices. Create a tender (a request for quotes), "
-        "ask suppliers to quote, record their replies, compare and choose."
-    ),
-    "supply_chain:orders": (
-        "What was actually ordered, and who bought it. Place an order once a supplier "
-        "is chosen, then record the invoice, payment, shipping and delivery."
-    ),
-    "supply_chain:suppliers": (
-        "The companies you may buy from. Add a manufacturer or trader, and see what "
-        "has been asked of them and what they have said."
-    ),
-    "supply_chain:network": (
-        "Where stock is kept, from the central warehouse down to health workers. "
-        "Add places and see what each one holds."
-    ),
-    "supply_chain:partners": (
-        "How each partner gets stock to its field workers (through facilities, straight to them, or a mix), "
-        "and which partner runs which place. Setting this up builds the partner's network."
-    ),
-    "supply_chain:programme_map": "The same places on a map, coloured by whether anything needs attention.",
-    "supply_chain:distribution": "Handouts: what was planned to go to each place, and what was actually given out.",
-    "supply_chain:stock": (
-        "How much of each product is where. Record stock moving in or out, "
-        "or a count of what is actually on the shelf."
-    ),
-    "supply_chain:plan": (
-        "What to issue each field worker at the next handout, who is running short, and whether the stock left "
-        "covers the children still to come. The three numbers behind it are yours to change."
-    ),
-    "supply_chain:workers": "Each field worker's stock, and how long it will last at the pace they are working.",
-    "supply_chain:flow": (
-        "Follow the stock from delivery to the children: how much is still held, "
-        "how much has been handed on and how much is unaccounted for."
-    ),
-    "supply_chain:issues": (
-        "Stock that is missing, taken, damaged or expired. Report it where it happened, follow it up until it "
-        "is recovered, replaced or written off, and see who is responsible where stock is kept."
-    ),
-    "supply_chain:catalogue": (
-        "What you buy. Set up each product once, and add the manufacturer's version " "(a trade item) when you buy it."
-    ),
-    "supply_chain:organisations": (
-        "The organisations this program uses, including partners who buy or hold stock "
-        "on your behalf. To add a supplier you do not need this page: use Suppliers."
-    ),
-    "supply_chain:alerts": "Who is told, by email, when something in the chain changes or needs attention.",
-    "supply_chain:programme_team": (
-        "The people who act for this program. Partners do not sign in here: they get access through "
-        "update links and their Connect sign-in."
-    ),
-    "supply_chain:update_links": (
-        "Private links that let a supplier or partner record their own step without signing in."
-    ),
+    # One short line each: the page's own heading and content carry the rest (Jon, 2026-11-05:
+    # "the entire UI is WAY too text heavy"). Keep each under ~12 words.
+    "supply_chain:home": "What is open, and who to chase.",
+    "supply_chain:start_here": "What each part is for, step by step.",
+    "supply_chain:procurement_tender_board": "Ask suppliers for prices, compare and choose.",
+    "supply_chain:orders": "What was ordered, and how far each order has got.",
+    "supply_chain:suppliers": "The companies you may buy from.",
+    "supply_chain:network": "Where stock is kept, and what each place holds.",
+    "supply_chain:partners": "Which partner runs which place, and how they hand out.",
+    "supply_chain:programme_map": "The same places on a map.",
+    "supply_chain:distribution": "Handouts planned, and handouts given.",
+    "supply_chain:stock": "How much of each product is where.",
+    "supply_chain:plan": "What to issue each field worker next.",
+    "supply_chain:workers": "Each field worker's stock, and how long it lasts.",
+    "supply_chain:flow": "Where the stock went after delivery.",
+    "supply_chain:issues": "Stock missing, damaged or expired, followed up.",
+    "supply_chain:catalogue": "What you buy.",
+    "supply_chain:organisations": "Every organisation in this program.",
+    "supply_chain:alerts": "Who is told, and when.",
+    "supply_chain:programme_team": "Who acts for this program. Partners use update links.",
+    "supply_chain:update_links": "No-login links for suppliers and partners.",
 }
 
 # Words this domain uses in its own way. `{% term "trade item" %}` (supply_chain_extras)
