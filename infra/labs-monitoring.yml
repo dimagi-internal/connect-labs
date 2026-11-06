@@ -612,14 +612,18 @@ Resources:
       AlarmName: labs-jj-alb-5xx-high
       AlarmDescription: >-
         The ALB is returning 5xx it generated itself: it got no usable response from
-        a target (none healthy, connection refused, idle timeout). Covers every
-        service on the ALB; target-5xx counts cannot see it. FIRST, which service lost
-        its targets: aws cloudwatch get-metric-data --profile labs-observe --region
-        us-east-1 --start-time <page-30m>Z --end-time <page>Z --metric-data-queries
-        '[{"Id":"q","Period":60,"Expression":"SELECT MIN(HealthyHostCount) FROM
-        SCHEMA(\"AWS/ApplicationELB\", LoadBalancer, TargetGroup) GROUP BY
-        TargetGroup"}]'. Then that service's describe-services events. Stopped-task
-        reasons age out in ~1h. Runbook: docs/PERFORMANCE_RUNBOOK.md §10.
+        a target (none registered or healthy, connection refused, idle timeout).
+        Covers every service on the ALB; target-5xx counts cannot see it. FIRST, which
+        service has no tasks: aws ecs describe-services --profile labs-observe
+        --region us-east-1 --cluster labs-jj-cluster --services labs-jj-web
+        labs-jj-canopy-web labs-jj-ace-web labs-jj-umami --query
+        'services[].[serviceName,desiredCount,runningCount]'. Desired 0 on every
+        service is a deliberate stop (DB maintenance: look for a manual
+        labs-jj-postgres snapshot), not a crash. Running below desired: read that
+        service's describe-services events; stopped-task reasons age out in ~1h.
+        Don't use HealthyHostCount for this: a target group with no registered targets
+        emits no datapoint, so the gap reads as healthy. Runbook:
+        docs/PERFORMANCE_RUNBOOK.md §10.
       Namespace: AWS/ApplicationELB
       MetricName: HTTPCode_ELB_5XX_Count
       Dimensions:
