@@ -28,6 +28,8 @@
     {% block sidenav %}
       {% if not present_mode %}{% include 'layouts/sidenav.html'%}{% endif %}
     {% endblock %}
+    {% comment %}A section's own menu (labs/rail_menu.py), for any page its menu lists.{% endcomment %}
+    {% if expandable_rail_menu and not present_mode %}{% include 'components/expandable_rail_menu.html' with menu=expandable_rail_menu %}{% endif %}
     <div class="flex-1  px-4">
       {% comment %} An overridable block, not a bare include: the header pulls in
          labs/context_selector.html, so while this was inline a child template
