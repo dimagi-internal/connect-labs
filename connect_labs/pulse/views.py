@@ -610,3 +610,65 @@ class PulseCostsView(LoginRequiredMixin, View):
             "auto": sum(1 for r in issues if r["who"] == costs.WHO_AUTO),
         }
         return render(request, "pulse/costs.html", {"groups": groups.values(), "totals": totals})
+
+
+@CONTEXT_NOT_USED
+class PulseCEAView(LoginRequiredMixin, View):
+    """Every opportunity ranked against Connect's cost-effectiveness models.
+
+    Total cost and people reached come from Pulse; the per-country multiples come
+    from Connect's CEA models (`pulse/cea.py`). ``?format=json`` and ``?format=csv``
+    return the same rows the page draws.
+    """
+
+    CSV_COLS = [
+        "rank",
+        "id",
+        "name",
+        "org_slug",
+        "service_name",
+        "model_label",
+        "status_text",
+        "country_name",
+        "lat",
+        "lon",
+        "total_usd",
+        "fixed_usd",
+        "reached",
+        "cost_per_person",
+        "model_cost_per_person",
+        "model_x",
+        "x",
+        "clears_bar",
+        "deaths_averted",
+        "cost_per_death",
+        "active",
+        "end_date",
+    ]
+
+    def get(self, request):
+        import csv
+
+        from django.http import HttpResponse, JsonResponse
+
+        from connect_labs.pulse import cea
+
+        data = cea.ranking()
+        fmt = request.GET.get("format")
+        if fmt == "json":
+            return JsonResponse(data)
+        if fmt == "csv":
+            response = HttpResponse(content_type="text/csv")
+            response["Content-Disposition"] = 'attachment; filename="connect-cea-ranking.csv"'
+            writer = csv.writer(response)
+            writer.writerow(self.CSV_COLS)
+            for r in data["rows"]:
+                writer.writerow(["" if r.get(c) is None else r.get(c) for c in self.CSV_COLS])
+            return response
+        from django.conf import settings
+
+        return render(
+            request,
+            "pulse/cea.html",
+            {"data": data, "mapbox_token": getattr(settings, "MAPBOX_TOKEN", "") or ""},
+        )
