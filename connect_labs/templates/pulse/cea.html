@@ -1,0 +1,426 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Cost-effectiveness ranking · Pulse{% endblock %}
+
+{% block css %}
+{{ block.super }}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<style>
+  .cea { --ink:#1f2433; --muted:#6b7280; --faint:#9ca3af; --rule:#e5e7eb; --card:#fff; --bg:#f5f5f4;
+         --chc:#2563eb; --mbw:#c2410c; --kc:#0f766e; --none:#a8a29e; --bar:#7c3aed; --good:#15803d; --low:#b91c1c;
+         color:var(--ink); max-width:1280px; margin:0 auto; padding:28px 16px 64px; }
+  .cea h1 { font-size:26px; font-weight:600; letter-spacing:-.01em; margin:0; }
+  .cea .lede { color:var(--muted); font-size:14px; max-width:860px; margin:6px 0 22px; line-height:1.5; }
+  .cea .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:22px; }
+  .cea .tile { background:var(--card); border-radius:10px; padding:14px 16px; box-shadow:0 1px 2px rgba(0,0,0,.05); }
+  .cea .tile .k { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  .cea .tile .v { font-size:26px; font-weight:600; margin-top:4px; font-variant-numeric:tabular-nums; }
+  .cea .tile .s { font-size:12px; color:var(--muted); margin-top:2px; }
+  .cea .card { background:var(--card); border-radius:10px; box-shadow:0 1px 2px rgba(0,0,0,.05); padding:18px; margin-bottom:18px; }
+  .cea .card h2 { font-size:16px; font-weight:600; margin:0 0 2px; }
+  .cea .card .sub { font-size:13px; color:var(--muted); margin:0 0 12px; }
+  .cea .controls { display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center; margin:0 0 14px; font-size:13px; }
+  .cea .chip { display:inline-flex; align-items:center; gap:6px; cursor:pointer; user-select:none; }
+  .cea .sw { width:11px; height:11px; border-radius:3px; display:inline-block; }
+  .cea input[type=search] { border:1px solid var(--rule); border-radius:6px; padding:5px 9px; font-size:13px; min-width:220px; }
+  .cea .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  @media (max-width: 900px) { .cea .grid2 { grid-template-columns:1fr; } }
+  .cea svg text { font-family:inherit; }
+  .cea .axis text { fill:var(--muted); font-size:11px; }
+  .cea .axis line, .cea .axis path { stroke:var(--rule); }
+  .cea #rank-wrap { max-height:760px; overflow-y:auto; }
+  .cea #map { height:420px; border-radius:8px; overflow:hidden; background:#e7e5e4; }
+  .cea table { width:100%; border-collapse:collapse; font-size:13px; }
+  .cea th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600;
+            padding:8px; border-bottom:1px solid var(--rule); cursor:pointer; white-space:nowrap; position:sticky; top:0; background:#fff; }
+  .cea td { padding:7px 8px; border-bottom:1px solid #f3f4f6; vertical-align:top; }
+  .cea td.n, .cea th.n { text-align:right; font-variant-numeric:tabular-nums; }
+  .cea .pill { font-size:11px; padding:2px 7px; border-radius:999px; background:#f3f4f6; color:var(--muted); white-space:nowrap; }
+  .cea .pill.ok { background:#dcfce7; color:var(--good); } .cea .pill.lo { background:#fee2e2; color:var(--low); }
+  .cea .tbl-wrap { max-height:620px; overflow:auto; }
+  .cea .tip { position:fixed; pointer-events:none; background:#111827; color:#fff; font-size:12px; line-height:1.45; padding:8px 10px;
+              border-radius:6px; max-width:320px; z-index:50; display:none; box-shadow:0 4px 14px rgba(0,0,0,.2); }
+  .cea .notes { font-size:12.5px; color:var(--muted); line-height:1.55; }
+  .cea .notes b { color:var(--ink); }
+  .cea a { color:#4338ca; }
+  .cea .btn { font-size:13px; padding:5px 11px; border:1px solid #d1d5db; border-radius:6px; background:#fff; text-decoration:none; color:var(--ink); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cea">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
+    <div>
+      <h1>Cost-effectiveness of every opportunity</h1>
+      <p class="lede">
+        Each real Connect opportunity, valued with Connect's own cost-effectiveness models (CHC, MBW, kangaroo care)
+        for the country it was delivered in, then <b>re-priced at what it actually cost</b> per person reached.
+        Multiples are of GiveWell's benchmark; the dashed line is GiveWell's bar of {{ data.bar_x }}x. Delivery types
+        with no model say so. Every figure is a model, counting deaths only, so each multiple is a floor.
+      </p>
+    </div>
+    <div style="display:flex;gap:8px">
+      <a class="btn" href="?format=csv">Download CSV</a>
+      <a class="btn" href="?format=json">JSON</a>
+    </div>
+  </div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="controls" id="controls">
+    <span style="color:var(--muted)">Show:</span>
+    <label class="chip"><input type="checkbox" data-model="chc" checked><span class="sw" style="background:var(--chc)"></span>Child Health Campaign</label>
+    <label class="chip"><input type="checkbox" data-model="mbw" checked><span class="sw" style="background:var(--mbw)"></span>Mother Baby Wellness</label>
+    <label class="chip"><input type="checkbox" data-model="kc" checked><span class="sw" style="background:var(--kc)"></span>Kangaroo Care</label>
+    <label class="chip"><input type="checkbox" id="active-only">Active only</label>
+    <input type="search" id="q" placeholder="Filter by opportunity, partner or country">
+  </div>
+
+  <div class="card">
+    <h2>Ranked by multiple at actual cost</h2>
+    <p class="sub">Bar = the opportunity's multiple at what it really cost per person. Hollow tick = the model's multiple for that
+      country at the model's default price, so the gap between them is what price did. Bar height scales with total spend.</p>
+    <div id="rank-wrap"><svg id="rank"></svg></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Price versus return</h2>
+      <p class="sub">Actual cost per person as a share of the model's price (log scale), against the multiple at actual cost.
+        Left of 1x the opportunity delivered cheaper than the model assumes. Circle area = spend.</p>
+      <svg id="scatter"></svg>
+    </div>
+    <div class="card">
+      <h2>Where it was delivered</h2>
+      <p class="sub">The centre of each opportunity's approved visits. Colour = multiple at actual cost; grey = no model.
+        Circle area = spend.</p>
+      <div id="map"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Spend with no model yet</h2>
+    <p class="sub">Delivery types Connect has no cost-effectiveness model for, by total spend. These are listed as "No model" below,
+      never valued with another intervention's chain.</p>
+    <svg id="nomodel"></svg>
+  </div>
+
+  <div class="card">
+    <h2>Every opportunity</h2>
+    <p class="sub">Click a heading to sort. Modelled opportunities first, by rank.</p>
+    <div class="tbl-wrap"><table id="tbl"></table></div>
+  </div>
+
+  <div class="card notes">
+    <p><b>Total cost</b> is everything paid for the opportunity in USD: worker pay and the organisation's per-service fee on
+      every completed work, plus startup and supply costs from Connect's custom invoices and costs entered in labs
+      (<a href="{% url 'pulse:costs' %}">cost data</a>).</p>
+    <p><b>People reached</b> is the approved work on the opportunity's most-used payment unit: a completed work is one person on one
+      payment unit, so the unit everyone passes through counts the people. Pulse holds no beneficiary ids, so this is a proxy.</p>
+    <p><b>Re-pricing.</b> Each model's multiple is benefit per person over cost per person, with GiveWell's leveraging adjustment at 1,
+      so multiple at actual cost = model multiple &times; model price &divide; actual cost per person. Model prices:
+      <span id="model-prices"></span>.</p>
+    <p><b>Models.</b> {% for k, m in data.models.items %}<a href="{{ m.sheet }}" target="_blank" rel="noopener">{{ m.label }}</a> ({{ m.variant }}, per {{ m.unit }}){% if not forloop.last %}; {% endif %}{% endfor %}.
+      Per-country results from {{ data.source }}, generated {{ data.generated }}. 45 sub-Saharan countries; an opportunity elsewhere
+      reads "No model for this country". {{ data.bar_note }}.</p>
+    <p><b>Not counted:</b> anything but deaths averted (illness, development, income), so every multiple is a floor. These are modelled
+      estimates, not measured impact.</p>
+  </div>
+
+  <div class="tip" id="tip"></div>
+</div>
+
+{{ data|json_script:"cea-data" }}
+<script>window.MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";</script>
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+<script>
+(function () {
+  "use strict";
+  var D = JSON.parse(document.getElementById("cea-data").textContent);
+  var BAR = D.bar_x;
+  var CSS = getComputedStyle(document.querySelector(".cea"));
+  var COL = { chc: CSS.getPropertyValue("--chc").trim(), mbw: CSS.getPropertyValue("--mbw").trim(),
+              kc: CSS.getPropertyValue("--kc").trim(), none: CSS.getPropertyValue("--none").trim() };
+  var NS = "http://www.w3.org/2000/svg";
+  var tip = document.getElementById("tip");
+
+  function el(tag, attrs, parent) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function usd(v) {
+    if (v == null) return "–";
+    var a = Math.abs(v);
+    if (a >= 1e6) return "$" + (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
+    if (a >= 1e3) return "$" + (v / 1e3).toFixed(a >= 1e4 ? 0 : 1) + "k";
+    return "$" + v.toFixed(a < 10 ? 2 : 0);
+  }
+  function num(v, d) { return v == null ? "–" : v.toLocaleString(undefined, { maximumFractionDigits: d || 0, minimumFractionDigits: d || 0 }); }
+  function xfmt(v) { return v == null ? "–" : (v >= 10 ? v.toFixed(0) : v.toFixed(1)) + "x"; }
+  function showTip(evt, html) { tip.innerHTML = html; tip.style.display = "block"; moveTip(evt); }
+  function moveTip(evt) {
+    var x = evt.clientX + 14, y = evt.clientY + 14;
+    if (x + 330 > window.innerWidth) x = evt.clientX - 334;
+    tip.style.left = x + "px"; tip.style.top = y + "px";
+  }
+  function hideTip() { tip.style.display = "none"; }
+  function rowTip(r) {
+    var s = "<b>" + esc(r.name) + "</b><br>" + esc(r.service_name) + " · " + esc(r.country_name) + (r.org_slug ? " · " + esc(r.org_slug) : "");
+    s += "<br>Total cost " + usd(r.total_usd) + " · reached " + num(r.reached);
+    if (r.status === "modelled") {
+      s += "<br>Cost per person " + usd(r.cost_per_person) + " (model " + usd(r.model_cost_per_person) + ")";
+      s += "<br><b>" + xfmt(r.x) + "</b> at actual cost · " + xfmt(r.model_x) + " at model price";
+      s += "<br>~" + num(r.deaths_averted, 1) + " deaths averted · " + usd(r.cost_per_death) + " per death";
+    } else {
+      s += "<br><i>" + esc(r.status_text) + "</i>";
+    }
+    return s;
+  }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  document.getElementById("model-prices").textContent = Object.keys(D.models).map(function (k) {
+    return D.models[k].label + " " + usd(D.models[k].price) + " per " + D.models[k].unit;
+  }).join("; ");
+
+  // ---------- filters ----------
+  var state = { models: { chc: true, mbw: true, kc: true }, active: false, q: "" };
+  document.querySelectorAll("#controls input[data-model]").forEach(function (cb) {
+    cb.addEventListener("change", function () { state.models[cb.dataset.model] = cb.checked; draw(); });
+  });
+  document.getElementById("active-only").addEventListener("change", function (e) { state.active = e.target.checked; draw(); });
+  document.getElementById("q").addEventListener("input", function (e) { state.q = e.target.value.toLowerCase(); draw(); });
+  function passes(r) {
+    if (state.active && !r.active) return false;
+    if (r.model && !state.models[r.model]) return false;
+    if (state.q) {
+      var hay = (r.name + " " + r.org_slug + " " + r.country_name + " " + r.service_name).toLowerCase();
+      if (hay.indexOf(state.q) < 0) return false;
+    }
+    return true;
+  }
+
+  // ---------- tiles ----------
+  function tiles(rows) {
+    var m = rows.filter(function (r) { return r.status === "modelled"; });
+    var spend = rows.reduce(function (a, r) { return a + r.total_usd; }, 0);
+    var mspend = m.reduce(function (a, r) { return a + r.total_usd; }, 0);
+    var px = mspend ? m.reduce(function (a, r) { return a + r.x * r.total_usd; }, 0) / mspend : null;
+    var deaths = m.reduce(function (a, r) { return a + r.deaths_averted; }, 0);
+    var clear = m.filter(function (r) { return r.clears_bar; }).length;
+    var t = [
+      ["Opportunities", num(rows.length), num(m.length) + " with a model"],
+      ["Total spend", usd(spend), usd(mspend) + " modelled (" + (spend ? Math.round(100 * mspend / spend) : 0) + "%)"],
+      ["Portfolio multiple", xfmt(px), "spend-weighted, modelled only"],
+      ["Clear GiveWell's bar", num(clear) + " / " + num(m.length), BAR + "x benchmark"],
+      ["Deaths averted (modelled)", "~" + num(deaths, 0), mspend && deaths ? usd(mspend / deaths) + " per death" : ""],
+    ];
+    document.getElementById("tiles").innerHTML = t.map(function (x) {
+      return '<div class="tile"><div class="k">' + x[0] + '</div><div class="v">' + x[1] + '</div><div class="s">' + x[2] + "</div></div>";
+    }).join("");
+  }
+
+  // ---------- ranked chart ----------
+  function rankChart(rows) {
+    var svg = document.getElementById("rank");
+    svg.innerHTML = "";
+    var m = rows.filter(function (r) { return r.status === "modelled"; });
+    var W = Math.max(svg.parentNode.clientWidth, 520), L = Math.min(330, W * 0.38), R = 70, T = 26;
+    var maxSpend = Math.max.apply(null, m.map(function (r) { return r.total_usd; }).concat([1]));
+    var hOf = function (r) { return 6 + 14 * Math.sqrt(r.total_usd / maxSpend); };
+    var gap = 6, y = T, ys = m.map(function (r) { var h = hOf(r), yy = y; y += h + gap; return [yy, h]; });
+    var H = Math.max(y + 10, 80);
+    svg.setAttribute("width", W); svg.setAttribute("height", H);
+    if (!m.length) { el("text", { x: 12, y: 40, fill: "#6b7280", "font-size": 13 }, svg).textContent = "No modelled opportunities match."; return; }
+    var xmax = Math.max(BAR * 1.5, Math.max.apply(null, m.map(function (r) { return Math.max(r.x, r.model_x); })) * 1.05);
+    var sx = function (v) { return L + (W - L - R) * Math.min(v, xmax) / xmax; };
+    var ax = el("g", { class: "axis" }, svg);
+    var step = xmax > 60 ? 20 : xmax > 30 ? 10 : 5;
+    for (var v = 0; v <= xmax; v += step) {
+      el("line", { x1: sx(v), x2: sx(v), y1: T - 6, y2: H - 4 }, ax);
+      el("text", { x: sx(v), y: T - 10, "text-anchor": "middle" }, ax).textContent = v + "x";
+    }
+    el("line", { x1: sx(BAR), x2: sx(BAR), y1: T - 6, y2: H - 4, stroke: "#7c3aed", "stroke-dasharray": "4 3", "stroke-width": 1.5 }, svg);
+    el("text", { x: sx(BAR) + 4, y: H - 8, fill: "#7c3aed", "font-size": 11 }, svg).textContent = "GiveWell bar " + BAR + "x";
+    m.forEach(function (r, i) {
+      var yy = ys[i][0], h = ys[i][1], cy = yy + h / 2;
+      var g = el("g", { style: "cursor:default" }, svg);
+      var label = r.rank + ". " + r.name;
+      var t = el("text", { x: L - 8, y: cy + 4, "text-anchor": "end", "font-size": 12, fill: "#1f2433" }, g);
+      t.textContent = label.length > 46 ? label.slice(0, 45) + "…" : label;
+      el("rect", { x: L, y: yy, width: Math.max(1, sx(r.x) - L), height: h, rx: 2, fill: COL[r.model], opacity: r.clears_bar ? 0.95 : 0.55 }, g);
+      el("line", { x1: sx(r.model_x), x2: sx(r.model_x), y1: yy - 2, y2: yy + h + 2, stroke: "#111827", "stroke-width": 1.5 }, g);
+      el("text", { x: Math.min(sx(r.x), W - R) + 5, y: cy + 4, "font-size": 11, fill: "#6b7280" }, g).textContent =
+        xfmt(r.x) + " · " + r.country + " · " + usd(r.total_usd);
+      el("rect", { x: 0, y: yy - gap / 2, width: W, height: h + gap, fill: "transparent" }, g);
+      g.addEventListener("mousemove", function (e) { showTip(e, rowTip(r)); });
+      g.addEventListener("mouseleave", hideTip);
+    });
+  }
+
+  // ---------- scatter ----------
+  function scatter(rows) {
+    var svg = document.getElementById("scatter");
+    svg.innerHTML = "";
+    var m = rows.filter(function (r) { return r.status === "modelled"; });
+    var W = Math.max(svg.parentNode.clientWidth - 4, 320), H = 400, L = 46, R = 14, T = 12, B = 40;
+    svg.setAttribute("width", W); svg.setAttribute("height", H);
+    if (!m.length) return;
+    var ratios = m.map(function (r) { return r.cost_per_person / r.model_cost_per_person; });
+    var lo = Math.min(0.25, Math.min.apply(null, ratios) / 1.3), hi = Math.max(4, Math.max.apply(null, ratios) * 1.3);
+    var ymax = Math.max(BAR * 1.5, Math.max.apply(null, m.map(function (r) { return r.x; })) * 1.1);
+    var sx = function (v) { return L + (W - L - R) * (Math.log(v) - Math.log(lo)) / (Math.log(hi) - Math.log(lo)); };
+    var sy = function (v) { return T + (H - T - B) * (1 - Math.min(v, ymax) / ymax); };
+    var ax = el("g", { class: "axis" }, svg);
+    [0.25, 0.5, 1, 2, 4, 8, 16].forEach(function (v) {
+      if (v < lo || v > hi) return;
+      el("line", { x1: sx(v), x2: sx(v), y1: T, y2: H - B }, ax);
+      el("text", { x: sx(v), y: H - B + 14, "text-anchor": "middle" }, ax).textContent = v + "x";
+    });
+    var ystep = ymax > 60 ? 20 : ymax > 30 ? 10 : 5;
+    for (var v = 0; v <= ymax; v += ystep) {
+      el("line", { x1: L, x2: W - R, y1: sy(v), y2: sy(v) }, ax);
+      el("text", { x: L - 6, y: sy(v) + 4, "text-anchor": "end" }, ax).textContent = v + "x";
+    }
+    el("text", { x: (L + W - R) / 2, y: H - 6, "text-anchor": "middle", fill: "#6b7280", "font-size": 11 }, svg).textContent = "actual cost per person ÷ model price";
+    el("line", { x1: L, x2: W - R, y1: sy(BAR), y2: sy(BAR), stroke: "#7c3aed", "stroke-dasharray": "4 3", "stroke-width": 1.5 }, svg);
+    el("line", { x1: sx(1), x2: sx(1), y1: T, y2: H - B, stroke: "#9ca3af", "stroke-dasharray": "2 3" }, svg);
+    var maxSpend = Math.max.apply(null, m.map(function (r) { return r.total_usd; }).concat([1]));
+    m.slice().sort(function (a, b) { return b.total_usd - a.total_usd; }).forEach(function (r) {
+      var c = el("circle", { cx: sx(r.cost_per_person / r.model_cost_per_person), cy: sy(r.x), r: 3 + 18 * Math.sqrt(r.total_usd / maxSpend),
+        fill: COL[r.model], "fill-opacity": 0.55, stroke: COL[r.model], "stroke-width": 1 }, svg);
+      c.addEventListener("mousemove", function (e) { showTip(e, rowTip(r)); });
+      c.addEventListener("mouseleave", hideTip);
+    });
+  }
+
+  // ---------- unmodelled spend ----------
+  function noModel(rows) {
+    var svg = document.getElementById("nomodel");
+    svg.innerHTML = "";
+    var by = {};
+    rows.filter(function (r) { return r.status === "no_model" || r.status === "no_country_data"; }).forEach(function (r) {
+      var k = r.status === "no_country_data" ? r.service_name + " (outside the models' countries)" : r.service_name;
+      by[k] = by[k] || { k: k, usd: 0, n: 0 };
+      by[k].usd += r.total_usd; by[k].n += 1;
+    });
+    var items = Object.values(by).sort(function (a, b) { return b.usd - a.usd; });
+    var W = Math.max(svg.parentNode.clientWidth - 4, 360), L = Math.min(300, W * 0.4), R = 120, rh = 22;
+    var H = Math.max(items.length * rh + 10, 40);
+    svg.setAttribute("width", W); svg.setAttribute("height", H);
+    var max = Math.max.apply(null, items.map(function (i) { return i.usd; }).concat([1]));
+    items.forEach(function (it, i) {
+      var y = 4 + i * rh;
+      el("text", { x: L - 8, y: y + 14, "text-anchor": "end", "font-size": 12, fill: "#1f2433" }, svg).textContent = it.k;
+      el("rect", { x: L, y: y + 3, width: Math.max(1, (W - L - R) * it.usd / max), height: rh - 8, rx: 2, fill: COL.none }, svg);
+      el("text", { x: L + (W - L - R) * it.usd / max + 6, y: y + 14, "font-size": 11, fill: "#6b7280" }, svg).textContent =
+        usd(it.usd) + " · " + it.n + " opp" + (it.n === 1 ? "" : "s");
+    });
+  }
+
+  // ---------- table ----------
+  var sortKey = null, sortDir = 1;
+  var COLS = [
+    ["rank", "#", "n"], ["name", "Opportunity"], ["service_name", "Delivery type"], ["country_name", "Country"],
+    ["total_usd", "Total cost", "n", usd], ["reached", "Reached", "n", function (v) { return num(v); }],
+    ["cost_per_person", "Cost / person", "n", usd], ["model_cost_per_person", "Model price", "n", usd],
+    ["model_x", "Model x", "n", xfmt], ["x", "x at actual cost", "n", xfmt],
+    ["deaths_averted", "Deaths averted", "n", function (v) { return v == null ? "–" : num(v, 1); }],
+    ["cost_per_death", "$ / death", "n", usd], ["status_text", "Status"],
+  ];
+  function table(rows) {
+    var t = document.getElementById("tbl");
+    var list = rows.slice();
+    if (sortKey) list.sort(function (a, b) {
+      var x = a[sortKey], y = b[sortKey];
+      if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1;
+      return (x > y ? 1 : x < y ? -1 : 0) * sortDir;
+    });
+    var h = "<thead><tr>" + COLS.map(function (c) {
+      return '<th data-k="' + c[0] + '" class="' + (c[2] || "") + '">' + c[1] + (sortKey === c[0] ? (sortDir > 0 ? " ▲" : " ▼") : "") + "</th>";
+    }).join("") + "</tr></thead><tbody>";
+    h += list.map(function (r) {
+      return "<tr>" + COLS.map(function (c) {
+        var v = r[c[0]], s;
+        if (c[0] === "status_text") {
+          var cls = r.status === "modelled" ? (r.clears_bar ? "ok" : "lo") : "";
+          s = '<span class="pill ' + cls + '">' + esc(r.status === "modelled" ? (r.clears_bar ? "Clears bar" : "Below bar") : v) + "</span>";
+        } else if (c[0] === "name") {
+          s = '<a href="/labs/pulse/opp/' + r.id + '/">' + esc(v) + '</a><div style="color:#9ca3af;font-size:11px">' + esc(r.org_slug || "") + (r.active ? " · active" : "") + "</div>";
+        } else if (c[0] === "service_name" && r.model) {
+          s = '<span class="sw" style="background:' + COL[r.model] + ';margin-right:5px"></span>' + esc(v);
+        } else s = c[3] ? c[3](v) : esc(v == null ? "–" : v);
+        return '<td class="' + (c[2] || "") + '">' + s + "</td>";
+      }).join("") + "</tr>";
+    }).join("") + "</tbody>";
+    t.innerHTML = h;
+    t.querySelectorAll("th").forEach(function (th) {
+      th.addEventListener("click", function () {
+        var k = th.dataset.k;
+        if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = (k === "name" || k === "rank" || k === "country_name") ? 1 : -1; }
+        table(current);
+      });
+    });
+  }
+
+  // ---------- map ----------
+  var map = null, mapReady = false;
+  function xColour(x) {
+    if (x == null) return COL.none;
+    var t = Math.max(0, Math.min(1, Math.log(x / 1) / Math.log(30)));
+    var stops = [[185, 28, 28], [234, 179, 8], [21, 128, 61]];
+    var a = t < 0.5 ? stops[0] : stops[1], b = t < 0.5 ? stops[1] : stops[2], u = t < 0.5 ? t * 2 : (t - 0.5) * 2;
+    return "rgb(" + a.map(function (v, i) { return Math.round(v + (b[i] - v) * u); }).join(",") + ")";
+  }
+  function geo(rows) {
+    var maxSpend = Math.max.apply(null, rows.map(function (r) { return r.total_usd; }).concat([1]));
+    return { type: "FeatureCollection", features: rows.filter(function (r) { return r.lat != null && r.total_usd > 0; })
+      .sort(function (a, b) { return b.total_usd - a.total_usd; }).map(function (r) {
+        return { type: "Feature", geometry: { type: "Point", coordinates: [r.lon, r.lat] },
+          properties: { id: r.id, colour: xColour(r.status === "modelled" ? r.x : null), radius: 3 + 20 * Math.sqrt(r.total_usd / maxSpend) } };
+      }) };
+  }
+  function initMap() {
+    var box = document.getElementById("map");
+    if (!window.mapboxgl || !window.MAPBOX_TOKEN) { box.innerHTML = '<p style="padding:16px;color:#6b7280;font-size:13px">Map unavailable here (no map token).</p>'; return; }
+    try {
+      mapboxgl.accessToken = window.MAPBOX_TOKEN;
+      map = new mapboxgl.Map({ container: box, style: "mapbox://styles/mapbox/light-v11", center: [15, 3], zoom: 2.4 });
+    } catch (e) { box.innerHTML = '<p style="padding:16px;color:#6b7280;font-size:13px">Map unavailable in this browser.</p>'; return; }
+    map.on("load", function () {
+      map.addSource("opps", { type: "geojson", data: geo(current) });
+      map.addLayer({ id: "opps", type: "circle", source: "opps", paint: {
+        "circle-color": ["get", "colour"], "circle-radius": ["get", "radius"], "circle-opacity": 0.7,
+        "circle-stroke-color": "#fff", "circle-stroke-width": 1 } });
+      map.on("mousemove", "opps", function (e) {
+        map.getCanvas().style.cursor = "pointer";
+        var id = e.features[0].properties.id, r = current.find(function (x) { return x.id === id; });
+        if (r) showTip(e.originalEvent, rowTip(r));
+      });
+      map.on("mouseleave", "opps", function () { map.getCanvas().style.cursor = ""; hideTip(); });
+      mapReady = true;
+      fit();
+    });
+  }
+  function fit() {
+    if (!mapReady) return;
+    var pts = current.filter(function (r) { return r.lat != null && r.total_usd > 0; });
+    if (!pts.length) return;
+    var b = new mapboxgl.LngLatBounds();
+    pts.forEach(function (r) { b.extend([r.lon, r.lat]); });
+    map.fitBounds(b, { padding: 40, maxZoom: 6, duration: 0 });
+  }
+
+  var current = [];
+  function draw() {
+    current = D.rows.filter(passes);
+    tiles(current); rankChart(current); scatter(current); noModel(current); table(current);
+    if (mapReady) { map.getSource("opps").setData(geo(current)); fit(); }
+  }
+  draw();
+  initMap();
+  var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { rankChart(current); scatter(current); noModel(current); }, 150); });
+})();
+</script>
+{% endblock %}

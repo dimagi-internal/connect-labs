@@ -23,6 +23,7 @@ urlpatterns = [
     path("network/", views.PulseNetworkView.as_view(), name="network"),
     path("connectivity/", views.PulseConnectivityView.as_view(), name="connectivity"),
     path("costs/", views.PulseCostsView.as_view(), name="costs"),
+    path("cea/", views.PulseCEAView.as_view(), name="cea"),
     path("v/<slug:layout>/", views.PulseDisplayView.as_view(), name="display"),
     path("opp/<int:opp_id>/", views.PulseOppView.as_view(), name="opp"),
     # An engagement several Connect opportunities belong to, addressed by slug.
