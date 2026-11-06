@@ -496,3 +496,30 @@ def test_source_plan_ids_must_be_int_list():
     payload["source_plan_ids"] = ["123"]
     with pytest.raises(ValidationError):
         validate_solicitation_payload(payload)
+
+
+class TestChoiceQuestions:
+    def _q(self, **kw):
+        q = {"id": "q1", "text": "Which?", "type": "checkboxes", "options": ["A", "B"]}
+        q.update(kw)
+        return q
+
+    def test_checkboxes_with_options_is_accepted(self):
+        from connect_labs.solicitations.validation import _validate_questions
+
+        assert _validate_questions([self._q()]) == {"q1"}
+
+    def test_checkboxes_needs_options(self):
+        from connect_labs.solicitations.validation import ValidationError, _validate_questions
+
+        with pytest.raises(ValidationError):
+            _validate_questions([self._q(options=[])])
+
+    def test_display_is_for_multiple_choice_only(self):
+        from connect_labs.solicitations.validation import ValidationError, _validate_questions
+
+        assert _validate_questions([self._q(type="multiple_choice", display="radio")]) == {"q1"}
+        with pytest.raises(ValidationError):
+            _validate_questions([self._q(display="radio")])
+        with pytest.raises(ValidationError):
+            _validate_questions([self._q(type="multiple_choice", display="slider")])

@@ -214,6 +214,8 @@
                             {% endif %}
                             {% if question.type == 'multiple_choice' %}
                                 <span class="text-xs text-gray-400"><i class="fa-solid fa-list-ul mr-1"></i>Multiple Choice</span>
+                            {% elif question.type == 'checkboxes' %}
+                                <span class="text-xs text-gray-400"><i class="fa-solid fa-square-check mr-1"></i>Pick any</span>
                             {% elif question.type == 'textarea' %}
                                 <span class="text-xs text-gray-400"><i class="fa-solid fa-align-left mr-1"></i>Long Answer</span>
                             {% elif question.type == 'number' %}

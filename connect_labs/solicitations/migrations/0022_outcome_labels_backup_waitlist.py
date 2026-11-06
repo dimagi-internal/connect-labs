@@ -6,13 +6,23 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('solicitations', '0021_rubric_versions'),
+        ("solicitations", "0021_rubric_versions"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='solicitationreview',
-            name='outcome',
-            field=models.CharField(blank=True, choices=[('pick', 'Recommended'), ('backup', 'Recommended backup'), ('waitlist', 'Waitlist'), ('pass', 'Not recommended')], default='', max_length=12),
+            model_name="solicitationreview",
+            name="outcome",
+            field=models.CharField(
+                blank=True,
+                choices=[
+                    ("pick", "Recommended"),
+                    ("backup", "Recommended backup"),
+                    ("waitlist", "Waitlist"),
+                    ("pass", "Not recommended"),
+                ],
+                default="",
+                max_length=12,
+            ),
         ),
     ]

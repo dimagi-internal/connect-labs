@@ -369,7 +369,15 @@ _CANONICAL_FIELD_PROPERTIES = {
                 "options": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Required when type=multiple_choice.",
+                    "description": (
+                        "Required when type is multiple_choice (pick one) or checkboxes "
+                        "(pick any; the answer is a list of the chosen options)."
+                    ),
+                },
+                "display": {
+                    "type": "string",
+                    "enum": ["radio", "dropdown"],
+                    "description": "multiple_choice only: radio buttons, or a dropdown (the default).",
                 },
                 "framing": {
                     "type": "string",

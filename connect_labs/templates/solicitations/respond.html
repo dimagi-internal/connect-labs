@@ -278,10 +278,13 @@
                 questionDivs.forEach(function(div) {
                     var label = div.querySelector('label');
                     var field = div.querySelector('textarea, input[type="text"], select');
-                    if (label && field && field.value) {
+                    // A radio or checkbox question answers with what is ticked.
+                    var ticked = Array.prototype.map.call(div.querySelectorAll('input:checked'), function (i) { return i.value; });
+                    var answer = field ? field.value.trim() : ticked.join('; ');
+                    if (label && answer) {
                         questionAnswers.push({
                             question: label.textContent.trim().replace(/\s*\*$/, ''),
-                            answer: field.value.trim(),
+                            answer: answer,
                         });
                     }
                 });

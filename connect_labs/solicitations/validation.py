@@ -38,7 +38,11 @@ STATUS_CHOICES: tuple[tuple[str, str], ...] = (
     ("closed", "Closed"),
     ("awarded", "Awarded"),
 )
-QUESTION_TYPES: tuple[str, ...] = ("text", "textarea", "number", "multiple_choice")
+QUESTION_TYPES: tuple[str, ...] = ("text", "textarea", "number", "multiple_choice", "checkboxes")
+# Answered by picking from ``options``: one (multiple_choice) or any number (checkboxes).
+CHOICE_TYPES: tuple[str, ...] = ("multiple_choice", "checkboxes")
+# How a multiple_choice question is drawn; a dropdown when unset.
+CHOICE_DISPLAYS: tuple[str, ...] = ("radio", "dropdown")
 
 VALID_SOLICITATION_TYPES: frozenset[str] = frozenset(c[0] for c in SOLICITATION_TYPE_CHOICES)
 VALID_STATUSES: frozenset[str] = frozenset(c[0] for c in STATUS_CHOICES)
@@ -83,7 +87,7 @@ ALLOWED_FIELDS: frozenset[str] = frozenset(
 
 REQUIRED_FIELDS: tuple[str, ...] = ("title", "description", "solicitation_type")
 
-_QUESTION_FIELDS: frozenset[str] = frozenset({"id", "text", "type", "required", "options", "framing"})
+_QUESTION_FIELDS: frozenset[str] = frozenset({"id", "text", "type", "required", "options", "framing", "display"})
 _CRITERION_FIELDS: frozenset[str] = frozenset(
     {"id", "name", "weight", "description", "scoring_guide", "linked_questions"}
 )
@@ -148,12 +152,17 @@ def _validate_questions(questions) -> set[str]:
             # an awkward "Why we're asking: " label with nothing after it.
             raise ValidationError({f"{prefix}.framing": "must be a non-empty string"})
 
-        if q_type == "multiple_choice":
+        if q_type in CHOICE_TYPES:
             opts = q.get("options")
             if not isinstance(opts, list) or not opts:
-                raise ValidationError({f"{prefix}.options": "required and non-empty when type=multiple_choice"})
+                raise ValidationError({f"{prefix}.options": f"required and non-empty when type={q_type}"})
             if not all(isinstance(o, str) for o in opts):
                 raise ValidationError({f"{prefix}.options": "must be strings"})
+
+        if "display" in q and (q_type != "multiple_choice" or q["display"] not in CHOICE_DISPLAYS):
+            raise ValidationError(
+                {f"{prefix}.display": f"only for type=multiple_choice, one of {list(CHOICE_DISPLAYS)}"}
+            )
 
     return seen_ids
 

@@ -22,61 +22,75 @@ def record_current_versions(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('solicitations', '0020_round_summary_and_outcome_labels'),
+        ("solicitations", "0020_round_summary_and_outcome_labels"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='RubricVersion',
+            name="RubricVersion",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('version', models.CharField(max_length=40)),
-                ('criteria', models.JSONField(blank=True, default=list)),
-                ('basis', models.TextField(blank=True, default='')),
-                ('created_at', models.DateTimeField(default=django.utils.timezone.now)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("version", models.CharField(max_length=40)),
+                ("criteria", models.JSONField(blank=True, default=list)),
+                ("basis", models.TextField(blank=True, default="")),
+                ("created_at", models.DateTimeField(default=django.utils.timezone.now)),
             ],
             options={
-                'ordering': ['created_at', 'pk'],
+                "ordering": ["created_at", "pk"],
             },
         ),
         migrations.AlterModelOptions(
-            name='solicitationreview',
-            options={'base_manager_name': 'all_versions', 'ordering': ['review_date', 'pk']},
+            name="solicitationreview",
+            options={"base_manager_name": "all_versions", "ordering": ["review_date", "pk"]},
         ),
         migrations.AlterModelManagers(
-            name='solicitationreview',
+            name="solicitationreview",
             managers=[
-                ('objects', django.db.models.manager.Manager()),
-                ('all_versions', django.db.models.manager.Manager()),
+                ("objects", django.db.models.manager.Manager()),
+                ("all_versions", django.db.models.manager.Manager()),
             ],
         ),
         migrations.RemoveConstraint(
-            model_name='solicitationreview',
-            name='uniq_review_per_reviewer_kind',
+            model_name="solicitationreview",
+            name="uniq_review_per_reviewer_kind",
         ),
         migrations.AddField(
-            model_name='solicitationreview',
-            name='superseded_at',
+            model_name="solicitationreview",
+            name="superseded_at",
             field=models.DateTimeField(blank=True, null=True),
         ),
         migrations.AddConstraint(
-            model_name='solicitationreview',
-            constraint=models.UniqueConstraint(condition=models.Q(('superseded_at__isnull', True)), fields=('response', 'reviewer', 'kind'), name='uniq_review_per_reviewer_kind'),
+            model_name="solicitationreview",
+            constraint=models.UniqueConstraint(
+                condition=models.Q(("superseded_at__isnull", True)),
+                fields=("response", "reviewer", "kind"),
+                name="uniq_review_per_reviewer_kind",
+            ),
         ),
         migrations.AddField(
-            model_name='rubricversion',
-            name='created_by',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to=settings.AUTH_USER_MODEL),
+            model_name="rubricversion",
+            name="created_by",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="+",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
         migrations.AddField(
-            model_name='rubricversion',
-            name='solicitation',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='rubric_versions', to='solicitations.solicitation'),
+            model_name="rubricversion",
+            name="solicitation",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="rubric_versions",
+                to="solicitations.solicitation",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='rubricversion',
-            constraint=models.UniqueConstraint(fields=('solicitation', 'version'), name='uniq_rubric_version'),
+            model_name="rubricversion",
+            constraint=models.UniqueConstraint(fields=("solicitation", "version"), name="uniq_rubric_version"),
         ),
         migrations.RunPython(record_current_versions, migrations.RunPython.noop, hints={"run_on_secondary": False}),
     ]

@@ -515,3 +515,10 @@ def test_org_page_links_only_a_web_address(client, world, website, linked):
     OrgProfile.objects.create(org=world["owner_org"], website=website)
     body = client.get(url("org_page", org_slug="owner-org")).content.decode()
     assert (f'href="{website}"' in body) is linked
+
+
+def test_a_checkboxes_answer_reads_as_text():
+    from connect_labs.solicitations.views import answer_text
+
+    assert answer_text(["Cash", "Mobile money"]) == "Cash; Mobile money"
+    assert answer_text("Cash") == "Cash" and answer_text(None) == ""
