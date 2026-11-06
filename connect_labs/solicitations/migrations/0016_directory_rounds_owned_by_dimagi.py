@@ -10,7 +10,9 @@ def own_directory_rounds(apps, schema_editor):
     Solicitation = apps.get_model("solicitations", "Solicitation")
     if not Solicitation.objects.filter(source="directory", owner_org__isnull=True).exists():
         return
-    dimagi, _ = LabsOrg.objects.get_or_create(slug=DIMAGI_ORG_SLUG, defaults={"name": "Dimagi", "short_name": "Dimagi"})
+    dimagi, _ = LabsOrg.objects.get_or_create(
+        slug=DIMAGI_ORG_SLUG, defaults={"name": "Dimagi", "short_name": "Dimagi"}
+    )
     Solicitation.objects.filter(source="directory", owner_org__isnull=True).update(owner_org=dimagi)
 
 

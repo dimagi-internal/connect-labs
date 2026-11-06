@@ -38,6 +38,7 @@ from connect_labs.solicitations.local_models import (
     SolicitationResponse,
     SolicitationReview,
 )
+from connect_labs.solicitations.validation import CHOICE_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +119,10 @@ def _round_reading_context(solicitation, response) -> dict:
     questions = past_calls.form_questions(solicitation)
     personal = personal_question_ids(questions, solicitation.column_map)
     stored = response.responses or {}
-    rows = [{"id": q["id"], "question": q.get("text", ""), "answer": stored.get(q["id"], "")} for q in questions]
+    rows = [
+        {"id": q["id"], "question": q.get("text", ""), "answer": answer_text(stored.get(q["id"], ""))}
+        for q in questions
+    ]
     applicants = queries.round_applicants(solicitation, {})
     queries.review_status(solicitation, applicants)  # the round page's order
     order = [a["response"].pk for a in applicants]
@@ -249,8 +253,11 @@ def _area_picker(request, name, *, initial=(), limits=(), input_id="", empty_tex
     return picker
 
 
-# Question types answered by picking, drawn as choices rather than boxes.
-CHOICE_TYPES = ("multiple_choice", "checkboxes")
+def answer_text(value) -> str:
+    """A stored answer as text: a checkboxes answer is a list of the chosen options."""
+    if isinstance(value, (list, tuple)):
+        return "; ".join(str(v) for v in value if v not in (None, ""))
+    return "" if value is None else str(value)
 
 
 def question_blocks(question_fields) -> list[dict]:
@@ -1354,7 +1361,10 @@ class ResponseDetailView(SignedInPage):
                     else None
                 ),
                 "qa_pairs": [
-                    {"question": q.get("text", ""), "answer": (response.responses or {}).get(q.get("id", ""), "")}
+                    {
+                        "question": q.get("text", ""),
+                        "answer": answer_text((response.responses or {}).get(q.get("id", ""), "")),
+                    }
                     for q in (
                         past_calls.form_questions(solicitation, response) if is_round else solicitation.questions or []
                     )
@@ -1521,7 +1531,7 @@ class ReviewView(SignedInPage):
                 "qa_pairs": [
                     {
                         "question": q.get("text", ""),
-                        "answer": (response.responses or {}).get(q.get("id", ""), ""),
+                        "answer": answer_text((response.responses or {}).get(q.get("id", ""), "")),
                         "question_id": q.get("id", ""),
                         "criteria": criteria_by_question.get(q.get("id", ""), []),
                     }

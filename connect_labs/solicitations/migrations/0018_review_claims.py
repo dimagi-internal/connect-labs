@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('solicitations', '0017_review_kinds_and_round_criteria'),
+        ("solicitations", "0017_review_kinds_and_round_criteria"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='solicitationreview',
-            name='claims',
+            model_name="solicitationreview",
+            name="claims",
             field=models.JSONField(blank=True, default=list),
         ),
     ]

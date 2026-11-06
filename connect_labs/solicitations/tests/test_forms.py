@@ -318,6 +318,21 @@ class TestSolicitationResponseForm:
         assert not form.is_valid()
         assert "question_q1" in form.errors
 
+    def test_checkboxes_answer_is_the_ticked_options(self):
+        questions = [
+            {"id": "q1", "text": "Services?", "type": "checkboxes", "required": True, "options": ["A", "B", "C"]}
+        ]
+        form = SolicitationResponseForm(questions=questions, data={"question_q1": ["A", "C"]})
+        assert form.is_valid(), form.errors
+        assert form.get_responses_dict() == {"q1": ["A", "C"]}
+        assert not SolicitationResponseForm(questions=questions, data={"question_q1": ["Z"]}).is_valid()
+
+    def test_multiple_choice_draws_radios_when_asked(self):
+        questions = [
+            {"id": "q1", "text": "Region?", "type": "multiple_choice", "display": "radio", "options": ["N", "S"]}
+        ]
+        assert SolicitationResponseForm(questions=questions).fields["question_q1"].widget.input_type == "radio"
+
     def test_responding_org_picked_from_the_users_orgs(self):
         form = SolicitationResponseForm(
             questions=self._questions(),

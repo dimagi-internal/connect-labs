@@ -8,77 +8,95 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('solicitations', '0016_directory_rounds_owned_by_dimagi'),
+        ("solicitations", "0016_directory_rounds_owned_by_dimagi"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.RemoveConstraint(
-            model_name='solicitationreview',
-            name='uniq_review_per_reviewer',
+            model_name="solicitationreview",
+            name="uniq_review_per_reviewer",
         ),
         migrations.AddField(
-            model_name='solicitation',
-            name='criteria_basis',
-            field=models.TextField(blank=True, default=''),
+            model_name="solicitation",
+            name="criteria_basis",
+            field=models.TextField(blank=True, default=""),
         ),
         migrations.AddField(
-            model_name='solicitation',
-            name='rubric_version',
-            field=models.CharField(blank=True, default='', max_length=40),
+            model_name="solicitation",
+            name="rubric_version",
+            field=models.CharField(blank=True, default="", max_length=40),
         ),
         migrations.AddField(
-            model_name='solicitationreview',
-            name='ask_next',
-            field=models.TextField(blank=True, default=''),
+            model_name="solicitationreview",
+            name="ask_next",
+            field=models.TextField(blank=True, default=""),
         ),
         migrations.AddField(
-            model_name='solicitationreview',
-            name='based_on',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='derived_reviews', to='solicitations.solicitationreview'),
+            model_name="solicitationreview",
+            name="based_on",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="derived_reviews",
+                to="solicitations.solicitationreview",
+            ),
         ),
         migrations.AddField(
-            model_name='solicitationreview',
-            name='concerns',
-            field=models.TextField(blank=True, default=''),
+            model_name="solicitationreview",
+            name="concerns",
+            field=models.TextField(blank=True, default=""),
         ),
         migrations.AddField(
-            model_name='solicitationreview',
-            name='criteria_notes',
+            model_name="solicitationreview",
+            name="criteria_notes",
             field=models.JSONField(blank=True, default=dict),
         ),
         migrations.AddField(
-            model_name='solicitationreview',
-            name='flags',
+            model_name="solicitationreview",
+            name="flags",
             field=models.JSONField(blank=True, default=list),
         ),
         migrations.AddField(
-            model_name='solicitationreview',
-            name='kind',
-            field=models.CharField(choices=[('ai', 'AI'), ('human', 'Person')], default='human', max_length=8),
+            model_name="solicitationreview",
+            name="kind",
+            field=models.CharField(choices=[("ai", "AI"), ("human", "Person")], default="human", max_length=8),
         ),
         migrations.AddField(
-            model_name='solicitationreview',
-            name='outcome',
-            field=models.CharField(blank=True, choices=[('pick', 'Pick'), ('backup', 'Backup'), ('waitlist', 'Waitlist'), ('pass', 'Pass')], default='', max_length=12),
+            model_name="solicitationreview",
+            name="outcome",
+            field=models.CharField(
+                blank=True,
+                choices=[("pick", "Pick"), ("backup", "Backup"), ("waitlist", "Waitlist"), ("pass", "Pass")],
+                default="",
+                max_length=12,
+            ),
         ),
         migrations.AddField(
-            model_name='solicitationreview',
-            name='provenance',
+            model_name="solicitationreview",
+            name="provenance",
             field=models.JSONField(blank=True, default=dict),
         ),
         migrations.AddField(
-            model_name='solicitationreview',
-            name='stance',
-            field=models.CharField(blank=True, choices=[('agrees', 'Agrees'), ('amended', 'Amended it'), ('disagrees', 'Disagrees')], default='', max_length=12),
+            model_name="solicitationreview",
+            name="stance",
+            field=models.CharField(
+                blank=True,
+                choices=[("agrees", "Agrees"), ("amended", "Amended it"), ("disagrees", "Disagrees")],
+                default="",
+                max_length=12,
+            ),
         ),
         migrations.AddField(
-            model_name='solicitationreview',
-            name='strengths',
-            field=models.TextField(blank=True, default=''),
+            model_name="solicitationreview",
+            name="strengths",
+            field=models.TextField(blank=True, default=""),
         ),
         migrations.AddConstraint(
-            model_name='solicitationreview',
-            constraint=models.UniqueConstraint(fields=('response', 'reviewer', 'kind'), name='uniq_review_per_reviewer_kind'),
+            model_name="solicitationreview",
+            constraint=models.UniqueConstraint(
+                fields=("response", "reviewer", "kind"), name="uniq_review_per_reviewer_kind"
+            ),
         ),
     ]
