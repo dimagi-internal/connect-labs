@@ -60,7 +60,7 @@ always worded "up to" — see `queries.committed_by_program`.
       </div>
       <div>
         <div class="text-[23px] sm:text-[29px] font-semibold text-white tabular-nums">{{ totals.applied }}</div>
-        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">ORGANIZATIONS HAVE APPLIED</div>
+        <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5" title="Organizations that answered at least one round tagged with a program. The network also counts directory organizations that have not applied.">ORGANIZATIONS HAVE APPLIED</div>
       </div>
     </div>
 
@@ -78,7 +78,7 @@ always worded "up to" — see `queries.committed_by_program`.
       <a href="{% url 'marketplace:network' %}"
          class="mk-ghost inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-2 border border-brand-sky/40 text-white text-sm font-medium rounded-lg transition">
         The network
-        <span class="mk-ghost-sub text-[11.5px] text-brand-sky tabular-nums">{{ network.organisations }} organizations</span>
+        <span class="mk-ghost-sub text-[11.5px] text-brand-sky tabular-nums" title="Every organization in the LLO Directory, plus any that answered a round. {{ totals.applied }} of them have applied to a program; the rest are in the directory without an application.">{{ network.organisations }} organizations</span>
       </a>
       <a href="{% url 'supply_chain:market' %}"
          class="mk-ghost inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-2 border border-brand-sky/40 text-white text-sm font-medium rounded-lg transition">
@@ -105,7 +105,7 @@ always worded "up to" — see `queries.committed_by_program`.
     <section class="{% if not forloop.first %}mt-12{% endif %}">
       <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-4">
         <h2 class="text-lg font-semibold text-brand-deep-purple">{{ section.title }}</h2>
-        <span class="text-[13px] text-gray-500">{{ section.why }}</span>
+        {% if section.why %}<span class="text-[13px] text-gray-500">{{ section.why }}</span>{% endif %}
       </div>
 
       <div class="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">

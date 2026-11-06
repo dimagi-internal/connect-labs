@@ -15,4 +15,7 @@ def warm_network() -> int:
     """
     from connect_labs.marketplace import queries
 
+    # The program page's money figures ride the same timer (see queries._shared).
+    queries.committed_by_program(refresh=True)
+    queries.fixed_costs_by_program(refresh=True)
     return len(queries.spine_first_service(refresh=True))
