@@ -278,34 +278,35 @@ def _long_answer_ids(submissions) -> set[str]:
     return long_ids
 
 
-def apply_form_structure(round_: Solicitation, shared_forms) -> dict:
+def apply_form_structure(round_: Solicitation, fetch=None) -> dict:
     """Give the round's questions their Google Forms' structure (`form_structure`).
 
-    ``shared_forms`` is every form shared with the labs service account. Returns
-    ``{form key: questions matched}``, None for a form not shared, so the import
-    can say which rounds still show text boxes and why. Does not save.
+    Each form is read from its public link. Returns ``{form key: questions
+    matched}``, or the reason a form could not be read, so the import can say
+    which rounds still show text boxes and why. Does not save.
     """
     from connect_labs.marketplace import form_structure
 
+    fetch = fetch or form_structure.fetch
+    multi = len(round_.directory_forms) > 1
     result = {}
     for entry in round_.directory_forms:
-        form = form_structure.find(shared_forms or [], entry)
-        multi = len(round_.directory_forms) > 1
-        result[entry["key"]] = (
-            None
-            if form is None
-            else form_structure.annotate(round_.questions or [], form, entry["key"] if multi else None)
-        )
+        try:
+            form = fetch(entry.get("form_url", ""))
+        except Exception as exc:  # noqa: BLE001 -- one unreadable form must not stop the import
+            result[entry["key"]] = f"form not read: {exc}"
+            continue
+        result[entry["key"]] = form_structure.annotate(round_.questions or [], form, entry["key"] if multi else None)
     return result
 
 
-def ingest_round(round_: Solicitation, rows, human_verdicts=None, shared_forms=None) -> dict:
+def ingest_round(round_: Solicitation, rows, human_verdicts=None, read_form=None) -> dict:
     """Store one round's submissions, matched to organisations where certain.
 
     ``rows`` is a response sheet, or ``{form key: response sheet}`` for a round
     that runs several forms; a bare sheet is the round's first form.
-    ``shared_forms`` (`form_structure.shared_forms`) gives the questions their
-    forms' choices, grids and sections; without it they are text boxes.
+    Each form's public page gives the questions their choices, grids and
+    sections (`apply_form_structure`; ``read_form`` replaces the page fetch).
     """
     from connect_labs.labs.models import LabsOrg
     from connect_labs.marketplace.models import OrgContact
@@ -376,7 +377,7 @@ def ingest_round(round_: Solicitation, rows, human_verdicts=None, shared_forms=N
             {"id": q.id, "text": q.text, "column": q.column, "forms": asked_on[q.id], "long": q.id in long_answers}
             for q in questions
         ]
-        stats["structure"] = apply_form_structure(round_, shared_forms)
+        stats["structure"] = apply_form_structure(round_, read_form)
 
         for sub in submissions:
             # The key a human verdict is filed under: the form's own Slug,

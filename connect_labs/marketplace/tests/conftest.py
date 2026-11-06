@@ -23,3 +23,14 @@ def _drop_marketplace_caches():
     yield
     queries.invalidate()
     invalidate_partner_names()
+
+
+@pytest.fixture(autouse=True)
+def _no_form_page_fetches(monkeypatch):
+    """An import reads each round's public Google Form page; a test never goes to Google."""
+    from connect_labs.marketplace import form_structure
+
+    def offline(url):
+        raise form_structure.FormUnreadable("tests do not fetch form pages")
+
+    monkeypatch.setattr(form_structure, "_anonymous_get", offline)

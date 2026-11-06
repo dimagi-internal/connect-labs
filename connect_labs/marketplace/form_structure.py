@@ -2,26 +2,26 @@
 
 The response sheet only carries a header row, so a round imported from it alone
 shows every question as a text box, and a grid ("rank these 1st, 2nd, 3rd")
-as one box per row. The form itself knows better, and the Google Forms API
-(``forms.get``) says it in a documented shape: each item's choice type and
-options, a grid's rows and columns, which questions are required, the help text,
-and where each section starts.
+as one box per row. The form itself knows better.
 
-The API answers only for an account that can edit the form, so -- as with the
-response sheets -- a form is read only once someone shares it with the labs
-service account. Nothing here needs the form's edit link: every form shared
-with the account is listed, and each is matched to its round by the response
-sheet it writes to (``linkedSheetId``) or by its public link (``responderUri``).
-A form nobody shared leaves its round's questions as they were.
+It is read from the form's public page -- the page anyone filling it in loads --
+so labs needs no access to the form at all. (The Google Forms API would say the
+same thing in a documented shape, but it answers only an account that can EDIT
+the form, and edit rights on a live form are too much to hand a service account
+for a read.) The page carries the form as a JSON array, ``FB_PUBLIC_LOAD_DATA_``.
+That array is not documented, so `parse` is strict about its shape and says why
+when it cannot read one: the import reports it per form and the questions keep
+their text boxes. A misread never becomes a wrong list of choices.
+
+`parse` turns the page into the item shape the Forms API documents
+(``questionItem``, ``questionGroupItem``, ``pageBreakItem``...), so the rest of
+this module reads one documented structure whichever way a form arrives.
 """
 
 from __future__ import annotations
 
+import json
 import re
-
-FORM_MIME = "application/vnd.google-apps.form"
-DRIVE_FILES = "https://www.googleapis.com/drive/v3/files"
-FORMS_API = "https://forms.googleapis.com/v1/forms"
 
 # What a question may carry once its form has been read. Cleared before each
 # annotation so a re-import never keeps a stale choice list.
@@ -30,74 +30,90 @@ STRUCTURE_KEYS = ("type", "display", "options", "required", "help", "section", "
 # Google Forms names an "Other" choice nothing; the sheet holds what was typed.
 OTHER = "Other"
 
-_PUBLIC_ID = re.compile(r"/forms/d/e/([A-Za-z0-9_-]+)")
+_DATA = re.compile(r"FB_PUBLIC_LOAD_DATA_\s*=\s*(.*?);\s*</script>", re.S)
+
+# The page's item type codes.
+_SHORT, _PARAGRAPH, _RADIO, _DROPDOWN, _CHECKBOX, _SCALE, _TITLE, _GRID, _PAGE = range(9)
+_CHOICE_TYPES = {_RADIO: "RADIO", _DROPDOWN: "DROP_DOWN", _CHECKBOX: "CHECKBOX"}
 
 
-def public_id(url: str) -> str:
-    """The id in a form's public link (``/forms/d/e/<id>/viewform``), or ""."""
-    match = _PUBLIC_ID.search(url or "")
-    return match.group(1) if match else ""
+class FormUnreadable(ValueError):
+    """The page was fetched but carries no form this module can read."""
 
 
-def shared_forms(get=None) -> list[dict]:
-    """Every form shared with the labs service account, as ``forms.get`` returns it.
+def fetch(form_url: str, get=None) -> dict:
+    """The form behind a public link, as `parse` returns it.
 
-    ``get(url, params)`` returns parsed JSON; it defaults to an authenticated
-    call as the service account. A form the account can list but not read is
-    skipped rather than failing the import.
+    ``get(url)`` returns the page's HTML; it defaults to a plain anonymous GET
+    that follows redirects (a ``forms.gle`` short link). Raises on a network
+    error, and `FormUnreadable` on a page that is not an open form -- one
+    restricted to signed-in users, say.
     """
-    get = get or _service_account_get()
-    forms, page = [], None
-    while True:
-        params = {
-            "q": f"mimeType='{FORM_MIME}' and trashed=false",
-            "fields": "nextPageToken,files(id)",
-            "pageSize": "200",
-            "supportsAllDrives": "true",
-            "includeItemsFromAllDrives": "true",
-        }
-        if page:
-            params["pageToken"] = page
-        listing = get(DRIVE_FILES, params)
-        for f in listing.get("files", []):
-            try:
-                forms.append(get(f"{FORMS_API}/{f['id']}", {}))
-            except Exception:  # noqa: BLE001 — one unreadable form must not stop the rest
-                continue
-        page = listing.get("nextPageToken")
-        if not page:
-            return forms
+    if not (form_url or "").startswith("https://"):
+        raise FormUnreadable("no public form link")
+    get = get or _anonymous_get
+    return parse(get(form_url))
 
 
-def _service_account_get():
+def _anonymous_get(url: str) -> str:
     import httpx
-    from google.auth.transport.requests import Request
 
-    from connect_labs.labs.synthetic.gdrive import _load_credentials
-
-    creds = _load_credentials()
-
-    def get(url, params):
-        if not creds.valid:
-            creds.refresh(Request())
-        got = httpx.get(url, params=params, headers={"Authorization": f"Bearer {creds.token}"}, timeout=60)
-        got.raise_for_status()
-        return got.json()
-
-    return get
+    got = httpx.get(url, follow_redirects=True, timeout=30, headers={"Accept-Language": "en"})
+    got.raise_for_status()
+    return got.text
 
 
-def find(forms: list[dict], form_entry: dict) -> dict | None:
-    """The shared form behind one of a round's forms: by response sheet, else by public link."""
-    sheet = (form_entry.get("response_spreadsheet_id") or "").strip()
-    link = public_id(form_entry.get("form_url", ""))
-    for form in forms:
-        if sheet and form.get("linkedSheetId") == sheet:
-            return form
-    for form in forms:
-        if link and public_id(form.get("responderUri", "")) == link:
-            return form
-    return None
+def _page_options(raw) -> list[dict]:
+    opts = []
+    for o in raw or []:
+        if len(o) > 4 and o[4] == 1:
+            opts.append({"isOther": True})
+        elif o and o[0]:
+            opts.append({"value": str(o[0])})
+    return opts
+
+
+def _item(raw: list) -> dict:
+    """One page item as a Forms API item."""
+    kind = raw[3]
+    item = {"itemId": str(raw[0]), "title": raw[1] or "", "description": raw[2] or ""}
+    specs = raw[4] if len(raw) > 4 and raw[4] else []
+    first = specs[0] if specs else None
+    required = bool(first[2]) if first and len(first) > 2 else False
+    if kind in (_SHORT, _PARAGRAPH):
+        item["questionItem"] = {"question": {"required": required, "textQuestion": {"paragraph": kind == _PARAGRAPH}}}
+    elif kind in _CHOICE_TYPES:
+        choice = {"type": _CHOICE_TYPES[kind], "options": _page_options(first[1])}
+        item["questionItem"] = {"question": {"required": required, "choiceQuestion": choice}}
+    elif kind == _SCALE:
+        values = [int(o[0]) for o in first[1] if str(o[0]).isdigit()]
+        scale = {"low": min(values), "high": max(values)}
+        item["questionItem"] = {"question": {"required": required, "scaleQuestion": scale}}
+    elif kind == _GRID:
+        multi = bool(first[11][0]) if len(first) > 11 and first[11] else False
+        columns = {"type": "CHECKBOX" if multi else "RADIO", "options": _page_options(first[1])}
+        rows = [{"required": bool(r[2]), "rowQuestion": {"title": r[3][0]}} for r in specs]
+        item["questionGroupItem"] = {"grid": {"columns": columns}, "questions": rows}
+    elif kind == _TITLE:
+        item["textItem"] = {}
+    elif kind == _PAGE:
+        item["pageBreakItem"] = {}
+    else:
+        item["questionItem"] = {"question": {"required": required}}  # date, time, upload: text
+    return item
+
+
+def parse(html: str) -> dict:
+    """A form's public page as ``{"title", "items"}`` in the Forms API's item shape."""
+    match = _DATA.search(html or "")
+    if not match:
+        raise FormUnreadable("the page carries no form (closed, or restricted to signed-in users?)")
+    try:
+        data = json.loads(match.group(1))
+        raw_items = data[1][1] or []
+        return {"title": data[1][8] or "", "items": [_item(raw) for raw in raw_items]}
+    except (ValueError, IndexError, TypeError, KeyError) as exc:
+        raise FormUnreadable(f"the form's layout has changed ({exc.__class__.__name__}: {exc})") from exc
 
 
 def _key(text: str) -> str:
