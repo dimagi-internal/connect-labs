@@ -104,13 +104,24 @@ Plain CSS rather than utilities, so nothing waits on the stylesheet being rebuil
       });
     }
     document.addEventListener("DOMContentLoaded", sync);
-    document.addEventListener("click", function (ev) {
-      var btn = ev.target.closest && ev.target.closest("[data-supply-rail-toggle]");
-      if (!btn) return;
+    function toggle() {
       var closed = shell.getAttribute("data-rail") !== "closed";
       shell.setAttribute("data-rail", closed ? "closed" : "open");
       try { localStorage.setItem(KEY, closed ? "closed" : "open"); } catch (e) {}
       sync();
+    }
+    // The Supply icon in the Labs sidebar toggles this rail too, the same as the Marketplace
+    // icon does for its menu (components/expandable_rail_menu.html). Only where the rail is drawn
+    // (768px and up), and a modified click (new tab) still navigates.
+    var HOME = "{% url 'supply_chain:home' %}";
+    document.addEventListener("click", function (ev) {
+      if (!ev.target.closest) return;
+      if (ev.target.closest("[data-supply-rail-toggle]")) { toggle(); return; }
+      var icon = ev.target.closest('#labs-sidenav a[href="' + HOME + '"]');
+      if (!icon || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button !== 0) return;
+      if (!window.matchMedia("(min-width: 768px)").matches) return;
+      ev.preventDefault();
+      toggle();
     });
   })();
 </script>

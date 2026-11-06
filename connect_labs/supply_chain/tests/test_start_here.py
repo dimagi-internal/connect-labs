@@ -70,3 +70,12 @@ def test_the_page_ticks_what_the_programme_has(client_in_programme):
     body = client_in_programme.get(reverse("supply_chain:start_here")).content.decode()
     assert body.count('data-state="done"') >= 1
     assert "1 tender" in body
+
+
+def test_the_supply_icon_in_the_sidebar_toggles_the_rail(client_in_programme):
+    """Like the Marketplace icon for its menu: on a supply page the sidebar's Supply icon opens
+    or closes the rail rather than reloading the home page (Jonathan, 2026-11-06)."""
+    body = client_in_programme.get(reverse("supply_chain:start_here")).content.decode()
+    assert 'data-testid="supply-rail"' in body
+    assert f'var HOME = "{reverse("supply_chain:home")}";' in body
+    assert "#labs-sidenav a[href=" in body
