@@ -62,6 +62,13 @@ PULSE_SUMMARY_CACHE_SECONDS = 0
 # test that changes health rows or events sees the change on its next request.
 PULSE_LIVE_CACHE_SECONDS = 0
 
+# The supply ACL shadow observer (supply_chain/access_shadow.py) is ON by
+# default and samples one read in SUPPLY_ACL_SHADOW_SAMPLE AT RANDOM, opening a
+# savepoint when it does. Left on, every query-count test on a supply page fails
+# about one run in twenty (test_worker_screens' "the page costs the same"
+# did, 37 == 35). Off here; the tests about it turn it on with SAMPLE = 1.
+SUPPLY_ACL_SHADOW = False
+
 # CACHES
 # ------------------------------------------------------------------------------
 # Tests must not reach a live Redis, and must not share cache state with each

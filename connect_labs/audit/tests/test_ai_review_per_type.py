@@ -1,5 +1,7 @@
 """Tests for per-image-type agent resolution in _run_ai_review_on_sessions."""
 
+import time
+
 import pytest
 from django.test import override_settings
 
@@ -719,6 +721,13 @@ class _CancelOnFirstAgent:
             from connect_labs.audit.data_access import mark_audit_creation_cancelled
 
             mark_audit_creation_cancelled("test-cancel-key-multi")
+        else:
+            # A real review takes seconds. An instant one let the pool's ten
+            # threads drain all 40 images before the consumer thread was even
+            # scheduled to read the first result and cancel the rest -- on a
+            # loaded CI runner it did (`assert 40 < 40`). 50ms per later review
+            # is still nothing, and leaves the consumer ample time to cancel.
+            time.sleep(0.05)
         return ReviewResult.success(match=True)
 
 

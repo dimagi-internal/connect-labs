@@ -61,9 +61,15 @@ runs:
         # v2 (2026-09-30): the v1 debs pinned libcurl4-gnutls-dev to a
         # libcurl the runner image had moved past, and every run failed.
         # v3 (2026-11-05): the OS release joined the key (#2901).
-        key: geo-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.os.outputs.release }}-v3
+        # v4 (2026-11-06): the shared libraries only, not gdal-bin/libproj-dev.
+        key: geo-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.os.outputs.release }}-v4
 
     - name: Install Geo Dependencies
+      # Not a GDAL test step: the database backend is PostGIS and
+      # django.contrib.gis is installed, so Django loads libgdal and libgeos_c
+      # when it starts -- every test needs them, which is why this runs on
+      # every CI run and is cached rather than skipped.
+      #
       # --no-install-recommends: Django reaches libgdal/libgeos through ctypes, so
       # the recommended extras (docs, python bindings) are downloaded and unpacked
       # for nothing on every run. Hard dependencies are still installed.
@@ -121,11 +127,22 @@ runs:
           apt_net install -y -f --no-install-recommends
           # apt refuses to use an archives dir without a `partial` inside it.
           sudo rm -rf /tmp/geo-debs && mkdir -p /tmp/geo-debs/partial
+          # The two shared libraries GeoDjango loads, and what they need --
+          # not gdal-bin or libproj-dev, which pulled in python3-gdal, numpy and
+          # a tree of -dev headers: 82 packages, 50 MB, for libraries reached
+          # only through ctypes. Nothing runs the GDAL command-line tools, and
+          # pyproj's wheel carries its own PROJ. The library packages are named
+          # by ABI (libgdal38, libgeos-c1t64) and the name moves with each
+          # release, so it is read from the archive, not written here; if that
+          # lookup ever comes back empty, install gdal-bin as before.
+          libs="$(apt-cache depends gdal-bin 2>/dev/null | awk '$1 == "Depends:" && $2 ~ /^libgdal[0-9]/ {print $2; exit}')"
+          libs="$libs $(apt-cache depends "${libs:-gdal-bin}" 2>/dev/null | awk '$1 == "Depends:" && $2 ~ /^libgeos-c1/ {print $2; exit}')"
+          case "$libs" in *libgdal*libgeos-c1*) ;; *) libs="gdal-bin" ;; esac
+          echo "Geo packages: $libs"
+          # shellcheck disable=SC2086 # $libs is a list of package names
           apt_net install -y --no-install-recommends \
             -o Dir::Cache::archives=/tmp/geo-debs \
-            binutils \
-            gdal-bin \
-            libproj-dev
+            $libs
           sudo chown -R "$USER" /tmp/geo-debs
           rmdir /tmp/geo-debs/partial 2>/dev/null || true
         }

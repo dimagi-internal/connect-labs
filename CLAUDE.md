@@ -294,10 +294,12 @@ reproduce it on a clean `origin/main` worktree.
 
 Two more ways a red check is not what it looks like:
 
-- **CI runs `pytest connect_labs/ -n logical` and nothing else**, split over three
-  runners (`--shard=1/3` … `3/3`, whole files per slice); the required `pytest`
-  check is green only when every `pytest (K/3)` slice is. A failure names its
-  slice — reproduce it with the same `--shard` or just run the file. Anything
+- **CI runs `pytest connect_labs/ -n logical` and nothing else**, split over four
+  runners (`--shard=1/4` … `4/4`, whole files per slice, balanced by the measured
+  times in `connect_labs/testing/shard_durations.json`; refresh with
+  `tools/refresh_shard_durations.py`); the required `pytest` check is green only
+  when every `pytest (K/4)` slice is. A failure names its slice — reproduce it
+  with the same `--shard` or just run the file. Anything
   outside that path — `tools/tests/` in particular — can never go red in CI, so a
   test there passing is not evidence it runs (#1391, #1431). Run it yourself.
 - **`main` can itself fail `pre-commit run --all-files`** (#1520). When it does,
