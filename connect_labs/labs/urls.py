@@ -6,6 +6,7 @@ from connect_labs.labs.analysis import views as analysis_views
 from connect_labs.labs.integrations.commcare import oauth_views as commcare_oauth_views
 from connect_labs.labs.integrations.connect import oauth_views as connect_oauth_views
 from connect_labs.labs.integrations.ocs import oauth_views as ocs_oauth_views
+from connect_labs.mcp import agent_request_views as mcp_agent_request_views
 from connect_labs.mcp import token_views as mcp_token_views
 from connect_labs.workflow import coach_image_views, page_views, sandbox
 
@@ -39,6 +40,7 @@ urlpatterns = [
     path("mcp/tokens/create/", mcp_token_views.tokens_create, name="mcp_tokens_create"),
     path("mcp/tokens/<int:pk>/revoke/", mcp_token_views.tokens_revoke, name="mcp_tokens_revoke"),
     path("mcp/tokens/<int:pk>/rotate/", mcp_token_views.tokens_rotate, name="mcp_tokens_rotate"),
+    path("mcp/agent-requests/<str:ref>/", mcp_agent_request_views.agent_request_page, name="mcp_agent_request"),
     path("mcp/full-access/approved/", mcp_token_views.full_access_approved, name="mcp_full_access_approved"),
     path("mcp/full-access/<str:ref>/collect/", mcp_token_views.full_access_collect, name="mcp_full_access_collect"),
     # Signed-in MCP clients (the OAuth half of the same page)
