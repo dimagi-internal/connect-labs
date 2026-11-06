@@ -231,10 +231,8 @@ class TestStockOnItsWayIsShownButNotCounted:
         assert expected["overdue"] is True
 
         text = _text(_stock_page(scoped))
-        assert (
-            f"expected: 400 jerry cans from A water donor — overdue since {day_text(date.fromisoformat(days_ago(90)))}"
-            in text
-        )
+        # Its own "On order" column: how much, when, from whom -- three short lines.
+        assert f"400 jerry cans overdue since {day_text(date.fromisoformat(days_ago(90)))} from A water donor" in text
         assert "not counted as cover" in text
         assert reverse("supply_chain:order_detail", args=[late["id"]]) in _stock_page(scoped)
 
@@ -316,9 +314,7 @@ class TestStockOnItsWayIsShownButNotCounted:
         (expected,) = _row(da, world)["expected_inbound"]
         assert expected["overdue"] is False
         text = _text(_stock_page(scoped))
-        assert (
-            f"expected: 60 jerry cans from A water donor — due {day_text(date.fromisoformat(days_ago(-55)))}" in text
-        )
+        assert f"60 jerry cans due {day_text(date.fromisoformat(days_ago(-55)))} from A water donor" in text
 
 
 class TestTheOrderPageOffersBillingOnlyForABoughtOrder:
