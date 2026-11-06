@@ -262,6 +262,22 @@ def _write_access_columns(results, rounds, spreadsheet_id) -> None:
     directory.update_cells(spreadsheet_id, updates)
 
 
+# An answer this long, or on more than one line, is written prose: the round's
+# read-only form shows that question as a small text area, not a one-line box.
+LONG_ANSWER_CHARS = 80
+
+
+def _long_answer_ids(submissions) -> set[str]:
+    """The questions any submission answered at length."""
+    long_ids = set()
+    for sub in submissions:
+        for qid, answer in (sub.answers or {}).items():
+            text = str(answer or "")
+            if len(text) > LONG_ANSWER_CHARS or "\n" in text.strip():
+                long_ids.add(qid)
+    return long_ids
+
+
 def ingest_round(round_: Solicitation, rows, human_verdicts=None) -> dict:
     """Store one round's submissions, matched to organisations where certain.
 
@@ -274,16 +290,19 @@ def ingest_round(round_: Solicitation, rows, human_verdicts=None) -> dict:
     forms = {f["key"]: f for f in round_.directory_forms}
     sheets = rows if isinstance(rows, dict) else {next(iter(forms)): rows}
     questions, submissions = [], []
-    seen_questions = set()
+    # Which forms asked each question, so a round with an English and a French
+    # form can show one form's questions at a time (`past_calls.form_questions`).
+    asked_on: dict[str, list[str]] = {}
     for key, sheet_rows in sheets.items():
         form = forms.get(key, {})
         form_questions, form_submissions = response_reader.parse_submissions(
             sheet_rows, form.get("column_map") or None
         )
         for q in form_questions:
-            if q.id not in seen_questions:
-                seen_questions.add(q.id)
+            if q.id not in asked_on:
+                asked_on[q.id] = []
                 questions.append(q)
+            asked_on[q.id].append(key)
         for sub in form_submissions:
             sub.form_key = key
             sub.spreadsheet_id = form.get("response_spreadsheet_id", "")
@@ -329,7 +348,11 @@ def ingest_round(round_: Solicitation, rows, human_verdicts=None) -> dict:
 
     stats = {"submissions": 0, "matched": 0, "unmatched": 0, "dismissed": 0}
     with transaction.atomic():
-        round_.questions = [{"id": q.id, "text": q.text, "column": q.column} for q in questions]
+        long_answers = _long_answer_ids(submissions)
+        round_.questions = [
+            {"id": q.id, "text": q.text, "column": q.column, "forms": asked_on[q.id], "long": q.id in long_answers}
+            for q in questions
+        ]
 
         for sub in submissions:
             # The key a human verdict is filed under: the form's own Slug,

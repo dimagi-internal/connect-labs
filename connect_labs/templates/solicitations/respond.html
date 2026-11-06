@@ -59,6 +59,23 @@
         {% if question_fields %}
             {% comment %}What the call asked, so a closed call still shows its form. Every field is disabled and there is no submit.{% endcomment %}
             <div class="mt-6 space-y-8">
+                {% if round_forms %}
+                    {% comment %}A round that ran one form per language: show one at a time.{% endcomment %}
+                    <nav class="flex flex-wrap gap-2" aria-label="Form" data-testid="round-form-switcher">
+                        {% for f in round_forms %}
+                            <a href="?form={{ f.key|urlencode }}" {% if f.active %}aria-current="page"{% endif %}
+                               class="px-3 py-1.5 rounded-full text-sm font-medium {% if f.active %}bg-brand-deep-purple text-white{% else %}bg-white text-brand-indigo border border-brand-border-light hover:bg-gray-50{% endif %}">{{ f.label }}</a>
+                        {% endfor %}
+                    </nav>
+                {% endif %}
+                {% if area_picker %}
+                    <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8" data-testid="round-area-picker">
+                        <h2 class="text-xl font-semibold text-brand-deep-purple mb-1">Where would you do this work?</h2>
+                        <p class="text-xs text-gray-500 mb-3">Answering in labs, an organisation picks the areas it proposes to work in, at whatever level fits: a whole state, a district, or a few wards. Click an area on the map, use <strong>Select parent</strong> for the larger area around it, or search by name. This is a preview: nothing picked here is saved.</p>
+                        {% include "solicitations/_service_area_picker.html" with picker=area_picker %}
+                        {{ form.service_areas }}
+                    </div>
+                {% endif %}
                 {% include "solicitations/_respond_questions.html" %}
             </div>
         {% endif %}
