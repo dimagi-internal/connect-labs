@@ -47,6 +47,7 @@ from django.utils import timezone
 
 from ..tool_registry import MCPToolError, get_tool, register
 from ..ui import WORKFLOW_EDIT_CONFIRM_URI, tool_meta
+from .review_batch import REVIEW_TOOLS
 
 #: The edit tools an agent may propose. Each changes one workflow, pipeline or
 #: registry in place; none shares, publishes, copies or deletes anything.
@@ -64,6 +65,11 @@ EDIT_TOOLS: frozenset[str] = frozenset(
         "semantic_registry_set_indicator_meta",
     }
 )
+
+#: Writes on a marketplace round, proposed the same way and confirmed on the same card
+#: (``mcp/tools/review_batch.py``). A token's scope decides which of the two sets it may
+#: propose: ``workflow:edit`` the edits above, ``marketplace:review`` these.
+PROPOSABLE_BY_SCOPE: dict[str, frozenset[str]] = {"workflow:edit": EDIT_TOOLS, "marketplace:review": REVIEW_TOOLS}
 
 RENDER_TOOLS = frozenset({"workflow_update_render_code", "workflow_patch_render_code"})
 
@@ -112,11 +118,41 @@ def _definition(user, arguments: dict):
     return definition
 
 
+def _token_scopes() -> frozenset[str] | None:
+    """The scopes of the delegated token making this call, or None for a person's own connection."""
+    from fastmcp.server.dependencies import get_access_token
+
+    try:
+        access = get_access_token()
+    except Exception:  # noqa: BLE001 -- no MCP request context (direct calls, tests)
+        return None
+    claims = getattr(access, "claims", None) or {}
+    if claims.get("auth_method") != "delegated":
+        return None
+    return frozenset(getattr(access, "scopes", None) or [])
+
+
+def scope_refusal(tool: str) -> str | None:
+    """Why THIS token may not propose ``tool``, or None. A person's own connection may propose any.
+
+    The four card tools sit in two scopes (``workflow:edit``, ``marketplace:review``), so holding
+    one must not open the other's proposals.
+    """
+    scopes = _token_scopes()
+    if scopes is None:
+        return None
+    allowed = frozenset().union(*(PROPOSABLE_BY_SCOPE[s] for s in scopes if s in PROPOSABLE_BY_SCOPE))
+    if tool in allowed:
+        return None
+    return f"This page's permission does not cover proposing {tool}."
+
+
 def refusal(user, tool: str, arguments: dict) -> str | None:
     """Why this edit may not be made through canopy, or None. Checked at proposal and again at apply."""
-    if tool not in EDIT_TOOLS:
+    proposable = EDIT_TOOLS | REVIEW_TOOLS
+    if tool not in proposable:
         return (
-            f"{tool} is not an edit canopy can propose. Proposable: {', '.join(sorted(EDIT_TOOLS))}. "
+            f"{tool} is not a change canopy can propose. Proposable: {', '.join(sorted(proposable))}. "
             "Sharing, publishing, cloning and deleting are made in Labs by a person."
         )
     if tool == "workflow_update_definition":
@@ -209,6 +245,10 @@ def _definition_preview(user, arguments: dict) -> dict:
 
 def preview(user, tool: str, arguments: dict) -> dict:
     """What the card shows: a summary and, per thing changed, a unified diff."""
+    if tool in REVIEW_TOOLS:
+        from .review_batch import preview as review_preview
+
+        return review_preview(user, tool, arguments)
     if tool in RENDER_TOOLS:
         return _render_preview(user, tool, arguments)
     if tool == "workflow_update_definition":
@@ -232,8 +272,8 @@ _PROPOSE_SCHEMA = {
     "properties": {
         "tool": {
             "type": "string",
-            "enum": sorted(EDIT_TOOLS),
-            "description": "The edit tool to run once the person confirms.",
+            "enum": sorted(EDIT_TOOLS | REVIEW_TOOLS),
+            "description": "The tool to run once the person confirms.",
         },
         "arguments": {
             "type": "object",
@@ -261,7 +301,9 @@ def _propose_text(result: dict) -> str:
         "to the workflow. Read the current version first (workflow_get, pipeline_get), propose one coherent "
         "change at a time, and say in your reply what it does. Refused: anything that would send data "
         "outside the workflow (sharing, publishing, cloning, the workflow's actions or agent settings), and "
-        "render code on a workflow that is not sandboxed."
+        "render code on a workflow that is not sandboxed. On a marketplace round page the proposals are "
+        "marketplace_reviews_write (the whole batch of AI reviews: round_slug, reviews, optional summary_url) and "
+        "marketplace_round_criteria_set; the person confirms them the same way and they are written as that person."
     ),
     input_schema=_PROPOSE_SCHEMA,
     meta=tool_meta(WORKFLOW_EDIT_CONFIRM_URI, "model", "app"),
@@ -275,7 +317,7 @@ def workflow_edit_propose(user, tool: str, arguments: dict):
         raise MCPToolError("INVALID_SCHEMA", "`arguments` must be an object.")
     if get_tool(tool) is None:
         raise MCPToolError("INVALID_SCHEMA", f"No tool named {tool!r}.")
-    reason = refusal(user, tool, arguments)
+    reason = refusal(user, tool, arguments) or scope_refusal(tool)
     if reason:
         raise MCPToolError("PERMISSION_DENIED", reason)
     denied = _policy(user, tool, arguments, policy_denial, restricted_call)
@@ -425,7 +467,11 @@ def workflow_edit_apply(user, change_id: str, confirm: str):
         raise MCPToolError(code, message)
 
     # Held to the rules as they are now, not as they were at proposal.
-    reason = refusal(user, tool, arguments) or _policy(user, tool, arguments, policy_denial, restricted_call)
+    reason = (
+        refusal(user, tool, arguments)
+        or scope_refusal(tool)
+        or _policy(user, tool, arguments, policy_denial, restricted_call)
+    )
     if reason:
         fail(reason, "PERMISSION_DENIED")
     enforce_write_limit(user)
