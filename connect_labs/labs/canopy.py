@@ -53,6 +53,19 @@ from connect_labs.labs import canopy_settings
 #: test pins it.
 SCOPE_TOOLS: dict[str, frozenset[str]] = {
     "marketplace:read": frozenset({"marketplace_orgs_get", "marketplace_rounds_list"}),
+    # A round's answers and the reviews written on them: what an AI first pass reads.
+    # Owner-gated in the tools themselves (the round's owner organisation only), so what
+    # the agent reads is what the person who sent may read.
+    "reviews:read": frozenset(
+        {"marketplace_round_responses", "list_reviews", "get_review", "marketplace_round_scores"}
+    ),
+    # Write reviews on a round -- by proposal only, the same card as ``workflow:edit``. The
+    # agent proposes the whole batch (workflow_edit_propose, tool marketplace_reviews_write);
+    # labs checks every review as the save would and shows what would be written; the person
+    # saves it with the card's Confirm. The write tool itself is not here.
+    "marketplace:review": frozenset(
+        {"workflow_edit_propose", "workflow_edit_review_view", "workflow_edit_apply", "workflow_edit_decline"}
+    ),
     "workflow:read": frozenset(
         {
             "workflow_run_context",
@@ -150,7 +163,7 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
 VISIT_SCOPES: frozenset[str] = frozenset({"workflow:read", "workflow:act", "page:read"})
 
 #: Write scopes whose every tool acts only on a confirmed preview.
-PREVIEWED_WRITE_SCOPES: frozenset[str] = frozenset({"workflow:act", "workflow:edit"})
+PREVIEWED_WRITE_SCOPES: frozenset[str] = frozenset({"workflow:act", "workflow:edit", "marketplace:review"})
 
 #: Which pages may let canopy act as the visitor, and with which scopes, keyed by
 #: URL name. A page's scopes are decided here, server-side, and never from
@@ -164,7 +177,7 @@ PREVIEWED_WRITE_SCOPES: frozenset[str] = frozenset({"workflow:act", "workflow:ed
 #: delegated call on a workflow that has not opted in, whatever the token says.
 PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "marketplace:network": ("marketplace:read",),
-    "marketplace:round": ("marketplace:read",),
+    "marketplace:round": ("marketplace:read", "reviews:read", "marketplace:review"),
     # data:read so the agent can check a run against the raw data behind it
     # (data_workflow_context, data_query, data_visits) -- production rows only for a cleared agent.
     "labs:workflow:run": ("workflow:read", "workflow:act", "data:read"),

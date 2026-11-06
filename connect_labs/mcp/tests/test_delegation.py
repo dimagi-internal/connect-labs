@@ -244,7 +244,9 @@ def test_metadata_advertises_the_grant_only_when_it_is_on(settings, canopy_agent
         "mcp:no-uservisit-data",
         "data:read",
         "marketplace:read",
+        "marketplace:review",
         "page:read",
+        "reviews:read",
         "supply:read",
         "targeting:read",
         "workflow:act",
@@ -316,7 +318,7 @@ def test_every_scoped_tool_exists_and_only_previewed_scopes_write():
             assert spec is not None, f"{scope} names a tool that does not exist: {name}"
             if scope not in canopy.PREVIEWED_WRITE_SCOPES:
                 assert not spec.is_write, f"{scope} is a read scope but {name} writes"
-    assert canopy.PREVIEWED_WRITE_SCOPES == {"workflow:act", "workflow:edit"}
+    assert canopy.PREVIEWED_WRITE_SCOPES == {"workflow:act", "workflow:edit", "marketplace:review"}
     assert canopy.SCOPE_TOOLS["workflow:act"] == {"workflow_run_action", "workflow_action_preview_view"}
     # Edits by proposal only: the edit tools themselves are never in a delegated scope.
     assert canopy.SCOPE_TOOLS["workflow:edit"] == {
@@ -325,6 +327,8 @@ def test_every_scoped_tool_exists_and_only_previewed_scopes_write():
         "workflow_edit_apply",
         "workflow_edit_decline",
     }
+    # Reviews likewise by proposal: the same card, a different write tool.
+    assert canopy.SCOPE_TOOLS["marketplace:review"] == canopy.SCOPE_TOOLS["workflow:edit"]
     assert all(scope.endswith(":read") for scope in set(canopy.SCOPE_TOOLS) - canopy.PREVIEWED_WRITE_SCOPES)
 
 
