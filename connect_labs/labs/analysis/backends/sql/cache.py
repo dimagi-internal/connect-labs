@@ -1208,7 +1208,14 @@ class SQLCacheManager:
 
     def _empty_marker_key(self) -> str:
         epoch = cache.get(self._empty_epoch_key(), 0)
-        return f"empty_result:{self.opportunity_id}:{epoch}:{self.pipeline_id}:{self.config_hash}"
+        return self._empty_marker_key_for(self.opportunity_id, self.config_hash, epoch)
+
+    @staticmethod
+    def _empty_marker_key_for(opportunity_id: int, config_hash: str, epoch) -> str:
+        # Keyed by config hash, not pipeline: the hash is what the config-scoped cache
+        # deletes address, and every labs_audits pipeline with the same hash on one
+        # opportunity reads the same audits, so they say the same thing.
+        return f"empty_result:{opportunity_id}:{epoch}:{config_hash}"
 
     def store_empty_marker(self) -> None:
         """Record that this config was built from zero rows (valid until the TTL)."""
@@ -1221,6 +1228,12 @@ class SQLCacheManager:
     def clear_empty_marker(self) -> None:
         if self.config_hash:
             cache.delete(self._empty_marker_key())
+
+    @classmethod
+    def _clear_empty_marker_for(cls, opportunity_id: int, config_hash: str) -> None:
+        """Drop ONE config's marker, leaving the opportunity's others valid."""
+        epoch = cache.get(f"empty_result_epoch:{opportunity_id}", 0)
+        cache.delete(cls._empty_marker_key_for(opportunity_id, config_hash, epoch))
 
     @classmethod
     def _invalidate_empty_markers(cls, opportunity_id: int) -> None:
@@ -1323,7 +1336,7 @@ class SQLCacheManager:
         Returns:
             Dict with deletion counts
         """
-        cls._invalidate_empty_markers(opportunity_id)
+        cls._clear_empty_marker_for(opportunity_id, config_hash)
         visit_deleted = ComputedVisitCache.invalidate_opportunity_config(opportunity_id, config_hash)
 
         flw_deleted = ComputedFLWCache.invalidate_opportunity_config(opportunity_id, config_hash)
