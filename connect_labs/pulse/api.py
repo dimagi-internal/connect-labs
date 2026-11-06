@@ -266,7 +266,11 @@ def _program_scope(request):
     # opportunities named as tests are dropped here, at the one place every card
     # is scoped, so no card can count what another leaves out. Events and works
     # carry no flag of their own, so they are excluded by opportunity.
-    test_opps = list(PulseOpportunity.objects.filter(is_test=True).values_list("opportunity_id", flat=True))
+    # A subquery, not a materialized list: the plan is the same hashed NOT IN, but a
+    # pasted list of ~360 ids made every card a different statement per list length,
+    # and those crowded pg_stat_statements out of its 5,000 slots. opportunity_id is
+    # unique and NOT NULL, so NOT IN over it cannot hit the NULL trap.
+    test_opps = PulseOpportunity.objects.filter(is_test=True).values("opportunity_id")
     events = PulseEvent.objects.exclude(opportunity_id__in=test_opps)
     works = PulseWork.objects.exclude(opportunity_id__in=test_opps)
     opps = PulseOpportunity.objects.filter(is_test=False)
