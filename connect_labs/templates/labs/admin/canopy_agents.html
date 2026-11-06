@@ -44,7 +44,7 @@
       <span class="font-semibold">Canopy workspace:</span>
       {% if current.workspace %}<code>{{ current.workspace }}</code>
       {% else %}<span class="text-gray-500">not known yet — canopy is asked by the default agent ({{ current.default_agent }}) until its first answer names it</span>{% endif %}
-      {% if connected_sites_url %}· <a class="text-blue-600" href="{{ connected_sites_url }}" target="_blank" rel="noopener">labs' site in canopy</a>{% endif %}
+      {% if host_sites_url %}· <a class="text-blue-600" href="{{ host_sites_url }}" target="_blank" rel="noopener">labs' site in canopy</a>{% endif %}
     </span>
     {% if can_change and offer_forget_workspace %}
     <form method="post">{% csrf_token %}
@@ -103,7 +103,7 @@
               {% if row.owner %}<span class="block text-xs text-gray-500">{{ row.owner }}</span>{% endif %}
             </td>
             <td class="px-3 py-2 text-gray-700 max-w-xs">
-              {% if row.listed %}{{ row.description|default:"—" }}{% else %}<span class="text-red-700">canopy no longer lists it for labs ({% if connected_sites_url %}<a class="underline" href="{{ connected_sites_url }}" target="_blank" rel="noopener">canopy › Connected sites</a>{% else %}canopy › Connected sites{% endif %})</span>{% endif %}
+              {% if row.listed %}{{ row.description|default:"—" }}{% else %}<span class="text-red-700">canopy no longer lists it for labs ({% if host_sites_url %}<a class="underline" href="{{ host_sites_url }}" target="_blank" rel="noopener">canopy › Host sites</a>{% else %}canopy › Host sites{% endif %})</span>{% endif %}
               {% for reason in row.held_back %}<span class="block text-xs text-red-700"><i class="fa-solid fa-circle-exclamation mr-1"></i>Not shown: {{ reason }}</span>{% endfor %}
               {% for reason in row.sensitive_data_held_back %}<span class="block text-xs text-red-700"><i class="fa-solid fa-circle-exclamation mr-1"></i>Not offered over sensitive data: {{ reason }}</span>{% endfor %}
             </td>
@@ -203,7 +203,7 @@
       {% endfor %}
     </ul>
     <p class="text-sm font-semibold text-gray-700 mb-2">Canopy's side: the Handles sensitive data, Sensitive-data runner and Ready columns above, and each call's statement below.</p>
-    {% if canopy_url %}<p class="text-sm"><a class="text-blue-600" href="{{ canopy_url }}" target="_blank" rel="noopener">Open canopy</a>{% if connected_sites_url %} · <a class="text-blue-600" href="{{ connected_sites_url }}" target="_blank" rel="noopener">canopy › Connected sites</a>{% endif %}</p>{% endif %}
+    {% if canopy_url %}<p class="text-sm"><a class="text-blue-600" href="{{ canopy_url }}" target="_blank" rel="noopener">Open canopy</a>{% if host_sites_url %} · <a class="text-blue-600" href="{{ host_sites_url }}" target="_blank" rel="noopener">canopy › Host sites</a>{% endif %}</p>{% endif %}
   </div>
 
   {# ── Recent calls ─────────────────────────────────────────────────── #}

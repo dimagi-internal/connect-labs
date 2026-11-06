@@ -21,7 +21,7 @@ urlpatterns = [
     path("canopy/token/", canopy_token.panel_token, name="canopy_token"),
     # Public: the verification key canopy fetches, so rotating ours is a secret
     # swap rather than a person re-pasting a key into canopy. canopy has THIS
-    # URL registered for labs' Connected site: do not move it.
+    # URL registered for labs' Host site: do not move it.
     path("canopy/jwks/", canopy_views.jwks, name="canopy_jwks"),
     # Public: what labs asks of canopy's agents, signed with the same key (the SDK's
     # view, canopy_sdk.site). canopy reads it beside the JWKS (canopy-web#1907).

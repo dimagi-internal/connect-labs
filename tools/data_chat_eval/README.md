@@ -69,7 +69,7 @@ passes. A run of the whole suite takes 10-15 minutes and costs real agent turns.
    `connect_labs/mcp/tools/labsdata.py`), the results card
    (`connect_labs/mcp/ui/data_result.html`), the run tools
    (`connect_labs/workflow/agent_sharing.py`), the agent's own skill (the labsdata agent:
-   `dimagi-internal/labsdata` `skills/answer-data/SKILL.md`; ace: its labs connected site), or
+   `dimagi-internal/labsdata` `skills/answer-data/SKILL.md`; ace: its labs host-site entry), or
    setup (canopy identity, Labs Admin › Canopy agents).
 
 ## Scenarios

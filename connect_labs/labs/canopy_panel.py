@@ -231,7 +231,7 @@ def availability(choice: str, reads: Reads, *, ticks=None, listing=_UNSET) -> Av
     agent = listing.agent(slug)
     if agent is None:
         return Availability(
-            False, slug, reasons=(f"canopy does not allow {slug} on labs' site: {canopy_settings.CONNECTED_SITES}",)
+            False, slug, reasons=(f"canopy does not allow {slug} on labs' site: {canopy_settings.HOST_SITES}",)
         )
     if not agent.ready:
         return Availability(False, slug, reasons=agent.problems or (f"{slug} is not ready in canopy",))

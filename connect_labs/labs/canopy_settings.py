@@ -4,7 +4,7 @@ from what canopy says (spec ``2026-10-22-canopy-site-agents-api-design`` §3).
 Two sources, kept apart:
 
 * **canopy's word** -- the site agents API (``canopy_sdk.django.site_agents.current()``,
-  read here through ``site_agents()``): the agents canopy allows on labs' connected site,
+  read here through ``site_agents()``): the agents canopy allows on labs' host site,
   signed by canopy, with whether each one's author declared it handles sensitive data, which runner
   flags it can run on, and whether it is ready. Cached five minutes; when canopy cannot
   be reached its last word is used for up to a day, then None -- and labs shows no agent.
@@ -101,7 +101,7 @@ def canopy_url(path: str = "") -> str:
 
 
 #: canopy's pages a problem sentence names, by the words it uses for them.
-CONNECTED_SITES = "canopy › Connected sites"
+HOST_SITES = "canopy › Host sites"
 RUNNERS = "canopy › Runners"
 
 
@@ -110,7 +110,7 @@ def eligible_for_sensitive_data(agent) -> tuple[bool, str]:
     its author declared it handles sensitive data, and it is ready on a runner with
     ``sensitive_data``."""
     if agent is None:
-        return False, f"canopy does not list it for labs ({CONNECTED_SITES})"
+        return False, f"canopy does not list it for labs ({HOST_SITES})"
     if not agent.handles_sensitive:
         return (
             False,
@@ -280,7 +280,7 @@ def validate(
         sensitive = bool(a.sensitive_data)
         offered = bool(a.offered) or sensitive  # sensitive data implies shown
         if offered and slug not in listed and not (was and was.offered):
-            raise InvalidSettings(f"canopy does not list {slug} for labs: allow it on canopy's Connected sites first.")
+            raise InvalidSettings(f"canopy does not list {slug} for labs: allow it on canopy's Host sites first.")
         if sensitive and not (was and was.sensitive_data):
             ok, why = eligible_for_sensitive_data(listed.get(slug))
             if not ok:
@@ -356,7 +356,7 @@ def restore(user, row_id: int, listing=None) -> AgentSettings:
     if listing is not None and listing.agent(old.default_agent) is None:
         raise InvalidSettings(
             f"#{row_id} cannot be restored: its default agent, {old.default_agent}, is no longer listed for "
-            f"labs in canopy ({CONNECTED_SITES}). Allow it there first, or choose another default."
+            f"labs in canopy ({HOST_SITES}). Allow it there first, or choose another default."
         )
     before = current()
     try:

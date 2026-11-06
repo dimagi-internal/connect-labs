@@ -43,7 +43,7 @@ from .suite import value
 #: Where a failure of each kind is most likely fixed (the report's findings route on it).
 ROUTES = {
     "number": "the answer: labsdata/guidance.py ANSWERING_RULES + data_* tool descriptions "
-    "(connect_labs/mcp/tools/labsdata.py); the agent's own skill (ace's labs connected site; "
+    "(connect_labs/mcp/tools/labsdata.py); the agent's own skill (ace's labs host-site entry; "
     "labsdata agent: dimagi-internal/labsdata skills/answer-data/SKILL.md)",
     "text": "the answer: labsdata/guidance.py + the agent's skill",
     "card": "a results card: guidance.py rule 10/15 and data_query's description; the card itself "

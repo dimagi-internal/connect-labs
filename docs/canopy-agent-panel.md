@@ -72,7 +72,7 @@ Admin table all read it, so none of them can disagree or fall silent.
 
 - **canopy's word** is the site agents API (`GET {canopy}/api/sites/agents`, dimagi-canopy
   0.14, `canopy_sdk.django.site_agents.current()`, read through
-  `canopy_settings.site_agents()`): the agents canopy allows on labs' connected site,
+  `canopy_settings.site_agents()`): the agents canopy allows on labs' host site,
   signed with canopy's client key, each with whether its author declared it handles
   sensitive data, whether it has a ready sensitive-data runner, whether it is ready, and canopy's own problems.
   Cached five minutes; when canopy is unreachable its last word is used for up to a day,
@@ -434,18 +434,18 @@ creates an account from an assertion, and there is no domain list to configure
 on either side.
 
 **The page's resource picks what the agent may do.** A conversation on a labs page
-runs in whichever of the agent's connected sites names that page's `resource`
-(canopy-web#942). ACE's `marketplace` connected site names `labs-marketplace://*`
+runs in whichever of the agent's host-site entries names that page's `resource`
+(canopy-web#942). ACE's `marketplace` host-site entry names `labs-marketplace://*`
 and carries `current_page`, the `marketplace_*` read tools, `Skill`, and its Drive
 tools; everything else — including anyone who emails ACE — stays in read mode.
 
-So **a new labs surface needs a connected site, or the panel can only chat.**
+So **a new labs surface needs a host-site entry, or the panel can only chat.**
 Declaring a resource nothing matches falls back to read mode, which for ACE is the
 email profile: no page tool, no `Skill`. That is how the first live run ended with the agent trying
 `screencapture`. These settings are edited on the agent's canopy page (Settings → Channels), or with
 `canopy agent read-mode` and `canopy agent sites` — never a file in the agent's repo.
 
-Two things a connected site cannot fix, learned the same way: a confined turn has no
+Two things a host-site entry cannot fix, learned the same way: a confined turn has no
 `AskUserQuestion`, so an agent must ask in the chat; and a Drive write needs a
 `parentFolderId` the agent can actually discover.
 
@@ -469,7 +469,7 @@ contract is in `connect_labs/workflow/WORKFLOW_REFERENCE.md` §14. What is speci
 to canopy:
 
 - **Nothing about workflows is configured on canopy's side.** ACE's `connect`
-  connected site names the connect-labs SITE. A conversation on any labs page reaches
+  host-site entry names the connect-labs SITE. A conversation on any labs page reaches
   labs' tools through canopy's gateway, as the visitor, and the agent learns what
   they are from labs' own tool list and descriptions. Labs alone decides what each
   page may do: the page's scopes (`PAGE_SCOPES`, here `workflow:read` +
@@ -596,8 +596,8 @@ ID-JAG's scopes, the redeem at `/o/token/`, and the MCP call as the visitor.
 Labs Admin › Canopy agents (`/labs/admin/canopy-agents/`) is the one place labs' side is
 set up. Besides it, a deployment needs one secret and, in canopy, the site.
 
-**1. Register the site in canopy**, as a workspace owner, at canopy › Connected sites
-(`https://canopy.dimagi.com/w/<workspace>/settings/connected-apps`): type labs' address
+**1. Register the site in canopy**, as a workspace owner, at canopy › Host sites
+(`https://canopy.dimagi.com/w/<workspace>/settings/host-sites`): type labs' address
 (`https://labs.connect.dimagi.com`), press **Fill from the site**, check what it filled
 in, and confirm. canopy reads labs' signed site document at
 `/.well-known/canopy-site.json` (also at `/labs/canopy/site.json`): its name

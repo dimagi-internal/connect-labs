@@ -44,7 +44,7 @@ def canopy_links(listing) -> dict[str, str]:
     gives labs' site page (``site_settings_url``) and, per agent, the page that fixes each
     problem (``problem_links``, see ``_agent_links``); labs builds a URL only where canopy
     gives none: its tenant's Runners settings (else Supervisor's Runners tab), and the
-    Connected sites page of a canopy that predates ``site_settings_url``."""
+    Host sites page of a canopy that predates ``site_settings_url``."""
     base = canopy_settings.canopy_url()
     links = {}
     if base:
@@ -53,10 +53,10 @@ def canopy_links(listing) -> dict[str, str]:
             f"{base}/w/{tenant}/settings/topology/runners" if tenant else f"{base}/supervisor?tab=runners"
         )
         if tenant:
-            links[canopy_settings.CONNECTED_SITES] = f"{base}/w/{tenant}/settings/connected-apps"
+            links[canopy_settings.HOST_SITES] = f"{base}/w/{tenant}/settings/host-sites"
     site_url = getattr(listing, "site_settings_url", "") if listing is not None else ""
     if _is_web_url(site_url):
-        links[canopy_settings.CONNECTED_SITES] = site_url
+        links[canopy_settings.HOST_SITES] = site_url
     return links
 
 
@@ -264,7 +264,7 @@ class CanopyAgentsView(AdminRequiredMixin, TemplateView):
             checks=[{**c, "detail": linkify(c["detail"], links)} for c in _checks(ticks, listing)],
             calls=_recent_calls(),
             canopy_url=canopy_settings.canopy_url(),
-            connected_sites_url=links.get(canopy_settings.CONNECTED_SITES, ""),
+            host_sites_url=links.get(canopy_settings.HOST_SITES, ""),
             error=error,
             # The tenant labs names cannot be right: offer to name it by the default agent again.
             offer_forget_workspace=bool(ticks.workspace and error is not None and error.code == "workspace_mismatch"),
