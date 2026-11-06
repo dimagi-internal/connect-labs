@@ -26,6 +26,18 @@ class Migration(migrations.Migration):
                 ("reason", models.CharField(max_length=200)),
                 ("recipient_key", models.CharField(max_length=44)),
                 (
+                    "scope",
+                    models.CharField(
+                        choices=[
+                            ("full", "Full access"),
+                            ("no-uservisit-data", "No user visit data"),
+                            ("coach-images", "Coaching pictures only"),
+                        ],
+                        default="no-uservisit-data",
+                        max_length=20,
+                    ),
+                ),
+                (
                     "status",
                     models.CharField(
                         choices=[
@@ -66,5 +78,19 @@ class Migration(migrations.Migration):
             options={
                 "db_table": "mcp_agent_token_request",
             },
+        ),
+        migrations.AlterField(
+            model_name="pendingfullaccess",
+            name="kind",
+            field=models.CharField(
+                choices=[
+                    ("token_create", "Create a token"),
+                    ("token_rotate", "Rotate a token"),
+                    ("token_browser", "Create a token for a local app"),
+                    ("oauth", "Sign an MCP app in"),
+                    ("agent_request", "Give an agent a temporary token"),
+                ],
+                max_length=20,
+            ),
         ),
     ]

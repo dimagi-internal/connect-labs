@@ -433,11 +433,13 @@ class PendingFullAccess(models.Model):
     pending mint cannot complete another; the row is completed once."""
 
     TOKEN_CREATE, TOKEN_ROTATE, TOKEN_BROWSER, OAUTH = "token_create", "token_rotate", "token_browser", "oauth"
+    AGENT_REQUEST = "agent_request"
     KINDS = [
         (TOKEN_CREATE, "Create a token"),
         (TOKEN_ROTATE, "Rotate a token"),
         (TOKEN_BROWSER, "Create a token for a local app"),
         (OAUTH, "Sign an MCP app in"),
+        (AGENT_REQUEST, "Give an agent a temporary token"),
     ]
 
     ref = models.CharField(max_length=64, unique=True, default=_pending_ref, editable=False)
@@ -468,8 +470,9 @@ class AgentTokenRequest(models.Model):
     token is returned SEALED to a public key only the agent holds. Labs never stores a
     usable token: ``sealed_token`` is ciphertext, and is cleared once claimed.
 
-    Only the restricted "no user visit data" level can be asked this way. Full access
-    keeps its passkey approval (``full_access``).
+    Same bar as the browser flow, and a little higher: the person's passkey, through
+    canopy, is required for every level (``full_access``), because the token leaves labs for
+    another machine.
     """
 
     PENDING, APPROVED, DECLINED, CLAIMED = "pending", "approved", "declined", "claimed"
@@ -488,6 +491,8 @@ class AgentTokenRequest(models.Model):
     reason = models.CharField(max_length=200)
     #: Base64 raw X25519 public key. The token is sealed to it (``utils.sealed_output``).
     recipient_key = models.CharField(max_length=44)
+    #: The access level asked for: ``full`` or ``no-uservisit-data``.
+    scope = models.CharField(max_length=20, choices=token_scopes.SCOPE_CHOICES, default=token_scopes.NO_USERVISIT_DATA)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=PENDING, db_index=True)
     approved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"

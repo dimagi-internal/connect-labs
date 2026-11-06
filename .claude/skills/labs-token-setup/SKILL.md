@@ -65,13 +65,14 @@ When the person asks you to get short-lived access for something your own labs t
 
 `--temporary` returns the token to `127.0.0.1`, so it only works when the person's browser and
 the agent share a machine. From anywhere else use `request_agent_token.py`: the agent asks with
-its own labs token, the person approves on a labs page, and the token comes back sealed to a key
-only the agent holds. Only the no-user-visit level can be asked for this way.
+its own labs token, the person approves on a labs page with their passkey (through canopy, like
+any full-access token), and the token comes back sealed to a key only the agent holds.
 
     python request_agent_token.py ask https://labs.connect.dimagi.com --reason "read how the CHC reports compute coverage"
 
-It prints `{ref, approve_url}`. **Show the person the link as a message before you wait**, saying
-what you will read, then:
+Add `--level full` only if the job needs visit data; the default is no-user-visit. Either level
+needs the passkey. It prints `{ref, approve_url}`. **Show the person the link as a message before
+you wait**, saying what you will read, then:
 
     python request_agent_token.py collect <ref> --output <scratchpad>/labs-token --wait 240
 

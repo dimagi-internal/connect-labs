@@ -46,6 +46,15 @@ log = logging.getLogger(__name__)
 
 #: The action canopy's approval names: one key for every full-access credential.
 ACTION_KEY = "labs.mcp_token.full"
+#: And one for a token handed to an agent on another machine (``agent_requests``), so an
+#: approval for one can never complete the other.
+AGENT_ACTION_KEY = "labs.mcp_token.agent"
+
+
+def action_key(kind: str) -> str:
+    return AGENT_ACTION_KEY if kind == PendingFullAccess.AGENT_REQUEST else ACTION_KEY
+
+
 #: How long a pending mint waits. canopy closes a person's own request after 15 minutes
 #: and an agent's after a day; this outlives both.
 PENDING_LIFETIME = timedelta(hours=25)
@@ -55,6 +64,7 @@ TITLES = {
     PendingFullAccess.TOKEN_ROTATE: "Rotate a full-access labs MCP token",
     PendingFullAccess.TOKEN_BROWSER: "Create a full-access labs MCP token for an app on your computer",
     PendingFullAccess.OAUTH: "Sign an MCP app in to labs with full access",
+    PendingFullAccess.AGENT_REQUEST: "Give an agent a one-hour labs MCP token",
 }
 
 
@@ -153,7 +163,7 @@ def _waiting(pending: PendingFullAccess, approve_url: str) -> dict:
     }
 
 
-def begin(request, kind: str, payload: dict, *, detail: str = ""):
+def begin(request, kind: str, payload: dict, *, detail: str = "", title: str = ""):
     """Ask canopy for the person's approval of one full-access mint.
 
     Their own request: canopy's passkey dialog opens over the page they are on, and its
@@ -167,8 +177,8 @@ def begin(request, kind: str, payload: dict, *, detail: str = ""):
     try:
         asked = sign_offs.request(
             subject=user.email or "",
-            action_key=ACTION_KEY,
-            title=TITLES[kind],
+            action_key=action_key(kind),
+            title=(title or TITLES[kind])[:200],
             detail=detail,
             site_ref=pending.ref,
             return_url=_return_url(),
@@ -183,8 +193,13 @@ def begin(request, kind: str, payload: dict, *, detail: str = ""):
                 payload,
                 {
                     "tone": "error",
-                    "text": "Full access needs your passkey approval in canopy, and canopy does not know "
-                    "this account. You can create a no-user-visit token instead.",
+                    "text": (
+                        "Handing a token to an agent needs your passkey approval in canopy, and canopy does "
+                        "not know this account."
+                        if kind == PendingFullAccess.AGENT_REQUEST
+                        else "Full access needs your passkey approval in canopy, and canopy does not know "
+                        "this account. You can create a no-user-visit token instead."
+                    ),
                 },
                 status=403,
             )
@@ -195,8 +210,9 @@ def begin(request, kind: str, payload: dict, *, detail: str = ""):
             payload,
             {
                 "tone": "error",
-                "text": "Full access needs your passkey approval in canopy, and canopy could not be "
-                "asked just now. Try again in a minute.",
+                "text": ("Handing a token to an agent" if kind == PendingFullAccess.AGENT_REQUEST else "Full access")
+                + " needs your passkey approval in canopy, and canopy could not be asked just now. "
+                "Try again in a minute.",
             },
             status=503,
         )
@@ -238,7 +254,10 @@ def _complete(request, pending: PendingFullAccess, approval_token: str | None):
         return no("There is no approval for this yet.")
     try:
         approval = sign_offs.verify(
-            approval_token, action_key=ACTION_KEY, site_ref=pending.ref, subject=request.user.email or ""
+            approval_token,
+            action_key=action_key(pending.kind),
+            site_ref=pending.ref,
+            subject=request.user.email or "",
         )
     except SignOffError as exc:
         _audit(request.user, "refused", pending.kind, exc.code)
@@ -361,6 +380,18 @@ def _complete_token_browser(request, payload: dict, full: FullAccess):
     )
 
 
+def _complete_agent_request(request, payload: dict, full: FullAccess):
+    from . import agent_request_views, agent_requests
+
+    try:
+        agent_requests.deliver(payload["request_ref"], request.user, full)
+    except agent_requests.AgentRequestError as exc:
+        return agent_request_views.render_page(
+            request, payload["request_ref"], outcome=exc.code, status=409 if exc.code == "expired" else 403
+        )
+    return agent_request_views.render_page(request, payload["request_ref"], outcome="approved")
+
+
 def _complete_oauth(request, payload: dict, full: FullAccess):
     from .oauth import complete_authorization
 
@@ -372,6 +403,7 @@ COMPLETERS = {
     PendingFullAccess.TOKEN_ROTATE: _complete_token_rotate,
     PendingFullAccess.TOKEN_BROWSER: _complete_token_browser,
     PendingFullAccess.OAUTH: _complete_oauth,
+    PendingFullAccess.AGENT_REQUEST: _complete_agent_request,
 }
 
 
@@ -398,7 +430,14 @@ def _show_token_browser(request, payload: dict, notice: dict, status: int):
     )
 
 
+def _show_agent_request(request, payload: dict, notice: dict, status: int):
+    from .agent_request_views import render_page
+
+    return render_page(request, payload["request_ref"], notice=notice, status=status)
+
+
 SHOW = {
+    PendingFullAccess.AGENT_REQUEST: _show_agent_request,
     PendingFullAccess.TOKEN_CREATE: _show_tokens,
     PendingFullAccess.TOKEN_ROTATE: _show_tokens,
     PendingFullAccess.TOKEN_BROWSER: _show_token_browser,

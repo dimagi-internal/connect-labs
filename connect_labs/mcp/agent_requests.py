@@ -1,30 +1,33 @@
-"""An agent asks a person for a one-hour, no-user-visit labs token, and gets it sealed.
+"""An agent asks a person for a temporary labs token and gets it sealed.
 
 ``labs-token-setup --temporary`` hands the token to the computer the person is sitting
 at (``admin_views.create_token_browser`` redirects their browser to ``127.0.0.1``). An
 agent running somewhere else, such as a cloud runner, has no such address, so it could
-not be given one. This is the same grant for that agent:
+not be given one. This is the same grant for that agent, with the same bar: the person's
+passkey, through canopy.
 
 1. The agent makes a fresh X25519 keypair, keeps the private half in memory, and asks
-   with its OWN labs token (``create``): a reason and the public key.
+   with its OWN labs token (``create``): a reason, the access level and the public key.
 2. It gives the person the approval link. The person opens it signed in to labs as
-   themselves, reads who asked and what they get, and approves or declines (``approve``).
-3. Approving mints a temporary ``no-uservisit-data`` token FOR THE PERSON and seals it to
-   the agent's public key (``utils.sealed_output``). Labs keeps only that ciphertext, so
-   neither a database read nor a log shows a usable token.
+   themselves and reads who asked and what they would get. Approving sends them to
+   canopy's passkey dialog (``full_access``); declining needs no passkey.
+3. Once canopy's signed approval checks out, labs mints a one-hour token FOR THE PERSON
+   and seals it to the agent's public key (``utils.sealed_output``). Labs keeps only that
+   ciphertext, so neither a database read nor a log shows a usable token.
 4. The agent collects it once (``claim``) and unseals it with its private key.
 
-Why this is safe to offer without a passkey, and what it deliberately is not:
+What this deliberately is not:
 
-* The level is fixed. Only ``no-uservisit-data`` can be asked for this way: it never
-  sees a real visit row (``token_scopes``). Full access keeps its passkey approval
-  (``full_access``) and cannot be requested here.
-* Who asked is verified, not claimed: it is the labs account the request was signed
-  with. The reason is the agent's own words and the approval page says so.
-* One hour, no renewal, and listed on the person's MCP access page where they can
-  revoke it (``MCPAccessToken.TEMPORARY_LIFETIME``).
-* A request waits ``APPROVAL_WINDOW`` for an answer, one agent account may have only
-  ``MAX_PENDING`` waiting, and the agent cannot approve its own.
+* Not a lower bar than the browser flow. Every level needs the passkey here, including
+  no-user-visit, which the browser flow lets a person create without one: the token
+  leaves labs for another machine.
+* Not a way to name the person. The asker is the labs account its own token resolved to
+  (verified); whoever opens the link and passes the passkey is who the token is for, and
+  the asker cannot be that person.
+* Not long-lived. One hour, no renewal, listed on the person's MCP access page where
+  they can revoke it (``MCPAccessToken.TEMPORARY_LIFETIME``).
+* A request waits ``APPROVAL_WINDOW`` for an answer, and one agent account may have only
+  ``MAX_PENDING`` waiting.
 """
 
 from __future__ import annotations
@@ -48,6 +51,8 @@ APPROVAL_WINDOW = timedelta(minutes=30)
 #: How many unanswered requests one agent account may have open.
 MAX_PENDING = 3
 REASON_MAX = 200
+#: The levels an agent may ask for. Coaching-picture tokens are not for people or agents.
+ASKABLE_SCOPES = (token_scopes.NO_USERVISIT_DATA, token_scopes.FULL)
 
 
 class AgentRequestError(Exception):
@@ -71,9 +76,12 @@ def clean_reason(reason) -> str:
     return text
 
 
-def create(agent_user, *, reason, recipient_key) -> AgentTokenRequest:
+def create(agent_user, *, reason, recipient_key, scope=token_scopes.NO_USERVISIT_DATA) -> AgentTokenRequest:
     """Record an agent's request. ``agent_user`` is the account its own token resolved to."""
     reason = clean_reason(reason)
+    scope = scope or token_scopes.NO_USERVISIT_DATA
+    if scope not in ASKABLE_SCOPES:
+        raise AgentRequestError("bad_scope", f"Ask for one of: {', '.join(ASKABLE_SCOPES)}.")
     try:
         sealed_output.parse_recipient(recipient_key)
     except sealed_output.SealedOutputError as exc:
@@ -91,6 +99,7 @@ def create(agent_user, *, reason, recipient_key) -> AgentTokenRequest:
         requested_by=agent_user,
         reason=reason,
         recipient_key=recipient_key,
+        scope=scope,
         expires_at=now + APPROVAL_WINDOW,
     )
 
@@ -113,8 +122,21 @@ def _audit(user, outcome: str, req: AgentTokenRequest, detail: str = "") -> None
     )
 
 
-def approve(ref: str, person) -> AgentTokenRequest:
-    """The person approves: mint their temporary no-user-visit token and seal it to the agent."""
+def check_can_ask_passkey(ref: str, person) -> AgentTokenRequest:
+    """Before the passkey is asked for: the request is open and the person is not the asker."""
+    try:
+        req = AgentTokenRequest.objects.select_related("requested_by").get(ref=ref)
+    except AgentTokenRequest.DoesNotExist as exc:
+        raise AgentRequestError("not_found", "No such request.") from exc
+    _must_be_open(req)
+    if person.pk == req.requested_by_id:
+        raise AgentRequestError("self_approval", "An account cannot approve its own request.")
+    return req
+
+
+def deliver(ref: str, person, full_access) -> AgentTokenRequest:
+    """canopy's passkey approval has been checked: mint the person's temporary token and seal it
+    to the agent. ``full_access`` is the proof ``full_access._complete`` made from that approval."""
     with transaction.atomic():
         try:
             req = AgentTokenRequest.objects.select_for_update().select_related("requested_by").get(ref=ref)
@@ -124,7 +146,9 @@ def approve(ref: str, person) -> AgentTokenRequest:
         if person.pk == req.requested_by_id:
             raise AgentRequestError("self_approval", "An account cannot approve its own request.")
         name = f"temporary-{req.requested_by.username}"[:90] + f"-{timezone.now():%Y%m%d-%H%M}"
-        _, raw = MCPAccessToken.create_token(person, name=name, scope=token_scopes.NO_USERVISIT_DATA, temporary=True)
+        _, raw = MCPAccessToken.create_token(
+            person, name=name, scope=req.scope, temporary=True, full_access=full_access
+        )
         sealed = sealed_output.seal(raw.encode("utf-8"), req.recipient_key)
         req.sealed_token = base64.b64encode(sealed).decode("ascii")
         req.status = AgentTokenRequest.APPROVED
