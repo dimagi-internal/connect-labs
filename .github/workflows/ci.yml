@@ -249,26 +249,28 @@ jobs:
           node_digest: ${{ steps.bases.outputs.node_digest }}
           app_release: ${{ github.sha }}
 
-  # THE SUITE, IN THREE SLICES ON THREE RUNNERS. One runner was the ceiling:
+  # THE SUITE, IN FOUR SLICES ON FOUR RUNNERS. One runner was the ceiling:
   # four shared vCPUs with Postgres in a container on the same box, running
-  # ~13,500 tests that each cost little. No single test or file is worth
-  # cutting (the slowest file is ~15s of a ~450s local total, measured
-  # 2026-10-15) -- the time is the sum, so the way to shrink it is more boxes.
-  # `--shard=K/3` deals whole files to slices, balanced by test count
-  # (connect_labs/testing/shard.py). Each slice repeats setup and collection
-  # (~1.5 min), so this costs runner minutes to buy wall clock: the merge path
-  # is the one people wait on.
+  # ~16,000 tests that each cost little -- the time is the sum, so the way to
+  # shrink it is more boxes. `--shard=K/4` deals whole files to slices,
+  # balanced by each file's MEASURED time (connect_labs/testing/shard.py,
+  # shard_durations.json), and a slice never imports another slice's files:
+  # collecting the whole suite in every slice was ~1 minute of each one
+  # before its first test. Each slice still repeats setup (~40s), so this
+  # costs runner minutes to buy wall clock: the merge path is the one people
+  # wait on. Every slice uploads its files' timings (`shard-durations-K`);
+  # tools/refresh_shard_durations.py turns a run's into the next table.
   #
   # The required status check is named `pytest`, so the slices report under
   # their own names and the `pytest` job below gathers them into that check.
   pytest-shard:
-    name: pytest (${{ matrix.shard }}/3)
+    name: pytest (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     strategy:
       # Every slice reports its failures, not just the first slice to fail.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     permissions:
       contents: read
       packages: read # pull the mirrored postgis service image from GHCR
@@ -349,13 +351,27 @@ jobs:
         # slower with no change to any test. This suite is mostly waiting on
         # Postgres, so it wants every vCPU the runner reports.
         run: |
-          .venv/bin/pytest connect_labs/ -n logical --shard=${{ matrix.shard }}/3
+          .venv/bin/pytest connect_labs/ -n logical --shard=${{ matrix.shard }}/4 \
+            --shard-durations-out=shard-durations-${{ matrix.shard }}.json
+
+      # What each file took, for the next shard_durations.json. Uploaded even
+      # from a red slice (its passing files' times are as good as any), and
+      # never able to fail the job.
+      - name: Upload this slice's file timings
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: shard-durations-${{ matrix.shard }}
+          path: shard-durations-${{ matrix.shard }}.json
+          if-no-files-found: ignore
+          retention-days: 14
 
       # On a cache miss this run built the template itself; keep it for the
       # next run. Only after a GREEN slice: a dump from a run that failed may be
       # of a template a broken migration produced, and caching it would hand
       # that to every later run with the same migrations. (A broken migration
-      # fails every slice, slice 1 included.) One slice saves, so three runners
+      # fails every slice, slice 1 included.) One slice saves, so four runners
       # do not race to write the same key. (The key is computed by the setup
       # action and is empty on `schedule`, which never saves.)
       - name: Dump the migrated test database
