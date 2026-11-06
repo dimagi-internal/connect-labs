@@ -18,7 +18,6 @@ from . import microplans_study  # noqa: F401  -- registers microplans_study_ensu
 from . import page_context  # noqa: F401  -- registers page_context (a page, for its agent panel)
 from . import pipelines  # noqa: F401
 from . import program_admin_demo  # noqa: F401  -- registers program_admin_demo_seed
-from . import review_batch  # noqa: F401  -- registers marketplace_reviews_write (a round's AI reviews, confirmed in chat)
 from . import reviews  # noqa: F401
 from . import sample_ids  # noqa: F401
 from . import scope_config  # noqa: F401  -- registers labs_config_*
@@ -39,5 +38,6 @@ from . import workflow_template_sync  # noqa: F401
 from . import workflow_templates_data  # noqa: F401  -- template workflows: draft/publish/rollback/follow
 from . import workflows  # noqa: F401
 from . import (  # noqa: F401  -- registers targeting_* (indicators/select/methodology/scenario/admin_levels/research)
+    review_batch,  # registers marketplace_reviews_write (a round's AI reviews, confirmed in chat)
     targeting,
 )
