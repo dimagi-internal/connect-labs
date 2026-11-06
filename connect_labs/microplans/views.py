@@ -537,6 +537,27 @@ class AdminAreaGeometryView(_ProgramScopeMixin, LoginRequiredMixin, View):
         return _admin_area_geometry_response(request)
 
 
+class BoundaryLevelsView(LoginRequiredMixin, View):
+    """The sub-national levels a country has boundaries for: ``?iso=NGA`` ->
+    ``{"levels": [1, 2, 3]}``. Countries differ in depth (two levels, or four),
+    so a picker asks rather than assuming three. Public geography: login only."""
+
+    def get(self, request):
+        from connect_labs.microplans.core import iso as iso_codes
+        from connect_labs.microplans.core.admin_boundaries import get_resolver
+
+        raw = (request.GET.get("iso") or "").strip()
+        country = iso_codes.to_alpha3(raw) if raw else None
+        if not country:
+            return JsonResponse({"status": "error", "detail": "iso=<country code> is required."}, status=400)
+        try:
+            levels = get_resolver().levels_for(country)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans boundary levels failed (iso=%s)", country)
+            return JsonResponse({"status": "error", "detail": "Boundary levels lookup failed."}, status=502)
+        return JsonResponse({"status": "ok", "country": country, "levels": levels})
+
+
 class BoundaryAreasView(LoginRequiredMixin, View):
     """Admin areas for a country/level, for any signed-in page that picks areas.
 

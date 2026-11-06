@@ -5,8 +5,10 @@
  *   - a respondent, naming where they would do the work, and
  *   - read-only maps of either (no urls).
  *
- * The person chooses the LEVEL they pick at (Country, State, LGA, Ward: each
- * country's own words), and that one switch decides what the map outlines,
+ * The person chooses the LEVEL they pick at (Country, Level 1, Level 2...: the
+ * same neutral words everywhere, since every country names its tiers its own
+ * way, and as many levels as the country in view has), and that one switch
+ * decides what the map outlines,
  * what a click selects and what the search finds. Clicking an area picks it;
  * clicking it again drops it. Any number of areas, at mixed levels, may be
  * picked; the server drops one already inside another.
@@ -26,10 +28,10 @@
  *   SolServiceAreaPicker.create({
  *     wrap, mapEl, listEl, toolsEl, input,  // elements (wrap is position:relative)
  *     token, csrf,
- *     urls: { viewport, areas, geometry },  // omit for a read-only map
+ *     urls: { viewport, areas, geometry, levels },  // omit for a read-only map
  *     initial: [area],              // stored areas (with geometry)
  *     limits: [area],               // the call's limits, drawn dashed
- *     levels: [0, 1, 2, 3],         // levels the person may pick at
+ *     minLevel: 0,                  // coarsest level allowed (0 = whole countries)
  *     level: 0,                     // the level the map starts on
  *     countries: [{alpha2, alpha3, name}],
  *     levelLabels: { default: {0: 'Country', 1: '...'}, NGA: {1: 'State', ...} },
@@ -110,7 +112,11 @@
   function levelLabel(labels, level, country) {
     const byCountry = (labels && labels[country]) || {};
     const fallback = (labels && labels.default) || {};
-    return byCountry[level] || fallback[level] || 'ADM' + level;
+    return (
+      byCountry[level] ||
+      fallback[level] ||
+      (Number(level) === 0 ? 'Country' : 'Level ' + level)
+    );
   }
   function featureCollection(items) {
     return {
@@ -189,9 +195,21 @@
     const input = opts.input || null;
     const onChange = opts.onChange || function () {};
     const countries = opts.countries || [];
-    const levels =
-      opts.levels && opts.levels.length ? opts.levels.slice() : [1, 2, 3];
-    let level = levels.indexOf(opts.level) !== -1 ? opts.level : levels[0];
+    // The coarsest level the person may pick at (0 = a whole country), and the
+    // finer levels of the country in view: countries differ in depth, so they
+    // are asked of the server per country (urls.levels), [1, 2, 3] until known.
+    const minLevel = Number(opts.minLevel) || 0;
+    let subLevels = [1, 2, 3];
+    const levelsByCountry = new Map();
+    function levels() {
+      return (minLevel === 0 ? [0] : []).concat(
+        subLevels.filter((l) => l >= Math.max(1, minLevel)),
+      );
+    }
+    let level =
+      levels().indexOf(Number(opts.level)) !== -1
+        ? Number(opts.level)
+        : levels()[0];
     const M = global.Microplans;
     const esc =
       (M && M.esc) ||
@@ -238,8 +256,41 @@
       const first = (selected.values().next().value || {}).desc;
       return (first && first.country) || null;
     }
+    // "Country", "Level 1", "Level 2"...: every country has its own words for
+    // its tiers, so the map uses the same neutral ones everywhere.
     function label(lvl) {
-      return levelLabel(labels, lvl, country());
+      return levelLabel(labels, lvl, null);
+    }
+    // Ask which levels the country in view has, once per country.
+    let levelsFor = null;
+    async function refreshLevels() {
+      const iso = country();
+      if (!iso || iso === levelsFor || !urls || !urls.levels) return;
+      levelsFor = iso;
+      let found = levelsByCountry.get(iso);
+      if (!found) {
+        try {
+          const r = await fetch(
+            urls.levels + '?iso=' + encodeURIComponent(iso),
+            { credentials: 'same-origin' },
+          );
+          const d = await r.json();
+          found = d && d.status === 'ok' ? d.levels || [] : null;
+        } catch (e) {
+          found = null;
+        }
+        if (!found) return; // keep what we have; the next move asks again
+        levelsByCountry.set(iso, found);
+      }
+      if (iso !== country()) return; // the map moved on meanwhile
+      subLevels = found.length ? found : [1, 2, 3];
+      const now = levels();
+      if (now.indexOf(level) === -1) {
+        // This country stops above the level in use: drop to its deepest.
+        const coarser = now.filter((l) => l < level);
+        setLevel(coarser.length ? coarser[coarser.length - 1] : now[0]);
+      }
+      renderLevels();
     }
 
     function writeInput() {
@@ -352,16 +403,24 @@
       statusEl = null;
     function renderLevels() {
       if (!levelBar) return;
-      levelBar.querySelectorAll('button').forEach((b) => {
-        const lvl = Number(b.dataset.level);
+      const all = levels();
+      levelBar.parentNode.hidden = all.length < 2;
+      levelBar.innerHTML = '';
+      all.forEach((lvl) => {
         const on = lvl === level;
-        b.textContent = label(lvl);
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.dataset.level = String(lvl);
+        b.setAttribute('role', 'radio');
         b.setAttribute('aria-checked', on ? 'true' : 'false');
+        b.textContent = label(lvl);
         b.className =
           'px-3 py-1.5 text-sm font-medium transition-colors ' +
           (on
             ? 'bg-brand-deep-purple text-white'
             : 'bg-white text-gray-700 hover:bg-gray-50');
+        b.addEventListener('click', () => setLevel(lvl));
+        levelBar.appendChild(b);
       });
     }
     function renderStatus() {
@@ -380,7 +439,7 @@
       toolsEl.innerHTML = '';
       const row = document.createElement('div');
       row.className = 'flex flex-wrap items-start gap-x-4 gap-y-2';
-      if (levels.length > 1) {
+      {
         const group = document.createElement('div');
         group.className = 'flex items-center gap-2';
         group.innerHTML =
@@ -391,20 +450,12 @@
         levelBar.setAttribute('data-testid', 'sap-levels');
         levelBar.className =
           'inline-flex flex-wrap rounded-lg border border-gray-300 overflow-hidden divide-x divide-gray-300';
-        levels.forEach((lvl) => {
-          const b = document.createElement('button');
-          b.type = 'button';
-          b.dataset.level = String(lvl);
-          b.setAttribute('role', 'radio');
-          b.addEventListener('click', () => setLevel(lvl));
-          levelBar.appendChild(b);
-        });
         group.appendChild(levelBar);
         row.appendChild(group);
       }
       const search = document.createElement('div');
       search.className = 'relative flex-1 min-w-[14rem]';
-      if (levels.indexOf(0) !== -1) {
+      if (minLevel === 0) {
         countrySearch = document.createElement('input');
         countrySearch.type = 'search';
         countrySearch.className = 'base-input w-full';
@@ -472,7 +523,7 @@
         navHost.hidden = level === 0;
         const q = navHost.querySelector('.mp-ab-search');
         if (q) {
-          q.placeholder = 'Search for a ' + label(level) + ' by name…';
+          q.placeholder = 'Search ' + label(level) + ' areas by name…';
           q.classList.remove('text-xs');
         }
       }
@@ -488,7 +539,7 @@
       changed();
     }
     function setLevel(lvl) {
-      if (lvl === level || levels.indexOf(lvl) === -1) return;
+      if (lvl === level || levels().indexOf(lvl) === -1) return;
       const wasCountry = level === 0;
       level = lvl;
       renderLevels();
@@ -513,6 +564,7 @@
     writeInput();
     renderList();
     buildToolbar();
+    if (!readOnly) refreshLevels(); // a call's limits name the country up front
 
     if (!opts.mapEl || !opts.token || !global.mapboxgl)
       return { count: () => selected.size };
@@ -691,11 +743,9 @@
         hoverText = '';
         renderStatus();
       });
-      // The level names follow the country in view (State and LGA in Nigeria).
-      map.on('moveend', () => {
-        renderLevels();
-        showSearchFor();
-      });
+      // The levels on offer follow the country in view (some have two, some four).
+      map.on('moveend', refreshLevels);
+      map.once('idle', refreshLevels);
     }
 
     map.on('load', () => {
@@ -863,7 +913,7 @@
         levelLabels: cfg.level_labels,
         emptyText: cfg.empty_text,
         countries: cfg.countries,
-        levels: cfg.levels,
+        minLevel: cfg.min_level,
         level: cfg.level,
       });
     });

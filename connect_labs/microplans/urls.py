@@ -51,6 +51,7 @@ urlpatterns = [
     ),
     path("boundaries/countries/", views.CountriesView.as_view(), name="countries"),
     path("boundaries/viewport/", views.BoundaryViewportView.as_view(), name="boundary_viewport"),
+    path("boundaries/levels/", views.BoundaryLevelsView.as_view(), name="boundary_levels"),
     path("boundaries/areas/", views.BoundaryAreasView.as_view(), name="boundary_areas"),
     path("boundaries/geometry/", views.BoundaryGeometryView.as_view(), name="boundary_geometry"),
     # Program layer: a program owns a portfolio of candidate plans + plan groups.

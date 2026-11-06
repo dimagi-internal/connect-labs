@@ -482,6 +482,10 @@ class BoundarySource:
     def covers(self, country3: str, level: int) -> bool:
         raise NotImplementedError
 
+    def levels(self, country3: str) -> list[int]:
+        """Every level this source has boundaries for in the country."""
+        return [lvl for lvl in range(LEVEL_COUNTRY, 6) if self.covers(country3, lvl)]
+
     def list_in_bbox(
         self, bbox, *, iso: str | None = None, levels=None, tolerance: float = 0.0, limit: int = 1500
     ) -> list[BoundaryFeature]:
@@ -603,6 +607,12 @@ class LabsAdminBoundarySource(BoundarySource):
     def covers(self, country3: str, level: int) -> bool:
         a3 = iso.to_alpha3(country3) or country3
         return self._scoped(self._model().objects.filter(iso_code=a3, admin_level=level)).exists()
+
+    def levels(self, country3: str) -> list[int]:
+        a3 = iso.to_alpha3(country3) or country3
+        return sorted(
+            set(self._scoped(self._model().objects.filter(iso_code=a3)).values_list("admin_level", flat=True))
+        )
 
     def list_areas(self, country3, level, *, name_contains=None, parent=None, parent_geom=None, limit=500):
         a3 = iso.to_alpha3(country3) or country3
@@ -785,6 +795,15 @@ class BoundaryResolver:
             if s and s.covers(country3, level):
                 return s
         return self._sources.get("overture") or next(iter(self._sources.values()))
+
+    def levels_for(self, country3: str) -> list[int]:
+        """The sub-national levels this country has boundaries for in any source,
+        coarse to fine. Countries differ: some stop at two levels, some go to four."""
+        a3 = iso.to_alpha3(country3) or (country3 or "").upper()
+        found: set[int] = set()
+        for src in self._sources.values():
+            found.update(lvl for lvl in src.levels(a3) if lvl >= LEVEL_REGION)
+        return sorted(found)
 
     def describe(self, country3: str) -> dict:
         """Per-level default source + the full pickable-source list, for the UI."""

@@ -83,9 +83,9 @@ def respond(world, call, areas, status="submitted"):
 # --- resolving -----------------------------------------------------------------------
 
 
-def test_an_area_is_stored_with_the_resolved_outline_and_its_countrys_word_for_the_level():
+def test_an_area_is_stored_with_the_resolved_outline_and_its_level():
     [kano] = service_areas.normalise([KANO], field="service_areas")
-    assert kano["level_label"] == "State"
+    assert kano["level_label"] == "Level 1"
     assert kano["geometry"]["type"] == "Polygon"
     assert kano["key"] == "Kano"
 
@@ -118,10 +118,21 @@ def test_a_whole_country_is_an_area_at_level_zero_and_swallows_what_is_inside_it
     ]
 
 
-def test_a_picker_offers_every_level_or_none_coarser_than_the_calls_limits():
-    assert service_areas.pick_levels() == [0, 1, 2, 3]
-    assert service_areas.pick_levels([{"level": 1}, {"level": 2}]) == [1, 2, 3]
-    assert service_areas.pick_levels([{"level": 0}]) == [0, 1, 2, 3]
+def test_a_picker_starts_at_countries_or_at_the_calls_coarsest_limit():
+    assert service_areas.min_pick_level() == 0
+    assert service_areas.min_pick_level([{"level": 1}, {"level": 2}]) == 1
+    assert service_areas.min_pick_level([{"level": 0}]) == 0
+
+
+def test_levels_are_named_the_same_in_every_country():
+    # Each country has its own words for its tiers, so none is used.
+    assert [service_areas.level_label(lvl, "NGA") for lvl in (0, 1, 2, 3, 4)] == [
+        "Country",
+        "Level 1",
+        "Level 2",
+        "Level 3",
+        "Level 4",
+    ]
 
 
 def test_an_area_missing_its_level_or_source_is_refused():
@@ -141,7 +152,7 @@ def test_a_call_limited_to_a_state_stores_it_and_says_so(world):
     call = within_kano(world)
     call.refresh_from_db()
     assert call.area_mode == "within"
-    assert call.area_limit_names == ["Kano (State)"]
+    assert call.area_limit_names == ["Kano (Level 1)"]
     assert call.service_area_limits[0]["geometry"] == json.loads(json.dumps(call.service_area_limits[0]["geometry"]))
 
 
@@ -173,11 +184,13 @@ def test_clearing_the_limits_opens_the_call_to_anywhere(world):
 def test_a_ward_inside_the_calls_state_is_accepted(world):
     response = respond(world, within_kano(world), [GWALE])
     assert [a["name"] for a in response.service_areas] == ["Gwale"]
-    assert response.coverage_names == ["Gwale (Ward) — Kano › Gwale"]
+    assert response.coverage_names == ["Gwale (Level 3) — Kano › Gwale"]
 
 
 def test_an_area_outside_the_calls_limits_is_refused_by_name(world):
-    with pytest.raises(ValidationError, match="Lagos is not inside the areas this call covers \\(Kano \\(State\\)\\)"):
+    with pytest.raises(
+        ValidationError, match="Lagos is not inside the areas this call covers \\(Kano \\(Level 1\\)\\)"
+    ):
         respond(world, within_kano(world), [LAGOS])
 
 
@@ -191,7 +204,7 @@ def test_a_limited_call_needs_an_area_to_submit_but_not_to_save_a_draft(world):
 
 def test_an_open_call_takes_areas_anywhere_and_none_at_all(world):
     call = make_call(world["owner_org"])
-    assert respond(world, call, [LAGOS, GWALE]).coverage_names == ["Lagos (State)", "Gwale (Ward) — Kano › Gwale"]
+    assert respond(world, call, [LAGOS, GWALE]).coverage_names == ["Lagos (Level 1)", "Gwale (Level 3) — Kano › Gwale"]
     other = make_call(world["owner_org"], title="Another")
     assert respond(world, other, []).status == "submitted"
 
@@ -234,7 +247,7 @@ def test_the_create_form_keeps_the_work_inside_the_chosen_state(client, world):
         reverse("solicitations:create"), _call_form(area_mode="within", service_area_limits=json.dumps([KANO]))
     )
     assert resp.status_code == 302
-    assert Solicitation.objects.get(title="New call").area_limit_names == ["Kano (State)"]
+    assert Solicitation.objects.get(title="New call").area_limit_names == ["Kano (Level 1)"]
 
 
 def test_choosing_within_with_no_area_is_refused_on_the_form(client, world):
@@ -258,17 +271,18 @@ def test_the_respond_page_draws_the_calls_limits_and_saves_the_picked_areas(clie
     call = within_kano(world)
     login(client, world["applicant"])
     page = client.get(reverse("solicitations:respond", kwargs={"pk": call.public_id})).content.decode()
-    assert "Where would you do this work?" in page and "This call covers Kano (State)" in page
+    assert "Where would you do this work?" in page and "This call covers Kano (Level 1)" in page
     assert reverse("microplans:boundary_areas") in page
     # Inside a state, the map offers the state and what is beneath it, never a country.
-    assert '"levels": [1, 2, 3], "level": 1' in page
+    assert '"min_level": 1, "level": 1' in page
+    assert reverse("microplans:boundary_levels") in page
     resp = client.post(
         reverse("solicitations:respond", kwargs={"pk": call.public_id}),
         {"org": "firm-org", "question_q1": "x", "service_areas": json.dumps([GWALE]), "submit": "1"},
     )
     assert resp.status_code == 302
     response = SolicitationResponse.objects.get(submitted_by=world["applicant"])
-    assert response.coverage_names == ["Gwale (Ward) — Kano › Gwale"]
+    assert response.coverage_names == ["Gwale (Level 3) — Kano › Gwale"]
 
 
 def test_the_respond_page_shows_an_area_outside_the_limits_as_an_error(client, world):
@@ -286,7 +300,7 @@ def test_the_respond_page_shows_an_area_outside_the_limits_as_an_error(client, w
 def test_the_call_page_shows_where_the_work_happens(client, world):
     call = within_kano(world)
     page = client.get(reverse("solicitations:public_detail", kwargs={"pk": call.public_id})).content.decode()
-    assert "Where the work happens" in page and "The work is inside Kano (State)" in page
+    assert "Where the work happens" in page and "The work is inside Kano (Level 1)" in page
 
 
 def test_the_owner_sees_where_a_respondent_would_work(client, world):
@@ -295,7 +309,7 @@ def test_the_owner_sees_where_a_respondent_would_work(client, world):
     page = client.get(reverse("solicitations:response_detail", kwargs={"pk": response.pk})).content.decode()
     assert "Where they would work" in page and "sap-config-response" in page
     listing = client.get(reverse("solicitations:responses_list", kwargs={"pk": response.solicitation.public_id}))
-    assert "Gwale (Ward)" in listing.content.decode()
+    assert "Gwale (Level 3)" in listing.content.decode()
 
 
 def test_boundary_search_and_geometry_need_only_a_login(client, world, monkeypatch):

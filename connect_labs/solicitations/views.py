@@ -227,19 +227,20 @@ def _area_picker(request, name, *, initial=(), limits=(), input_id="", empty_tex
     if input_id:
         from connect_labs.microplans.core import iso
 
-        levels = service_areas.pick_levels(limits)
+        min_level = service_areas.min_pick_level(limits)
         picker.update(
             {
-                # The levels the person may pick at, and the one the map starts on:
-                # countries when they may pick a country, else the coarsest allowed.
-                "levels": levels,
-                "level": levels[0],
+                # The coarsest level the person may pick at, where the map starts.
+                # The finer levels are each country's own, asked of `levels_url`.
+                "min_level": min_level,
+                "level": min_level,
                 # For the country search; the map itself draws countries from Mapbox.
                 "countries": iso.all_countries(),
                 "input_id": input_id,
                 "csrf": get_token(request),
                 "urls": {
                     "viewport": reverse("microplans:boundary_viewport"),
+                    "levels": reverse("microplans:boundary_levels"),
                     "areas": reverse("microplans:boundary_areas"),
                     "geometry": reverse("microplans:boundary_geometry"),
                 },

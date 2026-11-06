@@ -9,8 +9,11 @@ A call limits geography in one of three ways (`area_mode`):
 * ``any`` -- neither; the respondent picks any admin areas anywhere.
 
 Levels are the boundary resolver's: 0 is a whole country (several may be
-picked), then 1-3 down to a ward. The map lets the person choose the level they
-pick at (`pick_levels`).
+picked), then 1, 2, 3... beneath it, as deep as that country's boundaries go.
+They are named "Level 1", "Level 2": every country has its own words for its
+tiers (State and LGA in Nigeria, Province and District elsewhere), so a
+country-specific name would be wrong somewhere. The map lets the person choose
+the level they pick at.
 
 Admin areas come from the microplans boundary resolver (labs' curated
 boundaries first, Overture everywhere else), so a respondent can pick a state,
@@ -151,9 +154,12 @@ def normalise(raw, *, field: str) -> list[dict]:
     return kept
 
 
-def _level_label(level: int, country: str) -> str:
-    from connect_labs.microplans.core.admin_boundaries import level_label
+def level_label(level: int, country: str = "") -> str:
+    """ "Country", or "Level 1", "Level 2"...: the same words for every country."""
+    return "Country" if int(level) == 0 else f"Level {int(level)}"
 
+
+def _level_label(level: int, country: str) -> str:
     return level_label(level, country)
 
 
@@ -215,21 +221,14 @@ def without_geometry(areas: list[dict]) -> list[dict]:
     return [{k: v for k, v in a.items() if k != "geometry"} for a in areas or []]
 
 
-def pick_levels(limits=()) -> list[int]:
-    """The levels a picker offers: all of them, or, inside a call's limits, none
-    coarser than the coarsest limit (a call limited to a state cannot be
-    answered with a whole country)."""
-    from connect_labs.microplans.core.admin_boundaries import LEVEL_COUNTRY, LEVEL_LOCALITY
-
-    levels = list(range(LEVEL_COUNTRY, LEVEL_LOCALITY + 1))
+def min_pick_level(limits=()) -> int:
+    """The coarsest level a picker offers: a whole country, or, inside a call's
+    limits, nothing coarser than the coarsest limit (a call limited to a Level 1
+    area cannot be answered with a whole country)."""
     limit_levels = [int(lim["level"]) for lim in limits or [] if str(lim.get("level", "")).isdigit()]
-    if limit_levels:
-        levels = [lvl for lvl in levels if lvl >= min(limit_levels)]
-    return levels
+    return min(limit_levels) if limit_levels else 0
 
 
 def level_labels() -> dict:
-    """Each country's words for its levels (0 is the country itself), plus the generic ones, for the map."""
-    from connect_labs.microplans.core.admin_boundaries import COUNTRY_LEVEL_LABELS, LEVEL_LABELS
-
-    return {"default": LEVEL_LABELS, **COUNTRY_LEVEL_LABELS}
+    """The map's words for levels, the same for every country."""
+    return {"default": {lvl: level_label(lvl) for lvl in range(0, 6)}}
