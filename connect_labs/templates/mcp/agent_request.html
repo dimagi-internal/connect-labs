@@ -11,7 +11,7 @@
       <div class="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
         <i class="fa-solid fa-key text-indigo-600 text-lg"></i>
       </div>
-      <h1 data-testid="agent-request-heading" class="text-2xl font-semibold text-brand-deep-purple">An agent is asking to read how your Connect Labs programmes are built</h1>
+      <h1 data-testid="agent-request-heading" class="text-2xl font-semibold text-brand-deep-purple">An agent is asking to use Connect Labs as you</h1>
     </div>
 
     <dl class="text-sm border-t border-gray-100 divide-y divide-gray-100 mb-5">
@@ -29,7 +29,7 @@
       </div>
       <div class="py-3 sm:grid sm:grid-cols-4 sm:gap-4">
         <dt class="font-medium text-gray-500">Access</dt>
-        <dd class="sm:col-span-3 rounded-lg px-3 py-2 border text-emerald-900 bg-emerald-50 border-emerald-200" data-testid="agent-request-access">
+        <dd class="sm:col-span-3 rounded-lg px-3 py-2 border {% if is_full %}text-amber-900 bg-amber-50 border-amber-200{% else %}text-emerald-900 bg-emerald-50 border-emerald-200{% endif %}" data-testid="agent-request-access">
           <strong>{{ access_label }}.</strong> {{ access_text }}
         </dd>
       </div>
@@ -39,8 +39,10 @@
       </div>
     </dl>
 
+    {% include "mcp/_full_access_notice.html" with notice=full_access_notice %}
+
     {% if outcome == "approved" %}
-      <p class="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2" data-testid="agent-request-outcome">Approved. The agent collects its token on its own; you can close this page.</p>
+      <p class="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2" data-testid="agent-request-outcome">Approved with your passkey. The agent collects its token on its own; you can close this page.</p>
     {% elif outcome == "declined" %}
       <p class="text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2" data-testid="agent-request-outcome">Declined. Nothing was created.</p>
     {% elif outcome == "expired" %}
@@ -51,12 +53,13 @@
       <p class="text-sm text-red-900 bg-red-50 border border-red-200 rounded-lg px-3 py-2" data-testid="agent-request-outcome">This account asked for the token, so it can't be the one to approve it. Open the link signed in as the person it is for.</p>
     {% elif open and is_requester %}
       <p class="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" data-testid="agent-request-outcome">You are signed in as the account that asked. Open this link signed in as the person the token is for.</p>
-    {% elif open %}
-      <p class="text-sm font-medium text-gray-900 mb-4">Only approve if you just asked an agent for this.</p>
+    {% elif open and not full_access_notice.sign_off and not full_access_notice.finish %}
+      <p class="text-sm font-medium text-gray-900 mb-1 mt-4">Only approve if you just asked an agent for this.</p>
+      <p class="text-sm text-gray-600 mb-4" data-testid="agent-request-next">You approve this with your passkey in canopy. The token goes to the agent's computer, not to this one.</p>
       <form method="post" class="flex items-center gap-3 pt-2">
         {% csrf_token %}
         <button type="submit" name="action" value="decline" class="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition">Decline</button>
-        <button type="submit" name="action" value="approve" class="px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-400">Approve</button>
+        <button type="submit" name="action" value="approve" class="px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-400">Continue to passkey</button>
       </form>
     {% else %}
       <p class="text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2" data-testid="agent-request-outcome">
