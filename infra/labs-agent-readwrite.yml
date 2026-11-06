@@ -1,0 +1,460 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Labs agent read-write role: the role an AI agent uses when it must CHANGE
+# something in the labs account. canopy calls it `labs-readwrite`
+# (`canopy aws profile --role labs-readwrite`); its read-only sibling is
+# `labs-read` = labs-jj-observe-readonly (labs-observe-readonly.yml). Humans keep
+# the `labs` SSO profile; agents never use it.
+#
+# The first need is rehearsing a Postgres major-version upgrade on a copy of
+# labs-jj-postgres: snapshot production, restore the snapshot to a NEW instance,
+# upgrade and test that copy with a one-off psql client task in the database's
+# VPC, read what happened, then delete the copy. The role grants exactly that
+# and nothing else that writes:
+#
+#   * reads: everything labs-read reads (its allow policy is attached here);
+#   * RDS writes only on instances named labs-jj-agent-* / labs-jj-pg-rehearsal*,
+#     snapshots and parameter groups named labs-jj-agent-*; production is only
+#     ever a SOURCE (CreateDBSnapshot, RestoreDBInstanceToPointInTime);
+#   * ecs:RunTask of ONE task definition this stack owns
+#     (labs-jj-agent-pgclient: the postgres image, no secrets, no task role) on
+#     labs-jj-cluster, and its own log group;
+#   * no IAM, Organizations or Identity Center change of any kind, no snapshot
+#     sharing or export, no audit-trail change (explicit denies).
+#
+# The sensitive-read denies of labs-read are repeated here (one policy cannot
+# be shared: labs-read's deny also refuses ecs:RunTask), with two holes, both
+# deliberate: the pgclient log group, and log downloads from the agent's own
+# instances. A restored copy of production HOLDS production data, so anything
+# the client task selects is readable in its log group. Keep queries to
+# counts, versions and extension lists.
+#
+# Who. Trust names only canopy-web's task role (which vends the role to the
+# agents canopy-web allows, settings.CANOPY_AWS_ROLE_AGENTS) and Identity
+# Center users, and EVERY assume must set a SourceIdentity starting `canopy-`
+# (canopy-web sets `canopy-agent-<slug>`; it is sticky, so CloudTrail names
+# the agent on every call made with these keys). The cloud runners' box brokers
+# are NOT trusted: they cannot verify which agent is asking.
+#
+#   aws cloudformation deploy --profile labs --region us-east-1 \
+#     --stack-name labs-jj-agent-readwrite \
+#     --template-file infra/labs-agent-readwrite.yml \
+#     --capabilities CAPABILITY_NAMED_IAM
+
+Description: >-
+  Labs agent read-write role (labs-jj-agent-readwrite): labs-read's reads plus
+  snapshot/restore/modify/delete of agent-named RDS copies and a one-off psql
+  client task. Production is source-only; IAM/Organizations changes denied.
+
+Parameters:
+  RoleName:
+    Type: String
+    Default: labs-jj-agent-readwrite
+    Description: Name of the role (and the prefix of its managed policies).
+
+  ReadPolicyName:
+    Type: String
+    Default: labs-jj-observe-readonly
+    Description: >-
+      labs-read's allow policy (labs-observe-readonly.yml), attached here so
+      the read-write role reads what the read role reads.
+
+  ProductionDbInstance:
+    Type: String
+    Default: labs-jj-postgres
+    Description: The production instance. Source-only; never modified or deleted.
+
+  ClusterName:
+    Type: String
+    Default: labs-jj-cluster
+    Description: ECS cluster the psql client task runs in (the DB's VPC).
+
+  PgClientImage:
+    Type: String
+    Default: public.ecr.aws/docker/library/postgres:18
+    Description: >-
+      Image of the one-off client task. psql must be at least the newest
+      server major it will talk to.
+
+  BrokerRoleName:
+    Type: String
+    Default: canopy-web-task-role
+    Description: canopy-web's ECS task role, which vends this role to agents.
+
+  AllowSsoUsers:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: >-
+      'true' lets an IAM Identity Center role chain into this role (with a
+      canopy- SourceIdentity), so a person can test it.
+
+Conditions:
+  TrustSso: !Equals [!Ref AllowSsoUsers, 'true']
+
+Resources:
+  PgClientLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /labs-jj/agent/pgclient
+      RetentionInDays: 14
+
+  PgClientExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${RoleName}-pgclient-exec'
+      Description: Execution role of labs-jj-agent-pgclient (pull a public image, write its logs).
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: { 'aws:SourceAccount': !Ref AWS::AccountId }
+      Policies:
+        - PolicyName: logs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub '${PgClientLogGroup.Arn}'
+
+  # A psql box with no secrets and no task role: it can reach what the security
+  # group the caller passes can reach, and nothing in AWS. The caller supplies
+  # the command (overrides) and the connection details; for a restored copy,
+  # set its master password with ModifyDBInstance first.
+  PgClientTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: labs-jj-agent-pgclient
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '256'
+      Memory: '512'
+      ExecutionRoleArn: !GetAtt PgClientExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: pgclient
+          Image: !Ref PgClientImage
+          Essential: true
+          EntryPoint: [sh, -c]
+          Command: ['psql --version']
+          StopTimeout: 30
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref PgClientLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: pgclient
+
+  ReadWritePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Ref RoleName
+      Description: >-
+        Writes an agent may make in labs: agent-named RDS copies of production,
+        their parameter groups and snapshots, and the psql client task.
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Production (and any labs instance) as a SOURCE only: snapshot it
+          # into an agent-named snapshot.
+          - Sid: SnapshotIntoAgentNames
+            Effect: Allow
+            Action: rds:CreateDBSnapshot
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:db:labs-jj-*'
+              - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:snapshot:labs-jj-agent-*'
+          # Copy any labs snapshot (an automated one, say) to upgrade the copy.
+          - Sid: CopySnapshots
+            Effect: Allow
+            Action: rds:CopyDBSnapshot
+            Resource: !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:snapshot:*'
+          # The agent's own snapshots: upgrade their engine, tag, delete.
+          - Sid: AgentSnapshots
+            Effect: Allow
+            Action:
+              - rds:ModifyDBSnapshot
+              - rds:DeleteDBSnapshot
+              - rds:AddTagsToResource
+              - rds:RemoveTagsFromResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:snapshot:labs-jj-agent-*'
+          # Restore into a NEW agent-named instance (from any labs snapshot, or
+          # production at a point in time), then upgrade, test and delete it.
+          # The supporting resources (snapshot, subnet group, default
+          # parameter/option groups) are named in the same ARN list because
+          # RDS authorizes every resource a call touches.
+          - Sid: AgentInstances
+            Effect: Allow
+            Action:
+              - rds:RestoreDBInstanceFromDBSnapshot
+              - rds:RestoreDBInstanceToPointInTime
+              - rds:ModifyDBInstance
+              - rds:RebootDBInstance
+              - rds:StartDBInstance
+              - rds:StopDBInstance
+              - rds:DeleteDBInstance
+              - rds:DownloadDBLogFilePortion
+              - rds:DownloadCompleteDBLogFile
+              - rds:AddTagsToResource
+              - rds:RemoveTagsFromResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:db:labs-jj-agent-*'
+              - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:db:labs-jj-pg-rehearsal*'
+              - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:db:${ProductionDbInstance}'
+              - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:snapshot:*'
+              - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:subgrp:labs-jj-*'
+              - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:pg:default.*'
+              - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:pg:labs-jj-agent-*'
+              - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:og:default:*'
+              - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:og:labs-jj-agent-*'
+          - Sid: AgentParameterGroups
+            Effect: Allow
+            Action:
+              - rds:CreateDBParameterGroup
+              - rds:CopyDBParameterGroup
+              - rds:ModifyDBParameterGroup
+              - rds:ResetDBParameterGroup
+              - rds:DeleteDBParameterGroup
+              - rds:AddTagsToResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:pg:labs-jj-agent-*'
+              - !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:pg:default.*'
+          # The one task this role may run, on the labs cluster only.
+          - Sid: RunPgClient
+            Effect: Allow
+            Action: ecs:RunTask
+            Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/labs-jj-agent-pgclient:*'
+            Condition:
+              ArnEquals:
+                ecs:cluster: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ClusterName}'
+          - Sid: TagPgClientTasks
+            Effect: Allow
+            Action: ecs:TagResource
+            Resource: '*'
+            Condition:
+              StringEquals: { 'ecs:CreateAction': RunTask }
+          - Sid: PassPgClientExecutionRole
+            Effect: Allow
+            Action: iam:PassRole
+            Resource: !GetAtt PgClientExecutionRole.Arn
+            Condition:
+              StringEquals: { 'iam:PassedToService': ecs-tasks.amazonaws.com }
+          - Sid: ReadPgClientLogs
+            Effect: Allow
+            Action:
+              - logs:GetLogEvents
+              - logs:FilterLogEvents
+              - logs:StartQuery
+              - logs:GetLogGroupFields
+            Resource:
+              - !Sub '${PgClientLogGroup.Arn}'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/labs-jj/agent/pgclient:log-stream:*'
+          - Sid: NetworkLookups
+            Effect: Allow
+            Action:
+              - ec2:DescribeVpcs
+              - ec2:DescribeNetworkInterfaces
+            Resource: '*'
+
+  ReadWriteDenyPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-deny'
+      Description: >-
+        Backstop for labs-jj-agent-readwrite: production never changes, no
+        IAM/Organizations/Identity Center change, no snapshot sharing, no audit
+        change, and labs-read's sensitive-read denies.
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ProductionIsSourceOnly
+            Effect: Deny
+            Action:
+              - rds:DeleteDBInstance
+              - rds:ModifyDBInstance
+              - rds:RebootDBInstance
+              - rds:StopDBInstance
+              - rds:PromoteReadReplica
+              - rds:RemoveTagsFromResource
+              - rds:DownloadDBLogFilePortion
+              - rds:DownloadCompleteDBLogFile
+            Resource: !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:db:${ProductionDbInstance}'
+          # Snapshots, backups and clusters an agent did not make are never deleted.
+          - Sid: NoDeletingWhatAgentsDidNotMake
+            Effect: Deny
+            Action: rds:DeleteDBSnapshot
+            NotResource: !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:snapshot:labs-jj-agent-*'
+          - Sid: NoClusterOrBackupDeletes
+            Effect: Deny
+            Action:
+              - rds:DeleteDBCluster
+              - rds:DeleteDBClusterSnapshot
+              - rds:DeleteGlobalCluster
+              - rds:DeleteDBInstanceAutomatedBackup
+            Resource: '*'
+          # A snapshot of production is production data: never shared or exported.
+          - Sid: NoSnapshotSharingOrExport
+            Effect: Deny
+            Action:
+              - rds:ModifyDBSnapshotAttribute
+              - rds:ModifyDBClusterSnapshotAttribute
+              - rds:StartExportTask
+            Resource: '*'
+          - Sid: NoIamOrOrganizationChanges
+            Effect: Deny
+            Action:
+              - iam:Add*
+              - iam:Attach*
+              - iam:Change*
+              - iam:Create*
+              - iam:Deactivate*
+              - iam:Delete*
+              - iam:Detach*
+              - iam:Enable*
+              - iam:Put*
+              - iam:Remove*
+              - iam:Reset*
+              - iam:Resync*
+              - iam:Set*
+              - iam:Tag*
+              - iam:Untag*
+              - iam:Update*
+              - iam:Upload*
+              - organizations:*
+              - account:*
+              - sso:*
+              - sso-directory:*
+              - identitystore:*
+            Resource: '*'
+          - Sid: NoAuditChanges
+            Effect: Deny
+            Action:
+              - cloudtrail:StopLogging
+              - cloudtrail:DeleteTrail
+              - cloudtrail:UpdateTrail
+              - cloudtrail:PutEventSelectors
+              - logs:DeleteLogGroup
+              - logs:DeleteLogStream
+            Resource: '*'
+          # ── labs-read's sensitive-read denies, minus the pgclient holes ──────
+          - Sid: DenyLogContent
+            Effect: Deny
+            Action:
+              - logs:GetLogEvents
+              - logs:GetLogRecord
+              - logs:FilterLogEvents
+              - logs:StartQuery
+              - logs:StartLiveTail
+              - logs:GetLogGroupFields
+              - logs:Unmask
+              - logs:CreateExportTask
+            NotResource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/labs-jj/observe/*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/labs-jj/agent/pgclient:*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/labs-jj-umami-build:*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:RDSOSMetrics:*'
+          - Sid: DenyLogContentUnscoped
+            Effect: Deny
+            Action:
+              - logs:ListAnomalies
+              - logs:DescribeQueries
+              - cloudwatch:GetInsightRuleReport
+            Resource: '*'
+          - Sid: DenyObjectSecretAndDataContent
+            Effect: Deny
+            Action:
+              - s3:GetObject*
+              - s3:RestoreObject
+              - athena:*
+              - secretsmanager:GetSecretValue
+              - secretsmanager:BatchGetSecretValue
+              - ssm:GetParameter*
+              - kms:Decrypt
+              - kms:GenerateDataKey*
+              - rds-data:*
+              - rds-db:connect
+              - pi:*
+              - dynamodb:GetItem
+              - dynamodb:BatchGetItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - elasticache:Connect
+              - sqs:ReceiveMessage
+              - ecr:BatchGetImage
+              - ecr:GetDownloadUrlForLayer
+            Resource: '*'
+          - Sid: DenyEnvCommandsAndExec
+            Effect: Deny
+            Action:
+              - ecs:DescribeTaskDefinition
+              - ecs:DescribeTasks
+              - ecs:DescribeTaskSets
+              - ecs:DescribeServiceRevisions
+              - ecs:ExecuteCommand
+              - ecs:StartTask
+              - lambda:GetFunction
+              - lambda:GetFunctionConfiguration
+              - codebuild:BatchGetBuilds
+              - codebuild:BatchGetProjects
+              - ec2:DescribeInstanceAttribute
+              - ec2:DescribeLaunchTemplateVersions
+              - ec2:GetConsoleOutput
+              - cloudformation:DescribeChangeSet
+              - cloudtrail:LookupEvents
+              - ssm:StartSession
+              - ssm:SendCommand
+            Resource: '*'
+          - Sid: RunOnlyThePgClient
+            Effect: Deny
+            Action: ecs:RunTask
+            NotResource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/labs-jj-agent-pgclient:*'
+
+  ReadWriteRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: >-
+        Labs agent read-write (canopy: labs-readwrite). labs-read's reads plus
+        agent-named RDS copies and the psql client task; production source-only.
+      MaxSessionDuration: 3600
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ReadPolicyName}'
+        - !Ref ReadWritePolicy
+        - !Ref ReadWriteDenyPolicy
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: CanopyWebAndPeopleWithASourceIdentity
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action:
+              - sts:AssumeRole
+              - sts:SetSourceIdentity
+              - sts:TagSession
+            Condition:
+              ArnLike:
+                aws:PrincipalArn:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${BrokerRoleName}'
+                  - !If
+                    - TrustSso
+                    - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*'
+                    - !Ref AWS::NoValue
+              # No anonymous sessions: CloudTrail names who did it.
+              StringLike:
+                sts:SourceIdentity: canopy-*
+      Tags:
+        - { Key: purpose, Value: labs-agent-readwrite }
+
+Outputs:
+  RoleArn:
+    Description: Role an agent assumes to change labs (canopy name labs-readwrite).
+    Value: !GetAtt ReadWriteRole.Arn
+    Export:
+      Name: labs-jj-agent-readwrite-role-arn
+  PgClientTaskDefinition:
+    Description: The one task definition the role may run.
+    Value: !Ref PgClientTaskDefinition

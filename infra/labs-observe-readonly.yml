@@ -24,6 +24,11 @@ AWSTemplateFormatVersion: '2010-09-09'
 # an allow-listed projection — into `/labs-jj/observe/*`, which this role may
 # read.
 #
+# canopy calls this role `labs-read` (`canopy aws profile --role labs-read`;
+# `labs-observe` is the old name, still accepted). The IAM name stays
+# `labs-jj-observe-readonly` so every caller's existing sts:AssumeRole grant
+# keeps working. Its write-capable sibling is labs-agent-readwrite.yml.
+#
 # What this stack owns:
 #   * `labs-jj-observe-readonly` (ManagedPolicy): the explicit ALLOW list, and
 #     `labs-jj-observe-readonly-deny` (ManagedPolicy): the explicit-DENY backstop
@@ -223,16 +228,15 @@ Resources:
           # Database / redis configuration and AWS-side events. No data, no
           # logs (DescribeDBLogFiles lists names and sizes only; downloads are
           # denied), no Performance Insights (see DenyDatabaseContent).
+          # rds:Describe* is every RDS read of configuration: engine versions
+          # and valid upgrade targets ("which major can 16.13 go to?"),
+          # orderable classes, parameter/option/subnet groups, snapshots and
+          # their attributes, automated backups, blue/green deployments. None
+          # returns row data or log content (downloads are separate actions).
           - Sid: DataTierMetadata
             Effect: Allow
             Action:
-              - rds:DescribeDBInstances
-              - rds:DescribeEvents
-              - rds:DescribePendingMaintenanceActions
-              - rds:DescribeDBParameters
-              - rds:DescribeDBParameterGroups
-              - rds:DescribeDBLogFiles
-              - rds:DescribeDBSnapshots
+              - rds:Describe*
               - rds:ListTagsForResource
               - elasticache:DescribeCacheClusters
               - elasticache:DescribeReplicationGroups
