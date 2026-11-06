@@ -954,3 +954,41 @@ def test_versions_sort_by_number_not_by_when_they_were_archived(scored, ace):
     ]
     comparison = tools.marketplace_round_scores(ace, "battery-2026", compare_with="v1")["comparison"]
     assert (comparison["earlier"], comparison["later"]) == ("v1", "v3")
+
+
+class TestTheAIReviewButton:
+    """The round page's one button for the AI first pass. It sends fixed words to the
+    canopy agent, which reads the round from the page state."""
+
+    def _body(self, client, user, round_):
+        return _page(client, user, "marketplace:round", round_.slug)
+
+    def test_without_criteria_it_asks_for_them_first(self, client, round_, member):
+        from connect_labs.marketplace.views import CRITERIA_ASK
+
+        round_.evaluation_criteria = []
+        round_.save()
+        client.force_login(member)
+        response = client.get(reverse("marketplace:round", args=[round_.slug]))
+        ctx = response.context
+        assert ctx["ai_review_label"] == "Propose criteria"
+        assert ctx["ai_review_ask"] == CRITERIA_ASK
+
+    def test_with_criteria_it_starts_the_review(self, client, round_, member):
+        from connect_labs.marketplace.views import AI_REVIEW_ASK
+
+        round_.evaluation_criteria = [{"id": "sites", "name": "Named sites", "weight": 100}]
+        round_.save()
+        client.force_login(member)
+        context = client.get(reverse("marketplace:round", args=[round_.slug])).context
+        assert context["ai_review_label"] == "Start AI review"
+        assert context["ai_review_ask"] == AI_REVIEW_ASK
+
+    def test_the_words_name_no_skill_and_no_person(self):
+        from connect_labs.marketplace.views import AI_REVIEW_ASK, CRITERIA_ASK
+
+        for words in (AI_REVIEW_ASK, CRITERIA_ASK):
+            assert "skill" not in words.lower() and "/ace" not in words and "@" not in words
+
+    def test_anyone_else_gets_no_button(self, client, round_, outsider):
+        assert "start-ai-review" not in _page(client, outsider, "marketplace:round", "battery-2026")
