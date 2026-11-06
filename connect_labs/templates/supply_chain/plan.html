@@ -18,10 +18,7 @@ plain words, and each step says where it came from.
 <div class="flex flex-wrap items-end justify-between gap-4 mb-3">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Plan: {{ item.name }}</h1>
-    <p class="text-sm text-gray-600 mt-1">
-      Worked out from the visits and from the handovers and receipts Supply has recorded, week by week.
-      {% if picture.scoped %}You see the places your own organisation runs.{% endif %}
-    </p>
+    {% if picture.scoped %}<p class="text-sm text-gray-600 mt-1">You see the places your own organisation runs.</p>{% endif %}
     {% if role != "supervisor" and picture.as_of_note %}<p class="text-sm text-gray-800 mt-1 font-medium" data-testid="plan-as-of">{{ picture.as_of_note.text }}.</p>{% endif %}
   </div>
   {% if items|length > 1 %}

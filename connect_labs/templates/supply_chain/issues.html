@@ -156,11 +156,7 @@
 </div>
 
 <h3 class="text-base font-semibold text-gray-900 mb-1">Who is responsible where stock is kept</h3>
-<p class="text-xs text-gray-600 mb-3">
-  A named person at each storage point confirms deliveries and owns the balance there, so a missing carton points
-  to a person and a day. Where a partner's field workers keep stock at home, the field worker is the custodian and
-  the security says how it is kept (for example, a lockable box). Changing the custodian keeps the earlier one as history.
-</p>
+<details class="text-xs text-gray-600 mb-3"><summary class="cursor-pointer">Why name someone</summary><p class="mt-1">A named person at each storage point confirms deliveries and owns the balance there, so a missing carton points to a person and a day. Where a partner's field workers keep stock at home, the field worker is the custodian and the security says how it is kept (for example, a lockable box). Changing the custodian keeps the earlier one as history.</p></details>
 <div class="bg-white border border-gray-200 rounded-lg mb-6 overflow-hidden">
   <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
   <table class="min-w-[44rem] w-full text-sm">
@@ -202,10 +198,7 @@
 
 {% if legacy_losses %}
   <h3 class="text-base font-semibold text-gray-900 mb-1">Earlier losses, recorded as a note</h3>
-  <p class="text-xs text-gray-600 mb-3">
-    Before issues existed, a loss was a stock movement with a free-text note. They still count against the stock;
-    report a new problem as an issue instead.
-  </p>
+  <p class="text-xs text-gray-600 mb-3">Still counted against stock. Report new problems as an issue.</p>
   <div class="bg-white border border-gray-200 rounded-lg mb-6 overflow-hidden">
     <table class="w-full text-sm">
       <tbody class="divide-y divide-gray-100">

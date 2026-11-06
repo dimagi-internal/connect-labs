@@ -15,12 +15,14 @@ The log says how each notice left, including when it did not: "email off" and
 <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Alerts</h1>
-    <p class="text-sm text-gray-600 mt-1 max-w-2xl">
+    <details class="text-sm text-gray-600 mt-1 max-w-2xl"><summary class="cursor-pointer">How alerts are sent</summary>
+    <p class="mt-1">
       A message, by email or as a Connect message, when something you chose to watch becomes true or stock moves.
       Each states what is now true and links to the record — no advice, no ranking. Something that stays true is
       sent once; if it clears and comes back, it is sent again. A message that could not be sent shows in the sent
       log and on the Overview chase list.
     </p>
+    </details>
   </div>
   {% if has_program_context %}
     <div class="flex items-center gap-2">
@@ -130,7 +132,7 @@ The log says how each notice left, including when it did not: "email off" and
 
 <section>
   <h2 class="text-sm font-semibold text-gray-900 mb-1">Sent log</h2>
-  <p class="text-sm text-gray-600 mb-2">The newest fifty notices. Each is a fact as it stood when it was found.</p>
+  <p class="text-xs text-gray-600 mb-2">Newest 50.</p>
   <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
       <table class="min-w-[52rem] w-full text-sm">

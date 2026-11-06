@@ -84,12 +84,14 @@ own arithmetic -- so workers sit in the tree under their store, behind one
         </form>
       {% endif %}
     </div>
-    <p class="text-xs text-gray-600 mb-2" data-testid="network-readings">
+    <details class="text-xs text-gray-600 mb-2"><summary class="cursor-pointer">Why a store can be "ok" while its branch is not</summary>
+    <p class="mt-1" data-testid="network-readings">
       Two readings can look like they disagree. <strong>On its own shelf</strong> and its status chip
       (ok, low) are about the store itself. <strong>With everything below it</strong> adds the
       stores and field workers it supplies, so a store can be "ok" on its own shelf while the whole
       branch beneath it is "overstocked".
     </p>
+    </details>
     {% include "supply_chain/_partner_switcher.html" %}
     {% for partner in partners %}
       <div class="mb-5" data-testid="partner-tree">

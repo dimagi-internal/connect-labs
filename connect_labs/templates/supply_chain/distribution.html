@@ -154,11 +154,7 @@
 {% endfor %}
 
 <h3 id="deliveries" class="text-sm font-semibold text-gray-900 mt-8 mb-1">Deliveries to stores and facilities</h3>
-<p class="text-xs text-gray-600 mb-2 max-w-3xl">
-  The step before a handout: stock sent from a warehouse to a facility or another store. To record one, use
-  <a href="{% url 'supply_chain:consignment_dispatch' %}" class="underline">send stock</a>; when it arrives, say so on the
-  <a href="{% url 'supply_chain:stock' %}" class="underline">Stock</a> page.
-</p>
+<p class="text-xs text-gray-600 mb-2"><a href="{% url 'supply_chain:consignment_dispatch' %}" class="underline">Send stock</a> · mark arrivals on <a href="{% url 'supply_chain:stock' %}" class="underline">Stock</a></p>
 {% if deliveries %}
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden mb-6">
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">

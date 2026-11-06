@@ -164,7 +164,7 @@ one of them would destroy the only signal it had.
                   on this page, and a date nobody promised cannot have been
                   missed. Unknown is a different thing from late.
                   {% endcomment %}
-                  no arrival date has been given
+                  no date given
                 {% endif %}
                 <span class="text-gray-600">· not counted as cover</span>
               </div>
@@ -183,7 +183,7 @@ one of them would destroy the only signal it had.
           rate: one neutral cell, not three "Unconfirmed" and a "cannot be assessed".{% endcomment %}
           {% comment %}Zero on hand is a stock-out whatever the rate: saying only "cover
           can't be computed" beside a 0 read as if the store's state were unknown.{% endcomment %}
-          <td colspan="4" class="phone-lead px-4 py-3 text-gray-600" data-label="Enough stock?">{% if point.stocked_out %}<span class="stock-chip stock-chip--bad">Stocked out</span> — nothing on hand; no consumption yet to measure cover against{% else %}No consumption yet — cover can't be computed{% endif %}</td>
+          <td colspan="4" class="phone-lead px-4 py-3 text-gray-600" data-label="Enough stock?">{% if point.stocked_out %}<span class="stock-chip stock-chip--bad">Stocked out</span> <span class="text-xs">no consumption yet</span>{% else %}No consumption yet — cover can't be computed{% endif %}</td>
           {% else %}
           <td class="px-4 py-3 tabular-nums text-gray-600" data-label="Demand / day">
             {{ point.amc|per_day }}{% if point.amc.amount %} <span class="text-xs text-gray-600">{% if point.amc_basis == "releases" %}released{% else %}dispensed{% endif %} a day</span><div class="text-xs text-gray-600" data-testid="pace-window">{{ point|pace_window }}</div>{% endif %}
@@ -201,7 +201,7 @@ one of them would destroy the only signal it had.
             beside "9 days" there for the same worker on the same day.{% endcomment %}
             {% if point.months_of_stock|unconfirmed_reasons %}{{ point.months_of_stock|months_as_days }}{% else %}{{ point.days_to_stockout|days_text }}{% endif %}
             {% for reason in point.months_of_stock|unconfirmed_reasons %}
-              <div class="text-xs text-gray-600 mt-0.5">{{ reason }}</div>
+              <details class="text-xs text-gray-600 mt-0.5"><summary class="cursor-pointer">Why</summary>{{ reason }}</details>
             {% endfor %}
             {% if point.min_months_of_stock %}
               <span class="text-xs text-gray-600">
@@ -234,7 +234,7 @@ one of them would destroy the only signal it had.
             {% comment %}The same reason already said under days of stock is not said twice in one row.{% endcomment %}
             {% if point.resupply_quantity|unconfirmed_reasons != point.months_of_stock|unconfirmed_reasons %}
             {% for reason in point.resupply_quantity|unconfirmed_reasons %}
-              <div class="text-xs text-gray-600 mt-0.5">{{ reason }}</div>
+              <details class="text-xs text-gray-600 mt-0.5"><summary class="cursor-pointer">Why</summary>{{ reason }}</details>
             {% endfor %}
             {% endif %}
           </td>
