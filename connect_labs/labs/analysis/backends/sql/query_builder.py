@@ -2151,6 +2151,38 @@ def _visit_select_parts(config: AnalysisPipelineConfig, only_fields=None) -> tup
     return select_parts, computed_field_names
 
 
+def _raw_visit_source(select_clause: str, where_sql: str) -> tuple[str, str]:
+    """FROM-source and WHERE for a visit read, reading `form_json` ONCE per row.
+
+    `form_json` is ~8 KB per visit and stored out of line (TOAST), and Postgres
+    fetches an out-of-line value again for EVERY reference in a SELECT list. A
+    pipeline with eight fields fetched each row's JSON eight times. Measured on
+    prod (3,000 visits of opp 2155, seven rounds): 8 references took 266 ms and
+    105,552 buffer hits; the same SELECT over a once-read value took 140 ms and
+    11,287 hits.
+
+    The fence is the subquery's `OFFSET 0`: it stops the planner from flattening
+    the subquery, which would inline `form_json || '{}'` back into every
+    reference. The concat yields an in-memory copy of the same object, so the
+    outer SELECT reads that copy. The scope and filters go inside the subquery,
+    so the index scan is unchanged.
+
+    Returns (source, where) for `FROM {source} AS labs_raw_visit_cache WHERE {where}`.
+    A SELECT that names `form_json` at most once gains nothing and would pay a
+    fetch it may never have needed, so it keeps the plain table.
+    """
+    if select_clause.count("form_json") < 2:
+        return "labs_raw_visit_cache", where_sql
+    from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+
+    columns = [f.column for f in RawVisitCache._meta.concrete_fields if f.column != "form_json"]
+    source = (
+        f"(SELECT {', '.join(columns)}, form_json || '{{}}'::jsonb AS form_json "
+        f"FROM labs_raw_visit_cache WHERE {where_sql} OFFSET 0)"
+    )
+    return source, "TRUE"
+
+
 def _selected_fields(config: AnalysisPipelineConfig, only_fields) -> list:
     if only_fields is None:
         return list(config.fields)
@@ -2183,6 +2215,9 @@ def build_visit_extraction_query(
     # is small but the structure stays uniform.
     visit_source = _visit_source_sql(config, opportunity_id)
     with_clause = _build_cte_prologue(config, opportunity_id, include_owners=False)
+    if visit_source == "labs_raw_visit_cache":
+        # A joined source already reads form_json once, inside its MATERIALIZED CTE.
+        visit_source, where_clause = _raw_visit_source(select_clause, where_clause)
 
     # If no window fields, emit the simple flat extraction query.
     if not config.window_fields:
@@ -2296,10 +2331,11 @@ def build_multi_opportunity_visit_extraction(
         *_visit_filter_predicates(config),
         *extra_predicates,
     ]
+    source, where_sql = _raw_visit_source(select_clause, " AND ".join(where))
     return f"""SELECT DISTINCT ON (opportunity_id, visit_id)
     {select_clause}
-FROM labs_raw_visit_cache
-WHERE {" AND ".join(where)}
+FROM {source} AS labs_raw_visit_cache
+WHERE {where_sql}
 ORDER BY opportunity_id, visit_id, expires_at DESC, pipeline_id"""
 
 
