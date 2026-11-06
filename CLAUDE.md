@@ -420,7 +420,13 @@ user, audit rows attribute to them):
   this). The verifier tries a PAT first, then an OAuth token. A PAT is
   **full** or **no-uservisit-data**. An agent that needs labs access for one job the
   person asked for uses `labs-token-setup --temporary` (one hour, no renewal, nothing
-  registered), never a sign-in script of its own against `/o/register/`.
+  registered), never a sign-in script of its own against `/o/register/`. An agent NOT on
+  the person's computer (a cloud runner) cannot take that flow's `127.0.0.1` callback, so it
+  asks with its own token instead (`mcp/agent_requests.py`, `request_agent_token.py`): the
+  person opens `/labs/mcp/agent-requests/<ref>/` and approves with their PASSKEY through canopy
+  (the same `full_access` sign-off, action key `labs.mcp_token.agent`, at either level), labs
+  mints their one-hour token and returns it SEALED to the agent's X25519 key
+  (`utils/sealed_output`), keeping only ciphertext, once.
 - **Both approval pages say the same thing** (`mcp/consent.py`): what can it do, for how
   long, what happens next. An app's self-chosen name is shown as a claim, never in the
   headline: it limits nothing.

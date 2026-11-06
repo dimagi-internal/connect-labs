@@ -1,6 +1,6 @@
 ---
 name: labs-token-setup
-description: Use when the user wants to set up or refresh their labs MCP Personal Access Token (PAT), or asks an agent to get short-lived labs access for one job. Triggers on "set up labs mcp", "I need a labs token", "configure claude for labs", "my labs token expired", "connect me to labs", "request a short-lived token", "get a temporary token on my behalf". Opens the labs UI to approve a new token, receives it via a localhost callback, and registers a `connect_labs` MCP server in Claude Code via `claude mcp add --scope user`.
+description: Use when the user wants to set up or refresh their labs MCP Personal Access Token (PAT), or asks an agent to get short-lived labs access for one job (from their own computer, or from a cloud runner or remote box). Triggers on "set up labs mcp", "I need a labs token", "configure claude for labs", "my labs token expired", "connect me to labs", "request a short-lived token", "get a temporary token on my behalf". Opens the labs UI to approve a new token, receives it via a localhost callback, and registers a `connect_labs` MCP server in Claude Code via `claude mcp add --scope user`.
 ---
 
 # Labs MCP Token Setup
@@ -60,6 +60,27 @@ When the person asks you to get short-lived access for something your own labs t
 - It does NOT touch Claude Code's config: the person's `connect_labs` server keeps its token, and this session's MCP tools do not change. Call the server yourself with `Authorization: Bearer $(cat <file>)`.
 - A full-access token still needs the person's passkey. Tell them what you are about to read and why before you start.
 - Keep the token out of your output, and delete the file when the job is done.
+
+### An agent that is NOT on the person's computer (a cloud runner, a remote box)
+
+`--temporary` returns the token to `127.0.0.1`, so it only works when the person's browser and
+the agent share a machine. From anywhere else use `request_agent_token.py`: the agent asks with
+its own labs token, the person approves on a labs page with their passkey (through canopy, like
+any full-access token), and the token comes back sealed to a key only the agent holds.
+
+    python request_agent_token.py ask https://labs.connect.dimagi.com --reason "read how the CHC reports compute coverage"
+
+Add `--level full` only if the job needs visit data; the default is no-user-visit. Either level
+needs the passkey. It prints `{ref, approve_url}`. **Show the person the link as a message before
+you wait**, saying what you will read, then:
+
+    python request_agent_token.py collect <ref> --output <scratchpad>/labs-token --wait 240
+
+Exit 4 means still waiting (run `collect` again if they say they are on it), 3 means declined or
+expired. The token is the PERSON's, lasts one hour and shows on their MCP access page. The agent's
+own labs token (`LABS_MCP_TOKEN` or `--token-file`) signs both calls; the script needs the
+`cryptography` package. Same rules as above: keep the token out of your output, delete the file
+when the job is done, and say what you read with it.
 
 ## Anti-patterns
 

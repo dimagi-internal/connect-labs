@@ -100,6 +100,14 @@ A process with no browser uses a Personal Access Token (PAT) instead:
 | **Lasts** | Until you disconnect it | What you set (1 to 365 days) | 90 days | 1 hour, no renewal |
 | **Listed under** | Apps you've signed in | Your active tokens | Your active tokens | Your active tokens |
 
+An agent that is not on your computer (a cloud runner, a remote box) cannot receive a token on
+`127.0.0.1`. It asks with its own labs token (`POST /mcp/admin/agent-requests/`, the helper is
+`.claude/skills/labs-token-setup/request_agent_token.py`), you open the link it gives you
+(`/labs/mcp/agent-requests/<ref>/`) signed in as yourself, and you approve with your passkey in
+canopy. The token is then minted for your account, lasts one hour, and is returned sealed to a key
+only the agent holds. It is no-user-visit unless the agent asks for full access, and the passkey is
+needed for either level. It shows on your MCP access page, where you can revoke it.
+
 Full access needs your passkey on all four. An agent that needs access should use
 the temporary token, not write its own sign-in against `/o/register/`.
 
