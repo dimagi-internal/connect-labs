@@ -147,7 +147,12 @@ def test_layer1_scopes_every_raw_read_including_its_lookups():
         extra_fields={LOOKUPS_KEY: {"registration": _registrations_config(), "gs": _gs_config()}},
         props_doc=PROPS,
     )
-    assert sql.count(RAW) == 3, "the visits and both lookups"
+    # Count table READS, not mentions: a read-once source is aliased with the table's
+    # own name, so the text names it twice per read.
+    reads = [
+        t for s in sqlglot.parse(sql, read="postgres") if s is not None for t in s.find_all(exp.Table) if t.name == RAW
+    ]
+    assert len(reads) == 3, "the visits and both lookups"
     assert not _unscoped_reads(sql)
 
 
