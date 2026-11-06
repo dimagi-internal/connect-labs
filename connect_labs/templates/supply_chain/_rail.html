@@ -31,8 +31,11 @@ Plain CSS rather than utilities, so nothing waits on the stylesheet being rebuil
   .supply-rail-close:hover { background: #e2def2; color: #16006d; }
   .supply-rail-close:focus-visible, .supply-rail-toggle:focus-visible, .supply-tab:focus-visible { outline: 2px solid #3843d0; outline-offset: 1px; }
   .supply-tabs-bar { display: block; }
+  /* Each group is set off by a rule and headed in the rail's darkest ink, so the three stages read as sections and the
+     heading can't be mistaken for a tab. */
   .supply-tab-group { padding-top: 0.75rem; }
-  .supply-tab-group-name { display: block; margin: 0 0 0.25rem; padding: 0 0.625rem; font-size: 0.75rem; line-height: 1rem; font-weight: 600; color: #626678; }
+  .supply-tab-group + .supply-tab-group { margin-top: 0.75rem; border-top: 1px solid #dfdcef; padding-top: 0.875rem; }
+  .supply-tab-group-name { display: block; margin: 0 0 0.375rem; padding: 0 0.625rem; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 700; letter-spacing: 0.01em; color: #16006d; }
   .supply-tab { position: relative; display: block; padding: 0.375rem 0.625rem; border-radius: 0.375rem; font-size: 0.875rem; line-height: 1.25rem; color: #3b3f52; text-decoration: none; }
   .supply-tab:hover { background: #e2def2; color: #16006d; }
   .supply-tab.is-active { background: #fff; color: #16006d; font-weight: 600; box-shadow: 0 1px 2px rgb(22 0 109 / 0.12); color: #3843d0; }
@@ -43,11 +46,14 @@ Plain CSS rather than utilities, so nothing waits on the stylesheet being rebuil
   .supply-rail-foot [data-as-of-form] { flex-wrap: wrap; gap: 0.375rem; margin-bottom: 0.75rem; }
   .supply-rail-foot [data-as-of-form] label { width: 100%; font-size: 0.75rem; font-weight: 600; color: #626678; }
   .supply-rail-foot [data-as-of-form] input[name="as_of"] { flex: 1 1 0; width: auto; min-width: 0; background: #fff; }
-  /* The main column's first line: the page's purpose, and -- only while the rail is hidden -- the button that brings it back. */
+  /* The main column's first line: the page's purpose. */
   .supply-toolbar { display: flex; align-items: center; gap: 0.75rem; margin: 0 0 1.25rem; min-height: 2rem; }
-  .supply-rail-toggle { flex: none; display: none; align-items: center; gap: 0.375rem; padding: 0.3125rem 0.75rem; border: 1px solid #d6d5dc; border-radius: 0.375rem; background: #fff; font-size: 0.8125rem; line-height: 1.25rem; color: #3b3f52; white-space: nowrap; cursor: pointer; }
-  .supply-rail-toggle:hover { border-color: #b9b8c4; color: #16006d; }
+  /* While the rail is hidden, the arrow that brings it back sits on the top line, in the spot just right of the purple
+     bar and level with the rail's own hide arrow, so hiding and showing are one control in one place. */
+  .supply-rail-toggle { position: fixed; top: 1.375rem; left: 4.5rem; z-index: 32; display: none; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; border: 0; border-radius: 0.375rem; background: transparent; color: #6b6f80; cursor: pointer; }
+  .supply-rail-toggle:hover { background: #e2def2; color: #16006d; }
   .supply-shell[data-rail="closed"] .supply-rail-toggle { display: inline-flex; }
+  @media (min-width: 768px) { body:has(.supply-shell[data-rail="closed"]) > div > header.fixed > div { padding-left: 3rem; } }
   .supply-purpose { margin: 0; flex: 1 1 auto; min-width: 0; max-width: 46rem; font-size: 0.9375rem; line-height: 1.5; color: #555a6e; }
   @media (prefers-reduced-motion: reduce) { .supply-shell, .supply-rail { transition: none; } }
   @media (max-width: 767px) {
@@ -86,6 +92,7 @@ Plain CSS rather than utilities, so nothing waits on the stylesheet being rebuil
     </div>
   </div>
 </aside>
+<button type="button" class="supply-rail-toggle" data-supply-rail-toggle data-testid="supply-rail-show" aria-controls="supply-rail" aria-expanded="true" aria-label="Show menu" title="Show menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
 <script>
   (function () {
     var shell = document.currentScript.parentElement, KEY = "supplyRail";
@@ -94,7 +101,6 @@ Plain CSS rather than utilities, so nothing waits on the stylesheet being rebuil
       var closed = shell.getAttribute("data-rail") === "closed";
       document.querySelectorAll("[data-supply-rail-toggle]").forEach(function (b) {
         b.setAttribute("aria-expanded", closed ? "false" : "true");
-        var l = b.querySelector("[data-label]"); if (l) l.textContent = closed ? "Show menu" : "Hide menu";
       });
     }
     document.addEventListener("DOMContentLoaded", sync);
