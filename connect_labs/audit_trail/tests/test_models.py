@@ -44,3 +44,17 @@ def test_to_log_dict_round_trips_json():
     assert payload["action"] == "export"
     assert payload["opportunity_id"] == 765
     assert payload["metadata"]["endpoint"].endswith("user_visits/")
+
+
+@pytest.mark.django_db
+def test_user_id_has_exactly_one_index_and_it_leads_with_user_id():
+    """The FK's own single-column index duplicated the (user, -occurred_at) one.
+
+    Exactly one index may cover user_id, and it must lead with it so user_id
+    lookups (and SET_NULL on user delete) still use an index.
+    """
+    with connection.cursor() as cursor:
+        constraints = connection.introspection.get_constraints(cursor, AuditEvent._meta.db_table)
+    covering = [c for c in constraints.values() if c["index"] and not c["primary_key"] and "user_id" in c["columns"]]
+    assert len(covering) == 1, covering
+    assert covering[0]["columns"][0] == "user_id"

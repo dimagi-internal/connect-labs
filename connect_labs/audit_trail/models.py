@@ -76,6 +76,11 @@ class AuditEvent(models.Model):
         null=True,
         blank=True,
         related_name="audit_events",
+        # The (user, -occurred_at) index in Meta already starts with user_id, so
+        # it serves every user_id lookup (including SET_NULL on user delete). The
+        # FK's own single-column index was a pure duplicate: 49 MB, never scanned
+        # on prod, and written on every audit insert.
+        db_index=False,
     )
     username = models.CharField(max_length=150, blank=True, default="")
     user_email = models.CharField(max_length=254, blank=True, default="")
