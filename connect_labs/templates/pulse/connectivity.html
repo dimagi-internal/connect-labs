@@ -15,6 +15,7 @@ navigation above it. Same map stack, same shell, same panels.
   <link rel="stylesheet" href="{% static 'pulse/pulse.css' %}">
 </head>
 <body class="pulse-body">
+  {% if expandable_rail_menu %}{% include 'components/expandable_rail_menu.html' with menu=expandable_rail_menu standalone=True %}{% endif %}
   <div class="net-shell">
     <header class="pulse-bar">
       <div class="pulse-brand">Connect <b>Pulse</b></div>

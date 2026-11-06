@@ -1,0 +1,92 @@
+{% comment %}
+expandable_rail_menu: a section's own navigation, drawn as a left rail flush against the Labs
+sidebar, that slides in and out. Takes `standalone` (true on a full-screen page with no Labs sidebar) and `menu` = {key, title, subtitle, groups: [{label, items:
+[{label, url, active}]}]}, built by connect_labs.labs.rail_menu.build. base.html includes it for
+any page a section's menu lists (marketplace/menu.py), so no page template changes to join.
+
+The open/closed choice is remembered in this browser (localStorage "railMenu:<key>"). Below
+768px the rail is not drawn; the Labs sidebar still reaches every section. Plain CSS rather than
+utilities, so nothing waits on the stylesheet being rebuilt. The look follows Supply's rail
+(supply_chain/_rail.html), which this generalises.
+{% endcomment %}
+<style>
+  .erm-rail { display: none; }
+  @media (min-width: 768px) {
+    .erm-rail { display: block; position: fixed; top: 0; left: 4rem; z-index: 31; height: 100vh; width: 14.5rem; overflow: hidden;
+                background: #efedf8; transition: opacity .15s ease, transform .2s ease; }
+    .erm-rail[data-state="closed"] { opacity: 0; transform: translateX(-1.5rem); pointer-events: none; visibility: hidden; }
+    /* The page starts after the rail while it is open; the Labs header moves over with it. */
+    body:has(.erm-rail[data-state="open"]) > div.flex-1 { padding-left: 15.5rem; }
+    body:has(.erm-rail) > div.flex-1 { transition: padding-left .2s ease; }
+    body:has(.erm-rail[data-state="open"]) > div > header.fixed { left: 18.5rem; }
+    body:has(.erm-rail) > div > header.fixed { transition: left .2s ease; }
+    body:has(.erm-rail[data-state="closed"]) > div > header.fixed > div { padding-left: 3rem; }
+    .erm-show { position: fixed; top: 1.375rem; left: 4.5rem; z-index: 32; display: none; align-items: center; justify-content: center;
+                width: 1.75rem; height: 1.75rem; border: 0; border-radius: 0.375rem; background: transparent; color: #6b6f80; cursor: pointer; }
+    .erm-show:hover { background: #e2def2; color: #16006d; }
+    /* Standalone pages (full-screen, no Labs sidebar): the rail sits at the window's edge. */
+    .erm-rail[data-standalone] { left: 0; }
+    .erm-rail[data-standalone] ~ .erm-show { left: 0.5rem; }
+    body:has(.erm-rail[data-standalone][data-state="open"]) { padding-left: 14.5rem; }
+    body:has(.erm-rail[data-standalone]) { transition: padding-left .2s ease; }
+    body:has(.erm-rail[data-state="closed"]) .erm-show { display: inline-flex; }
+  }
+  .erm-scroll { height: 100%; overflow-y: auto; overscroll-behavior: contain; padding: 1.25rem 0.75rem 1.5rem; scrollbar-width: thin; }
+  .erm-head { display: flex; align-items: flex-start; gap: 0.5rem; padding: 0 0.25rem 1rem 0.625rem; border-bottom: 1px solid #dfdcef; }
+  .erm-head > div { flex: 1 1 auto; min-width: 0; }
+  .erm-head h2 { margin: 0; font-size: 1.25rem; line-height: 1.75rem; font-weight: 600; letter-spacing: -0.01em; color: #16006d; }
+  .erm-head p { margin: 0.25rem 0 0; font-size: 0.75rem; line-height: 1.35; color: #6b6f80; }
+  .erm-hide { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; margin-top: 0.125rem;
+              border: 0; border-radius: 0.375rem; background: transparent; color: #6b6f80; cursor: pointer; }
+  .erm-hide:hover { background: #e2def2; color: #16006d; }
+  .erm-group { padding-top: 0.75rem; }
+  .erm-group + .erm-group { margin-top: 0.75rem; border-top: 1px solid #dfdcef; padding-top: 0.875rem; }
+  .erm-group-name { display: block; margin: 0 0 0.375rem; padding: 0 0.625rem; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 700; color: #16006d; }
+  .erm-item { display: block; padding: 0.375rem 0.625rem; border-radius: 0.375rem; font-size: 0.875rem; line-height: 1.25rem; color: #3b3f52; text-decoration: none; }
+  .erm-item:hover { background: #e2def2; color: #16006d; }
+  .erm-item.is-active { background: #fff; color: #3843d0; font-weight: 600; box-shadow: 0 1px 2px rgb(22 0 109 / 0.12); }
+  .erm-hide:focus-visible, .erm-show:focus-visible, .erm-item:focus-visible { outline: 2px solid #3843d0; outline-offset: 1px; }
+  @media (prefers-reduced-motion: reduce) { .erm-rail, body:has(.erm-rail) > div.flex-1 { transition: none; } }
+</style>
+<aside id="{{ menu.key }}-rail" class="erm-rail" data-state="open" data-rail-key="{{ menu.key }}"{% if standalone %} data-standalone{% endif %} data-testid="{{ menu.key }}-rail" aria-label="{{ menu.title }} navigation">
+  <div class="erm-scroll">
+    <div class="erm-head">
+      <div>
+        <h2>{{ menu.title }}</h2>
+        {% if menu.subtitle %}<p>{{ menu.subtitle }}</p>{% endif %}
+      </div>
+      <button type="button" class="erm-hide" data-erm-toggle aria-controls="{{ menu.key }}-rail" aria-expanded="true" aria-label="Hide menu" title="Hide menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </div>
+    <nav aria-label="{{ menu.title }}">
+      {% for group in menu.groups %}
+      <div class="erm-group" data-testid="{{ menu.key }}-rail-group" data-group="{{ group.label }}">
+        <span class="erm-group-name">{{ group.label }}</span>
+        {% for item in group.items %}
+        <a href="{{ item.url }}" class="erm-item{% if item.active %} is-active{% endif %}"{% if item.active %} aria-current="page"{% endif %}>{{ item.label }}</a>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </nav>
+  </div>
+</aside>
+<button type="button" class="erm-show" data-erm-toggle data-testid="{{ menu.key }}-rail-show" aria-controls="{{ menu.key }}-rail" aria-expanded="true" aria-label="Show menu" title="Show menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+<script>
+  (function () {
+    var rail = document.getElementById("{{ menu.key|escapejs }}-rail"), KEY = "railMenu:" + rail.getAttribute("data-rail-key");
+    try { rail.setAttribute("data-state", localStorage.getItem(KEY) === "closed" ? "closed" : "open"); } catch (e) {}
+    function sync() {
+      var open = rail.getAttribute("data-state") === "open";
+      document.querySelectorAll("[data-erm-toggle]").forEach(function (b) { b.setAttribute("aria-expanded", open ? "true" : "false"); });
+    }
+    document.querySelectorAll("[data-erm-toggle]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var next = rail.getAttribute("data-state") === "open" ? "closed" : "open";
+        rail.setAttribute("data-state", next);
+        try { localStorage.setItem(KEY, next); } catch (e) {}
+        sync();
+        window.dispatchEvent(new Event("resize"));
+      });
+    });
+    sync();
+  })();
+</script>
