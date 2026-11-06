@@ -43,7 +43,7 @@ SEGMENTS = [
 # poller ingests, not between two queries in one request.
 _CACHE_TTL_SECONDS = 60
 # Everything cached for the TTL, keyed by the function that fills it.
-_CACHED = ("delivering", "workspaces", "delivered", "first_service", "committed", "fx")
+_CACHED = ("delivering", "workspaces", "delivered", "first_service", "committed", "fixed", "fx")
 _cache: dict = dict.fromkeys(_CACHED) | {"loaded_at": 0.0}
 
 
@@ -60,6 +60,7 @@ def invalidate() -> None:
     from django.core.cache import cache
 
     cache.delete(_SPINE_KEY)
+    cache.delete_many(list(_MONEY_KEYS))
 
 
 def _fresh() -> bool:
@@ -91,6 +92,39 @@ def spine_first_service(refresh: bool = False) -> dict:
 
     out = dict(first_service_by_partner())
     cache.set(_SPINE_KEY, out, _SPINE_TTL_SECONDS)
+    return out
+
+
+# The program page's money figures (`committed_by_program`, `fixed_costs_by_program`)
+# are SUMs over every completed work -- about a second each on production. One was
+# held only in the minute-long process cache and the other not at all, so every load
+# of /labs/marketplace/ paid ~2s of database time (measured 2026-11-06: 36 queries,
+# db_ms ~2,000 of ~2,600). Like the spine above, they are shared across workers in
+# Redis and re-warmed by `marketplace.tasks.warm_network`, so no visitor pays them.
+# Staleness is bounded by the warm interval: money moves when the poller ingests.
+_MONEY_TTL_SECONDS = 30 * 60
+_MONEY_KEYS = {
+    "committed": "marketplace:committed_by_program:v1",
+    "fixed": "marketplace:fixed_costs_by_program:v1",
+}
+
+
+def _shared(name: str, fill, refresh: bool = False):
+    """The process cache, then Redis, then `fill()` -- writing back to both."""
+    from django.core.cache import cache
+
+    if not refresh:
+        if _fresh() and _cache[name] is not None:
+            return _cache[name]
+        hit = cache.get(_MONEY_KEYS[name])
+        if hit is not None:
+            _cache[name] = hit
+            _cache["loaded_at"] = _cache["loaded_at"] or time.monotonic()
+            return hit
+    out = fill()
+    cache.set(_MONEY_KEYS[name], out, _MONEY_TTL_SECONDS)
+    _cache[name] = out
+    _cache["loaded_at"] = _cache["loaded_at"] or time.monotonic()
     return out
 
 
@@ -223,7 +257,12 @@ def fx_rates() -> dict[str, decimal.Decimal]:
     return out
 
 
-def committed_by_program() -> dict[str, dict]:
+def committed_by_program(refresh: bool = False) -> dict[str, dict]:
+    """Per program, through the shared cache (see `_shared`); `_committed_by_program` computes it."""
+    return _shared("committed", _committed_by_program, refresh)
+
+
+def _committed_by_program() -> dict[str, dict]:
     """Per program: what has been deployed, and what live work is still funded.
 
     Two numbers, deliberately built from different things:
@@ -261,9 +300,6 @@ def committed_by_program() -> dict[str, dict]:
     from django.utils import timezone
 
     from connect_labs.pulse.models import PulseOpportunity, PulseWork
-
-    if _fresh() and _cache["committed"] is not None:
-        return _cache["committed"]
 
     today = timezone.now().date()
     rates = fx_rates()
@@ -337,9 +373,6 @@ def committed_by_program() -> dict[str, dict]:
 
     for entry in out.values():
         entry["currencies"] = sorted(entry["currencies"])
-
-    _cache["committed"] = out
-    _cache["loaded_at"] = _cache["loaded_at"] or time.monotonic()
     return out
 
 
@@ -387,11 +420,9 @@ def services_by_program() -> dict[str, int]:
 # see, and the pipeline behind it second (Jonathan, 2026-09-25).
 STATES = (
     ("delivering", "Delivering", "Live on Connect today."),
-    (
-        "design",
-        "In Design and Development",
-        "Organizations have put their names forward. Nothing is live on Connect yet.",
-    ),
+    # No subtitle: the cards already say "N organizations have applied. None has
+    # delivered this program on Connect yet." (Jonathan, 2026-11-06.)
+    ("design", "In Design and Development", ""),
     (
         "funding",
         "Delivered, awaiting funding",
@@ -449,7 +480,12 @@ def _note(card: dict) -> str:
     return "No delivery recorded yet."
 
 
-def fixed_costs_by_program() -> dict[str, int]:
+def fixed_costs_by_program(refresh: bool = False) -> dict[str, int]:
+    """Fixed costs per delivery type, through the shared cache (see `_shared`)."""
+    return _shared("fixed", _fixed_costs_by_program, refresh)
+
+
+def _fixed_costs_by_program() -> dict[str, int]:
     """Start-up and other fixed costs per delivery type, each opportunity's
     spread over its approved work -- `pulse.costs`, the same share the Pulse
     wall uses, so the two agree in either view."""

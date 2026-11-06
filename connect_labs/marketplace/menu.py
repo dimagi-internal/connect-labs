@@ -61,6 +61,7 @@ MARKETPLACE_MENU = Menu(
     ),
     # Public, token-scoped and kiosk pages: no menu, and nothing that leads a visitor out of them.
     never=("/labs/pulse/p/", "/labs/pulse/r/", "/labs/pulse/v/", "/labs/pulse/api/"),
+    sidebar_url_name="marketplace:home",
 )
 
 

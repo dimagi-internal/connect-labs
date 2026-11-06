@@ -48,7 +48,7 @@ utilities, so nothing waits on the stylesheet being rebuilt. The look follows Su
   .erm-hide:focus-visible, .erm-show:focus-visible, .erm-item:focus-visible { outline: 2px solid #3843d0; outline-offset: 1px; }
   @media (prefers-reduced-motion: reduce) { .erm-rail, body:has(.erm-rail) > div.flex-1 { transition: none; } }
 </style>
-<aside id="{{ menu.key }}-rail" class="erm-rail" data-state="open" data-rail-key="{{ menu.key }}"{% if standalone %} data-standalone{% endif %} data-testid="{{ menu.key }}-rail" aria-label="{{ menu.title }} navigation">
+<aside id="{{ menu.key }}-rail" class="erm-rail" data-state="open" data-rail-key="{{ menu.key }}"{% if menu.sidebar_url %} data-sidebar-url="{{ menu.sidebar_url }}"{% endif %}{% if standalone %} data-standalone{% endif %} data-testid="{{ menu.key }}-rail" aria-label="{{ menu.title }} navigation">
   <div class="erm-scroll">
     <div class="erm-head">
       <div>
@@ -78,15 +78,26 @@ utilities, so nothing waits on the stylesheet being rebuilt. The look follows Su
       var open = rail.getAttribute("data-state") === "open";
       document.querySelectorAll("[data-erm-toggle]").forEach(function (b) { b.setAttribute("aria-expanded", open ? "true" : "false"); });
     }
-    document.querySelectorAll("[data-erm-toggle]").forEach(function (b) {
-      b.addEventListener("click", function () {
-        var next = rail.getAttribute("data-state") === "open" ? "closed" : "open";
-        rail.setAttribute("data-state", next);
-        try { localStorage.setItem(KEY, next); } catch (e) {}
-        sync();
-        window.dispatchEvent(new Event("resize"));
+    function toggle() {
+      var next = rail.getAttribute("data-state") === "open" ? "closed" : "open";
+      rail.setAttribute("data-state", next);
+      try { localStorage.setItem(KEY, next); } catch (e) {}
+      sync();
+      window.dispatchEvent(new Event("resize"));
+    }
+    document.querySelectorAll("[data-erm-toggle]").forEach(function (b) { b.addEventListener("click", toggle); });
+    // The section's own icon in the Labs sidebar toggles the rail too, rather than reloading the
+    // section's landing page underneath it. A modified click (new tab) still navigates.
+    var sidebarUrl = rail.getAttribute("data-sidebar-url");
+    if (sidebarUrl && window.matchMedia("(min-width: 768px)").matches) {
+      document.querySelectorAll('#labs-sidenav a[href="' + sidebarUrl + '"]').forEach(function (a) {
+        a.addEventListener("click", function (e) {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+          e.preventDefault();
+          toggle();
+        });
       });
-    });
+    }
     sync();
   })();
 </script>

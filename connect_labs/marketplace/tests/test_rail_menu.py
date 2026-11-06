@@ -110,3 +110,15 @@ def test_the_rail_is_drawn_on_a_page_and_not_for_a_visitor(client, django_user_m
     assert 'data-testid="marketplace-rail"' in page
     assert 'aria-current="page"' in page
     assert ">Calls for partners<" in page
+
+
+def test_the_sidebar_icon_is_wired_to_toggle_the_rail():
+    menu = build(MARKETPLACE_MENU, _req(reverse("pulse:cea")))
+    assert menu["sidebar_url"] == reverse("marketplace:home")
+
+
+@pytest.mark.django_db
+def test_the_rail_carries_the_sidebar_hook(client, django_user_model):
+    client.force_login(django_user_model.objects.create(username="rail-hook"))
+    page = client.get(reverse("marketplace:rounds")).content.decode()
+    assert f'data-sidebar-url="{reverse("marketplace:home")}"' in page

@@ -40,6 +40,9 @@ class Menu:
     groups: tuple[Group, ...]
     # Paths under a listed item that must never carry the menu (public links, kiosk views).
     never: tuple[str, ...] = field(default=())
+    # The Labs sidebar item that opens this section. On a page carrying the rail, clicking
+    # it toggles the rail instead of navigating (Jonathan, 2026-11-06).
+    sidebar_url_name: str = ""
 
 
 def _url(name: str) -> str | None:
@@ -77,4 +80,10 @@ def build(menu: Menu, request) -> dict | None:
     if best is None:
         return None
     best["active"] = True
-    return {"key": menu.key, "title": menu.title, "subtitle": menu.subtitle, "groups": groups}
+    return {
+        "key": menu.key,
+        "title": menu.title,
+        "subtitle": menu.subtitle,
+        "groups": groups,
+        "sidebar_url": _url(menu.sidebar_url_name) if menu.sidebar_url_name else None,
+    }

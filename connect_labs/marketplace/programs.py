@@ -164,6 +164,8 @@ _IMAGES = {
     "tms": ("tms.svg", "50% 50%"),
     "conversation": ("conversation.svg", "50% 50%"),
     "rs": ("rs.svg", "50% 50%"),
+    # Drawn for this page (2026-11-06): a collection point, used batteries stacked for recycling.
+    "ulab": ("ulab.svg", "50% 50%"),
 }
 
 
