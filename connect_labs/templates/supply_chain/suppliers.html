@@ -74,7 +74,7 @@ heard 12 Jun" is the record.
           <td class="text-right"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:supplier_detail' supplier.id %}">Open</a></td>
         </tr>
       {% empty %}
-        <tr><td colspan="11" class="py-6 text-center text-gray-600">No suppliers on file yet.</td></tr>
+        <tr><td colspan="11" class="py-6 text-center text-gray-600">{% if acl_scoped %}You have no suppliers in this programme.{% else %}No suppliers on file yet.{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

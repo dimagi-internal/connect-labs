@@ -35,6 +35,7 @@ from django.db.models import Q
 from connect_labs.labs.access.scopes import UNKNOWABLE, Caller, may_use
 from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain import records, scopes
+from connect_labs.supply_chain.access_enforce import restrict
 from connect_labs.supply_chain.fulfilment.repository import FulfilmentRepositoryMixin
 from connect_labs.supply_chain.history.context import capture_suspended
 from connect_labs.supply_chain.history.models import OperationCall, Revision
@@ -716,7 +717,9 @@ class SupplyDataAccess(
     # ---- tenders ---------------------------------------------------------
 
     def _contracts(self):
-        return Contract.objects.filter(program_id=self._require_program()).select_related("commodity")
+        return restrict(self, Contract.objects.filter(program_id=self._require_program()), Contract).select_related(
+            "commodity"
+        )
 
     def list_contracts(self, tender_id=None, status=None):
         qs = self._contracts()

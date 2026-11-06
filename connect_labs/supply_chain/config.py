@@ -90,6 +90,11 @@ SCHEMA = {
         },
         # How many packs (cartons) one child needs, the default a purchase is sized on. Unset: 1.
         "purchase_packs_per_child": {"type": "number", "exclusiveMinimum": 0},
+        # Relationship ACL, phase 2 (docs/superpowers/specs/2026-11-06-supply-relationship-acl.md). When true, a
+        # partner (a reader who is not the running organisation or platform support) reads only the rows it is
+        # related to, on the main Supply lists and pages. Unset or false: unchanged. Read from the programme layer
+        # only. Check `supply_chain_access_preview` for an organisation first.
+        "acl_enforce_reads": {"type": "boolean"},
     },
     "additionalProperties": False,
 }

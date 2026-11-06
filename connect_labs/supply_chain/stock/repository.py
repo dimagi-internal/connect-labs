@@ -12,6 +12,7 @@ module creates the parent event and lets that decide what the ledger records.
 
 from django.db import transaction
 
+from connect_labs.supply_chain.access_enforce import restrict
 from connect_labs.supply_chain.models import (
     Consignment,
     Custodian,
@@ -36,7 +37,7 @@ class StockRepositoryMixin:
     # ---- supply points ---------------------------------------------------
 
     def _supply_points(self):
-        return SupplyPoint.objects.filter(program_id=self._require_program())
+        return restrict(self, SupplyPoint.objects.filter(program_id=self._require_program()), SupplyPoint)
 
     def list_supply_points(self, opportunity_id=None, kind=None, include_inactive=False):
         qs = self._supply_points()
@@ -106,7 +107,9 @@ class StockRepositoryMixin:
     # ---- the ledger ------------------------------------------------------
 
     def list_movements(self, supply_point_id=None, item_id=None, kind=None, since=None, until=None, limit=500):
-        qs = Movement.objects.for_program(self._require_program()).select_related("commodity")
+        qs = restrict(self, Movement.objects.for_program(self._require_program()), Movement).select_related(
+            "commodity"
+        )
         if supply_point_id is not None:
             qs = qs.touching(self._require_supply_point(supply_point_id))
         if item_id is not None:

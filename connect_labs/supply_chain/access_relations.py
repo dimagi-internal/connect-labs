@@ -9,11 +9,25 @@ carry, one organisation can hold several relations at once (running a
 procurement, bidding on another, receiving goods on a third), and what it may do
 with a row follows from the relations it holds *to that row*.
 
-PHASE 1 (docs/superpowers/specs/2026-11-06-supply-relationship-acl.md): this is
-SHADOW MODE. Nothing here refuses anything; nothing a current user sees changes.
-`relations`, `capabilities` and `scope` exist, are tested, and are observed on
-reads (`access_shadow`) so that phase 2 can swap them in knowing what they would
-hide.
+PHASE 1 (docs/superpowers/specs/2026-11-06-supply-relationship-acl.md) was SHADOW
+MODE: `relations`, `capabilities` and `scope` exist, are tested and are observed on
+reads (`access_shadow`). PHASE 2 enforces them on reads for a partner-standing
+viewer, per programme, behind `acl_enforce_reads` (default off; see
+`access_enforce`). This module itself still refuses nothing: it only says which
+rows a viewer's relationships reach.
+
+Two owner decisions (5 Nov) widen the derivation, and `extended` says whether a
+caller wants them:
+
+  * the receiving partner of an order (`Contract.partner_org`) is its RECEIVER,
+    on the order and on the shipments, receipts, charges and invoices under it;
+  * a supply point below one an organisation manages is that organisation's too
+    (the nearest managing ancestor wins, `stock.services.issues.partner_by_point`),
+    wherever a relation is "manages the point" (SupplyPoint, Movement, the
+    delivery point of an order, the point of a receipt).
+
+`extended=True` is the default. The update-link and marketplace paths pass
+`extended=False` so they keep reaching exactly what they reached before.
 
 Rules this module holds to:
 
@@ -123,10 +137,13 @@ class ModelSpec:
     program_path: str
     program_filter: Callable[[object], dict]
     relations: dict[Relation, tuple[str, ...]] = field(default_factory=dict)
+    # Paths to `Contract.partner_org` that ALSO make an organisation the RECEIVER (owner decision 2).
+    # Left out when a caller asks for `extended=False`, so the update-link path is unchanged.
+    order_partner: tuple[str, ...] = ()
 
 
-def _spec(program_path, relations, program_filter=None) -> ModelSpec:
-    return ModelSpec(program_path, program_filter or _plain_program(program_path), relations)
+def _spec(program_path, relations, program_filter=None, order_partner=()) -> ModelSpec:
+    return ModelSpec(program_path, program_filter or _plain_program(program_path), relations, tuple(order_partner))
 
 
 R = Relation
@@ -160,6 +177,7 @@ MODELS: dict[type, ModelSpec] = {
             R.RECEIVER: ("delivery_supply_point__managed_by_org",),
             R.TENDER_OWNER: ("tender__owner_org",),
         },
+        order_partner=("partner_org",),
     ),
     models.Shipment: _spec(
         "contract__program_id",
@@ -169,11 +187,17 @@ MODELS: dict[type, ModelSpec] = {
             R.RECEIVER: ("contract__delivery_supply_point__managed_by_org",),
             R.TENDER_OWNER: ("contract__tender__owner_org",),
         },
+        order_partner=("contract__partner_org",),
     ),
-    # A charge is a cost: the payee and the buyer see it; the supplier does not.
+    # A charge is a cost: the payee, the buyer and the receiver of the goods it landed see it; the supplier does not.
     models.Charge: _spec(
         "shipment__contract__program_id",
-        {R.PAYEE: ("payee_org",), R.BUYER: ("shipment__contract__buyer_org",)},
+        {
+            R.PAYEE: ("payee_org",),
+            R.BUYER: ("shipment__contract__buyer_org",),
+            R.RECEIVER: ("shipment__contract__delivery_supply_point__managed_by_org",),
+        },
+        order_partner=("shipment__contract__partner_org",),
     ),
     models.Receipt: _spec(
         "supply_point__program_id",
@@ -182,10 +206,21 @@ MODELS: dict[type, ModelSpec] = {
             R.SUPPLIER: ("contract__supplier__org",),
             R.BUYER: ("contract__buyer_org",),
         },
+        order_partner=("contract__partner_org",),
     ),
     models.Invoice: _spec(
         "contract__program_id",
-        {R.SUPPLIER: ("contract__supplier__org",), R.BUYER: ("contract__buyer_org",)},
+        {
+            R.SUPPLIER: ("contract__supplier__org",),
+            R.BUYER: ("contract__buyer_org",),
+            R.RECEIVER: ("contract__delivery_supply_point__managed_by_org",),
+        },
+        order_partner=("contract__partner_org",),
+    ),
+    # Who a supplier approached is the tender owner's business and that supplier's own; competing bidders never see it.
+    models.Outreach: _spec(
+        "tender__program_id",
+        {R.SUPPLIER: ("supplier__org",), R.TENDER_OWNER: ("tender__owner_org",)},
     ),
     models.Commitment: _spec("program_id", {R.OWED_TO: ("owed_to_org",)}),
     models.SupplyPoint: _spec("program_id", {R.POINT_OPERATOR: ("managed_by_org",)}),
@@ -232,25 +267,76 @@ def _in(path: str, org_ids) -> Q:
     return Q(**{f"{path}__in": org_ids})
 
 
-def rows_for(model, org_ids, *, program_id=ANY_PROGRAMME, relations: Iterable[Relation] | None = None):
+def _is_point_org_path(path: str) -> bool:
+    return path == "managed_by_org" or path.endswith("__managed_by_org")
+
+
+def owned_point_ids(program_id, org_ids) -> set[int]:
+    """Supply points in the programme that `org_ids` run, directly or by sitting below a point they run.
+
+    The nearest managing ancestor wins (`partner_by_point`): a field worker under a partner's store is
+    that partner's, unless some other organisation manages the worker's own point.
+    """
+    from connect_labs.supply_chain.stock.services.issues import partner_by_point
+
+    ids = {int(getattr(i, "pk", i)) for i in (org_ids or ()) if i is not None}
+    if not ids or program_id in (None, "") or program_id is ANY_PROGRAMME:
+        return set()
+    return {pk for pk, owner in partner_by_point(int(program_id)).items() if owner in ids}
+
+
+def _paths(spec: ModelSpec, relation: Relation, extended: bool) -> tuple[str, ...]:
+    paths = spec.relations.get(relation, ())
+    if extended and relation is Relation.RECEIVER and spec.order_partner:
+        paths = paths + spec.order_partner
+    return paths
+
+
+def _path_condition(path: str, org_ids, point_ids) -> Q:
+    condition = _in(path, org_ids)
+    if point_ids and _is_point_org_path(path):
+        prefix = path.rpartition("__")[0]
+        condition |= Q(**{f"{prefix}__in": point_ids}) if prefix else Q(pk__in=point_ids)
+    return condition
+
+
+def _condition(spec: ModelSpec, wanted, org_ids, program_id, extended: bool) -> tuple[Q, list[str]]:
+    """The one place a set of relations becomes a filter: `rows_for` and `relations` both read it."""
+    paths = [path for relation in wanted for path in _paths(spec, relation, extended)]
+    points = owned_point_ids(program_id, org_ids) if extended and any(map(_is_point_org_path, paths)) else set()
+    condition = Q()
+    for path in paths:
+        condition |= _path_condition(path, org_ids, points)
+    return condition, paths
+
+
+def rows_for(
+    model,
+    org_ids,
+    *,
+    program_id=ANY_PROGRAMME,
+    relations: Iterable[Relation] | None = None,
+    extended: bool = True,
+):
     """Rows of `model` that `org_ids` hold any of `relations` to (default: every one), optionally in one programme.
 
     `org_ids` may be ids, instances or a queryset of LabsOrg: anything `__in` takes.
     The runner relation is not a path -- it is programme-wide -- so it is not
     here; see `scope_for_orgs`. A row reached through a reverse or many-to-many
     path is selected by `pk__in`, so it is never listed twice.
+
+    `extended` (default True) includes the receiving partner of an order and the
+    supply points below one an organisation manages (needs `program_id`). Callers
+    that must keep their pre-phase-2 reach pass False: the update links.
     """
     spec = spec_for(model)
     wanted = list(spec.relations) if relations is None else [r for r in relations if r in spec.relations]
     queryset = model.objects.all()
     if program_id is not ANY_PROGRAMME:
         queryset = queryset.filter(**spec.program_filter(program_id))
-    paths = [path for relation in wanted for path in spec.relations[relation]]
+    condition, paths = _condition(spec, wanted, org_ids, program_id, extended)
     if not paths:
         return queryset.none()
-    condition = Q()
-    for path in paths:
-        condition |= _in(path, org_ids)
     if any(_crosses_many(model, path) for path in paths):
         return queryset.filter(pk__in=model.objects.filter(condition).values("pk"))
     return queryset.filter(condition)
@@ -303,14 +389,13 @@ def relations(viewer_org_ids, obj) -> set[Relation]:
     model = type(obj)
     spec = MODELS[model]
     held: set[Relation] = set()
-    runner = runner_org_id(_program_of(obj))
+    program_id = _program_of(obj)
+    runner = runner_org_id(program_id)
     if runner is not None and runner in ids:
         held.add(Relation.RUNNER)
-    for relation, paths in spec.relations.items():
-        condition = Q()
-        for path in paths:
-            condition |= _in(path, ids)
-        if model.objects.filter(pk=obj.pk).filter(condition).exists():
+    for relation in spec.relations:
+        condition, paths = _condition(spec, [relation], ids, program_id, True)
+        if paths and model.objects.filter(pk=obj.pk).filter(condition).exists():
             held.add(relation)
     return held
 
@@ -380,7 +465,7 @@ def _viewer_org_ids(access) -> frozenset[int]:
 # ---- a viewer's scope ------------------------------------------------------
 
 
-def scope_for_orgs(org_ids, program_id, model, *, is_programme: bool = False):
+def scope_for_orgs(org_ids, program_id, model, *, is_programme: bool = False, extended: bool = True):
     """The rows of `model` in `program_id` that `org_ids` may see.
 
     `is_programme` (programme or operator standing, or a system caller) returns
@@ -399,7 +484,7 @@ def scope_for_orgs(org_ids, program_id, model, *, is_programme: bool = False):
     runner = runner_org_id(program_id)
     if runner is not None and runner in ids:
         return programme_rows(model, program_id)
-    return rows_for(model, ids, program_id=program_id)
+    return rows_for(model, ids, program_id=program_id, extended=extended)
 
 
 def scope(access, model):

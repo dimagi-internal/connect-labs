@@ -258,7 +258,15 @@ def call_operation(
         require_programme_standing(access, operation)
     payload = stamp_provenance(access, operation, payload)
     if not operation.is_write:
-        result = operation.handler(access, **payload)
+        from connect_labs.supply_chain.access_enforce import enforced_model, scoped_reads
+
+        own_rows = enforced_model(operation.name)
+        if own_rows is not None:
+            # Relationship ACL phase 2: scoped for a partner when the programme has switched it on (access_enforce).
+            with scoped_reads(access, own_rows):
+                result = operation.handler(access, **payload)
+        else:
+            result = operation.handler(access, **payload)
         # Shadow mode (relationship ACL phase 1): log what a relationship scope would hide. Never
         # alters or blocks the result; see access_shadow.py.
         from connect_labs.supply_chain.access_shadow import observe_read

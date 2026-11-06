@@ -336,7 +336,7 @@ def _own_quotes(orgs):
     # Through the relationship layer (the supplier relation of a Quote); pinned equal to the
     # hand-written filter this replaced by tests/test_access_relations_equivalence.py.
     return (
-        access_relations.rows_for(Quote, orgs, relations=(Relation.SUPPLIER,))
+        access_relations.rows_for(Quote, orgs, relations=(Relation.SUPPLIER,), extended=False)
         .filter(entered_by="supplier")
         .select_related("tender", "commodity", "supplier__org", "item")
         .order_by("-created_at")
