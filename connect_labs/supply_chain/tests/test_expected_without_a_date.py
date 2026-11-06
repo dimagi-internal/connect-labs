@@ -84,7 +84,7 @@ class TestAnArrivalDateThatIsNot:
     def test_a_consignment_with_no_promised_date_says_the_date_is_unknown(self, scoped, world):
         _undated_donation(world)
         line = _consignment_lines(_stock_page(scoped))
-        assert "expected:" in line, "the scenario needs the consignment to be owed at all"
+        assert "400 jerry cans" in line, "the scenario needs the consignment to be owed at all"
         assert "no date given" in line.lower(), line
 
     def test_it_is_not_dressed_as_overdue(self, scoped, world):
