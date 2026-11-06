@@ -36,6 +36,7 @@ doing if labs proves long-lived enough to justify the import work.
 | `labs-access-logs.yml`       | ALB access-log S3 bucket, its delivery policy, and a 90-day retention lifecycle                                                                                                                                                                                                                                                                                                                                                                      | The ALB itself (logging is switched on via a CLI attribute — see below)                                              |
 | `labs-email.yml`             | SES domain identity + DKIM, `labs-jj-email` configuration set, `labs-jj-email-events` SNS topic + event destination, scoped `ses:SendEmail` managed policy                                                                                                                                                                                                                                                                                           | ECS task role (policy attaches by name), the DNS zone, SES production access                                         |
 | `labs-observe-readonly.yml`  | `labs-jj-observe-readonly` role + managed policy: read-only, non-sensitive observability (metrics, alarms, ALB/ECS/RDS/ElastiCache/stack metadata) with explicit denies on log events, object bodies, secrets, task-definition env and DB data                                                                                                                                                                                                       | canopy runner instance roles + canopy-web's task role (they need their own `sts:AssumeRole` grant), Identity Center  |
+| `labs-agent-readwrite.yml`   | `labs-jj-agent-readwrite` role (canopy `labs-readwrite`): labs-read's reads plus snapshot/restore/modify/delete of agent-named RDS copies and a one-off psql client task; production is source-only; IAM/Organizations changes denied                                                                                                                                                                                                                | canopy-web's task role, Identity Center (with a `canopy-*` SourceIdentity)                                           |
 | `labs-media.yml`             | `labs-media-uploads` inline policy: Get/Put on `media/*` in the exports bucket, where `default_storage` (supply documents) writes                                                                                                                                                                                                                                                                                                                    | ECS task role, the exports bucket (private; its ListBucket grant is out-of-band)                                     |
 | `labs-overture.yml`          | `labs-overture-snapshots` inline policy: Delete on `overture/snapshots/*` in the exports bucket, so `overture_refresh` can prune Overture snapshots older than the rollback (Get/Put/List are out-of-band)                                                                                                                                                                                                                                           | ECS task role, the exports bucket                                                                                    |
 | `labs-synthetic-jobs.yml`    | `labs-synthetic-jobs` inline policy: `ecs:RunTask` from the worker family on the labs cluster, `ListTasks`/`StopTask`/`DescribeTasks`/`DescribeServices`/`DescribeTaskDefinition`, and `iam:PassRole` for the task + execution roles -- so each synthetic job runs on a standalone Fargate task a deploy does not stop (`labs/synthetic/ecs_runner.py`); the `labs-jj-synthetic-job-overran` and `-machine-died` alarms and their log metric filters | ECS task role, execution role, the cluster, the worker log group, the alert topic (`labs-jj-alert-topic-arn` export) |
@@ -392,6 +393,41 @@ until it is enabled and its `pi:Dimensions` gate is tested live.
 Anything sensitive (raw application logs, the HIPAA telemetry review, raw ALB
 access logs, task overrides, CloudTrail request parameters, alarm enable/disable)
 stays on the `labs` SSO admin path with a person's approval.
+
+### Agent read-write access (`labs-jj-agent-readwrite`, canopy `labs-readwrite`)
+
+AI agents get two named roles; people keep the `labs` SSO profile. `labs-read`
+is the observe role above (IAM name unchanged). `labs-readwrite`
+(`labs-agent-readwrite.yml`, stack `labs-jj-agent-readwrite`) is what an agent
+uses when it must change something. Its first job is rehearsing a Postgres major
+upgrade on a copy of `labs-jj-postgres`:
+
+- **Reads:** everything labs-read reads (its allow policy is attached).
+- **RDS writes:** only on instances named `labs-jj-agent-*` / `labs-jj-pg-rehearsal*`
+  and snapshots / parameter groups named `labs-jj-agent-*`. Production is only a
+  SOURCE (snapshot it, restore it to a point in time). An explicit deny stops
+  Delete/Modify/Reboot/Stop on `labs-jj-postgres`, deleting any snapshot not named
+  `labs-jj-agent-*`, cluster and automated-backup deletes, and sharing or exporting
+  snapshots.
+- **One task:** `ecs:RunTask` of `labs-jj-agent-pgclient` (the postgres 18 image, no
+  secrets, no task role) on `labs-jj-cluster`, and reading its log group
+  `/labs-jj/agent/pgclient`. A restored copy holds production data, so whatever
+  the task selects shows up in that log group. Keep queries to counts, versions
+  and extension lists.
+- **Never:** IAM, Organizations, Identity Center or audit-trail changes, plus
+  labs-read's sensitive-read denies (raw logs, objects, secrets, task env).
+
+Trust names canopy-web's task role (which vends it only to the agents canopy-web
+lists) and SSO users, and every assume must set a `canopy-*` SourceIdentity, so
+CloudTrail names the agent. Cloud-runner box brokers are not trusted, because they
+cannot verify which agent is asking.
+
+```bash
+aws cloudformation deploy --profile labs --region us-east-1 \
+  --stack-name labs-jj-agent-readwrite \
+  --template-file infra/labs-agent-readwrite.yml \
+  --capabilities CAPABILITY_NAMED_IAM
+```
 
 ### Deploy: observe pipeline (scrubbed derivatives)
 
