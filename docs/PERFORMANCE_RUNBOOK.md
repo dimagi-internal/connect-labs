@@ -586,13 +586,27 @@ use the same `labs-jj-postgres`. So answer "which service?" from metrics before 
   For canopy-web, a page in one or two buckets is usually its own migrating deploy (`gh run list
   -R dimagi-internal/canopy-web -w "Deploy to Labs (AWS)"`, #2404, #2454).
 - **ELB 5xx** (`labs-jj-alb-5xx-high`) has no target-group dimension, and target 5xx cannot see
-  it. A task that died sent nothing. Find the service that lost its targets:
+  it. A task that died sent nothing. Find the service that has no tasks:
 
   ```bash
-  aws cloudwatch get-metric-data --profile labs-observe --region us-east-1 \
-    --start-time <page-30m>Z --end-time <page>Z --metric-data-queries \
-    '[{"Id":"q","Period":60,"Expression":"SELECT MIN(HealthyHostCount) FROM SCHEMA(\"AWS/ApplicationELB\", LoadBalancer, TargetGroup) GROUP BY TargetGroup"}]'
+  aws ecs describe-services --profile labs-observe --region us-east-1 \
+    --cluster labs-jj-cluster \
+    --services labs-jj-web labs-jj-canopy-web labs-jj-ace-web labs-jj-umami \
+    --query 'services[].[serviceName,desiredCount,runningCount]' --output text
   ```
+
+  **Desired 0 on every service is a deliberate stop, not a crash.** It is usually database
+  maintenance; a manual snapshot of `labs-jj-postgres` taken at the same minute confirms it
+  (`aws rds describe-db-snapshots --profile labs-observe --region us-east-1
+  --db-instance-identifier labs-jj-postgres --snapshot-type manual`). Find the change that owns
+  the window before doing anything else.
+
+  **Don't answer this question from `HealthyHostCount`.** A target group with no registered
+  targets emits **no datapoint**. It doesn't report 0. So `MIN(HealthyHostCount)` shows every
+  service healthy right up to the last minute before the stop, and then shows nothing.
+  (2026-11-06 21:34Z, the PG 16→18 cutover: all five services at desired 0, every site 503, and
+  this query returned no value below 1.) Read it only for *partial* loss, where a service
+  still has some targets registered.
 
 - **No healthy targets** (`labs-jj-web-no-healthy-targets`), or a target group that dipped above:
   date the task deaths and replacements. `<svc>` is `labs-jj-web`, `labs-jj-canopy-web`,
