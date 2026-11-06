@@ -374,12 +374,12 @@ class PulseWork(models.Model):
     service_slug = models.CharField(max_length=48, blank=True, db_index=True)
     # Denormalised from the opportunity (works carry no GPS of their own) so
     # money can be grouped by country without a join on every card.
-    country = models.CharField(max_length=2, blank=True, db_index=True)
+    country = models.CharField(max_length=2, blank=True)
 
     status = models.CharField(max_length=32, db_index=True)
     created_ts = models.DateTimeField(db_index=True)
     status_ts = models.DateTimeField(null=True, blank=True)
-    payment_date = models.DateTimeField(null=True, blank=True, db_index=True)
+    payment_date = models.DateTimeField(null=True, blank=True)
 
     approved_count = models.IntegerField(default=0)
     completed_count = models.IntegerField(default=0)
@@ -389,7 +389,6 @@ class PulseWork(models.Model):
     class Meta:
         indexes = [
             models.Index(fields=["created_ts", "opportunity_id"]),
-            models.Index(fields=["status", "created_ts"]),
         ]
 
     def __str__(self) -> str:

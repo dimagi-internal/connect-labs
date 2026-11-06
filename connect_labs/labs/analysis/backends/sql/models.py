@@ -138,7 +138,7 @@ class ComputedVisitCache(models.Model):
 
     # Visit identification
     visit_id = models.CharField(max_length=255, db_index=True)
-    username = models.CharField(max_length=255, db_index=True)
+    username = models.CharField(max_length=255)
 
     # Base visit fields (denormalized from RawVisitCache to avoid joins)
     visit_date = models.DateField(null=True, blank=True)
@@ -207,17 +207,16 @@ class ComputedEntityCache(models.Model):
     # See ComputedVisitCache.pipeline_id — same #116-style isolation gap, fixed
     # the same way.
     pipeline_id = models.IntegerField(null=True, blank=True, db_index=True)
-    config_hash = models.CharField(max_length=32, db_index=True, help_text="Hash of analysis config")
+    config_hash = models.CharField(max_length=32, help_text="Hash of analysis config")
     visit_count = models.IntegerField(help_text="Visit count when cached, for invalidation")
     expires_at = models.DateTimeField(db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     # Entity identification
-    entity_id = models.CharField(max_length=255, db_index=True)
+    entity_id = models.CharField(max_length=255)
     entity_name = models.CharField(max_length=500, blank=True)
     username = models.CharField(
         max_length=255,
-        db_index=True,
         blank=True,
         help_text="Representative FLW (typically first(username) per entity)",
     )
