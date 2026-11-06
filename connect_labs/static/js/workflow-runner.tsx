@@ -21,6 +21,7 @@ import {
   type Warming,
 } from '@/components/workflow/warming';
 import { LoadingStrip } from '@/components/workflow/LoadingStrip';
+import { createSharedReads } from '@/components/workflow/sharedReads';
 import { createAgentSelection } from '@/components/workflow/agentSelection';
 import type { FramePayload } from '@/components/workflow/sandbox/protocol';
 import type { RouteContext } from '@/components/workflow/sandbox/routes';
@@ -946,7 +947,66 @@ function WorkflowRunner({
   );
 
   const queryPipelineRowsUrl = initialData.apiEndpoints?.queryPipelineRows;
+  // Identical pipeline queries in flight at once share one request (sharedReads.ts).
+  const pipelineQueries = useMemo(
+    () => createSharedReads<PipelineRowsQueryResult, [string, Warming?]>(),
+    [],
+  );
   const actions = useMemo(() => {
+    // One request to /pipeline-query/, polling while a cold cache warms.
+    const queryPipelineRowsOnce = async (
+      url: URL,
+      alias: string,
+      body: Omit<PipelineRowsQuery, 'onStatus' | 'timeoutMs'>,
+      onStatus: (message: string, warming?: Warming) => void,
+      timeoutMs: number | undefined,
+    ): Promise<PipelineRowsQueryResult> => {
+      const read = async () => {
+        const response = await fetch(url.toString(), {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken,
+          },
+          body: JSON.stringify({ alias, ...body }),
+        });
+        let data: Record<string, unknown> = {};
+        try {
+          data = await response.json();
+        } catch {
+          throw new Error(`queryPipelineRows: server error ${response.status}`);
+        }
+        return { response, data };
+      };
+      let answer: Awaited<ReturnType<typeof read>>;
+      try {
+        answer = await pollWhileWarming(read, {
+          warmingOf: ({ response, data }) => warmingFrom(response.status, data),
+          onWarming: (warming) => onStatus(warming.message, warming),
+          timeoutMs: timeoutMs ?? 10 * 60 * 1000,
+        });
+      } catch (e) {
+        if (e instanceof WarmingTimeout) {
+          throw new Error(
+            `queryPipelineRows: the ${alias} pipeline is still loading; try again shortly.`,
+          );
+        }
+        throw e;
+      }
+      const { response, data } = answer;
+      if (!response.ok || data.status !== 'ready') {
+        throw new Error(
+          String(data.error || `queryPipelineRows: HTTP ${response.status}`),
+        );
+      }
+      return {
+        rows: (data.rows as Record<string, unknown>[]) || [],
+        total: Number(data.total) || 0,
+        limit: Number(data.limit) || 0,
+        offset: Number(data.offset) || 0,
+      };
+    };
     return {
       ...createActionHandlers(csrfToken),
       // Server-side rows of one pipeline alias (filters/search/order/page in
@@ -963,54 +1023,13 @@ function WorkflowRunner({
         const { onStatus, timeoutMs, ...body } = query;
         const url = new URL(queryPipelineRowsUrl, window.location.origin);
         applyScopeParams(url.searchParams);
-        const read = async () => {
-          const response = await fetch(url.toString(), {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRFToken': csrfToken,
-            },
-            body: JSON.stringify({ alias, ...body }),
-          });
-          let data: Record<string, unknown> = {};
-          try {
-            data = await response.json();
-          } catch {
-            throw new Error(
-              `queryPipelineRows: server error ${response.status}`,
-            );
-          }
-          return { response, data };
-        };
-        let answer: Awaited<ReturnType<typeof read>>;
-        try {
-          answer = await pollWhileWarming(read, {
-            warmingOf: ({ response, data }) =>
-              warmingFrom(response.status, data),
-            onWarming: (warming) => onStatus?.(warming.message, warming),
-            timeoutMs: timeoutMs ?? 10 * 60 * 1000,
-          });
-        } catch (e) {
-          if (e instanceof WarmingTimeout) {
-            throw new Error(
-              `queryPipelineRows: the ${alias} pipeline is still loading; try again shortly.`,
-            );
-          }
-          throw e;
-        }
-        const { response, data } = answer;
-        if (!response.ok || data.status !== 'ready') {
-          throw new Error(
-            String(data.error || `queryPipelineRows: HTTP ${response.status}`),
-          );
-        }
-        return {
-          rows: (data.rows as Record<string, unknown>[]) || [],
-          total: Number(data.total) || 0,
-          limit: Number(data.limit) || 0,
-          offset: Number(data.offset) || 0,
-        };
+        const key = JSON.stringify([url.toString(), alias, body]);
+        return pipelineQueries.run(
+          key,
+          (broadcast) =>
+            queryPipelineRowsOnce(url, alias, body, broadcast, timeoutMs),
+          onStatus,
+        );
       },
       // One supply source on demand (supply_sources.py), e.g. a worker's timeline:
       // querySupply('timeline', {args: {supply_point_id: 7}, opportunity_id: 10113}).
@@ -1139,6 +1158,7 @@ function WorkflowRunner({
     querySupplyUrl,
     queryWorkflowUrl,
     applyScopeParams,
+    pipelineQueries,
   ]);
 
   // useRunView: abstracts snapshot-vs-live data reads and exposes view.complete().
