@@ -88,3 +88,52 @@ test('the centroid of a multipolygon is its largest part', () => {
   };
   assert.deepEqual(P.centroid(g), [12, 12]);
 });
+
+test('a country is an area at level 0 keyed by its code', () => {
+  const d = P.countryDesc('NGA', 'NG', 'Nigeria');
+  assert.equal(d.key, 'country:NGA');
+  assert.equal(d.level, 0);
+  assert.equal(d.source, 'overture');
+  assert.equal(d.country, 'NGA');
+  assert.deepEqual(d.ref, {
+    boundary_id: 'country:NGA',
+    alpha2: 'NG',
+    subtype: 'country',
+  });
+});
+
+test('country search puts names that start with the query first', () => {
+  const countries = [
+    { alpha3: 'NER', name: 'Niger' },
+    { alpha3: 'NGA', name: 'Nigeria' },
+    { alpha3: 'GNQ', name: 'Equatorial Guinea' },
+    { alpha3: 'GIN', name: 'Guinea' },
+  ];
+  assert.deepEqual(
+    P.matchCountries(countries, 'guin').map((c) => c.alpha3),
+    ['GIN', 'GNQ'],
+  );
+  assert.deepEqual(
+    P.matchCountries(countries, 'nga').map((c) => c.alpha3),
+    ['NGA'],
+  );
+  assert.deepEqual(P.matchCountries(countries, '  '), []);
+});
+
+test('bounds covers every ring of a multipolygon', () => {
+  const b = P.bounds([
+    [
+      [
+        [0, 0],
+        [2, 1],
+      ],
+    ],
+    [
+      [
+        [-3, 5],
+        [1, -4],
+      ],
+    ],
+  ]);
+  assert.deepEqual(b, [-3, -4, 2, 5]);
+});

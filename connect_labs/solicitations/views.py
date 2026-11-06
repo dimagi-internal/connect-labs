@@ -211,7 +211,8 @@ def _area_picker(request, name, *, initial=(), limits=(), input_id="", empty_tex
     """One service-area map for `_service_area_picker.html`.
 
     With `input_id` it is a picker writing to that hidden input, searching and
-    fetching boundaries through the sign-in-only microplans endpoints; without
+    fetching boundaries through the sign-in-only microplans endpoints; the
+    person chooses the level they pick at (a country, down to a ward). Without
     one it only draws `initial` (picked areas) and `limits` (dashed).
     """
     picker = {
@@ -223,14 +224,18 @@ def _area_picker(request, name, *, initial=(), limits=(), input_id="", empty_tex
         "level_labels": service_areas.level_labels(),
         "empty_text": empty_text,
     }
-    if input_id and not limits:
+    if input_id:
         from connect_labs.microplans.core import iso
 
-        # No limits: the person says which country they mean before searching it.
-        picker["countries"] = iso.all_countries()
-    if input_id:
+        levels = service_areas.pick_levels(limits)
         picker.update(
             {
+                # The levels the person may pick at, and the one the map starts on:
+                # countries when they may pick a country, else the coarsest allowed.
+                "levels": levels,
+                "level": levels[0],
+                # For the country search; the map itself draws countries from Mapbox.
+                "countries": iso.all_countries(),
                 "input_id": input_id,
                 "csrf": get_token(request),
                 "urls": {

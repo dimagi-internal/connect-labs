@@ -337,8 +337,8 @@
             </fieldset>
             <div x-show="mode === 'within'" x-cloak>
                 <p class="text-sm text-gray-600 mb-3">
-                    Click an area on the map to choose it (use <strong>Select parent</strong> in the panel to choose the state or district around it),
-                    or search for it by name in the map's panel. Respondents can then pick only areas inside these.
+                    Choose the level under <strong>Pick by</strong> (whole countries, or the states, districts or wards within them),
+                    then click areas on the map (click again to drop one) or search by name. Respondents can then pick only areas inside these.
                 </p>
                 {% include "solicitations/_service_area_picker.html" with picker=area_picker %}
                 {% for err in form.service_area_limits.errors %}<p class="mt-2 text-sm text-red-600">{{ err }}</p>{% endfor %}

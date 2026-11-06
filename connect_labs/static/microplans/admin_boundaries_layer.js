@@ -21,6 +21,10 @@
  *     isAreaPhase: () => true,               // gate area mutation
  *     onAreaAdd: (boundaryId, geometry, feature) => {},   // host: draw.add + refreshAreaStats
  *     onAreaRemove: (boundaryId) => {},                   // host: remove from draw + refresh
+ *     // Optional, for a host that owns its own chrome (solicitations' area picker):
+ *     getLevel: () => 2 | null,   // draw, click and search ONE level; null = every level, smallest wins
+ *     navHost: element,           // mount the source / search / results here, not in the panel
+ *     onHover: (desc | null) => {},  // the boundary under the cursor, as a descriptor
  *   });
  */
 (function (global) {
@@ -63,6 +67,9 @@
     const isAreaPhase = opts.isAreaPhase || (() => false);
     const onAreaAdd = opts.onAreaAdd || function () {};
     const onAreaRemove = opts.onAreaRemove || function () {};
+    const getLevel = opts.getLevel || (() => null);
+    const navHost = opts.navHost || null;
+    const onHover = opts.onHover || function () {};
     // Two-arm sampling support. When armEnabled() is true, each selected boundary
     // carries its own intervention/comparison arm, set via a per-row pill in the
     // rail. onAreaAdd's 4th arg + onArmChange let the host tag the boundary's draw
@@ -144,9 +151,10 @@
       // the rail is for configuration actions, not a data overview.
       body.style.display = 'none';
       controlsHost.appendChild(body);
-    } else {
+    } else if (!navHost) {
       body.insertBefore(sourceBody, body.firstChild); // no host: source + controls together
     }
+    if (navHost) navHost.appendChild(sourceBody);
 
     function setStatus(t) {
       statusEl.textContent = t || '';
@@ -387,6 +395,8 @@
       // program's real country (the bbox already scopes labs geographically).
       if (iso && (hostIso || source !== 'labs')) params.set('iso', iso);
       if (source) params.set('source', source);
+      const level = getLevel();
+      if (level != null) params.set('level', String(level));
       if (fetchCtrl) fetchCtrl.abort();
       fetchCtrl = new AbortController();
       setStatus('Loading boundaries…');
@@ -523,6 +533,7 @@
       if (map.getLayer(HOVER)) map.setFilter(HOVER, filt);
       if (map.getLayer(FILL_HOVER)) map.setFilter(FILL_HOVER, filt);
       panel.setInspect(inspectHTML(f, point), false);
+      onHover(featToDesc(f));
     }
     function clearHover() {
       const none = ['==', ['get', 'boundary_id'], '__none__'];
@@ -530,6 +541,7 @@
       if (map.getLayer(FILL_HOVER)) map.setFilter(FILL_HOVER, none);
       if (pinned) panel.setInspect(pinned, false);
       else panel.clearInspect();
+      onHover(null);
     }
     function pinInspect(f, point) {
       const node = inspectHTML(f, point);
@@ -1564,7 +1576,7 @@
       setStatus('Searching…');
       try {
         const perLevel = await Promise.all(
-          [1, 2, 3].map((level) =>
+          (getLevel() != null ? [getLevel()] : [1, 2, 3]).map((level) =>
             M.post(
               urls.areas,
               { country, level, q, source: source || undefined },
@@ -1659,7 +1671,7 @@
       color: COLOR,
       onToggle: (on) => {
         if (on) {
-          layer.setBody(controlsHost ? sourceBody : body);
+          if (!navHost) layer.setBody(controlsHost ? sourceBody : body);
           renderHint();
           renderSummary();
           ensureLayers();

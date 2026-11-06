@@ -1,28 +1,38 @@
 /*
- * Service-area picker for solicitations: pick admin areas at ANY level (a whole
- * state, an LGA, a few wards) on a map, for
- *   - a call's owner, naming the areas the work must be inside, and
- *   - a respondent, naming where they would do the work.
+ * The area picker for solicitations: name where work happens, as whole countries
+ * or admin areas at any level beneath them, on one map. Used by
+ *   - a call's owner, naming the areas the work must be inside,
+ *   - a respondent, naming where they would do the work, and
+ *   - read-only maps of either (no urls).
  *
- * It reuses the microplans boundary layer wholesale (as boundary_bulk_picker.js
- * does): MicroplansAdminBoundaries draws every level, picks the smallest area
- * under a click, offers "Select parent" to climb a level, and searches every
- * level by name. This file owns only the selected list, the hidden input the
- * form posts, and (for a respondent on a limited call) the limits drawn on the
- * map, with picks outside them refused.
+ * The person chooses the LEVEL they pick at (Country, State, LGA, Ward: each
+ * country's own words), and that one switch decides what the map outlines,
+ * what a click selects and what the search finds. Clicking an area picks it;
+ * clicking it again drops it. Any number of areas, at mixed levels, may be
+ * picked; the server drops one already inside another.
+ *
+ *   - Countries (level 0) are drawn from Mapbox's country tiles, so the whole
+ *     world is clickable without fetching an outline. The server resolves a
+ *     picked country's outline itself (Overture, by its code).
+ *   - Levels 1+ reuse the microplans boundary layer wholesale
+ *     (MicroplansAdminBoundaries), always on, asked for one level at a time;
+ *     its search box mounts in this picker's toolbar. Its layers card is not
+ *     shown: the boundaries are simply there.
  *
  * The hidden input carries descriptors only. The server resolves each area's
- * geometry itself and is the judge of "inside the limits"
- * (solicitations/service_areas.py); the check here is a courtesy.
+ * geometry and is the judge of "inside the limits" (solicitations/
+ * service_areas.py); the check here is a courtesy.
  *
  *   SolServiceAreaPicker.create({
- *     wrap, mapEl, listEl, input,   // elements (wrap is position:relative)
+ *     wrap, mapEl, listEl, toolsEl, input,  // elements (wrap is position:relative)
  *     token, csrf,
  *     urls: { viewport, areas, geometry },  // omit for a read-only map
  *     initial: [area],              // stored areas (with geometry)
  *     limits: [area],               // the call's limits, drawn dashed
- *     country: 'NGA' | null,
- *     levelLabels: { default: {1: '...'}, NGA: {1: 'State', ...} },
+ *     levels: [0, 1, 2, 3],         // levels the person may pick at
+ *     level: 0,                     // the level the map starts on
+ *     countries: [{alpha2, alpha3, name}],
+ *     levelLabels: { default: {0: 'Country', 1: '...'}, NGA: {1: 'State', ...} },
  *     emptyText: 'No areas picked yet.',
  *     onChange: (count) => {},
  *   })
@@ -114,6 +124,59 @@
         })),
     };
   }
+  // A whole country as an area descriptor. Its identity is its code, so a pick
+  // made on the map and the stored area compare equal (service_areas.area_key).
+  function countryDesc(alpha3, alpha2, name) {
+    const key = 'country:' + alpha3;
+    return {
+      key,
+      name: name || alpha3,
+      level: 0,
+      source: 'overture',
+      country: alpha3,
+      region: '',
+      parent_name: '',
+      ref: { boundary_id: key, alpha2: alpha2 || '', subtype: 'country' },
+    };
+  }
+  // [west, south, east, north] of any GeoJSON coordinates (nested arrays).
+  function bounds(coords, acc) {
+    acc = acc || [180, 90, -180, -90];
+    if (!coords || !coords.length) return acc;
+    if (typeof coords[0] === 'number') {
+      acc[0] = Math.min(acc[0], coords[0]);
+      acc[1] = Math.min(acc[1], coords[1]);
+      acc[2] = Math.max(acc[2], coords[0]);
+      acc[3] = Math.max(acc[3], coords[1]);
+      return acc;
+    }
+    coords.forEach((c) => bounds(c, acc));
+    return acc;
+  }
+  // Countries whose name matches a typed query, best (prefix) matches first.
+  function matchCountries(countries, q, limit) {
+    q = (q || '').trim().toLowerCase();
+    if (!q) return [];
+    const starts = [],
+      contains = [];
+    (countries || []).forEach((c) => {
+      const n = (c.name || '').toLowerCase();
+      if (n.startsWith(q) || (c.alpha3 || '').toLowerCase() === q)
+        starts.push(c);
+      else if (n.includes(q)) contains.push(c);
+    });
+    return starts.concat(contains).slice(0, limit || 8);
+  }
+
+  // Mapbox's own country polygons: one per country in the "US" worldview.
+  const COUNTRY_TILES = 'mapbox://mapbox.country-boundaries-v1';
+  const COUNTRY_LAYER = 'country_boundaries';
+  const WORLDVIEW = [
+    'any',
+    ['==', 'all', ['get', 'worldview']],
+    ['in', 'US', ['get', 'worldview']],
+  ];
+  const ISO3 = ['get', 'iso_3166_1_alpha_3'];
 
   // ---- the picker -----------------------------------------------------------
   function create(opts) {
@@ -122,8 +185,13 @@
     const limits = opts.limits || [];
     const labels = opts.levelLabels || {};
     const listEl = opts.listEl || null;
+    const toolsEl = opts.toolsEl || null;
     const input = opts.input || null;
     const onChange = opts.onChange || function () {};
+    const countries = opts.countries || [];
+    const levels =
+      opts.levels && opts.levels.length ? opts.levels.slice() : [1, 2, 3];
+    let level = levels.indexOf(opts.level) !== -1 ? opts.level : levels[0];
     const M = global.Microplans;
     const esc =
       (M && M.esc) ||
@@ -133,20 +201,45 @@
           (c) => '&#' + c.charCodeAt(0) + ';',
         ));
 
-    // id -> { desc, geometry }
+    // key -> { desc, geometry }
     const selected = new Map();
     (opts.initial || []).forEach((a) => {
       if (a && a.key) selected.set(a.key, { desc: a, geometry: a.geometry });
     });
+    const pickedCountries = () =>
+      Array.from(selected.values())
+        .map((v) => v.desc || {})
+        .filter((d) => Number(d.level) === 0)
+        .map((d) => d.country);
 
-    // The country searched and drawn. A limited call's is its limits'; otherwise
-    // the person chooses it (the boundary layer would otherwise guess it from
-    // whatever is in view, and search the wrong country).
-    let chosen = opts.country || null;
+    let map = null;
+    let adminLayer = null;
+    let hoverText = '';
+
+    // The country a sub-national level searches and draws: the call's, else the
+    // one under the middle of the map, else the last country picked.
+    function centreCountry() {
+      if (!map || !map.getLayer('sap-country-fill')) return null;
+      try {
+        const hit = map.queryRenderedFeatures(map.project(map.getCenter()), {
+          layers: ['sap-country-fill'],
+        })[0];
+        return (hit && hit.properties.iso_3166_1_alpha_3) || null;
+      } catch (e) {
+        return null;
+      }
+    }
     function country() {
-      if (chosen) return chosen;
-      const first = limits[0] || (selected.values().next().value || {}).desc;
+      if (limits[0] && limits[0].country) return limits[0].country;
+      const c = centreCountry();
+      if (c) return c;
+      const picked = pickedCountries();
+      if (picked.length) return picked[picked.length - 1];
+      const first = (selected.values().next().value || {}).desc;
       return (first && first.country) || null;
+    }
+    function label(lvl) {
+      return levelLabel(labels, lvl, country());
     }
 
     function writeInput() {
@@ -167,7 +260,6 @@
       input.value = JSON.stringify(out);
     }
 
-    let adminLayer = null;
     function renderList(message) {
       if (!listEl) return;
       listEl.innerHTML = '';
@@ -218,16 +310,29 @@
       listEl.appendChild(ul);
     }
 
-    let map = null;
     function drawPicked() {
-      if (!map || !map.getSource('sap-picked')) return;
-      const items = [];
-      selected.forEach((v) => items.push({ geometry: v.geometry }));
-      map.getSource('sap-picked').setData(featureCollection(items));
+      if (!map) return;
+      if (map.getSource('sap-picked')) {
+        // Countries are filled from the country tiles below; this draws the rest.
+        const items = [];
+        selected.forEach((v) => {
+          if (Number((v.desc || {}).level) !== 0)
+            items.push({ geometry: v.geometry });
+        });
+        map.getSource('sap-picked').setData(featureCollection(items));
+      }
+      if (map.getLayer('sap-country-picked'))
+        map.setFilter('sap-country-picked', [
+          'all',
+          WORLDVIEW,
+          ['in', ISO3, ['literal', pickedCountries()]],
+        ]);
     }
     function remove(id) {
       if (!selected.has(id)) return;
-      if (adminLayer && adminLayer.removeArea) adminLayer.removeArea(id);
+      const lvl = Number((selected.get(id).desc || {}).level);
+      if (lvl !== 0 && adminLayer && adminLayer.removeArea)
+        adminLayer.removeArea(id);
       selected.delete(id);
       changed();
     }
@@ -235,23 +340,189 @@
       writeInput();
       renderList(message);
       drawPicked();
+      renderStatus();
       onChange(selected.size);
+    }
+
+    // ---- toolbar: the level switch and the search -------------------------
+    let levelBar = null,
+      countrySearch = null,
+      countryResults = null,
+      navHost = null,
+      statusEl = null;
+    function renderLevels() {
+      if (!levelBar) return;
+      levelBar.querySelectorAll('button').forEach((b) => {
+        const lvl = Number(b.dataset.level);
+        const on = lvl === level;
+        b.textContent = label(lvl);
+        b.setAttribute('aria-checked', on ? 'true' : 'false');
+        b.className =
+          'px-3 py-1.5 text-sm font-medium transition-colors ' +
+          (on
+            ? 'bg-brand-deep-purple text-white'
+            : 'bg-white text-gray-700 hover:bg-gray-50');
+      });
+    }
+    function renderStatus() {
+      if (!statusEl) return;
+      const n = selected.size;
+      const what = level === 0 ? 'a country' : 'an area';
+      statusEl.textContent =
+        hoverText ||
+        (n ? n + ' picked. ' : '') +
+          'Click ' +
+          what +
+          ' on the map to pick it, and again to drop it.';
+    }
+    function buildToolbar() {
+      if (readOnly || !toolsEl) return;
+      toolsEl.innerHTML = '';
+      const row = document.createElement('div');
+      row.className = 'flex flex-wrap items-start gap-x-4 gap-y-2';
+      if (levels.length > 1) {
+        const group = document.createElement('div');
+        group.className = 'flex items-center gap-2';
+        group.innerHTML =
+          '<span class="text-sm font-medium text-gray-700">Pick by</span>';
+        levelBar = document.createElement('div');
+        levelBar.setAttribute('role', 'radiogroup');
+        levelBar.setAttribute('aria-label', 'Pick areas by');
+        levelBar.setAttribute('data-testid', 'sap-levels');
+        levelBar.className =
+          'inline-flex flex-wrap rounded-lg border border-gray-300 overflow-hidden divide-x divide-gray-300';
+        levels.forEach((lvl) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.dataset.level = String(lvl);
+          b.setAttribute('role', 'radio');
+          b.addEventListener('click', () => setLevel(lvl));
+          levelBar.appendChild(b);
+        });
+        group.appendChild(levelBar);
+        row.appendChild(group);
+      }
+      const search = document.createElement('div');
+      search.className = 'relative flex-1 min-w-[14rem]';
+      if (levels.indexOf(0) !== -1) {
+        countrySearch = document.createElement('input');
+        countrySearch.type = 'search';
+        countrySearch.className = 'base-input w-full';
+        countrySearch.placeholder = 'Search for a country…';
+        countrySearch.setAttribute('data-testid', 'sap-country-search');
+        countrySearch.setAttribute('aria-label', 'Search for a country');
+        countryResults = document.createElement('div');
+        countryResults.className =
+          'absolute left-0 right-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden';
+        countryResults.hidden = true;
+        countrySearch.addEventListener('input', renderCountryResults);
+        countrySearch.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter') return;
+          e.preventDefault(); // never submit the form from the search box
+          const first = matchCountries(countries, countrySearch.value, 1)[0];
+          if (first) pickFromSearch(first);
+        });
+        search.appendChild(countrySearch);
+        search.appendChild(countryResults);
+      }
+      // The boundary layer's own source + search + results land here.
+      navHost = document.createElement('div');
+      navHost.className = 'sap-nav text-sm';
+      search.appendChild(navHost);
+      row.appendChild(search);
+      toolsEl.appendChild(row);
+      statusEl = document.createElement('p');
+      statusEl.className = 'text-xs text-gray-500 mt-2';
+      statusEl.setAttribute('aria-live', 'polite');
+      toolsEl.appendChild(statusEl);
+      renderLevels();
+      renderStatus();
+    }
+    function renderCountryResults() {
+      const hits = matchCountries(countries, countrySearch.value, 8);
+      countryResults.innerHTML = '';
+      countryResults.hidden = !hits.length;
+      const picked = pickedCountries();
+      hits.forEach((c) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className =
+          'flex w-full items-center justify-between px-3 py-1.5 text-left text-sm hover:bg-purple-50';
+        b.innerHTML =
+          '<span>' +
+          esc(c.name) +
+          '</span>' +
+          (picked.indexOf(c.alpha3) !== -1
+            ? '<span class="text-xs text-purple-700">picked · click to drop</span>'
+            : '');
+        b.addEventListener('click', () => pickFromSearch(c));
+        countryResults.appendChild(b);
+      });
+    }
+    function pickFromSearch(c) {
+      toggleCountry(countryDesc(c.alpha3, c.alpha2, c.name));
+      countrySearch.value = '';
+      countryResults.hidden = true;
+      flyToCountry(c);
+    }
+    function showSearchFor() {
+      if (countrySearch) countrySearch.hidden = level !== 0;
+      if (countrySearch && level !== 0) countryResults.hidden = true;
+      if (navHost) {
+        navHost.hidden = level === 0;
+        const q = navHost.querySelector('.mp-ab-search');
+        if (q) {
+          q.placeholder = 'Search for a ' + label(level) + ' by name…';
+          q.classList.remove('text-xs');
+        }
+      }
+    }
+
+    // ---- picking ------------------------------------------------------------
+    function toggleCountry(desc) {
+      if (selected.has(desc.key)) {
+        selected.delete(desc.key);
+      } else {
+        selected.set(desc.key, { desc, geometry: null });
+      }
+      changed();
+    }
+    function setLevel(lvl) {
+      if (lvl === level || levels.indexOf(lvl) === -1) return;
+      const wasCountry = level === 0;
+      level = lvl;
+      renderLevels();
+      showSearchFor();
+      hoverText = '';
+      renderStatus();
+      if (!map) return;
+      paintCountries();
+      if (!adminLayer) return;
+      if (level === 0) {
+        adminLayer.disable();
+        return;
+      }
+      // From the world view into a country: go to the country just picked (else
+      // the one in view) first, so there are boundaries to pick from.
+      if (wasCountry && map.getZoom() < 4)
+        zoomToCountry(pickedCountries().slice(-1)[0] || country());
+      if (adminLayer.isOn()) adminLayer.refresh();
+      else adminLayer.enable();
     }
 
     writeInput();
     renderList();
+    buildToolbar();
 
     if (!opts.mapEl || !opts.token || !global.mapboxgl)
       return { count: () => selected.size };
-    if (!readOnly && !limits.length && (opts.countries || []).length)
-      countryPicker();
     mapboxgl.accessToken = opts.token;
     try {
       map = new mapboxgl.Map({
         container: opts.mapEl,
         style: 'mapbox://styles/mapbox/light-v11',
-        center: [8.6753, 9.082],
-        zoom: 3,
+        center: [15, 5],
+        zoom: 2,
       });
     } catch (e) {
       return { count: () => selected.size }; // no WebGL: the list still works
@@ -260,39 +531,37 @@
       new mapboxgl.NavigationControl({ showCompass: false }),
       'bottom-left',
     );
+    // The map can be dragged taller or shorter: keep the canvas filling it.
+    if (global.ResizeObserver && opts.wrap)
+      new ResizeObserver(() => map.resize()).observe(opts.wrap);
 
-    // A "Country" select above the map, for a call with no limits.
-    function countryPicker() {
-      const label = document.createElement('label');
-      label.className = 'flex items-center gap-2 text-sm text-gray-700 mb-2';
-      label.innerHTML = '<span class="font-medium">Country</span>';
-      const select = document.createElement('select');
-      select.className = 'base-dropdown max-w-xs';
-      select.setAttribute('data-testid', 'sap-country');
-      const current = country();
-      select.innerHTML =
-        '<option value="">Choose a country…</option>' +
-        opts.countries
-          .map(
-            (c) =>
-              '<option value="' +
-              esc(c.alpha3) +
-              '"' +
-              (c.alpha3 === current ? ' selected' : '') +
-              '>' +
-              esc(c.name) +
-              '</option>',
-          )
-          .join('');
-      select.addEventListener('change', () => {
-        chosen = select.value || null;
-        const picked = opts.countries.find((c) => c.alpha3 === chosen);
-        if (picked) flyToCountry(picked);
-        if (adminLayer && adminLayer.refresh) adminLayer.refresh();
-      });
-      label.appendChild(select);
-      opts.wrap.parentNode.insertBefore(label, opts.wrap);
-      return select;
+    function zoomToCountry(a3) {
+      if (!a3) return;
+      let box = null;
+      try {
+        map
+          .querySourceFeatures('sap-countries', {
+            sourceLayer: COUNTRY_LAYER,
+            filter: ['==', ISO3, a3],
+          })
+          .forEach((f) => {
+            box = bounds(f.geometry && f.geometry.coordinates, box);
+          });
+      } catch (e) {
+        box = null;
+      }
+      if (box && box[0] <= box[2]) {
+        map.fitBounds(
+          [
+            [box[0], box[1]],
+            [box[2], box[3]],
+          ],
+          { padding: 32, duration: 600 },
+        );
+        return;
+      }
+      const c = countries.find((x) => x.alpha3 === a3);
+      if (c) flyToCountry(c);
     }
     async function flyToCountry(c) {
       try {
@@ -300,7 +569,7 @@
           'https://api.mapbox.com/geocoding/v5/mapbox.places/' +
             encodeURIComponent(c.name) +
             '.json?types=country&limit=1&country=' +
-            encodeURIComponent(c.alpha2.toLowerCase()) +
+            encodeURIComponent((c.alpha2 || '').toLowerCase()) +
             '&access_token=' +
             encodeURIComponent(opts.token),
         );
@@ -314,14 +583,16 @@
             { padding: 24, duration: 600 },
           );
       } catch (e) {
-        /* the search still works; the person pans there */
+        /* the person pans there */
       }
     }
 
     function fit() {
       const items = limits.length
         ? limits
-        : Array.from(selected.values()).map((v) => ({ geometry: v.geometry }));
+        : Array.from(selected.values())
+            .filter((v) => v.geometry)
+            .map((v) => ({ geometry: v.geometry }));
       if (!items.length || !M || !M.fitTo) return;
       try {
         M.fitTo(map, featureCollection(items), {
@@ -334,7 +605,101 @@
       }
     }
 
+    // Countries are outlined at every level, and clickable at level 0.
+    function paintCountries() {
+      if (!map.getLayer('sap-country-line')) return;
+      const picking = level === 0 && !readOnly;
+      map.setPaintProperty(
+        'sap-country-line',
+        'line-color',
+        picking ? PICK : '#6b7280',
+      );
+      map.setPaintProperty(
+        'sap-country-line',
+        'line-width',
+        picking ? 1.2 : 0.8,
+      );
+      // Below the country level, a picked country is a backdrop for the areas in it.
+      map.setPaintProperty(
+        'sap-country-picked',
+        'fill-opacity',
+        level === 0 ? 0.25 : 0.1,
+      );
+      if (!picking)
+        map.setFilter('sap-country-hover', ['==', ISO3, '__none__']);
+    }
+    function addCountries() {
+      map.addSource('sap-countries', { type: 'vector', url: COUNTRY_TILES });
+      map.addLayer({
+        id: 'sap-country-fill',
+        type: 'fill',
+        source: 'sap-countries',
+        'source-layer': COUNTRY_LAYER,
+        filter: WORLDVIEW,
+        paint: { 'fill-color': PICK, 'fill-opacity': 0 },
+      });
+      map.addLayer({
+        id: 'sap-country-hover',
+        type: 'fill',
+        source: 'sap-countries',
+        'source-layer': COUNTRY_LAYER,
+        filter: ['==', ISO3, '__none__'],
+        paint: { 'fill-color': PICK, 'fill-opacity': 0.12 },
+      });
+      map.addLayer({
+        id: 'sap-country-picked',
+        type: 'fill',
+        source: 'sap-countries',
+        'source-layer': COUNTRY_LAYER,
+        filter: ['==', ISO3, '__none__'],
+        paint: { 'fill-color': PICK, 'fill-opacity': 0.25 },
+      });
+      map.addLayer({
+        id: 'sap-country-line',
+        type: 'line',
+        source: 'sap-countries',
+        'source-layer': COUNTRY_LAYER,
+        filter: WORLDVIEW,
+        paint: { 'line-color': '#6b7280', 'line-width': 0.8 },
+      });
+      paintCountries();
+      if (readOnly) return;
+      map.on('mousemove', 'sap-country-fill', (e) => {
+        if (level !== 0 || !e.features.length) return;
+        const p = e.features[0].properties;
+        map.getCanvas().style.cursor = 'pointer';
+        map.setFilter('sap-country-hover', ['==', ISO3, p.iso_3166_1_alpha_3]);
+        const on = selected.has('country:' + p.iso_3166_1_alpha_3);
+        hoverText =
+          (p.name_en || p.name) +
+          (on ? ': picked. Click to drop it.' : ': click to pick it.');
+        renderStatus();
+      });
+      map.on('mouseleave', 'sap-country-fill', () => {
+        if (level !== 0) return;
+        map.getCanvas().style.cursor = '';
+        map.setFilter('sap-country-hover', ['==', ISO3, '__none__']);
+        hoverText = '';
+        renderStatus();
+      });
+      map.on('click', 'sap-country-fill', (e) => {
+        if (level !== 0 || !e.features.length) return;
+        const p = e.features[0].properties;
+        toggleCountry(
+          countryDesc(p.iso_3166_1_alpha_3, p.iso_3166_1, p.name_en || p.name),
+        );
+        hoverText = '';
+        renderStatus();
+      });
+      // The level names follow the country in view (State and LGA in Nigeria).
+      map.on('moveend', () => {
+        renderLevels();
+        showSearchFor();
+      });
+    }
+
     map.on('load', () => {
+      addCountries();
       map.addSource('sap-limits', {
         type: 'geojson',
         data: featureCollection(limits),
@@ -393,22 +758,39 @@
         map.moveLayer('sap-limits-line');
         limitsOnTop = true;
       });
-      const panel = MicroplansMapPanel.create({ map, mount: opts.wrap });
-      const rail = document.createElement('div');
-      rail.style.display = 'none';
-      opts.wrap.appendChild(rail);
+      // The layer needs a panel to register with; this picker draws its own
+      // controls, so the panel (its on/off switch and inspector) stays hidden.
+      const panel = MicroplansMapPanel.create({
+        map,
+        mount: opts.wrap,
+        tabs: ['layers'],
+      });
+      panel.el.style.display = 'none';
       adminLayer = MicroplansAdminBoundaries.register({
         panel,
         map,
         csrf: opts.csrf,
-        controlsHost: rail,
+        navHost,
         urls: {
           viewport: urls.viewport,
           geometry: urls.geometry,
           areas: urls.areas,
         },
         getCountryIso: country,
-        isAreaPhase: () => true,
+        getLevel: () => (level > 0 ? level : null),
+        isAreaPhase: () => level > 0,
+        onHover: (desc) => {
+          hoverText = desc
+            ? desc.name +
+              ' (' +
+              levelLabel(labels, desc.level, desc.country) +
+              ')' +
+              (selected.has(desc.key)
+                ? ': picked. Click to drop it.'
+                : ': click to pick it.')
+            : '';
+          renderStatus();
+        },
         onAreaAdd: (id, geometry, desc) => {
           if (insideAny(geometry, limits) === false) {
             // Not inside the call's areas: undo the layer's pick and say why.
@@ -430,17 +812,25 @@
       });
       if (adminLayer.restore) {
         adminLayer.restore(
-          Array.from(selected.entries()).map(([id, v]) => ({
-            ...v.desc,
-            boundary_id: id,
-            geometry: v.geometry,
-          })),
+          Array.from(selected.entries())
+            .filter(([, v]) => Number((v.desc || {}).level) !== 0)
+            .map(([id, v]) => ({
+              ...v.desc,
+              boundary_id: id,
+              geometry: v.geometry,
+            })),
         );
       }
-      adminLayer.enable();
+      showSearchFor();
+      if (level > 0) adminLayer.enable();
     });
 
-    return { count: () => selected.size, map: () => map };
+    return {
+      count: () => selected.size,
+      map: () => map,
+      level: () => level,
+      setLevel,
+    };
   }
 
   // Start every map the page declares (_service_area_picker.html renders a
@@ -462,6 +852,7 @@
         wrap: byId('wrap'),
         mapEl: byId('map'),
         listEl: byId('list'),
+        toolsEl: byId('tools'),
         input: cfg.input_id ? document.getElementById(cfg.input_id) : null,
         token: cfg.token,
         csrf: cfg.csrf,
@@ -472,6 +863,8 @@
         levelLabels: cfg.level_labels,
         emptyText: cfg.empty_text,
         countries: cfg.countries,
+        levels: cfg.levels,
+        level: cfg.level,
       });
     });
   }
@@ -487,5 +880,8 @@
     insideAny,
     centroid,
     inGeometry,
+    countryDesc,
+    matchCountries,
+    bounds,
   };
 })(typeof window !== 'undefined' ? window : globalThis);
