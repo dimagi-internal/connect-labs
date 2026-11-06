@@ -319,7 +319,9 @@ def _outcome_figures(counts, undecided):
 # wanted, in terms its review skills describe ("AI-review a marketplace EOI
 # round"; "write the round's evaluation criteria"). Kept here, not in a
 # template, so a test can pin them.
-AI_REVIEW_ASK = "Start the AI review of this EOI round: score every response on the round's criteria and write the shortlist."
+AI_REVIEW_ASK = (
+    "Start the AI review of this EOI round: score every response on the round's criteria and write the shortlist."
+)
 CRITERIA_ASK = (
     "This EOI round has no evaluation criteria yet. Propose criteria for it from its responses, "
     "for me to approve, so the AI review can start."
