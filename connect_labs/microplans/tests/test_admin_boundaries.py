@@ -962,3 +962,34 @@ class TestViewportEndpoint:
 
         _login_labs(client, django_user_model)
         assert client.get(reverse("microplans:boundary_viewport"), {"bbox": "nope"}).status_code == 400
+
+
+@pytest.mark.django_db
+class TestCountryLevels:
+    """Countries differ in depth: the levels on offer come from the data."""
+
+    def test_levels_are_what_any_source_has_for_the_country(self):
+        _make_boundary("Borno", 1, _SQUARE, "ng-bo")
+        _make_boundary("Settlement", 4, _SQUARE, "ng-s1")
+
+        class TwoLevels(BoundarySource):
+            name = "two"
+
+            def covers(self, country3, level):
+                return level in (0, 1, 2)
+
+        resolver = BoundaryResolver(sources=[LabsAdminBoundarySource(), TwoLevels()])
+        # labs adds the fourth level it holds; the country itself (0) is never a sub-level
+        assert resolver.levels_for("NGA") == [1, 2, 4]
+        assert resolver.levels_for("KEN") == [1, 2]
+
+    def test_the_levels_endpoint_needs_a_login_and_a_country(self, client, django_user_model):
+        from django.urls import reverse
+
+        url = reverse("microplans:boundary_levels")
+        assert client.get(url + "?iso=NG").status_code in (302, 403)
+        _login_labs(client, django_user_model)
+        assert client.get(url).status_code == 400
+        body = client.get(url + "?iso=NG").json()
+        # No labs boundaries here, so Overture's three levels
+        assert body == {"status": "ok", "country": "NGA", "levels": [1, 2, 3]}
