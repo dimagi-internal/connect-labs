@@ -779,6 +779,68 @@ class TestOvertureViewport:
         # Overture can't prune the parquet without a country; no iso -> empty, no query.
         assert OvertureBoundarySource().list_in_bbox(_bbox(*_AROUND_SQUARE), iso=None) == []
 
+    def test_a_viewport_never_fetches_whole_countries_unless_asked(self, monkeypatch):
+        # A country outline is huge and the map draws countries from its own tiles.
+        captured = {}
+
+        def fake_bbox(a2, bbox_wkt, subtypes=None, simplify=None, limit=1500):
+            captured["subtypes"] = subtypes
+            return []
+
+        monkeypatch.setattr(ab.boundaries, "list_admin_areas_in_bbox", fake_bbox)
+        OvertureBoundarySource().list_in_bbox(_bbox(*_AROUND_SQUARE), iso="NGA")
+        assert captured["subtypes"] == ["region", "county", "locality"]
+        OvertureBoundarySource().list_in_bbox(_bbox(*_AROUND_SQUARE), iso="NGA", levels=[ab.LEVEL_COUNTY])
+        assert captured["subtypes"] == ["county"]
+
+
+class TestWholeCountries:
+    """Level 0 is a whole country: Overture's ``country`` subtype, found by code."""
+
+    def test_level_zero_is_a_country_everywhere(self):
+        assert ab.level_label(ab.LEVEL_COUNTRY) == "Country"
+        assert ab.level_label(ab.LEVEL_COUNTRY, "NGA") == "Country"
+        assert OvertureBoundarySource().covers("NGA", ab.LEVEL_COUNTRY)
+
+    def test_a_countrys_outline_is_looked_up_as_the_country_subtype(self, monkeypatch):
+        seen = {}
+
+        def fake_geom(a2, name, subtype, region=None):
+            seen.update(a2=a2, subtype=subtype)
+            return {"type": "Polygon", "coordinates": []}
+
+        monkeypatch.setattr(ab.boundaries, "get_admin_area_geojson", fake_geom)
+        area = AdminArea(name="Nigeria", level=0, source="overture", country="NGA", ref={"alpha2": "NG"})
+        assert OvertureBoundarySource().get_geometry(area)["type"] == "Polygon"
+        assert seen == {"a2": "NG", "subtype": "country"}
+
+    def test_the_country_query_ignores_the_name_and_takes_the_land_outline(self, monkeypatch):
+        from connect_labs.microplans.core import boundaries
+
+        ran = {}
+
+        class Con:
+            def execute(self, sql, params):
+                ran.update(sql=" ".join(sql.split()), params=params)
+                return self
+
+            def fetchall(self):
+                return [('{"type": "Polygon", "coordinates": []}',)]
+
+        monkeypatch.setattr(boundaries.overture, "connect", lambda: Con())
+        monkeypatch.setattr(boundaries, "_division_area", lambda: "divisions.parquet")
+        monkeypatch.setattr(boundaries, "_key", lambda *parts: "test-" + str(abs(hash(parts))))
+        geom = boundaries.get_admin_area_geojson("CI", "Ivory Coast", "country", region="CI-AB")
+        assert geom["type"] == "Polygon"
+        # A map's name for a country need not be Overture's, so only the code is matched;
+        # of its land and maritime outlines, the smaller (land) one comes first.
+        assert ran["params"] == ["CI", "country"]
+        assert "names.primary = ?" not in ran["sql"] and "ORDER BY ST_Area(geometry)" in ran["sql"]
+
+        boundaries.get_admin_area_geojson("NG", "Jere", "county", region="NG-BO")
+        assert ran["params"] == ["NG", "county", "Jere", "NG-BO"]
+        assert "ORDER BY" not in ran["sql"]
+
 
 @pytest.mark.django_db
 class TestResolverViewport:

@@ -26,6 +26,7 @@ def _square(x0, y0, x1, y1):
 
 
 SHAPES = {
+    "Nigeria": _square(3, 4, 14, 14),
     "Kano": _square(8, 11, 9, 12),
     "Gwale": _square(8.4, 11.4, 8.5, 11.5),
     "Lagos": _square(3, 6, 4, 7),
@@ -97,6 +98,30 @@ def test_a_ward_inside_a_picked_state_is_dropped_and_duplicates_collapse():
 def test_an_area_the_resolver_cannot_find_is_refused_by_name():
     with pytest.raises(ValidationError, match="could not find the boundary of Atlantis"):
         service_areas.normalise([area("Atlantis", 1)], field="service_areas")
+
+
+def country(name, alpha3, alpha2):
+    key = f"country:{alpha3}"
+    return {
+        "name": name,
+        "level": 0,
+        "source": "overture",
+        "country": alpha3,
+        "ref": {"boundary_id": key, "alpha2": alpha2, "subtype": "country"},
+    }
+
+
+def test_a_whole_country_is_an_area_at_level_zero_and_swallows_what_is_inside_it():
+    stored = service_areas.normalise([KANO, country("Nigeria", "NGA", "NG"), GWALE], field="service_areas")
+    assert [(a["name"], a["level"], a["level_label"], a["key"]) for a in stored] == [
+        ("Nigeria", 0, "Country", "country:NGA")
+    ]
+
+
+def test_a_picker_offers_every_level_or_none_coarser_than_the_calls_limits():
+    assert service_areas.pick_levels() == [0, 1, 2, 3]
+    assert service_areas.pick_levels([{"level": 1}, {"level": 2}]) == [1, 2, 3]
+    assert service_areas.pick_levels([{"level": 0}]) == [0, 1, 2, 3]
 
 
 def test_an_area_missing_its_level_or_source_is_refused():
@@ -235,6 +260,8 @@ def test_the_respond_page_draws_the_calls_limits_and_saves_the_picked_areas(clie
     page = client.get(reverse("solicitations:respond", kwargs={"pk": call.public_id})).content.decode()
     assert "Where would you do this work?" in page and "This call covers Kano (State)" in page
     assert reverse("microplans:boundary_areas") in page
+    # Inside a state, the map offers the state and what is beneath it, never a country.
+    assert '"levels": [1, 2, 3], "level": 1' in page
     resp = client.post(
         reverse("solicitations:respond", kwargs={"pk": call.public_id}),
         {"org": "firm-org", "question_q1": "x", "service_areas": json.dumps([GWALE]), "submit": "1"},

@@ -1,10 +1,20 @@
 {% comment %}
   One service-area map (solicitations/service_area_picker.js). `picker` comes
-  from views._area_picker: with an input it is a picker, without one a
-  read-only map of the areas.
+  from views._area_picker: with an input it is a picker (a level switch and a
+  search above a map the person can drag taller), without one a read-only map
+  of the areas.
 {% endcomment %}
+{% if picker.input_id %}
+<div id="sap-{{ picker.id }}-tools" class="mb-3" data-testid="sap-tools"></div>
+<div id="sap-{{ picker.id }}-wrap" class="relative w-full rounded-lg overflow-hidden border border-gray-200 mb-3"
+     style="height: min(36rem, 70vh); min-height: 16rem; max-height: 90vh; resize: vertical;"
+     title="Drag the bottom-right corner to make the map taller or shorter">
+  <div id="sap-{{ picker.id }}-map" class="w-full h-full"></div>
+</div>
+{% else %}
 <div id="sap-{{ picker.id }}-wrap" class="relative w-full {{ height|default:'h-96' }} rounded-lg overflow-hidden border border-gray-200 mb-3">
   <div id="sap-{{ picker.id }}-map" class="w-full h-full"></div>
 </div>
+{% endif %}
 <div id="sap-{{ picker.id }}-list" aria-live="polite"></div>
 {{ picker|json_script:picker.script_id }}

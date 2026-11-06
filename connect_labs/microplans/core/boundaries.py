@@ -105,11 +105,20 @@ def get_admin_area_geojson(country_iso2: str, name: str, subtype: str, region: s
     if cached is not None:
         return cached
 
-    where = ["country = ?", "subtype = ?", "names.primary = ?"]
-    params: list = [country_iso2, subtype, name]
-    if region:
+    # A whole country is found by its code alone: the name a map shows for it
+    # ("Ivory Coast") need not be the one Overture stores ("Côte d'Ivoire").
+    # Overture holds a land and a maritime outline per country; the land one is
+    # the smaller, so it comes first.
+    whole_country = subtype == "country"
+    where = ["country = ?", "subtype = ?"]
+    params: list = [country_iso2, subtype]
+    if not whole_country:
+        where.append("names.primary = ?")
+        params.append(name)
+    if region and not whole_country:
         where.append("region = ?")
         params.append(region)
+    order = "ORDER BY ST_Area(geometry)" if whole_country else ""
 
     con = overture.connect()
     rows = con.execute(
@@ -117,6 +126,7 @@ def get_admin_area_geojson(country_iso2: str, name: str, subtype: str, region: s
         SELECT ST_AsGeoJSON(geometry) AS geojson
         FROM read_parquet('{_division_area()}', filename=false, hive_partitioning=true)
         WHERE {' AND '.join(where)}
+        {order}
         LIMIT 1
         """,
         params,

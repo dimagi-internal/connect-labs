@@ -8,6 +8,10 @@ A call limits geography in one of three ways (`area_mode`):
   respondent picks any admin areas, at any level, that lie inside them.
 * ``any`` -- neither; the respondent picks any admin areas anywhere.
 
+Levels are the boundary resolver's: 0 is a whole country (several may be
+picked), then 1-3 down to a ward. The map lets the person choose the level they
+pick at (`pick_levels`).
+
 Admin areas come from the microplans boundary resolver (labs' curated
 boundaries first, Overture everywhere else), so a respondent can pick a state,
 an LGA or a ward, whichever describes where they work.
@@ -107,7 +111,8 @@ def normalise(raw, *, field: str) -> list[dict]:
 
     areas, seen = [], set()
     for i, desc in enumerate(raw):
-        if not isinstance(desc, dict) or any(not desc.get(k) for k in _DESCRIPTOR_KEYS):
+        # `level` may be 0 (a whole country), so "missing" means absent or blank.
+        if not isinstance(desc, dict) or any(desc.get(k) in (None, "") for k in _DESCRIPTOR_KEYS):
             raise ValidationError({field: f"area {i + 1} needs a name, level, source and country"})
         try:
             level = int(desc["level"])
@@ -210,8 +215,21 @@ def without_geometry(areas: list[dict]) -> list[dict]:
     return [{k: v for k, v in a.items() if k != "geometry"} for a in areas or []]
 
 
+def pick_levels(limits=()) -> list[int]:
+    """The levels a picker offers: all of them, or, inside a call's limits, none
+    coarser than the coarsest limit (a call limited to a state cannot be
+    answered with a whole country)."""
+    from connect_labs.microplans.core.admin_boundaries import LEVEL_COUNTRY, LEVEL_LOCALITY
+
+    levels = list(range(LEVEL_COUNTRY, LEVEL_LOCALITY + 1))
+    limit_levels = [int(lim["level"]) for lim in limits or [] if str(lim.get("level", "")).isdigit()]
+    if limit_levels:
+        levels = [lvl for lvl in levels if lvl >= min(limit_levels)]
+    return levels
+
+
 def level_labels() -> dict:
-    """Each country's words for levels 1-3, plus the generic ones, for the map's chips."""
+    """Each country's words for its levels (0 is the country itself), plus the generic ones, for the map."""
     from connect_labs.microplans.core.admin_boundaries import COUNTRY_LEVEL_LABELS, LEVEL_LABELS
 
     return {"default": LEVEL_LABELS, **COUNTRY_LEVEL_LABELS}

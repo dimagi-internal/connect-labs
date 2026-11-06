@@ -41,10 +41,15 @@ logger = logging.getLogger(__name__)
 # the ``iso`` module inside the method body).
 _iso = iso
 
-LEVEL_REGION, LEVEL_COUNTY, LEVEL_LOCALITY = 1, 2, 3
+LEVEL_COUNTRY, LEVEL_REGION, LEVEL_COUNTY, LEVEL_LOCALITY = 0, 1, 2, 3
+# The sub-national levels a viewport draws when no level is asked for. A whole
+# country (level 0) is only fetched by name: its outline is huge, and the map
+# draws countries from Mapbox's own tiles.
+SUBNATIONAL_LEVELS = (LEVEL_REGION, LEVEL_COUNTY, LEVEL_LOCALITY)
 # Country-agnostic fallback labels (shown when we don't have a country-specific
 # vocabulary). The canonical LEVEL numbers never change — this is display only.
 LEVEL_LABELS = {
+    LEVEL_COUNTRY: "Country",
     LEVEL_REGION: "Region / State",
     LEVEL_COUNTY: "County / District / LGA",
     LEVEL_LOCALITY: "Locality / Ward",
@@ -70,7 +75,12 @@ def level_label(level: int, country: str | None = None) -> str:
     return LEVEL_LABELS.get(level, f"ADM{level}")
 
 
-_LEVEL_TO_OVERTURE = {LEVEL_REGION: "region", LEVEL_COUNTY: "county", LEVEL_LOCALITY: "locality"}
+_LEVEL_TO_OVERTURE = {
+    LEVEL_COUNTRY: "country",
+    LEVEL_REGION: "region",
+    LEVEL_COUNTY: "county",
+    LEVEL_LOCALITY: "locality",
+}
 _OVERTURE_TO_LEVEL = {v: k for k, v in _LEVEL_TO_OVERTURE.items()}
 
 DEFAULT_SOURCE_ORDER: tuple[str, ...] = ("labs", "geopode", "grid3", "geoboundaries", "overture")
@@ -544,7 +554,7 @@ class OvertureBoundarySource(BoundarySource):
         a2 = _iso.to_alpha2(iso) if iso else None
         if not a2:
             return []
-        subtypes = [_LEVEL_TO_OVERTURE[lvl] for lvl in (levels or _LEVEL_TO_OVERTURE) if lvl in _LEVEL_TO_OVERTURE]
+        subtypes = [_LEVEL_TO_OVERTURE[lvl] for lvl in (levels or SUBNATIONAL_LEVELS) if lvl in _LEVEL_TO_OVERTURE]
         rows = boundaries.list_admin_areas_in_bbox(
             a2, bbox.wkt, subtypes=subtypes, simplify=(tolerance or None), limit=limit
         )
