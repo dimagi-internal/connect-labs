@@ -70,9 +70,8 @@ accessibility tree); from md up it is always visible.
         </div>
 
         <!-- Navigation Items -->
-        {# The two sides of the marketplace, and calls for partners. The supplier  #}
-        {# market and the solicitations directory are public, so they are offered #}
-        {# to everyone; the partners' side needs a labs sign-in.                  #}
+        {# The marketplace, calls for partners and the programme's supply chain. The #}
+        {# solicitations directory is public, so it is offered to everyone.        #}
         <div class="mt-5">
             {% if request.user.is_authenticated %}
                 {% url 'marketplace:home' as marketplace_url %}
@@ -87,7 +86,8 @@ accessibility tree); from md up it is always visible.
                 {% url 'supply_chain:home' as supply_home_url %}
                 {% include "components/sidenav-items.html" with name='Supply' icon='boxes-stacked' target=supply_home_url namespace='supply_chain' except_prefix=supply_market_url %}
             {% endif %}
-            {% include "components/sidenav-items.html" with name='Supply marketplace' icon='store' target=supply_market_url path_prefix=supply_market_url %}
+            {# No sidebar item for the supplier marketplace (Jonathan, 2026-11-06): it is reached from #}
+            {# the Marketplace menu (Suppliers) and the Supply rail's foot, and by the link a tender sends. #}
         </div>
         {% if request.user.is_authenticated %}
           {% if request.org %}
