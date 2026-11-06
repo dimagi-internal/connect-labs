@@ -344,8 +344,8 @@ def test_canopys_problem_sentences_link_what_they_name(env, client, staff, canop
     client.force_login(staff)
     page = client.get(reverse(URL)).content.decode()
     assert '<a class="text-blue-600 underline" href="https://canopy.example/x/y" target="_blank"' in page
-    # "canopy › Connected sites" links to canopy's page in labs' tenant.
-    assert 'href="https://canopy.example/w/connect/settings/connected-apps"' in page
+    # "canopy › Host sites" links to canopy's page in labs' tenant.
+    assert 'href="https://canopy.example/w/connect/settings/host-sites"' in page
     # A reason in an attribute stays plain text.
     assert not any("<a" in title for title in re.findall(r'title="([^"]*)"', page))
 
@@ -472,14 +472,14 @@ def test_canopys_own_links_are_used_where_it_gives_them(env, client, staff, cano
         listing(
             agent("site-bot"),
             agent("coach-bot", ready=False, problem_links=[("No ready runner.", "https://canopy.example/fix/1")]),
-            settings_url="https://canopy.example/w/connect/settings/connected-apps#site-7",
+            settings_url="https://canopy.example/w/connect/settings/host-sites#site-7",
         )
     )
     client.force_login(staff)
     page = client.get(reverse(URL))
     html = page.content.decode()
     assert 'href="https://canopy.example/fix/1" target="_blank" rel="noopener">No ready runner.</a>' in html
-    assert page.context["connected_sites_url"] == "https://canopy.example/w/connect/settings/connected-apps#site-7"
+    assert page.context["host_sites_url"] == "https://canopy.example/w/connect/settings/host-sites#site-7"
 
 
 @override_settings(**LABS_SETTINGS)
@@ -495,7 +495,7 @@ def test_only_web_links_from_canopy_reach_the_page(env, client, staff, canopy_ag
     client.force_login(staff)
     page = client.get(reverse(URL))
     assert "javascript:" not in page.content.decode()
-    assert page.context["connected_sites_url"] == "https://canopy.example/w/connect/settings/connected-apps"
+    assert page.context["host_sites_url"] == "https://canopy.example/w/connect/settings/host-sites"
 
 
 def test_a_stale_answer_does_not_set_the_workspace(env, canopy_agents):

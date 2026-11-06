@@ -203,7 +203,7 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "supply_chain:procurement_comparison": ("supply:read",),
 }
 
-#: What each page is, for people reading labs' ``site.json`` in canopy (Connected sites).
+#: What each page is, for people reading labs' ``site.json`` in canopy (Host sites).
 PAGE_TITLES: dict[str, str] = {
     "marketplace:network": "The partner network",
     "marketplace:round": "A marketplace round",
