@@ -2641,7 +2641,89 @@ class WorkflowSessionsAPIView(LoginRequiredMixin, View):
             return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)
 
 
-def _build_audit_summary_dicts(data_access, sessions):
+#: ``?include=images`` on a sessions-summary endpoint adds these per-image rows.
+SUMMARY_IMAGE_FIELDS = (
+    "visit_id",
+    "blob_id",
+    "question_id",
+    "result",
+    "notes",
+    "ai_result",
+    "ai_notes",
+    "ai_confidence",
+    "duplicate_group",
+    "username",
+    "visit_date_sort",
+    "image_url",
+)
+
+
+def _session_image_rows(session) -> list[dict]:
+    """One lean row per image in an audit session, read from the session record alone.
+
+    The same images, in the same order, as ``ExperimentBulkAssessmentDataView``
+    lists them (stored image metadata first, then assessments with no stored
+    metadata, under the session's own image filter), but only the fields in
+    ``SUMMARY_IMAGE_FIELDS``. It makes no further calls: no visit fetch, no
+    opportunity or worker-name lookup, no prior-audit or duplicate history. So a
+    report comparing verdicts across a whole programme can read every image in
+    ONE sessions-summary request instead of one bulk-data request per session.
+    Case details (child name, date of birth, household) are deliberately left out.
+    """
+    opportunity_id = session.opportunity_id
+    visit_images = session.data.get("visit_images", {}) or {}
+    image_filter_paths = {
+        r.get("image_path", "") for r in session.data.get("related_fields", []) or [] if r.get("filter_by_image")
+    }
+
+    rows = []
+    for visit_id in session.visit_ids or []:
+        images_metadata = visit_images.get(str(visit_id), []) or []
+        if image_filter_paths:
+            images_metadata = [img for img in images_metadata if img.get("question_id") in image_filter_paths]
+        if not images_metadata:
+            continue
+
+        first_image = images_metadata[0]
+        username = first_image.get("username", "")
+        visit_date_raw = first_image.get("visit_date", "")
+        visit_date_dt = parse_datetime(visit_date_raw) if visit_date_raw else None
+        if visit_date_dt and timezone.is_naive(visit_date_dt):
+            visit_date_dt = timezone.make_aware(visit_date_dt, _stdlib_timezone.utc)
+        visit_date_sort = timezone.localtime(visit_date_dt).isoformat() if visit_date_dt else ""
+
+        image_meta = {img["blob_id"]: img for img in images_metadata if img.get("blob_id")}
+        assessments_map = session.get_assessments(visit_id)
+
+        def row(blob_id, question_id, assessment):
+            return {
+                "visit_id": visit_id,
+                "blob_id": blob_id,
+                "question_id": question_id or "",
+                "result": assessment.get("result") or "",
+                "notes": assessment.get("notes", ""),
+                "ai_result": assessment.get("ai_result", ""),
+                "ai_notes": assessment.get("ai_notes", ""),
+                "ai_confidence": assessment.get("ai_confidence"),
+                "duplicate_group": assessment.get("duplicate_group"),
+                "username": username,
+                "visit_date_sort": visit_date_sort,
+                "image_url": image_proxy_path(opportunity_id, blob_id, image_meta.get(blob_id)),
+            }
+
+        for blob_id, img in image_meta.items():
+            rows.append(row(blob_id, img.get("question_id"), assessments_map.get(blob_id, {})))
+        for blob_id, assessment in assessments_map.items():
+            if blob_id not in image_meta:
+                rows.append(row(blob_id, assessment.get("question_id"), assessment))
+    return rows
+
+
+def _include_images(request) -> bool:
+    return "images" in (request.GET.get("include") or "").split(",")
+
+
+def _build_audit_summary_dicts(data_access, sessions, include_images=False):
     """Serialize audit sessions for the sessions-summary endpoints (opportunity
     and program scoped), adding the fields a Photo Audit Report needs.
 
@@ -2650,6 +2732,8 @@ def _build_audit_summary_dicts(data_access, sessions):
     IDs matched — own id vs run id), ``opportunity_name`` (to group per
     opportunity in program scope), and ``flw_display_name`` resolved per
     distinct opportunity present (a program-scoped result spans several).
+    With ``include_images``, also ``storage_opportunity_id`` and ``images``
+    (``_session_image_rows``).
     """
     session_dicts = []
     for s in sessions:
@@ -2657,6 +2741,9 @@ def _build_audit_summary_dicts(data_access, sessions):
         d["auditor_username"] = s.username
         d["workflow_run_id"] = s.workflow_run_id
         d["opportunity_name"] = s.opportunity_name
+        if include_images:
+            d["storage_opportunity_id"] = s.storage_opportunity_id
+            d["images"] = _session_image_rows(s)
         session_dicts.append(d)
 
     opp_ids = {d.get("opportunity_id") for d in session_dicts if d.get("opportunity_id")}
@@ -2732,11 +2819,14 @@ class OpportunityAuditSessionsSummaryAPIView(LoginRequiredMixin, View):
                 # workflow-run id that created them), and ``?created_by=``
                 # pins the result to one auditor's username. Both absent =
                 # every session for the opportunity, as before.
+                # ``?include=images`` adds each session's per-image rows.
                 ids = parse_session_id_filter(request.GET.get("ids"))
                 created_by = request.GET.get("created_by") or None
                 sessions = filter_audit_sessions(sessions, ids=ids, created_by=created_by)
 
-                session_dicts = _build_audit_summary_dicts(data_access, sessions)
+                session_dicts = _build_audit_summary_dicts(
+                    data_access, sessions, include_images=_include_images(request)
+                )
                 return JsonResponse({"success": True, "sessions": session_dicts})
             finally:
                 data_access.close()
@@ -2805,6 +2895,7 @@ class ProgramAuditSessionsSummaryAPIView(LoginRequiredMixin, View):
     ``opportunity_id``/``opportunity_name`` so a report can group per
     opportunity and pool a program total. Same ``?ids=`` / ``?created_by=``
     filters as the opportunity endpoint.
+    ``?include=images`` adds each session's per-image rows (``_session_image_rows``).
     """
 
     def get(self, request, program_id: int):
@@ -2815,7 +2906,9 @@ class ProgramAuditSessionsSummaryAPIView(LoginRequiredMixin, View):
                 ids = parse_session_id_filter(request.GET.get("ids"))
                 created_by = request.GET.get("created_by") or None
                 sessions = filter_audit_sessions(sessions, ids=ids, created_by=created_by)
-                session_dicts = _build_audit_summary_dicts(data_access, sessions)
+                session_dicts = _build_audit_summary_dicts(
+                    data_access, sessions, include_images=_include_images(request)
+                )
                 return JsonResponse({"success": True, "sessions": session_dicts})
             finally:
                 data_access.close()
