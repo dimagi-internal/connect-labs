@@ -271,7 +271,7 @@ def test_the_respond_page_draws_the_calls_limits_and_saves_the_picked_areas(clie
     call = within_kano(world)
     login(client, world["applicant"])
     page = client.get(reverse("solicitations:respond", kwargs={"pk": call.public_id})).content.decode()
-    assert "Where would you do this work?" in page and "This call covers Kano (Level 1)" in page
+    assert "Select Areas to Cover" in page and "This call covers Kano (Level 1)" in page
     assert reverse("microplans:boundary_areas") in page
     # Inside a state, the map offers the state and what is beneath it, never a country.
     assert '"min_level": 1, "level": 1' in page
