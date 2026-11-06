@@ -70,8 +70,7 @@
                 {% endif %}
                 {% if area_picker %}
                     <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8" data-testid="round-area-picker">
-                        <h2 class="text-xl font-semibold text-brand-deep-purple mb-1">Where would you do this work?</h2>
-                        <p class="text-xs text-gray-500 mb-3">Answering in labs, an organisation picks where it proposes to work, at whatever level fits: whole countries, or states, districts or wards within them. Choose the level under <strong>Pick by</strong>, then click areas on the map (click again to drop one) or search by name. This is a preview: nothing picked here is saved.</p>
+                        <h2 class="text-xl font-semibold text-brand-deep-purple mb-3">Select Areas to Cover</h2>
                         {% include "solicitations/_service_area_picker.html" with picker=area_picker %}
                         {{ form.service_areas }}
                     </div>
@@ -170,7 +169,7 @@
             </fieldset>
             {% elif area_picker %}
             <fieldset class="mb-6">
-              <legend class="text-sm font-semibold text-gray-800 mb-1">Where would you do this work?</legend>
+              <legend class="text-sm font-semibold text-gray-800 mb-1">Select Areas to Cover</legend>
               {% if solicitation.service_area_limits %}
               <p class="text-xs text-gray-500 mb-3">This call covers {{ solicitation.area_limit_names|join:", " }} (the dashed outline). Pick the areas inside it where you would work: all of it, or a district or a few wards. Choose the level under <strong>Pick by</strong>, then click areas on the map (click again to drop one) or search by name. Required to submit.</p>
               {% else %}
