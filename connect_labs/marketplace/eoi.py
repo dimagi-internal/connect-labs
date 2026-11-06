@@ -278,11 +278,34 @@ def _long_answer_ids(submissions) -> set[str]:
     return long_ids
 
 
-def ingest_round(round_: Solicitation, rows, human_verdicts=None) -> dict:
+def apply_form_structure(round_: Solicitation, shared_forms) -> dict:
+    """Give the round's questions their Google Forms' structure (`form_structure`).
+
+    ``shared_forms`` is every form shared with the labs service account. Returns
+    ``{form key: questions matched}``, None for a form not shared, so the import
+    can say which rounds still show text boxes and why. Does not save.
+    """
+    from connect_labs.marketplace import form_structure
+
+    result = {}
+    for entry in round_.directory_forms:
+        form = form_structure.find(shared_forms or [], entry)
+        multi = len(round_.directory_forms) > 1
+        result[entry["key"]] = (
+            None
+            if form is None
+            else form_structure.annotate(round_.questions or [], form, entry["key"] if multi else None)
+        )
+    return result
+
+
+def ingest_round(round_: Solicitation, rows, human_verdicts=None, shared_forms=None) -> dict:
     """Store one round's submissions, matched to organisations where certain.
 
     ``rows`` is a response sheet, or ``{form key: response sheet}`` for a round
     that runs several forms; a bare sheet is the round's first form.
+    ``shared_forms`` (`form_structure.shared_forms`) gives the questions their
+    forms' choices, grids and sections; without it they are text boxes.
     """
     from connect_labs.labs.models import LabsOrg
     from connect_labs.marketplace.models import OrgContact
@@ -353,6 +376,7 @@ def ingest_round(round_: Solicitation, rows, human_verdicts=None) -> dict:
             {"id": q.id, "text": q.text, "column": q.column, "forms": asked_on[q.id], "long": q.id in long_answers}
             for q in questions
         ]
+        stats["structure"] = apply_form_structure(round_, shared_forms)
 
         for sub in submissions:
             # The key a human verdict is filed under: the form's own Slug,

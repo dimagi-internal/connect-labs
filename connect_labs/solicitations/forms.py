@@ -351,11 +351,20 @@ class SolicitationResponseForm(forms.Form):
                 )
             elif q_type == "multiple_choice":
                 choices = [(opt, opt) for opt in q_options]
-                field = forms.ChoiceField(
+                # A short list reads best as radio buttons, the way a Google
+                # Form shows it; "display" says which a question wants.
+                widget = (
+                    forms.RadioSelect()
+                    if question.get("display") == "radio"
+                    else forms.Select(attrs={"class": _SELECT_CLASSES})
+                )
+                field = forms.ChoiceField(label=q_text, required=q_required, choices=choices, widget=widget)
+            elif q_type == "checkboxes":
+                field = forms.MultipleChoiceField(
                     label=q_text,
                     required=q_required,
-                    choices=choices,
-                    widget=forms.Select(attrs={"class": _SELECT_CLASSES}),
+                    choices=[(opt, opt) for opt in q_options],
+                    widget=forms.CheckboxSelectMultiple(),
                 )
             else:
                 # Default: text / short_text / unknown types — use textarea

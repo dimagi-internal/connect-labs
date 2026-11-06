@@ -371,3 +371,22 @@ def test_a_one_form_round_has_no_switcher(client, world):
     login(client, world["user"])
     body = client.get(url("respond", pk=world["round"].pk)).content.decode()
     assert 'data-testid="round-form-switcher"' not in body
+
+
+def test_a_round_s_copy_draws_its_forms_choices_grids_and_sections(client, world):
+    from connect_labs.marketplace import form_structure
+    from connect_labs.marketplace.tests.test_form_structure import FORM, _questions
+
+    questions = _questions()
+    form_structure.annotate(questions, FORM)
+    round_ = make_round(slug="rfi-structured", questions=questions)
+    login(client, world["user"])
+    body = client.get(url("respond", pk=round_.pk)).content.decode()
+    assert "data-question-section" in body and ">Identity<" in body and "See the overview." in body
+    assert 'type="checkbox" name="question_q2" value="CBO"' in body
+    # The grid is one table, a radio per row and column, not a box per row.
+    assert body.count("data-question-grid") == 1 and ">Kangaroo care" in body
+    assert 'type="radio" name="question_q3" value="2nd"' in body
+    assert "Which programmes? [Lead]" not in body
+    assert '<select name="question_q5"' in body
+    assert body.count('<span class="text-red-500 ml-1">*</span>') >= 2
