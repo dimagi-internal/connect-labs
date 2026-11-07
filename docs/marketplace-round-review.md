@@ -280,7 +280,7 @@ optional `extra` that adds figures only that step draws.
   `tests/round_fixtures.py`, loaded by `tests/conftest.py`.
 
 Not built yet, for the next iterations: the assistant's notes on what stands
-out in a version's scores ("What ACE noticed", kept per criteria version and
+out in a version's scores ("AI Observations", kept per criteria version and
 shown on AI Analysis); outcome rules as their own field rather than inside
 `criteria_basis`; and an agreement figure between people and the AI.
 
