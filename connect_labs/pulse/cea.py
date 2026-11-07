@@ -18,12 +18,16 @@ Three inputs come from Pulse, and each is stated where it is shown:
 * **Total cost**: everything paid for the opportunity, in USD -- worker pay and the
   organisation's per-service fee accrued on every completed work, plus fixed costs
   (Connect's custom invoices and costs entered in labs). `costs.opportunity_costs`.
-* **People reached**: approved works on the opportunity's most-used payment unit. Connect
-  keeps one completed work per (worker, beneficiary, payment unit) and stacks repeat
-  visits on it (commcare-connect ``form_receiver/processor.py``, a get_or_create on those
-  three), so the works on a unit count people, and the unit everyone passes through
-  (enrolment, the first visit) counts them all. Works carry no beneficiary id (Pulse is
-  PII-free), so a beneficiary seen by two workers counts twice: a proxy, stated as one.
+* **People reached**: distinct beneficiaries with approved work. Each completed work
+  carries a keyed hash of its beneficiary (``PulseWork.beneficiary_key``, see
+  ``normalize.beneficiary_label``), so this counts each child, mother or baby once,
+  across workers, visits and payment units -- whether the app pays per visit stage
+  (MBW cohorts), per visit (MBW Nigeria) or per baby (KMC). Only approved work counts:
+  Connect never approves work for a form without a deliver block, nor for a rejected,
+  duplicate, over-limit or pending visit. ``works_per_person`` is approved work per
+  person, a first look at how far through a longitudinal programme people got.
+  Opportunities synced before the key existed fall back to the old proxy (approved
+  works on the busiest payment unit), and say so in ``reach_basis``.
 * **Where**: the opportunity's country, and the centre of its approved visits.
 
 An opportunity whose delivery type has no model says "no model". One delivered outside
@@ -65,18 +69,36 @@ def models() -> dict:
         return json.load(f)
 
 
-def _people_reached(opp_ids) -> dict[int, int]:
-    """Approved works on each opportunity's most-used payment unit (see module docstring)."""
+REACH_DISTINCT = "distinct_people"
+REACH_PROXY = "busiest_payment_unit"
+
+
+def _people_reached(opp_ids) -> dict[int, dict]:
+    """People reached per opportunity: ``{reached, reach_basis, works_per_person}``."""
     from connect_labs.pulse.models import PulseWork
 
-    out: dict[int, int] = {}
-    rows = (
-        PulseWork.objects.filter(opportunity_id__in=list(opp_ids), status="approved")
-        .values("opportunity_id", "payment_unit_id")
-        .annotate(n=Count("id"))
-    )
-    for r in rows:
-        out[r["opportunity_id"]] = max(out.get(r["opportunity_id"], 0), r["n"])
+    approved = PulseWork.objects.filter(opportunity_id__in=list(opp_ids), status="approved")
+    keyed = {
+        r["opportunity_id"]: r
+        for r in approved.exclude(beneficiary_key="")
+        .values("opportunity_id")
+        .annotate(people=Count("beneficiary_key", distinct=True), works=Count("id"))
+    }
+    busiest: dict[int, int] = {}
+    for r in approved.values("opportunity_id", "payment_unit_id").annotate(n=Count("id")):
+        busiest[r["opportunity_id"]] = max(busiest.get(r["opportunity_id"], 0), r["n"])
+
+    out: dict[int, dict] = {}
+    for oid in set(keyed) | set(busiest):
+        k = keyed.get(oid)
+        if k and k["people"]:
+            out[oid] = {
+                "reached": k["people"],
+                "reach_basis": REACH_DISTINCT,
+                "works_per_person": round(k["works"] / k["people"], 2),
+            }
+        else:
+            out[oid] = {"reached": busiest.get(oid, 0), "reach_basis": REACH_PROXY, "works_per_person": None}
     return out
 
 
@@ -151,7 +173,8 @@ def ranking(opps_qs=None) -> dict:
     for o in opps:
         c = cost_of.get(o.opportunity_id)
         total = float(c.total_usd) if c else 0.0
-        reached = reached_of.get(o.opportunity_id, 0)
+        reach = reached_of.get(o.opportunity_id) or {"reached": 0, "reach_basis": None, "works_per_person": None}
+        reached = reach["reached"]
         country = (o.country or "").upper()
         loc = m["countries"].get(country)
         centre = centre_of.get(o.opportunity_id)
@@ -171,6 +194,8 @@ def ranking(opps_qs=None) -> dict:
             "total_usd": round(total, 2),
             "fixed_usd": round(float(c.fixed_usd), 2) if c else 0.0,
             "reached": reached,
+            "reach_basis": reach["reach_basis"],
+            "works_per_person": reach["works_per_person"],
         }
         row.update(value(row["service"], country, total, reached))
         row["status_text"] = STATUS_TEXT[row["status"]]

@@ -635,6 +635,8 @@ class PulseCEAView(LoginRequiredMixin, View):
         "total_usd",
         "fixed_usd",
         "reached",
+        "reach_basis",
+        "works_per_person",
         "cost_per_person",
         "model_cost_per_person",
         "model_x",

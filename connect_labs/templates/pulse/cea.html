@@ -158,8 +158,12 @@
     <p><b>Total cost</b> is everything paid for the opportunity in USD: worker pay and the organisation's per-service fee on
       every completed work, plus startup and supply costs from Connect's custom invoices and costs entered in labs
       (<a href="{% url 'pulse:costs' %}">cost data</a>).</p>
-    <p><b>People reached</b> is the approved work on the opportunity's most-used payment unit: a completed work is one person on one
-      payment unit, so the unit everyone passes through counts the people. Pulse holds no beneficiary ids, so this is a proxy.</p>
+    <p><b>People reached</b> counts distinct beneficiaries with approved work: each child, mother or baby once, however many
+      workers, visits or payment units they passed through. Connect's beneficiary label (a name with a phone number or birth date,
+      minus any visit suffix) is reduced to a keyed hash when Labs reads it, so people are counted without being stored. Only approved
+      work counts: forms with no service delivered, and rejected, duplicate, over-limit or pending visits, never are.
+      <b>Work / person</b> is approved work per person, a first look at how far people got through a longitudinal programme.
+      An opportunity marked <i>estimate</i> has not been re-read since this count existed and uses its busiest payment unit instead.</p>
     <p><b>Re-pricing.</b> Each model's multiple is benefit per person over cost per person, with GiveWell's leveraging adjustment at 1,
       so multiple at actual cost = model multiple &times; model price &divide; actual cost per person. Model prices:
       <span id="model-prices"></span>.</p>
@@ -211,7 +215,8 @@
   function hideTip() { tip.style.display = "none"; }
   function rowTip(r) {
     var s = "<b>" + esc(r.name) + "</b><br>" + esc(r.service_name) + " · " + esc(r.country_name) + (r.org_slug ? " · " + esc(r.org_slug) : "");
-    s += "<br>Total cost " + usd(r.total_usd) + " · reached " + num(r.reached);
+    s += "<br>Total cost " + usd(r.total_usd) + " · " + num(r.reached) + (r.reach_basis === "busiest_payment_unit" ? " people (estimate)" : " distinct people");
+    if (r.works_per_person != null) s += " · " + num(r.works_per_person, 2) + " approved work each";
     if (r.status === "modelled") {
       s += "<br>Cost per person " + usd(r.cost_per_person) + " (model " + usd(r.model_cost_per_person) + ")";
       s += "<br><b>" + xfmt(r.x) + "</b> at actual cost · " + xfmt(r.model_x) + " at model price";
@@ -457,7 +462,8 @@
   var sortKey = null, sortDir = 1;
   var COLS = [
     ["rank", "#", "n"], ["name", "Opportunity"], ["service_name", "Delivery type"], ["country_name", "Country"],
-    ["total_usd", "Total cost", "n", usd], ["reached", "Reached", "n", function (v) { return num(v); }],
+    ["total_usd", "Total cost", "n", usd], ["reached", "People", "n", function (v, r) { return num(v) + (r && r.reach_basis === "busiest_payment_unit" ? " <i title=\"Busiest payment unit, not yet a distinct count\">estimate</i>" : ""); }],
+    ["works_per_person", "Work / person", "n", function (v) { return v == null ? "–" : num(v, 2); }],
     ["cost_per_person", "Cost / person", "n", usd], ["model_cost_per_person", "Model price", "n", usd],
     ["model_x", "Model x", "n", xfmt], ["x", "x at actual cost", "n", xfmt],
     ["deaths_averted", "Deaths averted", "n", function (v) { return v == null ? "–" : num(v, 1); }],
@@ -484,7 +490,7 @@
           s = '<a href="/labs/pulse/opp/' + r.id + '/">' + esc(v) + '</a><div style="color:#9ca3af;font-size:11px">' + esc(r.org_slug || "") + (r.active ? " · active" : "") + "</div>";
         } else if (c[0] === "service_name" && r.model) {
           s = '<span class="sw" style="background:' + COL[r.model] + ';margin-right:5px"></span>' + esc(v);
-        } else s = c[3] ? c[3](v) : esc(v == null ? "–" : v);
+        } else s = c[3] ? c[3](v, r) : esc(v == null ? "–" : v);
         return '<td class="' + (c[2] || "") + '">' + s + "</td>";
       }).join("") + "</tr>";
     }).join("") + "</tbody>";
