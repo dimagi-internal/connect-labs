@@ -583,9 +583,20 @@ def round_scores(request, slug):
     figures; the query string (`version`, `compare`) carries over.
     """
     step = "ai-analysis" if "compare" in request.GET else "ai-review"
+    return redirect(_review_url(slug, step, request.GET), permanent=True)
+
+
+# The only query parameters a Review step reads; a redirect carries these and nothing else.
+_REVIEW_PARAMS = ("version", "compare")
+
+
+def _review_url(slug: str, step: str, params) -> str:
+    """A Review step's address, keeping only the `version` and `compare` a step reads."""
+    from urllib.parse import urlencode
+
     url = reverse("marketplace:round_review_step", args=[slug, step])
-    query = request.GET.urlencode()
-    return redirect(f"{url}?{query}" if query else url, permanent=True)
+    kept = {key: params[key] for key in _REVIEW_PARAMS if key in params}
+    return f"{url}?{urlencode(kept)}" if kept else url
 
 
 @login_required
@@ -632,9 +643,7 @@ def round_review(request, slug, step=""):
         "history": history,
     }
     if not step:
-        target = review_steps.default_step(ctx)
-        url = reverse("marketplace:round_review_step", args=[slug, target.key])
-        return redirect(f"{url}?{request.GET.urlencode()}" if request.GET else url)
+        return redirect(_review_url(slug, review_steps.default_step(ctx).key, request.GET))
     current = review_steps.BY_KEY[step]
 
     compare_with = None
