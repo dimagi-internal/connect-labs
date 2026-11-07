@@ -49,11 +49,13 @@ This design gives every one of those answers **one data model**. Every number in
                               │
             ┌────────── Valuation lens ────────┐
             │ moral weights per outcome, bar,   │  GiveWell by default; Coefficient
-            │ benchmark, leverage, funging, ... │  Giving or a custom lens alongside
+            │ benchmark, leverage method, ...   │  Giving or a custom lens alongside
             └───────────────────────────────────┘
                               │
                       Result (per pathway × stratum, then totals)
 ```
+
+Funging is not in the lens: it is a fact about who else funds this programme in this place, so each model carries its own (CHC 0.93, KC and MBW 1.0, as GiveWell's starting models do), and a lens or scenario can override it.
 
 The CEA provides three blocks: **baseline, effectiveness and cost**. The **valuation lens** is separate on purpose. It holds the funder's judgements, not facts about the programme. GiveWell's lens is the default and is always labelled as GiveWell's. Another funder's lens is a sibling, never an edit to it.
 
@@ -82,7 +84,7 @@ Parameter(
 | context | a fact about a place | newborn death rate, ORS coverage |
 | design | a choice about the programme | campaigns per year, cost per case |
 | observed | measured in Connect | people reached, visits completed, actual spend |
-| funder | a funder's value judgement | moral weight 113, bar 6×, funging |
+| funder | a funder's value judgement | moral weight 113, bar 6×, benchmark |
 
 ## Layers: where a value comes from
 
@@ -189,16 +191,19 @@ connect_labs/impact/
 Each step ships on its own and changes no published figure unless it says so:
 
 1. **`impact/parameters.py` + `lenses/givewell.py`.** Move the constants out of `cost_effectiveness.py`, sourced. The bar, benchmark and moral weights are then read by every path, and the hard-coded "6×" in the PMC page goes. The funging value has to be settled first, since it changes published figures.
-2. **`vendor.py`.** Re-vendor `connect-cea-models`, keeping pathway components and KC's own risk. Add a test that the vendored file matches its commit.
+2. **`vendor.py`.** Read each model's `spec.json` from `connect-cea-models` (its inputs, every Model row as a formula, scenarios and GiveWell checks; connect-cea-models#1) and evaluate the models' own formulas, instead of re-typing them. A test reproduces every column in the spec's `results`, and pins the commit.
 3. **`models/` for CHC, MBW, KC and ORS as pathways, plus `result.py`.** A test reproduces each model's published multiple per country exactly before anything moves.
 4. **`programmes.py` + `observed.py`.** Programme config and observed dose mix, building on `beneficiary_key` (#2940).
 5. **Callers switch.** CE ranking first, then targeting and TAM, then the PMC adapter.
 6. **Cost component kinds** in Labs cost entries.
 7. **The inputs drawer, lens switcher and saved scenarios.**
 
-## Open decisions (Jon)
+## Decisions (Jon, 7 Nov 2026)
 
-1. **Funging:** 0.93 or 0.968 for these models?
-2. **KC risk default:** the 4× newborn-death-rate rule (planning sheet, fitted to two pilots) or the model's own 13%?
-3. **Which other lenses to build first** (Coefficient Giving's?), and who owns their values?
-4. **Where model definitions live long term:** `connect-cea-models` stays the source and exports a parameter + pathway spec that Labs evaluates (recommended: one source, reviewed where the economists already work), or Labs owns them.
+1. **Everything comes from the models.** `connect-cea-models` is the source; Labs evaluates the models' own exported formulas (connect-cea-models#1) and keeps no copy of a model constant. The repo is shared work with Shay and Neal, and Labs-side needs go there as PRs.
+2. **Funging:** the model's own value, per model. Labs' separate 0.968 goes.
+3. **KC baseline risk:** the model's 13% for now. The model deliberately does not scale it by a place's newborn death rate (SM, 30 Oct 2026); the "4× newborn death rate" rule in `planning/model_results.js` is planning-only, and the team is working on it.
+
+## Still open
+
+1. **Which other lenses to build first** (Coefficient Giving's?), and who owns their values?
