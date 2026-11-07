@@ -23,12 +23,12 @@ from __future__ import annotations
 import json
 import re
 
+# Google Forms names an "Other" choice nothing; the sheet holds what was typed.
+from connect_labs.solicitations.answers import OTHER
+
 # What a question may carry once its form has been read. Cleared before each
 # annotation so a re-import never keeps a stale choice list.
 STRUCTURE_KEYS = ("type", "display", "options", "required", "help", "section", "grid")
-
-# Google Forms names an "Other" choice nothing; the sheet holds what was typed.
-OTHER = "Other"
 
 _DATA = re.compile(r"FB_PUBLIC_LOAD_DATA_\s*=\s*(.*?);\s*</script>", re.S)
 

@@ -596,6 +596,47 @@ class TestReadingForReview:
         assert context["position"] == 1 and context["next_pk"] == applicants[1]["response"].pk
 
 
+class TestAnswersReadAsTheFormAskedThem:
+    def test_choices_are_ticked_and_a_grid_is_one_table(self, client, round_, member):
+        def row(qid, label):
+            return {
+                "id": qid,
+                "text": f"Rank the barriers [{label}]",
+                "type": "multiple_choice",
+                "display": "radio",
+                "options": ["1st", "2nd"],
+                "grid": {"id": "g", "title": "Rank the barriers", "columns": ["1st", "2nd"], "row": label},
+            }
+
+        round_.questions = [
+            {"id": "how", "text": "How would you find households?", "column": 1},
+            {
+                "id": "reach",
+                "text": "Channels",
+                "type": "checkboxes",
+                "options": ["Door to door", "Radio", "Other"],
+                "section": {"title": "Reach", "help": ""},
+            },
+            row("cost", "Cost"),
+            row("distance", "Distance"),
+        ]
+        round_.save()
+        first = round_.responses.get(source_row=2)
+        first.responses = {"how": ANSWER, "reach": ["Radio"], "cost": "2nd", "distance": "1st"}
+        first.save()
+        client.force_login(member)
+        page = client.get(reverse("solicitations:response_detail", args=[first.pk]))
+        body = page.content.decode()
+        assert "data-answer-section" in body and "data-answer-grid" in body
+        assert body.count("data-picked") == 1, "only Radio is ticked"
+        assert 'data-question="cost"' in body and 'data-question="distance"' in body
+        # The grid is one question: a review citing either row points at the same Q.
+        numbers = {a["id"]: a["n"] for a in page.context["answers"]}
+        assert numbers["cost"] == numbers["distance"] == 3
+        org = _page(client, member, "marketplace:organisation", "fenwick")
+        assert "data-answer-grid" in org and "data-picked" in org
+
+
 class TestScores:
     """The round's scores side by side, for the owner to filter and compare."""
 

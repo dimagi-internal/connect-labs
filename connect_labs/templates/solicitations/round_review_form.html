@@ -63,14 +63,7 @@ select text on the left and attach it, or remove a passage with ×
           <span class="text-gray-400 ml-auto hidden sm:inline">Select text to cite it</span>
         </div>
         <div class="px-4 sm:px-6 py-4 space-y-4">
-          {% for qa in answers %}
-            <div data-question="{{ qa.id }}" class="pl-3 border-l-4 border-transparent rounded-sm">
-              <p class="text-[13px] font-semibold text-gray-700 mb-1"><span class="text-gray-400 tabular-nums">Q{{ forloop.counter }}</span> {{ qa.question }}</p>
-              <p data-answer class="text-sm text-gray-900 whitespace-pre-line break-words leading-relaxed">{% if qa.answer %}{{ qa.answer }}{% endif %}</p>
-              {% if not qa.answer %}<p class="text-sm text-gray-300">No answer</p>{% endif %}
-              <p data-absent-note class="hidden text-xs text-gray-500 mt-1"></p>
-            </div>
-          {% endfor %}
+          {% include "solicitations/_answer_blocks.html" with blocks=answer_blocks %}
         </div>
       </section>
       </div>

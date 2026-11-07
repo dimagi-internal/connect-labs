@@ -36,6 +36,7 @@ from connect_labs.labs.chrome import page_chrome
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import programs, queries
 from connect_labs.solicitations import access, past_calls, vocabulary
+from connect_labs.solicitations.answers import answer_blocks
 from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
 
 # Nothing in the marketplace is scoped by the labs context selector, and on a
@@ -603,16 +604,14 @@ def organisation(request, slug):
         .order_by("-submission_date")
     )
 
-    # Pair each question with its answer here rather than in the template: the
+    # Join each question to its answer here rather than in the template: the
     # question list belongs to the round and the answers to the submission, and
-    # a template filter reaching into a dict by key would hide that join.
+    # a template filter reaching into a dict by key would hide that join. The
+    # answers read as the form asked them (`solicitations.answers`).
     for response in responses:
-        answers = response.responses or {}
-        response.answer_pairs = [
-            (question.get("text", question.get("id", "")), answers.get(question.get("id"), ""))
-            for question in (response.solicitation.questions or [])
-            if answers.get(question.get("id"))
-        ]
+        response.answer_blocks = answer_blocks(
+            past_calls.form_questions(response.solicitation, response), response.responses or {}, answered_only=True
+        )
 
     from connect_labs.pulse.models import PulseOpportunity
 

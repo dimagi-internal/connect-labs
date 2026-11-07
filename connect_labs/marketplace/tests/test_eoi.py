@@ -83,6 +83,22 @@ class TestUpsertRounds:
         round_.refresh_from_db()
         assert round_.questions[1]["type"] == "text" and round_.questions[1]["required"] is True
 
+    def test_a_checkboxes_answer_is_stored_as_its_list_of_choices(self, round_):
+        options = [{"value": "Door to door"}, {"value": "Markets, fairs and churches"}, {"isOther": True}]
+        form = {
+            "items": [
+                {
+                    "title": "Country",
+                    "questionItem": {"question": {"choiceQuestion": {"type": "CHECKBOX", "options": options}}},
+                }
+            ],
+        }
+        rows = [RESPONSES[0], [*RESPONSES[1][:3], "Markets, fairs and churches, a radio show"]]
+        ingest_round(round_, rows, read_form=lambda url: form)
+        stored = round_.responses.get(source_row=2).responses
+        assert stored["country"] == ["Markets, fairs and churches", "a radio show"]
+        assert stored["organization_name"] == "Fenwick Trust"
+
     def test_an_unreadable_form_leaves_text_boxes_and_says_why(self, round_):
         def closed(url):
             raise ValueError("the page carries no form")

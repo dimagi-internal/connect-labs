@@ -19,6 +19,7 @@ from django.utils import timezone
 
 from connect_labs.marketplace import responses as response_reader
 from connect_labs.marketplace.matching import match_submission, normalise
+from connect_labs.solicitations.answers import typed_answers
 from connect_labs.solicitations.local_models import (
     ACCESS_DENIED,
     ACCESS_MISSING,
@@ -398,7 +399,9 @@ def ingest_round(round_: Solicitation, rows, human_verdicts=None, read_form=None
                     "llo_entity": org,
                     "llo_entity_name": sub.org_name[:300],
                     "org_name": sub.org_name[:300],
-                    "responses": sub.answers,
+                    # Stored as the form asked: a checkboxes answer is its list of
+                    # choices, as the respond form saves one (`solicitations.answers`).
+                    "responses": typed_answers(round_.questions, sub.answers),
                     "submitted_by_name": sub.contact_name[:200],
                     "submitted_by_email": ", ".join(sub.emails)[:500],
                     "submission_date": sub.submitted_at,
