@@ -52,8 +52,24 @@ def _controls(request) -> dict:
         "countries": [v for v in request.GET.getlist("country") if v.strip()],
         "delivered": [v for v in request.GET.getlist("delivered") if v.strip()],
         "applied": [v for v in request.GET.getlist("applied") if v.strip()],
+        # Who answered a round: set by the round page's map link, not the rail.
+        "rounds": [v for v in request.GET.getlist("round") if v.strip()],
         "segment": request.GET.get("segment", "all").strip() or "all",
     }
+
+
+def _round_filter(request, slugs) -> dict | None:
+    """The rounds the page is narrowed to, named, with a link back to everyone.
+
+    Only rounds the viewer may read are named; any other slug matches no one,
+    because the population holds only readable rounds' submissions.
+    """
+    if not slugs:
+        return None
+    rounds = Solicitation.objects.directory_rounds().filter(slug__in=slugs, pk__in=access.readable_round_ids(request))
+    params = request.GET.copy()
+    params.setlist("round", [])
+    return {"rounds": list(rounds.order_by("title")), "clear_url": "?" + params.urlencode()}
 
 
 def _population(request) -> dict:
@@ -85,6 +101,7 @@ def _population(request) -> dict:
                 countries=() if dimension == "country" else selected["countries"],
                 delivered=() if dimension == "delivered" else selected["delivered"],
                 applied=() if dimension == "applied" else selected["applied"],
+                rounds=selected["rounds"],
                 delivered_by_name=delivered_by_name,
             )
         ]
@@ -254,6 +271,7 @@ def network(request):
             "any_facet": bool(
                 state["selected"]["countries"] or state["selected"]["delivered"] or state["selected"]["applied"]
             ),
+            "round_filter": _round_filter(request, state["selected"]["rounds"]),
             "mapbox_token": getattr(settings, "MAPBOX_TOKEN", "") or "",
             # In the page rather than fetched after it: the globe draws from
             # the same population this render already holds, and a second

@@ -49,6 +49,7 @@ the scroll position stay put; every link and form still works without it.
     {% for value in selected.countries %}<input type="hidden" name="country" value="{{ value }}">{% endfor %}
     {% for value in selected.delivered %}<input type="hidden" name="delivered" value="{{ value }}">{% endfor %}
     {% for value in selected.applied %}<input type="hidden" name="applied" value="{{ value }}">{% endfor %}
+    {% for value in selected.rounds %}<input type="hidden" name="round" value="{{ value }}">{% endfor %}
     <input type="hidden" name="q" value="{{ selected.q }}">
     <div class="flex flex-wrap gap-2 mb-4">
       {% for s in segments %}
@@ -89,6 +90,7 @@ the scroll position stay put; every link and form still works without it.
         {% for value in selected.countries %}<input type="hidden" name="country" value="{{ value }}">{% endfor %}
         {% for value in selected.delivered %}<input type="hidden" name="delivered" value="{{ value }}">{% endfor %}
         {% for value in selected.applied %}<input type="hidden" name="applied" value="{{ value }}">{% endfor %}
+        {% for value in selected.rounds %}<input type="hidden" name="round" value="{{ value }}">{% endfor %}
         <div class="flex items-center gap-2 bg-white border border-brand-border-light rounded-lg px-2.5 h-9">
           <i class="fa-solid fa-magnifying-glass text-gray-400 text-xs"></i>
           <input type="search" name="q" value="{{ selected.q }}" placeholder="Search"
@@ -133,6 +135,12 @@ the scroll position stay put; every link and form still works without it.
       <div class="flex items-center gap-3 mb-3 flex-wrap" data-mk-swap="summary">
         <span class="text-[13px] text-gray-500"><span class="font-semibold text-gray-900">{{ shown }}</span> shown</span>
         {% if why %}<span class="text-[12.5px] text-gray-500">· {{ why }}</span>{% endif %}
+        {% if round_filter %}
+          <span class="inline-flex items-center gap-1.5 text-[12.5px] px-2.5 py-0.5 rounded-full bg-indigo-50 text-brand-deep-purple" data-testid="round-filter">
+            Answered {% for r in round_filter.rounds %}<a href="{% url 'marketplace:round' r.slug %}" class="font-semibold hover:underline">{{ r.title }}</a>{% if not forloop.last %} or {% endif %}{% empty %}a round you can't read{% endfor %}
+            <a href="{{ round_filter.clear_url }}" class="text-gray-400 hover:text-gray-700" title="Show everyone" aria-label="Show everyone"><i class="fa-solid fa-xmark"></i></a>
+          </span>
+        {% endif %}
       </div>
 
       {{ points|json_script:"mk-points" }}

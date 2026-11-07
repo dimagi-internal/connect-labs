@@ -25,6 +25,8 @@ below. `tab` names the page; each page adds its own figures after this.
     {% if round.evaluation_criteria %}
       <a href="{% url 'marketplace:round_scores' round.slug %}" data-testid="scores-link" class="pb-2 {% if tab == 'scores' %}text-brand-deep-purple{% else %}text-gray-500 hover:text-brand-indigo{% endif %}" {% if tab == 'scores' %}style="border-bottom: 2px solid currentColor; margin-bottom: -1px" aria-current="page"{% endif %}>Scores</a>
     {% endif %}
+    {% comment %}Where the applicants are: the network map, narrowed to this round.{% endcomment %}
+    <a href="{% url 'marketplace:network' %}?round={{ round.slug|urlencode }}" target="_blank" rel="noopener" data-testid="round-map-link" class="pb-2 ml-auto text-gray-500 hover:text-brand-indigo"><i class="fa-solid fa-earth-africa mr-1"></i>Applicants on the map <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i></a>
   </div>
 
   <div class="flex flex-wrap gap-x-7 gap-y-4 sm:gap-x-8 mt-4" data-testid="round-figures">
