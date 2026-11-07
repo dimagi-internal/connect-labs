@@ -97,6 +97,18 @@ If you ask an agent to carry out a single task — rather than setting it up as 
 
 Full access (including real visit data) still requires your passkey, even for a one-hour token.
 
+#### Agents not on your computer
+
+An agent running in the cloud or on another machine can also request a one-hour token. Instead of opening a browser itself, it gives you a link. You open that link while signed in to Labs, and the page shows you:
+
+- which Labs account the agent is acting as
+- what the agent says it needs the access for
+- the access level it is asking for (No user visit data or Full access) and that it lasts one hour
+
+Pressing **Continue** takes you to the same passkey step in canopy that a full-access token requires. This passkey step is required at both access levels when the token will leave Labs for another machine — the bar is higher than for a token that stays on your own computer.
+
+If you approve, the agent collects the token on its own. If you decline, no token is created and no passkey is needed. The token is yours and appears on your MCP access page at [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/), where you can revoke it at any time.
+
 ---
 
 ## MCP Access
@@ -221,7 +233,4 @@ When you create a token you choose an **Access** level:
 | Access level | What it can do |
 | --- | --- |
 | **Standard** | Full access matching your Connect permissions, including reading visit data and making workflow edits. Requires passkey confirmation through canopy to create or rotate. |
-| **No user visit data** | Never sees user visit data. Reads workflow definitions, CommCare app structure, pipeline and indicator definitions, solicitations, funds, the organisation directory, targeting data, and microplan sampling. Can edit workflow and indicator definitions (including a workflow's opportunity list; render code only on synthetic opportunities whose data was generated, because render code runs over the visit data of whoever opens the page) and trigger saved-run generation — snapshots, history rebuilds, cache warms, hand-downs and benchmark publication — where the server computes over visits and the token gets back only ids, versions, dates and counts. Cannot delete workflows or pipelines. Can also profile real opportunities on the server and generate synthetic data from those profiles. Same permissions as the `mcp/no_user_visit/` address. Cannot access individual visit rows or per-visit values — including through the export API and data reseed endpoints — except on synthetic opportunities whose data was generated. Opportunity-level counts and dates, and contact details of people who submitted as an organisation, are allowed. No passkey confirmation required. |
-| **Coaching pictures only** | Lets an Open Chat Studio team fetch coaching pictures. Nothing else. Cannot be used for MCP or the export API. |
-
-Tools the token is not allowed to use do not appear to the agent at all, so the agent
+| **No user visit data** | Never sees user visit data. Reads workflow definitions, CommCare app structure, pipeline and indicator definitions, solicitations, funds,
