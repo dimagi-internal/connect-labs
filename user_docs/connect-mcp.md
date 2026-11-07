@@ -104,10 +104,14 @@ An agent running in the cloud or on another machine can also request a one-hour 
 - which Labs account the agent is acting as
 - what the agent says it needs the access for
 - the access level it is asking for (No user visit data or Full access) and that it lasts one hour
+- **the name of the runner that made the request**, if the agent signed its request with a recognised runner key — this lets you confirm the request came from the agent you expect
 
 Pressing **Continue** takes you to the same passkey step in canopy that a full-access token requires. This passkey step is required at both access levels when the token will leave Labs for another machine — the bar is higher than for a token that stays on your own computer.
 
 If you approve, the agent collects the token on its own. If you decline, no token is created and no passkey is needed. The token is yours and appears on your MCP access page at [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/), where you can revoke it at any time.
+
+!!! note "If canopy refuses the agent's request"
+    If canopy cannot verify the agent's runner signature — for example, because the key is not recognised or has expired — the agent will now receive a clear explanation of why the request was refused, rather than a generic error. If this happens, contact your programme administrator to check the agent's credentials.
 
 ---
 
@@ -224,13 +228,4 @@ Personal Access Tokens let you connect an MCP client to Labs without going throu
 
 ### Creating and rotating tokens via `labs-token-setup`
 
-When `/labs-token-setup` opens a browser to approve a token, it uses the same approval page as the tokens page at `/labs/mcp/tokens/`. The approve button and all links on that page work correctly, including when you were not already signed in and Labs redirected you to sign in first. If you previously encountered a "not found" page after signing in at that step, this has been fixed — run `/labs-token-setup` again and it will complete normally.
-
-### Access levels
-
-When you create a token you choose an **Access** level:
-
-| Access level | What it can do |
-| --- | --- |
-| **Standard** | Full access matching your Connect permissions, including reading visit data and making workflow edits. Requires passkey confirmation through canopy to create or rotate. |
-| **No user visit data** | Never sees user visit data. Reads workflow definitions, CommCare app structure, pipeline and indicator definitions, solicitations, funds,
+When `/labs-token-setup` opens a browser to approve a token, it uses the same approval page as the tokens page at `/labs/mcp/tokens/`. The approve button and all links on that page work correctly, including when you were not already signed in and Labs redirected you to sign in first. If you previously encountered a "not found" page after signing in at that step, this has been fixed — run `/labs-token-setup` again
