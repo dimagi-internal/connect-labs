@@ -655,6 +655,18 @@ class TestATwoFormRound:
         assert [a["id"] for a in context["answers"]] == ["how", "skipped"]
 
 
+def test_a_named_contacts_email_and_name_are_folded_away_in_either_language():
+    from connect_labs.marketplace.responses import personal_question_ids
+
+    questions = [
+        {"id": "email", "text": "Primary contact email"},
+        {"id": "nom", "text": "Nom de la personne de contact principale"},
+        {"id": "how", "text": "How did you hear about this Request for Information (RFI)?"},
+        {"id": "kind", "text": "Which describes your organization?"},
+    ]
+    assert personal_question_ids(questions) == {"email", "nom"}
+
+
 class TestScores:
     """The round's scores side by side, for the owner to filter and compare."""
 
