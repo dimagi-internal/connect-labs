@@ -25,6 +25,8 @@
  *     getLevel: () => 2 | null,   // draw, click and search ONE level; null = every level, smallest wins
  *     navHost: element,           // mount the source / search / results here, not in the panel
  *     onHover: (desc | null) => {},  // the boundary under the cursor, as a descriptor
+ *     fixed: true,                // no on/off switch: the host turns the layer on and off
+ *     sourcePicker: false,        // no Source dropdown: the server picks, per country and level
  *   });
  */
 (function (global) {
@@ -69,6 +71,9 @@
     const onAreaRemove = opts.onAreaRemove || function () {};
     const getLevel = opts.getLevel || (() => null);
     const navHost = opts.navHost || null;
+    // A host with no Source dropdown never names a source, so every fetch gets
+    // the one the server picks for the country and level (one that has it).
+    const sourcePicker = opts.sourcePicker !== false;
     const onHover = opts.onHover || function () {};
     // Two-arm sampling support. When armEnabled() is true, each selected boundary
     // carries its own intervention/comparison arm, set via a per-row pill in the
@@ -107,7 +112,7 @@
         /* storage unavailable — session-only */
       }
     }
-    let source = _loadSource(); // active source; null = let the server pick the country default
+    let source = sourcePicker ? _loadSource() : null; // null = let the server pick
     let detectedIso = null; // country inferred from returned features (labs carry iso_code)
     let availableSources = [];
     let sourceLabels = {};
@@ -169,7 +174,7 @@
         )
         .join('');
       sourceSel.parentElement.style.display =
-        availableSources.length > 1 ? '' : 'none';
+        sourcePicker && availableSources.length > 1 ? '' : 'none';
     }
     function renderSummary() {
       if (!selected.size) {
@@ -424,14 +429,14 @@
         }
         availableSources = data.available_sources || [];
         sourceLabels = data.source_labels || {};
-        source = data.source || source;
+        if (sourcePicker) source = data.source || source;
         ensureLayers();
         map.getSource(SRC).setData({ type: 'FeatureCollection', features });
         renderSourceOptions();
         // search is country-wide + user-driven, so it doesn't re-run on viewport refresh
         setStatus(
           `${features.length.toLocaleString()} boundaries from ${
-            sourceLabels[source] || source || 'default'
+            sourceLabels[data.source] || data.source || 'default'
           }${truncated ? ' · zoom in to see all' : ''}`,
         );
       } catch (e) {
@@ -1669,6 +1674,7 @@
       id: 'admin',
       label: 'Boundaries',
       color: COLOR,
+      fixed: !!opts.fixed,
       onToggle: (on) => {
         if (on) {
           if (!navHost) layer.setBody(controlsHost ? sourceBody : body);

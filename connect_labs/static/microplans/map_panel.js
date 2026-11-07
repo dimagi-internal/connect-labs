@@ -138,9 +138,13 @@
           <div class="mp-lyr-nm">${esc(cfg.label)}${badge}</div>
           <div class="mp-lyr-meta"></div>
         </div>
-        <button type="button" class="mp-lyr-sw-toggle" data-testid="layer-toggle-${esc(
-          cfg.id || '',
-        )}" aria-label="toggle ${esc(cfg.label)}"><i></i></button>`;
+        ${
+          cfg.fixed
+            ? ''
+            : `<button type="button" class="mp-lyr-sw-toggle" data-testid="layer-toggle-${esc(
+                cfg.id || '',
+              )}" aria-label="toggle ${esc(cfg.label)}"><i></i></button>`
+        }`;
       const metaEl = row.querySelector('.mp-lyr-meta');
       const toggleEl = row.querySelector('.mp-lyr-sw-toggle');
       const bodyEl = el('div', 'mp-lyr-body');
@@ -149,9 +153,11 @@
       layersSec.appendChild(bodyEl);
 
       let on = false;
+      // A fixed layer (cfg.fixed) has no switch: its host turns it on and off,
+      // and its body (the host's controls) shows whether or not it is drawing.
       function render() {
-        toggleEl.classList.toggle('on', on);
-        bodyEl.hidden = !on || !bodyEl.childNodes.length;
+        if (toggleEl) toggleEl.classList.toggle('on', on);
+        bodyEl.hidden = (!on && !cfg.fixed) || !bodyEl.childNodes.length;
       }
       function setEnabled(v, fireCallback) {
         v = !!v;
@@ -164,7 +170,7 @@
         if (fireCallback !== false && typeof cfg.onToggle === 'function')
           cfg.onToggle(on, handle);
       }
-      toggleEl.addEventListener('click', () => setEnabled(!on));
+      if (toggleEl) toggleEl.addEventListener('click', () => setEnabled(!on));
 
       if (cfg.meta) metaEl.innerHTML = esc(cfg.meta);
       if (cfg.body) setContent(bodyEl, cfg.body);

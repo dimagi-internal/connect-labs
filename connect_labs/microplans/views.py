@@ -651,7 +651,7 @@ class BoundaryViewportView(LoginRequiredMixin, View):
             features, truncated = resolver.boundaries_in_bbox(
                 bbox, source=source, iso=iso, levels=levels, zoom=zoom, limit=self.LIMIT
             )
-            used = resolver.bbox_source_name(source, iso)
+            used = resolver.bbox_source_name(source, iso, levels)
         except Exception:  # noqa: BLE001
             logger.exception("microplans boundary viewport failed (iso=%s source=%s)", iso, source)
             return JsonResponse({"status": "error", "detail": "Boundary viewport lookup failed."}, status=502)

@@ -401,6 +401,7 @@
       countryResults = null,
       countryBox = null,
       navHost = null,
+      areaNav = null,
       statusEl = null;
     function renderLevels() {
       if (!levelBar) return;
@@ -455,11 +456,11 @@
         row.appendChild(group);
       }
       toolsEl.appendChild(row);
-      // The search lives in the map's own panel, like every other labs map:
-      // a country search while picking countries, the boundary layer's source
-      // and area search below that. Built here, mounted once the map is up.
+      // The search lives in the map's own panel, like every other labs map, and
+      // the panel looks the same at every level: one search box, for countries
+      // while picking countries and for areas below that. Built here, mounted
+      // in the Boundaries row's body once the map is up.
       countryBox = document.createElement('div');
-      countryBox.className = 'mb-1';
       if (minLevel === 0) {
         countrySearch = document.createElement('input');
         countrySearch.type = 'search';
@@ -481,9 +482,12 @@
         countryBox.appendChild(countrySearch);
         countryBox.appendChild(countryResults);
       }
-      // The boundary layer's own source + search + results land here.
+      // The boundary layer's own area search + results land in areaNav.
       navHost = document.createElement('div');
       navHost.className = 'sap-nav';
+      areaNav = document.createElement('div');
+      navHost.appendChild(countryBox);
+      navHost.appendChild(areaNav);
       statusEl = document.createElement('p');
       statusEl.className = 'text-xs text-gray-500 mt-2';
       statusEl.setAttribute('aria-live', 'polite');
@@ -519,16 +523,12 @@
       flyToCountry(c);
     }
     function showSearchFor() {
+      // Same panel at every level; only what its search box looks up changes.
       if (countryBox) countryBox.hidden = level !== 0 || !countrySearch;
       if (countryResults && level !== 0) countryResults.hidden = true;
-      // Picking countries uses the country tiles, not the boundary layer, so
-      // its row (switch, source, search) steps aside until a level is chosen.
-      if (adminLayer && adminLayer.layer) {
-        // .mp-lyr sets display:flex, which would beat the hidden attribute.
-        adminLayer.layer.row.style.display = level === 0 ? 'none' : '';
-      }
-      if (navHost) {
-        const q = navHost.querySelector('.mp-ab-search');
+      if (areaNav) {
+        areaNav.hidden = level === 0;
+        const q = areaNav.querySelector('.mp-ab-search');
         if (q) q.placeholder = 'Search ' + label(level) + ' areas by name…';
       }
     }
@@ -812,21 +812,22 @@
         map.moveLayer('sap-limits-line');
         limitsOnTop = true;
       });
-      // The map's panel, as on the other labs maps: the Boundaries layer with
-      // its source and area search, and above it the country search.
+      // The map's panel, as on the other labs maps: the Boundaries row and its
+      // search. Picking areas needs the boundaries drawn, so the row has no
+      // on/off switch, and no Source dropdown: the server draws each level from
+      // a source that has it (Niger's Level 2 is Overture's, not Enriched).
       const panel = MicroplansMapPanel.create({
         map,
         mount: opts.wrap,
         tabs: ['layers'],
       });
-      const layersSec = panel.el.querySelector('[data-sec="layers"]');
-      if (countryBox && layersSec)
-        layersSec.insertBefore(countryBox, layersSec.firstChild);
       adminLayer = MicroplansAdminBoundaries.register({
         panel,
         map,
         csrf: opts.csrf,
-        navHost,
+        navHost: areaNav,
+        fixed: true,
+        sourcePicker: false,
         urls: {
           viewport: urls.viewport,
           geometry: urls.geometry,
