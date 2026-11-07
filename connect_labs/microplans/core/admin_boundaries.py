@@ -684,8 +684,24 @@ class LabsAdminBoundarySource(BoundarySource):
         # Equal-area projection (EPSG:6933) so the area + largest-first ordering are
         # in real km², not square degrees. Ordering in SQL keeps the cap server-side.
         qs = qs.annotate(_area=Area(Transform("geometry", 6933))).order_by("-_area")
+        if self.db_source is None:
+            # The merged view holds some wards once per provider (every NGA ward is
+            # loaded from both GeoPoDe and GRID3). Drawing both stacks two slightly
+            # different outlines on one ward and spends two of the viewport's slots
+            # on it, so keep one per ward (the preferred provider), judged over a
+            # light pass with no geometry, then cap.
+            light = qs.values("pk", "name", "source", "extra")[: int(limit) * 2]
+            kept = _dedupe_by_provider_preference(
+                light,
+                name_of=lambda r: "|".join([r["name"] or "", *admin_names_from_extra(r.get("extra"))]),
+                source_of=lambda r: r.get("source"),
+            )[: int(limit)]
+            order = {r["pk"]: i for i, r in enumerate(kept)}
+            rows = sorted(qs.filter(pk__in=list(order)), key=lambda o: order[o.pk])
+        else:
+            rows = qs[: int(limit)]
         out = []
-        for obj in qs[: int(limit)]:
+        for obj in rows:
             geom = obj.geometry
             if tolerance:
                 geom = geom.simplify(tolerance, preserve_topology=True)

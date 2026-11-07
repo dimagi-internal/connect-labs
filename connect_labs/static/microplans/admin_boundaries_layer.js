@@ -164,6 +164,23 @@
     function setStatus(t) {
       statusEl.textContent = t || '';
     }
+    // On-map notice for a capped viewport: past the cap some boundaries are not
+    // drawn, which reads as holes in the map unless the map itself says why.
+    const zoomNotice = document.createElement('div');
+    zoomNotice.className = 'mp-ab-zoom-notice';
+    zoomNotice.setAttribute('role', 'status');
+    zoomNotice.hidden = true;
+    zoomNotice.style.cssText =
+      'position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:5;' +
+      'max-width:calc(100% - 24px);padding:6px 12px;border-radius:9999px;' +
+      'background:rgba(17,24,39,.85);color:#fff;font-size:12px;line-height:1.3;' +
+      'text-align:center;pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.25)';
+    zoomNotice.textContent =
+      'Too many areas to draw at this zoom. Zoom in to see and pick them all.';
+    if (map.getContainer) map.getContainer().appendChild(zoomNotice);
+    function showZoomNotice(on) {
+      zoomNotice.hidden = !on;
+    }
     function renderSourceOptions() {
       sourceSel.innerHTML = (availableSources || [])
         .map(
@@ -367,6 +384,7 @@
       return { type: 'FeatureCollection', features: [] };
     }
     function setVisible(on) {
+      if (!on) showZoomNotice(false);
       [FILL, FILL_HOVER, LINE, HOVER, SEL_FILL, SEL_LINE].forEach((id) => {
         if (map.getLayer(id))
           map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
@@ -415,6 +433,7 @@
         }
         features = data.features || [];
         truncated = !!data.truncated;
+        showZoomNotice(truncated);
         if (!detectedIso && features.length) {
           // Dominant country in view, not just features[0] — a wide, multi-country
           // zoom can list a neighbour first, which then mis-scopes later fetches.
@@ -437,7 +456,7 @@
         setStatus(
           `${features.length.toLocaleString()} boundaries from ${
             sourceLabels[data.source] || data.source || 'default'
-          }${truncated ? ' · zoom in to see all' : ''}`,
+          }${truncated ? ' · some not drawn, zoom in to see all' : ''}`,
         );
       } catch (e) {
         if (e && e.name === 'AbortError') return;
