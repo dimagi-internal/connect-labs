@@ -184,7 +184,13 @@ def parse_submissions(rows: list[list[str]], overrides: dict | None = None) -> t
 
 # Personal fields the column detector does not name: a phone number, and the
 # declaration's "Name, Role, and Date" signature line.
-_PERSONAL_HEADER = re.compile(r"\b(phone|telephone|whatsapp|mobile)\b|^name,? (and )?(role|title)|signature", re.I)
+_PERSONAL_HEADER = re.compile(
+    r"\b(phone|telephone|whatsapp|mobile)\b|^name,? (and )?(role|title)|signature"
+    # A named contact's email or name, however the form words it: "Primary
+    # contact email", "Nom de la personne de contact principale".
+    r"|\bcontact\b.*\b(e-?mail|courriel|name|nom)\b|\b(e-?mail|courriel|name|nom)\b.*\bcontact\b",
+    re.I,
+)
 
 
 def personal_question_ids(questions: list[dict], column_map: dict | None = None) -> set[str]:

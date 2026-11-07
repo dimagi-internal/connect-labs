@@ -678,6 +678,36 @@ class TestAnswersReadAsTheFormAskedThem:
         assert "data-answer-grid" in org and "data-picked" in org
 
 
+class TestATwoFormRound:
+    def test_a_response_shows_only_its_own_forms_questions(self, client, round_, member):
+        round_.forms = [{"key": "battery-en"}, {"key": "battery-fr"}]
+        round_.questions = [
+            {"id": "how", "text": "How would you find households?", "column": 1, "forms": ["battery-en"]},
+            {"id": "comment", "text": "Comment trouveriez-vous les ménages ?", "column": 1, "forms": ["battery-fr"]},
+            {"id": "skipped", "text": "Anything else?", "column": 2, "forms": ["battery-en"]},
+        ]
+        round_.save()
+        first = round_.responses.get(source_row=2)
+        first.source_form = "battery-en"
+        first.save()
+        client.force_login(member)
+        context = client.get(reverse("solicitations:response_detail", args=[first.pk])).context
+        # Its own form's unanswered question stays; the other form's does not appear.
+        assert [a["id"] for a in context["answers"]] == ["how", "skipped"]
+
+
+def test_a_named_contacts_email_and_name_are_folded_away_in_either_language():
+    from connect_labs.marketplace.responses import personal_question_ids
+
+    questions = [
+        {"id": "email", "text": "Primary contact email"},
+        {"id": "nom", "text": "Nom de la personne de contact principale"},
+        {"id": "how", "text": "How did you hear about this Request for Information (RFI)?"},
+        {"id": "kind", "text": "Which describes your organization?"},
+    ]
+    assert personal_question_ids(questions) == {"email", "nom"}
+
+
 class TestScores:
     """The round's scores side by side, for the owner to filter and compare."""
 
