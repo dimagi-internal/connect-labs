@@ -392,6 +392,23 @@ class TestTheSiteDocument:
         assert tuple(pages["labs:workflow:run:data"].scopes) == ("workflow:read", "data:read", "workflow:edit")
         assert pages["labs:workflow:run"].title == "A workflow run"
 
+    def test_it_names_labs_and_says_in_words_what_each_scope_lets_an_agent_do(self, client, configured, settings):
+        """canopy's permission prompt prints these ("... data on Connect Labs", one line per scope)."""
+        from canopy_sdk.site import verify_site_document
+
+        from connect_labs.labs import canopy
+
+        needs = verify_site_document(
+            client.get(reverse("labs:canopy_site")).content.decode(),
+            [_published_key(client)],
+            site_name=settings.CANOPY_APP_NAME,
+        )
+        assert needs.title == "Connect Labs"
+        assert dict(needs.scope_labels) == canopy.SCOPE_LABELS
+        # Every scope any page grants has words, so no prompt falls back to a bare scope name.
+        granted = {scope for page in needs.pages for scope in page.scopes}
+        assert granted <= set(needs.scope_labels)
+
     def test_it_is_also_at_the_well_known_path_with_labs_own_facts(self, client, configured):
         from canopy_sdk.site import WELL_KNOWN_PATH, verify_site_document
 

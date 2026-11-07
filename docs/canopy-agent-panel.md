@@ -133,6 +133,13 @@ sites page reads it and shows, per agent, whether it meets labs' needs. Canopy a
 not need to know labs' pages: labs describes them in `site.json` for reference, and
 enforces each page's scopes itself.
 
+`site.json` also says what labs is called (`title`: "Connect Labs") and what each scope lets
+an agent do in a phrase (`scope_labels`, `canopy.SCOPE_LABELS`; dimagi-canopy 0.28). canopy's
+permission prompt prints them ("ACE needs your permission to interact with this page and data
+on Connect Labs", then one line per scope) beside the raw scope names, so a person is told what
+they are agreeing to in words. They are descriptive only: `SCOPE_TOOLS` is what is enforced, and
+a test holds every scope to a label that says, for a write scope, that a person confirms it.
+
 Not drawn means no page token, no grant and no ID-JAG. Labs' MCP holds canopy's calls to
 the same rule independently (`mcp/visit_access.py:delegated_denied_reason`, every tool
 under `canopy.VISIT_SCOPES`), so a token minted before an opportunity's data changed is

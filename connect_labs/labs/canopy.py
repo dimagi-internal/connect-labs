@@ -322,6 +322,28 @@ def user_claims(user) -> dict:
     }
 
 
+#: What labs calls itself in canopy's permission prompt ("ACE needs your permission to interact
+#: with this page and data on Connect Labs"), published in ``site.json`` as ``title``.
+SITE_TITLE = "Connect Labs"
+
+#: What each scope lets an agent do, in a phrase a person reads in that prompt (``site.json``'s
+#: ``scope_labels``). Descriptive text only: ``SCOPE_TOOLS`` is what is enforced. Say honestly what
+#: a scope reaches, and for a write scope that nothing is saved until the person confirms it.
+#: A test holds every scope in ``SCOPE_TOOLS`` to a label.
+SCOPE_LABELS: dict[str, str] = {
+    "marketplace:read": "look up the partner network: organisations, their history and the rounds they answered",
+    "reviews:read": "read a round's applicants' answers and the reviews written on them",
+    "marketplace:review": "propose AI reviews and evaluation criteria for a round; nothing is saved until you confirm",
+    "workflow:read": "read a workflow run's data, indicators and cases",
+    "workflow:act": "propose actions on a workflow run, such as messaging workers; each is sent only on your click",
+    "workflow:edit": "propose changes to the workflow; each is saved only when you confirm it",
+    "page:read": "read what this page is built from",
+    "targeting:read": "read targeting data: population and burden figures, models and scenarios",
+    "data:read": "run read-only queries over the data you can access, including visits and workflows",
+    "supply:read": "read supply-chain records: tenders, quotes, awards and commitments",
+}
+
+
 def site_needs() -> dict:
     """What labs asks of canopy's agents, for ``site.json``: to work with sensitive data an
     agent must be declared to handle sensitive data and run on sensitive-data runners; and
@@ -329,6 +351,8 @@ def site_needs() -> dict:
     agents version they were chosen."""
     agents = canopy_settings.current()
     return {
+        "title": SITE_TITLE,
+        "scope_labels": SCOPE_LABELS,
         "sensitive_data": {"requires": {"handles_sensitive": True, "runner_flag": canopy_settings.SENSITIVE_DATA}},
         "uses": {
             "agents": list(agents.offered),
