@@ -14,9 +14,10 @@ as themselves, and the token comes back sealed to a key only this script holds.
         Waits for the answer. On approval writes the token to PATH (0600) and prints only the path.
         Exit 0 approved, 4 still pending, 3 declined or expired, 1 other failure.
 
-On a runner with an approved canopy device key the request is signed with it
-(`canopy vault runner-proof`), and the person's page says which runner asked; otherwise it shows
-as not verified. The agent's own labs token is read from $LABS_MCP_TOKEN (or --token-file). The default level is
+With `--prove-runner`, on a runner with an approved canopy device key, the request is signed
+with it (`canopy vault runner-proof`) and the person's page says which runner asked; otherwise it
+shows as not verified. Off by default: it shares the runner's name with labs.
+The agent's own labs token is read from $LABS_MCP_TOKEN (or --token-file). The default level is
 no-user-visit (it never sees a real visit row); `--level full` asks for everything the person can
 do. The person's passkey, through canopy, is needed for either. The token lasts one hour. Never
 print the token; delete the file when the job is done. Needs the `cryptography` package.
@@ -130,7 +131,7 @@ def ask(args) -> int:
         f"{base}/mcp/admin/agent-requests/",
         _own_token(args.token_file),
         {"reason": args.reason, "recipient_key": public, "scope": LEVELS[args.level]},
-        prove_runner=True,
+        prove_runner=args.prove_runner,
     )
     if status != 201:
         message = (body.get("error") or {}).get("message", "")
@@ -186,6 +187,12 @@ def main() -> int:
     p_ask.add_argument("--reason", required=True, help="what you will read and why (shown to the person)")
     p_ask.add_argument("--level", choices=sorted(LEVELS), default="no-user-visit", help="default: no-user-visit")
     p_ask.add_argument("--token-file", help="a file holding the agent's own labs token (default: $LABS_MCP_TOKEN)")
+    p_ask.add_argument(
+        "--prove-runner",
+        action="store_true",
+        help="sign the request with this runner's approved canopy device key, so the person's page names the "
+        "runner (shares the runner's name and the agent it serves with labs). Off by default.",
+    )
     p_ask.set_defaults(func=ask)
     p_collect = sub.add_parser("collect", help="wait for the answer and write the token to a private file")
     p_collect.add_argument("ref")

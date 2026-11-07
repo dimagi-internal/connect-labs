@@ -108,8 +108,8 @@ canopy. The token is then minted for your account, lasts one hour, and is return
 only the agent holds. It is no-user-visit unless the agent asks for full access, and the passkey is
 needed for either level. It shows on your MCP access page, where you can revoke it.
 
-The page also says which canopy runner asked. A runner with an approved device key signs the request
-(`canopy vault runner-proof`, sent as `X-Canopy-Runner-Proof`), and labs asks canopy who holds the key
+The page also says which canopy runner asked. A runner with an approved device key signs the request when the agent asks it to
+(`request_agent_token.py ask --prove-runner`: `canopy vault runner-proof`, sent as `X-Canopy-Runner-Proof`; off by default), and labs asks canopy who holds the key
 (`mcp/runner_check.py`). A request without that proof still goes through and is shown as "Not
 verified"; a proof canopy refuses refuses the request.
 
