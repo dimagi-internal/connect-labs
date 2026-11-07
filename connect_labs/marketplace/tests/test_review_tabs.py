@@ -186,3 +186,14 @@ class TestWhoseReviews:
         on_step = _get(client, member, step).context["outcomes"]
         assert [(o["key"], o["count"]) for o in on_step] == [(o["key"], o["count"]) for o in overview]
         assert {o["key"]: o["count"] for o in on_step}["waitlist"] == 1, "the person's waitlist leads"
+
+
+def test_a_redirect_into_review_keeps_only_the_parameters_a_step_reads(client, scored, member):
+    client.force_login(member)
+    url = client.get(
+        reverse("marketplace:round_scores", args=["battery-2026"]),
+        {"version": "v1", "next": "https://elsewhere.invalid/"},
+    ).url
+    assert url == reverse("marketplace:round_review_step", args=["battery-2026", "ai-review"]) + "?version=v1"
+    landed = _get(client, member, next="https://elsewhere.invalid/").url
+    assert "elsewhere" not in landed and landed.endswith("/review/ai-review/")
