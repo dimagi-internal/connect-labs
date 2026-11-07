@@ -332,6 +332,22 @@ def test_every_scoped_tool_exists_and_only_previewed_scopes_write():
     assert all(scope.endswith(":read") for scope in set(canopy.SCOPE_TOOLS) - canopy.PREVIEWED_WRITE_SCOPES)
 
 
+def test_every_scope_has_a_plain_label_for_the_permission_prompt():
+    """canopy prints these beside the raw scope names when it asks a person to let an agent use a
+    page, so a scope with no phrase would be the one a person cannot read."""
+    assert set(canopy.SCOPE_LABELS) == set(canopy.SCOPE_TOOLS)
+    for scope, label in canopy.SCOPE_LABELS.items():
+        assert label == " ".join(label.split()) and 0 < len(label) <= 160, scope
+    # A scope that writes says that a person confirms it.
+    for scope in canopy.PREVIEWED_WRITE_SCOPES:
+        assert any(w in canopy.SCOPE_LABELS[scope] for w in ("confirm", "click")), scope
+
+
+def test_site_json_asks_canopy_to_say_labs_by_name_with_those_labels():
+    needs = canopy.site_needs()
+    assert needs["title"] == "Connect Labs" and needs["scope_labels"] == canopy.SCOPE_LABELS
+
+
 def test_every_page_scope_is_one_the_server_offers():
     for page, scopes in canopy.PAGE_SCOPES.items():
         assert scopes, page
