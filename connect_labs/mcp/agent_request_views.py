@@ -48,9 +48,13 @@ def approval_url(request, req: AgentTokenRequest) -> str:
 
 
 def endpoint_url(request) -> str:
-    """The URL the agent POSTed to, as it wrote it (the runner proof is bound to it)."""
+    """The URL the agent POSTed to (the runner proof is bound to it).
+
+    From the named route, not ``request.path``: the MCP admin routes sit behind a Starlette
+    mount that may strip a prefix, and the runner signed the public URL."""
+    path = reverse("mcp:agent_request_create")
     base = oauth.public_base_url()
-    return f"{base}{request.path}" if base else request.build_absolute_uri(request.path)
+    return f"{base}{path}" if base else request.build_absolute_uri(path)
 
 
 @csrf_exempt

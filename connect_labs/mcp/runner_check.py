@@ -43,7 +43,9 @@ def check(request, endpoint_url: str, speaks_for: str = "") -> dict:
         got = ra.attest(kind=kind, proof=proof, htu=ra.bound_url(endpoint_url, request.body), speaks_for=speaks_for)
     except ra.AttestationError as exc:
         if exc.code == "proof_refused" or exc.status in (400, 401, 403):
-            raise AgentRequestError("runner_proof_refused", "canopy would not vouch for the runner proof.") from exc
+            raise AgentRequestError(
+                "runner_proof_refused", f"canopy would not vouch for the runner proof ({exc.code}: {exc.message})."
+            ) from exc
         log.warning("runner proof not checked (%s): %s", exc.code, exc.message)
         return {}
     return {"runner": got.runner, "kind": got.kind, "agent": got.agent, "serves_agent": got.serves_agent}
