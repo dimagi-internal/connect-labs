@@ -1,0 +1,15 @@
+{% comment %}
+The Review tab's step bar: each step with where it stands. Built by
+review_steps.tab_bar; the arrows say the steps run in order, and the first
+three go round again each time the criteria are revised.
+{% endcomment %}
+<nav class="flex flex-wrap items-stretch gap-1 mt-4 p-1 rounded-lg" style="background:#f1f5f9" aria-label="Review steps" data-testid="review-steps">
+  {% for s in steps %}
+    <a href="{% url 'marketplace:round_review_step' round.slug s.key %}" title="{{ s.hint }}" data-step="{{ s.key }}"
+       class="flex flex-col px-3 py-2 rounded-md {% if s.current %}bg-white text-brand-deep-purple{% else %}text-gray-600 hover:text-brand-indigo{% endif %}"
+       style="flex: 1 1 10rem; {% if s.current %}box-shadow: 0 1px 2px rgba(0,0,0,.08){% endif %}" {% if s.current %}aria-current="step"{% endif %}>
+      <span class="text-[13px] font-semibold">{{ s.number }} · {{ s.label }}</span>
+      <span class="text-[11.5px] text-gray-500" data-testid="step-status">{{ s.status }}</span>
+    </a>
+  {% endfor %}
+</nav>

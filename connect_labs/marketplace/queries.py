@@ -22,16 +22,33 @@ from django.db.models import Count, Max, Prefetch, Q
 from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import programs
 from connect_labs.marketplace.models import OrgProfile
-from connect_labs.solicitations.local_models import ACCESS_OK, SOURCE_DIRECTORY, Solicitation, SolicitationResponse
+from connect_labs.solicitations.local_models import (
+    ACCESS_OK,
+    SOURCE_DIRECTORY,
+    Solicitation,
+    SolicitationResponse,
+)
 
 # The segments people actually work, in the order they are offered. Each one is
 # a real job — "who can I still activate", "who can I not even write to" — not a
 # permutation of the filter controls.
 SEGMENTS = [
-    ("all", "All", "Every organization labs knows of, including those Connect has no row for."),
+    (
+        "all",
+        "All",
+        "Every organization labs knows of, including those Connect has no row for.",
+    ),
     ("delivering", "Delivering", "Currently running at least one Connect opportunity."),
-    ("available", "Available", "Answered a round, not delivering today. The largest untapped part of the network."),
-    ("repeat", "Applied more than once", "Came back for another round. Interest is already demonstrated."),
+    (
+        "available",
+        "Available",
+        "Answered a round, not delivering today. The largest untapped part of the network.",
+    ),
+    (
+        "repeat",
+        "Applied more than once",
+        "Came back for another round. Interest is already demonstrated.",
+    ),
 ]
 
 
@@ -43,7 +60,15 @@ SEGMENTS = [
 # poller ingests, not between two queries in one request.
 _CACHE_TTL_SECONDS = 60
 # Everything cached for the TTL, keyed by the function that fills it.
-_CACHED = ("delivering", "workspaces", "delivered", "first_service", "committed", "fixed", "fx")
+_CACHED = (
+    "delivering",
+    "workspaces",
+    "delivered",
+    "first_service",
+    "committed",
+    "fixed",
+    "fx",
+)
 _cache: dict = dict.fromkeys(_CACHED) | {"loaded_at": 0.0}
 
 
@@ -319,7 +344,13 @@ def _committed_by_program() -> dict[str, dict]:
     }
 
     def blank():
-        return {"deployed": 0, "remaining": 0, "live_opportunities": 0, "unconvertible": 0, "currencies": set()}
+        return {
+            "deployed": 0,
+            "remaining": 0,
+            "live_opportunities": 0,
+            "unconvertible": 0,
+            "currencies": set(),
+        }
 
     out: dict[str, dict] = {}
 
@@ -855,8 +886,14 @@ def _effective_flags(review) -> list[str]:
     return list(dict.fromkeys(vocabulary.flag_key(f) or str(f) for f in flags))
 
 
-def review_status(round_: Solicitation, applicants: list[dict], version: str | None = None) -> dict:
+def review_status(
+    round_: Solicitation, applicants: list[dict], version: str | None = None, kind: str | None = None
+) -> dict:
     """Where each applicant stands in review, and how far the round has got.
+
+    `kind="ai"` reads the AI's reviews alone, as the Review tab's AI Review and
+    AI Analysis steps do: there a person's review would hide the very scores
+    being judged. By default every review counts, a person's first.
 
     A person's review outranks the AI's: an applicant shows the outcome of its
     latest human review when it has one, else the AI's, marked as unchecked.
@@ -874,6 +911,8 @@ def review_status(round_: Solicitation, applicants: list[dict], version: str | N
         ).select_related("based_on")
     else:
         reviews = SolicitationReview.objects.filter(response__solicitation=round_).select_related("based_on")
+    if kind:
+        reviews = reviews.filter(kind=kind)
     for review in reviews.order_by("review_date", "pk"):
         by_response.setdefault(review.response_id, []).append(review)
     counts = {"people": 0, "ai_only": 0, "none": 0, "outcomes": {}, "next_pk": None}
@@ -1079,7 +1118,13 @@ def facet_rail(facets: dict, selected: dict, querydict) -> list[dict]:
     # exactly who a round is looking for.
     sections = [
         ("country", "Country", facets["countries"], selected["countries"], None),
-        ("delivered", "Has delivered", facets["delivered"], selected["delivered"], "label"),
+        (
+            "delivered",
+            "Has delivered",
+            facets["delivered"],
+            selected["delivered"],
+            "label",
+        ),
         ("applied", "Has applied for", facets["applied"], selected["applied"], "label"),
     ]
 
@@ -1190,7 +1235,16 @@ def applied_programs_of(org, readable=None) -> set[str]:
     }
 
 
-def matches(org, *, query="", countries=(), delivered=(), applied=(), rounds=(), delivered_by_name=None) -> bool:
+def matches(
+    org,
+    *,
+    query="",
+    countries=(),
+    delivered=(),
+    applied=(),
+    rounds=(),
+    delivered_by_name=None,
+) -> bool:
     """Whether one organisation survives the facet filters.
 
     Values WITHIN a dimension are an OR and dimensions are an AND, because that
@@ -1401,7 +1455,10 @@ def version_history(round_: Solicitation) -> list[dict]:
         tally = counts.setdefault(version, {"ai": 0, "people": 0})
         tally["ai" if kind == REVIEW_AI else "people"] += 1
     out = []
-    for record in sorted(round_.rubric_versions.select_related("created_by"), key=lambda r: version_number(r.version)):
+    for record in sorted(
+        round_.rubric_versions.select_related("created_by"),
+        key=lambda r: version_number(r.version),
+    ):
         tally = counts.get(record.version, {"ai": 0, "people": 0})
         out.append(
             {
@@ -1419,7 +1476,9 @@ def version_history(round_: Solicitation) -> list[dict]:
     return out
 
 
-def scores_at(round_: Solicitation, version: str | None = None, first_service: dict | None = None):
+def scores_at(
+    round_: Solicitation, version: str | None = None, first_service: dict | None = None, kind: str | None = None
+):
     """The round's applicants and scores as read at one criteria version (the current one by default).
 
     Returns (applicants, reviewed, summary, criteria). At an earlier version the
@@ -1429,18 +1488,146 @@ def scores_at(round_: Solicitation, version: str | None = None, first_service: d
     current = not version or version == round_.rubric_version
     record = None if current else round_.rubric_versions.filter(version=version).first()
     criteria = round_.evaluation_criteria if current or record is None else record.criteria
-    applicants = round_applicants(round_, first_service if first_service is not None else first_service_by_org_name())
-    reviewed = review_status(round_, applicants, None if current else version)
+    applicants = round_applicants(
+        round_,
+        first_service if first_service is not None else first_service_by_org_name(),
+    )
+    reviewed = review_status(round_, applicants, None if current else version, kind)
     return applicants, reviewed, round_scores(round_, applicants, criteria), criteria
 
 
-def compare_at(round_: Solicitation, earlier: str, later: str, first_service: dict | None = None) -> dict:
-    """`compare_versions` for two versions of one round, by name."""
+def compare_at(
+    round_: Solicitation, earlier: str, later: str, first_service: dict | None = None, kind: str | None = None
+) -> dict:
+    """`compare_versions` for two versions of one round, by name (`kind="ai"`: the AI's reviews alone)."""
     first_service = first_service if first_service is not None else first_service_by_org_name()
-    old_applicants, _, old_scores, _ = scores_at(round_, earlier, first_service)
-    new_applicants, _, new_scores, _ = scores_at(round_, later, first_service)
+    old_applicants, _, old_scores, _ = scores_at(round_, earlier, first_service, kind)
+    new_applicants, _, new_scores, _ = scores_at(round_, later, first_service, kind)
     return {
         "earlier": earlier,
         "later": later,
         **compare_versions(old_applicants, new_applicants, old_scores, new_scores),
     }
+
+
+def review_progress(round_: Solicitation, applicants: list[dict]) -> dict:
+    """How far a round's review has got, on its CURRENT criteria, whatever version a page is showing.
+
+    What the Review tab's step bar reads: how many applicants have a standing AI
+    review scored on the current version, and how many a person has checked.
+    Counted per applicant row (one per organisation), as the round page counts.
+    """
+    from connect_labs.solicitations.local_models import REVIEW_AI, SolicitationReview
+
+    pks = {a["response"].pk for a in applicants}
+    standing = SolicitationReview.objects.filter(response_id__in=pks).values_list("response_id", "kind", "provenance")
+    ai_current, people = set(), set()
+    for response_id, kind, provenance in standing:
+        if kind == REVIEW_AI:
+            if round_.rubric_version and str((provenance or {}).get("rubric_version") or "") == round_.rubric_version:
+                ai_current.add(response_id)
+        else:
+            people.add(response_id)
+    return {
+        "applicants": len(pks),
+        "ai_on_current": len(ai_current),
+        "people_checked": len(people),
+    }
+
+
+_STANCE_WORDS = {
+    "agrees": "agrees with {whose}",
+    "adds": "added to {whose}",
+    "amended": "copied and edited {whose}",
+    "disagrees": "disagrees with {whose}",
+}
+
+
+def _stance_text(review) -> str:
+    """How a person's review relates to the one it started from, in words: "agrees with the AI"."""
+    from connect_labs.solicitations.local_models import REVIEW_AI
+
+    if not review.stance or review.based_on is None:
+        return "own review"
+    whose = "the AI" if review.based_on.kind == REVIEW_AI else f"{review.based_on.reviewer_username}'s review"
+    if review.stance == "agrees" or review.stance == "disagrees":
+        return _STANCE_WORDS[review.stance].format(whose=whose)
+    return _STANCE_WORDS.get(review.stance, "{whose}").format(
+        whose="the AI's review" if review.based_on.kind == REVIEW_AI else whose
+    )
+
+
+def human_review_rows(round_: Solicitation, applicants: list[dict]) -> tuple[list[dict], dict]:
+    """Each applicant's AI review beside the people's, and how the people responded to the AI.
+
+    Returns (rows, counts). A row carries the standing AI review (outcome,
+    score, the criteria version it was scored on) and every standing person's
+    review (who, their stance on the review they started from, their outcome,
+    their version). `counts` tallies applicants checked and stances taken, for
+    the figures above the list. Rows keep `applicants`' order.
+    """
+    from connect_labs.solicitations import vocabulary
+    from connect_labs.solicitations.local_models import REVIEW_AI, SolicitationReview
+
+    pks = [a["response"].pk for a in applicants]
+    by_response: dict[int, list] = {}
+    for review in (
+        SolicitationReview.objects.filter(response_id__in=pks)
+        .select_related("reviewer", "based_on")
+        .order_by("review_date", "pk")
+    ):
+        by_response.setdefault(review.response_id, []).append(review)
+
+    def version_of(review) -> str:
+        return str((review.provenance or {}).get("rubric_version") or "")
+
+    counts = {
+        "checked": 0,
+        "agrees": 0,
+        "adds": 0,
+        "amended": 0,
+        "disagrees": 0,
+        "own": 0,
+        "reviewers": set(),
+    }
+    rows = []
+    for a in applicants:
+        reviews = by_response.get(a["response"].pk, [])
+        ai = [r for r in reviews if r.kind == REVIEW_AI]
+        people = [r for r in reviews if r.kind != REVIEW_AI]
+        lead_ai = ai[-1] if ai else None
+        if people:
+            counts["checked"] += 1
+        for r in people:
+            counts[r.stance if r.stance in counts else "own"] += 1
+            counts["reviewers"].add(r.reviewer_username)
+        rows.append(
+            {
+                "applicant": a,
+                "ai": (
+                    {
+                        "outcome": lead_ai.outcome,
+                        "label": vocabulary.outcome_label(lead_ai.outcome) if lead_ai.outcome else "",
+                        "score": lead_ai.score,
+                        "version": version_of(lead_ai),
+                        "stale": bool(round_.rubric_version) and version_of(lead_ai) != round_.rubric_version,
+                    }
+                    if lead_ai
+                    else None
+                ),
+                "people": [
+                    {
+                        "who": r.reviewer_username,
+                        "stance": r.stance,
+                        "stance_text": _stance_text(r),
+                        "outcome": r.outcome,
+                        "label": vocabulary.outcome_label(r.outcome) if r.outcome else "",
+                        "version": version_of(r),
+                        "stale": bool(round_.rubric_version) and version_of(r) not in ("", round_.rubric_version),
+                    }
+                    for r in people
+                ],
+            }
+        )
+    counts["reviewers"] = len(counts["reviewers"])
+    return rows, counts

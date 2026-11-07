@@ -1,0 +1,110 @@
+{% comment %}
+Review › Criteria: what applicants are scored on. The shown version's criteria
+with their scoring guides and reasons, how they were chosen, the way to ask for
+a revision (always a new version, scored again before it is judged on AI
+Analysis), and every version so far.
+{% endcomment %}
+<div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-4.5" data-testid="criteria">
+  <div class="px-4 sm:px-5 py-3.5 border-b border-brand-border-light flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-sm font-semibold text-brand-deep-purple">How responses are scored</span>
+      {% if shown_version %}<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo">Criteria version {{ shown_version|slice:"1:" }}{% if is_current %} (current){% endif %}</span>{% endif %}
+    </div>
+    {% if canopy_panel and not round.evaluation_criteria %}
+      <button type="button" data-canopy-ask class="hidden inline-flex items-center px-3.5 py-2 bg-indigo-600 text-white text-[13px] font-medium rounded-lg hover:bg-indigo-700"
+              data-testid="propose-criteria" data-ask="{{ ai_review_ask }}" title="{{ ai_review_hint }}">
+        <i class="fa-solid fa-wand-magic-sparkles mr-2 text-[11px]"></i>Propose criteria
+      </button>
+    {% endif %}
+  </div>
+  {% if not is_current %}
+    <div class="text-[12.5px] text-amber-800 bg-amber-50 px-4 sm:px-5 py-2" data-testid="earlier-version">
+      An earlier version. The round now uses version {{ round.rubric_version|slice:"1:" }}.
+      <a href="{% url 'marketplace:round_review_step' round.slug 'criteria' %}" class="text-brand-indigo hover:text-brand-deep-purple ml-1">See the current criteria →</a>
+    </div>
+  {% endif %}
+  {% if shown_criteria %}
+    <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-200" data-testid="criteria-list">
+      <thead class="bg-gray-50"><tr>
+        <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Criterion</th>
+        <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Weight</th>
+        <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">How it is scored</th>
+      </tr></thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for c in shown_criteria %}
+          <tr>
+            <td class="px-4 sm:px-5 py-3 align-top" style="width: 32%">
+              <div class="text-[13px] font-medium text-brand-deep-purple">{{ c.name }}</div>
+              {% if c.rationale %}<div class="text-[12px] text-gray-500 leading-snug mt-0.5">{{ c.rationale }}</div>{% endif %}
+            </td>
+            <td class="px-3 py-3 align-top text-right text-[13px] text-gray-800 tabular-nums">{{ c.weight|floatformat:"-1" }}%</td>
+            <td class="px-4 sm:px-5 py-3 align-top text-[12.5px] text-gray-600 leading-snug whitespace-pre-line">{{ c.scoring_guide|default:"—" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  {% else %}
+    <div class="px-4 sm:px-5 py-10 text-center text-[13px] text-gray-500 leading-relaxed" data-testid="no-criteria">
+      No criteria yet. This round's form went out without them, so they are written after reading the submissions.<br>
+      Ask the assistant to propose them: it drafts version 1 from the responses for you to approve, and the AI Review then scores everyone on it, so you can judge the criteria by what they produce.
+    </div>
+  {% endif %}
+</div>
+
+{% if shown_basis %}
+  <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-5 py-3.5 mb-4.5" data-testid="basis">
+    <div class="text-sm font-semibold text-brand-deep-purple">How these were chosen</div>
+    <p class="text-[12.5px] text-gray-600 leading-relaxed whitespace-pre-line mt-1.5">{{ shown_basis }}</p>
+  </div>
+{% endif %}
+
+{% if can_edit and round.evaluation_criteria and is_current %}
+  <div id="revise" class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-5 py-3.5 mb-4.5" data-testid="revise">
+    <div class="text-sm font-semibold text-brand-deep-purple">Revise the criteria</div>
+    <p class="text-[12.5px] text-gray-600 leading-snug mt-1">Say what to change. The assistant drafts version {{ progress.next_version|default:"" }} for you to approve, scores everyone on it, and AI Analysis then shows what changed from this version.</p>
+    <div class="flex flex-wrap items-center gap-2 mt-2.5">
+      <input id="revise-text" type="text" aria-label="What to change" placeholder="e.g. make cost count less; give points for named sampling steps, not length" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800" style="flex: 1 1 22rem; min-width: 0">
+      {% if canopy_panel %}
+        <button type="button" data-canopy-ask data-ask-input="revise-text" class="hidden inline-flex items-center px-3.5 py-2 bg-indigo-600 text-white text-[13px] font-medium rounded-lg hover:bg-indigo-700"
+                data-testid="revise-criteria" data-ask="{{ revise_ask }}">
+          <i class="fa-solid fa-wand-magic-sparkles mr-2 text-[11px]"></i>Revise the criteria
+        </button>
+      {% endif %}
+    </div>
+  </div>
+{% endif %}
+
+  {% if history %}
+    <details open class="bg-white border border-brand-border-light rounded-lg mt-4.5 px-4 sm:px-5 py-3" data-testid="versions">
+      <summary class="cursor-pointer text-[13px] font-semibold text-brand-deep-purple">Criteria versions ({{ history|length }})</summary>
+      <table class="min-w-full divide-y divide-gray-100 mt-2">
+        <thead><tr>
+          <th class="py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Version</th>
+          <th class="py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Written</th>
+          <th class="py-2 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">AI reviews</th>
+          <th class="py-2 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">People's reviews</th>
+          <th class="py-2"></th>
+        </tr></thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for v in history %}
+            <tr>
+              <td class="py-2 text-[12.5px]"><a href="?version={{ v.version }}" class="text-brand-indigo hover:text-brand-deep-purple">Version {{ v.number }}</a>{% if v.current %} <span class="text-[11px] text-gray-500">current</span>{% endif %}</td>
+              <td class="py-2 text-[12.5px] text-gray-600">{{ v.created_at|date:"j M Y" }}{% if v.created_by %} · {{ v.created_by }}{% endif %}</td>
+              <td class="py-2 text-right text-[12.5px] text-gray-700 tabular-nums">{{ v.ai_reviews }}</td>
+              <td class="py-2 text-right text-[12.5px] text-gray-700 tabular-nums">{{ v.person_reviews }}</td>
+              <td class="py-2 text-right">
+                {% if can_edit and not v.current %}
+                  <form method="post" action="{% url 'marketplace:round_version_delete' round.slug v.version %}" onsubmit="return confirm('Delete criteria version {{ v.number }} and the {{ v.ai_reviews|add:v.person_reviews }} reviews scored on it{% if v.person_reviews %}, including {{ v.person_reviews }} by people{% endif %}? This cannot be undone.');">
+                    {% csrf_token %}
+                    <button type="submit" class="text-[12px] text-red-700 hover:text-red-800"><i class="fa-solid fa-trash-can mr-1"></i>Delete with its reviews</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+  {% endif %}

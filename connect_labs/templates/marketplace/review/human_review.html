@@ -1,0 +1,73 @@
+{% comment %}
+Review › Human Review: people checking the AI. How many applicants a person has
+checked and how they responded to the AI's review (agreed, added to it, copied
+and edited, disagreed), then every applicant with the AI's recommendation beside
+the people's. The checking itself happens on the response page; this is where
+it stands. Rows keep the round's order (the shortlist first).
+{% endcomment %}
+<div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-6 py-4 mb-4.5 flex flex-wrap items-end gap-x-8 gap-y-4" data-testid="human-figures">
+  <div>
+    <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ human_counts.checked }}<span class="text-gray-300 text-[16px]">/{{ human_rows|length }}</span></div>
+    <div class="text-[11px] text-gray-400 tracking-wide">CHECKED BY A PERSON</div>
+  </div>
+  <div><div class="text-[22px] sm:text-[25px] font-semibold text-green-700 tabular-nums">{{ human_counts.agrees }}</div><div class="text-[11px] text-gray-400 tracking-wide">AGREED</div></div>
+  <div><div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ human_counts.adds }}</div><div class="text-[11px] text-gray-400 tracking-wide">ADDED TO IT</div></div>
+  <div><div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ human_counts.amended }}</div><div class="text-[11px] text-gray-400 tracking-wide">COPIED AND EDITED</div></div>
+  <div><div class="text-[22px] sm:text-[25px] font-semibold text-brand-sunset tabular-nums">{{ human_counts.disagrees }}</div><div class="text-[11px] text-gray-400 tracking-wide">DISAGREED</div></div>
+  {% if human_counts.own %}<div><div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ human_counts.own }}</div><div class="text-[11px] text-gray-400 tracking-wide">OWN REVIEWS</div></div>{% endif %}
+  <div><div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ human_counts.reviewers }}</div><div class="text-[11px] text-gray-400 tracking-wide">PEOPLE REVIEWING</div></div>
+  {% if reviewed.next_pk %}
+    <a href="{% url 'solicitations:response_detail' reviewed.next_pk %}" class="ml-auto inline-flex items-center px-3.5 py-2 bg-indigo-600 text-white text-[13px] font-medium rounded-lg hover:bg-indigo-700" data-testid="next-to-check">
+      {% if reviewed.people %}Next to check{% else %}Start reviewing{% endif %} <i class="fa-solid fa-arrow-right ml-2 text-[11px]"></i>
+    </a>
+  {% endif %}
+</div>
+
+<div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+  <div class="px-4 sm:px-5 py-3 border-b border-brand-border-light">
+    <span class="text-sm font-semibold text-brand-deep-purple">The AI's recommendation and the people's</span>
+    <span class="text-[12px] text-gray-500 ml-1">click a row to read the response with every review</span>
+  </div>
+  <div class="overflow-x-auto">
+  <table class="min-w-full divide-y divide-gray-200" data-testid="human-review">
+    <thead class="bg-gray-50"><tr>
+      <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organization</th>
+      <th class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">AI review</th>
+      <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">People</th>
+    </tr></thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for row in human_rows %}
+        <tr class="hover:bg-gray-50 cursor-pointer" data-href="{% url 'solicitations:response_detail' row.applicant.response.pk %}" data-checked="{% if row.people %}yes{% else %}no{% endif %}">
+          <td class="px-4 sm:px-5 py-2.5 align-top">
+            <a href="{% url 'solicitations:response_detail' row.applicant.response.pk %}" class="text-[13.5px] font-medium {% if row.applicant.org %}text-brand-deep-purple{% else %}text-gray-500 italic{% endif %} hover:text-brand-indigo">{{ row.applicant.name }}</a>
+          </td>
+          <td class="px-3 py-2.5 align-top whitespace-nowrap">
+            {% if row.ai %}
+              {% if row.ai.outcome %}<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-semibold {{ row.ai.chip }}">{{ row.ai.label }}</span>{% endif %}
+              {% if row.ai.score %}<span class="text-[11.5px] text-gray-500 tabular-nums ml-1">{{ row.ai.score }}</span>{% endif %}
+              {% if row.ai.version %}<span class="text-[11px] {% if row.ai.stale %}text-amber-800{% else %}text-gray-400{% endif %} ml-1" title="{% if row.ai.stale %}Scored on an earlier version of the criteria{% else %}Scored on the current criteria{% endif %}">{{ row.ai.version }}</span>{% endif %}
+            {% else %}
+              <span class="text-[11.5px] text-gray-300">no AI review</span>
+            {% endif %}
+          </td>
+          <td class="px-4 sm:px-5 py-2.5 align-top">
+            {% for p in row.people %}
+              <div class="text-[12.5px] text-gray-700 flex flex-wrap items-center gap-1.5 {% if not forloop.first %}mt-1{% endif %}">
+                <span class="text-gray-900">{{ p.who }}</span>
+                <span class="{% if p.stance == 'disagrees' %}text-red-700{% elif p.stance == 'agrees' %}text-green-700{% else %}text-gray-500{% endif %}">{{ p.stance_text }}</span>
+                {% if p.outcome %}<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold {{ p.chip }}">{{ p.label }}</span>{% endif %}
+                {% if p.stale %}<span class="text-[11px] text-amber-800" title="Made on an earlier version of the criteria; people's reviews are never replaced">on {{ p.version }}</span>{% endif %}
+              </div>
+            {% empty %}
+              <span class="text-[11.5px] text-gray-300">not checked yet</span>
+            {% endfor %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="3" class="px-4 sm:px-5 py-12 text-center text-sm text-gray-500">No applications recorded for this round.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+<div class="text-[11.5px] text-gray-400 mt-3 px-1">Checking happens on each response: the answers beside the AI's review, with I agree, Add to it, Copy and edit as mine, or I disagree. When the criteria change, people's reviews stay as they were and show the version they were made on.</div>

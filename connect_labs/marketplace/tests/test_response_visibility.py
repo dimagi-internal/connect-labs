@@ -12,7 +12,7 @@ import pytest
 from django.urls import reverse
 
 from connect_labs.labs.models import LabsOrg
-from connect_labs.marketplace.models import OrgProfile
+from connect_labs.marketplace.tests.round_fixtures import ANSWER, CRITERIA
 from connect_labs.mcp.tool_registry import MCPToolError
 from connect_labs.mcp.tools import marketplace as tools
 from connect_labs.solicitations import access
@@ -20,58 +20,6 @@ from connect_labs.solicitations.local_models import Solicitation, SolicitationRe
 from connect_labs.supply_chain.runner import dimagi_org
 
 pytestmark = pytest.mark.django_db
-
-ANSWER = "Through the customer lists of solar vendors."
-
-
-@pytest.fixture
-def round_():
-    applicant = LabsOrg.objects.create(slug="fenwick", name="Fenwick Trust")
-    OrgProfile.objects.create(org=applicant, countries=["Ghana"])
-    # Applied, but not in the directory: only the application puts it on the network.
-    LabsOrg.objects.create(slug="quietwater", name="Quietwater Collective")
-    call = Solicitation.objects.create(
-        owner_org=dimagi_org(),
-        slug="battery-2026",
-        title="Battery scoping",
-        solicitation_type="eoi",
-        delivery_type="chc",
-        status="closed",
-        response_spreadsheet_id="sheet-id-invalid",
-        questions=[{"id": "how", "text": "How would you find households?", "column": 1}],
-    )
-    SolicitationResponse.objects.create(
-        solicitation=call,
-        llo_entity=applicant,
-        org_name="Fenwick Trust",
-        source_row=2,
-        match_state=SolicitationResponse.MATCH_EMAIL,
-        responses={"how": ANSWER},
-    )
-    SolicitationResponse.objects.create(
-        solicitation=call,
-        llo_entity=LabsOrg.objects.get(slug="quietwater"),
-        org_name="Quietwater Collective",
-        source_row=3,
-        match_state=SolicitationResponse.MATCH_EMAIL,
-    )
-    SolicitationResponse.objects.create(
-        solicitation=call,
-        org_name="Unclaimed Group",
-        source_row=4,
-        match_state=SolicitationResponse.MATCH_UNMATCHED,
-    )
-    return call
-
-
-@pytest.fixture
-def member(django_user_model):
-    return django_user_model.objects.create_user(username="member", password="x", email="m@dimagi-associate.com")
-
-
-@pytest.fixture
-def outsider(django_user_model):
-    return django_user_model.objects.create_user(username="outsider", password="x", email="o@partner.invalid")
 
 
 def _page(client, user, name, *args, **params):
@@ -154,7 +102,7 @@ class TestTheRoundOnTheMap:
 
     def test_the_round_page_links_to_its_applicants_on_the_map(self, client, round_, member):
         body = _page(client, member, "marketplace:round", "battery-2026")
-        assert f'{reverse("marketplace:network")}?round=battery-2026' in body
+        assert f"{reverse('marketplace:network')}?round=battery-2026" in body
 
     def test_the_map_keeps_only_the_rounds_applicants(self, client, round_, member):
         self._other_round()
@@ -219,7 +167,11 @@ class TestOneResponse:
         before = round_.responses.count()
         response = client.post(
             reverse("solicitations:respond", args=[round_.public_id]),
-            {"org": "__new__", "new_org_name": "Somebody", "question_how": "door to door"},
+            {
+                "org": "__new__",
+                "new_org_name": "Somebody",
+                "question_how": "door to door",
+            },
         )
         assert response.status_code == 403
         assert round_.responses.count() == before
@@ -232,7 +184,11 @@ class TestOneResponse:
 class TestTheRoundMix:
     def test_new_returning_and_countries(self, client, round_, member):
         earlier = Solicitation.objects.create(
-            owner_org=dimagi_org(), slug="older-2024", title="Older", solicitation_type="eoi", status="closed"
+            owner_org=dimagi_org(),
+            slug="older-2024",
+            title="Older",
+            solicitation_type="eoi",
+            status="closed",
         )
         SolicitationResponse.objects.create(
             solicitation=earlier,
@@ -253,38 +209,6 @@ class TestTheRoundMix:
     def test_an_outsider_gets_no_mix(self, client, round_, outsider):
         client.force_login(outsider)
         assert client.get(reverse("marketplace:round", args=["battery-2026"])).context["mix"] == {}
-
-
-CRITERIA = [
-    {"id": "reach", "name": "Reach to households", "weight": 60, "rationale": "Half name no channel."},
-    {"id": "cost", "name": "Cost fit", "weight": 40, "rationale": "Quotes vary tenfold."},
-]
-
-
-@pytest.fixture
-def ace(django_user_model):
-    return django_user_model.objects.create_user(username="ace", password="x", email="ace@dimagi-ai.com")
-
-
-@pytest.fixture
-def scored(round_, ace):
-    """The round with criteria and an AI first pass on Fenwick."""
-    from connect_labs.solicitations.data_access import SolicitationsDataAccess
-
-    SolicitationsDataAccess(user=ace).set_round_criteria("battery-2026", CRITERIA, "Read all three.")
-    submission = round_.responses.get(source_row=2)
-    ai = SolicitationsDataAccess(user=ace).create_review(
-        submission.pk,
-        {
-            "kind": "ai",
-            "criteria_scores": {"reach": 8, "cost": 5},
-            "criteria_notes": {"reach": "Names solar vendors' lists."},
-            "outcome": "pick",
-            "strengths": "A real channel to households.",
-            "provenance": {"model": "test", "rubric_version": "v1"},
-        },
-    )
-    return submission, ai
 
 
 class TestReviewingARound:
@@ -347,7 +271,12 @@ class TestReviewingARound:
         )
         assert response.status_code == 302
         mine = submission.reviews.get(kind="human")
-        assert (mine.based_on_id, mine.stance, mine.outcome, mine.score) == (ai.pk, "amended", "backup", 56)
+        assert (mine.based_on_id, mine.stance, mine.outcome, mine.score) == (
+            ai.pk,
+            "amended",
+            "backup",
+            56,
+        )
         assert mine.criteria_notes == {"reach": "Lists are thin outside the city."}
         assert mine.strengths == "- A real channel to households."
         cite = mine.claims[0]["cites"][0]
@@ -367,7 +296,13 @@ class TestReviewingARound:
         assert form.initial["outcome"] == "pick" and form.initial["criteria_score_reach"] == 8
         page = response.content.decode()
         assert "Your additions to the AI first pass" in page and "Names solar vendors" in page
-        added = [{"id": "c1", "about": "criterion:reach", "text": "Lists exist in two towns only."}]
+        added = [
+            {
+                "id": "c1",
+                "about": "criterion:reach",
+                "text": "Lists exist in two towns only.",
+            }
+        ]
         data = {k: v for k, v in form.initial.items() if v not in (None, "")}
         data.update({"claims_json": json.dumps(added), "ask_next": "Which towns?"})
         assert client.post(url, data).status_code == 302
@@ -430,7 +365,8 @@ class TestReviewingARound:
         second = django_user_model.objects.create_user(username="second", password="x", email="s@dimagi.com")
         for person in (member, second):
             SolicitationsDataAccess(user=person).create_review(
-                submission.pk, {"outcome": "waitlist", "based_on": ai.pk, "stance": "disagrees"}
+                submission.pk,
+                {"outcome": "waitlist", "based_on": ai.pk, "stance": "disagrees"},
             )
         assert submission.reviews.filter(kind="human").count() == 2
         client.force_login(member)
@@ -469,7 +405,13 @@ class TestReviewingARound:
         listed = review_tools.list_reviews(ace, submission.pk)["reviews"]
         assert listed[0]["kind"] == "ai" and listed[0]["criteria_notes"]["reach"].startswith("Names")
         again = review_tools.create_review(
-            ace, True, submission.pk, "fenwick", kind="ai", outcome="backup", criteria_scores={"reach": 7}
+            ace,
+            True,
+            submission.pk,
+            "fenwick",
+            kind="ai",
+            outcome="backup",
+            criteria_scores={"reach": 7},
         )
         assert again["id"] == ai.pk, "re-running the AI pass replaces it"
         set_ = tools.marketplace_round_criteria_set(ace, "battery-2026", CRITERIA, "again")
@@ -494,8 +436,16 @@ class TestEvidence:
                     "text": "Has a channel.",
                     "cites": [{"question": "how", "quote": "THE  customer lists"}],
                 },
-                {"about": "concern", "text": "Generic text throughout.", "basis": "synthesized"},
-                {"about": "concern", "text": "Names no buyer.", "cites": [{"question": "how", "absent": True}]},
+                {
+                    "about": "concern",
+                    "text": "Generic text throughout.",
+                    "basis": "synthesized",
+                },
+                {
+                    "about": "concern",
+                    "text": "Names no buyer.",
+                    "cites": [{"question": "how", "absent": True}],
+                },
                 {
                     "about": "strength",
                     "text": "Delivered before.",
@@ -525,7 +475,11 @@ class TestEvidence:
                         "cites": [{"question": "how", "quote": "door to door canvassing"}],
                     },
                     {"about": "criterion:nope", "text": "y"},
-                    {"about": "concern", "text": "z", "cites": [{"source": "web", "detail": "no link"}]},
+                    {
+                        "about": "concern",
+                        "text": "z",
+                        "cites": [{"source": "web", "detail": "no link"}],
+                    },
                 ],
             )
         problems = " ".join(caught.value.messages)
@@ -544,7 +498,13 @@ class TestEvidence:
                 submission.pk,
                 "",
                 kind="ai",
-                claims=[{"about": "strength", "text": "x", "cites": [{"question": "how", "quote": "invented words"}]}],
+                claims=[
+                    {
+                        "about": "strength",
+                        "text": "x",
+                        "cites": [{"question": "how", "quote": "invented words"}],
+                    }
+                ],
             )
         assert caught.value.code == "BAD_REQUEST" and "invented words" in str(caught.value)
         answers = tools.marketplace_round_responses(ace, "battery-2026")["responses"][0]["answers"]
@@ -577,7 +537,11 @@ class TestEvidence:
 
         submission = round_.responses.get(source_row=2)
         SolicitationReview.objects.create(
-            response=submission, reviewer=None, reviewer_name="old", strengths="- Knows the area", concerns="Costly"
+            response=submission,
+            reviewer=None,
+            reviewer_name="old",
+            strengths="- Knows the area",
+            concerns="Costly",
         )
         client.force_login(member)
         payload = client.get(reverse("solicitations:response_detail", args=[submission.pk])).context["evidence"]
@@ -611,7 +575,10 @@ class TestReadingForReview:
             {"id": "phone", "text": "Phone", "column": 2},
         ]
         round_.save()
-        first, second = round_.responses.get(source_row=2), round_.responses.get(source_row=3)
+        first, second = (
+            round_.responses.get(source_row=2),
+            round_.responses.get(source_row=3),
+        )
         first.responses = {"how": ANSWER, "phone": "0800 000 000"}
         first.save()
         client.force_login(member)
@@ -646,7 +613,12 @@ class TestAnswersReadAsTheFormAskedThem:
                 "type": "multiple_choice",
                 "display": "radio",
                 "options": ["1st", "2nd"],
-                "grid": {"id": "g", "title": "Rank the barriers", "columns": ["1st", "2nd"], "row": label},
+                "grid": {
+                    "id": "g",
+                    "title": "Rank the barriers",
+                    "columns": ["1st", "2nd"],
+                    "row": label,
+                },
             }
 
         round_.questions = [
@@ -663,7 +635,12 @@ class TestAnswersReadAsTheFormAskedThem:
         ]
         round_.save()
         first = round_.responses.get(source_row=2)
-        first.responses = {"how": ANSWER, "reach": ["Radio"], "cost": "2nd", "distance": "1st"}
+        first.responses = {
+            "how": ANSWER,
+            "reach": ["Radio"],
+            "cost": "2nd",
+            "distance": "1st",
+        }
         first.save()
         client.force_login(member)
         page = client.get(reverse("solicitations:response_detail", args=[first.pk]))
@@ -682,9 +659,24 @@ class TestATwoFormRound:
     def test_a_response_shows_only_its_own_forms_questions(self, client, round_, member):
         round_.forms = [{"key": "battery-en"}, {"key": "battery-fr"}]
         round_.questions = [
-            {"id": "how", "text": "How would you find households?", "column": 1, "forms": ["battery-en"]},
-            {"id": "comment", "text": "Comment trouveriez-vous les ménages ?", "column": 1, "forms": ["battery-fr"]},
-            {"id": "skipped", "text": "Anything else?", "column": 2, "forms": ["battery-en"]},
+            {
+                "id": "how",
+                "text": "How would you find households?",
+                "column": 1,
+                "forms": ["battery-en"],
+            },
+            {
+                "id": "comment",
+                "text": "Comment trouveriez-vous les ménages ?",
+                "column": 1,
+                "forms": ["battery-fr"],
+            },
+            {
+                "id": "skipped",
+                "text": "Anything else?",
+                "column": 2,
+                "forms": ["battery-en"],
+            },
         ]
         round_.save()
         first = round_.responses.get(source_row=2)
@@ -702,7 +694,10 @@ def test_a_named_contacts_email_and_name_are_folded_away_in_either_language():
     questions = [
         {"id": "email", "text": "Primary contact email"},
         {"id": "nom", "text": "Nom de la personne de contact principale"},
-        {"id": "how", "text": "How did you hear about this Request for Information (RFI)?"},
+        {
+            "id": "how",
+            "text": "How did you hear about this Request for Information (RFI)?",
+        },
         {"id": "kind", "text": "Which describes your organization?"},
     ]
     assert personal_question_ids(questions) == {"email", "nom"}
@@ -730,58 +725,77 @@ class TestScores:
 
     def test_each_criterion_says_whether_it_decided_the_slate(self, client, two_scored, member):
         client.force_login(member)
-        summary = client.get(reverse("marketplace:round_scores", args=["battery-2026"])).context["summary"]
+        summary = client.get(reverse("marketplace:round_review_step", args=["battery-2026", "ai-review"])).context[
+            "summary"
+        ]
         reach, cost = summary["criteria"]
         assert (reach["scored"], reach["mean"], reach["gap"]) == (2, 6.0, 4.0), "the pick out-reached the pass"
         assert cost["gap"] == 0.0, "cost did not separate them"
-        assert summary["outcomes"] == {"pick": 1, "backup": 0, "waitlist": 0, "pass": 1, "undecided": 1}
+        assert summary["outcomes"] == {
+            "pick": 1,
+            "backup": 0,
+            "waitlist": 0,
+            "pass": 1,
+            "undecided": 1,
+        }
         assert summary["flags"] == [("padded", 1)], "a flag written before the list reads as the one it meant"
 
     def test_every_applicant_is_a_row_with_its_scores(self, client, two_scored, member):
-        body = _page(client, member, "marketplace:round_scores", "battery-2026")
+        body = _page(client, member, "marketplace:round_review_step", "battery-2026", "ai-review")
         assert body.count('data-href="/solicitations/response/') == 3
         assert 'data-scores="8|5"' in body and 'data-scores="4|5"' in body and 'data-scores="|"' in body
         assert "Reach to households" in body and 'data-flags="padded"' in body and "Long but thin" in body
 
     def test_the_recommendation_filter_offers_the_four_outcomes(self, client, two_scored, member):
-        body = _page(client, member, "marketplace:round_scores", "battery-2026")
+        body = _page(client, member, "marketplace:round_review_step", "battery-2026", "ai-review")
         select = body.split('data-filter="outcome"', 1)[1].split("</select>", 1)[0]
         values = re.findall(r'<option value="([^"]*)"', select)
         assert values == ["", "pick", "backup", "waitlist", "pass", "none"], "no combined shortlist option"
 
     def test_the_reviewed_by_filter_offers_only_the_kinds_some_applicant_has(self, client, two_scored, member):
-        body = _page(client, member, "marketplace:round_scores", "battery-2026")
+        body = _page(client, member, "marketplace:round_review_step", "battery-2026", "ai-review")
         select = body.split('data-filter="review"', 1)[1].split("</select>", 1)[0]
         assert re.findall(r'<option value="([^"]*)"', select) == ["", "ai", "none"], "nobody was reviewed by a person"
 
     def test_the_filters_count_each_country_and_leave_criteria_to_the_column_sort(self, client, two_scored, member):
-        body = _page(client, member, "marketplace:round_scores", "battery-2026")
+        body = _page(client, member, "marketplace:round_review_step", "battery-2026", "ai-review")
         assert 'data-filter="criterion"' not in body
-        country = client.get(reverse("marketplace:round_scores", args=["battery-2026"])).context["countries"]
+        country = client.get(reverse("marketplace:round_review_step", args=["battery-2026", "ai-review"])).context[
+            "countries"
+        ]
         assert all(isinstance(count, int) and count > 0 for _, count in country)
 
     def test_both_pages_share_one_header_with_the_same_figures(self, client, two_scored, member):
         overview = _page(client, member, "marketplace:round", "battery-2026")
-        scores = _page(client, member, "marketplace:round_scores", "battery-2026")
+        scores = _page(client, member, "marketplace:round_review_step", "battery-2026", "ai-review")
 
         def figures(body):
             after = body.split('data-testid="round-figures"', 1)[1]
-            block = re.split(r'data-testid="(?:round-outcomes|scores-extras)"', after, maxsplit=1)[0]
+            block = re.split(r'data-testid="(?:round-outcomes|review-steps)"', after, maxsplit=1)[0].rsplit("<", 1)[0]
             return " ".join(re.sub(r"<[^>]+>", " ", block).split())
 
         assert 'data-testid="round-tabs"' in overview and 'data-testid="round-tabs"' in scores
         assert figures(overview) == figures(scores)
         assert 'data-testid="scores-extras"' in scores and 'data-testid="scores-extras"' not in overview
+        assert 'data-testid="review-steps"' in scores and 'data-testid="review-steps"' not in overview
 
-    def test_the_applicants_come_before_the_criterion_breakdown(self, client, two_scored, member):
-        body = _page(client, member, "marketplace:round_scores", "battery-2026")
-        assert body.index('data-testid="scores"') < body.index('data-testid="criteria-summary"')
+    def test_the_scores_and_the_criterion_breakdown_are_separate_steps(self, client, two_scored, member):
+        review = _page(client, member, "marketplace:round_review_step", "battery-2026", "ai-review")
+        analysis = _page(
+            client,
+            member,
+            "marketplace:round_review_step",
+            "battery-2026",
+            "ai-analysis",
+        )
+        assert 'data-testid="scores"' in review and 'data-testid="criteria-summary"' not in review
+        assert 'data-testid="criteria-summary"' in analysis and 'data-testid="scores"' not in analysis
 
     def test_it_says_when_reviews_predate_the_current_criteria(self, client, two_scored, member, ace):
         from connect_labs.solicitations.data_access import SolicitationsDataAccess
 
         SolicitationsDataAccess(user=ace).set_round_criteria("battery-2026", CRITERIA, "v2")
-        body = _page(client, member, "marketplace:round_scores", "battery-2026")
+        body = _page(client, member, "marketplace:round_review_step", "battery-2026", "ai-review")
         assert "2 reviews scored on v1, not the current criteria (v2)" in body
 
     def test_adding_to_the_ai_review_keeps_its_scores(self, client, scored, member):
@@ -789,25 +803,44 @@ class TestScores:
         from connect_labs.solicitations.data_access import SolicitationsDataAccess
 
         SolicitationsDataAccess(user=member).create_review(
-            submission.pk, {"based_on": ai.pk, "stance": "adds", "criteria_scores": {"cost": 7}, "outcome": "pick"}
+            submission.pk,
+            {
+                "based_on": ai.pk,
+                "stance": "adds",
+                "criteria_scores": {"cost": 7},
+                "outcome": "pick",
+            },
         )
-        client.force_login(member)
-        applicants = client.get(reverse("marketplace:round_scores", args=["battery-2026"])).context["applicants"]
+        from connect_labs.marketplace import queries
+
+        applicants, _, _, _ = queries.scores_at(submission.solicitation)
         lead = next(a for a in applicants if a["response"].pk == submission.pk)
         assert lead["review"]["criteria_scores"] == {"reach": 8, "cost": 7} and lead["review"]["by_person"]
 
+        # AI Review judges the AI's scores, so there the person's addition does not stand in for them.
+        client.force_login(member)
+        applicants = client.get(reverse("marketplace:round_review_step", args=["battery-2026", "ai-review"])).context[
+            "applicants"
+        ]
+        ai_row = next(a for a in applicants if a["response"].pk == submission.pk)
+        assert ai_row["review"]["criteria_scores"] == {"reach": 8, "cost": 5} and not ai_row["review"]["by_person"]
+
     def test_the_round_page_links_to_it(self, client, scored, member):
-        assert 'data-testid="scores-link"' in _page(client, member, "marketplace:round", "battery-2026")
+        assert 'data-testid="review-link"' in _page(client, member, "marketplace:round", "battery-2026")
 
     def test_only_the_owner_sees_it(self, client, scored, outsider):
         client.force_login(outsider)
-        assert client.get(reverse("marketplace:round_scores", args=["battery-2026"])).status_code == 404
+        assert (
+            client.get(reverse("marketplace:round_review_step", args=["battery-2026", "ai-review"])).status_code == 404
+        )
         with pytest.raises(MCPToolError):
             tools.marketplace_round_scores(outsider, "battery-2026")
 
     def test_the_mcp_tool_reads_the_same_figures(self, client, two_scored, member, ace):
         client.force_login(member)
-        page = client.get(reverse("marketplace:round_scores", args=["battery-2026"])).context["summary"]
+        page = client.get(reverse("marketplace:round_review_step", args=["battery-2026", "ai-review"])).context[
+            "summary"
+        ]
         tool = tools.marketplace_round_scores(ace, "battery-2026")
         assert tool["criteria"] == page["criteria"] and tool["outcomes"] == page["outcomes"]
         fenwick = next(a for a in tool["applicants"] if a["org_slug"] == "fenwick")
@@ -819,10 +852,15 @@ def test_a_persons_review_records_the_criteria_it_scored_against(client, scored,
 
     submission, ai = scored
     mine = SolicitationsDataAccess(user=member).create_review(
-        submission.pk, {"based_on": ai.pk, "stance": "agrees", "criteria_scores": {"reach": 8, "cost": 5}}
+        submission.pk,
+        {
+            "based_on": ai.pk,
+            "stance": "agrees",
+            "criteria_scores": {"reach": 8, "cost": 5},
+        },
     )
     assert mine.provenance["rubric_version"] == "v1"
-    body = _page(client, member, "marketplace:round_scores", "battery-2026")
+    body = _page(client, member, "marketplace:round_review_step", "battery-2026", "ai-review")
     assert 'data-testid="stale"' not in body and 'data-testid="unrecorded"' not in body
 
 
@@ -830,7 +868,7 @@ class TestTerms:
     """Every outcome and flag a reviewer reads is a defined word with its meaning."""
 
     def test_a_pick_reads_as_recommended(self, client, scored, member):
-        body = _page(client, member, "marketplace:round_scores", "battery-2026")
+        body = _page(client, member, "marketplace:round_review_step", "battery-2026", "ai-review")
         assert "Recommended" in body and "Proposed for one of the round" in body and ">Pick<" not in body
 
     def test_flags_come_from_the_list(self, scored, ace):
@@ -840,7 +878,10 @@ class TestTerms:
 
         submission, ai = scored
         da = SolicitationsDataAccess(user=ace)
-        assert da.update_review(ai.pk, {"flags": ["cost-outlier", "safety"]}).flags == ["cost", "safety"]
+        assert da.update_review(ai.pk, {"flags": ["cost-outlier", "safety"]}).flags == [
+            "cost",
+            "safety",
+        ]
         with pytest.raises(ValidationError):
             da.update_review(ai.pk, {"flags": ["vibes-off"]})
 
@@ -864,10 +905,13 @@ class TestSummaryLink:
         client.force_login(member)
         response = client.post(
             reverse("marketplace:round_summary", args=["battery-2026"]),
-            {"summary_url": self.URL, "next": reverse("marketplace:round_scores", args=["battery-2026"])},
+            {
+                "summary_url": self.URL,
+                "next": reverse("marketplace:round_review_step", args=["battery-2026", "ai-review"]),
+            },
         )
-        assert response.status_code == 302 and response.url.endswith("/scores/")
-        assert self.URL in _page(client, member, "marketplace:round_scores", "battery-2026")
+        assert response.status_code == 302 and response.url.endswith("/review/ai-review/")
+        assert self.URL in _page(client, member, "marketplace:round_review_step", "battery-2026", "ai-review")
         assert 'data-testid="summary-link"' in _page(client, member, "marketplace:round", "battery-2026")
 
     def test_only_an_https_link(self, scored, ace):
@@ -877,7 +921,10 @@ class TestSummaryLink:
 
     def test_nobody_else_sets_it(self, client, scored, outsider):
         client.force_login(outsider)
-        response = client.post(reverse("marketplace:round_summary", args=["battery-2026"]), {"summary_url": self.URL})
+        response = client.post(
+            reverse("marketplace:round_summary", args=["battery-2026"]),
+            {"summary_url": self.URL},
+        )
         assert response.status_code == 404
         with pytest.raises(MCPToolError):
             tools.marketplace_round_summary_set(outsider, "battery-2026", self.URL)
@@ -913,7 +960,10 @@ class TestDeletingAReview:
         from connect_labs.mcp.tools import reviews as review_tools
 
         submission, ai = scored
-        assert review_tools.delete_review(ace, ai.pk) == {"deleted": ai.pk, "response_id": submission.pk}
+        assert review_tools.delete_review(ace, ai.pk) == {
+            "deleted": ai.pk,
+            "response_id": submission.pk,
+        }
 
 
 CRITERIA_V2 = [
@@ -961,9 +1011,12 @@ class TestVersions:
 
     def test_the_page_reads_an_earlier_version_and_says_what_changed(self, client, rescored, member):
         client.force_login(member)
-        context = client.get(reverse("marketplace:round_scores", args=["battery-2026"]), {"version": "v1"}).context
+        context = client.get(
+            reverse("marketplace:round_review_step", args=["battery-2026", "ai-review"]),
+            {"version": "v1"},
+        ).context
         assert not context["is_current"] and context["summary"]["outcomes"]["pick"] == 1
-        current = client.get(reverse("marketplace:round_scores", args=["battery-2026"]), {"compare": "v1"}).context
+        current = client.get(reverse("marketplace:round_review_step", args=["battery-2026", "ai-analysis"])).context
         moved = current["comparison"]["moved"]
         assert [(m["applicant"]["name"], m["from"], m["to"]) for m in moved] == [
             ("Fenwick Trust", "Recommended", "Recommended backup")
@@ -974,31 +1027,40 @@ class TestVersions:
     def test_the_comparison_says_what_its_numbers_are(self, client, rescored, member):
         client.force_login(member)
         page = client.get(
-            reverse("marketplace:round_scores", args=["battery-2026"]), {"compare": "v1"}
+            reverse("marketplace:round_review_step", args=["battery-2026", "ai-analysis"])
         ).content.decode()
         assert "points out of 100 on average" in page and "Mean of 10" in page
         assert "Shortlist lead" in page and ">Difference<" not in page
         assert 'data-testid="comparison-note"' in page
 
-    def test_the_page_shows_the_latest_alone_until_a_comparison_is_asked_for(self, client, rescored, member):
+    def test_ai_analysis_opens_on_what_the_last_revision_changed(self, client, rescored, member):
         client.force_login(member)
-        url = reverse("marketplace:round_scores", args=["battery-2026"])
+        url = reverse("marketplace:round_review_step", args=["battery-2026", "ai-analysis"])
         response = client.get(url)
         page = response.content.decode()
-        assert response.context["shown_version"] == "v2" and response.context["comparison"] is None
-        assert 'data-testid="comparison"' not in page
-        assert 'data-testid="compare-picker"' in page and '<option value="" selected>No comparison</option>' in page
+        assert response.context["shown_version"] == "v2" and response.context["compare_with"] == "v1"
+        assert 'data-testid="comparison"' in page
+        assert '<option value="none">No comparison</option>' in page, "a comparison can be turned off"
 
+        for off in ("none", "", "bogus", "v2"):
+            response = client.get(url, {"compare": off})
+            assert response.context["comparison"] is None, off
+        assert 'data-testid="compare-picker"' in response.content.decode()
+
+    def test_ai_review_shows_the_scores_alone(self, client, rescored, member):
+        client.force_login(member)
+        url = reverse("marketplace:round_review_step", args=["battery-2026", "ai-review"])
         response = client.get(url, {"compare": "v1"})
-        page = response.content.decode()
-        assert response.context["compare_with"] == "v1" and response.context["comparison"] is not None
-        assert 'data-testid="comparison"' in page and 'data-testid="compare-picker"' not in page
-        assert '<option value="">No comparison</option>' in page, "a comparison can be turned off"
+        assert response.context["comparison"] is None, "comparisons live on AI Analysis"
+        assert 'data-testid="comparison"' not in response.content.decode()
 
-        for bogus in ("bogus", "v2", ""):
-            response = client.get(url, {"compare": bogus})
-            assert response.context["comparison"] is None, bogus
-            assert 'data-testid="comparison"' not in response.content.decode()
+    def test_the_old_scores_address_still_lands(self, client, rescored, member):
+        client.force_login(member)
+        base = reverse("marketplace:round_scores", args=["battery-2026"])
+        assert client.get(base).url == reverse("marketplace:round_review_step", args=["battery-2026", "ai-review"])
+        compared = client.get(base, {"version": "v2", "compare": "v1"}).url
+        assert compared.startswith(reverse("marketplace:round_review_step", args=["battery-2026", "ai-analysis"]))
+        assert "compare=v1" in compared and "version=v2" in compared
 
     def test_the_mcp_tools_carry_versions_and_the_comparison(self, rescored, ace):
         versions = tools.marketplace_round_versions(ace, "battery-2026")
@@ -1017,7 +1079,13 @@ class TestVersions:
             ace,
             "battery-2026",
             "v1",
-            [{"response_id": other.pk, "criteria_scores": {"reach": 2, "cost": 4}, "outcome": "pass"}],
+            [
+                {
+                    "response_id": other.pk,
+                    "criteria_scores": {"reach": 2, "cost": 4},
+                    "outcome": "pass",
+                }
+            ],
         )
         assert result == {"version": "v1", "reviews": 1}
         archived = SolicitationReview.all_versions.get(response=other, provenance__rubric_version="v1")

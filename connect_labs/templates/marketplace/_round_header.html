@@ -1,5 +1,5 @@
 {% comment %}
-The top of a round's two pages, the overview and its scores: the same title,
+The top of a round's two tabs, Overview and Review: the same title,
 tags, tabs and figures on both, so moving between them changes only what is
 below. `tab` names the page; each page adds its own figures after this.
 {% endcomment %}
@@ -22,9 +22,8 @@ below. `tab` names the page; each page adds its own figures after this.
 {% if can_read %}
   <div class="flex gap-6 mt-3.5 border-b border-brand-border-light text-[13px] font-medium" data-testid="round-tabs">
     <a href="{% url 'marketplace:round' round.slug %}" class="pb-2 {% if tab == 'overview' %}text-brand-deep-purple{% else %}text-gray-500 hover:text-brand-indigo{% endif %}" {% if tab == 'overview' %}style="border-bottom: 2px solid currentColor; margin-bottom: -1px" aria-current="page"{% endif %}>Overview</a>
-    {% if round.evaluation_criteria %}
-      <a href="{% url 'marketplace:round_scores' round.slug %}" data-testid="scores-link" class="pb-2 {% if tab == 'scores' %}text-brand-deep-purple{% else %}text-gray-500 hover:text-brand-indigo{% endif %}" {% if tab == 'scores' %}style="border-bottom: 2px solid currentColor; margin-bottom: -1px" aria-current="page"{% endif %}>Scores</a>
-    {% endif %}
+    {% comment %}Review is there before any criteria exist: proposing them is its first step.{% endcomment %}
+    <a href="{% url 'marketplace:round_review' round.slug %}" data-testid="review-link" class="pb-2 {% if tab == 'review' %}text-brand-deep-purple{% else %}text-gray-500 hover:text-brand-indigo{% endif %}" {% if tab == 'review' %}style="border-bottom: 2px solid currentColor; margin-bottom: -1px" aria-current="page"{% endif %}>Review</a>
     {% comment %}Where the applicants are: the network map, narrowed to this round.{% endcomment %}
     <a href="{% url 'marketplace:network' %}?round={{ round.slug|urlencode }}" target="_blank" rel="noopener" data-testid="round-map-link" class="pb-2 ml-auto text-gray-500 hover:text-brand-indigo"><i class="fa-solid fa-earth-africa mr-1"></i>Applicants on the map <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i></a>
   </div>

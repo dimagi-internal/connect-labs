@@ -12,6 +12,9 @@ importer already invalidates it explicitly, as it does the partner-name one.
 
 import pytest
 
+# The round, its owner's member and ACE that the review tests share.
+from connect_labs.marketplace.tests.round_fixtures import ace, member, outsider, round_, scored  # noqa: F401
+
 
 @pytest.fixture(autouse=True)
 def _drop_marketplace_caches():
