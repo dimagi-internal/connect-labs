@@ -1190,7 +1190,7 @@ def applied_programs_of(org, readable=None) -> set[str]:
     }
 
 
-def matches(org, *, query="", countries=(), delivered=(), applied=(), delivered_by_name=None) -> bool:
+def matches(org, *, query="", countries=(), delivered=(), applied=(), rounds=(), delivered_by_name=None) -> bool:
     """Whether one organisation survives the facet filters.
 
     Values WITHIN a dimension are an OR and dimensions are an AND, because that
@@ -1200,7 +1200,8 @@ def matches(org, *, query="", countries=(), delivered=(), applied=(), delivered_
     Country stays a substring match because the sheet's country cell is free
     text ("Congo, the Democratic Republic of the"). Programs are matched
     exactly: they are Connect's own slugs, not prose, and a substring rule over
-    a controlled vocabulary only invents false positives.
+    a controlled vocabulary only invents false positives. ``rounds`` keeps the
+    organisations that answered one of those rounds (a round page's map link).
     """
     profile = getattr(org, "marketplace_profile", None)
 
@@ -1218,7 +1219,19 @@ def matches(org, *, query="", countries=(), delivered=(), applied=(), delivered_
             return False
     if applied and not (applied_programs_of(org) & set(applied)):
         return False
+    if rounds and not (rounds_of(org) & set(rounds)):
+        return False
     return True
+
+
+def rounds_of(org) -> set[str]:
+    """The slugs of the rounds this organisation answered.
+
+    Reads the prefetch (`all_rows_with_rounds`), which holds only the rounds the
+    viewer may read, so a round filter never reveals who answered someone
+    else's round.
+    """
+    return {r.solicitation.slug for r in org.solicitation_responses.all()}
 
 
 def supply_tenders_open() -> int:

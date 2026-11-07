@@ -132,6 +132,47 @@ class TestTheNetwork:
         assert "Fenwick Trust" not in _page(client, outsider, "marketplace:network", applied="chc")
 
 
+class TestTheRoundOnTheMap:
+    def _other_round(self):
+        other = LabsOrg.objects.create(slug="harbour", name="Harbour Group")
+        call = Solicitation.objects.create(
+            owner_org=dimagi_org(),
+            slug="kmc-2026",
+            title="KMC 2026",
+            solicitation_type="eoi",
+            delivery_type="chc",
+            status="closed",
+            response_spreadsheet_id="sheet-2-invalid",
+        )
+        SolicitationResponse.objects.create(
+            solicitation=call,
+            llo_entity=other,
+            org_name="Harbour Group",
+            source_row=2,
+            match_state=SolicitationResponse.MATCH_EMAIL,
+        )
+
+    def test_the_round_page_links_to_its_applicants_on_the_map(self, client, round_, member):
+        body = _page(client, member, "marketplace:round", "battery-2026")
+        assert f'{reverse("marketplace:network")}?round=battery-2026' in body
+
+    def test_the_map_keeps_only_the_rounds_applicants(self, client, round_, member):
+        self._other_round()
+        everyone = _page(client, member, "marketplace:network")
+        assert "Harbour Group" in everyone and "Fenwick Trust" in everyone
+        body = _page(client, member, "marketplace:network", round="battery-2026")
+        assert "Fenwick Trust" in body and "Quietwater Collective" in body
+        assert "Harbour Group" not in body
+        assert 'data-testid="round-filter"' in body and "Battery scoping" in body
+        client.force_login(member)
+        points = client.get(reverse("marketplace:network_points"), {"round": "battery-2026"}).json()["points"]
+        assert "Harbour Group" not in json.dumps(points)
+
+    def test_someone_who_cannot_read_the_round_finds_no_one_by_it(self, client, round_, outsider):
+        body = _page(client, outsider, "marketplace:network", round="battery-2026")
+        assert "Fenwick Trust" not in body and "Battery scoping" not in body
+
+
 class TestTheTools:
     def test_applicants_are_the_owners(self, round_, member, outsider):
         out = tools.marketplace_rounds_list(member, slug="battery-2026", include_applicants=True)
