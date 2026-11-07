@@ -259,7 +259,7 @@
               </div>
             {% endfor %}
             {% if round.evaluation_criteria %}
-              <a href="{% url 'marketplace:round_scores' round.slug %}" class="text-[12px] text-brand-indigo hover:text-brand-deep-purple">How applicants scored on each →</a>
+              <a href="{% url 'marketplace:round_review_step' round.slug 'ai-review' %}" class="text-[12px] text-brand-indigo hover:text-brand-deep-purple">How applicants scored on each →</a>
             {% endif %}
             {% if round.criteria_basis %}
               <details class="text-[11.5px] text-gray-500"><summary class="cursor-pointer text-brand-indigo">How these were chosen</summary><p class="mt-1 leading-snug whitespace-pre-line">{{ round.criteria_basis }}</p></details>

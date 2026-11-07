@@ -69,7 +69,10 @@ def _round_filter(request, slugs) -> dict | None:
     rounds = Solicitation.objects.directory_rounds().filter(slug__in=slugs, pk__in=access.readable_round_ids(request))
     params = request.GET.copy()
     params.setlist("round", [])
-    return {"rounds": list(rounds.order_by("title")), "clear_url": "?" + params.urlencode()}
+    return {
+        "rounds": list(rounds.order_by("title")),
+        "clear_url": "?" + params.urlencode(),
+    }
 
 
 def _population(request) -> dict:
@@ -124,21 +127,49 @@ def _population(request) -> dict:
 # and /marketplace/fonts/ shows them side by side. An allowlist, because the
 # family name is written into the page's CSS. (key, Google family, one line.)
 FONT_CANDIDATES = (
-    ("inter", "Inter", "Neutral and precise. The safest choice, and the most common one."),
-    ("dm-sans", "DM Sans", "Low contrast and slightly geometric. Calm, compact numbers."),
-    ("plus-jakarta", "Plus Jakarta Sans", "Modern and warm, with a little flair in the capitals."),
-    ("figtree", "Figtree", "Clean and friendly with round shapes. Easy on dense cards."),
+    (
+        "inter",
+        "Inter",
+        "Neutral and precise. The safest choice, and the most common one.",
+    ),
+    (
+        "dm-sans",
+        "DM Sans",
+        "Low contrast and slightly geometric. Calm, compact numbers.",
+    ),
+    (
+        "plus-jakarta",
+        "Plus Jakarta Sans",
+        "Modern and warm, with a little flair in the capitals.",
+    ),
+    (
+        "figtree",
+        "Figtree",
+        "Clean and friendly with round shapes. Easy on dense cards.",
+    ),
     ("ibm-plex", "IBM Plex Sans", "Engineered and serious. Reads like infrastructure."),
-    ("instrument", "Instrument Sans", "Narrow and crisp. Fits more on a line without shrinking."),
+    (
+        "instrument",
+        "Instrument Sans",
+        "Narrow and crisp. Fits more on a line without shrinking.",
+    ),
     ("public-sans", "Public Sans", "Government-grade neutral. Plain and very legible."),
     ("outfit", "Outfit", "Geometric and soft. More brand, less spreadsheet."),
     ("sora", "Sora", "Wide and technical, with a strong presence in headings."),
     ("lexend", "Lexend", "Built for readability. Generous spacing, very open."),
-    ("source-sans", "Source Sans 3", "Humanist and efficient. Good in long, dense text."),
+    (
+        "source-sans",
+        "Source Sans 3",
+        "Humanist and efficient. Good in long, dense text.",
+    ),
     ("nunito-sans", "Nunito Sans", "Rounded and approachable, the softest of the set."),
 )
 # Manrope and Geist were tried first and passed over; they stay usable by key.
-TRIAL_FONTS = {"manrope": "Manrope", "geist": "Geist", **{key: family for key, family, _ in FONT_CANDIDATES}}
+TRIAL_FONTS = {
+    "manrope": "Manrope",
+    "geist": "Geist",
+    **{key: family for key, family, _ in FONT_CANDIDATES},
+}
 
 
 @login_required
@@ -146,7 +177,11 @@ TRIAL_FONTS = {"manrope": "Manrope", "geist": "Geist", **{key: family for key, f
 def fonts(request):
     """Every candidate typeface side by side, each on a slice of this page."""
     faces = [
-        {"key": "", "family": "Work Sans", "note": "The current font. Wide and friendly, but loose at small sizes."}
+        {
+            "key": "",
+            "family": "Work Sans",
+            "note": "The current font. Wide and friendly, but loose at small sizes.",
+        }
     ]
     faces += [{"key": key, "family": family, "note": note} for key, family, note in FONT_CANDIDATES]
     families = "&".join(f"family={f['family'].replace(' ', '+')}:wght@400;500;600;700" for f in faces)
@@ -347,6 +382,15 @@ CRITERIA_ASK = (
 )
 
 
+# What the Review tab's "Revise the criteria" button sends: the person's own
+# words are appended (round_review.js, data-ask-input). A revision is always a
+# new version, proposed for approval, and scored again before it is judged.
+REVISE_ASK = (
+    "Revise this EOI round's evaluation criteria as a new version, for me to approve, "
+    "then score every response on it so the AI Analysis can compare it with the current version. The change:"
+)
+
+
 def _ai_review_button(round_):
     """The label, hint and words for the round page's AI-review button."""
     if round_.evaluation_criteria:
@@ -403,7 +447,8 @@ def round_detail(request, slug):
             **_ai_review_button(round_),
             # The header both of the round's pages share.
             "outcomes": _outcome_figures(
-                reviewed.get("outcomes", {}), len(applicants) - sum(reviewed.get("outcomes", {}).values())
+                reviewed.get("outcomes", {}),
+                len(applicants) - sum(reviewed.get("outcomes", {}).values()),
             ),
             "country_count": mix.get("country_count", 0),
             # Its public page on Solicitations, once it has stopped taking
@@ -454,7 +499,10 @@ def score_shade(score) -> str:
 
 
 def _score_cell(score) -> dict:
-    return {"score": score if isinstance(score, (int, float)) else None, "style": score_shade(score)}
+    return {
+        "score": score if isinstance(score, (int, float)) else None,
+        "style": score_shade(score),
+    }
 
 
 def _outcome_chip(key: str) -> str:
@@ -470,7 +518,10 @@ def _outcome_chip(key: str) -> str:
 def _flag_chips(keys: list[str]) -> list[dict]:
     """Each flag with the label and definition a reader sees."""
     return [
-        {"key": key, **vocabulary.FLAGS.get(key, {"label": key, "definition": "Not one of the defined flags."})}
+        {
+            "key": key,
+            **vocabulary.FLAGS.get(key, {"label": key, "definition": "Not one of the defined flags."}),
+        }
         for key in keys
     ]
 
@@ -508,7 +559,11 @@ def round_version_delete(request, slug, version):
 
     try:
         result = SolicitationsDataAccess(request=request).delete_round_version(slug, version)
-    except (Solicitation.DoesNotExist, RubricVersion.DoesNotExist, PermissionDenied) as e:
+    except (
+        Solicitation.DoesNotExist,
+        RubricVersion.DoesNotExist,
+        PermissionDenied,
+    ) as e:
         raise Http404("No such version") from e
     except ValidationError as e:
         messages.error(request, " ".join(e.messages))
@@ -518,32 +573,88 @@ def round_version_delete(request, slug, version):
             f"Deleted criteria version {version.lstrip('v')} and the {result['reviews_deleted']} "
             f"review{'s' if result['reviews_deleted'] != 1 else ''} scored on it.",
         )
-    return redirect("marketplace:round_scores", slug=slug)
+    return redirect("marketplace:round_review_step", slug=slug, step="criteria")
+
+
+def round_scores(request, slug):
+    """The old Scores page: now the Review tab's AI Review step (or AI Analysis, for a comparison).
+
+    Kept so links already sent, and anything bookmarked, still land on the same
+    figures; the query string (`version`, `compare`) carries over.
+    """
+    step = "ai-analysis" if "compare" in request.GET else "ai-review"
+    url = reverse("marketplace:round_review_step", args=[slug, step])
+    query = request.GET.urlencode()
+    return redirect(f"{url}?{query}" if query else url, permanent=True)
 
 
 @login_required
 @MARKETPLACE_CHROME
-def round_scores(request, slug):
-    """A round's scores side by side: every applicant against every criterion, to filter and compare."""
+def round_review(request, slug, step=""):
+    """A round's Review tab: one step of criteria -> AI review -> AI analysis -> human review.
+
+    The steps, their order, templates and status lines live in
+    `marketplace/review_steps.py`; this view builds the one context every step
+    reads, then draws the shown step's partial under the step bar.
+    """
+    from connect_labs.marketplace import review_steps
+
     round_ = get_object_or_404(queries.rounds_with_counts().select_related("owner_org"), slug=slug)
-    # The scores are the submissions read and judged: the owner's only. To
-    # anyone else this page does not exist, as a submission does not.
+    # The review is the submissions read and judged: the owner's only. To
+    # anyone else these pages do not exist, as a submission does not.
     if not access.can_read_round_responses(request, round_):
         raise Http404("No such round")
+    if step and step not in review_steps.BY_KEY:
+        raise Http404("No such step")
+
     history = queries.version_history(round_)
     names = [v["version"] for v in history]
+    current_at = names.index(round_.rubric_version) if round_.rubric_version in names else len(names)
+    previous = names[current_at - 1] if current_at >= 1 else None
     shown = request.GET.get("version") if request.GET.get("version") in names else round_.rubric_version
     first_service = queries.first_service_by_org_name()
-    applicants, reviewed, summary, _ = queries.scores_at(round_, shown, first_service)
-    # The shown version alone, unless `?compare=` names another version to set it against.
-    earlier = [n for n in names if n != shown]
-    compare_with = request.GET.get("compare") if request.GET.get("compare") in earlier else None
+    # The step decides whose reviews it reads: AI Review and AI Analysis judge the
+    # AI's scores, so a person's review must not stand in for them there.
+    kind = review_steps.BY_KEY[step].reviews if step in review_steps.BY_KEY else None
+    applicants, step_reviewed, summary, criteria = queries.scores_at(round_, shown, first_service, kind)
+    # The header is the round's, the same on Overview and every step: a person's review first, else the AI's.
+    if kind:
+        _, reviewed, header_summary, _ = queries.scores_at(round_, shown, first_service)
+    else:
+        reviewed, header_summary = step_reviewed, summary
+    progress = queries.review_progress(round_, applicants)
+    progress["next_version"] = max([queries.version_number(n) for n in names] + [0]) + 1
+
+    ctx = {
+        "round": round_,
+        "progress": progress,
+        "previous_version": previous,
+        "history": history,
+    }
+    if not step:
+        target = review_steps.default_step(ctx)
+        url = reverse("marketplace:round_review_step", args=[slug, target.key])
+        return redirect(f"{url}?{request.GET.urlencode()}" if request.GET else url)
+    current = review_steps.BY_KEY[step]
+
+    compare_with = None
+    asked = request.GET.get("compare")
+    if current.key == "ai-analysis":
+        if asked is None:
+            # Opens on what the last revision did: the shown version against the one before it.
+            at = names.index(shown) if shown in names else -1
+            compare_with = names[at - 1] if at >= 1 else None
+        elif asked in names and asked != shown:
+            compare_with = asked
     comparison = None
     if compare_with:
         first, second = sorted([compare_with, shown], key=names.index)
         comparison = queries.compare_at(round_, first, second, first_service)
         for move in comparison["moved"]:
-            move["from_style"], move["to_style"] = (_outcome_chip(move["from_key"]), _outcome_chip(move["to_key"]))
+            move["from_style"], move["to_style"] = (
+                _outcome_chip(move["from_key"]),
+                _outcome_chip(move["to_key"]),
+            )
     for a in applicants:
         a["cells"] = [_score_cell(a["review"]["criteria_scores"].get(c["id"])) for c in summary["criteria"]]
         a["flag_chips"] = _flag_chips(a["review"]["flags"])
@@ -557,15 +668,20 @@ def round_scores(request, slug):
         for c in summary["criteria"]
     ]
     countries = sorted(Counter(a["country"] for a in applicants if a["country"]).items())
-    return render(
-        request,
-        "marketplace/round_scores.html",
+    ctx.update(
         {
-            "round": round_,
+            "step": current,
             "applicants": applicants,
             "reviewed": reviewed,
+            "step_reviewed": step_reviewed,
             "summary": summary,
-            "history": history,
+            "shown_criteria": criteria or [],
+            # How the shown version was arrived at: the round's basis for the current one, its record's otherwise.
+            "shown_basis": (
+                round_.criteria_basis
+                if shown == round_.rubric_version
+                else next((v["basis"] for v in history if v["version"] == shown), "")
+            ),
             "shown_version": shown,
             "is_current": shown == round_.rubric_version,
             "compare_with": compare_with,
@@ -574,19 +690,21 @@ def round_scores(request, slug):
             "countries": countries,
             # Only the kinds of review some applicant has: an option that matches nobody is noise.
             "review_options": [
-                {"value": value, "label": label, "count": reviewed[key]}
+                {"value": value, "label": label, "count": step_reviewed[key]}
                 for value, label, key in (
                     ("person", "A person", "people"),
                     ("ai", "The AI only", "ai_only"),
                     ("none", "Not reviewed", "none"),
                 )
-                if reviewed[key]
+                if step_reviewed[key]
             ],
             "flag_counts": [
                 {**chip, "count": count}
                 for chip, (_, count) in zip(_flag_chips([k for k, _ in summary["flags"]]), summary["flags"])
             ],
-            "outcomes": _outcome_figures(summary["outcomes"], summary["outcomes"]["undecided"]),
+            "outcomes": _outcome_figures(header_summary["outcomes"], header_summary["outcomes"]["undecided"]),
+            # The step's own recommendations, for its filter: the AI's on AI Review.
+            "step_outcomes": _outcome_figures(summary["outcomes"], summary["outcomes"]["undecided"]),
             # Counted as the round page counts it, so the shared header agrees on both.
             "country_count": queries.round_mix(round_, applicants)["country_count"],
             "can_read": True,
@@ -595,18 +713,32 @@ def round_scores(request, slug):
             "shade_scale": {str(score): list(shade) for score, shade in _SHADES.items()},
             "set_by_people": sum(1 for a in applicants if a["review"]["by_person"] and a["review"]["outcome"]),
             "can_edit": access.can_set_round_criteria(request, round_),
-            # The same figures an agent reads through `marketplace_round_scores`.
-            "canopy_panel": canopy_panel.panel(
-                request,
-                reads=canopy_panel.NO_VISIT_DATA,  # the org directory
-                resource=f"labs-marketplace://rounds/{round_.slug}/scores",
-                backing_tool="marketplace_round_scores",
-                visible_ids=[a["org"].slug for a in applicants if a.get("org")],
-                filters={"round": round_.slug},
-                path=request.path,
-            ),
-        },
+            **_ai_review_button(round_),
+            "revise_ask": REVISE_ASK,
+        }
     )
+    if current.key == "human-review":
+        rows, counts = queries.human_review_rows(round_, applicants)
+        for row in rows:
+            if row["ai"]:
+                row["ai"]["chip"] = _outcome_chip(row["ai"]["outcome"])
+            for person in row["people"]:
+                person["chip"] = _outcome_chip(person["outcome"])
+        ctx.update({"human_rows": rows, "human_counts": counts})
+    if current.extra:
+        ctx.update(current.extra(ctx))
+    ctx["steps"] = review_steps.tab_bar(ctx, current)
+    # The same figures an agent reads through `marketplace_round_scores`.
+    ctx["canopy_panel"] = canopy_panel.panel(
+        request,
+        reads=canopy_panel.NO_VISIT_DATA,  # the org directory
+        resource=f"labs-marketplace://rounds/{round_.slug}/review/{current.key}",
+        backing_tool="marketplace_round_scores",
+        visible_ids=[a["org"].slug for a in applicants if a.get("org")],
+        filters={"round": round_.slug},
+        path=request.path,
+    )
+    return render(request, "marketplace/round_review.html", ctx)
 
 
 @login_required
@@ -628,7 +760,9 @@ def organisation(request, slug):
     # answers read as the form asked them (`solicitations.answers`).
     for response in responses:
         response.answer_blocks = answer_blocks(
-            past_calls.form_questions(response.solicitation, response), response.responses or {}, answered_only=True
+            past_calls.form_questions(response.solicitation, response),
+            response.responses or {},
+            answered_only=True,
         )
 
     from connect_labs.pulse.models import PulseOpportunity
@@ -702,7 +836,12 @@ def unmatched(request):
             "directory_url": f"https://docs.google.com/spreadsheets/d/{DIRECTORY_ID}/edit",
             "decided_count": SolicitationResponse.objects.directory_rounds()
             .filter(solicitation_id__in=readable)
-            .filter(match_state__in=[SolicitationResponse.MATCH_HUMAN, SolicitationResponse.MATCH_NOT_LLO])
+            .filter(
+                match_state__in=[
+                    SolicitationResponse.MATCH_HUMAN,
+                    SolicitationResponse.MATCH_NOT_LLO,
+                ]
+            )
             .count(),
         },
     )

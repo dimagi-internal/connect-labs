@@ -1,0 +1,177 @@
+{% comment %}
+Review › AI Review: every applicant scored on the criteria (the old Scores
+page's table), which version the scores are on, and the button that runs the
+AI review. The figures follow the filters (round_review.html's script).
+{% endcomment %}
+<div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-6 py-4 mb-4.5" data-testid="ai-review">
+    {% comment %}What only this page has: which criteria the scores are on, a comparison with another version, and the mean.{% endcomment %}
+    <div class="flex flex-wrap items-end gap-x-7 gap-y-4 sm:gap-x-8" data-testid="scores-extras">
+      <div title="Mean overall score (0–100) of the applicants shown below">
+        <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums" data-stat="total-mean">{{ summary.total_mean|floatformat:0|default:"—" }}</div>
+        <div class="text-[11px] text-gray-400 tracking-wide">MEAN SCORE</div>
+        <div class="text-[11px] text-gray-400 mt-0.5">median <span data-stat="total-median">{{ summary.total_median|floatformat:0|default:"—" }}</span> of 100</div>
+      </div>
+      <div class="flex items-center gap-2.5 flex-wrap pb-1">
+      {% if history|length > 1 %}
+        <form method="get" class="inline-flex items-center" data-testid="version-picker">
+          <select name="version" onchange="this.form.submit()" title="The scores are given against this version of the round's criteria. Each time the criteria are rewritten, the version goes up." class="rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo" style="border: 0; padding: 2px 28px 2px 10px">
+            {% for v in history %}<option value="{{ v.version }}" {% if v.version == shown_version %}selected{% endif %}>Criteria version {{ v.number }}{% if v.current %} (current){% endif %}</option>{% endfor %}
+          </select>
+        </form>
+        <a href="{% url 'marketplace:round_review_step' round.slug 'ai-analysis' %}" class="text-[12px] text-brand-indigo hover:text-brand-deep-purple">Compare with another version →</a>
+      {% elif shown_version %}<a href="{% url 'marketplace:round_review_step' round.slug 'criteria' %}" title="The scores are given against this version of the round's criteria. Each time the criteria are rewritten, the version goes up." class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo">Criteria version {{ shown_version|slice:"1:" }}</a>{% endif %}
+      </div>
+      <div class="flex flex-wrap items-center gap-2" data-testid="summary">
+        {% if round.summary_url %}
+          <a href="{{ round.summary_url }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center px-3.5 py-2 bg-indigo-600 text-white text-[13px] font-medium rounded-lg hover:bg-indigo-700">
+            <i class="fa-regular fa-file-lines mr-2 text-[12px]"></i> Read the round's summary
+          </a>
+        {% endif %}
+        {% if can_edit %}
+          <details class="text-[12px]">
+            <summary class="cursor-pointer text-brand-indigo hover:text-brand-deep-purple py-2">{% if round.summary_url %}Change the summary link{% else %}Link the round's summary{% endif %}</summary>
+            <form method="post" action="{% url 'marketplace:round_summary' round.slug %}" class="flex flex-wrap items-center gap-2 mt-1.5">
+              {% csrf_token %}
+              <input type="hidden" name="next" value="{{ request.path }}">
+              <input type="url" name="summary_url" value="{{ round.summary_url }}" placeholder="https://docs.google.com/…" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800" style="width: 22rem; max-width: 100%">
+              <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-brand-border-light text-brand-indigo text-[12.5px] font-medium rounded-lg hover:bg-gray-50">Save</button>
+            </form>
+          </details>
+        {% endif %}
+      </div>
+    </div>
+    {% if not is_current %}
+      <div class="text-[12.5px] text-amber-800 bg-amber-50 rounded-lg px-3 py-2 mt-2" data-testid="earlier-version">
+        An earlier version of the criteria. These are the reviews scored on version {{ shown_version|slice:"1:" }}; the round now uses version {{ round.rubric_version|slice:"1:" }}.
+        <a href="{% url 'marketplace:round_review_step' round.slug 'ai-review' %}" class="text-brand-indigo hover:text-brand-deep-purple ml-1">See the current scores →</a>
+      </div>
+    {% endif %}
+  {% if canopy_panel and round.evaluation_criteria %}
+    <div class="flex flex-wrap items-center gap-2 mt-3">
+      <button type="button" id="round-ai-review" class="hidden inline-flex items-center px-3.5 py-2 bg-white text-indigo-700 border border-indigo-300 text-[13px] font-medium rounded-lg hover:bg-indigo-50"
+              data-testid="start-ai-review" data-ask="{{ ai_review_ask }}" title="{{ ai_review_hint }}">
+        <i class="fa-solid fa-wand-magic-sparkles mr-2 text-[11px]"></i>{% if progress.ai_on_current %}Re-run the AI review on version {{ round.rubric_version|slice:"1:" }}{% else %}Run the AI review on version {{ round.rubric_version|slice:"1:" }}{% endif %}
+      </button>
+    </div>
+  {% endif %}
+    <details class="mt-4 text-[12px] text-gray-600" data-testid="glossary">
+      <summary class="cursor-pointer text-brand-indigo hover:text-brand-deep-purple">What the recommendations, colours and flags mean</summary>
+      <div class="grid grid-cols-1 xl:grid-cols-[1fr_1fr] gap-x-8 gap-y-3 mt-2.5">
+        <div class="flex flex-col gap-1.5">
+          <div class="text-[10.5px] font-semibold text-gray-400 tracking-wider">RECOMMENDATIONS</div>
+          {% for o in outcomes %}<div><span class="font-medium text-gray-800">{{ o.label }}</span> · {{ o.definition }}</div>{% endfor %}
+          <div class="text-[10.5px] font-semibold text-gray-400 tracking-wider pt-2">SCORES, 1 TO 10 PER CRITERION</div>
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="inline-block rounded text-[12px] font-semibold px-2" style="background:#86efac;color:#14532d">7–10</span> strong
+            <span class="inline-block rounded text-[12px] font-semibold px-2" style="background:#fef3c7;color:#92400e">4–6</span> partial
+            <span class="inline-block rounded text-[12px] font-semibold px-2" style="background:#fca5a5;color:#7f1d1d">1–3</span> weak or not answered
+          </div>
+          <div>The overall score is the criteria weighted, out of 100.</div>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <div class="text-[10.5px] font-semibold text-gray-400 tracking-wider">FLAGS · THINGS TO CHECK, NOT PENALTIES</div>
+          {% for key, meaning in flag_vocabulary %}<div><span class="font-medium text-gray-800">{{ meaning.label }}</span> · {{ meaning.definition }}</div>{% endfor %}
+        </div>
+      </div>
+    </details>
+</div>
+
+  <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+    <div class="px-4 sm:px-5 pt-3.5 flex flex-wrap items-baseline gap-x-3">
+      <span class="text-sm font-semibold text-brand-deep-purple">Applicants</span>
+      <span class="text-[12px] text-gray-500" data-testid="shown"><span data-stat="shown">{{ applicants|length }}</span> of {{ applicants|length }} shown · click a row to read the response and its review</span>
+    </div>
+    {% comment %}One line of filters: each names itself in its first option, so no label row above.{% endcomment %}
+    <div class="px-4 sm:px-5 pt-2.5 pb-3 border-b border-brand-border-light flex flex-wrap items-center gap-2" data-testid="filters">
+      <input type="search" data-filter="text" placeholder="Search" aria-label="Search organizations" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800" style="width: 7.5rem">
+      <select data-filter="outcome" aria-label="Recommendation" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[12.5px] text-gray-800 bg-white" style="max-width: 11rem">
+        <option value="">Any recommendation</option>
+        {% for o in step_outcomes %}{% if o.key or o.count %}<option value="{{ o.key|default:'none' }}">{{ o.label }} ({{ o.count }})</option>{% endif %}{% endfor %}
+      </select>
+      {% if review_options|length > 1 %}
+      <select data-filter="review" aria-label="Reviewed by" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[12.5px] text-gray-800 bg-white">
+        <option value="">Reviewed by anyone</option>
+        {% for r in review_options %}<option value="{{ r.value }}">{{ r.label }} ({{ r.count }})</option>{% endfor %}
+      </select>
+      {% endif %}
+      {% if countries %}
+      <select data-filter="country" aria-label="Country" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[12.5px] text-gray-800 bg-white">
+        <option value="">Any country</option>
+        {% for country, count in countries %}<option value="{{ country }}">{{ country }} ({{ count }})</option>{% endfor %}
+      </select>
+      {% endif %}
+      {% if flag_counts %}
+      <select data-filter="flag" aria-label="Flag" class="border border-brand-border-light rounded-lg px-2 py-1.5 text-[12.5px] text-gray-800 bg-white" style="max-width: 8.5rem">
+        <option value="">Any flag</option>
+        <option value="__none">No flags</option>
+        {% for f in flag_counts %}<option value="{{ f.key }}" title="{{ f.definition }}">{{ f.label }} ({{ f.count }})</option>{% endfor %}
+      </select>
+      {% endif %}
+      <button type="button" data-filter="reset" class="text-[12.5px] text-brand-indigo hover:text-brand-deep-purple py-1.5 px-1">Clear</button>
+    </div>
+
+    <div class="overflow-x-auto">
+    <table class="sortable min-w-full divide-y divide-gray-200" data-testid="scores">
+      <thead class="bg-gray-50">
+        <tr>
+          <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organization</th>
+          <th data-sort="number" class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="The criteria weighted, out of 100">Score</th>
+          <th data-sort="text" class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Sorts recommended first">Recommendation</th>
+          {% for c in summary.criteria %}
+            <th data-sort="number" class="hidden sm:table-cell px-2 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider" style="max-width: 5.25rem; white-space: normal; line-height: 1.2; vertical-align: bottom" title="{{ c.name }} · {{ c.weight|floatformat:'-1' }}% of the score"><div style="display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden">{{ c.name }}</div><div class="text-[10px] text-gray-400 font-normal normal-case">{{ c.weight|floatformat:"-1" }}%</div></th>
+          {% endfor %}
+          <th class="hidden sm:table-cell px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" style="vertical-align: bottom" title="Things to check before relying on the response; not penalties">Flags</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for a in applicants %}
+          <tr class="hover:bg-gray-50 transition cursor-pointer"
+              data-href="{% url 'solicitations:response_detail' a.response.pk %}"
+              data-name="{{ a.name|lower }}"
+              data-outcome="{{ a.review.outcome }}"
+              data-review="{% if a.review.by_person %}person{% elif a.review.has_ai %}ai{% else %}none{% endif %}"
+              data-country="{{ a.country|default:'' }}"
+              data-flags="{{ a.review.flags|join:'|' }}"
+              data-total="{{ a.review.score|default_if_none:'' }}"
+              data-scores="{% for cell in a.cells %}{{ cell.score|default_if_none:'' }}{% if not forloop.last %}|{% endif %}{% endfor %}">
+            <td class="px-4 sm:px-5 py-2.5" data-sort-value="{{ a.name|lower }}">
+              <a href="{% url 'solicitations:response_detail' a.response.pk %}" class="text-[13.5px] font-medium {% if a.org %}text-brand-deep-purple{% else %}text-gray-500 italic{% endif %} hover:text-brand-indigo">{{ a.name }}</a>
+              {% if a.review.by_person %}
+                <span class="text-[11px] text-gray-500 ml-1" title="Reviewed by {{ a.review.people }} {{ a.review.people|pluralize:'person,people' }}"><i class="fa-solid fa-user-check"></i></span>
+              {% elif a.review.has_ai %}
+                <span class="text-[11px] text-indigo-600 ml-1" title="The AI's review; no person has checked it yet"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+              {% endif %}
+              {% if a.country %}<div class="text-[11.5px] text-gray-500">{{ a.country|truncatechars:24 }}</div>{% endif %}
+            </td>
+            <td class="px-3 py-2.5 text-right text-[13px] font-semibold text-gray-900 tabular-nums" data-sort-value="{{ a.review.score|default_if_none:'' }}">{{ a.review.score|default_if_none:"—" }}</td>
+            <td class="px-3 py-2.5 whitespace-nowrap" data-sort-value="{{ a.review.sort }}">
+              {% if a.review.outcome %}
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11.5px] font-semibold
+                  {% if a.review.outcome == 'pick' %}bg-green-100 text-green-800{% elif a.review.outcome == 'backup' %}bg-teal-100 text-teal-800{% elif a.review.outcome == 'waitlist' %}bg-amber-50 text-amber-800{% else %}bg-gray-100 text-gray-600{% endif %}">{{ a.review.label }}</span>
+              {% else %}<span class="text-[11.5px] text-gray-300">—</span>{% endif %}
+            </td>
+            {% for cell in a.cells %}
+              <td class="hidden sm:table-cell px-1 py-1 text-center" data-sort-value="{{ cell.score|default_if_none:'' }}">
+                {% if cell.score is not None %}<span class="inline-block rounded text-[12px] font-semibold tabular-nums" style="min-width: 2.25rem; padding: 3px 0; {{ cell.style }}">{{ cell.score|floatformat:"-1" }}</span>{% else %}<span class="text-[12px] text-gray-300">—</span>{% endif %}
+              </td>
+            {% endfor %}
+            <td class="hidden sm:table-cell px-3 py-2.5">
+              {% comment %}Written out as plain text, not chips: chips made every row three lines tall.{% endcomment %}
+              <div class="text-[11.5px] leading-snug text-amber-800">{% for flag in a.flag_chips %}<span title="{{ flag.definition }}">{{ flag.label }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="{{ summary.criteria|length|add:4 }}" class="px-4 sm:px-5 py-12 text-center text-sm text-gray-500">No applications recorded for this round.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  {% if summary.stale or summary.unrecorded %}
+    {% comment %}Record-keeping, for whoever maintains the round: below the table, not above the scores.{% endcomment %}
+    <div class="text-[11.5px] text-gray-400 mt-3 px-1">
+      {% if summary.stale %}<div data-testid="stale">{{ summary.stale }} review{{ summary.stale|pluralize }} scored on {{ summary.older_versions }}, not the current criteria ({{ summary.current_version|default:"none" }}). Re-score {{ summary.stale|pluralize:"it,them" }} to compare like with like.</div>{% endif %}
+      {% if summary.unrecorded %}<div data-testid="unrecorded">{{ summary.unrecorded }} review{{ summary.unrecorded|pluralize }} {{ summary.unrecorded|pluralize:"does,do" }} not say which criteria {{ summary.unrecorded|pluralize:"it,they" }} scored against: saved before reviews recorded it.</div>{% endif %}
+    </div>
+  {% endif %}

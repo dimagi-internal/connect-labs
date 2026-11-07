@@ -215,20 +215,36 @@ firm's behalf).
 
 - `/labs/marketplace/rounds/` lists the rounds, with "not ingested" shown where
   the sheet could not be read.
-- `/labs/marketplace/rounds/<slug>/` is the round page (`views.round_detail`).
-  Its owner sees the responses. **Start reviewing** (**Next to check** once
-  people have reviewed) opens the next response, and **Scores** appears
-  once the round has criteria.
-- `/labs/marketplace/rounds/<slug>/scores/?version=vN&compare=vM` is the Scores
-  page (`views.round_scores`; 404 to anyone who cannot read the round's
-  responses). It shows every applicant against every criterion. `version` defaults
-  to the current one. With no `compare` the page shows that version alone (no
-  "What changed" block); a **Compare with** select beside the version picker, its
-  first option **No comparison**, adds one. `compare` may name any other version:
-  the two are ordered by version history before `compare_at` runs, and a `compare`
-  that names no other existing version is ignored. Earlier versions can be deleted from this page
-  (`rounds/<slug>/versions/<v>/delete/`), and `rounds/<slug>/summary/` sets the
-  summary link.
+- `/labs/marketplace/rounds/<slug>/` is the round's **Overview** tab
+  (`views.round_detail`). Its owner sees the responses. **Start reviewing**
+  (**Next to check** once people have reviewed) opens the next response.
+- `/labs/marketplace/rounds/<slug>/review/<step>/` is the round's **Review** tab
+  (`views.round_review`; 404 to anyone who cannot read the round's responses),
+  one URL per step; a bare `/review/` redirects to the step with something
+  still to do (`review_steps.default_step`). The steps, in order (see § The
+  Review tab, below):
+  - `criteria`: the shown version's criteria with their scoring guides and
+    reasons, how they were chosen (`criteria_basis`, or the version record's
+    basis), **Revise the criteria** (asks the assistant, with the person's
+    words appended: `views.REVISE_ASK`), and every version, deletable with its
+    reviews (`rounds/<slug>/versions/<v>/delete/`).
+  - `ai-review`: every applicant against every criterion, read from the **AI's
+    reviews alone** (`review_status(kind="ai")`), with the version picker, the
+    summary link (`rounds/<slug>/summary/`) and **Run / Re-run the AI review**.
+  - `ai-analysis`: also the AI's reviews alone. "What changed from version A to
+    B" opens against the version before the shown one; `?compare=vM` picks
+    another, `?compare=none` turns it off. Then **By criterion** (spread,
+    shortlist mean, everyone else, shortlist lead), open.
+  - `human-review`: how many applicants a person has checked, how people
+    responded to the AI (agreed, added to it, copied and edited, disagreed;
+    `queries.human_review_rows`), and each applicant's AI recommendation beside
+    the people's.
+  `?version=vN` reads an earlier criteria version on any step. The round header
+  above the steps always reads the round as Overview does (a person's review
+  first, else the AI's), so the two tabs' figures agree.
+- `/labs/marketplace/rounds/<slug>/scores/` is the old Scores page. It
+  redirects (301) to `review/ai-review/`, or to `review/ai-analysis/` when the
+  query asks for a comparison, keeping the query string.
 - `/solicitations/response/<pk>/` is a response with its reviews. For a directory round
   it renders `solicitations/round_response.html`, with every claim linked to the
   passage it cites.
@@ -237,6 +253,36 @@ firm's behalf).
   **Add to it** (`stance=adds`), **Copy and edit as mine** (no stance, which saves
   as `amended`) and **I disagree** (`stance=disagrees`). The AI's per-criterion
   suggestions stay hidden until the reviewer has scored that criterion.
+
+## The Review tab, and how to change it
+
+The tab is built to be iterated on. Its steps are declared once, in
+`connect_labs/marketplace/review_steps.py` (`STEPS`): each has a URL key, a
+label, a template partial under `templates/marketplace/review/`, a one-line
+status read from the page context (shown in the step bar), a hint, whose
+reviews its scores read (`reviews="ai"` or the round's usual reading), and an
+optional `extra` that adds figures only that step draws.
+
+- **Change a step's content**: edit its partial. Figures it needs come from the
+  context `views.round_review` builds (or its `extra`), never computed in the
+  template.
+- **Add, rename, reorder or drop a step**: change `STEPS` and its partial.
+  The URL, the step bar, the statuses and the bare `/review/` redirect follow.
+  Update `default_step` if the new step changes which one a round opens on.
+- **Ask the assistant from a step**: a button with `data-canopy-ask` and
+  `data-ask="<words>"` (optionally `data-ask-input="<text box id>"` to append
+  what the person typed) is wired by `static/marketplace/round_review.js`. Keep
+  the words in `views.py` so a test can pin them.
+- **Tests**: `marketplace/tests/test_review_tabs.py` renders every step for the
+  owner and refuses everyone else, checks each status line and where a bare
+  `/review/` lands, and that AI Review / AI Analysis read the AI's reviews while
+  the header matches Overview. The shared round fixtures live in
+  `tests/round_fixtures.py`, loaded by `tests/conftest.py`.
+
+Not built yet, for the next iterations: the assistant's notes on what stands
+out in a version's scores ("What ACE noticed", kept per criteria version and
+shown on AI Analysis); outcome rules as their own field rather than inside
+`criteria_basis`; and an agreement figure between people and the AI.
 
 ## Who reads reviews
 

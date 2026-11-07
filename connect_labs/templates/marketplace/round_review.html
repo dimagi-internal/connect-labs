@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% load static %}
+{% comment %}
+A round's Review tab: the step bar, then the shown step's partial
+(templates/marketplace/review/<step>.html). The steps, their order and their
+status lines come from marketplace/review_steps.py, so adding or reordering a
+step is a change there, not here.
+
+Tailwind, not Bootstrap. Only classes some template already uses are compiled
+into the stylesheet, so anything else here is an inline style. Every outcome
+and flag word comes from solicitations/vocabulary.py, with its definition.
+{% endcomment %}
+{% block title %}{{ step.label }} · Review · {{ round.title }}{% endblock %}
+
+{% block content %}
+<div class="max-w-screen-2xl mx-auto px-0 sm:px-6 lg:px-8 py-5 sm:py-6">
+
+  <div class="text-[12.5px] text-gray-500 mb-3.5">
+    <a href="{% url 'marketplace:home' %}" class="hover:text-gray-700">Marketplace</a> ·
+    <a href="{% url 'marketplace:rounds' %}" class="hover:text-gray-700">Expressions of interest</a> ·
+    <a href="{% url 'marketplace:round' round.slug %}" class="hover:text-gray-700">{{ round.title }}</a> ·
+    <span class="text-gray-900">Review</span>
+  </div>
+
+  <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-6 py-5 mb-4.5">
+    {% include "marketplace/_round_header.html" with tab="review" %}
+    {% include "marketplace/review/_steps.html" %}
+    {% if messages %}{% for message in messages %}<div class="text-[12px] {% if message.tags == 'error' %}text-red-800{% else %}text-green-800{% endif %} mt-2">{{ message }}</div>{% endfor %}{% endif %}
+  </div>
+
+  {% include step.template %}
+
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+  <script src="{% static 'supply_chain/sheet_sort.js' %}"></script>
+  {{ shade_scale|json_script:"shade-scale" }}
+  <script>
+    (function () {
+      // A row opens that applicant's submission, as on the round page.
+      document.querySelectorAll("tr[data-href]").forEach(function (row) {
+        row.addEventListener("click", function (event) {
+          if (event.target.closest("a") || String(window.getSelection())) return;
+          if (event.metaKey || event.ctrlKey) window.open(row.dataset.href, "_blank");
+          else window.location.href = row.dataset.href;
+        });
+      });
+
+      var shades = JSON.parse(document.getElementById("shade-scale").textContent);
+      var rows = Array.prototype.slice.call(document.querySelectorAll("table[data-testid=scores] tbody tr[data-href]"));
+      var control = function (name) { return document.querySelector("[data-filter=" + name + "]"); };
+      var KEPT = ["pick", "backup"];
+
+      function scoresOf(row) {
+        return row.dataset.scores.split("|").map(function (v) { return v === "" ? null : Number(v); });
+      }
+      function matches(row) {
+        var v = function (name) { var el = control(name); return el ? el.value : ""; };
+        var text = v("text").trim().toLowerCase();
+        if (text && row.dataset.name.indexOf(text) === -1) return false;
+        var outcome = v("outcome");
+        if (outcome === "none" && row.dataset.outcome) return false;
+        if (outcome && outcome !== "none" && row.dataset.outcome !== outcome) return false;
+        if (v("review") && row.dataset.review !== v("review")) return false;
+        if (v("country") && row.dataset.country !== v("country")) return false;
+        var flags = row.dataset.flags ? row.dataset.flags.split("|") : [];
+        if (v("flag") === "__none" && flags.length) return false;
+        if (v("flag") && v("flag") !== "__none" && flags.indexOf(v("flag")) === -1) return false;
+        return true;
+      }
+      function mean(xs) { return xs.length ? xs.reduce(function (a, b) { return a + b; }, 0) / xs.length : null; }
+      function median(xs) {
+        if (!xs.length) return null;
+        var s = xs.slice().sort(function (a, b) { return a - b; });
+        var m = Math.floor(s.length / 2);
+        return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+      }
+      function fmt(x, digits) { return x === null ? "—" : (Math.round(x * Math.pow(10, digits)) / Math.pow(10, digits)).toFixed(digits); }
+      function shade(x) { return x === null ? null : shades[String(Math.min(Math.max(Math.round(x), 1), 10))]; }
+      function setText(scope, stat, value) {
+        var el = scope.querySelector("[data-stat=" + stat + "]");
+        if (el) el.textContent = value;
+        return el;
+      }
+
+      // The summaries follow the filter: the figures above are always for the rows below.
+      function refresh() {
+        var shown = rows.filter(function (row) {
+          var ok = matches(row);
+          row.style.display = ok ? "" : "none";
+          return ok;
+        });
+        setText(document, "shown", shown.length);
+        var totals = shown.map(function (r) { return r.dataset.total; }).filter(function (t) { return t !== ""; }).map(Number);
+        setText(document, "total-mean", fmt(mean(totals), 0));
+        setText(document, "total-median", fmt(median(totals), 0));
+        document.querySelectorAll("tr[data-criterion]").forEach(function (line, i) {
+          var scored = [], kept = [], rest = [];
+          shown.forEach(function (r) {
+            var s = scoresOf(r)[i];
+            if (s === null) return;
+            scored.push(s);
+            (KEPT.indexOf(r.dataset.outcome) !== -1 ? kept : rest).push(s);
+          });
+          setText(line, "scored", scored.length);
+          var meanEl = setText(line, "mean", fmt(mean(scored), 1));
+          var tone = shade(mean(scored));
+          if (meanEl) { meanEl.style.background = tone ? tone[0] : ""; meanEl.style.color = tone ? tone[1] : ""; }
+          setText(line, "median", median(scored) === null ? "—" : String(median(scored)));
+          setText(line, "kept", fmt(mean(kept), 1));
+          setText(line, "rest", fmt(mean(rest), 1));
+          var gap = kept.length && rest.length ? mean(kept) - mean(rest) : null;
+          setText(line, "gap", gap === null ? "—" : (gap >= 0 ? "+" : "") + fmt(gap, 1));
+          var counts = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+          scored.forEach(function (s) { counts[Math.min(Math.max(Math.round(s), 1), 10) - 1] += 1; });
+          var tallest = Math.max.apply(null, counts) || 1;
+          line.querySelectorAll("[data-stat=spread] [data-score]").forEach(function (bar, b) {
+            bar.style.height = counts[b] ? Math.round(100 * counts[b] / tallest) + "%" : "2px";
+            bar.style.background = counts[b] ? shades[String(b + 1)][0] : "#f3f4f6";
+            bar.title = counts[b] + " scored " + (b + 1);
+          });
+        });
+      }
+
+      document.querySelectorAll("[data-filter]").forEach(function (el) {
+        if (el.dataset.filter === "reset") {
+          el.addEventListener("click", function () {
+            document.querySelectorAll("[data-filter]").forEach(function (c) {
+              if (c.tagName === "SELECT") c.selectedIndex = 0;
+              else if (c.dataset.filter === "text") c.value = "";
+            });
+            refresh();
+          });
+        } else {
+          el.addEventListener("input", refresh);
+          el.addEventListener("change", refresh);
+        }
+      });
+    })();
+  </script>
+  <script src="{% static 'marketplace/round_review.js' %}"></script>
+  {% include "canopy_host/panel.html" %}
+{% endblock %}

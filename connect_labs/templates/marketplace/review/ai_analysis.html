@@ -1,0 +1,153 @@
+{% comment %}
+Review › AI Analysis: are the criteria doing their job? It opens with what the
+last revision changed (the shown version against the one before it; ?compare=
+picks another, ?compare=none turns it off) and how each criterion scored. A
+finding here is a reason to revise the criteria: back to step 1.
+{% endcomment %}
+{% if not step_reviewed.people and not step_reviewed.ai_only %}
+  <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-5 py-10 text-center text-sm text-gray-500 mb-4.5" data-testid="analysis-empty">
+    Nothing to analyse yet: nobody has been scored on these criteria.
+    <a href="{% url 'marketplace:round_review_step' round.slug 'ai-review' %}" class="text-brand-indigo hover:text-brand-deep-purple ml-1">Go to AI Review →</a>
+  </div>
+{% else %}
+  {% if not comparison %}
+    <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-5 py-3 mb-4.5 flex flex-wrap items-center gap-3 text-[12.5px] text-gray-600" data-testid="no-comparison">
+      {% if history|length > 1 %}
+        <span>Version {{ shown_version|slice:"1:" }} on its own.</span>
+        <form method="get" class="inline-flex items-center gap-1.5 text-[11px] text-gray-500" data-testid="compare-picker">
+          <input type="hidden" name="version" value="{{ shown_version }}">
+          <select name="compare" onchange="this.form.submit()" class="border border-brand-border-light rounded-full px-2 py-0.5 text-[12px] text-gray-700 bg-white">
+            <option value="none" selected>No comparison</option>
+            {% for v in history %}{% if v.version != shown_version %}<option value="{{ v.version }}">Compare with version {{ v.number }}</option>{% endif %}{% endfor %}
+          </select>
+        </form>
+      {% else %}
+        <span>This is the first version of the criteria, so there is nothing to compare it with yet. Revising them makes version 2, and this page then shows what changed.</span>
+      {% endif %}
+    </div>
+  {% endif %}
+  {% if comparison %}
+  <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-4.5" data-testid="comparison">
+    <div class="px-4 sm:px-5 py-3.5 border-b border-brand-border-light flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <span class="text-sm font-semibold text-brand-deep-purple">What changed from version {{ comparison.earlier|slice:"1:" }} to version {{ comparison.later|slice:"1:" }}</span>
+        <div class="text-[12px] text-gray-500 mt-0.5">
+          {{ comparison.moved|length }} recommendation{{ comparison.moved|length|pluralize }} changed{% if comparison.mean_shift is not None %} · scores moved {% if comparison.mean_shift >= 0 %}+{% endif %}{{ comparison.mean_shift|floatformat:1 }} points out of 100 on average, across {{ comparison.compared }} applicants{% endif %}.
+        </div>
+        <div class="text-[12px] text-gray-500 mt-0.5" data-testid="comparison-note">A recommendation follows the round's rules on places, budget and geography as well as the score, so it can move the other way to the score.</div>
+      </div>
+      {% if history|length > 1 %}
+        <form method="get" class="text-[11px] text-gray-500 flex items-center gap-1.5">
+          <input type="hidden" name="version" value="{{ shown_version }}">
+          COMPARE WITH
+          <select name="compare" onchange="this.form.submit()" class="border border-brand-border-light rounded-lg px-2 py-1 text-[12.5px] text-gray-800 bg-white">
+            <option value="none">No comparison</option>
+            {% for v in history %}{% if v.version != shown_version %}<option value="{{ v.version }}" {% if v.version == compare_with %}selected{% endif %}>Version {{ v.number }}</option>{% endif %}{% endfor %}
+          </select>
+        </form>
+      {% endif %}
+    </div>
+    <div class="grid grid-cols-1 xl:grid-cols-[1fr_1fr] gap-0">
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50"><tr>
+            <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Recommendation changed</th>
+            <th class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Version {{ comparison.earlier|slice:"1:" }} → {{ comparison.later|slice:"1:" }}</th>
+            <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Score</th>
+          </tr></thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for m in comparison.moved %}
+              <tr class="hover:bg-gray-50 cursor-pointer" data-href="{% url 'solicitations:response_detail' m.applicant.response.pk %}">
+                <td class="px-4 sm:px-5 py-2 text-[13px] text-brand-deep-purple font-medium">{{ m.applicant.name }}</td>
+                <td class="px-3 py-2 text-[11.5px]">
+                  <span class="inline-flex flex-wrap items-center gap-1">
+                    <span class="inline-flex px-2 py-0.5 rounded-full font-semibold whitespace-nowrap {{ m.from_style }}">{{ m.from }}</span>
+                    <span class="text-gray-400">→</span>
+                    <span class="inline-flex px-2 py-0.5 rounded-full font-semibold whitespace-nowrap {{ m.to_style }}">{{ m.to }}</span>
+                  </span>
+                </td>
+                <td class="px-4 sm:px-5 py-2 text-right text-[12.5px] text-gray-700 tabular-nums whitespace-nowrap">{{ m.score_from|default_if_none:"—" }} → {{ m.score_to|default_if_none:"—" }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="3" class="px-4 sm:px-5 py-6 text-[12.5px] text-gray-500">No recommendation changed.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="overflow-x-auto border-t xl:border-t-0 xl:border-l border-brand-border-light">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50"><tr>
+            <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Criterion</th>
+            <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Weight</th>
+            <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Average score on this criterion, out of 10.">Mean of 10</th>
+            <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="How far the shortlist's mean is above everyone else's, in each version. Near zero: the criterion did not decide who was shortlisted.">Shortlist lead</th>
+          </tr></thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for c in comparison.criteria %}
+              <tr>
+                <td class="px-4 sm:px-5 py-2 text-[12.5px] text-gray-800">{{ c.name }}{% if c.weight_from is None %} <span class="text-[11px] text-green-700">new</span>{% endif %}</td>
+                <td class="px-3 py-2 text-right text-[12px] tabular-nums whitespace-nowrap {% if c.weight_from != c.weight_to %}font-semibold text-gray-900{% else %}text-gray-500{% endif %}">{% if c.weight_from is not None %}{{ c.weight_from|floatformat:"-1" }} → {% endif %}{{ c.weight_to|floatformat:"-1" }}%</td>
+                <td class="px-3 py-2 text-right text-[12px] text-gray-700 tabular-nums whitespace-nowrap">{{ c.mean_from|floatformat:1|default:"—" }} → {{ c.mean_to|floatformat:1|default:"—" }}</td>
+                <td class="px-4 sm:px-5 py-2 text-right text-[12px] text-gray-700 tabular-nums whitespace-nowrap">{{ c.gap_from|floatformat:1|default:"—" }} → {{ c.gap_to|floatformat:1|default:"—" }}</td>
+              </tr>
+            {% endfor %}
+            {% for c in comparison.dropped %}
+              <tr><td class="px-4 sm:px-5 py-2 text-[12.5px] text-gray-400 line-through" colspan="4">{{ c.name }} (dropped)</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% if summary.criteria %}
+  <details open class="bg-white border border-brand-border-light rounded-lg overflow-hidden mt-4.5" data-testid="by-criterion">
+    <summary class="cursor-pointer px-4 sm:px-5 py-3 text-[13px] font-semibold text-brand-deep-purple">By criterion <span class="text-[12px] font-normal text-gray-500">· how each criterion scored, for the applicants shown above</span></summary>
+    <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-200" data-testid="criteria-summary">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Criterion</th>
+          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Weight</th>
+          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Applicants given a score on this criterion">Scored</th>
+          <th class="px-3 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Mean</th>
+          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Median</th>
+          <th class="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="How many applicants got each score, 1 on the left to 10 on the right">Spread 1–10</th>
+          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Mean score of applicants recommended or kept as backup">Shortlist</th>
+          <th class="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Everyone else</th>
+          <th class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="How far the shortlist's mean is above everyone else's. Near zero: this criterion did not decide who was shortlisted.">Shortlist lead</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for c in criteria_rows %}
+          <tr data-criterion="{{ c.id }}">
+            <td class="px-4 sm:px-5 py-2.5 text-[13px] text-gray-800 font-medium">
+              {{ c.name }}
+              {% if c.scoring_guide %}<details class="text-[11.5px] text-gray-500 font-normal leading-snug mt-0.5"><summary class="cursor-pointer text-gray-400 hover:text-brand-indigo">How it is scored</summary><p class="mt-1 whitespace-pre-line" style="max-width: 36rem">{{ c.scoring_guide }}</p></details>{% endif %}
+            </td>
+            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-500 tabular-nums">{{ c.weight|floatformat:"-1" }}%</td>
+            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="scored">{{ c.scored }}</td>
+            <td class="px-3 py-2.5 text-center"><span class="inline-block rounded text-[12.5px] font-semibold tabular-nums" style="min-width: 2.75rem; padding: 2px 0; {{ c.mean_style }}" data-stat="mean">{{ c.mean|floatformat:1|default:"—" }}</span></td>
+            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="median">{{ c.median|floatformat:"-1"|default:"—" }}</td>
+            <td class="px-3 py-2.5">
+              <div class="flex items-end" style="gap: 2px; height: 24px" data-stat="spread">
+                {% for b in c.spread %}
+                  <div title="{{ b.count }} scored {{ b.score }}" data-score="{{ b.score }}" style="width: 7px; height: {% if b.count %}{{ b.pct }}%{% else %}2px{% endif %}; min-height: 2px; border-radius: 1px 1px 0 0; background: {{ b.colour }}"></div>
+                {% endfor %}
+              </div>
+            </td>
+            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="kept">{{ c.kept_mean|floatformat:1|default:"—" }}</td>
+            <td class="px-3 py-2.5 text-right text-[12.5px] text-gray-700 tabular-nums" data-stat="rest">{{ c.rest_mean|floatformat:1|default:"—" }}</td>
+            <td class="px-4 sm:px-5 py-2.5 text-right text-[12.5px] font-medium tabular-nums" data-stat="gap">{% if c.gap is not None %}{% if c.gap >= 0 %}+{% endif %}{{ c.gap|floatformat:1 }}{% else %}—{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </details>
+  {% endif %}
+  <div class="flex flex-wrap items-center gap-3 mt-4.5 text-[12.5px] text-gray-600" data-testid="analysis-next">
+    <a href="{% url 'marketplace:round_review_step' round.slug 'criteria' %}#revise" class="inline-flex items-center px-3.5 py-2 bg-white text-indigo-700 border border-indigo-300 text-[13px] font-medium rounded-lg hover:bg-indigo-50">Revise the criteria →</a>
+    <a href="{% url 'marketplace:round_review_step' round.slug 'human-review' %}" class="inline-flex items-center px-3.5 py-2 bg-indigo-600 text-white text-[13px] font-medium rounded-lg hover:bg-indigo-700">These criteria hold: start checking →</a>
+  </div>
+{% endif %}
