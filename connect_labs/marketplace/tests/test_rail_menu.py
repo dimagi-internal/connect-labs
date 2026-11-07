@@ -35,6 +35,7 @@ def test_headings_are_the_agreed_ones():
     ]
     labels = [i["label"] for g in menu["groups"] for i in g["items"]]
     assert "Supply" not in labels and "Funds and portfolio" not in labels
+    assert "Malaria PMC explorer" not in labels  # a deep dive, reached from Targeting
     assert labels[-1] == "Supplier marketplace"
 
 
@@ -44,7 +45,7 @@ def test_headings_are_the_agreed_ones():
         ("marketplace:home", "Programs"),
         ("marketplace:network", "Partners"),
         ("targeting:index", "Targeting"),
-        ("targeting:pmc", "Malaria PMC explorer"),
+        ("targeting:pmc", "Targeting"),
         ("solicitations:public_list", "Calls for partners"),
         ("marketplace:rounds", "Expressions of interest"),
         ("pulse:index", "Live delivery"),

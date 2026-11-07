@@ -330,6 +330,11 @@
 
       <div>
         <h1 class="text-2xl font-semibold text-stone-900">Intervention targeting</h1>
+        <p class="text-xs text-stone-500 mt-1" data-testid="targeting-deep-dives">
+          Deep dives:
+          <a href="{% url 'targeting:pmc' %}" class="text-teal-800 hover:text-teal-900 underline">Malaria PMC</a>
+          <span class="text-stone-400">(simulated deaths averted by state)</span>
+        </p>
         {% comment %}
           "mortality data for 54" used to sit here on every one of the 52
           indicators, a few centimetres above a method chip reading "43/55

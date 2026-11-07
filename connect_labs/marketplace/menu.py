@@ -26,8 +26,10 @@ MARKETPLACE_MENU = Menu(
         Group(
             "Targeting",
             (
+                # Deep dives (Malaria PMC today, more per programme area later) are
+                # reached from the Targeting page, not listed here; Targeting stays lit
+                # on them because their URLs sit under its own.
                 Item("Targeting", "targeting:index"),
-                Item("Malaria PMC explorer", "targeting:pmc"),
             ),
         ),
         Group(
