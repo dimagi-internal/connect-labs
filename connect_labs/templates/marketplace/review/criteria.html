@@ -60,6 +60,14 @@ Analysis), and every version so far.
   </div>
 {% endif %}
 
+{% if shown_outcome_rules %}
+  <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-5 py-3.5 mb-4.5" data-testid="outcome-rules">
+    <div class="text-sm font-semibold text-brand-deep-purple">Outcome rules</div>
+    <p class="text-[12px] text-gray-500 leading-snug mt-0.5">How scores become Recommended, Recommended backup, Waitlist and Not recommended. A recommendation follows these as well as the score.</p>
+    <p class="text-[12.5px] text-gray-700 leading-relaxed whitespace-pre-line mt-2">{{ shown_outcome_rules }}</p>
+  </div>
+{% endif %}
+
 {% if can_edit and round.evaluation_criteria and is_current %}
   <div id="revise" class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-5 py-3.5 mb-4.5" data-testid="revise">
     <div class="text-sm font-semibold text-brand-deep-purple">Revise the criteria</div>

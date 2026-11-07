@@ -657,10 +657,24 @@ class RubricVersion(models.Model):
     version = models.CharField(max_length=40)
     criteria = models.JSONField(default=list, blank=True)
     basis = models.TextField(blank=True, default="")
+    # How scores become outcomes (slots, conditions, overrides), written with
+    # the criteria. Versions from before this field keep theirs inside `basis`
+    # under an "Outcome rules:" line; `queries.outcome_rules_of` reads both.
+    outcome_rules = models.TextField(blank=True, default="")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
     created_at = models.DateTimeField(default=timezone.now)
+    # AI Observations: what stands out in the scores given on this version,
+    # usually against the version before it (`observations_compared_with`).
+    # Written by the assistant after a scoring pass, read on AI Analysis; each
+    # observation is a candidate revision of the criteria.
+    observations = models.TextField(blank=True, default="")
+    observations_compared_with = models.CharField(max_length=40, blank=True, default="")
+    observations_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    observations_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["created_at", "pk"]

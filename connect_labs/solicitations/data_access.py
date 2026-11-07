@@ -342,11 +342,13 @@ class SolicitationsDataAccess:
         round_.save(update_fields=["summary_url"])
         return round_
 
-    def set_round_criteria(self, slug: str, criteria: list, basis: str = "") -> Solicitation:
+    def set_round_criteria(self, slug: str, criteria: list, basis: str = "", outcome_rules: str = "") -> Solicitation:
         """Replace a directory round's evaluation criteria, and bump its rubric version.
 
         Each criterion is {id, name, weight, scoring_guide, rationale}; weights
-        are percentages. Reviews already scored keep the version they scored.
+        are percentages. `outcome_rules` says how scores become outcomes (slots,
+        conditions, overrides) and is kept on the new version. Reviews already
+        scored keep the version they scored.
         """
         round_ = Solicitation.objects.directory_rounds().select_related("owner_org").filter(slug=slug).first()
         if round_ is None:
@@ -369,9 +371,42 @@ class SolicitationsDataAccess:
             version=round_.rubric_version,
             criteria=cleaned,
             basis=basis or "",
+            outcome_rules=(outcome_rules or "").strip(),
             created_by=self.user,
         )
         return round_
+
+    def set_round_observations(
+        self, slug: str, version: str, observations: str, compared_with: str = ""
+    ) -> RubricVersion:
+        """Write (or, with empty text, clear) the AI Observations on one criteria version's scores.
+
+        `compared_with` names the version the observations read the scores
+        against, usually the one before. Writing again replaces them. Only
+        members of the organisation that ran the round may write them.
+        """
+        round_ = Solicitation.objects.directory_rounds().select_related("owner_org").filter(slug=slug).first()
+        if round_ is None:
+            raise Solicitation.DoesNotExist(f"No marketplace round with slug {slug!r}")
+        access.require(
+            access.can_set_round_criteria(self.caller, round_),
+            "Only members of the organisation that ran this round may write its AI Observations.",
+        )
+        record = round_.rubric_versions.filter(version=version).first()
+        if record is None:
+            raise RubricVersion.DoesNotExist(f"{slug} has no criteria version {version}.")
+        compared_with = (compared_with or "").strip()
+        if compared_with and (
+            compared_with == version or not round_.rubric_versions.filter(version=compared_with).exists()
+        ):
+            raise ValidationError({"compared_with": f"{compared_with} is not another version of {slug}."})
+        text = (observations or "").strip()
+        record.observations = text
+        record.observations_compared_with = compared_with if text else ""
+        record.observations_by = self.user if text else None
+        record.observations_at = timezone.now() if text else None
+        record.save(update_fields=["observations", "observations_compared_with", "observations_by", "observations_at"])
+        return record
 
     def get_past_call(self, key) -> Solicitation | None:
         """One past call by slug or id, or None."""

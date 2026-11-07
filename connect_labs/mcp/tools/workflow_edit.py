@@ -303,7 +303,9 @@ def _propose_text(result: dict) -> str:
         "outside the workflow (sharing, publishing, cloning, the workflow's actions or agent settings), and "
         "render code on a workflow that is not sandboxed. On a marketplace round page the proposals are "
         "marketplace_reviews_write (the whole batch of AI reviews: round_slug, reviews, optional summary_url) and "
-        "marketplace_round_criteria_set; the person confirms them the same way and they are written as that person."
+        "marketplace_round_criteria_set (with outcome_rules) and marketplace_round_observations_set (the AI "
+        "Observations on a criteria version's scores); the person confirms them the same way and they are written "
+        "as that person."
     ),
     input_schema=_PROPOSE_SCHEMA,
     meta=tool_meta(WORKFLOW_EDIT_CONFIRM_URI, "model", "app"),

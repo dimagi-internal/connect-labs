@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
+import re
 import time
 
 from django.db.models import Count, Max, Prefetch, Q
@@ -1444,6 +1445,26 @@ def version_number(version: str) -> int:
     return int(digits) if digits else 0
 
 
+_LEGACY_RULES_HEADING = re.compile(r"^Outcome rules:[ \t]*$", re.MULTILINE)
+
+
+def outcome_rules_of(basis: str, outcome_rules: str = "") -> tuple[str, str]:
+    """A version's basis and its outcome rules, read apart: (basis, rules).
+
+    Versions written since `RubricVersion.outcome_rules` keep the rules there.
+    Earlier ones carried them at the end of the basis under a line "Outcome
+    rules:"; that tail is read off as the rules so every version shows them in
+    the same place.
+    """
+    basis = basis or ""
+    if (outcome_rules or "").strip():
+        return basis.strip(), outcome_rules.strip()
+    match = _LEGACY_RULES_HEADING.search(basis)
+    if not match:
+        return basis.strip(), ""
+    return basis[: match.start()].strip(), basis[match.end() :].strip()
+
+
 def version_history(round_: Solicitation) -> list[dict]:
     """Every criteria version of a round, oldest first, with how many reviews were scored on each."""
     from connect_labs.solicitations.local_models import REVIEW_AI, SolicitationReview
@@ -1456,10 +1477,11 @@ def version_history(round_: Solicitation) -> list[dict]:
         tally["ai" if kind == REVIEW_AI else "people"] += 1
     out = []
     for record in sorted(
-        round_.rubric_versions.select_related("created_by"),
+        round_.rubric_versions.select_related("created_by", "observations_by"),
         key=lambda r: version_number(r.version),
     ):
         tally = counts.get(record.version, {"ai": 0, "people": 0})
+        basis, rules = outcome_rules_of(record.basis, record.outcome_rules)
         out.append(
             {
                 "version": record.version,
@@ -1469,6 +1491,13 @@ def version_history(round_: Solicitation) -> list[dict]:
                 "created_by": record.created_by.username if record.created_by_id else "",
                 "criteria": record.criteria,
                 "basis": record.basis,
+                # The basis without the rules, and the rules apart, however the version stored them.
+                "basis_text": basis,
+                "outcome_rules": rules,
+                "observations": record.observations,
+                "observations_compared_with": record.observations_compared_with,
+                "observations_by": record.observations_by.username if record.observations_by_id else "",
+                "observations_at": record.observations_at,
                 "ai_reviews": tally["ai"],
                 "person_reviews": tally["people"],
             }
@@ -1557,6 +1586,15 @@ def _stance_text(review) -> str:
     )
 
 
+def _effective_outcome(review) -> str:
+    """A review's outcome: its own, or the one it agrees with or adds to when it set none."""
+    if review.outcome:
+        return review.outcome
+    if review.stance in ("agrees", "adds") and review.based_on is not None:
+        return review.based_on.outcome or ""
+    return ""
+
+
 def human_review_rows(round_: Solicitation, applicants: list[dict]) -> tuple[list[dict], dict]:
     """Each applicant's AI review beside the people's, and how the people responded to the AI.
 
@@ -1564,7 +1602,10 @@ def human_review_rows(round_: Solicitation, applicants: list[dict]) -> tuple[lis
     score, the criteria version it was scored on) and every standing person's
     review (who, their stance on the review they started from, their outcome,
     their version). `counts` tallies applicants checked and stances taken, for
-    the figures above the list. Rows keep `applicants`' order.
+    the figures above the list, and how often a person landed on the AI's
+    outcome: `compared` people's reviews with an outcome beside an AI outcome
+    (the AI review they started from, else the applicant's standing one), of
+    which `same_outcome` match. Rows keep `applicants`' order.
     """
     from connect_labs.solicitations import vocabulary
     from connect_labs.solicitations.local_models import REVIEW_AI, SolicitationReview
@@ -1589,6 +1630,8 @@ def human_review_rows(round_: Solicitation, applicants: list[dict]) -> tuple[lis
         "disagrees": 0,
         "own": 0,
         "reviewers": set(),
+        "compared": 0,
+        "same_outcome": 0,
     }
     rows = []
     for a in applicants:
@@ -1601,6 +1644,11 @@ def human_review_rows(round_: Solicitation, applicants: list[dict]) -> tuple[lis
         for r in people:
             counts[r.stance if r.stance in counts else "own"] += 1
             counts["reviewers"].add(r.reviewer_username)
+            against = r.based_on if r.based_on is not None and r.based_on.kind == REVIEW_AI else lead_ai
+            theirs = _effective_outcome(r)
+            if theirs and against is not None and against.outcome:
+                counts["compared"] += 1
+                counts["same_outcome"] += theirs == against.outcome
         rows.append(
             {
                 "applicant": a,
@@ -1620,8 +1668,8 @@ def human_review_rows(round_: Solicitation, applicants: list[dict]) -> tuple[lis
                         "who": r.reviewer_username,
                         "stance": r.stance,
                         "stance_text": _stance_text(r),
-                        "outcome": r.outcome,
-                        "label": vocabulary.outcome_label(r.outcome) if r.outcome else "",
+                        "outcome": _effective_outcome(r),
+                        "label": vocabulary.outcome_label(_effective_outcome(r)) if _effective_outcome(r) else "",
                         "version": version_of(r),
                         "stale": bool(round_.rubric_version) and version_of(r) not in ("", round_.rubric_version),
                     }
@@ -1630,4 +1678,5 @@ def human_review_rows(round_: Solicitation, applicants: list[dict]) -> tuple[lis
             }
         )
     counts["reviewers"] = len(counts["reviewers"])
+    counts["agreement"] = round(100 * counts["same_outcome"] / counts["compared"]) if counts["compared"] else None
     return rows, counts

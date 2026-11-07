@@ -49,7 +49,9 @@ def _ai_analysis_status(ctx: dict) -> str:
     if not ctx["progress"]["ai_on_current"]:
         return "Waits for the AI review"
     previous = ctx["previous_version"]
-    return f"Compared with version {_number(previous)}" if previous else "First version: nothing to compare yet"
+    line = f"Compared with version {_number(previous)}" if previous else "First version: nothing to compare yet"
+    current = next((v for v in ctx.get("history", []) if v.get("current")), None)
+    return f"{line} · AI Observations" if current and current.get("observations") else line
 
 
 def _human_review_status(ctx: dict) -> str:

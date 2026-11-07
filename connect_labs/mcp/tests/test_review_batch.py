@@ -181,6 +181,7 @@ def test_someone_outside_the_owning_organisation_cannot_propose(round_, outsider
     [
         ({"marketplace:review"}, "marketplace_reviews_write", True),
         ({"marketplace:review"}, "marketplace_round_criteria_set", True),
+        ({"marketplace:review"}, "marketplace_round_observations_set", True),
         ({"marketplace:review"}, "workflow_update_definition", False),
         ({"workflow:edit"}, "marketplace_reviews_write", False),
         ({"workflow:edit"}, "workflow_update_definition", True),
@@ -213,3 +214,42 @@ def test_the_round_page_grants_the_review_scopes_to_its_owner_only_tools():
         "get_review",
         "marketplace_round_scores",
     }
+
+
+def test_ai_observations_are_proposed_and_written_on_confirm(round_, member):
+    from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+    user, raw = member
+    criteria = [{"id": "reach", "name": "Reach", "weight": 100}]
+    SolicitationsDataAccess(user=user).set_round_criteria(round_.slug, criteria, "First.", "Recommended: the top two.")
+    SolicitationsDataAccess(user=user).set_round_criteria(round_.slug, criteria, "Second.")
+    arguments = {
+        "slug": round_.slug,
+        "version": "v2",
+        "compared_with": "v1",
+        "observations": "Reach did not separate anyone: 9 of 10 scored 7.\n\nCost tracks answer length.",
+    }
+    change_id = _ok(_propose(raw, arguments, tool="marketplace_round_observations_set"))["change_id"]
+    staged = StagedEdit.objects.get(pk=change_id).preview
+    assert staged["summary"] == "Write the AI Observations on battery-2026 version 2, compared with version 1"
+    assert staged["changes"][0]["diff"].startswith("+ Reach did not separate anyone")
+    assert not round_.rubric_versions.get(version="v2").observations, "nothing written before Confirm"
+    card = _ok(call_tool(raw, "workflow_edit_review_view", {"change_id": change_id}))
+    out = _ok(call_tool(raw, "workflow_edit_apply", {"change_id": change_id, "confirm": card["confirm"]}))
+    assert out["state"] == "applied"
+    record = round_.rubric_versions.get(version="v2")
+    assert record.observations.startswith("Reach did not") and record.observations_compared_with == "v1"
+    assert record.observations_by == user
+
+
+def test_the_criteria_card_shows_the_outcome_rules(round_, member):
+    _, raw = member
+    arguments = {
+        "slug": round_.slug,
+        "criteria": [{"id": "reach", "name": "Reach", "weight": 100}],
+        "outcome_rules": "Recommended: the top two.\nNot recommended: otherwise.",
+    }
+    change_id = _ok(_propose(raw, arguments, tool="marketplace_round_criteria_set"))["change_id"]
+    changes = StagedEdit.objects.get(pk=change_id).preview["changes"]
+    assert [c["label"] for c in changes] == ["criteria", "outcome rules"]
+    assert changes[1]["diff"] == "+ Recommended: the top two.\n+ Not recommended: otherwise."

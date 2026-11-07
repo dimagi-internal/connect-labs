@@ -16,6 +16,10 @@ it stands. Rows keep the round's order (the shortlist first).
   <div><div class="text-[22px] sm:text-[25px] font-semibold text-brand-sunset tabular-nums">{{ human_counts.disagrees }}</div><div class="text-[11px] text-gray-400 tracking-wide">DISAGREED</div></div>
   {% if human_counts.own %}<div><div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ human_counts.own }}</div><div class="text-[11px] text-gray-400 tracking-wide">OWN REVIEWS</div></div>{% endif %}
   <div><div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ human_counts.reviewers }}</div><div class="text-[11px] text-gray-400 tracking-wide">PEOPLE REVIEWING</div></div>
+  <div data-testid="agreement" title="Of the people's reviews that give an outcome, how many give the same one as the AI review they started from (or, failing that, the applicant's AI review).">
+    <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{% if human_counts.agreement is not None %}{{ human_counts.agreement }}%<span class="text-gray-300 text-[16px]"> · {{ human_counts.same_outcome }}/{{ human_counts.compared }}</span>{% else %}—{% endif %}</div>
+    <div class="text-[11px] text-gray-400 tracking-wide">SAME OUTCOME AS THE AI</div>
+  </div>
   {% if reviewed.next_pk %}
     <a href="{% url 'solicitations:response_detail' reviewed.next_pk %}" class="ml-auto inline-flex items-center px-3.5 py-2 bg-indigo-600 text-white text-[13px] font-medium rounded-lg hover:bg-indigo-700" data-testid="next-to-check">
       {% if reviewed.people %}Next to check{% else %}Start reviewing{% endif %} <i class="fa-solid fa-arrow-right ml-2 text-[11px]"></i>
