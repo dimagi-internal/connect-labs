@@ -66,7 +66,8 @@ When the person asks you to get short-lived access for something your own labs t
 `--temporary` returns the token to `127.0.0.1`, so it only works when the person's browser and
 the agent share a machine. From anywhere else use `request_agent_token.py`: the agent asks with
 its own labs token, the person approves on a labs page with their passkey (through canopy, like
-any full-access token), and the token comes back sealed to a key only the agent holds.
+any full-access token), and the token comes back sealed to a key only the agent holds. On a canopy runner the helper also
+signs the request with the runner's device key, so the person's page names the runner.
 
     python request_agent_token.py ask https://labs.connect.dimagi.com --reason "read how the CHC reports compute coverage"
 

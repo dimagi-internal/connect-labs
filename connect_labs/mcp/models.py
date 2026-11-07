@@ -493,6 +493,14 @@ class AgentTokenRequest(models.Model):
     recipient_key = models.CharField(max_length=44)
     #: The access level asked for: ``full`` or ``no-uservisit-data``.
     scope = models.CharField(max_length=20, choices=token_scopes.SCOPE_CHOICES, default=token_scopes.NO_USERVISIT_DATA)
+    #: The canopy runner that made the request, as canopy vouched for it: the proof was signed by
+    #: that runner's approved device key and bound to this request (``runner_check``). Empty means
+    #: NOT VERIFIED (no proof was sent, or canopy could not be asked), never "no runner".
+    runner = models.CharField(max_length=100, blank=True, default="")
+    runner_key_kind = models.CharField(max_length=20, blank=True, default="")
+    #: The agent the request said it speaks for, and whether canopy says that runner serves it.
+    runner_agent = models.CharField(max_length=64, blank=True, default="")
+    runner_serves_agent = models.BooleanField(default=False)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=PENDING, db_index=True)
     approved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"

@@ -14,7 +14,9 @@ as themselves, and the token comes back sealed to a key only this script holds.
         Waits for the answer. On approval writes the token to PATH (0600) and prints only the path.
         Exit 0 approved, 4 still pending, 3 declined or expired, 1 other failure.
 
-The agent's own labs token is read from $LABS_MCP_TOKEN (or --token-file). The default level is
+On a runner with an approved canopy device key the request is signed with it
+(`canopy vault runner-proof`), and the person's page says which runner asked; otherwise it shows
+as not verified. The agent's own labs token is read from $LABS_MCP_TOKEN (or --token-file). The default level is
 no-user-visit (it never sees a real visit row); `--level full` asks for everything the person can
 do. The person's passkey, through canopy, is needed for either. The token lasts one hour. Never
 print the token; delete the file when the job is done. Needs the `cryptography` package.
@@ -26,6 +28,8 @@ import argparse
 import base64
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -54,14 +58,41 @@ def _own_token(token_file: str | None) -> str:
     return raw
 
 
-def _post(url: str, token: str, body: dict | None = None) -> tuple[int, dict]:
+def _runner_proof(url: str, data: bytes) -> dict:
+    """The header proving this request came from an approved canopy runner, or {}.
+
+    `canopy vault runner-proof` signs the URL and a digest of exactly these bytes with this
+    machine's approved device key; labs asks canopy who that is and shows the person. Without
+    one (no canopy CLI, no enrolled key) the request still goes, and the person sees it as not
+    verified."""
+    exe = os.environ.get("CANOPY_BIN") or shutil.which("canopy")
+    if not exe:
+        print("No canopy CLI here: the request will show as not verified.", file=sys.stderr)
+        return {}
+    with tempfile.TemporaryDirectory(prefix="labs-body-") as tmp:
+        body_file = Path(tmp) / "body"
+        body_file.write_bytes(data)
+        done = subprocess.run(
+            [exe, "vault", "runner-proof", "--url", url, "--body-file", str(body_file)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    name, _, value = done.stdout.strip().partition(": ")
+    if done.returncode != 0 or not value:
+        print(
+            f"No runner proof ({done.stderr.strip()[:200]}): the request will show as not verified.", file=sys.stderr
+        )
+        return {}
+    return {name: value}
+
+
+def _post(url: str, token: str, body: dict | None = None, *, prove_runner: bool = False) -> tuple[int, dict]:
     data = json.dumps(body or {}).encode()
-    req = urllib.request.Request(
-        url,
-        data=data,
-        method="POST",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-    )
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    if prove_runner:
+        headers.update(_runner_proof(url, data))
+    req = urllib.request.Request(url, data=data, method="POST", headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             return resp.status, json.loads(resp.read() or b"{}")
@@ -99,6 +130,7 @@ def ask(args) -> int:
         f"{base}/mcp/admin/agent-requests/",
         _own_token(args.token_file),
         {"reason": args.reason, "recipient_key": public, "scope": LEVELS[args.level]},
+        prove_runner=True,
     )
     if status != 201:
         message = (body.get("error") or {}).get("message", "")

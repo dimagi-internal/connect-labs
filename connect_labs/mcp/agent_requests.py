@@ -76,8 +76,12 @@ def clean_reason(reason) -> str:
     return text
 
 
-def create(agent_user, *, reason, recipient_key, scope=token_scopes.NO_USERVISIT_DATA) -> AgentTokenRequest:
-    """Record an agent's request. ``agent_user`` is the account its own token resolved to."""
+def create(
+    agent_user, *, reason, recipient_key, scope=token_scopes.NO_USERVISIT_DATA, runner=None
+) -> AgentTokenRequest:
+    """Record an agent's request. ``agent_user`` is the account its own token resolved to.
+
+    ``runner`` is what canopy vouched for (``runner_check.check``), or empty: not verified."""
     reason = clean_reason(reason)
     scope = scope or token_scopes.NO_USERVISIT_DATA
     if scope not in ASKABLE_SCOPES:
@@ -101,6 +105,10 @@ def create(agent_user, *, reason, recipient_key, scope=token_scopes.NO_USERVISIT
         recipient_key=recipient_key,
         scope=scope,
         expires_at=now + APPROVAL_WINDOW,
+        runner=(runner or {}).get("runner", ""),
+        runner_key_kind=(runner or {}).get("kind", ""),
+        runner_agent=(runner or {}).get("agent", ""),
+        runner_serves_agent=bool((runner or {}).get("serves_agent")),
     )
 
 

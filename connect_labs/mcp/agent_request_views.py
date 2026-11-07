@@ -16,7 +16,7 @@ from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from . import agent_requests, full_access, oauth, token_scopes
+from . import agent_requests, full_access, oauth, runner_check, token_scopes
 from .models import AgentTokenRequest, MCPAccessToken
 
 
@@ -47,10 +47,19 @@ def approval_url(request, req: AgentTokenRequest) -> str:
     return f"{base}{path}" if base else request.build_absolute_uri(path)
 
 
+def endpoint_url(request) -> str:
+    """The URL the agent POSTed to, as it wrote it (the runner proof is bound to it)."""
+    base = oauth.public_base_url()
+    return f"{base}{request.path}" if base else request.build_absolute_uri(request.path)
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def agent_request_create(request):
-    """``POST {reason, recipient_key, scope?}`` -> ``201 {ref, approve_url, expires_at, access}``.
+    """``POST {reason, recipient_key, scope?, agent?}`` -> ``201 {ref, approve_url, expires_at, access, runner}``.
+
+    ``X-Canopy-Runner-Proof`` (``canopy vault runner-proof``) is optional: with it, canopy says
+    which approved runner asked (``runner_check``); without it the request is "not verified".
 
     ``scope`` is ``no-uservisit-data`` (the default) or ``full``; the person's passkey is
     needed for either."""
@@ -64,20 +73,24 @@ def agent_request_create(request):
     if not isinstance(body, dict):
         return JsonResponse({"error": {"code": "BAD_REQUEST", "message": "Body must be a JSON object"}}, status=400)
     try:
+        runner = runner_check.check(request, endpoint_url(request), body.get("agent"))
         req = agent_requests.create(
             agent,
             reason=body.get("reason"),
             recipient_key=body.get("recipient_key"),
             scope=body.get("scope") or token_scopes.NO_USERVISIT_DATA,
+            runner=runner,
         )
     except agent_requests.AgentRequestError as exc:
-        return _error(exc, 429 if exc.code == "too_many_pending" else 400)
+        status = 429 if exc.code == "too_many_pending" else 401 if exc.code == "runner_proof_refused" else 400
+        return _error(exc, status)
     return JsonResponse(
         {
             "ref": req.ref,
             "approve_url": approval_url(request, req),
             "expires_at": req.expires_at.isoformat(),
             "access": req.scope,
+            "runner": req.runner or None,
         },
         status=201,
     )
@@ -115,9 +128,24 @@ def render_page(request, ref, *, outcome="", notice=None, status=200):
             "access_text": token_scopes.ACCESS_TEXT[req.scope],
             "is_full": req.scope == token_scopes.FULL,
             "lasts": "1 hour, then it stops working on its own.",
+            "runner_line": runner_line(req),
         },
         status=status,
     )
+
+
+def runner_line(req: AgentTokenRequest) -> str:
+    """One plain sentence on where the request came from, for the page and the passkey card."""
+    if not req.runner:
+        return "Not verified: nothing showed this came from an approved canopy runner."
+    line = f"Sent from the canopy runner \u201c{req.runner}\u201d, checked by canopy"
+    if req.runner_agent:
+        line += (
+            f" (it serves {req.runner_agent})"
+            if req.runner_serves_agent
+            else (f" (it says it speaks for {req.runner_agent}, but that runner does not serve it)")
+        )
+    return line + "."
 
 
 def _title(req: AgentTokenRequest) -> str:
@@ -144,7 +172,7 @@ def agent_request_page(request, ref):
                 request,
                 full_access.PendingFullAccess.AGENT_REQUEST,
                 {"request_ref": ref},
-                detail=f"The agent says: {req.reason}"[:300],
+                detail=f"{runner_line(req)} The agent says: {req.reason}"[:300],
                 title=_title(req),
             )
         if action == "decline":

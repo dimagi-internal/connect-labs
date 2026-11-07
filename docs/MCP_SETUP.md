@@ -108,6 +108,11 @@ canopy. The token is then minted for your account, lasts one hour, and is return
 only the agent holds. It is no-user-visit unless the agent asks for full access, and the passkey is
 needed for either level. It shows on your MCP access page, where you can revoke it.
 
+The page also says which canopy runner asked. A runner with an approved device key signs the request
+(`canopy vault runner-proof`, sent as `X-Canopy-Runner-Proof`), and labs asks canopy who holds the key
+(`mcp/runner_check.py`). A request without that proof still goes through and is shown as "Not
+verified"; a proof canopy refuses refuses the request.
+
 Full access needs your passkey on all four. An agent that needs access should use
 the temporary token, not write its own sign-in against `/o/register/`.
 

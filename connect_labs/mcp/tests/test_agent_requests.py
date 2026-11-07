@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from django.urls import reverse
 from django.utils import timezone
 
-from connect_labs.mcp import agent_requests, full_access, token_scopes
+from connect_labs.mcp import agent_requests, full_access, oauth, token_scopes
 from connect_labs.mcp.models import AgentTokenRequest, MCPAccessToken, PendingFullAccess
 from connect_labs.mcp.testing import mint_token
 from connect_labs.mcp.tests.test_full_access import Canopy
@@ -424,3 +424,118 @@ def test_an_answered_request_cannot_be_answered_twice(client, agent, person, can
     resp = client.post(_page(ref), {"action": "approve"})
     assert resp.status_code == 409
     assert MCPAccessToken.objects.filter(user=person).count() == count
+
+
+# --- which runner asked ---------------------------------------------------------------
+
+
+class Runner:
+    """canopy's answer about a runner proof (``canopy_sdk.django.runner_attestations.attest``)."""
+
+    def __init__(self, vouch=None, refuse=None, down=False):
+        self.vouch = vouch
+        self.refuse = refuse
+        self.down = down
+        self.asked = []
+
+    def __call__(self, **kw):
+        from canopy_sdk.runner_attestations import Attestation, AttestationError
+
+        self.asked.append(kw)
+        if self.down:
+            raise AttestationError("unreachable", "canopy could not be reached")
+        if self.refuse:
+            raise AttestationError("proof_refused", "no approved runner key proved this request", status=401)
+        return Attestation(**(self.vouch or {}))
+
+
+CLOUD_RUNNER = {"runner": "cloud-ec2-2", "kind": "aws-iam", "jkt": "j", "agent": "ace", "serves_agent": True}
+
+
+def _ask_from_runner(client, raw, public, canopy_says, proof="aws-iam abc", **extra):
+    body = json.dumps({"reason": "read how the CHC reports compute coverage", "recipient_key": public, **extra})
+    with patch("canopy_sdk.django.runner_attestations.attest", canopy_says):
+        return (
+            client.post(
+                reverse("mcp:agent_request_create"),
+                data=body,
+                content_type="application/json",
+                HTTP_AUTHORIZATION=f"Bearer {raw}",
+                **({"HTTP_X_CANOPY_RUNNER_PROOF": proof} if proof else {}),
+            ),
+            body,
+        )
+
+
+@pytest.mark.django_db
+def test_a_request_without_a_runner_proof_is_not_verified_but_goes_through(client, agent, person):
+    _, raw = agent
+    _, public = _keypair()
+    resp, _ = _ask_from_runner(client, raw, public, Runner(), proof="")
+    assert resp.status_code == 201 and resp.json()["runner"] is None
+    html = client.get(_page(resp.json()["ref"])).content.decode()
+    assert "Not verified" in html
+
+
+@pytest.mark.django_db
+def test_a_proof_canopy_vouches_for_names_the_runner_for_the_person(client, agent, person):
+    from canopy_sdk.runner_attestations import bound_url
+
+    _, raw = agent
+    _, public = _keypair()
+    says = Runner(vouch=CLOUD_RUNNER)
+    resp, body = _ask_from_runner(client, raw, public, says, agent="ace")
+    assert resp.status_code == 201 and resp.json()["runner"] == "cloud-ec2-2"
+    (asked,) = says.asked
+    assert asked["kind"] == "aws-iam" and asked["proof"] == "abc" and asked["speaks_for"] == "ace"
+    # The proof must be for THIS endpoint and THESE bytes: the digest is in the URL canopy checks.
+    base = oauth.public_base_url() or "http://testserver"
+    assert asked["htu"] == bound_url(base + reverse("mcp:agent_request_create"), body.encode())
+    req = AgentTokenRequest.objects.get(ref=resp.json()["ref"])
+    assert (req.runner, req.runner_key_kind, req.runner_serves_agent) == ("cloud-ec2-2", "aws-iam", True)
+    html = client.get(_page(req.ref)).content.decode()
+    assert "cloud-ec2-2" in html and "Not verified" not in html
+
+
+@pytest.mark.django_db
+def test_a_runner_that_does_not_serve_the_agent_it_names_is_flagged(client, agent, person):
+    _, raw = agent
+    _, public = _keypair()
+    says = Runner(vouch={**CLOUD_RUNNER, "serves_agent": False})
+    resp, _ = _ask_from_runner(client, raw, public, says, agent="ace")
+    html = client.get(_page(resp.json()["ref"])).content.decode()
+    assert "does not serve it" in html
+
+
+@pytest.mark.django_db
+def test_a_proof_canopy_refuses_refuses_the_request(client, agent):
+    _, raw = agent
+    _, public = _keypair()
+    resp, _ = _ask_from_runner(client, raw, public, Runner(refuse=True))
+    assert resp.status_code == 401 and resp.json()["error"]["code"] == "RUNNER_PROOF_REFUSED"
+    assert not AgentTokenRequest.objects.exists(), "a bad proof must not read as 'not verified'"
+
+
+@pytest.mark.django_db
+def test_a_malformed_proof_header_is_a_bad_request(client, agent):
+    _, raw = agent
+    _, public = _keypair()
+    resp, _ = _ask_from_runner(client, raw, public, Runner(), proof="rsa nonsense")
+    assert resp.status_code == 400 and resp.json()["error"]["code"] == "BAD_RUNNER_PROOF"
+
+
+@pytest.mark.django_db
+def test_when_canopy_cannot_be_asked_the_request_is_not_verified(client, agent, person):
+    _, raw = agent
+    _, public = _keypair()
+    resp, _ = _ask_from_runner(client, raw, public, Runner(down=True))
+    assert resp.status_code == 201 and resp.json()["runner"] is None
+
+
+@pytest.mark.django_db
+def test_the_passkey_card_says_where_the_request_came_from(client, agent, person, canopy):
+    _, raw = agent
+    _, public = _keypair()
+    ref = _ask_from_runner(client, raw, public, Runner(vouch=CLOUD_RUNNER))[0].json()["ref"]
+    client.post(_page(ref), {"action": "approve"})
+    assert "cloud-ec2-2" in canopy.asked[-1]["detail"]

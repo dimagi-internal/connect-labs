@@ -20,6 +20,10 @@
         <dd class="sm:col-span-3 text-gray-900" data-testid="agent-request-who"><strong>{{ req.requested_by.email|default:req.requested_by.username }}</strong>, a labs account. Labs checked this one.</dd>
       </div>
       <div class="py-3 sm:grid sm:grid-cols-4 sm:gap-4">
+        <dt class="font-medium text-gray-500">Sent from</dt>
+        <dd class="sm:col-span-3 {% if req.runner and req.runner_serves_agent or req.runner and not req.runner_agent %}text-gray-900{% elif req.runner %}text-amber-900{% else %}text-gray-600{% endif %}" data-testid="agent-request-runner">{{ runner_line }}</dd>
+      </div>
+      <div class="py-3 sm:grid sm:grid-cols-4 sm:gap-4">
         <dt class="font-medium text-gray-500">Says it needs this to</dt>
         <dd class="sm:col-span-3 text-gray-900" data-testid="agent-request-reason">“{{ req.reason }}” <span class="text-xs text-gray-500">(the agent's own words; labs can't check them)</span></dd>
       </div>

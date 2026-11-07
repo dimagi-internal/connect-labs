@@ -426,7 +426,10 @@ user, audit rows attribute to them):
   person opens `/labs/mcp/agent-requests/<ref>/` and approves with their PASSKEY through canopy
   (the same `full_access` sign-off, action key `labs.mcp_token.agent`, at either level), labs
   mints their one-hour token and returns it SEALED to the agent's X25519 key
-  (`utils/sealed_output`), keeping only ciphertext, once.
+  (`utils/sealed_output`), keeping only ciphertext, once. The request may carry
+  `X-Canopy-Runner-Proof` (`canopy vault runner-proof`): labs asks canopy which approved runner
+  signed it (`mcp/runner_check.py`, `canopy_sdk.runner_attestations`) and shows that to the
+  person; no proof is "Not verified" (allowed for now), a proof canopy refuses is refused.
 - **Both approval pages say the same thing** (`mcp/consent.py`): what can it do, for how
   long, what happens next. An app's self-chosen name is shown as a claim, never in the
   headline: it limits nothing.
