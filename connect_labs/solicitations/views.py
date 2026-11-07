@@ -117,7 +117,10 @@ def _round_reading_context(solicitation, response) -> dict:
     from connect_labs.marketplace import queries
     from connect_labs.marketplace.responses import personal_question_ids
 
-    questions = past_calls.form_questions(solicitation)
+    # Only the questions this submission's own form asked: a round that ran an
+    # English and a French form would otherwise list the other form's questions
+    # as unanswered under every response.
+    questions = past_calls.form_questions(solicitation, form_key=response.source_form or None)
     personal = personal_question_ids(questions, solicitation.column_map)
     stored = response.responses or {}
     blocks = answer_blocks([q for q in questions if q["id"] not in personal], stored)
