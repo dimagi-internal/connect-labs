@@ -336,6 +336,49 @@ def work_key_for(record: dict) -> str:
     return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
 
 
+_FIRST_LONG_NUMBER = re.compile(r"^(.*?\d{7,})")
+
+
+def beneficiary_label(entity_id: Any) -> str:
+    """The part of a Connect ``entity_id`` that names one beneficiary, normalised.
+
+    ``entity_id`` is whatever the Deliver form's deliver block puts there, and in
+    every programme measured (2026-11-07: CHC 411, MBW 571/627/673/765, KMC
+    874/1234/1488) it is a readable label: a name plus a phone number or birth
+    date. Longitudinal apps need a different ``entity_id`` per visit, because
+    Connect marks a second visit with the same ``entity_id`` on the same deliver
+    unit a duplicate (commcare-connect ``form_receiver/processor.py``); MBW
+    Nigeria does it by appending the visit ("... - 1 month visit"). Cutting the
+    label after its first run of 7+ digits (the phone) drops that suffix and
+    leaves the person. Labels with no such run are kept whole.
+
+    Checked against the form's own case id (the mother's or child's case) on
+    ~3,000 visits per programme: label and case id agreed one-to-one on 97-100%
+    of them. That case id is the stronger anchor, but it lives only in
+    ``form_json``, which the cheap works stream does not carry.
+    """
+    text = " ".join(str(entity_id or "").split()).lower()
+    match = _FIRST_LONG_NUMBER.match(text)
+    return (match.group(1) if match else text).strip(" -,")
+
+
+def beneficiary_key_for(record: dict) -> str:
+    """Keyed hash of (opportunity, beneficiary label): counts people, names no one.
+
+    A plain hash of a name and phone number can be reversed by guessing, so this
+    one is an HMAC under the server's secret. Distinct keys on an opportunity =
+    distinct people. Rotating ``SECRET_KEY`` changes every key, so rerun
+    ``pulse_backfill --works --from-start`` after a rotation.
+    """
+    label = beneficiary_label(record.get("entity_id"))
+    if not label:
+        return ""
+    from django.utils.crypto import salted_hmac
+
+    value = f"{record.get('opportunity_id') or ''}\x1f{label}"
+    return salted_hmac("pulse.beneficiary", value, algorithm="sha256").hexdigest()
+
+
 def work_to_fields(record: dict, opportunity=None) -> dict | None:
     """Normalise one completed_works record into PulseWork kwargs.
 
@@ -349,6 +392,7 @@ def work_to_fields(record: dict, opportunity=None) -> dict | None:
     status = (record.get("status") or "").strip() or "unknown"
     return {
         "work_key": work_key_for(record),
+        "beneficiary_key": beneficiary_key_for(record),
         "opportunity_id": int(record.get("opportunity_id") or getattr(opportunity, "opportunity_id", 0) or 0),
         "program_id": getattr(opportunity, "program_id", None) if opportunity is not None else None,
         "org_slug": (getattr(opportunity, "org_slug", "") if opportunity is not None else "") or "",

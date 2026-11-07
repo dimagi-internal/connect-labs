@@ -27,13 +27,14 @@ def _opp(oid, service, country="NG", **extra):
     )
 
 
-def _work(oid, usd, *, unit=1, status="approved", org=0, visits=1):
+def _work(oid, usd, *, unit=1, status="approved", org=0, visits=1, who=""):
     _seq[0] += 1
     PulseWork.objects.create(
         work_key=f"cea-w{_seq[0]}",
         opportunity_id=oid,
         worker_hash="w",
         payment_unit_id=unit,
+        beneficiary_key=who,
         status=status,
         approved_count=visits if status == "approved" else 0,
         created_ts=dt.datetime(2026, 3, 1, tzinfo=dt.timezone.utc),
@@ -99,20 +100,31 @@ class TestValue:
 
 @pytest.mark.django_db
 class TestRanking:
-    def test_people_reached_is_the_most_used_payment_unit(self):
-        # Connect keeps one completed work per (worker, beneficiary, payment unit) and stacks
-        # repeat visits on it (commcare-connect form_receiver/processor.py, get_or_create on
-        # those three), so works on a unit count people, and visits only raise approved_count.
+    def test_people_reached_counts_each_beneficiary_once(self):
+        # An MBW cohort app: one payment unit per visit stage, so a mother has a work on
+        # each stage she reached; MBW Nigeria's per-visit labels collapse the same way.
+        _opp(1, "mbw")
+        for m in range(10):
+            _work(1, 3, unit=7, who=f"mother-{m}")  # first stage: ten mothers
+        for m in range(4, 14):
+            _work(1, 3, unit=8, who=f"mother-{m}")  # later stage: four new mothers join here
+        _work(1, 0, unit=7, status="rejected", who="mother-99")  # never approved, never counted
+        row = cea.ranking()["rows"][0]
+        assert row["reached"] == 14
+        assert row["reach_basis"] == cea.REACH_DISTINCT
+        assert row["works_per_person"] == pytest.approx(20 / 14, abs=0.01)
+        assert row["cost_per_person"] == pytest.approx(60 / 14)
+
+    def test_without_beneficiary_keys_it_falls_back_to_the_busiest_unit_and_says_so(self):
         _opp(1, "kmc")
         for _ in range(10):
-            _work(1, 3, unit=7)  # enrolment: every baby
+            _work(1, 3, unit=7)
         for _ in range(7):
-            _work(1, 3, unit=8, visits=3)  # follow-up: fewer babies, three visits each
-        _work(1, 0, unit=7, status="rejected")
+            _work(1, 3, unit=8, visits=3)
         row = cea.ranking()["rows"][0]
         assert row["reached"] == 10
-        assert row["total_usd"] == pytest.approx(51)
-        assert row["cost_per_person"] == pytest.approx(5.1)
+        assert row["reach_basis"] == cea.REACH_PROXY
+        assert row["works_per_person"] is None
 
     def test_total_cost_includes_fixed_costs(self):
         _opp(2, "chc")

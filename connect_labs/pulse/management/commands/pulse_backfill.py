@@ -44,6 +44,13 @@ class Command(BaseCommand):
         parser.add_argument("--all", action="store_true", help="All three.")
         parser.add_argument("--days", type=int, default=30, help="Visit history depth in days (default 30).")
         parser.add_argument("--fold", action="store_true", help="Fold aged visits into the anonymous grid afterwards.")
+        parser.add_argument(
+            "--from-start",
+            action="store_true",
+            help="With --works: re-read every opportunity's works from the first row, refreshing fields "
+            "added since they were stored (e.g. beneficiary_key). ~87 MB in all.",
+        )
+        parser.add_argument("--opps", type=int, nargs="*", help="Limit --works to these opportunity ids.")
 
     def handle(self, *args, **options):
         do_all = options["all"]
@@ -74,7 +81,10 @@ class Command(BaseCommand):
                 ingest.ensure_cursors()
 
                 if want_works:
-                    self._run("works", lambda: self._backfill_works(client))
+                    self._run(
+                        "works",
+                        lambda: self._backfill_works(client, from_start=options["from_start"], opps=options["opps"]),
+                    )
                 if want_visits:
                     self._run(f"visits ({options['days']}d)", lambda: self._backfill_visits(client, options["days"]))
                 if want_countries:
@@ -118,9 +128,16 @@ class Command(BaseCommand):
             return
         self.stdout.write(self.style.SUCCESS(f"  {label}: {result} in {time.time() - t0:.0f}s"))
 
-    def _backfill_works(self, client) -> int:
+    def _backfill_works(self, client, from_start: bool = False, opps=None) -> int:
         total = 0
-        for cursor in PulseCursor.objects.filter(endpoint=ingest.WORKS_ENDPOINT).order_by("-newest_sync_ts"):
+        cursors = PulseCursor.objects.filter(endpoint=ingest.WORKS_ENDPOINT)
+        if opps:
+            cursors = cursors.filter(opportunity_id__in=opps)
+        for cursor in cursors.order_by("-newest_sync_ts"):
+            if from_start:
+                # Works upsert on work_key, so re-reading from the first row
+                # refreshes every stored work in place; nothing is duplicated.
+                cursor.last_id = None
             try:
                 total += ingest.sync_works(client, cursor, max_rows=200000)["stored"]
             except Exception as exc:

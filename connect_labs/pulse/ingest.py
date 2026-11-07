@@ -764,7 +764,15 @@ def _store_works(rows, opp) -> int:
         # Works mutate; a re-seen row should update its status and payment date
         # rather than be discarded, or "approved" would never arrive.
         update_conflicts=True,
-        update_fields=["status", "status_ts", "payment_date", "approved_count", "usd_to_worker", "usd_to_org"],
+        update_fields=[
+            "status",
+            "status_ts",
+            "payment_date",
+            "approved_count",
+            "usd_to_worker",
+            "usd_to_org",
+            "beneficiary_key",
+        ],
         unique_fields=["work_key"],
         batch_size=500,
     )

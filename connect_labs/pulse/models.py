@@ -369,6 +369,10 @@ class PulseWork(models.Model):
     # this over every row of the spine.
     worker_hash = models.CharField(max_length=64, blank=True, db_index=True)
     payment_unit_id = models.IntegerField(null=True, blank=True)
+    # Keyed hash of (opportunity, beneficiary): distinct values on an
+    # opportunity count the people it reached. Never the identifier itself --
+    # see ``normalize.beneficiary_key_for``. Blank on rows synced before it existed.
+    beneficiary_key = models.CharField(max_length=64, blank=True, default="")
     # Indexed: the delivery-type filter selects on it across every spine,
     # and the type menu groups by it.
     service_slug = models.CharField(max_length=48, blank=True, db_index=True)
