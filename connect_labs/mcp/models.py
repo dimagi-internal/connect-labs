@@ -433,11 +433,13 @@ class PendingFullAccess(models.Model):
     pending mint cannot complete another; the row is completed once."""
 
     TOKEN_CREATE, TOKEN_ROTATE, TOKEN_BROWSER, OAUTH = "token_create", "token_rotate", "token_browser", "oauth"
+    AGENT_REQUEST = "agent_request"
     KINDS = [
         (TOKEN_CREATE, "Create a token"),
         (TOKEN_ROTATE, "Rotate a token"),
         (TOKEN_BROWSER, "Create a token for a local app"),
         (OAUTH, "Sign an MCP app in"),
+        (AGENT_REQUEST, "Give an agent a temporary token"),
     ]
 
     ref = models.CharField(max_length=64, unique=True, default=_pending_ref, editable=False)
@@ -455,3 +457,68 @@ class PendingFullAccess(models.Model):
 
     class Meta:
         db_table = "mcp_pending_full_access"
+
+
+class AgentTokenRequest(models.Model):
+    """An agent asking a person for a one-hour, no-user-visit token that is delivered to it
+    (``agent_requests``).
+
+    The browser-callback flow (``admin_views.create_token_browser``) can only hand a token
+    to the computer the person is sitting at, so it cannot serve an agent running
+    somewhere else (a cloud runner). This is the same grant for that agent: it asks with
+    its own token, the person approves on a labs page signed in as themselves, and the
+    token is returned SEALED to a public key only the agent holds. Labs never stores a
+    usable token: ``sealed_token`` is ciphertext, and is cleared once claimed.
+
+    Same bar as the browser flow, and a little higher: the person's passkey, through
+    canopy, is required for every level (``full_access``), because the token leaves labs for
+    another machine.
+    """
+
+    PENDING, APPROVED, DECLINED, CLAIMED = "pending", "approved", "declined", "claimed"
+    STATUS_CHOICES = [
+        (PENDING, "Waiting for the person"),
+        (APPROVED, "Approved, not yet collected"),
+        (DECLINED, "Declined"),
+        (CLAIMED, "Collected by the agent"),
+    ]
+
+    ref = models.CharField(max_length=64, unique=True, default=_pending_ref, editable=False)
+    #: The labs account that asked, verified from its own token: the one thing on the
+    #: approval page that is not the agent's own claim.
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    #: Why, in the agent's words. A claim, shown as one.
+    reason = models.CharField(max_length=200)
+    #: Base64 raw X25519 public key. The token is sealed to it (``utils.sealed_output``).
+    recipient_key = models.CharField(max_length=44)
+    #: The access level asked for: ``full`` or ``no-uservisit-data``.
+    scope = models.CharField(max_length=20, choices=token_scopes.SCOPE_CHOICES, default=token_scopes.NO_USERVISIT_DATA)
+    #: The canopy runner that made the request, as canopy vouched for it: the proof was signed by
+    #: that runner's approved device key and bound to this request (``runner_check``). Empty means
+    #: NOT VERIFIED (no proof was sent, or canopy could not be asked), never "no runner".
+    runner = models.CharField(max_length=100, blank=True, default="")
+    runner_key_kind = models.CharField(max_length=20, blank=True, default="")
+    #: The agent the request said it speaks for, and whether canopy says that runner serves it.
+    runner_agent = models.CharField(max_length=64, blank=True, default="")
+    runner_serves_agent = models.BooleanField(default=False)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=PENDING, db_index=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    #: Base64 sealed blob of the raw token; empty until approved and again once collected.
+    sealed_token = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    #: How long the person has to answer. The token, once minted, lasts its own hour.
+    expires_at = models.DateTimeField()
+    decided_at = models.DateTimeField(null=True, blank=True)
+    claimed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "mcp_agent_token_request"
+
+    def __str__(self) -> str:
+        return f"agent token request {self.ref[:8]} by {self.requested_by} ({self.status})"
+
+    @property
+    def expired(self) -> bool:
+        return self.status == self.PENDING and self.expires_at < timezone.now()
