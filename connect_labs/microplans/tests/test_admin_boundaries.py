@@ -738,6 +738,17 @@ class TestLabsViewport:
         assert f.area_km2 and f.area_km2 > 0
         assert f.population == 5_000_000
 
+    def test_merged_view_draws_each_ward_once(self):
+        """A ward loaded from two providers is drawn once, from the preferred one;
+        a same-named ward in another LGA is a different ward and stays."""
+        kano = {"parent_names": {"state": "Kano", "lga": "Bichi"}}
+        other = {"parent_names": {"state": "Kano", "lga": "Gwale"}}
+        _make_boundary("Badume", 3, _INSIDE, "grid3-1", source="grid3", extra=kano)
+        _make_boundary("Badume", 3, _INSIDE, "geopode-1", source="geopode", extra=kano)
+        _make_boundary("Badume", 3, _INSIDE, "grid3-2", source="grid3", extra=other)
+        feats = LabsAdminBoundarySource().list_in_bbox(_bbox(*_AROUND_SQUARE), levels=[3])
+        assert sorted(f.boundary_id for f in feats) == ["geopode-1", "grid3-2"]
+
     def test_level_filter(self):
         _make_boundary("Borno", 1, _SQUARE, "ng-bo")
         _make_boundary("Jere", 2, _INSIDE, "ng-bo-jere", parent_boundary_id="ng-bo")
