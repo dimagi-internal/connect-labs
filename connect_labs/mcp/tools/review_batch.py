@@ -9,8 +9,10 @@ one of these two tools:
 * ``marketplace_reviews_write``      -- a round's whole batch of reviews, written together.
 * ``marketplace_round_criteria_set`` -- registered in ``marketplace.py``; proposable here
                                         so the criteria an agent drafts are saved the same way.
+* ``marketplace_round_observations_set`` -- likewise: the AI Observations an agent writes on
+                                        a version's scores, from the AI Analysis step.
 
-This module holds the batch tool and what the card shows for either. Neither tool is in a
+This module holds the batch tool and what the card shows for each. None of the tools is in a
 delegated scope: they run only from the person's Confirm, as the person.
 
 Why a batch, not ``create_review`` per response: a round has dozens of responses, and
@@ -26,7 +28,9 @@ from django.db import transaction
 from ..tool_registry import MCPToolError, get_tool, register
 
 #: The tools an agent may propose for a round. Both are writes the person confirms.
-REVIEW_TOOLS: frozenset[str] = frozenset({"marketplace_reviews_write", "marketplace_round_criteria_set"})
+REVIEW_TOOLS: frozenset[str] = frozenset(
+    {"marketplace_reviews_write", "marketplace_round_criteria_set", "marketplace_round_observations_set"}
+)
 
 #: A round is dozens of responses; this is a ceiling against a runaway payload.
 MAX_REVIEWS = 300
@@ -202,6 +206,11 @@ def _label(review: dict, names: dict[int, str]) -> str:
     return f"+ {name} -- " + ", ".join(bits)
 
 
+def _plus(text: str) -> str:
+    """Text as the added lines of a diff."""
+    return "\n".join(f"+ {line}" for line in (text or "").strip().splitlines())
+
+
 def preview(user, tool: str, arguments: dict) -> dict:
     """What the confirm card shows for a proposed round write: a summary and lines per group."""
     if tool == "marketplace_round_criteria_set":
@@ -209,7 +218,23 @@ def preview(user, tool: str, arguments: dict) -> dict:
         lines = [f"+ {c.get('name') or c.get('id')} -- weight {c.get('weight')}" for c in criteria]
         return {
             "summary": f"Set {len(criteria)} evaluation criteria on {arguments.get('slug')}",
-            "changes": [{"label": "criteria", "diff": "\n".join(lines), "truncated": False}],
+            "changes": [{"label": "criteria", "diff": "\n".join(lines), "truncated": False}]
+            + (
+                [{"label": "outcome rules", "diff": _plus(arguments["outcome_rules"]), "truncated": False}]
+                if arguments.get("outcome_rules")
+                else []
+            ),
+        }
+    if tool == "marketplace_round_observations_set":
+        version, against = arguments.get("version", ""), arguments.get("compared_with", "")
+        text = arguments.get("observations") or ""
+        return {
+            "summary": (
+                f"{'Write' if text.strip() else 'Clear'} the AI Observations on {arguments.get('slug')} "
+                f"version {version.lstrip('v')}"
+                + (f", compared with version {against.lstrip('v')}" if against else "")
+            ),
+            "changes": [{"label": "AI Observations", "diff": _plus(text), "truncated": False}],
         }
     slug = arguments.get("round_slug", "")
     reviews = arguments.get("reviews")

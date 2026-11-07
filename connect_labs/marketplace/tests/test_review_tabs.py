@@ -10,7 +10,7 @@ import pytest
 from django.template.loader import get_template
 from django.urls import reverse
 
-from connect_labs.marketplace import review_steps
+from connect_labs.marketplace import queries, review_steps
 from connect_labs.marketplace.tests.round_fixtures import CRITERIA
 
 pytestmark = pytest.mark.django_db
@@ -197,3 +197,142 @@ def test_a_redirect_into_review_keeps_only_the_parameters_a_step_reads(client, s
     assert url == reverse("marketplace:round_review_step", args=["battery-2026", "ai-review"]) + "?version=v1"
     landed = _get(client, member, next="https://elsewhere.invalid/").url
     assert "elsewhere" not in landed and landed.endswith("/review/ai-review/")
+
+
+LEGACY_BASIS = (
+    "Read all 45.\n\nWhat changed: cost counts less.\n\n"
+    "Outcome rules:\nRecommended: the top scorer per slot.\nNot recommended: otherwise."
+)
+
+
+class TestOutcomeRules:
+    def test_rules_written_apart_stay_apart(self):
+        assert queries.outcome_rules_of("How.", "Recommended: top two.") == ("How.", "Recommended: top two.")
+
+    def test_rules_kept_inside_an_older_basis_are_read_off_its_end(self):
+        basis, rules = queries.outcome_rules_of(LEGACY_BASIS)
+        assert basis == "Read all 45.\n\nWhat changed: cost counts less."
+        assert rules == "Recommended: the top scorer per slot.\nNot recommended: otherwise."
+
+    def test_a_basis_without_rules_is_left_whole(self):
+        assert queries.outcome_rules_of("Read all three.") == ("Read all three.", "")
+
+    def test_the_criteria_step_shows_them_under_their_own_heading(self, client, round_, member, ace):
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        SolicitationsDataAccess(user=ace).set_round_criteria(
+            "battery-2026", CRITERIA, "Read all three.", "Recommended: top one."
+        )
+        response = _get(client, member, "criteria")
+        assert response.context["shown_outcome_rules"] == "Recommended: top one."
+        assert response.context["shown_basis"] == "Read all three."
+        assert 'data-testid="outcome-rules"' in response.content.decode()
+
+    def test_an_older_round_shows_its_rules_apart_too(self, client, round_, member, ace):
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        SolicitationsDataAccess(user=ace).set_round_criteria("battery-2026", CRITERIA, LEGACY_BASIS)
+        response = _get(client, member, "criteria")
+        assert response.context["shown_outcome_rules"].startswith("Recommended: the top scorer")
+        assert "Outcome rules:" not in response.context["shown_basis"]
+
+
+class TestAIObservations:
+    @pytest.fixture
+    def two_versions(self, scored, ace):
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        SolicitationsDataAccess(user=ace).set_round_criteria("battery-2026", CRITERIA, "Reweighted.")
+        return SolicitationsDataAccess(user=ace)
+
+    def test_written_on_a_version_and_shown_on_ai_analysis(self, client, two_versions, member, ace):
+        two_versions.set_round_observations("battery-2026", "v2", "Cost did not separate anyone.", "v1")
+        response = _get(client, member, "ai-analysis")
+        page = response.content.decode()
+        assert response.context["shown_record"]["observations"] == "Cost did not separate anyone."
+        assert 'data-testid="observations-text"' in page and "compared with version 1" in page
+
+    def test_the_step_bar_says_the_current_version_has_them(self, client, scored, member, ace):
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        SolicitationsDataAccess(user=ace).set_round_observations("battery-2026", "v1", "Reach decides.")
+        steps = {s["key"]: s["status"] for s in _get(client, member, "criteria").context["steps"]}
+        assert steps["ai-analysis"] == "First version: nothing to compare yet · AI Observations"
+
+    def test_each_version_keeps_its_own(self, client, two_versions, member):
+        two_versions.set_round_observations("battery-2026", "v1", "First pass: reach decides.")
+        two_versions.set_round_observations("battery-2026", "v2", "Second pass: cost decides.", "v1")
+        assert _get(client, member, "ai-analysis", version="v1").context["shown_record"]["observations"] == (
+            "First pass: reach decides."
+        )
+
+    def test_none_yet_says_how_they_come_about(self, client, scored, member):
+        page = _get(client, member, "ai-analysis").content.decode()
+        assert 'data-testid="no-observations"' in page and 'data-testid="observations-text"' not in page
+
+    def test_empty_text_clears_them(self, two_versions):
+        two_versions.set_round_observations("battery-2026", "v2", "Something.", "v1")
+        record = two_versions.set_round_observations("battery-2026", "v2", "  ")
+        assert (record.observations, record.observations_compared_with, record.observations_at) == ("", "", None)
+
+    def test_only_the_rounds_organisation_writes_them(self, two_versions, outsider):
+        from django.core.exceptions import PermissionDenied
+
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        with pytest.raises(PermissionDenied):
+            SolicitationsDataAccess(user=outsider).set_round_observations("battery-2026", "v2", "Mine.")
+
+    def test_they_name_a_real_other_version(self, two_versions):
+        from django.core.exceptions import ValidationError
+
+        from connect_labs.solicitations.local_models import RubricVersion
+
+        with pytest.raises(RubricVersion.DoesNotExist):
+            two_versions.set_round_observations("battery-2026", "v9", "Text.")
+        for bad in ("v2", "v7"):
+            with pytest.raises(ValidationError):
+                two_versions.set_round_observations("battery-2026", "v2", "Text.", bad)
+
+    def test_the_scores_tool_returns_them_and_reads_the_ai_alone_when_asked(self, scored, member, ace):
+        from connect_labs.mcp.tool_registry import get_tool
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        submission, ai = scored
+        SolicitationsDataAccess(user=member).create_review(
+            submission.pk, {"based_on": ai.pk, "stance": "disagrees", "outcome": "waitlist"}
+        )
+        SolicitationsDataAccess(user=ace).set_round_observations("battery-2026", "v1", "Reach decides.")
+        scores = get_tool("marketplace_round_scores").handler
+        lead = scores(user=member, slug="battery-2026")
+        ai_only = scores(user=member, slug="battery-2026", reviews="ai")
+        assert lead["ai_observations"]["text"] == "Reach decides."
+        assert lead["outcomes"]["waitlist"] == 1 and ai_only["outcomes"]["pick"] == 1
+        assert ai_only["reviews"] == "ai"
+
+
+class TestAgreement:
+    def test_a_person_who_agrees_lands_on_the_ais_outcome(self, client, scored, member):
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        submission, ai = scored
+        SolicitationsDataAccess(user=member).create_review(submission.pk, {"based_on": ai.pk, "stance": "agrees"})
+        response = _get(client, member, "human-review")
+        counts = response.context["human_counts"]
+        assert (counts["compared"], counts["same_outcome"], counts["agreement"]) == (1, 1, 100)
+        fenwick = next(r for r in response.context["human_rows"] if r["applicant"]["name"] == "Fenwick Trust")
+        assert fenwick["people"][0]["outcome"] == "pick", "an agreeing review reads as the AI's outcome"
+        assert 'data-testid="agreement"' in response.content.decode()
+
+    def test_a_different_outcome_is_not_agreement(self, client, scored, member):
+        from connect_labs.solicitations.data_access import SolicitationsDataAccess
+
+        submission, ai = scored
+        SolicitationsDataAccess(user=member).create_review(
+            submission.pk, {"based_on": ai.pk, "stance": "disagrees", "outcome": "waitlist"}
+        )
+        counts = _get(client, member, "human-review").context["human_counts"]
+        assert (counts["compared"], counts["same_outcome"], counts["agreement"]) == (1, 0, 0)
+
+    def test_nobody_checked_has_no_figure(self, client, scored, member):
+        assert _get(client, member, "human-review").context["human_counts"]["agreement"] is None

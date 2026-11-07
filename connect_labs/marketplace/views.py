@@ -391,6 +391,15 @@ REVISE_ASK = (
 )
 
 
+OBSERVE_ASK = (
+    "Write the AI Observations for this EOI round's criteria version shown on this page: read its AI scores "
+    "against the version before it (or on their own for a first version), say what stands out (criteria that "
+    "did not separate applicants, scores that track answer length, recommendations that moved and why, rules "
+    "that placed nobody), each with the change to the criteria it suggests, and save them on that version for "
+    "me to approve."
+)
+
+
 def _ai_review_button(round_):
     """The label, hint and words for the round page's AI-review button."""
     if round_.evaluation_criteria:
@@ -658,7 +667,8 @@ def round_review(request, slug, step=""):
     comparison = None
     if compare_with:
         first, second = sorted([compare_with, shown], key=names.index)
-        comparison = queries.compare_at(round_, first, second, first_service)
+        # The AI's scores alone, as the step reads them: a person's review must not stand in for them.
+        comparison = queries.compare_at(round_, first, second, first_service, kind)
         for move in comparison["moved"]:
             move["from_style"], move["to_style"] = (
                 _outcome_chip(move["from_key"]),
@@ -677,6 +687,12 @@ def round_review(request, slug, step=""):
         for c in summary["criteria"]
     ]
     countries = sorted(Counter(a["country"] for a in applicants if a["country"]).items())
+    shown_record = next((v for v in history if v["version"] == shown), None)
+    if shown_record:
+        shown_basis, shown_rules = shown_record["basis_text"], shown_record["outcome_rules"]
+    else:
+        # A round whose criteria predate kept versions: the round's own basis.
+        shown_basis, shown_rules = queries.outcome_rules_of(round_.criteria_basis)
     ctx.update(
         {
             "step": current,
@@ -685,12 +701,11 @@ def round_review(request, slug, step=""):
             "step_reviewed": step_reviewed,
             "summary": summary,
             "shown_criteria": criteria or [],
-            # How the shown version was arrived at: the round's basis for the current one, its record's otherwise.
-            "shown_basis": (
-                round_.criteria_basis
-                if shown == round_.rubric_version
-                else next((v["basis"] for v in history if v["version"] == shown), "")
-            ),
+            # How the shown version was arrived at, and its outcome rules apart from that.
+            "shown_basis": shown_basis,
+            "shown_outcome_rules": shown_rules,
+            "shown_record": shown_record,
+            "observe_ask": OBSERVE_ASK,
             "shown_version": shown,
             "is_current": shown == round_.rubric_version,
             "compare_with": compare_with,

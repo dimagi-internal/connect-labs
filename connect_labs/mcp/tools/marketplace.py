@@ -414,8 +414,11 @@ def _applicant_row(a) -> dict:
         "`version` reads an earlier criteria version (its criteria and the reviews scored on "
         "it; `marketplace_round_versions` lists them); `compare_with` adds what changed between "
         "the two versions: whose recommendation moved, the mean score shift, and each "
-        "criterion's weight, mean and shortlist gap in both. The same figures as the round's "
-        "Scores page in labs. Only the round's owner may read it. Read-only."
+        "criterion's weight, mean and shortlist gap in both. `reviews: \"ai\"` reads the AI's reviews "
+        "alone, as the Review tab's AI Review and AI Analysis steps do: use it to judge the criteria "
+        "(e.g. before writing AI Observations). Also returns the shown version's outcome rules and "
+        "AI Observations. The same figures as the round's Review tab in labs. Only the round's owner "
+        "may read it. Read-only."
     ),
     input_schema={
         "type": "object",
@@ -423,12 +426,21 @@ def _applicant_row(a) -> dict:
             "slug": {"type": "string", "description": "The round's slug, from `marketplace_rounds_list`."},
             "version": {"type": "string", "description": "A criteria version, e.g. v1. Default: current."},
             "compare_with": {"type": "string", "description": "Another version to compare with, e.g. v1."},
+            "reviews": {
+                "type": "string",
+                "enum": ["lead", "ai"],
+                "description": (
+                    "Whose reviews to read: lead (default: a person's, else the AI's) or ai (the AI's alone)."
+                ),
+            },
         },
         "required": ["slug"],
         "additionalProperties": False,
     },
 )
-def marketplace_round_scores(user, slug: str, version: str = "", compare_with: str = "") -> dict[str, Any]:
+def marketplace_round_scores(
+    user, slug: str, version: str = "", compare_with: str = "", reviews: str = "lead"
+) -> dict[str, Any]:
     from connect_labs.marketplace import queries
     from connect_labs.solicitations import vocabulary
 
@@ -439,7 +451,9 @@ def marketplace_round_scores(user, slug: str, version: str = "", compare_with: s
             raise MCPToolError("NOT_FOUND", f"{slug} has no criteria version {asked!r}; it has {names}.")
     shown = version or round_.rubric_version
     first_service = queries.first_service_by_org_name()
-    applicants, reviewed, summary, criteria = queries.scores_at(round_, shown, first_service)
+    kind = "ai" if reviews == "ai" else None
+    applicants, reviewed, summary, criteria = queries.scores_at(round_, shown, first_service, kind)
+    record = next((v for v in queries.version_history(round_) if v["version"] == shown), None)
     out = {
         "round": {
             "slug": round_.slug,
@@ -449,7 +463,19 @@ def marketplace_round_scores(user, slug: str, version: str = "", compare_with: s
         },
         "version": shown,
         "versions": names,
+        "reviews": "ai" if kind else "lead",
         "evaluation_criteria": criteria,
+        "outcome_rules": record["outcome_rules"] if record else queries.outcome_rules_of(round_.criteria_basis)[1],
+        "ai_observations": (
+            {
+                "text": record["observations"],
+                "compared_with": record["observations_compared_with"],
+                "by": record["observations_by"],
+                "at": record["observations_at"].isoformat() if record["observations_at"] else None,
+            }
+            if record and record["observations"]
+            else None
+        ),
         # What each outcome and flag key means, as the page shows it.
         "vocabulary": {"outcomes": vocabulary.OUTCOMES, "flags": vocabulary.FLAGS},
         "criteria": summary["criteria"],
@@ -462,7 +488,7 @@ def marketplace_round_scores(user, slug: str, version: str = "", compare_with: s
     }
     if compare_with and compare_with != shown:
         first, second = sorted([compare_with, shown], key=names.index)
-        comparison = queries.compare_at(round_, first, second, first_service)
+        comparison = queries.compare_at(round_, first, second, first_service, kind)
         out["comparison"] = {
             **comparison,
             "moved": [
@@ -503,7 +529,11 @@ def marketplace_round_versions(user, slug: str) -> dict[str, Any]:
         "slug": round_.slug,
         "current": round_.rubric_version or "",
         "versions": [
-            {**v, "created_at": v["created_at"].isoformat() if v["created_at"] else None}
+            {
+                **v,
+                "created_at": v["created_at"].isoformat() if v["created_at"] else None,
+                "observations_at": v["observations_at"].isoformat() if v["observations_at"] else None,
+            }
             for v in queries.version_history(round_)
         ],
     }
@@ -651,20 +681,30 @@ def marketplace_round_summary_set(user, slug: str, url: str) -> dict[str, Any]:
                 },
             },
             "basis": {"type": "string", "description": "How the criteria were arrived at."},
+            "outcome_rules": {
+                "type": "string",
+                "description": (
+                    "How scores become outcomes (Recommended, Recommended backup, Waitlist, Not recommended): "
+                    "slots, conditions and overrides. Kept on the new version and shown on the Review tab's "
+                    "Criteria step under Outcome rules. Leave it out of `basis`."
+                ),
+            },
         },
         "required": ["slug", "criteria"],
         "additionalProperties": False,
     },
     is_write=True,
 )
-def marketplace_round_criteria_set(user, slug: str, criteria: list, basis: str = "") -> dict[str, Any]:
+def marketplace_round_criteria_set(
+    user, slug: str, criteria: list, basis: str = "", outcome_rules: str = ""
+) -> dict[str, Any]:
     from django.core.exceptions import PermissionDenied, ValidationError
 
     from connect_labs.solicitations.data_access import SolicitationsDataAccess
     from connect_labs.solicitations.local_models import Solicitation
 
     try:
-        round_ = SolicitationsDataAccess(user=user).set_round_criteria(slug, criteria, basis)
+        round_ = SolicitationsDataAccess(user=user).set_round_criteria(slug, criteria, basis, outcome_rules)
     except Solicitation.DoesNotExist as e:
         raise MCPToolError("NOT_FOUND", str(e)) from e
     except PermissionDenied as e:
@@ -676,4 +716,58 @@ def marketplace_round_criteria_set(user, slug: str, criteria: list, basis: str =
         "rubric_version": round_.rubric_version,
         "evaluation_criteria": round_.evaluation_criteria,
         "criteria_basis": round_.criteria_basis,
+        "outcome_rules": (outcome_rules or "").strip(),
+    }
+
+
+@register(
+    name="marketplace_round_observations_set",
+    description=(
+        "Write the AI Observations on one criteria version of a marketplace EOI/RFP round: what stands "
+        "out in the AI scores given on that version, usually read against the version before it "
+        "(`compared_with`). Say what the figures show (a criterion that did not separate applicants, "
+        "scores that track answer length, recommendations that moved and why, an outcome rule that "
+        "placed nobody), each with the change to the criteria it suggests. Plain text; one observation "
+        "per paragraph. Shown on the Review tab's AI Analysis step. Writing again replaces them; an "
+        "empty text clears them. Only members of the organisation that ran the round may write them. "
+        "Get the requester's approval first."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "slug": {"type": "string", "description": "The round's slug."},
+            "version": {"type": "string", "description": "The criteria version the observations are on, e.g. v4."},
+            "observations": {"type": "string", "description": "The observations; empty to clear."},
+            "compared_with": {
+                "type": "string",
+                "description": "The version the scores were read against, e.g. v3. Omit for a first version.",
+            },
+        },
+        "required": ["slug", "version", "observations"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def marketplace_round_observations_set(
+    user, slug: str, version: str, observations: str, compared_with: str = ""
+) -> dict[str, Any]:
+    from django.core.exceptions import PermissionDenied, ValidationError
+
+    from connect_labs.solicitations.data_access import SolicitationsDataAccess
+    from connect_labs.solicitations.local_models import RubricVersion, Solicitation
+
+    try:
+        record = SolicitationsDataAccess(user=user).set_round_observations(slug, version, observations, compared_with)
+    except (Solicitation.DoesNotExist, RubricVersion.DoesNotExist) as e:
+        raise MCPToolError("NOT_FOUND", str(e)) from e
+    except PermissionDenied as e:
+        raise MCPToolError("PERMISSION_DENIED", str(e)) from e
+    except ValidationError as e:
+        raise MCPToolError("BAD_REQUEST", "; ".join(e.messages)) from e
+    return {
+        "slug": slug,
+        "version": record.version,
+        "observations": record.observations,
+        "compared_with": record.observations_compared_with,
+        "written_at": record.observations_at.isoformat() if record.observations_at else None,
     }

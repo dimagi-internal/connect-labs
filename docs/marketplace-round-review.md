@@ -190,7 +190,18 @@ firm's behalf).
   `criteria_basis`, sets `rubric_version` to `v{max(current, every version ever
   recorded) + 1}` (a deleted version's number is never reused), and writes a
   `RubricVersion` row. Only someone who may read the round's responses may set
-  it (`access.can_set_round_criteria`).
+  it (`access.can_set_round_criteria`). Its optional `outcome_rules` (how scores
+  become outcomes: slots, conditions, overrides) is kept on that version's
+  `RubricVersion.outcome_rules`. Versions written before the field carry their
+  rules at the end of the basis under an "Outcome rules:" line;
+  `queries.outcome_rules_of(basis, outcome_rules)` reads either into
+  `(basis, rules)`, so every version shows them in the same place.
+- **AI Observations** (`marketplace_round_observations_set` →
+  `set_round_observations`) are the assistant's notes on what stands out in one
+  version's AI scores, usually against the version before it: each is a
+  candidate revision. They live on the version's record (`observations`,
+  `observations_compared_with`, `observations_by`, `observations_at`); writing
+  again replaces them, empty text clears them. Same permission as the criteria.
 - A review is linked to a version by `provenance.rubric_version`, which is
   stamped with the round's current version whenever criteria scores are saved
   and the caller did not name one.
@@ -224,21 +235,26 @@ firm's behalf).
   still to do (`review_steps.default_step`). The steps, in order (see § The
   Review tab, below):
   - `criteria`: the shown version's criteria with their scoring guides and
-    reasons, how they were chosen (`criteria_basis`, or the version record's
-    basis), **Revise the criteria** (asks the assistant, with the person's
+    reasons, how they were chosen (the version's basis), its **Outcome rules**
+    on their own, **Revise the criteria** (asks the assistant, with the person's
     words appended: `views.REVISE_ASK`), and every version, deletable with its
     reviews (`rounds/<slug>/versions/<v>/delete/`).
   - `ai-review`: every applicant against every criterion, read from the **AI's
     reviews alone** (`review_status(kind="ai")`), with the version picker, the
     summary link (`rounds/<slug>/summary/`) and **Run / Re-run the AI review**.
-  - `ai-analysis`: also the AI's reviews alone. "What changed from version A to
-    B" opens against the version before the shown one; `?compare=vM` picks
+  - `ai-analysis`: also the AI's reviews alone. **AI Observations** on the
+    shown version come first, with **Ask for AI Observations** (asks the
+    assistant: `views.OBSERVE_ASK`; it proposes them for the person to confirm).
+    "What changed from version A to B" opens against the version before the shown one; `?compare=vM` picks
     another, `?compare=none` turns it off. Then **By criterion** (spread,
     shortlist mean, everyone else, shortlist lead), open.
   - `human-review`: how many applicants a person has checked, how people
     responded to the AI (agreed, added to it, copied and edited, disagreed;
-    `queries.human_review_rows`), and each applicant's AI recommendation beside
-    the people's.
+    `queries.human_review_rows`), how often a person landed on the AI's outcome
+    (**Same outcome as the AI**: of the people's reviews with an outcome, how
+    many match the AI review they started from, else the applicant's AI review;
+    an "agrees" or "adds" review without its own outcome reads as the AI's), and
+    each applicant's AI recommendation beside the people's.
   `?version=vN` reads an earlier criteria version on any step. The round header
   above the steps always reads the round as Overview does (a person's review
   first, else the AI's), so the two tabs' figures agree.
@@ -279,10 +295,10 @@ optional `extra` that adds figures only that step draws.
   the header matches Overview. The shared round fixtures live in
   `tests/round_fixtures.py`, loaded by `tests/conftest.py`.
 
-Not built yet, for the next iterations: the assistant's notes on what stands
-out in a version's scores ("AI Observations", kept per criteria version and
-shown on AI Analysis); outcome rules as their own field rather than inside
-`criteria_basis`; and an agreement figure between people and the AI.
+AI Observations, outcome rules as their own field and the agreement figure are
+built (§ Criteria versions, § UI routes). An agent writes the first two through
+proposals the person confirms (`mcp/tools/review_batch.py`), the same way as
+criteria and reviews.
 
 ## Who reads reviews
 
@@ -322,12 +338,18 @@ Marketplace (`connect_labs/mcp/tools/marketplace.py`):
 - `marketplace_rounds_list`: rounds with counts; `slug` for one round,
   `include_applicants` for who answered it.
 - `marketplace_round_responses`: every submission to a round, with its matched org (owner only).
-- `marketplace_round_scores`: the Scores page's figures; `version`, `compare_with`.
-- `marketplace_round_versions`: every criteria version with its review counts.
+- `marketplace_round_scores`: the Review tab's figures; `version`, `compare_with`,
+  `reviews` (`lead` or `ai`: the AI's reviews alone, as AI Review and AI Analysis
+  read them); also the shown version's `outcome_rules` and `ai_observations`.
+- `marketplace_round_versions`: every criteria version with its review counts,
+  `outcome_rules` (and `basis_text` without them) and AI Observations.
 - `marketplace_round_version_archive`: put an earlier version and its AI reviews into history.
 - `marketplace_round_version_delete`: delete an earlier version and every review on it.
 - `marketplace_round_summary_set`: set or clear `summary_url` (https only).
-- `marketplace_round_criteria_set`: replace the criteria and bump `rubric_version`.
+- `marketplace_round_criteria_set`: replace the criteria and bump `rubric_version`;
+  `outcome_rules` is kept on the new version.
+- `marketplace_round_observations_set`: write or clear the AI Observations on one
+  version (`version`, `observations`, `compared_with`).
 
 Reviews (`mcp/tools/reviews.py`):
 - `list_reviews` / `get_review`: the standing reviews of a response, or one review by id.

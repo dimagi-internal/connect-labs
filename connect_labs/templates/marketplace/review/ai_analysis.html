@@ -10,6 +10,31 @@ finding here is a reason to revise the criteria: back to step 1.
     <a href="{% url 'marketplace:round_review_step' round.slug 'ai-review' %}" class="text-brand-indigo hover:text-brand-deep-purple ml-1">Go to AI Review →</a>
   </div>
 {% else %}
+  <div class="bg-white border border-brand-border-light rounded-lg mb-4.5" data-testid="observations">
+    <div class="px-4 sm:px-5 py-3.5 flex flex-wrap items-start justify-between gap-3 {% if shown_record.observations %}border-b border-brand-border-light{% endif %}">
+      <div>
+        <span class="text-sm font-semibold text-brand-deep-purple">AI Observations</span>
+        <span class="text-[12px] text-gray-500 ml-1">on the version {{ shown_version|slice:"1:" }} scores{% if shown_record.observations_compared_with %}, compared with version {{ shown_record.observations_compared_with|slice:"1:" }}{% endif %}</span>
+        {% if shown_record.observations %}
+          <div class="text-[11.5px] text-gray-400 mt-0.5">{% if shown_record.observations_by %}{{ shown_record.observations_by }} · {% endif %}{{ shown_record.observations_at|date:"j M Y, H:i" }} · each one can become a revision of the criteria</div>
+        {% else %}
+          <div class="text-[12.5px] text-gray-500 mt-1 leading-snug" data-testid="no-observations">None yet. Ask the assistant to read these scores and say what stands out: a criterion that did not separate anyone, scores that follow answer length, a rule that placed nobody. Each comes with the change it suggests.</div>
+        {% endif %}
+      </div>
+      {% if canopy_panel and can_edit %}
+        <button type="button" data-canopy-ask class="hidden inline-flex items-center px-3.5 py-2 {% if shown_record.observations %}bg-white text-indigo-700 border border-indigo-300 hover:bg-indigo-50{% else %}bg-indigo-600 text-white hover:bg-indigo-700{% endif %} text-[13px] font-medium rounded-lg"
+                data-testid="ask-observations" data-ask="{{ observe_ask }}">
+          <i class="fa-solid fa-wand-magic-sparkles mr-2 text-[11px]"></i>{% if shown_record.observations %}Write them again{% else %}Ask for AI Observations{% endif %}
+        </button>
+      {% endif %}
+    </div>
+    {% if shown_record.observations %}
+      <div class="px-4 sm:px-5 py-3.5 text-[13px] text-gray-800 leading-relaxed whitespace-pre-line" data-testid="observations-text">{{ shown_record.observations }}</div>
+      {% if comparison and shown_record.observations_compared_with and shown_record.observations_compared_with != compare_with %}
+        <div class="px-4 sm:px-5 pb-3 text-[12px] text-amber-800" data-testid="observations-other-comparison">These read version {{ shown_version|slice:"1:" }} against version {{ shown_record.observations_compared_with|slice:"1:" }}; the comparison below is with version {{ compare_with|slice:"1:" }}.</div>
+      {% endif %}
+    {% endif %}
+  </div>
   {% if not comparison %}
     <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-5 py-3 mb-4.5 flex flex-wrap items-center gap-3 text-[12.5px] text-gray-600" data-testid="no-comparison">
       {% if history|length > 1 %}
