@@ -66,6 +66,15 @@ When you sign in, Labs shows you a page that explains exactly what the app is as
 
 The headline reads "An app on this computer wants to use Connect Labs as you". The name the app gives itself appears beneath that, labelled as something the app claims — not something Labs has verified. Check the access level and expiry rather than relying on the name.
 
+### What the permission prompt tells you
+
+When an agent on a Labs page asks for your permission, the prompt names Connect Labs and explains each permission in plain English before you approve. For example:
+
+- _"read a round's applicants' answers and the reviews written on them"_
+- _"propose AI reviews and evaluation criteria for a round; nothing is saved until you confirm"_
+
+The raw permission names appear underneath for reference. Read the plain-English lines to understand what the agent will be able to do — nothing happens until you confirm.
+
 ### 2. (Scripts and headless agents only) Register a Labs token
 
 Anything that cannot open a browser to sign in — a script, a scheduled job, a headless agent — needs a Personal Access Token instead. From **inside your connect-labs checkout**, start Claude Code and run:
@@ -215,9 +224,4 @@ When you create a token you choose an **Access** level:
 | **No user visit data** | Never sees user visit data. Reads workflow definitions, CommCare app structure, pipeline and indicator definitions, solicitations, funds, the organisation directory, targeting data, and microplan sampling. Can edit workflow and indicator definitions (including a workflow's opportunity list; render code only on synthetic opportunities whose data was generated, because render code runs over the visit data of whoever opens the page) and trigger saved-run generation — snapshots, history rebuilds, cache warms, hand-downs and benchmark publication — where the server computes over visits and the token gets back only ids, versions, dates and counts. Cannot delete workflows or pipelines. Can also profile real opportunities on the server and generate synthetic data from those profiles. Same permissions as the `mcp/no_user_visit/` address. Cannot access individual visit rows or per-visit values — including through the export API and data reseed endpoints — except on synthetic opportunities whose data was generated. Opportunity-level counts and dates, and contact details of people who submitted as an organisation, are allowed. No passkey confirmation required. |
 | **Coaching pictures only** | Lets an Open Chat Studio team fetch coaching pictures. Nothing else. Cannot be used for MCP or the export API. |
 
-Tools the token is not allowed to use do not appear to the agent at all, so the agent cannot accidentally attempt a blocked action.
-
-The token list on the tokens page shows the access level and exact expiry time of each token. When you rotate a token, its access level stays the same.
-
-!!! tip "When to use 'No user visit data'"
-    Choose this level when you want an AI assistant to help you navigate programme structure, explore or edit indicator and workflow definitions, regenerate saved runs, or query the organisation directory — but you do not want it to have access to any beneficiary visit data. Because it can edit a report
+Tools the token is not allowed to use do not appear to the agent at all, so the agent
