@@ -128,6 +128,22 @@ class TestResolverSelection:
         # When labs isn't configured, fall back to overture (no regression).
         assert BoundaryResolver(sources=[ovr]).bbox_source_name(None, None) == "overture"
 
+    def test_bbox_at_one_level_uses_a_source_that_has_that_level(self):
+        # Niger, observed live 2026-11-07: Enriched Boundaries holds only Level 1,
+        # Overture holds 1-3. The levels endpoint offers Level 2 (any source has
+        # it), so a Level 2 viewport must not ask labs and draw nothing, even when
+        # the page asks for labs because that is what Level 1 used.
+        labs = _FakeSource("labs", [1])
+        ovr = _FakeSource("overture", [1, 2, 3])
+        r = BoundaryResolver(sources=[labs, ovr])
+        assert r.bbox_source_name(None, "NER", levels=[2]) == "overture"
+        assert r.bbox_source_name("labs", "NER", levels=[2]) == "overture"
+        # A picked source that has the level still wins.
+        assert r.bbox_source_name("labs", "NER", levels=[1]) == "labs"
+        assert r.bbox_source_name("overture", "NER", levels=[1]) == "overture"
+        # No level (every level, smallest wins): unchanged.
+        assert r.bbox_source_name("labs", "NER") == "labs"
+
     def test_country_override_order(self):
         labs = _FakeSource("labs", [1, 2, 3])
         ovr = _FakeSource("overture", [1, 2, 3])

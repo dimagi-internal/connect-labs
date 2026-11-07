@@ -873,9 +873,17 @@ class BoundaryResolver:
             return "labs"
         return "overture" if "overture" in self._sources else next(iter(self._sources))
 
-    def bbox_source_name(self, source: str | None, iso: str | None) -> str:
+    def bbox_source_name(self, source: str | None, iso: str | None, levels=None) -> str:
         """The source name a viewport query will use: the picked one if known, else
-        the country default. (Lets a view report the used source without re-querying.)"""
+        the country default. (Lets a view report the used source without re-querying.)
+
+        When the query is for ONE level of a known country, the source must hold
+        that level: countries differ in which source goes how deep (Niger's
+        Enriched Boundaries stop at Level 1, Overture goes to 3), and a source
+        without the level draws an empty map with nothing to click. So the pick
+        is a preference there, as it is for the by-name search (`source_for`)."""
+        if iso and levels and len(levels) == 1:
+            return self.source_for(iso, int(levels[0]), prefer=source).name
         return source if (source and source in self._sources) else self._default_bbox_source(iso)
 
     def boundaries_in_bbox(
@@ -884,7 +892,7 @@ class BoundaryResolver:
         """Boundaries intersecting ``bbox`` from a single source (the picked one, or the
         country default). Returns ``(features, truncated)`` — ``truncated`` is True when
         the intersect set exceeded ``limit`` (the FE prompts "zoom in")."""
-        name = self.bbox_source_name(source, iso)
+        name = self.bbox_source_name(source, iso, levels)
         src = self._sources[name]
         tolerance = tolerance_for_zoom(zoom)
         # Fetch one past the cap so we can detect (and report) truncation.
