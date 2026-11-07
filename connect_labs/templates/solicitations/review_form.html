@@ -94,18 +94,29 @@
         {% endif %}
 
         <!-- Q&A Pairs with inline criteria scoring -->
-        {% for qa in qa_pairs %}
+        {% for block in qa_blocks %}
+        {% if block.kind == "section" %}
+        <div class="pt-2">
+            <h3 class="text-base font-semibold text-brand-deep-purple">{{ block.title }}</h3>
+            {% if block.help %}<p class="mt-1 text-xs text-gray-500 whitespace-pre-line">{{ block.help }}</p>{% endif %}
+        </div>
+        {% else %}
         <div class="bg-white rounded-xl shadow-sm p-4 sm:p-6">
             <div class="flex items-start gap-3 mb-4">
-                <span class="flex-shrink-0 w-7 h-7 bg-brand-indigo text-white text-xs font-bold rounded-full flex items-center justify-center">{{ forloop.counter }}</span>
-                <div class="flex-1">
-                    <p class="text-sm font-medium text-gray-700 mb-2">{{ qa.question }}</p>
-                    <div class="p-3 bg-gray-50 rounded-lg text-sm text-gray-600 whitespace-pre-line">{{ qa.answer|default:"No response provided" }}</div>
+                <span class="flex-shrink-0 w-7 h-7 bg-brand-indigo text-white text-xs font-bold rounded-full flex items-center justify-center">{{ block.number }}</span>
+                <div class="flex-1 min-w-0">
+                    {% if block.kind == "grid" %}
+                    <p class="text-sm font-medium text-gray-700 mb-2">{{ block.title }}</p>
+                    {% include "solicitations/_answer_grid.html" %}
+                    {% else %}
+                    <p class="text-sm font-medium text-gray-700 mb-2">{{ block.question.text }}</p>
+                    <div class="p-3 bg-gray-50 rounded-lg">{% include "solicitations/_answer_body.html" with a=block.answer %}</div>
+                    {% endif %}
                 </div>
             </div>
-            {% if qa.criteria %}
+            {% if block.criteria %}
             <div class="ml-10 mt-3 space-y-2">
-                {% for criterion in qa.criteria %}
+                {% for criterion in block.criteria %}
                 <div class="p-3 bg-indigo-50/50 rounded-lg">
                     <div class="flex items-center gap-4">
                         <div class="flex-1">
@@ -136,6 +147,7 @@
             </div>
             {% endif %}
         </div>
+        {% endif %}
         {% endfor %}
 
         {% if unlinked_criteria %}

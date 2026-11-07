@@ -29,6 +29,7 @@ from django.views.generic import TemplateView
 
 from connect_labs.microplans.core.solicitation_snapshot import build_plan_snapshot
 from connect_labs.solicitations import access, demo, evidence, past_calls, service_areas, vocabulary
+from connect_labs.solicitations.answers import answer_blocks, answer_rows, answer_text, question_blocks
 from connect_labs.solicitations.data_access import AlreadyAwarded, SolicitationsDataAccess, by_public_id
 from connect_labs.solicitations.forms import NEW_ORG, ReviewForm, SolicitationForm, SolicitationResponseForm
 from connect_labs.solicitations.local_models import (
@@ -119,17 +120,21 @@ def _round_reading_context(solicitation, response) -> dict:
     questions = past_calls.form_questions(solicitation)
     personal = personal_question_ids(questions, solicitation.column_map)
     stored = response.responses or {}
-    rows = [
+    blocks = answer_blocks([q for q in questions if q["id"] not in personal], stored)
+    contact = [
         {"id": q["id"], "question": q.get("text", ""), "answer": answer_text(stored.get(q["id"], ""))}
         for q in questions
+        if q["id"] in personal
     ]
     applicants = queries.round_applicants(solicitation, {})
     queries.review_status(solicitation, applicants)  # the round page's order
     order = [a["response"].pk for a in applicants]
     at = order.index(response.pk) if response.pk in order else None
     return {
-        "answers": [r for r in rows if r["id"] not in personal],
-        "contact": [r for r in rows if r["id"] in personal and r["answer"]],
+        "answer_blocks": blocks,
+        # Flat, in the form's order: what a review's claims are numbered against.
+        "answers": answer_rows(blocks),
+        "contact": [r for r in contact if r["answer"]],
         "position": (at + 1) if at is not None else None,
         "applicant_count": len(order),
         "previous_pk": order[at - 1] if at else None,
@@ -251,47 +256,6 @@ def _area_picker(request, name, *, initial=(), limits=(), input_id="", empty_tex
             }
         )
     return picker
-
-
-def answer_text(value) -> str:
-    """A stored answer as text: a checkboxes answer is a list of the chosen options."""
-    if isinstance(value, (list, tuple)):
-        return "; ".join(str(v) for v in value if v not in (None, ""))
-    return "" if value is None else str(value)
-
-
-def question_blocks(question_fields) -> list[dict]:
-    """The questions as the form lays them out: section headings, single
-    questions, and a grid's rows gathered into one table.
-
-    A Google Form grid arrives as one question per row (the response sheet has
-    a column per row), each carrying ``grid`` (`marketplace.form_structure`).
-    Consecutive rows of one grid become one block, so "rank these 1st, 2nd,
-    3rd" reads as the table it was, not six separate questions.
-    """
-    blocks: list[dict] = []
-    for qf in question_fields:
-        question = qf["question"]
-        if question.get("section"):
-            blocks.append({"kind": "section", **question["section"]})
-        grid = question.get("grid")
-        if not grid:
-            blocks.append({"kind": "question", **qf})
-            continue
-        last = blocks[-1] if blocks else None
-        if not (last and last["kind"] == "grid" and last["id"] == grid.get("id")):
-            last = {
-                "kind": "grid",
-                "id": grid.get("id"),
-                "title": grid.get("title", ""),
-                "help": grid.get("help", ""),
-                "columns": grid.get("columns", []),
-                "multi": question.get("type") == "checkboxes",
-                "rows": [],
-            }
-            blocks.append(last)
-        last["rows"].append({"label": grid.get("row", ""), **qf})
-    return blocks
 
 
 def _compact_round_widgets(form, questions) -> None:
@@ -1360,15 +1324,10 @@ class ResponseDetailView(SignedInPage):
                     if response.service_areas
                     else None
                 ),
-                "qa_pairs": [
-                    {
-                        "question": q.get("text", ""),
-                        "answer": answer_text((response.responses or {}).get(q.get("id", ""), "")),
-                    }
-                    for q in (
-                        past_calls.form_questions(solicitation, response) if is_round else solicitation.questions or []
-                    )
-                ],
+                "qa_blocks": answer_blocks(
+                    past_calls.form_questions(solicitation, response) if is_round else solicitation.questions or [],
+                    response.responses or {},
+                ),
             }
         )
         return ctx
@@ -1528,15 +1487,11 @@ class ReviewView(SignedInPage):
                 "blind_label": response.blind_label,
                 "ai_proposed_scores": hidden,
                 "source": source,
-                "qa_pairs": [
-                    {
-                        "question": q.get("text", ""),
-                        "answer": answer_text((response.responses or {}).get(q.get("id", ""), "")),
-                        "question_id": q.get("id", ""),
-                        "criteria": criteria_by_question.get(q.get("id", ""), []),
-                    }
-                    for q in questions
-                ],
+                "qa_blocks": answer_blocks(
+                    questions,
+                    response.responses or {},
+                    extra=lambda q: {"criteria": criteria_by_question.get(q.get("id", ""), [])},
+                ),
                 "unlinked_criteria": [c for c in eval_criteria if c.get("id") not in linked_ids],
                 "existing_review": existing,
                 "is_update": existing is not None,

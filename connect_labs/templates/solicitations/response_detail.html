@@ -103,20 +103,15 @@
     </div>
     {% endif %}
 
-    <!-- Q&A Pairs -->
-    {% if qa_pairs %}
+    <!-- The answers, as the form asked them -->
+    {% if qa_blocks %}
         <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8 mb-6">
             <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
                 <i class="fa-solid fa-clipboard-list mr-2"></i>
                 Responses
             </h2>
             <div class="space-y-4">
-                {% for qa in qa_pairs %}
-                    <div class="{% if not forloop.last %}pb-4 border-b border-gray-100{% endif %}">
-                        <p class="text-sm font-medium text-gray-700 mb-1">{{ qa.question }}</p>
-                        <p class="text-sm text-gray-900 whitespace-pre-line break-words">{{ qa.answer|default:"No answer provided" }}</p>
-                    </div>
-                {% endfor %}
+                {% include "solicitations/_answer_blocks.html" with blocks=qa_blocks %}
             </div>
         </div>
     {% endif %}

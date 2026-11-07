@@ -28,6 +28,8 @@ from __future__ import annotations
 
 from django.core.exceptions import ValidationError
 
+from connect_labs.solicitations.answers import answer_text
+
 ABOUT_FIXED = ("strength", "concern", "flag", "outcome")
 BASES = ("quoted", "synthesized")
 SOURCES = ("labs", "web")
@@ -160,7 +162,8 @@ def flatten(claims: list[dict]) -> dict:
 def answers_of(response, questions) -> dict:
     """Question id -> answer text, for the questions a review can cite."""
     stored = response.responses or {}
-    return {q["id"]: str(stored.get(q["id"]) or "") for q in questions if q.get("id")}
+    # The same text the page shows (`answers.answer_view`), so quote offsets land.
+    return {q["id"]: answer_text(stored.get(q["id"])) for q in questions if q.get("id")}
 
 
 # One colour per criterion, in the order the round lists them; strengths and
@@ -222,9 +225,10 @@ def panel(review, criteria, questions=None) -> list[dict]:
     criterion with its score, then strengths, concerns and flags.
 
     `questions` (id and text, in the form's order) numbers the questions each
-    claim draws on, so a statement says where in the response it comes from.
+    claim draws on, so a statement says where in the response it comes from;
+    a row's own ``n`` wins (every row of one grid is one numbered question).
     """
-    numbers = {q["id"]: (n, q.get("question", "")) for n, q in enumerate(questions or [], 1)}
+    numbers = {q["id"]: (q.get("n", n), q.get("question", "")) for n, q in enumerate(questions or [], 1)}
     claims = []
     for claim in shown_claims(review):
         drawn = sorted({numbers[c["question"]] for c in claim.get("cites") or [] if c.get("question") in numbers})

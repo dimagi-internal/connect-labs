@@ -1,0 +1,29 @@
+{% comment %}
+A grid's answers as the table the form asked (`solicitations.answers.answer_blocks`, passed as `block`).
+Each row is its own question, so it carries `data-question` and its text in `[data-answer]`.
+{% endcomment %}
+{% if block.help %}<p class="mb-1 text-xs text-gray-500 whitespace-pre-line">{{ block.help }}</p>{% endif %}
+<div class="overflow-x-auto">
+  <table class="min-w-full text-sm" data-answer-grid>
+    <thead>
+      <tr class="border-b border-gray-200">
+        <th class="py-1.5 pr-3 text-left font-normal"><span class="sr-only">Option</span></th>
+        {% for column in block.columns %}<th class="px-2 py-1.5 text-center text-xs font-medium text-gray-600">{{ column }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in block.rows %}
+        <tr data-question="{{ row.id }}" class="border-b border-gray-100 border-l-4 border-l-transparent">
+          <th scope="row" class="py-1.5 pl-2 pr-3 text-left font-normal text-gray-700">
+            {{ row.label }}
+            <span data-answer class="sr-only">{{ row.answer.text }}</span>
+            <span data-absent-note class="hidden text-xs text-gray-500 mt-1"></span>
+          </th>
+          {% for ticked in row.cells %}
+            <td class="px-2 py-1.5 text-center">{% if ticked %}<i aria-hidden="true" class="fa-solid fa-circle-check text-brand-indigo"></i><span class="sr-only">chosen</span>{% else %}<span aria-hidden="true" class="text-gray-200">·</span>{% endif %}</td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

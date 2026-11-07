@@ -1,0 +1,26 @@
+{% comment %}
+A response read as its form laid it out: section headings, numbered questions, and a
+grid as one table (`solicitations.answers.answer_blocks`, passed as `blocks`). The
+`data-question` / `[data-answer]` / `[data-absent-note]` hooks are review_evidence.js's.
+{% endcomment %}
+{% for block in blocks %}
+  {% if block.kind == "section" %}
+    <div class="pt-2" data-answer-section>
+      <h3 class="text-sm font-semibold text-brand-deep-purple">{{ block.title }}</h3>
+      {% if block.help %}
+        <details class="text-xs text-gray-500"><summary class="cursor-pointer select-none text-gray-400 hover:text-brand-indigo">What the form said here</summary><p class="mt-1 whitespace-pre-line">{{ block.help }}</p></details>
+      {% endif %}
+    </div>
+  {% elif block.kind == "grid" %}
+    <div class="pl-3" data-question-grid>
+      <p class="text-[13px] font-semibold text-gray-700 mb-1"><span class="text-gray-400 tabular-nums">Q{{ block.number }}</span> {{ block.title }}</p>
+      {% include "solicitations/_answer_grid.html" %}
+    </div>
+  {% else %}
+    <div data-question="{{ block.id }}" class="pl-3 border-l-4 border-transparent rounded-sm transition-colors">
+      <p class="text-[13px] font-semibold text-gray-700 mb-1"><span class="text-gray-400 tabular-nums">Q{{ block.number }}</span> {{ block.question.text }}</p>
+      {% include "solicitations/_answer_body.html" with a=block.answer %}
+      <p data-absent-note class="hidden text-xs text-gray-500 mt-1"></p>
+    </div>
+  {% endif %}
+{% endfor %}

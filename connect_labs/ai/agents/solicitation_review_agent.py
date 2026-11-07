@@ -12,6 +12,7 @@ from pydantic_ai import Agent, RunContext
 from pydantic_ai.settings import ModelSettings
 
 from connect_labs.ai.types import UserDependencies
+from connect_labs.solicitations.answers import answer_text
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,7 @@ def _fetch_solicitation_data(deps, solicitation_id: int) -> str:
             if answers:
                 result += "**Answers:**\n"
                 for key, val in answers.items():
-                    result += f"  - {key}: {val}\n"
+                    result += f"  - {key}: {answer_text(val)}\n"
             result += "\n"
 
         return result

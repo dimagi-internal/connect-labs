@@ -187,16 +187,10 @@ refuses to open. <details> needs no JavaScript at all.
                       Open the original response (row {{ r.source_row }})
                     </a>
                   {% endif %}
-                  <dl class="space-y-2">
-                    {% for question, answer in r.answer_pairs %}
-                      <div class="grid grid-cols-1 sm:grid-cols-3 gap-1">
-                        <dt class="text-xs text-gray-500 sm:col-span-1">{{ question|truncatechars:110 }}</dt>
-                        <dd class="text-sm text-gray-900 sm:col-span-2">{{ answer|linebreaksbr }}</dd>
-                      </div>
-                    {% empty %}
-                      <div class="text-sm text-gray-500">This submission recorded no answers.</div>
-                    {% endfor %}
-                  </dl>
+                  <div class="space-y-3">
+                    {% include "solicitations/_answer_blocks.html" with blocks=r.answer_blocks %}
+                    {% if not r.answer_blocks %}<div class="text-sm text-gray-500">This submission recorded no answers.</div>{% endif %}
+                  </div>
                 </div>
               </details>
             {% endfor %}

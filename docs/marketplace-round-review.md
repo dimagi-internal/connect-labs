@@ -100,7 +100,12 @@ Code: `marketplace/directory.py` (parsing), `marketplace/eoi.py`
   No form is shared with labs: the Forms API would need edit rights, which a
   read does not justify. A form whose page can't be read (closed, sign-in only,
   or a layout change) is named in the import output, and its questions stay
-  text boxes.
+  text boxes. Answers are then stored in their question's terms
+  (`solicitations/answers.py`): a checkboxes answer is its list of choices,
+  split by matching the options because the sheet joins them with ", ". Every
+  page that shows an answer (the response, the review form, an organisation's
+  history) reads it through `answer_blocks`: choices with the picked ones
+  ticked, a grid as one table, under the form's section headings.
 - Each round's response sheet is a separate file and must be shared explicitly
   with `connect-labs-sa@connect-labs.iam.gserviceaccount.com` (`eoi._SA_EMAIL`).
   Viewer access is enough. An unreadable sheet is recorded as `denied` (or `missing`

@@ -518,7 +518,7 @@ def test_org_page_links_only_a_web_address(client, world, website, linked):
 
 
 def test_a_checkboxes_answer_reads_as_text():
-    from connect_labs.solicitations.views import answer_text
+    from connect_labs.solicitations.answers import answer_text
 
     assert answer_text(["Cash", "Mobile money"]) == "Cash; Mobile money"
     assert answer_text("Cash") == "Cash" and answer_text(None) == ""
