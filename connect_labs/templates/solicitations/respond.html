@@ -240,7 +240,7 @@
             <div class="bg-white rounded-xl shadow-sm p-5 sm:p-6 mb-8">
                 <p class="text-sm text-gray-600 mb-4">
                     <i class="fa-solid fa-circle-info mr-1 text-gray-400"></i>
-                    <strong>What happens next:</strong> once you submit, your response goes to {{ solicitation.owner_name|default:"the organisation that posted this call" }}, who review every response{% if solicitation.application_deadline %} after the deadline{% endif %} and contact you about the outcome. You can't edit it after submitting. Save a draft to finish later.
+                    <strong>What happens next:</strong> once you submit, your response goes to {{ solicitation.owner_name|default:"the organisation that posted this call" }}, who review every response{% if solicitation.application_deadline %} after the deadline{% endif %} and contact you about the outcome. Until the call closes, you or anyone in your organisation can update it from <a href="{% url 'solicitations:applications' %}" class="text-brand-cornflower-blue hover:underline">Your applications</a>. Save a draft to finish later.
                 </p>
                 <div class="flex flex-wrap justify-end gap-3">
                     <a href="{% url 'solicitations:public_detail' pk=solicitation.public_id %}"

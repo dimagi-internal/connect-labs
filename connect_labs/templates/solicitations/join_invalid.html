@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}Invitation not valid · Solicitations{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto px-4 py-12">
+    <div class="bg-white rounded-xl shadow-sm p-8">
+        <h1 class="text-xl font-semibold text-brand-deep-purple mb-2">This invitation can't be used</h1>
+        <p class="text-sm text-gray-700">It may have been used already, or it has expired. Ask whoever sent it for a new link.</p>
+        {% if user.is_authenticated %}
+        <p class="text-sm mt-4"><a href="{% url 'solicitations:applications' %}" class="text-brand-cornflower-blue hover:underline">Your applications</a></p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

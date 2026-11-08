@@ -12,7 +12,11 @@ call is one of:
 
 On a response there is one more: the **respondent**, the user who submitted it.
 They read their own response and edit it until it is submitted; they never
-review or award it, whatever else they are.
+review or award it, whatever else they are. The response's **applicant** side
+is the respondent plus every member of the organisation it is from
+(`is_applicant`): they all read it once it is submitted, and while its call is
+open they may amend it (`can_amend_response`) -- on a directory round only where
+they would work, since its answers are the Google Form's.
 
 Nobody reviews or awards a response from their own side, with one narrow
 exception: a **demonstration** (`can_demonstrate`) -- an explicitly requested
@@ -204,8 +208,20 @@ def can_read(subject, solicitation) -> bool:
     return can_manage(subject, solicitation) or has_responded(subject, solicitation)
 
 
+def is_applicant(subject, response) -> bool:
+    """The respondent, or a member (by grant) of the organisation the response is from."""
+    caller = caller_for(subject)
+    if is_respondent(caller, response):
+        return True
+    return bool(response.llo_entity_id) and caller.is_member(response.llo_entity)
+
+
 def can_read_response(subject, response) -> bool:
     if is_respondent(subject, response):
+        return True
+    # The organisation that applied reads what it submitted -- never a
+    # colleague's unsent draft, never someone's invented demonstration answer.
+    if response.status != "draft" and not response.synthetic and is_applicant(subject, response):
         return True
     if is_directory_round(response.solicitation):
         return can_read_round_responses(subject, response.solicitation)
@@ -216,6 +232,24 @@ def can_read_response(subject, response) -> bool:
 def can_edit_response(subject, response) -> bool:
     """The respondent, until they submit it."""
     return is_respondent(subject, response) and response.status == "draft"
+
+
+# A response its call's owner has decided on is no longer the applicant's to change.
+_DECIDED_STATUSES = ("awarded", "rejected")
+
+
+def can_amend_response(subject, response) -> bool:
+    """Change a submitted response while its call is still open: the applicant side.
+
+    Never a draft (the respondent finishes that on the respond page), never one
+    the owner has decided on, never an invented one, never once the call has
+    closed. What may change is `SolicitationsDataAccess.amend_response`'s to say.
+    """
+    if response.status == "draft" or response.status in _DECIDED_STATUSES:
+        return False
+    if response.synthetic or not response.solicitation.can_accept_responses:
+        return False
+    return is_applicant(subject, response)
 
 
 def _is_own_side(subject, response) -> bool:

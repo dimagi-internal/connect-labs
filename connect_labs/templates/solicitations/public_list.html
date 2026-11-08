@@ -17,10 +17,17 @@
                     Expressions of Interest and Requests for Proposal from organisations looking for partners. Anyone can read them; sign in to respond.
                 </p>
             </div>
-            {% if can_manage_any %}
-            <a href="{% url 'solicitations:manage_list' %}" class="button button-sm outline-style self-start sm:self-auto whitespace-nowrap">
-                <i class="fa-solid fa-briefcase mr-1"></i> Manage your calls
-            </a>
+            {% if user.is_authenticated %}
+            <div class="flex flex-wrap gap-2 self-start sm:self-auto">
+                <a href="{% url 'solicitations:applications' %}" class="button button-sm outline-style whitespace-nowrap">
+                    <i class="fa-solid fa-folder-open mr-1"></i> Your applications
+                </a>
+                {% if can_manage_any %}
+                <a href="{% url 'solicitations:manage_list' %}" class="button button-sm outline-style whitespace-nowrap">
+                    <i class="fa-solid fa-briefcase mr-1"></i> Manage your calls
+                </a>
+                {% endif %}
+            </div>
             {% endif %}
         </div>
     </div>

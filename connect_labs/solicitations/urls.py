@@ -20,6 +20,12 @@ urlpatterns = [
     # Responding (login).
     path("<int:pk>/respond/", views.RespondView.as_view(), name="respond"),
     path("response/<int:pk>/", views.ResponseDetailView.as_view(), name="response_detail"),
+    # Your organisations' applications, and changing one while its call is open (login).
+    path("applications/", views.ApplicationsView.as_view(), name="applications"),
+    path("response/<int:pk>/update/", views.AmendResponseView.as_view(), name="response_update"),
+    # An invitation to act for an organisation: the link (token), then a token-free page to accept.
+    path("join/", views.JoinView.as_view(), name="join"),
+    path("join/<str:token>/", views.JoinLinkView.as_view(), name="join_link"),
     # Award and blind review (owner or staff, never on your own side).
     path("response/<int:pk>/award/", views.AwardView.as_view(), name="award"),
     path("response/<int:pk>/review/", views.ReviewView.as_view(), name="review"),

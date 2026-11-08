@@ -283,6 +283,26 @@ def _compact_round_widgets(form, questions) -> None:
             field.widget = django_forms.TextInput(attrs={"class": "base-input"})
 
 
+def _question_fields(solicitation, form, questions) -> list[dict]:
+    """Each question beside its form field and the criteria it is scored on."""
+    criteria_by_question = {}
+    for criterion in solicitation.evaluation_criteria or []:
+        for q_id in criterion.get("linked_questions", []):
+            criteria_by_question.setdefault(q_id, []).append(criterion)
+    rows = []
+    for question in questions or []:
+        field_name = f"question_{question.get('id', '')}"
+        rows.append(
+            {
+                "question": question,
+                "field": form[field_name] if field_name in form.fields else None,
+                "field_name": field_name,
+                "criteria": criteria_by_question.get(question.get("id", ""), []),
+            }
+        )
+    return rows
+
+
 def _posted_areas(raw) -> list[dict]:
     """Areas a form posted, resolved again so a re-rendered map can draw them ([] if they no longer resolve)."""
     try:
@@ -1103,11 +1123,6 @@ class RespondView(SignedInPage):
         )
 
     def _context(self, solicitation, my_response, form, **extra):
-        criteria_by_question = {}
-        for criterion in solicitation.evaluation_criteria or []:
-            for q_id in criterion.get("linked_questions", []):
-                criteria_by_question.setdefault(q_id, []).append(criterion)
-        question_fields = []
         is_round = _is_round(solicitation)
         round_forms, form_key = self._round_forms(solicitation) if is_round else ([], None)
         questions = past_calls.form_questions(solicitation, form_key=form_key) if is_round else solicitation.questions
@@ -1118,16 +1133,7 @@ class RespondView(SignedInPage):
                 # The round's map stays live: picking on it is the preview.
                 if not (is_round and name == "service_areas"):
                     field.widget.attrs["disabled"] = True
-        for question in questions or []:
-            field_name = f"question_{question.get('id', '')}"
-            question_fields.append(
-                {
-                    "question": question,
-                    "field": form[field_name] if field_name in form.fields else None,
-                    "field_name": field_name,
-                    "criteria": criteria_by_question.get(question.get("id", ""), []),
-                }
-            )
+        question_fields = _question_fields(solicitation, form, questions)
         ctx = self.get_context_data(
             solicitation=solicitation,
             my_response=my_response,
@@ -1286,7 +1292,10 @@ class ResponseDetailView(SignedInPage):
                 }
                 for c_id, c_score in (rev.criteria_scores or {}).items()
             ]
-        is_round = access.is_directory_round(solicitation)
+        # A round's response is read as a reviewer reads it only by those who
+        # review the round; the organisation that applied reads its own as any
+        # response, without the round's ordering of every applicant.
+        is_round = access.is_directory_round(solicitation) and access.can_read_round_responses(da.caller, solicitation)
         self._is_round = is_round
         my_review = next((r for r in reviews if r.kind != REVIEW_AI and r.reviewer_id == da.caller.user_pk), None)
         if is_round:
@@ -1314,7 +1323,10 @@ class ResponseDetailView(SignedInPage):
                 "ai_reviews": [r for r in reviews if r.kind == REVIEW_AI],
                 "is_owner": da.can_manage(solicitation)
                 or (is_round and access.can_read_reviews(da.caller, solicitation)),
-                "is_respondent": access.is_respondent(da.caller, response),
+                "is_respondent": access.is_applicant(da.caller, response),
+                "can_amend": access.can_amend_response(da.caller, response),
+                "from_round": access.is_directory_round(solicitation),
+                "area_names": service_areas.describe(response.service_areas or []),
                 "can_review": access.can_review(da.caller, response),
                 "can_edit": access.can_edit_response(da.caller, response) and bool(solicitation.can_accept_responses),
                 "areas_map": (
@@ -1334,6 +1346,128 @@ class ResponseDetailView(SignedInPage):
             }
         )
         return ctx
+
+
+class ApplicationsView(SignedInPage):
+    """Your organisations' applications: to calls made here and to directory rounds, open then closed."""
+
+    template_name = "solicitations/applications.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        da = self.da()
+        rows = []
+        for response in da.get_my_applications():
+            solicitation = response.solicitation
+            rows.append(
+                {
+                    "response": response,
+                    "solicitation": solicitation,
+                    "is_round": access.is_directory_round(solicitation),
+                    "is_open": bool(solicitation.can_accept_responses),
+                    "can_amend": access.can_amend_response(da.caller, response),
+                    "area_names": service_areas.describe(response.service_areas or []),
+                }
+            )
+        ctx.update(
+            {
+                "open_rows": [r for r in rows if r["is_open"]],
+                "closed_rows": [r for r in rows if not r["is_open"]],
+                "orgs": access.member_orgs(da.caller),
+                "updated_pk": self.request.GET.get("updated", ""),
+            }
+        )
+        return ctx
+
+
+class AmendResponseView(SignedInPage):
+    """Change a submitted response while its call is open: anyone on the applicant's side.
+
+    On a directory round only where the organisation would work: the round's
+    answers are its Google Form's, shown here read-only. On a call, the answers
+    and the areas.
+    """
+
+    template_name = "solicitations/response_update.html"
+
+    def _load(self, pk):
+        da = self.da()
+        response = _response_or_404(da, pk)
+        if not access.can_amend_response(da.caller, response):
+            if access.is_applicant(da.caller, response) and not response.solicitation.can_accept_responses:
+                raise PermissionDenied("This call has closed, so its responses can no longer be changed.")
+            raise PermissionDenied("This response can't be changed here.")
+        return response
+
+    def _form(self, response, data=None):
+        solicitation = response.solicitation
+        is_round = access.is_directory_round(solicitation)
+        initial = {}
+        if not is_round:
+            initial = {f"question_{k}": v for k, v in (response.responses or {}).items()}
+        if response.service_areas:
+            initial["service_areas"] = json.dumps(service_areas.without_geometry(response.service_areas))
+        return SolicitationResponseForm(
+            questions=[] if is_round else solicitation.questions,
+            pick_areas=service_areas.area_mode(solicitation) != service_areas.AREA_MODE_PLANS,
+            data=data,
+            initial=initial,
+        )
+
+    def _render(self, response, form, status=200):
+        solicitation = response.solicitation
+        is_round = access.is_directory_round(solicitation)
+        question_fields = [] if is_round else _question_fields(solicitation, form, solicitation.questions)
+        picker = None
+        if "service_areas" in form.fields:
+            initial = _posted_areas(form.data.get("service_areas")) if form.is_bound else response.service_areas
+            picker = _area_picker(
+                self.request,
+                "update",
+                initial=initial or [],
+                limits=solicitation.service_area_limits,
+                input_id="id_service_areas",
+                empty_text="No areas picked yet.",
+            )
+        ctx = self.get_context_data(
+            response=response,
+            solicitation=solicitation,
+            is_round=is_round,
+            form=form,
+            question_fields=question_fields,
+            question_blocks=question_blocks(question_fields),
+            area_picker=picker,
+            qa_blocks=(
+                answer_blocks(past_calls.form_questions(solicitation, response), response.responses or {})
+                if is_round
+                else []
+            ),
+        )
+        rendered = self.render_to_response(ctx)
+        rendered.status_code = status
+        return rendered
+
+    def get(self, request, *args, **kwargs):
+        response = self._load(kwargs["pk"])
+        return self._render(response, self._form(response))
+
+    def post(self, request, *args, **kwargs):
+        response = self._load(kwargs["pk"])
+        form = self._form(response, data=request.POST)
+        if form.is_valid():
+            data = {}
+            if not access.is_directory_round(response.solicitation):
+                data["responses"] = form.get_responses_dict()
+            if "service_areas" in form.fields:
+                data["service_areas"] = form.cleaned_data.get("service_areas") or []
+            try:
+                self.da().amend_response(response.pk, data)
+            except ValidationError as e:
+                _attach_errors(form, e)
+            else:
+                messages.success(request, f"Saved your changes to {response.solicitation.title}.")
+                return redirect(f"{reverse('solicitations:applications')}?updated={response.pk}")
+        return self._render(response, form, status=400)
 
 
 # -- Award and review (owner or platform support, never your own side) ------------------
@@ -1577,3 +1711,86 @@ class ReviewView(SignedInPage):
             return redirect("solicitations:responses_list", pk=response.solicitation.public_id)
         ctx = self.get_context_data(form=form, **kwargs)
         return self.render_to_response(ctx)
+
+
+# -- Joining an organisation from an invitation, to update its applications --------
+
+
+JOIN_SESSION_KEY = "solicitations_invite_token"
+
+
+def _no_store(response):
+    response["Cache-Control"] = "no-store"
+    response["Referrer-Policy"] = "same-origin"
+    return response
+
+
+def _invalid_invite(request):
+    from django.template.response import TemplateResponse
+
+    response = TemplateResponse(request, "solicitations/join_invalid.html", {}, status=404)
+    return _no_store(response.render())
+
+
+class JoinLinkView(SolicitationsPage):
+    """The link an applicant was sent. Moves the token into the session and on.
+
+    The token never travels further than this request -- not into the sign-in
+    page's `next=`, a Location header or the next page's URL -- and the audit
+    record of this request names the path with the token redacted.
+    """
+
+    def get(self, request, token):
+        from connect_labs.audit_trail.context import get_audit_context
+        from connect_labs.marketplace import membership
+
+        audit = get_audit_context()
+        if audit is not None:
+            audit.path = reverse("solicitations:join_link", kwargs={"token": "redacted"})
+        if membership.find_invite(token) is None:
+            return _invalid_invite(request)
+        request.session[JOIN_SESSION_KEY] = token
+        return _no_store(redirect(reverse("solicitations:join")))
+
+
+class JoinView(SolicitationsPage):
+    """Accept an invitation to act for an organisation, then go to its applications."""
+
+    template_name = "solicitations/join.html"
+
+    def _invite(self, request):
+        from connect_labs.marketplace import membership
+
+        return membership.find_invite(request.session.get(JOIN_SESSION_KEY))
+
+    def get(self, request, *args, **kwargs):
+        invite = self._invite(request)
+        if invite is None:
+            return _invalid_invite(request)
+        open_count = (
+            SolicitationResponse.objects.filter(llo_entity=invite.org, synthetic=False)
+            .exclude(status="draft")
+            .select_related("solicitation")
+        )
+        ctx = self.get_context_data(
+            invite=invite,
+            open_count=sum(1 for r in open_count if r.solicitation.can_accept_responses),
+            login_url=f"{LabsLoginRequiredMixin.login_url}?next={reverse('solicitations:join')}",
+        )
+        return _no_store(self.render_to_response(ctx))
+
+    def post(self, request, *args, **kwargs):
+        from connect_labs.marketplace import membership
+
+        if not request.user.is_authenticated:
+            return redirect(f"{LabsLoginRequiredMixin.login_url}?next={reverse('solicitations:join')}")
+        invite = self._invite(request)
+        if invite is None:
+            return _invalid_invite(request)
+        try:
+            membership.accept_invite(invite, request.user)
+        except ValueError:
+            return _invalid_invite(request)
+        request.session.pop(JOIN_SESSION_KEY, None)
+        messages.success(request, f"You now act for {invite.org.name}.")
+        return redirect("solicitations:applications")
