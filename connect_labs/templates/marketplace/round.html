@@ -204,6 +204,11 @@
           <a href="{% url 'solicitations:respond' round.public_id %}" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
             <i class="fa-regular fa-rectangle-list text-[11px]"></i> The form
           </a>
+          {% if can_read and round.can_accept_responses %}
+            <a href="{% url 'solicitations:contact_applicants' round.public_id %}" data-testid="contact-applicants-link" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
+              <i class="fa-regular fa-envelope text-[11px]"></i> Write to applicants
+            </a>
+          {% endif %}
           {% if public_call_url %}
             <a href="{{ public_call_url }}" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
               <i class="fa-solid fa-bullhorn text-[11px]"></i> Public call page

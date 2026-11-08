@@ -1794,3 +1794,112 @@ class JoinView(SolicitationsPage):
         request.session.pop(JOIN_SESSION_KEY, None)
         messages.success(request, f"You now act for {invite.org.name}.")
         return redirect("solicitations:applications")
+
+
+# -- Writing to a call's applicants ------------------------------------------------
+
+
+class ContactApplicantsView(SignedInPage):
+    """Write to chosen applicant organisations, each person with their own invitation link.
+
+    Preview shows the first chosen person's copy as it will arrive; Send writes
+    to everyone named at each chosen organisation (`applicant_contact.send`).
+    """
+
+    template_name = "solicitations/contact_applicants.html"
+
+    def _load(self, pk):
+        from connect_labs.solicitations import applicant_contact
+
+        solicitation = by_public_id(Solicitation.objects.select_related("owner_org"), pk)
+        if solicitation is None or not applicant_contact.can_contact(self.da().caller, solicitation):
+            raise Http404("Not found")
+        return solicitation
+
+    def _render(self, solicitation, *, values, chosen, errors=None, preview=None, status=200):
+        from connect_labs.solicitations import applicant_contact
+
+        orgs, unmatched = applicant_contact.applicants(solicitation)
+        ctx = self.get_context_data(
+            solicitation=solicitation,
+            back_url=reverse("marketplace:round", args=[solicitation.slug]),
+            applicants=orgs,
+            unmatched=unmatched,
+            chosen={str(i) for i in chosen},
+            values=values,
+            errors=errors or {},
+            preview=preview,
+            is_open=bool(solicitation.can_accept_responses),
+            email_enabled=_email_enabled(),
+            placeholders=applicant_contact.PLACEHOLDERS,
+            history=solicitation.applicant_messages.select_related("org", "sent_by")[:200],
+        )
+        rendered = self.render_to_response(ctx)
+        rendered.status_code = status
+        return rendered
+
+    def get(self, request, *args, **kwargs):
+        from connect_labs.solicitations import applicant_contact
+
+        solicitation = self._load(kwargs["pk"])
+        values = {
+            "subject": applicant_contact.DEFAULT_SUBJECT,
+            "message": applicant_contact.DEFAULT_MESSAGE,
+            "reply_to": request.user.email or "",
+        }
+        return self._render(solicitation, values=values, chosen=[])
+
+    def post(self, request, *args, **kwargs):
+        from connect_labs.solicitations import applicant_contact
+
+        solicitation = self._load(kwargs["pk"])
+        values = {k: request.POST.get(k, "") for k in ("subject", "message", "reply_to")}
+        chosen = [i for i in request.POST.getlist("org") if i.isdigit()]
+        errors = applicant_contact.check(**values)
+        if not chosen:
+            errors["org"] = "Choose at least one organisation to write to."
+        if errors:
+            return self._render(solicitation, values=values, chosen=chosen, errors=errors, status=400)
+
+        if "send" not in request.POST:
+            orgs, _ = applicant_contact.applicants(solicitation)
+            first = next((a for a in orgs if str(a.org.pk) in chosen and a.contactable), None)
+            preview = None
+            if first is not None:
+                fill = {"person": first.people[0], "org_name": first.org.name, "solicitation": solicitation}
+                preview = {
+                    "to": first.people[0].email,
+                    "org": first.org.name,
+                    "subject": applicant_contact.render(values["subject"], link="", **fill),
+                    "body": applicant_contact.render(
+                        applicant_contact.with_link(values["message"]),
+                        link=applicant_contact.LINK_SHOWN_IN_RECORD,
+                        **fill,
+                    ),
+                    "people": sum(len(a.people) for a in orgs if str(a.org.pk) in chosen and a.contactable),
+                }
+            return self._render(solicitation, values=values, chosen=chosen, preview=preview)
+
+        try:
+            result = applicant_contact.send(
+                request.user,
+                solicitation,
+                org_ids=chosen,
+                link_for=lambda raw: request.build_absolute_uri(reverse("solicitations:join_link", args=[raw])),
+                **values,
+            )
+        except ValidationError as e:
+            errs = e.message_dict if hasattr(e, "message_dict") else {"__all__": e.messages}
+            return self._render(
+                solicitation,
+                values=values,
+                chosen=chosen,
+                errors={("general" if k == "__all__" else k): " ".join(v) for k, v in errs.items()},
+                status=400,
+            )
+        messages.success(
+            request,
+            f"Sent {result['queued']} email{'s' if result['queued'] != 1 else ''} "
+            f"to {result['orgs']} organisation{'s' if result['orgs'] != 1 else ''}.",
+        )
+        return redirect("solicitations:contact_applicants", pk=solicitation.public_id)
