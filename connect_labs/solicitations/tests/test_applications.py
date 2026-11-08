@@ -264,12 +264,26 @@ def mail(settings, monkeypatch):
     queued = []
 
     def fake_send(
-        subject, message, recipient_list, html_message=None, from_email=None, *, reply_to=None, cc=None, countdown=None
+        subject,
+        message,
+        recipient_list,
+        html_message=None,
+        from_email=None,
+        *,
+        reply_to=None,
+        cc=None,
+        countdown=None,
+        sent_message_id=None,
     ):
         queued.append({"subject": subject, "body": message, "to": recipient_list, "reply_to": reply_to})
+        if sent_message_id:  # what the mail task does once the mail service takes it
+            from connect_labs.communications.service import delivered
+
+            delivered(sent_message_id)
         return object()
 
     monkeypatch.setattr("connect_labs.utils.email.send_labs_email", fake_send)
+    monkeypatch.setattr("django.db.transaction.on_commit", lambda fn, using=None, robust=False: fn())
     return queued
 
 
@@ -381,6 +395,29 @@ def test_a_closed_round_cannot_be_written_to(client, world, mail):
     )
     assert response.status_code == 400 and "closed" in response.content.decode()
     assert mail == []
+
+
+def test_an_invitation_goes_only_to_an_address_an_applicant_gave(client, world, mail):
+    from django.core.exceptions import ValidationError as DjangoValidationError
+
+    from connect_labs.communications import service as comms
+
+    draft = start_draft(client, world, world["reviewer"])
+    recipient = draft.recipients.get()
+    with pytest.raises(DjangoValidationError):
+        comms.update_draft(
+            world["reviewer"], draft.pk, {"recipients": [{"email": "me@elsewhere.example", "org": "firm-org"}]}
+        )
+    with pytest.raises(DjangoValidationError):
+        comms.update_draft(world["reviewer"], draft.pk, {"emails": {recipient.pk: "me@elsewhere.example"}})
+    # Even a recipient changed underneath (a stale or forged row) is checked again at send.
+    recipient.email = "me@elsewhere.example"
+    recipient.save()
+    response = client.post(
+        reverse("communications:detail", args=[draft.pk]), {"action": "send", "include": [recipient.pk]}
+    )
+    assert response.status_code == 400 and "be invited from here" in response.content.decode()
+    assert mail == [] and not OrgInvite.objects.exists()
 
 
 def test_a_call_made_in_labs_is_not_offered_it_since_it_is_scored_blind(world):

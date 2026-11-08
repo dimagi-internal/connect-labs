@@ -37,7 +37,7 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1" for="reply_to">Replies go to</label>
                         <input id="reply_to" name="reply_to" type="email" value="{{ communication.reply_to }}" class="base-input w-full">
-                        {% if errors.reply_to or problems.reply_to %}<p class="mt-1 text-sm text-red-600">{{ errors.reply_to|default:problems.reply_to }}</p>{% endif %}
+                        {% if errors.reply_to %}<p class="mt-1 text-sm text-red-600">{{ errors.reply_to }}</p>{% endif %}
                     </div>
                     {% if not per_recipient %}
                     <div>
@@ -65,7 +65,7 @@
                             <input type="checkbox" @change="$root.querySelectorAll('input[name=include]:not(:disabled)').forEach(c => c.checked = $event.target.checked)"> Select all
                         </label>
                     </div>
-                    {% if errors.recipients or problems.recipients %}<p class="px-5 pt-3 text-sm text-red-600">{{ errors.recipients|default:problems.recipients }}</p>{% endif %}
+                    {% if errors.recipients %}<p class="px-5 pt-3 text-sm text-red-600">{{ errors.recipients }}</p>{% endif %}
                     <div class="overflow-x-auto">
                     <table class="min-w-full text-sm" data-testid="recipients">
                         <tbody class="divide-y divide-gray-100">
@@ -81,7 +81,7 @@
                                     {% if r.ref.has_areas %}<div class="text-[11px] text-green-700">Has picked areas</div>{% endif %}
                                 </td>
                                 <td class="px-2 py-2 align-top text-xs">
-                                    <input name="email_{{ r.pk }}" value="{{ r.email }}" placeholder="email address" class="base-input w-56 text-xs">
+                                    {% if emails_editable %}<input name="email_{{ r.pk }}" value="{{ r.email }}" placeholder="email address" class="base-input w-56 text-xs">{% else %}<span class="break-all">{{ r.email|default:"no address" }}</span>{% endif %}
                                     {% if r.cc %}<div class="text-gray-500 mt-1">cc {{ r.cc|join:", " }}</div>{% endif %}
                                 </td>
                                 <td class="px-4 py-2 align-top text-xs"><a href="?preview={{ r.pk }}#preview" class="text-brand-cornflower-blue hover:underline">Preview</a></td>

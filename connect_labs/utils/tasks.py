@@ -22,7 +22,15 @@ RETRY_BACKOFF_SECONDS = 10
 
 @celery_app.task(bind=True, max_retries=MAX_RETRIES)
 def send_mail_async(
-    self, subject, message, recipient_list, from_email=None, html_message=None, reply_to=None, cc=None
+    self,
+    subject,
+    message,
+    recipient_list,
+    from_email=None,
+    html_message=None,
+    reply_to=None,
+    cc=None,
+    sent_message_id=None,
 ):
     """
     Deliver one email.
@@ -67,6 +75,8 @@ def send_mail_async(
             subject,
             recipient_list,
         )
+        if sent_message_id and self.request.retries >= MAX_RETRIES:
+            _report(sent_message_id, delivered=False, failed=True)
         raise self.retry(exc=exc, countdown=RETRY_BACKOFF_SECONDS * (2**self.request.retries))
 
     if not sent:
@@ -79,4 +89,19 @@ def send_mail_async(
             recipient_list,
             settings.EMAIL_BACKEND,
         )
+    if sent_message_id:
+        _report(sent_message_id, delivered=bool(sent), failed=False)
     return sent
+
+
+def _report(sent_message_id, *, delivered: bool, failed: bool) -> None:
+    """Tell communications what became of a message it recorded (never fails the send)."""
+    try:
+        from connect_labs.communications import service
+
+        if delivered:
+            service.delivered(sent_message_id)
+        else:
+            service.not_delivered(sent_message_id, failed=failed)
+    except Exception:  # noqa: BLE001 -- the email's fate is decided; a record that lags is logged
+        logger.exception("Could not record delivery of communications message %s", sent_message_id)

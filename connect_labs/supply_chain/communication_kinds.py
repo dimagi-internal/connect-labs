@@ -74,6 +74,9 @@ class TenderEmailsKind(kinds.Kind):
     label = "Emails a tender owes"
     about_model = "supply_chain.tender"
     placeholders = ()
+    # Each recipient is the email labs drafted for one supplier or partner, and
+    # what sending marks sent: choose among them, and supply an address on file.
+    recipients_editable = False
     description = (
         "Every email a tender owes now, drafted by labs (quote requests, reminders, follow-ups, replies to a "
         "supplier's questions, clarifications), one recipient each with its own subject and text. `about_id` "
@@ -176,6 +179,9 @@ class AwardEmailsKind(kinds.Kind):
     label = "Emails an award owes"
     about_model = "supply_chain.award"
     placeholders = ()
+    # Each recipient is the email labs drafted for one supplier or partner, and
+    # what sending marks sent: choose among them, and supply an address on file.
+    recipients_editable = False
     description = (
         "The emails to send once a tender is awarded: `selection` to the winning supplier and, on a tender "
         "split by partner, a `handover` to each partner. `about_id` is the award's id. Only the programme "

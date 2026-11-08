@@ -50,6 +50,8 @@ def _errors(fn):
             raise MCPToolError("NOT_FOUND", f"No message or record {e} that you may write about.") from e
         except PermissionDenied as e:
             raise MCPToolError("PERMISSION_DENIED", str(e)) from e
+        except (TypeError, ValueError) as e:
+            raise MCPToolError("BAD_REQUEST", str(e)) from e
         except ValidationError as e:
             detail = e.message_dict if hasattr(e, "message_dict") else {"error": e.messages}
             raise MCPToolError("BAD_REQUEST", "; ".join(f"{k}: {' '.join(v)}" for k, v in detail.items())) from e
@@ -69,7 +71,11 @@ def _summary(communication, *, full: bool = False, user=None) -> dict[str, Any]:
         "kind": communication.kind,
         "status": communication.status,
         "title": communication.title,
-        "about": {"label": kind.about_label(about), "id": communication.about_id} if about is not None else None,
+        "about": (
+            {"label": kind.about_label(about), "id": communication.about_id}
+            if about is not None
+            else ({"ref": communication.about_id} if communication.about_id else None)
+        ),
         "reply_to": communication.reply_to,
         "prepared_via": communication.prepared_via,
         "sent_at": communication.sent_at.isoformat() if communication.sent_at else None,
@@ -202,8 +208,10 @@ def communications_draft_create(
     name="communications_draft_update",
     description=(
         "Change a draft before a person sends it: `title`, `subject`, `body`, `reply_to`, `recipients` (the "
-        "whole list; name an existing recipient's `id` to keep it), or `included` (the recipient ids to send "
-        "to). Only a draft can change. Does not send."
+        "whole list; name an existing recipient's `id` to keep it), `included` (the recipient ids to send "
+        "to), or `emails` (a recipient's address). A kind that fixes its recipients (a round's applicants, a "
+        "tender's suppliers) takes only `included` -- and, for a tender, an address. Only a draft can change. "
+        "Does not send."
     ),
     input_schema={
         "type": "object",
@@ -215,6 +223,11 @@ def communications_draft_create(
             "reply_to": {"type": "string"},
             "recipients": {"type": "array", "items": _RECIPIENT},
             "included": {"type": "array", "items": {"type": "integer"}},
+            "emails": {
+                "type": "object",
+                "additionalProperties": {"type": "string"},
+                "description": "Recipient id -> corrected address, where the kind allows it.",
+            },
         },
         "required": ["id"],
         "additionalProperties": False,
@@ -272,7 +285,8 @@ def communications_get(user, id) -> dict[str, Any]:  # noqa: A002
     name="communications_list",
     description=(
         "Messages you may prepare: drafts waiting for a person to send, and those sent. Narrow by `kind` and "
-        "`about_id` (one round, tender or award) or `status` (draft, sent, discarded)."
+        "`about_id` (one round, tender or award), `about_ref` (a general message's reference), or `status` "
+        "(draft, sent, discarded)."
     ),
     input_schema={
         "type": "object",
@@ -280,12 +294,16 @@ def communications_get(user, id) -> dict[str, Any]:  # noqa: A002
             "kind": {"type": "string"},
             "about_id": {"type": ["integer", "string"]},
             "status": {"type": "string", "enum": ["draft", "sent", "discarded"]},
+            "about_ref": {
+                "type": "string",
+                "description": "A general message's reference, as written when drafted (e.g. workflow.run:812).",
+            },
         },
         "additionalProperties": False,
     },
 )
 @_errors
-def communications_list(user, kind=None, about_id=None, status=None) -> dict[str, Any]:
+def communications_list(user, kind=None, about_id=None, status=None, about_ref=None) -> dict[str, Any]:
     from django.contrib.contenttypes.models import ContentType
 
     from connect_labs.communications import kinds, service
@@ -300,6 +318,14 @@ def communications_list(user, kind=None, about_id=None, status=None) -> dict[str
             if about is None:
                 return {"communications": []}
             qs = qs.filter(about_type=ContentType.objects.get_for_model(about), about_id=str(about.pk))
+    if about_ref:
+        from connect_labs.solicitations.access import caller_for
+
+        linked = kinds.get("general").resolve_about(about_ref, caller_for(user))
+        if linked.record is not None:
+            qs = qs.filter(about_type=ContentType.objects.get_for_model(linked.record), about_id=str(linked.record.pk))
+        else:
+            qs = qs.filter(about_type__isnull=True, about_id=linked.ref)
     if status:
         qs = qs.filter(status=status)
     return {"communications": [_summary(c) for c in service.visible(user, qs, limit=100)]}

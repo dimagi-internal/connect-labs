@@ -125,7 +125,16 @@ class NotConfiguredEmailBackend(BaseEmailBackend):
 
 
 def send_labs_email(
-    subject, message, recipient_list, html_message=None, from_email=None, *, reply_to=None, cc=None, countdown=None
+    subject,
+    message,
+    recipient_list,
+    html_message=None,
+    from_email=None,
+    *,
+    reply_to=None,
+    cc=None,
+    countdown=None,
+    sent_message_id=None,
 ):
     """
     Queue an email for delivery. The one front door for labs features.
@@ -136,9 +145,11 @@ def send_labs_email(
     no recipients to send to.
 
     ``reply_to`` (a list of addresses) sends replies to a person rather than to
-    labs' sender; ``cc`` copies others. ``countdown`` (seconds) holds the send back: a batch spaced a
-    little over a second apart stays under SES's one-message-a-second cap
-    instead of leaning on retries.
+    labs' sender; ``cc`` copies others. ``sent_message_id`` names the
+    communications record the task reports delivery to
+    (``communications.service.delivered``). ``countdown`` (seconds) holds the
+    send back: a batch spaced a little over a second apart stays under SES's
+    one-message-a-second cap instead of leaning on retries.
     """
     recipients = [r for r in (recipient_list or []) if r]
     if not recipients:
@@ -160,6 +171,8 @@ def send_labs_email(
         kwargs["reply_to"] = [r for r in reply_to if r]
     if cc:
         kwargs["cc"] = [c for c in cc if c]
+    if sent_message_id:
+        kwargs["sent_message_id"] = sent_message_id
     if countdown:
         return send_mail_async.apply_async(kwargs=kwargs, countdown=countdown)
     return send_mail_async.delay(**kwargs)

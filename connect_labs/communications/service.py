@@ -20,7 +20,8 @@ from django.utils import timezone
 from connect_labs.communications import kinds as kind_registry
 from connect_labs.communications.kinds import RecipientSpec, render
 from connect_labs.communications.models import (
-    DRAFT,
+    DELIVERED,
+    FAILED,
     NOT_SENT,
     PREPARED_WEB,
     QUEUED,
@@ -69,34 +70,76 @@ def load(subject, pk, *, for_send: bool = False):
 
 
 def visible(subject, queryset=None, limit: int = 200) -> list:
-    """Communications the caller may prepare, newest first."""
+    """Communications the caller may prepare, newest first.
+
+    Filtered row by row in order, until `limit` are found: taking the newest N
+    first and filtering after would hide a person's own drafts once others' outnumber them.
+    """
     caller = caller_for(subject)
     rows = (queryset if queryset is not None else Communication.objects.all()).select_related(
         "owner_org", "about_type", "prepared_by", "sent_by"
-    )[: limit * 2]
+    )
     out = []
-    for communication in rows:
+    for communication in rows.iterator(chunk_size=200):
         try:
             kind = kind_registry.get(communication.kind)
         except ValidationError:
             continue
         if kind.can_prepare(caller, about_of(communication), communication):
             out.append(communication)
+            if len(out) >= limit:
+                break
+    return out
+
+
+def sent_about(subject, about, limit: int = 300) -> list:
+    """What was sent about one record that the caller may read.
+
+    A message sent from a communication is readable by whoever may prepare
+    that communication -- not by whoever may read the record: an organisation's
+    general message about a round is its own business, not the round owner's.
+    Labs' own notices (no communication) go with the record, to those who may
+    write about it.
+    """
+    caller = caller_for(subject)
+    ct = ContentType.objects.get_for_model(about)
+    rows = SentMessage.objects.filter(about_type=ct, about_id=str(about.pk)).select_related(
+        "org", "sent_by", "communication"
+    )[: limit * 2]
+    readable: dict[int, bool] = {}
+    out = []
+    for message in rows:
+        communication = message.communication
+        if communication is not None:
+            if communication.pk not in readable:
+                try:
+                    kind = kind_registry.get(communication.kind)
+                    readable[communication.pk] = kind.can_prepare(caller, about_of(communication), communication)
+                except ValidationError:
+                    readable[communication.pk] = False
+            if not readable[communication.pk]:
+                continue
+        out.append(message)
         if len(out) >= limit:
             break
     return out
 
 
-def for_about(about):
-    """Every communication and sent message about one record."""
-    ct = ContentType.objects.get_for_model(about)
-    return (
-        Communication.objects.filter(about_type=ct, about_id=str(about.pk)),
-        SentMessage.objects.filter(about_type=ct, about_id=str(about.pk)).select_related("org", "sent_by"),
-    )
-
-
 # -- preparing -----------------------------------------------------------------
+
+
+def _clean_cc(raw, i) -> list[str]:
+    out = []
+    for address in raw or []:
+        address = str(address).strip()
+        if not address:
+            continue
+        try:
+            validate_email(address)
+        except ValidationError as e:
+            raise ValidationError({"recipients": f"recipient {i + 1}: cc {address!r} is not an email address"}) from e
+        out.append(address)
+    return out
 
 
 def _clean_recipients(raw) -> list[RecipientSpec]:
@@ -118,7 +161,7 @@ def _clean_recipients(raw) -> list[RecipientSpec]:
                 email=email,
                 name=str(item.get("name") or "").strip()[:200],
                 org=org,
-                cc=[str(c).strip() for c in item.get("cc") or [] if str(c).strip()],
+                cc=_clean_cc(item.get("cc"), i),
                 subject=str(item.get("subject") or "")[:MAX_SUBJECT],
                 body=str(item.get("body") or "")[:MAX_BODY],
                 label=str(item.get("label") or "")[:200],
@@ -172,12 +215,16 @@ def create_draft(
     if not caller.is_authenticated:
         raise PermissionDenied("Sign in to write a message.")
     kind = kind_registry.get(kind_key)
+    opaque_ref = ""
     if kind.about_model:
         about = kind.resolve(about_id)
         if about is None:
             raise NotFound(about_id)
+    elif hasattr(kind, "resolve_about"):
+        linked = kind.resolve_about(about_ref, caller)
+        about, opaque_ref = linked.record, ("" if linked.record is not None else linked.ref)
     else:
-        about = kind.resolve_about(about_ref) if hasattr(kind, "resolve_about") else None
+        about = None
     spec = kind.new_draft(caller, about, dict(params or {}))
     communication = Communication(
         kind=kind.key,
@@ -194,6 +241,9 @@ def create_draft(
     if about is not None:
         communication.about_type = ContentType.objects.get_for_model(about)
         communication.about_id = str(about.pk)
+    elif opaque_ref:
+        # The writer's own reference (a workflow run): kept as text, never looked up.
+        communication.about_id = opaque_ref
     if not kind.can_prepare(caller, about, communication):
         raise PermissionDenied(f"You can't write {kind.label.lower()}s about this.")
     communication.save()
@@ -201,20 +251,41 @@ def create_draft(
     return communication
 
 
+def _locked_draft(caller, pk):
+    """The draft, locked for this transaction: a send and an edit never interleave."""
+    communication, kind, about = load(caller, pk)
+    communication = (
+        Communication.objects.select_for_update(of=("self",)).select_related("owner_org").get(pk=communication.pk)
+    )
+    if not communication.is_draft:
+        raise ValidationError(
+            {"status": f"Only a draft can change; this one is {communication.get_status_display().lower()}."}
+        )
+    return communication, kind, about
+
+
 @transaction.atomic
 def update_draft(subject, pk, data: dict) -> Communication:
-    """Change a draft: its title, subject, body, reply-to, recipients or which are included."""
-    communication, kind, about = load(subject, pk)
-    if not communication.is_draft:
-        raise ValidationError({"status": "Only a draft can be changed; this one is " + communication.status + "."})
-    unknown = set(data) - {"title", "subject", "body", "reply_to", "recipients", "included"}
+    """Change a draft: its title, subject, body, reply-to, recipients, which are included,
+    or a recipient's address (`emails`: {recipient id: address})."""
+    caller = caller_for(subject)
+    communication, kind, about = _locked_draft(caller, pk)
+    unknown = set(data) - {"title", "subject", "body", "reply_to", "recipients", "included", "emails"}
     if unknown:
         raise ValidationError({name: "cannot be changed" for name in sorted(unknown)})
+    changed = []
     for name, limit in (("title", 200), ("subject", MAX_SUBJECT), ("body", MAX_BODY), ("reply_to", 320)):
         if name in data:
-            setattr(communication, name, str(data[name] or "")[:limit].strip() if name != "body" else str(data[name]))
-    communication.save()
+            value = str(data[name] or "")
+            setattr(communication, name, value[:limit] if name == "body" else value[:limit].strip())
+            changed.append(name)
+    # Only what changed: never write back a status read before a send claimed it.
+    communication.save(update_fields=[*changed, "updated_at"])
     if "recipients" in data:
+        if not kind.recipients_editable:
+            raise ValidationError(
+                {"recipients": f"Who a {kind.label.lower()} goes to is set by labs; choose among them."}
+            )
         # A recipient named by its `id` keeps what the kind attached to it (the
         # outreach row a reminder marks sent); a new one carries nothing.
         refs = {r.pk: r.ref for r in communication.recipients.all()}
@@ -227,13 +298,29 @@ def update_draft(subject, pk, data: dict) -> Communication:
         for recipient in communication.recipients.all():
             recipient.included = recipient.pk in chosen
             recipient.save(update_fields=["included"])
+    if "emails" in data:
+        if not kind.emails_editable:
+            raise ValidationError(
+                {"recipients": f"A {kind.label.lower()} goes to the addresses labs holds; they can't be changed here."}
+            )
+        for recipient in communication.recipients.all():
+            address = (data["emails"] or {}).get(recipient.pk, (data["emails"] or {}).get(str(recipient.pk)))
+            if address is None or address.strip() == recipient.email:
+                continue
+            address = address.strip()
+            if address:
+                try:
+                    validate_email(address)
+                except ValidationError as e:
+                    raise ValidationError({"recipients": f"{address!r} is not an email address"}) from e
+            recipient.email = address
+            recipient.save(update_fields=["email"])
     return communication
 
 
+@transaction.atomic
 def discard(subject, pk) -> Communication:
-    communication, kind, about = load(subject, pk)
-    if not communication.is_draft:
-        raise ValidationError({"status": "Only a draft can be discarded."})
+    communication, kind, about = _locked_draft(caller_for(subject), pk)
     communication.status = "discarded"
     communication.save(update_fields=["status", "updated_at"])
     return communication
@@ -246,7 +333,8 @@ def copy_for(communication, kind, about, recipient, *, caller, sending: bool):
     """(subject, body, filled) as this recipient reads it."""
     filled = kind.fill(communication, recipient, about, sending=sending, caller=caller)
     values = filled.values if sending else filled.recorded
-    subject = render(recipient.subject or communication.subject, values).strip()
+    # Placeholders fill in after the template's own cap: a long title must not overflow the record.
+    subject = render(recipient.subject or communication.subject, values).strip()[:MAX_SUBJECT]
     body = render(recipient.body or communication.body, values)
     return subject, body, filled
 
@@ -300,6 +388,12 @@ def send(request, pk) -> dict:
     PAT, an API client) is refused, and no MCP tool calls this. Each recipient
     gets their own copy; what the kind makes on the way (an invitation) is made
     only now, and the record keeps the copy without it.
+
+    The draft row is locked for the rest of the request (labs runs each request
+    in a transaction), so a concurrent send or edit waits and then finds it
+    sent. Emails are queued only once that transaction commits; what sending
+    changes besides the email (`kind.after_sent`) runs when delivery succeeds
+    (`delivered`), never on a mere hand-off.
     """
     from connect_labs.utils.email import email_enabled, send_labs_email
 
@@ -308,74 +402,95 @@ def send(request, pk) -> dict:
     if not getattr(request, "user", None) or not request.user.is_authenticated:
         raise PermissionDenied("Sign in to send.")
     caller = Caller(user=request.user, request=request)
-    communication, kind, about = load(caller, pk, for_send=True)
-    if not communication.is_draft:
-        raise ValidationError({"status": f"This message is {communication.get_status_display().lower()}."})
-    kind.before_send(communication, about, caller)
-    errors = problems(communication, kind)
-    if errors:
-        raise ValidationError(errors)
-    if not email_enabled():
-        raise ValidationError({"__all__": "Outbound email is not set up on this labs, so nothing was sent."})
+    with transaction.atomic():
+        load(caller, pk, for_send=True)  # NotFound unless they may send it
+        communication, kind, about = _locked_draft(caller, pk)
+        kind.before_send(communication, about, caller)
+        errors = problems(communication, kind)
+        if errors:
+            raise ValidationError(errors)
+        if not email_enabled():
+            raise ValidationError({"__all__": "Outbound email is not set up on this labs, so nothing was sent."})
+        communication.status = SENT
+        communication.sent_by = request.user
+        communication.sent_at = timezone.now()
+        communication.save(update_fields=["status", "sent_by", "sent_at", "updated_at"])
 
-    # Claim it: a second click (or a second tab) finds it already sent.
-    now = timezone.now()
-    claimed = Communication.objects.filter(pk=communication.pk, status=DRAFT).update(
-        status=SENT, sent_by=request.user, sent_at=now
-    )
-    if not claimed:
-        raise ValidationError({"status": "This message was already sent."})
-    communication.refresh_from_db()
-
-    sent, queued_count = [], 0
-    for recipient in communication.recipients.filter(included=True).select_related("org"):
-        subject_line, body, filled = copy_for(communication, kind, about, recipient, caller=caller, sending=True)
-        try:
-            queued = (
-                send_labs_email(
-                    subject_line,
-                    body,
-                    [recipient.email],
-                    reply_to=[communication.reply_to],
-                    cc=list(recipient.cc or []),
-                    countdown=queued_count * SEND_SPACING_SECONDS or None,
-                )
-                is not None
+        sent = []
+        for i, recipient in enumerate(communication.recipients.filter(included=True).select_related("org")):
+            subject_line, body, filled = copy_for(communication, kind, about, recipient, caller=caller, sending=True)
+            record_subject, record_body, _ = copy_for(
+                communication, kind, about, recipient, caller=caller, sending=False
             )
-        except Exception:  # noqa: BLE001 -- one failed hand-off must not lose the others' records
-            logger.exception("communications: could not queue message %s to %s", communication.pk, recipient.email)
-            queued = False
-        queued_count += int(queued)
-        record_subject, record_body, _ = copy_for(communication, kind, about, recipient, caller=caller, sending=False)
-        message = SentMessage.objects.create(
-            communication=communication,
-            recipient=recipient,
-            kind=communication.kind,
-            about_type=communication.about_type,
-            about_id=communication.about_id,
-            program_id=communication.program_id,
-            org=recipient.org,
-            to_email=recipient.email,
-            to_name=recipient.name,
-            cc=list(recipient.cc or []),
-            reply_to=communication.reply_to,
-            subject=record_subject,
-            body=record_body,
-            delivery=QUEUED if queued else NOT_SENT,
-            effects=filled.effects,
-            sent_by=request.user,
-        )
-        if queued:
-            try:
-                effects = kind.after_sent(communication, recipient, message, about, caller) or {}
-            except Exception as e:  # noqa: BLE001 -- the email went; say what did not follow it
-                logger.exception("communications: after-send step failed for message %s", message.pk)
-                effects = {"after_sent_error": str(e)[:500]}
-            if effects:
-                message.effects = {**message.effects, **effects}
-                message.save(update_fields=["effects"])
-        sent.append(message)
-    return {"communication": communication, "messages": sent, "queued": queued_count}
+            message = SentMessage.objects.create(
+                communication=communication,
+                recipient=recipient,
+                kind=communication.kind,
+                about_type=communication.about_type,
+                about_id=communication.about_id,
+                program_id=communication.program_id,
+                org=recipient.org,
+                to_email=recipient.email,
+                to_name=recipient.name,
+                cc=list(recipient.cc or []),
+                reply_to=communication.reply_to,
+                subject=record_subject,
+                body=record_body,
+                delivery=QUEUED,
+                effects=filled.effects,
+                sent_by=request.user,
+            )
+
+            def queue(message=message, subject_line=subject_line, body=body, recipient=recipient, i=i):
+                try:
+                    send_labs_email(
+                        subject_line,
+                        body,
+                        [recipient.email],
+                        reply_to=[communication.reply_to],
+                        cc=list(recipient.cc or []),
+                        countdown=i * SEND_SPACING_SECONDS or None,
+                        sent_message_id=message.pk,
+                    )
+                except Exception:  # noqa: BLE001 -- one failed hand-off must not stop the others
+                    logger.exception("communications: could not queue message %s", message.pk)
+                    SentMessage.objects.filter(pk=message.pk).update(delivery=NOT_SENT)
+
+            transaction.on_commit(queue)
+            sent.append(message)
+    return {"communication": communication, "messages": sent, "queued": len(sent)}
+
+
+def delivered(sent_message_id) -> None:
+    """The mail service took this message: record it, then do what sending it changes.
+
+    Called by the mail task on success. `after_sent` runs as the person who
+    sent it (an outreach marked sent, a reply recorded); if it fails, the
+    message still went, and the failure is kept on the record and shown.
+    """
+    message = (
+        SentMessage.objects.select_related("communication", "recipient", "sent_by").filter(pk=sent_message_id).first()
+    )
+    if message is None:
+        return
+    message.delivery = DELIVERED
+    effects = dict(message.effects or {})
+    communication, recipient = message.communication, message.recipient
+    if communication is not None and recipient is not None:
+        try:
+            kind = kind_registry.get(communication.kind)
+            caller = Caller(user=message.sent_by)
+            effects.update(kind.after_sent(communication, recipient, message, about_of(communication), caller) or {})
+        except Exception as e:  # noqa: BLE001 -- the email went; say what did not follow it
+            logger.exception("communications: after-send step failed for message %s", message.pk)
+            effects["after_sent_error"] = str(e)[:500]
+    message.effects = effects
+    message.save(update_fields=["delivery", "effects"])
+
+
+def not_delivered(sent_message_id, *, failed: bool) -> None:
+    """The mail service refused it for good (`failed`), or mail is off here."""
+    SentMessage.objects.filter(pk=sent_message_id).update(delivery=FAILED if failed else NOT_SENT)
 
 
 # -- what labs sends on its own -----------------------------------------------

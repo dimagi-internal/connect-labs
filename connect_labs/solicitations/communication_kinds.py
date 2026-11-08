@@ -85,6 +85,10 @@ class RoundApplicantsKind(kinds.Kind):
     label = "Message to a round's applicants"
     about_model = "solicitations.solicitation"
     placeholders = ("first_name", "name", "org_name", "call_title", "deadline", "link")
+    # Each copy carries an invitation into the recipient's organisation: only
+    # the people the application names, at the addresses it gives.
+    recipients_editable = False
+    emails_editable = False
     description = (
         "A message to the organisations that applied to a directory EOI round, each person with their own "
         "link to sign in, join their organisation on labs and update their application while the round is "
@@ -177,11 +181,22 @@ class RoundApplicantsKind(kinds.Kind):
         if not about.can_accept_responses:
             raise ValidationError({"__all__": "This round has closed, so its applications can no longer be updated."})
         included = list(communication.recipients.filter(included=True))
-        blocked = [r.label or r.email for r in included if (r.ref or {}).get("blocked")]
-        if blocked:
-            raise ValidationError({"recipients": "These can't be invited from here: " + ", ".join(blocked) + "."})
-        if any(r.org_id is None for r in included):
-            raise ValidationError({"recipients": "Each person must belong to an applicant organisation."})
+        # Checked again now, from the applications themselves, not from the draft:
+        # an invitation goes only to an address an applicant organisation gave.
+        orgs, _ = applicants(about)
+        allowed = {(a.org.pk, email.lower()): a for a in orgs for _, email in a.people}
+        refused = []
+        for r in included:
+            applicant = allowed.get((r.org_id, (r.email or "").lower()))
+            if applicant is None or applicant.blocked:
+                refused.append(r.label or r.email or r.name)
+        if refused:
+            raise ValidationError(
+                {
+                    "recipients": "These can't be invited from here (not an address an applicant gave, or an "
+                    "organisation whose people support adds): " + ", ".join(refused) + "."
+                }
+            )
         if "{link}" not in communication.body and not all("{link}" in (r.body or "") for r in included):
             communication.body = communication.body.rstrip() + "\n\n{link}"
             communication.save(update_fields=["body"])

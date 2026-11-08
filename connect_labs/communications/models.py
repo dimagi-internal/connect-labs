@@ -106,9 +106,11 @@ class Recipient(models.Model):
         return self.name.split()[0] if self.name.strip() else ""
 
 
-QUEUED = "queued"
-NOT_SENT = "not_sent"
-DELIVERY = [(QUEUED, "Sent"), (NOT_SENT, "Not sent")]
+QUEUED = "queued"  # handed to the mail queue
+DELIVERED = "delivered"  # the mail service took it
+FAILED = "failed"  # the mail service refused it, after retries
+NOT_SENT = "not_sent"  # never handed over (mail is off here)
+DELIVERY = [(QUEUED, "Sending"), (DELIVERED, "Sent"), (FAILED, "Failed"), (NOT_SENT, "Not sent")]
 
 
 class SentMessage(models.Model):

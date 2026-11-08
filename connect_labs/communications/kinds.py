@@ -65,6 +65,12 @@ class Kind:
     #: Placeholders a writer may use, filled in per person.
     placeholders: tuple = ("first_name", "name", "org_name")
     description = ""
+    #: Whether a draft's recipient list may be replaced, and an address changed.
+    #: A kind whose recipients carry something sending acts on (an invitation
+    #: to an organisation, an outreach row) fixes who they are: a writer only
+    #: chooses among them.
+    recipients_editable = True
+    emails_editable = True
 
     # -- the record it is about ----------------------------------------------
 
@@ -75,7 +81,10 @@ class Kind:
         from django.apps import apps
 
         model = apps.get_model(self.about_model)
-        return model.objects.filter(pk=about_id).first()
+        try:
+            return model.objects.filter(pk=int(about_id)).first()
+        except (TypeError, ValueError):
+            return None
 
     def about_label(self, about) -> str:
         return str(about) if about is not None else ""
@@ -142,29 +151,64 @@ def render(template: str, values: dict) -> str:
 # -- labs' own: a message an organisation writes -----------------------------
 
 
+def _may_read_call(caller, record) -> bool:
+    from connect_labs.solicitations import access
+
+    return access.can_read(caller, record) or access.can_read_round_responses(caller, record)
+
+
+def _may_read_tender(caller, record) -> bool:
+    from connect_labs.supply_chain.communication_kinds import _is_programme
+
+    return _is_programme(caller, record.program_id)
+
+
+#: Records a general message may be linked to, each with who may name it. Any
+#: other reference ("workflow.run:812", a programme) is kept as the writer's own
+#: text and never looked up, so naming one reveals nothing about it.
+LINKABLE = {
+    "solicitations.solicitation": _may_read_call,
+    "supply_chain.tender": _may_read_tender,
+    "labs.labsorg": lambda caller, record: True,  # the organisation directory is public
+}
+
+
+@dataclass
+class About:
+    record: object = None
+    ref: str = ""
+
+
 class GeneralKind(Kind):
     key = "general"
     label = "Message"
     description = (
-        "A message an organisation writes to people, about any labs record (a workflow run, a programme...) "
-        "or nothing. Its members prepare and send it. Name the organisation it is sent for."
+        "A message an organisation writes to people, about a labs record or nothing. Name the organisation it "
+        "is sent for (`params.owner_org`); its members prepare and send it. `about_ref` links it: "
+        '"solicitations.solicitation:<id>", "supply_chain.tender:<id>" or "labs.labsorg:<id>" link that '
+        'record (you must be able to read it); anything else, e.g. "workflow.run:<id>", is kept as written.'
     )
 
-    def resolve_about(self, ref: str):
-        """A record from "app_label.model:id"; None for an empty ref."""
+    def resolve_about(self, ref: str, caller) -> About:
+        """The record a reference names, if it is a linkable one the caller may read; else the text itself."""
+        ref = (ref or "").strip()[:64]
         if not ref:
-            return None
+            return About()
+        model_label, _, pk = ref.rpartition(":")
+        check = LINKABLE.get(model_label.lower())
+        if check is None:
+            return About(ref=ref)
         from django.apps import apps
 
+        model = apps.get_model(model_label)
         try:
-            model_label, pk = ref.rsplit(":", 1)
-            model = apps.get_model(model_label)
-        except (ValueError, LookupError) as e:
-            raise ValidationError({"about": f"{ref!r} names no labs record; write it as app_label.model:id"}) from e
-        record = model.objects.filter(pk=pk).first()
-        if record is None:
-            raise ValidationError({"about": f"no {model_label} with id {pk}"})
-        return record
+            record = model.objects.filter(pk=int(pk)).first()
+        except (TypeError, ValueError):
+            record = None
+        # One answer for a record that is missing and one the caller may not read.
+        if record is None or not check(caller, record):
+            raise ValidationError({"about": f"{ref!r} is not a record you can write about."})
+        return About(record=record, ref=ref)
 
     def can_send(self, caller, about, communication=None) -> bool:
         org = communication.owner_org if communication is not None and communication.owner_org_id else None
@@ -180,10 +224,18 @@ class GeneralKind(Kind):
             raise ValidationError({"owner_org": "Name the organisation this message is sent for."})
         if not (caller.is_member(org) or caller.is_operator):
             raise PermissionDenied(f"You can write only for an organisation you belong to, and not for {org.name}.")
+        program_id = params.get("program_id")
+        if program_id not in (None, ""):
+            try:
+                program_id = int(program_id)
+            except (TypeError, ValueError) as e:
+                raise ValidationError({"program_id": "must be a whole number"}) from e
+        else:
+            program_id = None
         return DraftSpec(
             title=params.get("title") or (f"Message about {about}" if about is not None else "Message"),
             owner_org=org,
-            program_id=params.get("program_id"),
+            program_id=program_id,
         )
 
 
