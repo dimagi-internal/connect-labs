@@ -539,3 +539,19 @@ def test_the_passkey_card_says_where_the_request_came_from(client, agent, person
     ref = _ask_from_runner(client, raw, public, Runner(vouch=CLOUD_RUNNER))[0].json()["ref"]
     client.post(_page(ref), {"action": "approve"})
     assert "cloud-ec2-2" in canopy.asked[-1]["detail"]
+
+
+@pytest.mark.django_db
+def test_the_request_is_answered_on_the_main_tokens_page(client, agent, person):
+    """One page for tokens: the agent's link lands on the tokens page, request on top, the person's own
+    tokens and the create form beneath it."""
+    _, raw = agent
+    _, public = _keypair()
+    ref = _ask(client, raw, public).json()["ref"]
+    html = client.get(_page(ref)).content.decode()
+    assert 'data-testid="agent-request-card"' in html
+    assert "Your active tokens" in html and "Create a new token" in html
+    assert html.index("agent-request-card") < html.index("Create a new token")
+    # Without a request in the link, the page is the plain tokens page.
+    plain = client.get(reverse("labs:mcp_tokens_index")).content.decode()
+    assert "agent-request-card" not in plain

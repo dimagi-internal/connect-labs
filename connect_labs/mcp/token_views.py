@@ -60,6 +60,7 @@ def _render_index(
     raw_token_name: str | None = None,
     raw_token_scope: str | None = None,
     full_access_notice: dict | None = None,
+    agent_request: dict | None = None,
     status: int = 200,
 ):
     tokens = MCPAccessToken.objects.filter(user=request.user, is_active=True).order_by("-created_at")
@@ -91,6 +92,8 @@ def _render_index(
         "may_self_mint": full_access.may_self_mint(request.user),
         # A full-access mint waiting on (or refused) the person's passkey (full_access._show).
         "full_access_notice": full_access_notice,
+        # An agent's request for a temporary token, answered here (agent_request_views.card).
+        "ar": agent_request,
     }
     return render(request, "mcp/tokens.html", context, status=status)
 

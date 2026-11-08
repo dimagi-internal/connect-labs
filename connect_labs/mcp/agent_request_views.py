@@ -11,7 +11,6 @@ import json
 
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
-from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -114,27 +113,31 @@ def agent_request_claim(request, ref):
         return _error(exc, 404)
 
 
-def render_page(request, ref, *, outcome="", notice=None, status=200):
-    """The person's page for one request: who asked, what they would get, and what happened."""
+def card(request, ref, *, outcome=""):
+    """What the tokens page shows for one agent request: who asked, what they would get, and what happened."""
     req = AgentTokenRequest.objects.select_related("requested_by").filter(ref=ref).first()
     if req is None:
-        return render(request, "mcp/agent_request.html", {"missing": True}, status=404)
-    return render(
-        request,
-        "mcp/agent_request.html",
-        {
-            "req": req,
-            "outcome": outcome,
-            "full_access_notice": notice,
-            "open": req.status == AgentTokenRequest.PENDING and not req.expired,
-            "is_requester": request.user.pk == req.requested_by_id,
-            "access_label": dict(token_scopes.SCOPE_CHOICES)[req.scope],
-            "access_text": token_scopes.ACCESS_TEXT[req.scope],
-            "is_full": req.scope == token_scopes.FULL,
-            "lasts": "1 hour, then it stops working on its own.",
-            "runner_line": runner_line(req),
-        },
-        status=status,
+        return {"missing": True}
+    return {
+        "req": req,
+        "outcome": outcome,
+        "open": req.status == AgentTokenRequest.PENDING and not req.expired,
+        "is_requester": request.user.pk == req.requested_by_id,
+        "access_label": dict(token_scopes.SCOPE_CHOICES)[req.scope],
+        "access_text": token_scopes.ACCESS_TEXT[req.scope],
+        "is_full": req.scope == token_scopes.FULL,
+        "lasts": "1 hour, then it stops working on its own.",
+        "runner_line": runner_line(req),
+    }
+
+
+def render_page(request, ref, *, outcome="", notice=None, status=200):
+    """The tokens page with this request on top: the person's one place for tokens."""
+    from .token_views import _render_index
+
+    ctx = card(request, ref, outcome=outcome)
+    return _render_index(
+        request, agent_request=ctx, full_access_notice=notice, status=404 if ctx.get("missing") else status
     )
 
 
