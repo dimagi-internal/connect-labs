@@ -162,6 +162,25 @@ class TestSendMailAsync:
 
         assert mail.outbox[0].from_email == "alerts@mail.labs.connect.dimagi.com"
 
+    def test_replies_go_to_the_writer(self, settings):
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+        mail.outbox = []
+
+        send_mail_async(
+            subject="Subject", message="body", recipient_list=["a@example.com"], reply_to=["pm@partner.example"]
+        )
+
+        assert mail.outbox[0].reply_to == ["pm@partner.example"]
+        assert mail.outbox[0].to == ["a@example.com"]
+
+    def test_a_held_send_is_queued_with_its_countdown(self):
+        with patch("connect_labs.utils.tasks.send_mail_async.apply_async") as apply_async:
+            labs_email.send_labs_email(
+                "Subject", "body", ["a@example.com"], reply_to=["pm@partner.example"], countdown=3
+            )
+        assert apply_async.call_args.kwargs["countdown"] == 3
+        assert apply_async.call_args.kwargs["kwargs"]["reply_to"] == ["pm@partner.example"]
+
     def test_zero_sent_is_logged_and_not_retried(self, settings, caplog):
         settings.EMAIL_BACKEND = NOT_CONFIGURED
         with caplog.at_level(logging.WARNING, logger="connect_labs.utils.tasks"):

@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block title %}Write to applicants · {{ solicitation.title }}{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-0 sm:px-4 py-4 sm:py-6">
+    <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-500 mb-4 min-w-0">
+        <a href="{{ back_url }}" class="hover:text-brand-cornflower-blue transition-colors truncate max-w-[24rem]">
+            <i class="fa-solid fa-inbox mr-1"></i> {{ solicitation.title }}
+        </a>
+        <i class="fa-solid fa-chevron-right text-xs"></i>
+        <span>Write to applicants</span>
+    </nav>
+
+    <h1 class="text-2xl font-semibold text-brand-deep-purple mb-1">Write to applicants</h1>
+    <p class="text-sm text-gray-600 mb-6 max-w-3xl">
+        Each person named on a chosen organisation's application gets their own copy, filled in for them, with their own link.
+        Opening the link and accepting makes them a member of their organisation on labs and takes them to its application,
+        which they can update until the call closes{% if solicitation.application_deadline %} on {{ solicitation.application_deadline|date:"j M Y" }}{% endif %}.
+        Each link works once and lasts 30 days. Replies go to the address you give.
+    </p>
+
+    {% for message in messages %}
+        <div class="mb-4 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800" data-testid="contact-sent">{{ message }}</div>
+    {% endfor %}
+    {% if not is_open %}
+        <div class="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">This call has closed, so its applications can no longer be updated and nothing can be sent from here.</div>
+    {% elif not email_enabled %}
+        <div class="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">Outbound email is not set up on this labs: you can preview, but sending will be refused.</div>
+    {% endif %}
+    {% if errors.general %}
+        <div class="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700" data-testid="contact-error">{{ errors.general }}</div>
+    {% endif %}
+
+    <form method="post" x-data="{ all: false }">
+        {% csrf_token %}
+        <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_26rem] gap-6">
+            <!-- Who -->
+            <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+                <div class="px-5 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
+                    <h2 class="text-sm font-semibold text-brand-deep-purple">Organisations ({{ applicants|length }})</h2>
+                    <label class="text-xs text-gray-600 flex items-center gap-1.5">
+                        <input type="checkbox" x-model="all" @change="$root.querySelectorAll('input[name=org]:not(:disabled)').forEach(c => c.checked = all)"> Select all
+                    </label>
+                </div>
+                {% if errors.org %}<p class="px-5 pt-3 text-sm text-red-600">{{ errors.org }}</p>{% endif %}
+                <div class="overflow-x-auto">
+                <table class="min-w-full text-sm" data-testid="contact-applicants">
+                    <thead class="bg-gray-50 text-xs text-gray-500">
+                        <tr>
+                            <th class="w-8 px-4 py-2"></th>
+                            <th class="px-2 py-2 text-left font-medium">Organisation</th>
+                            <th class="px-2 py-2 text-left font-medium">Writes to</th>
+                            <th class="px-2 py-2 text-left font-medium">Areas</th>
+                            <th class="px-4 py-2 text-left font-medium">Last written to</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                    {% for a in applicants %}
+                        <tr class="{% if not a.contactable %}text-gray-400{% endif %}">
+                            <td class="px-4 py-2 align-top">
+                                <input type="checkbox" name="org" value="{{ a.org.pk }}" {% if not a.contactable or not is_open %}disabled{% endif %} {% if a.org.pk|stringformat:'s' in chosen %}checked{% endif %} data-testid="choose-org">
+                            </td>
+                            <td class="px-2 py-2 align-top">
+                                <div class="font-medium {% if a.contactable %}text-gray-900{% endif %}">{{ a.org.name }}</div>
+                                {% if a.org.connect_organization_id and not a.org.labs_only %}<span class="text-[11px] text-gray-500">On Connect</span>{% endif %}
+                                {% if a.blocked %}<div class="text-[11px] text-amber-700">Can't be invited: {{ a.blocked }}</div>{% endif %}
+                            </td>
+                            <td class="px-2 py-2 align-top text-xs">
+                                {% for p in a.people %}<div class="break-all">{% if p.name %}{{ p.name }} · {% endif %}{{ p.email }}</div>{% empty %}<span>—</span>{% endfor %}
+                            </td>
+                            <td class="px-2 py-2 align-top text-xs">{% if a.has_areas %}<span class="text-green-700">Picked</span>{% else %}<span class="text-gray-500">Not yet</span>{% endif %}</td>
+                            <td class="px-4 py-2 align-top text-xs text-gray-500">{{ a.last_contacted|date:"j M Y H:i"|default:"Never" }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="5" class="px-5 py-8 text-center text-gray-500">No applications matched to an organisation yet.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                </div>
+                {% if unmatched %}
+                <p class="px-5 py-3 text-xs text-gray-500 border-t border-gray-100">
+                    {{ unmatched|length }} application{{ unmatched|length|pluralize }} {{ unmatched|length|pluralize:"is,are" }} not matched to an organisation in the directory, so {{ unmatched|length|pluralize:"it,they" }} can't be invited from here:
+                    {% for r in unmatched %}{{ r.org_name|default:r.llo_entity_name|default:"(no name)" }}{% if not forloop.last %}; {% endif %}{% endfor %}.
+                </p>
+                {% endif %}
+            </div>
+
+            <!-- What -->
+            <div class="flex flex-col gap-4">
+                <div class="bg-white rounded-xl shadow-sm p-5 flex flex-col gap-3">
+                    <div>
+                        <label for="reply_to" class="block text-sm font-medium text-gray-700 mb-1">Replies go to</label>
+                        <input id="reply_to" name="reply_to" type="email" value="{{ values.reply_to }}" class="base-input w-full" required>
+                        {% if errors.reply_to %}<p class="mt-1 text-sm text-red-600">{{ errors.reply_to }}</p>{% endif %}
+                    </div>
+                    <div>
+                        <label for="subject" class="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+                        <input id="subject" name="subject" value="{{ values.subject }}" class="base-input w-full" maxlength="300" required>
+                        {% if errors.subject %}<p class="mt-1 text-sm text-red-600">{{ errors.subject }}</p>{% endif %}
+                    </div>
+                    <div>
+                        <label for="message" class="block text-sm font-medium text-gray-700 mb-1">Message</label>
+                        <textarea id="message" name="message" rows="12" class="base-input !h-auto py-2 w-full resize-y" required>{{ values.message }}</textarea>
+                        {% if errors.message %}<p class="mt-1 text-sm text-red-600">{{ errors.message }}</p>{% endif %}
+                        <p class="mt-1 text-xs text-gray-500">
+                            Filled in for each person: {% for p in placeholders %}<code class="text-[11px] bg-gray-100 px-1 rounded">{{ "{" }}{{ p }}{{ "}" }}</code>{% if not forloop.last %} {% endif %}{% endfor %}.
+                            Their link goes where you put <code class="text-[11px] bg-gray-100 px-1 rounded">{link}</code>, or at the end.
+                        </p>
+                    </div>
+                    <div class="flex flex-wrap justify-end gap-2 pt-1">
+                        <button type="submit" name="preview" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50">Preview</button>
+                        {% if preview %}
+                        <button type="submit" name="send" {% if not is_open or not email_enabled %}disabled{% endif %} data-testid="send"
+                                class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                            <i class="fa-solid fa-paper-plane mr-2"></i> Send to {{ preview.people }} {{ preview.people|pluralize:"person,people" }}
+                        </button>
+                        {% endif %}
+                    </div>
+                    {% if not preview %}<p class="text-xs text-gray-500 text-right">Preview first; then you can send.</p>{% endif %}
+                </div>
+
+                {% if preview %}
+                <div class="bg-white rounded-xl shadow-sm p-5" data-testid="contact-preview">
+                    <p class="text-xs font-semibold text-gray-500 mb-2">AS {{ preview.to }} ({{ preview.org }}) WILL READ IT</p>
+                    <p class="text-xs text-gray-500">Reply-to: {{ values.reply_to }}</p>
+                    <p class="text-sm font-semibold text-gray-900 mt-2">{{ preview.subject }}</p>
+                    <div class="text-sm text-gray-700 whitespace-pre-line mt-2">{{ preview.body }}</div>
+                    <p class="text-[11px] text-gray-400 mt-3">Each person's own link replaces [invitation link].</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+
+    {% if history %}
+    <div class="bg-white rounded-xl shadow-sm mt-8 overflow-hidden" data-testid="contact-history">
+        <h2 class="px-5 py-3 border-b border-gray-100 text-sm font-semibold text-brand-deep-purple">Sent from here</h2>
+        <div class="overflow-x-auto">
+        <table class="min-w-full text-xs">
+            <tbody class="divide-y divide-gray-100">
+            {% for m in history %}
+                <tr>
+                    <td class="px-5 py-2 text-gray-500 whitespace-nowrap">{{ m.sent_at|date:"j M Y H:i" }}</td>
+                    <td class="px-2 py-2">{{ m.org.name|default:"—" }}</td>
+                    <td class="px-2 py-2 break-all">{{ m.to_email }}</td>
+                    <td class="px-2 py-2">{{ m.subject }}</td>
+                    <td class="px-2 py-2 text-gray-500">by {{ m.sent_by.name|default:m.sent_by.username|default:"—" }}; replies to {{ m.reply_to }}</td>
+                    <td class="px-5 py-2">{% if m.queued %}<span class="text-green-700">Sent</span>{% else %}<span class="text-amber-700">Not sent</span>{% endif %}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

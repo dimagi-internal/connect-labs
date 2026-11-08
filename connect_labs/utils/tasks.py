@@ -1,7 +1,7 @@
 import logging
 
 from django.conf import settings
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives, send_mail
 
 from config import celery_app
 
@@ -21,7 +21,7 @@ RETRY_BACKOFF_SECONDS = 10
 
 
 @celery_app.task(bind=True, max_retries=MAX_RETRIES)
-def send_mail_async(self, subject, message, recipient_list, from_email=None, html_message=None):
+def send_mail_async(self, subject, message, recipient_list, from_email=None, html_message=None, reply_to=None):
     """
     Deliver one email.
 
@@ -36,13 +36,22 @@ def send_mail_async(self, subject, message, recipient_list, from_email=None, htm
     sender = from_email or settings.DEFAULT_FROM_EMAIL
 
     try:
-        sent = send_mail(
-            subject=subject,
-            message=message,
-            recipient_list=recipient_list,
-            from_email=sender,
-            html_message=html_message,
-        )
+        if reply_to:
+            # Replies go to whoever wrote the message, not to labs' own sender.
+            email = EmailMultiAlternatives(
+                subject=subject, body=message, from_email=sender, to=recipient_list, reply_to=list(reply_to)
+            )
+            if html_message:
+                email.attach_alternative(html_message, "text/html")
+            sent = email.send()
+        else:
+            sent = send_mail(
+                subject=subject,
+                message=message,
+                recipient_list=recipient_list,
+                from_email=sender,
+                html_message=html_message,
+            )
     except Exception as exc:
         logger.exception(
             "Email send failed (attempt %s/%s): subject=%r to=%r",

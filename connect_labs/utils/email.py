@@ -124,7 +124,9 @@ class NotConfiguredEmailBackend(BaseEmailBackend):
         return 0
 
 
-def send_labs_email(subject, message, recipient_list, html_message=None, from_email=None):
+def send_labs_email(
+    subject, message, recipient_list, html_message=None, from_email=None, *, reply_to=None, countdown=None
+):
     """
     Queue an email for delivery. The one front door for labs features.
 
@@ -132,6 +134,11 @@ def send_labs_email(subject, message, recipient_list, html_message=None, from_em
     (``connect_labs.utils.tasks.send_mail_async``), keeping SES latency off the
     request path. Returns the Celery ``AsyncResult``, or ``None`` when there are
     no recipients to send to.
+
+    ``reply_to`` (a list of addresses) sends replies to a person rather than to
+    labs' sender. ``countdown`` (seconds) holds the send back: a batch spaced a
+    little over a second apart stays under SES's one-message-a-second cap
+    instead of leaning on retries.
     """
     recipients = [r for r in (recipient_list or []) if r]
     if not recipients:
@@ -142,13 +149,18 @@ def send_labs_email(subject, message, recipient_list, html_message=None, from_em
     # state, and this module is imported from settings-adjacent code paths.
     from connect_labs.utils.tasks import send_mail_async
 
-    return send_mail_async.delay(
-        subject=subject,
-        message=message,
-        recipient_list=recipients,
-        from_email=from_email,
-        html_message=html_message,
-    )
+    kwargs = {
+        "subject": subject,
+        "message": message,
+        "recipient_list": recipients,
+        "from_email": from_email,
+        "html_message": html_message,
+    }
+    if reply_to:
+        kwargs["reply_to"] = [r for r in reply_to if r]
+    if countdown:
+        return send_mail_async.apply_async(kwargs=kwargs, countdown=countdown)
+    return send_mail_async.delay(**kwargs)
 
 
 def check_labs_email(app_configs, **kwargs):
