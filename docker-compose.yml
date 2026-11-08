@@ -2,11 +2,11 @@ version: '3.8'
 
 services:
   db:
-    image: postgis/postgis:17-3.5
+    image: postgis/postgis:18-3.6
     platform: linux/amd64
     # persist data beyond lifetime of container
     volumes:
-      - postgres_data:/var/lib/postgresql/data/
+      - postgres18_data:/var/lib/postgresql
     environment:
       - POSTGRES_DB=connect_labs
       - POSTGRES_USER=postgres
@@ -32,5 +32,5 @@ services:
       retries: 10
 
 volumes:
-  postgres_data:
+  postgres18_data:
   redis_data:

@@ -285,11 +285,11 @@ jobs:
         ports:
           - 6379:6379
       postgres:
-        # Mirrored from Docker Hub's postgis/postgis:17-3.5 by mirror-ci-images.yml.
+        # Mirrored from Docker Hub's postgis/postgis:18-3.6 by mirror-ci-images.yml.
         # Docker Hub's anonymous pull limit ("toomanyrequests: Data limit exceeded") was
         # failing this job outright several times a day; GHCR pulls from Actions are not
         # rate-limited that way. To bump the version, change it in BOTH files.
-        image: ghcr.io/dimagi-internal/connect-labs-ci-postgis:17-3.5
+        image: ghcr.io/dimagi-internal/connect-labs-ci-postgis:18-3.6
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
@@ -463,11 +463,11 @@ jobs:
         ports:
           - 6379:6379
       postgres:
-        # Mirrored from Docker Hub's postgis/postgis:17-3.5 by mirror-ci-images.yml.
+        # Mirrored from Docker Hub's postgis/postgis:18-3.6 by mirror-ci-images.yml.
         # Docker Hub's anonymous pull limit ("toomanyrequests: Data limit exceeded") was
         # failing this job outright several times a day; GHCR pulls from Actions are not
         # rate-limited that way. To bump the version, change it in BOTH files.
-        image: ghcr.io/dimagi-internal/connect-labs-ci-postgis:17-3.5
+        image: ghcr.io/dimagi-internal/connect-labs-ci-postgis:18-3.6
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
