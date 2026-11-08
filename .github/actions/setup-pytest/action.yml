@@ -233,7 +233,7 @@ runs:
     # dropped and pytest migrates cold, as before. A prefix match is never
     # trusted as-is: --reuse-db would believe an older schema.
     #
-    # `pg17-3.5` is the postgis service image in ci.yml; bump it with the image.
+    # `pg18-3.6` is the postgis service image in ci.yml; bump it with the image.
     #
     # Not on `schedule`: the nightly run migrates from scratch, so the path
     # every cache miss relies on is exercised at least once a day.
@@ -256,8 +256,8 @@ runs:
           config/settings/base.py config/settings/test.py \
           connect_labs/testing/db_template.py .github/actions/setup-pytest/test-db-template.sh \
           | sort -z | xargs -0 sha256sum > "$dir/manifest.current"
-        echo "key=test-db-v2-${{ runner.os }}-pg17-3.5-$(sha256sum < "$dir/manifest.current" | cut -c1-64)" >> "$GITHUB_OUTPUT"
-        echo "prefix=test-db-v2-${{ runner.os }}-pg17-3.5-" >> "$GITHUB_OUTPUT"
+        echo "key=test-db-v2-${{ runner.os }}-pg18-3.6-$(sha256sum < "$dir/manifest.current" | cut -c1-64)" >> "$GITHUB_OUTPUT"
+        echo "prefix=test-db-v2-${{ runner.os }}-pg18-3.6-" >> "$GITHUB_OUTPUT"
         echo "dump=$dir/template.dump" >> "$GITHUB_OUTPUT"
         echo "manifest=$dir/manifest.txt" >> "$GITHUB_OUTPUT"
         echo "current=$dir/manifest.current" >> "$GITHUB_OUTPUT"
