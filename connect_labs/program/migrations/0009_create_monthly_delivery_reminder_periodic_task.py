@@ -30,6 +30,8 @@ def delete_monthly_delivery_reminder_periodic_task(apps, schema_editor):
 class Migration(migrations.Migration):
     dependencies = [
         ("program", "0008_alter_program_program_id_and_more"),
+        # Writes django_celery_beat's own (current) models: their tables must exist first.
+        ("django_celery_beat", "0019_alter_periodictasks_options"),
     ]
 
     operations = [

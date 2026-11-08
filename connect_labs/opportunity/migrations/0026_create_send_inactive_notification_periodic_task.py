@@ -29,6 +29,8 @@ def delete_send_inactive_notification_periodic_task(apps, schema_editor):
 class Migration(migrations.Migration):
     dependencies = [
         ("opportunity", "0025_opportunity_short_description"),
+        # Writes django_celery_beat's own (current) models: their tables must exist first.
+        ("django_celery_beat", "0019_alter_periodictasks_options"),
     ]
 
     operations = [
