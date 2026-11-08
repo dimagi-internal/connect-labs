@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}{% if about %}Messages · {{ about_label }}{% else %}Outbox{% endif %}{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-0 sm:px-4 py-4 sm:py-6">
+    {% if about %}
+    <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-500 mb-4 min-w-0">
+        {% if about_url %}<a href="{{ about_url }}" class="hover:text-brand-cornflower-blue truncate max-w-[24rem]">{{ about_label }}</a>{% else %}<span>{{ about_label }}</span>{% endif %}
+        <i class="fa-solid fa-chevron-right text-xs"></i><span>Messages</span>
+    </nav>
+    {% endif %}
+    <div class="flex flex-wrap items-start justify-between gap-3 mb-6">
+        <div>
+            <h1 class="text-2xl font-semibold text-brand-deep-purple">{% if about %}Messages: {{ about_label }}{% else %}Outbox{% endif %}</h1>
+            <p class="text-sm text-gray-600 mt-1 max-w-3xl">
+                Drafts are prepared here or by an agent, and only a person sends them, from their draft page.
+                Each person gets their own copy, and every message sent is kept here.
+            </p>
+        </div>
+        {% if can_start %}
+        <form method="post">{% csrf_token %}
+            <button class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700" data-testid="start-draft">
+                <i class="fa-solid fa-pen mr-2"></i> New: {{ kind.label }}
+            </button>
+        </form>
+        {% endif %}
+    </div>
+
+    {% for message in messages %}<div class="mb-4 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800">{{ message }}</div>{% endfor %}
+
+    <section class="mb-8" data-testid="drafts">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3">Drafts ({{ drafts|length }})</h2>
+        {% include "communications/_list.html" with rows=drafts empty="No drafts." %}
+    </section>
+    <section class="mb-8" data-testid="sent">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3">Sent ({{ sent|length }})</h2>
+        {% include "communications/_list.html" with rows=sent empty="Nothing sent from here yet." %}
+    </section>
+
+    {% if about and sent_messages %}
+    <section class="bg-white rounded-xl shadow-sm overflow-hidden" data-testid="correspondence">
+        <h2 class="px-5 py-3 border-b border-gray-100 text-sm font-semibold text-brand-deep-purple">Every email sent about this ({{ sent_messages|length }})</h2>
+        {% include "communications/_sent_table.html" with rows=sent_messages %}
+    </section>
+    {% endif %}
+</div>
+{% endblock %}

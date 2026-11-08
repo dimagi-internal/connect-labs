@@ -51,6 +51,7 @@ urlpatterns = [
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
     # Labs apps
     path("solicitations/", include("connect_labs.solicitations.urls", namespace="solicitations")),
+    path("communications/", include("connect_labs.communications.urls", namespace="communications")),
     path("funder/", include("connect_labs.funder_dashboard.urls", namespace="funder_dashboard")),
     path("tasks/", include("connect_labs.tasks.urls", namespace="tasks")),
     path("audit/", include("connect_labs.audit.urls", namespace="audit")),

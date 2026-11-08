@@ -125,7 +125,7 @@ class NotConfiguredEmailBackend(BaseEmailBackend):
 
 
 def send_labs_email(
-    subject, message, recipient_list, html_message=None, from_email=None, *, reply_to=None, countdown=None
+    subject, message, recipient_list, html_message=None, from_email=None, *, reply_to=None, cc=None, countdown=None
 ):
     """
     Queue an email for delivery. The one front door for labs features.
@@ -136,7 +136,7 @@ def send_labs_email(
     no recipients to send to.
 
     ``reply_to`` (a list of addresses) sends replies to a person rather than to
-    labs' sender. ``countdown`` (seconds) holds the send back: a batch spaced a
+    labs' sender; ``cc`` copies others. ``countdown`` (seconds) holds the send back: a batch spaced a
     little over a second apart stays under SES's one-message-a-second cap
     instead of leaning on retries.
     """
@@ -158,6 +158,8 @@ def send_labs_email(
     }
     if reply_to:
         kwargs["reply_to"] = [r for r in reply_to if r]
+    if cc:
+        kwargs["cc"] = [c for c in cc if c]
     if countdown:
         return send_mail_async.apply_async(kwargs=kwargs, countdown=countdown)
     return send_mail_async.delay(**kwargs)

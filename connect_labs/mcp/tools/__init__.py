@@ -7,6 +7,7 @@ Importing this package triggers all registration.
 from . import apps  # noqa: F401
 from . import benchmarks  # noqa: F401  -- registers benchmarks_cohort_*
 from . import campaign  # noqa: F401  -- registers campaign_build_national
+from . import communications  # noqa: F401  -- communications_* (drafts only; a person sends in labs)
 from . import funds  # noqa: F401
 from . import jobs  # noqa: F401  -- registers job_status, job_cancel (mcp/jobs.py)
 from . import labs_context  # noqa: F401

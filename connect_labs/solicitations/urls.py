@@ -17,8 +17,8 @@ urlpatterns = [
     path("create/", views.SolicitationCreateView.as_view(), name="create"),
     path("<int:pk>/edit/", views.SolicitationEditView.as_view(), name="edit"),
     path("<int:pk>/responses/", views.ResponsesListView.as_view(), name="responses_list"),
-    # Write to a call's applicants, each with their own link to update their application.
-    path("<int:pk>/contact/", views.ContactApplicantsView.as_view(), name="contact_applicants"),
+    # A round's messages to its applicants (the outbox, communications/).
+    path("<int:pk>/contact/", views.contact_applicants, name="contact_applicants"),
     # Responding (login).
     path("<int:pk>/respond/", views.RespondView.as_view(), name="respond"),
     path("response/<int:pk>/", views.ResponseDetailView.as_view(), name="response_detail"),

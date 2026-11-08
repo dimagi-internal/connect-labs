@@ -1291,11 +1291,15 @@ class SolicitationsDataAccess:
             # The signed-in account only: the address typed on the form is a
             # contact for the owner, and could be anyone's.
             [response.submitted_by.email if response.submitted_by_id else ""],
+            about=solicitation,
+            org=response.llo_entity,
         )
         self._send(
             f"New response to {solicitation.title}",
             f"{response.display_name or 'An organisation'} has responded to {solicitation.title}.",
             [solicitation.contact_email],
+            about=solicitation,
+            org=solicitation.owner_org,
         )
 
     def _notify_awarded(self, response) -> bool:
@@ -1313,16 +1317,40 @@ class SolicitationsDataAccess:
                 + (f" Questions: {solicitation.contact_email}" if solicitation.contact_email else "")
             ),
             [response.account_email],
+            about=solicitation,
+            org=response.llo_entity,
         )
 
     @staticmethod
-    def _send(subject: str, message: str, recipients) -> bool:
-        """True only when the mail was handed to the delivery path."""
+    def _send(subject: str, message: str, recipients, *, about=None, org=None) -> bool:
+        """True only when the mail was handed to the delivery path. Either way it is
+        recorded against the call (`communications`), so a call's correspondence is whole."""
         from connect_labs.utils.email import email_enabled, send_labs_email
 
         recipients = [r for r in (recipients or []) if r and "@" in r]
-        if not recipients or not email_enabled():
+        if not recipients:
             return False
+        queued = False
+        if email_enabled():
+            try:
+                queued = send_labs_email(subject, message, recipients) is not None
+            except Exception:
+                logger.exception("Could not queue solicitation email %r", subject)
+        try:
+            from connect_labs.communications.service import record_automatic
+
+            record_automatic(
+                "solicitations.notice",
+                about=about,
+                to=recipients,
+                subject=subject,
+                body=message,
+                queued=queued,
+                org=org,
+            )
+        except Exception:  # noqa: BLE001 -- a failed record must not undo the response it reports
+            logger.exception("Could not record solicitation email %r", subject)
+        return queued
         try:
             return send_labs_email(subject, message, recipients) is not None
         except Exception:

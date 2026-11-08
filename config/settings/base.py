@@ -168,6 +168,7 @@ LOCAL_APPS = [
     "connect_labs.workflow",
     "connect_labs.flags",
     "connect_labs.commcarehq",  # stub: HQServer model for FK references
+    "connect_labs.communications",
     "connect_labs.labs.admin_boundaries",
     "connect_labs.labs.indicators",
     "connect_labs.labs.synthetic",
