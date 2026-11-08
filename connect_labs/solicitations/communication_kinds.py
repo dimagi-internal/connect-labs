@@ -190,6 +190,9 @@ class RoundApplicantsKind(kinds.Kind):
             applicant = allowed.get((r.org_id, (r.email or "").lower()))
             if applicant is None or applicant.blocked:
                 refused.append(r.label or r.email or r.name)
+            elif r.cc:
+                # The copy carries an invitation link: nobody else may read it.
+                refused.append(f"{r.label or r.email} (copied to {', '.join(r.cc)})")
         if refused:
             raise ValidationError(
                 {

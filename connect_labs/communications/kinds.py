@@ -158,9 +158,14 @@ def _may_read_call(caller, record) -> bool:
 
 
 def _may_read_tender(caller, record) -> bool:
+    """The programme, or a supplier invited to the tender (it reads its own invitation)."""
     from connect_labs.supply_chain.communication_kinds import _is_programme
+    from connect_labs.supply_chain.models import Outreach
 
-    return _is_programme(caller, record.program_id)
+    if _is_programme(caller, record.program_id):
+        return True
+    invited = Outreach.objects.filter(tender=record).select_related("supplier__org")
+    return any(o.supplier.org_id and caller.is_member(o.supplier.org) for o in invited)
 
 
 #: Records a general message may be linked to, each with who may name it. Any
@@ -171,6 +176,11 @@ LINKABLE = {
     "supply_chain.tender": _may_read_tender,
     "labs.labsorg": lambda caller, record: True,  # the organisation directory is public
 }
+
+
+#: What `about_id` holds: a reference longer than this is refused, never cut short
+#: (two cut the same way would share each other's correspondence).
+MAX_REF = 64
 
 
 @dataclass
@@ -191,11 +201,14 @@ class GeneralKind(Kind):
 
     def resolve_about(self, ref: str, caller) -> About:
         """The record a reference names, if it is a linkable one the caller may read; else the text itself."""
-        ref = (ref or "").strip()[:64]
+        ref = (ref or "").strip()
         if not ref:
             return About()
+        if len(ref) > MAX_REF:
+            raise ValidationError({"about": f"a reference is at most {MAX_REF} characters"})
         model_label, _, pk = ref.rpartition(":")
-        check = LINKABLE.get(model_label.lower())
+        model_label = model_label.lower()
+        check = LINKABLE.get(model_label)
         if check is None:
             return About(ref=ref)
         from django.apps import apps

@@ -210,8 +210,8 @@ def communications_draft_create(
         "Change a draft before a person sends it: `title`, `subject`, `body`, `reply_to`, `recipients` (the "
         "whole list; name an existing recipient's `id` to keep it), `included` (the recipient ids to send "
         "to), or `emails` (a recipient's address). A kind that fixes its recipients (a round's applicants, a "
-        "tender's suppliers) takes only `included` -- and, for a tender, an address. Only a draft can change. "
-        "Does not send."
+        "tender's suppliers) refuses `recipients`, and a round's also `emails`; its title, subject, body and "
+        "reply-to change like any draft's. Only a draft can change. Does not send."
     ),
     input_schema={
         "type": "object",

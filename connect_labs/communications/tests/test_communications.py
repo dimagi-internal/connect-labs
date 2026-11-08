@@ -276,9 +276,19 @@ def test_what_sending_changes_waits_for_the_mail_service(world, settings, monkey
     service.not_delivered(row.pk, failed=True)
     row.refresh_from_db()
     assert row.delivery == "failed" and calls == []
+
+
+def test_what_sending_changes_runs_once_the_mail_service_takes_it(world, settings, monkeypatch):
+    settings.LABS_EMAIL_ENABLED = True
+    monkeypatch.setattr("connect_labs.utils.email.send_labs_email", lambda *a, **k: object())
+    monkeypatch.setattr("django.db.transaction.on_commit", lambda fn, using=None, robust=False: fn())
+    monkeypatch.setattr(kinds.get("general"), "after_sent", lambda *a, **k: {"done": True})
+    out = draft_for(world)
+    service.send(browser_request(world["writer"]), out["id"])
+    row = SentMessage.objects.get(communication_id=out["id"])
     service.delivered(row.pk)
     row.refresh_from_db()
-    assert row.delivery == "delivered" and calls == [1] and row.effects["done"]
+    assert row.delivery == "delivered" and row.effects["done"]
 
 
 def test_another_organisations_message_about_a_record_is_not_shown(world, mail):
@@ -300,3 +310,41 @@ def test_another_organisations_message_about_a_record_is_not_shown(world, mail):
     service.send(browser_request(world["writer"]), ours["id"])
     seen = {m.subject for m in service.sent_about(world["writer"], world["org"])}
     assert "Hello Partner Org" in seen and "Private to Other Org" not in seen
+
+
+def test_a_delivery_report_applies_once_and_a_late_failure_never_undoes_it(world, settings, monkeypatch):
+    settings.LABS_EMAIL_ENABLED = True
+    monkeypatch.setattr("connect_labs.utils.email.send_labs_email", lambda *a, **k: object())
+    monkeypatch.setattr("django.db.transaction.on_commit", lambda fn, using=None, robust=False: fn())
+    calls = []
+    monkeypatch.setattr(kinds.get("general"), "after_sent", lambda *a, **k: calls.append(1) or {})
+    out = draft_for(world)
+    service.send(browser_request(world["writer"]), out["id"])
+    row = SentMessage.objects.get(communication_id=out["id"])
+    service.delivered(row.pk)
+    service.delivered(row.pk)  # the task ran twice
+    service.not_delivered(row.pk, failed=True)
+    row.refresh_from_db()
+    assert calls == [1] and row.delivery == "delivered"
+
+
+def test_references_are_whole_and_case_does_not_matter(world):
+    with pytest.raises(MCPToolError):
+        draft_for(world, about_ref="workflow.run:" + "9" * 80)
+    out = draft_for(world, about_ref=f"LABS.LabsOrg:{world['org'].pk}")
+    assert Communication.objects.get(pk=out["id"]).about == world["org"]
+
+
+def test_an_automatic_notice_reaches_its_final_state(world, settings, monkeypatch):
+    settings.LABS_EMAIL_ENABLED = True
+    monkeypatch.setattr("django.db.transaction.on_commit", lambda fn, using=None, robust=False: fn())
+    monkeypatch.setattr(
+        "connect_labs.utils.email.send_labs_email",
+        lambda *a, sent_message_id=None, **k: service.delivered(sent_message_id),
+    )
+    assert service.send_automatic(
+        "solicitations.notice", about=world["org"], to=["a@x.example", "b@x.example"], subject="s", body="b"
+    )
+    rows = SentMessage.objects.filter(kind="solicitations.notice")
+    assert sorted(r.to_email for r in rows) == ["a@x.example", "b@x.example"]
+    assert {r.delivery for r in rows} == {"delivered"}

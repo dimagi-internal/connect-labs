@@ -378,9 +378,12 @@ def test_award_notifies_when_email_on(world):
 
 
 @override_settings(LABS_EMAIL_ENABLED=True)
-def test_submission_confirms_to_respondent_and_owner(world):
+def test_submission_confirms_to_respondent_and_owner(world, django_capture_on_commit_callbacks):
     call = make_call(world["owner_org"])
-    with patch("connect_labs.utils.email.send_labs_email", return_value=MagicMock()) as send:
+    with (
+        patch("connect_labs.utils.email.send_labs_email", return_value=MagicMock()) as send,
+        django_capture_on_commit_callbacks(execute=True),
+    ):
         da(world["applicant"]).create_response(call.pk, None, {"status": "submitted"})
     sent_to = [c[0][2] for c in send.call_args_list]
     assert [world["applicant"].email] in sent_to
@@ -483,9 +486,12 @@ def test_one_submitted_response_per_user_per_call(world):
 
 
 @override_settings(LABS_EMAIL_ENABLED=True)
-def test_receipt_goes_only_to_the_signed_in_account(world):
+def test_receipt_goes_only_to_the_signed_in_account(world, django_capture_on_commit_callbacks):
     call = make_call(world["owner_org"])
-    with patch("connect_labs.utils.email.send_labs_email", return_value=MagicMock()) as send:
+    with (
+        patch("connect_labs.utils.email.send_labs_email", return_value=MagicMock()) as send,
+        django_capture_on_commit_callbacks(execute=True),
+    ):
         response = da(world["applicant"]).create_response(
             call.pk, None, {"status": "submitted", "org_name": "Typed Co", "submitted_by_email": "victim@else.example"}
         )
@@ -625,8 +631,10 @@ def test_award_email_and_allocation_wait_for_the_commit(world, django_capture_on
         fda.return_value.add_allocation.assert_not_called()
         response.refresh_from_db()
         assert response.status == "awarded" and response.awardee_notified is False
-        for callback in callbacks:
-            callback()
+        # Committed: the award's own step runs, and queues its email for the same commit.
+        with django_capture_on_commit_callbacks(execute=True):
+            for callback in callbacks:
+                callback()
     send.assert_called_once()
     assert fda.return_value.add_allocation.call_count == 1
     response.refresh_from_db()

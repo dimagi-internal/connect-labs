@@ -105,10 +105,11 @@ def sent_about(subject, about, limit: int = 300) -> list:
     ct = ContentType.objects.get_for_model(about)
     rows = SentMessage.objects.filter(about_type=ct, about_id=str(about.pk)).select_related(
         "org", "sent_by", "communication"
-    )[: limit * 2]
+    )
     readable: dict[int, bool] = {}
     out = []
-    for message in rows:
+    # Filtered in order until `limit` readable ones are found, not sliced first.
+    for message in rows.iterator(chunk_size=200):
         communication = message.communication
         if communication is not None:
             if communication.pk not in readable:
@@ -247,6 +248,10 @@ def create_draft(
     if not kind.can_prepare(caller, about, communication):
         raise PermissionDenied(f"You can't write {kind.label.lower()}s about this.")
     communication.save()
+    if recipients is not None and not kind.recipients_editable:
+        raise ValidationError(
+            {"recipients": f"Who a {kind.label.lower()} goes to is set by labs; choose among them after drafting."}
+        )
     _write_recipients(communication, _clean_recipients(recipients) if recipients is not None else spec.recipients)
     return communication
 
@@ -464,33 +469,38 @@ def send(request, pk) -> dict:
 def delivered(sent_message_id) -> None:
     """The mail service took this message: record it, then do what sending it changes.
 
-    Called by the mail task on success. `after_sent` runs as the person who
-    sent it (an outreach marked sent, a reply recorded); if it fails, the
-    message still went, and the failure is kept on the record and shown.
+    Called by the mail task on success. The delivery is claimed first (queued ->
+    delivered, once), so a task that runs twice never applies `after_sent` twice.
+    `after_sent` runs as the person who sent it (an outreach marked sent, a reply
+    recorded); if it fails, the message still went, and the failure is kept on
+    the record and shown.
     """
-    message = (
-        SentMessage.objects.select_related("communication", "recipient", "sent_by").filter(pk=sent_message_id).first()
-    )
-    if message is None:
+    claimed = SentMessage.objects.filter(pk=sent_message_id, delivery=QUEUED).update(delivery=DELIVERED)
+    if not claimed:
         return
-    message.delivery = DELIVERED
-    effects = dict(message.effects or {})
+    message = SentMessage.objects.select_related("communication", "recipient", "sent_by").get(pk=sent_message_id)
     communication, recipient = message.communication, message.recipient
-    if communication is not None and recipient is not None:
-        try:
-            kind = kind_registry.get(communication.kind)
-            caller = Caller(user=message.sent_by)
-            effects.update(kind.after_sent(communication, recipient, message, about_of(communication), caller) or {})
-        except Exception as e:  # noqa: BLE001 -- the email went; say what did not follow it
-            logger.exception("communications: after-send step failed for message %s", message.pk)
-            effects["after_sent_error"] = str(e)[:500]
+    if communication is None or recipient is None:
+        return
+    effects = dict(message.effects or {})
+    try:
+        kind = kind_registry.get(communication.kind)
+        caller = Caller(user=message.sent_by)
+        effects.update(kind.after_sent(communication, recipient, message, about_of(communication), caller) or {})
+    except Exception as e:  # noqa: BLE001 -- the email went; say what did not follow it
+        logger.exception("communications: after-send step failed for message %s", message.pk)
+        effects["after_sent_error"] = str(e)[:500]
     message.effects = effects
-    message.save(update_fields=["delivery", "effects"])
+    message.save(update_fields=["effects"])
 
 
 def not_delivered(sent_message_id, *, failed: bool) -> None:
-    """The mail service refused it for good (`failed`), or mail is off here."""
-    SentMessage.objects.filter(pk=sent_message_id).update(delivery=FAILED if failed else NOT_SENT)
+    """The mail service refused it for good (`failed`), or mail is off here.
+
+    Only a message still waiting changes: a report that arrives after a
+    success (a task run twice) never turns "Sent" into "Failed".
+    """
+    SentMessage.objects.filter(pk=sent_message_id, delivery=QUEUED).update(delivery=FAILED if failed else NOT_SENT)
 
 
 # -- what labs sends on its own -----------------------------------------------
@@ -515,3 +525,31 @@ def record_automatic(kind: str, *, about=None, to, subject: str, body: str, queu
             )
         )
     return rows
+
+
+def send_automatic(kind: str, *, about=None, to, subject: str, body: str, program_id=None, org=None) -> bool:
+    """Send mail labs sends by itself (a receipt, a notice), recorded first.
+
+    One email per address, each with its record, queued once the transaction
+    commits and reported back by the mail task, so its row ends Sent, Failed or
+    Not sent rather than waiting forever. True when mail is on and it was queued.
+    """
+    from connect_labs.utils.email import email_enabled, send_labs_email
+
+    enabled = email_enabled()
+    rows = record_automatic(
+        kind, about=about, to=to, subject=subject, body=body, queued=enabled, program_id=program_id, org=org
+    )
+    if not enabled:
+        return False
+    for row in rows:
+
+        def queue(row=row):
+            try:
+                send_labs_email(row.subject, row.body, [row.to_email], sent_message_id=row.pk)
+            except Exception:  # noqa: BLE001 -- recorded as not sent; the rest still go
+                logger.exception("communications: could not queue notice %s", row.pk)
+                SentMessage.objects.filter(pk=row.pk).update(delivery=NOT_SENT)
+
+        transaction.on_commit(queue)
+    return bool(rows)

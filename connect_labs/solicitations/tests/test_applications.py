@@ -420,6 +420,31 @@ def test_an_invitation_goes_only_to_an_address_an_applicant_gave(client, world, 
     assert mail == [] and not OrgInvite.objects.exists()
 
 
+def test_an_agent_cannot_add_or_copy_people_on_a_rounds_invitations(world):
+    from django.core.exceptions import ValidationError as DjangoValidationError
+
+    from connect_labs.communications import service as comms
+
+    with pytest.raises(DjangoValidationError):
+        comms.create_draft(
+            world["reviewer"],
+            ROUND_KIND,
+            about_id=world["round"].pk,
+            recipients=[{"email": "lead@firm.example", "org": "firm-org", "cc": ["spy@elsewhere.example"]}],
+        )
+
+
+def test_a_copy_on_an_invitation_is_refused_at_send(client, world, mail):
+    draft = start_draft(client, world, world["reviewer"])
+    recipient = draft.recipients.get()
+    recipient.cc = ["spy@elsewhere.example"]
+    recipient.save()
+    response = client.post(
+        reverse("communications:detail", args=[draft.pk]), {"action": "send", "include": [recipient.pk]}
+    )
+    assert response.status_code == 400 and mail == []
+
+
 def test_a_call_made_in_labs_is_not_offered_it_since_it_is_scored_blind(world):
     owner = make_user("call-owner")
     grant(owner, world["call"].owner_org)

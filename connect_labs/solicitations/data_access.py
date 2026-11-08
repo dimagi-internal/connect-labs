@@ -1323,36 +1323,18 @@ class SolicitationsDataAccess:
 
     @staticmethod
     def _send(subject: str, message: str, recipients, *, about=None, org=None) -> bool:
-        """True only when the mail was handed to the delivery path. Either way it is
-        recorded against the call (`communications`), so a call's correspondence is whole."""
-        from connect_labs.utils.email import email_enabled, send_labs_email
-
+        """True when the mail was queued. Recorded against the call either way
+        (`communications`), so a call's correspondence is whole and each row
+        reaches its final delivery state."""
         recipients = [r for r in (recipients or []) if r and "@" in r]
         if not recipients:
             return False
-        queued = False
-        if email_enabled():
-            try:
-                queued = send_labs_email(subject, message, recipients) is not None
-            except Exception:
-                logger.exception("Could not queue solicitation email %r", subject)
         try:
-            from connect_labs.communications.service import record_automatic
+            from connect_labs.communications.service import send_automatic
 
-            record_automatic(
-                "solicitations.notice",
-                about=about,
-                to=recipients,
-                subject=subject,
-                body=message,
-                queued=queued,
-                org=org,
+            return send_automatic(
+                "solicitations.notice", about=about, to=recipients, subject=subject, body=message, org=org
             )
-        except Exception:  # noqa: BLE001 -- a failed record must not undo the response it reports
-            logger.exception("Could not record solicitation email %r", subject)
-        return queued
-        try:
-            return send_labs_email(subject, message, recipients) is not None
         except Exception:
-            logger.exception("Could not queue solicitation email %r", subject)
+            logger.exception("Could not send solicitation email %r", subject)
             return False
