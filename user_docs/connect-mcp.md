@@ -99,16 +99,16 @@ Full access (including real visit data) still requires your passkey, even for a 
 
 #### Agents not on your computer
 
-An agent running in the cloud or on another machine can also request a one-hour token. Instead of opening a browser itself, it gives you a link. You open that link while signed in to Labs, and the page shows you:
+An agent running in the cloud or on another machine can also request a one-hour token. Instead of opening a browser itself, it gives you a link. You open that link while signed in to Labs, and it takes you to the **MCP access page** ([labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/)) with the agent's request shown at the top. The request tells you:
 
 - which Labs account the agent is acting as
 - what the agent says it needs the access for
 - the access level it is asking for (No user visit data or Full access) and that it lasts one hour
 - **the name of the runner that made the request**, if the agent signed its request with a recognised runner key — this lets you confirm the request came from the agent you expect
 
-Pressing **Continue** takes you to the same passkey step in canopy that a full-access token requires. This passkey step is required at both access levels when the token will leave Labs for another machine — the bar is higher than for a token that stays on your own computer.
+Your active tokens and the token creation form are shown beneath the request. The **Decline** and **Continue** buttons are in the request panel at the top. Pressing **Continue** takes you to the same passkey step in canopy that a full-access token requires. This passkey step is required at both access levels when the token will leave Labs for another machine — the bar is higher than for a token that stays on your own computer.
 
-If you approve, the agent collects the token on its own. If you decline, no token is created and no passkey is needed. The token is yours and appears on your MCP access page at [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/), where you can revoke it at any time.
+If you approve, the agent collects the token on its own, and the new token appears in your active tokens list on the same page. If you decline, no token is created and no passkey is needed. You can revoke any token at any time from the same page.
 
 !!! note "If canopy refuses the agent's request"
     If canopy cannot verify the agent's runner signature — for example, because the key is not recognised or has expired — the agent will now receive a clear explanation of why the request was refused, rather than a generic error. If this happens, contact your programme administrator to check the agent's credentials.
@@ -117,7 +117,7 @@ If you approve, the agent collects the token on its own. If you decline, no toke
 
 ## MCP Access
 
-The page where you manage sign-ins and tokens is called **MCP access** and is at [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/). It explains the difference between signing an app in through the browser and using a Personal Access Token, and shows expiry dates including the time of day.
+The page where you manage sign-ins and tokens is called **MCP access** and is at [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/). It explains the difference between signing an app in through the browser and using a Personal Access Token, and shows expiry dates including the time of day. When an agent requests a short-lived token, that request also appears at the top of this page for you to review and act on.
 
 The `claude mcp add` command shown on that page is the correct one to use. Do not edit `~/.claude/mcp.json` directly — Claude Code does not read that file.
 
@@ -223,9 +223,4 @@ Personal Access Tokens let you connect an MCP client to Labs without going throu
 
 **Expiry dates** on the tokens page include the time of day, so you can tell exactly when a token will stop working.
 
-!!! note "Tokens you already have keep working"
-    This confirmation step applies only when creating or rotating a token. Using an existing token is unchanged.
-
-### Creating and rotating tokens via `labs-token-setup`
-
-When `/labs-token-setup` opens a browser to approve a token, it uses the same approval page as the tokens page at `/labs/mcp/tokens/`. The approve button and all links on that page work correctly, including when you were not already signed in and Labs redirected you to sign in first. If you previously encountered a "not found" page after signing in at that step, this has been fixed — run `/labs-token-setup` again
+**Agent token requests** appear at the top of the tokens page when an agent running elsewhere has sent you a link. The request panel shows who asked, which runner it came from, what it says it needs, the access level and how long the token will last. Your **
