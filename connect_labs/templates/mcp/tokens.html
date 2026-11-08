@@ -72,6 +72,8 @@
   </div>
   {% endif %}
 
+  {% if ar %}{% include "mcp/_agent_request_card.html" %}{% endif %}
+
   {% include "mcp/_full_access_notice.html" with notice=full_access_notice %}
 
   {% if messages %}
