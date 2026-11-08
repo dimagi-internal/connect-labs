@@ -16,10 +16,11 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.urls import reverse
 from django.utils import timezone
 
+from connect_labs.communications.models import Communication, SentMessage
 from connect_labs.marketplace.models import OrgInvite
-from connect_labs.solicitations import access, applicant_contact, service_areas
+from connect_labs.solicitations import access, communication_kinds, service_areas
 from connect_labs.solicitations.data_access import SolicitationsDataAccess
-from connect_labs.solicitations.local_models import SOURCE_DIRECTORY, ApplicantMessage, SolicitationResponse
+from connect_labs.solicitations.local_models import SOURCE_DIRECTORY, SolicitationResponse
 from connect_labs.solicitations.tests.factories import (
     grant,
     make_call,
@@ -253,7 +254,7 @@ def test_the_reviewer_sees_the_picked_areas(client, world):
     assert 'data-testid="round-response-areas"' in body and "Kano" in body
 
 
-# --- writing to applicants -----------------------------------------------------
+# --- writing to applicants (communications, kind solicitations.round_applicants) ---
 
 
 @pytest.fixture
@@ -263,7 +264,7 @@ def mail(settings, monkeypatch):
     queued = []
 
     def fake_send(
-        subject, message, recipient_list, html_message=None, from_email=None, *, reply_to=None, countdown=None
+        subject, message, recipient_list, html_message=None, from_email=None, *, reply_to=None, cc=None, countdown=None
     ):
         queued.append({"subject": subject, "body": message, "to": recipient_list, "reply_to": reply_to})
         return object()
@@ -272,155 +273,150 @@ def mail(settings, monkeypatch):
     return queued
 
 
-def contact_url(world):
-    return reverse("solicitations:contact_applicants", args=[world["round"].public_id])
-
-
+ROUND_KIND = "solicitations.round_applicants"
 MESSAGE = "Dear {first_name},\n\nPlease pick your areas for {call_title}."
 
 
-def test_the_round_page_offers_it_to_its_reviewers_only(client, world):
+def outbox_url(world):
+    return f"{reverse('communications:outbox')}?kind={ROUND_KIND}&about={world['round'].pk}"
+
+
+def start_draft(client, world, user):
+    response = login(client, user).post(outbox_url(world))
+    assert response.status_code == 302, response
+    return Communication.objects.get(pk=int(response.url.rstrip("/").split("/")[-1]))
+
+
+def test_the_round_page_links_its_reviewers_to_its_messages(client, world):
     page = login(client, world["reviewer"]).get(reverse("marketplace:round", args=["chp-eoi"])).content.decode()
-    assert contact_url(world) in page
-    assert login(client, world["colleague"]).get(contact_url(world)).status_code == 404
+    contact = reverse("solicitations:contact_applicants", args=[world["round"].public_id])
+    assert contact in page
+    assert client.get(contact).url == outbox_url(world)
+    assert login(client, world["colleague"]).get(outbox_url(world)).status_code == 404
 
 
-def test_the_page_lists_applicant_organisations_and_who_it_writes_to(client, world):
+def test_a_draft_addresses_each_person_at_each_applicant(client, world):
     make_response(world["round"], None, org_name="Nobody We Know")
-    body = login(client, world["reviewer"]).get(contact_url(world)).content.decode()
-    assert "Firm Org" in body and "lead@firm.example" in body
-    assert "Nobody We Know" in body and "not matched to an organisation" in body
-    assert "reviewer@dimagi.com" in body  # replies default to the writer
-
-
-def test_preview_fills_the_message_in_for_the_first_person(client, world, mail):
-    world["imported"].submitted_by_name = "Amina Bello"
+    world["imported"].submitted_by_name = "Amina Bello, Musa Ali"
+    world["imported"].submitted_by_email = "amina@firm.example, musa@firm.example"
     world["imported"].save()
-    response = login(client, world["reviewer"]).post(
-        contact_url(world),
-        {
-            "org": [world["firm"].pk],
-            "subject": "About {org_name}",
-            "message": MESSAGE,
-            "reply_to": "pm@partner.example",
-            "preview": "1",
-        },
-    )
-    body = response.content.decode()
-    assert 'data-testid="contact-preview"' in body
-    assert "Dear Amina," in body and "Please pick your areas for Community health EOI." in body
-    assert "About Firm Org" in body and "[invitation link]" in body
-    assert mail == []  # preview sends nothing
+    draft = start_draft(client, world, world["reviewer"])
+    assert [(r.name, r.email, r.org) for r in draft.recipients.all()] == [
+        ("Amina Bello", "amina@firm.example", world["firm"]),
+        ("Musa Ali", "musa@firm.example", world["firm"]),
+    ]
+    assert draft.reply_to == "reviewer@dimagi.com" and "{link}" in draft.body
+    assert draft.context["unmatched"] == ["Nobody We Know"]
+    body = client.get(reverse("communications:detail", args=[draft.pk])).content.decode()
+    assert "amina@firm.example" in body and 'data-testid="preview"' in body
+    assert "Dear Amina," in body and "[invitation link]" in body
 
 
 def test_sending_writes_each_person_their_own_link_with_the_reply_to(client, world, mail):
     world["imported"].submitted_by_name = "Amina Bello, Musa Ali"
     world["imported"].submitted_by_email = "amina@firm.example, musa@firm.example"
     world["imported"].save()
-    response = login(client, world["reviewer"]).post(
-        contact_url(world),
-        {
-            "org": [world["firm"].pk],
-            "subject": "Areas",
-            "message": MESSAGE,
-            "reply_to": "pm@partner.example",
-            "send": "1",
-        },
+    draft = start_draft(client, world, world["reviewer"])
+    ids = [str(r.pk) for r in draft.recipients.all()]
+    response = client.post(
+        reverse("communications:detail", args=[draft.pk]),
+        {"action": "send", "subject": "Areas", "body": MESSAGE, "reply_to": "pm@partner.example", "include": ids},
     )
     assert response.status_code == 302
     assert [m["to"] for m in mail] == [["amina@firm.example"], ["musa@firm.example"]]
     assert all(m["reply_to"] == ["pm@partner.example"] for m in mail)
     assert mail[0]["body"].startswith("Dear Amina,") and mail[1]["body"].startswith("Dear Musa,")
-    links = [m["body"].split("\n")[-1] for m in mail]
+    links = [m["body"].split("\n")[-1] for m in mail]  # {link} not placed: added at the end
     assert all("/solicitations/join/" in link for link in links) and links[0] != links[1]
 
-    sent = list(ApplicantMessage.objects.order_by("pk"))
+    sent = list(SentMessage.objects.filter(communication=draft).order_by("pk"))
     assert [m.to_email for m in sent] == ["amina@firm.example", "musa@firm.example"]
     assert all("[invitation link]" in m.body and "/solicitations/join/" not in m.body for m in sent)
-    assert sent[0].sent_by == world["reviewer"] and sent[0].queued
+    assert sent[0].sent_by == world["reviewer"] and sent[0].effects["invite_id"]
+    draft.refresh_from_db()
+    assert draft.status == "sent"
+    # The round's correspondence lists them.
+    assert "musa@firm.example" in client.get(outbox_url(world)).content.decode()
 
-    history = client.get(contact_url(world)).content.decode()
-    assert 'data-testid="contact-history"' in history and "musa@firm.example" in history
+
+def test_only_the_chosen_are_written_to(client, world, mail):
+    other = make_org("other-org", name="Other Org")
+    make_response(world["round"], None, llo_entity=other, submitted_by_email="x@other.example")
+    draft = start_draft(client, world, world["reviewer"])
+    firm = draft.recipients.get(org=world["firm"])
+    client.post(
+        reverse("communications:detail", args=[draft.pk]),
+        {"action": "send", "subject": "s", "body": MESSAGE, "reply_to": "pm@partner.example", "include": [firm.pk]},
+    )
+    assert [m["to"] for m in mail] == [["lead@firm.example"]]
 
 
 def test_nothing_is_sent_or_invited_when_mail_is_off(client, world, settings):
     settings.LABS_EMAIL_ENABLED = False
-    response = login(client, world["reviewer"]).post(
-        contact_url(world),
+    draft = start_draft(client, world, world["reviewer"])
+    response = client.post(
+        reverse("communications:detail", args=[draft.pk]),
         {
-            "org": [world["firm"].pk],
-            "subject": "Areas",
-            "message": MESSAGE,
+            "action": "send",
+            "subject": "s",
+            "body": MESSAGE,
             "reply_to": "pm@partner.example",
-            "send": "1",
+            "include": [r.pk for r in draft.recipients.all()],
         },
     )
     assert response.status_code == 400 and "not set up" in response.content.decode()
-    assert not ApplicantMessage.objects.exists()
+    assert not SentMessage.objects.filter(communication=draft).exists()
     assert not OrgInvite.objects.exists()
+    draft.refresh_from_db()
+    assert draft.status == "draft"
 
 
-def test_a_closed_round_cannot_be_written_to(world, mail):
+def test_a_closed_round_cannot_be_written_to(client, world, mail):
+    draft = start_draft(client, world, world["reviewer"])
     world["round"].application_deadline = timezone.localdate() - timedelta(days=1)
     world["round"].save()
-    with pytest.raises(ValidationError):
-        applicant_contact.send(
-            world["reviewer"],
-            world["round"],
-            org_ids=[world["firm"].pk],
-            subject="s",
-            message="m",
-            reply_to="pm@partner.example",
-            link_for=str,
-        )
+    response = client.post(
+        reverse("communications:detail", args=[draft.pk]),
+        {"action": "send", "include": [r.pk for r in draft.recipients.all()]},
+    )
+    assert response.status_code == 400 and "closed" in response.content.decode()
     assert mail == []
-
-
-def test_only_the_rounds_reviewers_send(world, mail):
-    with pytest.raises(PermissionDenied):
-        applicant_contact.send(
-            world["colleague"],
-            world["round"],
-            org_ids=[world["firm"].pk],
-            subject="s",
-            message="m",
-            reply_to="pm@partner.example",
-            link_for=str,
-        )
 
 
 def test_a_call_made_in_labs_is_not_offered_it_since_it_is_scored_blind(world):
     owner = make_user("call-owner")
     grant(owner, world["call"].owner_org)
-    assert not applicant_contact.can_contact(owner, world["call"])
+    kind = communication_kinds.RoundApplicantsKind()
+    assert kind.resolve(world["call"].pk) is None
+    assert not kind.can_send(access.caller_for(owner), world["call"])
 
 
-def test_the_message_is_filled_in_and_the_link_added_when_not_placed():
-    from types import SimpleNamespace
+# --- labs' own notices are recorded -----------------------------------------------
 
-    call = SimpleNamespace(title="CHP EOI", application_deadline=None)
-    text = applicant_contact.render(
-        applicant_contact.with_link("Hi {first_name} of {org_name}; {unknown} stays."),
-        person=applicant_contact.Person(name="", email="a@b.example"),
-        org_name="Firm Org",
-        solicitation=call,
-        link="https://labs.example/solicitations/join/x/",
+
+def test_a_submission_receipt_is_recorded_against_the_call(world, settings):
+    settings.LABS_EMAIL_ENABLED = False
+    da(world["colleague"]).create_response(
+        world["call"].public_id, llo_entity_id="firm-org", data={"responses": {"q1": "x"}}
     )
-    assert text == "Hi Firm Org team of Firm Org; {unknown} stays.\n\nhttps://labs.example/solicitations/join/x/"
+    notices = SentMessage.objects.filter(kind="solicitations.notice", about_id=str(world["call"].pk))
+    assert {m.to_email for m in notices} == {"colleague@example.org", "calls@owner.example"}
+    assert all(m.delivery == "not_sent" and m.sent_by is None for m in notices)
 
 
 # --- accepting the invitation ---------------------------------------------------
 
 
 def test_accepting_a_link_joins_the_organisation_and_lands_on_its_applications(client, world, mail):
-    login(client, world["reviewer"]).post(
-        contact_url(world),
+    draft = start_draft(client, world, world["reviewer"])
+    client.post(
+        reverse("communications:detail", args=[draft.pk]),
         {
-            "org": [world["firm"].pk],
-            "subject": "Areas",
-            "message": MESSAGE,
+            "action": "send",
+            "subject": "s",
+            "body": MESSAGE,
             "reply_to": "pm@partner.example",
-            "send": "1",
+            "include": [r.pk for r in draft.recipients.all()],
         },
     )
     link = mail[0]["body"].split("\n")[-1]

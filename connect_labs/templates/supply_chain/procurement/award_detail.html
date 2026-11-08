@@ -151,7 +151,12 @@ the award, so the page says so where the order button would otherwise be.
 {% endif %}
 
 <details class="bg-white border border-gray-200 rounded-lg mb-4" id="selection-drafts" data-testid="selection-drafts">
-  <summary class="px-4 py-2.5 cursor-pointer text-xs font-semibold text-gray-600">Emails for this award <span class="font-normal ml-1">the selection email to the supplier{% if order_set.partners_total %}, and a handover for each partner{% endif %}; nothing is sent from here</span></summary>
+  <summary class="px-4 py-2.5 cursor-pointer text-xs font-semibold text-gray-600">Emails for this award <span class="font-normal ml-1">the selection email to the supplier{% if order_set.partners_total %}, and a handover for each partner{% endif %}</span></summary>
+  <form method="post" action="{% url 'communications:outbox' %}?kind=supply_chain.award_emails&amp;about={{ award.pk }}" class="px-4 py-2 flex flex-wrap items-center gap-2" data-testid="send-from-labs">
+    {% csrf_token %}
+    <button class="text-sm px-3 py-1.5 rounded-md bg-brand-deep-purple text-white">Send these from labs</button>
+    <a class="text-xs text-brand-indigo hover:underline" href="{% url 'communications:outbox' %}?kind=supply_chain.award_emails&amp;about={{ award.pk }}">Messages for this award</a>
+  </form>
   {% for d in selection_drafts %}
   <div class="border-t border-gray-100 px-4 py-3" data-testid="selection-draft" data-kind="{{ d.kind }}">
     <p class="font-semibold text-gray-900">{{ d.label }}</p>

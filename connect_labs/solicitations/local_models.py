@@ -815,36 +815,6 @@ class SolicitationReview(models.Model):
         }
 
 
-class ApplicantMessage(models.Model):
-    """One email a call's owner sent to one person at an applicant organisation.
-
-    Each carries its own invitation (`marketplace.OrgInvite`) to act for the
-    organisation and update its application. The body is kept as sent but
-    with the link replaced by ``[invitation link]``: the token is a credential
-    and labs keeps only its hash.
-    """
-
-    solicitation = models.ForeignKey(Solicitation, on_delete=models.CASCADE, related_name="applicant_messages")
-    org = models.ForeignKey(LabsOrg, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
-    invite = models.ForeignKey(
-        "marketplace.OrgInvite", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
-    )
-    to_email = models.CharField(max_length=320)
-    to_name = models.CharField(max_length=200, blank=True, default="")
-    reply_to = models.CharField(max_length=320, blank=True, default="")
-    subject = models.CharField(max_length=300)
-    body = models.TextField()
-    # Handed to the delivery queue. False when outbound mail is off here.
-    queued = models.BooleanField(default=False)
-    sent_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
-    )
-    sent_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["-sent_at", "-pk"]
-
-
 def weighted_score(criteria_scores: dict, evaluation_criteria: list) -> int | None:
     """1-100 from per-criterion 1-10 scores, weighted by the rubric.
 

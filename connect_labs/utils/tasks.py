@@ -21,7 +21,9 @@ RETRY_BACKOFF_SECONDS = 10
 
 
 @celery_app.task(bind=True, max_retries=MAX_RETRIES)
-def send_mail_async(self, subject, message, recipient_list, from_email=None, html_message=None, reply_to=None):
+def send_mail_async(
+    self, subject, message, recipient_list, from_email=None, html_message=None, reply_to=None, cc=None
+):
     """
     Deliver one email.
 
@@ -36,10 +38,15 @@ def send_mail_async(self, subject, message, recipient_list, from_email=None, htm
     sender = from_email or settings.DEFAULT_FROM_EMAIL
 
     try:
-        if reply_to:
+        if reply_to or cc:
             # Replies go to whoever wrote the message, not to labs' own sender.
             email = EmailMultiAlternatives(
-                subject=subject, body=message, from_email=sender, to=recipient_list, reply_to=list(reply_to)
+                subject=subject,
+                body=message,
+                from_email=sender,
+                to=recipient_list,
+                cc=list(cc or []),
+                reply_to=list(reply_to or []),
             )
             if html_message:
                 email.attach_alternative(html_message, "text/html")

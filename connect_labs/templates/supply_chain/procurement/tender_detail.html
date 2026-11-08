@@ -299,14 +299,21 @@ is folded away, each fold with its count.
 
 {% if drafts %}
 {% comment %}
-The emails due on this tender today, drafted for Sophie to copy into her own
-mailbox: nothing is sent from here. Folded shut, and in the order a tender runs
+The emails due on this tender today, drafted to copy into a mailbox or to send from
+labs as one draft (communications/). Folded shut, and in the order a tender runs
 rather than by urgency -- the product drafts when asked; it does not press a
 next action on anyone (design doc section 22).
 {% endcomment %}
 <details id="drafts" class="fold scroll-mt-20">
   <summary>Draft emails <span class="text-sm font-normal tabular-nums text-gray-600">{{ drafts.drafts|length }}</span>{% if drafts_breakdown %} <span data-testid="drafts-breakdown" class="text-sm font-normal text-gray-600">{{ drafts_breakdown }}</span>{% endif %}{% if award_card %} <span data-testid="award-emails-note" class="text-sm font-normal text-gray-600">&middot; plus {{ award_card.emails }} award email{{ award_card.emails|pluralize }} on <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' award_card.id %}#selection-drafts">the award page</a></span>{% endif %}</summary>
   <div class="fold-body">
+    {% if not supply_as_of %}
+    <form method="post" action="{% url 'communications:outbox' %}?kind=supply_chain.tender_emails&amp;about={{ tender.id }}" class="mt-1 flex flex-wrap items-center gap-2" data-testid="send-from-labs">
+      {% csrf_token %}
+      <button class="text-sm px-3 py-1.5 rounded-md bg-brand-deep-purple text-white">Send these from labs</button>
+      <span class="text-xs text-gray-600">Opens them as one draft to check and send; sending marks each sent here. <a class="text-brand-indigo hover:underline" href="{% url 'communications:outbox' %}?kind=supply_chain.tender_emails&amp;about={{ tender.id }}">Messages for this tender</a></span>
+    </form>
+    {% endif %}
     {% for d in drafts.drafts %}
       {% comment %}Each draft is its own card headed by who it goes to, so one draft's
       Copy and Mark sent cannot be read as a neighbour's.{% endcomment %}

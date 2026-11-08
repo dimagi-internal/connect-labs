@@ -1,0 +1,16 @@
+{% if rows %}
+<div class="bg-white rounded-xl shadow-sm divide-y divide-gray-100">
+    {% for c in rows %}
+    <a href="{% url 'communications:detail' pk=c.pk %}" class="flex flex-wrap items-center justify-between gap-2 px-5 py-3 hover:bg-gray-50" data-testid="communication">
+        <div class="min-w-0">
+            <div class="text-sm font-medium text-gray-900 truncate">{{ c.title|default:c.subject|default:"(untitled)" }}</div>
+            <div class="text-xs text-gray-500">
+                {{ c.recipients.count }} recipient{{ c.recipients.count|pluralize }}
+                · {% if c.status == 'sent' %}sent {{ c.sent_at|date:"j M Y H:i" }} by {{ c.sent_by.name|default:c.sent_by.username }}{% else %}prepared {{ c.updated_at|date:"j M Y H:i" }}{% if c.prepared_via == 'mcp' %} by an agent for {{ c.prepared_by.name|default:c.prepared_by.username }}{% elif c.prepared_by %} by {{ c.prepared_by.name|default:c.prepared_by.username }}{% endif %}{% endif %}
+            </div>
+        </div>
+        <span class="px-2.5 py-0.5 rounded-full text-xs font-medium {% if c.status == 'sent' %}bg-green-100 text-green-800{% else %}bg-amber-50 text-amber-800{% endif %}">{{ c.get_status_display }}</span>
+    </a>
+    {% endfor %}
+</div>
+{% else %}<p class="text-sm text-gray-500">{{ empty }}</p>{% endif %}

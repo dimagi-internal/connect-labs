@@ -1,0 +1,20 @@
+<div class="overflow-x-auto">
+<table class="min-w-full text-xs">
+    <thead class="bg-gray-50 text-gray-500"><tr>
+        <th class="px-5 py-2 text-left font-medium">When</th><th class="px-2 py-2 text-left font-medium">To</th>
+        <th class="px-2 py-2 text-left font-medium">Subject</th><th class="px-2 py-2 text-left font-medium">By</th>
+        <th class="px-5 py-2 text-left font-medium">Delivery</th>
+    </tr></thead>
+    <tbody class="divide-y divide-gray-100">
+    {% for m in rows %}
+        <tr>
+            <td class="px-5 py-2 text-gray-500 whitespace-nowrap">{{ m.sent_at|date:"j M Y H:i" }}</td>
+            <td class="px-2 py-2 break-all">{% if m.org %}{{ m.org.name }} · {% endif %}{{ m.to_email }}</td>
+            <td class="px-2 py-2"><details><summary class="cursor-pointer">{{ m.subject }}</summary><div class="whitespace-pre-line text-gray-700 mt-2">{{ m.body }}</div>{% if m.reply_to %}<p class="text-gray-400 mt-1">Replies to {{ m.reply_to }}</p>{% endif %}</details></td>
+            <td class="px-2 py-2 text-gray-500">{% if m.sent_by %}{{ m.sent_by.name|default:m.sent_by.username }}{% else %}labs (automatic){% endif %}</td>
+            <td class="px-5 py-2">{% if m.delivery == 'queued' %}<span class="text-green-700">Sent</span>{% else %}<span class="text-amber-700">Not sent</span>{% endif %}{% if m.effects.after_sent_error %}<div class="text-red-600">Follow-up step failed: {{ m.effects.after_sent_error }}</div>{% endif %}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>

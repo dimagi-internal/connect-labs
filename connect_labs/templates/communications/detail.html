@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}{{ communication.title|default:"Message" }} · Outbox{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-0 sm:px-4 py-4 sm:py-6">
+    <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-500 mb-4 min-w-0">
+        <a href="{{ outbox_url }}" class="hover:text-brand-cornflower-blue"><i class="fa-solid fa-envelope mr-1"></i> {% if about %}Messages: {{ about_label }}{% else %}Outbox{% endif %}</a>
+        <i class="fa-solid fa-chevron-right text-xs"></i>
+        <span class="truncate max-w-[20rem]">{{ communication.title|default:"Message" }}</span>
+    </nav>
+
+    <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div class="min-w-0">
+            <h1 class="text-2xl font-semibold text-brand-deep-purple break-words">{{ communication.title|default:"Message" }}</h1>
+            <p class="text-sm text-gray-600 mt-1">
+                {{ kind.label }}{% if about %} · about {% if about_url %}<a href="{{ about_url }}" class="text-brand-cornflower-blue hover:underline">{{ about_label }}</a>{% else %}{{ about_label }}{% endif %}{% endif %}
+                {% if communication.prepared_by %} · prepared {% if communication.prepared_via == 'mcp' %}by an agent for{% else %}by{% endif %} {{ communication.prepared_by.name|default:communication.prepared_by.username }}{% endif %}
+            </p>
+        </div>
+        <span class="px-3 py-1 rounded-full text-sm font-medium {% if communication.status == 'sent' %}bg-green-100 text-green-800{% elif communication.status == 'draft' %}bg-amber-50 text-amber-800{% else %}bg-gray-100 text-gray-700{% endif %}" data-testid="status">{{ communication.get_status_display }}</span>
+    </div>
+
+    {% for message in messages %}<div class="mb-4 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800" data-testid="flash">{{ message }}</div>{% endfor %}
+    {% if errors.general %}<div class="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700" data-testid="error">{{ errors.general }}</div>{% endif %}
+
+    {% if communication.status == 'draft' %}
+    <form method="post" x-data="{}">
+        {% csrf_token %}
+        <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_28rem] gap-6">
+            <div class="flex flex-col gap-4">
+                <div class="bg-white rounded-xl shadow-sm p-5 flex flex-col gap-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="title">Name (only you see it)</label>
+                        <input id="title" name="title" value="{{ communication.title }}" class="base-input w-full" maxlength="200">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="reply_to">Replies go to</label>
+                        <input id="reply_to" name="reply_to" type="email" value="{{ communication.reply_to }}" class="base-input w-full">
+                        {% if errors.reply_to or problems.reply_to %}<p class="mt-1 text-sm text-red-600">{{ errors.reply_to|default:problems.reply_to }}</p>{% endif %}
+                    </div>
+                    {% if not per_recipient %}
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="subject">Subject</label>
+                        <input id="subject" name="subject" value="{{ communication.subject }}" class="base-input w-full" maxlength="300">
+                        {% if errors.subject %}<p class="mt-1 text-sm text-red-600">{{ errors.subject }}</p>{% endif %}
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1" for="body">Message</label>
+                        <textarea id="body" name="body" rows="12" class="base-input !h-auto py-2 w-full resize-y">{{ communication.body }}</textarea>
+                        {% if errors.body %}<p class="mt-1 text-sm text-red-600">{{ errors.body }}</p>{% endif %}
+                        {% if placeholders %}
+                        <p class="mt-1 text-xs text-gray-500">Filled in for each person: {% for p in placeholders %}<code class="text-[11px] bg-gray-100 px-1 rounded">{{ "{" }}{{ p }}{{ "}" }}</code> {% endfor %}</p>
+                        {% endif %}
+                    </div>
+                    {% else %}
+                    <p class="text-xs text-gray-500">Each email below was drafted for its recipient; preview one to read it.</p>
+                    {% endif %}
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+                    <div class="px-5 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
+                        <h2 class="text-sm font-semibold text-brand-deep-purple">Send to ({{ included_count }} of {{ recipients|length }})</h2>
+                        <label class="text-xs text-gray-600 flex items-center gap-1.5">
+                            <input type="checkbox" @change="$root.querySelectorAll('input[name=include]:not(:disabled)').forEach(c => c.checked = $event.target.checked)"> Select all
+                        </label>
+                    </div>
+                    {% if errors.recipients or problems.recipients %}<p class="px-5 pt-3 text-sm text-red-600">{{ errors.recipients|default:problems.recipients }}</p>{% endif %}
+                    <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm" data-testid="recipients">
+                        <tbody class="divide-y divide-gray-100">
+                        {% for r in recipients %}
+                            <tr class="{% if r.ref.blocked %}text-gray-400{% endif %}">
+                                <td class="w-8 px-4 py-2 align-top"><input type="checkbox" name="include" value="{{ r.pk }}" {% if r.included %}checked{% endif %} {% if r.ref.blocked %}disabled{% endif %} data-testid="include"></td>
+                                <td class="px-2 py-2 align-top">
+                                    <div class="font-medium">{{ r.label|default:r.org.name|default:r.name }}</div>
+                                    {% if r.name and r.name != r.label %}<div class="text-xs text-gray-500">{{ r.name }}</div>{% endif %}
+                                    {% if r.ref.blocked %}<div class="text-[11px] text-amber-700">Can't be invited: {{ r.ref.blocked }}</div>{% endif %}
+                                    {% if r.ref.note %}<div class="text-[11px] text-amber-700">{{ r.ref.note }}</div>{% endif %}
+                                    {% if r.ref.why %}<div class="text-[11px] text-gray-500">{{ r.ref.why }}</div>{% endif %}
+                                    {% if r.ref.has_areas %}<div class="text-[11px] text-green-700">Has picked areas</div>{% endif %}
+                                </td>
+                                <td class="px-2 py-2 align-top text-xs">
+                                    <input name="email_{{ r.pk }}" value="{{ r.email }}" placeholder="email address" class="base-input w-56 text-xs">
+                                    {% if r.cc %}<div class="text-gray-500 mt-1">cc {{ r.cc|join:", " }}</div>{% endif %}
+                                </td>
+                                <td class="px-4 py-2 align-top text-xs"><a href="?preview={{ r.pk }}#preview" class="text-brand-cornflower-blue hover:underline">Preview</a></td>
+                            </tr>
+                        {% empty %}
+                            <tr><td class="px-5 py-6 text-gray-500">Nobody to send to.</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-4">
+                <div class="bg-white rounded-xl shadow-sm p-5 flex flex-col gap-2">
+                    <button type="submit" name="action" value="save" class="w-full inline-flex justify-center items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50">Save draft</button>
+                    {% if can_send %}
+                    <button type="submit" name="action" value="send" data-testid="send"
+                            onclick="return confirm('Send to {{ included_count }} {{ included_count|pluralize:"person,people" }}? Each gets their own copy.')"
+                            class="w-full inline-flex justify-center items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700">
+                        <i class="fa-solid fa-paper-plane mr-2"></i> Send to {{ included_count }} {{ included_count|pluralize:"person,people" }}
+                    </button>
+                    <p class="text-[11px] text-gray-500">Saves what is on the page first. Sending is final.</p>
+                    {% else %}
+                    <p class="text-xs text-gray-500">You can prepare this draft; someone allowed to send it does that.</p>
+                    {% endif %}
+                    <button type="submit" name="action" value="discard" class="text-xs text-gray-500 hover:text-red-600 mt-1" onclick="return confirm('Discard this draft?')">Discard draft</button>
+                </div>
+
+                {% if preview and preview.recipient %}
+                <div class="bg-white rounded-xl shadow-sm p-5" id="preview" data-testid="preview">
+                    <p class="text-xs font-semibold text-gray-500 mb-1">AS {{ preview.recipient.email|default:preview.recipient.name|upper }} WILL READ IT</p>
+                    <p class="text-xs text-gray-500">Reply-to: {{ preview.reply_to|default:"—" }}{% if preview.recipient.cc %} · cc {{ preview.recipient.cc|join:", " }}{% endif %}</p>
+                    <p class="text-sm font-semibold text-gray-900 mt-2">{{ preview.subject }}</p>
+                    <div class="text-sm text-gray-700 whitespace-pre-line mt-2">{{ preview.body }}</div>
+                    <p class="text-[11px] text-gray-400 mt-3">Shows the last saved draft.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+    {% else %}
+        <div class="bg-white rounded-xl shadow-sm overflow-hidden" data-testid="sent-messages">
+            <h2 class="px-5 py-3 border-b border-gray-100 text-sm font-semibold text-brand-deep-purple">
+                {% if communication.status == 'sent' %}Sent {{ communication.sent_at|date:"j M Y H:i" }} by {{ communication.sent_by.name|default:communication.sent_by.username }}{% else %}Discarded{% endif %}
+            </h2>
+            {% include "communications/_sent_table.html" with rows=sent_messages %}
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

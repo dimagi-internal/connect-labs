@@ -7,7 +7,6 @@ left; those records were not imported (they were ACE test output).
 """
 
 from connect_labs.solicitations.local_models import (  # noqa: F401
-    ApplicantMessage,
     Solicitation,
     SolicitationResponse,
     SolicitationReview,
