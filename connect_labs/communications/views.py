@@ -40,7 +40,10 @@ def _about_filter(request):
     kind_key, about_id = request.GET.get("kind", ""), request.GET.get("about", "")
     if not kind_key or not about_id:
         return None, None, {}
-    kind = kind_registry.get(kind_key)
+    try:
+        kind = kind_registry.get(kind_key)
+    except ValidationError as e:
+        raise Http404("Not found") from e
     about = kind.resolve(about_id) if kind.about_model else None
     if about is None:
         raise Http404("Not found")
@@ -60,8 +63,7 @@ class OutboxView(OutboxPage):
         if about is not None:
             if not kind.can_prepare(caller, about):
                 raise Http404("Not found")
-            _, sent_qs = service.for_about(about)
-            sent_messages = list(sent_qs[:300])
+            sent_messages = service.sent_about(caller, about)
         ctx.update(
             {
                 "drafts": [c for c in rows if c.status == DRAFT],
@@ -103,9 +105,11 @@ class CommunicationView(OutboxPage):
             recipients=recipients,
             included_count=sum(1 for r in recipients if r.included),
             preview=chosen_preview,
-            problems=service.problems(communication, kind) if communication.is_draft else {},
-            errors=errors or {},
+            # What stops it being sent, then what the last attempt said: one dict, so
+            # the template never resolves a missing key as a filter argument.
+            errors={**(service.problems(communication, kind) if communication.is_draft else {}), **(errors or {})},
             can_send=communication.is_draft and kind.can_send(caller, about, communication),
+            emails_editable=kind.emails_editable,
             placeholders=kind.placeholders,
             per_recipient=any(r.body for r in recipients),
             sent_messages=list(communication.sent_messages.select_related("org", "sent_by")),
@@ -136,12 +140,13 @@ class CommunicationView(OutboxPage):
             if communication.is_draft:
                 data = {k: request.POST[k] for k in ("title", "subject", "body", "reply_to") if k in request.POST}
                 data["included"] = [i for i in request.POST.getlist("include") if i.isdigit()]
+                if kind.emails_editable:
+                    data["emails"] = {
+                        r.pk: request.POST[f"email_{r.pk}"]
+                        for r in communication.recipients.all()
+                        if f"email_{r.pk}" in request.POST
+                    }
                 service.update_draft(request, pk, data)
-                for recipient in communication.recipients.all():
-                    email = request.POST.get(f"email_{recipient.pk}")
-                    if email is not None and email.strip() != recipient.email:
-                        recipient.email = email.strip()
-                        recipient.save(update_fields=["email"])
             if action == "send":
                 result = service.send(request, pk)
                 count = result["queued"]

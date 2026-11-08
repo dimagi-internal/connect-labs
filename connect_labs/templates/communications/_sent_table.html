@@ -12,7 +12,7 @@
             <td class="px-2 py-2 break-all">{% if m.org %}{{ m.org.name }} · {% endif %}{{ m.to_email }}</td>
             <td class="px-2 py-2"><details><summary class="cursor-pointer">{{ m.subject }}</summary><div class="whitespace-pre-line text-gray-700 mt-2">{{ m.body }}</div>{% if m.reply_to %}<p class="text-gray-400 mt-1">Replies to {{ m.reply_to }}</p>{% endif %}</details></td>
             <td class="px-2 py-2 text-gray-500">{% if m.sent_by %}{{ m.sent_by.name|default:m.sent_by.username }}{% else %}labs (automatic){% endif %}</td>
-            <td class="px-5 py-2">{% if m.delivery == 'queued' %}<span class="text-green-700">Sent</span>{% else %}<span class="text-amber-700">Not sent</span>{% endif %}{% if m.effects.after_sent_error %}<div class="text-red-600">Follow-up step failed: {{ m.effects.after_sent_error }}</div>{% endif %}</td>
+            <td class="px-5 py-2">{% if m.delivery == 'delivered' %}<span class="text-green-700">Sent</span>{% elif m.delivery == 'queued' %}<span class="text-gray-600">Sending</span>{% elif m.delivery == 'failed' %}<span class="text-red-600">Failed</span>{% else %}<span class="text-amber-700">Not sent</span>{% endif %}{% if m.effects.after_sent_error %}<div class="text-red-600">Follow-up step failed: {{ m.effects.after_sent_error }}</div>{% endif %}</td>
         </tr>
     {% endfor %}
     </tbody>

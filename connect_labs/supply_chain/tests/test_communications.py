@@ -46,12 +46,26 @@ def mail(settings, monkeypatch):
     queued = []
 
     def fake_send(
-        subject, message, recipient_list, html_message=None, from_email=None, *, reply_to=None, cc=None, countdown=None
+        subject,
+        message,
+        recipient_list,
+        html_message=None,
+        from_email=None,
+        *,
+        reply_to=None,
+        cc=None,
+        countdown=None,
+        sent_message_id=None,
     ):
         queued.append({"subject": subject, "body": message, "to": recipient_list, "reply_to": reply_to})
+        if sent_message_id:  # what the mail task does once the mail service takes it
+            from connect_labs.communications.service import delivered
+
+            delivered(sent_message_id)
         return object()
 
     monkeypatch.setattr("connect_labs.utils.email.send_labs_email", fake_send)
+    monkeypatch.setattr("django.db.transaction.on_commit", lambda fn, using=None, robust=False: fn())
     return queued
 
 
@@ -143,3 +157,42 @@ def test_only_the_programme_prepares_them(tender, monkeypatch):
     monkeypatch.setattr(communication_kinds, "_is_programme", lambda caller, program_id: False)
     with pytest.raises(PermissionDenied):
         service.create_draft(make_user("stranger"), "supply_chain.tender_emails", about_id=tender["tender"]["id"])
+
+
+def test_an_email_the_mail_service_refuses_marks_nothing_sent(tender, settings, monkeypatch):
+    from connect_labs.communications.service import not_delivered
+
+    settings.LABS_EMAIL_ENABLED = True
+    monkeypatch.setattr(
+        "connect_labs.utils.email.send_labs_email",
+        lambda *a, sent_message_id=None, **k: not_delivered(sent_message_id, failed=True),
+    )
+    monkeypatch.setattr("django.db.transaction.on_commit", lambda fn, using=None, robust=False: fn())
+    sophie = make_user("sophie")
+    draft = service.create_draft(sophie, "supply_chain.tender_emails", about_id=tender["tender"]["id"])
+    draft.reply_to = "sophie@program.example"
+    draft.save()
+    service.send(browser_request(sophie), draft.pk)
+    assert Outreach.objects.get(pk=tender["rows"]["unsent"]["id"]).sent_on is None
+    assert Outreach.objects.get(pk=tender["rows"]["silent"]["id"]).last_reminder_on is None
+    assert set(SentMessage.objects.filter(communication=draft).values_list("delivery", flat=True)) == {"failed"}
+
+
+def test_an_invited_supplier_links_a_tender_only_while_it_is_open(tender, da, monkeypatch):
+    from django.core.exceptions import ValidationError
+
+    from connect_labs.communications import kinds
+    from connect_labs.solicitations.access import caller_for
+    from connect_labs.solicitations.tests.factories import grant
+    from connect_labs.supply_chain.models import Outreach, Tender
+
+    monkeypatch.setattr(communication_kinds, "_is_programme", lambda caller, program_id: False)
+    supplier_person = make_user("bola")
+    outreach = Outreach.objects.get(pk=tender["rows"]["unsent"]["id"])
+    grant(supplier_person, outreach.supplier.org)
+    general = kinds.get("general")
+    ref = f"supply_chain.tender:{tender['tender']['id']}"
+    assert general.resolve_about(ref, caller_for(supplier_person)).record is not None
+    Tender.objects.filter(pk=tender["tender"]["id"]).update(status="closed")
+    with pytest.raises(ValidationError):
+        general.resolve_about(ref, caller_for(supplier_person))
