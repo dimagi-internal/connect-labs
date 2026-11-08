@@ -1,0 +1,58 @@
+<section class="mb-8" data-testid="{{ testid }}">
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-3">{{ heading }} <span class="text-gray-400">({{ rows|length }})</span></h2>
+    {% if rows %}
+    <div class="space-y-3">
+        {% for row in rows %}
+        <div class="bg-white rounded-xl shadow-sm p-4 sm:p-5 {% if row.response.pk|stringformat:'s' == updated_pk %}ring-2 ring-green-300{% endif %}" data-testid="application" data-response="{{ row.response.pk }}">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <p class="text-xs text-gray-500">
+                        {% if row.is_round %}Expression of interest{% else %}{{ row.solicitation.owner_name|default:"Call" }}{% endif %}
+                        {% if row.solicitation.application_deadline %} · {% if row.is_open %}closes{% else %}closed{% endif %} {{ row.solicitation.application_deadline|date:"j M Y" }}{% endif %}
+                    </p>
+                    <h3 class="text-base font-semibold text-brand-deep-purple break-words">{{ row.solicitation.title }}</h3>
+                    <p class="text-sm text-gray-600 mt-0.5">
+                        For {{ row.response.display_name|default:row.response.org_name|default:"your organisation" }}
+                        {% if row.response.submission_date and row.response.status != 'draft' %} · sent {{ row.response.submission_date|date:"j M Y" }}{% endif %}
+                        {% if row.response.submitted_by_name %} by {{ row.response.submitted_by_name }}{% endif %}
+                    </p>
+                    <p class="text-sm mt-2 {% if row.area_names %}text-gray-700{% else %}text-amber-700{% endif %}">
+                        <i class="fa-solid fa-location-dot mr-1 {% if row.area_names %}text-gray-400{% endif %}"></i>
+                        {% if row.area_names %}
+                            {{ row.area_names|slice:":4"|join:"; " }}{% if row.area_names|length > 4 %} and {{ row.area_names|length|add:"-4" }} more{% endif %}
+                        {% elif row.response.selected_plan_names %}
+                            {{ row.response.selected_plan_names|join:", " }}
+                        {% else %}
+                            No areas picked yet
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    {% if row.response.status == 'draft' %}
+                        <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Draft</span>
+                    {% elif row.response.status == 'awarded' %}
+                        <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Awarded</span>
+                    {% elif row.response.status == 'rejected' %}
+                        <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700">Not selected</span>
+                    {% else %}
+                        <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Submitted</span>
+                    {% endif %}
+                    {% if row.response.status == 'draft' and row.is_open and not row.is_round %}
+                        <a href="{% url 'solicitations:respond' pk=row.solicitation.public_id %}" class="inline-flex items-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700">Continue</a>
+                    {% else %}
+                        <a href="{% url 'solicitations:response_detail' pk=row.response.pk %}" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50">View</a>
+                    {% endif %}
+                    {% if row.can_amend %}
+                        <a href="{% url 'solicitations:response_update' pk=row.response.pk %}" data-testid="update-application" class="inline-flex items-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700">
+                            <i class="fa-solid fa-pen mr-1.5"></i>{% if row.is_round %}Update areas{% else %}Update{% endif %}
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+        <p class="text-sm text-gray-500">{{ empty }}</p>
+    {% endif %}
+</section>

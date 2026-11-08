@@ -531,7 +531,10 @@ def labs_org_data_context(request):
 # ``/supply/api/`` is the supply pages' own operation endpoint, fetched by their
 # scripts: it reads its programme from the session's context like any request, and
 # a redirect would only add a round trip to every read.
-REDIRECT_EXEMPT_PREFIXES = ("/audit/image/", "/supply/api/")
+# An invitation link carries its token in the path: decorating it would copy the
+# token into a Location header and the next request's URL, which the link pages
+# take care never to do.
+REDIRECT_EXEMPT_PREFIXES = ("/audit/image/", "/supply/api/", "/supply/market/invites/", "/solicitations/join/")
 
 # Apps scoped by programme alone, where an opportunity in view implies its
 # programme. Supply's records belong to a programme and an opportunity only narrows

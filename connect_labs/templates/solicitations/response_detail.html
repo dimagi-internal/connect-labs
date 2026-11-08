@@ -20,6 +20,10 @@
             <a href="{% url 'solicitations:responses_list' pk=solicitation.public_id %}" class="hover:text-brand-cornflower-blue transition-colors">
                 <i class="fa-solid fa-inbox mr-1"></i> Responses
             </a>
+        {% elif is_respondent %}
+            <a href="{% url 'solicitations:applications' %}" class="hover:text-brand-cornflower-blue transition-colors">
+                <i class="fa-solid fa-folder-open mr-1"></i> Your applications
+            </a>
         {% else %}
             <a href="{% url 'solicitations:public_detail' pk=solicitation.public_id %}" class="hover:text-brand-cornflower-blue transition-colors truncate max-w-[16rem]">
                 <i class="fa-solid fa-bullhorn mr-1"></i> {{ solicitation.title }}
@@ -33,6 +37,8 @@
             {% if is_owner %}Response to{% else %}Your response to{% endif %}
             {% if is_round %}
             <a href="{% url 'marketplace:round' solicitation.slug %}" class="text-brand-cornflower-blue hover:underline">{{ solicitation.title }}</a>
+            {% elif from_round %}
+            <span class="text-gray-700">{{ solicitation.title }}</span>
             {% else %}
             <a href="{% url 'solicitations:public_detail' pk=solicitation.public_id %}" class="text-brand-cornflower-blue hover:underline">{{ solicitation.title }}</a>
             {% endif %}
@@ -87,6 +93,15 @@
                 {{ solicitation.owner_name|default:"The organisation" }} has your response and will contact you about the outcome.
             {% endif %}
         </p>
+        {% endif %}
+        {% if can_amend %}
+        <div class="mt-4">
+            <a href="{% url 'solicitations:response_update' pk=response.pk %}" data-testid="update-response"
+               class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">
+                <i class="fa-solid fa-pen mr-2"></i> {% if from_round %}Update where you would work{% else %}Update this response{% endif %}
+            </a>
+            <span class="text-xs text-gray-500 ml-2">Open until the call closes{% if solicitation.application_deadline %} on {{ solicitation.application_deadline|date:"j M Y" }}{% endif %}.</span>
+        </div>
         {% endif %}
     </div>
 

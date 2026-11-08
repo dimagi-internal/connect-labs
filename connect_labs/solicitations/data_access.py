@@ -632,6 +632,60 @@ class SolicitationsDataAccess:
         mine = solicitation.responses.filter(submitted_by_id=self.caller.user_pk)
         return mine.filter(status="draft").order_by("-pk").first() or mine.order_by("-pk").first()
 
+    def get_my_applications(self) -> list[SolicitationResponse]:
+        """Every response from the caller's side, on calls and directory rounds alike.
+
+        What the caller submitted (drafts included), and what was submitted
+        for any organisation they belong to by grant -- whoever filled in the
+        form, here or on a round's Google Form. Newest call first.
+        """
+        if self.caller.user_pk is None:
+            return []
+        orgs = [org.pk for org in access.member_orgs(self.caller)]
+        mine = Q(submitted_by_id=self.caller.user_pk)
+        ours = Q(llo_entity_id__in=orgs, synthetic=False) & ~Q(status="draft")
+        return list(
+            SolicitationResponse.objects.filter(mine | ours)
+            .select_related("solicitation", "solicitation__owner_org", "llo_entity")
+            .order_by("-solicitation__application_deadline", "-submission_date", "-pk")
+        )
+
+    def amend_response(self, response_id: int, data: dict) -> SolicitationResponse:
+        """Change a submitted response while its call is open (`access.can_amend_response`).
+
+        On a directory round only `service_areas`: its answers came from the
+        Google Form and the next import from the sheet writes them again (it
+        never touches the areas). On a call, the answers and the areas. Never
+        who it is from, its status, or its plans.
+        """
+        response = self._response_or_missing(response_id)
+        access.require(
+            access.can_amend_response(self.caller, response),
+            "Only the organisation that sent this response can change it, and only while its call is open.",
+        )
+        solicitation = response.solicitation
+        allowed = {"service_areas"} if access.is_directory_round(solicitation) else {"responses", "service_areas"}
+        refused = sorted(set(data) - allowed)
+        if refused:
+            raise ValidationError({name: "cannot be changed on a submitted response" for name in refused})
+        changed = []
+        if "responses" in data:
+            response.responses = data["responses"] or {}
+            changed.append("responses")
+        if "service_areas" in data:
+            if service_areas.area_mode(solicitation) == service_areas.AREA_MODE_PLANS:
+                raise ValidationError({"service_areas": "this call offers its own study areas"})
+            value = service_areas.normalise(data["service_areas"], field="service_areas")
+            service_areas.check_response_areas(solicitation, value)
+            response.service_areas = value
+            changed.append("service_areas")
+        if not access.is_directory_round(solicitation):
+            _require_areas_to_submit(response)
+        if changed:
+            # Only what changed: a round's `imported_at` still says when the sheet was last read.
+            response.save(update_fields=changed)
+        return response
+
     def create_response(
         self,
         solicitation_id: int,

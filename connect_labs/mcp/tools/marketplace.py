@@ -771,3 +771,102 @@ def marketplace_round_observations_set(
         "compared_with": record.observations_compared_with,
         "written_at": record.observations_at.isoformat() if record.observations_at else None,
     }
+
+
+@register(
+    name="marketplace_round_invites_create",
+    description=(
+        "Make one invitation link per organisation that applied to an OPEN marketplace EOI/RFP "
+        "round, so someone there can sign in to labs, join the organisation and update its "
+        "application -- today, pick where it would work (`/solicitations/applications/`). Opening "
+        "the link and accepting makes them a member of that organisation on labs, whether or not it "
+        "is on Connect; a link works once and lasts 30 days. Returns each organisation with the "
+        "contact the form gave (name, emails), whether it is already linked to a Connect "
+        "organisation (its Connect members can sign in without a link) and the link. Every call "
+        "makes NEW links; earlier ones stay valid until used or expired. Submissions the import "
+        "could not match to an organisation get no link and are listed under `unmatched`. Only "
+        "members of the organisation that ran the round may call it. Writes invitations: get the "
+        "requester's approval first. The links are credentials -- put them only in the email to "
+        "that organisation."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "slug": {"type": "string", "description": "The round's slug, from `marketplace_rounds_list`."},
+            "org_slugs": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Only these applicant organisations (default: every matched applicant).",
+            },
+        },
+        "required": ["slug"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def marketplace_round_invites_create(user, slug: str, org_slugs: list[str] | None = None) -> dict[str, Any]:
+    from django.urls import reverse
+
+    from connect_labs.labs.synthetic.org_tree import is_labs_only_org_row
+    from connect_labs.marketplace import membership
+    from connect_labs.supply_chain.runner import is_running_org
+
+    from .workflow_run import _absolute
+
+    round_ = _round_or_refuse(user, slug)
+    if not round_.can_accept_responses:
+        raise MCPToolError("BAD_REQUEST", f"{slug!r} is closed, so its applications can no longer be updated.")
+    wanted = set(org_slugs or [])
+
+    by_org: dict[int, dict] = {}
+    unmatched = []
+    for response in round_.responses.select_related("llo_entity").order_by("source_form", "source_row"):
+        org = response.llo_entity
+        if org is None:
+            unmatched.append({"response_id": response.pk, "org_name": response.org_name})
+            continue
+        if wanted and org.slug not in wanted:
+            continue
+        entry = by_org.setdefault(org.pk, {"org": org, "response_ids": [], "names": [], "emails": []})
+        entry["response_ids"].append(response.pk)
+        for value, bucket in ((response.submitted_by_name, "names"), (response.submitted_by_email, "emails")):
+            for item in str(value or "").replace(";", ",").split(","):
+                item = item.strip()
+                if item and item not in entry[bucket]:
+                    entry[bucket].append(item)
+
+    invites, skipped = [], []
+    for entry in sorted(by_org.values(), key=lambda e: e["org"].name.lower()):
+        org = entry["org"]
+        # Whoever accepts first may become the organisation's first admin: never
+        # for one that runs a programme (or Dimagi), nor a synthetic one.
+        if is_running_org(org) or is_labs_only_org_row(org):
+            skipped.append({"org_slug": org.slug, "org_name": org.name, "reason": "its people are added by support"})
+            continue
+        invite, raw = membership.issue_invite(org, email=(entry["emails"] or [""])[0][:254], issued_by=user)
+        path = reverse("solicitations:join_link", args=[raw])
+        invites.append(
+            {
+                "org_slug": org.slug,
+                "org_name": org.name,
+                "response_ids": entry["response_ids"],
+                "contact": {"names": entry["names"], "emails": entry["emails"]},
+                "connect_linked": bool(org.connect_organization_id and not org.labs_only),
+                "invite_url": _absolute(path) or path,
+                "role_on_accept": invite.role,
+                "expires_at": invite.expires_at.isoformat(),
+            }
+        )
+    missing = sorted(wanted - {e["org"].slug for e in by_org.values()})
+    return {
+        "round": {
+            "slug": round_.slug,
+            "title": round_.title,
+            "application_deadline": (round_.application_deadline.isoformat() if round_.application_deadline else None),
+        },
+        "applications_url": _absolute(reverse("solicitations:applications")),
+        "invites": invites,
+        "skipped": skipped,
+        "unmatched": unmatched,
+        "not_applicants": missing,
+    }

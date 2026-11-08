@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Join {{ invite.org.name }} · Solicitations{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto px-4 py-12">
+    <div class="bg-white rounded-xl shadow-sm p-8">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Invitation</p>
+        <h1 class="text-xl font-semibold text-brand-deep-purple mb-3">Act for {{ invite.org.name }}</h1>
+        <p class="text-sm text-gray-700">
+            Accepting adds you to {{ invite.org.name }} on Connect Labs, so you can see the applications it has sent
+            {% if open_count %}and update the {{ open_count }} still open{% endif %}.
+            The link works once.
+        </p>
+        {% if user.is_authenticated %}
+            <form method="post" class="mt-6">{% csrf_token %}
+                <button class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700">Accept and continue</button>
+            </form>
+        {% else %}
+            <a href="{{ login_url }}" class="inline-flex items-center mt-6 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700">Sign in with Connect to accept</a>
+            <p class="text-xs text-gray-500 mt-2">Signing in uses a Connect account.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

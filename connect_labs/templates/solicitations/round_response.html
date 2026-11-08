@@ -72,6 +72,12 @@ Below lg the two are tabs.
             </dl>
           </details>
         {% endif %}
+        {% if area_names %}
+          <div class="text-sm border border-gray-100 rounded-lg px-3 py-2" data-testid="round-response-areas">
+            <p class="text-xs font-semibold text-gray-500 mb-1"><i class="fa-solid fa-location-dot mr-1"></i>Where they would work (picked on labs)</p>
+            <p class="text-gray-700">{{ area_names|join:"; " }}</p>
+          </div>
+        {% endif %}
         {% include "solicitations/_answer_blocks.html" with blocks=answer_blocks %}
       </div>
     </section>
