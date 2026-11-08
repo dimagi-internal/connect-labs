@@ -348,3 +348,23 @@ def test_an_automatic_notice_reaches_its_final_state(world, settings, monkeypatc
     rows = SentMessage.objects.filter(kind="solicitations.notice")
     assert sorted(r.to_email for r in rows) == ["a@x.example", "b@x.example"]
     assert {r.delivery for r in rows} == {"delivered"}
+
+
+def test_a_success_after_a_failure_wins_and_still_follows_up_once(world, settings, monkeypatch):
+    settings.LABS_EMAIL_ENABLED = True
+    monkeypatch.setattr("connect_labs.utils.email.send_labs_email", lambda *a, **k: object())
+    monkeypatch.setattr("django.db.transaction.on_commit", lambda fn, using=None, robust=False: fn())
+    calls = []
+    monkeypatch.setattr(kinds.get("general"), "after_sent", lambda *a, **k: calls.append(1) or {})
+    out = draft_for(world)
+    service.send(browser_request(world["writer"]), out["id"])
+    row = SentMessage.objects.get(communication_id=out["id"])
+    service.not_delivered(row.pk, failed=True)
+    service.delivered(row.pk)
+    service.delivered(row.pk)
+    row.refresh_from_db()
+    assert row.delivery == "delivered" and calls == [1]
+
+
+def test_no_messages_for_a_zero_limit(world):
+    assert service.sent_about(world["writer"], world["org"], limit=0) == []

@@ -101,6 +101,8 @@ def sent_about(subject, about, limit: int = 300) -> list:
     Labs' own notices (no communication) go with the record, to those who may
     write about it.
     """
+    if limit <= 0:
+        return []
     caller = caller_for(subject)
     ct = ContentType.objects.get_for_model(about)
     rows = SentMessage.objects.filter(about_type=ct, about_id=str(about.pk)).select_related(
@@ -475,7 +477,9 @@ def delivered(sent_message_id) -> None:
     recorded); if it fails, the message still went, and the failure is kept on
     the record and shown.
     """
-    claimed = SentMessage.objects.filter(pk=sent_message_id, delivery=QUEUED).update(delivery=DELIVERED)
+    # A success outranks any earlier report (a task run twice may report failure first);
+    # the move to delivered happens once, so the follow-up runs once.
+    claimed = SentMessage.objects.filter(pk=sent_message_id).exclude(delivery=DELIVERED).update(delivery=DELIVERED)
     if not claimed:
         return
     message = SentMessage.objects.select_related("communication", "recipient", "sent_by").get(pk=sent_message_id)
@@ -542,14 +546,18 @@ def send_automatic(kind: str, *, about=None, to, subject: str, body: str, progra
     )
     if not enabled:
         return False
+
+    def queue(row) -> bool:
+        try:
+            return send_labs_email(row.subject, row.body, [row.to_email], sent_message_id=row.pk) is not None
+        except Exception:  # noqa: BLE001 -- recorded as not sent; the rest still go
+            logger.exception("communications: could not queue notice %s", row.pk)
+            SentMessage.objects.filter(pk=row.pk).update(delivery=NOT_SENT)
+            return False
+
+    if not transaction.get_connection().in_atomic_block:
+        # Already committed (an award's own after-commit step): hand off now, and say how it went.
+        return any([queue(row) for row in rows])
     for row in rows:
-
-        def queue(row=row):
-            try:
-                send_labs_email(row.subject, row.body, [row.to_email], sent_message_id=row.pk)
-            except Exception:  # noqa: BLE001 -- recorded as not sent; the rest still go
-                logger.exception("communications: could not queue notice %s", row.pk)
-                SentMessage.objects.filter(pk=row.pk).update(delivery=NOT_SENT)
-
-        transaction.on_commit(queue)
+        transaction.on_commit(lambda row=row: queue(row))
     return bool(rows)

@@ -149,7 +149,9 @@ def communications_kinds(user) -> dict[str, Any]:
         "Prepare a message for a person to send from labs. Labs writes it as its kind does -- the applicants "
         "of a round with their invitation links, the emails a tender owes each supplier -- and anything you "
         "pass replaces that: `subject`, `body` (with the kind's placeholders), `reply_to` (defaults to you), "
-        "`recipients` (replaces the list). `about_id` names the record for a kind about one (a round, a "
+        "`recipients` (replaces the list -- only for a `general` message; a round's applicants and a tender's or "
+        "award's emails are addressed by labs, so omit it and choose among them afterwards with "
+        "communications_draft_update `included`). `about_id` names the record for a kind about one (a round, a "
         "tender, an award); a `general` message names `params.owner_org` (the organisation it is sent for) "
         'and may name any record as `about_ref` ("app_label.model:id", e.g. a workflow run). Returns the '
         "draft with its `url`. THIS DOES NOT SEND: give the person the url; they review and send it in labs."

@@ -176,3 +176,23 @@ def test_an_email_the_mail_service_refuses_marks_nothing_sent(tender, settings, 
     assert Outreach.objects.get(pk=tender["rows"]["unsent"]["id"]).sent_on is None
     assert Outreach.objects.get(pk=tender["rows"]["silent"]["id"]).last_reminder_on is None
     assert set(SentMessage.objects.filter(communication=draft).values_list("delivery", flat=True)) == {"failed"}
+
+
+def test_an_invited_supplier_links_a_tender_only_while_it_is_open(tender, da, monkeypatch):
+    from django.core.exceptions import ValidationError
+
+    from connect_labs.communications import kinds
+    from connect_labs.solicitations.access import caller_for
+    from connect_labs.solicitations.tests.factories import grant
+    from connect_labs.supply_chain.models import Outreach, Tender
+
+    monkeypatch.setattr(communication_kinds, "_is_programme", lambda caller, program_id: False)
+    supplier_person = make_user("bola")
+    outreach = Outreach.objects.get(pk=tender["rows"]["unsent"]["id"])
+    grant(supplier_person, outreach.supplier.org)
+    general = kinds.get("general")
+    ref = f"supply_chain.tender:{tender['tender']['id']}"
+    assert general.resolve_about(ref, caller_for(supplier_person)).record is not None
+    Tender.objects.filter(pk=tender["tender"]["id"]).update(status="closed")
+    with pytest.raises(ValidationError):
+        general.resolve_about(ref, caller_for(supplier_person))

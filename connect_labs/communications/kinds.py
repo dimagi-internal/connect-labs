@@ -164,6 +164,9 @@ def _may_read_tender(caller, record) -> bool:
 
     if _is_programme(caller, record.program_id):
         return True
+    if record.status != "open":
+        # A supplier sees a tender only while it takes quotes (the marketplace hides the rest).
+        return False
     invited = Outreach.objects.filter(tender=record).select_related("supplier__org")
     return any(o.supplier.org_id and caller.is_member(o.supplier.org) for o in invited)
 
