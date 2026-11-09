@@ -11,7 +11,7 @@ Every row says what to do, how much is at stake and how long it has waited.
   <h3 class="text-sm font-semibold text-gray-900">{{ group.label }} <span class="font-normal text-gray-600">{{ group.items|length }}, oldest first</span></h3>
   <ul class="mt-1 divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white">
     {% for item in group.items %}
-    <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-4 py-2.5" data-testid="chase-item">
+    <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-4 py-2" data-testid="chase-item">
       <div class="min-w-0">
         <div class="text-sm text-gray-900" data-testid="chase-ask">{% if item.href %}<a class="hover:underline" href="{{ item.href }}">{{ item.ask|explain_term:item.hint_term }}</a>{% else %}{{ item.ask|explain_term:item.hint_term }}{% endif %}</div>
         {% if item.parts %}

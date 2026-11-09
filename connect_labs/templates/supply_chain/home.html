@@ -18,7 +18,7 @@ tenders and orders sit folded below.
     <p class="text-sm text-amber-900">Choose a program to see its overview.</p>
   </div>
 {% else %}
-<div class="flex flex-col gap-5" data-testid="overview">
+<div class="flex flex-col gap-4" data-testid="overview">
   <div class="flex flex-wrap items-end justify-between gap-4">
     <div class="flex flex-col gap-1">
       <div class="sr-only" data-testid="program-heading">{{ program_heading }}</div>
@@ -47,31 +47,31 @@ tenders and orders sit folded below.
   <h2 class="text-brand-deep-purple text-lg font-semibold" data-testid="buying-heading">Buying: tenders and orders</h2>
   <section id="supply-standing" class="border-brand-border-light overflow-hidden rounded-lg border bg-white" aria-label="All procurements">
     <div class="max-w-full overflow-x-auto" tabindex="0" role="region" aria-label="All procurements, scrolls sideways">
-      <table data-testid="standing-table" class="phone-cards w-full min-w-[960px] table-fixed text-sm">
+      <table data-testid="standing-table" class="phone-cards w-full min-w-[52rem] table-fixed text-sm">
         <thead class="border-b border-gray-200 text-left text-xs text-gray-600">
           <tr>
-            <th scope="col" class="w-[22%] px-5 pb-2 pt-3.5 font-medium">Procurement</th>
-            <th scope="col" class="w-[20%] px-3 pb-2 pt-3.5 font-medium">Stage</th>
-            <th scope="col" class="px-3 pb-2 pt-3.5 font-medium">Next move</th>
-            <th scope="col" class="w-28 px-3 pb-2 pt-3.5 font-medium">To do · waiting</th>
-            <th scope="col" class="w-32 px-5 pb-2 pt-3.5 font-medium">Last change</th>
+            <th scope="col" class="w-[34%] px-4 pb-2 pt-3 font-medium">Procurement</th>
+            <th scope="col" class="w-[15%] px-3 pb-2 pt-3 font-medium">Stage</th>
+            <th scope="col" class="px-3 pb-2 pt-3 font-medium">Next move</th>
+            <th scope="col" class="w-24 px-3 pb-2 pt-3 font-medium">To do · waiting</th>
+            <th scope="col" class="w-40 px-4 pb-2 pt-3 font-medium">Last change</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
           {% for row in standing %}
           {% if not row.under_tender %}
           <tr data-testid="overview-row" data-kind="{{ row.kind }}"{% if row.tender_id %} data-tender-id="{{ row.tender_id }}"{% endif %} class="align-top">
-            <td class="phone-title px-5 py-4">
+            <td class="phone-title px-4 py-3">
               <div class="flex flex-col gap-0.5">
                 <span class="text-xs text-gray-600">{% if row.kind == "tender" %}Tender{% else %}Order{% endif %}</span>
-                <a href="{{ row.url }}" class="text-brand-indigo text-[15px] font-semibold hover:underline">{{ row.title }}</a>
+                <a href="{{ row.url }}" class="text-brand-indigo text-sm font-semibold hover:underline">{{ row.title }}</a>
                 {% if row.sub %}<span class="text-xs text-gray-600" data-testid="row-sub">{{ row.sub }}</span>{% endif %}
                 {% comment %}A split tender is one row; each local partner's own order sits beneath it, including the partners who have not ordered yet.{% endcomment %}
                 {% if row.partners %}<ul class="mt-1 flex flex-col gap-0.5 text-xs" data-testid="row-partners">{% for p in row.partners %}<li data-testid="row-partner" data-state="{{ p.state }}" class="flex flex-wrap gap-x-1.5">{% if p.url %}<a class="font-medium text-brand-indigo hover:underline" href="{{ p.url }}">{{ p.name }}</a>{% else %}<span class="font-medium text-gray-900">{{ p.name }}</span>{% endif %}{% if p.quantity %}<span class="text-gray-600">· {{ p.quantity }}</span>{% endif %}<span class="{% if p.state == 'waiting' %}font-medium text-message-warning-text{% else %}text-gray-700{% endif %}">· {{ p.status }}</span></li>{% endfor %}</ul>{% endif %}
                 {% if row.kind == "order" %}{% with model=buying_models|dictkey:row.contract_id %}{% if model %}<span class="text-xs text-gray-600" data-testid="row-buying-model">{{ model }}</span>{% endif %}{% endwith %}{% endif %}
               </div>
             </td>
-            <td class="phone-lead phone-wide px-3 py-4" data-label="Stage">
+            <td class="phone-lead phone-wide px-3 py-3" data-label="Stage">
               <div class="flex flex-col gap-1.5">
                 <div class="stage-minibar" aria-hidden="true">{% for b in row.bars %}<div class="stage-seg stage-seg--{{ b }}"></div>{% endfor %}</div>
                 <span class="flex flex-col text-xs" data-testid="row-stage"><span class="font-semibold text-gray-900" data-testid="row-stage-name">{{ row.stage_name }}</span>{% if row.stage_detail %}<span class="text-gray-600">{{ row.stage_detail }}</span>{% endif %}{% if row.deadline_note %}<span class="text-gray-700" data-testid="row-deadline">{{ row.deadline_note }}</span>{% endif %}</span>
@@ -80,7 +80,7 @@ tenders and orders sit folded below.
                 {% if row.quotes_chip %}{% with parts=row.quotes_chip|dot_parts %}<span class="status-chip status-chip--neutral self-start" data-testid="row-quotes">{{ parts.0 }}</span>{% if parts.1 %}<span class="text-xs text-gray-700" data-testid="row-quotes-priced">{{ parts.1 }}</span>{% endif %}{% endwith %}{% endif %}
               </div>
             </td>
-            <td class="phone-lead phone-wide px-3 py-4" data-label="Next move" data-testid="next-move">
+            <td class="phone-lead phone-wide px-3 py-3" data-label="Next move" data-testid="next-move">
               {% with m=row.next_move %}{% if m %}
                 <div class="flex flex-col gap-2">
                 {% for mv in row.move_lines %}
@@ -95,12 +95,12 @@ tenders and orders sit folded below.
                 </div>
               {% else %}<span class="text-gray-600">—</span>{% endif %}{% endwith %}
             </td>
-            <td class="px-3 py-4" data-label="To do · waiting">{% if row.whose %}<span class="flex flex-col items-start gap-1" data-testid="whose" data-whose="{{ row.whose }}">{% if row.ours %}<span class="status-chip status-chip--ours" data-testid="whose-us" data-count="{{ row.ours|length }}">To do {{ row.ours|length }}</span>{% endif %}{% if row.theirs %}<span class="status-chip status-chip--theirs" data-testid="whose-suppliers" data-count="{{ row.theirs|length }}">Waiting {{ row.theirs|length }}</span>{% endif %}</span>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
-            <td class="whitespace-nowrap px-5 py-4 text-gray-600" data-label="Last change">
+            <td class="px-3 py-3" data-label="To do · waiting">{% if row.whose %}<span class="flex flex-col items-start gap-1" data-testid="whose" data-whose="{{ row.whose }}">{% if row.ours %}<span class="status-chip status-chip--ours" data-testid="whose-us" data-count="{{ row.ours|length }}">To do {{ row.ours|length }}</span>{% endif %}{% if row.theirs %}<span class="status-chip status-chip--theirs" data-testid="whose-suppliers" data-count="{{ row.theirs|length }}">Waiting {{ row.theirs|length }}</span>{% endif %}</span>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+            <td class="px-4 py-3 text-gray-600" data-label="Last change">
               {% if row.last_change_at %}
                 {% if supply_as_of %}<span data-testid="last-change" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|date:'j M Y' }}</span>
                 {% else %}<span data-testid="last-change" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|count_back:standing_now }}</span>{% with day=row.last_change_at|short_day:standing_now %}{% if day %}<span data-testid="last-change-day" class="block text-xs">{{ day }}</span>{% endif %}{% endwith %}{% endif %}
-                <span class="block text-xs" {% if row.last_change_is_ai %}data-ai data-testid="ai-badge" title="{{ row.last_change_title }}"{% endif %}>{% if row.last_change_is_ai %}{% include "supply_chain/_src.html" with src="ai" %}{{ row.last_change_badge|ai_words }}{% else %}{% include "supply_chain/_src.html" with src="person" %}{{ row.last_change_by }}{% endif %}</span>
+                <span class="block text-xs leading-snug" {% if row.last_change_is_ai %}data-ai data-testid="ai-badge" title="{{ row.last_change_title }}"{% endif %}>{% if row.last_change_is_ai %}{% include "supply_chain/_src.html" with src="ai" %}{{ row.last_change_badge|ai_words }}{% else %}{% include "supply_chain/_src.html" with src="person" %}{{ row.last_change_by }}{% endif %}</span>
               {% else %}<span class="text-gray-600">—</span>{% endif %}
             </td>
           </tr>
