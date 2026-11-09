@@ -110,7 +110,7 @@ class TestASplitTenderIsOneRow:
         # The partner reads under the buyer of record, not in a column of its own.
         assert ">For partner</th>" not in body
         assert body.count('data-testid="order-partner"') == 2
-        assert " · for " in body
+        assert re.search(r">for \S", body)
         status = re.findall(r'data-testid="order-status">(.*?)</span>', body, re.S)
         assert any("In transit" in s for s in status) and not any("· in transit" in s for s in status)
 

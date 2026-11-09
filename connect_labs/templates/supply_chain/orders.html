@@ -37,8 +37,9 @@ pinned "Open". An editable value is the span that carries its edit attributes.
   .orders-sheet { min-width: 0; }
   .orders-sheet > tbody > tr > td, .orders-sheet > tbody > tr > th { white-space: nowrap; vertical-align: top; padding: 0.625rem 0.875rem; }
   .orders-sheet > thead th { padding: 0.5rem 0.875rem; }
-  .orders-sheet .cut { display: block; max-width: 17rem; overflow: hidden; text-overflow: ellipsis; }
-  .orders-sheet .sub { display: block; max-width: 17rem; overflow: hidden; text-overflow: ellipsis; font-size: 0.75rem; color: #5b6072; margin-top: 0.125rem; }
+  .orders-sheet .cut { display: block; max-width: 19rem; overflow: hidden; text-overflow: ellipsis; }
+  .orders-sheet .sub { display: block; max-width: 19rem; overflow: hidden; text-overflow: ellipsis; font-size: 0.75rem; color: #5b6072; margin-top: 0.125rem; }
+  .orders-sheet td.signed .sub { white-space: normal; max-width: 12rem; }
   .orders-sheet [data-edit] { display: inline-block; }
   .orders-sheet .got { display: block; width: 6.5rem; height: 0.3125rem; background: #eceef3; border-radius: 9999px; margin-top: 0.3125rem; overflow: hidden; }
   .orders-sheet .got > i { display: block; height: 100%; background: #3843d0; }
@@ -53,7 +54,7 @@ pinned "Open". An editable value is the span that carries its edit attributes.
         <th scope="col" class="text-right" data-sort>Price</th>
         <th scope="col" data-sort>Status</th>
         <th scope="col" data-sort>Signed</th>
-        <th scope="col" class="sheet-pin-end"><span class="sr-only">Open</span></th>
+        <th scope="col" class="text-right"><span class="sr-only">Open</span></th>
       </tr>
     </thead>
     <tbody>
@@ -62,11 +63,13 @@ pinned "Open". An editable value is the span that carries its edit attributes.
         <tr data-testid="order-row">
           <th scope="row" class="text-left font-medium text-gray-900" data-sort-value="{{ contract.reference|default:'' }}">
             <span {% edit_cell "contract" contract.id "reference" contract.reference %}>{% if contract.reference %}{{ contract.reference }}{% else %}<span class="status-chip status-chip--ours">we do not hold it</span>{% endif %}</span>
-            <span class="sub"><a href="{% url 'supply_chain:supplier_detail' contract.supplier_id %}" class="text-brand-indigo hover:underline">{{ suppliers|dictkey:contract.supplier_id|dictkey:"name"|default:contract.supplier_id }}</a>{% if contract.item_id %} · {{ item_names|dictkey:contract.item_id }}{% endif %}</span>
+            <span class="sub"><a href="{% url 'supply_chain:supplier_detail' contract.supplier_id %}" class="text-brand-indigo hover:underline">{{ suppliers|dictkey:contract.supplier_id|dictkey:"name"|default:contract.supplier_id }}</a></span>
+            {% if contract.item_id %}<span class="sub">{{ item_names|dictkey:contract.item_id }}</span>{% endif %}
           </th>
           <td>
-            <span class="cut text-gray-900">{{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:"" }}</span>
-            <span class="sub" data-testid="order-partner">{{ contract.buyer_of_record|buyer_label }}{% if contract.partner_org_id %} · for {{ orgs|dictkey:contract.partner_org_id|dictkey:"name"|default:"" }}{% endif %}</span>
+            <span class="cut text-gray-900" >{{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:"" }}</span>
+            <span class="sub" data-testid="order-partner">{{ contract.buyer_of_record|buyer_label }}</span>
+            {% if contract.partner_org_id %}<span class="sub">for {{ orgs|dictkey:contract.partner_org_id|dictkey:"name"|default:"" }}</span>{% endif %}
           </td>
           <td class="num" data-sort-value="{{ contract.quantity|sort_key }}">
             {% if contract.quantity %}
@@ -78,8 +81,8 @@ pinned "Open". An editable value is the span that carries its edit attributes.
             {% endif %}
           </td>
           <td class="num" data-sort-value="{{ contract.unit_price|sort_key }}">
-            {% if contract.unit_price %}<span {% edit_cell "contract" contract.id "unit_price" contract.unit_price %}>{{ contract.unit_price|money }}</span>{% if contract.unit_price_unit %}<span class="sub">{{ contract.unit_price_unit|humanise }}</span>{% endif %}{% else %}<span {% edit_cell "contract" contract.id "unit_price" contract.unit_price %}><span class="text-gray-600">—</span></span>{% endif %}
-            <span class="sub" {% edit_cell "contract" contract.id "currency" contract.currency %}>{{ contract.currency|default:"—" }}</span>
+            {% if contract.unit_price %}<span {% edit_cell "contract" contract.id "unit_price" contract.unit_price %}>{{ contract.unit_price|money }}</span>{% if contract.unit_price_unit %}<span class="sub">{{ contract.unit_price_unit|humanise }}</span>{% endif %}{% else %}<span {% edit_cell "contract" contract.id "unit_price" contract.unit_price %}><span class="text-gray-600">no price yet</span></span>{% endif %}
+            {% if contract.unit_price or not contract.currency %}<span class="sub" {% edit_cell "contract" contract.id "currency" contract.currency %}>{{ contract.currency|default:"—" }}</span>{% endif %}
           </td>
           <td>
             <span {% edit_cell "contract" contract.id "status" contract.status %}><span class="status-chip {% if contract.status == 'received' or contract.status == 'closed' %}status-chip--primary{% elif contract.status == 'cancelled' %}status-chip--neutral{% else %}status-chip--theirs{% endif %}" data-testid="order-status">{% with step=order_steps|dictkey:contract.id %}{% if step %}{{ step }}{% else %}{{ contract.status|humanise|capfirst }}{% endif %}{% endwith %}</span></span>
@@ -89,11 +92,11 @@ pinned "Open". An editable value is the span that carries its edit attributes.
             {% with covers=covered_by|dictkey:contract.id %}{% if covers %}<span class="sub text-message-success-text">shortfall covered by {{ covers|join:", " }}</span>{% endif %}{% endwith %}
             {% if contract.covers_shortfall_of_id %}<span class="sub">covers {{ references|dictkey:contract.covers_shortfall_of_id }}</span>{% endif %}
           </td>
-          <td data-sort-value="{{ contract.signed_on|sort_key }}">
+          <td class="signed" data-sort-value="{{ contract.signed_on|sort_key }}">
             {% if contract.signed_on %}<span {% edit_cell "contract" contract.id "signed_on" contract.signed_on %}>{{ contract.signed_on|day }}</span>{% else %}<span {% edit_cell "contract" contract.id "signed_on" contract.signed_on %}><span class="text-gray-600">—</span></span>{% endif %}
             <span class="sub">{% if contract.source == "we_recorded" %}Recorded by {{ orgs|dictkey:contract.recorded_by_org_id|dictkey:"name"|default:"the programme" }}{% else %}{{ contract|told_by:orgs }}{% endif %}{% if not contract.witnessed %} · reported, not witnessed{% endif %}</span>
           </td>
-          <td class="sheet-pin-end"><a class="font-medium text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.id %}">Open</a></td>
+          <td class="text-right"><a class="font-medium text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.id %}">Open</a></td>
         </tr>
         {% endwith %}
       {% empty %}
