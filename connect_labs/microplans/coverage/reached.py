@@ -20,8 +20,8 @@ point of the method is to compare settings (which footprints, how close counts a
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable
 
 import numpy as np
 import pandas as pd
