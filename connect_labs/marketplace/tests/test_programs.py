@@ -219,6 +219,8 @@ class TestPictures:
             "wellme",
             "conversation",
             "rs",
+            "ulab",
+            programs.PROGRAM_NONE,
         }
         missing = {slug for slug in cards if programs.image(slug) is None}
         assert missing == set(), f"these program cards have no picture: {sorted(missing)}"

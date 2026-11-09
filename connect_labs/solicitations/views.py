@@ -608,16 +608,21 @@ class PublicSolicitationListView(SolicitationsPage):
         query = (q.get("q") or "").strip()
 
         everything = self.da().get_public_solicitations()
+        open_rounds = self.da().get_open_calls()
         past = self.da().get_past_calls()
         ran_by = past_calls.owner()
         dimagi_slug = past_calls.owner_slug()
 
         owners = {c.owner_org.slug: c.owner_org for c in everything if c.owner_org_id}
-        if past and dimagi_slug not in owners:
+        if (past or open_rounds) and dimagi_slug not in owners:
             owners[dimagi_slug] = past_calls.Owner(name=ran_by.name, slug=dimagi_slug)
         owners = sorted(owners.values(), key=lambda o: o.name.lower())
         programs = sorted(
-            {(c.delivery_type, c.program_label) for c in [*everything, *past] if c.delivery_type and c.program_label},
+            {
+                (c.delivery_type, c.program_label)
+                for c in [*everything, *open_rounds, *past]
+                if c.delivery_type and c.program_label
+            },
             key=lambda p: p[1].lower(),
         )
 
@@ -625,20 +630,26 @@ class PublicSolicitationListView(SolicitationsPage):
         if solicitation_type:
             calls = [c for c in calls if c.solicitation_type == solicitation_type]
             past = [c for c in past if c.solicitation_type == solicitation_type]
+            open_rounds = [c for c in open_rounds if c.solicitation_type == solicitation_type]
         if owner_slug:
             calls = [c for c in calls if c.owner_org_id and c.owner_org.slug == owner_slug]
             if owner_slug != dimagi_slug:
                 past = []
+                open_rounds = []
         if program:
             calls = [c for c in calls if c.delivery_type == program]
             past = [c for c in past if c.delivery_type == program]
+            open_rounds = [c for c in open_rounds if c.delivery_type == program]
         calls = _search(calls, query)
         past = _search_past(past, query)
+        open_rounds = _search_past(open_rounds, query)
         open_calls, closed = _split_open_closed(calls)
 
         ctx.update(
             {
                 "solicitations": open_calls,
+                "open_rounds": open_rounds,
+                "open_count": len(open_rounds) + len(open_calls),
                 "recently_closed": closed[:RECENTLY_CLOSED_LIMIT],
                 "past_years": past_calls.by_year(past),
                 "past_count": len(past),

@@ -166,6 +166,10 @@ _IMAGES = {
     "rs": ("rs.svg", "50% 50%"),
     # Drawn for this page (2026-11-06): a collection point, used batteries stacked for recycling.
     "ulab": ("ulab.svg", "50% 50%"),
+    # An illustration drawn for this page: a network of organisations, showing
+    # no one program. For a round that is not a delivery program (PROGRAM_NONE),
+    # and the stand-in for a round nobody has tagged yet.
+    PROGRAM_NONE: ("cross-program.svg", "50% 50%"),
 }
 
 

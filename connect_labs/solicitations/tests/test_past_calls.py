@@ -115,7 +115,7 @@ def test_a_round_without_a_publication_date_is_dated_by_its_deadline(client, wor
     assert ">2023<" in body and "Deadline 30 Jun 2023" in body
 
 
-def test_a_round_still_taking_applications_is_not_a_past_call(client, world):
+def test_a_round_still_taking_applications_is_an_open_call_not_a_past_one(client, world):
     make_round(
         "open-round",
         title="Still open round",
@@ -124,8 +124,29 @@ def test_a_round_still_taking_applications_is_not_a_past_call(client, world):
         application_deadline=timezone.localdate() + timedelta(days=10),
     )
     body = client.get(url("public_list")).content.decode()
-    assert "Still open round" not in body
-    assert client.get(url("past_detail", slug="open-round")).status_code == 404
+    assert "Still open round" in body
+    assert "1 open call" in body and "No calls are open right now" not in body
+    open_section = body.split('id="past-calls"')[0]
+    assert "Still open round" in open_section  # above the archive, not in it
+    assert 'id="past-calls"' not in body or "Still open round" not in body.split('id="past-calls"')[1]
+    detail = client.get(url("past_detail", slug="open-round"))
+    assert detail.status_code == 200
+    page = detail.content.decode()
+    assert "This call is open until" in page and "no longer takes responses" not in page
+    assert FORM_URL not in body and FORM_URL not in page and SHEET_ID not in page
+
+
+def test_an_untagged_round_gets_the_neutral_picture(client, world):
+    make_round("untagged-open", title="Untagged open", status="active", decision_on=None, delivery_type="")
+    body = client.get(url("public_list")).content.decode()
+    assert "images/programs/cross-program.svg" in body
+
+
+def test_an_open_round_follows_the_filters(client, world):
+    make_round("open-malaria", title="Open malaria EOI", status="active", decision_on=None, delivery_type="malaria")
+    make_round("open-chc", title="Open chc EOI", status="active", decision_on=None, delivery_type="chc")
+    body = client.get(url("public_list"), {"program": "malaria"}).content.decode()
+    assert "Open malaria EOI" in body and "Open chc EOI" not in body
 
 
 def test_past_calls_follow_the_type_program_owner_filters_and_search(client, world):
@@ -300,7 +321,7 @@ def test_marketplace_round_links_to_the_public_call_page(client, world):
     assert url("past_detail", slug="chc-2025") in body
 
 
-def test_marketplace_round_still_open_has_no_public_call_link(client, world):
+def test_marketplace_round_still_open_links_to_its_public_call_page(client, world):
     make_round(
         "open-round",
         title="Still open",
@@ -310,7 +331,8 @@ def test_marketplace_round_still_open_has_no_public_call_link(client, world):
     )
     login(client, world["user"])
     body = client.get(reverse("marketplace:round", args=["open-round"])).content.decode()
-    assert "Public call page" not in body
+    assert "Public call page" in body
+    assert url("past_detail", slug="open-round") in body
 
 
 def test_member_of_dimagi_gets_no_management_of_past_calls(client, world):
