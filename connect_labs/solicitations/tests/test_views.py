@@ -56,7 +56,7 @@ def url(name, **kw):
 # --- directory -----------------------------------------------------------------
 
 
-def test_directory_lists_open_calls_with_owner_and_recently_closed(client, world):
+def test_directory_lists_open_calls_with_owner_and_no_recently_closed_section(client, world):
     closed = make_call(
         world["owner_org"], title="Old call", application_deadline=timezone.localdate() - timedelta(days=3)
     )
@@ -66,8 +66,7 @@ def test_directory_lists_open_calls_with_owner_and_recently_closed(client, world
     assert world["call"].title in body
     assert "Owner Org" in body
     assert url("org_page", org_slug="owner-org") in body
-    assert "Recently closed" in body and closed.title in body
-    assert "Closed — deadline passed" in body
+    assert "Recently closed" not in body and closed.title not in body
     assert "Secret draft" not in body
     assert "Unlisted call" not in body
     assert "<title>Calls for partners · Marketplace</title>" in body
