@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static markdown_filters %}
 
-{% block title %}{{ solicitation.title }} · Past call · Solicitations{% endblock %}
+{% block title %}{{ solicitation.title }} · {% if solicitation.past_is_open %}Open call{% else %}Past call{% endif %} · Solicitations{% endblock %}
 
 {% block content %}
 {% comment %}
@@ -17,7 +17,7 @@ many organisations applied and a link to the marketplace's round page.
             <i class="fa-solid fa-bullhorn mr-1"></i> Solicitations
         </a>
         <i class="fa-solid fa-chevron-right text-xs"></i>
-        <a href="{% url 'solicitations:public_list' %}#past-calls" class="hover:text-brand-cornflower-blue transition-colors">Past calls</a>
+        {% if solicitation.past_is_open %}<a href="{% url 'solicitations:public_list' %}" class="hover:text-brand-cornflower-blue transition-colors">Open calls</a>{% else %}<a href="{% url 'solicitations:public_list' %}#past-calls" class="hover:text-brand-cornflower-blue transition-colors">Past calls</a>{% endif %}
     </nav>
 
     <div class="bg-white rounded-xl shadow-sm mb-4 overflow-hidden">
@@ -29,7 +29,7 @@ many organisations applied and a link to the marketplace's round page.
         <div class="p-5 sm:p-8">
             <div class="flex flex-wrap items-center gap-2 mb-3">
                 {% include "solicitations/_type_badge.html" %}
-                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>Closed</span>
+                {% if solicitation.past_is_open %}<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>Open</span>{% else %}<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>Closed</span>{% endif %}
             </div>
             <p class="text-sm text-gray-500 mb-2">
                 <i class="fa-solid fa-building mr-1"></i>Run by
@@ -95,7 +95,11 @@ many organisations applied and a link to the marketplace's round page.
 
     <p class="text-sm text-gray-500 px-1">
         <i class="fa-solid fa-circle-info mr-1"></i>
+        {% if solicitation.past_is_open %}
+        This call is open{% if solicitation.application_deadline %} until {{ solicitation.application_deadline|date:"j M Y" }}{% endif %}.
+        {% else %}
         This call is closed and no longer takes responses. Looking for a call you can answer now? <a href="{% url 'solicitations:public_list' %}" class="text-brand-cornflower-blue hover:underline">See the open calls</a>.
+        {% endif %}
     </p>
 </div>
 {% endblock %}

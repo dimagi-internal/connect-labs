@@ -471,10 +471,10 @@ def round_detail(request, slug):
                 len(applicants) - sum(reviewed.get("outcomes", {}).values()),
             ),
             "country_count": mix.get("country_count", 0),
-            # Its public page on Solicitations, once it has stopped taking
-            # applications: anyone can read that one, so it is the link to send.
+            # Its public page on Solicitations, open or finished: anyone can
+            # read that one, so it is the link to send.
             "public_call_url": (
-                reverse("solicitations:past_detail", args=[round_.slug]) if past_calls.is_past_call(round_) else ""
+                reverse("solicitations:past_detail", args=[round_.slug]) if past_calls.is_public_round(round_) else ""
             ),
             # This round, and the organisations that answered it. Naming the
             # round in the resource is what makes "draft an email for each of

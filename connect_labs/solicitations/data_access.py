@@ -313,6 +313,12 @@ class SolicitationsDataAccess:
 
         return past_calls.all_past_calls()
 
+    def get_open_calls(self) -> list[Solicitation]:
+        """Directory rounds still taking applications, for anyone: the real EOIs."""
+        from connect_labs.solicitations import past_calls
+
+        return past_calls.all_open_calls()
+
     def get_round_form(self, solicitation_id) -> Solicitation | None:
         """A directory round, by public id, for its form only -- to someone signed in.
 
@@ -409,10 +415,10 @@ class SolicitationsDataAccess:
         return record
 
     def get_past_call(self, key) -> Solicitation | None:
-        """One past call by slug or id, or None."""
+        """One directory round by slug or id, open or finished, or None."""
         from connect_labs.solicitations import past_calls
 
-        return past_calls.get(key)
+        return past_calls.get_round(key)
 
     def past_call_applicant_count(self, call) -> int | None:
         """How many organisations applied -- to someone signed in; None otherwise.

@@ -1,6 +1,6 @@
 {% load static %}
 {% comment %}
-A past call in a list: one of the marketplace's historical rounds, read-only.
+A directory round in a list, open or finished: read-only.
 The program's picture (marketplace.programs.image) heads the card, or its hue
 where it has none. Never the application form, the response sheet, or who applied.
 {% endcomment %}
@@ -13,7 +13,7 @@ where it has none. Never the application form, the response sheet, or who applie
     <div class="p-4 sm:p-5 flex flex-col flex-1 min-w-0">
         <div class="flex flex-wrap items-center gap-2 mb-3">
             {% include "solicitations/_type_badge.html" %}
-            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>Closed</span>
+            {% if solicitation.past_is_open %}<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>Open</span>{% else %}<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>Closed</span>{% endif %}
         </div>
         {% if not hide_owner %}
         <p class="text-xs text-gray-500 mb-1 truncate">
@@ -33,7 +33,7 @@ where it has none. Never the application form, the response sheet, or who applie
         {% endif %}
         <div class="mt-auto pt-3 border-t border-gray-100 text-sm text-gray-600 whitespace-nowrap">
             <i class="fa-regular fa-calendar mr-1"></i>
-            {% if solicitation.past_dated_by == "published" %}Published {{ solicitation.published_on|date:"j M Y" }}{% elif solicitation.past_dated_by == "deadline" %}Deadline {{ solicitation.application_deadline|date:"j M Y" }}{% else %}<span class="text-gray-400">Date not recorded</span>{% endif %}
+            {% if solicitation.past_is_open and solicitation.application_deadline %}Deadline {{ solicitation.application_deadline|date:"j M Y" }}{% elif solicitation.past_is_open %}No deadline{% elif solicitation.past_dated_by == "published" %}Published {{ solicitation.published_on|date:"j M Y" }}{% elif solicitation.past_dated_by == "deadline" %}Deadline {{ solicitation.application_deadline|date:"j M Y" }}{% else %}<span class="text-gray-400">Date not recorded</span>{% endif %}
         </div>
     </div>
 </article>

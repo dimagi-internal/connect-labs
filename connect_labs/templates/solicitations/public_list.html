@@ -67,9 +67,12 @@
 
     <!-- Open calls -->
     <h2 class="sr-only">Open calls</h2>
-    {% if solicitations %}
-        <p class="text-sm text-gray-500 mb-3">{{ solicitations|length }} open call{{ solicitations|length|pluralize }}</p>
+    {% if open_count %}
+        <p class="text-sm text-gray-500 mb-3">{{ open_count }} open call{{ open_count|pluralize }}</p>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-10">
+            {% for solicitation in open_rounds %}
+                {% include "solicitations/_past_card.html" %}
+            {% endfor %}
             {% for solicitation in solicitations %}
                 {% include "solicitations/_card.html" %}
             {% endfor %}

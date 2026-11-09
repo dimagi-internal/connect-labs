@@ -50,6 +50,25 @@ def queryset():
     return Solicitation.objects.directory_rounds().exclude(_still_open())
 
 
+def open_queryset():
+    """Every directory round still taking applications.
+
+    These are the real EOIs: the directory holds every call Dimagi has run, so a
+    live one belongs on the open list beside the calls made in Solicitations.
+    """
+    return Solicitation.objects.directory_rounds().filter(_still_open())
+
+
+def is_open(call) -> bool:
+    """Whether a directory round is still taking applications, by its own dates."""
+    today = datetime.date.today()
+    return (
+        call.status == "active"
+        and call.decision_on is None
+        and (call.application_deadline is None or call.application_deadline >= today)
+    )
+
+
 def form_questions(call, response=None, form_key=None) -> list[dict]:
     """The round's questions as its form asked them.
 
@@ -84,19 +103,40 @@ def all_past_calls() -> list[Solicitation]:
     return calls
 
 
-def get(key) -> Solicitation | None:
-    """A past call by slug, or by id."""
+def all_open_calls() -> list[Solicitation]:
+    """Open directory rounds, soonest deadline first (no deadline last), each decorated."""
+    calls = [decorate(c) for c in open_queryset()]
+    calls.sort(key=lambda c: (c.application_deadline is None, c.application_deadline or datetime.date.max, c.title))
+    return calls
+
+
+def _find(qs, key) -> Solicitation | None:
     text = str(key or "").strip()
     if not text:
         return None
-    call = queryset().filter(slug=text).first()
+    call = qs.filter(slug=text).first()
     if call is None and text.isdigit():
-        call = queryset().filter(pk=int(text)).first()
+        call = qs.filter(pk=int(text)).first()
     return decorate(call) if call is not None else None
+
+
+def get(key) -> Solicitation | None:
+    """A past call by slug, or by id."""
+    return _find(queryset(), key)
+
+
+def get_round(key) -> Solicitation | None:
+    """A directory round by slug or id, open or finished: the page a card links to."""
+    return _find(Solicitation.objects.directory_rounds(), key)
 
 
 def is_past_call(call) -> bool:
     return call is not None and queryset().filter(pk=call.pk).exists()
+
+
+def is_public_round(call) -> bool:
+    """Whether this directory round has a public page, open or finished."""
+    return call is not None and Solicitation.objects.directory_rounds().filter(pk=call.pk).exists()
 
 
 @dataclass(frozen=True)
@@ -134,8 +174,9 @@ def decorate(call: Solicitation) -> Solicitation:
         "slug": slug,
         "label": call.program_label,
         "hue": programs.hue(slug),
-        "image": programs.image(slug),
+        "image": programs.image(slug) or programs.image(programs.PROGRAM_NONE),
     }
+    call.past_is_open = is_open(call)
     call.past_ran_on = ran_on(call)
     call.past_dated_by = "published" if call.published_on else ("deadline" if call.application_deadline else "")
     url = (call.announcement_url or "").strip()
