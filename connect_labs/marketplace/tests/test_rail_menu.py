@@ -137,3 +137,10 @@ def test_the_rail_carries_the_sidebar_hook(client, django_user_model):
     client.force_login(django_user_model.objects.create(username="rail-hook"))
     page = client.get(reverse("solicitations:public_list")).content.decode()
     assert f'data-sidebar-url="{reverse("marketplace:home")}"' in page
+
+
+def test_live_delivery_opens_the_night_map_and_stays_lit_on_its_root():
+    menu = build(MARKETPLACE_MENU, _req("/labs/pulse/"))
+    item = next(i for g in menu["groups"] for i in g["items"] if i["label"] == "Live delivery")
+    assert item["url"] == reverse("pulse:display", args=["nightmap"])
+    assert item["active"]
