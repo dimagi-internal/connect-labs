@@ -145,26 +145,23 @@ def resolve(sc, grid_cells, *, retention_days: int = 30) -> Geography:
 
 
 def _prepared_hits(boundaries, points) -> dict[str, int]:
-    """Tally point volume per boundary using prepared geometries.
+    """Tally point volume per boundary.
 
-    One spatial query fetches the candidates; the containment test itself runs
-    in GEOS in-process. Asking the database per point instead would be tens of
-    thousands of round trips for a map nobody would wait for.
+    The containment test is the shared placement core's (``labs.admin_boundaries.placement``), so Pulse,
+    the impact model and the coverage check agree about which area a point is in. The candidates were
+    fetched with one spatial query; the test runs in-process, never per point against the database.
     """
-    from django.contrib.gis.geos import Point
+    import pandas as pd
+    from shapely import wkb
 
-    # Built once and reused across every boundary: constructing them inside the
-    # inner loop turns an O(boundaries x points) test into O(boundaries x
-    # points) *object allocations*, which dominates the actual containment work.
-    geos_points = [(Point(lon, lat, srid=4326), n) for lon, lat, n in points]
+    from connect_labs.labs.admin_boundaries.placement import Unit, place_points
 
-    tally: dict[str, int] = {}
-    for b in boundaries:
-        prepared = b.geometry.prepared
-        total = sum(n for pt, n in geos_points if prepared.contains(pt))
-        if total:
-            tally[b.boundary_id] = total
-    return tally
+    units = [
+        Unit(key=b.boundary_id, name=b.name, level=0, geometry=wkb.loads(bytes(b.geometry.wkb))) for b in boundaries
+    ]
+    frame = pd.DataFrame(list(points), columns=["lon", "lat", "n"])
+    placed = place_points(frame, units, weight="n").levels.get(0)
+    return {key: int(total) for key, total in (placed.weights.items() if placed else ()) if total}
 
 
 def _touched(iso3: list[str], level: int, points) -> list[AdminBoundary]:
