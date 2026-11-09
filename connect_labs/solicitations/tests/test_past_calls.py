@@ -455,3 +455,11 @@ def test_the_old_rounds_list_leads_to_the_table_view(client, world):
     response = client.get(reverse("marketplace:rounds"))
     assert response.status_code == 302
     assert response["Location"] == url("public_list") + "?view=table"
+
+
+def test_the_page_offers_the_cards_and_table_views_and_keeps_filters_across_them(client, world):
+    body = client.get(url("public_list"), {"type": "eoi"}).content.decode()
+    assert "type=eoi&view=table" in body.replace("&amp;", "&")
+    table = client.get(url("public_list"), {"type": "eoi", "view": "table"}).content.decode()
+    assert "type=eoi&view=cards" in table.replace("&amp;", "&")
+    assert 'name="view" value="table"' in table

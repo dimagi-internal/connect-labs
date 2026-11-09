@@ -33,36 +33,58 @@
         </div>
     </div>
 
-    <!-- Search and filters: one compact block so the calls stay above the fold on a phone -->
-    <form method="get" class="bg-white rounded-lg shadow-sm p-3 sm:p-4 mb-6" role="search">
+    <!-- Search, filters and the view switch: one quiet row, each filter lit when it is set -->
+    <form method="get" class="bg-white rounded-lg shadow-sm p-3 sm:p-4 mb-6" role="search" data-testid="calls-filters">
         {% if view == 'table' %}<input type="hidden" name="view" value="table">{% endif %}
-        <div class="grid grid-cols-2 md:grid-cols-[minmax(0,1fr)_11rem_13rem_12rem_auto] gap-2 items-center">
-            <label class="sr-only" for="sol-q">Search</label>
-            <input id="sol-q" type="search" name="q" value="{{ query }}" placeholder="Search calls"
-                   class="base-input col-span-2 md:col-span-1 min-w-0">
-            <label class="sr-only" for="sol-type">Type</label>
-            <select id="sol-type" name="type" class="base-dropdown min-w-0" onchange="this.form.submit()">
-                <option value="" {% if not selected_type %}selected{% endif %}>All types</option>
-                <option value="eoi" {% if selected_type == 'eoi' %}selected{% endif %}>Expressions of Interest</option>
-                <option value="rfp" {% if selected_type == 'rfp' %}selected{% endif %}>Requests for Proposal</option>
-            </select>
-            <label class="sr-only" for="sol-owner">Organisation</label>
-            <select id="sol-owner" name="owner" class="base-dropdown min-w-0" onchange="this.form.submit()">
-                <option value="" {% if not selected_owner %}selected{% endif %}>All organisations</option>
-                {% for org in owners %}
-                <option value="{{ org.slug }}" {% if selected_owner == org.slug %}selected{% endif %}>{{ org.name }}</option>
-                {% endfor %}
-            </select>
-            <label class="sr-only" for="sol-program">Program</label>
-            <select id="sol-program" name="program" class="base-dropdown min-w-0" onchange="this.form.submit()">
-                <option value="" {% if not selected_program %}selected{% endif %}>All programs</option>
-                {% for program in programs %}
-                <option value="{{ program.slug }}" {% if selected_program == program.slug %}selected{% endif %}>{{ program.label }}</option>
-                {% endfor %}
-            </select>
-            <div class="md:col-span-1 flex items-center gap-3">
-                <button type="submit" class="button button-sm primary-dark">Search</button>
-                {% if filtered %}<a href="{% url 'solicitations:public_list' %}{% if view == 'table' %}?view=table{% endif %}" class="text-sm text-brand-cornflower-blue hover:underline whitespace-nowrap">Clear</a>{% endif %}
+        <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+            <div class="relative flex-1 min-w-[14rem]">
+                <label class="sr-only" for="sol-q">Search</label>
+                <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none"></i>
+                <input id="sol-q" type="search" name="q" value="{{ query }}" placeholder="Search calls" enterkeyhint="search"
+                       class="h-10 w-full rounded-full border border-gray-300 bg-white pl-9 pr-4 text-sm text-gray-800 placeholder-gray-400 hover:border-gray-400 focus:border-brand-indigo focus:outline-none focus:ring-2 focus:ring-brand-indigo/20">
+            </div>
+            <div class="relative">
+                <label class="sr-only" for="sol-type">Type</label>
+                <select id="sol-type" name="type" onchange="this.form.submit()"
+                        class="h-10 max-w-[13rem] appearance-none truncate rounded-full border pl-4 pr-9 text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-indigo/20 {% if selected_type %}border-brand-indigo bg-indigo-50 font-medium text-brand-deep-purple{% else %}border-gray-300 bg-white text-gray-700 hover:border-gray-400{% endif %}">
+                    <option value="" {% if not selected_type %}selected{% endif %}>All types</option>
+                    <option value="eoi" {% if selected_type == 'eoi' %}selected{% endif %}>Expressions of Interest</option>
+                    <option value="rfp" {% if selected_type == 'rfp' %}selected{% endif %}>Requests for Proposal</option>
+                </select>
+                <i class="fa-solid fa-chevron-down absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-500 pointer-events-none"></i>
+            </div>
+            <div class="relative">
+                <label class="sr-only" for="sol-owner">Organisation</label>
+                <select id="sol-owner" name="owner" onchange="this.form.submit()"
+                        class="h-10 max-w-[14rem] appearance-none truncate rounded-full border pl-4 pr-9 text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-indigo/20 {% if selected_owner %}border-brand-indigo bg-indigo-50 font-medium text-brand-deep-purple{% else %}border-gray-300 bg-white text-gray-700 hover:border-gray-400{% endif %}">
+                    <option value="" {% if not selected_owner %}selected{% endif %}>All organisations</option>
+                    {% for org in owners %}
+                    <option value="{{ org.slug }}" {% if selected_owner == org.slug %}selected{% endif %}>{{ org.name }}</option>
+                    {% endfor %}
+                </select>
+                <i class="fa-solid fa-chevron-down absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-500 pointer-events-none"></i>
+            </div>
+            <div class="relative">
+                <label class="sr-only" for="sol-program">Program</label>
+                <select id="sol-program" name="program" onchange="this.form.submit()"
+                        class="h-10 max-w-[18rem] appearance-none truncate rounded-full border pl-4 pr-9 text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-indigo/20 {% if selected_program %}border-brand-indigo bg-indigo-50 font-medium text-brand-deep-purple{% else %}border-gray-300 bg-white text-gray-700 hover:border-gray-400{% endif %}">
+                    <option value="" {% if not selected_program %}selected{% endif %}>All programs</option>
+                    {% for program in programs %}
+                    <option value="{{ program.slug }}" {% if selected_program == program.slug %}selected{% endif %}>{{ program.label }}</option>
+                    {% endfor %}
+                </select>
+                <i class="fa-solid fa-chevron-down absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-500 pointer-events-none"></i>
+            </div>
+            {% if filtered %}
+            <a href="{% url 'solicitations:public_list' %}{% if view == 'table' %}?view=table{% endif %}" class="text-sm text-brand-cornflower-blue hover:underline whitespace-nowrap">Clear</a>
+            {% endif %}
+            <div class="inline-flex h-10 rounded-full border border-gray-300 overflow-hidden text-sm sm:ml-auto" role="group" aria-label="View">
+                <a href="?{% for k, v in request.GET.items %}{% if k != 'view' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}view=cards"
+                   class="inline-flex items-center gap-1.5 px-4 {% if view == 'cards' %}bg-brand-deep-purple text-white{% else %}text-gray-600 hover:bg-gray-50{% endif %}"
+                   {% if view == 'cards' %}aria-current="true"{% endif %}><i class="fa-solid fa-table-cells-large text-xs"></i> Cards</a>
+                <a href="?{% for k, v in request.GET.items %}{% if k != 'view' %}{{ k }}={{ v|urlencode }}&{% endif %}{% endfor %}view=table"
+                   class="inline-flex items-center gap-1.5 px-4 border-l border-gray-300 {% if view == 'table' %}bg-brand-deep-purple text-white{% else %}text-gray-600 hover:bg-gray-50{% endif %}"
+                   {% if view == 'table' %}aria-current="true"{% endif %}><i class="fa-solid fa-list text-xs"></i> Table</a>
             </div>
         </div>
     </form>
@@ -92,17 +114,6 @@
                 {% if filtered %}Try a different search, or <a href="{% url 'solicitations:public_list' %}" class="text-brand-cornflower-blue hover:underline">see every open call</a>.{% else %}Check back soon for new partnership opportunities.{% endif %}
             </p>
         </div>
-    {% endif %}
-
-    {% if recently_closed %}
-    <section aria-labelledby="recently-closed">
-        <h2 id="recently-closed" class="text-lg font-semibold text-brand-deep-purple mb-3">Recently closed</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8 opacity-90">
-            {% for solicitation in recently_closed %}
-                {% include "solicitations/_card.html" %}
-            {% endfor %}
-        </div>
-    </section>
     {% endif %}
 
     {% if past_years %}

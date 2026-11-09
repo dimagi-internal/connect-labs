@@ -44,8 +44,6 @@ from connect_labs.solicitations.validation import CHOICE_TYPES
 
 logger = logging.getLogger(__name__)
 
-# How many recently closed calls the directory shows under the open ones.
-RECENTLY_CLOSED_LIMIT = 6
 # A call this long (description + scope, in characters) or with this many
 # sections gets an "On this page" index.
 LONG_CALL_CHARS = 2500
@@ -595,7 +593,7 @@ Return ONLY the JSON array, no other text."""
 
 
 class PublicSolicitationListView(SolicitationsPage):
-    """Every listed call that is open, the recently closed ones, and the past
+    """Every listed call that is open, and the past
     calls (the marketplace's historical rounds), grouped by year."""
 
     template_name = "solicitations/public_list.html"
@@ -657,7 +655,6 @@ class PublicSolicitationListView(SolicitationsPage):
                 "solicitations": open_calls,
                 "open_rounds": open_rounds,
                 "open_count": len(open_rounds) + len(open_calls),
-                "recently_closed": closed[:RECENTLY_CLOSED_LIMIT],
                 "past_years": past_calls.by_year(past),
                 "past_count": len(past),
                 "past_owner": ran_by,
