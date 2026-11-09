@@ -75,6 +75,70 @@ one of them would destroy the only signal it had.
   </div>
 {% endif %}
 
+{% comment %}
+Cards are the first view: one per supply point, read from the same rows as the table beside
+them (stock/cards.py). The table stays as the second view, with every column it ever had.
+Plain CSS, so nothing waits on the stylesheet being rebuilt.
+{% endcomment %}
+<style>
+  .sc-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.625rem; margin-bottom: 0.875rem; }
+  .sc-tile { display: flex; align-items: baseline; gap: 0.5rem; text-align: left; padding: 0.5rem 0.875rem; background: #fff; border: 1px solid #e4e3ea; border-radius: 0.5rem; cursor: pointer; font: inherit; box-shadow: 0 1px 2px rgb(22 0 109 / 0.04); }
+  .sc-tile:hover { border-color: #b9bbd6; }
+  .sc-tile[aria-pressed="true"] { border-color: #3843d0; box-shadow: 0 0 0 2px #dfe2fb; }
+  .sc-tile b { font-size: 1.5rem; line-height: 1.75rem; font-weight: 700; color: #16006d; font-variant-numeric: tabular-nums; }
+  .sc-tile span { font-size: 0.8125rem; color: #4b5563; }
+  .sc-tile--bad b { color: #b91c1c; } .sc-tile--warn b { color: #b45309; } .sc-tile--ok b { color: #047857; }
+  .sc-tile--zero b { color: #9ca3af; }
+  .sc-bar { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.625rem; }
+  .sc-seg { display: inline-flex; border: 1px solid #d1d5db; border-radius: 0.375rem; overflow: hidden; background: #fff; }
+  .sc-seg button { padding: 0.25rem 0.75rem; font-size: 0.8125rem; color: #374151; background: transparent; border: 0; cursor: pointer; }
+  .sc-seg button[aria-pressed="true"] { background: #3843d0; color: #fff; }
+  .sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(20.5rem, 1fr)); gap: 0.75rem; list-style: none; margin: 0; padding: 0; }
+  .sc-card { position: relative; display: flex; flex-direction: column; gap: 0.5rem; background: #fff; border: 1px solid #e4e3ea; border-left: 4px solid #d1d5db; border-radius: 0.5rem; padding: 0.75rem 0.875rem 0.75rem 0.875rem; box-shadow: 0 1px 2px rgb(22 0 109 / 0.04); }
+  .sc-card[data-state="negative"], .sc-card[data-state="stockout"] { border-left-color: #dc2626; }
+  .sc-card[data-state="below_min"] { border-left-color: #d97706; }
+  .sc-card[data-state="ok"] { border-left-color: #10b981; }
+  .sc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
+  .sc-name { font-weight: 600; color: #111827; line-height: 1.25rem; }
+  .sc-sub { font-size: 0.75rem; color: #5b6072; margin-top: 0.125rem; }
+  .sc-main { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
+  .sc-big { font-size: 1.875rem; line-height: 2.25rem; font-weight: 700; color: #16006d; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .sc-big a { color: inherit; text-decoration: none; } .sc-big a:hover { text-decoration: underline; }
+  .sc-big--small { font-size: 1.125rem; }
+  .sc-unit { font-size: 0.875rem; font-weight: 500; color: #4b5563; margin-left: 0.25rem; letter-spacing: 0; }
+  .sc-side { font-size: 0.75rem; color: #5b6072; text-align: right; }
+  .sc-track { position: relative; height: 0.5rem; background: #eceef3; border-radius: 9999px; }
+  .sc-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 9999px; background: #10b981; }
+  .sc-card[data-state="below_min"] .sc-fill { background: #d97706; }
+  .sc-card[data-state="overstocked"] .sc-fill { background: #6b7280; }
+  .sc-tick { position: absolute; top: -0.1875rem; bottom: -0.1875rem; width: 2px; background: #6b7280; border-radius: 1px; }
+  .sc-scale { display: flex; justify-content: space-between; font-size: 0.6875rem; color: #5b6072; margin-top: 0.25rem; font-variant-numeric: tabular-nums; }
+  .sc-scale b { color: #111827; font-weight: 600; }
+  .sc-nobar { font-size: 0.75rem; color: #5b6072; padding: 0.125rem 0; }
+  .sc-why { font-size: 0.8125rem; line-height: 1.2rem; color: #374151; }
+  .sc-foot { display: flex; flex-wrap: wrap; gap: 0.25rem 0.875rem; font-size: 0.75rem; color: #4b5563; border-top: 1px solid #f0f0f4; padding-top: 0.5rem; margin-top: auto; }
+  .sc-foot a { color: #3843d0; } .sc-foot a:hover { text-decoration: underline; }
+  .sc-foot .sc-do { font-weight: 600; color: #111827; }
+  .sc-foot .sc-late { color: #b45309; }
+  .sc-empty { padding: 2rem 1rem; text-align: center; color: #4b5563; background: #fff; border: 1px dashed #d1d5db; border-radius: 0.5rem; }
+</style>
+{% if network.points %}
+<div class="sc-tiles" data-testid="stock-tiles">
+  <button type="button" class="sc-tile sc-tile--ok" data-filter="" aria-pressed="true"><b>{{ network.points|length }}</b><span>supply point{{ network.points|length|pluralize }}</span></button>
+  <button type="button" class="sc-tile sc-tile--bad{% if not stock_tiles.empty %} sc-tile--zero{% endif %}" data-filter="empty" aria-pressed="false"><b>{{ stock_tiles.empty }}</b><span>stocked out or negative</span></button>
+  <button type="button" class="sc-tile sc-tile--warn{% if not stock_tiles.below_min %} sc-tile--zero{% endif %}" data-filter="below_min" aria-pressed="false"><b>{{ stock_tiles.below_min }}</b><span>below minimum</span></button>
+  <button type="button" class="sc-tile sc-tile--warn{% if not stock_tiles.reorder %} sc-tile--zero{% endif %}" data-filter="reorder" aria-pressed="false"><b>{{ stock_tiles.reorder }}</b><span>to reorder</span></button>
+</div>
+<div class="sc-bar">
+  <span class="text-xs text-gray-600" id="sc-shown" aria-live="polite"></span>
+  <div class="sc-seg" role="group" aria-label="View">
+    <button type="button" data-view="cards" aria-pressed="true">Cards</button>
+    <button type="button" data-view="table" aria-pressed="false">Table</button>
+  </div>
+</div>
+{% endif %}
+
+<div data-testid="stock-table-view" id="stock-table-view" hidden>
 <style>
   /* Trouble reads at the start of a row, not only in the last column: a coloured edge on the supply point's cell. */
   .stock-table > tbody > tr > td.phone-title { box-shadow: inset 3px 0 0 transparent; }
@@ -296,7 +360,63 @@ one of them would destroy the only signal it had.
   </div>
 </div>
 
-<section class="mt-8 grid gap-6 border-t border-gray-200 pt-6 md:grid-cols-2" aria-label="How to read this page">
+</div>
+{% comment %}Source order: the table first, so a reader of the markup (and a test) meets each point in the table; the cards are what the page shows first.{% endcomment %}
+<ul class="sc-grid" data-testid="stock-cards">
+  {% for card in stock_cards %}
+    {% with point=card.point %}
+    <li class="sc-card" data-state="{{ card.state }}" data-card="{{ point.supply_point_id }}"
+        data-flags="{% if card.state == 'negative' or card.state == 'stockout' %}empty {% endif %}{% if card.state == 'below_min' %}below_min {% endif %}{% if card.needs_order %}reorder{% endif %}">
+      <div class="sc-head">
+        <div>
+          <div class="sc-name">{{ point.name }}</div>
+          <div class="sc-sub">{{ point.kind|humanise }}{% if point.admin_area %} · {{ point.admin_area }}{% endif %}{% if card.partner %} · {{ card.partner }}{% endif %}</div>
+        </div>
+        {% if card.state == "negative" %}<span class="stock-chip stock-chip--bad">Negative balance</span>
+        {% elif card.state == "stockout" %}<span class="stock-chip stock-chip--bad">Stocked out</span>
+        {% elif card.state == "below_min" %}<span class="stock-chip stock-chip--warn">Below minimum</span>
+        {% elif card.state == "ok" %}<span class="stock-chip stock-chip--ok">Within band</span>
+        {% elif card.state == "overstocked" %}<span class="stock-chip stock-chip--quiet">Over maximum</span>
+        {% elif card.state == "durable" %}<span class="stock-chip stock-chip--quiet">Durable</span>
+        {% else %}<span class="stock-chip stock-chip--quiet">Not assessed</span>{% endif %}
+      </div>
+      <div class="sc-main">
+        <div class="sc-big{% if card.lead.unconfirmed %} sc-big--small{% endif %}">
+          <a title="The movements behind this balance"
+             href="{% url 'supply_chain:movements' %}?supply_point_id={{ point.supply_point_id }}{% if point.item_id %}&amp;item_id={{ point.item_id }}{% endif %}">{{ card.lead.big }}</a>{% if card.lead.unit %}<span class="sc-unit">{{ card.lead.unit }}</span>{% endif %}
+        </div>
+        {% if card.lead.side or point.item_name %}<div class="sc-side">{% if card.lead.side %}= {{ card.lead.side }}{% endif %}{% if point.item_name %}<div>{{ point.item_name }}</div>{% endif %}</div>{% endif %}
+      </div>
+      {% if card.bar %}
+      <div>
+        <div class="sc-track" role="img" aria-label="{{ card.bar.days }} days of cover{% if card.bar.min_days is not None %}, minimum {{ card.bar.min_days }}, maximum {{ card.bar.max_days }}{% endif %}">
+          <div class="sc-fill" style="width:{{ card.bar.fill }}%"></div>
+          {% if card.bar.min_at is not None %}<span class="sc-tick" style="left:{{ card.bar.min_at }}%" title="Minimum: {{ card.bar.min_days }} days"></span><span class="sc-tick" style="left:{{ card.bar.max_at }}%" title="Maximum: {{ card.bar.max_days }} days"></span>{% endif %}
+        </div>
+        <div class="sc-scale"><span><b>{{ card.bar.days }}</b> day{{ card.bar.days|pluralize }} of cover</span>{% if card.bar.min_days is not None %}<span>min {{ card.bar.min_days }} · max {{ card.bar.max_days }} days</span>{% endif %}</div>
+      </div>
+      {% endif %}
+      <div class="sc-why">{{ card.why }}</div>
+      {% for reason in point.on_hand|unconfirmed_reasons %}<div class="sc-why" style="color:#b45309">{{ reason }}</div>{% endfor %}
+      <div class="sc-foot">
+        {% if card.top_up %}<span class="sc-do">{{ card.top_up }}</span>{% endif %}
+        {% for expected in point.expected_inbound %}
+          <span data-on-order>
+            <a href="{% url 'supply_chain:order_detail' expected.contract_id %}">{{ expected.outstanding|figure_text }} on order</a>{% if expected.expected_on %}, {% if expected.overdue %}<span class="sc-late">overdue since {{ expected.expected_on|day }}</span>{% else %}due {{ expected.expected_on|day }}{% endif %}{% else %}, no date given{% endif %}
+          </span>
+        {% endfor %}
+        {% if point.reported %}<span>Counted {{ point.reported|figure_text }}, {{ point.reported_on|day }}</span>{% else %}<span>No count yet</span>{% endif %}
+      </div>
+    </li>
+    {% endwith %}
+  {% empty %}
+    <li class="sc-empty" style="grid-column:1/-1">{% if acl_scoped %}You have no supply points in this programme.{% else %}No supply points yet. Stock needs somewhere to be.{% endif %}</li>
+  {% endfor %}
+</ul>
+
+<details class="mt-5 rounded-lg border border-gray-200 bg-white text-sm" data-testid="stock-how-it-works">
+<summary class="cursor-pointer px-4 py-2.5 font-medium text-gray-800">How this works</summary>
+<section class="grid gap-6 border-t border-gray-200 px-4 py-4 md:grid-cols-2" aria-label="How to read this page">
 <div class="space-y-3 max-w-xl">
 <div class="text-sm text-gray-700" data-testid="stock-forms-explained">
   <p class="font-medium text-gray-900 mb-1">Two ways to record stock</p>
@@ -353,5 +473,41 @@ paragraphs of method above a one-row table.{% endcomment %}
 </details>
 </div>
 </section>
+</details>
+
+<script>
+  (function () {
+    var cards = document.querySelectorAll('[data-testid="stock-cards"] [data-card]');
+    var tiles = document.querySelectorAll('.sc-tile');
+    var views = document.querySelectorAll('.sc-seg [data-view]');
+    var grid = document.querySelector('[data-testid="stock-cards"]');
+    var table = document.getElementById('stock-table-view');
+    var shown = document.getElementById('sc-shown');
+    function filter(key) {
+      var n = 0;
+      cards.forEach(function (c) {
+        var on = !key || (c.getAttribute('data-flags') || '').split(' ').indexOf(key) !== -1;
+        c.hidden = !on;
+        if (on) n += 1;
+      });
+      tiles.forEach(function (t) { t.setAttribute('aria-pressed', String((t.getAttribute('data-filter') || '') === (key || ''))); });
+      if (shown) shown.textContent = key ? 'Showing ' + n + ' of ' + cards.length : '';
+    }
+    tiles.forEach(function (t) {
+      t.addEventListener('click', function () {
+        var key = t.getAttribute('data-filter') || '';
+        filter(t.getAttribute('aria-pressed') === 'true' ? '' : key);
+      });
+    });
+    views.forEach(function (b) {
+      b.addEventListener('click', function () {
+        var asTable = b.getAttribute('data-view') === 'table';
+        if (grid) grid.hidden = asTable;
+        if (table) table.hidden = !asTable;
+        views.forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+      });
+    });
+  })();
+</script>
 {% endif %}
 {% endblock %}
