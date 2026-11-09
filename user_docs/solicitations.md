@@ -10,7 +10,7 @@ Every call belongs to an **organisation** — the one that posted it. That organ
 
 | Page | Address | Who can open it |
 | ---- | ------- | --------------- |
-| **Calls for partners** | `/solicitations/` | Anyone, signed in or not. Every call — open and past — listed as cards or as a table (use the **Cards \| Table** toggle to switch). The table shows Call, Status, Date, Program and Where columns; signed-in people also see Applicants and Organizations counts and a **This round on the marketplace** link. Visitors who are not signed in never see how many organisations applied. The same keyword search and organisation, type, and program filters apply in both views. Open marketplace EOIs appear on this list too — see below. |
+| **Calls for partners** | `/solicitations/` | Anyone, signed in or not. Every call — open and past — listed as cards or as a table (use the **Cards \| Table** switch, at the right of the filter row, to switch; your filters are kept when you switch). The table shows Call, Status, Date, Program and Where columns; signed-in people also see Applicants and Organizations counts and a **This round on the marketplace** link. Visitors who are not signed in never see how many organisations applied. The same keyword search and organisation, type, and program filters apply in both views. Open marketplace EOIs appear on this list too — see below. |
 | **A past call** | `/solicitations/past/<name>/` | Anyone. One of the calls Dimagi ran on the Connect marketplace before calls were posted here (see **Past calls** below). |
 | **A call** | `/solicitations/<number>/` | Anyone, for a listed call. Shows who posted it, the deadline, what it asks and how responses are scored. Long calls have a key-facts strip and an **On this page** index. |
 | **An organisation's calls** | `/solicitations/o/<organisation>/` | Anyone. The organisation's open calls and its past ones (Dimagi's page also lists the past marketplace calls). The marketplace page for an organisation links here when it has listed calls. |
@@ -173,8 +173,4 @@ Wherever a coverage map appears — on the solicitation page, the response submi
 | Green  | Intervention area |
 | Blue   | Comparison area   |
 
-This applies to all coverage maps across the solicitations module.
-
-### Reviewing Responses
-
-Once the deadline passes, open
+This applies to all coverage maps across the
