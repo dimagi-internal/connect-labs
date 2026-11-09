@@ -234,7 +234,9 @@ class Baselines:
             return
         isos = {b.iso_code for b in boundaries}
         adm0 = list(boundary_set.owned().filter(iso_code__in=isos, admin_level=0))
-        for row in IndicatorValue.objects.filter(boundary__in=adm0, indicator__in=("u5mr",)).select_related("boundary"):
+        for row in IndicatorValue.objects.filter(boundary__in=adm0, indicator__in=("u5mr",)).select_related(
+            "boundary"
+        ):
             self._country_rows.setdefault(row.boundary.iso_code, {}).setdefault(row.indicator, []).append(row)
 
     def for_area(self, model: str, iso3: str, boundary: AdminBoundary | None) -> dict[str, Value]:

@@ -30,7 +30,9 @@ class Command(BaseCommand):
     help = "Vendor connect-cea-models' spec.json files and re-derive pulse/data/cea_models.json from them."
 
     def add_arguments(self, parser):
-        parser.add_argument("--from", dest="src", help="A connect-cea-models checkout to copy models/<m>/spec.json from.")
+        parser.add_argument(
+            "--from", dest="src", help="A connect-cea-models checkout to copy models/<m>/spec.json from."
+        )
 
     def handle(self, *args, src=None, **options):
         if src:
@@ -68,7 +70,9 @@ class Command(BaseCommand):
                 if r is None:
                     raise CommandError(f"{m} has no figures for {c['iso3']}")
                 c[m] = {"x": r["x"], "unit_cost": r["price"], "deaths_per_100k": r["deaths_per_100k"]}
-        summary["models"]["kc"]["variant"] = "home visits after discharge; risk = the model's 13% for enrolled small babies"
+        summary["models"]["kc"][
+            "variant"
+        ] = "home visits after discharge; risk = the model's 13% for enrolled small babies"
         summary["source"] = f"connect_labs/impact/data (connect-cea-models @ {engine.source()['commit'][:7]})"
         summary["generated"] = date.today().isoformat()
         SUMMARY.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")

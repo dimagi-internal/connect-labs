@@ -208,6 +208,7 @@ def _headline_level(areas: list) -> str:
     level = next(lvl for lvl in LOCAL_LEVELS if lvl in counts)
     return f"{level} · {round(local_inputs)} of {n_inputs}"
 
+
 def opportunity_areas(opps, reach_of: dict) -> dict:
     """The place layer for every valued opportunity: ``{opp_id: [area dict, ...]}``.
 
@@ -249,6 +250,7 @@ def opportunity_areas(opps, reach_of: dict) -> dict:
             for a in areas
         ]
     return out
+
 
 def _pool_cost_only(opps, own_usd: dict, reach_of: dict):
     """Fold the spend of cost-only opportunities into the delivery they paid for.
