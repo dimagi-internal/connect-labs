@@ -10,11 +10,13 @@ caller can route around it.
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.validators import validate_email
 from django.db import transaction
+from django.db.models import Case, Value, When
 from django.utils import timezone
 
 from connect_labs.communications import kinds as kind_registry
@@ -22,10 +24,15 @@ from connect_labs.communications.kinds import RecipientSpec, render
 from connect_labs.communications.models import (
     DELIVERED,
     FAILED,
+    FOLLOWUP_DONE,
+    FOLLOWUP_FAILED,
+    FOLLOWUP_NONE,
+    FOLLOWUP_PENDING,
     NOT_SENT,
     PREPARED_WEB,
     QUEUED,
     SENT,
+    UNKNOWN,
     Communication,
     Recipient,
     SentMessage,
@@ -471,40 +478,154 @@ def send(request, pk) -> dict:
 def delivered(sent_message_id) -> None:
     """The mail service took this message: record it, then do what sending it changes.
 
-    Called by the mail task on success. The delivery is claimed first (queued ->
-    delivered, once), so a task that runs twice never applies `after_sent` twice.
-    `after_sent` runs as the person who sent it (an outreach marked sent, a reply
-    recorded); if it fails, the message still went, and the failure is kept on
-    the record and shown.
+    Called by the mail task's report (`tasks.record_delivery`), or by a person
+    confirming a message whose outcome was unknown. The delivery is claimed
+    first -- the move to delivered happens once -- so a report that arrives
+    twice never applies the follow-up twice. A success outranks any earlier
+    report (a task run twice may report failure first).
     """
-    # A success outranks any earlier report (a task run twice may report failure first);
-    # the move to delivered happens once, so the follow-up runs once.
-    claimed = SentMessage.objects.filter(pk=sent_message_id).exclude(delivery=DELIVERED).update(delivery=DELIVERED)
-    if not claimed:
-        return
-    message = SentMessage.objects.select_related("communication", "recipient", "sent_by").get(pk=sent_message_id)
-    communication, recipient = message.communication, message.recipient
-    if communication is None or recipient is None:
-        return
-    effects = dict(message.effects or {})
-    try:
-        kind = kind_registry.get(communication.kind)
-        caller = Caller(user=message.sent_by)
-        effects.update(kind.after_sent(communication, recipient, message, about_of(communication), caller) or {})
-    except Exception as e:  # noqa: BLE001 -- the email went; say what did not follow it
-        logger.exception("communications: after-send step failed for message %s", message.pk)
-        effects["after_sent_error"] = str(e)[:500]
-    message.effects = effects
-    message.save(update_fields=["effects"])
+    # One statement: delivered, and its follow-up pending, are recorded together --
+    # a stop between them can never leave a sent message with no follow-up to retry.
+    claimed = (
+        SentMessage.objects.filter(pk=sent_message_id)
+        .exclude(delivery=DELIVERED)
+        .update(
+            delivery=DELIVERED,
+            followup=Case(
+                When(communication__isnull=False, recipient__isnull=False, then=Value(FOLLOWUP_PENDING)),
+                default=Value(FOLLOWUP_NONE),
+            ),
+        )
+    )
+    if claimed:
+        run_followup(sent_message_id)
+
+
+def run_followup(sent_message_id, *, automatic: bool = False, now=None) -> bool:
+    """Do what sending this message changes (`kind.after_sent`), as the person who sent it.
+
+    Never resends the email. Safe to run again after a partial failure: the
+    kinds' follow-ups set dates and record replies, which are idempotent. True
+    when it is done; a failure is kept on the record (`followup_error`) and
+    retried by the reconcile job, then left for a person to retry.
+    """
+    with transaction.atomic():
+        message = (
+            SentMessage.objects.select_for_update(of=("self",))
+            .select_related("communication", "recipient", "sent_by")
+            .filter(pk=sent_message_id)
+            .first()
+        )
+        if message is None or message.followup not in (FOLLOWUP_PENDING, FOLLOWUP_FAILED):
+            return message is not None and message.followup == FOLLOWUP_DONE
+        if automatic and message.followup == FOLLOWUP_FAILED:
+            # Checked again under the lock: another attempt may have run since this was selected.
+            if message.followup_attempts >= MAX_FOLLOWUP_ATTEMPTS or not _followup_due(message, now or timezone.now()):
+                return False
+        communication, recipient = message.communication, message.recipient
+        message.followup_attempts += 1
+        message.followup_at = timezone.now()
+        try:
+            with transaction.atomic():
+                kind = kind_registry.get(communication.kind)
+                caller = Caller(user=message.sent_by)
+                effects = kind.after_sent(communication, recipient, message, about_of(communication), caller) or {}
+        except Exception as e:  # noqa: BLE001 -- the email went; say what did not follow it, and retry later
+            logger.exception("communications: follow-up failed for message %s", message.pk)
+            message.followup = FOLLOWUP_FAILED
+            message.followup_error = str(e)[:1000]
+            message.save(update_fields=["followup", "followup_attempts", "followup_at", "followup_error"])
+            return False
+        message.effects = {**(message.effects or {}), **effects}
+        message.followup = FOLLOWUP_DONE
+        message.followup_error = ""
+        message.save(update_fields=["effects", "followup", "followup_attempts", "followup_at", "followup_error"])
+        return True
 
 
 def not_delivered(sent_message_id, *, failed: bool) -> None:
     """The mail service refused it for good (`failed`), or mail is off here.
 
-    Only a message still waiting changes: a report that arrives after a
-    success (a task run twice) never turns "Sent" into "Failed".
+    Only a message still waiting (or whose outcome was unknown) changes: a
+    report that arrives after a success never turns "Sent" into "Failed".
     """
-    SentMessage.objects.filter(pk=sent_message_id, delivery=QUEUED).update(delivery=FAILED if failed else NOT_SENT)
+    SentMessage.objects.filter(pk=sent_message_id, delivery__in=(QUEUED, UNKNOWN)).update(
+        delivery=FAILED if failed else NOT_SENT
+    )
+
+
+#: A message handed to the mail queue with no report back after this long was
+#: lost on the way (a worker stopped mid-send): say so, never guess sent or failed.
+UNKNOWN_AFTER = timedelta(hours=2)
+#: Follow-ups are retried this many times by the reconcile job, then left for a person.
+MAX_FOLLOWUP_ATTEMPTS = 5
+
+
+def _followup_due(message, now) -> bool:
+    """Back off between attempts: 10 minutes, then 20, 40, 80."""
+    wait = timedelta(minutes=10 * 2 ** max(message.followup_attempts - 1, 0))
+    return message.followup_at is None or now - message.followup_at >= wait
+
+
+def reconcile(now=None) -> dict:
+    """Settle what the mail path left open. Run every ten minutes (`tasks.reconcile_communications`).
+
+    * A message still "Sending" long after it was handed over becomes "Outcome
+      unknown": the page asks a person to confirm it went (which runs its
+      follow-up) -- labs never assumes delivered or failed.
+    * A delivered message whose follow-up is pending (the report stopped
+      half-way) or failed is retried, with back-off, up to
+      MAX_FOLLOWUP_ATTEMPTS; after that it waits for a person's Retry.
+    """
+    now = now or timezone.now()
+    lost = SentMessage.objects.filter(delivery=QUEUED, sent_at__lt=now - UNKNOWN_AFTER).update(delivery=UNKNOWN)
+    retried = done = 0
+    stuck = SentMessage.objects.filter(
+        delivery=DELIVERED,
+        followup__in=(FOLLOWUP_PENDING, FOLLOWUP_FAILED),
+        followup_attempts__lt=MAX_FOLLOWUP_ATTEMPTS,
+    )
+    for message in stuck.iterator():
+        # A pending one only once its own report has had time to finish.
+        if (
+            message.followup == FOLLOWUP_PENDING
+            and message.followup_at
+            and now - message.followup_at < timedelta(minutes=10)
+        ):
+            continue
+        if not _followup_due(message, now):
+            continue
+        retried += 1
+        done += int(run_followup(message.pk, automatic=True, now=now))
+    return {"unknown": lost, "followups_retried": retried, "followups_done": done}
+
+
+# -- a person settling what labs could not ----------------------------------
+
+
+def _message_for_sender(request, message_id):
+    caller = Caller(user=request.user, request=request)
+    message = SentMessage.objects.select_related("communication").filter(pk=message_id).first()
+    if message is None or message.communication is None:
+        raise NotFound(message_id)
+    load(caller, message.communication.pk, for_send=True)  # NotFound unless they may send it
+    return message
+
+
+def confirm_delivered(request, message_id) -> None:
+    """A person says a message whose outcome was unknown did arrive: record it and follow up."""
+    message = _message_for_sender(request, message_id)
+    if message.delivery != UNKNOWN:
+        raise ValidationError({"__all__": "Only a message whose outcome is unknown can be confirmed."})
+    delivered(message.pk)
+
+
+def retry_followup(request, message_id) -> bool:
+    """A person asks for a failed follow-up again (never the email)."""
+    message = _message_for_sender(request, message_id)
+    if message.delivery != DELIVERED or message.followup not in (FOLLOWUP_PENDING, FOLLOWUP_FAILED):
+        raise ValidationError({"__all__": "Nothing to retry for this message."})
+    return run_followup(message.pk)
 
 
 # -- what labs sends on its own -----------------------------------------------

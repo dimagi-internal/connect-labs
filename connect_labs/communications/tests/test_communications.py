@@ -251,7 +251,7 @@ def test_a_failed_follow_up_step_is_recorded_without_losing_the_send(world, mail
     monkeypatch.setattr(kinds.get("general"), "after_sent", boom)
     service.send(browser_request(world["writer"]), out["id"])
     row = SentMessage.objects.get(communication_id=out["id"])
-    assert row.delivery == "delivered" and "outreach row gone" in row.effects["after_sent_error"]
+    assert row.delivery == "delivered" and row.followup == "failed" and "outreach row gone" in row.followup_error
 
 
 def test_placeholders_fill_in_and_unknown_braces_stay():
@@ -368,3 +368,141 @@ def test_a_success_after_a_failure_wins_and_still_follows_up_once(world, setting
 
 def test_no_messages_for_a_zero_limit(world):
     assert service.sent_about(world["writer"], world["org"], limit=0) == []
+
+
+# --- settling what the mail path left open ------------------------------------------
+
+
+@pytest.fixture
+def queued_only(settings, monkeypatch):
+    """Mail on, handed to the queue, and no report back (yet)."""
+    settings.LABS_EMAIL_ENABLED = True
+    monkeypatch.setattr("connect_labs.utils.email.send_labs_email", lambda *a, **k: object())
+    monkeypatch.setattr("django.db.transaction.on_commit", lambda fn, using=None, robust=False: fn())
+
+
+def test_a_message_with_no_word_back_becomes_outcome_unknown_and_a_person_settles_it(
+    client, world, queued_only, monkeypatch
+):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    calls = []
+    monkeypatch.setattr(kinds.get("general"), "after_sent", lambda *a, **k: calls.append(1) or {})
+    out = draft_for(world)
+    service.send(browser_request(world["writer"]), out["id"])
+    row = SentMessage.objects.get(communication_id=out["id"])
+    assert service.reconcile()["unknown"] == 0  # too soon to say
+    assert service.reconcile(now=timezone.now() + timedelta(hours=3))["unknown"] == 1
+    row.refresh_from_db()
+    assert row.delivery == "unknown" and calls == []
+
+    client.force_login(world["writer"])
+    page = client.get(reverse("communications:detail", args=[out["id"]])).content.decode()
+    assert "Outcome unknown" in page and 'data-testid="confirm-delivered"' in page
+    client.post(reverse("communications:detail", args=[out["id"]]), {"action": "confirm_delivered", "message": row.pk})
+    row.refresh_from_db()
+    assert row.delivery == "delivered" and row.followup == "done" and calls == [1]
+
+
+def test_a_failed_follow_up_is_retried_with_back_off_then_left_to_a_person(client, world, queued_only, monkeypatch):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    attempts = []
+
+    def flaky(*a, **k):
+        attempts.append(1)
+        raise RuntimeError("supply is down")
+
+    monkeypatch.setattr(kinds.get("general"), "after_sent", flaky)
+    out = draft_for(world)
+    service.send(browser_request(world["writer"]), out["id"])
+    row = SentMessage.objects.get(communication_id=out["id"])
+    service.delivered(row.pk)
+    row.refresh_from_db()
+    assert row.followup == "failed" and row.followup_attempts == 1
+    assert service.reconcile()["followups_retried"] == 0  # backing off
+    later = timezone.now()
+    for _ in range(10):
+        later += timedelta(hours=3)
+        service.reconcile(now=later)
+    row.refresh_from_db()
+    assert row.followup_attempts == service.MAX_FOLLOWUP_ATTEMPTS and len(attempts) == service.MAX_FOLLOWUP_ATTEMPTS
+
+    monkeypatch.setattr(kinds.get("general"), "after_sent", lambda *a, **k: {"marked": True})
+    client.force_login(world["writer"])
+    page = client.get(reverse("communications:detail", args=[out["id"]])).content.decode()
+    assert "supply is down" in page and 'data-testid="retry-followup"' in page
+    client.post(reverse("communications:detail", args=[out["id"]]), {"action": "retry_followup", "message": row.pk})
+    row.refresh_from_db()
+    assert row.followup == "done" and row.effects["marked"] and row.delivery == "delivered"
+
+
+def test_only_someone_who_may_send_settles_a_message(client, world, queued_only):
+    out = draft_for(world)
+    service.send(browser_request(world["writer"]), out["id"])
+    row = SentMessage.objects.get(communication_id=out["id"])
+    SentMessage.objects.filter(pk=row.pk).update(delivery="unknown")
+    client.force_login(world["outsider"])
+    response = client.post(
+        reverse("communications:detail", args=[out["id"]]), {"action": "confirm_delivered", "message": row.pk}
+    )
+    assert response.status_code == 404
+    row.refresh_from_db()
+    assert row.delivery == "unknown"
+
+
+def test_the_mail_task_reports_through_its_own_retried_task(settings, monkeypatch):
+    from unittest.mock import patch
+
+    from connect_labs.utils import tasks as mail_tasks
+
+    settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+    with patch("connect_labs.communications.tasks.record_delivery.delay") as report:
+        mail_tasks.send_mail_async(subject="s", message="b", recipient_list=["a@x.example"], sent_message_id=42)
+    report.assert_called_once_with(42, True, False)
+
+
+def test_a_worker_without_mail_holds_a_recorded_message_for_a_later_one(settings):
+    from unittest.mock import patch
+
+    from celery.exceptions import Retry
+
+    from connect_labs.utils import tasks as mail_tasks
+
+    settings.EMAIL_BACKEND = "connect_labs.utils.email.NotConfiguredEmailBackend"
+    with patch("connect_labs.communications.tasks.record_delivery.delay") as report, pytest.raises(Retry):
+        mail_tasks.send_mail_async(subject="s", message="b", recipient_list=["a@x.example"], sent_message_id=42)
+    report.assert_not_called()
+    # Not a recorded message: as before, nothing to hold, nothing retried.
+    assert mail_tasks.send_mail_async(subject="s", message="b", recipient_list=["a@x.example"]) == 0
+
+
+def test_delivered_and_its_pending_follow_up_are_recorded_together(world, queued_only, monkeypatch):
+    def stop(*a, **k):
+        raise SystemExit  # the worker stops right after the delivery claim
+
+    out = draft_for(world)
+    service.send(browser_request(world["writer"]), out["id"])
+    row = SentMessage.objects.get(communication_id=out["id"])
+    monkeypatch.setattr(service, "run_followup", stop)
+    with pytest.raises(SystemExit):
+        service.delivered(row.pk)
+    row.refresh_from_db()
+    assert row.delivery == "delivered" and row.followup == "pending"  # reconcile will pick it up
+
+
+def test_an_automatic_retry_rechecks_its_limit_under_the_lock(world, queued_only, monkeypatch):
+    calls = []
+    monkeypatch.setattr(kinds.get("general"), "after_sent", lambda *a, **k: calls.append(1) or {})
+    out = draft_for(world)
+    service.send(browser_request(world["writer"]), out["id"])
+    row = SentMessage.objects.get(communication_id=out["id"])
+    SentMessage.objects.filter(pk=row.pk).update(
+        delivery="delivered", followup="failed", followup_attempts=service.MAX_FOLLOWUP_ATTEMPTS
+    )
+    assert service.run_followup(row.pk, automatic=True) is False and calls == []
+    assert service.run_followup(row.pk) is True and calls == [1]  # a person's retry is never limited

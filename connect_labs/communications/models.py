@@ -110,7 +110,27 @@ QUEUED = "queued"  # handed to the mail queue
 DELIVERED = "delivered"  # the mail service took it
 FAILED = "failed"  # the mail service refused it, after retries
 NOT_SENT = "not_sent"  # never handed over (mail is off here)
-DELIVERY = [(QUEUED, "Sending"), (DELIVERED, "Sent"), (FAILED, "Failed"), (NOT_SENT, "Not sent")]
+UNKNOWN = "unknown"  # handed over, and no word back in time: a person says what became of it
+DELIVERY = [
+    (QUEUED, "Sending"),
+    (DELIVERED, "Sent"),
+    (FAILED, "Failed"),
+    (NOT_SENT, "Not sent"),
+    (UNKNOWN, "Outcome unknown"),
+]
+
+# What sending changes besides the email (`kind.after_sent`): run once the mail
+# service takes the message, retried apart from it, never by resending it.
+FOLLOWUP_NONE = ""  # nothing to do (an automatic notice, or not delivered)
+FOLLOWUP_PENDING = "pending"
+FOLLOWUP_DONE = "done"
+FOLLOWUP_FAILED = "failed"
+FOLLOWUP = [
+    (FOLLOWUP_NONE, "None"),
+    (FOLLOWUP_PENDING, "Pending"),
+    (FOLLOWUP_DONE, "Done"),
+    (FOLLOWUP_FAILED, "Failed"),
+]
 
 
 class SentMessage(models.Model):
@@ -138,8 +158,12 @@ class SentMessage(models.Model):
     subject = models.CharField(max_length=300)
     body = models.TextField()
     delivery = models.CharField(max_length=12, choices=DELIVERY, default=QUEUED)
-    # What sending did beyond the email ({"invite_id": 7}, {"outreach_id": 5} ...).
+    # What sending did beyond the email ({"invite_id": 7}, {"outreach_sent_on": ...}).
     effects = models.JSONField(default=dict, blank=True)
+    followup = models.CharField(max_length=8, choices=FOLLOWUP, default=FOLLOWUP_NONE, blank=True, db_index=True)
+    followup_attempts = models.PositiveSmallIntegerField(default=0)
+    followup_error = models.TextField(blank=True, default="")
+    followup_at = models.DateTimeField(null=True, blank=True)
     # Sent by a person from labs, or by labs itself (null: an automatic notice).
     sent_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"

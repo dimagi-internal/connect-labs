@@ -255,6 +255,36 @@ as a donor), only while that subscription is active, and only checks that are
 logged as `email_disabled` rather than queued, so turning mail on does not release
 a backlog. To stop it entirely: `PeriodicTask.objects.filter(name="supply_chain_send_alerts").update(enabled=False)`.
 
+### Communications — mail a person sends, and what became of it
+
+`connect_labs/communications/` is where labs drafts, sends and records mail to
+organisations and people (a round's applicants, a tender's suppliers, a general
+message). Anyone allowed may prepare a draft — a person, or an agent over MCP —
+but only a person signed in to labs sends it, from `/communications/<id>/`. Each
+recipient's copy is one `SentMessage`, queued with `sent_message_id` so the mail
+task can say what became of it:
+
+| delivery | meaning |
+|---|---|
+| Sending | handed to the queue, no word back yet |
+| Sent | the mail service took it; the kind's follow-up then runs (an outreach marked sent, a reply recorded) |
+| Failed | the mail service refused it after retries |
+| Not sent | never handed over (mail off here) |
+| Outcome unknown | no word back two hours after hand-off (a worker stopped mid-send): a person checks and clicks "It arrived" |
+
+The mail task reports through its own retried task
+(`communications.tasks.record_delivery`), so a database blip after SES accepted a
+message delays the record rather than losing it, and never resends. A worker with
+mail off (one a deploy has not replaced yet) holds a recorded message for a later
+worker, up to three times two minutes, before calling it not sent.
+
+`communications.tasks.reconcile_communications` runs every ten minutes
+(`PeriodicTask` `communications_reconcile`, seeded by
+`communications/migrations/0004_…`). **It sends no mail.** It marks lost messages
+"Outcome unknown" and retries failed follow-ups with back-off (10, 20, 40, 80
+minutes; five attempts), after which the draft page offers a person "Retry
+follow-up". A follow-up never resends the email.
+
 ### The audit to repeat before enabling mail anywhere
 
 A send path nobody remembers is worse than no send path. All three of these are
