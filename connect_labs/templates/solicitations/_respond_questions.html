@@ -1,4 +1,4 @@
-{% comment %}The call's questions, as fields. Shared by the live form and the read-only copy a closed call shows.{% endcomment %}
+{% load static %}{% comment %}The call's questions, as fields. Shared by the live form and the read-only copy a closed call shows.{% endcomment %}
 <!-- Questions Section — only when the solicitation defines custom questions -->
 {% if question_fields %}
     <div class="bg-white rounded-xl shadow-sm p-5 sm:p-8">
@@ -32,10 +32,10 @@
                     {% if block.help %}<p class="mt-1 text-xs text-gray-500 whitespace-pre-line">{{ block.help }}</p>{% endif %}
                 </div>
             {% elif block.kind == "grid" %}
-                <div class="mb-6" data-question data-question-grid>
-                    <p class="block text-sm font-medium text-gray-700 mb-1">{{ block.title }}</p>
+                <div class="mb-6" data-question data-question-grid{% if block.one_per_column %} data-one-per-column{% endif %}>
+                    <p class="block text-sm font-medium text-gray-700 mb-1">{{ block.title }}{% if block.required %}<span class="text-red-500 ml-1">*</span>{% endif %}</p>
                     {% if block.help %}<p class="mb-2 text-xs text-gray-500 whitespace-pre-line">{{ block.help }}</p>{% endif %}
-                    <p class="mb-2 text-xs text-gray-500">{% if block.multi %}Tick any that apply in each row.{% else %}One choice per row.{% endif %}</p>
+                    <p class="mb-2 text-xs text-gray-500">{% if block.multi %}Tick any that apply in each row.{% elif block.one_per_column %}One choice per column: each can go to one row only.{% if block.required %} Use every column.{% endif %}{% else %}One choice per row.{% endif %}</p>
                     <div class="overflow-x-auto">
                         <table class="min-w-full text-sm">
                             <thead>
@@ -93,4 +93,6 @@
             {% endfor %}
         </div>
     </div>
+    {# Ranking grids: picking a column in one row clears it from the others. #}
+    <script src="{% static 'solicitations/question_grids.js' %}"></script>
 {% endif %}

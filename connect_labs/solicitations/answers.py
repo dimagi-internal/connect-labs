@@ -130,6 +130,10 @@ def question_blocks(items) -> list[dict]:
                 "help": grid.get("help", ""),
                 "columns": grid.get("columns", []),
                 "multi": question.get("type") == "checkboxes",
+                # A ranking: each column may be picked in one row only.
+                "one_per_column": bool(grid.get("one_per_column")),
+                # A required ranking: every column must go to some row.
+                "required": bool(grid.get("required")),
                 "rows": [],
             }
             blocks.append(last)

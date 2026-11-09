@@ -523,3 +523,83 @@ class TestChoiceQuestions:
             _validate_questions([self._q(display="radio")])
         with pytest.raises(ValidationError):
             _validate_questions([self._q(type="multiple_choice", display="slider")])
+
+
+class TestGridRows:
+    COLUMNS = ["1st choice", "2nd choice"]
+
+    def _row(self, grid_extra=None, **kw):
+        grid = {"id": "g1", "title": "Rank these", "columns": self.COLUMNS, "row": "Cost"}
+        grid.update(grid_extra or {})
+        q = {
+            "id": "g1_r1",
+            "text": "Rank these [Cost]",
+            "type": "multiple_choice",
+            "display": "radio",
+            "options": self.COLUMNS,
+            "grid": grid,
+        }
+        q.update(kw)
+        return q
+
+    def _check(self, *questions):
+        from connect_labs.solicitations.validation import _validate_questions
+
+        return _validate_questions(list(questions))
+
+    def test_a_grid_row_is_accepted(self):
+        assert self._check(self._row()) == {"g1_r1"}
+
+    def test_one_per_column_is_accepted_on_a_pick_one_row(self):
+        assert self._check(self._row({"one_per_column": True})) == {"g1_r1"}
+
+    @pytest.mark.parametrize(
+        "grid_extra, kw",
+        [
+            ({"one_per_column": "yes"}, {}),  # not a boolean
+            ({"one_per_column": True}, {"type": "checkboxes", "display": None}),  # rows tick several
+            ({"columns": ["1st choice"]}, {}),  # columns are the row's options
+            ({"row": ""}, {}),
+            ({"title": None}, {}),
+            ({"shuffle": True}, {}),  # unknown key
+        ],
+    )
+    def test_a_malformed_grid_is_rejected(self, grid_extra, kw):
+        row = self._row(grid_extra, **kw)
+        if row.get("display") is None:
+            row.pop("display")
+        with pytest.raises(ValidationError):
+            self._check(row)
+
+    def _rows(self, labels, **grid_extra):
+        return [
+            {
+                **self._row(grid_extra, id=f"g1_r{i}", text=f"Rank these [{label}]"),
+                "grid": {**self._row(grid_extra)["grid"], "row": label},
+            }
+            for i, label in enumerate(labels, start=1)
+        ]
+
+    def test_a_required_ranking_keeps_its_rows_optional(self):
+        rows = self._rows(["Cost", "Distance"], one_per_column=True, required=True)
+        assert self._check(*rows) == {"g1_r1", "g1_r2"}
+        with pytest.raises(ValidationError):  # the rows themselves stay optional
+            self._check(*[{**r, "required": True} for r in rows])
+        with pytest.raises(ValidationError):  # required needs one_per_column
+            self._check(*self._rows(["Cost", "Distance"], required=True))
+        with pytest.raises(ValidationError):  # two columns to fill, one row
+            self._check(*self._rows(["Cost"], one_per_column=True, required=True))
+
+    def test_a_grids_rows_sit_together_and_agree(self):
+        rows = self._rows(["Cost", "Distance"], one_per_column=True)
+        other = {"id": "q9", "text": "Name?", "type": "text"}
+        with pytest.raises(ValidationError):
+            self._check(rows[0], other, rows[1])
+        with pytest.raises(ValidationError):
+            self._check(rows[0], {**rows[1], "grid": {**rows[1]["grid"], "one_per_column": False}})
+
+    def test_a_grid_is_for_choice_questions_only(self):
+        row = self._row(type="textarea")
+        row.pop("display")
+        with pytest.raises(ValidationError):
+            self._check(row)

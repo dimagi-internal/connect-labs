@@ -333,6 +333,55 @@ class TestSolicitationResponseForm:
         ]
         assert SolicitationResponseForm(questions=questions).fields["question_q1"].widget.input_type == "radio"
 
+    @staticmethod
+    def _ranking(one_per_column=True):
+        columns = ["1st", "2nd"]
+        grid = {"id": "g1", "title": "Rank these", "columns": columns, "one_per_column": one_per_column}
+        return [
+            {
+                "id": f"g1_r{i}",
+                "text": f"Rank these [{row}]",
+                "type": "multiple_choice",
+                "options": columns,
+                "grid": {**grid, "row": row},
+            }
+            for i, row in enumerate(["Cost", "Distance", "Safety"], start=1)
+        ]
+
+    def test_a_grid_row_draws_radios(self):
+        form = SolicitationResponseForm(questions=self._ranking())
+        assert form.fields["question_g1_r1"].widget.input_type == "radio"
+
+    def test_one_per_column_lets_each_column_go_to_one_row(self):
+        ok = SolicitationResponseForm(
+            questions=self._ranking(), data={"question_g1_r1": "2nd", "question_g1_r2": "1st"}
+        )
+        assert ok.is_valid(), ok.errors
+
+        clash = SolicitationResponseForm(
+            questions=self._ranking(), data={"question_g1_r1": "1st", "question_g1_r3": "1st"}
+        )
+        assert not clash.is_valid()
+        assert list(clash.errors) == ["question_g1_r3"]
+        assert "Cost" in clash.errors["question_g1_r3"][0]
+
+    def test_a_required_ranking_must_use_every_column(self):
+        questions = self._ranking()
+        for q in questions:
+            q["grid"]["required"] = True
+        missing = SolicitationResponseForm(questions=questions, data={"question_g1_r2": "1st"})
+        assert not missing.is_valid()
+        assert missing.errors["question_g1_r1"] == ["Pick a row for each of: 2nd."]
+        full = SolicitationResponseForm(questions=questions, data={"question_g1_r2": "1st", "question_g1_r3": "2nd"})
+        assert full.is_valid(), full.errors
+
+    def test_without_one_per_column_rows_may_share_a_column(self):
+        form = SolicitationResponseForm(
+            questions=self._ranking(one_per_column=False),
+            data={"question_g1_r1": "1st", "question_g1_r2": "1st"},
+        )
+        assert form.is_valid(), form.errors
+
     def test_responding_org_picked_from_the_users_orgs(self):
         form = SolicitationResponseForm(
             questions=self._questions(),

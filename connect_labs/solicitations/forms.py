@@ -355,7 +355,8 @@ class SolicitationResponseForm(forms.Form):
                 # Form shows it; "display" says which a question wants.
                 widget = (
                     forms.RadioSelect()
-                    if question.get("display") == "radio"
+                    # A grid row is always radios: the table draws one per cell.
+                    if question.get("display") == "radio" or question.get("grid")
                     else forms.Select(attrs={"class": _SELECT_CLASSES})
                 )
                 field = forms.ChoiceField(label=q_text, required=q_required, choices=choices, widget=widget)
@@ -378,6 +379,41 @@ class SolicitationResponseForm(forms.Form):
                 )
 
             self.fields[field_name] = field
+
+    def clean(self):
+        cleaned = super().clean()
+        # A one-per-column grid is a ranking: no two rows may share a column.
+        # The form's script stops it in the browser; this stops a crafted post.
+        # A required one (grid.required) must use every column.
+        taken: dict[tuple[str, str], str] = {}
+        first_row: dict[str, str] = {}
+        rankings: dict[str, dict] = {}
+        for question in self.questions:
+            grid = question.get("grid") or {}
+            if not grid.get("one_per_column"):
+                continue
+            grid_id = grid.get("id", "")
+            field_name = f"question_{question.get('id', '')}"
+            first_row.setdefault(grid_id, field_name)
+            rankings.setdefault(grid_id, grid)
+            value = cleaned.get(field_name)
+            if not value:
+                continue
+            key = (grid_id, value)
+            if key in taken:
+                self.add_error(
+                    field_name,
+                    f"“{value}” is already picked for {taken[key]}; each choice can go to one row only.",
+                )
+            else:
+                taken[key] = grid.get("row", "") or "another row"
+        for grid_id, grid in rankings.items():
+            if not grid.get("required"):
+                continue
+            missing = [c for c in grid.get("columns") or [] if (grid_id, c) not in taken]
+            if missing:
+                self.add_error(first_row[grid_id], f"Pick a row for each of: {', '.join(missing)}.")
+        return cleaned
 
     def responding_org(self) -> tuple[str | None, str, str]:
         """(org slug or None, new organisation name, its contact email) from the cleaned form.

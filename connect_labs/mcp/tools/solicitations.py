@@ -389,6 +389,26 @@ _CANONICAL_FIELD_PROPERTIES = {
                         "render or score against it cleanly."
                     ),
                 },
+                "grid": {
+                    "type": "object",
+                    "description": (
+                        "Makes this question one row of a grid (e.g. 'rank these 1st, 2nd, 3rd'). "
+                        "A grid is stored as one choice question per row; consecutive rows sharing "
+                        "grid.id draw as one table. Each row's options must equal grid.columns. "
+                        "one_per_column (multiple_choice rows only) makes it a ranking: each column "
+                        "can be picked in one row only."
+                    ),
+                    "properties": {
+                        "id": {"type": "string"},
+                        "title": {"type": "string", "description": "The grid's question, shown above the table."},
+                        "help": {"type": "string"},
+                        "columns": {"type": "array", "items": {"type": "string"}},
+                        "row": {"type": "string", "description": "This row's label."},
+                        "one_per_column": {"type": "boolean", "default": False},
+                    },
+                    "required": ["id", "title", "columns", "row"],
+                    "additionalProperties": False,
+                },
             },
             "required": ["id", "text", "type"],
             "additionalProperties": False,

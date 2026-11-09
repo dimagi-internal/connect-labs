@@ -99,6 +99,11 @@ Click **Generate Criteria** and paste in text describing your program requiremen
 **Adding context to response questions:**
 When building your response template, each question has an optional **Framing** field where you can write one or two sentences explaining why you're asking that question. This framing appears above the question prompt on the public solicitation page, displayed in muted italic text, so respondents understand the intent behind the question — not just what you're asking. Framing is optional; questions without it display exactly as before.
 
+**Grid questions and rankings:**
+Choose **Grid (one choice per row)** as a question's type to ask several things against the same set of answers, for example "Which of these programmes would you want to deliver?" with a row per programme and columns **1st choice**, **2nd choice**, **3rd choice**. Type the rows and the columns one per line. Respondents see a table and pick one answer in each row.
+
+Tick **One choice per column** to make the grid a ranking: each column can then be picked in only one row, so a respondent can name just one 1st choice, one 2nd and one 3rd. Picking "1st choice" in a second row clears it from the first, the same as a Google Form's "Limit to one response per column".
+
 The question input box in the template editor automatically expands to fit longer question text, so lengthy questions are always fully visible as you type.
 
 The published solicitation shows the number of questions in the response template. This count is phrased correctly for any number — for example, "1 question" or "3 questions".
