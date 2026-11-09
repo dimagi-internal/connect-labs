@@ -91,7 +91,11 @@ Parameter(
 A scenario resolves each parameter through layers. The **last one that sets it wins**, and the result records **which layer** that was:
 
 1. **Model default.** Taken from `connect-cea-models` or a Labs model module, with its source.
-2. **Place.** Registry values for a country or admin area: mortality, coverage, population.
+2. **Place.** Registry values for a country or admin area: mortality, coverage, population. **The most local area with the figure wins** (Jon, 9 Nov 2026), per input:
+   - Every approved visit is placed by its GPS in the most local area of the targeting boundary set: a district where Labs holds district boundaries, else the state or province. An opportunity is valued once per area and combined by share of approved visits.
+   - Each place input takes the area's own figure, else its nearest ancestor's (`indicators.resolve.BulkResolver`), else the model's own figure for the country (the spec's `places`, which the published per-country results use). A Labs figure measured only at country level does not replace the model's country figure, so an opportunity with nothing local is valued exactly as published.
+   - The recipes follow the models' own subnational method (their North West Nigeria scenario): survey coverage for the area, and the country's diarrhoea death rate scaled by the area's under-five mortality over the country's, from the same source.
+   - Every resolved input carries its level, area, source, year and how it was made, and the opportunity page shows them.
 3. **Lens.** GiveWell (default), or another funder's set, or a custom one.
 4. **Programme or opportunity.** Observed values from Connect (reached, dose mix, cost), or a programme's config.
 5. **Scenario.** What a person typed into the UI, saved and shareable by URL.
