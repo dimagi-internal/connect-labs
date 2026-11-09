@@ -172,6 +172,13 @@ MEASURES = (
 )
 
 
+@dataclass
+class _Row:
+    source: str
+    year: int
+    value: float
+
+
 class _Ctx:
     """What a recipe sees for one area."""
 
@@ -203,11 +210,14 @@ class Baselines:
         if not boundaries:  # country figures only: no database needed
             return
         isos = {b.iso_code for b in boundaries}
-        adm0 = list(boundary_set.owned().filter(iso_code__in=isos, admin_level=0))
-        for row in IndicatorValue.objects.filter(
+        # Only the numbers: a boundary row carries its whole geometry, and a country's
+        # mortality series is ~35 years x 3 measures (loading the boundary with each
+        # row ran a production task out of memory, 2026-11-09).
+        adm0 = boundary_set.owned().filter(iso_code__in=isos, admin_level=0).values("pk")
+        for iso, ind, src, year, value in IndicatorValue.objects.filter(
             boundary__in=adm0, indicator__in=("u5mr", "imr", "nmr")
-        ).select_related("boundary"):
-            self._country_rows.setdefault(row.boundary.iso_code, {}).setdefault(row.indicator, []).append(row)
+        ).values_list("iso_code", "indicator", "source", "year", "value"):
+            self._country_rows.setdefault(iso, {}).setdefault(ind, []).append(_Row(source=src, year=year, value=value))
 
     def for_area(self, model: str, iso3: str, boundary: AdminBoundary | None) -> dict[str, Value]:
         """Every location input of ``model`` for one area (or the country, when ``boundary`` is None)."""

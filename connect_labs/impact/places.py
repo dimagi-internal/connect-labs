@@ -128,7 +128,7 @@ def opportunity_places(opp_ids) -> dict[int, Placement]:
     wanted = {str(int(i)) for i in opp_ids}
     raw = {int(k): v for k, v in stored.items() if k in wanted}
     bids = {int(bid) for r in raw.values() for bid in r["areas"]}
-    by_pk = {b.pk: b for b in AdminBoundary.objects.filter(pk__in=bids)}
+    by_pk = {b.pk: b for b in AdminBoundary.objects.filter(pk__in=bids).defer("geometry")}
     out: dict[int, Placement] = {}
     for opp, r in raw.items():
         counts = {int(b): n for b, n in r["areas"].items()}
