@@ -227,7 +227,7 @@ class TestPlaces:
         _visit(1, 0.5, 1.6, status="rejected")  # not approved: not counted
         _visit(1, 5.0, 5.0)  # outside every area
         assert places.opportunity_places([1]) == {}  # nothing stored until the timer runs
-        places.refresh([1])
+        places.refresh({1: "NGA"})
         p = places.opportunity_places([1])[1]
         assert [(a.boundary.name, a.visits) for a in p.areas] == [("Kano", 3), ("Lagos", 1)]
         assert p.areas[0].share == pytest.approx(0.75)
@@ -265,7 +265,7 @@ class TestEndToEnd:
         for i in range(4):
             _visit(3, 0.5, 0.5)
             _work(3, 1.0, f"child-{i}")
-        places.refresh([3])
+        places.refresh({3: "NGA"})
         client.force_login(django_user_model.objects.create_user(username="u", email="u@x.org", password="x"))
         url = reverse("pulse:cea_opp", args=[3])
         page = client.get(url)

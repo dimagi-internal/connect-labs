@@ -22,11 +22,11 @@ def refresh_opportunity_places() -> int:
     from connect_labs.pulse import cea
     from connect_labs.pulse.models import PulseOpportunity
 
-    ids = [
-        o.opportunity_id
+    opps = {
+        o.opportunity_id: cea.iso3_for(o.country)
         for o in PulseOpportunity.objects.filter(is_test=False)
         if cea.SERVICE_MODEL.get(o.service_slug or "") and cea.iso3_for(o.country)
-    ]
-    value = places.refresh(ids)
+    }
+    value = places.refresh(opps)
     logger.info("[impact] placed %s opportunities", len(value["opps"]))
     return len(value["opps"])

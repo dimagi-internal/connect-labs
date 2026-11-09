@@ -1,14 +1,20 @@
 """Where an opportunity's work happened: its approved visits, by the most local admin area.
 
-Every approved visit carries GPS. Each one is placed in the most local area of
-the targeting boundary set (``indicators.boundaries.owned()``: geoBoundaries
-ADM1, and ADM2 where it is loaded), because that is the tessellation every
-baseline figure in Labs was matched against. An area's share of an opportunity
-is its share of the opportunity's approved visits.
+Placing points in admin areas has one home in labs, ``labs.admin_boundaries.placement``
+(#2971), so Pulse's place names, the coverage check and this cannot disagree about
+where work happened. This module only gathers an opportunity's visits and the
+units to place them in:
 
-Visits are rounded to 0.001 degrees (about 100 m) before placing, which turns
-~1.9M visits into far fewer distinct points without moving any of them across
-anything but a border they were already within 100 m of.
+* **Points.** Every approved visit with GPS, rounded to 0.001 degrees (about
+  100 m) and weighted by how many visits share the point, which turns ~1.9M
+  visits into far fewer points without moving any across anything but a border
+  it was already within 100 m of.
+* **Units.** The targeting boundary set (``indicators.boundaries.owned()``:
+  geoBoundaries ADM1, and ADM2 where loaded), because that is the tessellation
+  every baseline figure in Labs was matched against.
+* **Level.** The placement core's ``finest_level``: the most local level that
+  still places nearly all of the opportunity's visits. An area's share is its
+  share of the visits placed at that level.
 
 Placing every modelled opportunity takes about a minute on production
 (measured 2026-11-09: 60s for 106 opportunities, 1.85M visits), far too long
@@ -27,6 +33,9 @@ from django.db import connection
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators import boundaries as boundary_set
 
+#: Relative to the best level: a level placing at least this share of what the best one places is "nearly all".
+NEARLY_ALL = 0.9
+
 
 @dataclass
 class Area:
@@ -39,64 +48,80 @@ class Area:
 class Placement:
     areas: list[Area]
     visits: int  # approved visits with GPS
-    unplaced: int  # of those, visits outside every boundary in the set
+    unplaced: int  # of those, visits outside every area at the level used
 
 
-_SQL = """
-WITH pts AS (
-    SELECT opportunity_id AS opp,
-           round(lat::numeric, 3)::float8 AS lat,
-           round(lon::numeric, 3)::float8 AS lon,
-           count(*) AS n
-    FROM {events}
-    WHERE opportunity_id = ANY(%s)
-      AND status = 'approved'
-      AND lat IS NOT NULL AND lon IS NOT NULL
-      AND NOT (lat = 0 AND lon = 0)
-    GROUP BY 1, 2, 3
-),
-hit AS (
-    SELECT DISTINCT ON (p.opp, p.lat, p.lon) p.opp, p.n, b.id AS bid
-    FROM pts p
-    JOIN {boundaries} b
-      ON b.source = %s
-     AND b.admin_level IN (1, 2)
-     AND ST_Covers(b.geometry, ST_SetSRID(ST_MakePoint(p.lon, p.lat), 4326))
-    ORDER BY p.opp, p.lat, p.lon, b.admin_level DESC
-)
-SELECT 'placed' AS kind, opp, bid, sum(n)::bigint FROM hit GROUP BY opp, bid
-UNION ALL
-SELECT 'total', opp, NULL, sum(n)::bigint FROM pts GROUP BY opp
+_POINTS = """
+SELECT opportunity_id, round(lat::numeric, 3)::float8, round(lon::numeric, 3)::float8, count(*)
+FROM {events}
+WHERE opportunity_id = ANY(%s)
+  AND status = 'approved'
+  AND lat IS NOT NULL AND lon IS NOT NULL
+  AND NOT (lat = 0 AND lon = 0)
+GROUP BY 1, 2, 3
 """
 
 
-def _compute(opp_ids: list[int]) -> dict[int, dict]:
+def _units(iso3s) -> dict[str, list]:
+    """The targeting set's ADM1 and ADM2 for these countries, as placement units, by country."""
+    from shapely import wkb
+
+    from connect_labs.labs.admin_boundaries.placement import Unit
+
+    out: dict[str, list] = {}
+    for pk, iso, level, name, geom in (
+        boundary_set.owned()
+        .filter(iso_code__in=list(iso3s), admin_level__in=(1, 2))
+        .values_list("pk", "iso_code", "admin_level", "name", "geometry")
+    ):
+        if geom is None:
+            continue
+        out.setdefault(iso, []).append(
+            Unit(key=str(pk), name=name, level=level, geometry=wkb.loads(bytes(geom.wkb)), country=iso)
+        )
+    return out
+
+
+def _compute(opps: dict[int, str]) -> dict[int, dict]:
+    """``opps``: {opportunity id: its country's alpha-3}. Returns {opp: {visits, level, areas: {pk: visits}}}."""
+    import pandas as pd
+
+    from connect_labs.labs.admin_boundaries.placement import place_points
     from connect_labs.pulse.models import PulseEvent
 
-    sql = _SQL.format(events=PulseEvent._meta.db_table, boundaries=AdminBoundary._meta.db_table)
-    placed: dict[int, dict[int, int]] = {}
-    total: dict[int, int] = {}
+    points: dict[int, list] = {}
     with connection.cursor() as cur:
-        cur.execute(sql, [list(opp_ids), boundary_set.SOURCE])
-        for kind, opp, bid, n in cur.fetchall():
-            if kind == "placed":
-                placed.setdefault(opp, {})[bid] = int(n)
-            else:
-                total[opp] = int(n)
-    return {opp: {"areas": placed.get(opp, {}), "visits": total.get(opp, 0)} for opp in set(total) | set(placed)}
+        cur.execute(_POINTS.format(events=PulseEvent._meta.db_table), [list(opps)])
+        for opp, lat, lon, n in cur.fetchall():
+            points.setdefault(opp, []).append((lat, lon, int(n)))
+    units = _units({opps[o] for o in points})
+    out: dict[int, dict] = {}
+    for opp, pts in points.items():
+        df = pd.DataFrame(pts, columns=["lat", "lon", "weight"])
+        visits = int(df["weight"].sum())
+        placement = place_points(df, units.get(opps[opp], []))
+        best = max((lp.placed_share or 0.0 for lp in placement.levels.values()), default=0.0)
+        level = placement.finest_level(min_placed_share=best * NEARLY_ALL) if best else None
+        areas = (
+            {int(k): int(round(w)) for k, w in placement.levels[level].weights.items()} if level is not None else {}
+        )
+        out[opp] = {"visits": visits, "level": level, "areas": areas}
+    return out
 
 
 SCALAR_KEY = "impact_places"
 
 
-def refresh(opp_ids) -> dict:
-    """Place the given opportunities' visits now and store the result. Run by the timer, not by pages."""
+def refresh(opps: dict) -> dict:
+    """Place the given opportunities' visits now and store the result. Run by the timer, not by pages.
+
+    ``opps``: {opportunity id: its country's alpha-3}; visits are placed only in that country's areas.
+    """
     from django.utils import timezone
 
     from connect_labs.pulse.models import PulseScalar
 
-    ids = sorted({int(i) for i in opp_ids})
-    raw = _compute(ids) if ids else {}
+    raw = _compute({int(k): v for k, v in opps.items()}) if opps else {}
     value = {
         "computed_at": timezone.now().isoformat(),
         "opps": {
