@@ -1,5 +1,8 @@
 """Schedule communications' reconcile on celery beat, every ten minutes.
 
+Superseded by 0005, which removes it: reconciling now runs only when a person
+clicks "Check delivery".
+
 Same pattern as `supply_chain/migrations/0012_seed_alert_beat_task.py`: the
 worker runs beat with the DatabaseScheduler, so this PeriodicTask row is what
 makes it fire. It sends no mail: it settles records and retries follow-ups.

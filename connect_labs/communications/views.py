@@ -13,6 +13,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import Http404
 from django.shortcuts import redirect
 from django.urls import reverse
+from django.utils.http import urlencode
 from django.views.generic import TemplateView
 
 from connect_labs.communications import kinds as kind_registry
@@ -79,12 +80,26 @@ class OutboxView(OutboxPage):
         return ctx
 
     def post(self, request, *args, **kwargs):
-        """Start a draft of ?kind about ?about, as the kind writes it."""
+        """Start a draft of ?kind about ?about, as the kind writes it -- or "Check delivery" on its messages."""
         kind, about, _ = _about_filter(request)
         if kind is None:
             raise Http404("Not found")
+        if request.POST.get("action") == "check_delivery":
+            _report_check(request, service.check_delivery_about(request, kind, about))
+            # Back to this record's page, built from what was resolved, never from the request's own URL.
+            query = urlencode({"kind": kind.key, "about": about.pk})
+            return redirect(f"{reverse('communications:outbox')}?{query}")
         communication = service.create_draft(request, kind.key, about_id=about.pk)
         return redirect("communications:detail", pk=communication.pk)
+
+
+def _report_check(request, result) -> None:
+    parts = []
+    if result["unknown"]:
+        parts.append(f"{result['unknown']} with no word back marked outcome unknown")
+    if result["followups_retried"]:
+        parts.append(f"{result['followups_done']} of {result['followups_retried']} follow-ups done")
+    messages.success(request, "Checked delivery: " + ("; ".join(parts) if parts else "nothing to settle") + ".")
 
 
 class CommunicationView(OutboxPage):
@@ -137,6 +152,9 @@ class CommunicationView(OutboxPage):
                 service.discard(request, pk)
                 messages.success(request, "Draft discarded.")
                 return redirect("communications:outbox")
+            if action == "check_delivery":
+                _report_check(request, service.check_delivery(request, pk))
+                return redirect("communications:detail", pk=pk)
             if action in ("confirm_delivered", "retry_followup"):
                 message_id = request.POST.get("message", "")
                 if not message_id.isdigit():

@@ -270,7 +270,7 @@ task can say what became of it:
 | Sent | the mail service took it; the kind's follow-up then runs (an outreach marked sent, a reply recorded) |
 | Failed | the mail service refused it after retries |
 | Not sent | never handed over (mail off here) |
-| Outcome unknown | no word back two hours after hand-off (a worker stopped mid-send): a person checks and clicks "It arrived" |
+| Outcome unknown | no word back two hours after hand-off (a worker stopped mid-send), found by "Check delivery": a person checks and clicks "It arrived" |
 
 The mail task reports through its own retried task
 (`communications.tasks.record_delivery`), so a database blip after SES accepted a
@@ -278,12 +278,14 @@ message delays the record rather than losing it, and never resends. A worker wit
 mail off (one a deploy has not replaced yet) holds a recorded message for a later
 worker, up to three times two minutes, before calling it not sent.
 
-`communications.tasks.reconcile_communications` runs every ten minutes
-(`PeriodicTask` `communications_reconcile`, seeded by
-`communications/migrations/0004_…`). **It sends no mail.** It marks lost messages
-"Outcome unknown" and retries failed follow-ups with back-off (10, 20, 40, 80
-minutes; five attempts), after which the draft page offers a person "Retry
-follow-up". A follow-up never resends the email.
+**Nothing in communications runs on a timer.** Settling what the mail path left
+open is a person's click: **Check delivery** on a message's page (its emails) or
+on a record's messages page (everything sent about it that they may read). It
+sends no mail. It marks messages with no word back for two hours "Outcome
+unknown", and retries pending or failed follow-ups (an outreach marked sent, a
+reply recorded) -- never by resending the email. A single failed follow-up also
+has its own "Retry follow-up". (A beat task did this every ten minutes for a
+day; `communications/migrations/0005_…` removed it.)
 
 ### The audit to repeat before enabling mail anywhere
 

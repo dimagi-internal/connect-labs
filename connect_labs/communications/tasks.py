@@ -1,4 +1,4 @@
-"""Background work for communications: delivery reports, and settling what the mail path left open."""
+"""Background work for communications: recording what became of each message."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def record_delivery(self, sent_message_id, delivered: bool, failed: bool = False
     The mail task queues this once the mail service has answered, so a database
     that is unavailable at that moment delays the record (retried with back-off)
     instead of losing it -- and never resends the email. What it could not
-    record in the end, `reconcile_communications` settles.
+    record in the end, a person settles with "Check delivery" (`service.reconcile`).
     """
     from connect_labs.communications import service
 
@@ -26,13 +26,3 @@ def record_delivery(self, sent_message_id, delivered: bool, failed: bool = False
             service.delivered(sent_message_id)
         else:
             service.not_delivered(sent_message_id, failed=failed)
-
-
-@celery_app.task
-def reconcile_communications() -> dict:
-    """Every ten minutes (migration 0004): lost messages become "Outcome unknown";
-    failed or stalled follow-ups are retried with back-off."""
-    from connect_labs.communications import service
-
-    with audit_context(source="celery"):
-        return service.reconcile()
