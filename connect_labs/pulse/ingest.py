@@ -204,8 +204,12 @@ def refresh_opportunities(client) -> dict:
                 "opportunity_id": opp_id,
                 "name": name[:300],
                 "org_slug": org_slug,
+                "connect_is_test": bool(row.get("is_test")),
                 "is_test": is_test_opportunity(
-                    name=name, org_slug=org_slug, program_is_test=program_test.get(row.get("program"), False)
+                    name=name,
+                    org_slug=org_slug,
+                    program_is_test=program_test.get(row.get("program"), False),
+                    connect_is_test=bool(row.get("is_test")),
                 ),
                 "program_id": row.get("program"),
                 "is_active": bool(row.get("is_active")),
@@ -386,7 +390,9 @@ def reclassify_opportunities() -> int:
     for opp in PulseOpportunity.objects.all():
         program = programs.get(opp.program_id)
         program_is_test = bool(program and (program.is_test or looks_like_test(program.name)))
-        is_test = is_test_opportunity(name=opp.name, org_slug=opp.org_slug, program_is_test=program_is_test)
+        is_test = is_test_opportunity(
+            name=opp.name, org_slug=opp.org_slug, program_is_test=program_is_test, connect_is_test=opp.connect_is_test
+        )
         if program and program.delivery_type:
             service = program.delivery_type
         elif opp.service_slug in ("", "other"):
@@ -432,7 +438,7 @@ def resync_service_slugs() -> int:
     return updated
 
 
-def sample_opportunity_countries(client, limit: int = 600) -> int:
+def sample_opportunity_countries(client, limit: int = 600, opp_ids=None) -> int:
     """Give historical opportunities a country from a single sampled visit.
 
     ``refresh_opportunity_countries`` derives country from stored events, but
@@ -448,7 +454,12 @@ def sample_opportunity_countries(client, limit: int = 600) -> int:
     """
     from connect_labs.pulse.normalize import country_for
 
-    targets = PulseOpportunity.objects.filter(country="").values_list("opportunity_id", flat=True)[:limit]
+    # ``opp_ids`` re-samples named opportunities whatever country they hold
+    # (``pulse_relabel_countries``); otherwise only those with none yet.
+    if opp_ids is not None:
+        targets = list(opp_ids)[:limit]
+    else:
+        targets = PulseOpportunity.objects.filter(country="").values_list("opportunity_id", flat=True)[:limit]
     resolved = 0
     for opp_id in list(targets):
         endpoint = f"/export/opportunity/{opp_id}/{VISITS_ENDPOINT}/"

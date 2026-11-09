@@ -71,6 +71,8 @@ COUNTRY_NAMES = {
     "SL": "Sierra Leone",
     "TZ": "Tanzania",
     "ML": "Mali",
+    "CF": "Central African Republic",
+    "TD": "Chad",
 }
 
 # Opportunity name -> the service a funder would recognise. Opp names are
@@ -217,9 +219,118 @@ def is_on_map(lat: float | None, lon: float | None) -> bool:
     return bool(country_for(lat, lon))
 
 
+# ISO 3166 alpha-3 (labs' country borders) -> alpha-2 (everything pulse stores).
+ISO3_TO_ISO2 = {
+    "AGO": "AO",
+    "BDI": "BI",
+    "BEN": "BJ",
+    "BFA": "BF",
+    "BWA": "BW",
+    "CAF": "CF",
+    "CIV": "CI",
+    "CMR": "CM",
+    "COD": "CD",
+    "COG": "CG",
+    "COM": "KM",
+    "CPV": "CV",
+    "DJI": "DJ",
+    "DZA": "DZ",
+    "EGY": "EG",
+    "ERI": "ER",
+    "ETH": "ET",
+    "GAB": "GA",
+    "GHA": "GH",
+    "GIN": "GN",
+    "GMB": "GM",
+    "GNB": "GW",
+    "GNQ": "GQ",
+    "KEN": "KE",
+    "LBR": "LR",
+    "LBY": "LY",
+    "LSO": "LS",
+    "MAR": "MA",
+    "MDG": "MG",
+    "MLI": "ML",
+    "MOZ": "MZ",
+    "MRT": "MR",
+    "MUS": "MU",
+    "MWI": "MW",
+    "NAM": "NA",
+    "NER": "NE",
+    "NGA": "NG",
+    "RWA": "RW",
+    "SDN": "SD",
+    "SEN": "SN",
+    "SLE": "SL",
+    "SOM": "SO",
+    "SSD": "SS",
+    "STP": "ST",
+    "SWZ": "SZ",
+    "SYC": "SC",
+    "TCD": "TD",
+    "TGO": "TG",
+    "TUN": "TN",
+    "TZA": "TZ",
+    "UGA": "UG",
+    "ZAF": "ZA",
+    "ZMB": "ZM",
+    "ZWE": "ZW",
+    "IND": "IN",
+}
+
+_shapes: list | None = None
+
+
+def _country_shapes() -> list:
+    """Labs' real country borders (``AdminBoundary`` level 0), loaded once per process.
+
+    Each entry is (alpha-2 code, bounding box, prepared geometry). An empty
+    table, or no database, gives an empty list and is not cached, so the boxes
+    below answer until the borders are loaded.
+    """
+    global _shapes
+    if _shapes is not None:
+        return _shapes
+    try:
+        from connect_labs.labs.admin_boundaries.models import AdminBoundary
+
+        shapes = []
+        for iso3, geom in AdminBoundary.objects.filter(admin_level=0).values_list("iso_code", "geometry"):
+            code = ISO3_TO_ISO2.get((iso3 or "").upper())
+            if code and geom is not None:
+                shapes.append((code, geom.extent, geom.prepared))
+    except Exception:  # no database here (a pure unit test) or the table is unavailable
+        return []
+    if shapes:
+        _shapes = shapes
+    return shapes
+
+
+def reset_country_shapes() -> None:
+    """Forget the loaded borders (tests, or after new borders are loaded)."""
+    global _shapes
+    _shapes = None
+
+
 def country_for(lat: float | None, lon: float | None) -> str:
+    """Which country a point is in: labs' real borders first, the rough boxes as a fallback.
+
+    The boxes alone were wrong where they overlap or reach over a border. On
+    2026-11-08 they put Focus 1000's Kenema visits (Sierra Leone) in Liberia,
+    APSV's Bangui visits (Central African Republic) in DR Congo, and a test
+    opportunity in Chad in Nigeria -- and the country picks the CEA model.
+    """
     if lat is None or lon is None:
         return ""
+    point = None
+    for code, (x0, y0, x1, y1), prepared in _country_shapes():
+        if x0 <= lon <= x1 and y0 <= lat <= y1:
+            if point is None:
+                from django.contrib.gis.geos import Point
+
+                point = Point(lon, lat, srid=4326)
+            if prepared.covers(point):
+                return code
     for code, (lat_lo, lat_hi, lon_lo, lon_hi) in _COUNTRY_BOXES.items():
         if lat_lo <= lat <= lat_hi and lon_lo <= lon <= lon_hi:
             return code
@@ -264,13 +375,26 @@ def looks_like_test_org(org_slug: str | None) -> bool:
     return slug in TEST_ORGS or bool(_TEST_PROGRAM.search(re.sub(r"[-_]+", " ", slug)))
 
 
-def is_test_opportunity(*, name: str | None, org_slug: str | None, program_is_test: bool) -> bool:
+def is_test_opportunity(
+    *, name: str | None, org_slug: str | None, program_is_test: bool, connect_is_test: bool = False
+) -> bool:
     """One place that decides whether an opportunity is real delivery.
 
     Pulse excludes these from every figure it shows, and the marketplace reads
     the same flag, so the two cannot disagree about what counts.
+
+    Connect's own flag comes first. Its export carries ``is_test`` on every
+    opportunity, and on 2026-11-08 it marked 106 opportunities the name rules
+    missed ("CCC CHC tech 2", "MBW QA Opp", "[MERCY DEMO 3] Infant Vaccine"...),
+    $584 of spend between them, none of it real delivery. The name and org rules
+    stay as well: they catch the few Connect leaves unflagged ("UAT 1 - ECD OPP").
     """
-    return program_is_test or looks_like_test_org(org_slug) or bool(_TEST_OPPORTUNITY.search(name or ""))
+    return (
+        connect_is_test
+        or program_is_test
+        or looks_like_test_org(org_slug)
+        or bool(_TEST_OPPORTUNITY.search(name or ""))
+    )
 
 
 def service_slug_for(opportunity_name: str | None) -> str:

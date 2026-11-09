@@ -283,3 +283,41 @@ class TestScaffolding:
     )
     def test_is_test_opportunity(self, name, org, program_is_test, expected):
         assert is_test_opportunity(name=name, org_slug=org, program_is_test=program_is_test) is expected
+
+
+class TestCountryFor:
+    """Real borders first, the rough boxes only when no border answers."""
+
+    @pytest.fixture(autouse=True)
+    def _borders(self, monkeypatch):
+        from django.contrib.gis.geos import Polygon
+
+        from connect_labs.pulse import normalize
+
+        # Two neighbours whose boxes overlap: Sierra Leone's real shape reaches
+        # east past Liberia's box edge. Invented squares stand in for the borders.
+        sl = Polygon(((-13.4, 6.8), (-10.2, 6.8), (-10.2, 10.1), (-13.4, 10.1), (-13.4, 6.8)), srid=4326)
+        lr = Polygon(((-10.2, 4.0), (-7.3, 4.0), (-7.3, 8.6), (-10.2, 8.6), (-10.2, 4.0)), srid=4326)
+        monkeypatch.setattr(normalize, "_shapes", [("SL", sl.extent, sl.prepared), ("LR", lr.extent, lr.prepared)])
+
+    def test_a_point_inside_a_border_gets_that_country_not_the_overlapping_box(self):
+        from connect_labs.pulse.normalize import country_for
+
+        # Kenema, Sierra Leone: inside Liberia's rough box, which used to win.
+        assert country_for(7.87, -11.19) == "SL"
+
+    def test_no_border_falls_back_to_the_boxes(self):
+        from connect_labs.pulse.normalize import country_for
+
+        assert country_for(12.0, 8.5) == "NG"  # no Nigeria border loaded here
+        assert country_for(None, 8.5) == ""
+
+
+class TestConnectTestFlag:
+    def test_connects_flag_alone_makes_a_test(self):
+        from connect_labs.pulse.normalize import is_test_opportunity
+
+        assert is_test_opportunity(
+            name="CCC CHC tech 2", org_slug="solina", program_is_test=False, connect_is_test=True
+        )
+        assert not is_test_opportunity(name="CCC CHC tech 2", org_slug="solina", program_is_test=False)
