@@ -157,6 +157,42 @@ class TestRanking:
             sum(r["x"] * r["total_usd"] for r in modelled) / sum(r["total_usd"] for r in modelled)
         )
 
+    def test_a_cost_only_opportunity_is_counted_in_its_programmes_delivery(self):
+        # Ruwoyd's shape: two cohorts that reached mothers, and an invoicing
+        # opportunity in the same programme and org that reached no one but was paid.
+        for oid in (40, 41, 42, 43):
+            _opp(oid, "mbw", program_id=38)
+        PulseOpportunity.objects.filter(opportunity_id__in=[40, 41, 42]).update(org_slug="ruwoyd")
+        # 43 keeps its own org: another partner in the same programme is untouched.
+        for m in range(100):
+            _work(40, 1, who=f"a-{m}")
+        for m in range(300):
+            _work(41, 1, who=f"b-{m}")
+        # The invoice: paid through Connect's custom invoices, no visit, nobody counted.
+        PulseCostEntry.objects.create(opportunity_id=42, usd=D("800"), kind="fixed", reason="invoice")
+        for m in range(50):
+            _work(43, 1, who=f"c-{m}")
+        out = cea.ranking()
+        rows = {r["id"]: r for r in out["rows"]}
+        # Shared by people reached: 100 and 300 of 400.
+        assert rows[40]["total_usd"] == pytest.approx(100 + 200)
+        assert rows[41]["total_usd"] == pytest.approx(300 + 600)
+        assert rows[40]["pooled_from"] == [42]
+        assert rows[40]["cost_per_person"] == pytest.approx(3)
+        assert rows[42]["status"] == cea.STATUS_COST_POOLED
+        assert rows[42]["pooled_into"] == [40, 41]
+        assert rows[43]["total_usd"] == pytest.approx(50)
+        # Every dollar once.
+        assert out["totals"]["spend"] == pytest.approx(100 + 300 + 800 + 50)
+        assert out["totals"]["spend_modelled"] == pytest.approx(100 + 300 + 800 + 50)
+
+    def test_a_cost_only_opportunity_with_no_delivery_keeps_its_own_row(self):
+        _opp(50, "mbw", program_id=39)
+        PulseCostEntry.objects.create(opportunity_id=50, usd=D("500"), kind="fixed", reason="invoice")
+        row = cea.ranking()["rows"][0]
+        assert row["status"] == cea.STATUS_NOTHING_DELIVERED
+        assert row["total_usd"] == pytest.approx(500)
+
     def test_test_opportunities_never_appear(self):
         _opp(20, "chc", is_test=True)
         _work(20, 2)

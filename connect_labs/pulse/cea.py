@@ -54,12 +54,14 @@ STATUS_MODELLED = "modelled"
 STATUS_NO_MODEL = "no_model"
 STATUS_NO_COUNTRY = "no_country_data"
 STATUS_NOTHING_DELIVERED = "nothing_delivered"
+STATUS_COST_POOLED = "cost_pooled"
 
 STATUS_TEXT = {
     STATUS_MODELLED: "Modelled",
     STATUS_NO_MODEL: "No model",
     STATUS_NO_COUNTRY: "No model for this country",
     STATUS_NOTHING_DELIVERED: "Nothing delivered yet",
+    STATUS_COST_POOLED: "Cost counted in its programme's delivery",
 }
 
 
@@ -156,6 +158,45 @@ def value(service: str, country: str, total_usd: float, reached: int) -> dict:
     return out
 
 
+def _pool_cost_only(opps, own_usd: dict, reach_of: dict):
+    """Fold the spend of cost-only opportunities into the delivery they paid for.
+
+    Some partners are paid through an opportunity that records no service at
+    all: Ruwoyd's Mother Baby Wellness invoices went through "MBW Invoicing for
+    Ruwoyd" ($12k, nobody reached), while its two cohort opportunities carried
+    only $3k between them. Valued alone, the cohorts looked 13x better than
+    they were, and topped the ranking at 349x and 274x.
+
+    So spend on an opportunity that reached no one moves to the opportunities
+    in the same programme, run by the same partner, that did reach people,
+    split by people reached. Every invoice counts (owner decision, 2026-11-08).
+    A cost-only opportunity with no such delivery to join keeps its own row.
+
+    Returns (extra $ per delivery opp, delivery opp -> [source ids],
+    source opp -> [delivery ids]).
+    """
+    groups: dict[tuple, list] = {}
+    for o in opps:
+        if o.program_id is not None and o.org_slug:
+            groups.setdefault((o.program_id, o.org_slug), []).append(o)
+    pooled_usd: dict[int, float] = {}
+    pooled_from: dict[int, list] = {}
+    pooled_into: dict[int, list] = {}
+    for members in groups.values():
+        delivery = [o for o in members if reach_of[o.opportunity_id]["reached"] > 0]
+        sources = [o for o in members if reach_of[o.opportunity_id]["reached"] == 0 and own_usd[o.opportunity_id] > 0]
+        if not delivery or not sources:
+            continue
+        people = sum(reach_of[o.opportunity_id]["reached"] for o in delivery)
+        for src in sources:
+            for d in delivery:
+                share = own_usd[src.opportunity_id] * reach_of[d.opportunity_id]["reached"] / people
+                pooled_usd[d.opportunity_id] = pooled_usd.get(d.opportunity_id, 0.0) + share
+                pooled_from.setdefault(d.opportunity_id, []).append(src.opportunity_id)
+            pooled_into[src.opportunity_id] = [d.opportunity_id for d in delivery]
+    return pooled_usd, pooled_from, pooled_into
+
+
 def ranking(opps_qs=None) -> dict:
     """Every real opportunity, modelled ones ranked by multiple at their actual cost."""
     from connect_labs.pulse.models import PulseOpportunity
@@ -169,11 +210,22 @@ def ranking(opps_qs=None) -> dict:
     centre_of = _centres(ids)
     m = models()
 
+    own_usd = {
+        o.opportunity_id: (float(cost_of[o.opportunity_id].total_usd) if o.opportunity_id in cost_of else 0.0)
+        for o in opps
+    }
+    reach_of = {
+        o.opportunity_id: reached_of.get(o.opportunity_id)
+        or {"reached": 0, "reach_basis": None, "works_per_person": None}
+        for o in opps
+    }
+    pooled_usd, pooled_from, pooled_into = _pool_cost_only(opps, own_usd, reach_of)
+
     rows = []
     for o in opps:
+        total = own_usd[o.opportunity_id] + pooled_usd.get(o.opportunity_id, 0.0)
         c = cost_of.get(o.opportunity_id)
-        total = float(c.total_usd) if c else 0.0
-        reach = reached_of.get(o.opportunity_id) or {"reached": 0, "reach_basis": None, "works_per_person": None}
+        reach = reach_of[o.opportunity_id]
         reached = reach["reached"]
         country = (o.country or "").upper()
         loc = m["countries"].get(country)
@@ -192,16 +244,31 @@ def ranking(opps_qs=None) -> dict:
             "active": bool(o.is_active),
             "end_date": o.end_date.isoformat() if o.end_date else None,
             "total_usd": round(total, 2),
+            "own_usd": round(own_usd[o.opportunity_id], 2),
+            "pooled_usd": round(pooled_usd.get(o.opportunity_id, 0.0), 2),
+            "pooled_from": pooled_from.get(o.opportunity_id, []),
+            "pooled_into": pooled_into.get(o.opportunity_id, []),
             "fixed_usd": round(float(c.fixed_usd), 2) if c else 0.0,
             "reached": reached,
             "reach_basis": reach["reach_basis"],
             "works_per_person": reach["works_per_person"],
         }
-        row.update(value(row["service"], country, total, reached))
+        if o.opportunity_id in pooled_into:
+            # Its spend is already inside the delivery rows above; valuing it again would count it twice.
+            row.update(value(row["service"], country, 0.0, 0))
+            row["status"] = STATUS_COST_POOLED
+        else:
+            row.update(value(row["service"], country, total, reached))
         row["status_text"] = STATUS_TEXT[row["status"]]
         rows.append(row)
 
-    order = {STATUS_MODELLED: 0, STATUS_NOTHING_DELIVERED: 1, STATUS_NO_COUNTRY: 2, STATUS_NO_MODEL: 3}
+    order = {
+        STATUS_MODELLED: 0,
+        STATUS_NOTHING_DELIVERED: 1,
+        STATUS_NO_COUNTRY: 2,
+        STATUS_NO_MODEL: 3,
+        STATUS_COST_POOLED: 4,
+    }
     rows.sort(key=lambda r: (order[r["status"]], -(r["x"] or 0), -r["total_usd"]))
     rank = 0
     for r in rows:
@@ -220,7 +287,8 @@ def ranking(opps_qs=None) -> dict:
             "opportunities": len(rows),
             "modelled": len(modelled),
             "clearing_bar": sum(1 for r in modelled if r["clears_bar"]),
-            "spend": round(sum(r["total_usd"] for r in rows), 2),
+            # Each dollar once: a pooled row's spend is already inside its delivery rows.
+            "spend": round(sum(r["own_usd"] for r in rows), 2),
             "spend_modelled": round(spend_modelled, 2),
             "deaths_averted": round(deaths, 2),
             # Spend-weighted: the portfolio's multiple is total benefit over total cost.

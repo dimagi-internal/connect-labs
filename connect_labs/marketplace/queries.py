@@ -332,8 +332,9 @@ def _committed_by_program() -> dict[str, dict]:
     # Scaffolding is excluded from both figures, by the flag pulse sets at
     # ingest (`PulseOpportunity.is_test`: a test program, a sandbox or demo
     # org such as ACE's `ai-demo-space`, or an opportunity named as a test).
-    # Connect has a real `Opportunity.is_test`, but no export carries it. It
-    # matters here more than anywhere: one test opportunity alone carried
+    # Connect's own `Opportunity.is_test` is part of that flag (the export does
+    # carry it; see `normalize.is_test_opportunity`). It matters here more than
+    # anywhere: one test opportunity alone carried
     # $312,500 of budget, and ACE's runs were 31 of Malaria's live opportunities.
     test_opps = PulseOpportunity.objects.filter(is_test=True).values("opportunity_id")
 

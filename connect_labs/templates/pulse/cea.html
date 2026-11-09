@@ -157,7 +157,9 @@
   <div class="card notes">
     <p><b>Total cost</b> is everything paid for the opportunity in USD: worker pay and the organisation's per-service fee on
       every completed work, plus startup and supply costs from Connect's custom invoices and costs entered in labs
-      (<a href="{% url 'pulse:costs' %}">cost data</a>).</p>
+      (<a href="{% url 'pulse:costs' %}">cost data</a>). An opportunity that reached no one but was paid (an invoicing
+      opportunity, for example) has its spend shared across the opportunities in the same programme, run by the same
+      partner, that did reach people, by people reached, so every invoice counts once.</p>
     <p><b>People reached</b> counts distinct beneficiaries with approved work: each child, mother or baby once, however many
       workers, visits or payment units they passed through. Connect's beneficiary label (a name with a phone number or birth date,
       minus any visit suffix) is reduced to a keyed hash when Labs reads it, so people are counted without being stored. Only approved
@@ -217,6 +219,8 @@
     var s = "<b>" + esc(r.name) + "</b><br>" + esc(r.service_name) + " · " + esc(r.country_name) + (r.org_slug ? " · " + esc(r.org_slug) : "");
     s += "<br>Total cost " + usd(r.total_usd) + " · " + num(r.reached) + (r.reach_basis === "busiest_payment_unit" ? " people (estimate)" : " distinct people");
     if (r.works_per_person != null) s += " · " + num(r.works_per_person, 2) + " approved work each";
+    if (r.pooled_usd) s += "<br>Includes " + usd(r.pooled_usd) + " paid through opportunit" + (r.pooled_from.length === 1 ? "y " : "ies ") + r.pooled_from.join(", ");
+    if (r.pooled_into && r.pooled_into.length) s += "<br>Its " + usd(r.own_usd) + " is counted in opportunit" + (r.pooled_into.length === 1 ? "y " : "ies ") + r.pooled_into.join(", ");
     if (r.status === "modelled") {
       s += "<br>Cost per person " + usd(r.cost_per_person) + " (model " + usd(r.model_cost_per_person) + ")";
       s += "<br><b>" + xfmt(r.x) + "</b> at actual cost · " + xfmt(r.model_x) + " at model price";
@@ -342,7 +346,8 @@
   // ---------- tiles ----------
   function tiles(rows) {
     var m = rows.filter(function (r) { return r.status === "modelled"; });
-    var spend = rows.reduce(function (a, r) { return a + r.total_usd; }, 0);
+    // Each dollar once: a pooled row's spend already sits inside its delivery rows' total_usd.
+    var spend = rows.reduce(function (a, r) { return a + (r.own_usd != null ? r.own_usd : r.total_usd); }, 0);
     var mspend = m.reduce(function (a, r) { return a + r.total_usd; }, 0);
     var used = m.reduce(function (a, r) { return a + (r.cost_used || r.total_usd); }, 0);
     var px = used ? m.reduce(function (a, r) { return a + r.x * (r.cost_used || r.total_usd); }, 0) / used : null;

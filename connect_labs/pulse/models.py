@@ -228,6 +228,9 @@ class PulseOpportunity(models.Model):
     # org, or an opportunity named as a test. Every Pulse figure excludes these,
     # and so does the marketplace. See `normalize.is_test_opportunity`.
     is_test = models.BooleanField(default=False, db_index=True)
+    # Connect's own `Opportunity.is_test`, as the export sends it. `is_test` above is
+    # this OR labs' name and org rules, so neither source alone can let a test through.
+    connect_is_test = models.BooleanField(default=False)
 
     # The engagement this cohort belongs to, when several were really one.
     # On the opportunity rather than as a list on the group, so the database

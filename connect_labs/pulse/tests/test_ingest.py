@@ -312,6 +312,36 @@ class TestCheapTier:
         # An interview cohort with no program is still Interviews.
         assert PulseOpportunity.objects.get(opportunity_id=5).service_slug == "interview"
 
+    def test_connects_own_test_flag_is_honoured(self):
+        """Connect's export carries ``is_test``. An opportunity Connect marks as a
+        test is one, whatever its name; the name rules still catch the ones it
+        leaves unflagged."""
+        client = FakeClient(
+            json_payload={
+                "organizations": [{"id": 1, "slug": "solina", "name": "Solina"}],
+                "programs": [{"id": 9, "organization": "solina", "name": "CHC Nigeria", "delivery_type": "chc"}],
+                "opportunities": [
+                    {"id": 1, "name": "CHC - NG - P1", "program": 9, "is_test": False, "organization": "solina"},
+                    {"id": 2, "name": "CCC CHC tech 2", "program": 9, "is_test": True, "organization": "solina"},
+                    {"id": 3, "name": "UAT 1 - ECD OPP", "program": 9, "is_test": False, "organization": "solina"},
+                ],
+            }
+        )
+        import connect_labs.pulse.client as pulse_client
+
+        original = pulse_client.fetch_json
+        pulse_client.fetch_json = lambda c, path: c.json_payload
+        try:
+            ingest.refresh_opportunities(client)
+        finally:
+            pulse_client.fetch_json = original
+
+        got = {o.opportunity_id: (o.connect_is_test, o.is_test) for o in PulseOpportunity.objects.all()}
+        assert got == {1: (False, False), 2: (True, True), 3: (False, True)}
+        # The every-row re-derivation keeps Connect's flag rather than undoing it.
+        ingest.reclassify_opportunities()
+        assert PulseOpportunity.objects.get(opportunity_id=2).is_test is True
+
     def test_reclassify_reaches_opportunities_connect_no_longer_lists(self):
         """The interview cohorts dropped out of the poller's list but their
         works still count, so a rule change has to reach every stored row."""
