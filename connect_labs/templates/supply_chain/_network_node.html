@@ -55,7 +55,7 @@ works, not a stock-out. The red alarm stays for points meant to hold stock.
     <div class="nw-below" data-testid="subtree">
       <span class="nw-fact"><span class="nw-k">With everything below it:</span> <span class="nw-v">{{ node.stock.subtree.on_hand|figure_text }}<span class="sr-only"> on hand</span></span></span>
       <span class="nw-fact"><span class="nw-k">Cover</span> <span class="nw-q">{{ node.stock.subtree|cover_text }}{% with pace=node.stock.subtree|subtree_pace_text %}{% if pace %} <span class="nw-note" data-testid="subtree-pace">{{ pace }}</span>{% endif %}{% endwith %}{% for note in node.stock.subtree|cover_notes %} <span class="nw-note" data-testid="cover-note">{{ note }}</span>{% endfor %} {% include 'supply_chain/_stock_band.html' with status=node.stock.subtree.status %}</span></span>
-      {% if node.stock.workers %}<span class="nw-fact"><span class="nw-k">Field workers</span> <span data-testid="workers-below-minimum">· <span class="nw-q {% if node.stock.workers_below_min %}text-amber-900 font-medium{% endif %}">{{ node.stock.below_minimum_line }}</span></span></span>{% endif %}
+      {% if node.stock.workers %}<span class="nw-fact"><span class="nw-k">Field workers</span> <span data-testid="workers-below-minimum"><span class="nw-q {% if node.stock.workers_below_min %}text-amber-900 font-medium{% endif %}">{{ node.stock.below_minimum_line }}</span></span></span>{% endif %}
     </div>
   {% endif %}
   <details class="nw-details" data-testid="point-details">
