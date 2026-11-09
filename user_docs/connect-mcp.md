@@ -223,4 +223,4 @@ Personal Access Tokens let you connect an MCP client to Labs without going throu
 
 **Expiry dates** on the tokens page include the time of day, so you can tell exactly when a token will stop working.
 
-**Agent token requests** appear at the top of the tokens page when an agent running elsewhere has sent you a link. The request panel shows who asked, which runner it came from, what it says it needs, the access level and how long the token will last. Your **
+**Agent token requests** appear at the top of the tokens page when an agent running elsewhere has sent you a link. The request panel shows who asked, which runner it came from, what it says it needs, the access level and how long the token will last. Your active tokens

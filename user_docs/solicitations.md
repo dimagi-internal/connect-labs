@@ -102,7 +102,9 @@ When building your response template, each question has an optional **Framing** 
 **Grid questions and rankings:**
 Choose **Grid (one choice per row)** as a question's type to ask several things against the same set of answers, for example "Which of these programmes would you want to deliver?" with a row per programme and columns **1st choice**, **2nd choice**, **3rd choice**. Type the rows and the columns one per line. Respondents see a table and pick one answer in each row.
 
-Tick **One choice per column** to make the grid a ranking: each column can then be picked in only one row, so a respondent can name just one 1st choice, one 2nd and one 3rd. Picking "1st choice" in a second row clears it from the first, the same as a Google Form's "Limit to one response per column".
+Tick **One choice per column** to make the grid a ranking: each column can then be picked in only one row, so a respondent can name just one 1st choice, one 2nd and one 3rd. Picking "1st choice" in a second row clears it from the first, the same as a Google Form's "Limit to one response per column". Without this option, nothing stops a respondent marking every row as "1st choice".
+
+Marking a ranking **Required** means the respondent must use every column — one row for each rank — before they can submit. They can still save a draft with the ranking partially filled in.
 
 The question input box in the template editor automatically expands to fit longer question text, so lengthy questions are always fully visible as you type.
 
@@ -160,22 +162,4 @@ A call started from a micro-plan offers its plans instead, as described above. A
 
 ### Saying Where You Would Work
 
-When you respond to a call that is not tied to a micro-plan, the response form has a **Where would you do this work?** map. Pick the areas you would work in, at whatever level fits your organisation: a whole state, a district, or a handful of wards. Each area you pick appears below the map with its level (for example "Kano · State" or "Gwale · Ward"), and you can remove it with ×.
-
-- If the call is limited to certain areas, the map shows them as a dashed outline and you can pick only areas inside them. You must pick at least one area to submit, though a draft can be saved without one.
-- If the call is open to anywhere, choose the country first. Picking areas is optional.
-
-If you pick a state and also a ward inside that state, only the state is kept, because it already covers the ward.
-
-The call's owner sees the areas you picked on the responses list, on the scoring page, on a map in your response, and on the award page.
-
-### Reading the Coverage Map Legend
-
-Wherever a coverage map appears — on the solicitation page, the response submission form, and the responses review pages — a small legend is displayed on the map showing how areas are colour-coded:
-
-| Colour | Meaning       |
-| ------ | ------------- |
-| Green  | Intervention area |
-| Blue   | Comparison area   |
-
-This applies to all coverage maps across the
+When you respond to a call that is not tied to a micro-plan, the response form has a **Where would you do this work?** map. Pick the areas you would work in, at whatever level fits your organisation: a whole state, a district, or a handful of wards. Each area you pick appears below the map with its level (for example "Kano · State" or "
