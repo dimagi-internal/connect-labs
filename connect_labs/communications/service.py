@@ -16,6 +16,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.validators import validate_email
 from django.db import transaction
+from django.db.models import Case, Value, When
 from django.utils import timezone
 
 from connect_labs.communications import kinds as kind_registry
@@ -25,6 +26,7 @@ from connect_labs.communications.models import (
     FAILED,
     FOLLOWUP_DONE,
     FOLLOWUP_FAILED,
+    FOLLOWUP_NONE,
     FOLLOWUP_PENDING,
     NOT_SENT,
     PREPARED_WEB,
@@ -482,18 +484,24 @@ def delivered(sent_message_id) -> None:
     twice never applies the follow-up twice. A success outranks any earlier
     report (a task run twice may report failure first).
     """
-    claimed = SentMessage.objects.filter(pk=sent_message_id).exclude(delivery=DELIVERED).update(delivery=DELIVERED)
-    if not claimed:
-        return
-    message = SentMessage.objects.select_related("communication", "recipient", "sent_by").get(pk=sent_message_id)
-    if message.communication is None or message.recipient is None:
-        return
-    message.followup = FOLLOWUP_PENDING
-    message.save(update_fields=["followup"])
-    run_followup(message.pk)
+    # One statement: delivered, and its follow-up pending, are recorded together --
+    # a stop between them can never leave a sent message with no follow-up to retry.
+    claimed = (
+        SentMessage.objects.filter(pk=sent_message_id)
+        .exclude(delivery=DELIVERED)
+        .update(
+            delivery=DELIVERED,
+            followup=Case(
+                When(communication__isnull=False, recipient__isnull=False, then=Value(FOLLOWUP_PENDING)),
+                default=Value(FOLLOWUP_NONE),
+            ),
+        )
+    )
+    if claimed:
+        run_followup(sent_message_id)
 
 
-def run_followup(sent_message_id) -> bool:
+def run_followup(sent_message_id, *, automatic: bool = False, now=None) -> bool:
     """Do what sending this message changes (`kind.after_sent`), as the person who sent it.
 
     Never resends the email. Safe to run again after a partial failure: the
@@ -510,6 +518,10 @@ def run_followup(sent_message_id) -> bool:
         )
         if message is None or message.followup not in (FOLLOWUP_PENDING, FOLLOWUP_FAILED):
             return message is not None and message.followup == FOLLOWUP_DONE
+        if automatic and message.followup == FOLLOWUP_FAILED:
+            # Checked again under the lock: another attempt may have run since this was selected.
+            if message.followup_attempts >= MAX_FOLLOWUP_ATTEMPTS or not _followup_due(message, now or timezone.now()):
+                return False
         communication, recipient = message.communication, message.recipient
         message.followup_attempts += 1
         message.followup_at = timezone.now()
@@ -584,7 +596,7 @@ def reconcile(now=None) -> dict:
         if not _followup_due(message, now):
             continue
         retried += 1
-        done += int(run_followup(message.pk))
+        done += int(run_followup(message.pk, automatic=True, now=now))
     return {"unknown": lost, "followups_retried": retried, "followups_done": done}
 
 

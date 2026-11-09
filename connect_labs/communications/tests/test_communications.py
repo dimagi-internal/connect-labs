@@ -479,3 +479,30 @@ def test_a_worker_without_mail_holds_a_recorded_message_for_a_later_one(settings
     report.assert_not_called()
     # Not a recorded message: as before, nothing to hold, nothing retried.
     assert mail_tasks.send_mail_async(subject="s", message="b", recipient_list=["a@x.example"]) == 0
+
+
+def test_delivered_and_its_pending_follow_up_are_recorded_together(world, queued_only, monkeypatch):
+    def stop(*a, **k):
+        raise SystemExit  # the worker stops right after the delivery claim
+
+    out = draft_for(world)
+    service.send(browser_request(world["writer"]), out["id"])
+    row = SentMessage.objects.get(communication_id=out["id"])
+    monkeypatch.setattr(service, "run_followup", stop)
+    with pytest.raises(SystemExit):
+        service.delivered(row.pk)
+    row.refresh_from_db()
+    assert row.delivery == "delivered" and row.followup == "pending"  # reconcile will pick it up
+
+
+def test_an_automatic_retry_rechecks_its_limit_under_the_lock(world, queued_only, monkeypatch):
+    calls = []
+    monkeypatch.setattr(kinds.get("general"), "after_sent", lambda *a, **k: calls.append(1) or {})
+    out = draft_for(world)
+    service.send(browser_request(world["writer"]), out["id"])
+    row = SentMessage.objects.get(communication_id=out["id"])
+    SentMessage.objects.filter(pk=row.pk).update(
+        delivery="delivered", followup="failed", followup_attempts=service.MAX_FOLLOWUP_ATTEMPTS
+    )
+    assert service.run_followup(row.pk, automatic=True) is False and calls == []
+    assert service.run_followup(row.pk) is True and calls == [1]  # a person's retry is never limited

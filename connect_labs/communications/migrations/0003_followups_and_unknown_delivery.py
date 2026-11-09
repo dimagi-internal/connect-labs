@@ -3,6 +3,21 @@
 from django.db import migrations, models
 
 
+def carry_over_failed_followups(apps, schema_editor):
+    """A follow-up that failed before follow-ups had a state kept its error in
+    `effects["after_sent_error"]`: give it the failed state, so the page shows it
+    and the reconcile job (and a person) can retry it."""
+    SentMessage = apps.get_model("communications", "SentMessage")
+    for message in SentMessage.objects.filter(effects__has_key="after_sent_error").iterator():
+        effects = dict(message.effects or {})
+        error = str(effects.pop("after_sent_error", ""))
+        message.effects = effects
+        message.followup = "failed"
+        message.followup_error = error
+        message.followup_attempts = 1
+        message.save(update_fields=["effects", "followup", "followup_error", "followup_attempts"])
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -35,4 +50,5 @@ class Migration(migrations.Migration):
             name='delivery',
             field=models.CharField(choices=[('queued', 'Sending'), ('delivered', 'Sent'), ('failed', 'Failed'), ('not_sent', 'Not sent'), ('unknown', 'Outcome unknown')], default='queued', max_length=12),
         ),
+        migrations.RunPython(carry_over_failed_followups, migrations.RunPython.noop, hints={"run_on_secondary": False}),
     ]
