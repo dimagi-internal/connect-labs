@@ -107,8 +107,10 @@ class TestASplitTenderIsOneRow:
 
     def test_orders_list_has_a_partner_column_and_the_same_status_words(self, client_in_program, da, split):
         body = client_in_program.get(reverse("supply_chain:orders")).content.decode()
-        assert ">For partner</th>" in body
+        # The partner reads under the buyer of record, not in a column of its own.
+        assert ">For partner</th>" not in body
         assert body.count('data-testid="order-partner"') == 2
+        assert " · for " in body
         status = re.findall(r'data-testid="order-status">(.*?)</span>', body, re.S)
         assert any("In transit" in s for s in status) and not any("· in transit" in s for s in status)
 

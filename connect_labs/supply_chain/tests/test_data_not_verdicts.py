@@ -241,17 +241,12 @@ class TestSheetsSort:
         orders = client_in_program.get(reverse("supply_chain:orders")).content.decode()
         table = re.search(r'<table class="sheet[^"]*" data-testid="orders-table">.*?</table>', orders, re.S).group(0)
         assert _sortable(table) == [
-            "Reference",
-            "Supplier",
-            "For partner",
+            "Order",
             "Buyer of record",
             "Quantity",
-            "Received",
-            "Unit price",
-            "Currency",
+            "Price",
             "Status",
             "Signed",
-            "Told by",
         ]
         assert f'data-sort-value="{(reality.TODAY - timedelta(days=2)).isoformat()}"' in table
         assert re.search(r'data-sort-value="49\.80*"', table)
