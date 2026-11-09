@@ -12,15 +12,50 @@ phone, focus moves into the drawer when it opens (retried a frame at a time: the
 drawer is still `invisible`, so unfocusable, for the first frames of its transition) and back to the toggle when it
 closes, and the closed drawer is `invisible` (out of the tab order and the
 accessibility tree); from md up it is always visible.
+
+A section's own menu (Marketplace, Supply) is not drawn on a phone as a rail. Instead, tapping
+that section's icon in the open drawer shows its menu in a panel to the drawer's right (the
+`phone-open` class on the section's rail aside; CSS below). The drawer is 14rem on a phone, which
+leaves the panel the rest of the width. On a page that carries no such menu the tap just
+navigates, as before, and the section's own pages have the menu. Closing the drawer closes the panel.
 {% endcomment %}
+<style>
+  @media (max-width: 767.98px) {
+    .erm-rail.phone-open, .supply-rail.phone-open {
+      display: block !important; visibility: visible !important; opacity: 1 !important; transform: none !important; pointer-events: auto !important;
+      position: fixed; top: 0; left: 14rem; z-index: 41; height: 100vh; width: calc(100vw - 14rem); max-width: 18rem;
+      overflow: hidden; background: #efedf8; box-shadow: 4px 0 12px rgb(0 0 0 / 0.2);
+    }
+    .phone-open .erm-hide, .phone-open .supply-rail-close { display: none; }
+    .phone-open .erm-scroll, .phone-open .supply-rail-scroll { padding: 1.25rem 0.5rem 1.5rem; }
+    .phone-open .erm-head h2, .phone-open .supply-rail-head h1 { font-size: 1.0625rem; }
+    .phone-open .erm-item, .phone-open .supply-tab { padding: 0.5rem 0.5rem; }
+  }
+</style>
 <div x-data="{
         sidebarOpen: false,
+        closePhoneMenus() {
+            document.querySelectorAll('.phone-open').forEach(el => el.classList.remove('phone-open'));
+        },
+        // Phone only: a tap on a section's icon opens that section's menu beside the drawer.
+        sectionTap(ev) {
+            if (window.matchMedia('(min-width: 768px)').matches || !this.sidebarOpen) return;
+            if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button !== 0) return;
+            const link = ev.target.closest('a[href]');
+            if (!link) return;
+            const rail = [...document.querySelectorAll('[data-sidebar-url]')].find(r => r.getAttribute('data-sidebar-url') === link.getAttribute('href'));
+            if (!rail) return;
+            ev.preventDefault();
+            const wasOpen = rail.classList.contains('phone-open');
+            this.closePhoneMenus();
+            if (!wasOpen) rail.classList.add('phone-open');
+        },
         focusMenu(frames = 30) {
             this.$refs.navMenu.focus();
             if (document.activeElement !== this.$refs.navMenu && frames > 0) requestAnimationFrame(() => this.focusMenu(frames - 1));
         },
     }" @keydown.escape.window="sidebarOpen = false"
-    x-init="$watch('sidebarOpen', open => { if (!window.matchMedia('(max-width: 767.98px)').matches) return; open ? focusMenu() : $nextTick(() => $refs.navToggle.focus()) })">
+    x-init="$watch('sidebarOpen', open => { if (!open) closePhoneMenus(); if (!window.matchMedia('(max-width: 767.98px)').matches) return; open ? focusMenu() : $nextTick(() => $refs.navToggle.focus()) })">
 <button type="button" data-testid="labs-nav-toggle" x-ref="navToggle" x-show="!sidebarOpen"
     class="md:hidden fixed top-3 left-3 z-50 flex items-center justify-center w-10 h-10 rounded-lg bg-brand-deep-purple text-brand-sky"
     :aria-expanded="sidebarOpen.toString()" aria-controls="labs-sidenav" aria-label="Menu"
@@ -30,9 +65,10 @@ accessibility tree); from md up it is always visible.
 <div x-show="sidebarOpen" x-cloak x-transition.opacity data-testid="labs-nav-backdrop"
     class="md:hidden fixed inset-0 z-40 bg-black/40" @click="sidebarOpen = false"></div>
 <div id="labs-sidenav" x-cloak
-    @click.outside="sidebarOpen = false"
+    @click.outside="if (!$event.target.closest('.phone-open')) sidebarOpen = false"
+    @click.capture="sectionTap($event)"
     class="fixed top-0 left-0 h-screen bg-brand-deep-purple pt-3 z-40 text-white flex flex-col justify-between transition-all duration-300 px-2"
-    :class="sidebarOpen ? 'w-64 translate-x-0 visible' : 'w-64 -translate-x-full invisible md:visible md:w-16 md:translate-x-0'">
+    :class="sidebarOpen ? 'w-56 md:w-64 translate-x-0 visible' : 'w-56 -translate-x-full invisible md:visible md:w-16 md:translate-x-0'">
 
     <!-- Top Section -->
     <div>
