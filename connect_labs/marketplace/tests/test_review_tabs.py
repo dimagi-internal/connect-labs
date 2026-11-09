@@ -266,6 +266,22 @@ class TestAIObservations:
             "First pass: reach decides."
         )
 
+    def test_discuss_opens_the_panel_on_the_current_versions_observations(
+        self, client, two_versions, member, monkeypatch
+    ):
+        from connect_labs.marketplace import views
+
+        monkeypatch.setattr(views.canopy_panel, "panel", lambda *a, **k: {"stub": True})
+        no_obs = _get(client, member, "ai-analysis").content.decode()
+        assert 'data-testid="discuss-observations"' not in no_obs, "nothing to discuss before there are observations"
+        two_versions.set_round_observations("battery-2026", "v2", "Cost did not separate anyone.", "v1")
+        two_versions.set_round_observations("battery-2026", "v1", "First pass.")
+        page = _get(client, member, "ai-analysis").content.decode()
+        assert 'data-testid="ask-observations"' in page, "the panel's buttons render for the round's owner"
+        assert 'data-testid="discuss-observations"' in page and "discuss the AI Observations" in page
+        earlier = _get(client, member, "ai-analysis", version="v1").content.decode()
+        assert 'data-testid="discuss-observations"' not in earlier, "acting on them makes the next version"
+
     def test_none_yet_says_how_they_come_about(self, client, scored, member):
         page = _get(client, member, "ai-analysis").content.decode()
         assert 'data-testid="no-observations"' in page and 'data-testid="observations-text"' not in page

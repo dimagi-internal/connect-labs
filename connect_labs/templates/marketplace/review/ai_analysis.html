@@ -22,10 +22,19 @@ finding here is a reason to revise the criteria: back to step 1.
         {% endif %}
       </div>
       {% if canopy_panel and can_edit %}
-        <button type="button" data-canopy-ask class="hidden inline-flex items-center px-3.5 py-2 {% if shown_record.observations %}bg-white text-indigo-700 border border-indigo-300 hover:bg-indigo-50{% else %}bg-indigo-600 text-white hover:bg-indigo-700{% endif %} text-[13px] font-medium rounded-lg"
-                data-testid="ask-observations" data-ask="{{ observe_ask }}">
-          <i class="fa-solid fa-wand-magic-sparkles mr-2 text-[11px]"></i>{% if shown_record.observations %}Write them again{% else %}Ask for AI Observations{% endif %}
-        </button>
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" data-canopy-ask class="hidden inline-flex items-center px-3.5 py-2 {% if shown_record.observations %}bg-white text-indigo-700 border border-indigo-300 hover:bg-indigo-50{% else %}bg-indigo-600 text-white hover:bg-indigo-700{% endif %} text-[13px] font-medium rounded-lg"
+                  data-testid="ask-observations" data-ask="{{ observe_ask }}">
+            <i class="fa-solid fa-wand-magic-sparkles mr-2 text-[11px]"></i>{% if shown_record.observations %}Write them again{% else %}Ask for AI Observations{% endif %}
+          </button>
+          {% if shown_record.observations and is_current %}
+            {% comment %}Acting on the observations is a conversation in the panel: it ends in a new criteria version for the person to confirm, then a run on it.{% endcomment %}
+            <button type="button" data-canopy-ask class="hidden inline-flex items-center px-3.5 py-2 bg-indigo-600 text-white hover:bg-indigo-700 text-[13px] font-medium rounded-lg"
+                    data-testid="discuss-observations" data-ask="{{ discuss_ask }}">
+              <i class="fa-regular fa-comments mr-2 text-[12px]"></i>Discuss and act on these
+            </button>
+          {% endif %}
+        </div>
       {% endif %}
     </div>
     {% if shown_record.observations %}
