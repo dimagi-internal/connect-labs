@@ -394,12 +394,19 @@ def ranking(opps_qs=None) -> dict:
         },
         "bar_x": m["bar_x"],
         "bar_note": m["bar_note"],
+        "placed_at": _placed_at(),
         "models": {
             k: dict(v, price=next(iter(m["countries"].values()))[k]["unit_cost"]) for k, v in m["models"].items()
         },
         "source": m["source"],
         "generated": m["generated"],
     }
+
+
+def _placed_at():
+    from connect_labs.impact import places as impact_places
+
+    return impact_places.placed_at()
 
 
 def opportunity_detail(opp_id: int) -> dict | None:
@@ -421,7 +428,14 @@ def opportunity_detail(opp_id: int) -> dict | None:
         peers = PulseOpportunity.objects.filter(is_test=False, program_id=o.program_id, org_slug=o.org_slug)
     data = ranking(peers)
     row = next(r for r in data["rows"] if r["id"] == opp_id)
-    out = {"row": row, "bar_x": data["bar_x"], "bar_note": data["bar_note"], "result": None, "placement": None}
+    out = {
+        "row": row,
+        "bar_x": data["bar_x"],
+        "bar_note": data["bar_note"],
+        "placed_at": data["placed_at"],
+        "result": None,
+        "placement": None,
+    }
     key, iso3 = row["model"], iso3_for(row["country"])
     if key is None or iso3 is None:
         return out

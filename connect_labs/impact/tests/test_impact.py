@@ -109,12 +109,14 @@ def nigeria(db):
     ng = _boundary(0, "Nigeria", "NGA", 0, 0, size=2)
     kano = _boundary(1, "Kano", "NGA-KN", 0, 0)
     lagos = _boundary(1, "Lagos", "NGA-LA", 1, 0)
-    _value(ng, "u5mr", 100.0)
-    _value(kano, "u5mr", 150.0)
-    _value(lagos, "u5mr", 50.0)
+    # Area mortality is IGME's subnational model, levelled to IGME's national estimate.
+    _value(ng, "u5mr", 100.0, source="igme")
+    _value(kano, "u5mr", 150.0, source="igme_subnational")
+    _value(lagos, "u5mr", 50.0, source="igme_subnational")
     _value(kano, "ors_coverage", 20.0)
     _value(lagos, "ors_coverage", 60.0)
-    _value(kano, "nmr", 40.0)
+    _value(ng, "nmr", 30.0, source="igme")
+    _value(kano, "nmr", 40.0, source="igme_subnational")
     return {"ng": ng, "kano": kano, "lagos": lagos}
 
 
@@ -143,10 +145,20 @@ class TestBaseline:
         # An input with no recipe at all says so.
         assert "no area figure" in v["worm"].how
 
-    def test_mbw_reads_newborn_mortality_for_the_area(self, nigeria):
+    def test_mbw_scales_the_countrys_newborn_mortality_by_the_areas(self, nigeria):
         v = baseline.Baselines([nigeria["kano"]]).for_area("mbw", "NGA", nigeria["kano"])
-        assert v["nmr"].value == 40.0 and v["nmr"].level == "state or province"
-        assert v["imr"].level == "model country figure"
+        country = engine.country("mbw", "NGA")["inputs"]["nmr"]
+        assert v["nmr"].value == pytest.approx(country * 40 / 30)
+        assert v["nmr"].level == "state or province"
+        assert v["imr"].level == "model country figure"  # no area figure for infant mortality here
+
+    def test_a_ratio_is_only_taken_within_one_series(self, nigeria):
+        # A DHS survey figure for the area has no national DHS figure to compare with here.
+        lagos = nigeria["lagos"]
+        IndicatorValue.objects.filter(boundary=lagos, indicator="u5mr").delete()
+        _value(lagos, "u5mr", 40.0, source="dhs")
+        v = baseline.Baselines([lagos]).for_area("chc", "NGA", lagos)
+        assert v["deaths"].level == "model country figure"
 
     def test_kc_has_no_place_inputs(self, nigeria):
         assert baseline.Baselines([nigeria["kano"]]).for_area("kc", "NGA", nigeria["kano"]) == {}
@@ -199,8 +211,7 @@ def _work(oid, usd, who):
 
 
 @pytest.fixture(autouse=True)
-def _fresh(settings):
-    settings.CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+def _fresh():
     costs.invalidate()
     yield
     costs.invalidate()
@@ -215,6 +226,8 @@ class TestPlaces:
         _visit(1, 0.5, 1.5)  # Lagos
         _visit(1, 0.5, 1.6, status="rejected")  # not approved: not counted
         _visit(1, 5.0, 5.0)  # outside every area
+        assert places.opportunity_places([1]) == {}  # nothing stored until the timer runs
+        places.refresh([1])
         p = places.opportunity_places([1])[1]
         assert [(a.boundary.name, a.visits) for a in p.areas] == [("Kano", 3), ("Lagos", 1)]
         assert p.areas[0].share == pytest.approx(0.75)
@@ -228,6 +241,9 @@ class TestEndToEnd:
         for i in range(10):
             _visit(1, 0.5, 0.5)
             _work(1, 1.0, f"child-{i}")
+        from connect_labs.impact.tasks import refresh_opportunity_places
+
+        assert refresh_opportunity_places() == 1  # the timed task places every modelled opportunity
         row = next(r for r in cea.ranking()["rows"] if r["id"] == 1)
         country = result.model_country_result("chc", "NGA")
         # Kano: more child deaths and less ORS than Nigeria as a whole, so more to avert.
@@ -249,6 +265,7 @@ class TestEndToEnd:
         for i in range(4):
             _visit(3, 0.5, 0.5)
             _work(3, 1.0, f"child-{i}")
+        places.refresh([3])
         client.force_login(django_user_model.objects.create_user(username="u", email="u@x.org", password="x"))
         url = reverse("pulse:cea_opp", args=[3])
         page = client.get(url)

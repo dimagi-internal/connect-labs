@@ -92,87 +92,54 @@ def _pct(indicator: str):
     return recipe
 
 
-def _direct(indicator: str):
-    def recipe(ctx, key):
-        r = _local(ctx.get(indicator))
-        if r is None:
-            return None
-        lvl, where = _level(r)
-        return Value(key, r.value, lvl, where, _src(r), f"Labs {indicator}", None)
-
-    return recipe
+#: Area mortality series, and the national series each is levelled to. IGME's
+#: subnational model and DHS "re-levelled" (``dhs_calibrated``) are both expressed
+#: relative to IGME's national estimate, so an area's ratio is taken against that.
+NATIONAL_FOR = {"igme_subnational": "igme", "dhs_calibrated": "igme", "igme": "igme"}
 
 
-def _u5_ratio(ctx) -> tuple[float, Resolved] | None:
-    """The area's under-five mortality over the country's, from the SAME source.
+def _ratio(ctx, indicator: str) -> tuple[float, Resolved] | None:
+    """The area's figure over the country's, from the same series, nearest year.
 
-    Two sources disagree by more than the subnational differences being measured,
-    so a ratio across sources would be noise. If the area's figure is the
-    country's own (inherited), the ratio is 1 and the recipe says country.
+    Two series can disagree by more than the subnational differences being
+    measured, so a ratio across series would be noise. None when the area has no
+    figure of its own, or no national figure in its series.
     """
-    area = ctx.get("u5mr")
-    if area is None or (area.measured_at and area.measured_at.admin_level == 0):
+    area = _local(ctx.get(indicator))
+    if area is None:
         return None
-    nat = ctx.country_row("u5mr", area.source, area.year)
+    nat = ctx.country_row(indicator, NATIONAL_FOR.get(area.source, area.source), area.year)
     if nat is None or not nat.value:
         return None
     return area.value / nat.value, area
 
 
-def _scaled_deaths(ctx, key):
-    """CHC ``deaths``: the country's diarrhoea death rate x the area's child mortality / the country's."""
-    got = _u5_ratio(ctx)
-    country = ctx.country_inputs.get(key)
-    if got is None or country is None:
-        return None
-    ratio, area = got
-    lvl, where = _level(area)
-    return Value(
-        key,
-        country * ratio,
-        lvl,
-        where,
-        f"{_src(area)} (child mortality)",
-        f"the country's rate x the area's under-five mortality / the country's ({ratio:.2f})",
-        None,
-    )
+def _scaled(indicator: str, what: str):
+    """The model's country figure x the area's ``indicator`` / the country's, as the models do subnationally.
 
-
-def _mort659(ctx, key):
-    """CHC ``mort659``: from the area's under-five and infant mortality, by the model's own formula.
-
-    1 - (1 - (U5MR - IMR) / (1000 - IMR)) ^ (1/4), as the input's own note says.
-    Both must be measured for the same area by the same source; otherwise the
-    country figure is scaled by the area's under-five mortality.
+    This keeps every area on the same footing as the published national result:
+    the model's own source and year for the level, the area's survey or model
+    estimate only for how it differs from the country.
     """
-    u5, im = ctx.get("u5mr"), ctx.get("imr")
-    if (
-        u5
-        and im
-        and u5.measured_at
-        and im.measured_at
-        and u5.measured_at.pk == im.measured_at.pk
-        and u5.measured_at.admin_level > 0
-        and u5.source == im.source
-    ):
-        v = 1 - (1 - (u5.value - im.value) / (1000 - im.value)) ** 0.25
-        lvl, where = _level(u5)
-        return Value(key, v, lvl, where, _src(u5), "from the area's under-five and infant mortality", None)
-    got = _u5_ratio(ctx)
-    country = ctx.country_inputs.get(key)
-    if got is None or country is None:
-        return None
-    ratio, area = got
-    lvl, where = _level(area)
-    return Value(
-        key,
-        country * ratio,
-        lvl,
-        where,
-        f"{_src(area)} (child mortality)",
-        f"the country's rate x the area's under-five mortality / the country's ({ratio:.2f})",
-        None,
-    )
+
+    def recipe(ctx, key):
+        got = _ratio(ctx, indicator)
+        country = ctx.country_inputs.get(key)
+        if got is None or country is None:
+            return None
+        ratio, area = got
+        lvl, where = _level(area)
+        return Value(
+            key,
+            country * ratio,
+            lvl,
+            where,
+            f"{_src(area)} ({indicator})",
+            f"the country's {what} x the area's {indicator} / the country's ({ratio:.2f})",
+            None,
+        )
+
+    return recipe
 
 
 RECIPES = {
@@ -180,12 +147,14 @@ RECIPES = {
         "ors": _pct("ors_coverage"),
         "vas": _pct("vitamin_a_coverage"),
         "dw_cov": _pct("deworming_coverage"),
-        "deaths": _scaled_deaths,
-        "mort659": _mort659,
+        # The models' North West Nigeria method: the country's diarrhoea death rate,
+        # and its child death rate, scaled by the area's under-five mortality.
+        "deaths": _scaled("u5mr", "diarrhoea death rate"),
+        "mort659": _scaled("u5mr", "child death rate"),
     },
     "mbw": {
-        "nmr": _direct("nmr"),
-        "imr": _direct("imr"),
+        "nmr": _scaled("nmr", "newborn death rate"),
+        "imr": _scaled("imr", "infant death rate"),
         "ebf": _pct("exclusive_breastfeeding"),
     },
     "kc": {},
@@ -219,6 +188,7 @@ class _Ctx:
 
     def country_row(self, indicator: str, source: str, year: int):
         rows = [r for r in self._country_rows.get(indicator, ()) if r.source == source]
+        # Nearest year to the area's, so a ratio compares like with like.
         if not rows:
             return None
         return min(rows, key=lambda r: (abs(r.year - year), -r.year))
@@ -234,9 +204,9 @@ class Baselines:
             return
         isos = {b.iso_code for b in boundaries}
         adm0 = list(boundary_set.owned().filter(iso_code__in=isos, admin_level=0))
-        for row in IndicatorValue.objects.filter(boundary__in=adm0, indicator__in=("u5mr",)).select_related(
-            "boundary"
-        ):
+        for row in IndicatorValue.objects.filter(
+            boundary__in=adm0, indicator__in=("u5mr", "imr", "nmr")
+        ).select_related("boundary"):
             self._country_rows.setdefault(row.boundary.iso_code, {}).setdefault(row.indicator, []).append(row)
 
     def for_area(self, model: str, iso3: str, boundary: AdminBoundary | None) -> dict[str, Value]:

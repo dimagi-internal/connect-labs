@@ -74,7 +74,8 @@
   <div class="card">
     <h2><span class="step">1</span>Where it was delivered</h2>
     <p class="sub">Each approved visit's GPS, placed in the most local area Labs holds baseline figures for (a district where loaded, else the state or province). An area's share is its share of approved visits.
-      {% if d.placement.visits %}{{ d.placement.visits|intcomma }} approved visits with GPS{% if d.placement.unplaced %}; {{ d.placement.unplaced|intcomma }} fell outside every area{% endif %}.{% else %}No approved visit carries GPS, so it is valued at {{ row.country_name }}'s figures.{% endif %}</p>
+      {% if d.placement.visits %}{{ d.placement.visits|intcomma }} approved visits with GPS{% if d.placement.unplaced %}; {{ d.placement.unplaced|intcomma }} fell outside every area{% endif %}.{% elif d.placed_at %}No approved visit carries GPS, so it is valued at {{ row.country_name }}'s figures.{% else %}Visits have not been placed yet (that runs every six hours), so for now it is valued at {{ row.country_name }}'s figures.{% endif %}
+      {% if d.placed_at %}<span class="muted">Placed {{ d.placed_at|slice:":16"|cut:"T"|default:"" }} UTC.</span>{% endif %}</p>
     <div class="wrap"><table>
       <thead><tr><th>Area</th><th>Level</th><th class="n">Visits</th><th class="n">Share</th><th class="n">Model multiple there</th><th class="n">Deaths averted per 100,000</th></tr></thead>
       <tbody>{% for a in r.areas %}
