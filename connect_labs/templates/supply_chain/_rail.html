@@ -62,7 +62,7 @@ Plain CSS rather than utilities, so nothing waits on the stylesheet being rebuil
     .supply-rail, .supply-rail-toggle, .supply-shell[data-rail="closed"] .supply-rail-toggle { display: none; }
   }
 </style>
-<aside id="supply-rail" class="supply-rail" data-testid="supply-rail" aria-label="Supply navigation">
+<aside id="supply-rail" class="supply-rail" data-sidebar-url="{% url 'supply_chain:home' %}" data-testid="supply-rail" aria-label="Supply navigation">
   <div class="supply-rail-scroll">
     <div data-testid="supply-banner" class="supply-rail-head">
       <div>

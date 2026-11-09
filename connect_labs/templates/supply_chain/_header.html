@@ -10,7 +10,7 @@ for a past day. Plain CSS in `_rail.html`, so nothing waits on the stylesheet be
   .supply-tabs-phone[open] > summary .supply-tabs-caret { transform: rotate(180deg); }
   .supply-tabs-phone > nav { position: absolute; left: 0; z-index: 30; margin-top: 0.25rem; width: 14rem; max-width: calc(100vw - 2rem); padding: 0.25rem 0; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); }
   @media (max-width: 767px) {
-    .supply-tabs-phone { display: block; position: relative; margin-bottom: 0.75rem; }
+    /* The Supply menu is in the Labs drawer on a phone (tap Supply), so the page keeps its top. */
     .supply-toolbar { display: block; }
     .supply-purpose { display: none; }
   }
