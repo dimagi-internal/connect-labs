@@ -1365,6 +1365,7 @@ def round_scores(round_: Solicitation, applicants: list[dict], criteria: list | 
             versions[version] = versions.get(version, 0) + 1
     return {
         "criteria": criteria,
+        "scored": len(totals),
         "total_mean": _mean(totals),
         "total_median": _median(totals),
         "outcomes": outcomes,

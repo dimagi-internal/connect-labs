@@ -374,7 +374,8 @@ def _outcome_figures(counts, undecided):
 # round"; "write the round's evaluation criteria"). Kept here, not in a
 # template, so a test can pin them.
 AI_REVIEW_ASK = (
-    "Start the AI review of this EOI round: score every response on the round's criteria and write the shortlist."
+    "Run the AI review of this EOI round on its current criteria version: score every response, calibrate across "
+    "the pool, and write the AI reviews, the AI Observations and the summary report, for me to confirm."
 )
 CRITERIA_ASK = (
     "This EOI round has no evaluation criteria yet. Propose criteria for it from its responses, "
@@ -388,6 +389,16 @@ CRITERIA_ASK = (
 REVISE_ASK = (
     "Revise this EOI round's evaluation criteria as a new version, for me to approve, "
     "then score every response on it so the AI Analysis can compare it with the current version. The change:"
+)
+
+
+# What AI Analysis' "Discuss and act on these" sends: acting on the AI Observations is a
+# conversation in the panel, ending in a new criteria version the person confirms and then
+# a run on it. The page itself only shows what was saved.
+DISCUSS_ASK = (
+    "Let's discuss the AI Observations on this EOI round's current criteria version and decide what to change. "
+    "Go through them with me; when we agree on a change, propose it as a new criteria version for me to confirm, "
+    "then offer to run the AI review on it."
 )
 
 
@@ -706,6 +717,7 @@ def round_review(request, slug, step=""):
             "shown_outcome_rules": shown_rules,
             "shown_record": shown_record,
             "observe_ask": OBSERVE_ASK,
+            "discuss_ask": DISCUSS_ASK,
             "shown_version": shown,
             "is_current": shown == round_.rubric_version,
             "compare_with": compare_with,

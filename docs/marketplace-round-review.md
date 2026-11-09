@@ -240,11 +240,16 @@ firm's behalf).
     words appended: `views.REVISE_ASK`), and every version, deletable with its
     reviews (`rounds/<slug>/versions/<v>/delete/`).
   - `ai-review`: every applicant against every criterion, read from the **AI's
-    reviews alone** (`review_status(kind="ai")`), with the version picker, the
-    summary link (`rounds/<slug>/summary/`) and **Run / Re-run the AI review**.
+    reviews alone** (`review_status(kind="ai")`). One line above the table: how
+    many are scored on the shown version, the version picker, **Read the summary
+    report** (the link set at `rounds/<slug>/summary/`, or by the run) and **Run the
+    AI review** (asks the assistant: `views.AI_REVIEW_ASK`).
   - `ai-analysis`: also the AI's reviews alone. **AI Observations** on the
     shown version come first, with **Ask for AI Observations** (asks the
-    assistant: `views.OBSERVE_ASK`; it proposes them for the person to confirm).
+    assistant: `views.OBSERVE_ASK`; it proposes them for the person to confirm)
+    and, on the current version, **Discuss and act on these** (`views.DISCUSS_ASK`):
+    acting on the observations is a conversation in the panel that ends in a new
+    criteria version to confirm, then a run on it. The page only shows what was saved.
     "What changed from version A to B" opens against the version before the shown one; `?compare=vM` picks
     another, `?compare=none` turns it off. Then **By criterion** (spread,
     shortlist mean, everyone else, shortlist lead), open.
@@ -255,9 +260,9 @@ firm's behalf).
     many match the AI review they started from, else the applicant's AI review;
     an "agrees" or "adds" review without its own outcome reads as the AI's), and
     each applicant's AI recommendation beside the people's.
-  `?version=vN` reads an earlier criteria version on any step. The round header
-  above the steps always reads the round as Overview does (a person's review
-  first, else the AI's), so the two tabs' figures agree.
+  `?version=vN` reads an earlier criteria version on any step. The Review tab's
+  header is the title, the tabs and the step bar only: the round's figures and
+  countries are Overview's (`_round_header.html`), so Review reads as a working view.
 - `/labs/marketplace/rounds/<slug>/scores/` is the old Scores page. It
   redirects (301) to `review/ai-review/`, or to `review/ai-analysis/` when the
   query asks for a comparison, keeping the query string.

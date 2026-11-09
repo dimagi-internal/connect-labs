@@ -4,39 +4,30 @@ page's table), which version the scores are on, and the button that runs the
 AI review. The figures follow the filters (round_review.html's script).
 {% endcomment %}
 <div class="bg-white border border-brand-border-light rounded-lg px-4 sm:px-6 py-4 mb-4.5" data-testid="ai-review">
-    {% comment %}What only this page has: which criteria the scores are on, a comparison with another version, and the mean.{% endcomment %}
-    <div class="flex flex-wrap items-end gap-x-7 gap-y-4 sm:gap-x-8" data-testid="scores-extras">
-      <div title="Mean overall score (0–100) of the applicants shown below">
-        <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums" data-stat="total-mean">{{ summary.total_mean|floatformat:0|default:"—" }}</div>
-        <div class="text-[11px] text-gray-400 tracking-wide">MEAN SCORE</div>
-        <div class="text-[11px] text-gray-400 mt-0.5">median <span data-stat="total-median">{{ summary.total_median|floatformat:0|default:"—" }}</span> of 100</div>
+    {% comment %}One line: what is scored and on which criteria version, then the summary report and the button that runs the AI review (it opens the assistant panel).{% endcomment %}
+    <div class="flex flex-wrap items-center gap-x-5 gap-y-3" data-testid="scores-extras">
+      <div>
+        <div class="text-[14px] font-semibold text-brand-deep-purple" data-testid="scored-line">{{ summary.scored }} of {{ applicants|length }} scored{% if shown_version %} on version {{ shown_version|slice:"1:" }}{% endif %}</div>
+        <div class="text-[12px] text-gray-500" title="Mean and median overall score (0-100) of the applicants shown below">mean <span data-stat="total-mean">{{ summary.total_mean|floatformat:0|default:"—" }}</span> · median <span data-stat="total-median">{{ summary.total_median|floatformat:0|default:"—" }}</span> of 100</div>
       </div>
-      <div class="flex items-center gap-2.5 flex-wrap pb-1">
       {% if history|length > 1 %}
         <form method="get" class="inline-flex items-center" data-testid="version-picker">
           <select name="version" onchange="this.form.submit()" title="The scores are given against this version of the round's criteria. Each time the criteria are rewritten, the version goes up." class="rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo" style="border: 0; padding: 2px 28px 2px 10px">
             {% for v in history %}<option value="{{ v.version }}" {% if v.version == shown_version %}selected{% endif %}>Criteria version {{ v.number }}{% if v.current %} (current){% endif %}</option>{% endfor %}
           </select>
         </form>
-        <a href="{% url 'marketplace:round_review_step' round.slug 'ai-analysis' %}" class="text-[12px] text-brand-indigo hover:text-brand-deep-purple">Compare with another version →</a>
-      {% elif shown_version %}<a href="{% url 'marketplace:round_review_step' round.slug 'criteria' %}" title="The scores are given against this version of the round's criteria. Each time the criteria are rewritten, the version goes up." class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-semibold bg-indigo-50 text-brand-indigo">Criteria version {{ shown_version|slice:"1:" }}</a>{% endif %}
-      </div>
-      <div class="flex flex-wrap items-center gap-2" data-testid="summary">
+      {% endif %}
+      <div class="flex flex-wrap items-center gap-2 ml-auto" data-testid="summary">
         {% if round.summary_url %}
-          <a href="{{ round.summary_url }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center px-3.5 py-2 bg-indigo-600 text-white text-[13px] font-medium rounded-lg hover:bg-indigo-700">
-            <i class="fa-regular fa-file-lines mr-2 text-[12px]"></i> Read the round's summary
+          <a href="{{ round.summary_url }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center px-3.5 py-2 bg-white text-indigo-700 border border-indigo-300 text-[13px] font-medium rounded-lg hover:bg-indigo-50">
+            <i class="fa-regular fa-file-lines mr-2 text-[12px]"></i> Read the summary report
           </a>
         {% endif %}
-        {% if can_edit %}
-          <details class="text-[12px]">
-            <summary class="cursor-pointer text-brand-indigo hover:text-brand-deep-purple py-2">{% if round.summary_url %}Change the summary link{% else %}Link the round's summary{% endif %}</summary>
-            <form method="post" action="{% url 'marketplace:round_summary' round.slug %}" class="flex flex-wrap items-center gap-2 mt-1.5">
-              {% csrf_token %}
-              <input type="hidden" name="next" value="{{ request.path }}">
-              <input type="url" name="summary_url" value="{{ round.summary_url }}" placeholder="https://docs.google.com/…" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800" style="width: 22rem; max-width: 100%">
-              <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-brand-border-light text-brand-indigo text-[12.5px] font-medium rounded-lg hover:bg-gray-50">Save</button>
-            </form>
-          </details>
+        {% if canopy_panel and round.evaluation_criteria %}
+          <button type="button" id="round-ai-review" class="hidden inline-flex items-center px-3.5 py-2 bg-indigo-600 text-white text-[13px] font-medium rounded-lg hover:bg-indigo-700"
+                  data-testid="start-ai-review" data-ask="{{ ai_review_ask }}" title="{{ ai_review_hint }}">
+            <i class="fa-solid fa-wand-magic-sparkles mr-2 text-[11px]"></i>{% if progress.ai_on_current %}Run the AI review again{% else %}Run the AI review{% endif %}
+          </button>
         {% endif %}
       </div>
     </div>
@@ -46,14 +37,17 @@ AI review. The figures follow the filters (round_review.html's script).
         <a href="{% url 'marketplace:round_review_step' round.slug 'ai-review' %}" class="text-brand-indigo hover:text-brand-deep-purple ml-1">See the current scores →</a>
       </div>
     {% endif %}
-  {% if canopy_panel and round.evaluation_criteria %}
-    <div class="flex flex-wrap items-center gap-2 mt-3">
-      <button type="button" id="round-ai-review" class="hidden inline-flex items-center px-3.5 py-2 bg-white text-indigo-700 border border-indigo-300 text-[13px] font-medium rounded-lg hover:bg-indigo-50"
-              data-testid="start-ai-review" data-ask="{{ ai_review_ask }}" title="{{ ai_review_hint }}">
-        <i class="fa-solid fa-wand-magic-sparkles mr-2 text-[11px]"></i>{% if progress.ai_on_current %}Re-run the AI review on version {{ round.rubric_version|slice:"1:" }}{% else %}Run the AI review on version {{ round.rubric_version|slice:"1:" }}{% endif %}
-      </button>
-    </div>
-  {% endif %}
+    {% if can_edit %}
+      <details class="mt-3 text-[12px]">
+        <summary class="cursor-pointer text-gray-500 hover:text-brand-indigo">{% if round.summary_url %}Change the summary link{% else %}Link the round's summary report{% endif %}</summary>
+        <form method="post" action="{% url 'marketplace:round_summary' round.slug %}" class="flex flex-wrap items-center gap-2 mt-1.5">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.path }}">
+          <input type="url" name="summary_url" value="{{ round.summary_url }}" placeholder="https://docs.google.com/…" class="border border-brand-border-light rounded-lg px-3 py-1.5 text-[13px] text-gray-800" style="width: 22rem; max-width: 100%">
+          <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-brand-border-light text-brand-indigo text-[12.5px] font-medium rounded-lg hover:bg-gray-50">Save</button>
+        </form>
+      </details>
+    {% endif %}
     <details class="mt-4 text-[12px] text-gray-600" data-testid="glossary">
       <summary class="cursor-pointer text-brand-indigo hover:text-brand-deep-purple">What the recommendations, colours and flags mean</summary>
       <div class="grid grid-cols-1 xl:grid-cols-[1fr_1fr] gap-x-8 gap-y-3 mt-2.5">

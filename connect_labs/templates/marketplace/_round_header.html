@@ -1,7 +1,8 @@
 {% comment %}
 The top of a round's two tabs, Overview and Review: the same title,
-tags, tabs and figures on both, so moving between them changes only what is
-below. `tab` names the page; each page adds its own figures after this.
+tags and tabs on both. The countries and the round's figures show on Overview
+only: Review is a working view, so its header is just the title, the tabs and
+the step bar (round_review.html). `tab` names the page.
 {% endcomment %}
 <div class="flex items-center gap-2 flex-wrap mb-1.5">
   <span class="text-[10px] font-semibold tracking-wider px-1.5 py-0.5 rounded {% if round.solicitation_type == 'rfp' %}bg-red-50 text-red-800{% else %}bg-indigo-50 text-brand-indigo{% endif %}">{{ round.solicitation_type|upper }}</span>
@@ -15,7 +16,7 @@ below. `tab` names the page; each page adds its own figures after this.
   {% endif %}
 </div>
 <h1 class="text-xl sm:text-2xl font-semibold text-brand-deep-purple">{{ round.title }}</h1>
-{% if round.target_countries %}
+{% if round.target_countries and tab == 'overview' %}
   <div class="text-[13px] text-gray-600 mt-1 leading-relaxed">{{ round.target_countries }}</div>
 {% endif %}
 
@@ -28,6 +29,7 @@ below. `tab` names the page; each page adds its own figures after this.
     <a href="{% url 'marketplace:network' %}?round={{ round.slug|urlencode }}" target="_blank" rel="noopener" data-testid="round-map-link" class="pb-2 ml-auto text-gray-500 hover:text-brand-indigo"><i class="fa-solid fa-earth-africa mr-1"></i>Applicants on the map <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i></a>
   </div>
 
+  {% if tab == 'overview' %}
   <div class="flex flex-wrap gap-x-7 gap-y-4 sm:gap-x-8 mt-4" data-testid="round-figures">
     <div>
       <div class="text-[22px] sm:text-[25px] font-semibold text-gray-900 tabular-nums">{{ round.organisations }}</div>
@@ -52,4 +54,5 @@ below. `tab` names the page; each page adds its own figures after this.
       <div class="text-[11px] text-gray-400 tracking-wide">COUNTR{{ country_count|pluralize:"Y,IES" }}</div>
     </div>
   </div>
+  {% endif %}
 {% endif %}

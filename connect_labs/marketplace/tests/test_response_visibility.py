@@ -765,19 +765,16 @@ class TestScores:
         ]
         assert all(isinstance(count, int) and count > 0 for _, count in country)
 
-    def test_both_pages_share_one_header_with_the_same_figures(self, client, two_scored, member):
+    def test_review_keeps_the_header_but_drops_the_round_figures(self, client, two_scored, member):
+        """Review is a working view: the title and tabs stay, the round's figures and countries are Overview's."""
         overview = _page(client, member, "marketplace:round", "battery-2026")
         scores = _page(client, member, "marketplace:round_review_step", "battery-2026", "ai-review")
 
-        def figures(body):
-            after = body.split('data-testid="round-figures"', 1)[1]
-            block = re.split(r'data-testid="(?:round-outcomes|review-steps)"', after, maxsplit=1)[0].rsplit("<", 1)[0]
-            return " ".join(re.sub(r"<[^>]+>", " ", block).split())
-
         assert 'data-testid="round-tabs"' in overview and 'data-testid="round-tabs"' in scores
-        assert figures(overview) == figures(scores)
+        assert 'data-testid="round-figures"' in overview and 'data-testid="round-figures"' not in scores
         assert 'data-testid="scores-extras"' in scores and 'data-testid="scores-extras"' not in overview
         assert 'data-testid="review-steps"' in scores and 'data-testid="review-steps"' not in overview
+        assert re.search(r'data-testid="scored-line">\s*2 of \d+ scored on version 1', scores)
 
     def test_the_scores_and_the_criterion_breakdown_are_separate_steps(self, client, two_scored, member):
         review = _page(client, member, "marketplace:round_review_step", "battery-2026", "ai-review")
