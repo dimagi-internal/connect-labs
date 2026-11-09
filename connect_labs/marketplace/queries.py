@@ -1004,9 +1004,10 @@ def round_mix(round_: Solicitation, applicants: list[dict]) -> dict:
 
     priority = list(round_.priority_countries or [])
     rank = {name: i for i, name in enumerate(priority)}
-    # Priorities first, in the order the funders gave them, and shown even at
-    # zero: a priority nobody applied from is the finding, not a gap to hide.
-    first = [(name, countries.get(name, 0)) for name in priority]
+    # Priorities first, most applicants first (ties in the order the funders
+    # gave them), and shown even at zero: a priority nobody applied from is
+    # the finding, not a gap to hide.
+    first = sorted(((name, countries.get(name, 0)) for name in priority), key=lambda kv: -kv[1])
     rest = sorted(
         ((k, v) for k, v in countries.items() if k not in rank),
         key=lambda kv: (kv[0] == "Not stated", -kv[1], kv[0]),
