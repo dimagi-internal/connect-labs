@@ -414,8 +414,44 @@ def test_a_round_s_copy_draws_its_forms_choices_grids_and_sections(client, world
     assert body.count('<span class="text-red-500 ml-1">*</span>') >= 2
 
 
-def test_the_far_left_rail_has_a_solicitations_item_only_for_a_visitor(client, world):
-    # A signed-in person has the Marketplace menu's Solicitations group; a visitor has no menu.
-    rail_item = '<span class="text-xs whitespace-nowrap">Solicitations</span>'
-    assert rail_item in client.get(url("public_list")).content.decode()
-    assert rail_item not in login(client, world["user"]).get(url("public_list")).content.decode()
+def test_the_far_left_rail_is_the_marketplace_for_everyone_with_no_separate_solicitations_item(client, world):
+    solicitations_item = '<span class="text-xs whitespace-nowrap">Solicitations</span>'
+    marketplace_item = '<span class="text-xs whitespace-nowrap">Marketplace</span>'
+    visitor = client.get(url("public_list")).content.decode()
+    signed_in = login(client, world["user"]).get(url("public_list")).content.decode()
+    for page in (visitor, signed_in):
+        assert marketplace_item in page and solicitations_item not in page
+
+
+def test_the_table_view_lists_every_call_and_a_visitor_sees_no_applicant_counts(client, world):
+    make_round(
+        "open-round",
+        title="Still open round",
+        status="active",
+        decision_on=None,
+        application_deadline=timezone.localdate() + timedelta(days=10),
+    )
+    visitor = client.get(url("public_list"), {"view": "table"}).content.decode()
+    assert 'data-testid="calls-table"' in visitor
+    for title in ("Still open round", "Community health partners 2025"):
+        assert title in visitor
+    for heading in ("Applicants", "Organizations", "This round on the marketplace"):
+        assert heading not in visitor
+    assert "1 organisation applied" not in visitor
+
+    signed_in = login(client, world["user"]).get(url("public_list"), {"view": "table"}).content.decode()
+    for heading in ("Applicants", "Organizations", "This round on the marketplace"):
+        assert heading in signed_in
+    assert reverse("marketplace:round", args=["open-round"]) in signed_in
+
+
+def test_the_table_view_follows_the_filters(client, world):
+    make_round("rfp-malaria", title="Malaria survey RFP", solicitation_type="rfp", delivery_type="malaria")
+    body = client.get(url("public_list"), {"view": "table", "type": "rfp"}).content.decode()
+    assert "Malaria survey RFP" in body and "Community health partners 2025" not in body
+
+
+def test_the_old_rounds_list_leads_to_the_table_view(client, world):
+    response = client.get(reverse("marketplace:rounds"))
+    assert response.status_code == 302
+    assert response["Location"] == url("public_list") + "?view=table"

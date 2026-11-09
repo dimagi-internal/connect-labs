@@ -70,7 +70,7 @@ def test_directory_lists_open_calls_with_owner_and_recently_closed(client, world
     assert "Closed — deadline passed" in body
     assert "Secret draft" not in body
     assert "Unlisted call" not in body
-    assert "<title>Open calls for partners · Solicitations</title>" in body
+    assert "<title>Calls for partners · Marketplace</title>" in body
 
 
 def test_directory_search_and_filters(client, world):

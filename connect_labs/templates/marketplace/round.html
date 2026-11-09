@@ -8,7 +8,7 @@
 
   <div class="text-[12.5px] text-gray-500 mb-3.5">
     <a href="{% url 'marketplace:home' %}" class="hover:text-gray-700">Marketplace</a> ·
-    <a href="{% url 'marketplace:rounds' %}" class="hover:text-gray-700">Expressions of interest</a> ·
+    <a href="{% url 'solicitations:public_list' %}?view=table" class="hover:text-gray-700">Calls for partners</a> ·
     <span class="text-gray-900">{{ round.title }}</span>
   </div>
 

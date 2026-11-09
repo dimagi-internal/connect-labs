@@ -188,7 +188,6 @@ def fonts(request):
     return render(request, "marketplace/fonts.html", {"faces": faces, "families": families})
 
 
-@login_required
 @MARKETPLACE_CHROME
 def home(request):
     """The marketplace: every kind of work on Connect, by program.
@@ -199,6 +198,10 @@ def home(request):
 
     Spent and services are Pulse's own figures, so this page and the Pulse wall
     cannot quote different numbers for the same program.
+
+    Public. A visitor who is not signed in sees the programs, what is delivered
+    and what is open; the money, the applicant counts and the links into the
+    network are for a signed-in person (the template checks).
     """
     from connect_labs.pulse import costs
 
@@ -340,25 +343,9 @@ def network_points(request):
     return JsonResponse({"points": queries.map_points(state["rows"], state["delivering"])})
 
 
-@login_required
-@MARKETPLACE_CHROME
 def rounds(request):
-    """Every expression of interest and request for proposals, open first.
-
-    The drill-down from the landing page: what the network has been asked, and
-    what it answered.
-    """
-    return render(
-        request,
-        "marketplace/rounds.html",
-        {
-            "network": queries.network_totals(),
-            "groups": [
-                {"label": "Open now", "rounds": list(queries.open_rounds())},
-                {"label": "Closed", "rounds": list(queries.closed_rounds())},
-            ],
-        },
-    )
+    """The old list of rounds: now the table view of Calls for partners, which lists every call."""
+    return redirect(reverse("solicitations:public_list") + "?view=table")
 
 
 def _outcome_figures(counts, undecided):

@@ -19,7 +19,7 @@ MARKETPLACE_MENU = Menu(
         Group(
             "Overview",
             (
-                Item("Programs", "marketplace:home"),
+                Item("Programs", "marketplace:home", public=True),
                 Item("Partners", "marketplace:network", owns=("/labs/marketplace/org/",)),
             ),
         ),
@@ -35,8 +35,14 @@ MARKETPLACE_MENU = Menu(
         Group(
             "Solicitations",
             (
-                Item("Calls for partners", "solicitations:public_list"),
-                Item("Expressions of interest", "marketplace:rounds"),
+                # One page for every call: cards or a table, open and past. A round's own
+                # analysis page (signed in) sits under it.
+                Item(
+                    "Calls for partners",
+                    "solicitations:public_list",
+                    owns=("/labs/marketplace/rounds/",),
+                    public=True,
+                ),
                 Item("Manage my calls", "solicitations:manage_list", owns=("/solicitations/o/",)),
             ),
         ),
@@ -58,7 +64,7 @@ MARKETPLACE_MENU = Menu(
         ),
         Group(
             "Suppliers",
-            (Item("Supplier marketplace", "supply_chain:market"),),
+            (Item("Supplier marketplace", "supply_chain:market", public=True),),
         ),
     ),
     # Public, token-scoped and kiosk pages: no menu, and nothing that leads a visitor out of them.
@@ -68,9 +74,9 @@ MARKETPLACE_MENU = Menu(
 
 
 def marketplace_rail_context(request) -> dict:
-    """Context processor: the marketplace rail for a signed-in person on a page it lists."""
-    user = getattr(request, "user", None)
-    if user is None or not user.is_authenticated or is_present_mode(request):
+    """Context processor: the marketplace rail on a page it lists. A visitor who is not
+    signed in gets it too, with only the pages they can open."""
+    if is_present_mode(request):
         return {}
     menu = build(MARKETPLACE_MENU, request)
     return {"expandable_rail_menu": menu} if menu else {}

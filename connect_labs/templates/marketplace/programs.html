@@ -40,6 +40,7 @@ always worded "up to" — see `queries.committed_by_program`.
     <h1 class="text-[26px] sm:text-3xl lg:text-4xl font-semibold text-white mt-1 leading-tight">Marketplace</h1>
 
     <div class="grid grid-cols-2 gap-x-6 gap-y-4 sm:flex sm:flex-wrap sm:gap-x-12 sm:gap-y-5 mt-6 sm:mt-7">
+      {% if user.is_authenticated %}
       <div>
         <div class="text-[23px] sm:text-[29px] font-semibold text-white tabular-nums">{{ totals.spent }}</div>
         <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">{% if costs_view == "spread" %}PAID OUT, INCL. STARTUP AND SUPPLIES{% else %}PAID OUT PER SERVICE{% endif %}</div>
@@ -54,20 +55,23 @@ always worded "up to" — see `queries.committed_by_program`.
         <div class="text-[23px] sm:text-[29px] font-semibold text-brand-marigold tabular-nums">{{ totals.remaining }}</div>
         <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">UP TO, STILL FUNDED</div>
       </div>
+      {% endif %}
       <div>
         <div class="text-[23px] sm:text-[29px] font-semibold text-white tabular-nums">{{ totals.services|intcomma }}</div>
         <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">SERVICES DELIVERED</div>
       </div>
+      {% if user.is_authenticated %}
       <div>
         <div class="text-[23px] sm:text-[29px] font-semibold text-white tabular-nums">{{ totals.applied }}</div>
         <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5" title="Organizations that answered at least one round tagged with a program. The network also counts directory organizations that have not applied.">ORGANIZATIONS HAVE APPLIED</div>
       </div>
+      {% endif %}
     </div>
 
     <div class="flex flex-col sm:flex-row sm:flex-wrap gap-3 mt-6 sm:mt-7">
-      <a href="{% url 'marketplace:rounds' %}"
+      <a href="{% url 'solicitations:public_list' %}"
          class="inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-2 bg-white text-brand-deep-purple text-sm font-semibold rounded-lg hover:bg-brand-marigold transition">
-        Expressions of interest
+        Calls for partners
         {% if open_round_count %}
           <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-bold tracking-wider bg-brand-mango text-white shadow-sm">{{ open_round_count }} OPEN</span>
         {% else %}
@@ -75,11 +79,13 @@ always worded "up to" — see `queries.committed_by_program`.
         {% endif %}
         <i class="fa-solid fa-arrow-right text-xs"></i>
       </a>
+      {% if user.is_authenticated %}
       <a href="{% url 'marketplace:network' %}"
          class="mk-ghost inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-2 border border-brand-sky/40 text-white text-sm font-medium rounded-lg transition">
         The network
         <span class="mk-ghost-sub text-[11.5px] text-brand-sky tabular-nums" title="Every organization in the LLO Directory, plus any that answered a round. {{ totals.applied }} of them have applied to a program; the rest are in the directory without an application.">{{ network.organisations }} organizations</span>
       </a>
+      {% endif %}
       <a href="{% url 'supply_chain:market' %}"
          class="mk-ghost inline-flex items-center justify-center sm:justify-start gap-2 px-4 py-2 border border-brand-sky/40 text-white text-sm font-medium rounded-lg transition">
         Supply tenders
@@ -91,6 +97,7 @@ always worded "up to" — see `queries.committed_by_program`.
 
 <div class="max-w-screen-2xl mx-auto px-0 sm:px-8 lg:px-10 py-6 sm:py-8">
 
+  {% if user.is_authenticated %}
   {# Start-up and other fixed costs: beside per-service pay, or spread into it. #}
   {# The same choice as the Pulse wall's, remembered across both.            #}
   <div class="flex flex-wrap items-center gap-2 mb-6 text-[12.5px]" id="costs-toggle">
@@ -100,6 +107,7 @@ always worded "up to" — see `queries.committed_by_program`.
     <a href="?costs=spread{% if font %}&font={{ font }}{% endif %}" data-costs="spread"
        class="px-3 py-1 rounded-full border {% if costs_view == 'spread' %}bg-brand-deep-purple text-white border-brand-deep-purple{% else %}border-gray-300 text-gray-600 hover:bg-brand-deep-purple/10 hover:border-brand-deep-purple hover:text-brand-deep-purple{% endif %}">spread into services</a>
   </div>
+  {% endif %}
 
   {% for section in sections %}
     <section class="{% if not forloop.first %}mt-12{% endif %}">
@@ -139,6 +147,7 @@ always worded "up to" — see `queries.committed_by_program`.
               {% endif %}
             </div>
 
+            {% if user.is_authenticated %}
             <div class="flex flex-col gap-1.5">
               {% if c.spent or c.remaining %}
                 {# Paid and still-funded on one line; startup and supplies gets #}
@@ -169,16 +178,18 @@ always worded "up to" — see `queries.committed_by_program`.
               {% endif %}
             </div>
 
-            {% if c.note %}<p class="text-[13px] text-gray-600 leading-relaxed">{{ c.note }}</p>{% endif %}
+            {% endif %}
+
+            {% if user.is_authenticated and c.note %}<p class="text-[13px] text-gray-600 leading-relaxed">{{ c.note }}</p>{% endif %}
 
             {# One three-column grid for the counts and their links, so "Who delivers #}
             {# it" sits under "delivering" and "Who has applied" under "applied".    #}
             <div class="border-t border-gray-100 pt-3 mt-auto grid grid-cols-3 gap-x-3 gap-y-1.5 text-[12px]">
               <span class="text-gray-600"><span class="font-semibold text-gray-900 tabular-nums">{{ c.delivering }}</span> delivering</span>
-              <span class="text-gray-600"><span class="font-semibold text-gray-900 tabular-nums">{{ c.applied }}</span> applied</span>
+              {% if user.is_authenticated %}<span class="text-gray-600"><span class="font-semibold text-gray-900 tabular-nums">{{ c.applied }}</span> applied</span>{% endif %}
               <span class="text-gray-600"><span class="font-semibold text-gray-900 tabular-nums">{{ c.rounds }}</span> round{{ c.rounds|pluralize }}</span>
-              <span>{% if c.delivering %}<a href="{% url 'marketplace:network' %}?delivered={{ c.slug }}" class="pg-hue font-medium whitespace-nowrap hover:underline">Who delivers it →</a>{% endif %}</span>
-              <span>{% if c.applied %}<a href="{% url 'marketplace:network' %}?applied={{ c.slug }}" class="pg-hue font-medium whitespace-nowrap hover:underline">Who has applied →</a>{% endif %}</span>
+              <span>{% if user.is_authenticated and c.delivering %}<a href="{% url 'marketplace:network' %}?delivered={{ c.slug }}" class="pg-hue font-medium whitespace-nowrap hover:underline">Who delivers it →</a>{% endif %}</span>
+              <span>{% if user.is_authenticated and c.applied %}<a href="{% url 'marketplace:network' %}?applied={{ c.slug }}" class="pg-hue font-medium whitespace-nowrap hover:underline">Who has applied →</a>{% endif %}</span>
             </div>
           </article>
         {% endfor %}
@@ -190,6 +201,7 @@ always worded "up to" — see `queries.committed_by_program`.
     </div>
   {% endfor %}
 
+  {% if user.is_authenticated %}
   <p class="mt-10 sm:mt-12 pt-5 border-t border-gray-200 text-[12.5px] text-gray-500 max-w-3xl leading-relaxed">
     Paid out and services delivered are the same figures the Pulse wall shows. Startup and supplies are costs Connect
     invoiced outside any unit of work; "spread into services" shares each opportunity's across its approved
@@ -197,6 +209,7 @@ always worded "up to" — see `queries.committed_by_program`.
     left on opportunities that are live today, converted to dollars at the rate Connect applied to their
     payments — an upper bound, since programs rarely spend their whole budget.
   </p>
+  {% endif %}
 </div>
 <script>
   // Remember the choice, shared with the Pulse wall. The link always wins;

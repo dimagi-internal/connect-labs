@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('labs', '0021_computed_cache_pipeline_id'),
+        ("labs", "0021_computed_cache_pipeline_id"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='rawvisitcache',
-            name='images_fetched',
+            model_name="rawvisitcache",
+            name="images_fetched",
             field=models.BooleanField(default=False),
         ),
     ]

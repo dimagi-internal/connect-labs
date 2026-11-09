@@ -24,6 +24,8 @@ class Item:
     owns: tuple[str, ...] = ()
     # Shown only to a signed-in user who passes this check (request -> bool).
     visible: object = None
+    # Also shown to a visitor who is not signed in. Everything else is for a signed-in person.
+    public: bool = False
 
 
 @dataclass(frozen=True)
@@ -58,10 +60,13 @@ def build(menu: Menu, request) -> dict | None:
     if any(path.startswith(p) for p in menu.never):
         return None
 
+    signed_in = bool(getattr(getattr(request, "user", None), "is_authenticated", False))
     groups, best, best_len = [], None, -1
     for g in menu.groups:
         items = []
         for it in g.items:
+            if not signed_in and not it.public:
+                continue
             if it.visible is not None and not it.visible(request):
                 continue
             url = _url(it.url_name)
