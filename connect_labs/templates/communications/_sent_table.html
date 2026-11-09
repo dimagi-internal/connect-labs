@@ -12,7 +12,24 @@
             <td class="px-2 py-2 break-all">{% if m.org %}{{ m.org.name }} · {% endif %}{{ m.to_email }}</td>
             <td class="px-2 py-2"><details><summary class="cursor-pointer">{{ m.subject }}</summary><div class="whitespace-pre-line text-gray-700 mt-2">{{ m.body }}</div>{% if m.reply_to %}<p class="text-gray-400 mt-1">Replies to {{ m.reply_to }}</p>{% endif %}</details></td>
             <td class="px-2 py-2 text-gray-500">{% if m.sent_by %}{{ m.sent_by.name|default:m.sent_by.username }}{% else %}labs (automatic){% endif %}</td>
-            <td class="px-5 py-2">{% if m.delivery == 'delivered' %}<span class="text-green-700">Sent</span>{% elif m.delivery == 'queued' %}<span class="text-gray-600">Sending</span>{% elif m.delivery == 'failed' %}<span class="text-red-600">Failed</span>{% else %}<span class="text-amber-700">Not sent</span>{% endif %}{% if m.effects.after_sent_error %}<div class="text-red-600">Follow-up step failed: {{ m.effects.after_sent_error }}</div>{% endif %}</td>
+            <td class="px-5 py-2" data-testid="delivery-{{ m.pk }}">
+                {% if m.delivery == 'delivered' %}<span class="text-green-700">Sent</span>
+                {% elif m.delivery == 'queued' %}<span class="text-gray-600">Sending</span>
+                {% elif m.delivery == 'failed' %}<span class="text-red-600">Failed</span>
+                {% elif m.delivery == 'unknown' %}<span class="text-amber-700" title="Handed to the mail service with no word back. Check with the recipient if it matters.">Outcome unknown</span>
+                {% else %}<span class="text-amber-700">Not sent</span>{% endif %}
+                {% if m.followup == 'failed' %}<div class="text-red-600">Follow-up failed{% if m.followup_attempts %} ({{ m.followup_attempts }} attempt{{ m.followup_attempts|pluralize }}){% endif %}: {{ m.followup_error|truncatechars:200 }}</div>
+                {% elif m.followup == 'pending' %}<div class="text-gray-500">Follow-up pending</div>{% endif %}
+                {% if can_settle %}
+                    {% if m.delivery == 'unknown' %}
+                    <form method="post" class="mt-1">{% csrf_token %}<input type="hidden" name="message" value="{{ m.pk }}">
+                        <button name="action" value="confirm_delivered" class="text-brand-indigo hover:underline" data-testid="confirm-delivered">It arrived: mark sent</button></form>
+                    {% elif m.delivery == 'delivered' and m.followup == 'failed' %}
+                    <form method="post" class="mt-1">{% csrf_token %}<input type="hidden" name="message" value="{{ m.pk }}">
+                        <button name="action" value="retry_followup" class="text-brand-indigo hover:underline" data-testid="retry-followup">Retry follow-up</button></form>
+                    {% endif %}
+                {% endif %}
+            </td>
         </tr>
     {% endfor %}
     </tbody>

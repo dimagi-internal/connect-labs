@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 # and log every attempt.
 MAX_RETRIES = 3
 RETRY_BACKOFF_SECONDS = 10
+# How long a recorded message waits for a worker with mail configured (a deploy in progress).
+NOT_CONFIGURED_RETRY_SECONDS = 120
 
 
 @celery_app.task(bind=True, max_retries=MAX_RETRIES)
@@ -80,28 +82,34 @@ def send_mail_async(
         raise self.retry(exc=exc, countdown=RETRY_BACKOFF_SECONDS * (2**self.request.retries))
 
     if not sent:
-        # NotConfiguredEmailBackend returns 0 by design. Don't retry — the
-        # environment will not become configured between attempts — but don't
-        # let it pass for a delivery either.
+        # NotConfiguredEmailBackend returns 0 by design, so nothing was delivered.
         logger.warning(
             "Email reported 0 messages sent: subject=%r to=%r backend=%s",
             subject,
             recipient_list,
             settings.EMAIL_BACKEND,
         )
+        if sent_message_id and self.request.retries < MAX_RETRIES:
+            # A recorded message was queued by a web task that had mail on: a
+            # worker without it is most likely one a deploy has not replaced yet.
+            # Hold it for a later worker rather than calling it not sent.
+            raise self.retry(countdown=NOT_CONFIGURED_RETRY_SECONDS)
     if sent_message_id:
         _report(sent_message_id, delivered=bool(sent), failed=False)
     return sent
 
 
 def _report(sent_message_id, *, delivered: bool, failed: bool) -> None:
-    """Tell communications what became of a message it recorded (never fails the send)."""
-    try:
-        from connect_labs.communications import service
+    """Tell communications what became of a message it recorded, as its own retried task.
 
-        if delivered:
-            service.delivered(sent_message_id)
-        else:
-            service.not_delivered(sent_message_id, failed=failed)
-    except Exception:  # noqa: BLE001 -- the email's fate is decided; a record that lags is logged
-        logger.exception("Could not record delivery of communications message %s", sent_message_id)
+    Separate from this one, so a database that is unavailable now delays the
+    record (and its follow-up) instead of losing it -- and retrying it never
+    resends the email. If even queueing that fails, the reconcile job finds the
+    message still waiting and marks its outcome unknown for a person to settle.
+    """
+    try:
+        from connect_labs.communications.tasks import record_delivery
+
+        record_delivery.delay(sent_message_id, delivered, failed)
+    except Exception:  # noqa: BLE001 -- the email's fate is decided; reconcile settles a lost record
+        logger.exception("Could not queue the delivery record of communications message %s", sent_message_id)

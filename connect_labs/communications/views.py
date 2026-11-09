@@ -110,6 +110,7 @@ class CommunicationView(OutboxPage):
             errors={**(service.problems(communication, kind) if communication.is_draft else {}), **(errors or {})},
             can_send=communication.is_draft and kind.can_send(caller, about, communication),
             emails_editable=kind.emails_editable,
+            can_settle=kind.can_send(caller, about, communication),
             placeholders=kind.placeholders,
             per_recipient=any(r.body for r in recipients),
             sent_messages=list(communication.sent_messages.select_related("org", "sent_by")),
@@ -136,6 +137,18 @@ class CommunicationView(OutboxPage):
                 service.discard(request, pk)
                 messages.success(request, "Draft discarded.")
                 return redirect("communications:outbox")
+            if action in ("confirm_delivered", "retry_followup"):
+                message_id = request.POST.get("message", "")
+                if not message_id.isdigit():
+                    raise Http404("Not found")
+                if action == "confirm_delivered":
+                    service.confirm_delivered(request, int(message_id))
+                    messages.success(request, "Marked sent.")
+                elif service.retry_followup(request, int(message_id)):
+                    messages.success(request, "Follow-up done.")
+                else:
+                    messages.error(request, "The follow-up failed again; the reason is shown below.")
+                return redirect("communications:detail", pk=pk)
             communication, kind, about = service.load(request, pk)
             if communication.is_draft:
                 data = {k: request.POST[k] for k in ("title", "subject", "body", "reply_to") if k in request.POST}

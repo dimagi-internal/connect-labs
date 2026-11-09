@@ -108,7 +108,14 @@ def _summary(communication, *, full: bool = False, user=None) -> dict[str, Any]:
                 "problems": service.problems(communication, kind) if communication.is_draft else {},
                 "preview": service.preview(user, communication.pk) if recipients and user is not None else None,
                 "sent": [
-                    {"to": m.to_email, "subject": m.subject, "delivery": m.delivery, "sent_at": m.sent_at.isoformat()}
+                    {
+                        "to": m.to_email,
+                        "subject": m.subject,
+                        "delivery": m.delivery,
+                        "followup": m.followup,
+                        "followup_error": m.followup_error,
+                        "sent_at": m.sent_at.isoformat(),
+                    }
                     for m in communication.sent_messages.all()
                 ],
             }
