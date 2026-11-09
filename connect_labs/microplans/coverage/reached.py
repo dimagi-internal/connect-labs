@@ -1,5 +1,9 @@
 """Buildings reached: how much of an area's building stock did a set of recorded points get to?
 
+Which areas to compute over is ``labs.admin_boundaries.placement``'s question (``place(points)`` and
+``LevelPlacement.areas()``), shared with the impact model and Pulse, so this module only holds the
+building-specific part.
+
 The microplanner decides what a "building" is (``fetch_buildings`` + ``apply_frame_filters``);
 this module asks the inverse question of delivery that was NOT planned on those buildings: given
 where visits were recorded, which buildings did the work get close to? It is the footprint method
@@ -170,33 +174,3 @@ def reached_by_cycle(
         by_cycle[c] = int(mask.sum())
         cumulative[c] = int(ever.sum())
     return ReachedResult(buildings=n, reached_ever=int(ever.sum()), by_cycle=by_cycle, cumulative=cumulative)
-
-
-def points_by_area(points: pd.DataFrame, areas: dict) -> dict:
-    """How many points fall in each area. ``areas`` maps an id to a shapely (Multi)Polygon in lon/lat.
-    A point is counted in the first area that contains it; the remainder is under the key ``None``."""
-    from shapely import STRtree
-    from shapely.geometry import Point
-
-    ids = list(areas)
-    geoms = [areas[i] for i in ids]
-    tree = STRtree(geoms)
-    counts = {i: 0 for i in ids}
-    counts[None] = 0
-    for lon, lat in zip(points["lon"].to_numpy(float), points["lat"].to_numpy(float)):
-        pt = Point(lon, lat)
-        hit = next((int(j) for j in sorted(tree.query(pt)) if geoms[int(j)].covers(pt)), None)
-        counts[None if hit is None else ids[hit]] += 1
-    return counts
-
-
-def infer_areas(points: pd.DataFrame, areas: dict, *, min_share: float = 0.01) -> list:
-    """The areas the campaign evidently worked in: those holding at least ``min_share`` of the points,
-    largest first. Answers "which admin boundaries was this aimed at?" from where the points are, so the
-    coverage denominator is a set of whole areas chosen by the evidence and not by an assumption."""
-    counts = points_by_area(points, areas)
-    total = sum(counts.values())
-    if not total:
-        return []
-    chosen = [(a, n) for a, n in counts.items() if a is not None and n / total >= min_share]
-    return [a for a, _ in sorted(chosen, key=lambda t: -t[1])]

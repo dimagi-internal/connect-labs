@@ -3,7 +3,6 @@
 import numpy as np
 import pandas as pd
 import pytest
-from shapely.geometry import box
 
 from connect_labs.microplans.coverage import reached
 
@@ -96,17 +95,3 @@ def test_cleaning_uses_the_microplanners_own_filters():
 
     assert len(reached.clean_buildings(b)) == 9
     assert len(reached.clean_buildings(b, FilterConfig(area_max_m2=10_000))) == 10
-
-
-def test_infer_which_areas_the_points_were_aimed_at():
-    areas = {
-        "A": box(LON0 - 0.1, LAT0 - 0.1, LON0 + 0.1, LAT0 + 0.1),
-        "B": box(LON0 + 0.1, LAT0 - 0.1, LON0 + 0.3, LAT0 + 0.1),
-        "C": box(LON0 + 0.3, LAT0 - 0.1, LON0 + 0.5, LAT0 + 0.1),
-    }
-    pts = pd.DataFrame({"lon": [LON0] * 80 + [LON0 + 0.2] * 19 + [LON0 + 0.4] + [LON0 + 5], "lat": [LAT0] * 101})
-    counts = reached.points_by_area(pts, areas)
-    assert counts == {"A": 80, "B": 19, "C": 1, None: 1}
-    assert reached.infer_areas(pts, areas, min_share=0.05) == ["A", "B"]
-    assert reached.infer_areas(pts, areas, min_share=0.005) == ["A", "B", "C"]
-    assert reached.infer_areas(pts.iloc[0:0], areas) == []
