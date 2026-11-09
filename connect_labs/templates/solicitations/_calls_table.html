@@ -1,0 +1,57 @@
+{% comment %}
+Every call as one sortable table: open first, then closed. Expects `table_rows`
+and `signed_in`. How many organisations answered, and the link into a round's
+analysis, are for a signed-in person only.
+{% endcomment %}
+{% if table_rows %}
+<div class="bg-white rounded-lg shadow-sm overflow-hidden mb-8" data-testid="calls-table">
+  <div class="overflow-x-auto">
+    <table class="sortable min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 sm:px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" data-sort>Call</th>
+          <th class="px-4 sm:px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" data-sort>Status</th>
+          <th class="hidden sm:table-cell px-4 sm:px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" data-sort>Date</th>
+          <th class="hidden lg:table-cell px-4 sm:px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" data-sort>Program</th>
+          <th class="hidden xl:table-cell px-4 sm:px-5 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" data-sort>Where</th>
+          {% if signed_in %}
+          <th class="px-4 sm:px-5 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" data-sort>Applicants</th>
+          <th class="hidden md:table-cell px-4 sm:px-5 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" data-sort>Organizations</th>
+          <th class="hidden lg:table-cell px-4 sm:px-5 py-3 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Analysis</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for r in table_rows %}
+        <tr class="hover:bg-gray-50 transition">
+          <td class="px-4 sm:px-5 py-3" data-sort-value="{{ r.title }}">
+            <a href="{{ r.url }}" class="flex items-center gap-2.5">
+              <span class="text-[10px] font-semibold tracking-wider px-1.5 py-0.5 rounded {% if r.type == 'rfp' %}bg-red-50 text-red-800{% else %}bg-indigo-50 text-brand-indigo{% endif %}">{{ r.type|upper }}</span>
+              <span class="text-[13.5px] font-medium text-brand-deep-purple">{{ r.title }}</span>
+            </a>
+            <div class="text-[11.5px] text-gray-500 mt-0.5 ml-[2.4rem]">{{ r.owner }}</div>
+          </td>
+          <td class="px-4 sm:px-5 py-3 whitespace-nowrap" data-sort-value="{% if r.open %}0{% else %}1{% endif %}">
+            {% if r.open %}<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>Open</span>{% else %}<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700"><span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>Closed</span>{% endif %}
+          </td>
+          <td class="hidden sm:table-cell px-4 sm:px-5 py-3 text-[12.5px] text-gray-600 whitespace-nowrap" data-sort-value="{{ r.when|date:'Y-m-d' }}">{% if r.when %}{% if r.open %}Deadline {% endif %}{{ r.when|date:"j M Y" }}{% else %}—{% endif %}</td>
+          <td class="hidden lg:table-cell px-4 sm:px-5 py-3 text-[12.5px] text-gray-600">{{ r.program|default:"—" }}</td>
+          <td class="hidden xl:table-cell px-4 sm:px-5 py-3 text-[12.5px] text-gray-600">{{ r.where|default:"—"|truncatechars:48 }}</td>
+          {% if signed_in %}
+          <td class="px-4 sm:px-5 py-3 text-[13px] text-gray-900 text-right tabular-nums font-medium" data-sort-value="{{ r.applications|default_if_none:'-1' }}">{% if r.applications is not None %}{{ r.applications }}{% else %}—{% endif %}</td>
+          <td class="hidden md:table-cell px-4 sm:px-5 py-3 text-[13px] text-gray-600 text-right tabular-nums" data-sort-value="{{ r.organisations|default_if_none:'-1' }}">{% if r.organisations is not None %}{{ r.organisations }}{% else %}—{% endif %}</td>
+          <td class="hidden lg:table-cell px-4 sm:px-5 py-3 text-right text-[12.5px]">{% if r.analysis_url %}<a href="{{ r.analysis_url }}" class="text-brand-cornflower-blue hover:underline">This round on the marketplace</a>{% endif %}</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="bg-white rounded-lg shadow-sm text-center py-8 sm:py-10 px-4 mb-10">
+  <i class="fa-solid fa-box-open text-4xl text-gray-300 mb-3"></i>
+  <h3 class="card_title mb-2">No calls match</h3>
+  <p class="card_description">Try a different search, or <a href="{% url 'solicitations:public_list' %}?view=table" class="text-brand-cornflower-blue hover:underline">see every call</a>.</p>
+</div>
+{% endif %}

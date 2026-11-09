@@ -104,12 +104,21 @@ def marketplace(db):
 
 @pytest.mark.django_db
 class TestAccess:
-    def test_every_marketplace_page_requires_a_login(self, client, marketplace):
+    def test_the_landing_page_is_public(self, client, marketplace):
+        assert client.get(reverse("marketplace:home")).status_code == 200
+
+    def test_a_visitor_sees_the_money_but_no_applicant_counts_on_the_landing_page(self, client, marketplace):
+        body = client.get(reverse("marketplace:home")).content.decode()
+        for public in ("SERVICES DELIVERED", "PAID OUT", "STILL FUNDED"):
+            assert public in body, public
+        for private in ("ORGANIZATIONS HAVE APPLIED", " applied</span>", "Who has applied"):
+            assert private not in body, private
+        assert reverse("marketplace:network") not in body
+
+    def test_every_other_marketplace_page_requires_a_login(self, client, marketplace):
         """Submission text is what an organisation wrote while applying for work."""
         for name, args in [
-            ("marketplace:home", []),
             ("marketplace:network", []),
-            ("marketplace:rounds", []),
             ("marketplace:round", ["chc-2025"]),
             ("marketplace:network_points", []),
         ]:
@@ -127,7 +136,7 @@ def test_no_page_leaks_a_template_comment(client, user, marketplace):
     for name, args in [
         ("marketplace:home", []),
         ("marketplace:network", []),
-        ("marketplace:rounds", []),
+        ("solicitations:public_list", []),
         ("marketplace:round", ["chc-2025"]),
         ("marketplace:organisation", [marketplace["live"].slug]),
         ("marketplace:unmatched", []),
@@ -148,10 +157,10 @@ class TestHome:
         assert "SERVICES DELIVERED" in body
         assert "every round they have answered" not in body
 
-    def test_leads_to_the_rounds_and_the_network(self, client, user, marketplace):
+    def test_leads_to_the_calls_and_the_network(self, client, user, marketplace):
         client.force_login(user)
         body = client.get(reverse("marketplace:home")).content.decode()
-        assert reverse("marketplace:rounds") in body
+        assert reverse("solicitations:public_list") in body
         assert reverse("marketplace:network") in body
 
     def test_says_organizations_not_organisations(self, client, user, marketplace):
@@ -177,10 +186,9 @@ class TestHome:
 
 @pytest.mark.django_db
 class TestRoundsPage:
-    def test_separates_open_rounds_from_closed_ones(self, client, user, marketplace):
+    def test_lists_open_and_closed_rounds_in_the_table_view(self, client, user, marketplace):
         client.force_login(user)
-        body = client.get(reverse("marketplace:rounds")).content.decode()
-        assert "Open now" in body
+        body = client.get(reverse("solicitations:public_list"), {"view": "table"}).content.decode()
         assert "Matching Grant Pilot" in body
         assert "Community Health Campaign" in body
 

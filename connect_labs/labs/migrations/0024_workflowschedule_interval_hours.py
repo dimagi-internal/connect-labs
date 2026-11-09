@@ -6,18 +6,28 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('labs', '0023_labsorg'),
+        ("labs", "0023_labsorg"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='workflowschedule',
-            name='interval_hours',
+            model_name="workflowschedule",
+            name="interval_hours",
             field=models.PositiveSmallIntegerField(blank=True, null=True),
         ),
         migrations.AlterField(
-            model_name='workflowschedule',
-            name='cadence',
-            field=models.CharField(choices=[('daily', 'Daily'), ('interval', 'Every N hours'), ('weekdays', 'Weekdays (Mon–Fri)'), ('weekly', 'Weekly'), ('biweekly', 'Every 2 weeks'), ('monthly', 'Monthly')], max_length=16),
+            model_name="workflowschedule",
+            name="cadence",
+            field=models.CharField(
+                choices=[
+                    ("daily", "Daily"),
+                    ("interval", "Every N hours"),
+                    ("weekdays", "Weekdays (Mon–Fri)"),
+                    ("weekly", "Weekly"),
+                    ("biweekly", "Every 2 weeks"),
+                    ("monthly", "Monthly"),
+                ],
+                max_length=16,
+            ),
         ),
     ]

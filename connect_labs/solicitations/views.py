@@ -11,6 +11,7 @@ nothing private is on them. Responding, managing, reviewing and awarding need a
 login.
 """
 
+import datetime
 import json
 import logging
 
@@ -645,8 +646,14 @@ class PublicSolicitationListView(SolicitationsPage):
         open_rounds = _search_past(open_rounds, query)
         open_calls, closed = _split_open_closed(calls)
 
+        view = "table" if q.get("view") == "table" else "cards"
+        signed_in = bool(self.request.user.is_authenticated)
+
         ctx.update(
             {
+                "view": view,
+                "signed_in": signed_in,
+                "table_rows": _table_rows(open_rounds, open_calls, closed, past, signed_in) if view == "table" else [],
                 "solicitations": open_calls,
                 "open_rounds": open_rounds,
                 "open_count": len(open_rounds) + len(open_calls),
@@ -785,6 +792,48 @@ class PastCallDetailView(SolicitationsPage):
             }
         )
         return ctx
+
+
+def _table_rows(open_rounds, open_calls, closed, past, signed_in) -> list[dict]:
+    """Every call as one row: open first, then closed, newest first.
+
+    Directory rounds and calls made in Solicitations sit in one table. How many
+    organisations answered, and the link into the round's analysis, are for a
+    signed-in person only: a visitor sees the call, never how many applied.
+    """
+    counts = {}
+    if signed_in:
+        from connect_labs.marketplace.queries import rounds_with_counts
+
+        counts = {r.slug: (r.applications, r.organisations) for r in rounds_with_counts()}
+
+    def row(call, *, is_round, is_open):
+        when = call.application_deadline or getattr(call, "published_on", None)
+        applications, organisations = counts.get(call.slug, (None, None)) if is_round else (None, None)
+        return {
+            "title": call.title,
+            "url": (
+                reverse("solicitations:past_detail", args=[call.slug])
+                if is_round
+                else reverse("solicitations:public_detail", args=[call.public_id])
+            ),
+            "type": call.solicitation_type,
+            "open": is_open,
+            "when": when,
+            "where": getattr(call, "target_countries", "") or "",
+            "program": call.program_label,
+            "owner": past_calls.owner().name if is_round else call.owner_name,
+            "applications": applications,
+            "organisations": organisations,
+            "analysis_url": reverse("marketplace:round", args=[call.slug]) if is_round and signed_in else "",
+        }
+
+    rows = [row(c, is_round=True, is_open=True) for c in open_rounds]
+    rows += [row(c, is_round=False, is_open=True) for c in open_calls]
+    closed_rows = [row(c, is_round=False, is_open=False) for c in closed]
+    closed_rows += [row(c, is_round=True, is_open=False) for c in past]
+    closed_rows.sort(key=lambda r: (r["when"] is not None, r["when"] or datetime.date.min), reverse=True)
+    return rows + closed_rows
 
 
 def _search_past(calls, query):

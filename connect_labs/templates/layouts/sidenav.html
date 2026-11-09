@@ -73,13 +73,10 @@ accessibility tree); from md up it is always visible.
         {# The marketplace, calls for partners and the programme's supply chain. The #}
         {# solicitations directory is public, so it is offered to everyone.        #}
         <div class="mt-5">
-            {% if request.user.is_authenticated %}
-                {% url 'marketplace:home' as marketplace_url %}
-                {% include "components/sidenav-items.html" with name='Marketplace' icon='handshake' target=marketplace_url namespace='marketplace' %}
-            {% endif %}
-            {# Calls for partners are public too: anyone can read them, signed in or not. #}
-            {% url 'solicitations:public_list' as solicitations_url %}
-            {% include "components/sidenav-items.html" with name='Solicitations' icon='bullhorn' target=solicitations_url namespace='solicitations' %}
+            {# The Marketplace is the way in for everyone: its landing page and its Solicitations pages #}
+            {# are public, and the menu beside it lists only what a visitor can open.                 #}
+            {% url 'marketplace:home' as marketplace_url %}
+            {% include "components/sidenav-items.html" with name='Marketplace' icon='handshake' target=marketplace_url namespace='marketplace' %}
             {% url 'supply_chain:market' as supply_market_url %}
             {% if request.user.is_authenticated %}
                 {# The programme's supply chain. Its pages draw their own menu beside this bar (supply_chain/_rail.html); this item says where you are. #}

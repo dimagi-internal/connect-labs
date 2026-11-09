@@ -224,12 +224,12 @@ class TestThePage:
         assert "up to" in body.lower()
         assert "committed" not in body.lower()
 
-    def test_requires_login(self, client, market):
-        assert client.get(reverse("marketplace:home")).status_code == 302
+    def test_is_public(self, client, market):
+        assert client.get(reverse("marketplace:home")).status_code == 200
 
-    def test_it_leads_to_the_rounds_it_drills_into(self, client, user, market):
+    def test_it_leads_to_the_calls_it_drills_into(self, client, user, market):
         client.force_login(user)
-        assert reverse("marketplace:rounds") in client.get(reverse("marketplace:home")).content.decode()
+        assert reverse("solicitations:public_list") in client.get(reverse("marketplace:home")).content.decode()
 
 
 @pytest.mark.django_db

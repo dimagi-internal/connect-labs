@@ -43,103 +43,135 @@ def users_to_testers(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('labs', '0028_workspace_tester'),
+        ("labs", "0028_workspace_tester"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='WorkspaceAccess',
+            name="WorkspaceAccess",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('role', models.CharField(max_length=32)),
-                ('teams', models.JSONField(blank=True, default=list)),
-                ('explicit', models.BooleanField(default=False)),
-                ('first_seen', models.DateTimeField(auto_now_add=True)),
-                ('last_seen', models.DateTimeField(default=django.utils.timezone.now)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("role", models.CharField(max_length=32)),
+                ("teams", models.JSONField(blank=True, default=list)),
+                ("explicit", models.BooleanField(default=False)),
+                ("first_seen", models.DateTimeField(auto_now_add=True)),
+                ("last_seen", models.DateTimeField(default=django.utils.timezone.now)),
             ],
             options={
-                'db_table': 'labs_workspace_access',
+                "db_table": "labs_workspace_access",
             },
         ),
         migrations.CreateModel(
-            name='WorkspaceLLO',
+            name="WorkspaceLLO",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('slug', models.CharField(max_length=200)),
-                ('name', models.CharField(blank=True, max_length=255)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("slug", models.CharField(max_length=200)),
+                ("name", models.CharField(blank=True, max_length=255)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
             ],
             options={
-                'db_table': 'labs_workspace_llo',
-                'ordering': ['created_at', 'pk'],
+                "db_table": "labs_workspace_llo",
+                "ordering": ["created_at", "pk"],
             },
         ),
         migrations.CreateModel(
-            name='WorkspaceUser',
+            name="WorkspaceUser",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('email', models.CharField(max_length=254)),
-                ('role', models.CharField(choices=[('program_manager', 'Program Manager'), ('network_manager', 'Network Manager')], max_length=32)),
-                ('team', models.CharField(blank=True, default='', max_length=200)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("email", models.CharField(max_length=254)),
+                (
+                    "role",
+                    models.CharField(
+                        choices=[("program_manager", "Program Manager"), ("network_manager", "Network Manager")],
+                        max_length=32,
+                    ),
+                ),
+                ("team", models.CharField(blank=True, default="", max_length=200)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
             ],
             options={
-                'db_table': 'labs_workspace_user',
-                'ordering': ['created_at', 'pk'],
+                "db_table": "labs_workspace_user",
+                "ordering": ["created_at", "pk"],
             },
         ),
         migrations.AddField(
-            model_name='workspaceaccess',
-            name='user',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='+', to=settings.AUTH_USER_MODEL),
+            model_name="workspaceaccess",
+            name="user",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE, related_name="+", to=settings.AUTH_USER_MODEL
+            ),
         ),
         migrations.AddField(
-            model_name='workspaceaccess',
-            name='workspace',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='accesses', to='labs.workspace'),
+            model_name="workspaceaccess",
+            name="workspace",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE, related_name="accesses", to="labs.workspace"
+            ),
         ),
         migrations.AddField(
-            model_name='workspacello',
-            name='added_by',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to=settings.AUTH_USER_MODEL),
+            model_name="workspacello",
+            name="added_by",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="+",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
         migrations.AddField(
-            model_name='workspacello',
-            name='workspace',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='llos', to='labs.workspace'),
+            model_name="workspacello",
+            name="workspace",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE, related_name="llos", to="labs.workspace"
+            ),
         ),
         migrations.AddField(
-            model_name='workspaceuser',
-            name='added_by',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to=settings.AUTH_USER_MODEL),
+            model_name="workspaceuser",
+            name="added_by",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="+",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
         migrations.AddField(
-            model_name='workspaceuser',
-            name='user',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to=settings.AUTH_USER_MODEL),
+            model_name="workspaceuser",
+            name="user",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="+",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
         migrations.AddField(
-            model_name='workspaceuser',
-            name='workspace',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='users', to='labs.workspace'),
+            model_name="workspaceuser",
+            name="workspace",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE, related_name="users", to="labs.workspace"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='workspaceaccess',
-            constraint=models.UniqueConstraint(fields=('workspace', 'user'), name='labs_workspace_access_once'),
+            model_name="workspaceaccess",
+            constraint=models.UniqueConstraint(fields=("workspace", "user"), name="labs_workspace_access_once"),
         ),
         migrations.AddConstraint(
-            model_name='workspacello',
-            constraint=models.UniqueConstraint(fields=('workspace', 'slug'), name='labs_workspace_llo_once'),
+            model_name="workspacello",
+            constraint=models.UniqueConstraint(fields=("workspace", "slug"), name="labs_workspace_llo_once"),
         ),
         migrations.AddConstraint(
-            model_name='workspaceuser',
-            constraint=models.UniqueConstraint(fields=('workspace', 'email'), name='labs_workspace_user_once'),
+            model_name="workspaceuser",
+            constraint=models.UniqueConstraint(fields=("workspace", "email"), name="labs_workspace_user_once"),
         ),
         # Every tester becomes a Network Manager entry on the Users list, by email.
         migrations.RunPython(testers_to_users, users_to_testers),
         migrations.DeleteModel(
-            name='WorkspaceTester',
+            name="WorkspaceTester",
         ),
     ]

@@ -8,7 +8,7 @@
 
   <div class="text-[12.5px] text-gray-500 mb-3.5">
     <a href="{% url 'marketplace:home' %}" class="hover:text-gray-700">Marketplace</a> ·
-    <a href="{% url 'marketplace:rounds' %}" class="hover:text-gray-700">Expressions of interest</a> ·
+    <a href="{% url 'solicitations:public_list' %}?view=table" class="hover:text-gray-700">Calls for partners</a> ·
     <span class="text-gray-900">{{ round.title }}</span>
   </div>
 
@@ -217,7 +217,7 @@
           {% endif %}
           <div class="text-[10.5px] font-semibold text-gray-400 tracking-wider">IN LABS</div>
           <a href="{% url 'solicitations:respond' round.public_id %}" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
-            <i class="fa-regular fa-rectangle-list text-[11px]"></i> The form
+            <i class="fa-regular fa-rectangle-list text-[11px]"></i> Response Form
           </a>
           {% if can_read %}
             <a href="{% url 'solicitations:contact_applicants' round.public_id %}" data-testid="contact-applicants-link" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">

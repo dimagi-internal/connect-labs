@@ -89,7 +89,7 @@ class TestTheHeader:
 class TestTheMarketplace:
     def test_opts_out_of_the_selector_and_into_the_widget(self, client, django_user_model):
         client.force_login(django_user_model.objects.create_user(username="staff", password="x"))
-        for name in ("marketplace:home", "marketplace:rounds", "marketplace:network", "marketplace:unmatched"):
+        for name in ("marketplace:home", "marketplace:network", "marketplace:unmatched"):
             html = client.get(reverse(name)).content.decode()
             assert SELECTOR not in html, name
             assert WIDGET in html, name
