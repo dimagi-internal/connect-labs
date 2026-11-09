@@ -445,29 +445,57 @@
       by[k].usd += r.total_usd; by[k].n += 1;
     });
     var items = Object.values(by).sort(function (a, b) { return b.usd - a.usd; });
-    var W = Math.max(svg.parentNode.clientWidth - 4, 360), L = Math.min(300, W * 0.4), R = 120, rh = 22;
-    var H = Math.max(items.length * rh + 10, 40);
-    svg.setAttribute("width", W); svg.setAttribute("height", H);
+    var W = Math.max(svg.parentNode.clientWidth - 4, 260), R = 120;
     var max = Math.max.apply(null, items.map(function (i) { return i.usd; }).concat([1]));
-    items.forEach(function (it, i) {
-      var y = 4 + i * rh;
-      el("text", { x: L - 8, y: y + 14, "text-anchor": "end", "font-size": 12, fill: "#1f2433" }, svg).textContent = it.k;
-      el("rect", { x: L, y: y + 3, width: Math.max(1, (W - L - R) * it.usd / max), height: rh - 8, rx: 2, fill: COL.none }, svg);
-      el("text", { x: L + (W - L - R) * it.usd / max + 6, y: y + 14, "font-size": 11, fill: "#6b7280" }, svg).textContent =
-        usd(it.usd) + " · " + it.n + " opp" + (it.n === 1 ? "" : "s");
+    function amount(it) { return usd(it.usd) + " · " + it.n + " opp" + (it.n === 1 ? "" : "s"); }
+    // Size the label column to the longest label, so "Kangaroo Mother Care (outside the models'
+    // countries)" is not cut off on the left. Floor by character count: measured before the web
+    // font loads, the text reads narrower.
+    var longest = 0;
+    items.forEach(function (it) {
+      var t = el("text", { "font-size": 12 }, svg); t.textContent = it.k;
+      longest = Math.max(longest, t.getComputedTextLength(), it.k.length * 6.6); svg.removeChild(t);
     });
+    var L = Math.max(longest + 16, 120);
+    if (L <= W * 0.55) {
+      // Wide: label column on the left, bar to its right.
+      var rh = 22;
+      svg.setAttribute("width", W); svg.setAttribute("height", Math.max(items.length * rh + 10, 40));
+      items.forEach(function (it, i) {
+        var y = 4 + i * rh, bw = (W - L - R) * it.usd / max;
+        el("text", { x: L - 8, y: y + 14, "text-anchor": "end", "font-size": 12, fill: "#1f2433" }, svg).textContent = it.k;
+        el("rect", { x: L, y: y + 3, width: Math.max(1, bw), height: rh - 8, rx: 2, fill: COL.none }, svg);
+        el("text", { x: L + bw + 6, y: y + 14, "font-size": 11, fill: "#6b7280" }, svg).textContent = amount(it);
+      });
+    } else {
+      // Narrow (a phone): each label on its own line, its bar underneath.
+      var rh2 = 38;
+      svg.setAttribute("width", W); svg.setAttribute("height", Math.max(items.length * rh2 + 6, 40));
+      items.forEach(function (it, i) {
+        var y = 4 + i * rh2, bw = (W - R) * it.usd / max;
+        el("text", { x: 0, y: y + 12, "font-size": 12, fill: "#1f2433" }, svg).textContent = it.k;
+        el("rect", { x: 0, y: y + 18, width: Math.max(1, bw), height: 12, rx: 2, fill: COL.none }, svg);
+        el("text", { x: bw + 6, y: y + 28, "font-size": 11, fill: "#6b7280" }, svg).textContent = amount(it);
+      });
+    }
   }
 
   // ---------- table ----------
   var sortKey = null, sortDir = 1;
+  // The result columns come straight after the name: the table is wider than its box, and the
+  // multiple and status are what a reader came for, so they must not sit past the right edge.
   var COLS = [
-    ["rank", "#", "n"], ["name", "Opportunity"], ["service_name", "Delivery type"], ["country_name", "Country"],
-    ["total_usd", "Total cost", "n", usd], ["reached", "People", "n", function (v, r) { return num(v) + (r && r.reach_basis === "busiest_payment_unit" ? " <i title=\"Busiest payment unit, not yet a distinct count\">estimate</i>" : ""); }],
-    ["works_per_person", "Work / person", "n", function (v) { return v == null ? "–" : num(v, 2); }],
+    ["rank", "#", "n"], ["name", "Opportunity"],
+    ["x", "x at actual cost", "n", xfmt], ["status_text", "Status"],
+    ["reached", "People", "n", function (v, r) { return num(v) + (r && r.reach_basis === "busiest_payment_unit" ? " <i title=\"Busiest payment unit, not yet a distinct count\">estimate</i>" : ""); },
+     "Distinct people with approved work (see the notes below)"],
     ["cost_per_person", "Cost / person", "n", usd], ["model_cost_per_person", "Model price", "n", usd],
-    ["model_x", "Model x", "n", xfmt], ["x", "x at actual cost", "n", xfmt],
+    ["model_x", "Model x", "n", xfmt],
     ["deaths_averted", "Deaths averted", "n", function (v) { return v == null ? "–" : num(v, 1); }],
-    ["cost_per_death", "$ / death", "n", usd], ["status_text", "Status"],
+    ["cost_per_death", "$ / death", "n", usd], ["total_usd", "Total cost", "n", usd],
+    ["works_per_person", "Work / person", "n", function (v) { return v == null ? "–" : num(v, 2); },
+     "Approved work per person: how far people got through a longitudinal programme"],
+    ["service_name", "Delivery type"], ["country_name", "Country"],
   ];
   function table(rows) {
     var t = document.getElementById("tbl");
@@ -478,7 +506,7 @@
       return (x > y ? 1 : x < y ? -1 : 0) * sortDir;
     });
     var h = "<thead><tr>" + COLS.map(function (c) {
-      return '<th data-k="' + c[0] + '" class="' + (c[2] || "") + '">' + c[1] + (sortKey === c[0] ? (sortDir > 0 ? " ▲" : " ▼") : "") + "</th>";
+      return '<th data-k="' + c[0] + '" class="' + (c[2] || "") + '"' + (c[4] ? ' title="' + esc(c[4]) + '"' : "") + ">" + c[1] + (sortKey === c[0] ? (sortDir > 0 ? " ▲" : " ▼") : "") + "</th>";
     }).join("") + "</tr></thead><tbody>";
     h += list.map(function (r) {
       return "<tr>" + COLS.map(function (c) {
