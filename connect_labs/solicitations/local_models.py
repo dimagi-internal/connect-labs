@@ -204,6 +204,11 @@ class Solicitation(models.Model):
     # The round's written summary (a shortlist report, usually a Google Doc):
     # the reasoning lives there, so the round links to it rather than copying it.
     summary_url = models.URLField(max_length=500, blank=True, default="")
+    # The countries the round's funders put first, as ISO 3166 names, in the
+    # order they were given. Empty means the round has no priorities. The round
+    # page lists these ahead of the rest and splits its arrivals chart by them,
+    # and the AI review weighs geography against them.
+    priority_countries = models.JSONField(default=list, blank=True)
 
     # Connect's own `delivery_type` — the same vocabulary the pulse spine tags
     # every opportunity with, so "applied to a malaria round" and "delivered

@@ -524,6 +524,29 @@ class TestTheSubmissionTrend:
     def test_the_busiest_bucket_is_full_height(self, spread):
         assert max(b["pct"] for b in queries.submission_trend(spread)) == 100.0
 
+    def test_priority_countries_split_each_bar_and_head_the_country_list(self, spread):
+        import datetime as dt
+
+        for i, (name, country) in enumerate([("Niger", "Niger"), ("Peru", "Peru"), ("Niger2", "Niger")]):
+            SolicitationResponse.objects.create(
+                solicitation=spread,
+                source_row=50 + i,
+                org_name=name,
+                country_as_submitted=country,
+                match_state="unmatched",
+                submission_date=dt.datetime(2025, 2, 3, 9, tzinfo=dt.timezone.utc),
+            )
+        assert all(b["priority"] == 0 for b in queries.submission_trend(spread))  # no priorities set
+
+        spread.priority_countries = ["Niger", "Somalia"]
+        spread.save()
+        trend = queries.submission_trend(spread)
+        assert trend[0]["priority"] == 2 and trend[0]["priority_pct"] == round(2 * 100 / trend[0]["count"], 1)
+
+        mix = queries.round_mix(spread, queries.round_applicants(spread, {}))
+        assert mix["priority"] == [("Niger", 2), ("Somalia", 0)]  # priority order, shown even at zero
+        assert "Niger" not in dict(mix["countries"])
+
     def test_a_short_round_buckets_by_day(self, db):
         import datetime as dt
 
