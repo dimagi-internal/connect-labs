@@ -125,9 +125,16 @@
     </form>
     {% else %}
         <div class="bg-white rounded-xl shadow-sm overflow-hidden" data-testid="sent-messages">
-            <h2 class="px-5 py-3 border-b border-gray-100 text-sm font-semibold text-brand-deep-purple">
-                {% if communication.status == 'sent' %}Sent {{ communication.sent_at|date:"j M Y H:i" }} by {{ communication.sent_by.name|default:communication.sent_by.username }}{% else %}Discarded{% endif %}
-            </h2>
+            <div class="px-5 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
+                <h2 class="text-sm font-semibold text-brand-deep-purple">
+                    {% if communication.status == 'sent' %}Sent {{ communication.sent_at|date:"j M Y H:i" }} by {{ communication.sent_by.name|default:communication.sent_by.username }}{% else %}Discarded{% endif %}
+                </h2>
+                {% if can_settle and sent_messages %}
+                <form method="post">{% csrf_token %}
+                    <button name="action" value="check_delivery" class="text-xs px-3 py-1.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50" data-testid="check-delivery" title="Marks emails with no word back for 2 hours as outcome unknown, and retries failed follow-ups. Sends nothing.">Check delivery</button>
+                </form>
+                {% endif %}
+            </div>
             {% include "communications/_sent_table.html" with rows=sent_messages can_settle=can_settle %}
         </div>
     {% endif %}

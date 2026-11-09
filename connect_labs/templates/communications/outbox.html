@@ -40,7 +40,14 @@
 
     {% if about and sent_messages %}
     <section class="bg-white rounded-xl shadow-sm overflow-hidden" data-testid="correspondence">
-        <h2 class="px-5 py-3 border-b border-gray-100 text-sm font-semibold text-brand-deep-purple">Every email sent about this ({{ sent_messages|length }})</h2>
+        <div class="px-5 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
+            <h2 class="text-sm font-semibold text-brand-deep-purple">Every email sent about this ({{ sent_messages|length }})</h2>
+            {% if can_start %}
+            <form method="post">{% csrf_token %}
+                <button name="action" value="check_delivery" class="text-xs px-3 py-1.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50" data-testid="check-delivery" title="Marks emails with no word back for 2 hours as outcome unknown, and retries failed follow-ups. Sends nothing.">Check delivery</button>
+            </form>
+            {% endif %}
+        </div>
         {% include "communications/_sent_table.html" with rows=sent_messages %}
     </section>
     {% endif %}

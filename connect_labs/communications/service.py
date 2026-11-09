@@ -501,13 +501,13 @@ def delivered(sent_message_id) -> None:
         run_followup(sent_message_id)
 
 
-def run_followup(sent_message_id, *, automatic: bool = False, now=None) -> bool:
+def run_followup(sent_message_id) -> bool:
     """Do what sending this message changes (`kind.after_sent`), as the person who sent it.
 
     Never resends the email. Safe to run again after a partial failure: the
     kinds' follow-ups set dates and record replies, which are idempotent. True
-    when it is done; a failure is kept on the record (`followup_error`) and
-    retried by the reconcile job, then left for a person to retry.
+    when it is done; a failure is kept on the record (`followup_error`) for a
+    person to retry ("Retry follow-up", or "Check delivery").
     """
     with transaction.atomic():
         message = (
@@ -518,10 +518,6 @@ def run_followup(sent_message_id, *, automatic: bool = False, now=None) -> bool:
         )
         if message is None or message.followup not in (FOLLOWUP_PENDING, FOLLOWUP_FAILED):
             return message is not None and message.followup == FOLLOWUP_DONE
-        if automatic and message.followup == FOLLOWUP_FAILED:
-            # Checked again under the lock: another attempt may have run since this was selected.
-            if message.followup_attempts >= MAX_FOLLOWUP_ATTEMPTS or not _followup_due(message, now or timezone.now()):
-                return False
         communication, recipient = message.communication, message.recipient
         message.followup_attempts += 1
         message.followup_at = timezone.now()
@@ -557,47 +553,47 @@ def not_delivered(sent_message_id, *, failed: bool) -> None:
 #: A message handed to the mail queue with no report back after this long was
 #: lost on the way (a worker stopped mid-send): say so, never guess sent or failed.
 UNKNOWN_AFTER = timedelta(hours=2)
-#: Follow-ups are retried this many times by the reconcile job, then left for a person.
-MAX_FOLLOWUP_ATTEMPTS = 5
 
 
-def _followup_due(message, now) -> bool:
-    """Back off between attempts: 10 minutes, then 20, 40, 80."""
-    wait = timedelta(minutes=10 * 2 ** max(message.followup_attempts - 1, 0))
-    return message.followup_at is None or now - message.followup_at >= wait
+def reconcile(messages, now=None) -> dict:
+    """Settle what the mail path left open among `messages`, when a person asks ("Check delivery").
 
-
-def reconcile(now=None) -> dict:
-    """Settle what the mail path left open. Run every ten minutes (`tasks.reconcile_communications`).
+    Nothing runs this on a timer. It sends no mail.
 
     * A message still "Sending" long after it was handed over becomes "Outcome
-      unknown": the page asks a person to confirm it went (which runs its
+      unknown": the page then asks a person to confirm it went (which runs its
       follow-up) -- labs never assumes delivered or failed.
-    * A delivered message whose follow-up is pending (the report stopped
-      half-way) or failed is retried, with back-off, up to
-      MAX_FOLLOWUP_ATTEMPTS; after that it waits for a person's Retry.
+    * A delivered message whose follow-up is pending (a report stopped half-way)
+      or failed is retried now. Never by resending the email.
     """
     now = now or timezone.now()
-    lost = SentMessage.objects.filter(delivery=QUEUED, sent_at__lt=now - UNKNOWN_AFTER).update(delivery=UNKNOWN)
-    retried = done = 0
-    stuck = SentMessage.objects.filter(
-        delivery=DELIVERED,
-        followup__in=(FOLLOWUP_PENDING, FOLLOWUP_FAILED),
-        followup_attempts__lt=MAX_FOLLOWUP_ATTEMPTS,
+    ids = [m.pk for m in messages]
+    lost = SentMessage.objects.filter(pk__in=ids, delivery=QUEUED, sent_at__lt=now - UNKNOWN_AFTER).update(
+        delivery=UNKNOWN
     )
-    for message in stuck.iterator():
-        # A pending one only once its own report has had time to finish.
-        if (
-            message.followup == FOLLOWUP_PENDING
-            and message.followup_at
-            and now - message.followup_at < timedelta(minutes=10)
-        ):
-            continue
-        if not _followup_due(message, now):
-            continue
+    stuck = SentMessage.objects.filter(
+        pk__in=ids, delivery=DELIVERED, followup__in=(FOLLOWUP_PENDING, FOLLOWUP_FAILED)
+    ).values_list("pk", flat=True)
+    retried = done = 0
+    for pk in list(stuck):
         retried += 1
-        done += int(run_followup(message.pk, automatic=True, now=now))
+        done += int(run_followup(pk))
     return {"unknown": lost, "followups_retried": retried, "followups_done": done}
+
+
+def check_delivery(request, pk) -> dict:
+    """ "Check delivery" on one message: its emails, by someone who may send it."""
+    caller = Caller(user=request.user, request=request)
+    communication, _, _ = load(caller, pk, for_send=True)
+    return reconcile(list(communication.sent_messages.all()))
+
+
+def check_delivery_about(request, kind, about) -> dict:
+    """ "Check delivery" on a record's messages page: what the person may read there, if they may write about it."""
+    caller = Caller(user=request.user, request=request)
+    if not kind.can_send(caller, about):
+        raise NotFound(about.pk)
+    return reconcile(sent_about(caller, about, limit=10_000))
 
 
 # -- a person settling what labs could not ----------------------------------
