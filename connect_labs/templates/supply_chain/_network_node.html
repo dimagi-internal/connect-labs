@@ -22,39 +22,43 @@ A store that passes stock on (holds nothing itself while the points below it
 hold some -- `passes_stock_on`) says so in grey: its empty shelf is how it
 works, not a stock-out. The red alarm stays for points meant to hold stock.
 {% endcomment %}
-<li class="py-2{% if node.status != 'active' %} opacity-60{% endif %}" data-testid="network-node">
-  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+<li class="nw-item{% if node.status != 'active' %} opacity-60{% endif %}" data-testid="network-node">
+  {% comment %}The point's own row is spans in ONE div: the tests (and a reader of the markup) take that div as "this point, not what is below it".{% endcomment %}
+  <div class="nw-own">
+    <span class="nw-head">
     {% if node.kind == "user_held" and node.stock %}
-      <a data-testid="point-name" class="text-gray-900 hover:underline" href="{% url 'supply_chain:worker_detail' node.id %}?item_id={{ stock.item_id }}">{{ node.name }}</a>
+      <a data-testid="point-name" class="nw-name hover:underline" href="{% url 'supply_chain:worker_detail' node.id %}?item_id={{ stock.item_id }}">{{ node.name }}</a>
     {% else %}
-      <span data-testid="point-name" class="{% if node.kind != 'user_held' %}font-medium {% endif %}text-gray-900">{{ node.name }}</span>
+      <span data-testid="point-name" class="nw-name{% if node.kind != 'user_held' %} nw-name--store{% endif %}">{{ node.name }}</span>
     {% endif %}
-    {% if node.kind != "user_held" %}<span class="text-xs text-gray-600">{{ node.kind|words }}</span>{% endif %}
+    {% if node.kind != "user_held" %}<span class="nw-kind">{{ node.kind|words }}</span>{% endif %}
     {% if node.status != 'active' %}<span class="px-1.5 py-0.5 rounded text-[11px] bg-gray-100 text-gray-600">inactive</span>{% endif %}
-    {% if node.stock %}
-      <span class="text-sm text-gray-900 tabular-nums">{% if node.kind != "user_held" %}On its own shelf: {% endif %}{{ node.stock.on_hand|figure_text }} on hand</span>
+    <span class="nw-end">
+      {% if node.stock and not node.passes_on %}{% include 'supply_chain/_stock_band.html' with status=node.band %}{% endif %}
+      {% if not supply_as_of %}<a href="{% url 'supply_chain:supply_point_edit' node.id %}" class="text-sm text-brand-indigo hover:underline">Edit<span class="sr-only"> {{ node.name }}</span></a>{% endif %}
+    </span>
+    </span>
+  {% if node.stock %}
+    <span class="nw-facts">
+      <span class="nw-fact"><span class="nw-k">{% if node.kind != "user_held" %}On its own shelf{% else %}On hand{% endif %}</span> <span class="nw-v">{{ node.stock.on_hand|figure_text }}<span class="sr-only"> on hand</span></span></span>
       {% if node.passes_on %}
-        <span class="text-xs text-gray-600" data-testid="passes-on">passes stock on</span>
+        <span class="nw-fact"><span class="nw-k">Role</span> <span class="nw-q" data-testid="passes-on">passes stock on</span></span>
       {% else %}
-        <span class="text-sm text-gray-600" data-testid="cover">{{ node.stock|cover_text }}</span>
-        {% for note in node.stock|cover_notes %}<span class="text-xs text-gray-600" data-testid="cover-note">{{ note }}</span>{% endfor %}
-        {% include 'supply_chain/_stock_band.html' with status=node.band %}
+        <span class="nw-fact"><span class="nw-k">Cover</span> <span class="nw-q"><span data-testid="cover">{{ node.stock|cover_text }}</span>{% for note in node.stock|cover_notes %} <span class="nw-note" data-testid="cover-note">{{ note }}</span>{% endfor %}</span></span>
       {% endif %}
-      {% if node.kind == "user_held" and not node.stock.reported_on %}<span class="text-xs text-gray-600">never counted</span>{% endif %}
-      {% if node.stock.unmatched_receipts %}<span class="text-xs text-amber-900">reports a receipt no store recorded</span>{% endif %}
-    {% endif %}
-    {% if not supply_as_of %}
-      <a href="{% url 'supply_chain:supply_point_edit' node.id %}" class="ml-auto text-sm text-brand-indigo hover:underline">Edit<span class="sr-only"> {{ node.name }}</span></a>
-    {% endif %}
+      {% if node.kind == "user_held" and not node.stock.reported_on %}<span class="nw-fact"><span class="nw-k">Count</span> <span class="nw-q">never counted</span></span>{% endif %}
+      {% if node.stock.unmatched_receipts %}<span class="nw-fact"><span class="nw-q text-amber-900">reports a receipt no store recorded</span></span>{% endif %}
+    </span>
+  {% endif %}
   </div>
   {% if node.stock.subtree %}
-    <div class="text-sm text-gray-700 mt-1 flex flex-wrap gap-x-3 gap-y-0.5" data-testid="subtree">
-      <span>With everything below it: <span class="tabular-nums text-gray-900">{{ node.stock.subtree.on_hand|figure_text }} on hand</span></span>
-      <span>· {{ node.stock.subtree|cover_text }}{% with pace=node.stock.subtree|subtree_pace_text %}{% if pace %} <span class="text-xs text-gray-600" data-testid="subtree-pace">{{ pace }}</span>{% endif %}{% endwith %}{% for note in node.stock.subtree|cover_notes %} <span class="text-xs text-gray-600" data-testid="cover-note">{{ note }}</span>{% endfor %} {% include 'supply_chain/_stock_band.html' with status=node.stock.subtree.status %}</span>
-      {% if node.stock.workers %}<span data-testid="workers-below-minimum">· <span class="{% if node.stock.workers_below_min %}text-amber-900 font-medium{% endif %}">{{ node.stock.below_minimum_line }}</span></span>{% endif %}
+    <div class="nw-below" data-testid="subtree">
+      <span class="nw-fact"><span class="nw-k">With everything below it:</span> <span class="nw-v">{{ node.stock.subtree.on_hand|figure_text }}<span class="sr-only"> on hand</span></span></span>
+      <span class="nw-fact"><span class="nw-k">Cover</span> <span class="nw-q">{{ node.stock.subtree|cover_text }}{% with pace=node.stock.subtree|subtree_pace_text %}{% if pace %} <span class="nw-note" data-testid="subtree-pace">{{ pace }}</span>{% endif %}{% endwith %}{% for note in node.stock.subtree|cover_notes %} <span class="nw-note" data-testid="cover-note">{{ note }}</span>{% endfor %} {% include 'supply_chain/_stock_band.html' with status=node.stock.subtree.status %}</span></span>
+      {% if node.stock.workers %}<span class="nw-fact"><span class="nw-k">Field workers</span> <span data-testid="workers-below-minimum">· <span class="nw-q {% if node.stock.workers_below_min %}text-amber-900 font-medium{% endif %}">{{ node.stock.below_minimum_line }}</span></span></span>{% endif %}
     </div>
   {% endif %}
-  <details class="mt-0.5 text-xs text-gray-600" data-testid="point-details">
+  <details class="nw-details" data-testid="point-details">
     <summary class="cursor-pointer text-brand-indigo">Details</summary>
     <ul class="mt-1 ml-3 space-y-0.5">
       <li>{{ node.kind|words|capfirst }}{% if node.connect_username %} · Connect user {{ node.connect_username }}{% endif %}{% if node.admin_area %} · {{ node.admin_area }}{% endif %}</li>
@@ -71,14 +75,14 @@ works, not a stock-out. The red alarm stays for points meant to hold stock.
     </ul>
   </details>
   {% if node.store_children %}
-    <ul class="ml-4 border-l border-gray-200 pl-4">
+    <ul class="nw-children">
       {% for child in node.store_children %}{% include 'supply_chain/_network_node.html' with node=child %}{% endfor %}
     </ul>
   {% endif %}
   {% if node.worker_children %}
-    <details class="mt-1 ml-4">
+    <details class="nw-workers">
       <summary class="text-sm text-brand-indigo cursor-pointer">Show the {{ node.worker_children|length }} worker{{ node.worker_children|length|pluralize }} {{ node.name }} supplies</summary>
-      <ul class="ml-2 border-l border-gray-200 pl-4 divide-y divide-gray-100">
+      <ul class="nw-children">
         {% for child in node.worker_children %}{% include 'supply_chain/_network_node.html' with node=child %}{% endfor %}
       </ul>
     </details>

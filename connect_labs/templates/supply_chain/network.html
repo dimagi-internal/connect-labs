@@ -15,6 +15,28 @@ own arithmetic -- so workers sit in the tree under their store, behind one
 {% endcomment %}
 
 {% block supply_content %}
+<style>
+  .nw-list, .nw-children { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+  .nw-children { margin: 0.5rem 0 0 1rem; padding-left: 1rem; border-left: 2px solid #e4e3ea; }
+  .nw-own { display: block; background: #fff; border: 1px solid #e4e3ea; border-radius: 0.5rem; padding: 0.625rem 0.875rem; box-shadow: 0 1px 2px rgb(22 0 109 / 0.04); }
+  .nw-own:has(+ .nw-below) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  .nw-below { display: flex; flex-wrap: wrap; gap: 0.25rem 1.75rem; background: #f8f8fb; border: 1px solid #e4e3ea; border-top: 0; border-radius: 0 0 0.5rem 0.5rem; padding: 0.5rem 0.875rem; }
+  .nw-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.25rem 0.625rem; }
+  .nw-name { color: #111827; }
+  .nw-name--store { font-weight: 600; }
+  .nw-kind { font-size: 0.6875rem; color: #4b5563; background: #f3f4f6; border-radius: 9999px; padding: 0.0625rem 0.5rem; }
+  .nw-end { margin-left: auto; display: inline-flex; align-items: center; gap: 0.75rem; }
+  .nw-facts { display: flex; flex-wrap: wrap; gap: 0.25rem 1.75rem; margin-top: 0.5rem; }
+  .nw-fact { display: inline-flex; flex-direction: column; gap: 0.0625rem; min-width: 7rem; }
+  .nw-k { font-size: 0.6875rem; color: #5b6072; }
+  .nw-v { font-size: 1.0625rem; font-weight: 700; color: #16006d; font-variant-numeric: tabular-nums; }
+  .nw-q { font-size: 0.8125rem; color: #374151; }
+  .nw-note { font-size: 0.6875rem; color: #5b6072; }
+  .nw-details { margin: 0.25rem 0 0 0.25rem; font-size: 0.75rem; color: #5b6072; }
+  .nw-workers { margin: 0.5rem 0 0 1rem; }
+  .nw-workers > summary { font-size: 0.8125rem; color: #3843d0; cursor: pointer; }
+  .nw-workers > ul { margin-top: 0.5rem; }
+</style>
 
 <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
   <div>
@@ -98,7 +120,7 @@ own arithmetic -- so workers sit in the tree under their store, behind one
         {% if partners|length > 1 or partner.org_id %}
           <h3 class="text-sm font-semibold text-gray-900 mb-1" data-testid="partner-name">{{ partner.name }}{% if not partner.org_id %} <span class="font-normal text-gray-600">(say who runs it on the Partners page)</span>{% endif %}</h3>
         {% endif %}
-        <ul class="bg-white border border-brand-border-light rounded-lg px-4 divide-y divide-gray-100">
+        <ul class="nw-list">
           {% for node in partner.roots %}{% include 'supply_chain/_network_node.html' with node=node %}{% endfor %}
         </ul>
       </div>
