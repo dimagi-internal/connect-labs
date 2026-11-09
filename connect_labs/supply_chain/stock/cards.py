@@ -133,7 +133,7 @@ def why(point, state, bar) -> str:
 
 
 def _top_up(point) -> str:
-    """"18 jerrycans to reorder", or "" when nothing is owed to reach the maximum."""
+    """ "18 jerrycans to reorder", or "" when nothing is owed to reach the maximum."""
     quantity = point.get("resupply_quantity")
     if not isinstance(quantity, dict) or quantity.get("amount") in (None, "", "0"):
         return ""

@@ -48,7 +48,14 @@ def test_a_negative_balance_is_negative_not_stocked_out_and_draws_no_bar():
 
 def test_a_stocked_out_point_with_no_use_says_there_is_no_pace_yet():
     (card,) = cards.build(
-        [_point(status="unknown", on_hand={"amount": "0", "unit": "jerrycan"}, stocked_out=True, no_consumption_yet=True)]
+        [
+            _point(
+                status="unknown",
+                on_hand={"amount": "0", "unit": "jerrycan"},
+                stocked_out=True,
+                no_consumption_yet=True,
+            )
+        ]
     )
     assert card["state"] == "stockout" and card["bar"] is None
     assert card["why"].startswith("Nothing left, and no use recorded yet")
@@ -56,7 +63,13 @@ def test_a_stocked_out_point_with_no_use_says_there_is_no_pace_yet():
 
 def test_unknown_cover_draws_no_bar_and_gives_the_reason():
     (card,) = cards.build(
-        [_point(status="unknown", days_to_stockout={"unconfirmed": ["no count yet"]}, months_of_stock={"unconfirmed": ["no count yet"]})]
+        [
+            _point(
+                status="unknown",
+                days_to_stockout={"unconfirmed": ["no count yet"]},
+                months_of_stock={"unconfirmed": ["no count yet"]},
+            )
+        ]
     )
     assert card["bar"] is None
     assert card["why"] == "no count yet"
@@ -67,7 +80,12 @@ def test_the_tiles_count_what_needs_a_person():
         [
             _point(),
             _point(status="below_min", days_to_stockout="5"),
-            _point(status="unknown", on_hand={"amount": "0", "unit": "jerrycan"}, stocked_out=True, no_consumption_yet=True),
+            _point(
+                status="unknown",
+                on_hand={"amount": "0", "unit": "jerrycan"},
+                stocked_out=True,
+                no_consumption_yet=True,
+            ),
             _point(status="unknown", on_hand={"amount": "-1", "unit": "jerrycan"}, stocked_out=True),
         ]
     )
@@ -76,6 +94,12 @@ def test_the_tiles_count_what_needs_a_person():
 
 def test_a_balance_counted_in_its_base_unit_leads_with_it():
     (card,) = cards.build(
-        [_point(counted_in_base=True, on_hand_in_base={"amount": "540", "unit": "liter"}, on_hand={"amount": "27", "unit": "jerrycan"})]
+        [
+            _point(
+                counted_in_base=True,
+                on_hand_in_base={"amount": "540", "unit": "liter"},
+                on_hand={"amount": "27", "unit": "jerrycan"},
+            )
+        ]
     )
     assert card["lead"]["big"] == "540" and card["lead"]["side"] == "27 jerrycans"
