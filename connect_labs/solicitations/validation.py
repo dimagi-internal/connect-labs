@@ -87,7 +87,13 @@ ALLOWED_FIELDS: frozenset[str] = frozenset(
 
 REQUIRED_FIELDS: tuple[str, ...] = ("title", "description", "solicitation_type")
 
-_QUESTION_FIELDS: frozenset[str] = frozenset({"id", "text", "type", "required", "options", "framing", "display"})
+_QUESTION_FIELDS: frozenset[str] = frozenset(
+    {"id", "text", "type", "required", "options", "framing", "display", "grid"}
+)
+# A grid ("rank these 1st, 2nd, 3rd") is stored the way a Google Form's arrives
+# (`marketplace.form_structure`): one question per row, each carrying ``grid``.
+# Consecutive rows sharing ``grid.id`` draw as one table (`answers.question_blocks`).
+_GRID_FIELDS: frozenset[str] = frozenset({"id", "title", "help", "columns", "row", "one_per_column", "required"})
 _CRITERION_FIELDS: frozenset[str] = frozenset(
     {"id", "name", "weight", "description", "scoring_guide", "linked_questions"}
 )
@@ -164,7 +170,88 @@ def _validate_questions(questions) -> set[str]:
                 {f"{prefix}.display": f"only for type=multiple_choice, one of {list(CHOICE_DISPLAYS)}"}
             )
 
+        if "grid" in q:
+            _validate_grid_row(q, prefix)
+
+    _validate_grids(questions)
     return seen_ids
+
+
+def _validate_grid_row(q: dict, prefix: str) -> None:
+    """One row of a grid question: its ``grid`` says which table it belongs to.
+
+    The row's options are the grid's columns. ``one_per_column`` (a ranking:
+    only one row may be "1st choice") needs one pick per row, so it is for
+    multiple_choice rows only.
+    """
+    grid = q["grid"]
+    key = f"{prefix}.grid"
+    if q.get("type") not in CHOICE_TYPES:
+        raise ValidationError({key: f"only for type in {list(CHOICE_TYPES)}"})
+    if not isinstance(grid, dict):
+        raise ValidationError({key: "must be an object"})
+    unknown = set(grid.keys()) - _GRID_FIELDS
+    if unknown:
+        raise ValidationError({key: f"unknown keys {sorted(unknown)}"})
+    for name in ("id", "title", "row"):
+        if not isinstance(grid.get(name), str) or not grid[name].strip():
+            raise ValidationError({f"{key}.{name}": "must be a non-empty string"})
+    if "help" in grid and not isinstance(grid["help"], str):
+        raise ValidationError({f"{key}.help": "must be a string"})
+    if grid.get("columns") != q.get("options"):
+        raise ValidationError({f"{key}.columns": "must match the row's options"})
+    if "one_per_column" in grid:
+        if not isinstance(grid["one_per_column"], bool):
+            raise ValidationError({f"{key}.one_per_column": "must be a boolean"})
+        if grid["one_per_column"] and q.get("type") != "multiple_choice":
+            raise ValidationError({f"{key}.one_per_column": "only for type=multiple_choice"})
+    if "required" in grid:
+        # A required ranking: every column must go to some row. The rows stay
+        # optional -- with more rows than columns, not every row can be answered.
+        if not isinstance(grid["required"], bool):
+            raise ValidationError({f"{key}.required": "must be a boolean"})
+        if grid["required"] and not grid.get("one_per_column"):
+            raise ValidationError({f"{key}.required": "only with one_per_column; otherwise mark the rows required"})
+        if grid["required"] and q.get("required"):
+            raise ValidationError({f"{prefix}.required": "a required ranking's rows are optional (grid.required)"})
+
+
+# What every row of one grid must agree on: they draw as one table.
+_GRID_SHARED: tuple[str, ...] = ("title", "help", "columns", "one_per_column", "required")
+
+
+def _validate_grids(questions: list[dict]) -> None:
+    """A grid's rows sit together and agree on the table they make.
+
+    `answers.question_blocks` draws consecutive rows as one table from the
+    first row's settings, and the respond form checks one_per_column per grid;
+    rows that disagree, or are split by another question, would draw one rule
+    and enforce another.
+    """
+    first: dict[str, int] = {}
+    previous = None
+    for i, q in enumerate(questions):
+        grid_id = (q.get("grid") or {}).get("id")
+        if grid_id is None:
+            previous = None
+            continue
+        if grid_id in first and previous != grid_id:
+            raise ValidationError({f"questions[{i}].grid.id": f"{grid_id!r}'s rows must be consecutive"})
+        first.setdefault(grid_id, i)
+        lead = questions[first[grid_id]]["grid"]
+        for name in _GRID_SHARED:
+            if q["grid"].get(name) != lead.get(name):
+                raise ValidationError({f"questions[{i}].grid.{name}": f"must match the first row of grid {grid_id!r}"})
+        if q.get("type") != questions[first[grid_id]].get("type"):
+            raise ValidationError({f"questions[{i}].type": f"must match the first row of grid {grid_id!r}"})
+        previous = grid_id
+    for grid_id, i in first.items():
+        lead = questions[i]["grid"]
+        rows = sum(1 for q in questions if (q.get("grid") or {}).get("id") == grid_id)
+        if lead.get("required") and rows < len(lead.get("columns") or []):
+            raise ValidationError(
+                {f"questions[{i}].grid.required": f"grid {grid_id!r} has fewer rows than columns to fill"}
+            )
 
 
 def _validate_evaluation_criteria(criteria, question_ids: set[str]) -> None:

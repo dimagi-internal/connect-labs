@@ -113,6 +113,13 @@ class TestAnswerBlocks:
         assert [(r["id"], r["n"]) for r in rows] == [("years", 1), ("g_a", 2), ("g_b", 2), ("reach", 3)]
         assert rows[1]["question"] == "Rank the barriers [Cost]" and rows[1]["answer"] == "2nd"
 
+    def test_a_one_per_column_grid_says_so(self):
+        ranked = [_grid_row("g_a", "Cost"), _grid_row("g_b", "Distance")]
+        for row in ranked:
+            row["grid"]["one_per_column"] = True
+        assert answer_blocks(ranked, {})[0]["one_per_column"] is True
+        assert answer_blocks([_grid_row("g_a", "Cost")], {})[0]["one_per_column"] is False
+
     def test_a_multi_grid_row_ticks_several(self):
         blocks = answer_blocks([_grid_row("g_a", "Cost", multi=True)], {"g_a": "1st, 3rd"})
         assert blocks[0]["multi"] and blocks[0]["rows"][0]["cells"] == [True, False, True]

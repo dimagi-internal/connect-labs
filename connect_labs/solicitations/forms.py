@@ -355,7 +355,8 @@ class SolicitationResponseForm(forms.Form):
                 # Form shows it; "display" says which a question wants.
                 widget = (
                     forms.RadioSelect()
-                    if question.get("display") == "radio"
+                    # A grid row is always radios: the table draws one per cell.
+                    if question.get("display") == "radio" or question.get("grid")
                     else forms.Select(attrs={"class": _SELECT_CLASSES})
                 )
                 field = forms.ChoiceField(label=q_text, required=q_required, choices=choices, widget=widget)
@@ -378,6 +379,52 @@ class SolicitationResponseForm(forms.Form):
                 )
 
             self.fields[field_name] = field
+
+    def clean(self):
+        cleaned = super().clean()
+        # A one-per-column grid is a ranking: no two rows may share a column.
+        # The form's script stops it in the browser; this stops a crafted post.
+        taken: dict[tuple[str, str], str] = {}
+        for question in self.questions:
+            grid = question.get("grid") or {}
+            if not grid.get("one_per_column"):
+                continue
+            field_name = f"question_{question.get('id', '')}"
+            value = cleaned.get(field_name)
+            if not value:
+                continue
+            key = (grid.get("id", ""), value)
+            if key in taken:
+                self.add_error(
+                    field_name,
+                    f"“{value}” is already picked for {taken[key]}; each choice can go to one row only.",
+                )
+            else:
+                taken[key] = grid.get("row", "") or "another row"
+        return cleaned
+
+    def check_rankings_complete(self) -> None:
+        """A required ranking (grid.required) must use every column -- on SUBMIT.
+
+        A draft may leave a ranking half done, so the view calls this only when
+        the response is submitted, beside its other submit-only checks.
+        """
+        cleaned = getattr(self, "cleaned_data", {}) or {}
+        picked: dict[str, set] = {}
+        rankings: dict[str, tuple[str, dict]] = {}
+        for question in self.questions:
+            grid = question.get("grid") or {}
+            if not (grid.get("one_per_column") and grid.get("required")):
+                continue
+            grid_id = grid.get("id", "")
+            field_name = f"question_{question.get('id', '')}"
+            rankings.setdefault(grid_id, (field_name, grid))
+            if cleaned.get(field_name):
+                picked.setdefault(grid_id, set()).add(cleaned[field_name])
+        for grid_id, (first_field, grid) in rankings.items():
+            missing = [c for c in grid.get("columns") or [] if c not in picked.get(grid_id, set())]
+            if missing:
+                self.add_error(first_field, f"Pick a row for each of: {', '.join(missing)}.")
 
     def responding_org(self) -> tuple[str | None, str, str]:
         """(org slug or None, new organisation name, its contact email) from the cleaned form.

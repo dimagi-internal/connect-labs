@@ -231,6 +231,7 @@
                                         <option value="number">Number</option>
                                         <option value="multiple_choice">Multiple Choice (pick one)</option>
                                         <option value="checkboxes">Checkboxes (pick any)</option>
+                                        <option value="grid">Grid (one choice per row)</option>
                                     </select>
                                 </div>
 
@@ -249,6 +250,32 @@
                                 <input type="text" x-model="question.options_text"
                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                                        placeholder="Option 1, Option 2, Option 3">
+                            </div>
+
+                            <!-- Grid: rows x columns, one per line (static/solicitations/question_grids.js) -->
+                            <div x-show="question.type === 'grid'" class="space-y-3" data-grid-editor>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Rows (one per line)</label>
+                                        <textarea x-model="question.rows_text" rows="4"
+                                                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-y"
+                                                  placeholder="Child Health Campaigns&#10;Kangaroo Care&#10;Reading glasses"></textarea>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Columns (one per line)</label>
+                                        <textarea x-model="question.columns_text" rows="4"
+                                                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-y"
+                                                  placeholder="1st choice&#10;2nd choice&#10;3rd choice"></textarea>
+                                    </div>
+                                </div>
+                                <p x-show="question.row_type === 'checkboxes'" class="text-xs text-gray-500">Respondents tick any that apply in each row.</p>
+                                <label class="flex items-start gap-2" x-show="question.row_type !== 'checkboxes'">
+                                    <input type="checkbox" x-model="question.one_per_column" class="simple-checkbox mt-0.5">
+                                    <span class="text-sm text-gray-700">
+                                        <span class="font-medium">One choice per column</span>
+                                        <span class="block text-xs text-gray-500">For a ranking: each column (say "1st choice") can be picked in one row only. Respondents still pick one choice per row.</span>
+                                    </span>
+                                </label>
                             </div>
                         </div>
                     </div>
@@ -497,6 +524,7 @@
   <script src="{% static 'bundles/js/solicitation-chat-bundle.js' %}" defer></script>
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
   <script src="{% static 'solicitations/coverage_map.js' %}"></script>
+  <script src="{% static 'solicitations/question_grids.js' %}"></script>
   {% if area_picker %}{% include "solicitations/_service_area_scripts.html" %}{% endif %}
 {% endblock javascript %}
 
@@ -529,7 +557,9 @@ function questionBuilder() {
                 const dataEl = document.getElementById('existing-questions-data');
                 const raw = JSON.parse(dataEl.textContent || '[]');
                 if (Array.isArray(raw)) {
-                    this.questions = raw.map(function(q, i) {
+                    // A grid's rows are stored as one question each; edit them as one item.
+                    this.questions = window.SolQuestionGrids.collapse(raw).map(function(q, i) {
+                        if (q.type === 'grid') return q;
                         return {
                             id: q.id || ('q_' + (i + 1)),
                             text: q.text || q.question_text || '',
@@ -551,7 +581,15 @@ function questionBuilder() {
             var self = this;
             var form = document.getElementById('solicitation-form');
             if (form) {
-                form.addEventListener('submit', function() {
+                form.addEventListener('submit', function(event) {
+                    // A grid missing its rows or columns would save as nothing, or
+                    // fail with an error naming a row the editor does not show.
+                    var problems = window.SolQuestionGrids.problems(self.questions);
+                    if (problems.length) {
+                        event.preventDefault();
+                        alert(problems.join('\n'));
+                        return;
+                    }
                     self.serializeQuestions();
                 });
             }
@@ -559,7 +597,8 @@ function questionBuilder() {
 
         addQuestion() {
             this.questions.push({
-                id: 'q_' + (this.questions.length + 1),
+                // Unused by any question or grid row (a grid is one item here, many rows stored).
+                id: window.SolQuestionGrids.newQuestionId(this.questions),
                 text: '',
                 type: 'text',
                 required: false,
@@ -572,7 +611,8 @@ function questionBuilder() {
         },
 
         serializeQuestions() {
-            var output = this.questions.map(function(q) {
+            var items = this.questions.map(function(q) {
+                if (q.type === 'grid') return q;
                 var item = {
                     id: q.id,
                     text: q.text,
@@ -588,6 +628,7 @@ function questionBuilder() {
                 if (q.framing) item.framing = q.framing;
                 return item;
             });
+            var output = window.SolQuestionGrids.expand(items);
             this.$refs.questionsJson.value = JSON.stringify(output);
         }
     };
