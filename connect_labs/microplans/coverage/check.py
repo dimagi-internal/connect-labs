@@ -286,14 +286,19 @@ def run_check(rows, spec: CheckSpec, fetch=None) -> dict:
 
 
 def total_row(result: dict) -> dict:
-    """All areas together, per cycle: the headline row."""
+    """All areas together, per cycle: the headline row.
+
+    A cycle's share is out of the buildings of the areas that RAN that cycle (a campaign may run a cycle in
+    only some districts), never out of every area's buildings."""
     cycles: dict = {}
     for a in result["areas"]:
         for c, v in a["cycles"].items():
-            t = cycles.setdefault(c, {"buildings_reached": 0, "households_visited": 0, "households_unplaced": 0})
-            for k in t:
+            t = cycles.setdefault(
+                c, {"buildings": 0, "buildings_reached": 0, "households_visited": 0, "households_unplaced": 0}
+            )
+            t["buildings"] += a["buildings"]
+            for k in ("buildings_reached", "households_visited", "households_unplaced"):
                 t[k] += v[k]
-    buildings = sum(a["buildings"] for a in result["areas"])
     for t in cycles.values():
-        t["share"] = (t["buildings_reached"] / buildings) if buildings else None
-    return {"buildings": buildings, "cycles": cycles}
+        t["share"] = (t["buildings_reached"] / t["buildings"]) if t["buildings"] else None
+    return {"buildings": sum(a["buildings"] for a in result["areas"]), "cycles": cycles}

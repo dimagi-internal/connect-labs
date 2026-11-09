@@ -145,3 +145,13 @@ def test_a_shard_is_a_hash_range_on_the_household_id_and_only_hex_is_accepted():
     assert check.count_sql(spec()).startswith(
         "SELECT count(DISTINCT form_json #>> '{form,var_menage,case_id_menage}')"
     )
+
+
+def test_a_cycle_run_in_only_some_areas_is_measured_against_those_areas_only():
+    second = {"id": "C2", "lon": LON0 + 200 * M, "lat": LAT0 + 200 * M}
+    rows = [("C1", "hh1", gps(55), "contact_1,contact_2"), ("C2", "hh2", gps(45), "contact_1")]
+    out = check.run_check(rows, spec(facilities=[FACILITY, second]), fetch)
+    tot = check.total_row(out)
+    assert tot["buildings"] == 120
+    assert tot["cycles"][1]["buildings"] == 120 and tot["cycles"][2]["buildings"] == 60
+    assert tot["cycles"][2]["share"] == pytest.approx(tot["cycles"][2]["buildings_reached"] / 60)
