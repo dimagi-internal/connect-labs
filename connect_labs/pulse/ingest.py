@@ -455,7 +455,7 @@ def sample_opportunity_countries(client, limit: int = 600, opp_ids=None) -> int:
     from connect_labs.pulse.normalize import country_for
 
     # ``opp_ids`` re-samples named opportunities whatever country they hold
-    # (``pulse_relabel_countries``); otherwise only those with none yet.
+    # (``pulse_fix_country_labels``); otherwise only those with none yet.
     if opp_ids is not None:
         targets = list(opp_ids)[:limit]
     else:

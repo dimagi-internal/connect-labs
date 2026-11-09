@@ -1,4 +1,4 @@
-"""Re-label every stored visit's country from labs' real borders, then each opportunity's.
+"""Fix the country labels labs has stored: each visit's, from labs' real borders, then each opportunity's.
 
 ``normalize.country_for`` used rough rectangles that overlap at borders, so
 visits near one were labelled with the neighbouring country (Kenema, Sierra
@@ -6,8 +6,8 @@ Leone as Liberia; Bangui, Central African Republic as DR Congo). It now uses
 labs' country borders, but labels already stored keep the old answer until
 this runs once.
 
-    python manage.py pulse_relabel_countries --dry-run
-    python manage.py pulse_relabel_countries
+    python manage.py pulse_fix_country_labels --dry-run
+    python manage.py pulse_fix_country_labels
 
 Three steps:
 
