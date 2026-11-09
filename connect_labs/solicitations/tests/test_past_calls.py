@@ -412,3 +412,10 @@ def test_a_round_s_copy_draws_its_forms_choices_grids_and_sections(client, world
     assert "Which programmes? [Lead]" not in body
     assert '<select name="question_q5"' in body
     assert body.count('<span class="text-red-500 ml-1">*</span>') >= 2
+
+
+def test_the_far_left_rail_has_a_solicitations_item_only_for_a_visitor(client, world):
+    # A signed-in person has the Marketplace menu's Solicitations group; a visitor has no menu.
+    rail_item = '<span class="text-xs whitespace-nowrap">Solicitations</span>'
+    assert rail_item in client.get(url("public_list")).content.decode()
+    assert rail_item not in login(client, world["user"]).get(url("public_list")).content.decode()
