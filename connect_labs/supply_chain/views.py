@@ -1260,7 +1260,22 @@ class StockView(OperationBase):
         context.update(switcher(self.request, _access(self.request).program_id))
         item = next((i for i in context["items"] if i["id"] == context["item_id"]), None)
         context["standing"] = self._standing(item) if item else None
+        self._add_cards(context)
         return context
+
+    def _add_cards(self, context) -> None:
+        """One card per point and the four counts above them, read from the same rows as the table."""
+        from connect_labs.labs.models import LabsOrg
+        from connect_labs.supply_chain.stock import cards
+        from connect_labs.supply_chain.stock.services.issues import partner_by_point
+
+        built = cards.build(context["network"].get("points") or [])
+        owner_of = partner_by_point(_access(self.request).program_id)
+        names = dict(LabsOrg.objects.filter(pk__in={o for o in owner_of.values() if o}).values_list("pk", "name"))
+        for card in built:
+            card["partner"] = names.get(owner_of.get(card["point"].get("supply_point_id")))
+        context["stock_cards"] = built
+        context["stock_tiles"] = cards.tiles(built)
 
     def _standing(self, item) -> dict:
         """Why this stock is the right stock: the item against its specification, and who agreed to it.
