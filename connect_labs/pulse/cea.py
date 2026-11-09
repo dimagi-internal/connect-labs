@@ -181,16 +181,32 @@ def value(service: str, country: str, total_usd: float, reached: int, areas: lis
     return out
 
 
-def _headline_level(areas: list) -> str:
-    """The level most of a delivery's baseline came from, by share: district, state or province, or country."""
-    weight: dict[str, float] = {}
-    for a in areas:
-        for v in a["inputs"].values():
-            lvl = "country" if v.level in ("model country figure", "model default") else v.level
-            weight[lvl] = weight.get(lvl, 0.0) + a["share"]
-    # KC has no place inputs at all: its risk is the model's 13% everywhere.
-    return max(weight, key=weight.get) if weight else "no place inputs"
+LOCAL_LEVELS = ("district", "state or province")
 
+
+def _headline_level(areas: list) -> str:
+    """Where a delivery's place figures came from, in a few words.
+
+    The most local level any input used (district, then state or province), and
+    how many of the model's place inputs used a local figure, by visit share:
+    "state or province · 3 of 9". "country" when every input took the country
+    figure; "no place inputs" for a model without any (KC).
+    """
+    counts: dict[str, float] = {}
+    n_inputs = 0
+    local_inputs = 0.0
+    for a in areas:
+        n_inputs = max(n_inputs, len(a["inputs"]))
+        local = [v for v in a["inputs"].values() if v.level in LOCAL_LEVELS]
+        local_inputs += a["share"] * len(local)
+        for lvl in {v.level for v in local}:
+            counts[lvl] = counts.get(lvl, 0.0) + a["share"]
+    if not n_inputs:
+        return "no place inputs"
+    if not counts:
+        return "country"
+    level = next(lvl for lvl in LOCAL_LEVELS if lvl in counts)
+    return f"{level} · {round(local_inputs)} of {n_inputs}"
 
 def opportunity_areas(opps, reach_of: dict) -> dict:
     """The place layer for every valued opportunity: ``{opp_id: [area dict, ...]}``.

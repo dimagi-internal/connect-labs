@@ -155,6 +155,11 @@
   </div>
 
   <div class="card notes">
+    <p><b>Place.</b> Each opportunity runs the model's own formulas once per area its approved visits fell in (by GPS):
+      a district where Labs holds district figures, else the state or province. Each place input (diarrhoea deaths,
+      ORS, vitamin A and deworming coverage, newborn and infant mortality, breastfeeding) takes the most local figure
+      Labs holds, else the model's own figure for the country. The opportunity's model multiple is the visit-weighted
+      mean across its areas. Click a multiple to see every step for that opportunity.</p>
     <p><b>Total cost</b> is everything paid for the opportunity in USD: worker pay and the organisation's per-service fee on
       every completed work, plus startup and supply costs from Connect's custom invoices and costs entered in labs
       (<a href="{% url 'pulse:costs' %}">cost data</a>). An opportunity that reached no one but was paid (an invoicing
@@ -170,7 +175,7 @@
       so multiple at actual cost = model multiple &times; model price &divide; actual cost per person. Model prices:
       <span id="model-prices"></span>.</p>
     <p><b>Models.</b> {% for k, m in data.models.items %}<a href="{{ m.sheet }}" target="_blank" rel="noopener">{{ m.label }}</a> ({{ m.variant }}, per {{ m.unit }}){% if not forloop.last %}; {% endif %}{% endfor %}.
-      Per-country results from {{ data.source }}, generated {{ data.generated }}. 45 sub-Saharan countries; an opportunity elsewhere
+      The models' own formulas and country figures, from {{ data.source }}, generated {{ data.generated }}. 45 sub-Saharan countries; an opportunity elsewhere
       reads "No model for this country". {{ data.bar_note }}.</p>
     <p><b>Not counted:</b> anything but deaths averted (illness, development, income), so every multiple is a floor. These are modelled
       estimates, not measured impact.</p>
@@ -491,7 +496,10 @@
   // multiple and status are what a reader came for, so they must not sit past the right edge.
   var COLS = [
     ["rank", "#", "n"], ["name", "Opportunity"],
-    ["x", "x at actual cost", "n", xfmt], ["status_text", "Status"],
+    ["x", "x at actual cost", "n", function (v, r) { return r && r.model ? '<a href="/labs/pulse/cea/opp/' + r.id + '/" title="How this was worked out, end to end">' + xfmt(v) + "</a>" : xfmt(v); }],
+    ["status_text", "Status"],
+    ["baseline_level", "Baseline from", "", function (v) { return v ? esc(v) : "–"; },
+     "Where the place figures came from: the most local area Labs holds for where the visits happened"],
     ["reached", "People", "n", function (v, r) { return num(v) + (r && r.reach_basis === "busiest_payment_unit" ? " <i title=\"Busiest payment unit, not yet a distinct count\">estimate</i>" : ""); },
      "Distinct people with approved work (see the notes below)"],
     ["cost_per_person", "Cost / person", "n", usd], ["model_cost_per_person", "Model price", "n", usd],
