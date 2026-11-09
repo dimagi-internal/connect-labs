@@ -54,16 +54,31 @@
           <div class="flex items-end gap-1 overflow-x-auto">
             {% for bucket in trend %}
               <div class="flex flex-col items-center shrink-0" style="width: {% if trend|length > 16 %}12px{% else %}30px{% endif %}"
-                   title="{{ bucket.count }} submission{{ bucket.count|pluralize }} {% if bucket.days == 1 %}on{% else %}in the week from{% endif %} {{ bucket.start|date:'j M Y' }}">
+                   title="{{ bucket.count }} submission{{ bucket.count|pluralize }}{% if mix.priority %} ({{ bucket.priority }} from priority countries){% endif %} {% if bucket.days == 1 %}on{% else %}in the week from{% endif %} {{ bucket.start|date:'j M Y' }}">
                 {% if trend|length <= 16 %}<span class="text-[10.5px] text-gray-500 tabular-nums mb-1" style="line-height:1">{{ bucket.count|default:"" }}</span>{% endif %}
                 <div class="w-full flex items-end" style="height: 44px">
+                  {% if mix.priority and bucket.count %}
+                    {% comment %}Stacked: the priority share at the bottom in the strong colour, the rest above it.{% endcomment %}
+                    <div class="w-full rounded-t-sm overflow-hidden flex flex-col-reverse"
+                         style="height: {{ bucket.pct }}%; min-height: 2px;">
+                      <div class="w-full bg-brand-indigo" style="height: {{ bucket.priority_pct }}%"></div>
+                      <div class="w-full bg-brand-indigo/25" style="flex: 1 1 0"></div>
+                    </div>
+                  {% else %}
                   <div class="w-full rounded-t-sm {% if bucket.count %}bg-brand-indigo/70{% else %}bg-gray-100{% endif %}"
                        style="height: {% if bucket.count %}{{ bucket.pct }}%{% else %}2px{% endif %}; min-height: 2px;"></div>
+                  {% endif %}
                 </div>
                 {% if trend|length <= 16 %}<span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap" style="line-height:1">{% if bucket.days == 1 %}{{ bucket.start|date:"j M" }}{% else %}{{ bucket.start|date:"j M" }}{% endif %}</span>{% endif %}
               </div>
             {% endfor %}
           </div>
+          {% if mix.priority %}
+            <div class="flex items-center gap-3 text-[10.5px] text-gray-500 mt-1.5" data-testid="arrivals-legend">
+              <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm bg-brand-indigo"></span>Priority countries</span>
+              <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm bg-brand-indigo/25"></span>Other</span>
+            </div>
+          {% endif %}
           {% if trend|length > 16 %}<div class="text-[10.5px] text-gray-400 mt-1">{{ trend.0.start|date:"j M" }} – {{ span_end|date:"j M Y" }}</div>{% endif %}
         </div>
       {% endif %}
@@ -273,12 +288,22 @@
         </div>
       {% endif %}
 
-      {% if mix.countries %}
-        <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+      {% if mix.countries or mix.priority %}
+        <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden" data-testid="country-counts">
           <div class="px-[18px] py-3 border-b border-gray-100">
             <span class="text-xs font-semibold text-brand-deep-purple tracking-wide">WHERE APPLICANTS WORK</span>
           </div>
           <div class="px-[18px] py-3.5 flex flex-col gap-2">
+            {% if mix.priority %}
+              <div class="text-[10.5px] font-semibold text-gray-400 tracking-wide">PRIORITY COUNTRIES</div>
+              {% for country, count in mix.priority %}
+                <div class="flex items-baseline justify-between gap-3 text-[12.5px]" data-testid="priority-country">
+                  <span class="text-gray-900 font-medium">{{ country }}</span>
+                  <span class="{% if count %}text-gray-900 font-medium{% else %}text-gray-400{% endif %} tabular-nums">{{ count }}</span>
+                </div>
+              {% endfor %}
+              {% if mix.countries %}<div class="text-[10.5px] font-semibold text-gray-400 tracking-wide pt-2 border-t border-gray-100">OTHER COUNTRIES</div>{% endif %}
+            {% endif %}
             {% for country, count in mix.countries %}
               <div class="flex items-baseline justify-between gap-3 text-[12.5px]">
                 <span class="{% if country == 'Not stated' %}text-gray-400 italic{% else %}text-gray-700{% endif %}">{{ country }}</span>

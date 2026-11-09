@@ -697,7 +697,12 @@ def round_review(request, slug, step=""):
         }
         for c in summary["criteria"]
     ]
-    countries = sorted(Counter(a["country"] for a in applicants if a["country"]).items())
+    # Alphabetical, except that the round's priority countries come first.
+    priority_rank = {name: i for i, name in enumerate(round_.priority_countries or [])}
+    countries = sorted(
+        Counter(a["country"] for a in applicants if a["country"]).items(),
+        key=lambda kv: (priority_rank.get(kv[0], len(priority_rank)), kv[0]),
+    )
     shown_record = next((v for v in history if v["version"] == shown), None)
     if shown_record:
         shown_basis, shown_rules = shown_record["basis_text"], shown_record["outcome_rules"]

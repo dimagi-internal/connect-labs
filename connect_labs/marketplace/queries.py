@@ -998,19 +998,37 @@ def round_mix(round_: Solicitation, applicants: list[dict]) -> dict:
                 or (a["started"] is not None and _as_date(a["started"]) < opened)
             ):
                 returning += 1
-        named = (profile.countries if profile and profile.countries else []) or [
-            c.strip() for c in (a["response"].country_as_submitted or "").split(",") if c.strip()
-        ]
-        for country in named or ["Not stated"]:
+        for country in _countries_named(profile, a["response"]) or ["Not stated"]:
             countries[country] = countries.get(country, 0) + 1
 
+    priority = list(round_.priority_countries or [])
+    rank = {name: i for i, name in enumerate(priority)}
+    # Priorities first, in the order the funders gave them, and shown even at
+    # zero: a priority nobody applied from is the finding, not a gap to hide.
+    first = [(name, countries.get(name, 0)) for name in priority]
+    rest = sorted(
+        ((k, v) for k, v in countries.items() if k not in rank),
+        key=lambda kv: (kv[0] == "Not stated", -kv[1], kv[0]),
+    )
     return {
         "new": len(applicants) - returning,
         "returning": returning,
         "country_count": len([c for c in countries if c != "Not stated"]),
+        "priority": first,
+        "priority_applicants": sum(count for _, count in first),
         # Most applicants first; "Not stated" last whatever its size.
-        "countries": sorted(countries.items(), key=lambda kv: (kv[0] == "Not stated", -kv[1], kv[0])),
+        "countries": rest,
     }
+
+
+def _countries_named(profile, response) -> list[str]:
+    """Where an applicant works: the directory's word for it, else what it wrote on the form."""
+    if profile and profile.countries:
+        return list(profile.countries)
+    from connect_labs.marketplace import countries as country_names
+
+    names, _ = country_names.parse_cell(response.country_as_submitted or "")
+    return names
 
 
 def _as_date(value):
@@ -1028,9 +1046,23 @@ def submission_trend(round_: Solicitation, buckets: int = 26) -> list[dict]:
     Bucketed by week, or by day when the whole round ran inside three weeks,
     because thirty bars of one submission each says less than seven of four.
     """
-    dates = sorted(
-        _as_date(r.submission_date) for r in round_.responses.all() if r.submission_date is not None  # noqa: SIM118
+    priority = set(round_.priority_countries or [])
+    # (date, in a priority country). With no priorities nothing is, and the
+    # chart stays the single series it always was.
+    arrivals = sorted(
+        (
+            _as_date(r.submission_date),
+            bool(priority)
+            and bool(
+                priority.intersection(
+                    _countries_named(getattr(r.llo_entity, "marketplace_profile", None) if r.llo_entity else None, r)
+                )
+            ),
+        )
+        for r in round_.responses.select_related("llo_entity")  # noqa: SIM118
+        if r.submission_date is not None
     )
+    dates = [d for d, _ in arrivals]
     if len(dates) < 2:
         return []
 
@@ -1044,21 +1076,26 @@ def submission_trend(round_: Solicitation, buckets: int = 26) -> list[dict]:
         cursor += datetime.timedelta(days=step)
 
     counts = [0] * len(edges)
-    for value in dates:
+    in_priority = [0] * len(edges)
+    for value, is_priority in arrivals:
         index = min((value - first).days // step, len(edges) - 1)
         counts[index] += 1
+        in_priority[index] += is_priority
 
     peak = max(counts) or 1
     return [
         {
             "start": edge,
             "count": count,
+            "priority": hit,
             # Percentage rather than pixels: the bar is drawn by the template
-            # and has to survive whatever width the column ends up being.
+            # and has to survive whatever width the column ends up being. The
+            # priority share is of the BAR, so the two segments stack to `pct`.
             "pct": round(count * 100 / peak, 1),
+            "priority_pct": round(hit * 100 / count, 1) if count else 0,
             "days": step,
         }
-        for edge, count in zip(edges, counts)
+        for edge, count, hit in zip(edges, counts, in_priority)
     ]
 
 

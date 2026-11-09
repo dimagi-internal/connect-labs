@@ -238,6 +238,7 @@ def marketplace_rounds_list(
             "description": round_.description or "",
             "contact_email": round_.contact_email or "",
             "target_countries": round_.target_countries or "",
+            "priority_countries": round_.priority_countries or [],
             # `applications` counts submissions; `organisations` counts
             # applicants, counting each unattributed submission separately
             # because assuming two of them are the same org is the judgement
@@ -363,6 +364,7 @@ def marketplace_round_responses(user, slug: str, include_contacts: bool = False)
             "rubric_version": round_.rubric_version or "",
             "criteria_basis": round_.criteria_basis or "",
             "summary_url": round_.summary_url or "",
+            "priority_countries": round_.priority_countries or [],
             "questions_withheld": len(questions) - len(shown),
         },
         "responses": out,
@@ -460,6 +462,7 @@ def marketplace_round_scores(
             "title": round_.title,
             "rubric_version": round_.rubric_version or "",
             "summary_url": round_.summary_url or "",
+            "priority_countries": round_.priority_countries or [],
         },
         "version": shown,
         "versions": names,
@@ -648,6 +651,44 @@ def marketplace_round_summary_set(user, slug: str, url: str) -> dict[str, Any]:
     except ValidationError as e:
         raise MCPToolError("BAD_REQUEST", "; ".join(e.messages)) from e
     return {"slug": round_.slug, "summary_url": round_.summary_url}
+
+
+@register(
+    name="marketplace_round_priorities_set",
+    description=(
+        "Set the priority countries of one marketplace EOI/RFP round: the countries its funders put "
+        "first, in priority order. The round page lists them ahead of the other countries and splits "
+        "its submissions-over-time chart into priority and other, and the AI review should weigh "
+        "geography against them. Names are resolved to ISO 3166 (\"DRC\" works); an empty list clears "
+        "them. Only members of the organisation that ran the round may set them. Get the requester's "
+        "approval first."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "slug": {"type": "string", "description": "The round's slug."},
+            "countries": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["slug", "countries"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def marketplace_round_priorities_set(user, slug: str, countries: list) -> dict[str, Any]:
+    from django.core.exceptions import PermissionDenied, ValidationError
+
+    from connect_labs.solicitations.data_access import SolicitationsDataAccess
+    from connect_labs.solicitations.local_models import Solicitation
+
+    try:
+        round_ = SolicitationsDataAccess(user=user).set_round_priority_countries(slug, countries)
+    except Solicitation.DoesNotExist as e:
+        raise MCPToolError("NOT_FOUND", str(e)) from e
+    except PermissionDenied as e:
+        raise MCPToolError("PERMISSION_DENIED", str(e)) from e
+    except ValidationError as e:
+        raise MCPToolError("BAD_REQUEST", "; ".join(e.messages)) from e
+    return {"slug": round_.slug, "priority_countries": round_.priority_countries}
 
 
 @register(

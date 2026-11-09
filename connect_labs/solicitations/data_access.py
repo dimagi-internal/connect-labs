@@ -348,6 +348,37 @@ class SolicitationsDataAccess:
         round_.save(update_fields=["summary_url"])
         return round_
 
+    def set_round_priority_countries(self, slug: str, countries: list) -> Solicitation:
+        """Set the countries a directory round puts first, or clear them with an empty list.
+
+        Names are resolved to ISO 3166's own words, so "DRC" and "Congo, the
+        Democratic Republic of the" are one country. A name nothing resolves is
+        refused rather than stored: a priority that can never match anyone
+        looks like a country with no applicants.
+        """
+        from django.core.exceptions import ValidationError
+
+        from connect_labs.marketplace import countries as country_names
+
+        round_ = Solicitation.objects.directory_rounds().select_related("owner_org").filter(slug=slug).first()
+        if round_ is None:
+            raise Solicitation.DoesNotExist(f"No marketplace round with slug {slug!r}")
+        access.require(
+            access.can_set_round_criteria(self.caller, round_),
+            "Only members of the organisation that ran this round may set its priority countries.",
+        )
+        names: list[str] = []
+        unresolved: list[str] = []
+        for raw in countries or []:
+            found, missed = country_names.parse_cell(str(raw))
+            unresolved.extend(missed)
+            names.extend(n for n in found if n not in names)
+        if unresolved:
+            raise ValidationError(f"Not countries: {', '.join(unresolved)}")
+        round_.priority_countries = names
+        round_.save(update_fields=["priority_countries"])
+        return round_
+
     def set_round_criteria(self, slug: str, criteria: list, basis: str = "", outcome_rules: str = "") -> Solicitation:
         """Replace a directory round's evaluation criteria, and bump its rubric version.
 
