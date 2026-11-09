@@ -202,7 +202,7 @@
           {% endif %}
           <div class="text-[10.5px] font-semibold text-gray-400 tracking-wider">IN LABS</div>
           <a href="{% url 'solicitations:respond' round.public_id %}" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">
-            <i class="fa-regular fa-rectangle-list text-[11px]"></i> The form
+            <i class="fa-regular fa-rectangle-list text-[11px]"></i> Response Form
           </a>
           {% if can_read %}
             <a href="{% url 'solicitations:contact_applicants' round.public_id %}" data-testid="contact-applicants-link" class="text-[13px] text-brand-indigo hover:text-brand-deep-purple flex items-center gap-2">

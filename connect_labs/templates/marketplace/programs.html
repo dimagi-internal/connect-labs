@@ -40,7 +40,6 @@ always worded "up to" — see `queries.committed_by_program`.
     <h1 class="text-[26px] sm:text-3xl lg:text-4xl font-semibold text-white mt-1 leading-tight">Marketplace</h1>
 
     <div class="grid grid-cols-2 gap-x-6 gap-y-4 sm:flex sm:flex-wrap sm:gap-x-12 sm:gap-y-5 mt-6 sm:mt-7">
-      {% if user.is_authenticated %}
       <div>
         <div class="text-[23px] sm:text-[29px] font-semibold text-white tabular-nums">{{ totals.spent }}</div>
         <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">{% if costs_view == "spread" %}PAID OUT, INCL. STARTUP AND SUPPLIES{% else %}PAID OUT PER SERVICE{% endif %}</div>
@@ -55,7 +54,6 @@ always worded "up to" — see `queries.committed_by_program`.
         <div class="text-[23px] sm:text-[29px] font-semibold text-brand-marigold tabular-nums">{{ totals.remaining }}</div>
         <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">UP TO, STILL FUNDED</div>
       </div>
-      {% endif %}
       <div>
         <div class="text-[23px] sm:text-[29px] font-semibold text-white tabular-nums">{{ totals.services|intcomma }}</div>
         <div class="text-[11.5px] text-brand-sky tracking-wider mt-0.5">SERVICES DELIVERED</div>
@@ -97,7 +95,6 @@ always worded "up to" — see `queries.committed_by_program`.
 
 <div class="max-w-screen-2xl mx-auto px-0 sm:px-8 lg:px-10 py-6 sm:py-8">
 
-  {% if user.is_authenticated %}
   {# Start-up and other fixed costs: beside per-service pay, or spread into it. #}
   {# The same choice as the Pulse wall's, remembered across both.            #}
   <div class="flex flex-wrap items-center gap-2 mb-6 text-[12.5px]" id="costs-toggle">
@@ -107,7 +104,6 @@ always worded "up to" — see `queries.committed_by_program`.
     <a href="?costs=spread{% if font %}&font={{ font }}{% endif %}" data-costs="spread"
        class="px-3 py-1 rounded-full border {% if costs_view == 'spread' %}bg-brand-deep-purple text-white border-brand-deep-purple{% else %}border-gray-300 text-gray-600 hover:bg-brand-deep-purple/10 hover:border-brand-deep-purple hover:text-brand-deep-purple{% endif %}">spread into services</a>
   </div>
-  {% endif %}
 
   {% for section in sections %}
     <section class="{% if not forloop.first %}mt-12{% endif %}">
@@ -147,7 +143,6 @@ always worded "up to" — see `queries.committed_by_program`.
               {% endif %}
             </div>
 
-            {% if user.is_authenticated %}
             <div class="flex flex-col gap-1.5">
               {% if c.spent or c.remaining %}
                 {# Paid and still-funded on one line; startup and supplies gets #}
@@ -178,8 +173,6 @@ always worded "up to" — see `queries.committed_by_program`.
               {% endif %}
             </div>
 
-            {% endif %}
-
             {% if user.is_authenticated and c.note %}<p class="text-[13px] text-gray-600 leading-relaxed">{{ c.note }}</p>{% endif %}
 
             {# One three-column grid for the counts and their links, so "Who delivers #}
@@ -201,7 +194,6 @@ always worded "up to" — see `queries.committed_by_program`.
     </div>
   {% endfor %}
 
-  {% if user.is_authenticated %}
   <p class="mt-10 sm:mt-12 pt-5 border-t border-gray-200 text-[12.5px] text-gray-500 max-w-3xl leading-relaxed">
     Paid out and services delivered are the same figures the Pulse wall shows. Startup and supplies are costs Connect
     invoiced outside any unit of work; "spread into services" shares each opportunity's across its approved
@@ -209,7 +201,6 @@ always worded "up to" — see `queries.committed_by_program`.
     left on opportunities that are live today, converted to dollars at the rate Connect applied to their
     payments — an upper bound, since programs rarely spend their whole budget.
   </p>
-  {% endif %}
 </div>
 <script>
   // Remember the choice, shared with the Pulse wall. The link always wins;

@@ -107,16 +107,11 @@ class TestAccess:
     def test_the_landing_page_is_public(self, client, marketplace):
         assert client.get(reverse("marketplace:home")).status_code == 200
 
-    def test_a_visitor_sees_no_money_and_no_applicant_counts_on_the_landing_page(self, client, marketplace):
+    def test_a_visitor_sees_the_money_but_no_applicant_counts_on_the_landing_page(self, client, marketplace):
         body = client.get(reverse("marketplace:home")).content.decode()
-        assert "SERVICES DELIVERED" in body
-        for private in (
-            "PAID OUT",
-            "STILL FUNDED",
-            "ORGANIZATIONS HAVE APPLIED",
-            " applied</span>",
-            "Who has applied",
-        ):
+        for public in ("SERVICES DELIVERED", "PAID OUT", "STILL FUNDED"):
+            assert public in body, public
+        for private in ("ORGANIZATIONS HAVE APPLIED", " applied</span>", "Who has applied"):
             assert private not in body, private
         assert reverse("marketplace:network") not in body
 
