@@ -26,6 +26,9 @@ class Item:
     visible: object = None
     # Also shown to a visitor who is not signed in. Everything else is for a signed-in person.
     public: bool = False
+    # Where the link goes when that is not the item's own page: (url name, *args). The item
+    # still lights for `url_name`'s paths and `owns`, so it stays lit on the page it stands for.
+    link: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -47,9 +50,9 @@ class Menu:
     sidebar_url_name: str = ""
 
 
-def _url(name: str) -> str | None:
+def _url(name: str, *args: str) -> str | None:
     try:
-        return reverse(name)
+        return reverse(name, args=args)
     except NoReverseMatch:
         return None
 
@@ -72,7 +75,8 @@ def build(menu: Menu, request) -> dict | None:
             url = _url(it.url_name)
             if url is None:
                 continue
-            row = {"label": it.label, "url": url, "active": False}
+            target = _url(it.link[0], *it.link[1:]) if it.link else url
+            row = {"label": it.label, "url": target or url, "active": False}
             for prefix in (url, *it.owns):
                 # Longest prefix wins, so a section's landing page ("/labs/pulse/") only lights
                 # for the pages no more specific item claims.

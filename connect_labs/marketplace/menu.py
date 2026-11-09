@@ -49,7 +49,9 @@ MARKETPLACE_MENU = Menu(
         Group(
             "Network",
             (
-                Item("Live delivery", "pulse:index", owns=("/labs/pulse/opp/",)),
+                # The menu opens the night map, not the picker and link manager at the section's
+                # root (Jonathan, 2026-11-09); the item still lights on that root page.
+                Item("Live delivery", "pulse:index", owns=("/labs/pulse/opp/",), link=("pulse:display", "nightmap")),
                 Item("Network growth", "pulse:network"),
                 Item("Connectivity", "pulse:connectivity"),
             ),
