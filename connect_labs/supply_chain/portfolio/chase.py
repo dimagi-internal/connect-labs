@@ -562,6 +562,58 @@ def merge_rows(items: list[dict]) -> list[dict]:
     return rows
 
 
+# What a run of the same kind of line is called once it is one line: (the heading, what each one is).
+CLUSTERS = {
+    "stock_expiring": ("Stock expiring soon or already expired", "lot"),
+}
+# A kind this often on one list is read as one thing with a count; fewer stay as the lines they are.
+CLUSTER_FROM = 3
+
+
+def _cluster_repeats(rows: list[dict]) -> list[dict]:
+    """Rows of one kind, three or more, as one row with a count and the lines behind it.
+
+    "12 jerrycans expire 4 Dec: issue these first" sixteen times is one finding sixteen times over;
+    it reads once, "Stock expiring soon or already expired: 16 lots", with each lot a click away
+    (the row's `parts`, which the chase list already folds). A row that already stands for several
+    (a supplier's or partner's message, with `parts`) is never folded again, and the oldest
+    stays first.
+    """
+    by_kind: dict[str, list[dict]] = {}
+    for row in rows:
+        if not row.get("parts") and row.get("kind"):
+            by_kind.setdefault(row["kind"], []).append(row)
+    folded = {kind for kind, same in by_kind.items() if len(same) >= CLUSTER_FROM}
+    if not folded:
+        return rows
+    out: list[dict] = []
+    seen: set[str] = set()
+    for row in rows:
+        kind = row.get("kind")
+        if kind not in folded or row.get("parts"):
+            out.append(row)
+            continue
+        if kind in seen:
+            continue
+        seen.add(kind)
+        same = by_kind[kind]
+        heading, noun = CLUSTERS.get(kind, (kind.replace("_", " ").capitalize(), "item"))
+        head = dict(same[0])
+        head["ask"] = f"{heading}: {_plural(len(same), noun)}"
+        head["what"] = f"{_plural(len(same), noun)}, oldest first"
+        head["about"] = ""
+        head["href"] = ""
+        head["amount"] = ""
+        head["hint_term"] = ""
+        head["days"] = max((i["days"] for i in same if i["days"] is not None), default=None)
+        head["age_text"] = ""
+        head["parts"] = [
+            {"text": i["ask"], "href": i["href"], "days": i["days"], "amount": i.get("amount", "")} for i in same
+        ]
+        out.append(head)
+    return out
+
+
 def grouped(items: list[dict]) -> list[dict]:
     """The rows by audience, oldest first, empty groups left out, one row per supplier or partner.
 
@@ -575,7 +627,7 @@ def grouped(items: list[dict]) -> list[dict]:
         mine = [
             i for i in items if i["audience"] == audience or (audience == "internal" and i["audience"] not in known)
         ]
-        group = _oldest_first(merge_rows(mine))
+        group = _cluster_repeats(_oldest_first(merge_rows(mine)))
         for row in group:
             # The template reads these on every row and every part; a missing key is an error there.
             for slot in (row, *row.get("parts", [])):

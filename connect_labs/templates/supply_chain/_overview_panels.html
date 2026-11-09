@@ -4,14 +4,14 @@ distribution stands. Worked out in overview.py and the chase list in
 portfolio/chase.py.
 {% endcomment %}
 {% if next_step.line %}
-<section class="rounded-lg border border-brand-border-light bg-white px-5 py-4" data-testid="next-step" aria-label="Next step">
+<section class="rounded-lg border border-brand-border-light bg-white px-4 py-3" data-testid="next-step" aria-label="Next step">
   <div class="text-xs uppercase tracking-wide text-gray-600">Where this program stands</div>
   <div class="mt-1 text-[15px] font-semibold text-gray-900" data-testid="next-step-line">{{ next_step.line }}</div>
   {% if next_step.next %}<div class="mt-1 text-sm text-gray-700" data-testid="next-step-next">Next: {{ next_step.next }}.</div>{% endif %}
 </section>
 {% endif %}
 
-<section class="flex flex-col gap-3" data-testid="chase-list" aria-label="To chase">
+<section class="flex flex-col gap-2" data-testid="chase-list" aria-label="To chase">
   <div class="flex flex-wrap items-baseline justify-between gap-x-4">
     <h2 class="text-brand-deep-purple text-lg font-semibold">To chase{% if not supply_as_of %} <span class="text-sm font-normal tabular-nums text-gray-600">{{ chase_count }}</span>{% endif %}</h2>
     <a class="text-sm text-brand-indigo underline" href="{{ map_url }}">The same list on the Map, with the places</a>
@@ -23,7 +23,7 @@ portfolio/chase.py.
   {% endif %}
 </section>
 
-<section class="flex flex-col gap-3" data-testid="distribution-overview" aria-label="Distribution">
+<section class="flex flex-col gap-2" data-testid="distribution-overview" aria-label="Distribution">
   <h2 class="text-brand-deep-purple text-lg font-semibold">Distribution: local partners (LLOs) and field workers</h2>
   {% with d=distribution %}
   <div class="grid gap-3 md:grid-cols-3">
