@@ -613,6 +613,28 @@ class PulseCostsView(LoginRequiredMixin, View):
 
 
 @CONTEXT_NOT_USED
+class PulseCEAOppView(LoginRequiredMixin, View):
+    """One opportunity's cost-effectiveness, end to end (`pulse.cea.opportunity_detail`).
+
+    Where its visits happened, the baseline there and where each figure came from,
+    the model's other inputs, its observed people and cost, and the result.
+    ``?format=json`` returns the same structure.
+    """
+
+    def get(self, request, opp_id):
+        from django.http import Http404, JsonResponse
+
+        from connect_labs.pulse import cea
+
+        detail = cea.opportunity_detail(opp_id)
+        if detail is None:
+            raise Http404("No such opportunity")
+        if request.GET.get("format") == "json":
+            return JsonResponse(detail, json_dumps_params={"default": str})
+        return render(request, "pulse/cea_opp.html", {"d": detail})
+
+
+@CONTEXT_NOT_USED
 class PulseCEAView(LoginRequiredMixin, View):
     """Every opportunity ranked against Connect's cost-effectiveness models.
 

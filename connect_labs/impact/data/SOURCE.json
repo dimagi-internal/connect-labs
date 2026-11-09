@@ -1,0 +1,6 @@
+{
+ "repo": "dimagi-internal/connect-cea-models",
+ "commit": "631a581e0f07b7efc11d6ff9f5f688e0fcde5c0f",
+ "branch": "spec-places",
+ "files": ["models/chc/spec.json", "models/kc/spec.json", "models/mbw/spec.json"]
+}

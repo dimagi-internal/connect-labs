@@ -1,0 +1,160 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}{{ d.row.name }} · Cost-effectiveness{% endblock %}
+
+{% block css %}
+{{ block.super }}
+<style>
+  .ceo { --ink:#1f2433; --muted:#6b7280; --rule:#e5e7eb; --card:#fff; --good:#15803d; --low:#b91c1c; --accent:#4338ca;
+         color:var(--ink); max-width:1180px; margin:0 auto; padding:28px 16px 64px; }
+  .ceo a { color:var(--accent); }
+  .ceo h1 { font-size:24px; font-weight:600; margin:4px 0 2px; letter-spacing:-.01em; }
+  .ceo .meta { color:var(--muted); font-size:13px; margin-bottom:18px; }
+  .ceo .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:20px; }
+  .ceo .tile { background:var(--card); border-radius:10px; padding:14px 16px; box-shadow:0 1px 2px rgba(0,0,0,.05); }
+  .ceo .tile .k { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  .ceo .tile .v { font-size:24px; font-weight:600; margin-top:4px; font-variant-numeric:tabular-nums; }
+  .ceo .tile .s { font-size:12px; color:var(--muted); margin-top:2px; }
+  .ceo .card { background:var(--card); border-radius:10px; box-shadow:0 1px 2px rgba(0,0,0,.05); padding:18px; margin-bottom:16px; }
+  .ceo .card h2 { font-size:16px; font-weight:600; margin:0 0 2px; }
+  .ceo .card .sub { font-size:13px; color:var(--muted); margin:0 0 12px; max-width:860px; line-height:1.5; }
+  .ceo .step { display:inline-block; width:22px; height:22px; border-radius:50%; background:#eef2ff; color:var(--accent);
+               font-size:12px; font-weight:600; text-align:center; line-height:22px; margin-right:6px; }
+  .ceo .wrap { overflow-x:auto; }
+  .ceo table { width:100%; border-collapse:collapse; font-size:13px; }
+  .ceo th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600;
+            padding:7px 8px; border-bottom:1px solid var(--rule); white-space:nowrap; }
+  .ceo td { padding:7px 8px; border-bottom:1px solid #f3f4f6; vertical-align:top; }
+  .ceo td.n, .ceo th.n { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .ceo .lvl { font-size:11px; padding:2px 7px; border-radius:999px; background:#f3f4f6; color:var(--muted); white-space:nowrap; }
+  .ceo .lvl.local { background:#dcfce7; color:var(--good); }
+  .ceo .pill { font-size:12px; padding:2px 8px; border-radius:999px; background:#f3f4f6; color:var(--muted); }
+  .ceo .pill.ok { background:#dcfce7; color:var(--good); } .ceo .pill.lo { background:#fee2e2; color:var(--low); }
+  .ceo .muted { color:var(--muted); }
+  .ceo .eq { font-size:14px; line-height:1.9; font-variant-numeric:tabular-nums; }
+  .ceo .eq b { font-weight:600; }
+  .ceo details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-top:8px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ceo">
+  <a href="{% url 'pulse:cea' %}">&larr; Cost-effectiveness ranking</a>
+  <h1>{{ d.row.name }}</h1>
+  <div class="meta">
+    {{ d.row.org_slug }} · {{ d.row.service_name }} · {{ d.row.country_name }}
+    · <span class="pill {% if d.row.status == 'modelled' %}{% if d.row.clears_bar %}ok{% else %}lo{% endif %}{% endif %}">{{ d.row.status_text }}</span>
+    {% if d.model_meta %} · model: <a href="{{ d.model_meta.sheet }}" target="_blank" rel="noopener">{{ d.model_meta.label }}</a>{% endif %}
+  </div>
+
+  {% with r=d.result row=d.row %}
+  <div class="tiles">
+    <div class="tile"><div class="k">Multiple at actual cost</div>
+      <div class="v">{% if r.x %}{{ r.x|floatformat:1 }}x{% else %}–{% endif %}</div>
+      <div class="s">GiveWell bar {{ d.bar_x }}x</div></div>
+    <div class="tile"><div class="k">Deaths averted (modelled)</div>
+      <div class="v">{% if r.deaths_averted %}{{ r.deaths_averted|floatformat:1 }}{% else %}–{% endif %}</div>
+      <div class="s">{% if r.cost_per_death %}${{ r.cost_per_death|floatformat:0|intcomma }} per death{% endif %}</div></div>
+    <div class="tile"><div class="k">People reached</div>
+      <div class="v">{{ row.reached|intcomma }}</div>
+      <div class="s">{% if row.reach_basis == 'busiest_payment_unit' %}estimate{% else %}distinct people, approved work{% endif %}</div></div>
+    <div class="tile"><div class="k">Cost per person</div>
+      <div class="v">{% if r.cost_per_person %}${{ r.cost_per_person|floatformat:2 }}{% else %}–{% endif %}</div>
+      <div class="s">{% if r.model_cost_per_person %}model price ${{ r.model_cost_per_person|floatformat:2 }}{% endif %}</div></div>
+    <div class="tile"><div class="k">Model multiple here</div>
+      <div class="v">{% if r.model_x %}{{ r.model_x|floatformat:1 }}x{% else %}–{% endif %}</div>
+      <div class="s">{% if r.country_model_x %}{{ row.country_name }} as a whole: {{ r.country_model_x|floatformat:1 }}x{% endif %}</div></div>
+  </div>
+
+  {% if not r %}
+  <div class="card"><h2>Not valued</h2>
+    <p class="sub">{{ row.status_text }}. {% if not row.model %}Connect has no cost-effectiveness model for {{ row.service_name }}.{% else %}The model has no figures for {{ row.country_name }}.{% endif %}</p></div>
+  {% else %}
+
+  <div class="card">
+    <h2><span class="step">1</span>Where it was delivered</h2>
+    <p class="sub">Each approved visit's GPS, placed in the most local area Labs holds baseline figures for (a district where loaded, else the state or province). An area's share is its share of approved visits.
+      {% if d.placement.visits %}{{ d.placement.visits|intcomma }} approved visits with GPS{% if d.placement.unplaced %}; {{ d.placement.unplaced|intcomma }} fell outside every area{% endif %}.{% else %}No approved visit carries GPS, so it is valued at {{ row.country_name }}'s figures.{% endif %}</p>
+    <div class="wrap"><table>
+      <thead><tr><th>Area</th><th>Level</th><th class="n">Visits</th><th class="n">Share</th><th class="n">Model multiple there</th><th class="n">Deaths averted per 100,000</th></tr></thead>
+      <tbody>{% for a in r.areas %}
+        <tr><td>{{ a.name }}</td><td><span class="lvl">{{ a.level }}</span></td>
+          <td class="n">{% if a.visits %}{{ a.visits|intcomma }}{% else %}–{% endif %}</td>
+          <td class="n">{% widthratio a.share 1 100 %}%</td>
+          <td class="n">{{ a.model_x|floatformat:1 }}x</td><td class="n">{{ a.deaths_per_100k|floatformat:1 }}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">2</span>Baseline in those places</h2>
+    <p class="sub">The model's inputs that describe a place. Each takes the most local figure Labs holds; with nothing more local it takes the model's own figure for the country, which is what the published per-country results use.
+      {% if not r.location_labels %}This model has no place inputs: its risk is the model's own figure everywhere.{% endif %}</p>
+    {% if r.location_labels %}
+    <div class="wrap"><table>
+      <thead><tr><th>Input</th><th>Area</th><th class="n">Value</th><th>From</th><th>Source</th><th>How</th><th class="n">Country figure</th></tr></thead>
+      <tbody>{% for a in r.areas %}{% for key, v in a.inputs.items %}
+        <tr><td>{% for k, label in r.location_labels.items %}{% if k == key %}{{ label }}{% endif %}{% endfor %}</td>
+          <td>{{ a.name }}</td>
+          <td class="n">{{ v.value|floatformat:4 }}</td>
+          <td><span class="lvl {% if v.level == 'district' or v.level == 'state or province' %}local{% endif %}">{{ v.level }}</span> <span class="muted">{{ v.measured_at }}</span></td>
+          <td class="muted">{{ v.source }}</td><td class="muted">{{ v.how }}</td>
+          <td class="n">{% if v.country_value is not None %}{{ v.country_value|floatformat:4 }}{% else %}–{% endif %}</td></tr>
+      {% endfor %}{% endfor %}</tbody>
+    </table></div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2><span class="step">3</span>The model, run there</h2>
+    <p class="sub">The model's own formulas ({{ d.model_meta.label }}, connect-cea-models {{ r.spec.commit|slice:":7" }}{% if r.spec.version %}, {{ r.spec.version }}{% endif %}), run once per area with that area's baseline. Key steps for each area:</p>
+    {% for a in r.areas %}
+    <details {% if forloop.first %}open{% endif %}><summary>{{ a.name }} ({% widthratio a.share 1 100 %}% of visits)</summary>
+      <div class="wrap"><table>
+        <thead><tr><th>Step</th><th>Row</th><th class="n">Value</th></tr></thead>
+        <tbody>{% for c in a.chain %}<tr><td class="muted">{{ c.step }}</td><td>{{ c.label }}</td><td class="n">{{ c.value|floatformat:4 }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+    </details>
+    {% endfor %}
+    <details><summary>Every other input (effect sizes, programme settings, GiveWell's values)</summary>
+      <div class="wrap"><table>
+        <thead><tr><th>Input</th><th class="n">Value</th><th>Unit</th><th>Kind</th><th>Where from</th></tr></thead>
+        <tbody>{% for i in r.other_inputs %}<tr><td>{{ i.label }}</td><td class="n">{{ i.value }}</td><td class="muted">{{ i.unit }}</td><td class="muted">{{ i.type }}</td><td class="muted">{{ i.where|default:"" }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+    </details>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">4</span>What it cost, and who it reached</h2>
+    <p class="sub">From Connect: everything paid for the opportunity in USD (worker pay, the organisation's fee, invoices and costs entered in Labs), and the distinct people with approved work.</p>
+    <table><tbody>
+      <tr><td>Total cost</td><td class="n">${{ row.total_usd|floatformat:0|intcomma }}</td></tr>
+      {% if row.pooled_usd %}<tr><td class="muted">of which paid through opportunit{{ row.pooled_from|length|pluralize:"y,ies" }} {{ row.pooled_from|join:", " }} (same programme and partner, shared by people reached)</td><td class="n">${{ row.pooled_usd|floatformat:0|intcomma }}</td></tr>{% endif %}
+      {% if row.fixed_usd %}<tr><td class="muted">of which fixed costs (invoices, Labs cost entries)</td><td class="n">${{ row.fixed_usd|floatformat:0|intcomma }}</td></tr>{% endif %}
+      <tr><td>People reached</td><td class="n">{{ row.reached|intcomma }}</td></tr>
+      {% if row.works_per_person %}<tr><td class="muted">Approved work per person</td><td class="n">{{ row.works_per_person }}</td></tr>{% endif %}
+      <tr><td>Cost per person</td><td class="n">{% if r.cost_per_person %}${{ r.cost_per_person|floatformat:2 }}{% else %}–{% endif %}</td></tr>
+      <tr><td class="muted">The model's price per person ({{ d.model_meta.unit }})</td><td class="n">${{ r.model_cost_per_person|floatformat:2 }}</td></tr>
+    </tbody></table>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">5</span>Result</h2>
+    <p class="sub">Every model here runs with GiveWell's leveraging adjustment at 1, so the benefit per person is set by the place and the multiple scales with price exactly. Deaths only, so each multiple is a floor.</p>
+    {% if r.x %}
+    <div class="eq">
+      Model multiple, visit-weighted across the areas: <b>{{ r.model_x|floatformat:2 }}x</b><br>
+      &times; model price ${{ r.model_cost_per_person|floatformat:2 }} &divide; actual ${{ r.cost_per_person|floatformat:2 }}
+      = <b>{{ r.x|floatformat:1 }}x</b> at actual cost, {% if r.clears_bar %}above{% else %}below{% endif %} GiveWell's bar of {{ d.bar_x }}x<br>
+      Deaths averted: {{ row.reached|intcomma }} people &times; {{ r.model_deaths_per_100k|floatformat:1 }} per 100,000 = <b>{{ r.deaths_averted|floatformat:1 }}</b>
+      {% if r.cost_per_death %}, ${{ r.cost_per_death|floatformat:0|intcomma }} per death averted{% endif %}
+    </div>
+    {% else %}
+    <p class="muted">{{ row.status_text }}: no multiple at actual cost.</p>
+    {% endif %}
+    <p class="sub" style="margin-top:12px"><a href="?format=json">This page as JSON</a></p>
+  </div>
+  {% endif %}
+  {% endwith %}
+</div>
+{% endblock %}

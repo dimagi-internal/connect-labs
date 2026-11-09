@@ -1,0 +1,1920 @@
+{
+ "model": "mbw",
+ "version": "1.0, October 2026",
+ "source": "models/mbw/build_mbw_model.py",
+ "inputs": [
+  {
+   "key": "nmr",
+   "label": "Newborn deaths per 1,000 live births (neonatal mortality)",
+   "unit": "per 1,000",
+   "value": 23.6,
+   "low": 20.7,
+   "high": 28.3,
+   "type": "Set for each location",
+   "block": "location",
+   "meaning": "Deaths in the first 28 days of life, per 1,000 babies born alive. Breastfeeding support prevents a small share of them.",
+   "where": "UN IGME 2024 (childmortality.org), neonatal mortality rate. A DHS survey also gives it, for regions too.",
+   "range": "6 (Sao Tome and Principe) to 39 (South Sudan), median 24 (45 sub-Saharan countries, UN IGME 2024)",
+   "format": "#,##0.0"
+  },
+  {
+   "key": "imr",
+   "label": "Infant deaths per 1,000 live births (infant mortality)",
+   "unit": "per 1,000",
+   "value": 40.2,
+   "low": 32.1,
+   "high": 54.6,
+   "type": "Set for each location",
+   "block": "location",
+   "meaning": "Deaths before the first birthday, per 1,000 babies born alive. Infant minus newborn deaths gives the deaths after the first month, where most of the benefit is.",
+   "where": "UN IGME 2024 (childmortality.org), infant mortality rate.",
+   "range": "9 (Sao Tome and Principe) to 72 (South Sudan), median 40 (45 sub-Saharan countries, UN IGME 2024)",
+   "format": "#,##0.0"
+  },
+  {
+   "key": "ebf",
+   "label": "Babies under 6 months exclusively breastfed",
+   "unit": "share",
+   "value": 0.509,
+   "low": 0.594,
+   "high": 0.34,
+   "type": "Set for each location",
+   "block": "location",
+   "meaning": "Share of babies under six months given only breast milk. Used only when the breastfeeding gap setting is above 0, to scale the benefit down where breastfeeding is already common. GiveWell's own calculation does not use it.",
+   "where": "The latest DHS or MICS survey, or UNICEF's data warehouse.",
+   "range": "7% (Chad, 2022 survey) to 83% (Burundi, 2024 survey), median 51% (45 sub-Saharan countries, latest survey in each, 2010 to 2025)",
+   "format": "0.0%"
+  },
+  {
+   "key": "cost",
+   "label": "Cost per mother and baby pair, all visits",
+   "unit": "$",
+   "value": 10.0,
+   "low": 12.0,
+   "high": 8.0,
+   "type": "Program cost",
+   "block": "program",
+   "meaning": "The cost of all visits for one mother and baby pair.",
+   "where": "Current pilot cost in Nigeria is $8 per case",
+   "range": null,
+   "format": "\"$\"#,##0.00"
+  },
+  {
+   "key": "later",
+   "label": "Children who benefit per pair, counting later children",
+   "unit": "count",
+   "value": 2.0,
+   "low": 1.0,
+   "high": 2.0,
+   "type": "Judgement call: GiveWell's guess (MBW model, Nov 2024)",
+   "block": "judgement call",
+   "meaning": "A mother who learns to breastfeed is likely to breastfeed her next children too. GiveWell counts each pair as two children and labels this a guess.",
+   "where": "GiveWell's CEA for Dimagi's MBW program design grant (November 2024), row 12 (GiveWell's guess).",
+   "range": "1 (this baby only) to 2",
+   "format": "0.00"
+  },
+  {
+   "key": "gap_on",
+   "label": "How far to scale the benefit by the breastfeeding gap (0 = not at all, 1 = fully)",
+   "unit": "share",
+   "value": 0.0,
+   "low": 1.0,
+   "high": 0.0,
+   "type": "Judgement call: ours (0, as GiveWell)",
+   "block": "judgement call",
+   "meaning": "At 1, the benefit is scaled by the share of babies not yet exclusively breastfed, compared with the trials behind GiveWell's estimate (82% not exclusively breastfed in their control groups). At 0.5 it goes halfway. Where breastfeeding is already common, the benefit is smaller.",
+   "where": "0 by default to match GiveWell's calculation, which does not do this. A review for GiveWell (Rethink Priorities, April 2026) found little evidence either way (very low confidence).",
+   "range": "0 to 1",
+   "format": "0.0"
+  },
+  {
+   "key": "gov_share",
+   "label": "Government cost, as a share of the organisation's cost",
+   "unit": "share",
+   "value": 0.0,
+   "low": null,
+   "high": null,
+   "type": "Our assumption, open to review",
+   "block": "fixed",
+   "meaning": "What the government spends on the program, in cash or in kind, for every dollar the organisation spends. That money could have done good elsewhere, so GiveWell's leveraging adjustment takes off the good it would have done. At 0% there is nothing to take off.",
+   "where": "0% by default, as in GiveWell's MBW analysis, which applies no leveraging adjustment: in Connect programs the government gives permission but does not pay for the work. If a government co-funds the program, enter its share.",
+   "range": "0% to 100%",
+   "format": "0.0%"
+  },
+  {
+   "key": "funging",
+   "label": "Funging adjustment",
+   "unit": "factor",
+   "value": 1.0,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: MBW model (Nov 2024)",
+   "block": "fixed",
+   "meaning": "GiveWell's discount for the chance that others would have funded the program anyway.",
+   "where": "GiveWell's CEA for Dimagi's MBW program design grant (November 2024) applies none (1.00). The CHC model uses 0.93, from GiveWell's CHAI Bauchi ORS and zinc grant.",
+   "range": "0.93 to 1",
+   "format": "0.000"
+  },
+  {
+   "key": "benchmark",
+   "label": "GiveWell benchmark, units of value per dollar",
+   "unit": "per $",
+   "value": 0.003,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: benchmark (Nov 2025)",
+   "block": "fixed",
+   "meaning": "Every result is divided by this. GiveWell's funding bar is 6 times this figure (May 2026).",
+   "where": "GiveWell's cost-effectiveness page, September 2026. Its MBW analysis used 0.00335, which makes results about 10% lower.",
+   "range": "Set by GiveWell",
+   "format": "0.00000"
+  },
+  {
+   "key": "diarr_red",
+   "label": "Fall in diarrhoea with breastfeeding support",
+   "unit": "share",
+   "value": 0.16,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: MBW model (Nov 2024), meta-analysis of 6 trials",
+   "block": "fixed",
+   "meaning": "Across 6 trials with diarrhoea outcomes (10 study groups: some trials ran in several sites or arms), breastfeeding support cut diarrhoea by 16% (relative risk 0.84).",
+   "where": "GiveWell's CEA for Dimagi's MBW program design grant (November 2024), Meta-analysis tab (row 18 of the CEA tab).",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "post_share",
+   "label": "Share of deaths after the first month from causes breastfeeding could reduce",
+   "unit": "share",
+   "value": 0.80452,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: MBW model (Nov 2024), from IHME GBD 2019",
+   "block": "fixed",
+   "meaning": "GiveWell assumes fewer diarrhoea bouts lower deaths from infections more widely (respiratory, enteric, malaria and others), capping causes it thinks unlikely (half of preterm and other neonatal causes, a quarter of sudden infant deaths). This is the capped share of all deaths after the first month.",
+   "where": "GiveWell's CEA for Dimagi's MBW program design grant (November 2024), Mortality plausibility modeling tab, row 19 (IHME cause shares, low SDI).",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "neo_scale",
+   "label": "Effect on newborns compared with older babies",
+   "unit": "factor",
+   "value": 0.69591,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: MBW model (Nov 2024), from Olufunlayo et al. 2019",
+   "block": "fixed",
+   "meaning": "Breastfeeding support raises exclusive breastfeeding less in the first month than later, so GiveWell scales the effect for newborns by this.",
+   "where": "GiveWell's CEA for Dimagi's MBW program design grant (November 2024), row 23 (from Olufunlayo et al. 2019).",
+   "range": null,
+   "format": "0.000"
+  },
+  {
+   "key": "neo_share",
+   "label": "Share of newborn deaths from causes breastfeeding could reduce",
+   "unit": "share",
+   "value": 0.44892,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: MBW model (Nov 2024), from IHME GBD 2019",
+   "block": "fixed",
+   "meaning": "As above, for deaths in the first 28 days, where preterm birth and other newborn conditions dominate.",
+   "where": "GiveWell's CEA for Dimagi's MBW program design grant (November 2024), Mortality plausibility modeling tab, row 35.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "iv",
+   "label": "Internal validity adjustment",
+   "unit": "factor",
+   "value": 0.7,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: MBW model (Nov 2024)",
+   "block": "fixed",
+   "meaning": "GiveWell keeps 70% of the trial results, for weaknesses in the trials.",
+   "where": "GiveWell's CEA for Dimagi's MBW program design grant (November 2024), row 29.",
+   "range": null,
+   "format": "0.00"
+  },
+  {
+   "key": "ev",
+   "label": "External validity adjustment",
+   "unit": "factor",
+   "value": 0.75,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: MBW model (Nov 2024)",
+   "block": "fixed",
+   "meaning": "GiveWell keeps 75% again, as the trials' settings may differ from the program's.",
+   "where": "GiveWell's CEA for Dimagi's MBW program design grant (November 2024), row 30.",
+   "range": null,
+   "format": "0.00"
+  },
+  {
+   "key": "mw_post",
+   "label": "Value of preventing a death after the first month (units)",
+   "unit": "units",
+   "value": 100.7,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: moral weights (2025)",
+   "block": "fixed",
+   "meaning": "GiveWell's moral weight for a death between one month and one year.",
+   "where": "GiveWell's CEA for Dimagi's MBW program design grant (November 2024), row 39 (GiveWell moral weights).",
+   "range": null,
+   "format": "#,##0.0"
+  },
+  {
+   "key": "mw_neo",
+   "label": "Value of preventing a newborn death (units)",
+   "unit": "units",
+   "value": 84.0,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: moral weights (2025)",
+   "block": "fixed",
+   "meaning": "GiveWell's moral weight for a death in the first month.",
+   "where": "GiveWell's CEA for Dimagi's MBW program design grant (November 2024), row 41 (GiveWell moral weights).",
+   "range": null,
+   "format": "#,##0.0"
+  },
+  {
+   "key": "dev_ratio",
+   "label": "Value from higher income, as a share of the value from deaths averted, for SMC",
+   "unit": "share",
+   "value": 0.31,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: MBW model (Nov 2024)",
+   "block": "fixed",
+   "meaning": "GiveWell values longer-term development (income) effects relative to its seasonal malaria chemoprevention estimate.",
+   "where": "GiveWell's CEA for Dimagi's MBW program design grant (November 2024), row 45.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "dev_bf",
+   "label": "Development effects of breastfeeding support, compared with SMC",
+   "unit": "factor",
+   "value": 0.30233,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: MBW model (Nov 2024)",
+   "block": "fixed",
+   "meaning": "GiveWell's score of the evidence for breastfeeding's development effects against SMC's (0.65 against 2.15).",
+   "where": "GiveWell's CEA for Dimagi's MBW program design grant (November 2024), Development effects tab.",
+   "range": null,
+   "format": "0.000"
+  },
+  {
+   "key": "dev_young",
+   "label": "Scaling for a younger group of children",
+   "unit": "factor",
+   "value": 2.0,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: MBW model (Nov 2024)",
+   "block": "fixed",
+   "meaning": "GiveWell doubles the development value because the children are younger than SMC's.",
+   "where": "GiveWell's CEA for Dimagi's MBW program design grant (November 2024), row 49 (GiveWell's guess).",
+   "range": null,
+   "format": "0.00"
+  },
+  {
+   "key": "excl",
+   "label": "Adjustment for effects not modelled",
+   "unit": "factor",
+   "value": 1.12004,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: MBW model (Nov 2024)",
+   "block": "fixed",
+   "meaning": "GiveWell's addition for benefits outside the calculation: birth spacing, skin-to-skin contact, deaths of children over one, illness and others.",
+   "where": "GiveWell's CEA for Dimagi's MBW program design grant (November 2024), Adjustments for excluded effects tab.",
+   "range": null,
+   "format": "0.000"
+  },
+  {
+   "key": "ref_ebf",
+   "label": "Exclusive breastfeeding in the trials' control groups",
+   "unit": "share",
+   "value": 0.1784,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: MBW model (Nov 2024)",
+   "block": "fixed",
+   "meaning": "Used only to scale the benefit by the breastfeeding gap.",
+   "where": "GiveWell's CEA for Dimagi's MBW program design grant (November 2024), Uptake of breastfeeding tab, row 30 (weighted average).",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "lv_gov_value",
+   "label": "Value of a government dollar spent elsewhere",
+   "unit": "units per $",
+   "value": 0.0056,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: ORS and zinc model (Aug 2023)",
+   "block": "fixed",
+   "meaning": "What government money would achieve if it were not spent on this program. Used only for the leveraging adjustment.",
+   "where": "GiveWell ORS and zinc spreadsheet, leverage and funging inputs.",
+   "range": null,
+   "format": "0.0000\" units per $\""
+  },
+  {
+   "key": "lv_other_value",
+   "label": "Value of another funder's dollar spent elsewhere",
+   "unit": "units per $",
+   "value": 0.0215,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: ORS and zinc model (Aug 2023)",
+   "block": "fixed",
+   "meaning": "The same, for money from other funders. Used only for the leveraging adjustment.",
+   "where": "GiveWell ORS and zinc spreadsheet, leverage and funging inputs.",
+   "range": null,
+   "format": "0.0000\" units per $\""
+  },
+  {
+   "key": "lv_p_gov",
+   "label": "Chance the government would run the program without this funding",
+   "unit": "share",
+   "value": 0.05,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: ORS and zinc model (Aug 2023)",
+   "block": "fixed",
+   "meaning": "Used only for the leveraging adjustment.",
+   "where": "GiveWell ORS and zinc spreadsheet, leverage and funging inputs.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "lv_p_other",
+   "label": "Chance another funder would pay for it without this funding",
+   "unit": "share",
+   "value": 0.05,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: ORS and zinc model (Aug 2023)",
+   "block": "fixed",
+   "meaning": "Used only for the leveraging adjustment.",
+   "where": "GiveWell ORS and zinc spreadsheet, leverage and funging inputs.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "lv_p_none",
+   "label": "Chance the program would not happen without this funding",
+   "unit": "share",
+   "value": 0.9,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: ORS and zinc model (Aug 2023)",
+   "block": "fixed",
+   "meaning": "Used only for the leveraging adjustment.",
+   "where": "GiveWell ORS and zinc spreadsheet, leverage and funging inputs.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "lv_gov_part",
+   "label": "Share of the program that would still happen if the government ran it",
+   "unit": "share",
+   "value": 0.8,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: ORS and zinc model (Aug 2023)",
+   "block": "fixed",
+   "meaning": "Used only for the leveraging adjustment.",
+   "where": "GiveWell ORS and zinc spreadsheet, leverage and funging inputs.",
+   "range": null,
+   "format": "0.0%"
+  }
+ ],
+ "rows": [
+  {
+   "key": "top_x",
+   "label": "Multiple of GiveWell's benchmark",
+   "step": "Results",
+   "formula": "r_x",
+   "checks": [
+    "r_x",
+    "r_x"
+   ],
+   "type": "Calculated",
+   "note": "Calculated step by step below. The grey columns should show GiveWell's 17.73x and 13.54x.",
+   "format": "0.00\"x\"",
+   "result": true,
+   "text": false
+  },
+  {
+   "key": "top_cpd",
+   "label": "Cost per death averted",
+   "step": "Results",
+   "formula": "r_cpd",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "\"$\"#,##0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "pairs",
+   "label": "Mother and baby pairs reached (a standard group of 100,000)",
+   "step": "Step 1. Cost",
+   "formula": "100000",
+   "checks": [
+    100000,
+    100000
+   ],
+   "type": "Assumption",
+   "note": "Every figure below is per 100,000 pairs, so the size of the program does not matter.",
+   "format": "#,##0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "cost",
+   "label": "Cost per mother and baby pair, all visits",
+   "step": "Step 1. Cost",
+   "formula": "i_cost",
+   "checks": [
+    12.0,
+    16.33333333
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab or the Scenarios tab. The grey columns use GiveWell's own costs.",
+   "format": "\"$\"#,##0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "total",
+   "label": "Organisation's cost for 100,000 pairs",
+   "step": "Step 1. Cost",
+   "formula": "r_pairs*r_cost",
+   "checks": [
+    "r_pairs*r_cost",
+    "r_pairs*r_cost"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "\"$\"#,##0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "later",
+   "label": "Children who benefit per pair, counting later children",
+   "step": "Step 2. Children who benefit",
+   "formula": "i_later",
+   "checks": [
+    2,
+    2
+   ],
+   "type": "Input",
+   "note": "GiveWell's guess: the mother breastfeeds later children too.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "children",
+   "label": "Children who benefit, per 100,000 pairs",
+   "step": "Step 2. Children who benefit",
+   "formula": "r_pairs*r_later",
+   "checks": [
+    "r_pairs*r_later",
+    "r_pairs*r_later"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "#,##0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "nmr",
+   "label": "Newborn deaths per 1,000 live births",
+   "step": "Step 3. Deaths averted after the first month",
+   "formula": "i_nmr",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab or the Scenarios tab.",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "imr",
+   "label": "Infant deaths per 1,000 live births",
+   "step": "Step 3. Deaths averted after the first month",
+   "formula": "i_imr",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab or the Scenarios tab.",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "post_rate",
+   "label": "Chance of dying between one month and one year",
+   "step": "Step 3. Deaths averted after the first month",
+   "formula": "(r_imr-r_nmr)/1000",
+   "checks": [
+    0.02753196913,
+    0.03168579982
+   ],
+   "type": "Calculated",
+   "note": "Infant minus newborn deaths, per baby. GiveWell's calculation starts here, so the grey columns enter its IHME rates in this row.",
+   "format": "0.0000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "diarr_red",
+   "label": "Fall in diarrhoea with breastfeeding support",
+   "step": "Step 3. Deaths averted after the first month",
+   "formula": "i_diarr_red",
+   "checks": [
+    "i_diarr_red",
+    "i_diarr_red"
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab (GiveWell's meta-analysis).",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "post_share",
+   "label": "Share of these deaths from causes breastfeeding could reduce",
+   "step": "Step 3. Deaths averted after the first month",
+   "formula": "i_post_share",
+   "checks": [
+    "i_post_share",
+    "i_post_share"
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab (GiveWell's plausibility caps). The trials measured diarrhoea only; GiveWell applies the same cut to other infection deaths. A review for GiveWell (Rethink Priorities, April 2026) calls this inconsistent with diarrhoea being the main pathway and sets out options. No change made.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "post_eff",
+   "label": "Fall in deaths after the first month",
+   "step": "Step 3. Deaths averted after the first month",
+   "formula": "r_diarr_red*r_post_share",
+   "checks": [
+    "r_diarr_red*r_post_share",
+    "r_diarr_red*r_post_share"
+   ],
+   "type": "Calculated",
+   "note": "GiveWell's 12.87% (CEA row 19).",
+   "format": "0.00%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "post_d",
+   "label": "Deaths averted after the first month, per 100,000 pairs",
+   "step": "Step 3. Deaths averted after the first month",
+   "formula": "r_children*r_post_rate*r_post_eff",
+   "checks": [
+    "r_children*r_post_rate*r_post_eff",
+    "r_children*r_post_rate*r_post_eff"
+   ],
+   "type": "Calculated",
+   "note": "Before GiveWell's validity adjustments (Step 5).",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "neo_rate",
+   "label": "Chance of dying in the first 28 days",
+   "step": "Step 4. Newborn deaths averted",
+   "formula": "r_nmr/1000",
+   "checks": [
+    0.03654513087,
+    0.02855670018
+   ],
+   "type": "Calculated",
+   "note": "Newborn deaths per baby. The grey columns enter GiveWell's IHME rates in this row.",
+   "format": "0.0000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "neo_scale",
+   "label": "Effect on newborns compared with older babies",
+   "step": "Step 4. Newborn deaths averted",
+   "formula": "i_neo_scale",
+   "checks": [
+    "i_neo_scale",
+    "i_neo_scale"
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab.",
+   "format": "0.000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "neo_share",
+   "label": "Share of newborn deaths from causes breastfeeding could reduce",
+   "step": "Step 4. Newborn deaths averted",
+   "formula": "i_neo_share",
+   "checks": [
+    "i_neo_share",
+    "i_neo_share"
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "neo_eff",
+   "label": "Fall in newborn deaths",
+   "step": "Step 4. Newborn deaths averted",
+   "formula": "r_diarr_red*r_neo_scale*r_neo_share",
+   "checks": [
+    "r_diarr_red*r_neo_scale*r_neo_share",
+    "r_diarr_red*r_neo_scale*r_neo_share"
+   ],
+   "type": "Calculated",
+   "note": "GiveWell's 5.00% (CEA row 25).",
+   "format": "0.00%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "neo_d",
+   "label": "Newborn deaths averted, per 100,000 pairs",
+   "step": "Step 4. Newborn deaths averted",
+   "formula": "r_children*r_neo_rate*r_neo_eff",
+   "checks": [
+    "r_children*r_neo_rate*r_neo_eff",
+    "r_children*r_neo_rate*r_neo_eff"
+   ],
+   "type": "Calculated",
+   "note": "Before GiveWell's validity adjustments (Step 5).",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "iv",
+   "label": "Internal validity adjustment",
+   "step": "Step 5. Adjustments: GiveWell's validity, breastfeeding gap",
+   "formula": "i_iv",
+   "checks": [
+    "i_iv",
+    "i_iv"
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "ev",
+   "label": "External validity adjustment",
+   "step": "Step 5. Adjustments: GiveWell's validity, breastfeeding gap",
+   "formula": "i_ev",
+   "checks": [
+    "i_ev",
+    "i_ev"
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "gap_on",
+   "label": "How far to scale by the breastfeeding gap (0 = not at all, 1 = fully)",
+   "step": "Step 5. Adjustments: GiveWell's validity, breastfeeding gap",
+   "formula": "i_gap_on",
+   "checks": [
+    0,
+    0
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab. 0 by default, as in GiveWell's calculation.",
+   "format": "0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "gap_raw",
+   "label": "Breastfeeding gap compared with the trials",
+   "step": "Step 5. Adjustments: GiveWell's validity, breastfeeding gap",
+   "formula": "MIN(1,(1-i_ebf)/(1-i_ref_ebf))",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "Share of babies not yet exclusively breastfed here, divided by the share in the trials' control groups (82%), capped at 100%.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "gap",
+   "label": "Scaling used for the breastfeeding gap",
+   "step": "Step 5. Adjustments: GiveWell's validity, breastfeeding gap",
+   "formula": "1-r_gap_on*(1-r_gap_raw)",
+   "checks": [
+    "1-r_gap_on*(1-r_gap_raw)",
+    "1-r_gap_on*(1-r_gap_raw)"
+   ],
+   "type": "Calculated",
+   "note": "100% at 0; the full gap at 1; halfway at 0.5.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "post_adj",
+   "label": "Deaths averted after the first month, adjusted",
+   "step": "Step 5. Adjustments: GiveWell's validity, breastfeeding gap",
+   "formula": "r_post_d*r_iv*r_ev*r_gap",
+   "checks": [
+    "r_post_d*r_iv*r_ev*r_gap",
+    "r_post_d*r_iv*r_ev*r_gap"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "neo_adj",
+   "label": "Newborn deaths averted, adjusted",
+   "step": "Step 5. Adjustments: GiveWell's validity, breastfeeding gap",
+   "formula": "r_neo_d*r_iv*r_ev*r_gap",
+   "checks": [
+    "r_neo_d*r_iv*r_ev*r_gap",
+    "r_neo_d*r_iv*r_ev*r_gap"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "mw_post",
+   "label": "Value of preventing a death after the first month (units)",
+   "step": "Step 6. Value in GiveWell's units",
+   "formula": "i_mw_post",
+   "checks": [
+    "i_mw_post",
+    "i_mw_post"
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab (GiveWell moral weights).",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "mw_neo",
+   "label": "Value of preventing a newborn death (units)",
+   "step": "Step 6. Value in GiveWell's units",
+   "formula": "i_mw_neo",
+   "checks": [
+    "i_mw_neo",
+    "i_mw_neo"
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab (GiveWell moral weights).",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "u_deaths",
+   "label": "Units of value from deaths averted",
+   "step": "Step 6. Value in GiveWell's units",
+   "formula": "r_post_adj*r_mw_post+r_neo_adj*r_mw_neo",
+   "checks": [
+    "r_post_adj*r_mw_post+r_neo_adj*r_mw_neo",
+    "r_post_adj*r_mw_post+r_neo_adj*r_mw_neo"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dev_share",
+   "label": "Development effects, as a share of the value from deaths averted",
+   "step": "Step 6. Value in GiveWell's units",
+   "formula": "i_dev_ratio*i_dev_bf*i_dev_young",
+   "checks": [
+    "i_dev_ratio*i_dev_bf*i_dev_young",
+    "i_dev_ratio*i_dev_bf*i_dev_young"
+   ],
+   "type": "Calculated",
+   "note": "GiveWell's 0.31 x 0.302 x 2 = 18.7% (CEA rows 45 to 49). Fixed assumptions on the Inputs tab.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "excl",
+   "label": "Adjustment for effects not modelled",
+   "step": "Step 6. Value in GiveWell's units",
+   "formula": "i_excl",
+   "checks": [
+    "i_excl",
+    "i_excl"
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab.",
+   "format": "0.000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "units",
+   "label": "Units of value per 100,000 pairs, before leveraging and funging",
+   "step": "Step 6. Value in GiveWell's units",
+   "formula": "r_u_deaths*(1+r_dev_share)*r_excl",
+   "checks": [
+    "r_u_deaths*(1+r_dev_share)*r_excl",
+    "r_u_deaths*(1+r_dev_share)*r_excl"
+   ],
+   "type": "Calculated",
+   "note": "Deaths averted plus development effects, times the adjustment for effects not modelled (GiveWell CEA row 53).",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "gov_share",
+   "label": "Government cost, as a share of the organisation's cost",
+   "step": "Step 7. GiveWell's adjustments",
+   "formula": "i_gov_share",
+   "checks": [
+    0,
+    0
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab or the Scenarios tab. The grey columns use 0%, as GiveWell's MBW analysis applies no leveraging adjustment.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "lv_a",
+   "label": "Leveraging formula, part a: weight on the program's own value, with the government's spending",
+   "step": "Step 7. GiveWell's adjustments",
+   "formula": "(1-i_lv_p_gov*i_lv_gov_part-i_lv_p_other+i_lv_p_none*r_gov_share)/(1+r_gov_share)",
+   "checks": [
+    "(1-i_lv_p_gov*i_lv_gov_part-i_lv_p_other+i_lv_p_none*r_gov_share)/(1+r_gov_share)",
+    "(1-i_lv_p_gov*i_lv_gov_part-i_lv_p_other+i_lv_p_none*r_gov_share)/(1+r_gov_share)"
+   ],
+   "type": "Calculated",
+   "note": "GiveWell's leveraging formula in four parts, from the leverage inputs on the Inputs tab. Leveraging = (value per dollar x a + b) / (value per dollar x c + d).",
+   "format": "0.00000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "lv_b",
+   "label": "Leveraging formula, part b: value of the money if the program did not happen, with the government's spending",
+   "step": "Step 7. GiveWell's adjustments",
+   "formula": "i_lv_p_other*i_lv_other_value+i_lv_p_gov*i_lv_gov_part*i_lv_gov_value-i_lv_gov_value*i_lv_p_none*r_gov_share",
+   "checks": [
+    "i_lv_p_other*i_lv_other_value+i_lv_p_gov*i_lv_gov_part*i_lv_gov_value-i_lv_gov_value*i_lv_p_none*r_gov_share",
+    "i_lv_p_other*i_lv_other_value+i_lv_p_gov*i_lv_gov_part*i_lv_gov_value-i_lv_gov_value*i_lv_p_none*r_gov_share"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "0.00000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "lv_c",
+   "label": "Leveraging formula, part c: weight on the program's own value, without the government's spending",
+   "step": "Step 7. GiveWell's adjustments",
+   "formula": "1-i_lv_p_gov*i_lv_gov_part-i_lv_p_other",
+   "checks": [
+    "1-i_lv_p_gov*i_lv_gov_part-i_lv_p_other",
+    "1-i_lv_p_gov*i_lv_gov_part-i_lv_p_other"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "0.00000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "lv_d",
+   "label": "Leveraging formula, part d: value of the money if the program did not happen, without the government's spending",
+   "step": "Step 7. GiveWell's adjustments",
+   "formula": "i_lv_p_other*i_lv_other_value+i_lv_p_gov*i_lv_gov_part*i_lv_gov_value",
+   "checks": [
+    "i_lv_p_other*i_lv_other_value+i_lv_p_gov*i_lv_gov_part*i_lv_gov_value",
+    "i_lv_p_other*i_lv_other_value+i_lv_p_gov*i_lv_gov_part*i_lv_gov_value"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "0.00000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "w",
+   "label": "Value per dollar before leveraging and funging (units)",
+   "step": "Step 7. GiveWell's adjustments",
+   "formula": "r_units/r_total",
+   "checks": [
+    "r_units/r_total",
+    "r_units/r_total"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "0.00000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "lev",
+   "label": "Leveraging adjustment",
+   "step": "Step 7. GiveWell's adjustments",
+   "formula": "((r_w)*r_lv_a+r_lv_b)/((r_w)*r_lv_c+r_lv_d)",
+   "checks": [
+    "((r_w)*r_lv_a+r_lv_b)/((r_w)*r_lv_c+r_lv_d)",
+    "((r_w)*r_lv_a+r_lv_b)/((r_w)*r_lv_c+r_lv_d)"
+   ],
+   "type": "Calculated",
+   "note": "GiveWell's method from its ORS and zinc analysis: the good the government's money would have done elsewhere is taken off. 1.000 when the government pays nothing.",
+   "format": "0.000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "fung",
+   "label": "Funging adjustment",
+   "step": "Step 7. GiveWell's adjustments",
+   "formula": "i_funging",
+   "checks": [
+    1,
+    1
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab.",
+   "format": "0.000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "bench",
+   "label": "GiveWell benchmark, units of value per dollar",
+   "step": "Step 7. GiveWell's adjustments",
+   "formula": "i_benchmark",
+   "checks": [
+    0.00335,
+    0.00335
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab. The grey columns use 0.00335, the figure in GiveWell's MBW analysis.",
+   "format": "0.00000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "x",
+   "label": "Multiple of GiveWell's benchmark",
+   "step": "Step 8. Results",
+   "formula": "r_w*r_lev*r_fung/r_bench",
+   "checks": [
+    "r_w*r_lev*r_fung/r_bench",
+    "r_w*r_lev*r_fung/r_bench"
+   ],
+   "type": "Calculated",
+   "note": "The grey columns should show 17.73x and 13.54x, the results in GiveWell's MBW spreadsheet (CEA row 55).",
+   "format": "0.00\"x\"",
+   "result": true,
+   "text": false
+  },
+  {
+   "key": "cpd",
+   "label": "Cost per death averted",
+   "step": "Step 8. Results",
+   "formula": "r_total/(r_post_adj+r_neo_adj)",
+   "checks": [
+    "r_total/(r_post_adj+r_neo_adj)",
+    "r_total/(r_post_adj+r_neo_adj)"
+   ],
+   "type": "Calculated",
+   "note": "Deaths after GiveWell's validity adjustments, before the adjustment for effects not modelled.",
+   "format": "\"$\"#,##0",
+   "result": false,
+   "text": false
+  }
+ ],
+ "scenarios": [
+  {
+   "name": "Nigeria (national)",
+   "sets": {
+    "nmr": 39.0,
+    "imr": 69.8,
+    "ebf": 0.288,
+    "cost": 10.0,
+    "later": 2.0,
+    "gov_share": 0.0
+   }
+  },
+  {
+   "name": "High: Sierra Leone (closest to the 75th percentile)",
+   "sets": {
+    "nmr": 28.3,
+    "imr": 54.6,
+    "ebf": 0.509,
+    "cost": 10.0,
+    "later": 2.0,
+    "gov_share": 0.0
+   }
+  },
+  {
+   "name": "Typical: Malawi (closest to the median)",
+   "sets": {
+    "nmr": 23.6,
+    "imr": 38.0,
+    "ebf": 0.601,
+    "cost": 10.0,
+    "later": 2.0,
+    "gov_share": 0.0
+   }
+  },
+  {
+   "name": "Low: Burundi (closest to the 25th percentile)",
+   "sets": {
+    "nmr": 19.1,
+    "imr": 30.5,
+    "ebf": 0.833,
+    "cost": 10.0,
+    "later": 2.0,
+    "gov_share": 0.0
+   }
+  },
+  {
+   "name": "Typical: Malawi (closest to the median)",
+   "sets": {
+    "nmr": 23.6,
+    "imr": 38.0,
+    "ebf": 0.601,
+    "cost": 10.0,
+    "later": 1.0,
+    "gov_share": 0.0
+   }
+  },
+  {
+   "name": "Low: Burundi (closest to the 25th percentile)",
+   "sets": {
+    "nmr": 19.1,
+    "imr": 30.5,
+    "ebf": 0.833,
+    "cost": 10.0,
+    "later": 1.0,
+    "gov_share": 0.0
+   }
+  }
+ ],
+ "results": {
+  "Your inputs": {
+   "top_x": 14.628971990821386,
+   "top_cpd": 2871.681535766825,
+   "pairs": 100000,
+   "cost": 10.0,
+   "total": 1000000.0,
+   "later": 2.0,
+   "children": 200000.0,
+   "nmr": 23.6,
+   "imr": 40.2,
+   "post_rate": 0.0166,
+   "diarr_red": 0.16,
+   "post_share": 0.80452,
+   "post_eff": 0.1287232,
+   "post_d": 427.36102400000004,
+   "neo_rate": 0.023600000000000003,
+   "neo_scale": 0.69591,
+   "neo_share": 0.44892,
+   "neo_eff": 0.049985266752,
+   "neo_d": 235.93045906944005,
+   "iv": 0.7,
+   "ev": 0.75,
+   "gap_on": 0.0,
+   "gap_raw": 0.5976144109055501,
+   "gap": 1.0,
+   "post_adj": 224.3645376,
+   "neo_adj": 123.86349101145603,
+   "mw_post": 100.7,
+   "mw_neo": 84.0,
+   "u_deaths": 32998.04218128231,
+   "dev_share": 0.1874446,
+   "excl": 1.12004,
+   "units": 43886.91597246416,
+   "gov_share": 0.0,
+   "lv_a": 0.9099999999999999,
+   "lv_b": 0.001299,
+   "lv_c": 0.9099999999999999,
+   "lv_d": 0.001299,
+   "w": 0.043886915972464156,
+   "lev": 1.0,
+   "fung": 1.0,
+   "bench": 0.003,
+   "x": 14.628971990821386,
+   "cpd": 2871.681535766825
+  },
+  "Scenario 1: Nigeria (national)": {
+   "top_x": 26.20710550024469,
+   "top_cpd": 1610.3565348682844,
+   "pairs": 100000,
+   "cost": 10.0,
+   "total": 1000000.0,
+   "later": 2.0,
+   "children": 200000.0,
+   "nmr": 39.0,
+   "imr": 69.8,
+   "post_rate": 0.030799999999999998,
+   "diarr_red": 0.16,
+   "post_share": 0.80452,
+   "post_eff": 0.1287232,
+   "post_d": 792.9349119999999,
+   "neo_rate": 0.039,
+   "neo_scale": 0.69591,
+   "neo_share": 0.44892,
+   "neo_eff": 0.049985266752,
+   "neo_d": 389.88508066559996,
+   "iv": 0.7,
+   "ev": 0.75,
+   "gap_on": 0.0,
+   "gap_raw": 0.866601752677702,
+   "gap": 1.0,
+   "post_adj": 416.2908287999999,
+   "neo_adj": 204.68966734943996,
+   "mw_post": 100.7,
+   "mw_neo": 84.0,
+   "u_deaths": 59114.418517512946,
+   "dev_share": 0.1874446,
+   "excl": 1.12004,
+   "units": 78621.31650073407,
+   "gov_share": 0.0,
+   "lv_a": 0.9099999999999999,
+   "lv_b": 0.001299,
+   "lv_c": 0.9099999999999999,
+   "lv_d": 0.001299,
+   "w": 0.07862131650073408,
+   "lev": 1.0,
+   "fung": 1.0,
+   "bench": 0.003,
+   "x": 26.20710550024469,
+   "cpd": 1610.3565348682844
+  },
+  "Scenario 2: High: Sierra Leone (closest to the 75th percentile)": {
+   "top_x": 21.400513274798477,
+   "top_cpd": 1984.1256576225799,
+   "pairs": 100000,
+   "cost": 10.0,
+   "total": 1000000.0,
+   "later": 2.0,
+   "children": 200000.0,
+   "nmr": 28.3,
+   "imr": 54.6,
+   "post_rate": 0.0263,
+   "diarr_red": 0.16,
+   "post_share": 0.80452,
+   "post_eff": 0.1287232,
+   "post_d": 677.0840320000001,
+   "neo_rate": 0.028300000000000002,
+   "neo_scale": 0.69591,
+   "neo_share": 0.44892,
+   "neo_eff": 0.049985266752,
+   "neo_d": 282.91660981632,
+   "iv": 0.7,
+   "ev": 0.75,
+   "gap_on": 0.0,
+   "gap_raw": 0.5976144109055501,
+   "gap": 1.0,
+   "post_adj": 355.46911680000005,
+   "neo_adj": 148.53122015356797,
+   "mw_post": 100.7,
+   "mw_neo": 84.0,
+   "u_deaths": 48272.36255465972,
+   "dev_share": 0.1874446,
+   "excl": 1.12004,
+   "units": 64201.539824395426,
+   "gov_share": 0.0,
+   "lv_a": 0.9099999999999999,
+   "lv_b": 0.001299,
+   "lv_c": 0.9099999999999999,
+   "lv_d": 0.001299,
+   "w": 0.06420153982439543,
+   "lev": 1.0,
+   "fung": 1.0,
+   "bench": 0.003,
+   "x": 21.400513274798477,
+   "cpd": 1984.1256576225799
+  },
+  "Scenario 3: Typical: Malawi (closest to the median)": {
+   "top_x": 13.301504442252812,
+   "top_cpd": 3139.7867332767273,
+   "pairs": 100000,
+   "cost": 10.0,
+   "total": 1000000.0,
+   "later": 2.0,
+   "children": 200000.0,
+   "nmr": 23.6,
+   "imr": 38.0,
+   "post_rate": 0.014399999999999998,
+   "diarr_red": 0.16,
+   "post_share": 0.80452,
+   "post_eff": 0.1287232,
+   "post_d": 370.72281599999997,
+   "neo_rate": 0.023600000000000003,
+   "neo_scale": 0.69591,
+   "neo_share": 0.44892,
+   "neo_eff": 0.049985266752,
+   "neo_d": 235.93045906944005,
+   "iv": 0.7,
+   "ev": 0.75,
+   "gap_on": 0.0,
+   "gap_raw": 0.4856377799415774,
+   "gap": 1.0,
+   "post_adj": 194.62947839999998,
+   "neo_adj": 123.86349101145603,
+   "mw_post": 100.7,
+   "mw_neo": 84.0,
+   "u_deaths": 30003.72171984231,
+   "dev_share": 0.1874446,
+   "excl": 1.12004,
+   "units": 39904.51332675844,
+   "gov_share": 0.0,
+   "lv_a": 0.9099999999999999,
+   "lv_b": 0.001299,
+   "lv_c": 0.9099999999999999,
+   "lv_d": 0.001299,
+   "w": 0.039904513326758435,
+   "lev": 1.0,
+   "fung": 1.0,
+   "bench": 0.003,
+   "x": 13.301504442252812,
+   "cpd": 3139.7867332767273
+  },
+  "Scenario 4: Low: Burundi (closest to the 25th percentile)": {
+   "top_x": 10.611795288367714,
+   "top_cpd": 3931.9439810856747,
+   "pairs": 100000,
+   "cost": 10.0,
+   "total": 1000000.0,
+   "later": 2.0,
+   "children": 200000.0,
+   "nmr": 19.1,
+   "imr": 30.5,
+   "post_rate": 0.011399999999999999,
+   "diarr_red": 0.16,
+   "post_share": 0.80452,
+   "post_eff": 0.1287232,
+   "post_d": 293.48889599999995,
+   "neo_rate": 0.019100000000000002,
+   "neo_scale": 0.69591,
+   "neo_share": 0.44892,
+   "neo_eff": 0.049985266752,
+   "neo_d": 190.94371899264002,
+   "iv": 0.7,
+   "ev": 0.75,
+   "gap_on": 0.0,
+   "gap_raw": 0.2032619279454723,
+   "gap": 1.0,
+   "post_adj": 154.08167039999998,
+   "neo_adj": 100.24545247113602,
+   "mw_post": 100.7,
+   "mw_neo": 84.0,
+   "u_deaths": 23936.642216855424,
+   "dev_share": 0.1874446,
+   "excl": 1.12004,
+   "units": 31835.385865103144,
+   "gov_share": 0.0,
+   "lv_a": 0.9099999999999999,
+   "lv_b": 0.001299,
+   "lv_c": 0.9099999999999999,
+   "lv_d": 0.001299,
+   "w": 0.03183538586510314,
+   "lev": 1.0,
+   "fung": 1.0,
+   "bench": 0.003,
+   "x": 10.611795288367714,
+   "cpd": 3931.9439810856747
+  },
+  "Scenario 5: Typical: Malawi (closest to the median)": {
+   "top_x": 6.650752221126406,
+   "top_cpd": 6279.573466553455,
+   "pairs": 100000,
+   "cost": 10.0,
+   "total": 1000000.0,
+   "later": 1.0,
+   "children": 100000.0,
+   "nmr": 23.6,
+   "imr": 38.0,
+   "post_rate": 0.014399999999999998,
+   "diarr_red": 0.16,
+   "post_share": 0.80452,
+   "post_eff": 0.1287232,
+   "post_d": 185.36140799999998,
+   "neo_rate": 0.023600000000000003,
+   "neo_scale": 0.69591,
+   "neo_share": 0.44892,
+   "neo_eff": 0.049985266752,
+   "neo_d": 117.96522953472002,
+   "iv": 0.7,
+   "ev": 0.75,
+   "gap_on": 0.0,
+   "gap_raw": 0.4856377799415774,
+   "gap": 1.0,
+   "post_adj": 97.31473919999999,
+   "neo_adj": 61.93174550572802,
+   "mw_post": 100.7,
+   "mw_neo": 84.0,
+   "u_deaths": 15001.860859921155,
+   "dev_share": 0.1874446,
+   "excl": 1.12004,
+   "units": 19952.25666337922,
+   "gov_share": 0.0,
+   "lv_a": 0.9099999999999999,
+   "lv_b": 0.001299,
+   "lv_c": 0.9099999999999999,
+   "lv_d": 0.001299,
+   "w": 0.019952256663379218,
+   "lev": 1.0,
+   "fung": 1.0,
+   "bench": 0.003,
+   "x": 6.650752221126406,
+   "cpd": 6279.573466553455
+  },
+  "Scenario 6: Low: Burundi (closest to the 25th percentile)": {
+   "top_x": 5.305897644183857,
+   "top_cpd": 7863.8879621713495,
+   "pairs": 100000,
+   "cost": 10.0,
+   "total": 1000000.0,
+   "later": 1.0,
+   "children": 100000.0,
+   "nmr": 19.1,
+   "imr": 30.5,
+   "post_rate": 0.011399999999999999,
+   "diarr_red": 0.16,
+   "post_share": 0.80452,
+   "post_eff": 0.1287232,
+   "post_d": 146.74444799999998,
+   "neo_rate": 0.019100000000000002,
+   "neo_scale": 0.69591,
+   "neo_share": 0.44892,
+   "neo_eff": 0.049985266752,
+   "neo_d": 95.47185949632001,
+   "iv": 0.7,
+   "ev": 0.75,
+   "gap_on": 0.0,
+   "gap_raw": 0.2032619279454723,
+   "gap": 1.0,
+   "post_adj": 77.04083519999999,
+   "neo_adj": 50.12272623556801,
+   "mw_post": 100.7,
+   "mw_neo": 84.0,
+   "u_deaths": 11968.321108427712,
+   "dev_share": 0.1874446,
+   "excl": 1.12004,
+   "units": 15917.692932551572,
+   "gov_share": 0.0,
+   "lv_a": 0.9099999999999999,
+   "lv_b": 0.001299,
+   "lv_c": 0.9099999999999999,
+   "lv_d": 0.001299,
+   "w": 0.01591769293255157,
+   "lev": 1.0,
+   "fung": 1.0,
+   "bench": 0.003,
+   "x": 5.305897644183857,
+   "cpd": 7863.8879621713495
+  },
+  "Check 1": {
+   "top_x": 17.727902522311158,
+   "pairs": 100000,
+   "cost": 12.0,
+   "total": 1200000.0,
+   "later": 2,
+   "children": 200000,
+   "post_rate": 0.02753196913,
+   "diarr_red": 0.16,
+   "post_share": 0.80452,
+   "post_eff": 0.1287232,
+   "post_d": 708.8006337429633,
+   "neo_rate": 0.03654513087,
+   "neo_scale": 0.69591,
+   "neo_share": 0.44892,
+   "neo_eff": 0.049985266752,
+   "neo_d": 365.3436230047399,
+   "iv": 0.7,
+   "ev": 0.75,
+   "gap_on": 0,
+   "gap": 1,
+   "post_adj": 372.1203327150557,
+   "neo_adj": 191.80540207748845,
+   "mw_post": 100.7,
+   "mw_neo": 84.0,
+   "u_deaths": 53584.17127891514,
+   "dev_share": 0.1874446,
+   "excl": 1.12004,
+   "units": 71266.16813969085,
+   "gov_share": 0,
+   "lv_a": 0.9099999999999999,
+   "lv_b": 0.001299,
+   "lv_c": 0.9099999999999999,
+   "lv_d": 0.001299,
+   "w": 0.05938847344974238,
+   "lev": 1.0,
+   "fung": 1,
+   "bench": 0.00335,
+   "x": 17.727902522311158,
+   "cpd": 2127.939772852277
+  },
+  "Check 2": {
+   "top_x": 13.542736443149485,
+   "pairs": 100000,
+   "cost": 16.33333333,
+   "total": 1633333.3329999999,
+   "later": 2,
+   "children": 200000,
+   "post_rate": 0.03168579982,
+   "diarr_red": 0.16,
+   "post_share": 0.80452,
+   "post_eff": 0.1287232,
+   "post_d": 815.7395094779648,
+   "neo_rate": 0.02855670018,
+   "neo_scale": 0.69591,
+   "neo_share": 0.44892,
+   "neo_eff": 0.049985266752,
+   "neo_d": 285.4828552108373,
+   "iv": 0.7,
+   "ev": 0.75,
+   "gap_on": 0,
+   "gap": 1,
+   "post_adj": 428.2632424759315,
+   "neo_adj": 149.87849898568956,
+   "mw_post": 100.7,
+   "mw_neo": 84.0,
+   "u_deaths": 55715.90243212423,
+   "dev_share": 0.1874446,
+   "excl": 1.12004,
+   "units": 74101.33955631021,
+   "gov_share": 0,
+   "lv_a": 0.9099999999999999,
+   "lv_b": 0.001299,
+   "lv_c": 0.9099999999999999,
+   "lv_d": 0.001299,
+   "w": 0.04536816708455078,
+   "lev": 1.0,
+   "fung": 1,
+   "bench": 0.00335,
+   "x": 13.542736443149485,
+   "cpd": 2825.1434135696736
+  }
+ },
+ "places": {
+  "AGO": {
+   "name": "Angola",
+   "inputs": {
+    "nmr": 18.1,
+    "imr": 32.1,
+    "ebf": 0.327
+   },
+   "notes": []
+  },
+  "BEN": {
+   "name": "Benin",
+   "inputs": {
+    "nmr": 27.2,
+    "imr": 45.2,
+    "ebf": 0.4495
+   },
+   "notes": []
+  },
+  "BWA": {
+   "name": "Botswana",
+   "inputs": {
+    "nmr": 17.6,
+    "imr": 32.1,
+    "ebf": 0.2999
+   },
+   "notes": []
+  },
+  "BFA": {
+   "name": "Burkina Faso",
+   "inputs": {
+    "nmr": 23.8,
+    "imr": 43.6,
+    "ebf": 0.5126
+   },
+   "notes": []
+  },
+  "BDI": {
+   "name": "Burundi",
+   "inputs": {
+    "nmr": 19.1,
+    "imr": 30.5,
+    "ebf": 0.833
+   },
+   "notes": []
+  },
+  "CMR": {
+   "name": "Cameroon",
+   "inputs": {
+    "nmr": 24.8,
+    "imr": 40.2,
+    "ebf": 0.3941
+   },
+   "notes": []
+  },
+  "CAF": {
+   "name": "Central African Republic",
+   "inputs": {
+    "nmr": 29.9,
+    "imr": 58.8,
+    "ebf": 0.3615
+   },
+   "notes": []
+  },
+  "TCD": {
+   "name": "Chad",
+   "inputs": {
+    "nmr": 30.4,
+    "imr": 56.3,
+    "ebf": 0.0735
+   },
+   "notes": []
+  },
+  "COM": {
+   "name": "Comoros",
+   "inputs": {
+    "nmr": 22.1,
+    "imr": 35.0,
+    "ebf": 0.2257
+   },
+   "notes": []
+  },
+  "COG": {
+   "name": "Congo",
+   "inputs": {
+    "nmr": 16.5,
+    "imr": 27.0,
+    "ebf": 0.3286
+   },
+   "notes": []
+  },
+  "CIV": {
+   "name": "Côte d'Ivoire",
+   "inputs": {
+    "nmr": 27.4,
+    "imr": 44.8,
+    "ebf": 0.3396
+   },
+   "notes": []
+  },
+  "COD": {
+   "name": "Democratic Republic of the Congo",
+   "inputs": {
+    "nmr": 23.6,
+    "imr": 56.4,
+    "ebf": 0.5226
+   },
+   "notes": []
+  },
+  "GNQ": {
+   "name": "Equatorial Guinea",
+   "inputs": {
+    "nmr": 26.3,
+    "imr": 47.6,
+    "ebf": 0.074
+   },
+   "notes": []
+  },
+  "ERI": {
+   "name": "Eritrea",
+   "inputs": {
+    "nmr": 15.6,
+    "imr": 24.7,
+    "ebf": 0.687
+   },
+   "notes": []
+  },
+  "SWZ": {
+   "name": "Eswatini",
+   "inputs": {
+    "nmr": 25.0,
+    "imr": 42.2,
+    "ebf": 0.5401
+   },
+   "notes": []
+  },
+  "ETH": {
+   "name": "Ethiopia",
+   "inputs": {
+    "nmr": 25.2,
+    "imr": 34.5,
+    "ebf": 0.573
+   },
+   "notes": []
+  },
+  "GAB": {
+   "name": "Gabon",
+   "inputs": {
+    "nmr": 16.3,
+    "imr": 25.9,
+    "ebf": 0.1936
+   },
+   "notes": []
+  },
+  "GMB": {
+   "name": "Gambia",
+   "inputs": {
+    "nmr": 23.0,
+    "imr": 32.7,
+    "ebf": 0.5363
+   },
+   "notes": []
+  },
+  "GHA": {
+   "name": "Ghana",
+   "inputs": {
+    "nmr": 18.1,
+    "imr": 27.5,
+    "ebf": 0.5259
+   },
+   "notes": []
+  },
+  "GIN": {
+   "name": "Guinea",
+   "inputs": {
+    "nmr": 29.8,
+    "imr": 59.8,
+    "ebf": 0.437
+   },
+   "notes": []
+  },
+  "GNB": {
+   "name": "Guinea-Bissau",
+   "inputs": {
+    "nmr": 32.0,
+    "imr": 42.1,
+    "ebf": 0.5935
+   },
+   "notes": []
+  },
+  "KEN": {
+   "name": "Kenya",
+   "inputs": {
+    "nmr": 20.7,
+    "imr": 34.2,
+    "ebf": 0.5971
+   },
+   "notes": []
+  },
+  "LSO": {
+   "name": "Lesotho",
+   "inputs": {
+    "nmr": 28.5,
+    "imr": 56.3,
+    "ebf": 0.6074
+   },
+   "notes": []
+  },
+  "LBR": {
+   "name": "Liberia",
+   "inputs": {
+    "nmr": 32.9,
+    "imr": 63.2,
+    "ebf": 0.5523
+   },
+   "notes": []
+  },
+  "MDG": {
+   "name": "Madagascar",
+   "inputs": {
+    "nmr": 23.1,
+    "imr": 43.0,
+    "ebf": 0.5441
+   },
+   "notes": []
+  },
+  "MWI": {
+   "name": "Malawi",
+   "inputs": {
+    "nmr": 23.6,
+    "imr": 38.0,
+    "ebf": 0.601
+   },
+   "notes": []
+  },
+  "MLI": {
+   "name": "Mali",
+   "inputs": {
+    "nmr": 28.0,
+    "imr": 47.5,
+    "ebf": 0.404
+   },
+   "notes": []
+  },
+  "MRT": {
+   "name": "Mauritania",
+   "inputs": {
+    "nmr": 20.8,
+    "imr": 30.2,
+    "ebf": 0.409
+   },
+   "notes": []
+  },
+  "MOZ": {
+   "name": "Mozambique",
+   "inputs": {
+    "nmr": 25.1,
+    "imr": 43.7,
+    "ebf": 0.555
+   },
+   "notes": []
+  },
+  "NAM": {
+   "name": "Namibia",
+   "inputs": {
+    "nmr": 21.4,
+    "imr": 36.4,
+    "ebf": 0.4832
+   },
+   "notes": []
+  },
+  "NER": {
+   "name": "Niger",
+   "inputs": {
+    "nmr": 32.8,
+    "imr": 65.6,
+    "ebf": 0.2451
+   },
+   "notes": []
+  },
+  "NGA": {
+   "name": "Nigeria",
+   "inputs": {
+    "nmr": 39.0,
+    "imr": 69.8,
+    "ebf": 0.2878
+   },
+   "notes": []
+  },
+  "RWA": {
+   "name": "Rwanda",
+   "inputs": {
+    "nmr": 17.4,
+    "imr": 29.4,
+    "ebf": 0.818
+   },
+   "notes": []
+  },
+  "STP": {
+   "name": "Sao Tome and Principe",
+   "inputs": {
+    "nmr": 6.4,
+    "imr": 9.2,
+    "ebf": 0.6306
+   },
+   "notes": []
+  },
+  "SEN": {
+   "name": "Senegal",
+   "inputs": {
+    "nmr": 20.9,
+    "imr": 28.9,
+    "ebf": 0.344
+   },
+   "notes": []
+  },
+  "SLE": {
+   "name": "Sierra Leone",
+   "inputs": {
+    "nmr": 28.3,
+    "imr": 54.6,
+    "ebf": 0.5089
+   },
+   "notes": []
+  },
+  "SOM": {
+   "name": "Somalia",
+   "inputs": {
+    "nmr": 34.2,
+    "imr": 65.4,
+    "ebf": 0.337
+   },
+   "notes": []
+  },
+  "ZAF": {
+   "name": "South Africa",
+   "inputs": {
+    "nmr": 12.4,
+    "imr": 24.2,
+    "ebf": 0.3161
+   },
+   "notes": []
+  },
+  "SSD": {
+   "name": "South Sudan",
+   "inputs": {
+    "nmr": 39.5,
+    "imr": 71.9,
+    "ebf": 0.4454
+   },
+   "notes": []
+  },
+  "SDN": {
+   "name": "Sudan",
+   "inputs": {
+    "nmr": 23.7,
+    "imr": 42.9,
+    "ebf": 0.546
+   },
+   "notes": []
+  },
+  "TGO": {
+   "name": "Togo",
+   "inputs": {
+    "nmr": 22.6,
+    "imr": 34.8,
+    "ebf": 0.6433
+   },
+   "notes": []
+  },
+  "UGA": {
+   "name": "Uganda",
+   "inputs": {
+    "nmr": 21.3,
+    "imr": 35.9,
+    "ebf": 0.6546
+   },
+   "notes": []
+  },
+  "TZA": {
+   "name": "United Republic of Tanzania",
+   "inputs": {
+    "nmr": 19.9,
+    "imr": 28.7,
+    "ebf": 0.643
+   },
+   "notes": []
+  },
+  "ZMB": {
+   "name": "Zambia",
+   "inputs": {
+    "nmr": 21.4,
+    "imr": 34.6,
+    "ebf": 0.641
+   },
+   "notes": []
+  },
+  "ZWE": {
+   "name": "Zimbabwe",
+   "inputs": {
+    "nmr": 33.7,
+    "imr": 62.4,
+    "ebf": 0.424
+   },
+   "notes": []
+  }
+ }
+}

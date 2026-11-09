@@ -119,8 +119,21 @@ def _centres(opp_ids) -> dict[int, tuple[float, float]]:
     return {r["opportunity_id"]: (round(r["lat"], 3), round(r["lon"], 3)) for r in rows}
 
 
-def value(service: str, country: str, total_usd: float, reached: int) -> dict:
-    """The CEA for one delivery: pure arithmetic over the vendored models, no database."""
+def iso3_for(country: str) -> str | None:
+    """Pulse's alpha-2 country -> the models' alpha-3, or None outside the models' 45 countries."""
+    return (models()["countries"].get((country or "").upper()) or {}).get("iso3")
+
+
+def value(service: str, country: str, total_usd: float, reached: int, areas: list | None = None) -> dict:
+    """The CEA for one delivery, run through the models' own formulas (``connect_labs.impact``).
+
+    ``areas`` is the place layer for where its visits happened (``impact.result.evaluate``);
+    without it the delivery is valued at its country's figures, as the published
+    per-country results are. No database access unless ``areas`` needs it.
+    """
+    from connect_labs.impact import baseline as impact_baseline
+    from connect_labs.impact import result as impact_result
+
     m = models()
     key = SERVICE_MODEL.get(service or "")
     out = {
@@ -130,6 +143,8 @@ def value(service: str, country: str, total_usd: float, reached: int) -> dict:
         "model_x": None,
         "model_cost_per_person": None,
         "model_deaths_per_100k": None,
+        "country_model_x": None,
+        "baseline_level": None,
         "x": None,
         "deaths_averted": None,
         "cost_per_death": None,
@@ -138,25 +153,86 @@ def value(service: str, country: str, total_usd: float, reached: int) -> dict:
     if key is None:
         out["status"] = STATUS_NO_MODEL
         return out
-    loc = m["countries"].get((country or "").upper())
-    if loc is None:
+    iso3 = iso3_for(country)
+    if iso3 is None:
         out["status"] = STATUS_NO_COUNTRY
         return out
-    cell = loc[key]
-    out["model_x"] = cell["x"]
-    out["model_cost_per_person"] = cell["unit_cost"]
-    # Per person reached; the page's what-if controls recompute deaths from it.
-    out["model_deaths_per_100k"] = cell["deaths_per_100k"]
+    if not areas:
+        areas = [
+            {
+                "name": (m["countries"].get((country or "").upper()) or {}).get("name") or country,
+                "level": "country",
+                "share": 1.0,
+                "inputs": impact_baseline.Baselines([]).for_area(key, iso3, None),
+            }
+        ]
+    r = impact_result.evaluate(key, iso3, areas, reached, total_usd, m["bar_x"])
+    for k in ("model_x", "model_cost_per_person", "model_deaths_per_100k", "country_model_x", "x"):
+        out[k] = r[k]
+    out["baseline_level"] = _headline_level(areas)
     if not reached or total_usd <= 0:
+        out["x"] = None
         out["status"] = STATUS_NOTHING_DELIVERED
         return out
     out["status"] = STATUS_MODELLED
-    out["x"] = cell["x"] * cell["unit_cost"] / out["cost_per_person"]
-    out["deaths_averted"] = reached * cell["deaths_per_100k"] / 100_000
-    out["cost_per_death"] = (total_usd / out["deaths_averted"]) if out["deaths_averted"] else None
-    out["clears_bar"] = out["x"] >= m["bar_x"]
+    out["deaths_averted"] = r["deaths_averted"]
+    out["cost_per_death"] = r["cost_per_death"]
+    out["clears_bar"] = r["clears_bar"]
     return out
 
+
+def _headline_level(areas: list) -> str:
+    """The level most of a delivery's baseline came from, by share: district, state or province, or country."""
+    weight: dict[str, float] = {}
+    for a in areas:
+        for v in a["inputs"].values():
+            lvl = "country" if v.level in ("model country figure", "model default") else v.level
+            weight[lvl] = weight.get(lvl, 0.0) + a["share"]
+    # KC has no place inputs at all: its risk is the model's 13% everywhere.
+    return max(weight, key=weight.get) if weight else "no place inputs"
+
+
+def opportunity_areas(opps, reach_of: dict) -> dict:
+    """The place layer for every valued opportunity: ``{opp_id: [area dict, ...]}``.
+
+    One spatial query places every approved visit (``impact.places``), and one
+    resolver reads every area's baseline (``impact.baseline``). An opportunity
+    with no placed visits is left out and valued at its country's figures.
+    """
+    from connect_labs.impact import baseline as impact_baseline
+    from connect_labs.impact import places as impact_places
+
+    wanted = {
+        o.opportunity_id: (SERVICE_MODEL.get(o.service_slug or ""), iso3_for(o.country))
+        for o in opps
+        if SERVICE_MODEL.get(o.service_slug or "") and iso3_for(o.country)
+    }
+    if not wanted:
+        return {}
+    placed = impact_places.opportunity_places(wanted)
+    boundaries = {a.boundary.pk: a.boundary for p in placed.values() for a in p.areas}
+    resolver = impact_baseline.Baselines(list(boundaries.values()))
+    out = {}
+    for opp_id, (key, iso3) in wanted.items():
+        p = placed.get(opp_id)
+        # Only areas in the opportunity's own country: a stray point over a border
+        # must not value a delivery with a neighbour's figures.
+        areas = [a for a in (p.areas if p else []) if a.boundary.iso_code == iso3]
+        total = sum(a.visits for a in areas)
+        if not total:
+            continue
+        out[opp_id] = [
+            {
+                "name": a.boundary.name,
+                "level": impact_baseline.LEVEL_NAMES.get(a.boundary.admin_level, ""),
+                "boundary_id": a.boundary.pk,
+                "visits": a.visits,
+                "share": a.visits / total,
+                "inputs": resolver.for_area(key, iso3, a.boundary),
+            }
+            for a in areas
+        ]
+    return out
 
 def _pool_cost_only(opps, own_usd: dict, reach_of: dict):
     """Fold the spend of cost-only opportunities into the delivery they paid for.
@@ -220,6 +296,7 @@ def ranking(opps_qs=None) -> dict:
         for o in opps
     }
     pooled_usd, pooled_from, pooled_into = _pool_cost_only(opps, own_usd, reach_of)
+    areas_of = opportunity_areas(opps, reach_of)
 
     rows = []
     for o in opps:
@@ -258,7 +335,8 @@ def ranking(opps_qs=None) -> dict:
             row.update(value(row["service"], country, 0.0, 0))
             row["status"] = STATUS_COST_POOLED
         else:
-            row.update(value(row["service"], country, total, reached))
+            row.update(value(row["service"], country, total, reached, areas_of.get(o.opportunity_id)))
+        row["areas_n"] = len(areas_of.get(o.opportunity_id) or [])
         row["status_text"] = STATUS_TEXT[row["status"]]
         rows.append(row)
 
@@ -304,3 +382,50 @@ def ranking(opps_qs=None) -> dict:
         "source": m["source"],
         "generated": m["generated"],
     }
+
+
+def opportunity_detail(opp_id: int) -> dict | None:
+    """One opportunity end to end: where, baseline, model, cost and result, every step shown.
+
+    Ranked among the opportunities it shares a programme and partner with, so
+    invoice pooling is the same as on the ranking page. ``None`` if it is not a
+    real (non-test) opportunity.
+    """
+    from connect_labs.impact import places as impact_places
+    from connect_labs.impact import result as impact_result
+    from connect_labs.pulse.models import PulseOpportunity
+
+    o = PulseOpportunity.objects.filter(opportunity_id=opp_id, is_test=False).first()
+    if o is None:
+        return None
+    peers = PulseOpportunity.objects.filter(is_test=False, opportunity_id=opp_id)
+    if o.program_id is not None and o.org_slug:
+        peers = PulseOpportunity.objects.filter(is_test=False, program_id=o.program_id, org_slug=o.org_slug)
+    data = ranking(peers)
+    row = next(r for r in data["rows"] if r["id"] == opp_id)
+    out = {"row": row, "bar_x": data["bar_x"], "bar_note": data["bar_note"], "result": None, "placement": None}
+    key, iso3 = row["model"], iso3_for(row["country"])
+    if key is None or iso3 is None:
+        return out
+    placement = impact_places.opportunity_places([opp_id]).get(opp_id)
+    out["placement"] = (
+        {"visits": placement.visits, "unplaced": placement.unplaced, "areas": len(placement.areas)}
+        if placement
+        else {"visits": 0, "unplaced": 0, "areas": 0}
+    )
+    areas = opportunity_areas([o], {}).get(opp_id)
+    if not areas:
+        from connect_labs.impact import baseline as impact_baseline
+
+        areas = [
+            {
+                "name": row["country_name"],
+                "level": "country",
+                "share": 1.0,
+                "inputs": impact_baseline.Baselines([]).for_area(key, iso3, None),
+            }
+        ]
+    total = 0.0 if row["status"] == STATUS_COST_POOLED else row["total_usd"]
+    out["result"] = impact_result.evaluate(key, iso3, areas, row["reached"], total, data["bar_x"], detail=True)
+    out["model_meta"] = models()["models"][key]
+    return out

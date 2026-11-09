@@ -501,6 +501,17 @@ _coverage(
     "Children who received a vitamin A supplement in the last six months.",
 )
 
+# The CHC cost-effectiveness model's deworming input (connect-cea-models ``dw_cov``)
+# reads this same DHS indicator, so Labs can value a campaign with its state's figure.
+_coverage(
+    "deworming_coverage",
+    "Deworming",
+    "pop_u5",
+    "pop_u5",
+    "% of children 6-59 months",
+    "Children given deworming medication in the last six months.",
+)
+
 _coverage(
     "itn_use_children",
     "ITN use, under-5s",
@@ -1526,6 +1537,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "child_anaemia",
         "women_anaemia",
         "vitamin_a_coverage",
+        "deworming_coverage",
         "exclusive_breastfeeding",
         "min_meal_frequency",
     ),

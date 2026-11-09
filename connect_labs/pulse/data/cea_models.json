@@ -10,13 +10,13 @@
       },
       "iso3": "AGO",
       "kc": {
-        "deaths_per_100k": 984.6400000000002,
-        "unit_cost": 60,
-        "x": 5.743733333333335
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 284.22010346217604,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 11.985170321237492
       },
       "name": "Angola"
@@ -29,13 +29,13 @@
       },
       "iso3": "BFA",
       "kc": {
-        "deaths_per_100k": 1294.72,
-        "unit_cost": 60,
-        "x": 7.552533333333333
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 392.52871441324805,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 16.59892393000883
       },
       "name": "Burkina Faso"
@@ -48,13 +48,13 @@
       },
       "iso3": "BDI",
       "kc": {
-        "deaths_per_100k": 1039.0400000000002,
-        "unit_cost": 60,
-        "x": 6.061066666666668
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 254.327122871136,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 10.611795288367714
       },
       "name": "Burundi"
@@ -67,13 +67,13 @@
       },
       "iso3": "BEN",
       "kc": {
-        "deaths_per_100k": 1479.68,
-        "unit_cost": 60,
-        "x": 8.631466666666668
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 386.044769843712,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 16.17734497367102
       },
       "name": "Benin"
@@ -86,13 +86,13 @@
       },
       "iso3": "BWA",
       "kc": {
-        "deaths_per_100k": 957.44,
-        "unit_cost": 60,
-        "x": 5.585066666666667
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 288.35384495769597,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 12.189142365465624
       },
       "name": "Botswana"
@@ -105,13 +105,13 @@
       },
       "iso3": "COD",
       "kc": {
-        "deaths_per_100k": 1283.8400000000004,
-        "unit_cost": 60,
-        "x": 7.489066666666669
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 567.186191811456,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 24.40396030300813
       },
       "name": "Democratic Republic of the Congo"
@@ -124,13 +124,13 @@
       },
       "iso3": "CAF",
       "kc": {
-        "deaths_per_100k": 1626.5600000000002,
-        "unit_cost": 60,
-        "x": 9.488266666666668
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 547.5392953679041,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 23.282058962353897
       },
       "name": "Central African Republic"
@@ -143,13 +143,13 @@
       },
       "iso3": "COG",
       "kc": {
-        "deaths_per_100k": 897.6,
-        "unit_cost": 60,
-        "x": 5.236000000000001
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 228.51680264784,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 9.56056972744947
       },
       "name": "Congo"
@@ -162,13 +162,13 @@
       },
       "iso3": "CIV",
       "kc": {
-        "deaths_per_100k": 1490.56,
-        "unit_cost": 60,
-        "x": 8.694933333333333
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 378.98489884550395,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 15.854398419876384
       },
       "name": "C\u00f4te d'Ivoire"
@@ -181,13 +181,13 @@
       },
       "iso3": "CMR",
       "kc": {
-        "deaths_per_100k": 1349.1200000000001,
-        "unit_cost": 60,
-        "x": 7.869866666666669
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 338.30704902220805,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 14.139439084673858
       },
       "name": "Cameroon"
@@ -200,13 +200,13 @@
       },
       "iso3": "ERI",
       "kc": {
-        "deaths_per_100k": 848.6400000000001,
-        "unit_cost": 60,
-        "x": 4.9504
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 204.870884539776,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 8.539912424465696
       },
       "name": "Eritrea"
@@ -219,13 +219,13 @@
       },
       "iso3": "ETH",
       "kc": {
-        "deaths_per_100k": 1370.88,
-        "unit_cost": 60,
-        "x": 7.996800000000001
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 257.959220625792,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 10.536913709818236
       },
       "name": "Ethiopia"
@@ -238,13 +238,13 @@
       },
       "iso3": "GAB",
       "kc": {
-        "deaths_per_100k": 886.7200000000001,
-        "unit_cost": 60,
-        "x": 5.172533333333334
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 215.30276964604798,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 8.978424770856437
       },
       "name": "Gabon"
@@ -257,13 +257,13 @@
       },
       "iso3": "GHA",
       "kc": {
-        "deaths_per_100k": 984.6400000000002,
-        "unit_cost": 60,
-        "x": 5.743733333333335
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 222.046797862176,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 9.20955635604866
       },
       "name": "Ghana"
@@ -276,13 +276,13 @@
       },
       "iso3": "GMB",
       "kc": {
-        "deaths_per_100k": 1251.2,
-        "unit_cost": 60,
-        "x": 7.298666666666666
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 251.81899840608003,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 10.348280891956835
       },
       "name": "Gambia"
@@ -295,13 +295,13 @@
       },
       "iso3": "GIN",
       "kc": {
-        "deaths_per_100k": 1621.1200000000001,
-        "unit_cost": 60,
-        "x": 9.456533333333335
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 561.8819796670078,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 23.926247711457954
       },
       "name": "Guinea"
@@ -314,13 +314,13 @@
       },
       "iso3": "GNQ",
       "kc": {
-        "deaths_per_100k": 1430.72,
-        "unit_cost": 60,
-        "x": 8.345866666666666
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 425.923750935648,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 17.99264106990192
       },
       "name": "Equatorial Guinea"
@@ -333,13 +333,13 @@
       },
       "iso3": "GNB",
       "kc": {
-        "deaths_per_100k": 1740.8000000000002,
-        "unit_cost": 60,
-        "x": 10.154666666666667
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 304.46144988672,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 12.348690894279757
       },
       "name": "Guinea-Bissau"
@@ -352,13 +352,13 @@
       },
       "iso3": "KEN",
       "kc": {
-        "deaths_per_100k": 1126.0800000000002,
-        "unit_cost": 60,
-        "x": 6.5688
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 291.108113285472,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 12.191643805793914
       },
       "name": "Kenya"
@@ -371,13 +371,13 @@
       },
       "iso3": "COM",
       "kc": {
-        "deaths_per_100k": 1202.24,
-        "unit_cost": 60,
-        "x": 7.013066666666667
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 290.34638589801597,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 12.103237554161893
       },
       "name": "Comoros"
@@ -390,13 +390,13 @@
       },
       "iso3": "LBR",
       "kc": {
-        "deaths_per_100k": 1789.7600000000002,
-        "unit_cost": 60,
-        "x": 10.44026666666667
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 582.2069647947841,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 24.713161794122232
       },
       "name": "Liberia"
@@ -409,13 +409,13 @@
       },
       "iso3": "LSO",
       "kc": {
-        "deaths_per_100k": 1550.4,
-        "unit_cost": 60,
-        "x": 9.044
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 525.32393155536,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 22.344694835546566
       },
       "name": "Lesotho"
@@ -428,13 +428,13 @@
       },
       "iso3": "MDG",
       "kc": {
-        "deaths_per_100k": 1256.6400000000003,
-        "unit_cost": 60,
-        "x": 7.330400000000002
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 390.206390906976,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 16.522448187773154
       },
       "name": "Madagascar"
@@ -447,13 +447,13 @@
       },
       "iso3": "MLI",
       "kc": {
-        "deaths_per_100k": 1523.2,
-        "unit_cost": 60,
-        "x": 8.885333333333334
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 410.51743625087994,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 17.238796685500414
       },
       "name": "Mali"
@@ -466,13 +466,13 @@
       },
       "iso3": "MRT",
       "kc": {
-        "deaths_per_100k": 1131.52,
-        "unit_cost": 60,
-        "x": 6.600533333333333
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 236.217620986368,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 9.737272035914522
       },
       "name": "Mauritania"
@@ -485,13 +485,13 @@
       },
       "iso3": "MWI",
       "kc": {
-        "deaths_per_100k": 1283.8400000000004,
-        "unit_cost": 60,
-        "x": 7.489066666666669
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 318.492969411456,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 13.301504442252812
       },
       "name": "Malawi"
@@ -504,13 +504,13 @@
       },
       "iso3": "MOZ",
       "kc": {
-        "deaths_per_100k": 1365.44,
-        "unit_cost": 60,
-        "x": 7.965066666666667
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 383.132580124896,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 16.12893604904152
       },
       "name": "Mozambique"
@@ -523,13 +523,13 @@
       },
       "iso3": "NAM",
       "kc": {
-        "deaths_per_100k": 1164.16,
-        "unit_cost": 60,
-        "x": 6.790933333333333
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 315.055934391744,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 13.233550492443097
       },
       "name": "Namibia"
@@ -542,13 +542,13 @@
       },
       "iso3": "NER",
       "kc": {
-        "deaths_per_100k": 1784.32,
-        "unit_cost": 60,
-        "x": 10.408533333333335
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 615.4719594938879,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 26.202102619588107
       },
       "name": "Niger"
@@ -561,13 +561,13 @@
       },
       "iso3": "NGA",
       "kc": {
-        "deaths_per_100k": 2121.6000000000004,
-        "unit_cost": 60,
-        "x": 12.376000000000003
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 620.9804961494399,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 26.20710550024469
       },
       "name": "Nigeria"
@@ -580,13 +580,13 @@
       },
       "iso3": "RWA",
       "kc": {
-        "deaths_per_100k": 946.56,
-        "unit_cost": 60,
-        "x": 5.521599999999999
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 253.514314355904,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 10.641566464459087
       },
       "name": "Rwanda"
@@ -599,13 +599,13 @@
       },
       "iso3": "SDN",
       "kc": {
-        "deaths_per_100k": 1289.2800000000002,
-        "unit_cost": 60,
-        "x": 7.520800000000001
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 383.894307512352,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 16.217342300673547
       },
       "name": "Sudan"
@@ -618,13 +618,13 @@
       },
       "iso3": "SLE",
       "kc": {
-        "deaths_per_100k": 1539.5200000000002,
-        "unit_cost": 60,
-        "x": 8.980533333333335
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 504.000336953568,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 21.400513274798477
       },
       "name": "Sierra Leone"
@@ -637,13 +637,13 @@
       },
       "iso3": "SEN",
       "kc": {
-        "deaths_per_100k": 1136.96,
-        "unit_cost": 60,
-        "x": 6.632266666666666
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 217.82015588726398,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 8.912064984732922
       },
       "name": "Senegal"
@@ -656,13 +656,13 @@
       },
       "iso3": "SOM",
       "kc": {
-        "deaths_per_100k": 1860.4800000000002,
-        "unit_cost": 60,
-        "x": 10.8528
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 601.1942961064319,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 25.51030202769765
       },
       "name": "Somalia"
@@ -675,13 +675,13 @@
       },
       "iso3": "SSD",
       "kc": {
-        "deaths_per_100k": 2148.8,
-        "unit_cost": 60,
-        "x": 12.534666666666666
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 645.2302202539202,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 27.270261570559292
       },
       "name": "South Sudan"
@@ -694,13 +694,13 @@
       },
       "iso3": "STP",
       "kc": {
-        "deaths_per_100k": 348.16,
-        "unit_cost": 60,
-        "x": 2.0309333333333335
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 71.43472005734398,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 2.9403857642575346
       },
       "name": "Sao Tome and Principe"
@@ -713,13 +713,13 @@
       },
       "iso3": "SWZ",
       "kc": {
-        "deaths_per_100k": 1360,
-        "unit_cost": 60,
-        "x": 7.933333333333334
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 363.6854244240001,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 15.264638947499488
       },
       "name": "Eswatini"
@@ -732,13 +732,13 @@
       },
       "iso3": "TCD",
       "kc": {
-        "deaths_per_100k": 1653.7600000000002,
-        "unit_cost": 60,
-        "x": 9.646933333333335
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 509.61571387238405,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 21.56960106747966
       },
       "name": "Chad"
@@ -751,13 +751,13 @@
       },
       "iso3": "TGO",
       "kc": {
-        "deaths_per_100k": 1229.44,
-        "unit_cost": 60,
-        "x": 7.171733333333334
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 283.5094572024959,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 11.778586641882066
       },
       "name": "Togo"
@@ -770,13 +770,13 @@
       },
       "iso3": "TZA",
       "kc": {
-        "deaths_per_100k": 1082.56,
-        "unit_cost": 60,
-        "x": 6.314933333333332
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 223.38445167830398,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 9.199330205137501
       },
       "name": "United Republic of Tanzania"
@@ -789,13 +789,13 @@
       },
       "iso3": "UGA",
       "kc": {
-        "deaths_per_100k": 1158.72,
-        "unit_cost": 60,
-        "x": 6.7592
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 309.12471469084795,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 12.972647731159503
       },
       "name": "Uganda"
@@ -808,13 +808,13 @@
       },
       "iso3": "ZAF",
       "kc": {
-        "deaths_per_100k": 674.5600000000001,
-        "unit_cost": 60,
-        "x": 3.9349333333333343
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 224.568862111104,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 9.54363633739654
       },
       "name": "South Africa"
@@ -827,13 +827,13 @@
       },
       "iso3": "ZMB",
       "kc": {
-        "deaths_per_100k": 1164.16,
-        "unit_cost": 60,
-        "x": 6.790933333333333
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 290.727249591744,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 12.147440679977905
       },
       "name": "Zambia"
@@ -846,19 +846,19 @@
       },
       "iso3": "ZWE",
       "kc": {
-        "deaths_per_100k": 1833.2800000000002,
-        "unit_cost": 60,
-        "x": 10.694133333333335
+        "deaths_per_100k": 1768.0000000000002,
+        "unit_cost": 60.0,
+        "x": 10.313333333333334
       },
       "mbw": {
         "deaths_per_100k": 564.780229601952,
-        "unit_cost": 10,
+        "unit_cost": 10.0,
         "x": 23.904091051150456
       },
       "name": "Zimbabwe"
     }
   },
-  "generated": "2026-11-06",
+  "generated": "2026-11-09",
   "models": {
     "chc": {
       "label": "Connect Child Health Campaign",
@@ -870,7 +870,7 @@
       "label": "Kangaroo Care",
       "sheet": "https://docs.google.com/spreadsheets/d/1ao7o1pqxfXyJ3C-h7BIPXGmhjwi9ZN3wgfbk5uWkNPM",
       "unit": "baby, all visits",
-      "variant": "home visits after discharge; risk = 4 x newborn death rate"
+      "variant": "home visits after discharge; risk = the model's 13% for enrolled small babies"
     },
     "mbw": {
       "label": "Mother Baby Wellness",
@@ -879,5 +879,5 @@
       "variant": "breastfeeding support visits"
     }
   },
-  "source": "dimagi-internal/connect-cea-models planning/model_results.json @ e23c398"
+  "source": "connect_labs/impact/data (connect-cea-models @ 631a581)"
 }

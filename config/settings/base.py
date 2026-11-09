@@ -160,6 +160,7 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
+    "connect_labs.impact",
     "connect_labs.ai",
     "connect_labs.tasks",
     "connect_labs.audit",
