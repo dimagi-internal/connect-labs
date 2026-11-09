@@ -13,6 +13,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import Http404
 from django.shortcuts import redirect
 from django.urls import reverse
+from django.utils.http import urlencode
 from django.views.generic import TemplateView
 
 from connect_labs.communications import kinds as kind_registry
@@ -85,7 +86,9 @@ class OutboxView(OutboxPage):
             raise Http404("Not found")
         if request.POST.get("action") == "check_delivery":
             _report_check(request, service.check_delivery_about(request, kind, about))
-            return redirect(request.get_full_path())
+            # Back to this record's page, built from what was resolved, never from the request's own URL.
+            query = urlencode({"kind": kind.key, "about": about.pk})
+            return redirect(f"{reverse('communications:outbox')}?{query}")
         communication = service.create_draft(request, kind.key, about_id=about.pk)
         return redirect("communications:detail", pk=communication.pk)
 
