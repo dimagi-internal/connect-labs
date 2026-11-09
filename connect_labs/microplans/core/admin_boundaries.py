@@ -84,6 +84,10 @@ _LEVEL_TO_OVERTURE = {
 _OVERTURE_TO_LEVEL = {v: k for k, v in _LEVEL_TO_OVERTURE.items()}
 
 DEFAULT_SOURCE_ORDER: tuple[str, ...] = ("labs", "geopode", "grid3", "geoboundaries", "overture")
+#: Countries where one source is the better whole set than the blended view. Niger: OCHA's COD-AB has the 8 regions,
+#: 67 departments and 266 communes; geoBoundaries' region layer merges Tahoua with Agadez and Zinder with Diffa, and
+#: blending the two would count a place twice. Settings (MICROPLANS_BOUNDARY_SOURCE_ORDER) still override.
+DEFAULT_COUNTRY_SOURCE_ORDER: dict[str, tuple[str, ...]] = {"NER": ("hdx", "geoboundaries", "overture")}
 
 # Friendly labels for the UI source picker. New sources just add an entry.
 #
@@ -98,6 +102,7 @@ DEFAULT_SOURCE_ORDER: tuple[str, ...] = ("labs", "geopode", "grid3", "geoboundar
 SOURCE_LABELS: dict[str, str] = {
     "labs": "Enriched Boundaries",
     "overture": "Overture",
+    "hdx": "HDX / OCHA (COD-AB)",
     # Individual underlying loaders, selectable on their own (not just merged).
     "geoboundaries": "geoBoundaries (admin)",
     "geopode": "GeoPoDe / WHO (wards + pop)",
@@ -332,6 +337,7 @@ def _default_boundary_sources():
         LabsAdminBoundarySource(db_source="geoboundaries", name="geoboundaries"),
         LabsAdminBoundarySource(db_source="geopode", name="geopode"),
         LabsAdminBoundarySource(db_source="grid3", name="grid3"),
+        LabsAdminBoundarySource(db_source="hdx", name="hdx"),
         OvertureBoundarySource(),
     ]
 
@@ -783,7 +789,7 @@ class BoundaryResolver:
         self._sources = {s.name: s for s in srcs}
         # settings override (per-deployment) layered under any explicit arg.
         configured = dict(getattr(settings, "MICROPLANS_BOUNDARY_SOURCE_ORDER", {}) or {})
-        self._country_order = {**configured, **(country_order or {})}
+        self._country_order = {**DEFAULT_COUNTRY_SOURCE_ORDER, **configured, **(country_order or {})}
 
     def _order_for(self, country3: str) -> tuple[str, ...]:
         a3 = iso.to_alpha3(country3) or (country3 or "").upper()
