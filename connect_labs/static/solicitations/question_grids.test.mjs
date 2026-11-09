@@ -203,3 +203,30 @@ test('limitOnePerColumn clears the column in the other rows of a ranking only', 
   G.limitOnePerColumn(loose);
   assert.equal(loose.checked, true);
 });
+
+test('a tick-any grid and a row framing survive an edit unchanged', () => {
+  const tickAny = (id, label) => ({
+    id,
+    text: `Barriers [${label}]`,
+    type: 'checkboxes',
+    required: false,
+    options: COLUMNS,
+    grid: { id: 'g2', title: 'Barriers', columns: COLUMNS, row: label },
+  });
+  const stored = [
+    tickAny('g2_r1', 'Cost'),
+    tickAny('g2_r2', 'Distance'),
+    { ...row('g1_r1', 'Cost'), framing: 'Why we ask.' },
+    row('g1_r2', 'Distance'),
+  ];
+  const items = G.collapse(stored);
+  assert.equal(items[0].row_type, 'checkboxes');
+  assert.deepEqual(G.expand(items), stored);
+  // Ticking "one per column" on a tick-any grid cannot make it a ranking.
+  items[0].one_per_column = true;
+  assert.ok(
+    G.expand(items)
+      .slice(0, 2)
+      .every((q) => q.type === 'checkboxes' && !('one_per_column' in q.grid)),
+  );
+});

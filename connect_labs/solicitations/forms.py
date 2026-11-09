@@ -384,22 +384,16 @@ class SolicitationResponseForm(forms.Form):
         cleaned = super().clean()
         # A one-per-column grid is a ranking: no two rows may share a column.
         # The form's script stops it in the browser; this stops a crafted post.
-        # A required one (grid.required) must use every column.
         taken: dict[tuple[str, str], str] = {}
-        first_row: dict[str, str] = {}
-        rankings: dict[str, dict] = {}
         for question in self.questions:
             grid = question.get("grid") or {}
             if not grid.get("one_per_column"):
                 continue
-            grid_id = grid.get("id", "")
             field_name = f"question_{question.get('id', '')}"
-            first_row.setdefault(grid_id, field_name)
-            rankings.setdefault(grid_id, grid)
             value = cleaned.get(field_name)
             if not value:
                 continue
-            key = (grid_id, value)
+            key = (grid.get("id", ""), value)
             if key in taken:
                 self.add_error(
                     field_name,
@@ -407,13 +401,30 @@ class SolicitationResponseForm(forms.Form):
                 )
             else:
                 taken[key] = grid.get("row", "") or "another row"
-        for grid_id, grid in rankings.items():
-            if not grid.get("required"):
-                continue
-            missing = [c for c in grid.get("columns") or [] if (grid_id, c) not in taken]
-            if missing:
-                self.add_error(first_row[grid_id], f"Pick a row for each of: {', '.join(missing)}.")
         return cleaned
+
+    def check_rankings_complete(self) -> None:
+        """A required ranking (grid.required) must use every column -- on SUBMIT.
+
+        A draft may leave a ranking half done, so the view calls this only when
+        the response is submitted, beside its other submit-only checks.
+        """
+        cleaned = getattr(self, "cleaned_data", {}) or {}
+        picked: dict[str, set] = {}
+        rankings: dict[str, tuple[str, dict]] = {}
+        for question in self.questions:
+            grid = question.get("grid") or {}
+            if not (grid.get("one_per_column") and grid.get("required")):
+                continue
+            grid_id = grid.get("id", "")
+            field_name = f"question_{question.get('id', '')}"
+            rankings.setdefault(grid_id, (field_name, grid))
+            if cleaned.get(field_name):
+                picked.setdefault(grid_id, set()).add(cleaned[field_name])
+        for grid_id, (first_field, grid) in rankings.items():
+            missing = [c for c in grid.get("columns") or [] if c not in picked.get(grid_id, set())]
+            if missing:
+                self.add_error(first_field, f"Pick a row for each of: {', '.join(missing)}.")
 
     def responding_org(self) -> tuple[str | None, str, str]:
         """(org slug or None, new organisation name, its contact email) from the cleaned form.

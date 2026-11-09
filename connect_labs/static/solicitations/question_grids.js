@@ -57,13 +57,19 @@
           // So switching the item to Multiple Choice keeps its choices.
           options_text: columns.join(', '),
           one_per_column: !!grid.one_per_column,
+          // "checkboxes": tick any in each row. Kept, so an edit never turns it
+          // into a pick-one grid.
+          row_type: q.type === 'checkboxes' ? 'checkboxes' : 'multiple_choice',
           rows: [],
         };
         items.push(last);
       }
       // The editor sets "required" for the whole grid: required if any row is.
       last.required = last.required || !!q.required;
-      last.rows.push({ id: q.id, label: grid.row || '' });
+      var kept = { id: q.id, label: grid.row || '' };
+      // Not edited here, but kept: an edit must not drop it.
+      if (q.framing) kept.framing = q.framing;
+      last.rows.push(kept);
     });
     items.forEach(function (item) {
       if (item.type === 'grid') {
@@ -99,14 +105,17 @@
         return;
       }
       var columns = lines(item.columns_text);
-      var ranking = !!item.one_per_column;
-      // An edited row keeps the id it had at the same label; else a new one.
+      var multi = item.row_type === 'checkboxes';
+      // A ranking is pick-one rows only (validation.py).
+      var ranking = !multi && !!item.one_per_column;
+      // An edited row keeps the id (and framing) it had at the same label; else a new one.
       var byLabel = {};
       (item.rows || []).forEach(function (r) {
-        if (r.id && !(r.label in byLabel)) byLabel[r.label] = r.id;
+        if (r.id && !(r.label in byLabel)) byLabel[r.label] = r;
       });
       lines(item.rows_text).forEach(function (label) {
-        var id = byLabel[label] || freshId(item.id);
+        var prior = byLabel[label];
+        var id = prior ? prior.id : freshId(item.id);
         delete byLabel[label];
         var grid = {
           id: item.id,
@@ -119,15 +128,17 @@
           grid.one_per_column = true;
           if (item.required) grid.required = true;
         }
-        out.push({
+        var row = {
           id: id,
           text: item.text + ' [' + label + ']',
-          type: 'multiple_choice',
+          type: multi ? 'checkboxes' : 'multiple_choice',
           required: !ranking && !!item.required,
           options: columns.slice(),
-          display: 'radio',
-          grid: grid,
-        });
+        };
+        if (!multi) row.display = 'radio';
+        if (prior && prior.framing) row.framing = prior.framing;
+        row.grid = grid;
+        out.push(row);
       });
     });
     return out;

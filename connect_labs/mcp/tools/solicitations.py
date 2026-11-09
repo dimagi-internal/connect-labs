@@ -405,6 +405,14 @@ _CANONICAL_FIELD_PROPERTIES = {
                         "columns": {"type": "array", "items": {"type": "string"}},
                         "row": {"type": "string", "description": "This row's label."},
                         "one_per_column": {"type": "boolean", "default": False},
+                        "required": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": (
+                                "one_per_column only: every column must go to some row. The rows "
+                                "themselves stay optional (set required=false on them)."
+                            ),
+                        },
                     },
                     "required": ["id", "title", "columns", "row"],
                     "additionalProperties": False,

@@ -1279,6 +1279,7 @@ class RespondView(SignedInPage):
                     form.add_error("new_org_name", "Name the organisation you are responding for.")
                 if solicitation.plans and not selected_ids:
                     form.add_error(None, "Select at least one coverage area to submit.")
+                form.check_rankings_complete()
         if form.is_valid():
             data = {"responses": form.get_responses_dict(), "status": status}
             if new_name:
@@ -1511,6 +1512,8 @@ class AmendResponseView(SignedInPage):
     def post(self, request, *args, **kwargs):
         response = self._load(kwargs["pk"])
         form = self._form(response, data=request.POST)
+        if form.is_valid() and response.status != "draft":
+            form.check_rankings_complete()  # a submitted response stays complete
         if form.is_valid():
             data = {}
             if not access.is_directory_round(response.solicitation):

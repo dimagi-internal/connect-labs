@@ -268,7 +268,8 @@
                                                   placeholder="1st choice&#10;2nd choice&#10;3rd choice"></textarea>
                                     </div>
                                 </div>
-                                <label class="flex items-start gap-2">
+                                <p x-show="question.row_type === 'checkboxes'" class="text-xs text-gray-500">Respondents tick any that apply in each row.</p>
+                                <label class="flex items-start gap-2" x-show="question.row_type !== 'checkboxes'">
                                     <input type="checkbox" x-model="question.one_per_column" class="simple-checkbox mt-0.5">
                                     <span class="text-sm text-gray-700">
                                         <span class="font-medium">One choice per column</span>

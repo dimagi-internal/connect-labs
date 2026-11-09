@@ -370,9 +370,14 @@ class TestSolicitationResponseForm:
         for q in questions:
             q["grid"]["required"] = True
         missing = SolicitationResponseForm(questions=questions, data={"question_g1_r2": "1st"})
+        # A draft may leave a ranking half done; only a submit checks it.
+        assert missing.is_valid(), missing.errors
+        missing.check_rankings_complete()
         assert not missing.is_valid()
         assert missing.errors["question_g1_r1"] == ["Pick a row for each of: 2nd."]
         full = SolicitationResponseForm(questions=questions, data={"question_g1_r2": "1st", "question_g1_r3": "2nd"})
+        assert full.is_valid(), full.errors
+        full.check_rankings_complete()
         assert full.is_valid(), full.errors
 
     def test_without_one_per_column_rows_may_share_a_column(self):
