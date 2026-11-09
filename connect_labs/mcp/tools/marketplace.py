@@ -659,7 +659,7 @@ def marketplace_round_summary_set(user, slug: str, url: str) -> dict[str, Any]:
         "Set the priority countries of one marketplace EOI/RFP round: the countries its funders put "
         "first, in priority order. The round page lists them ahead of the other countries and splits "
         "its submissions-over-time chart into priority and other, and the AI review should weigh "
-        "geography against them. Names are resolved to ISO 3166 (\"DRC\" works); an empty list clears "
+        'geography against them. Names are resolved to ISO 3166 ("DRC" works); an empty list clears '
         "them. Only members of the organisation that ran the round may set them. Get the requester's "
         "approval first."
     ),
