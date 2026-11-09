@@ -10,7 +10,7 @@ Every call belongs to an **organisation** — the one that posted it. That organ
 
 | Page | Address | Who can open it |
 | ---- | ------- | --------------- |
-| **All open calls** | `/solicitations/` | Anyone, signed in or not. Every listed call that is still open, each naming the organisation that posted it, with a **Recently closed** section underneath, then **Past calls**. Open marketplace EOIs appear on this list too — see below. Search by keyword, or filter by organisation, by type (EOI or RFP) and by program. |
+| **Calls for partners** | `/solicitations/` | Anyone, signed in or not. Every call — open and past — listed as cards or as a table (use the **Cards \| Table** toggle to switch). The table shows Call, Status, Date, Program and Where columns; signed-in people also see Applicants and Organizations counts and a **This round on the marketplace** link. Visitors who are not signed in never see how many organisations applied. The same keyword search and organisation, type, and program filters apply in both views. Open marketplace EOIs appear on this list too — see below. |
 | **A past call** | `/solicitations/past/<name>/` | Anyone. One of the calls Dimagi ran on the Connect marketplace before calls were posted here (see **Past calls** below). |
 | **A call** | `/solicitations/<number>/` | Anyone, for a listed call. Shows who posted it, the deadline, what it asks and how responses are scored. Long calls have a key-facts strip and an **On this page** index. |
 | **An organisation's calls** | `/solicitations/o/<organisation>/` | Anyone. The organisation's open calls and its past ones (Dimagi's page also lists the past marketplace calls). The marketplace page for an organisation links here when it has listed calls. |
@@ -18,7 +18,12 @@ Every call belongs to an **organisation** — the one that posted it. That organ
 | **Responses, scoring and award** | from the Manage page | Members of the owning organisation, and platform support. Never someone scoring or awarding a response from their own organisation — except on a demonstration award (see below). |
 | **Your response** | linked from the call | The person who submitted it. |
 
-**Solicitations** is in the left-hand menu for everyone. **Manage calls** (`/solicitations/manage/`) lists the organisations you can manage calls for; if there is only one, it takes you straight there. If there are none, it explains how to get access: you are a member of an organisation either through CommCare Connect (when the organisation is registered in labs) or because someone who manages it in labs added you. Seeing an organisation's programme in the context selector does not make you a member of it.
+**Solicitations** is in the left-hand menu for everyone — it appears as **Marketplace** in the far-left rail, with no separate Solicitations megaphone icon. The menu items you see depend on whether you are signed in:
+
+- **Visitor (not signed in):** Programs, Calls for partners, Supplier marketplace.
+- **Signed-in person:** the full menu, which no longer includes a separate "Expressions of interest" item.
+
+**Manage calls** (`/solicitations/manage/`) lists the organisations you can manage calls for; if there is only one, it takes you straight there. If there are none, it explains how to get access: you are a member of an organisation either through CommCare Connect (when the organisation is registered in labs) or because someone who manages it in labs added you. Seeing an organisation's programme in the context selector does not make you a member of it.
 
 A call that is **not listed** does not appear in the directory or on the organisation's page; only the organisation that owns it, platform support, and people who already responded to it can open it. A **draft** is visible only to the organisation that owns it. A response that is not yours looks exactly like one that does not exist ("not found").
 
@@ -28,7 +33,11 @@ A call that is **not listed** does not appear in the directory or on the organis
 
 **Open marketplace EOIs on the open list.** When the Connect marketplace has a live EOI — one that is currently accepting expressions of interest — it appears as the first card on the open list at `/solicitations/`. It shows an **Open** chip and its deadline, and links to its own page where you can read the announcement. The open count at the top of the page and any empty-state message include it. All four filters (keyword search, organisation, type, and program) apply to it in the same way they apply to calls created inside Solicitations. Once the round closes, the card moves to **Past calls** as before.
 
-**Program pictures.** Every program has its own picture on its call cards. Rounds with no specific program, or that span multiple programs (such as matching grants or learning partner calls), show a neutral picture of a network of organisations instead of a bare colour bar.
+**The Marketplace landing page is now public.** A visitor who is not signed in can open the Marketplace home page and see the programs, what each has delivered, which are live, what is open, and financial information (paid out, still funded, startup and supplies — displayed at the owner's discretion). The applicant counts, the "who delivers / who has applied" links, and the network link are shown only to signed-in people.
+
+**Program pictures.** Every program has its own picture on its call cards. Rounds with no specific program, or that span multiple programs (such as matching grants or learning partner calls), show a picture in the same style as the program pictures — a field worker with a tablet and a second person, joined by a dotted line of organisations — rather than a bare colour bar.
+
+**On a round's marketplace page**, the section previously labelled "The form" is now labelled **Response Form**.
 
 **Who belongs to the Dimagi organisation.** Anyone with a `@dimagi.com`, `@dimagi-ai.com`, or `@dimagi-associate.com` address is automatically a member of the Dimagi organisation in Solicitations. This means Dimagi associates can manage Dimagi's calls and, because Dimagi owns all past EOI/RFP rounds, can access responses to those rounds through the same Manage calls page that any organisation member uses. Associates are also treated as Dimagi staff everywhere else in labs — they can open synthetic (labs-only) programs and opportunities, pick them in the program picker, and change who may see a synthetic opportunity, exactly as `@dimagi.com` and `@dimagi-ai.com` staff can. Being a member of the Dimagi organisation in Solicitations does not grant access to admin pages, Settings, or any other staff-only area — those remain unchanged.
 
@@ -63,7 +72,7 @@ flowchart TD
 
 ### Creating a Solicitation
 
-Click **Solicitations** in the left-hand menu, then **Manage your calls**, pick your organisation, and click **New call**. The form asks which organisation the call is **from**: you can choose any organisation you are a member of. Only that organisation's members (and platform support) will see the responses.
+Click **Marketplace** in the left-hand menu, then **Manage your calls**, pick your organisation, and click **New call**. The form asks which organisation the call is **from**: you can choose any organisation you are a member of. Only that organisation's members (and platform support) will see the responses.
 
 Fill in:
 
@@ -168,19 +177,4 @@ This applies to all coverage maps across the solicitations module.
 
 ### Reviewing Responses
 
-Once the deadline passes, open your organisation's **Manage calls** page and click the response count next to the call (or click **Responses** on the call's own page, which only you and your colleagues see).
-
-The page header shows the solicitation's current state. Once a winner has been awarded, the header updates to show **Awarded** so you can see at a glance that the process is complete.
-
-The responses table pins the **Organization** column to the left edge, so firm names remain visible even when you scroll the table horizontally to see all columns.
-
-For each response:
-
-1. Click **Score** on its row. The scoring page shows the answers and selected coverage areas, but not who sent them
-2. Read the answers to each question
-3. Review the applicant's selected coverage areas — these are shown on the responses list and on the scoring page
-4. Score the submission
-5. Score each criterion from 1–10 and add notes — every criterion in the rubric has a score field, including criteria that are not tied to a specific application question (such as Independence or Timeline)
-6. Set your recommendation: Approve / Reject / Needs Revision
-
-Multiple reviewers can score independently. Each reviewer has one review per response: scoring the same response again updates your earlier review
+Once the deadline passes, open
