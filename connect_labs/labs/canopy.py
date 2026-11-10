@@ -217,7 +217,7 @@ PAGE_TITLES: dict[str, str] = {
     "labs:page": "A page",
     "supply_chain:workflow_view": "A supply page",
     "targeting:index": "Targeting",
-    "targeting:pmc": "Targeting: malaria PMC",
+    "targeting:pmc": "Cost-effectiveness: targeting view (malaria PMC)",
     "labsdata:index": "Data",
     "labsdata:space": "A data space (a named set of sources on the Data page)",
     "supply_chain:procurement_tender_detail": "A tender",

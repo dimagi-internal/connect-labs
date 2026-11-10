@@ -97,18 +97,16 @@
 {% endblock %}
 
 {% block content %}
+{% include "components/cea_tabs.html" with active="implementation" %}
 <div class="cea">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
     <div>
-      <div class="kicker">Implementation CEA · every delivered opportunity, what delivery achieved</div>
       <h1>Implementation cost-effectiveness</h1>
       <p class="lede">
         Each real Connect opportunity, valued with Connect's own cost-effectiveness models (CHC, MBW, kangaroo care)
         for the country it was delivered in, then <b>re-priced at what it actually cost</b> per person reached.
         Multiples are of GiveWell's benchmark; the dashed line is GiveWell's bar of {{ data.bar_x }}x. Delivery types
         with no model say so. Every figure is a model, counting deaths only, so each multiple is a floor.
-        Deciding where to deploy next? That is <a href="{% url 'targeting:index' %}">Targeting</a>, whose cost-effectiveness
-        (<a href="{% url 'targeting:pmc' %}">Targeting CEA: malaria PMC</a>) projects what spend would buy before anything is delivered.
       </p>
     </div>
     <div style="display:flex;gap:8px">

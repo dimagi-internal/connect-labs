@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% load static %}
 
+{% block title %}Baseline explorer · Connect Labs{% endblock %}
+
 {% block css %}
   {{ block.super }}
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
@@ -132,24 +134,18 @@
 <div class="py-6" x-data>
 
   <!-- The question starts with the intervention, so it is the first thing on the
-       page. Choosing it sets what the indicator, unit and price below are for;
-       a deep dive with its own page (Malaria PMC) opens that page. -->
+       page. Choosing it sets what the indicator, unit and price below are for.
+       This is the baseline explorer: burden, population and what could be absorbed.
+       What an intervention achieves per dollar is the cost-effectiveness explorer. -->
   <div class="mb-6 flex flex-col md:flex-row md:items-end gap-3 md:gap-6">
     <div class="min-w-0">
-      <h1 class="text-2xl font-semibold text-stone-900">Intervention targeting</h1>
-      <p class="text-sm text-stone-500 mt-1">Where an intervention could go, and what it could absorb.</p>
+      <h1 class="text-2xl font-semibold text-stone-900">Baseline explorer</h1>
+      <p class="text-sm text-stone-500 mt-1">Where an intervention could go, how many people that is, and what it could absorb.</p>
     </div>
     <div class="w-full md:w-[420px] md:ml-auto">
       <label for="tg-preset" class="block text-xs font-semibold tracking-wide uppercase text-stone-500">Intervention</label>
       <select id="tg-preset"
               class="w-full mt-1 text-base font-medium border border-stone-300 rounded-md px-3 py-2 bg-white"></select>
-      <p class="text-xs text-stone-500 mt-1" data-testid="targeting-deep-dives">
-        Malaria PMC has its own page:
-        <a id="tg-pmc-link" href="{% url 'targeting:pmc' %}" class="text-teal-800 hover:text-teal-900 underline">Targeting CEA: PMC explorer</a>
-        <span class="text-stone-400">(simulated deaths averted by state, before delivery)</span>
-        · What delivered opportunities actually achieved:
-        <a href="{% url 'pulse:cea' %}" class="text-teal-800 hover:text-teal-900 underline">Implementation CEA</a>
-      </p>
     </div>
   </div>
 

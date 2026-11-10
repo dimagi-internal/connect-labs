@@ -6,7 +6,6 @@
   var util = T.util;
   var state = T.state;
   var api = T.api;
-  var PMC = '__pmc';
 
   function renderControls() {
     var S = state.get();
@@ -25,13 +24,6 @@
       o.selected = i.slug === S.preset;
       presetSel.appendChild(o);
     });
-    // A deep dive with its own page: choosing it opens that page.
-    if (document.getElementById('tg-pmc-link')) {
-      var pmc = document.createElement('option');
-      pmc.value = PMC;
-      pmc.textContent = 'Malaria PMC (opens the PMC explorer)';
-      presetSel.appendChild(pmc);
-    }
 
     basisSel.innerHTML = '';
     S.costInfo.bases.forEach(function (b) {
@@ -131,11 +123,6 @@
     var costEl = document.getElementById('tg-unitcost');
 
     presetSel.onchange = function () {
-      if (presetSel.value === PMC) {
-        // Follow the page's own link to it rather than building a URL here.
-        document.getElementById('tg-pmc-link').click();
-        return;
-      }
       var S = state.get();
       var pick = S.costInfo.interventions.filter(function (i) {
         return i.slug === presetSel.value;

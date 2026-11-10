@@ -2,7 +2,7 @@
 
 A section (the marketplace today) declares its menu as groups of items, each item a URL
 name. `build` resolves them for a request: the URLs, which item is current (the longest
-matching path, so `/labs/pulse/cea/` lights "Implementation CEA", not "Live
+matching path, so `/labs/pulse/cea/` lights "Cost-effectiveness explorer", not "Live
 delivery"), and whether the page belongs to the menu at all. The template
 `components/expandable_rail_menu.html` draws it; `base.html` includes it for any page a
 section's menu claims, so a page joins a menu by being listed here, not by editing its

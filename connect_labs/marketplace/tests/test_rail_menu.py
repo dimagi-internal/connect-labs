@@ -27,6 +27,7 @@ def test_headings_are_the_agreed_ones():
     menu = build(MARKETPLACE_MENU, _req(reverse("marketplace:home")))
     assert [g["label"] for g in menu["groups"]] == [
         "Overview",
+        "Baseline",
         "Solicitations",
         "Network",
         "Cost-Effectiveness",
@@ -34,7 +35,7 @@ def test_headings_are_the_agreed_ones():
     ]
     labels = [i["label"] for g in menu["groups"] for i in g["items"]]
     assert "Supply" not in labels and "Funds and portfolio" not in labels
-    assert "Malaria PMC explorer" not in labels  # a deep dive, reached from Targeting
+    assert "Malaria PMC explorer" not in labels  # a tab of the cost-effectiveness explorer
     assert labels[-1] == "Supplier marketplace"
 
 
@@ -43,12 +44,12 @@ def test_headings_are_the_agreed_ones():
     [
         ("marketplace:home", "Programs"),
         ("marketplace:network", "Partners"),
-        ("targeting:index", "Targeting CEA"),
-        ("targeting:pmc", "Targeting CEA"),
+        ("targeting:index", "Baseline explorer"),
+        ("targeting:pmc", "Cost-effectiveness explorer"),
         ("solicitations:public_list", "Calls for partners"),
         ("pulse:index", "Live delivery"),
         ("pulse:network", "Network growth"),
-        ("pulse:cea", "Implementation CEA"),
+        ("pulse:cea", "Cost-effectiveness explorer"),
         ("pulse:costs", "Cost data"),
         ("supply_chain:market", "Supplier marketplace"),
     ],

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Targeting CEA: PMC schedule explorer · Connect Labs{% endblock %}
+{% block title %}Targeting cost-effectiveness: malaria PMC · Connect Labs{% endblock %}
 
 {% block css %}
   {{ block.super }}
@@ -127,18 +127,17 @@
 {% endblock %}
 
 {% block content %}
+{% include "components/cea_tabs.html" with active="targeting" %}
 <div class="pmc py-6 space-y-4 max-w-6xl">
 
-  <div class="text-[11px] font-semibold uppercase tracking-wider text-indigo-700" data-testid="cea-kind">Targeting CEA · projected, before delivery
-    <a href="{% url 'pulse:cea' %}" class="ml-2 normal-case tracking-normal font-normal underline">What delivery achieved: Implementation CEA</a></div>
-  <div class="flex flex-wrap items-baseline gap-3">
+    <div class="flex flex-wrap items-baseline gap-3">
     <h1 class="text-2xl font-semibold text-stone-900">Which PMC schedule, and where?</h1>
     {% if grid_states %}
       <span class="pmc-chip near" title="EMOD's transmission fitted to each state's DHS malaria prevalence, its season to CHIRPS rainfall. Not a full calibration: illustrative.">Fitted per state. Illustrative</span>
     {% else %}
       <span class="pmc-chip unknown" title="{{ sweep.setting.description }}">Illustrative. One uncalibrated setting</span>
     {% endif %}
-    <a href="{% url 'targeting:index' %}" class="ml-auto text-sm text-indigo-700 hover:underline">← Targeting</a>
+    
   </div>
 
   <section class="pmc-card" aria-label="Inputs">
