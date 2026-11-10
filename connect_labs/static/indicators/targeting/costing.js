@@ -6,6 +6,7 @@
   var util = T.util;
   var state = T.state;
   var api = T.api;
+  var PMC = '__pmc';
 
   function renderControls() {
     var S = state.get();
@@ -13,14 +14,24 @@
     var basisSel = document.getElementById('tg-basis');
     if (!S.costInfo) return;
 
-    presetSel.innerHTML = '<option value="">— choose your own —</option>';
+    // The intervention picker sits at the top of the page. The price is not in
+    // the option's name: it is in the unit cost box, where it can be changed.
+    presetSel.innerHTML =
+      '<option value="">Custom: set your own unit and price</option>';
     S.costInfo.interventions.forEach(function (i) {
       var o = document.createElement('option');
       o.value = i.slug;
-      o.textContent = i.label + ' ($' + i.unit_cost_usd.toFixed(2) + ')';
+      o.textContent = i.label;
       o.selected = i.slug === S.preset;
       presetSel.appendChild(o);
     });
+    // A deep dive with its own page: choosing it opens that page.
+    if (document.getElementById('tg-pmc-link')) {
+      var pmc = document.createElement('option');
+      pmc.value = PMC;
+      pmc.textContent = 'Malaria PMC (opens the PMC explorer)';
+      presetSel.appendChild(pmc);
+    }
 
     basisSel.innerHTML = '';
     S.costInfo.bases.forEach(function (b) {
@@ -120,6 +131,11 @@
     var costEl = document.getElementById('tg-unitcost');
 
     presetSel.onchange = function () {
+      if (presetSel.value === PMC) {
+        // Follow the page's own link to it rather than building a URL here.
+        document.getElementById('tg-pmc-link').click();
+        return;
+      }
       var S = state.get();
       var pick = S.costInfo.interventions.filter(function (i) {
         return i.slug === presetSel.value;

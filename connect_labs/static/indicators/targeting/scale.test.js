@@ -333,7 +333,10 @@ describe('the column head over the value', () => {
 describe('the line above the totals', () => {
   // "Total population 150M" for Nigeria read as a wrong census. It was right:
   // the default threshold keeps 28 of 37 states. The line says so.
-  function load(S) {
+  // Not named S: table.js is eval'd in this function's scope, so a parameter
+  // called S stood in for the one renderTotalsScope forgot to define, and the
+  // page threw on every selection while this test passed.
+  function load(pageState) {
     globalThis.window = globalThis.window || globalThis;
     globalThis.window.Targeting = {
       util: {
@@ -341,7 +344,7 @@ describe('the line above the totals', () => {
         fmt: (n) => String(n),
         plural: (n, one) => (n === 1 ? one : one + 's'),
       },
-      state: { get: () => S },
+      state: { get: () => pageState },
     };
     const fs = require('fs');
     // eslint-disable-next-line no-eval
@@ -365,8 +368,8 @@ describe('the line above the totals', () => {
 
   it('names the areas, the threshold, and that the country is only partly counted', () => {
     const text = render(u5, {
-      label: 'Under-5 mortality rate',
-      unit: 'per 1,000 live births',
+      indicator_label: 'Under-5 mortality rate',
+      indicator_unit: 'per 1,000 live births',
       threshold: 80,
       counts: { units: 28 },
       countries_partly_above: ['Nigeria'],
@@ -382,8 +385,8 @@ describe('the line above the totals', () => {
     const text = render(
       { indicator: 'ors', indicatorMeta: { ors: { lower_is_worse: true } } },
       {
-        label: 'ORS coverage',
-        unit: '%',
+        indicator_label: 'ORS coverage',
+        indicator_unit: '%',
         threshold: 50,
         counts: { units: 1 },
         projected_to: 2026,
