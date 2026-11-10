@@ -74,7 +74,7 @@ def mock_delay(monkeypatch):
 
 
 def post(client, **body):
-    return client.post(reverse("targeting:pmc_run"), body, content_type="application/json")
+    return client.post(reverse("cea:pmc_run"), body, content_type="application/json")
 
 
 def make_run(schedules, status=PmcModelRun.QUEUED, **fields):
@@ -90,7 +90,7 @@ class TestRunEndpoint:
     def test_requires_login_when_deployed(self, client, settings, mock_delay):
         settings.DEBUG = False
         assert post(client, state="Ondo", schedules=[MONTHLY]).status_code == 302
-        assert client.get(reverse("targeting:pmc_run_status", args=[1])).status_code == 302
+        assert client.get(reverse("cea:pmc_run_status", args=[1])).status_code == 302
 
     def test_identical_inputs_hit_cache(self, client_in, mock_delay):
         run = make_run([MONTHLY], PmcModelRun.COMPLETED, result={"ok": 1}, timings={"total_s": 90})
@@ -187,7 +187,7 @@ class TestRunEndpoint:
             post(client_in, state="Ondo", schedules=[MONTHLY])
         run.refresh_from_db()
         assert run.updated_at > old + timedelta(minutes=59)
-        body = client_in.get(reverse("targeting:pmc_run_status", args=[run.pk])).json()
+        body = client_in.get(reverse("cea:pmc_run_status", args=[run.pk])).json()
         assert body["eta_s"] > 250
 
     def test_failed_run_is_requeued_on_the_same_row(self, client_in, mock_delay, django_capture_on_commit_callbacks):
@@ -217,7 +217,7 @@ class TestRunEndpoint:
         assert post(client_in, **body).status_code == 400
 
     def test_bad_json_is_400(self, client_in):
-        r = client_in.post(reverse("targeting:pmc_run"), "{nope", content_type="application/json")
+        r = client_in.post(reverse("cea:pmc_run"), "{nope", content_type="application/json")
         assert r.status_code == 400
 
     def test_missing_configuration_is_503_with_the_public_sentence(self, client_in, settings, mock_delay):
@@ -232,18 +232,18 @@ class TestRunEndpoint:
 class TestStatusEndpoint:
     def test_running_has_no_result_and_an_eta(self, client_in):
         run = make_run([MONTHLY], PmcModelRun.RUNNING)
-        body = client_in.get(reverse("targeting:pmc_run_status", args=[run.pk])).json()
+        body = client_in.get(reverse("cea:pmc_run_status", args=[run.pk])).json()
         assert body["status"] == "running" and body["result"] is None and body["cached"] is False
         assert 10 <= body["eta_s"] <= runner_eta_cold()
 
     def test_completed_carries_result_and_zero_eta(self, client_in):
         run = make_run([MONTHLY], PmcModelRun.COMPLETED, result={"a": 1}, timings={"total_s": 5})
-        body = client_in.get(reverse("targeting:pmc_run_status", args=[run.pk])).json()
+        body = client_in.get(reverse("cea:pmc_run_status", args=[run.pk])).json()
         assert body["result"] == {"a": 1} and body["eta_s"] == 0 and body["timings"] == {"total_s": 5}
 
     def test_failed_carries_the_public_error_never_the_internal_one(self, client_in):
         run = make_run([MONTHLY], PmcModelRun.FAILED, error="runner i-0abc123 is 'stopping' (InstanceGone)")
-        r = client_in.get(reverse("targeting:pmc_run_status", args=[run.pk]))
+        r = client_in.get(reverse("cea:pmc_run_status", args=[run.pk]))
         body = r.json()
         assert body["status"] == "failed" and body["result"] is None
         assert body["error"] == "The live model is unavailable right now."
@@ -253,25 +253,25 @@ class TestStatusEndpoint:
 
     def test_a_busy_timeout_says_busy(self, client_in):
         run = make_run([MONTHLY], PmcModelRun.FAILED, error="runner busy: another model run held the worker")
-        body = client_in.get(reverse("targeting:pmc_run_status", args=[run.pk])).json()
+        body = client_in.get(reverse("cea:pmc_run_status", args=[run.pk])).json()
         assert "busy" in body["error"]
 
     def test_the_payload_carries_the_label_and_caveats(self, client_in):
         from connect_labs.labs.indicators import pmc
 
         run = make_run([MONTHLY], PmcModelRun.COMPLETED, result={"a": 1})
-        body = client_in.get(reverse("targeting:pmc_run_status", args=[run.pk])).json()
+        body = client_in.get(reverse("cea:pmc_run_status", args=[run.pk])).json()
         assert body["label"] == "illustrative \u00b7 live model run"
         assert body["caveats"] == list(pmc.CAVEATS) and body["caveats"]
 
     def test_a_running_rows_eta_counts_from_its_claim_not_its_last_heartbeat(self, client_in):
         started = timezone.now().timestamp() - 100
         run = make_run([MONTHLY], PmcModelRun.RUNNING, timings={"expected_s": 120, "started_at": started})
-        body = client_in.get(reverse("targeting:pmc_run_status", args=[run.pk])).json()
+        body = client_in.get(reverse("cea:pmc_run_status", args=[run.pk])).json()
         assert body["eta_s"] <= 20  # updated_at is fresh (a heartbeat), but 100 s of 120 are gone
 
     def test_unknown_run_is_404(self, client_in):
-        assert client_in.get(reverse("targeting:pmc_run_status", args=[999999])).status_code == 404
+        assert client_in.get(reverse("cea:pmc_run_status", args=[999999])).status_code == 404
 
 
 def runner_eta_cold():
@@ -644,7 +644,7 @@ class TestADeployKillsTheWaitingTask:
         run = kill(make_run([MONTHLY]))
         configured.finish(run, {"runs": [{"seed": 0}]})
 
-        body = client_in.get(reverse("targeting:pmc_run_status", args=[run.pk])).json()
+        body = client_in.get(reverse("cea:pmc_run_status", args=[run.pk])).json()
 
         assert body["status"] == "completed" and body["result"] == {"runs": [{"seed": 0}]}
         assert body["timings"]["recovered_from_s3"] is True
@@ -663,7 +663,7 @@ class TestADeployKillsTheWaitingTask:
         self, client_in, configured, mock_delay, django_capture_on_commit_callbacks
     ):
         run = kill(make_run([MONTHLY]))
-        url = reverse("targeting:pmc_run_status", args=[run.pk])
+        url = reverse("cea:pmc_run_status", args=[run.pk])
 
         with django_capture_on_commit_callbacks(execute=True):
             first = client_in.get(url).json()
@@ -676,7 +676,7 @@ class TestADeployKillsTheWaitingTask:
         run = make_run([MONTHLY], PmcModelRun.RUNNING)
         configured.finish(run, {"runs": []})  # a result already there must not short-cut a live task
 
-        assert client_in.get(reverse("targeting:pmc_run_status", args=[run.pk])).json()["status"] == "running"
+        assert client_in.get(reverse("cea:pmc_run_status", args=[run.pk])).json()["status"] == "running"
 
     def test_the_sweep_heals_dead_runs_without_anyone_polling(
         self, configured, mock_delay, django_capture_on_commit_callbacks
@@ -703,7 +703,7 @@ class TestADeployKillsTheWaitingTask:
 
         monkeypatch.setattr(runner, "default_s3", broken)
         with django_capture_on_commit_callbacks(execute=True):
-            body = client_in.get(reverse("targeting:pmc_run_status", args=[run.pk])).json()
+            body = client_in.get(reverse("cea:pmc_run_status", args=[run.pk])).json()
 
         assert body["status"] == "queued" and mock_delay == [run.pk]
 

@@ -27,7 +27,7 @@ MARKETPLACE_MENU = Menu(
             "Baseline",
             (
                 # Burden, population and what could be absorbed, with no cost-effectiveness in it:
-                # that is the explorer below. The URL is still /labs/targeting/.
+                # that is the explorer below.
                 Item("Baseline explorer", "targeting:index"),
             ),
         ),
@@ -60,9 +60,8 @@ MARKETPLACE_MENU = Menu(
             (
                 # ONE explorer with two views on tabs: Implementation (what delivered opportunities
                 # achieved, at what they cost) and Targeting (what spend would buy before delivery:
-                # malaria PMC today). The PMC page sits under /labs/targeting/pmc/, so this item
-                # claims that path, which is longer than the Baseline item's and so wins.
-                Item("Cost-effectiveness explorer", "pulse:cea", owns=("/labs/targeting/pmc/",)),
+                # malaria PMC today). Every page under /labs/cea/ lights this one item.
+                Item("Cost-effectiveness explorer", "cea:implementation", owns=("/labs/cea/",)),
                 Item("Cost data", "pulse:costs"),
                 Item("Donor reports", "pulse:report_list"),
             ),

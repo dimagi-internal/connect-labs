@@ -1,6 +1,7 @@
-{# The cost-effectiveness explorer's two views, as tabs on both pages. `active` is "implementation" or "targeting".
+{% comment %} The cost-effectiveness explorer's two views, as tabs on both pages. `active` is "implementation" or "targeting".
    Implementation = what delivered opportunities achieved, at what they cost. Targeting = what spend would buy where it
-   has not been delivered yet. One explorer, two questions; the baseline explorer (/labs/targeting/) has neither. #}
+   has not been delivered yet. One explorer, two questions; the baseline explorer (/labs/targeting/) has neither.
+{% endcomment %}
 <style>
   .ceatabs { max-width:1280px; margin:0 auto; padding:14px 16px 0; font-family:inherit; }
   .ceatabs .ct-title { font-size:11px; text-transform:uppercase; letter-spacing:.07em; font-weight:600; color:#6b7280; margin:0 0 6px; }
@@ -13,7 +14,7 @@
 <nav class="ceatabs" aria-label="Cost-effectiveness explorer" data-testid="cea-tabs">
   <div class="ct-title">Cost-effectiveness explorer</div>
   <div class="ct-row">
-    <a href="{% url 'pulse:cea' %}" {% if active == "implementation" %}class="on" aria-current="page"{% endif %}>Implementation<small>what delivery achieved, at actual cost</small></a>
-    <a href="{% url 'targeting:pmc' %}" {% if active == "targeting" %}class="on" aria-current="page"{% endif %}>Targeting<small>what spend would buy, before delivery (malaria PMC)</small></a>
+    <a href="{% url 'cea:implementation' %}" {% if active == "implementation" %}class="on" aria-current="page"{% endif %}>Implementation<small>what delivery achieved, at actual cost</small></a>
+    <a href="{% url 'cea:pmc' %}" {% if active == "targeting" %}class="on" aria-current="page"{% endif %}>Targeting<small>what spend would buy, before delivery (malaria PMC)</small></a>
   </div>
 </nav>

@@ -1389,7 +1389,7 @@ def targeting_pmc_schedules(
     q |= {k: v for k, v in costs.items() if v != pmc.costs_or_default()[k]}
     if states:
         q["states"] = ",".join(r["name"] for r in rows)
-    out["explorer_path"] = f"{reverse('targeting:pmc')}?{urlencode(q)}"
+    out["explorer_path"] = f"{reverse('cea:pmc')}?{urlencode(q)}"
     return out
 
 
@@ -2003,9 +2003,9 @@ def targeting_pmc_rank(
         **out,
         # SMC already runs here: not a PMC candidate (data/nga_smc_states.json, sourced).
         "smc": {n: smc[n] for n in dict.fromkeys(considered) if n in smc},
-        "explorer_path": f"{reverse('targeting:pmc')}?{urlencode(q)}",
+        "explorer_path": f"{reverse('cea:pmc')}?{urlencode(q)}",
         # Absolute, for a View: it may open only an https link, and it builds one per selection.
-        "explorer_url": f"{(getattr(settings, 'LABS_PUBLIC_URL', '') or '').rstrip('/')}{reverse('targeting:pmc')}",
+        "explorer_url": f"{(getattr(settings, 'LABS_PUBLIC_URL', '') or '').rstrip('/')}{reverse('cea:pmc')}",
     }
 
 

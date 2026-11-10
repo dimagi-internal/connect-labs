@@ -1,4 +1,5 @@
 from django.urls import path
+from django.views.generic import RedirectView
 
 from connect_labs.pulse import api, network_api, views
 
@@ -23,8 +24,12 @@ urlpatterns = [
     path("network/", views.PulseNetworkView.as_view(), name="network"),
     path("connectivity/", views.PulseConnectivityView.as_view(), name="connectivity"),
     path("costs/", views.PulseCostsView.as_view(), name="costs"),
-    path("cea/", views.PulseCEAView.as_view(), name="cea"),
-    path("cea/opp/<int:opp_id>/", views.PulseCEAOppView.as_view(), name="cea_opp"),
+    # The cost-effectiveness explorer moved to /labs/cea/ (connect_labs/cea_urls.py); keep the old addresses.
+    path("cea/", RedirectView.as_view(pattern_name="cea:implementation", query_string=True, permanent=False)),
+    path(
+        "cea/opp/<int:opp_id>/",
+        RedirectView.as_view(pattern_name="cea:implementation_opp", query_string=True, permanent=False),
+    ),
     path("v/<slug:layout>/", views.PulseDisplayView.as_view(), name="display"),
     path("opp/<int:opp_id>/", views.PulseOppView.as_view(), name="opp"),
     # An engagement several Connect opportunities belong to, addressed by slug.

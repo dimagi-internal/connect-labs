@@ -177,7 +177,7 @@ class TestThePage:
 
     def test_the_page_renders(self, client_in, nigeria, settings):
         settings.PMC_STATE_GRID_PATH = "/nonexistent/pmc_state_grid.json"
-        body = client_in.get(reverse("targeting:pmc")).content.decode()
+        body = client_in.get(reverse("cea:pmc")).content.decode()
         assert "Which PMC schedule, and where?" in body
         assert "Illustrative. One uncalibrated setting" in body
         assert "indicators/pmc/pmc.js" in body
@@ -193,7 +193,7 @@ class TestThePage:
 
     def test_the_page_states_its_method_once_folded_and_writes_no_answer_in_words(self, client_in, nigeria, settings):
         settings.PMC_STATE_GRID_PATH = "/nonexistent/pmc_state_grid.json"
-        body = client_in.get(reverse("targeting:pmc")).content.decode()
+        body = client_in.get(reverse("cea:pmc")).content.decode()
         # The three inputs a visitor changes, each labelled.
         for label in ("States", "Price", "Children"):
             assert f'<div class="pmc-in-k">{label}' in body
@@ -213,7 +213,7 @@ class TestThePage:
         from connect_labs.labs.indicators.tests.test_emod_rank import FIXTURE
 
         settings.PMC_STATE_GRID_PATH = str(FIXTURE)
-        resp = client_in.get(reverse("targeting:pmc"))
+        resp = client_in.get(reverse("cea:pmc"))
         body = resp.content.decode()
 
         assert "Fitted per state. Illustrative" in body
@@ -234,7 +234,7 @@ class TestThePage:
             "Kano": {"u5_deaths": 95_000, "map_malaria_deaths": 23_000, "pfpr": 0.54, "pop_u5": 2_000_000},
         }
         monkeypatch.setattr(mortality, "registry_burden", lambda: burden)
-        url = reverse("targeting:pmc_rank")
+        url = reverse("cea:pmc_rank")
         params = {"states": "Kano,Ondo", "deaths_basis": "map", "cost_per_visit": 0.5, "top_n": 3}
 
         got = client_in.get(url, params).json()
@@ -255,7 +255,7 @@ class TestThePage:
         from connect_labs.labs.indicators.tests.test_emod_rank import FIXTURE
 
         settings.PMC_STATE_GRID_PATH = str(FIXTURE)
-        url = reverse("targeting:pmc_rank")
+        url = reverse("cea:pmc_rank")
 
         assert client_in.get(url, {"top_n": "ten"}).status_code == 400
         bad = client_in.get(url, {"deaths_basis": "guess"})
@@ -264,23 +264,23 @@ class TestThePage:
     def test_the_rank_endpoint_says_when_the_grid_is_not_computed(self, client_in, nigeria, settings):
         settings.PMC_STATE_GRID_PATH = "/nonexistent/pmc_state_grid.json"
 
-        got = client_in.get(reverse("targeting:pmc_rank")).json()
+        got = client_in.get(reverse("cea:pmc_rank")).json()
 
         assert got["available"] is False and "not available yet" in got["message"]
 
     def test_the_data_endpoint_defaults_to_the_best_schedule(self, client_in, nigeria):
-        got = client_in.get(reverse("targeting:pmc_data")).json()
+        got = client_in.get(reverse("cea:pmc_data")).json()
         assert got["schedule"] == "connect_monthly_in_season_3_24"
         assert [s["name"] for s in got["states"]] == ["Ondo", "Kano"]
 
     def test_the_data_endpoint_takes_the_visitors_prices(self, client_in, nigeria):
-        got = client_in.get(reverse("targeting:pmc_data"), {"cost_per_visit": 1.6, "dose_rate": 2}).json()
+        got = client_in.get(reverse("cea:pmc_data"), {"cost_per_visit": 1.6, "dose_rate": 2}).json()
         # A nonsense dose rate falls back to the proposal's own.
         assert got["costs"]["dose_rate"] == DEFAULTS["dose_rate"]
         assert got["costs"]["cost_per_dose"] == pytest.approx(2.021, abs=1e-3)
 
     def test_a_non_number_price_falls_back_rather_than_breaking_the_json(self, client_in, nigeria):
-        got = client_in.get(reverse("targeting:pmc_data"), {"cost_per_visit": "nan", "platform_fee": "inf"}).json()
+        got = client_in.get(reverse("cea:pmc_data"), {"cost_per_visit": "nan", "platform_fee": "inf"}).json()
         assert got["costs"]["cost_per_visit"] == DEFAULTS["cost_per_visit"]
         assert got["costs"]["platform_fee"] == DEFAULTS["platform_fee"]
 
@@ -296,7 +296,7 @@ class TestThePage:
         client.force_login(django_user_model.objects.create_user(username="pm2", password="x"))
 
         body = client.get(
-            reverse("targeting:pmc"), {"schedule": "connect_quarterly_3_24", "states": "Benue"}
+            reverse("cea:pmc"), {"schedule": "connect_quarterly_3_24", "states": "Benue"}
         ).content.decode()
 
         assert "labs-targeting://pmc" in body
@@ -307,7 +307,7 @@ class TestThePage:
         assert "connect_quarterly_3_24" not in body
 
     def test_the_page_may_use_the_targeting_tools(self):
-        assert canopy.PAGE_SCOPES["targeting:pmc"] == ("targeting:read",)
+        assert canopy.PAGE_SCOPES["cea:pmc"] == ("targeting:read",)
         assert "targeting_pmc_schedules" in canopy.SCOPE_TOOLS["targeting:read"]
 
 
@@ -365,13 +365,13 @@ class TestTheRunControl:
         return client
 
     def _post(self, client, **body):
-        return client.post(reverse("targeting:pmc_run"), body, content_type="application/json")
+        return client.post(reverse("cea:pmc_run"), body, content_type="application/json")
 
     def test_the_page_carries_the_run_control_and_its_urls(self, client_in):
-        body = client_in.get(reverse("targeting:pmc")).content.decode()
+        body = client_in.get(reverse("cea:pmc")).content.decode()
 
         assert "Run IDM" in body and 'id="pmc-live-run"' in body
-        assert reverse("targeting:pmc_run") in body
+        assert reverse("cea:pmc_run") in body
         # The status URL is a template the script fills in with the run id.
         assert "{id}" in body and "api/pmc/run/" in body
 
@@ -408,7 +408,7 @@ class TestTheRunControl:
             runs.append({"code": "none", "seed": seed, "cases_3_24m": 2000, "kids_3_24m": 370, "doses": 0})
             runs.append({"code": code, "seed": seed, "cases_3_24m": 1500, "kids_3_24m": 370, "doses": 1000})
         PmcModelRun.objects.filter(pk=run_id).update(status=PmcModelRun.COMPLETED, result={"runs": runs})
-        url = reverse("targeting:pmc_run_status", args=[run_id])
+        url = reverse("cea:pmc_run_status", args=[run_id])
 
         got = client_in.get(url, {"state": "Ondo"}).json()
 
@@ -425,9 +425,9 @@ class TestTheRunControl:
 
         strict = Client(enforce_csrf_checks=True)
         strict.force_login(django_user_model.objects.get(username="pm3"))
-        body = strict.get(reverse("targeting:pmc")).content.decode()
+        body = strict.get(reverse("cea:pmc")).content.decode()
         token = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', body).group(1)
-        url = reverse("targeting:pmc_run")
+        url = reverse("cea:pmc_run")
         payload = {"state": "Ondo", "schedule": self.SPEC}
 
         assert strict.post(url, payload, content_type="application/json").status_code == 403
@@ -442,7 +442,7 @@ class TestTheRunControl:
             status=PmcModelRun.FAILED, error="runner i-0123456789abcdef0 is 'terminated' (InstanceGone)"
         )
 
-        r = client_in.get(reverse("targeting:pmc_run_status", args=[run_id]), {"state": "Ondo"})
+        r = client_in.get(reverse("cea:pmc_run_status", args=[run_id]), {"state": "Ondo"})
 
         assert r.json()["status"] == "failed"
         assert r.json()["error"] == "The live model is unavailable right now."

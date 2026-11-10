@@ -218,7 +218,7 @@ class TestRanking:
 @pytest.mark.django_db
 class TestPage:
     def test_requires_a_session(self, client):
-        resp = client.get(reverse("pulse:cea"))
+        resp = client.get(reverse("cea:implementation"))
         assert resp.status_code == 302
 
     def test_renders_json_and_csv(self, client, django_user_model):
@@ -226,11 +226,11 @@ class TestPage:
         client.force_login(user)
         _opp(40, "chc")
         _work(40, 2)
-        page = client.get(reverse("pulse:cea"))
+        page = client.get(reverse("cea:implementation"))
         assert page.status_code == 200
         assert b"Implementation cost-effectiveness" in page.content
-        data = client.get(reverse("pulse:cea") + "?format=json").json()
+        data = client.get(reverse("cea:implementation") + "?format=json").json()
         assert data["rows"][0]["id"] == 40
-        csv = client.get(reverse("pulse:cea") + "?format=csv").content.decode()
+        csv = client.get(reverse("cea:implementation") + "?format=csv").content.decode()
         assert csv.splitlines()[0].startswith("rank,id,name")
         assert "Opp 40" in csv

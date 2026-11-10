@@ -45,11 +45,11 @@ def test_headings_are_the_agreed_ones():
         ("marketplace:home", "Programs"),
         ("marketplace:network", "Partners"),
         ("targeting:index", "Baseline explorer"),
-        ("targeting:pmc", "Cost-effectiveness explorer"),
+        ("cea:pmc", "Cost-effectiveness explorer"),
         ("solicitations:public_list", "Calls for partners"),
         ("pulse:index", "Live delivery"),
         ("pulse:network", "Network growth"),
-        ("pulse:cea", "Cost-effectiveness explorer"),
+        ("cea:implementation", "Cost-effectiveness explorer"),
         ("pulse:costs", "Cost data"),
         ("supply_chain:market", "Supplier marketplace"),
     ],
@@ -76,7 +76,7 @@ def test_a_page_outside_the_menu_has_none():
 
 
 def test_never_in_present_mode():
-    url = reverse("pulse:cea")
+    url = reverse("cea:implementation")
     assert marketplace_rail_context(_req(url))["expandable_rail_menu"]
     assert marketplace_rail_context(_req(url, present="1")) == {}
 
@@ -87,7 +87,7 @@ def test_a_visitor_gets_the_menu_with_only_the_pages_they_can_open():
     assert labels == ["Programs", "Calls for partners", "Supplier marketplace"]
     assert _active(menu) == ["Calls for partners"]
     # A page only a signed-in person can open carries no menu for a visitor.
-    assert build(MARKETPLACE_MENU, _req(reverse("pulse:cea"), signed_in=False)) is None
+    assert build(MARKETPLACE_MENU, _req(reverse("cea:implementation"), signed_in=False)) is None
 
 
 def test_the_marketplace_landing_page_carries_the_menu_for_a_visitor():
@@ -128,7 +128,7 @@ def test_the_rail_is_drawn_on_a_page_and_a_visitor_sees_only_what_they_can_open(
 
 
 def test_the_sidebar_icon_is_wired_to_toggle_the_rail():
-    menu = build(MARKETPLACE_MENU, _req(reverse("pulse:cea")))
+    menu = build(MARKETPLACE_MENU, _req(reverse("cea:implementation")))
     assert menu["sidebar_url"] == reverse("marketplace:home")
 
 

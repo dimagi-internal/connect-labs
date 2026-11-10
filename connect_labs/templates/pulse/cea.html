@@ -289,7 +289,7 @@
     } else {
       s += "<br><i>" + esc(r.status_text) + "</i>";
     }
-    if (TOUCH && r.model) s += '<br><a href="/labs/pulse/cea/opp/' + r.id + '/">How this was worked out →</a>';
+    if (TOUCH && r.model) s += '<br><a href="/labs/cea/implementation/opp/' + r.id + '/">How this was worked out →</a>';
     return s;
   }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
@@ -557,7 +557,7 @@
   // multiple and status are what a reader came for, so they must not sit past the right edge.
   var COLS = [
     ["rank", "#", "n"], ["name", "Opportunity"],
-    ["x", "x at actual cost", "n", function (v, r) { return r && r.model ? '<a href="/labs/pulse/cea/opp/' + r.id + '/" title="How this was worked out, end to end">' + xfmt(v) + "</a>" : xfmt(v); }],
+    ["x", "x at actual cost", "n", function (v, r) { return r && r.model ? '<a href="/labs/cea/implementation/opp/' + r.id + '/" title="How this was worked out, end to end">' + xfmt(v) + "</a>" : xfmt(v); }],
     ["status_text", "Status"],
     ["baseline_level", "Baseline from", "", function (v) { return v ? esc(v) : "–"; },
      "Where the place figures came from: the most local area Labs holds for where the visits happened"],

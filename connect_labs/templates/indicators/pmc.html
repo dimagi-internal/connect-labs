@@ -130,14 +130,13 @@
 {% include "components/cea_tabs.html" with active="targeting" %}
 <div class="pmc py-6 space-y-4 max-w-6xl">
 
-    <div class="flex flex-wrap items-baseline gap-3">
+  <div class="flex flex-wrap items-baseline gap-3">
     <h1 class="text-2xl font-semibold text-stone-900">Which PMC schedule, and where?</h1>
     {% if grid_states %}
       <span class="pmc-chip near" title="EMOD's transmission fitted to each state's DHS malaria prevalence, its season to CHIRPS rainfall. Not a full calibration: illustrative.">Fitted per state. Illustrative</span>
     {% else %}
       <span class="pmc-chip unknown" title="{{ sweep.setting.description }}">Illustrative. One uncalibrated setting</span>
     {% endif %}
-    
   </div>
 
   <section class="pmc-card" aria-label="Inputs">
@@ -275,11 +274,11 @@
   {{ block.super }}
   <script>
     window.PMC = {
-      url: "{% url 'targeting:pmc_data' %}",
+      url: "{% url 'cea:pmc_data' %}",
       csrf: "{{ csrf_token }}",
-      rankUrl: "{% url 'targeting:pmc_rank' %}",
-      runUrl: "{% url 'targeting:pmc_run' %}",
-      statusUrl: "{% url 'targeting:pmc_run_status' 0 %}".replace(/0\/$/, '{id}/'),
+      rankUrl: "{% url 'cea:pmc_rank' %}",
+      runUrl: "{% url 'cea:pmc_run' %}",
+      statusUrl: "{% url 'cea:pmc_run_status' 0 %}".replace(/0\/$/, '{id}/'),
       defaults: {
         cost_per_visit: {{ sweep.default_costs.cost_per_visit }},
         platform_fee: {{ sweep.default_costs.platform_fee }},
