@@ -1,0 +1,883 @@
+{
+ "model": "kc",
+ "version": "1.0, October 2026",
+ "source": "models/kc/build_kc_model.py",
+ "inputs": [
+  {
+   "key": "cost",
+   "label": "Cost per small baby reached, all in",
+   "unit": "$",
+   "value": 60.0,
+   "low": 85.0,
+   "high": 45.0,
+   "type": "Program cost",
+   "block": "program",
+   "meaning": "Everything spent per small baby: at least four home visits in 60 days, nurse supervision, commodity price and the Connect fee.",
+   "where": "Connect's 2026 price per completed case. Low $85: GiveWell's cost for Ansh. High $45: a lower cost.",
+   "range": null,
+   "format": "\"$\"#,##0.00"
+  },
+  {
+   "key": "effect",
+   "label": "Fall in newborn deaths from kangaroo care at home",
+   "unit": "share",
+   "value": 0.2,
+   "low": 0.12,
+   "high": 0.3,
+   "type": "Our assumption",
+   "block": "judgement call",
+   "meaning": "How much home kangaroo care with the visits cuts a small baby's chance of dying, before the two validity adjustments.",
+   "where": "Base 20%, between the two trials closest to Connect: home visits in India (Mazumder 2019) 30%; Uganda (OMWaNA 2024) 12%, not significant. Low 12%, High 30%.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "post_ref",
+   "label": "Baseline risk: share of enrolled small babies who would die by 28 days of age with usual care (no Connect visits)",
+   "unit": "share",
+   "value": 0.13,
+   "low": 0.08,
+   "high": 0.18,
+   "type": "Judgement call",
+   "block": "judgement call",
+   "meaning": "Of the small babies Connect enrols, the share who would die by 28 days of age without Connect. The program's effect is applied to this.",
+   "where": "Base 13%: between Connect's program data in Uganda and Kano, Nigeria, and close to GiveWell's best guess for Ansh (12%, from birth). Low 8%: GiveWell's Ansh Scenario A (7.9%). High 18%: Connect's program data in Kano.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "gov_share",
+   "label": "Government cost, as a share of the organisation's cost",
+   "unit": "share",
+   "value": 0.0,
+   "low": null,
+   "high": null,
+   "type": "Our assumption",
+   "block": "fixed",
+   "meaning": "What the government spends for every dollar the organisation spends. It is counted as a cost.",
+   "where": "0%, as in all of GiveWell's kangaroo care models. If a government co-funds the program, enter its share.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "funging",
+   "label": "Funging adjustment",
+   "unit": "factor",
+   "value": 1.0,
+   "low": null,
+   "high": null,
+   "type": "GiveWell",
+   "block": "fixed",
+   "meaning": "Discount for the chance that others would have funded the program anyway.",
+   "where": "GiveWell's Ansh model applies none (1.00).",
+   "range": "0.93 to 1",
+   "format": "0.000"
+  },
+  {
+   "key": "benchmark",
+   "label": "GiveWell benchmark, units of value per dollar",
+   "unit": "per $",
+   "value": 0.003,
+   "low": null,
+   "high": null,
+   "type": "GiveWell",
+   "block": "fixed",
+   "meaning": "Every result is divided by this. GiveWell's funding bar is 6 times this figure (May 2026).",
+   "where": "GiveWell's cost-effectiveness page, September 2026. GiveWell's Ansh model used 0.00335, which makes results about 10% lower.",
+   "range": "Set by GiveWell",
+   "format": "0.00000"
+  },
+  {
+   "key": "iv",
+   "label": "Internal validity adjustment",
+   "unit": "factor",
+   "value": 0.8,
+   "low": null,
+   "high": null,
+   "type": "GiveWell",
+   "block": "fixed",
+   "meaning": "Keeps 80% of the measured effect, for weaknesses in the evidence.",
+   "where": "GiveWell's Ansh model, Scenario A.",
+   "range": null,
+   "format": "0.00"
+  },
+  {
+   "key": "ev",
+   "label": "External validity adjustment",
+   "unit": "factor",
+   "value": 0.85,
+   "low": null,
+   "high": null,
+   "type": "GiveWell",
+   "block": "fixed",
+   "meaning": "Keeps 85% again, as the studies' settings may differ from the program's.",
+   "where": "GiveWell's Ansh model, Scenario A.",
+   "range": null,
+   "format": "0.00"
+  },
+  {
+   "key": "mw_neo",
+   "label": "Value of preventing a newborn death (units)",
+   "unit": "units",
+   "value": 84.0,
+   "low": null,
+   "high": null,
+   "type": "GiveWell",
+   "block": "fixed",
+   "meaning": "Value given to preventing a death in the first month.",
+   "where": "GiveWell moral weights; used in its kangaroo care models.",
+   "range": null,
+   "format": "#,##0.0"
+  },
+  {
+   "key": "dev",
+   "label": "Adjustment for development effects",
+   "unit": "share",
+   "value": 0.15,
+   "low": null,
+   "high": null,
+   "type": "GiveWell",
+   "block": "fixed",
+   "meaning": "Adds 15% for better growth and development among babies who survive.",
+   "where": "GiveWell's Ansh and r.i.c.e. models.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "morb",
+   "label": "Adjustment for fewer illnesses",
+   "unit": "share",
+   "value": 0.1,
+   "low": null,
+   "high": null,
+   "type": "GiveWell",
+   "block": "fixed",
+   "meaning": "Adds 10% for fewer infections and illnesses among small babies.",
+   "where": "GiveWell's Ansh model, row 25.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "lv_gov_value",
+   "label": "Value of a government dollar spent elsewhere",
+   "unit": "units per $",
+   "value": 0.0056,
+   "low": null,
+   "high": null,
+   "type": "GiveWell",
+   "block": "fixed",
+   "meaning": "What government money would achieve if it were not spent on this program. Used only for the leveraging adjustment.",
+   "where": "GiveWell ORS and zinc spreadsheet, leverage and funging inputs.",
+   "range": null,
+   "format": "0.0000"
+  },
+  {
+   "key": "lv_other_value",
+   "label": "Value of another funder's dollar spent elsewhere",
+   "unit": "units per $",
+   "value": 0.0215,
+   "low": null,
+   "high": null,
+   "type": "GiveWell",
+   "block": "fixed",
+   "meaning": "The same, for money from other funders. Used only for the leveraging adjustment.",
+   "where": "GiveWell ORS and zinc spreadsheet, leverage and funging inputs.",
+   "range": null,
+   "format": "0.0000"
+  },
+  {
+   "key": "lv_p_gov",
+   "label": "Chance the government would run the program without this funding",
+   "unit": "share",
+   "value": 0.05,
+   "low": null,
+   "high": null,
+   "type": "GiveWell",
+   "block": "fixed",
+   "meaning": "Used only for the leveraging adjustment.",
+   "where": "GiveWell ORS and zinc spreadsheet, leverage and funging inputs.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "lv_p_other",
+   "label": "Chance another funder would pay for it without this funding",
+   "unit": "share",
+   "value": 0.05,
+   "low": null,
+   "high": null,
+   "type": "GiveWell",
+   "block": "fixed",
+   "meaning": "Used only for the leveraging adjustment.",
+   "where": "GiveWell ORS and zinc spreadsheet, leverage and funging inputs.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "lv_p_none",
+   "label": "Chance the program would not happen without this funding",
+   "unit": "share",
+   "value": 0.9,
+   "low": null,
+   "high": null,
+   "type": "GiveWell",
+   "block": "fixed",
+   "meaning": "Used only for the leveraging adjustment.",
+   "where": "GiveWell ORS and zinc spreadsheet, leverage and funging inputs.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "lv_gov_part",
+   "label": "Share of the program that would still happen if the government ran it",
+   "unit": "share",
+   "value": 0.8,
+   "low": null,
+   "high": null,
+   "type": "GiveWell",
+   "block": "fixed",
+   "meaning": "Used only for the leveraging adjustment.",
+   "where": "GiveWell ORS and zinc spreadsheet, leverage and funging inputs.",
+   "range": null,
+   "format": "0.0%"
+  }
+ ],
+ "rows": [
+  {
+   "key": "top_x",
+   "label": "Multiple of GiveWell's benchmark",
+   "step": "Results",
+   "formula": "r_x",
+   "checks": [
+    "r_x",
+    "r_x"
+   ],
+   "type": "Calculated",
+   "note": "Calculated step by step below. Grey columns: GiveWell's Ansh model, 6.0x and 12.5x.",
+   "format": "0.00\"x\"",
+   "result": true,
+   "text": false
+  },
+  {
+   "key": "top_cpd",
+   "label": "Cost per death averted",
+   "step": "Results",
+   "formula": "r_cpd",
+   "checks": [
+    "r_cpd",
+    "r_cpd"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "\"$\"#,##0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "babies",
+   "label": "Small babies reached (a standard group of 100,000)",
+   "step": "Step 1. Cost",
+   "formula": "100000",
+   "checks": [
+    100000,
+    100000
+   ],
+   "type": "Assumption",
+   "note": "Every figure below is per 100,000 small babies, so the size of the program does not matter.",
+   "format": "#,##0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "cost",
+   "label": "Cost per small baby reached, all in",
+   "step": "Step 1. Cost",
+   "formula": "i_cost",
+   "checks": [
+    85.26540972535551,
+    85.26540972535551
+   ],
+   "type": "Input",
+   "note": "",
+   "format": "\"$\"#,##0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "total",
+   "label": "Organisation's cost for 100,000 small babies",
+   "step": "Step 1. Cost",
+   "formula": "r_babies*r_cost",
+   "checks": [
+    "r_babies*r_cost",
+    "r_babies*r_cost"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "\"$\"#,##0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "risk",
+   "label": "Baseline risk: share of enrolled small babies who would die by 28 days of age with usual care (no Connect visits)",
+   "step": "Step 2. How many enrolled babies would die without the program",
+   "formula": "i_post_ref",
+   "checks": [
+    0.07947278973945152,
+    0.1199803744
+   ],
+   "type": "Input",
+   "note": "Differs from GiveWell's Ansh model (12%, counted from birth). From the Inputs or Scenarios tab. Grey columns: 7.9% and 12.0%.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "effect",
+   "label": "Fall in newborn deaths from kangaroo care at home",
+   "step": "Step 3. Deaths averted",
+   "formula": "i_effect",
+   "checks": [
+    0.3,
+    0.4727442639
+   ],
+   "type": "Input",
+   "note": "Differs from GiveWell's Ansh model (30%). From the Inputs tab. Grey columns: 30% and 47%.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "iv",
+   "label": "Internal validity adjustment",
+   "step": "Step 3. Deaths averted",
+   "formula": "i_iv",
+   "checks": [
+    0.8,
+    0.6
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "ev",
+   "label": "External validity adjustment",
+   "step": "Step 3. Deaths averted",
+   "formula": "i_ev",
+   "checks": [
+    0.85,
+    1.0
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "eff_adj",
+   "label": "Fall in deaths, after validity adjustments",
+   "step": "Step 3. Deaths averted",
+   "formula": "r_effect*r_iv*r_ev",
+   "checks": [
+    "r_effect*r_iv*r_ev",
+    "r_effect*r_iv*r_ev"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "deaths",
+   "label": "Deaths averted per 100,000 small babies",
+   "step": "Step 3. Deaths averted",
+   "formula": "r_babies*r_risk*r_eff_adj",
+   "checks": [
+    "r_babies*r_risk*r_eff_adj",
+    "r_babies*r_risk*r_eff_adj"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "mw_neo",
+   "label": "Value of preventing a newborn death (units)",
+   "step": "Step 4. Value of the deaths averted",
+   "formula": "i_mw_neo",
+   "checks": [
+    "i_mw_neo",
+    "i_mw_neo"
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab.",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "extra",
+   "label": "Adjustment for development and fewer illnesses",
+   "step": "Step 4. Value of the deaths averted",
+   "formula": "1+i_dev+i_morb",
+   "checks": [
+    "1+i_dev+i_morb",
+    "1+i_dev+i_morb"
+   ],
+   "type": "Calculated",
+   "note": "1 + 15% + 10%. Fixed assumptions on the Inputs tab.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "units",
+   "label": "Units of value per 100,000 small babies, before leveraging and funging",
+   "step": "Step 4. Value of the deaths averted",
+   "formula": "r_deaths*r_mw_neo*r_extra",
+   "checks": [
+    "r_deaths*r_mw_neo*r_extra",
+    "r_deaths*r_mw_neo*r_extra"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "gov_share",
+   "label": "Government cost, as a share of the organisation's cost",
+   "step": "Step 5. Adjustments for other funders",
+   "formula": "i_gov_share",
+   "checks": [
+    0,
+    0
+   ],
+   "type": "Input",
+   "note": "From the Inputs or Scenarios tab. 0% by default.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "lv_a",
+   "label": "Leveraging formula, part a: weight on the program's own value, with the government's spending",
+   "step": "Step 5. Adjustments for other funders",
+   "formula": "(1-i_lv_p_gov*i_lv_gov_part-i_lv_p_other+i_lv_p_none*r_gov_share)/(1+r_gov_share)",
+   "checks": [
+    "(1-i_lv_p_gov*i_lv_gov_part-i_lv_p_other+i_lv_p_none*r_gov_share)/(1+r_gov_share)",
+    "(1-i_lv_p_gov*i_lv_gov_part-i_lv_p_other+i_lv_p_none*r_gov_share)/(1+r_gov_share)"
+   ],
+   "type": "Calculated",
+   "note": "GiveWell's leveraging formula in four parts, from the leverage inputs on the Inputs tab. Leveraging = (value per dollar x a + b) / (value per dollar x c + d).",
+   "format": "0.00000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "lv_b",
+   "label": "Leveraging formula, part b: value of the money if the program did not happen, with the government's spending",
+   "step": "Step 5. Adjustments for other funders",
+   "formula": "i_lv_p_other*i_lv_other_value+i_lv_p_gov*i_lv_gov_part*i_lv_gov_value-i_lv_gov_value*i_lv_p_none*r_gov_share",
+   "checks": [
+    "i_lv_p_other*i_lv_other_value+i_lv_p_gov*i_lv_gov_part*i_lv_gov_value-i_lv_gov_value*i_lv_p_none*r_gov_share",
+    "i_lv_p_other*i_lv_other_value+i_lv_p_gov*i_lv_gov_part*i_lv_gov_value-i_lv_gov_value*i_lv_p_none*r_gov_share"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "0.00000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "lv_c",
+   "label": "Leveraging formula, part c: weight on the program's own value, without the government's spending",
+   "step": "Step 5. Adjustments for other funders",
+   "formula": "1-i_lv_p_gov*i_lv_gov_part-i_lv_p_other",
+   "checks": [
+    "1-i_lv_p_gov*i_lv_gov_part-i_lv_p_other",
+    "1-i_lv_p_gov*i_lv_gov_part-i_lv_p_other"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "0.00000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "lv_d",
+   "label": "Leveraging formula, part d: value of the money if the program did not happen, without the government's spending",
+   "step": "Step 5. Adjustments for other funders",
+   "formula": "i_lv_p_other*i_lv_other_value+i_lv_p_gov*i_lv_gov_part*i_lv_gov_value",
+   "checks": [
+    "i_lv_p_other*i_lv_other_value+i_lv_p_gov*i_lv_gov_part*i_lv_gov_value",
+    "i_lv_p_other*i_lv_other_value+i_lv_p_gov*i_lv_gov_part*i_lv_gov_value"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "0.00000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "w",
+   "label": "Value per dollar before leveraging and funging (units)",
+   "step": "Step 5. Adjustments for other funders",
+   "formula": "r_units/r_total",
+   "checks": [
+    "r_units/r_total",
+    "r_units/r_total"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "0.00000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "lev",
+   "label": "Leveraging adjustment",
+   "step": "Step 5. Adjustments for other funders",
+   "formula": "((r_w)*r_lv_a+r_lv_b)/((r_w)*r_lv_c+r_lv_d)",
+   "checks": [
+    "((r_w)*r_lv_a+r_lv_b)/((r_w)*r_lv_c+r_lv_d)",
+    "((r_w)*r_lv_a+r_lv_b)/((r_w)*r_lv_c+r_lv_d)"
+   ],
+   "type": "Calculated",
+   "note": "1.000 when the government pays nothing.",
+   "format": "0.000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "fung",
+   "label": "Funging adjustment",
+   "step": "Step 5. Adjustments for other funders",
+   "formula": "i_funging",
+   "checks": [
+    1,
+    1
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab.",
+   "format": "0.000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "bench",
+   "label": "GiveWell benchmark, units of value per dollar",
+   "step": "Step 5. Adjustments for other funders",
+   "formula": "i_benchmark",
+   "checks": [
+    0.00335,
+    0.00335
+   ],
+   "type": "Input",
+   "note": "Differs from GiveWell's Ansh model (0.00335, its benchmark at the time). From the Inputs tab.",
+   "format": "0.00000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "x",
+   "label": "Multiple of GiveWell's benchmark",
+   "step": "Step 6. Results",
+   "formula": "r_w*r_lev*r_fung/r_bench",
+   "checks": [
+    "r_w*r_lev*r_fung/r_bench",
+    "r_w*r_lev*r_fung/r_bench"
+   ],
+   "type": "Calculated",
+   "note": "Grey columns: 6.0x and 12.5x, as in GiveWell's Ansh model.",
+   "format": "0.00\"x\"",
+   "result": true,
+   "text": false
+  },
+  {
+   "key": "cpd",
+   "label": "Cost per death averted",
+   "step": "Step 6. Results",
+   "formula": "r_total/r_deaths",
+   "checks": [
+    "r_total/r_deaths",
+    "r_total/r_deaths"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "\"$\"#,##0",
+   "result": false,
+   "text": false
+  }
+ ],
+ "scenarios": [
+  {
+   "name": "Risk 18% (approximately like Nigeria)",
+   "sets": {
+    "cost": 60.0,
+    "post_ref": 0.18,
+    "gov_share": 0.0
+   }
+  },
+  {
+   "name": "Lower burden, under 2,000 g only, lower cost (approximately like Uganda)",
+   "sets": {
+    "cost": 45.0,
+    "post_ref": 0.096,
+    "gov_share": 0.0
+   }
+  },
+  {
+   "name": "Risk 15.2% (approximately like Liberia)",
+   "sets": {
+    "cost": 60.0,
+    "post_ref": 0.152,
+    "gov_share": 0.0
+   }
+  },
+  {
+   "name": "Higher cost, risk 13%",
+   "sets": {
+    "cost": 85.0,
+    "post_ref": 0.13,
+    "gov_share": 0.0
+   }
+  },
+  {
+   "name": "Lower risk, higher cost",
+   "sets": {
+    "cost": 85.0,
+    "post_ref": 0.08,
+    "gov_share": 0.0
+   }
+  }
+ ],
+ "results": {
+  "Your inputs": {
+   "top_x": 10.313333333333334,
+   "top_cpd": 3393.6651583710404,
+   "babies": 100000,
+   "cost": 60.0,
+   "total": 6000000.0,
+   "risk": 0.13,
+   "effect": 0.2,
+   "iv": 0.8,
+   "ev": 0.85,
+   "eff_adj": 0.136,
+   "deaths": 1768.0000000000002,
+   "mw_neo": 84.0,
+   "extra": 1.25,
+   "units": 185640.00000000003,
+   "gov_share": 0.0,
+   "lv_a": 0.9099999999999999,
+   "lv_b": 0.001299,
+   "lv_c": 0.9099999999999999,
+   "lv_d": 0.001299,
+   "w": 0.030940000000000006,
+   "lev": 1.0,
+   "fung": 1.0,
+   "bench": 0.003,
+   "x": 10.313333333333334,
+   "cpd": 3393.6651583710404
+  },
+  "Scenario 1: Risk 18% (approximately like Nigeria)": {
+   "top_x": 14.280000000000001,
+   "top_cpd": 2450.9803921568628,
+   "babies": 100000,
+   "cost": 60.0,
+   "total": 6000000.0,
+   "risk": 0.18,
+   "effect": 0.2,
+   "iv": 0.8,
+   "ev": 0.85,
+   "eff_adj": 0.136,
+   "deaths": 2448.0,
+   "mw_neo": 84.0,
+   "extra": 1.25,
+   "units": 257040.0,
+   "gov_share": 0.0,
+   "lv_a": 0.9099999999999999,
+   "lv_b": 0.001299,
+   "lv_c": 0.9099999999999999,
+   "lv_d": 0.001299,
+   "w": 0.04284,
+   "lev": 1.0,
+   "fung": 1.0,
+   "bench": 0.003,
+   "x": 14.280000000000001,
+   "cpd": 2450.9803921568628
+  },
+  "Scenario 2: Lower burden, under 2,000 g only, lower cost (approximately like Uganda)": {
+   "top_x": 10.154666666666667,
+   "top_cpd": 3446.691176470588,
+   "babies": 100000,
+   "cost": 45.0,
+   "total": 4500000.0,
+   "risk": 0.096,
+   "effect": 0.2,
+   "iv": 0.8,
+   "ev": 0.85,
+   "eff_adj": 0.136,
+   "deaths": 1305.6000000000001,
+   "mw_neo": 84.0,
+   "extra": 1.25,
+   "units": 137088.0,
+   "gov_share": 0.0,
+   "lv_a": 0.9099999999999999,
+   "lv_b": 0.001299,
+   "lv_c": 0.9099999999999999,
+   "lv_d": 0.001299,
+   "w": 0.030464,
+   "lev": 1.0,
+   "fung": 1.0,
+   "bench": 0.003,
+   "x": 10.154666666666667,
+   "cpd": 3446.691176470588
+  },
+  "Scenario 3: Risk 15.2% (approximately like Liberia)": {
+   "top_x": 12.058666666666669,
+   "top_cpd": 2902.4767801857583,
+   "babies": 100000,
+   "cost": 60.0,
+   "total": 6000000.0,
+   "risk": 0.152,
+   "effect": 0.2,
+   "iv": 0.8,
+   "ev": 0.85,
+   "eff_adj": 0.136,
+   "deaths": 2067.2000000000003,
+   "mw_neo": 84.0,
+   "extra": 1.25,
+   "units": 217056.00000000003,
+   "gov_share": 0.0,
+   "lv_a": 0.9099999999999999,
+   "lv_b": 0.001299,
+   "lv_c": 0.9099999999999999,
+   "lv_d": 0.001299,
+   "w": 0.03617600000000001,
+   "lev": 1.0,
+   "fung": 1.0,
+   "bench": 0.003,
+   "x": 12.058666666666669,
+   "cpd": 2902.4767801857583
+  },
+  "Scenario 4: Higher cost, risk 13%": {
+   "top_x": 7.28,
+   "top_cpd": 4807.692307692307,
+   "babies": 100000,
+   "cost": 85.0,
+   "total": 8500000.0,
+   "risk": 0.13,
+   "effect": 0.2,
+   "iv": 0.8,
+   "ev": 0.85,
+   "eff_adj": 0.136,
+   "deaths": 1768.0000000000002,
+   "mw_neo": 84.0,
+   "extra": 1.25,
+   "units": 185640.00000000003,
+   "gov_share": 0.0,
+   "lv_a": 0.9099999999999999,
+   "lv_b": 0.001299,
+   "lv_c": 0.9099999999999999,
+   "lv_d": 0.001299,
+   "w": 0.021840000000000002,
+   "lev": 1.0,
+   "fung": 1.0,
+   "bench": 0.003,
+   "x": 7.28,
+   "cpd": 4807.692307692307
+  },
+  "Scenario 5: Lower risk, higher cost": {
+   "top_x": 4.48,
+   "top_cpd": 7812.5,
+   "babies": 100000,
+   "cost": 85.0,
+   "total": 8500000.0,
+   "risk": 0.08,
+   "effect": 0.2,
+   "iv": 0.8,
+   "ev": 0.85,
+   "eff_adj": 0.136,
+   "deaths": 1088.0,
+   "mw_neo": 84.0,
+   "extra": 1.25,
+   "units": 114240.0,
+   "gov_share": 0.0,
+   "lv_a": 0.9099999999999999,
+   "lv_b": 0.001299,
+   "lv_c": 0.9099999999999999,
+   "lv_d": 0.001299,
+   "w": 0.01344,
+   "lev": 1.0,
+   "fung": 1.0,
+   "bench": 0.003,
+   "x": 4.48,
+   "cpd": 7812.5
+  },
+  "Check 1": {
+   "top_x": 5.959642855794839,
+   "top_cpd": 5259.255351453319,
+   "babies": 100000,
+   "cost": 85.26540972535551,
+   "total": 8526540.97253555,
+   "risk": 0.07947278973945152,
+   "effect": 0.3,
+   "iv": 0.8,
+   "ev": 0.85,
+   "eff_adj": 0.204,
+   "deaths": 1621.244910684811,
+   "mw_neo": 84.0,
+   "extra": 1.25,
+   "units": 170230.71562190514,
+   "gov_share": 0,
+   "lv_a": 0.9099999999999999,
+   "lv_b": 0.001299,
+   "lv_c": 0.9099999999999999,
+   "lv_d": 0.001299,
+   "w": 0.01996480356691271,
+   "lev": 1.0,
+   "fung": 1,
+   "bench": 0.00335,
+   "x": 5.959642855794839,
+   "cpd": 5259.255351453319
+  },
+  "Check 2": {
+   "top_x": 12.510058481309478,
+   "top_cpd": 2505.4466075372593,
+   "babies": 100000,
+   "cost": 85.26540972535551,
+   "total": 8526540.97253555,
+   "risk": 0.1199803744,
+   "effect": 0.4727442639,
+   "iv": 0.6,
+   "ev": 1.0,
+   "eff_adj": 0.28364655834,
+   "deaths": 3403.2020266904647,
+   "mw_neo": 84.0,
+   "extra": 1.25,
+   "units": 357336.2128024988,
+   "gov_share": 0,
+   "lv_a": 0.9099999999999999,
+   "lv_b": 0.001299,
+   "lv_c": 0.9099999999999999,
+   "lv_d": 0.001299,
+   "w": 0.04190869591238675,
+   "lev": 1.0,
+   "fung": 1,
+   "bench": 0.00335,
+   "x": 12.510058481309478,
+   "cpd": 2505.4466075372593
+  }
+ },
+ "places": {}
+}

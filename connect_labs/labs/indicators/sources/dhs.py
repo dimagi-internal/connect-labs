@@ -41,6 +41,7 @@ INDICATORS = {
     "stunting": {"value": "CN_NUTS_C_HA2", "lo": None, "hi": None},
     "wasting": {"value": "CN_NUTS_C_WH2", "lo": None, "hi": None},
     "vitamin_a_coverage": {"value": "CN_MIAC_C_VAS", "lo": None, "hi": None},
+    "deworming_coverage": {"value": "CN_MIAC_C_DWM", "lo": None, "hi": None},
     # Immunisation
     "measles_vaccination": {"value": "CH_VACC_C_MSL", "lo": None, "hi": None},
     "dpt3_vaccination": {"value": "CH_VACC_C_DP3", "lo": None, "hi": None},

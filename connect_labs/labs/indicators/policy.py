@@ -272,6 +272,7 @@ POLICY: dict[str, tuple[Eligible, ...]] = {
     "ari_antibiotics": _survey("antibiotic treatment for those symptoms"),
     "exclusive_breastfeeding": _survey("feeding practice"),
     "vitamin_a_coverage": _survey("supplementation"),
+    "deworming_coverage": _survey("deworming"),
     "measles_vaccination": _survey("vaccination from cards and recall"),
     "dpt3_vaccination": _survey("vaccination from cards and recall"),
     "full_immunisation": _survey("the full schedule from cards and recall"),

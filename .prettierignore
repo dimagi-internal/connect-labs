@@ -22,3 +22,5 @@ connect_labs/semantic/tests/fixtures/kmc_rollup_golden.json
 # A vendored, already-minified third-party decoder (jsQR, Apache-2.0). Reformatting it would
 # turn a 130 KB line into a diff nobody can review.
 connect_labs/static/supply_chain/field/jsQR.min.js
+# Vendored byte-for-byte from connect-cea-models (impact_vendor); never reformat.
+connect_labs/impact/data/

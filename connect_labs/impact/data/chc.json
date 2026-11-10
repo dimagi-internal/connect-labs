@@ -1,0 +1,3571 @@
+{
+ "model": "chc",
+ "version": "1.0, November 2026",
+ "source": "models/chc/build_chc_model.py",
+ "inputs": [
+  {
+   "key": "ors",
+   "label": "Children with diarrhoea who receive ORS",
+   "unit": "share",
+   "value": 0.357,
+   "low": 0.466,
+   "high": 0.234,
+   "type": "Set for each location",
+   "block": "location",
+   "meaning": "Of children under five who had diarrhoea in the last two weeks, the share who were given ORS. The lower this is, the more children the campaign can help.",
+   "where": "The latest DHS or MICS survey for the location. National figures are in UNICEF's data warehouse.",
+   "range": "10% (Mali, 2024 survey) to 85% (Sierra Leone, 2019 survey), median 36% (45 sub-Saharan countries, latest survey in each, 2006 to 2025)",
+   "format": "0.0%"
+  },
+  {
+   "key": "deaths",
+   "label": "Under-five diarrhoea deaths per 100,000 children, per year",
+   "unit": "per 100,000",
+   "value": 97.3,
+   "low": 56.2,
+   "high": 137.0,
+   "type": "Set for each location",
+   "block": "location",
+   "meaning": "How many children under five die of diarrhoea each year, per 100,000 children. This matters more than any other input. If it doubles, the result roughly doubles.",
+   "where": "UN IGME (childmortality.org), IHME Global Burden of Disease, or WHO Global Health Estimates. They can disagree by up to three times for the same location, so note which one you used. The example locations use UN IGME's 2024 under-five diarrhoea deaths (its CA CODE cause-of-death estimates), divided by UN WPP 2024 population.",
+   "range": "10 (Sao Tome and Principe) to 328 (Nigeria), median 97 (45 sub-Saharan countries, UN IGME / CA CODE 2024 diarrhoea deaths, UN WPP 2024 population)",
+   "format": "#,##0.0"
+  },
+  {
+   "key": "scaling",
+   "label": "Scaling factor applied to the death rate",
+   "unit": "factor",
+   "value": 1.0,
+   "low": null,
+   "high": null,
+   "type": "Set for each location",
+   "block": "location",
+   "meaning": "Puts a death rate on another source's level, for example to bring an older study in line with a newer national estimate. 1 leaves the rate as entered.",
+   "where": "Divide one source's national figure by the other's. For example, use 0.5 if the newer national figure is half the study's.",
+   "range": "Usually 1",
+   "format": "0.00"
+  },
+  {
+   "key": "vas",
+   "label": "Children already receiving vitamin A supplements",
+   "unit": "share",
+   "value": 0.564,
+   "low": 0.687,
+   "high": 0.46,
+   "type": "Set for each location",
+   "block": "location",
+   "meaning": "Share of children aged 6 to 59 months who had a vitamin A dose in the last six months. Children who already had one gain nothing from another.",
+   "where": "The latest DHS or MICS survey for the location.",
+   "range": "20% (Gabon, 2021 survey) to 84% (Namibia, 2013 survey), median 56% (37 countries with a survey figure, latest survey in each, 2007 to 2025)",
+   "format": "0.0%"
+  },
+  {
+   "key": "mort659",
+   "label": "Child death rate, ages 6 to 59 months, per year",
+   "unit": "share",
+   "value": 0.0041,
+   "low": 0.0021,
+   "high": 0.0068,
+   "type": "Set for each location",
+   "block": "location",
+   "meaning": "Share of children aged 6 to 59 months who die each year, from any cause. The vitamin A benefit goes up with it.",
+   "where": "Work it out from UN IGME under-five and infant mortality (childmortality.org) with this formula, which gives a yearly rate for ages one to four: 1 - (1 - (U5MR - IMR) / (1000 - IMR)) ^ (1/4). Child mortality from a DHS survey also works. The model applies this ages one to four rate to children aged 6 to 59 months; the difference is small.",
+   "range": "0.0003 (Botswana) to 0.0126 (Nigeria), median 0.0041 (45 sub-Saharan countries, UN IGME 2024)",
+   "format": "0.0000"
+  },
+  {
+   "key": "rota_gain",
+   "label": "Rotavirus vaccine coverage gained since the death rate's year",
+   "unit": "share",
+   "value": 0.0,
+   "low": null,
+   "high": null,
+   "type": "Set for each location",
+   "block": "location",
+   "meaning": "How much rotavirus vaccine coverage has gone up since the year of the death rate. The vaccine now prevents some of those deaths, so the model takes them out.",
+   "where": "WHO and UNICEF immunisation estimates (WUENIC). Take coverage now minus coverage in the year of the death rate. Enter 0 if the death rate is recent. If the vaccine was introduced after that year, enter today's full coverage.",
+   "range": "0 for most countries with 2024 death rates. Higher where the vaccine is new, for example introduced in 2025",
+   "format": "0.0%"
+  },
+  {
+   "key": "rota_on",
+   "label": "Apply the rotavirus adjustment (1 = yes, 0 = no)",
+   "unit": "switch",
+   "value": 1,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: CHAI Bauchi ORS model (2023)",
+   "block": "location",
+   "meaning": "Whether to take out deaths that rotavirus vaccine has prevented since the year of the death rate (see the location inputs above).",
+   "where": "GiveWell's CHAI Bauchi model uses it.",
+   "range": "1 or 0",
+   "format": "#,##0"
+  },
+  {
+   "key": "dw_cov",
+   "label": "Children aged 12 to 59 months dewormed in the last six months",
+   "unit": "share",
+   "value": 0.46,
+   "low": 0.572,
+   "high": 0.372,
+   "type": "Set for each location",
+   "block": "location",
+   "meaning": "Share of young children who were given deworming medicine in the six months before the survey. Children already dewormed gain nothing from another dose, so the campaign's deworming benefit falls as this rises.",
+   "where": "The latest DHS or MICS survey for the location: deworming medication in the past six months (the DHS online database reports it for children 6 to 59 months). The 46% here is the median of 36 sub-Saharan countries with a DHS figure. This counts children not dewormed recently; some of them would be reached anyway, for example by child health weeks. GiveWell treats the true share Connect adds as unknown (it guessed 15% to 40% in its Connect pilot spreadsheet) and expects a trial to measure it.",
+   "range": "13% (Ethiopia, 2016 survey) to 82% (Rwanda, 2019-20 survey), median 46% (36 countries with a DHS figure, latest survey in each, 2006 to 2021; many surveys are old)",
+   "format": "0.0%"
+  },
+  {
+   "key": "worm",
+   "label": "Worm burden, as a share of the level in the Kenya trial",
+   "unit": "share",
+   "value": 0.093,
+   "low": 0.05,
+   "high": 0.126,
+   "type": "Set for each location",
+   "block": "location",
+   "meaning": "How heavy worm infections are in the location compared with Busia, Kenya, in 1998, where the trial behind the income evidence was run. The income benefit is scaled by this share.",
+   "where": "GiveWell's deworming cost-effectiveness spreadsheets give a figure for each area its grantees work in (for example row 42 of its Deworm the World analysis). The 9.3% here is the median of the 19 sub-Saharan countries in GiveWell's END Fund, SCI and Sightsavers spreadsheets. Each country's figure is in GiveWell's January 2022 SCI grant spreadsheet (see Sources).",
+   "range": "0.9% (Uganda) to 21% (Kenya, Madagascar, Mauritania), median 9.3% (19 sub-Saharan countries in GiveWell's deworming spreadsheets, January 2022)",
+   "format": "0.0%"
+  },
+  {
+   "key": "cost",
+   "label": "Cost per child reached, per visit, for ORS and vitamin A",
+   "unit": "$",
+   "value": 1.8,
+   "low": 2.5,
+   "high": 1.44,
+   "type": "Program cost",
+   "block": "program",
+   "meaning": "Everything the organisation spends per child per visit for ORS and zinc and the vitamin A capsule, including commodities, local partner costs and the Connect platform fee. The deworming tablet is added separately. Halve the cost and the result doubles.",
+   "where": "The program budget. $1.80 is Connect's September 2026 estimate. Low is $2.50. High is $1.44, 20% below $1.80.",
+   "range": "$1.80 (Connect's estimate)",
+   "format": "\"$\"#,##0.00"
+  },
+  {
+   "key": "campaigns",
+   "label": "Campaigns per year",
+   "unit": "count",
+   "value": 2,
+   "low": null,
+   "high": null,
+   "type": "Program choice",
+   "block": "program",
+   "meaning": "How many door-to-door rounds a year. A second round doubles the cost, adds 0.8 of a round's ORS benefit (see Value of a second round, under Judgement calls) and gives a second vitamin A dose. The deworming tablet is given again in the second round but counts as the same year of deworming, so it adds its cost and no benefit.",
+   "where": "The program design.",
+   "range": "1 or 2",
+   "format": "#,##0"
+  },
+  {
+   "key": "va_on",
+   "label": "Vitamin A included (1 = yes, 0 = no)",
+   "unit": "switch",
+   "value": 1,
+   "low": null,
+   "high": null,
+   "type": "Program choice",
+   "block": "program",
+   "meaning": "Whether the visit also gives children aged 6 months and over a vitamin A dose. At 0 the vitamin A deaths prevented and the capsule cost are zero, so the result is for the visit without vitamin A. The cost per visit for ORS stays the same.",
+   "where": "The program design.",
+   "range": "1 or 0",
+   "format": "#,##0"
+  },
+  {
+   "key": "va_cost",
+   "label": "Extra cost of the vitamin A capsule, per child per visit",
+   "unit": "$",
+   "value": 0.0,
+   "low": null,
+   "high": null,
+   "type": "Program cost",
+   "block": "program",
+   "meaning": "Any vitamin A cost not already in the cost per visit.",
+   "where": "The program budget. Enter 0 while the capsule is in the cost per visit.",
+   "range": "0 to about $0.25",
+   "format": "\"$\"#,##0.00"
+  },
+  {
+   "key": "dw_on",
+   "label": "Deworming included (1 = yes, 0 = no)",
+   "unit": "switch",
+   "value": 1,
+   "low": null,
+   "high": null,
+   "type": "Program choice",
+   "block": "program",
+   "meaning": "Whether the visit also gives children aged 12 months and over a deworming tablet. At 0 the deworming value and the tablet cost are zero, so the result is for the visit without deworming.",
+   "where": "The program design. Child health campaigns usually give deworming with vitamin A, from 12 months of age.",
+   "range": "1 or 0",
+   "format": "#,##0"
+  },
+  {
+   "key": "dw_cost",
+   "label": "Extra cost of the deworming tablet, per child per visit",
+   "unit": "$",
+   "value": 0.04,
+   "low": null,
+   "high": null,
+   "type": "Program cost",
+   "block": "program",
+   "meaning": "Any deworming cost not already in the cost per visit. Albendazole 400 mg chewable tablets cost about $0.04 each at UNICEF's indicative price. Where the Ministry of Health supplies donated tablets, enter 0.",
+   "where": "UNICEF Supply Catalogue, albendazole 400 mg chewable tablets, $3.66 per 100 (accessed October 13, 2026).",
+   "range": "0 (donated) to about $0.04",
+   "format": "\"$\"#,##0.00"
+  },
+  {
+   "key": "arm",
+   "label": "Delivery model (1 = door to door, 2 = free pickup)",
+   "unit": "switch",
+   "value": 1,
+   "low": null,
+   "high": null,
+   "type": "Program choice",
+   "block": "program",
+   "meaning": "Bringing ORS to the home raises ORS use more than free ORS that families have to collect. Connect campaigns are door to door.",
+   "where": "Wagner et al. 2019 trial, as GiveWell uses it. Door to door is 0.469 (GiveWell's CHAI Bauchi model). Free pickup is 0.399 (GiveWell's general model).",
+   "range": "1 or 2",
+   "format": "#,##0"
+  },
+  {
+   "key": "episodes",
+   "label": "Share of the year's diarrhoea episodes the co-packs cover",
+   "unit": "share",
+   "value": 1.0,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: ORS and zinc model (Aug 2023)",
+   "block": "published",
+   "meaning": "Whether families have ORS and zinc for every bout of diarrhoea in the year. GiveWell assumes they do, and its cost per child pays for a treatment course for every bout: about 1.8 a year for children under five. A Connect visit leaves two co-packs per child, which roughly matches. One co-pack with no restock would cover about half a child's bouts (0.55).",
+   "where": "GiveWell's ORS and zinc spreadsheet: bouts a year from IHME, 2.5 for infants and 1.7 for ages 1 to 4. Two co-packs per child: Connect's program design.",
+   "range": "0.55 (one co-pack) to 1",
+   "format": "0.00"
+  },
+  {
+   "key": "va_effect",
+   "label": "Vitamin A dose: reduction in child deaths",
+   "unit": "share",
+   "value": 0.06,
+   "low": 0.01,
+   "high": 0.11,
+   "type": "Our midpoint of GiveWell's range",
+   "block": "published",
+   "meaning": "How much one vitamin A dose lowers a child's risk of dying from any cause over the following six months.",
+   "where": "GiveWell's vitamin A report, April 2026 update, gives 1% to 11%. 6% is our midpoint of that range, not a GiveWell figure: GiveWell works out a figure for each location it models (1.3% to 11.1% across 33 locations in its Helen Keller spreadsheet, median 2.9%). Low is 1%, High is 11%.",
+   "range": "1% to 11% (GiveWell)",
+   "format": "0.0%"
+  },
+  {
+   "key": "second",
+   "label": "Value of a second round, as a share of the first (ORS)",
+   "unit": "share",
+   "value": 0.8,
+   "low": 0.5,
+   "high": 1.0,
+   "type": "Our assumption, open to review",
+   "block": "judgement call",
+   "meaning": "Most of the rise in ORS use, about 80%, happens in the first six months after a distribution. So a second round six months later counts as 0.8 of the first. No study has measured this directly.",
+   "where": "Our assumption. Only used when there are 2 campaigns a year. Low is 0.5, High is 1.",
+   "range": "0 (adds nothing) to 1 (worth a full round)",
+   "format": "0.00"
+  },
+  {
+   "key": "va_diarr",
+   "label": "Share of the vitamin A benefit that works through diarrhoea",
+   "unit": "share",
+   "value": 0.4,
+   "low": 1.0,
+   "high": 0.0,
+   "type": "Our assumption, open to review",
+   "block": "judgement call",
+   "meaning": "A child saved by the vitamin A dose may also have been saved by ORS. This share stops the model counting those children twice. Apart from this, the model treats the two as separate. At the typical location the model removes about 11% of the vitamin A deaths as overlap; if all of the vitamin A benefit worked through diarrhoea it would remove about 28%.",
+   "where": "Our assumption, as there is no published figure. Diarrhoea causes only a small share of child deaths, so 0.4 is on the cautious side. At 0, the result goes up by about 2%. Low is 1 and High is 0: the higher the share, the more of the vitamin A benefit is removed as overlap with ORS.",
+   "range": "0 to 1",
+   "format": "0.0%"
+  },
+  {
+   "key": "dw_age",
+   "label": "Adjustment for deworming children aged 1 to 4 rather than school age",
+   "unit": "factor",
+   "value": 1.0,
+   "low": 0.5,
+   "high": 1.0,
+   "type": "Our assumption, open to review",
+   "block": "judgement call",
+   "meaning": "The income evidence comes from children aged about 7 to 14 at treatment. Follow-ups found that children under five at the time also gained, in learning scores years later; no study has measured their adult income. 1 treats a year of deworming at ages 1 to 4 as worth the same as a year at school age; 0.5 as half.",
+   "where": "GiveWell's June 2024 cost-effectiveness spreadsheet for the Connect pilot in Nigeria uses the full school-age value for children 6 to 59 months, the same as 1. Ozier 2018 (children under two during the Kenya program; cognitive gains ten years later) and Croke 2014 (Uganda, ages 1 to 7; literacy and numeracy gains seven to eight years later) support an effect; neither gives a factor. Low is 0.5, High is 1.",
+   "range": "0 to 1",
+   "format": "0.00"
+  },
+  {
+   "key": "dw_wait",
+   "label": "Years until the income benefit starts, deworming",
+   "unit": "years",
+   "value": 15,
+   "low": 17,
+   "high": 11,
+   "type": "Our assumption, open to review",
+   "block": "judgement call",
+   "meaning": "How long after deworming the higher earnings begin. A child dewormed at ages 1 to 4 starts work later than the school-age children in the trial, so the income gain is discounted for a longer wait.",
+   "where": "GiveWell's deworming parameter note: treated children average 9 years old and start substantive work at about 17, giving its 8 years. Connect deworms children aged 1 to 4 (about 3 on average), so the same reasoning gives about 14; we use 15, GiveWell's figure for lead exposure, which starts at birth (Pure Earth grant spreadsheet, row 58). GiveWell's June 2024 Connect pilot spreadsheet took Deworm the World's school-age value (an 8-year wait) without adjusting for age. Low is 17 years (work from age 20), High is 11 (work from 14, the youngest legal working age GiveWell's note cites).",
+   "range": "8 (school age, GiveWell) to 17",
+   "format": "#,##0"
+  },
+  {
+   "key": "funging",
+   "label": "Funging adjustment",
+   "unit": "factor",
+   "value": 0.93,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: CHAI Bauchi ORS model (2023)",
+   "block": "fixed",
+   "meaning": "Discount for the chance that others would have funded the program anyway.",
+   "where": "GiveWell's CHAI Bauchi grant page (September 2023), the same grant as the government share and door to door delivery. GiveWell's general ORS and zinc model uses 0.968 for its low-income case.",
+   "range": "0.93 to 0.97",
+   "format": "0.000"
+  },
+  {
+   "key": "benchmark",
+   "label": "GiveWell benchmark, units of value per dollar",
+   "unit": "per $",
+   "value": 0.003,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: benchmark (Nov 2025)",
+   "block": "fixed",
+   "meaning": "Every result is divided by this. The funding bar is 6 times this figure (May 2026).",
+   "where": "GiveWell's cost-effectiveness page, September 2026. Its 2023 ORS analysis used 0.00335, which makes results about 10% lower.",
+   "range": "Set by GiveWell",
+   "format": "0.00000"
+  },
+  {
+   "key": "gov_share",
+   "label": "Government cost, as a share of the organisation's cost",
+   "unit": "share",
+   "value": 0.0,
+   "low": null,
+   "high": null,
+   "type": "Our assumption, open to review",
+   "block": "fixed",
+   "meaning": "What the government spends on the campaign, in cash or in kind, for every dollar the organisation spends. GiveWell takes off the good that money could have done elsewhere (its leveraging adjustment). At 0% there is nothing to take off, so the adjustment is 1 (Model tab, Step 8).",
+   "where": "0%: in Connect campaigns the organisation pays for the work and the government gives permission, as in GiveWell's CHAI Bauchi ORS and zinc grant. GiveWell's general ORS and zinc model guesses 100% for government-run programs (the grey columns on the Model tab). The model covers a 0% share only, so this cell accepts only 0.",
+   "range": "0% to 100%",
+   "format": "0.0%"
+  },
+  {
+   "key": "arm_d2d",
+   "label": "Trial effect of ORS brought to the home",
+   "unit": "share",
+   "value": 0.46936,
+   "low": null,
+   "high": null,
+   "type": "Study: Wagner et al. 2019, via GiveWell's CHAI Bauchi model",
+   "block": "fixed",
+   "meaning": "Of children who would not otherwise have had ORS, the share who get it when it is brought free to the home.",
+   "where": "Wagner et al. 2019 (Uganda), door-to-door group, as used in GiveWell's CHAI Bauchi model.",
+   "range": null,
+   "format": "0.00%"
+  },
+  {
+   "key": "arm_free",
+   "label": "Trial effect of free ORS that families collect",
+   "unit": "share",
+   "value": 0.39869,
+   "low": null,
+   "high": null,
+   "type": "Study: Wagner et al. 2019, via GiveWell's ORS and zinc model",
+   "block": "fixed",
+   "meaning": "The same, when families have to collect the free ORS themselves.",
+   "where": "Wagner et al. 2019, free pickup group, as used in GiveWell's general ORS model.",
+   "range": null,
+   "format": "0.00%"
+  },
+  {
+   "key": "iv",
+   "label": "Discount for the trial's own weaknesses",
+   "unit": "factor",
+   "value": 0.8,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: ORS and zinc model (Aug 2023)",
+   "block": "fixed",
+   "meaning": "The trial relied on what families reported and was not blinded, so 80% of its effect is counted.",
+   "where": "GiveWell ORS and zinc analysis, August 2023.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "ev",
+   "label": "Discount for using the trial elsewhere",
+   "unit": "factor",
+   "value": 0.85,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: ORS and zinc model (Aug 2023)",
+   "block": "fixed",
+   "meaning": "The trial was at one site near a city and followed families for a short time, so 85% of the effect is counted elsewhere.",
+   "where": "GiveWell ORS and zinc analysis, August 2023.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "indirect",
+   "label": "Extra deaths where diarrhoea contributed",
+   "unit": "per death",
+   "value": 0.5,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: ORS and zinc model (Aug 2023)",
+   "block": "fixed",
+   "meaning": "For every death caused by diarrhoea, half as many again where diarrhoea contributed but was not the main cause.",
+   "where": "GiveWell ORS and zinc analysis, August 2023.",
+   "range": null,
+   "format": "0.00"
+  },
+  {
+   "key": "ors_red",
+   "label": "Reduction in diarrhoea deaths for a child who uses ORS",
+   "unit": "share",
+   "value": 0.5952,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: ORS and zinc model (Aug 2023)",
+   "block": "fixed",
+   "meaning": "The original studies found 93% fewer deaths. This is discounted twice, by 0.8 each time.",
+   "where": "GiveWell ORS and zinc analysis, August 2023 (93% x 0.8 x 0.8).",
+   "range": null,
+   "format": "0.00%"
+  },
+  {
+   "key": "rota_share",
+   "label": "Share of diarrhoea deaths caused by rotavirus",
+   "unit": "share",
+   "value": 0.352,
+   "low": null,
+   "high": null,
+   "type": "Study: GBD 2021 diarrhoea (Lancet Infectious Diseases 2024)",
+   "block": "fixed",
+   "meaning": "Used only by the rotavirus adjustment.",
+   "where": "GBD 2021 Diarrhoeal Diseases Collaborators, Lancet Infectious Diseases 2024.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "rota_eff",
+   "label": "Rotavirus vaccine efficacy against death",
+   "unit": "share",
+   "value": 0.46,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: CHAI Bauchi ORS model (2023)",
+   "block": "fixed",
+   "meaning": "Used only by the rotavirus adjustment.",
+   "where": "GiveWell CHAI Bauchi model.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "rota_adj",
+   "label": "Country adjustment to vaccine efficacy",
+   "unit": "factor",
+   "value": 0.81,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: CHAI Bauchi ORS model (2023)",
+   "block": "fixed",
+   "meaning": "Used only by the rotavirus adjustment.",
+   "where": "GiveWell CHAI Bauchi model.",
+   "range": null,
+   "format": "0.00"
+  },
+  {
+   "key": "va_age",
+   "label": "Share of children reached who are 6 to 59 months old",
+   "unit": "share",
+   "value": 0.9,
+   "low": null,
+   "high": null,
+   "type": "Calculation: 54 of 60 months",
+   "block": "fixed",
+   "meaning": "Vitamin A is given from six months of age, so it covers 54 of the 60 months before a child turns five.",
+   "where": "54 divided by 60.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "va_years",
+   "label": "Protection from one vitamin A dose",
+   "unit": "years",
+   "value": 0.5,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: vitamin A report (Apr 2026)",
+   "block": "fixed",
+   "meaning": "One dose protects for about six months, so one campaign a year covers half the year.",
+   "where": "GiveWell vitamin A report.",
+   "range": null,
+   "format": "0.00"
+  },
+  {
+   "key": "uv",
+   "label": "Value of preventing one child's death",
+   "unit": "units",
+   "value": 113,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: moral weights (2025)",
+   "block": "fixed",
+   "meaning": "Value given to preventing the death of a child under five, in units of value.",
+   "where": "Rounded from GiveWell's ORS and zinc model, which uses 111.8 to 112.7 depending on the place. GiveWell's 2025 moral weights give 116.25 for a death under five from malaria and 118.73 for vitamin A.",
+   "range": null,
+   "format": "#,##0"
+  },
+  {
+   "key": "mshare",
+   "label": "Share of the benefit that comes from deaths prevented",
+   "unit": "share",
+   "value": 0.9,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: ORS and zinc model (Aug 2023)",
+   "block": "fixed",
+   "meaning": "The other 10% comes from illness avoided and better development. The model adds it by dividing by 0.9.",
+   "where": "GiveWell ORS and zinc analysis, August 2023.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "excl",
+   "label": "Adjustment for effects not modelled",
+   "unit": "factor",
+   "value": 1.011,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: ORS and zinc model (Aug 2023)",
+   "block": "fixed",
+   "meaning": "A small increase for benefits the model does not count, such as zinc making illness shorter.",
+   "where": "GiveWell ORS and zinc analysis, August 2023.",
+   "range": null,
+   "format": "0.000"
+  },
+  {
+   "key": "dw_age_share",
+   "label": "Share of children reached who are 12 to 59 months old",
+   "unit": "share",
+   "value": 0.8,
+   "low": null,
+   "high": null,
+   "type": "Calculation: 48 of 60 months",
+   "block": "fixed",
+   "meaning": "Deworming is given from 12 months of age, so it covers 48 of the 60 months before a child turns five.",
+   "where": "48 divided by 60, as for vitamin A.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "dw_itt",
+   "label": "Effect of deworming on ln income in the Kenya trial, intention to treat",
+   "unit": "ln units",
+   "value": 0.109,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: Deworm the World model (2024)",
+   "block": "fixed",
+   "meaning": "The gain in adult income, in natural log units, for children assigned to the trial's treatment group, pooled across the follow-up surveys; about 11.5%.",
+   "where": "GiveWell, Deworm the World 2024 cost-effectiveness analysis, row 7 (the Kenya Life Panel Survey follow-ups of Miguel and Kremer 2004).",
+   "range": null,
+   "format": "0.000"
+  },
+  {
+   "key": "dw_cov_t",
+   "label": "Coverage in the trial's treatment group",
+   "unit": "share",
+   "value": 0.75,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: Deworm the World model (2024)",
+   "block": "fixed",
+   "meaning": "Not every child assigned to treatment was dewormed, and a few control children were. The effect on those assigned is converted into the effect on those treated.",
+   "where": "GiveWell, Deworm the World 2024 cost-effectiveness analysis, row 8.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "dw_cov_c",
+   "label": "Coverage in the trial's control group",
+   "unit": "share",
+   "value": 0.05,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: Deworm the World model (2024)",
+   "block": "fixed",
+   "meaning": "See the row above.",
+   "where": "GiveWell, Deworm the World 2024 cost-effectiveness analysis, row 9.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "dw_repl",
+   "label": "Replicability adjustment for the income effect",
+   "unit": "factor",
+   "value": 0.13,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: Deworm the World model (2024)",
+   "block": "fixed",
+   "meaning": "Counts 13% of the trial's income effect: one trial, a long chain from infection to adult income, and heavier infections then than now make the full effect unlikely to repeat.",
+   "where": "GiveWell, Deworm the World 2024 cost-effectiveness analysis, row 11.",
+   "range": null,
+   "format": "0.00"
+  },
+  {
+   "key": "dw_sched",
+   "label": "Adjustment for the trial's treatment schedule against a program year",
+   "unit": "factor",
+   "value": 0.9,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: Deworm the World model (2024)",
+   "block": "fixed",
+   "meaning": "Takes 10% off because a year of treatment in the trial was heavier than a year of treatment in today's programs.",
+   "where": "GiveWell, Deworm the World 2024 cost-effectiveness analysis, row 12.",
+   "range": null,
+   "format": "0.00"
+  },
+  {
+   "key": "dw_years",
+   "label": "Extra years of deworming in the trial's treatment group",
+   "unit": "years",
+   "value": 2.41,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: Deworm the World model (2024)",
+   "block": "fixed",
+   "meaning": "The treatment group received this many more years of deworming than the control group, so the gain per year of deworming is the trial effect divided by this.",
+   "where": "GiveWell, Deworm the World 2024 cost-effectiveness analysis, row 13 (Baird et al. 2016).",
+   "range": null,
+   "format": "0.00"
+  },
+  {
+   "key": "dw_fade",
+   "label": "Adjustment for the effect fading over time",
+   "unit": "factor",
+   "value": 0.9,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: Deworm the World model (2024)",
+   "block": "fixed",
+   "meaning": "The later follow-ups found smaller effects than the earlier ones, so 10% comes off the present value.",
+   "where": "GiveWell, Deworm the World 2024 cost-effectiveness analysis, row 22; explained in its April 2023 update on deworming and decay.",
+   "range": null,
+   "format": "0.00"
+  },
+  {
+   "key": "dw_hh",
+   "label": "Multiplier for resource sharing within households, deworming",
+   "unit": "factor",
+   "value": 2,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: Deworm the World model (2024)",
+   "block": "fixed",
+   "meaning": "Doubles the value of an income gain because income is shared within the household.",
+   "where": "GiveWell, Deworm the World 2024 cost-effectiveness analysis, row 25.",
+   "range": null,
+   "format": "0.0"
+  },
+  {
+   "key": "dw_life",
+   "label": "Years the income benefit lasts",
+   "unit": "years",
+   "value": 40,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: Deworm the World model (2024)",
+   "block": "fixed",
+   "meaning": "The gain is counted over 40 working years, as an annuity due.",
+   "where": "GiveWell, Deworm the World 2024 cost-effectiveness analysis, rows 19 and 21.",
+   "range": null,
+   "format": "#,##0"
+  },
+  {
+   "key": "dw_disc",
+   "label": "Discount rate",
+   "unit": "per year",
+   "value": 0.04,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: Deworm the World model (2024)",
+   "block": "fixed",
+   "meaning": "Future income is discounted at 4% a year.",
+   "where": "GiveWell, Deworm the World 2024 cost-effectiveness analysis, row 16.",
+   "range": null,
+   "format": "0.0%"
+  },
+  {
+   "key": "dw_units",
+   "label": "Units of value per unit of ln income, for one person for one year",
+   "unit": "units",
+   "value": 1.442695,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: Deworm the World model (2024)",
+   "block": "fixed",
+   "meaning": "One unit of value is doubling one person's consumption for a year, which is 0.69 in natural log units, so one log unit is worth 1.44 units.",
+   "where": "GiveWell, Deworm the World 2024 cost-effectiveness analysis, row 44; 1 divided by ln(2).",
+   "range": null,
+   "format": "0.00"
+  },
+  {
+   "key": "dw_excl",
+   "label": "Adjustment for effects not modelled, deworming",
+   "unit": "factor",
+   "value": 1.073,
+   "low": null,
+   "high": null,
+   "type": "GiveWell: Deworm the World model (2024)",
+   "block": "fixed",
+   "meaning": "Net addition for effects outside the income chain: direct health effects, HIV reduction, deaths averted, short-term anaemia, investment of the income gain and other long-run benefits, less possible harms, drug resistance, unprogrammed deworming, lower-priority areas and general equilibrium effects. The organisation-level adjustments (wastage, monitoring, fungibility) are not carried, as the ORS chain carries none.",
+   "where": "GiveWell, Deworm the World 2024 cost-effectiveness analysis, rows 96 to 110.",
+   "range": null,
+   "format": "0.000"
+  }
+ ],
+ "rows": [
+  {
+   "key": "package",
+   "label": "What the result includes",
+   "step": "Results",
+   "formula": "\"ORS and zinc\"&IF(r_va_on=1,\" + vitamin A\",\"\")&IF(r_dw_on=1,\" + deworming\",\"\")",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "Set by the vitamin A and deworming switches on the Inputs tab. ORS and zinc are always included.",
+   "format": "@",
+   "result": false,
+   "text": true
+  },
+  {
+   "key": "top_full",
+   "label": "Cost-effectiveness: multiple of GiveWell's benchmark",
+   "step": "Results",
+   "formula": "r_full_x",
+   "checks": [
+    "r_full_x",
+    "r_full_x"
+   ],
+   "type": "Calculated",
+   "note": "Calculated step by step below. GiveWell's funding bar was 6x in May 2026. The grey GiveWell columns cover ORS and zinc only, as GiveWell's own cases do.",
+   "format": "0.0\"x\"",
+   "result": true,
+   "text": false
+  },
+  {
+   "key": "cohort",
+   "label": "Children reached (a standard group of 100,000)",
+   "step": "Step 1. Cost",
+   "formula": "100000",
+   "checks": [
+    100000,
+    100000
+   ],
+   "type": "Assumption",
+   "note": "As in GiveWell's models, every figure below is per 100,000 children reached, so the size of the program does not matter.",
+   "format": "#,##0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "cost",
+   "label": "Cost per child reached, per visit, for ORS and vitamin A",
+   "step": "Step 1. Cost",
+   "formula": "i_cost",
+   "checks": [
+    1.785,
+    1.907
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab. The grey columns use GiveWell's grant size divided by the 100,000 children ($1.785 and $1.907). That is GiveWell's cost per child given ORS and zinc ($3.02 and $3.31) times the share who use it (59% and 58%), because GiveWell pays only for children who use it.",
+   "format": "\"$\"#,##0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "campaigns",
+   "label": "Campaigns per year",
+   "step": "Step 1. Cost",
+   "formula": "i_campaigns",
+   "checks": [
+    1,
+    1
+   ],
+   "type": "Input",
+   "note": "",
+   "format": "#,##0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "second",
+   "label": "Value of a second round, as a share of the first (ORS)",
+   "step": "Step 1. Cost",
+   "formula": "i_second",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab. Only used with 2 campaigns a year.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "mult",
+   "label": "Rounds of ORS benefit per year (each extra round counts as a share of the first)",
+   "step": "Step 1. Cost",
+   "formula": "1+(r_campaigns-1)*r_second",
+   "checks": [
+    1,
+    1
+   ],
+   "type": "Calculated",
+   "note": "The first round, plus the row above for each extra round. Vitamin A is not reduced this way.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "cost_y",
+   "label": "Cost per child per year",
+   "step": "Step 1. Cost",
+   "formula": "r_cost*r_campaigns",
+   "checks": [
+    "r_cost*r_campaigns",
+    "r_cost*r_campaigns"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "\"$\"#,##0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "ors",
+   "label": "Children with diarrhoea who already receive ORS",
+   "step": "Step 2. How many more children use ORS",
+   "formula": "i_ors",
+   "checks": [
+    0.44,
+    0.419
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "arm_sw",
+   "label": "Delivery model (1 = door to door, 2 = free pickup)",
+   "step": "Step 2. How many more children use ORS",
+   "formula": "i_arm",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab.",
+   "format": "#,##0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "arm_d2d",
+   "label": "Trial effect, ORS brought to the home",
+   "step": "Step 2. How many more children use ORS",
+   "formula": "i_arm_d2d",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "Share of untreated children who start using ORS (Wagner et al. 2019). Fixed assumption on the Inputs tab.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "arm_free",
+   "label": "Trial effect, free ORS that families collect",
+   "step": "Step 2. How many more children use ORS",
+   "formula": "i_arm_free",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "arm",
+   "label": "Trial effect for the delivery model chosen",
+   "step": "Step 2. How many more children use ORS",
+   "formula": "IF(r_arm_sw=1,r_arm_d2d,r_arm_free)",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "The door-to-door effect when the delivery model is 1, otherwise the free pickup effect.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "iv",
+   "label": "Discount for the trial's own weaknesses",
+   "step": "Step 2. How many more children use ORS",
+   "formula": "i_iv",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "ev",
+   "label": "Discount for using the trial elsewhere",
+   "step": "Step 2. How many more children use ORS",
+   "formula": "i_ev",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "eff",
+   "label": "Share of untreated children who start using ORS, after both discounts",
+   "step": "Step 2. How many more children use ORS",
+   "formula": "r_arm*r_iv*r_ev",
+   "checks": [
+    0.27111,
+    0.27111
+   ],
+   "type": "Calculated",
+   "note": "The grey columns use GiveWell's general model, which assumes free pickup (27.1%).",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "inc",
+   "label": "New ORS users per 100 children with diarrhoea",
+   "step": "Step 2. How many more children use ORS",
+   "formula": "(1-r_ors)*r_eff*100",
+   "checks": [
+    "(1-r_ors)*r_eff*100",
+    "(1-r_ors)*r_eff*100"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "deaths",
+   "label": "Under-five diarrhoea deaths per 100,000 children, per year",
+   "step": "Step 3. How deadly diarrhoea is in the location",
+   "formula": "i_deaths",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab.",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "scaling",
+   "label": "Scaling factor applied to the death rate",
+   "step": "Step 3. How deadly diarrhoea is in the location",
+   "formula": "i_scaling",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "",
+   "format": "0.0000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "rota_gain",
+   "label": "Rotavirus vaccine coverage gained since the death rate's year",
+   "step": "Step 3. How deadly diarrhoea is in the location",
+   "formula": "i_rota_gain",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "rota_on",
+   "label": "Rotavirus adjustment applied (1 = yes, 0 = no)",
+   "step": "Step 3. How deadly diarrhoea is in the location",
+   "formula": "i_rota_on",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab.",
+   "format": "#,##0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "rota_share",
+   "label": "Share of diarrhoea deaths caused by rotavirus",
+   "step": "Step 3. How deadly diarrhoea is in the location",
+   "formula": "i_rota_share",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab (GBD 2021).",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "rota_eff",
+   "label": "Rotavirus vaccine efficacy against death",
+   "step": "Step 3. How deadly diarrhoea is in the location",
+   "formula": "i_rota_eff",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "rota_adj",
+   "label": "Country adjustment to vaccine efficacy",
+   "step": "Step 3. How deadly diarrhoea is in the location",
+   "formula": "i_rota_adj",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "rota",
+   "label": "Share of deaths left after the rotavirus adjustment",
+   "step": "Step 3. How deadly diarrhoea is in the location",
+   "formula": "IF(r_rota_on=1,1-r_rota_gain*r_rota_share*r_rota_eff*r_rota_adj,1)",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "1.00 when the adjustment is off or there has been no coverage gain.",
+   "format": "0.0000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "direct",
+   "label": "Diarrhoea deaths per 1,000 children, after adjustments",
+   "step": "Step 3. How deadly diarrhoea is in the location",
+   "formula": "r_deaths/100*r_scaling*r_rota",
+   "checks": [
+    1.969,
+    3.953
+   ],
+   "type": "Calculated",
+   "note": "GiveWell's own calculation starts here, so the grey columns enter GiveWell's published rates in this row.",
+   "format": "0.0000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "indirect",
+   "label": "Extra deaths where diarrhoea contributed, per diarrhoea death",
+   "step": "Step 3. How deadly diarrhoea is in the location",
+   "formula": "i_indirect",
+   "checks": [
+    0.5,
+    0.5
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "ors_red",
+   "label": "Reduction in diarrhoea deaths for a child who uses ORS",
+   "step": "Step 3. How deadly diarrhoea is in the location",
+   "formula": "i_ors_red",
+   "checks": [
+    0.5952,
+    0.5952
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "nonuser",
+   "label": "Diarrhoea deaths per 1,000 children not yet using ORS",
+   "step": "Step 3. How deadly diarrhoea is in the location",
+   "formula": "r_direct*(1+r_indirect)/(1-r_ors_red*r_ors)",
+   "checks": [
+    "r_direct*(1+r_indirect)/(1-r_ors_red*r_ors)",
+    "r_direct*(1+r_indirect)/(1-r_ors_red*r_ors)"
+   ],
+   "type": "Calculated",
+   "note": "Children already using ORS are partly protected, so a child who is not yet using it is at higher risk.",
+   "format": "0.0000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "episodes",
+   "label": "Share of the year's diarrhoea episodes the co-packs cover",
+   "step": "Step 4. Deaths prevented by ORS and zinc",
+   "formula": "i_episodes",
+   "checks": [
+    1,
+    1
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "ors_d",
+   "label": "Deaths prevented per 100,000 children reached",
+   "step": "Step 4. Deaths prevented by ORS and zinc",
+   "formula": "r_cohort*r_inc/100*r_nonuser/1000*r_ors_red*r_episodes*r_mult",
+   "checks": [
+    "r_cohort*r_inc/100*r_nonuser/1000*r_ors_red*r_episodes*r_mult",
+    "r_cohort*r_inc/100*r_nonuser/1000*r_ors_red*r_episodes*r_mult"
+   ],
+   "type": "Calculated",
+   "note": "New ORS users, times their risk of dying, times how much ORS lowers that risk, for every round in the year.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "va_on",
+   "label": "Vitamin A included (1 = yes, 0 = no)",
+   "step": "Step 5. Deaths prevented by the vitamin A dose",
+   "formula": "i_va_on",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab. 0 switches the whole step off.",
+   "format": "#,##0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "va_effect",
+   "label": "Vitamin A dose: reduction in child deaths",
+   "step": "Step 5. Deaths prevented by the vitamin A dose",
+   "formula": "i_va_effect",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "vas",
+   "label": "Children already receiving vitamin A",
+   "step": "Step 5. Deaths prevented by the vitamin A dose",
+   "formula": "i_vas",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "va_new",
+   "label": "Children newly covered by the dose",
+   "step": "Step 5. Deaths prevented by the vitamin A dose",
+   "formula": "1-r_vas",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "va_age",
+   "label": "Share of children reached aged 6 to 59 months",
+   "step": "Step 5. Deaths prevented by the vitamin A dose",
+   "formula": "i_va_age",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab (54 of 60 months).",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "mort659",
+   "label": "Child death rate, ages 6 to 59 months, per year",
+   "step": "Step 5. Deaths prevented by the vitamin A dose",
+   "formula": "i_mort659",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab.",
+   "format": "0.0000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "va_dose",
+   "label": "Years of protection from one vitamin A dose",
+   "step": "Step 5. Deaths prevented by the vitamin A dose",
+   "formula": "i_va_years",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab (half a year).",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "va_years",
+   "label": "Years of vitamin A protection per year",
+   "step": "Step 5. Deaths prevented by the vitamin A dose",
+   "formula": "MIN(1,r_campaigns*r_va_dose)",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "One dose per campaign, up to a full year.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "va_pre",
+   "label": "Deaths prevented by vitamin A per 100,000, before removing overlap with ORS",
+   "step": "Step 5. Deaths prevented by the vitamin A dose",
+   "formula": "r_cohort*r_va_new*r_va_age*r_mort659*r_va_years*r_va_effect*r_va_on",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "Children reached, times the share not already covered, times the share old enough, times their death rate, times the years protected, times the effect. Zero when vitamin A is switched off.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "diarr_tot",
+   "label": "All diarrhoea-related deaths per 100,000 children",
+   "step": "Step 5. Deaths prevented by the vitamin A dose",
+   "formula": "r_direct*(1+r_indirect)*100",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "ors_share",
+   "label": "Share of those deaths ORS already prevents",
+   "step": "Step 5. Deaths prevented by the vitamin A dose",
+   "formula": "r_ors_d/r_diarr_tot",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "va_diarr",
+   "label": "Share of the vitamin A benefit that works through diarrhoea",
+   "step": "Step 5. Deaths prevented by the vitamin A dose",
+   "formula": "i_va_diarr",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "overlap",
+   "label": "Overlap removed from the vitamin A deaths",
+   "step": "Step 5. Deaths prevented by the vitamin A dose",
+   "formula": "r_va_diarr*r_ors_share",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "This way a child saved by both is only counted once.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "va_d",
+   "label": "Deaths prevented by vitamin A per 100,000, after removing overlap",
+   "step": "Step 5. Deaths prevented by the vitamin A dose",
+   "formula": "r_va_pre*(1-r_overlap)",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_on",
+   "label": "Deworming included (1 = yes, 0 = no)",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_dw_on",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab. 0 switches the whole step off.",
+   "format": "#,##0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_age_share",
+   "label": "Share of children reached aged 12 to 59 months",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_dw_age_share",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab (48 of 60 months).",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_cov",
+   "label": "Children already dewormed in the last six months",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_dw_cov",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab, or the Scenarios tab (DHS survey figures).",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_new",
+   "label": "Children newly dewormed by the campaign",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "1-r_dw_cov",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_itt",
+   "label": "Effect on ln income in the Kenya trial, intention to treat",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_dw_itt",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "0.109 log units for children assigned to treatment, pooled across the follow-up surveys. Fixed assumption on the Inputs tab (GiveWell row 7).",
+   "format": "0.000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_cov_t",
+   "label": "Coverage in the trial's treatment group",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_dw_cov_t",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab (GiveWell row 8).",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_cov_c",
+   "label": "Coverage in the trial's control group",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_dw_cov_c",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab (GiveWell row 9).",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_tot",
+   "label": "Effect on the children treated",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "r_dw_itt/((r_dw_cov_t-r_dw_cov_c)-r_dw_cov_c*r_dw_itt)",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "GiveWell's conversion from those assigned to treatment to those treated (row 10): 0.157.",
+   "format": "0.000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_repl",
+   "label": "Replicability adjustment for the income effect",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_dw_repl",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "Counts 13% of the trial effect. Fixed assumption on the Inputs tab.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_sched",
+   "label": "Adjustment for the trial's treatment schedule against a program year",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_dw_sched",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "GiveWell's 0.9 (row 12). Fixed assumption on the Inputs tab.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_years",
+   "label": "Extra years of deworming in the trial's treatment group",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_dw_years",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "2.41 (row 13). Fixed assumption on the Inputs tab.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_per_year",
+   "label": "Effect on ln income per year of deworming, after GiveWell's adjustments",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "r_dw_tot*r_dw_repl*r_dw_sched/r_dw_years",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "The effect on the treated, times the replicability and schedule adjustments, divided by the extra years of deworming: 0.0076, GiveWell's row 14. A year of deworming is that year's full schedule, so a second campaign in the year does not double it.",
+   "format": "0.00000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "worm",
+   "label": "Worm burden, as a share of the level in the Kenya trial",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_worm",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab, or the Scenarios tab (GiveWell's figures for the area).",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_age",
+   "label": "Adjustment for ages 1 to 4 rather than school age",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_dw_age",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab. Our assumption, the main judgement call for deworming: 1 assumes a child dewormed at ages 1 to 4 gains as much in adult income as a school-age child. No study has measured it. The Sensitivity tab shows 0.5.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_local",
+   "label": "Effect on ln income per child dewormed for one year, in this location",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "r_dw_per_year*r_worm*r_dw_age",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "0.000000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_wait",
+   "label": "Years until the income benefit starts",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_dw_wait",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab. 15: a child dewormed at ages 1 to 4 starts work later than the school-age children behind GiveWell's 8 years (row 17). The Sensitivity tab shows 17 and 11.",
+   "format": "#,##0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_life",
+   "label": "Years the income benefit lasts",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_dw_life",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab (40 years).",
+   "format": "#,##0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_disc",
+   "label": "Discount rate",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_dw_disc",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab (4%).",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_annuity",
+   "label": "Value today of one log unit a year over the benefit years, if it started now",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "(1-(1+r_dw_disc)^-r_dw_life)/r_dw_disc*(1+r_dw_disc)",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "GiveWell's present value with payments at the start of each year (row 21): 20.58 for 40 years at 4%.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_waitdisc",
+   "label": "Discount for the years until the benefit starts",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "1/(1+r_dw_disc)^r_dw_wait",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "The discount rate applied once for each year of waiting (row 18).",
+   "format": "0.0000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_pv",
+   "label": "Present value of one log unit a year over the benefit years, discounted for the wait",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "r_dw_annuity*r_dw_waitdisc",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "The two rows above multiplied. At an 8-year wait this is 15.04.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_fade",
+   "label": "Adjustment for the effect fading over time",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_dw_fade",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "A 10% reduction (row 22). Fixed assumption on the Inputs tab.",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_hh",
+   "label": "Multiplier for resource sharing within households",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_dw_hh",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "GiveWell's 2.0 (row 25). Fixed assumption on the Inputs tab.",
+   "format": "0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_gain",
+   "label": "Income gain per child dewormed for one year, present value (ln units)",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "r_dw_local*r_dw_pv*r_dw_fade*r_dw_hh",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "At a worm burden of 100%, an age adjustment of 1 and an 8-year wait this reproduces GiveWell's 0.206 per year of deworming (row 27).",
+   "format": "0.00000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_units_per",
+   "label": "Units of value per unit of ln income",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_dw_units",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab (GiveWell row 44; 1 divided by ln 2).",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_excl",
+   "label": "Adjustment for effects not modelled, deworming",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "i_dw_excl",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Source",
+   "note": "GiveWell's 1.073 for effects outside the income chain (rows 96 to 110). Fixed assumption on the Inputs tab.",
+   "format": "0.000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_units",
+   "label": "Units of value from deworming per 100,000 children reached, per year",
+   "step": "Step 6. Income gains from deworming",
+   "formula": "r_cohort*r_dw_age_share*r_dw_new*r_dw_on*r_dw_gain*r_dw_units_per*r_dw_excl",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "Children reached, times the share old enough, times the share not already dewormed, times the value of each child's income gain. Zero when deworming is switched off.",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "va_cost",
+   "label": "Extra cost of the vitamin A capsule, per child per visit",
+   "step": "Step 7. ORS and zinc + vitamin A together, and the full package",
+   "formula": "i_va_cost*r_va_on",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab; zero when vitamin A is switched off. The cost per visit for ORS stays the same either way.",
+   "format": "\"$\"#,##0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "bundle_d",
+   "label": "Deaths prevented per 100,000 children, both together",
+   "step": "Step 7. ORS and zinc + vitamin A together, and the full package",
+   "formula": "r_ors_d+r_va_d",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "bundle_cost",
+   "label": "Cost per child per year, both together",
+   "step": "Step 7. ORS and zinc + vitamin A together, and the full package",
+   "formula": "r_cost_y+r_va_cost*r_campaigns",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "\"$\"#,##0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "dw_cost",
+   "label": "Extra cost of the deworming tablet, per child per visit",
+   "step": "Step 7. ORS and zinc + vitamin A together, and the full package",
+   "formula": "i_dw_cost*r_dw_on",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab; zero when deworming is switched off.",
+   "format": "\"$\"#,##0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "full_cost",
+   "label": "Cost per child per year, full package",
+   "step": "Step 7. ORS and zinc + vitamin A together, and the full package",
+   "formula": "r_bundle_cost+r_dw_cost*r_campaigns",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "The ORS and zinc + vitamin A cost plus the tablet for every campaign in the year.",
+   "format": "\"$\"#,##0.00",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "uv",
+   "label": "Value of preventing one child's death (units)",
+   "step": "Step 8. Value of each death prevented, and of the package, in units of value",
+   "formula": "i_uv",
+   "checks": [
+    111.8141889,
+    112.6596725
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab. The grey columns use GiveWell's age-weighted values for each case.",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "mshare",
+   "label": "Share of the benefit from deaths prevented",
+   "step": "Step 8. Value of each death prevented, and of the package, in units of value",
+   "formula": "i_mshare",
+   "checks": [
+    0.8626388986,
+    0.8955988883
+   ],
+   "type": "Source",
+   "note": "The rest is illness avoided and effects on development. Fixed assumption on the Inputs tab. The grey columns use GiveWell's own shares.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "excl",
+   "label": "Adjustment for effects not modelled",
+   "step": "Step 8. Value of each death prevented, and of the package, in units of value",
+   "formula": "i_excl",
+   "checks": [
+    1.011415788,
+    1.011415788
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab.",
+   "format": "0.000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "vpd",
+   "label": "Value per death prevented, before leveraging and funging (units)",
+   "step": "Step 8. Value of each death prevented, and of the package, in units of value",
+   "formula": "r_uv/r_mshare*r_excl",
+   "checks": [
+    "r_uv/r_mshare*r_excl",
+    "r_uv/r_mshare*r_excl"
+   ],
+   "type": "Calculated",
+   "note": "",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "gov_share",
+   "label": "Government cost, as a share of the organisation's cost",
+   "step": "Step 8. Value of each death prevented, and of the package, in units of value",
+   "formula": "i_gov_share",
+   "checks": [
+    1,
+    1
+   ],
+   "type": "Source",
+   "note": "Fixed assumption on the Inputs tab. 0%: in Connect campaigns the organisation pays for the work and the government gives permission, as in GiveWell's CHAI Bauchi grant. GiveWell's general ORS and zinc cases (the grey columns) assume 100%.",
+   "format": "0.0%",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "lev",
+   "label": "Adjustment for government spending (GiveWell's leveraging adjustment)",
+   "step": "Step 8. Value of each death prevented, and of the package, in units of value",
+   "formula": "IF(r_gov_share=0,1,\"not modelled\")",
+   "checks": [
+    0.7968584296,
+    0.8857381345
+   ],
+   "type": "Calculated",
+   "note": "GiveWell takes off the good the government's money would have done elsewhere. With a 0% government share there is nothing to take off, so this is 1. The model covers a 0% government share only. The grey columns use GiveWell's own values for its cases (0.797 and 0.886).",
+   "format": "0.000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "full_units",
+   "label": "Units of value per 100,000 children per year, before leveraging and funging",
+   "step": "Step 8. Value of each death prevented, and of the package, in units of value",
+   "formula": "r_bundle_d*r_vpd+r_dw_units",
+   "checks": [
+    null,
+    null
+   ],
+   "type": "Calculated",
+   "note": "Deaths prevented by ORS and zinc + vitamin A, times the value of each, plus the deworming units.",
+   "format": "#,##0.0",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "w_full",
+   "label": "Value per dollar before leveraging and funging (units)",
+   "step": "Step 8. Value of each death prevented, and of the package, in units of value",
+   "formula": "r_full_units/(r_cohort*r_full_cost)",
+   "checks": [
+    "r_ors_d*r_vpd/(r_cohort*r_cost_y)",
+    "r_ors_d*r_vpd/(r_cohort*r_cost_y)"
+   ],
+   "type": "Calculated",
+   "note": "Units of value per year divided by the cost per year. The grey columns: ORS and zinc only (deaths prevented times the value of each, divided by the ORS cost).",
+   "format": "0.00000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "fung",
+   "label": "Funging adjustment",
+   "step": "Step 8. Value of each death prevented, and of the package, in units of value",
+   "formula": "i_funging",
+   "checks": [
+    0.9683267146,
+    0.9352825124
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab. The grey columns use GiveWell's own values for each case.",
+   "format": "0.000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "bench",
+   "label": "GiveWell benchmark, units of value per dollar",
+   "step": "Step 8. Value of each death prevented, and of the package, in units of value",
+   "formula": "i_benchmark",
+   "checks": [
+    0.00335,
+    0.00335
+   ],
+   "type": "Input",
+   "note": "From the Inputs tab. The grey columns use 0.00335, the figure in GiveWell's August 2023 analysis.",
+   "format": "0.00000",
+   "result": false,
+   "text": false
+  },
+  {
+   "key": "full_x",
+   "label": "Cost-effectiveness: multiple of GiveWell's benchmark",
+   "step": "Step 9. Result",
+   "formula": "r_w_full*r_lev*r_fung/r_bench",
+   "checks": [
+    "r_w_full*r_lev*r_fung/r_bench",
+    "r_w_full*r_lev*r_fung/r_bench"
+   ],
+   "type": "Calculated",
+   "note": "Value per dollar, times the leveraging and funging adjustments, divided by the benchmark, for the package switched on in the Inputs tab. Quote this one figure: splitting it between ORS, vitamin A and deworming would depend on how the visit cost is divided. The grey columns give 6.12x and 12.22x, the results on the Simple CEA tab of GiveWell's ORS and zinc spreadsheet.",
+   "format": "0.0\"x\"",
+   "result": true,
+   "text": false
+  }
+ ],
+ "scenarios": [
+  {
+   "name": "Location: North West Nigeria",
+   "sets": {
+    "deaths": 397,
+    "ors": 0.44,
+    "vas": 0.264,
+    "mort659": 0.0153,
+    "rota_gain": 0,
+    "dw_cov": 0.118,
+    "worm": 0.113,
+    "cost": 1.8,
+    "campaigns": 2
+   }
+  },
+  {
+   "name": "Rounds: North West Nigeria, 1 campaign a year",
+   "sets": {
+    "deaths": 397,
+    "ors": 0.44,
+    "vas": 0.264,
+    "mort659": 0.0153,
+    "rota_gain": 0,
+    "dw_cov": 0.118,
+    "worm": 0.113,
+    "cost": 1.8,
+    "campaigns": 1
+   }
+  },
+  {
+   "name": "Cost: North West Nigeria, $1.44 a visit",
+   "sets": {
+    "deaths": 397,
+    "ors": 0.44,
+    "vas": 0.264,
+    "mort659": 0.0153,
+    "rota_gain": 0,
+    "dw_cov": 0.118,
+    "worm": 0.113,
+    "cost": 1.44,
+    "campaigns": 2
+   }
+  },
+  {
+   "name": "Cost: North West Nigeria, $2.50 a visit",
+   "sets": {
+    "deaths": 397,
+    "ors": 0.44,
+    "vas": 0.264,
+    "mort659": 0.0153,
+    "rota_gain": 0,
+    "dw_cov": 0.118,
+    "worm": 0.113,
+    "cost": 2.5,
+    "campaigns": 2
+   }
+  },
+  {
+   "name": "Location: high burden (75th percentile of 45 countries; closest country Angola)",
+   "sets": {
+    "deaths": 137.0,
+    "ors": 0.357,
+    "vas": 0.564,
+    "mort659": 0.0068,
+    "rota_gain": 0,
+    "dw_cov": 0.46,
+    "worm": 0.093,
+    "cost": 1.8,
+    "campaigns": 2
+   }
+  },
+  {
+   "name": "Location: low burden (25th percentile of 45 countries; closest country Uganda)",
+   "sets": {
+    "deaths": 56.2,
+    "ors": 0.357,
+    "vas": 0.564,
+    "mort659": 0.0021,
+    "rota_gain": 0,
+    "dw_cov": 0.46,
+    "worm": 0.093,
+    "cost": 1.8,
+    "campaigns": 2
+   }
+  }
+ ],
+ "results": {
+  "Your inputs": {
+   "top_full": 6.095357753901075,
+   "cohort": 100000,
+   "cost": 1.8,
+   "campaigns": 2,
+   "second": 0.8,
+   "mult": 1.8,
+   "cost_y": 3.6,
+   "ors": 0.357,
+   "arm_sw": 1,
+   "arm_d2d": 0.46936,
+   "arm_free": 0.39869,
+   "arm": 0.46936,
+   "iv": 0.8,
+   "ev": 0.85,
+   "eff": 0.3191648,
+   "inc": 20.52229664,
+   "deaths": 97.3,
+   "scaling": 1.0,
+   "rota_gain": 0.0,
+   "rota_on": 1,
+   "rota_share": 0.352,
+   "rota_eff": 0.46,
+   "rota_adj": 0.81,
+   "rota": 1.0,
+   "direct": 0.973,
+   "indirect": 0.5,
+   "ors_red": 0.5952,
+   "nonuser": 1.8533013271135887,
+   "episodes": 1.0,
+   "ors_d": 40.74810580966762,
+   "va_on": 1,
+   "va_effect": 0.06,
+   "vas": 0.564,
+   "va_new": 0.43600000000000005,
+   "va_age": 0.9,
+   "mort659": 0.0041,
+   "va_dose": 0.5,
+   "va_years": 1,
+   "va_pre": 9.653040000000003,
+   "diarr_tot": 145.95,
+   "ors_share": 0.27919222891173434,
+   "va_diarr": 0.4,
+   "overlap": 0.11167689156469374,
+   "va_d": 8.575018498650351,
+   "dw_on": 1,
+   "dw_age_share": 0.8,
+   "dw_cov": 0.46,
+   "dw_new": 0.54,
+   "dw_itt": 0.109,
+   "dw_cov_t": 0.75,
+   "dw_cov_c": 0.05,
+   "dw_tot": 0.1569361457058527,
+   "dw_repl": 0.13,
+   "dw_sched": 0.9,
+   "dw_years": 2.41,
+   "dw_per_year": 0.007618891720989529,
+   "worm": 0.093,
+   "dw_age": 1.0,
+   "dw_local": 0.0007085569300520262,
+   "dw_wait": 15,
+   "dw_life": 40,
+   "dw_disc": 0.04,
+   "dw_annuity": 20.584484838763533,
+   "dw_waitdisc": 0.5552645027132749,
+   "dw_pv": 11.42983373760498,
+   "dw_fade": 0.9,
+   "dw_hh": 2,
+   "dw_gain": 0.01457763822742043,
+   "dw_units_per": 1.442695,
+   "dw_excl": 1.073,
+   "dw_units": 974.8665379280775,
+   "va_cost": 0.0,
+   "bundle_d": 49.32312430831797,
+   "bundle_cost": 3.6,
+   "dw_cost": 0.04,
+   "full_cost": 3.68,
+   "uv": 113,
+   "mshare": 0.9,
+   "excl": 1.011,
+   "vpd": 126.93666666666665,
+   "gov_share": 0.0,
+   "lev": 1,
+   "full_units": 7235.779527211599,
+   "w_full": 0.019662444367422822,
+   "fung": 0.93,
+   "bench": 0.003,
+   "full_x": 6.095357753901075
+  },
+  "Scenario 1: Location: North West Nigeria": {
+   "top_full": 23.976866689655893,
+   "cohort": 100000,
+   "cost": 1.8,
+   "campaigns": 2,
+   "second": 0.8,
+   "mult": 1.8,
+   "cost_y": 3.6,
+   "ors": 0.44,
+   "arm_sw": 1,
+   "arm_d2d": 0.46936,
+   "arm_free": 0.39869,
+   "arm": 0.46936,
+   "iv": 0.8,
+   "ev": 0.85,
+   "eff": 0.3191648,
+   "inc": 17.873228800000003,
+   "deaths": 397,
+   "scaling": 1.0,
+   "rota_gain": 0,
+   "rota_on": 1,
+   "rota_share": 0.352,
+   "rota_eff": 0.46,
+   "rota_adj": 0.81,
+   "rota": 1.0,
+   "direct": 3.97,
+   "indirect": 0.5,
+   "ors_red": 0.5952,
+   "nonuser": 8.067881297147315,
+   "episodes": 1.0,
+   "ors_d": 154.48913530017865,
+   "va_on": 1,
+   "va_effect": 0.06,
+   "vas": 0.264,
+   "va_new": 0.736,
+   "va_age": 0.9,
+   "mort659": 0.0153,
+   "va_dose": 0.5,
+   "va_years": 1,
+   "va_pre": 60.808319999999995,
+   "diarr_tot": 595.5,
+   "ors_share": 0.25942759916066943,
+   "va_diarr": 0.4,
+   "overlap": 0.10377103966426778,
+   "va_d": 54.498177413362505,
+   "dw_on": 1,
+   "dw_age_share": 0.8,
+   "dw_cov": 0.118,
+   "dw_new": 0.882,
+   "dw_itt": 0.109,
+   "dw_cov_t": 0.75,
+   "dw_cov_c": 0.05,
+   "dw_tot": 0.1569361457058527,
+   "dw_repl": 0.13,
+   "dw_sched": 0.9,
+   "dw_years": 2.41,
+   "dw_per_year": 0.007618891720989529,
+   "worm": 0.113,
+   "dw_age": 1.0,
+   "dw_local": 0.0008609347644718168,
+   "dw_wait": 15,
+   "dw_life": 40,
+   "dw_disc": 0.04,
+   "dw_annuity": 20.584484838763533,
+   "dw_waitdisc": 0.5552645027132749,
+   "dw_pv": 11.42983373760498,
+   "dw_fade": 0.9,
+   "dw_hh": 2,
+   "dw_gain": 0.017712614190306546,
+   "dw_units_per": 1.442695,
+   "dw_excl": 1.073,
+   "dw_units": 1934.7082510780526,
+   "va_cost": 0.0,
+   "bundle_d": 208.98731271354114,
+   "bundle_cost": 3.6,
+   "dw_cost": 0.04,
+   "full_cost": 3.68,
+   "uv": 113,
+   "mshare": 0.9,
+   "excl": 1.011,
+   "vpd": 126.93666666666665,
+   "gov_share": 0.0,
+   "lev": 1,
+   "full_units": 28462.86110255925,
+   "w_full": 0.07734473125695449,
+   "fung": 0.93,
+   "bench": 0.003,
+   "full_x": 23.976866689655893
+  },
+  "Scenario 2: Rounds: North West Nigeria, 1 campaign a year": {
+   "top_full": 27.742043573290733,
+   "cohort": 100000,
+   "cost": 1.8,
+   "campaigns": 1,
+   "second": 0.8,
+   "mult": 1.0,
+   "cost_y": 1.8,
+   "ors": 0.44,
+   "arm_sw": 1,
+   "arm_d2d": 0.46936,
+   "arm_free": 0.39869,
+   "arm": 0.46936,
+   "iv": 0.8,
+   "ev": 0.85,
+   "eff": 0.3191648,
+   "inc": 17.873228800000003,
+   "deaths": 397,
+   "scaling": 1.0,
+   "rota_gain": 0,
+   "rota_on": 1,
+   "rota_share": 0.352,
+   "rota_eff": 0.46,
+   "rota_adj": 0.81,
+   "rota": 1.0,
+   "direct": 3.97,
+   "indirect": 0.5,
+   "ors_red": 0.5952,
+   "nonuser": 8.067881297147315,
+   "episodes": 1.0,
+   "ors_d": 85.82729738898813,
+   "va_on": 1,
+   "va_effect": 0.06,
+   "vas": 0.264,
+   "va_new": 0.736,
+   "va_age": 0.9,
+   "mort659": 0.0153,
+   "va_dose": 0.5,
+   "va_years": 0.5,
+   "va_pre": 30.404159999999997,
+   "diarr_tot": 595.5,
+   "ors_share": 0.14412644397814967,
+   "va_diarr": 0.4,
+   "overlap": 0.05765057759125987,
+   "va_d": 28.651342614822916,
+   "dw_on": 1,
+   "dw_age_share": 0.8,
+   "dw_cov": 0.118,
+   "dw_new": 0.882,
+   "dw_itt": 0.109,
+   "dw_cov_t": 0.75,
+   "dw_cov_c": 0.05,
+   "dw_tot": 0.1569361457058527,
+   "dw_repl": 0.13,
+   "dw_sched": 0.9,
+   "dw_years": 2.41,
+   "dw_per_year": 0.007618891720989529,
+   "worm": 0.113,
+   "dw_age": 1.0,
+   "dw_local": 0.0008609347644718168,
+   "dw_wait": 15,
+   "dw_life": 40,
+   "dw_disc": 0.04,
+   "dw_annuity": 20.584484838763533,
+   "dw_waitdisc": 0.5552645027132749,
+   "dw_pv": 11.42983373760498,
+   "dw_fade": 0.9,
+   "dw_hh": 2,
+   "dw_gain": 0.017712614190306546,
+   "dw_units_per": 1.442695,
+   "dw_excl": 1.073,
+   "dw_units": 1934.7082510780526,
+   "va_cost": 0.0,
+   "bundle_d": 114.47864000381105,
+   "bundle_cost": 1.8,
+   "dw_cost": 0.04,
+   "full_cost": 1.84,
+   "uv": 113,
+   "mshare": 0.9,
+   "excl": 1.011,
+   "vpd": 126.93666666666665,
+   "gov_share": 0.0,
+   "lev": 1,
+   "full_units": 16466.245217695145,
+   "w_full": 0.08949046313964752,
+   "fung": 0.93,
+   "bench": 0.003,
+   "full_x": 27.742043573290733
+  },
+  "Scenario 3: Cost: North West Nigeria, $1.44 a visit": {
+   "top_full": 29.809077506058674,
+   "cohort": 100000,
+   "cost": 1.44,
+   "campaigns": 2,
+   "second": 0.8,
+   "mult": 1.8,
+   "cost_y": 2.88,
+   "ors": 0.44,
+   "arm_sw": 1,
+   "arm_d2d": 0.46936,
+   "arm_free": 0.39869,
+   "arm": 0.46936,
+   "iv": 0.8,
+   "ev": 0.85,
+   "eff": 0.3191648,
+   "inc": 17.873228800000003,
+   "deaths": 397,
+   "scaling": 1.0,
+   "rota_gain": 0,
+   "rota_on": 1,
+   "rota_share": 0.352,
+   "rota_eff": 0.46,
+   "rota_adj": 0.81,
+   "rota": 1.0,
+   "direct": 3.97,
+   "indirect": 0.5,
+   "ors_red": 0.5952,
+   "nonuser": 8.067881297147315,
+   "episodes": 1.0,
+   "ors_d": 154.48913530017865,
+   "va_on": 1,
+   "va_effect": 0.06,
+   "vas": 0.264,
+   "va_new": 0.736,
+   "va_age": 0.9,
+   "mort659": 0.0153,
+   "va_dose": 0.5,
+   "va_years": 1,
+   "va_pre": 60.808319999999995,
+   "diarr_tot": 595.5,
+   "ors_share": 0.25942759916066943,
+   "va_diarr": 0.4,
+   "overlap": 0.10377103966426778,
+   "va_d": 54.498177413362505,
+   "dw_on": 1,
+   "dw_age_share": 0.8,
+   "dw_cov": 0.118,
+   "dw_new": 0.882,
+   "dw_itt": 0.109,
+   "dw_cov_t": 0.75,
+   "dw_cov_c": 0.05,
+   "dw_tot": 0.1569361457058527,
+   "dw_repl": 0.13,
+   "dw_sched": 0.9,
+   "dw_years": 2.41,
+   "dw_per_year": 0.007618891720989529,
+   "worm": 0.113,
+   "dw_age": 1.0,
+   "dw_local": 0.0008609347644718168,
+   "dw_wait": 15,
+   "dw_life": 40,
+   "dw_disc": 0.04,
+   "dw_annuity": 20.584484838763533,
+   "dw_waitdisc": 0.5552645027132749,
+   "dw_pv": 11.42983373760498,
+   "dw_fade": 0.9,
+   "dw_hh": 2,
+   "dw_gain": 0.017712614190306546,
+   "dw_units_per": 1.442695,
+   "dw_excl": 1.073,
+   "dw_units": 1934.7082510780526,
+   "va_cost": 0.0,
+   "bundle_d": 208.98731271354114,
+   "bundle_cost": 2.88,
+   "dw_cost": 0.04,
+   "full_cost": 2.96,
+   "uv": 113,
+   "mshare": 0.9,
+   "excl": 1.011,
+   "vpd": 126.93666666666665,
+   "gov_share": 0.0,
+   "lev": 1,
+   "full_units": 28462.86110255925,
+   "w_full": 0.09615831453567314,
+   "fung": 0.93,
+   "bench": 0.003,
+   "full_x": 29.809077506058674
+  },
+  "Scenario 4: Cost: North West Nigeria, $2.50 a visit": {
+   "top_full": 17.369068783057813,
+   "cohort": 100000,
+   "cost": 2.5,
+   "campaigns": 2,
+   "second": 0.8,
+   "mult": 1.8,
+   "cost_y": 5.0,
+   "ors": 0.44,
+   "arm_sw": 1,
+   "arm_d2d": 0.46936,
+   "arm_free": 0.39869,
+   "arm": 0.46936,
+   "iv": 0.8,
+   "ev": 0.85,
+   "eff": 0.3191648,
+   "inc": 17.873228800000003,
+   "deaths": 397,
+   "scaling": 1.0,
+   "rota_gain": 0,
+   "rota_on": 1,
+   "rota_share": 0.352,
+   "rota_eff": 0.46,
+   "rota_adj": 0.81,
+   "rota": 1.0,
+   "direct": 3.97,
+   "indirect": 0.5,
+   "ors_red": 0.5952,
+   "nonuser": 8.067881297147315,
+   "episodes": 1.0,
+   "ors_d": 154.48913530017865,
+   "va_on": 1,
+   "va_effect": 0.06,
+   "vas": 0.264,
+   "va_new": 0.736,
+   "va_age": 0.9,
+   "mort659": 0.0153,
+   "va_dose": 0.5,
+   "va_years": 1,
+   "va_pre": 60.808319999999995,
+   "diarr_tot": 595.5,
+   "ors_share": 0.25942759916066943,
+   "va_diarr": 0.4,
+   "overlap": 0.10377103966426778,
+   "va_d": 54.498177413362505,
+   "dw_on": 1,
+   "dw_age_share": 0.8,
+   "dw_cov": 0.118,
+   "dw_new": 0.882,
+   "dw_itt": 0.109,
+   "dw_cov_t": 0.75,
+   "dw_cov_c": 0.05,
+   "dw_tot": 0.1569361457058527,
+   "dw_repl": 0.13,
+   "dw_sched": 0.9,
+   "dw_years": 2.41,
+   "dw_per_year": 0.007618891720989529,
+   "worm": 0.113,
+   "dw_age": 1.0,
+   "dw_local": 0.0008609347644718168,
+   "dw_wait": 15,
+   "dw_life": 40,
+   "dw_disc": 0.04,
+   "dw_annuity": 20.584484838763533,
+   "dw_waitdisc": 0.5552645027132749,
+   "dw_pv": 11.42983373760498,
+   "dw_fade": 0.9,
+   "dw_hh": 2,
+   "dw_gain": 0.017712614190306546,
+   "dw_units_per": 1.442695,
+   "dw_excl": 1.073,
+   "dw_units": 1934.7082510780526,
+   "va_cost": 0.0,
+   "bundle_d": 208.98731271354114,
+   "bundle_cost": 5.0,
+   "dw_cost": 0.04,
+   "full_cost": 5.08,
+   "uv": 113,
+   "mshare": 0.9,
+   "excl": 1.011,
+   "vpd": 126.93666666666665,
+   "gov_share": 0.0,
+   "lev": 1,
+   "full_units": 28462.86110255925,
+   "w_full": 0.056029254138896166,
+   "fung": 0.93,
+   "bench": 0.003,
+   "full_x": 17.369068783057813
+  },
+  "Scenario 5: Location: high burden (75th percentile of 45 countries; closest country Angola)": {
+   "top_full": 8.477002407797048,
+   "cohort": 100000,
+   "cost": 1.8,
+   "campaigns": 2,
+   "second": 0.8,
+   "mult": 1.8,
+   "cost_y": 3.6,
+   "ors": 0.357,
+   "arm_sw": 1,
+   "arm_d2d": 0.46936,
+   "arm_free": 0.39869,
+   "arm": 0.46936,
+   "iv": 0.8,
+   "ev": 0.85,
+   "eff": 0.3191648,
+   "inc": 20.52229664,
+   "deaths": 137.0,
+   "scaling": 1.0,
+   "rota_gain": 0,
+   "rota_on": 1,
+   "rota_share": 0.352,
+   "rota_eff": 0.46,
+   "rota_adj": 0.81,
+   "rota": 1.0,
+   "direct": 1.37,
+   "indirect": 0.5,
+   "ors_red": 0.5952,
+   "nonuser": 2.6094787442400995,
+   "episodes": 1.0,
+   "ors_d": 57.37400304136141,
+   "va_on": 1,
+   "va_effect": 0.06,
+   "vas": 0.564,
+   "va_new": 0.43600000000000005,
+   "va_age": 0.9,
+   "mort659": 0.0068,
+   "va_dose": 0.5,
+   "va_years": 1,
+   "va_pre": 16.00992,
+   "diarr_tot": 205.50000000000003,
+   "ors_share": 0.27919222891173434,
+   "va_diarr": 0.4,
+   "overlap": 0.11167689156469374,
+   "va_d": 14.221981900200579,
+   "dw_on": 1,
+   "dw_age_share": 0.8,
+   "dw_cov": 0.46,
+   "dw_new": 0.54,
+   "dw_itt": 0.109,
+   "dw_cov_t": 0.75,
+   "dw_cov_c": 0.05,
+   "dw_tot": 0.1569361457058527,
+   "dw_repl": 0.13,
+   "dw_sched": 0.9,
+   "dw_years": 2.41,
+   "dw_per_year": 0.007618891720989529,
+   "worm": 0.093,
+   "dw_age": 1.0,
+   "dw_local": 0.0007085569300520262,
+   "dw_wait": 15,
+   "dw_life": 40,
+   "dw_disc": 0.04,
+   "dw_annuity": 20.584484838763533,
+   "dw_waitdisc": 0.5552645027132749,
+   "dw_pv": 11.42983373760498,
+   "dw_fade": 0.9,
+   "dw_hh": 2,
+   "dw_gain": 0.01457763822742043,
+   "dw_units_per": 1.442695,
+   "dw_excl": 1.073,
+   "dw_units": 974.8665379280775,
+   "va_cost": 0.0,
+   "bundle_d": 71.595984941562,
+   "bundle_cost": 3.6,
+   "dw_cost": 0.04,
+   "full_cost": 3.68,
+   "uv": 113,
+   "mshare": 0.9,
+   "excl": 1.011,
+   "vpd": 126.93666666666665,
+   "gov_share": 0.0,
+   "lev": 1,
+   "full_units": 10063.022213126818,
+   "w_full": 0.027345169057409833,
+   "fung": 0.93,
+   "bench": 0.003,
+   "full_x": 8.477002407797048
+  },
+  "Scenario 6: Location: low burden (25th percentile of 45 countries; closest country Uganda)": {
+   "top_full": 3.8075684153078453,
+   "cohort": 100000,
+   "cost": 1.8,
+   "campaigns": 2,
+   "second": 0.8,
+   "mult": 1.8,
+   "cost_y": 3.6,
+   "ors": 0.357,
+   "arm_sw": 1,
+   "arm_d2d": 0.46936,
+   "arm_free": 0.39869,
+   "arm": 0.46936,
+   "iv": 0.8,
+   "ev": 0.85,
+   "eff": 0.3191648,
+   "inc": 20.52229664,
+   "deaths": 56.2,
+   "scaling": 1.0,
+   "rota_gain": 0,
+   "rota_on": 1,
+   "rota_share": 0.352,
+   "rota_eff": 0.46,
+   "rota_adj": 0.81,
+   "rota": 1.0,
+   "direct": 0.562,
+   "indirect": 0.5,
+   "ors_red": 0.5952,
+   "nonuser": 1.070457703841559,
+   "episodes": 1.0,
+   "ors_d": 23.535904897259204,
+   "va_on": 1,
+   "va_effect": 0.06,
+   "vas": 0.564,
+   "va_new": 0.43600000000000005,
+   "va_age": 0.9,
+   "mort659": 0.0021,
+   "va_dose": 0.5,
+   "va_years": 1,
+   "va_pre": 4.944240000000001,
+   "diarr_tot": 84.30000000000001,
+   "ors_share": 0.2791922289117343,
+   "va_diarr": 0.4,
+   "overlap": 0.11167689156469372,
+   "va_d": 4.392082645650179,
+   "dw_on": 1,
+   "dw_age_share": 0.8,
+   "dw_cov": 0.46,
+   "dw_new": 0.54,
+   "dw_itt": 0.109,
+   "dw_cov_t": 0.75,
+   "dw_cov_c": 0.05,
+   "dw_tot": 0.1569361457058527,
+   "dw_repl": 0.13,
+   "dw_sched": 0.9,
+   "dw_years": 2.41,
+   "dw_per_year": 0.007618891720989529,
+   "worm": 0.093,
+   "dw_age": 1.0,
+   "dw_local": 0.0007085569300520262,
+   "dw_wait": 15,
+   "dw_life": 40,
+   "dw_disc": 0.04,
+   "dw_annuity": 20.584484838763533,
+   "dw_waitdisc": 0.5552645027132749,
+   "dw_pv": 11.42983373760498,
+   "dw_fade": 0.9,
+   "dw_hh": 2,
+   "dw_gain": 0.01457763822742043,
+   "dw_units_per": 1.442695,
+   "dw_excl": 1.073,
+   "dw_units": 974.8665379280775,
+   "va_cost": 0.0,
+   "bundle_d": 27.927987542909385,
+   "bundle_cost": 3.6,
+   "dw_cost": 0.04,
+   "full_cost": 3.68,
+   "uv": 113,
+   "mshare": 0.9,
+   "excl": 1.011,
+   "vpd": 126.93666666666665,
+   "gov_share": 0.0,
+   "lev": 1,
+   "full_units": 4519.952183333185,
+   "w_full": 0.012282478759057566,
+   "fung": 0.93,
+   "bench": 0.003,
+   "full_x": 3.8075684153078453
+  },
+  "Check 1": {
+   "top_full": 6.1168645205452234,
+   "cohort": 100000,
+   "cost": 1.785,
+   "campaigns": 1,
+   "mult": 1,
+   "cost_y": 1.785,
+   "ors": 0.44,
+   "eff": 0.27111,
+   "inc": 15.182160000000003,
+   "direct": 1.969,
+   "indirect": 0.5,
+   "ors_red": 0.5952,
+   "nonuser": 4.0014252579554315,
+   "episodes": 1,
+   "ors_d": 36.158565759819645,
+   "uv": 111.8141889,
+   "mshare": 0.8626388986,
+   "excl": 1.011415788,
+   "vpd": 131.09846560294488,
+   "gov_share": 1,
+   "lev": 0.7968584296,
+   "w_full": 0.026556484535101045,
+   "fung": 0.9683267146,
+   "bench": 0.00335,
+   "full_x": 6.1168645205452234
+  },
+  "Check 2": {
+   "top_full": 12.218698523191248,
+   "cohort": 100000,
+   "cost": 1.907,
+   "campaigns": 1,
+   "mult": 1,
+   "cost_y": 1.907,
+   "ors": 0.419,
+   "eff": 0.27111,
+   "inc": 15.751491000000001,
+   "direct": 3.953,
+   "indirect": 0.5,
+   "ors_red": 0.5952,
+   "nonuser": 7.899562383295106,
+   "episodes": 1,
+   "ors_d": 74.06066801888167,
+   "uv": 112.6596725,
+   "mshare": 0.8955988883,
+   "excl": 1.011415788,
+   "vpd": 127.22857623650921,
+   "gov_share": 1,
+   "lev": 0.8857381345,
+   "w_full": 0.049410767420907636,
+   "fung": 0.9352825124,
+   "bench": 0.00335,
+   "full_x": 12.218698523191248
+  }
+ },
+ "places": {
+  "AGO": {
+   "name": "Angola",
+   "inputs": {
+    "ors": 0.387,
+    "deaths": 136.98,
+    "vas": 0.275,
+    "mort659": 0.004386,
+    "rota_gain": 0.0,
+    "dw_cov": 0.46,
+    "worm": 0.1975
+   },
+   "notes": [
+    "No DHS deworming figure, median used (46%)."
+   ]
+  },
+  "BEN": {
+   "name": "Benin",
+   "inputs": {
+    "ors": 0.148,
+    "deaths": 134.22,
+    "vas": 0.522,
+    "mort659": 0.007832,
+    "rota_gain": 0.0,
+    "dw_cov": 0.383,
+    "worm": 0.093
+   },
+   "notes": [
+    "Vitamin A coverage from a 2018 survey.",
+    "Deworming coverage from a 2017-18 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "BWA": {
+   "name": "Botswana",
+   "inputs": {
+    "ors": 0.429,
+    "deaths": 47.08,
+    "vas": 0.0,
+    "mort659": 0.000313,
+    "rota_gain": 0.0,
+    "dw_cov": 0.46,
+    "worm": 0.093
+   },
+   "notes": [
+    "ORS use from a 2007 survey.",
+    "Vitamin A coverage from 2022 admin data (no survey figure), which often reads higher than surveys; here it reports 0%.",
+    "UN IGME infant and under-five death rates are close, so almost no deaths at ages 1 to 4 and vitamin A adds very little.",
+    "No DHS deworming figure, median used (46%).",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "BFA": {
+   "name": "Burkina Faso",
+   "inputs": {
+    "ors": 0.342,
+    "deaths": 121.89,
+    "vas": 0.37,
+    "mort659": 0.008273,
+    "rota_gain": 0.0,
+    "dw_cov": 0.128,
+    "worm": 0.093
+   },
+   "notes": [
+    "Deworming coverage from a 2010 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "BDI": {
+   "name": "Burundi",
+   "inputs": {
+    "ors": 0.356,
+    "deaths": 62.52,
+    "vas": 0.687,
+    "mort659": 0.004298,
+    "rota_gain": 0.0,
+    "dw_cov": 0.676,
+    "worm": 0.1259
+   },
+   "notes": [
+    "ORS use from a 2017 survey.",
+    "Vitamin A coverage from a 2017 survey.",
+    "Deworming coverage from a 2016-17 survey."
+   ]
+  },
+  "CMR": {
+   "name": "Cameroon",
+   "inputs": {
+    "ors": 0.179,
+    "deaths": 145.49,
+    "vas": 0.545,
+    "mort659": 0.006467,
+    "rota_gain": 0.0,
+    "dw_cov": 0.533,
+    "worm": 0.0761
+   },
+   "notes": [
+    "ORS use from a 2018 survey.",
+    "Vitamin A coverage from a 2018 survey.",
+    "Deworming coverage from a 2018 survey."
+   ]
+  },
+  "CAF": {
+   "name": "Central African Republic",
+   "inputs": {
+    "ors": 0.234,
+    "deaths": 272.02,
+    "vas": 0.76,
+    "mort659": 0.008311,
+    "rota_gain": 0.0,
+    "dw_cov": 0.46,
+    "worm": 0.093
+   },
+   "notes": [
+    "ORS use from a 2019 survey.",
+    "Vitamin A coverage from 2023 admin data (no survey figure), which often reads higher than surveys.",
+    "No DHS deworming figure, median used (46%).",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "TCD": {
+   "name": "Chad",
+   "inputs": {
+    "ors": 0.174,
+    "deaths": 196.54,
+    "vas": 0.441,
+    "mort659": 0.011041,
+    "rota_gain": 0.25,
+    "dw_cov": 0.266,
+    "worm": 0.1953
+   },
+   "notes": [
+    "ORS use from a 2019 survey.",
+    "Vitamin A coverage from a 2015 survey.",
+    "Rotavirus vaccine introduced in 2025, after the 2024 death rate, so today's coverage (25%) is taken out.",
+    "Deworming coverage from a 2014-15 survey."
+   ]
+  },
+  "COM": {
+   "name": "Comoros",
+   "inputs": {
+    "ors": 0.349,
+    "deaths": 44.38,
+    "vas": 0.485,
+    "mort659": 0.001026,
+    "rota_gain": 0.0,
+    "dw_cov": 0.56,
+    "worm": 0.093
+   },
+   "notes": [
+    "Vitamin A coverage from a 2012 survey.",
+    "UN IGME infant and under-five death rates are close, so almost no deaths at ages 1 to 4 and vitamin A adds very little.",
+    "Deworming coverage from a 2012 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "COG": {
+   "name": "Congo",
+   "inputs": {
+    "ors": 0.269,
+    "deaths": 47.69,
+    "vas": 0.649,
+    "mort659": 0.003131,
+    "rota_gain": 0.0,
+    "dw_cov": 0.767,
+    "worm": 0.093
+   },
+   "notes": [
+    "ORS use from a 2015 survey.",
+    "Vitamin A coverage from a 2012 survey.",
+    "Deworming coverage from a 2011-12 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "CIV": {
+   "name": "Côte d'Ivoire",
+   "inputs": {
+    "ors": 0.173,
+    "deaths": 121.52,
+    "vas": 0.46,
+    "mort659": 0.005183,
+    "rota_gain": 0.0,
+    "dw_cov": 0.367,
+    "worm": 0.0926
+   },
+   "notes": [
+    "Deworming coverage from a 2011-12 survey."
+   ]
+  },
+  "COD": {
+   "name": "Democratic Republic of the Congo",
+   "inputs": {
+    "ors": 0.348,
+    "deaths": 157.7,
+    "vas": 0.525,
+    "mort659": 0.00893,
+    "rota_gain": 0.0,
+    "dw_cov": 0.606,
+    "worm": 0.0998
+   },
+   "notes": [
+    "Deworming coverage from a 2013-14 survey."
+   ]
+  },
+  "GNQ": {
+   "name": "Equatorial Guinea",
+   "inputs": {
+    "ors": 0.404,
+    "deaths": 141.16,
+    "vas": 0.08,
+    "mort659": 0.005389,
+    "rota_gain": 0.0,
+    "dw_cov": 0.46,
+    "worm": 0.093
+   },
+   "notes": [
+    "ORS use from a 2011 survey.",
+    "Vitamin A coverage from 2023 admin data (no survey figure), which often reads higher than surveys.",
+    "No DHS deworming figure, median used (46%).",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "ERI": {
+   "name": "Eritrea",
+   "inputs": {
+    "ors": 0.434,
+    "deaths": 37.39,
+    "vas": 0.78,
+    "mort659": 0.002469,
+    "rota_gain": 0.0,
+    "dw_cov": 0.46,
+    "worm": 0.093
+   },
+   "notes": [
+    "ORS use from a 2010 survey.",
+    "Vitamin A coverage from 2021 admin data (no survey figure), which often reads higher than surveys.",
+    "No DHS deworming figure, median used (46%).",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "SWZ": {
+   "name": "Eswatini",
+   "inputs": {
+    "ors": 0.679,
+    "deaths": 62.91,
+    "vas": 0.805,
+    "mort659": 0.000758,
+    "rota_gain": 0.0,
+    "dw_cov": 0.467,
+    "worm": 0.093
+   },
+   "notes": [
+    "Vitamin A coverage from a 2007 survey.",
+    "UN IGME infant and under-five death rates are close, so almost no deaths at ages 1 to 4 and vitamin A adds very little.",
+    "Deworming coverage from a 2006-07 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "ETH": {
+   "name": "Ethiopia",
+   "inputs": {
+    "ors": 0.257,
+    "deaths": 67.35,
+    "vas": 0.374,
+    "mort659": 0.002603,
+    "rota_gain": 0.0,
+    "dw_cov": 0.127,
+    "worm": 0.0394
+   },
+   "notes": [
+    "Deworming coverage from a 2016 survey."
+   ]
+  },
+  "GAB": {
+   "name": "Gabon",
+   "inputs": {
+    "ors": 0.2,
+    "deaths": 37.0,
+    "vas": 0.195,
+    "mort659": 0.001722,
+    "rota_gain": 0.0,
+    "dw_cov": 0.678,
+    "worm": 0.093
+   },
+   "notes": [
+    "Deworming coverage from a 2019-21 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "GMB": {
+   "name": "Gambia",
+   "inputs": {
+    "ors": 0.443,
+    "deaths": 69.83,
+    "vas": 0.564,
+    "mort659": 0.002519,
+    "rota_gain": 0.0,
+    "dw_cov": 0.394,
+    "worm": 0.093
+   },
+   "notes": [
+    "Deworming coverage from a 2019-20 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "GHA": {
+   "name": "Ghana",
+   "inputs": {
+    "ors": 0.398,
+    "deaths": 60.17,
+    "vas": 0.746,
+    "mort659": 0.002156,
+    "rota_gain": 0.0,
+    "dw_cov": 0.383,
+    "worm": 0.093
+   },
+   "notes": [
+    "Deworming coverage from a 2014 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "GIN": {
+   "name": "Guinea",
+   "inputs": {
+    "ors": 0.549,
+    "deaths": 230.36,
+    "vas": 0.411,
+    "mort659": 0.008709,
+    "rota_gain": 0.0,
+    "dw_cov": 0.374,
+    "worm": 0.093
+   },
+   "notes": [
+    "ORS use from a 2018 survey.",
+    "Vitamin A coverage from a 2018 survey.",
+    "Deworming coverage from a 2018 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "GNB": {
+   "name": "Guinea-Bissau",
+   "inputs": {
+    "ors": 0.3,
+    "deaths": 130.6,
+    "vas": 0.73,
+    "mort659": 0.006659,
+    "rota_gain": 0.0,
+    "dw_cov": 0.46,
+    "worm": 0.0137
+   },
+   "notes": [
+    "ORS use from a 2019 survey.",
+    "Vitamin A coverage from 2023 admin data (no survey figure), which often reads higher than surveys.",
+    "No DHS deworming figure, median used (46%)."
+   ]
+  },
+  "KEN": {
+   "name": "Kenya",
+   "inputs": {
+    "ors": 0.483,
+    "deaths": 56.16,
+    "vas": 0.636,
+    "mort659": 0.001218,
+    "rota_gain": 0.0,
+    "dw_cov": 0.222,
+    "worm": 0.2052
+   },
+   "notes": [
+    "UN IGME infant and under-five death rates are close, so almost no deaths at ages 1 to 4 and vitamin A adds very little.",
+    "Deworming coverage from a 2014 survey."
+   ]
+  },
+  "LSO": {
+   "name": "Lesotho",
+   "inputs": {
+    "ors": 0.355,
+    "deaths": 94.17,
+    "vas": 0.696,
+    "mort659": 0.00096,
+    "rota_gain": 0.0,
+    "dw_cov": 0.222,
+    "worm": 0.093
+   },
+   "notes": [
+    "UN IGME infant and under-five death rates are close, so almost no deaths at ages 1 to 4 and vitamin A adds very little.",
+    "Deworming coverage from a 2014 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "LBR": {
+   "name": "Liberia",
+   "inputs": {
+    "ors": 0.541,
+    "deaths": 139.47,
+    "vas": 0.464,
+    "mort659": 0.006234,
+    "rota_gain": 0.0,
+    "dw_cov": 0.516,
+    "worm": 0.1676
+   },
+   "notes": [
+    "Deworming coverage from a 2019-20 survey."
+   ]
+  },
+  "MDG": {
+   "name": "Madagascar",
+   "inputs": {
+    "ors": 0.196,
+    "deaths": 131.66,
+    "vas": 0.378,
+    "mort659": 0.005116,
+    "rota_gain": 0.0,
+    "dw_cov": 0.488,
+    "worm": 0.2052
+   },
+   "notes": []
+  },
+  "MWI": {
+   "name": "Malawi",
+   "inputs": {
+    "ors": 0.534,
+    "deaths": 70.17,
+    "vas": 0.617,
+    "mort659": 0.002823,
+    "rota_gain": 0.0,
+    "dw_cov": 0.448,
+    "worm": 0.1046
+   },
+   "notes": [
+    "Deworming coverage from a 2015-16 survey."
+   ]
+  },
+  "MLI": {
+   "name": "Mali",
+   "inputs": {
+    "ors": 0.099,
+    "deaths": 168.89,
+    "vas": 0.611,
+    "mort659": 0.006751,
+    "rota_gain": 0.0,
+    "dw_cov": 0.411,
+    "worm": 0.093
+   },
+   "notes": [
+    "Deworming coverage from a 2018 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "MRT": {
+   "name": "Mauritania",
+   "inputs": {
+    "ors": 0.195,
+    "deaths": 54.27,
+    "vas": 0.605,
+    "mort659": 0.00173,
+    "rota_gain": 0.0,
+    "dw_cov": 0.473,
+    "worm": 0.2052
+   },
+   "notes": []
+  },
+  "MOZ": {
+   "name": "Mozambique",
+   "inputs": {
+    "ors": 0.5,
+    "deaths": 135.73,
+    "vas": 0.501,
+    "mort659": 0.004129,
+    "rota_gain": 0.0,
+    "dw_cov": 0.463,
+    "worm": 0.093
+   },
+   "notes": [
+    "Deworming coverage from a 2011 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "NAM": {
+   "name": "Namibia",
+   "inputs": {
+    "ors": 0.716,
+    "deaths": 39.43,
+    "vas": 0.836,
+    "mort659": 0.000793,
+    "rota_gain": 0.0,
+    "dw_cov": 0.43,
+    "worm": 0.093
+   },
+   "notes": [
+    "ORS use from a 2013 survey.",
+    "Vitamin A coverage from a 2013 survey.",
+    "UN IGME infant and under-five death rates are close, so almost no deaths at ages 1 to 4 and vitamin A adds very little.",
+    "Deworming coverage from a 2013 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "NER": {
+   "name": "Niger",
+   "inputs": {
+    "ors": 0.412,
+    "deaths": 226.33,
+    "vas": 0.596,
+    "mort659": 0.012291,
+    "rota_gain": 0.0,
+    "dw_cov": 0.265,
+    "worm": 0.0437
+   },
+   "notes": [
+    "Vitamin A coverage from a 2012 survey.",
+    "Deworming coverage from a 2012 survey."
+   ]
+  },
+  "NGA": {
+   "name": "Nigeria",
+   "inputs": {
+    "ors": 0.466,
+    "deaths": 327.53,
+    "vas": 0.368,
+    "mort659": 0.012565,
+    "rota_gain": 0.0,
+    "dw_cov": 0.253,
+    "worm": 0.1063
+   },
+   "notes": [
+    "Deworming coverage from a 2018 survey."
+   ]
+  },
+  "RWA": {
+   "name": "Rwanda",
+   "inputs": {
+    "ors": 0.359,
+    "deaths": 75.12,
+    "vas": 0.744,
+    "mort659": 0.002163,
+    "rota_gain": 0.0,
+    "dw_cov": 0.815,
+    "worm": 0.0573
+   },
+   "notes": [
+    "Deworming coverage from a 2019-20 survey."
+   ]
+  },
+  "STP": {
+   "name": "Sao Tome and Principe",
+   "inputs": {
+    "ors": 0.416,
+    "deaths": 9.62,
+    "vas": 0.476,
+    "mort659": 0.001109,
+    "rota_gain": 0.0,
+    "dw_cov": 0.544,
+    "worm": 0.093
+   },
+   "notes": [
+    "ORS use from a 2019 survey.",
+    "Vitamin A coverage from a 2009 survey.",
+    "UN IGME infant and under-five death rates are close, so almost no deaths at ages 1 to 4 and vitamin A adds very little.",
+    "Deworming coverage from a 2008-09 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "SEN": {
+   "name": "Senegal",
+   "inputs": {
+    "ors": 0.33,
+    "deaths": 49.96,
+    "vas": 0.218,
+    "mort659": 0.001974,
+    "rota_gain": 0.0,
+    "dw_cov": 0.385,
+    "worm": 0.0502
+   },
+   "notes": [
+    "Deworming coverage from a 2019 survey."
+   ]
+  },
+  "SLE": {
+   "name": "Sierra Leone",
+   "inputs": {
+    "ors": 0.853,
+    "deaths": 109.73,
+    "vas": 0.694,
+    "mort659": 0.009633,
+    "rota_gain": 0.0,
+    "dw_cov": 0.644,
+    "worm": 0.093
+   },
+   "notes": [
+    "ORS use from a 2019 survey.",
+    "Vitamin A coverage from a 2019 survey.",
+    "Deworming coverage from a 2019 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "SOM": {
+   "name": "Somalia",
+   "inputs": {
+    "ors": 0.164,
+    "deaths": 297.33,
+    "vas": 0.14,
+    "mort659": 0.00968,
+    "rota_gain": 0.23,
+    "dw_cov": 0.46,
+    "worm": 0.093
+   },
+   "notes": [
+    "ORS use from a 2006 survey.",
+    "Vitamin A coverage from 2023 admin data (no survey figure), which often reads higher than surveys.",
+    "Rotavirus vaccine introduced in 2025, after the 2024 death rate, so today's coverage (23%) is taken out.",
+    "No DHS deworming figure, median used (46%).",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "ZAF": {
+   "name": "South Africa",
+   "inputs": {
+    "ors": 0.514,
+    "deaths": 70.36,
+    "vas": 0.723,
+    "mort659": 0.002792,
+    "rota_gain": 0.0,
+    "dw_cov": 0.625,
+    "worm": 0.093
+   },
+   "notes": [
+    "ORS use from a 2016 survey.",
+    "Vitamin A coverage from a 2016 survey.",
+    "Deworming coverage from a 2016 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "SSD": {
+   "name": "South Sudan",
+   "inputs": {
+    "ors": 0.57,
+    "deaths": 126.26,
+    "vas": 0.79,
+    "mort659": 0.00676,
+    "rota_gain": 0.22,
+    "dw_cov": 0.46,
+    "worm": 0.093
+   },
+   "notes": [
+    "Vitamin A coverage from 2023 admin data (no survey figure), which often reads higher than surveys.",
+    "Rotavirus vaccine introduced in 2025, after the 2024 death rate, so today's coverage (22%) is taken out.",
+    "No DHS deworming figure, median used (46%).",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "SDN": {
+   "name": "Sudan",
+   "inputs": {
+    "ors": 0.196,
+    "deaths": 100.01,
+    "vas": 0.09,
+    "mort659": 0.004918,
+    "rota_gain": 0.0,
+    "dw_cov": 0.46,
+    "worm": 0.0755
+   },
+   "notes": [
+    "ORS use from a 2014 survey.",
+    "Vitamin A coverage from 2023 admin data (no survey figure), which often reads higher than surveys.",
+    "No DHS deworming figure, median used (46%)."
+   ]
+  },
+  "TGO": {
+   "name": "Togo",
+   "inputs": {
+    "ors": 0.136,
+    "deaths": 97.29,
+    "vas": 0.817,
+    "mort659": 0.005564,
+    "rota_gain": 0.0,
+    "dw_cov": 0.479,
+    "worm": 0.093
+   },
+   "notes": [
+    "ORS use from a 2017 survey.",
+    "Vitamin A coverage from a 2014 survey.",
+    "Deworming coverage from a 2013-14 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "UGA": {
+   "name": "Uganda",
+   "inputs": {
+    "ors": 0.357,
+    "deaths": 52.67,
+    "vas": 0.616,
+    "mort659": 0.003327,
+    "rota_gain": 0.0,
+    "dw_cov": 0.607,
+    "worm": 0.009
+   },
+   "notes": [
+    "Vitamin A coverage from a 2016 survey.",
+    "Deworming coverage from a 2016 survey."
+   ]
+  },
+  "TZA": {
+   "name": "United Republic of Tanzania",
+   "inputs": {
+    "ors": 0.391,
+    "deaths": 40.44,
+    "vas": 0.533,
+    "mort659": 0.00214,
+    "rota_gain": 0.0,
+    "dw_cov": 0.376,
+    "worm": 0.0694
+   },
+   "notes": [
+    "Deworming coverage from a 2015-16 survey."
+   ]
+  },
+  "ZMB": {
+   "name": "Zambia",
+   "inputs": {
+    "ors": 0.611,
+    "deaths": 78.63,
+    "vas": 0.714,
+    "mort659": 0.003581,
+    "rota_gain": 0.0,
+    "dw_cov": 0.638,
+    "worm": 0.093
+   },
+   "notes": [
+    "Deworming coverage from a 2018 survey.",
+    "No GiveWell worm burden figure, median used (9.3%)."
+   ]
+  },
+  "ZWE": {
+   "name": "Zimbabwe",
+   "inputs": {
+    "ors": 0.343,
+    "deaths": 102.57,
+    "vas": 0.674,
+    "mort659": 0.000594,
+    "rota_gain": 0.0,
+    "dw_cov": 0.18,
+    "worm": 0.103
+   },
+   "notes": [
+    "Vitamin A coverage from a 2015 survey.",
+    "UN IGME infant and under-five death rates are close, so almost no deaths at ages 1 to 4 and vitamin A adds very little.",
+    "Deworming coverage from a 2015 survey."
+   ]
+  }
+ }
+}
