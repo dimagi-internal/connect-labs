@@ -24,15 +24,6 @@ MARKETPLACE_MENU = Menu(
             ),
         ),
         Group(
-            "Targeting",
-            (
-                # Deep dives (Malaria PMC today, more per programme area later) are
-                # reached from the Targeting page, not listed here; Targeting stays lit
-                # on them because their URLs sit under its own.
-                Item("Targeting", "targeting:index"),
-            ),
-        ),
-        Group(
             "Solicitations",
             (
                 # One page for every call: cards or a table, open and past. A round's own
@@ -63,6 +54,11 @@ MARKETPLACE_MENU = Menu(
                 # cost. Its counterpart, Targeting CEA (the Malaria PMC explorer), projects what
                 # spend would buy before delivery and is reached from the Targeting page.
                 Item("Implementation CEA", "pulse:cea"),
+                # Targeting sits here, not in a group of its own (Jonathan, 2026-11-10): it is
+                # the before-delivery side of the same question. Deep dives (Malaria PMC today)
+                # are reached from the Targeting page; it stays lit on them because their URLs
+                # sit under its own.
+                Item("Targeting CEA", "targeting:index"),
                 Item("Cost data", "pulse:costs"),
                 Item("Donor reports", "pulse:report_list"),
             ),
