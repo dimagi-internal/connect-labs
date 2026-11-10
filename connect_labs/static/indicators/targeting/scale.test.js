@@ -347,8 +347,12 @@ describe('the line above the totals', () => {
       state: { get: () => pageState },
     };
     const fs = require('fs');
+    // Indirect eval, so the file runs in the global scope as it does on the
+    // page. A direct eval sees this function's own `S` parameter, which hid a
+    // missing `var S = state.get()` in renderTotalsScope: every real load threw
+    // "S is not defined" and left the totals tiles blank.
     // eslint-disable-next-line no-eval
-    eval(fs.readFileSync(new URL('./table.js', import.meta.url), 'utf8'));
+    (0, eval)(fs.readFileSync(new URL('./table.js', import.meta.url), 'utf8'));
     return globalThis.window.Targeting.table.renderTotalsScope;
   }
   function render(S, data) {

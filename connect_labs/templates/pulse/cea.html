@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load humanize %}
-{% block title %}Cost-effectiveness ranking · Pulse{% endblock %}
+{% block title %}Implementation cost-effectiveness · Pulse{% endblock %}
 
 {% block css %}
 {{ block.super }}
@@ -9,6 +9,7 @@
   .cea { --ink:#1f2433; --muted:#6b7280; --faint:#9ca3af; --rule:#e5e7eb; --card:#fff; --bg:#f5f5f4;
          --chc:#2563eb; --mbw:#c2410c; --kc:#0f766e; --none:#a8a29e; --bar:#7c3aed; --good:#15803d; --low:#b91c1c;
          color:var(--ink); max-width:1280px; margin:0 auto; padding:28px 16px 64px; }
+  .cea .kicker { font-size:11px; text-transform:uppercase; letter-spacing:.07em; font-weight:600; color:var(--chc); margin:0 0 4px; }
   .cea h1 { font-size:26px; font-weight:600; letter-spacing:-.01em; margin:0; }
   .cea .lede { color:var(--muted); font-size:14px; max-width:860px; margin:6px 0 22px; line-height:1.5; }
   .cea .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:22px; }
@@ -24,7 +25,7 @@
   .cea .sw { width:11px; height:11px; border-radius:3px; display:inline-block; }
   .cea input[type=search] { border:1px solid var(--rule); border-radius:6px; padding:5px 9px; font-size:13px; min-width:220px; }
   .cea .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
-  @media (max-width: 900px) { .cea .grid2 { grid-template-columns:1fr; } }
+  @media (max-width: 900px) { .cea .grid2 { grid-template-columns:minmax(0,1fr); } }
   .cea svg text { font-family:inherit; }
   .cea .axis text { fill:var(--muted); font-size:11px; }
   .cea .axis line, .cea .axis path { stroke:var(--rule); }
@@ -52,6 +53,46 @@
   .cea table.wi-models th { position:static; cursor:default; }
   .cea table.wi-models td input { width:90px; }
   .cea .btn { font-size:13px; padding:5px 11px; border:1px solid #d1d5db; border-radius:6px; background:#fff; text-decoration:none; color:var(--ink); }
+  .cea .rk, .cea .sort-sm { display:none; }
+  .cea .tip a { color:#c7d2fe; }
+  @media (hover: none) { .cea .tip { pointer-events:auto; } }
+  /* A phone: one column, the what-if inputs and the table as stacked blocks (not wider than the screen),
+     charts sized to the card. */
+  @media (max-width: 700px) {
+    .cea { padding:18px 12px 48px; }
+    .cea h1 { font-size:22px; }
+    .cea .tiles { grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; }
+    .cea .tile { padding:10px 12px; } .cea .tile .v { font-size:21px; }
+    .cea .card { padding:14px 12px; }
+    .cea input[type=search], .cea #controls select { min-width:0; width:100%; }
+    .cea #map { height:320px; }
+    .cea #rank-wrap { max-height:70vh; }
+    .cea .whatif .wi-top label, .cea .whatif .wi-top select { width:100%; box-sizing:border-box; }
+    .cea .whatif .wi-top { gap:10px; }
+    .cea table.wi-models, .cea table.wi-models tbody, .cea table.wi-models tr, .cea table.wi-models td { display:block; width:100%; }
+    .cea table.wi-models thead { display:none; }
+    .cea table.wi-models tr { border-top:1px solid var(--rule); padding:8px 0; }
+    .cea table.wi-models td { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:3px 0; border:0; }
+    .cea table.wi-models td[data-l]::before { content:attr(data-l); color:var(--muted); font-size:12px; }
+    .cea table.wi-models td:first-child { font-weight:600; justify-content:flex-start; }
+    .cea .whatif select, .cea #controls select { padding-right:28px; text-overflow:ellipsis; }
+    .cea .sort-sm { display:flex; gap:8px; align-items:center; margin:0 0 10px; font-size:13px; }
+    .cea .sort-sm select { flex:1; min-width:0; border:1px solid var(--rule); border-radius:6px; padding:5px 8px; font-size:13px; background:#fff; }
+    .cea .tbl-wrap { max-height:none; overflow:visible; }
+    .cea #tbl, .cea #tbl tbody, .cea #tbl tr, .cea #tbl td { display:block; width:100%; }
+    .cea #tbl thead { display:none; }
+    .cea #tbl tr { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:2px 14px; padding:12px 0; border-bottom:1px solid var(--rule); }
+    .cea #tbl td { display:flex; justify-content:space-between; gap:8px; border:0; padding:1px 0; text-align:left; min-width:0; overflow-wrap:break-word; }
+    .cea #tbl td[data-l]::before { content:attr(data-l); color:var(--muted); font-size:12px; white-space:nowrap; }
+    .cea #tbl td.c-name { grid-column:1 / -1; display:block; font-size:14px; font-weight:500; padding-bottom:4px; }
+    .cea #tbl td.c-name::before, .cea #tbl td.c-rank, .cea #tbl td.c-baseline_level, .cea #tbl td.c-model_cost_per_person,
+    .cea #tbl td.c-model_x, .cea #tbl td.c-works_per_person { display:none; }
+    .cea #tbl td.c-x { font-size:15px; font-weight:600; }
+    .cea #tbl td.c-status_text { grid-column:1 / -1; justify-content:flex-start; }
+    .cea #tbl td.c-service_name { grid-column:1 / -1; }
+    .cea #tbl .pill { white-space:normal; }
+    .cea .rk { display:inline; color:var(--muted); font-weight:400; }
+  }
 </style>
 {% endblock %}
 
@@ -59,12 +100,15 @@
 <div class="cea">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
     <div>
-      <h1>Cost-effectiveness of every opportunity</h1>
+      <div class="kicker">Implementation CEA · every delivered opportunity, what delivery achieved</div>
+      <h1>Implementation cost-effectiveness</h1>
       <p class="lede">
         Each real Connect opportunity, valued with Connect's own cost-effectiveness models (CHC, MBW, kangaroo care)
         for the country it was delivered in, then <b>re-priced at what it actually cost</b> per person reached.
         Multiples are of GiveWell's benchmark; the dashed line is GiveWell's bar of {{ data.bar_x }}x. Delivery types
         with no model say so. Every figure is a model, counting deaths only, so each multiple is a floor.
+        Deciding where to deploy next? That is <a href="{% url 'targeting:index' %}">Targeting</a>, whose cost-effectiveness
+        (<a href="{% url 'targeting:pmc' %}">Targeting CEA: malaria PMC</a>) projects what spend would buy before anything is delivered.
       </p>
     </div>
     <div style="display:flex;gap:8px">
@@ -151,6 +195,8 @@
   <div class="card">
     <h2>Every opportunity</h2>
     <p class="sub">Click a heading to sort. Modelled opportunities first, by rank.</p>
+    <div class="sort-sm"><label for="sort-sm">Sort by</label><select id="sort-sm"></select>
+      <button type="button" class="btn" id="sort-dir" aria-label="Reverse the sort order">⇅</button></div>
     <div class="tbl-wrap"><table id="tbl"></table></div>
   </div>
 
@@ -215,11 +261,23 @@
   function xfmt(v) { return v == null ? "–" : (v >= 10 ? v.toFixed(0) : v.toFixed(1)) + "x"; }
   function showTip(evt, html) { tip.innerHTML = html; tip.style.display = "block"; moveTip(evt); }
   function moveTip(evt) {
+    var w = tip.offsetWidth || 320, h = tip.offsetHeight || 120;
     var x = evt.clientX + 14, y = evt.clientY + 14;
-    if (x + 330 > window.innerWidth) x = evt.clientX - 334;
+    if (x + w + 8 > window.innerWidth) x = evt.clientX - w - 14;
+    x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
+    if (y + h + 8 > window.innerHeight) y = Math.max(8, evt.clientY - h - 14);
     tip.style.left = x + "px"; tip.style.top = y + "px";
   }
   function hideTip() { tip.style.display = "none"; }
+  // A phone has no hover: a tap shows the tip and stays until the next tap elsewhere.
+  var tipAt = 0, TOUCH = window.matchMedia("(hover: none)").matches;
+  function tapTip(evt, html) { tipAt = Date.now(); showTip(evt, html); }
+  document.addEventListener("click", function (e) { if (Date.now() - tipAt > 300 && !tip.contains(e.target)) hideTip(); });
+  function bindTip(node, r) {
+    node.addEventListener("mousemove", function (e) { showTip(e, rowTip(r)); });
+    node.addEventListener("mouseleave", hideTip);
+    node.addEventListener("click", function (e) { tapTip(e, rowTip(r)); });
+  }
   function rowTip(r) {
     var s = "<b>" + esc(r.name) + "</b><br>" + esc(r.service_name) + " · " + esc(r.country_name) + (r.org_slug ? " · " + esc(r.org_slug) : "");
     s += "<br>Total cost " + usd(r.total_usd) + " · " + num(r.reached) + (r.reach_basis === "busiest_payment_unit" ? " people (estimate)" : " distinct people");
@@ -233,6 +291,7 @@
     } else {
       s += "<br><i>" + esc(r.status_text) + "</i>";
     }
+    if (TOUCH && r.model) s += '<br><a href="/labs/pulse/cea/opp/' + r.id + '/">How this was worked out →</a>';
     return s;
   }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
@@ -267,10 +326,10 @@
   wiRows.innerHTML = Object.keys(D.models).map(function (k) {
     var m = D.models[k];
     return '<tr><td><span class="sw" style="background:' + COL[k] + ';margin-right:6px"></span>' + esc(m.label) + '</td>' +
-      '<td><span class="wi-unit">$<input type="number" min="0" step="0.1" data-k="' + k + '" data-f="extra"></span></td>' +
-      '<td><span class="wi-unit"><input type="number" min="0" max="300" step="5" data-k="' + k + '" data-f="effect">%</span></td>' +
-      '<td><span class="wi-unit"><input type="number" min="1" max="100" step="5" data-k="' + k + '" data-f="reach">%</span></td>' +
-      '<td style="color:#6b7280">' + usd(m.price) + " per " + esc(m.unit) + "</td></tr>";
+      '<td data-l="Extra cost per person"><span class="wi-unit">$<input type="number" min="0" step="0.1" data-k="' + k + '" data-f="extra"></span></td>' +
+      '<td data-l="Effect, % of model"><span class="wi-unit"><input type="number" min="0" max="300" step="5" data-k="' + k + '" data-f="effect">%</span></td>' +
+      '<td data-l="People counted, %"><span class="wi-unit"><input type="number" min="1" max="100" step="5" data-k="' + k + '" data-f="reach">%</span></td>' +
+      '<td data-l="Model price" style="color:#6b7280">' + usd(m.price) + " per " + esc(m.unit) + "</td></tr>";
   }).join("");
   function fillInputs() {
     document.getElementById("wi-basis").value = W.basis;
@@ -375,10 +434,13 @@
     var svg = document.getElementById("rank");
     svg.innerHTML = "";
     var m = rows.filter(function (r) { return r.status === "modelled"; });
-    var W = Math.max(svg.parentNode.clientWidth, 520), L = Math.min(330, W * 0.38), R = 70, T = 26;
+    // On a phone each name gets its own line above its bar, so nothing needs to scroll sideways.
+    var narrow = svg.parentNode.clientWidth < 560;
+    var W = narrow ? Math.max(svg.parentNode.clientWidth, 240) : Math.max(svg.parentNode.clientWidth, 520);
+    var L = narrow ? 14 : Math.min(330, W * 0.38), R = narrow ? 8 : 70, T = 26, LH = narrow ? 16 : 0;
     var maxSpend = Math.max.apply(null, m.map(function (r) { return r.total_usd; }).concat([1]));
     var hOf = function (r) { return 6 + 14 * Math.sqrt(r.total_usd / maxSpend); };
-    var gap = 6, y = T, ys = m.map(function (r) { var h = hOf(r), yy = y; y += h + gap; return [yy, h]; });
+    var gap = narrow ? 8 : 6, y = T, ys = m.map(function (r) { var h = hOf(r), yy = y; y += LH + h + gap; return [yy, h]; });
     var H = Math.max(y + 10, 80);
     svg.setAttribute("width", W); svg.setAttribute("height", H);
     if (!m.length) { el("text", { x: 12, y: 40, fill: "#6b7280", "font-size": 13 }, svg).textContent = "No modelled opportunities match."; return; }
@@ -393,18 +455,20 @@
     el("line", { x1: sx(BAR), x2: sx(BAR), y1: T - 6, y2: H - 4, stroke: "#7c3aed", "stroke-dasharray": "4 3", "stroke-width": 1.5 }, svg);
     el("text", { x: sx(BAR) + 4, y: H - 8, fill: "#7c3aed", "font-size": 11 }, svg).textContent = "GiveWell bar " + BAR + "x";
     m.forEach(function (r, i) {
-      var yy = ys[i][0], h = ys[i][1], cy = yy + h / 2;
+      var top = ys[i][0], h = ys[i][1], yy = top + LH, cy = yy + h / 2;
       var g = el("g", { style: "cursor:default" }, svg);
       var label = r.rank + ". " + r.name;
-      var t = el("text", { x: L - 8, y: cy + 4, "text-anchor": "end", "font-size": 12, fill: "#1f2433" }, g);
-      t.textContent = label.length > 46 ? label.slice(0, 45) + "…" : label;
+      var maxc = narrow ? Math.max(12, Math.floor((W - 96) / 6.3)) : 46;
+      var t = el("text", narrow ? { x: L, y: top + 11, "font-size": 12, fill: "#1f2433" }
+                                : { x: L - 8, y: cy + 4, "text-anchor": "end", "font-size": 12, fill: "#1f2433" }, g);
+      t.textContent = label.length > maxc ? label.slice(0, maxc - 1) + "…" : label;
       el("rect", { x: L, y: yy, width: Math.max(1, sx(r.x) - L), height: h, rx: 2, fill: COL[r.model], opacity: r.clears_bar ? 0.95 : 0.55 }, g);
       el("line", { x1: sx(r.model_x), x2: sx(r.model_x), y1: yy - 2, y2: yy + h + 2, stroke: "#111827", "stroke-width": 1.5 }, g);
-      el("text", { x: Math.min(sx(r.x), W - R) + 5, y: cy + 4, "font-size": 11, fill: "#6b7280" }, g).textContent =
-        xfmt(r.x) + " · " + r.country + " · " + usd(r.total_usd);
-      el("rect", { x: 0, y: yy - gap / 2, width: W, height: h + gap, fill: "transparent" }, g);
-      g.addEventListener("mousemove", function (e) { showTip(e, rowTip(r)); });
-      g.addEventListener("mouseleave", hideTip);
+      var val = el("text", narrow ? { x: W - R, y: top + 11, "text-anchor": "end", "font-size": 11, fill: "#6b7280" }
+                                  : { x: Math.min(sx(r.x), W - R) + 5, y: cy + 4, "font-size": 11, fill: "#6b7280" }, g);
+      val.textContent = narrow ? xfmt(r.x) + " · " + usd(r.total_usd) : xfmt(r.x) + " · " + r.country + " · " + usd(r.total_usd);
+      el("rect", { x: 0, y: top - gap / 2, width: W, height: LH + h + gap, fill: "transparent" }, g);
+      bindTip(g, r);
     });
   }
 
@@ -413,7 +477,7 @@
     var svg = document.getElementById("scatter");
     svg.innerHTML = "";
     var m = rows.filter(function (r) { return r.status === "modelled"; });
-    var W = Math.max(svg.parentNode.clientWidth - 4, 320), H = 400, L = 46, R = 14, T = 12, B = 40;
+    var W = Math.max(svg.parentNode.clientWidth - 4, 240), H = 400, L = 46, R = 14, T = 12, B = 40;
     svg.setAttribute("width", W); svg.setAttribute("height", H);
     if (!m.length) return;
     var ratios = m.map(function (r) { return r.cost_per_person / r.model_cost_per_person; });
@@ -439,8 +503,7 @@
     m.slice().sort(function (a, b) { return b.total_usd - a.total_usd; }).forEach(function (r) {
       var c = el("circle", { cx: sx(r.cost_per_person / r.model_cost_per_person), cy: sy(r.x), r: 3 + 18 * Math.sqrt(r.total_usd / maxSpend),
         fill: COL[r.model], "fill-opacity": 0.55, stroke: COL[r.model], "stroke-width": 1 }, svg);
-      c.addEventListener("mousemove", function (e) { showTip(e, rowTip(r)); });
-      c.addEventListener("mouseleave", hideTip);
+      bindTip(c, r);
     });
   }
 
@@ -510,6 +573,16 @@
      "Approved work per person: how far people got through a longitudinal programme"],
     ["service_name", "Delivery type"], ["country_name", "Country"],
   ];
+  // On a phone the header row is hidden (the rows are cards), so sorting comes from this control.
+  var sortSel = document.getElementById("sort-sm");
+  sortSel.innerHTML = '<option value="">Rank</option>' + COLS.filter(function (c) { return ["rank", "status_text", "baseline_level"].indexOf(c[0]) < 0; })
+    .map(function (c) { return '<option value="' + c[0] + '">' + esc(c[1]) + "</option>"; }).join("");
+  sortSel.addEventListener("change", function () {
+    sortKey = sortSel.value || null;
+    sortDir = (sortKey === "name" || sortKey === "country_name") ? 1 : -1;
+    table(current);
+  });
+  document.getElementById("sort-dir").addEventListener("click", function () { sortDir = -sortDir; table(current); });
   function table(rows) {
     var t = document.getElementById("tbl");
     var list = rows.slice();
@@ -528,14 +601,15 @@
           var cls = r.status === "modelled" ? (r.clears_bar ? "ok" : "lo") : "";
           s = '<span class="pill ' + cls + '">' + esc(r.status === "modelled" ? (r.clears_bar ? "Clears bar" : "Below bar") : v) + "</span>";
         } else if (c[0] === "name") {
-          s = '<a href="/labs/pulse/opp/' + r.id + '/">' + esc(v) + '</a><div style="color:#9ca3af;font-size:11px">' + esc(r.org_slug || "") + (r.active ? " · active" : "") + "</div>";
+          s = (r.rank ? '<span class="rk">#' + r.rank + " </span>" : "") + '<a href="/labs/pulse/opp/' + r.id + '/">' + esc(v) + '</a><div style="color:#9ca3af;font-size:11px">' + esc(r.org_slug || "") + (r.active ? " · active" : "") + "</div>";
         } else if (c[0] === "service_name" && r.model) {
           s = '<span class="sw" style="background:' + COL[r.model] + ';margin-right:5px"></span>' + esc(v);
         } else s = c[3] ? c[3](v, r) : esc(v == null ? "–" : v);
-        return '<td class="' + (c[2] || "") + '">' + s + "</td>";
+        return '<td class="c-' + c[0] + " " + (c[2] || "") + '" data-l="' + esc(c[1]) + '">' + s + "</td>";
       }).join("") + "</tr>";
     }).join("") + "</tbody>";
     t.innerHTML = h;
+    sortSel.value = sortKey || "";
     t.querySelectorAll("th").forEach(function (th) {
       th.addEventListener("click", function () {
         var k = th.dataset.k;
@@ -567,7 +641,8 @@
     if (!window.mapboxgl || !window.MAPBOX_TOKEN) { box.innerHTML = '<p style="padding:16px;color:#6b7280;font-size:13px">Map unavailable here (no map token).</p>'; return; }
     try {
       mapboxgl.accessToken = window.MAPBOX_TOKEN;
-      map = new mapboxgl.Map({ container: box, style: "mapbox://styles/mapbox/light-v11", center: [15, 3], zoom: 2.4 });
+      map = new mapboxgl.Map({ container: box, style: "mapbox://styles/mapbox/light-v11", center: [15, 3], zoom: 2.4,
+        cooperativeGestures: window.matchMedia("(max-width: 700px)").matches });
     } catch (e) { box.innerHTML = '<p style="padding:16px;color:#6b7280;font-size:13px">Map unavailable in this browser.</p>'; return; }
     map.on("load", function () {
       map.addSource("opps", { type: "geojson", data: geo(current) });
@@ -580,6 +655,10 @@
         if (r) showTip(e.originalEvent, rowTip(r));
       });
       map.on("mouseleave", "opps", function () { map.getCanvas().style.cursor = ""; hideTip(); });
+      map.on("click", "opps", function (e) {
+        var id = e.features[0].properties.id, r = current.find(function (x) { return x.id === id; });
+        if (r) tapTip(e.originalEvent, rowTip(r));
+      });
       mapReady = true;
       fit();
     });

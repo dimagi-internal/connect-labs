@@ -49,7 +49,7 @@ def test_headings_are_the_agreed_ones():
         ("solicitations:public_list", "Calls for partners"),
         ("pulse:index", "Live delivery"),
         ("pulse:network", "Network growth"),
-        ("pulse:cea", "Cost-effectiveness ranking"),
+        ("pulse:cea", "Implementation CEA"),
         ("pulse:costs", "Cost data"),
         ("supply_chain:market", "Supplier marketplace"),
     ],
