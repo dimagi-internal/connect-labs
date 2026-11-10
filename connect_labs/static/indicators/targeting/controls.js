@@ -223,7 +223,7 @@
             m.unavailable
               .slice(0, 4)
               .map(function (c) {
-                return c;
+                return c && c.name ? c.name : c && c.iso ? c.iso : String(c);
               })
               .join(', ') +
             '.'
