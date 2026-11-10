@@ -75,7 +75,7 @@
     <h2><span class="step">1</span>Where it was delivered</h2>
     <p class="sub">Each approved visit's GPS, placed in the most local area Labs holds baseline figures for (a district where loaded, else the state or province). An area's share is its share of approved visits.
       {% if d.placement.visits %}{{ d.placement.visits|intcomma }} approved visits with GPS{% if d.placement.unplaced %}; {{ d.placement.unplaced|intcomma }} fell outside every area{% endif %}.{% elif d.placed_at %}No approved visit carries GPS, so it is valued at {{ row.country_name }}'s figures.{% else %}Visits have not been placed yet (that runs every six hours), so for now it is valued at {{ row.country_name }}'s figures.{% endif %}
-      {% if d.placed_at %}<span class="muted">Placed {{ d.placed_at|slice:":16"|cut:"T"|default:"" }} UTC.</span>{% endif %}</p>
+      {% if d.placed_at %}<span class="muted">Placed {{ d.placed_at|slice:":10" }} at {{ d.placed_at|slice:"11:16" }} UTC.</span>{% endif %}</p>
     <div class="wrap"><table>
       <thead><tr><th>Area</th><th>Level</th><th class="n">Visits</th><th class="n">Share</th><th class="n">Model multiple there</th><th class="n">Deaths averted per 100,000</th></tr></thead>
       <tbody>{% for a in r.areas %}
@@ -147,8 +147,8 @@
       Model multiple, visit-weighted across the areas: <b>{{ r.model_x|floatformat:2 }}x</b><br>
       &times; model price ${{ r.model_cost_per_person|floatformat:2 }} &divide; actual ${{ r.cost_per_person|floatformat:2 }}
       = <b>{{ r.x|floatformat:1 }}x</b> at actual cost, {% if r.clears_bar %}above{% else %}below{% endif %} GiveWell's bar of {{ d.bar_x }}x<br>
-      Deaths averted: {{ row.reached|intcomma }} people &times; {{ r.model_deaths_per_100k|floatformat:1 }} per 100,000 = <b>{{ r.deaths_averted|floatformat:1 }}</b>
-      {% if r.cost_per_death %}, ${{ r.cost_per_death|floatformat:0|intcomma }} per death averted{% endif %}
+      Deaths averted: {{ row.reached|intcomma }} people &times; {{ r.model_deaths_per_100k|floatformat:1 }} per 100,000 = <b>{{ r.deaths_averted|floatformat:1 }}</b>{% if r.cost_per_death %},
+      ${{ r.cost_per_death|floatformat:0|intcomma }} per death averted{% endif %}
     </div>
     {% else %}
     <p class="muted">{{ row.status_text }}: no multiple at actual cost.</p>
