@@ -43,6 +43,8 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
+from connect_labs.impact import valuation
+
 #: The intervention codes this module can value. One today; the shape is the one a
 #: second effect model (a precomputed transmission-model response curve) would
 #: slot into.
@@ -64,15 +66,18 @@ INTERNAL_VALIDITY = Parameter(0.80, "GiveWell ORS/zinc CEA (Aug 2023), CHAI Bauc
 EXTERNAL_VALIDITY = Parameter(0.85, "GiveWell ORS/zinc CEA (Aug 2023), CHAI Bauchi: external validity")
 INDIRECT_MULTIPLIER = Parameter(1.5, "GiveWell: 0.5 indirect deaths per direct diarrhoea death")
 ORS_MORTALITY_EFFECT = Parameter(0.595, "GiveWell: ORS reduces diarrhoea mortality by 59.5% among users")
-MORAL_WEIGHT = Parameter(113.0, "GiveWell moral weight, under-5 death averted")
+#: The three valuation numbers below are the Connect models' own (``impact/valuation.py``), so the
+#: ORS and PMC views and the delivered ranking cannot value a death or the bar differently.
+MORAL_WEIGHT = Parameter(valuation.value_per_death(), valuation.VALUE_PER_DEATH_SOURCE)
 MORTALITY_SHARE_OF_BENEFITS = Parameter(0.9, "GiveWell: mortality's share of total benefits")
 EXCLUDED_EFFECTS = Parameter(1.011, "GiveWell: adjustment for excluded effects")
 LEVERAGING = Parameter(1.0, "GiveWell CHAI Bauchi: no government co-financing (generic Nigeria case used 0.797)")
+#: GiveWell's published funging for the CHAI Bauchi grant this chain reproduces. It is not the CHC
+#: model's funging (0.93, ``impact/data/chc.json``): this chain is GiveWell's own grant, pinned to
+#: its published column, and is a different calculation from Connect's campaign model.
 FUNGING = Parameter(0.968, "GiveWell CHAI Bauchi: funging adjustment")
-BENCHMARK_UOV_PER_DOLLAR = Parameter(
-    0.003, "GiveWell cost-effectiveness models page (2026): ~0.003 units of value per $ is 1x"
-)
-BAR = Parameter(6.0, "GiveWell's bar for new grants, as of May 2026")
+BENCHMARK_UOV_PER_DOLLAR = Parameter(valuation.benchmark(), valuation.BENCHMARK_SOURCE)
+BAR = Parameter(valuation.bar(), valuation.BAR_SOURCE)
 
 #: The anchor that turns an area's under-5 mortality into direct diarrhoea
 #: mortality. GiveWell's Bauchi figure, backed out of its 1.3% non-ORS mortality.
