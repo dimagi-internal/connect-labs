@@ -284,6 +284,7 @@
   function renderTotalsScope(data) {
     var el = document.getElementById('tg-totals-scope');
     if (!el) return;
+    var S = state.get();
     var meta = (S.indicatorMeta || {})[S.indicator] || {};
     var c = data.counts || {};
     var partly = data.countries_partly_above || [];

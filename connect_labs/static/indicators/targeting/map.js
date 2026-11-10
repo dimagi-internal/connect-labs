@@ -60,6 +60,8 @@
       projection: 'mercator',
       bounds: AFRICA_BOUNDS,
       fitBoundsOptions: { padding: 20 },
+      // On a phone one finger scrolls the page; two move the map.
+      cooperativeGestures: window.matchMedia('(max-width: 700px)').matches,
     });
     map.addControl(new mapboxgl.NavigationControl(), 'top-right');
     return new Promise(function (resolve) {

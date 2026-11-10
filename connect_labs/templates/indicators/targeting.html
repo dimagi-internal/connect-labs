@@ -6,6 +6,7 @@
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
   <style>
     .tg-map { height: 620px; border-radius: 0.5rem; overflow: hidden; }
+    @media (max-width: 700px) { .tg-map { height: 380px; } }
     .tg-num { font-variant-numeric: tabular-nums; }
     .tg-table-wrap { max-height: 520px; overflow: auto; }
     .tg-table thead th { position: sticky; top: 0; z-index: 1; }
@@ -116,7 +117,7 @@
 <div class="py-6" x-data>
 
   <!-- Controls on the LEFT, where a reader's eye starts and where every other tool of this kind puts them. The map and the table are the answer; the panel is the question, and the question should come first. -->
-  <div class="flex flex-col lg:flex-row gap-6 items-start">
+  <div class="flex flex-col lg:flex-row gap-6 items-stretch lg:items-start">
 
     <aside class="w-full lg:w-[350px] lg:shrink-0 space-y-4">
 
@@ -384,7 +385,7 @@
 
       <div>
         <div id="tg-map" class="tg-map bg-stone-200"></div>
-        <div class="flex items-center gap-4 mt-3 text-xs text-stone-600">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-xs text-stone-600">
           <span class="font-medium" id="tg-legend-title">Under-5 mortality (per 1,000 live births)</span>
           <div class="flex items-center gap-1" id="tg-legend"></div>
           <span class="ml-auto flex items-center gap-1">
