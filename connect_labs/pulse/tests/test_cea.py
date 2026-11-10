@@ -228,7 +228,7 @@ class TestPage:
         _work(40, 2)
         page = client.get(reverse("pulse:cea"))
         assert page.status_code == 200
-        assert b"Cost-effectiveness of every opportunity" in page.content
+        assert b"Implementation cost-effectiveness" in page.content
         data = client.get(reverse("pulse:cea") + "?format=json").json()
         assert data["rows"][0]["id"] == 40
         csv = client.get(reverse("pulse:cea") + "?format=csv").content.decode()

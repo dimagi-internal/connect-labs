@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load humanize %}
-{% block title %}Cost-effectiveness ranking · Pulse{% endblock %}
+{% block title %}Implementation cost-effectiveness · Pulse{% endblock %}
 
 {% block css %}
 {{ block.super }}
@@ -9,6 +9,7 @@
   .cea { --ink:#1f2433; --muted:#6b7280; --faint:#9ca3af; --rule:#e5e7eb; --card:#fff; --bg:#f5f5f4;
          --chc:#2563eb; --mbw:#c2410c; --kc:#0f766e; --none:#a8a29e; --bar:#7c3aed; --good:#15803d; --low:#b91c1c;
          color:var(--ink); max-width:1280px; margin:0 auto; padding:28px 16px 64px; }
+  .cea .kicker { font-size:11px; text-transform:uppercase; letter-spacing:.07em; font-weight:600; color:var(--chc); margin:0 0 4px; }
   .cea h1 { font-size:26px; font-weight:600; letter-spacing:-.01em; margin:0; }
   .cea .lede { color:var(--muted); font-size:14px; max-width:860px; margin:6px 0 22px; line-height:1.5; }
   .cea .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:22px; }
@@ -99,12 +100,15 @@
 <div class="cea">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
     <div>
-      <h1>Cost-effectiveness of every opportunity</h1>
+      <div class="kicker">Implementation CEA · every delivered opportunity, what delivery achieved</div>
+      <h1>Implementation cost-effectiveness</h1>
       <p class="lede">
         Each real Connect opportunity, valued with Connect's own cost-effectiveness models (CHC, MBW, kangaroo care)
         for the country it was delivered in, then <b>re-priced at what it actually cost</b> per person reached.
         Multiples are of GiveWell's benchmark; the dashed line is GiveWell's bar of {{ data.bar_x }}x. Delivery types
         with no model say so. Every figure is a model, counting deaths only, so each multiple is a floor.
+        Deciding where to deploy next? That is <a href="{% url 'targeting:index' %}">Targeting</a>, whose cost-effectiveness
+        (<a href="{% url 'targeting:pmc' %}">Targeting CEA: malaria PMC</a>) projects what spend would buy before anything is delivered.
       </p>
     </div>
     <div style="display:flex;gap:8px">

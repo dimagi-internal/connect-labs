@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load humanize %}
-{% block title %}{{ d.row.name }} · Cost-effectiveness{% endblock %}
+{% block title %}{{ d.row.name }} · Implementation cost-effectiveness{% endblock %}
 
 {% block css %}
 {{ block.super }}
@@ -39,7 +39,7 @@
 
 {% block content %}
 <div class="ceo">
-  <a href="{% url 'pulse:cea' %}">&larr; Cost-effectiveness ranking</a>
+  <a href="{% url 'pulse:cea' %}">&larr; Implementation cost-effectiveness</a>
   <h1>{{ d.row.name }}</h1>
   <div class="meta">
     {{ d.row.org_slug }} · {{ d.row.service_name }} · {{ d.row.country_name }}

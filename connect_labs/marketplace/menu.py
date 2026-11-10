@@ -59,7 +59,10 @@ MARKETPLACE_MENU = Menu(
         Group(
             "Cost-Effectiveness",
             (
-                Item("Cost-effectiveness ranking", "pulse:cea"),
+                # Implementation CEA = what delivered opportunities achieved, priced at what they
+                # cost. Its counterpart, Targeting CEA (the Malaria PMC explorer), projects what
+                # spend would buy before delivery and is reached from the Targeting page.
+                Item("Implementation CEA", "pulse:cea"),
                 Item("Cost data", "pulse:costs"),
                 Item("Donor reports", "pulse:report_list"),
             ),
