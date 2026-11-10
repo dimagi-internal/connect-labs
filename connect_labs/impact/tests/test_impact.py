@@ -232,6 +232,10 @@ class TestPlaces:
         assert [(a.boundary.name, a.visits) for a in p.areas] == [("Kano", 3), ("Lagos", 1)]
         assert p.areas[0].share == pytest.approx(0.75)
         assert (p.visits, p.unplaced) == (5, 1)
+        from connect_labs.pulse.models import PulseScalar
+
+        # The level used is stored with the placement, so a page can say which it was.
+        assert PulseScalar.objects.get(key=places.SCALAR_KEY).value["opps"]["1"]["level"] == 1
 
 
 @pytest.mark.django_db
