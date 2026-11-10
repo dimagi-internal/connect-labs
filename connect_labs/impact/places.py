@@ -125,7 +125,7 @@ def refresh(opps: dict) -> dict:
     value = {
         "computed_at": timezone.now().isoformat(),
         "opps": {
-            str(opp): {"visits": r["visits"], "areas": {str(b): n for b, n in r["areas"].items()}}
+            str(opp): {"visits": r["visits"], "level": r["level"], "areas": {str(b): n for b, n in r["areas"].items()}}
             for opp, r in raw.items()
         },
     }
