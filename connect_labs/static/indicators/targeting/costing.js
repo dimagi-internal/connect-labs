@@ -26,8 +26,7 @@
       presetSel.appendChild(o);
     });
     // A deep dive with its own page: choosing it opens that page.
-    var pmcUrl = presetSel.getAttribute('data-pmc-url');
-    if (pmcUrl) {
+    if (document.getElementById('tg-pmc-link')) {
       var pmc = document.createElement('option');
       pmc.value = PMC;
       pmc.textContent = 'Malaria PMC (opens the PMC explorer)';
@@ -133,7 +132,8 @@
 
     presetSel.onchange = function () {
       if (presetSel.value === PMC) {
-        window.location.href = presetSel.getAttribute('data-pmc-url');
+        // Follow the page's own link to it rather than building a URL here.
+        document.getElementById('tg-pmc-link').click();
         return;
       }
       var S = state.get();

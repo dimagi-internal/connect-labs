@@ -125,11 +125,11 @@
     </div>
     <div class="w-full md:w-[420px] md:ml-auto">
       <label for="tg-preset" class="block text-xs font-semibold tracking-wide uppercase text-stone-500">Intervention</label>
-      <select id="tg-preset" data-pmc-url="{% url 'targeting:pmc' %}"
+      <select id="tg-preset"
               class="w-full mt-1 text-base font-medium border border-stone-300 rounded-md px-3 py-2 bg-white"></select>
       <p class="text-xs text-stone-500 mt-1" data-testid="targeting-deep-dives">
         Malaria PMC has its own page:
-        <a href="{% url 'targeting:pmc' %}" class="text-teal-800 hover:text-teal-900 underline">PMC explorer</a>
+        <a id="tg-pmc-link" href="{% url 'targeting:pmc' %}" class="text-teal-800 hover:text-teal-900 underline">PMC explorer</a>
         <span class="text-stone-400">(simulated deaths averted by state)</span>
       </p>
     </div>
