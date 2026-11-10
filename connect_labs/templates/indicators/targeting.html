@@ -116,6 +116,28 @@
 {% block content %}
 <div class="py-6" x-data>
 
+  <!-- The question starts with the intervention, so it is the first thing on the
+       page. Choosing it sets what the indicator, unit and price below are for;
+       a deep dive with its own page (Malaria PMC) opens that page. -->
+  <div class="mb-6 flex flex-col md:flex-row md:items-end gap-3 md:gap-6">
+    <div class="min-w-0">
+      <h1 class="text-2xl font-semibold text-stone-900">Intervention targeting</h1>
+      <p class="text-sm text-stone-500 mt-1">Where an intervention could go, and what it could absorb.</p>
+    </div>
+    <div class="w-full md:w-[420px] md:ml-auto">
+      <label for="tg-preset" class="block text-xs font-semibold tracking-wide uppercase text-stone-500">Intervention</label>
+      <select id="tg-preset"
+              class="w-full mt-1 text-base font-medium border border-stone-300 rounded-md px-3 py-2 bg-white"></select>
+      <p class="text-xs text-stone-500 mt-1" data-testid="targeting-deep-dives">
+        Malaria PMC has its own page:
+        <a id="tg-pmc-link" href="{% url 'targeting:pmc' %}" class="text-teal-800 hover:text-teal-900 underline">Targeting CEA: PMC explorer</a>
+        <span class="text-stone-400">(simulated deaths averted by state, before delivery)</span>
+        · What delivered opportunities actually achieved:
+        <a href="{% url 'pulse:cea' %}" class="text-teal-800 hover:text-teal-900 underline">Implementation CEA</a>
+      </p>
+    </div>
+  </div>
+
   <!-- Controls on the LEFT, where a reader's eye starts and where every other tool of this kind puts them. The map and the table are the answer; the panel is the question, and the question should come first. -->
   <div class="flex flex-col lg:flex-row gap-6 items-stretch lg:items-start">
 
@@ -298,9 +320,6 @@
                 class="w-full mt-1 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
         <p id="tg-year-note" class="text-[11px] text-stone-500 mt-1"></p>
 
-        <label for="tg-preset" class="block text-xs font-medium text-stone-600 mt-3">Preset</label>
-        <select id="tg-preset"
-                class="w-full mt-1 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
         <div class="grid grid-cols-2 gap-3 mt-3">
           <div>
             <label for="tg-basis" class="block text-xs font-medium text-stone-600">Priced per</label>
@@ -330,14 +349,6 @@
     <div class="flex-1 min-w-0 space-y-4">
 
       <div>
-        <h1 class="text-2xl font-semibold text-stone-900">Intervention targeting</h1>
-        <p class="text-xs text-stone-500 mt-1" data-testid="targeting-deep-dives">
-          Deep dives:
-          <a href="{% url 'targeting:pmc' %}" class="text-teal-800 hover:text-teal-900 underline">Targeting CEA: malaria PMC</a>
-          <span class="text-stone-400">(simulated deaths averted by state, before delivery)</span>
-          · What delivered opportunities actually achieved:
-          <a href="{% url 'pulse:cea' %}" class="text-teal-800 hover:text-teal-900 underline">Implementation CEA</a>
-        </p>
         {% comment %}
           "mortality data for 54" used to sit here on every one of the 52
           indicators, a few centimetres above a method chip reading "43/55

@@ -291,14 +291,16 @@
     var thr =
       data.threshold === null || data.threshold === undefined
         ? ''
-        : ' ' + util.fmt(data.threshold) + (data.unit ? ' ' + data.unit : '');
+        : ' ' +
+          util.fmt(data.threshold) +
+          (data.indicator_unit ? ' ' + data.indicator_unit : '');
     el.innerHTML =
       'Totals for the <b>' +
       util.fmt(c.units) +
       ' ' +
       util.plural(c.units, 'area') +
       '</b> where ' +
-      util.esc(data.label || 'the indicator') +
+      util.esc(data.indicator_label || meta.label || 'the indicator') +
       ' is ' +
       (meta.lower_is_worse ? 'below' : 'above') +
       util.esc(thr) +
