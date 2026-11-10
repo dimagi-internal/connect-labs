@@ -2,7 +2,7 @@
 
    Rank  -- every (state, design) pair among the states picked, by cost per
             under-5 death averted against GiveWell's bar, each state modelled
-            in its own fitted setting (/labs/targeting/api/pmc/rank/, the
+            in its own fitted setting (/labs/cea/targeting/pmc/api/rank/, the
             agent's targeting_pmc_rank);
    Try   -- one custom schedule in one state, a live EMOD run;
    How   -- the older comparison in one illustrative setting, kept folded.

@@ -1232,7 +1232,7 @@ class TestPmcRank:
         assert "ranked" not in got and "by_design" not in got
         assert got["recommendation"]["label"] and got["recommendation"]["keep"]
         # The card opens the explorer at an absolute https address, on the visitor's price.
-        assert got["explorer_url"] == "https://labs.example.org/labs/targeting/pmc/"
+        assert got["explorer_url"] == "https://labs.example.org/labs/cea/targeting/pmc/"
         assert got["costs"]["cost_per_visit"] == 0.58
         from connect_labs.labs import canopy
 

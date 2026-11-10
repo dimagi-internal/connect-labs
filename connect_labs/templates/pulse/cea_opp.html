@@ -38,8 +38,9 @@
 {% endblock %}
 
 {% block content %}
+{% include "components/cea_tabs.html" with active="implementation" %}
 <div class="ceo">
-  <a href="{% url 'pulse:cea' %}">&larr; Implementation cost-effectiveness</a>
+  <a href="{% url 'cea:implementation' %}">&larr; Implementation cost-effectiveness</a>
   <h1>{{ d.row.name }}</h1>
   <div class="meta">
     {{ d.row.org_slug }} · {{ d.row.service_name }} · {{ d.row.country_name }}

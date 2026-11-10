@@ -271,7 +271,7 @@ class TestEndToEnd:
             _work(3, 1.0, f"child-{i}")
         places.refresh({3: "NGA"})
         client.force_login(django_user_model.objects.create_user(username="u", email="u@x.org", password="x"))
-        url = reverse("pulse:cea_opp", args=[3])
+        url = reverse("cea:implementation_opp", args=[3])
         page = client.get(url)
         assert page.status_code == 200
         body = page.content.decode()
@@ -281,4 +281,4 @@ class TestEndToEnd:
         assert data["result"]["areas"][0]["name"] == "Kano"
         assert data["result"]["areas"][0]["inputs"]["ors"]["value"] == pytest.approx(0.20)
         assert any(c["key"] == "full_x" for c in data["result"]["areas"][0]["chain"])
-        assert client.get(reverse("pulse:cea_opp", args=[999])).status_code == 404
+        assert client.get(reverse("cea:implementation_opp", args=[999])).status_code == 404

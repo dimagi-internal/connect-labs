@@ -24,6 +24,14 @@ MARKETPLACE_MENU = Menu(
             ),
         ),
         Group(
+            "Baseline",
+            (
+                # Burden, population and what could be absorbed, with no cost-effectiveness in it:
+                # that is the explorer below.
+                Item("Baseline explorer", "targeting:index"),
+            ),
+        ),
+        Group(
             "Solicitations",
             (
                 # One page for every call: cards or a table, open and past. A round's own
@@ -50,15 +58,10 @@ MARKETPLACE_MENU = Menu(
         Group(
             "Cost-Effectiveness",
             (
-                # Implementation CEA = what delivered opportunities achieved, priced at what they
-                # cost. Its counterpart, Targeting CEA (the Malaria PMC explorer), projects what
-                # spend would buy before delivery and is reached from the Targeting page.
-                Item("Implementation CEA", "pulse:cea"),
-                # Targeting sits here, not in a group of its own (Jonathan, 2026-11-10): it is
-                # the before-delivery side of the same question. Deep dives (Malaria PMC today)
-                # are reached from the Targeting page; it stays lit on them because their URLs
-                # sit under its own.
-                Item("Targeting CEA", "targeting:index"),
+                # ONE explorer with two views on tabs: Implementation (what delivered opportunities
+                # achieved, at what they cost) and Targeting (what spend would buy before delivery:
+                # malaria PMC today). Every page under /labs/cea/ lights this one item.
+                Item("Cost-effectiveness explorer", "cea:implementation", owns=("/labs/cea/",)),
                 Item("Cost data", "pulse:costs"),
                 Item("Donor reports", "pulse:report_list"),
             ),

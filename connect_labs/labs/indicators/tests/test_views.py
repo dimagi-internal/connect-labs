@@ -87,7 +87,7 @@ class TestPage:
     def test_page_renders(self, client_in, africa):
         resp = client_in.get(reverse("targeting:index"))
         assert resp.status_code == 200
-        assert b"Intervention targeting" in resp.content
+        assert b"Baseline explorer" in resp.content
 
 
 class TestSelectionApi:
