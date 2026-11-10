@@ -10,6 +10,21 @@
     .tg-num { font-variant-numeric: tabular-nums; }
     .tg-table-wrap { max-height: 520px; overflow: auto; }
     .tg-table thead th { position: sticky; top: 0; z-index: 1; }
+    /* The table scrolls sideways in its own box. Without these, a narrow screen
+       squeezed Source and Method to ~80px and their names wrapped every row to
+       ~200px tall. Numbers and short cells keep one line; the two text columns
+       get a floor. The empty and error rows (colspan) wrap as prose. */
+    .tg-table td:not([colspan]) { white-space: nowrap; }
+    .tg-table td:nth-child(7):not([colspan]), .tg-table td:nth-child(8):not([colspan]) {
+      white-space: normal; min-width: 13rem; }
+    /* The area's name may wrap (its "whole country" chip with it), and on a phone
+       it stays pinned while the numbers scroll past it. */
+    .tg-table td:first-child:not([colspan]) { white-space: normal; min-width: 8rem; }
+    @media (max-width: 700px) {
+      .tg-table td:first-child:not([colspan]), .tg-table th:first-child {
+        position: sticky; left: 0; background: #fff; max-width: 10rem; }
+      .tg-table th:first-child { background: #fafaf9; z-index: 2; }
+    }
     input[type=range].tg-slider { accent-color: #0f766e; }
 
     /* Read-once explanation lives behind an info dot rather than under every

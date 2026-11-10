@@ -27,7 +27,6 @@ def test_headings_are_the_agreed_ones():
     menu = build(MARKETPLACE_MENU, _req(reverse("marketplace:home")))
     assert [g["label"] for g in menu["groups"]] == [
         "Overview",
-        "Targeting",
         "Solicitations",
         "Network",
         "Cost-Effectiveness",
@@ -44,8 +43,8 @@ def test_headings_are_the_agreed_ones():
     [
         ("marketplace:home", "Programs"),
         ("marketplace:network", "Partners"),
-        ("targeting:index", "Targeting"),
-        ("targeting:pmc", "Targeting"),
+        ("targeting:index", "Targeting CEA"),
+        ("targeting:pmc", "Targeting CEA"),
         ("solicitations:public_list", "Calls for partners"),
         ("pulse:index", "Live delivery"),
         ("pulse:network", "Network growth"),
