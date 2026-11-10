@@ -858,7 +858,7 @@
       "name": "Zimbabwe"
     }
   },
-  "generated": "2026-11-09",
+  "generated": "2026-11-10",
   "models": {
     "chc": {
       "label": "Connect Child Health Campaign",
@@ -879,5 +879,5 @@
       "variant": "breastfeeding support visits"
     }
   },
-  "source": "connect_labs/impact/data (connect-cea-models @ 631a581)"
+  "source": "connect_labs/impact/data (connect-cea-models @ 1557dc1)"
 }
