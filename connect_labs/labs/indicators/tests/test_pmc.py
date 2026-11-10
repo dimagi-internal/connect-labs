@@ -330,7 +330,7 @@ class TestTheAgentTool:
         gives the visitor a link to the explorer showing exactly them."""
         got = targeting.targeting_pmc_schedules(None, states=["Ondo", "Kano"])
         path = got["explorer_path"]
-        assert path.startswith("/labs/targeting/pmc/?")
+        assert path.startswith("/labs/cea/targeting/pmc/?")
         assert "states=Ondo%2CKano" in path or "states=Kano%2COndo" in path
         # Defaults are left out so the link stays readable in a chat panel.
         assert "schedule=" not in path and "cost_per_visit=" not in path
@@ -373,7 +373,7 @@ class TestTheRunControl:
         assert "Run IDM" in body and 'id="pmc-live-run"' in body
         assert reverse("cea:pmc_run") in body
         # The status URL is a template the script fills in with the run id.
-        assert "{id}" in body and "api/pmc/run/" in body
+        assert "{id}" in body and "pmc/api/run/" in body
 
     def test_a_friendly_schedule_is_queued(self, client_in):
         r = self._post(client_in, state="Ondo", schedule=self.SPEC)
