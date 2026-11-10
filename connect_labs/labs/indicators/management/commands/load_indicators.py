@@ -373,6 +373,7 @@ class Command(BaseCommand):
             "stunting",
             "wasting",
             "vitamin_a_coverage",
+            "deworming_coverage",  # the CHC cost-effectiveness model's dw_cov (connect_labs/impact)
             "measles_vaccination",
             "dpt3_vaccination",
             "full_immunisation",
