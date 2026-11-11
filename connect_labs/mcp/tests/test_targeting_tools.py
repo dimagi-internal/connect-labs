@@ -1188,11 +1188,11 @@ class TestPmcLiveValue:
 
         got = targeting._pmc_value("Benue", self.ROW, self.PROJECTION)
 
-        # 20% of 5,000 deaths = 1,000 a year for $1M: $1,000 each; 113 x 1,000 / 1M / 0.003 = 37.7x.
+        # 20% of 5,000 deaths = 1,000 a year for $1M: $1,000 each; 118.05 x 1,000 / 1M / 0.003 = 39.4x.
         assert got == {
             "deaths_averted_per_year": 1000,
             "cost_per_death_averted": 1000,
-            "multiple_of_benchmark": 37.7,
+            "multiple_of_benchmark": 39.4,
             "clears_bar": True,
             "bar": 6.0,
             "deaths_basis": "lower",
