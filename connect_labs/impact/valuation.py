@@ -3,8 +3,8 @@
 Every cost-effectiveness view in Labs turns deaths averted into "a multiple of GiveWell's
 benchmark" with the same few numbers: what a death averted is worth, what 1x is worth per
 dollar, and the bar a grant has to clear. They live here, read from the vendored models
-(``python manage.py impact_vendor`` refreshes them), so the delivered ranking, the PMC
-explorer and the ORS tool cannot value a death differently, and tests fail if the specs
+(``python manage.py impact_vendor`` refreshes them), so the delivered ranking and the PMC
+explorer cannot value a death differently, and tests fail if the specs
 disagree or a value moves without a deliberate change.
 
 A death averted is valued as the Connect CHC model values it (``units_per_death``): the

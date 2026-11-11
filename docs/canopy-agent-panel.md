@@ -12,8 +12,7 @@ $2.50 a visit?" are questions about what is on screen.
 ## The targeting map
 
 Registered as `targeting:index` with the `targeting:read` scope: every
-`targeting_*` read tool, including `targeting_cost_effectiveness` (deaths averted,
-cost per death and the multiple of GiveWell's bar for a round of ORS in one area).
+`targeting_*` read tool.
 Everything the page shows is public open data, so the scope adds no exposure; the
 page state carries only the query parameters that describe the view
 (`PANEL_FILTER_KEYS` in `labs/indicators/views.py`). The panel renders for
@@ -500,7 +499,7 @@ to canopy:
 | `workflow:read`  | `workflow_run_context`, `workflow_run_indicators`, `workflow_indicator_explain`, `workflow_action_status`                            |
 | `workflow:act`   | `workflow_run_action`, `workflow_action_preview_view` (app-only: the coaching View's own preview)                                    |
 | `workflow:edit`  | `workflow_edit_propose`; app-only, for the confirm card: `workflow_edit_review_view`, `workflow_edit_apply`, `workflow_edit_decline` |
-| `targeting:read` | every `targeting_*` read tool, incl. `targeting_cost_effectiveness`                                                                  |
+| `targeting:read` | every `targeting_*` read tool                                                                  |
 
 **Edits, confirmed in chat (`workflow:edit`).** The agent never calls an edit tool
 (`workflow_update_definition`, `workflow_patch_render_code`, `pipeline_update_schema`, the
