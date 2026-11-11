@@ -587,6 +587,19 @@ use the same `labs-jj-postgres`. So answer "which service?" from metrics before 
     '[{"Id":"q","Period":300,"Expression":"SELECT SUM(RequestCount) FROM \"Labs/Requests\" WHERE status_class = '\''5xx'\'' GROUP BY route ORDER BY SUM() DESC LIMIT 5"}]'
   ```
 
+  Then name what raised, from metrics alone (no SSO): a view that catches its own exception
+  and answers 500 counts it as `HandledException` by `route` and `exception` class.
+
+  ```bash
+  aws cloudwatch get-metric-data --profile labs-observe --region us-east-1 \
+    --start-time <page-30m>Z --end-time <page>Z --metric-data-queries \
+    '[{"Id":"q","Period":300,"Expression":"SELECT SUM(HandledException) FROM \"Labs/Requests\" GROUP BY route, exception ORDER BY SUM() DESC LIMIT 5"}]'
+  ```
+
+  Only views that call `emit_handled_exception_metric` report (today `pipeline_rows_api`); no row
+  for a failing route means that route's 500 is not a handled one, so the traceback is in
+  `/ecs/labs-jj-web` and needs the `labs` SSO session.
+
   Every route failing at once points at the shared tier: read the RDS alarm states
   (`aws cloudwatch describe-alarms --profile labs-observe --region us-east-1 --alarm-name-prefix labs-jj-rds`).
   For canopy-web, a page in one or two buckets is usually its own migrating deploy (`gh run list
