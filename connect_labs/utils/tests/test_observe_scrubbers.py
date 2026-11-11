@@ -128,6 +128,9 @@ def test_task_stopped_keeps_only_the_allowed_fields(monkeypatch):
         "kind",
         "time",
         "cluster",
+        "task_id",
+        "started_by",
+        "job_id",
         "group",
         "task_definition",
         "stop_code",
@@ -138,7 +141,51 @@ def test_task_stopped_keeps_only_the_allowed_fields(monkeypatch):
     }
     assert rec["task_definition"] == "labs-jj-web:412"
     assert rec["containers"] == [{"name": "web", "exit_code": 137, "reason": "OutOfMemoryError: Container killed"}]
+    # A one-off's command is a raw snippet: it is not an id, so no job id comes out of it.
+    assert rec["job_id"] is None
     _no_sentinel(rec)
+
+
+def test_task_stopped_names_the_task_and_the_job_it_ran(monkeypatch):
+    """What lets an overran/machine-died page name its job without a raw Logs read."""
+    mod, _ = _load("events_projector", monkeypatch)
+    job = "0b9d6a3e-4c1f-4a52-9a43-5d7f0c2e8b11"
+    ev = {
+        **TASK_STOPPED,
+        "detail": {
+            **TASK_STOPPED["detail"],
+            "taskArn": "arn:aws:ecs:us-east-1:1:task/labs-jj-cluster/46f05cb0317347c5b6a5afabdb3227af",
+            "startedBy": "synthetic-job",
+            "overrides": {
+                "containerOverrides": [
+                    {
+                        "name": "worker",
+                        "command": ["python", "manage.py", "run_synthetic_job", job],
+                        "environment": [{"name": "X", "value": SENTINEL}],
+                    }
+                ]
+            },
+        },
+    }
+    _, rec = mod.project(ev)
+    assert rec["task_id"] == "46f05cb0317347c5b6a5afabdb3227af"
+    assert rec["started_by"] == "synthetic-job"
+    assert rec["job_id"] == job
+    _no_sentinel(rec)
+
+
+def test_task_stopped_job_id_is_only_ever_a_bare_id(monkeypatch):
+    """The command stays out of the group: whatever ends it, only a 36-char id shape passes."""
+    mod, _ = _load("events_projector", monkeypatch)
+    for tail in (SENTINEL, f"x={SENTINEL}", "0b9d6a3e-4c1f-4a52-9a43-5d7f0c2e8b11; DROP", "", "0b9d6a3e" * 5):
+        ev = {
+            **TASK_STOPPED,
+            "detail": {**TASK_STOPPED["detail"], "overrides": {"containerOverrides": [{"command": ["x", tail]}]}},
+        }
+        _, rec = mod.project(ev)
+        assert rec["job_id"] is None, tail
+    ev = {**TASK_STOPPED, "detail": {k: v for k, v in TASK_STOPPED["detail"].items() if k != "overrides"}}
+    assert mod.project(ev)[1]["job_id"] is None
 
 
 def test_api_call_keeps_who_what_error_and_never_parameters(monkeypatch):
