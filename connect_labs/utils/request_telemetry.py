@@ -748,6 +748,33 @@ def emit_heavy_memory_metric(route: str, mem: dict) -> None:
         _emf(METRICS_NAMESPACE, {"route": route}, values, {k: "Kilobytes" for k in values})
 
 
+# Handled exceptions
+# ------------------
+# A view that catches its own exception and answers 500 is invisible to everything
+# but its log line: the route metric says "5xx" and not what raised, and the read-only
+# observe role cannot read log events. So the 2026-11-11 21:45Z page on
+# `labs-jj-alb-target-5xx-high` (84 target 5xx in ten minutes, all on one route, CPU
+# under 50%, memory flat, no deploy) ended on "cause unknown, the logs need SSO".
+# One count per (route, exception class) answers "what is failing" from metrics alone.
+# The class name is bounded by the code, never by input; the message is not recorded.
+HANDLED_EXCEPTION_METRIC = "HandledException"
+
+
+def emit_handled_exception_metric(request, exc: BaseException) -> None:
+    """Count one exception a view caught and turned into an error response."""
+    if not ROUTE_METRICS_ENABLED:
+        return
+    try:
+        _emf(
+            METRICS_NAMESPACE,
+            {"route": route_template(request), "exception": type(exc).__name__[:100]},
+            {HANDLED_EXCEPTION_METRIC: 1},
+            {HANDLED_EXCEPTION_METRIC: "Count"},
+        )
+    except Exception:  # telemetry must never break the call it is measuring
+        logger.debug("handled-exception metric failed", exc_info=True)
+
+
 # Streams
 # -------
 STREAMS_NAMESPACE = "Labs/Streams"

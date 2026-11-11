@@ -3023,8 +3023,11 @@ def pipeline_rows_api(request, definition_id):
         )
     except PipelineRowsError as exc:
         return JsonResponse({"error": exc.message}, status=exc.status)
-    except Exception:
+    except Exception as exc:
         logger.exception("Failed to read pipeline rows for definition %s", definition_id)
+        from connect_labs.utils.request_telemetry import emit_handled_exception_metric
+
+        emit_handled_exception_metric(request, exc)
         return JsonResponse({"error": "An internal error occurred"}, status=500)
     finally:
         for access in pipeline_access_box:

@@ -281,6 +281,7 @@ no `PutMetricData` call, no stack to deploy:
 | Namespace       | Metrics                                                 | Dimensions (exactly these)        |
 | --------------- | ------------------------------------------------------- | --------------------------------- |
 | `Labs/Requests` | `RequestLatency` (Milliseconds), `RequestCount` (Count) | `route`, `method`, `status_class` |
+| `Labs/Requests` | `HandledException` (Count): a view caught its own exception and answered 500 | `route`, `exception` (class name) |
 
 `route` is the URL pattern template (`labs/workflow/<int:workflow_id>/`), never the
 raw path; anything that did not resolve (404s, scanners) is `unmatched`, and a

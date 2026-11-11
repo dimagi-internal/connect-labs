@@ -286,3 +286,29 @@ class TestRequesterConcentration:
         broken = MagicMock()
         type(broken).user = property(lambda self: (_ for _ in ()).throw(RuntimeError("x")))
         requester_concentration.observe(broken, "labs/overview/")
+
+
+class TestHandledExceptionMetric:
+    """A view that swallows its exception into a 500 still says what raised, as a metric
+    the log-blind observe role can read (the 2026-11-11 `labs-jj-alb-target-5xx-high` page)."""
+
+    def test_one_count_per_route_and_exception_class(self, cap):
+        request_telemetry.emit_handled_exception_metric(
+            _req(route="labs/workflow/api/<int:definition_id>/pipeline-rows/"), KeyError("opp 765 secret")
+        )
+        (line,) = cap(EXTRA)
+        assert line["route"] == "labs/workflow/api/<int:definition_id>/pipeline-rows/"
+        assert line["exception"] == "KeyError"
+        assert line["HandledException"] == 1
+        assert line["_aws"]["CloudWatchMetrics"][0]["Dimensions"] == [["route", "exception"]]
+        assert "secret" not in json.dumps(line)  # the message never leaves the process
+
+    def test_kill_switch(self, cap, monkeypatch):
+        monkeypatch.setattr(request_telemetry, "ROUTE_METRICS_ENABLED", False)
+        request_telemetry.emit_handled_exception_metric(_req(), ValueError("x"))
+        assert cap(EXTRA) == []
+
+    def test_never_raises(self):
+        broken = MagicMock()
+        type(broken).resolver_match = property(lambda self: (_ for _ in ()).throw(RuntimeError("x")))
+        request_telemetry.emit_handled_exception_metric(broken, ValueError("x"))
