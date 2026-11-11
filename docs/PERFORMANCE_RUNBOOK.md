@@ -567,6 +567,12 @@ These say a background job failed. The site is usually fine.
   Then search `/ecs/labs-jj-worker` (`labs` SSO) for the line the alarm description quotes; its
   stream `worker/worker/<task id>` shows where the job stalled.
 
+  **Which job, with no SSO:** the `task_stopped` record in `/labs-jj/observe/ecs-events`
+  (`labs-observe`) carries `task_id`, `started_by` and `job_id` for the stop (exit code 124 on the
+  overran one; `started_at` to `stopped_at` is the run time). Feed `job_id` to
+  `synthetic_job_status`. Records written before the observe pipeline was redeployed with
+  this projector have none of the three: `labs-jj-observe-pipeline` is deployed by hand.
+
 ## 10. 5xx and outage pages: name the service first
 
 The ALB fronts four services (labs web, canopy-web, ace-web, Umami), and canopy-web and ace-web

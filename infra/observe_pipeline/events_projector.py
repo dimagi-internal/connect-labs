@@ -2,6 +2,7 @@
 # fields (labs-observe-pipeline.yml). Inlined into the template by render.py.
 import json
 import os
+import re
 import time
 import uuid
 
@@ -26,6 +27,14 @@ def _tail(arn):
     return str(arn or "").rsplit("/", 1)[-1] or None
 
 
+def _job(d):
+    # only a bare id; commands stay out
+    for o in _g(d, "overrides", "containerOverrides") or []:
+        w = str(((o or {}).get("command") or [""])[-1])
+        if re.fullmatch("[0-9a-f-]{36}", w):
+            return w
+
+
 def project(ev):
     """(log group key, record) for one event, or None to drop it."""
     d, src, kind = ev.get("detail") or {}, ev.get("source"), ev.get("detail-type")
@@ -34,6 +43,9 @@ def project(ev):
             "kind": "task_stopped",
             "time": ev.get("time"),
             "cluster": _tail(d.get("clusterArn")),
+            "task_id": _tail(d.get("taskArn")),
+            "started_by": d.get("startedBy"),
+            "job_id": _job(d),
             "group": d.get("group"),
             "task_definition": _tail(d.get("taskDefinitionArn")),
             "stop_code": d.get("stopCode"),
