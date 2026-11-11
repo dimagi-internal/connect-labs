@@ -58,9 +58,12 @@ def test_an_empty_registry_gives_no_deaths():
 
 
 def test_value_against_givewells_benchmark_and_bar():
-    # $37,667 a death is GiveWell's 1x (113 units / 0.003 units per $).
-    v = mortality.value(deaths_averted=10, spend=376_667)
+    # A death averted is worth the CHC model's 118.05 units; 1x is 0.003 units a dollar.
+    from connect_labs.impact import valuation
+
+    one_x = valuation.units_per_death() / valuation.benchmark()  # dollars a death at GiveWell's 1x
+    v = mortality.value(deaths_averted=10, spend=10 * one_x)
     assert v["multiple_of_benchmark"] == pytest.approx(1.0, rel=1e-4)
-    assert v["cost_per_death_averted"] == pytest.approx(37_666.7)
+    assert v["cost_per_death_averted"] == pytest.approx(one_x)
     assert v["clears_bar"] is False
     assert mortality.value(61, 376_667)["clears_bar"] is True

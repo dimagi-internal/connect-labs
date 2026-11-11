@@ -233,7 +233,7 @@
       <dt>Deaths</dt>
       <dd>Two estimates: DHS-scaled and MAP. Every decision uses the lower of the two in each state; both are shown alone.</dd>
       <dt>&times; GiveWell</dt>
-      <dd>An under-5 death averted is worth {{ pmc_fixed.moral_weight }} units of value; GiveWell's 1&times; is {{ pmc_fixed.benchmark }} units a dollar, so its {{ pmc_fixed.bar }}&times; bar is about {{ pmc_fixed.per_death_at_bar }} per death averted. Only deaths are counted, so every multiple is a floor.</dd>
+      <dd>An under-5 death averted is valued as in Connect's CHC model: GiveWell's moral weight of {{ pmc_fixed.moral_weight }} units of value, grossed up for the share of benefit that comes from deaths and for effects not modelled, less funging, which is {{ pmc_fixed.units_per_death }} units. GiveWell's 1&times; is {{ pmc_fixed.benchmark }} units a dollar, so its {{ pmc_fixed.bar }}&times; bar is about {{ pmc_fixed.per_death_at_bar }} per death averted. Only deaths are modelled, and the delivered ranking values a death the same way.</dd>
       <dt>Caveats</dt>
       <dd><ul id="pmc-caveats">{% for c in caveats %}<li>{{ c }}</li>{% endfor %}</ul>
         {% for ref in sweep.references %}<a class="text-indigo-700 hover:underline" href="{{ ref.url }}" target="_blank" rel="noopener">{{ ref.label }}</a> {% endfor %}</dd>
