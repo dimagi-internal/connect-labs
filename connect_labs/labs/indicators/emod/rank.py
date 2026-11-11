@@ -34,8 +34,8 @@ import math
 import os
 from pathlib import Path
 
+from connect_labs.impact.valuation import BAR
 from connect_labs.labs.indicators import pmc
-from connect_labs.labs.indicators.cost_effectiveness import BAR
 from connect_labs.labs.indicators.emod import mortality
 
 GRID_PATH = Path(__file__).resolve().parents[1] / "data" / "pmc_state_grid.json"
@@ -82,17 +82,18 @@ DEATHS_CAVEATS = {
         "under-5 deaths x malaria's national share from MAP, spread by DHS prevalence) and MAP's own modelled deaths "
         "x 76% under five. They disagree by more than threefold in places, so decisions use the figure that "
         "survives either; every figure also shows each estimate alone. Mortality is assumed to fall with "
-        "clinical cases, and only deaths are valued, so every multiple is a floor."
+        "clinical cases, and only deaths are modelled, each valued as in Connect's CHC model."
     ),
     "prevalence_scaled": (
         "Deaths: the state's under-5 deaths x malaria's share of them, set nationally from MAP and spread by DHS "
-        "prevalence. Mortality is assumed to fall with clinical cases, and only deaths are valued (GiveWell's "
-        "moral weight, no income or morbidity benefit, no leverage or funging), so the multiple is a floor."
+        "prevalence. Mortality is assumed to fall with clinical cases, and only deaths are modelled, each valued "
+        "as in Connect's CHC model (GiveWell's moral weight, grossed up for the share of benefit from deaths and "
+        "for effects not modelled, less funging)."
     ),
     "map": (
         "Deaths: MAP's modelled malaria deaths for the state x 76% under five. MAP's state pattern does not track "
-        "DHS prevalence. Mortality is assumed to fall with clinical cases, and only deaths are valued, so the "
-        "multiple is a floor."
+        "DHS prevalence. Mortality is assumed to fall with clinical cases, and only deaths are modelled, each "
+        "valued as in Connect's CHC model."
     ),
 }
 NO_DEATHS = "no under-5 malaria death figure"

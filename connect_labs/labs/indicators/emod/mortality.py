@@ -32,7 +32,8 @@ Pure functions apart from ``registry_burden``; the MCP tool resolves and passes 
 
 from __future__ import annotations
 
-from connect_labs.labs.indicators.cost_effectiveness import BAR, BENCHMARK_UOV_PER_DOLLAR, MORAL_WEIGHT, Parameter
+from connect_labs.impact import valuation
+from connect_labs.impact.valuation import BAR, Parameter
 
 #: The two estimates, and the per-state lower of them that decisions are made on.
 ESTIMATES = ("prevalence_scaled", "map")
@@ -74,8 +75,12 @@ def malaria_u5_deaths(states: dict[str, dict], basis: str = DEFAULT_BASIS) -> di
 
 
 def value(deaths_averted: float, spend: float) -> dict:
-    """Cost per death averted and the multiple of GiveWell's 1x benchmark (deaths only, a floor)."""
-    multiple = MORAL_WEIGHT.value * deaths_averted / spend / BENCHMARK_UOV_PER_DOLLAR.value
+    """Cost per death averted and the multiple of GiveWell's 1x benchmark.
+
+    Only deaths are modelled, and each is valued as Connect's CHC model values one (``impact.valuation``),
+    the same valuation the delivered ranking uses, so the two are comparable.
+    """
+    multiple = valuation.multiple(deaths_averted, spend)
     return {
         "deaths_averted_per_year": deaths_averted,
         "cost_per_death_averted": spend / deaths_averted,

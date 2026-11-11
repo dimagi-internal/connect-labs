@@ -201,8 +201,8 @@ class TestThePage:
         method = body[body.index("How the numbers are made") :]
         assert "85% of the children reached each round" in method
         assert "lower of the two in each state" in method
-        assert "worth 113 units of value" in method and "0.003 units a dollar" in method
-        assert "6&times; bar is about $6,300 per death averted" in method
+        assert "113 units of value" in method and "118 units" in method and "0.003 units a dollar" in method
+        assert "6&times; bar is about $6,600 per death averted" in method
         # Deaths are not a choice, and the answer is figures: no sentences of advice on the page.
         assert 'data-basis="' not in body
         assert "there is nothing to run" not in body and "Our proposal:" not in body

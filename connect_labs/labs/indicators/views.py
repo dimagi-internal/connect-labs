@@ -924,14 +924,15 @@ def _pmc_costs(request) -> dict:
 
 def pmc_fixed_assumptions() -> dict:
     """What the PMC page holds fixed, said beside the inputs a visitor can change."""
-    from connect_labs.labs.indicators.cost_effectiveness import BAR, BENCHMARK_UOV_PER_DOLLAR, MORAL_WEIGHT
+    from connect_labs.impact.valuation import BAR, BENCHMARK, MORAL_WEIGHT, UNITS_PER_DEATH
     from connect_labs.labs.indicators.emod.live import DEFAULT_COVERAGE
 
-    per_death = MORAL_WEIGHT.value / BENCHMARK_UOV_PER_DOLLAR.value / BAR.value
+    per_death = UNITS_PER_DEATH.value / BENCHMARK.value / BAR.value
     return {
         "coverage_pct": round(DEFAULT_COVERAGE * 100),
         "moral_weight": f"{MORAL_WEIGHT.value:g}",
-        "benchmark": f"{BENCHMARK_UOV_PER_DOLLAR.value:g}",
+        "units_per_death": f"{UNITS_PER_DEATH.value:.0f}",
+        "benchmark": f"{BENCHMARK.value:g}",
         "bar": f"{BAR.value:g}",
         "per_death_at_bar": f"${round(per_death, -2):,.0f}",
     }

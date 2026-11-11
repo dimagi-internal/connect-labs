@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from connect_labs.impact import valuation
 from connect_labs.labs.indicators.emod import rank
 
 FIXTURE = Path(__file__).parent / "fixtures" / "pmc_state_grid.json"
@@ -244,7 +245,7 @@ def test_deaths_rank_by_cost_per_death_and_value_against_the_bar(grid):
     averted = d["averted_u5_pct"] / 100 * 4_000
     assert top["deaths_averted_per_year"] == rank.sig(averted)
     assert top["cost_per_death_averted"] == rank.sig(spend / averted)
-    assert top["multiple_of_benchmark"] == round(113 * averted / spend / 0.003, 1)
+    assert top["multiple_of_benchmark"] == round(valuation.units_per_death() * averted / spend / 0.003, 1)
     assert out["bar"] == 6.0
     assert out["pairs_ranked"] == len(out["ranked"])  # all pairs shown, so the counts can be checked here
     assert out["pairs_clearing_bar"] == sum(r["clears_bar"] for r in out["ranked"])
@@ -329,8 +330,9 @@ class TestRecommend:
 
         assert got["keep"] == ["A", "B"] and got["drop"] == ["C"]
         assert got["deaths_averted_per_year"] == 200
-        # A at 12x and B at 10x pooled: 200 deaths for 113*(100/36 + 100/30)/0.003 dollars -> 10.9x.
-        assert got["multiple_of_benchmark"] == 10.9
+        # A and B pooled: 200 deaths for 113*(100/36 + 100/30)/0.003 dollars (the spends the fixture builds in), and a
+        # death is valued at the CHC model's 118.05 units, not 113: 10.9x x 1.0447 -> 11.4x.
+        assert got["multiple_of_benchmark"] == 11.4
         assert [s["state"] for s in got["states"]] == ["A", "B", "C"] and got["states"][2]["clears_bar"] is False
 
     def test_the_step_up_is_valued_on_the_increment(self):
@@ -340,7 +342,7 @@ class TestRecommend:
         assert got["design_code"] == "pmc_m12" and got["extra_deaths_averted_per_year"] == 60
         spend = lambda d, m: 113 * d / (0.003 * m)  # noqa: E731
         extra = spend(130, 10) + spend(130, 9) - spend(100, 12) - spend(100, 10)
-        assert got["multiple_of_benchmark"] == round(113 * 60 / extra / 0.003, 1)
+        assert got["multiple_of_benchmark"] == round(valuation.units_per_death() * 60 / extra / 0.003, 1)
         assert got["clears_bar"] is (got["multiple_of_benchmark"] >= 6)
 
     def test_it_compares_with_quarterly_over_the_same_states(self):
