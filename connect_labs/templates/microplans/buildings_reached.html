@@ -2,51 +2,89 @@
 {% block title %}Buildings reached{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8 max-w-7xl">
-  <a href="{% url 'microplans:hub' %}" class="text-sm text-indigo-600 hover:underline"><i class="fa-solid fa-arrow-left mr-1"></i>Microplans</a>
-  <div class="bg-white rounded-xl shadow-sm p-6 mt-3">
-    <h1 class="text-2xl font-bold text-gray-900 flex items-center mb-1">
-      <i class="fa-solid fa-house-circle-check text-emerald-600 mr-3"></i>Buildings reached
-    </h1>
-    <p class="text-sm text-gray-600 mb-4">
-      For each facility, the buildings around it are fixed first (its nearest buildings, from the microplanner's own
-      footprints). A building counts as reached in a cycle when a household visited that cycle has its recorded GPS
-      point within the chosen distance of it. Nothing here shows a household or a point.
-    </p>
+<style>
+  .br-wrap { max-width: 80rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+  .br-card { background: #fff; border-radius: .75rem; box-shadow: 0 1px 2px rgba(0,0,0,.06); padding: 1.25rem; }
+  .br-sub { color: #4b5563; font-size: .9rem; margin: .15rem 0 .9rem; }
+  .br-bar { display: flex; flex-wrap: wrap; gap: .5rem .75rem; align-items: center; background: #f3f4f6; border-radius: .5rem; padding: .5rem .75rem; font-size: .85rem; color: #374151; }
+  .br-bar b { color: #111827; }
+  .br-link { color: #4f46e5; cursor: pointer; text-decoration: underline; background: none; border: 0; padding: 0; font: inherit; }
+  .br-form[hidden], .br-bar[hidden] { display: none; }
+  .br-form { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; margin-top: .75rem; }
+  .br-form label { font-size: .8rem; color: #374151; display: block; }
+  .br-form input, .br-form textarea { display: block; width: 100%; margin-top: .2rem; border: 1px solid #d1d5db; border-radius: .35rem; padding: .35rem .5rem; font-size: .85rem; }
+  .br-wide { grid-column: 1 / -1; }
+  .br-run { background: #059669; color: #fff; border: 0; border-radius: .4rem; padding: .5rem 1rem; font-weight: 600; cursor: pointer; }
+  .br-run:disabled { opacity: .5; cursor: wait; }
+  .br-status { font-size: .85rem; color: #4b5563; margin: .75rem 0; min-height: 1.2rem; }
+  .br-err { color: #b91c1c; }
+  .br-h2 { font-size: 1.05rem; font-weight: 700; color: #111827; margin: 1.4rem 0 .5rem; }
+  .br-tiles { display: flex; flex-wrap: wrap; gap: .6rem; }
+  .br-tile { flex: 1 1 8rem; border: 1px solid #e5e7eb; border-radius: .5rem; padding: .6rem .75rem; }
+  .br-tile .k { font-size: .75rem; color: #6b7280; }
+  .br-tile .v { font-size: 1.7rem; font-weight: 700; color: #065f46; line-height: 1.2; }
+  .br-tile .n { font-size: .72rem; color: #6b7280; }
+  .br-lows { font-size: .85rem; color: #374151; margin-top: .6rem; }
+  .br-lows b { color: #92400e; }
+  .br-t { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: .85rem; }
+  .br-t th { text-align: left; font-weight: 600; color: #6b7280; padding: .25rem .3rem; border-bottom: 1px solid #e5e7eb; }
+  .br-t td { padding: .2rem .3rem; border-bottom: 1px solid #f3f4f6; }
+  .br-t th:first-child, .br-t td:first-child { width: 26%; font-weight: 600; word-wrap: break-word; }
+  .br-t td.b { color: #6b7280; width: 12%; }
+  .br-c { text-align: center; color: #064e3b; border-radius: .25rem; background: linear-gradient(to right, #a7f3d0 var(--v), #f3f4f6 var(--v)); }
+  .br-c.low { color: #78350f; background: linear-gradient(to right, #fcd34d var(--v), #f3f4f6 var(--v)); font-weight: 700; }
+  .br-c.none { background: none; color: #9ca3af; }
+  .br-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .br-chip { background: #f3f4f6; border-radius: 999px; padding: .15rem .6rem; font-size: .8rem; color: #374151; }
+  .br-chip.ok { background: #d1fae5; color: #065f46; }
+  details.br-how { margin-top: 1.4rem; font-size: .85rem; color: #4b5563; }
+  details.br-how summary, details.br-sec summary { cursor: pointer; color: #374151; font-weight: 600; }
+  .br-legend { font-size: .75rem; color: #6b7280; margin-top: .4rem; }
+  @media (max-width: 640px) {
+    .br-form { grid-template-columns: 1fr; }
+    .br-t .b { display: none; }
+    .br-t { font-size: .78rem; }
+    .br-t th:first-child, .br-t td:first-child { width: 30%; }
+    .br-tile { flex-basis: 45%; }
+  }
+</style>
 
-    <form id="br-form" class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-      <label class="md:col-span-1 text-sm text-gray-700">Opportunity ids
-        <input id="br-opps" class="mt-1 w-full border rounded px-2 py-1" placeholder="10184,10185">
-      </label>
-      <label class="text-sm text-gray-700">Distance (m)
-        <input id="br-dist" type="number" min="1" max="500" class="mt-1 w-full border rounded px-2 py-1" value="30">
-      </label>
-      <label class="text-sm text-gray-700">Catchment: nearest buildings
-        <input id="br-k" type="number" min="10" max="5000" class="mt-1 w-full border rounded px-2 py-1" value="260">
-      </label>
-      <div class="flex items-end"><button id="br-run" type="submit" class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 w-full">Run</button></div>
-      <label class="md:col-span-4 text-sm text-gray-700">Facilities: one per line or separated by <code>;</code> &mdash; <code>id,lon,lat,district</code> (district optional; the id is the value the form records for the facility)
-        <textarea id="br-fac" rows="4" class="mt-1 w-full border rounded px-2 py-1 font-mono text-xs"></textarea>
-      </label>
-      <details class="md:col-span-4 text-sm text-gray-700">
-        <summary class="cursor-pointer">Form paths (defaults are the eCHIS Niger SMC form)</summary>
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mt-2">
-          <label>Household id <input id="br-hh" class="mt-1 w-full border rounded px-2 py-1" placeholder="form.var_menage.case_id_menage"></label>
-          <label>GPS (comma separated) <input id="br-gps" class="mt-1 w-full border rounded px-2 py-1" placeholder="form.administration_dose.geolocalisation,form.geolocalisation_nonelligble"></label>
-          <label>Cycle <input id="br-cycle" class="mt-1 w-full border rounded px-2 py-1" placeholder="form.var.passage"></label>
-          <label>Facility <input id="br-group" class="mt-1 w-full border rounded px-2 py-1" placeholder="form.localisation.csi_id"></label>
+<div class="br-wrap">
+  <a href="{% url 'microplans:hub' %}" class="text-sm text-indigo-600 hover:underline"><i class="fa-solid fa-arrow-left mr-1"></i>Microplans</a>
+  <div class="br-card" style="margin-top:.75rem">
+    <h1 class="text-2xl font-bold text-gray-900"><i class="fa-solid fa-house-circle-check text-emerald-600 mr-2"></i>Buildings reached</h1>
+    <p class="br-sub">Of the buildings around each facility, the share that visited households' GPS points came within the chosen distance of, by cycle.</p>
+
+    <div id="br-bar" class="br-bar" hidden>
+      <span id="br-summary"></span>
+      <button type="button" id="br-change" class="br-link">Change settings</button>
+    </div>
+
+    <form id="br-form" class="br-form">
+      <label>Opportunity ids <input id="br-opps" placeholder="10184,10185"></label>
+      <label>Distance (m) <input id="br-dist" type="number" min="1" max="500" value="30"></label>
+      <label>Buildings per facility <input id="br-k" type="number" min="10" max="5000" value="260"></label>
+      <div style="display:flex;align-items:flex-end"><button id="br-run" type="submit" class="br-run" style="width:100%">Run</button></div>
+      <label class="br-wide">Facilities: <code>id,lon,lat,district</code>, one per line or separated by <code>;</code> (district optional; id is the value the form records for the facility)
+        <textarea id="br-fac" rows="4" style="font-family:monospace;font-size:.75rem"></textarea></label>
+      <details class="br-wide br-sec"><summary>Form paths (defaults are the eCHIS Niger SMC form)</summary>
+        <div class="br-form" style="margin-top:.5rem">
+          <label>Household id <input id="br-hh" placeholder="form.var_menage.case_id_menage"></label>
+          <label>GPS, comma separated <input id="br-gps" placeholder="form.administration_dose.geolocalisation,form.geolocalisation_nonelligble"></label>
+          <label>Cycle <input id="br-cycle" placeholder="form.var.passage"></label>
+          <label>Facility <input id="br-group" placeholder="form.localisation.csi_id"></label>
         </div>
       </details>
     </form>
 
-    <div id="br-status" class="text-sm text-gray-600 mb-3"></div>
+    <div id="br-status" class="br-status" role="status"></div>
     <div id="br-out"></div>
 
-    <div class="mt-6 text-xs text-gray-500 border-t pt-3">
-      <p class="mb-1"><b>Read it carefully.</b> The share depends on the distance you pick and on how dense the buildings are, so compare a district with itself over cycles, or districts at one distance, not districts with different densities against each other.</p>
-      <p class="mb-1">Households with no usable point (none recorded, 0,0, far from the facility, or poor accuracy) cannot be placed, so buildings reached is a floor. Each is counted by kind below, none is silently dropped.</p>
-      <p>A cycle's headline share is out of the buildings of the facilities that ran that cycle.</p>
-    </div>
+    <details class="br-how"><summary>How to read this</summary>
+      <p style="margin:.5rem 0">The buildings around each facility are fixed first (its nearest buildings, from the microplanner's own footprints), so the denominator never depends on where visits happened. A building counts as reached in a cycle when a household visited that cycle has its recorded GPS point within the chosen distance of it. Nothing here shows a household or a point.</p>
+      <p style="margin:.5rem 0">The share depends on the distance and on how dense the buildings are: compare a district with itself over cycles, or districts at one distance, not districts of different density against each other.</p>
+      <p style="margin:.5rem 0">Households with no usable point cannot be placed, so the share is a floor. Each is counted by kind under Data quality; none is dropped silently. A cycle's headline share is out of the buildings of the facilities that ran that cycle.</p>
+    </details>
   </div>
 </div>
 
@@ -55,69 +93,120 @@
   var $ = function (id) { return document.getElementById(id); };
   var FIELDS = {opps: 'br-opps', max_dist_m: 'br-dist', catchment_k: 'br-k', facilities: 'br-fac',
                 household_path: 'br-hh', gps_paths: 'br-gps', cycle_path: 'br-cycle', group_path: 'br-group'};
+  var CSRF = "{{ csrf_token }}";
+  var RUN_URL = "{% url 'microplans:buildings_reached_run' %}";
+  var LOW_POINTS = 0.10;
   var params = new URLSearchParams(location.search);
   Object.keys(FIELDS).forEach(function (k) { if (params.get(k)) { $(FIELDS[k]).value = params.get(k); } });
 
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }
-  function pct(v) { return v === null || v === undefined ? '&ndash;' : (100 * v).toFixed(0) + '%'; }
-  function bar(v) {
-    if (v === null || v === undefined) { return '&ndash;'; }
-    return '<div class="flex items-center gap-2"><div class="w-24 h-2 bg-gray-100 rounded"><div class="h-2 bg-emerald-500 rounded" style="width:' + Math.min(100, 100 * v).toFixed(0) + '%"></div></div><span>' + pct(v) + '</span></div>';
-  }
+  function n(v) { return Number(v).toLocaleString('en-US'); }
+  function pct(v) { return (100 * v).toFixed(0) + '%'; }
   function cycleKeys(rows) {
     var s = {};
     rows.forEach(function (r) { Object.keys(r.cycles || {}).forEach(function (c) { s[c] = 1; }); });
     return Object.keys(s).map(Number).sort(function (a, b) { return a - b; });
   }
-  function table(title, rows, label) {
+  function cell(v, head) {
+    if (!v || v.share === null || v.share === undefined) { return '<td class="br-c none">&ndash;</td>'; }
+    var low = head !== undefined && head !== null && v.share < head - LOW_POINTS;
+    return '<td class="br-c' + (low ? ' low' : '') + '" style="--v:' + Math.min(100, 100 * v.share).toFixed(0) + '%" title="' + n(v.buildings_reached) + ' of ' + n(v.buildings || 0) + ' buildings">' + pct(v.share) + '</td>';
+  }
+  function table(rows, label, headCycles) {
     var cycles = cycleKeys(rows);
-    var h = '<h2 class="text-lg font-semibold text-gray-900 mt-5 mb-2">' + title + '</h2><div class="overflow-x-auto"><table class="min-w-full text-sm"><thead><tr class="text-left text-gray-500 border-b"><th class="py-1 pr-4">' + label + '</th><th class="pr-4">Buildings</th>';
-    cycles.forEach(function (c) { h += '<th class="pr-4">Cycle ' + c + '</th>'; });
+    var h = '<table class="br-t"><thead><tr><th>' + label + '</th><th class="b">Buildings</th>';
+    cycles.forEach(function (c) { h += '<th style="text-align:center">C' + c + '</th>'; });
     h += '</tr></thead><tbody>';
     rows.forEach(function (r) {
-      h += '<tr class="border-b"><td class="py-1 pr-4 font-medium">' + esc(r.label) + '</td><td class="pr-4">' + r.buildings + '</td>';
-      cycles.forEach(function (c) { var v = (r.cycles || {})[c]; h += '<td class="pr-4">' + (v ? bar(v.share) : '&ndash;') + '</td>'; });
+      h += '<tr><td>' + esc(r.label) + '</td><td class="b">' + n(r.buildings) + '</td>';
+      cycles.forEach(function (c) {
+        var v = (r.cycles || {})[c];
+        if (v) { v = Object.assign({buildings: r.buildings}, v); }
+        h += cell(v, headCycles[c] ? headCycles[c].share : null);
+      });
       h += '</tr>';
     });
-    return h + '</tbody></table></div>';
+    return h + '</tbody></table>';
   }
-  function dq(rows) {
+  function tiles(total) {
+    var h = '<div class="br-tiles">';
+    Object.keys(total.cycles).map(Number).sort(function (a, b) { return a - b; }).forEach(function (c) {
+      var t = total.cycles[c];
+      h += '<div class="br-tile"><div class="k">Cycle ' + c + '</div><div class="v">' + (t.share === null ? '&ndash;' : pct(t.share)) + '</div><div class="n">' +
+        n(t.buildings_reached) + ' of ' + n(t.buildings) + ' buildings<br>' + n(t.households_visited) + ' households</div></div>';
+    });
+    return h + '</div>';
+  }
+  function meanShare(r) {
+    var v = Object.keys(r.cycles || {}).map(function (c) { return r.cycles[c].share; }).filter(function (x) { return x !== null && x !== undefined; });
+    return v.length ? v.reduce(function (a, b) { return a + b; }, 0) / v.length : null;
+  }
+  function lowest(rows, count, label) {
+    var ranked = rows.map(function (r) { return {l: label(r), m: meanShare(r)}; }).filter(function (x) { return x.m !== null; })
+      .sort(function (a, b) { return a.m - b.m; }).slice(0, count);
+    return ranked.map(function (x) { return '<b>' + esc(x.l) + '</b> ' + pct(x.m); }).join(', ');
+  }
+  function dq(areas) {
     var t = {no_point: 0, null_island: 0, off_area: 0, poor_accuracy: 0, usable: 0, households: 0};
-    rows.forEach(function (a) { t.households += a.households; Object.keys(a.data_quality).forEach(function (k) { t[k] += a.data_quality[k]; }); });
-    var p = function (n) { return t.households ? ' (' + (100 * n / t.households).toFixed(1) + '%)' : ''; };
-    return '<h2 class="text-lg font-semibold text-gray-900 mt-5 mb-2">Data quality</h2><p class="text-sm text-gray-700">Of ' + t.households + ' households with a recorded first visit: ' +
-      t.no_point + p(t.no_point) + ' have no point, ' + t.null_island + p(t.null_island) + ' sit at 0,0, ' + t.off_area + p(t.off_area) + ' are far from their facility, ' +
-      t.poor_accuracy + p(t.poor_accuracy) + ' report poor accuracy. <b>' + t.usable + p(t.usable) + ' are usable.</b></p>';
+    areas.forEach(function (a) { t.households += a.households; Object.keys(a.data_quality).forEach(function (k) { t[k] += a.data_quality[k]; }); });
+    var share = t.households ? ' (' + Math.round(100 * t.usable / t.households) + '%)' : '';
+    return '<div class="br-h2">Data quality</div><div class="br-chips"><span class="br-chip">' + n(t.households) + ' households</span><span class="br-chip ok">' + n(t.usable) + ' usable' + share + '</span>' +
+      '<span class="br-chip">' + n(t.no_point) + ' no point</span><span class="br-chip">' + n(t.null_island) + ' at 0,0</span><span class="br-chip">' + n(t.off_area) + ' far from facility</span><span class="br-chip">' + n(t.poor_accuracy) + ' poor accuracy</span></div>';
   }
   function show(res) {
     var areas = (res.areas || []).map(function (a) { return {label: a.group, buildings: a.buildings, cycles: a.cycles}; });
-    var head = {label: 'All facilities', buildings: res.total.buildings, cycles: res.total.cycles};
-    var h = table('Headline', [head], '');
-    if (res.rollup && res.rollup.length) { h += table('By district', res.rollup, 'District'); }
-    h += table('By facility', areas, 'Facility');
+    var rollup = res.rollup || [];
+    var h = '<div class="br-h2">All facilities</div>' + tiles(res.total);
+    var lows = [];
+    if (rollup.length > 1) { lows.push('Lowest districts: ' + lowest(rollup, 2, function (r) { return r.label; })); }
+    lows.push('lowest facilities: ' + lowest(areas, 3, function (r) { return r.label; }));
+    h += '<div class="br-lows">' + lows.join(' &middot; ') + ' <span style="color:#6b7280">(average over cycles)</span></div>';
+    if (rollup.length) { h += '<div class="br-h2">By district</div>' + table(rollup, 'District', res.total.cycles); }
+    h += '<details class="br-sec" open><summary class="br-h2" style="display:list-item">By facility (' + areas.length + ')</summary>' + table(areas, 'Facility', res.total.cycles) + '</details>';
+    h += '<div class="br-legend">Amber: more than 10 points below the all-facilities share for that cycle. Hover a cell for the building counts.</div>';
     h += dq(res.areas || []);
     if ((res.groups_without_a_facility || []).length) {
-      h += '<p class="text-sm text-amber-700 mt-3">Groups in the data with no facility in your list (not counted above): ' + res.groups_without_a_facility.map(esc).join(', ') + '</p>';
+      h += '<p style="font-size:.85rem;color:#b45309;margin-top:.6rem">Groups in the data with no facility in your list (not counted): ' + res.groups_without_a_facility.map(esc).join(', ') + '</p>';
     }
     $('br-out').innerHTML = h;
   }
-  function csrf() { var m = document.cookie.match(/csrftoken=([^;]+)/); return m ? m[1] : ''; }
+  function settingsSummary(body) {
+    var fac = String(body.facilities || '').split(/[;\n]/).map(function (x) { return x.trim(); }).filter(Boolean);
+    var districts = {};
+    fac.forEach(function (f) { var p = f.split(','); if (p[3]) { districts[p[3].trim()] = 1; } });
+    var nd = Object.keys(districts).length;
+    var opps = String(body.opps || '').split(',').filter(Boolean).length;
+    return '<b>' + esc(body.max_dist_m || 30) + ' m</b> &middot; nearest <b>' + esc(body.catchment_k || 260) + '</b> buildings per facility &middot; <b>' + fac.length + '</b> facilities' + (nd ? ' in ' + nd + ' districts' : '') + ' &middot; ' + opps + ' opportunities';
+  }
+  function setOpen(open) { $('br-form').hidden = !open; $('br-bar').hidden = open; }
+  function failure(status, message) {
+    if (status === 403 && !message) { return 'Your sign-in has expired or this account cannot read these opportunities. Reload the page and sign in again.'; }
+    if (status >= 500 && !message) { return 'The server hit an error (' + status + '). Try again in a minute; if it keeps happening, tell the Labs team.'; }
+    return message || 'The request failed (' + status + ').';
+  }
   function run() {
     var body = {};
     Object.keys(FIELDS).forEach(function (k) { body[k] = $(FIELDS[k]).value.trim(); });
     var q = new URLSearchParams();
     Object.keys(body).forEach(function (k) { if (body[k]) { q.set(k, body[k]); } });
     history.replaceState(null, '', '?' + q.toString());
-    $('br-status').textContent = 'Loading the visits and reading the footprints; this takes about a minute the first time.';
-    $('br-out').innerHTML = ''; $('br-run').disabled = true;
-    fetch('{% url "microplans:buildings_reached_run" %}', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()}, body: JSON.stringify(body)})
-      .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
-      .then(function (x) { if (!x.ok) { throw new Error(x.j.message || x.j.error || 'failed'); } $('br-status').textContent = 'Distance ' + x.j.settings.max_dist_m + ' m, ' + (x.j.settings.catchment.k ? 'nearest ' + x.j.settings.catchment.k + ' buildings' : x.j.settings.catchment.radius_m + ' m radius') + ', opportunities ' + x.j.opportunities.join(', ') + '.'; show(x.j); })
-      .catch(function (e) { $('br-status').innerHTML = '<span class="text-red-700">' + esc(e.message) + '</span>'; })
+    $('br-summary').innerHTML = settingsSummary(body);
+    $('br-status').className = 'br-status';
+    $('br-status').textContent = 'Loading the visits and reading the footprints. The first run can take about a minute.';
+    $('br-out').innerHTML = ''; $('br-run').disabled = true; setOpen(false);
+    fetch(RUN_URL, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF}, body: JSON.stringify(body)})
+      .then(function (r) { return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (e) { /* an HTML error page */ } return {status: r.status, ok: r.ok, j: j}; }); })
+      .then(function (x) {
+        if (!x.ok || !x.j) { throw new Error(failure(x.status, x.j && x.j.message)); }
+        $('br-status').textContent = '';
+        show(x.j);
+      })
+      .catch(function (e) { setOpen(true); $('br-status').className = 'br-status br-err'; $('br-status').textContent = e.message; })
       .finally(function () { $('br-run').disabled = false; });
   }
   $('br-form').addEventListener('submit', function (e) { e.preventDefault(); run(); });
-  if (params.get('opps') && params.get('facilities')) { run(); }
+  $('br-change').addEventListener('click', function () { setOpen(true); });
+  if (params.get('opps') && params.get('facilities')) { run(); } else { setOpen(true); }
 }());
 </script>
 {% endblock %}
