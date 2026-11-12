@@ -14,7 +14,7 @@ from django.shortcuts import render
 from django.utils.decorators import method_decorator
 from django.views import View
 
-from connect_labs.impact import engine, explore, valuation
+from connect_labs.impact import engine, explore, groups, valuation
 from connect_labs.labs.chrome import NOT_USED, page_chrome
 
 CONTEXT_NOT_USED = method_decorator(page_chrome(labs_context=NOT_USED), name="dispatch")
@@ -25,6 +25,13 @@ def _request_state(request) -> tuple[str, dict]:
     model = request.GET.get("model", DEFAULT_MODEL)
     raw = {k[2:]: v for k, v in request.GET.items() if k.startswith("i_")}
     return model, raw
+
+
+def _included(request) -> list[str] | None:
+    """``?s=a,b`` switches sensitivity on for those inputs only; no ``s`` means the model's default set."""
+    if "s" not in request.GET:
+        return None
+    return [k for k in request.GET["s"].split(",") if k]
 
 
 def _floats(raw: str) -> list[float]:
@@ -53,10 +60,10 @@ class ModelExplorerView(LoginRequiredMixin, View):
             "models": {k: {**meta[k], "key": k} for k in engine.MODELS},
             "error": error,
             "inputs": explore.inputs(model),
-            "blocks": [{"key": k, "title": explore.BLOCK_TITLES[k]} for k in explore.BLOCK_ORDER],
+            "blocks": groups.blocks(),
             "overrides": overrides,
             "run": run,
-            "tornado": explore.tornado(model, overrides),
+            "sensitivity": explore.sensitivity(model, overrides, _included(request)),
             "scenarios": explore.scenarios(model),
             "places": explore.places(model),
             "bar": valuation.bar(),
@@ -68,7 +75,7 @@ class ModelExplorerView(LoginRequiredMixin, View):
 
 @CONTEXT_NOT_USED
 class ModelRunView(LoginRequiredMixin, View):
-    """``?model=chc&i_ors=0.4`` -> the run and its tornado.
+    """``?model=chc&i_ors=0.4&s=ors,cost`` -> the run and its sensitivity over the inputs named in ``s``.
 
     ``&grid_x=cost&grid_xs=1.4,1.8&grid_y=ors&grid_ys=0.3,0.5`` adds a two-input grid.
     """
@@ -77,7 +84,10 @@ class ModelRunView(LoginRequiredMixin, View):
         model, raw = _request_state(request)
         try:
             overrides = explore.clean_overrides(model, raw)
-            out = {"run": explore.run(model, overrides), "tornado": explore.tornado(model, overrides)}
+            out = {
+                "run": explore.run(model, overrides),
+                "sensitivity": explore.sensitivity(model, overrides, _included(request)),
+            }
             if request.GET.get("grid_x"):
                 out["grid"] = explore.grid(
                     model,

@@ -18,21 +18,12 @@ from __future__ import annotations
 import json
 import math
 
-from connect_labs.impact import engine
+from connect_labs.impact import engine, groups
 from connect_labs.impact import result as impact_result
 from connect_labs.impact import valuation
 
-#: Blocks the form shows open: what a person sets for a place and a programme. The rest are the model's
-#: published and fixed values, shown folded away because changing them is a modelling decision.
+#: Blocks a person sets for a place and a programme; the rest are the model's published and fixed values.
 EDITABLE_BLOCKS = ("location", "program", "judgement call")
-BLOCK_ORDER = ("location", "program", "judgement call", "published", "fixed")
-BLOCK_TITLES = {
-    "location": "The place",
-    "program": "The programme",
-    "judgement call": "Judgement calls (open to review)",
-    "published": "Published figures",
-    "fixed": "Fixed by GiveWell or the trials",
-}
 
 
 class ExploreError(ValueError):
@@ -84,6 +75,7 @@ def inputs(model: str) -> list[dict]:
                 "where": i.get("where"),
                 "range": i.get("range"),
                 "format": i.get("format"),
+                "group": groups.group_of(model, i["key"]),
                 "editable": i["block"] in EDITABLE_BLOCKS,
             }
         )
@@ -175,6 +167,64 @@ def tornado(model: str, overrides: dict | None = None) -> list[dict]:
         )
     out.sort(key=lambda r: -r["swing"])
     return [{**r, "base": base} for r in out]
+
+
+def default_included(model: str) -> list[str]:
+    """The inputs sensitivity covers until the caller chooses: every input the spec gives a low and a high case."""
+    return [i["key"] for i in inputs(model) if i["low"] is not None and i["high"] is not None]
+
+
+def sensitivity(model: str, overrides: dict | None = None, include: list[str] | None = None) -> dict:
+    """What moves the multiple, for the inputs the caller has switched on.
+
+    ``rows`` has one entry per input that has a low and a high case, whether or not it is included; an included
+    one carries the multiple at each case (the others one at a time, as in ``tornado``). ``combined`` moves every
+    included input to its worse case together, and to its better case together, so the spread of the whole set
+    is visible and not only each input's own. ``groups`` gives the same per group (baseline, counterfactual,
+    effectiveness, cost, other). Which case is worse is read per input from the model, so an input whose "low"
+    case helps is still counted on the right side.
+    """
+    overrides = clean_overrides(model, overrides)
+    ranged = {i["key"]: i for i in inputs(model) if i["low"] is not None and i["high"] is not None}
+    chosen = default_included(model) if include is None else [k for k in include if k in ranged]
+    base = _headline(model, overrides)[0]
+    rows, worst, best = [], {}, {}
+    for key, i in ranged.items():
+        row = {
+            "key": key,
+            "label": i["label"],
+            "unit": i["unit"],
+            "format": i["format"],
+            "group": i["group"],
+            "low": i["low"],
+            "high": i["high"],
+            "included": key in chosen,
+            "multiple_at_low": None,
+            "multiple_at_high": None,
+            "swing": None,
+        }
+        if key in chosen:
+            x_low = _headline(model, {**overrides, key: i["low"]})[0]
+            x_high = _headline(model, {**overrides, key: i["high"]})[0]
+            row.update(multiple_at_low=x_low, multiple_at_high=x_high, swing=abs(x_high - x_low))
+            worst[key], best[key] = (i["low"], i["high"]) if x_low <= x_high else (i["high"], i["low"])
+        rows.append(row)
+
+    def spread(keys):
+        if not keys:
+            return None
+        return {
+            "worst": _headline(model, {**overrides, **{k: worst[k] for k in keys}})[0],
+            "best": _headline(model, {**overrides, **{k: best[k] for k in keys}})[0],
+            "n": len(keys),
+        }
+
+    by_group = {}
+    for g in groups.ORDER:
+        in_group = [k for k in chosen if ranged[k]["group"] == g]
+        if in_group:
+            by_group[g] = spread(in_group)
+    return {"base": base, "rows": rows, "combined": spread(chosen), "groups": by_group}
 
 
 def grid(model: str, x_key: str, xs: list[float], y_key: str, ys: list[float], overrides: dict | None = None) -> dict:

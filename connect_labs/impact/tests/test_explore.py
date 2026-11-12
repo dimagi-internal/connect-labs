@@ -8,7 +8,7 @@ point of the test: a model change should be seen.
 import pytest
 from django.urls import reverse
 
-from connect_labs.impact import engine, explore, valuation
+from connect_labs.impact import engine, explore, groups, valuation
 
 
 class TestEngineLayer:
@@ -118,13 +118,13 @@ class TestPageAndApi:
         body = client_in.get(reverse("cea:models"), {"model": "chc", "i_nope": "1"}).content.decode()
         assert "nope" in body
 
-    def test_the_api_returns_the_run_and_the_tornado(self, client_in):
+    def test_the_api_returns_the_run_and_the_sensitivity(self, client_in):
         got = client_in.get(reverse("cea:models_run"), {"model": "chc", "i_cost": "2.5"}).json()
         assert got["run"]["overrides"] == {"cost": 2.5}
         assert got["run"]["headline"]["multiple"] == pytest.approx(
             explore.run("chc", {"cost": 2.5})["headline"]["multiple"]
         )
-        assert got["tornado"]
+        assert got["sensitivity"]["rows"] and got["sensitivity"]["combined"]
 
     def test_the_api_returns_a_grid_on_request(self, client_in):
         got = client_in.get(
@@ -228,3 +228,64 @@ class TestDeliveryIntoTheExplorer:
         # At the model's own price the multiple is the model's.
         assert result.reprice(20.0, 2.0, 50.0, 1000, 4000.0, 6.0, at_model_price=True)["x"] == pytest.approx(20.0)
         assert result.reprice(20.0, 2.0, 50.0, 0, 0.0, 6.0) is None
+
+
+class TestSensitivity:
+    def test_every_ranged_input_is_included_by_default(self):
+        out = explore.sensitivity("chc")
+        assert out["rows"] and all(r["included"] for r in out["rows"])
+        assert {r["key"] for r in out["rows"]} == set(explore.default_included("chc"))
+        assert out["base"] == pytest.approx(explore.run("chc")["headline"]["multiple"])
+
+    def test_the_whole_set_spreads_wider_than_any_one_input(self):
+        out = explore.sensitivity("chc")
+        biggest = max(r["swing"] for r in out["rows"])
+        assert out["combined"]["best"] - out["combined"]["worst"] > biggest
+        assert out["combined"]["worst"] < out["base"] < out["combined"]["best"]
+
+    def test_switching_an_input_off_removes_it_and_narrows_the_spread(self):
+        full = explore.sensitivity("chc")
+        keys = [r["key"] for r in full["rows"] if r["key"] != "cost"]
+        part = explore.sensitivity("chc", include=keys)
+        assert not next(r for r in part["rows"] if r["key"] == "cost")["included"]
+        assert (
+            part["combined"]["best"] - part["combined"]["worst"] < full["combined"]["best"] - full["combined"]["worst"]
+        )
+
+    def test_nothing_included_has_no_combined_spread(self):
+        out = explore.sensitivity("chc", include=[])
+        assert out["combined"] is None and out["groups"] == {} and not any(r["included"] for r in out["rows"])
+
+    def test_one_input_alone_matches_the_one_at_a_time_figures(self):
+        out = explore.sensitivity("chc", include=["cost"])
+        row = next(r for r in out["rows"] if r["key"] == "cost")
+        one = next(r for r in explore.tornado("chc") if r["key"] == "cost")
+        assert row["multiple_at_low"] == pytest.approx(one["multiple_at_low"])
+        assert {out["combined"]["worst"], out["combined"]["best"]} == {row["multiple_at_low"], row["multiple_at_high"]}
+
+    def test_groups_cover_the_inputs_that_are_in(self):
+        out = explore.sensitivity("chc")
+        assert set(out["groups"]) <= set(groups.ORDER) and "cost" in out["groups"] and "baseline" in out["groups"]
+
+    def test_unknown_keys_are_ignored(self):
+        assert explore.sensitivity("chc", include=["cost", "nonsense"])["combined"]["n"] == 1
+
+
+class TestGroups:
+    @pytest.mark.parametrize("model", engine.MODELS)
+    def test_every_listed_key_is_an_input_of_the_model_and_listed_once(self, model):
+        keys = {i["key"] for i in engine.spec(model)["inputs"]}
+        listed = [k for ks in groups.GROUPS[model].values() for k in ks]
+        assert set(listed) <= keys, sorted(set(listed) - keys)
+        assert len(listed) == len(set(listed)), "an input is in two groups"
+
+    @pytest.mark.parametrize("model", engine.MODELS)
+    def test_the_four_key_inputs_are_all_present(self, model):
+        assert all(groups.GROUPS[model][g] for g in groups.KEY_GROUPS)
+
+    def test_the_headline_inputs_sit_where_a_reader_expects(self):
+        assert groups.group_of("chc", "deaths") == "baseline"
+        assert groups.group_of("chc", "ors") == "counterfactual"
+        assert groups.group_of("chc", "va_effect") == "effectiveness"
+        assert groups.group_of("kc", "cost") == "cost"
+        assert groups.group_of("chc", "uv") == "other"
