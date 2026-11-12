@@ -169,6 +169,8 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "targeting_admin_levels",
         "targeting_research",
         "targeting_compare_criteria",
+        # The cost-effectiveness explorer: arithmetic on vendored public models, nothing visit-specific.
+        "cea_model_run",
         # Microplans. A plan handed off from WA Revisit carries per-ward
         # figures computed from visits (children per building) -- aggregates,
         # not visits, which is on the allowed side of the line.
