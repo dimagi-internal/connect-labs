@@ -48,7 +48,7 @@ uses, so nothing ships purged.
     </thead>
     <tbody class="divide-y divide-gray-100">
       {% for movement in movements %}
-        <tr{% if movement.removed %} data-removed class="bg-gray-50 text-gray-500"{% endif %}>
+        <tr{% if movement.removed %} data-removed class="bg-gray-50 text-gray-600"{% endif %}>
           <td class="px-4 py-2.5 text-gray-600" data-label="Date">{{ movement.occurred_on|day }}</td>
           <td class="phone-title px-4 py-2.5">
             {% comment %}A reversal is consumption INTO the worker: a rejected visit's
@@ -94,7 +94,7 @@ uses, so nothing ships purged.
           <td class="px-4 py-2.5 text-gray-600" data-label="Batch">{{ movement.batch|default:"—" }}</td>
           <td class="phone-lead px-4 py-2.5 tabular-nums font-medium{% if movement.removed %} line-through{% endif %}" data-label="Quantity">{{ movement.quantity|qty:movement.quantity_unit }}</td>
           <td class="px-4 py-2.5 text-xs text-gray-600" data-label="Told by">{{ movement.source|source_label }}</td>
-          <td class="px-4 py-2.5 text-right" data-label="">
+          <td class="px-4 py-2.5 text-right" data-label="Remove">
             {% comment %}A past day is read-only; a removal, an entry already removed and a rejected
             visit's put-back cannot be removed (the operation refuses them too).{% endcomment %}
             {% if not supply_as_of and not movement.removed and not movement.reverses_movement_id %}
