@@ -24,14 +24,6 @@ MARKETPLACE_MENU = Menu(
             ),
         ),
         Group(
-            "Baseline",
-            (
-                # Burden, population and what could be absorbed, with no cost-effectiveness in it:
-                # that is the explorer below.
-                Item("Baseline explorer", "targeting:index"),
-            ),
-        ),
-        Group(
             "Solicitations",
             (
                 # One page for every call: cards or a table, open and past. A round's own
@@ -53,18 +45,20 @@ MARKETPLACE_MENU = Menu(
                 Item("Live delivery", "pulse:index", owns=("/labs/pulse/opp/",), link=("pulse:display", "nightmap")),
                 Item("Network growth", "pulse:network"),
                 Item("Connectivity", "pulse:connectivity"),
+                Item("Cost data", "pulse:costs"),
+                Item("Donor reports", "pulse:report_list"),
             ),
         ),
         Group(
             "Cost-Effectiveness",
             (
-                # ONE explorer, three views on tabs: Models (run a model, change inputs, test sensitivity),
-                # Implementation (what delivered opportunities achieved, at what they cost) and Targeting
-                # (what spend would buy before delivery: malaria PMC today). Every page under /labs/cea/
-                # lights this one item.
-                Item("Cost-effectiveness explorer", "cea:models", owns=("/labs/cea/",)),
-                Item("Cost data", "pulse:costs"),
-                Item("Donor reports", "pulse:report_list"),
+                # What the indicators say, then the models, then the models applied to what was delivered, then
+                # the models applied to a market that has not been served yet (Jonathan, 2026-11-12). Malaria PMC
+                # hangs off Market size as a small link, so its pages light that item.
+                Item("Health indicators", "targeting:index"),
+                Item("CEA models", "cea:models", owns=("/labs/cea/models/",)),
+                Item("Implementations", "cea:implementation", owns=("/labs/cea/implementation/",)),
+                Item("Market size", "cea:market", owns=("/labs/cea/market/", "/labs/cea/targeting/")),
             ),
         ),
         Group(

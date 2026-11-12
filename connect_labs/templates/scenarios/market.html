@@ -1,0 +1,251 @@
+{% extends 'base.html' %}
+{% block title %}Market size · Connect Labs{% endblock %}
+
+{% block css %}
+{{ block.super }}
+<style>
+  .mk { --ink:#1f2433; --muted:#6b7280; --rule:#e5e7eb; --good:#15803d; --low:#b91c1c; --acc:#4338ca;
+        color:var(--ink); max-width:1280px; margin:0 auto; padding:18px 16px 64px; }
+  .mk h1 { font-size:24px; font-weight:600; margin:0; }
+  .mk h2 { font-size:15px; font-weight:600; margin:0 0 6px; }
+  .mk .lede { color:var(--muted); font-size:14px; margin:6px 0 4px; }
+  .mk .small-link { font-size:12.5px; color:var(--muted); margin:0 0 14px; }
+  .mk .small-link a { color:var(--acc); }
+  .mk .card { background:#fff; border-radius:10px; box-shadow:0 1px 2px rgba(0,0,0,.05); padding:16px; margin-bottom:16px; min-width:0; }
+  .mk .layout { display:grid; grid-template-columns:minmax(320px,440px) minmax(0,1fr); gap:16px; align-items:start; grid-template-areas:"controls results"; }
+  .mk .controls { grid-area:controls; } .mk .results { grid-area:results; min-width:0; }
+  @media (max-width: 900px) { .mk .layout { grid-template-columns:minmax(0,1fr); grid-template-areas:"results" "controls"; } }
+  .mk label.f { display:block; font-size:12.5px; margin:10px 0 0; }
+  .mk label.f span { display:block; color:var(--muted); font-size:11.5px; margin-bottom:3px; }
+  .mk select, .mk input[type=number], .mk input[type=text] { border:1px solid var(--rule); border-radius:6px; padding:6px 8px; font-size:13px; background:#fff; color:var(--ink); width:100%; box-sizing:border-box; }
+  .mk .two { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .mk .models { display:flex; flex-wrap:wrap; gap:8px; }
+  .mk .mchip { display:flex; align-items:center; gap:7px; padding:7px 11px; border:1px solid var(--rule); border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; flex:1 1 130px; }
+  .mk .mchip.on { border-color:var(--acc); background:#eef2ff; color:#3730a3; }
+  .mk .mchip small { display:block; font-weight:400; color:var(--muted); font-size:11px; }
+  .mk details.mi { border-top:1px solid var(--rule); margin-top:12px; padding-top:8px; }
+  .mk details.mi > summary { cursor:pointer; font-size:13px; font-weight:600; }
+  .mk .gt { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:10px 0 2px; }
+  .mk .ir { display:grid; grid-template-columns:minmax(0,1fr) 96px; gap:8px; align-items:center; padding:4px 0; font-size:12.5px; }
+  .mk .ir.changed input { border-color:var(--acc); background:#eef2ff; }
+  .mk .ir small { color:var(--muted); display:block; font-size:11px; }
+  .mk .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; }
+  .mk .tile .big { font-size:30px; font-weight:600; font-variant-numeric:tabular-nums; line-height:1.1; }
+  .mk .tile .cap { font-size:12px; color:var(--muted); margin-top:3px; }
+  .mk .err { background:#fef2f2; color:var(--low); padding:8px 10px; border-radius:6px; font-size:13px; margin:0 0 10px; }
+  .mk .scroll { overflow-x:auto; }
+  .mk table { border-collapse:collapse; font-size:13px; width:100%; }
+  .mk th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); padding:6px 8px; border-bottom:1px solid var(--rule); white-space:nowrap; }
+  .mk td { padding:6px 8px; border-bottom:1px solid #f3f4f6; }
+  .mk td.n, .mk th.n { text-align:right; font-variant-numeric:tabular-nums; }
+  .mk .ok { color:var(--good); font-weight:600; } .mk .lo { color:var(--low); }
+  .mk .btn { font-size:13px; padding:5px 11px; border:1px solid #d1d5db; border-radius:6px; background:#fff; color:var(--ink); cursor:pointer; }
+  .mk .muted { color:var(--muted); font-size:12px; }
+  .mk .mline { display:flex; flex-wrap:wrap; gap:4px 16px; font-size:13px; padding:5px 0; border-top:1px solid #f3f4f6; }
+  .mk .mline b { font-variant-numeric:tabular-nums; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% include "components/cea_tabs.html" with active="market" %}
+<div class="mk">
+  <h1>Market size</h1>
+  <p class="lede">What it would cost to reach everyone in the places you choose, and where the models say it is worth it.</p>
+  <p class="small-link">Malaria PMC, a one-off: <a href="{% url 'cea:pmc' %}">open the PMC explorer</a></p>
+  <div id="error" class="err" hidden></div>
+
+  <div class="layout">
+    <div class="results">
+      <div class="card"><div class="tiles" id="tiles"></div><p class="muted" id="sel-note" style="margin:10px 0 0"></p></div>
+      <div class="card">
+        <h2>By programme</h2>
+        <div id="by-model"></div>
+      </div>
+      <div class="card">
+        <h2>By country</h2>
+        <div class="scroll"><table id="rows"></table></div>
+        <p style="margin:8px 0 0"><button type="button" class="btn" id="more" hidden>Show all countries</button></p>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="card">
+        <h2>Programmes</h2>
+        <div class="models" id="models"></div>
+        <h2 style="margin-top:16px">Places</h2>
+        <label class="f"><span>Where this is highest</span><select id="indicator"></select></label>
+        <div class="two">
+          <label class="f"><span>Threshold</span><input type="number" id="threshold" step="any"></label>
+          <label class="f"><span>GiveWell's bar (x)</span><input type="number" id="bar" step="any"></label>
+        </div>
+        <label class="f"><span>Countries (ISO codes, blank for all Africa)</span><input type="text" id="iso" placeholder="NGA, NER, TCD"></label>
+        <div id="inputs"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{ data|json_script:"market-data" }}
+<script>
+(function () {
+  "use strict";
+  var D = JSON.parse(document.getElementById("market-data").textContent);
+  var $ = function (id) { return document.getElementById(id); };
+  function h(tag, props, kids) {
+    var e = document.createElement(tag);
+    Object.keys(props || {}).forEach(function (k) {
+      var v = props[k]; if (v == null || v === false) return;
+      if (k === "class") e.className = v; else if (k === "text") e.textContent = v;
+      else if (k === "data") Object.keys(v).forEach(function (d) { e.dataset[d] = v[d]; });
+      else if (v === true) e.setAttribute(k, ""); else e.setAttribute(k, v);
+    });
+    [].concat(kids == null ? [] : kids).forEach(function (c) { if (c != null) e.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+    return e;
+  }
+  function put(el, nodes) { while (el.firstChild) el.removeChild(el.firstChild); nodes.forEach(function (n) { el.appendChild(typeof n === "string" ? document.createTextNode(n) : n); }); }
+  function usd(v) {
+    if (v == null) return "–";
+    var a = Math.abs(v);
+    if (a >= 1e9) return "$" + (v / 1e9).toFixed(2) + "B";
+    if (a >= 1e6) return "$" + (v / 1e6).toFixed(a >= 1e8 ? 0 : 1) + "M";
+    if (a >= 1e3) return "$" + (v / 1e3).toFixed(0) + "K";
+    return "$" + v.toFixed(2);
+  }
+  function num(v) { return v == null ? "–" : (v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? (v / 1e3).toFixed(0) + "K" : String(Math.round(v))); }
+  function mult(v) { return v == null ? "–" : (v >= 10 ? v.toFixed(0) : v.toFixed(1)) + "x"; }
+
+  // ---- state, read from and written to the link
+  var q = new URLSearchParams(location.search);
+  var state = {
+    models: (q.get("models") || "chc").split(",").filter(function (m) { return D.models[m]; }),
+    indicator: q.get("indicator") || D.indicators[0].key,
+    threshold: q.get("threshold"), bar: q.get("bar") || String(D.bar), iso: q.get("iso") || "",
+    over: {}
+  };
+  if (!state.models.length) state.models = ["chc"];
+  q.forEach(function (v, k) { var m = /^i\.(\w+)\.(\w+)$/.exec(k); if (m) { (state.over[m[1]] = state.over[m[1]] || {})[m[2]] = parseFloat(v); } });
+  function indicatorMeta() { return D.indicators.filter(function (i) { return i.key === state.indicator; })[0] || D.indicators[0]; }
+  if (state.threshold == null) state.threshold = String(indicatorMeta().threshold);
+
+  function params() {
+    var p = new URLSearchParams({ models: state.models.join(","), indicator: state.indicator, threshold: state.threshold, bar: state.bar });
+    if (state.iso.trim()) p.set("iso", state.iso.replace(/\s+/g, ""));
+    Object.keys(state.over).forEach(function (m) {
+      if (state.models.indexOf(m) < 0) return;
+      Object.keys(state.over[m]).forEach(function (k) { p.set("i." + m + "." + k, state.over[m][k]); });
+    });
+    return p;
+  }
+
+  // ---- controls
+  put($("indicator"), D.indicators.map(function (i) { return h("option", { value: i.key, text: i.label }); }));
+  $("indicator").value = state.indicator; $("threshold").value = state.threshold; $("bar").value = state.bar; $("iso").value = state.iso;
+  function drawModels() {
+    put($("models"), Object.keys(D.models).map(function (k) {
+      var m = D.models[k], on = state.models.indexOf(k) >= 0;
+      return h("label", { class: "mchip" + (on ? " on" : "") }, [
+        h("input", { type: "checkbox", data: { model: k }, checked: on ? true : null }),
+        h("span", {}, [m.label, h("small", { text: "per " + m.unit })])
+      ]);
+    }));
+  }
+  function inputRow(model, i) {
+    var cur = (state.over[model] || {}).hasOwnProperty(i.key) ? state.over[model][i.key] : i.value;
+    return h("div", { class: "ir" + ((state.over[model] || {}).hasOwnProperty(i.key) ? " changed" : "") }, [
+      h("div", {}, [i.label, h("small", { text: "model: " + i.value })]),
+      h("input", { type: "number", step: "any", value: String(cur), data: { model: model, key: i.key, def: String(i.value) } })
+    ]);
+  }
+  function drawInputs() {
+    put($("inputs"), state.models.map(function (k) {
+      var m = D.models[k], kids = [h("summary", { text: m.label + ": inputs" })];
+      D.blocks.forEach(function (b) {
+        var rows = m.inputs.filter(function (i) { return i.group === b.key; });
+        if (!rows.length) return;
+        kids.push(h("div", { class: "gt", text: b.title }));
+        rows.forEach(function (i) { kids.push(inputRow(k, i)); });
+      });
+      return h("details", { class: "mi", open: true }, kids);
+    }));
+  }
+  drawModels(); drawInputs();
+
+  var timer = null, seq = 0, showAll = false, last = null;
+  function go() {
+    clearTimeout(timer);
+    try { history.replaceState(null, "", location.pathname + "?" + params().toString()); } catch (e) { /* sandboxed */ }
+    timer = setTimeout(function () {
+      var mine = ++seq;
+      fetch(D.api_url + "?" + params().toString(), { credentials: "same-origin" })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (mine !== seq) return;
+          var e = $("error");
+          if (!res.ok) { e.hidden = false; e.textContent = res.j.error || "That did not run."; return; }
+          e.hidden = true; last = res.j; draw(res.j);
+        }).catch(function () { var e = $("error"); e.hidden = false; e.textContent = "The server did not respond. Try again."; });
+    }, 250);
+  }
+
+  function draw(r) {
+    var all = 0, clear = 0, ppl = 0, floor = false, unm = 0;
+    r.models.forEach(function (m) { all += m.totals.market_usd; clear += m.totals.clearing_usd; floor = floor || m.totals.is_floor; unm += m.totals.unmodelled_countries; });
+    put($("tiles"), [
+      h("div", { class: "tile" }, [h("div", { class: "big", text: usd(all) + (floor ? "+" : "") }), h("div", { class: "cap", text: "a year, to reach everyone in these places" + (r.models.length > 1 ? " (programmes added together)" : "") })]),
+      h("div", { class: "tile" }, [h("div", { class: "big", text: usd(clear) }), h("div", { class: "cap", text: "where the model clears " + r.bar + "x GiveWell's benchmark" })]),
+      h("div", { class: "tile" }, [h("div", { class: "big", text: String(r.selection.countries) }), h("div", { class: "cap", text: "countries, " + r.selection.regions + " regions above " + r.selection.threshold + " on " + r.selection.indicator_label })])
+    ]);
+    $("sel-note").textContent = (floor ? "A plus means some places have no count, so this is a floor. " : "") +
+      (unm ? unm + " country-programme pairs have no published model figures: they count in the first number, never the second. " : "") +
+      (r.selection.unsupported.length ? "No data for " + r.selection.unsupported.join(", ") + "." : "");
+    put($("by-model"), r.models.map(function (m) {
+      var t = m.totals;
+      return h("div", { class: "mline" }, [
+        h("b", { text: D.models[m.model].label }),
+        h("span", { text: num(t.units) + " " + m.noun }),
+        h("span", { text: usd(t.market_usd) + " a year" }),
+        h("span", { class: t.clearing_countries ? "ok" : "lo", text: t.clearing_countries + " of " + t.countries + " countries clear the bar (" + usd(t.clearing_usd) + ")" })
+      ]);
+    }));
+    var rows = [];
+    r.models.forEach(function (m) { m.rows.forEach(function (x) { rows.push({ m: m.model, x: x }); }); });
+    rows.sort(function (a, b) { return (b.x.market_usd || 0) - (a.x.market_usd || 0); });
+    var shown = showAll ? rows : rows.slice(0, 12);
+    $("more").hidden = rows.length <= 12; $("more").textContent = showAll ? "Show fewer" : "Show all " + rows.length + " rows";
+    put($("rows"), [
+      h("thead", {}, [h("tr", {}, [h("th", { text: "Country" }), h("th", { text: "Programme" }), h("th", { class: "n", text: "People" }), h("th", { class: "n", text: "Cost each" }), h("th", { class: "n", text: "Market" }), h("th", { class: "n", text: "Multiple" })])]),
+      h("tbody", {}, shown.map(function (o) {
+        var x = o.x;
+        return h("tr", {}, [h("td", { text: x.country }), h("td", { text: D.models[o.m].label.split(" ")[0] }),
+          h("td", { class: "n", text: num(x.units) + (x.partial ? "+" : "") }), h("td", { class: "n", text: "$" + x.cost_per_person.toFixed(2) }),
+          h("td", { class: "n", text: usd(x.market_usd) }),
+          h("td", { class: "n " + (x.clears_bar ? "ok" : "lo"), text: x.modelled ? mult(x.multiple) : "no model figure" })]);
+      }))
+    ]);
+  }
+  $("more").addEventListener("click", function () { showAll = !showAll; if (last) draw(last); });
+
+  // ---- events
+  $("models").addEventListener("change", function (e) {
+    var k = e.target.dataset.model; if (!k) return;
+    var on = state.models.slice(); var at = on.indexOf(k);
+    if (e.target.checked && at < 0) on.push(k); if (!e.target.checked && at >= 0) on.splice(at, 1);
+    if (!on.length) { e.target.checked = true; return; }
+    state.models = on; drawModels(); drawInputs(); go();
+  });
+  $("indicator").addEventListener("change", function (e) { state.indicator = e.target.value; state.threshold = String(indicatorMeta().threshold); $("threshold").value = state.threshold; go(); });
+  $("threshold").addEventListener("input", function (e) { state.threshold = e.target.value; go(); });
+  $("bar").addEventListener("input", function (e) { state.bar = e.target.value; go(); });
+  $("iso").addEventListener("input", function (e) { state.iso = e.target.value; go(); });
+  $("inputs").addEventListener("input", function (e) {
+    var t = e.target; if (!t.dataset.key) return;
+    var v = parseFloat(t.value); if (isNaN(v)) return;
+    var o = state.over[t.dataset.model] = state.over[t.dataset.model] || {};
+    if (String(v) === t.dataset.def) delete o[t.dataset.key]; else o[t.dataset.key] = v;
+    t.parentNode.classList.toggle("changed", o.hasOwnProperty(t.dataset.key));
+    go();
+  });
+  go();
+})();
+</script>
+{% endblock %}
