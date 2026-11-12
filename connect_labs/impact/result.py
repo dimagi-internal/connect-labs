@@ -13,9 +13,8 @@ the whole chain and a reader can check any number against its source:
     observed   people reached, total cost, cost per person (and invoice pooling)
     result     multiple at actual cost, deaths averted, cost per death, the bar
 
-Re-pricing: every model here runs with GiveWell's leveraging adjustment at 1, so
-benefit per person is fixed by the place and cost per person scales the multiple
-exactly: multiple at actual cost = model multiple x model price / actual price.
+Re-pricing is ``reprice`` below: every model here runs with GiveWell's leveraging adjustment at 1, so
+benefit per person is fixed by the place and cost per person scales the multiple exactly.
 """
 
 from __future__ import annotations
@@ -49,6 +48,51 @@ CHAIN = {
     "kc": ["babies", "deaths", "units", "cost", "lev", "x"],
     "mbw": ["pairs", "post_d", "neo_d", "post_adj", "neo_adj", "units", "cost", "lev", "x"],
 }
+
+
+def reprice(
+    model_x: float,
+    model_price: float,
+    deaths_per_100k: float,
+    reached: float,
+    total_usd: float,
+    bar_x: float,
+    *,
+    effect: float = 1.0,
+    reach_share: float = 1.0,
+    extra_per_person: float = 0.0,
+    at_model_price: bool = False,
+) -> dict | None:
+    """What a delivery achieved, from the model's result at its place and what was actually spent.
+
+    The one place this arithmetic lives: ``evaluate`` calls it, the Implementation what-if calls it, and
+    so does anything that reports a delivered opportunity. Every model here runs with GiveWell's
+    leveraging adjustment at 1, so benefit per person is fixed by the place and the multiple scales
+    exactly with price:
+
+        multiple at actual cost = model multiple x model price / cost per person
+
+    The keywords are the what-if: ``effect`` scales the model's effect on deaths (1 = as modelled),
+    ``reach_share`` the people counted, ``extra_per_person`` adds cost bought outside the programme, and
+    ``at_model_price`` values the people at the model's own price. Defaults are the delivery as observed.
+    Returns None when nobody is counted.
+    """
+    people = reached * reach_share
+    if people <= 0:
+        return None
+    cost = model_price * people if at_model_price else total_usd + extra_per_person * people
+    cost_per_person = cost / people
+    x = model_x * effect * model_price / cost_per_person
+    deaths = people * deaths_per_100k / 100_000 * effect
+    return {
+        "reached": people,
+        "cost_used": cost,
+        "cost_per_person": cost_per_person,
+        "x": x,
+        "deaths_averted": deaths,
+        "cost_per_death": (cost / deaths) if deaths else None,
+        "clears_bar": x >= bar_x,
+    }
 
 
 def model_country_result(model: str, iso3: str) -> dict | None:
@@ -122,10 +166,11 @@ def evaluate(
         "clears_bar": None,
     }
     if reached and total_usd > 0 and per_area:
-        out["x"] = model_x * price / out["cost_per_person"]
-        out["deaths_averted"] = reached * deaths_per_100k / 100_000
-        out["cost_per_death"] = (total_usd / out["deaths_averted"]) if out["deaths_averted"] else None
-        out["clears_bar"] = out["x"] >= bar_x
+        r = reprice(model_x, price, deaths_per_100k, reached, total_usd, bar_x)
+        out["x"] = r["x"]
+        out["deaths_averted"] = r["deaths_averted"]
+        out["cost_per_death"] = r["cost_per_death"]
+        out["clears_bar"] = r["clears_bar"]
     if detail:
         loc = set(engine.location_keys(model))
         out["other_inputs"] = [

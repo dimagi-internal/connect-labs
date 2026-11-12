@@ -98,6 +98,20 @@ def test_nothing_below_scenarios_imports_it():
         assert not any(_under(m, ("connect_labs.scenarios",)) for m in _imports(p)), f"{rel} imports scenarios"
 
 
+def test_existing_opportunities_reach_the_models_only_through_impact():
+    """The Implementation view (pulse/cea.py) applies the models to what was delivered through ``impact``.
+
+    It may read Pulse's own data (visits, works, costs) and the ``impact`` place layer and evaluator. It must not
+    reach into the baseline package itself or carry its own copy of the arithmetic: where a delivery is placed
+    and what its baseline is come from ``impact.places`` and ``impact.baseline``, the same as the explorer.
+    """
+    imports = _imports(ROOT / "pulse" / "cea.py")
+    assert not any(_under(m, ("connect_labs.labs.indicators",)) for m in imports), sorted(
+        m for m in imports if _under(m, ("connect_labs.labs.indicators",))
+    )
+    assert {"connect_labs.impact.result", "connect_labs.impact.baseline", "connect_labs.impact.places"} <= imports
+
+
 def test_market_sizing_has_no_new_importers():
     sizing = "connect_labs.labs.indicators.interventions"
     found = {rel for rel, p in _files("labs", "mcp", "impact", "pulse", "marketplace") if sizing in _imports(p)}

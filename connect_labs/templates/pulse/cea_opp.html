@@ -47,6 +47,12 @@
     · <span class="pill {% if d.row.status == 'modelled' %}{% if d.row.clears_bar %}ok{% else %}lo{% endif %}{% endif %}">{{ d.row.status_text }}</span>
     {% if d.model_meta %} · model: <a href="{{ d.model_meta.sheet }}" target="_blank" rel="noopener">{{ d.model_meta.label }}</a>{% endif %}
   </div>
+  {% if d.explore %}
+  <p class="meta" data-testid="explore-links">Test how sensitive this answer is in the model explorer, with this opportunity's place and
+    what it actually cost per person already set:
+    {% for l in d.explore %}<a href="{{ l.path }}">{{ l.area }}{% if d.explore|length > 1 %} ({% widthratio l.share 1 100 %}% of visits){% endif %}</a>{% if not forloop.last %} · {% endif %}{% endfor %}
+  </p>
+  {% endif %}
 
   {% with r=d.result row=d.row %}
   <div class="tiles">

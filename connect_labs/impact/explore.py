@@ -191,6 +191,26 @@ def grid(model: str, x_key: str, xs: list[float], y_key: str, ys: list[float], o
     return {"x_key": x_key, "xs": xs, "y_key": y_key, "ys": ys, "multiples": cells}
 
 
+def delivery_overrides(model: str, place_inputs: dict, cost_per_person: float | None) -> dict[str, float]:
+    """Inputs that put one delivered opportunity into the model, so its answer can be explored.
+
+    ``place_inputs`` are the opportunity's place inputs as the baseline resolved them (location inputs
+    only are kept); ``cost_per_person`` is what it actually cost per person reached. The model's price per
+    person is its cost input plus fixed extras (a deworming tablet, say), so the cost input is shifted by
+    the difference, which makes the model's price equal the observed one. The explorer then gives the same
+    multiple ``result.evaluate`` gives for that opportunity at that place, because both are the model's
+    result re-priced (``result.reprice``).
+    """
+    location = set(engine.location_keys(model))
+    overrides = clean_overrides(model, {k: v for k, v in (place_inputs or {}).items() if k in location})
+    if cost_per_person and cost_per_person > 0:
+        price_now = _headline(model, overrides)[1]
+        shifted = engine.defaults(model)["cost"] + (cost_per_person - price_now)
+        if shifted > 0:
+            overrides["cost"] = shifted
+    return overrides
+
+
 def scenarios(model: str) -> list[dict]:
     """The scenarios the model's builders wrote, each run: their name, what they set, and the result."""
     out = []
