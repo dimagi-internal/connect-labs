@@ -54,6 +54,7 @@ from connect_labs.labs.context import get_org_data
 from connect_labs.labs.integrations.connect.api_client import LabsAPIError
 from connect_labs.opportunity.models import VisitValidationStatus
 from connect_labs.utils.json_safe import safe_json_for_script
+from connect_labs.utils.request_telemetry import emit_handled_exception_metric
 from connect_labs.utils.tables import get_validated_page_size
 
 logger = logging.getLogger(__name__)
@@ -1647,11 +1648,13 @@ class ExperimentAuditImageConnectView(LoginRequiredMixin, View):
                 logger.warning("Audit image %s not found upstream (opp=%s)", blob_id, opp_id)
                 return HttpResponse("Image not found", status=404)
             logger.exception("Audit image fetch failed for blob_id=%s opp_id=%s", blob_id, opp_id)
+            emit_handled_exception_metric(request, e)
             return HttpResponse("Image temporarily unavailable", status=502)
-        except Exception:
+        except Exception as e:
             # A real fault. Report it as one — reporting these as "404 Image not
             # found" is what kept this endpoint's failures invisible.
             logger.exception("Audit image fetch failed for blob_id=%s opp_id=%s", blob_id, opp_id)
+            emit_handled_exception_metric(request, e)
             return HttpResponse("Image temporarily unavailable", status=502)
         finally:
             data_access.close()
