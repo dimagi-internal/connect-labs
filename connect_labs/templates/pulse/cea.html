@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load humanize %}
-{% block title %}Implementation cost-effectiveness · Pulse{% endblock %}
+{% block title %}Implementations · Connect Labs{% endblock %}
 
 {% block css %}
 {{ block.super }}
@@ -102,13 +102,8 @@
 <div class="cea">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
     <div>
-      <h1>Implementation cost-effectiveness</h1>
-      <p class="lede">
-        Each real Connect opportunity, valued with Connect's own cost-effectiveness models (CHC, MBW, kangaroo care)
-        for the country it was delivered in, then <b>re-priced at what it actually cost</b> per person reached.
-        Multiples are of GiveWell's benchmark; the dashed line is GiveWell's bar of {{ data.bar_x }}x. Delivery types
-        with no model say so. Every figure is a model, counting deaths only, so each multiple is a floor.
-      </p>
+      <h1>Implementations</h1>
+      <p class="lede">Each delivered opportunity, valued with the models and re-priced at what it actually cost. A multiple is of GiveWell's benchmark; the bar is {{ data.bar_x }}x.</p>
     </div>
     <div style="display:flex;gap:8px">
       <a class="btn" href="?format=csv">Download CSV</a>
@@ -121,8 +116,7 @@
   <div class="card whatif" id="whatif">
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
       <div><h2>What if</h2>
-        <p class="sub">Change the inputs and every multiple, total and rank below recomputes. Your settings are kept in the link, so a
-          scenario can be shared.</p></div>
+        <p class="sub">Everything below recomputes. Settings are kept in the link.</p></div>
       <button type="button" class="btn" id="wi-reset">Reset to the models</button>
     </div>
     <div class="wi-top">
@@ -206,7 +200,7 @@
     <div class="tbl-wrap"><table id="tbl"></table></div>
   </div>
 
-  <div class="card notes">
+  <details class="card notes"><summary style="cursor:pointer;font-weight:600;font-size:14px">How these numbers are made</summary>
     <p><b>Place.</b> Each opportunity runs the model's own formulas once per area its approved visits fell in (by GPS):
       a district where Labs holds district figures, else the state or province. Each place input (diarrhoea deaths,
       ORS, vitamin A and deworming coverage, newborn and infant mortality, breastfeeding) takes the most local figure
@@ -233,7 +227,7 @@
       reads "No model for this country". {{ data.bar_note }}.</p>
     <p><b>Not counted:</b> anything but deaths averted (illness, development, income), so every multiple is a floor. These are modelled
       estimates, not measured impact.</p>
-  </div>
+  </details>
 
   <div class="tip" id="tip"></div>
 </div>

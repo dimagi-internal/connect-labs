@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Targeting cost-effectiveness: malaria PMC · Connect Labs{% endblock %}
+{% block title %}Malaria PMC · Connect Labs{% endblock %}
 
 {% block css %}
   {{ block.super }}
@@ -128,6 +128,7 @@
 
 {% block content %}
 {% include "components/cea_tabs.html" with active="market" %}
+<p style="max-width:1280px;margin:10px auto 0;padding:0 16px;font-size:13px"><a href="{% url 'cea:market' %}" style="color:#4338ca">&larr; Market size</a></p>
 <div class="pmc py-6 space-y-4 max-w-6xl">
 
   <div class="flex flex-wrap items-baseline gap-3">

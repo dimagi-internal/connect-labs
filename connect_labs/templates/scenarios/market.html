@@ -6,6 +6,7 @@
 <style>
   .mk { --ink:#1f2433; --muted:#6b7280; --rule:#e5e7eb; --good:#15803d; --low:#b91c1c; --acc:#4338ca;
         color:var(--ink); max-width:1280px; margin:0 auto; padding:18px 16px 64px; }
+  .mk [hidden] { display:none !important; }
   .mk h1 { font-size:24px; font-weight:600; margin:0; }
   .mk h2 { font-size:15px; font-weight:600; margin:0 0 6px; }
   .mk .lede { color:var(--muted); font-size:14px; margin:6px 0 4px; }
@@ -73,9 +74,9 @@
         <h2>Programmes</h2>
         <div class="models" id="models"></div>
         <h2 style="margin-top:16px">Places</h2>
-        <label class="f"><span>Where this is highest</span><select id="indicator"></select></label>
+        <label class="f"><span>Where</span><select id="indicator"></select></label>
         <div class="two">
-          <label class="f"><span>Threshold</span><input type="number" id="threshold" step="any"></label>
+          <label class="f" id="thr-wrap"><span>Above</span><input type="number" id="threshold" step="any"></label>
           <label class="f"><span>GiveWell's bar (x)</span><input type="number" id="bar" step="any"></label>
         </div>
         <label class="f"><span>Countries (ISO codes, blank for all Africa)</span><input type="text" id="iso" placeholder="NGA, NER, TCD"></label>
@@ -118,17 +119,18 @@
   var q = new URLSearchParams(location.search);
   var state = {
     models: (q.get("models") || "chc").split(",").filter(function (m) { return D.models[m]; }),
-    indicator: q.get("indicator") || D.indicators[0].key,
+    indicator: q.get("indicator") || "all",
     threshold: q.get("threshold"), bar: q.get("bar") || String(D.bar), iso: q.get("iso") || "",
     over: {}
   };
   if (!state.models.length) state.models = ["chc"];
   q.forEach(function (v, k) { var m = /^i\.(\w+)\.(\w+)$/.exec(k); if (m) { (state.over[m[1]] = state.over[m[1]] || {})[m[2]] = parseFloat(v); } });
   function indicatorMeta() { return D.indicators.filter(function (i) { return i.key === state.indicator; })[0] || D.indicators[0]; }
-  if (state.threshold == null) state.threshold = String(indicatorMeta().threshold);
+  if (state.threshold == null) state.threshold = String(indicatorMeta().threshold == null ? "" : indicatorMeta().threshold);
 
   function params() {
-    var p = new URLSearchParams({ models: state.models.join(","), indicator: state.indicator, threshold: state.threshold, bar: state.bar });
+    var p = new URLSearchParams({ models: state.models.join(","), indicator: state.indicator, bar: state.bar });
+    if (state.indicator !== "all") p.set("threshold", state.threshold);
     if (state.iso.trim()) p.set("iso", state.iso.replace(/\s+/g, ""));
     Object.keys(state.over).forEach(function (m) {
       if (state.models.indexOf(m) < 0) return;
@@ -140,6 +142,8 @@
   // ---- controls
   put($("indicator"), D.indicators.map(function (i) { return h("option", { value: i.key, text: i.label }); }));
   $("indicator").value = state.indicator; $("threshold").value = state.threshold; $("bar").value = state.bar; $("iso").value = state.iso;
+  function showThreshold() { $("thr-wrap").hidden = state.indicator === "all"; }
+  showThreshold();
   function drawModels() {
     put($("models"), Object.keys(D.models).map(function (k) {
       var m = D.models[k], on = state.models.indexOf(k) >= 0;
@@ -193,11 +197,15 @@
     put($("tiles"), [
       h("div", { class: "tile" }, [h("div", { class: "big", text: usd(all) + (floor ? "+" : "") }), h("div", { class: "cap", text: "a year, to reach everyone in these places" + (r.models.length > 1 ? " (programmes added together)" : "") })]),
       h("div", { class: "tile" }, [h("div", { class: "big", text: usd(clear) }), h("div", { class: "cap", text: "where the model clears " + r.bar + "x GiveWell's benchmark" })]),
-      h("div", { class: "tile" }, [h("div", { class: "big", text: String(r.selection.countries) }), h("div", { class: "cap", text: "countries, " + r.selection.regions + " regions above " + r.selection.threshold + " on " + r.selection.indicator_label })])
+      h("div", { class: "tile" }, [h("div", { class: "big", text: String(r.selection.countries) }),
+        h("div", { class: "cap", text: r.selection.everywhere ? "of " + r.selection.africa_total + " African countries have data" : "countries with " + r.selection.regions + " regions above " + r.selection.threshold + " on " + r.selection.indicator_label })])
     ]);
-    $("sel-note").textContent = (floor ? "A plus means some places have no count, so this is a floor. " : "") +
-      (unm ? unm + " country-programme pairs have no published model figures: they count in the first number, never the second. " : "") +
-      (r.selection.unsupported.length ? "No data for " + r.selection.unsupported.join(", ") + "." : "");
+    var missing = r.selection.unsupported.length;
+    put($("sel-note"), [
+      (floor ? "A plus means some places have no count, so this is a floor. " : "") +
+        (unm ? unm + (unm === 1 ? " country has" : " countries have") + " no model figures: counted in the market, never in the clearing part. " : ""),
+      missing > 0 ? h("details", { css: { display: "inline" } }, [h("summary", { css: { display: "inline", cursor: "pointer" }, text: missing + (missing === 1 ? " country has" : " countries have") + " no data" }), " " + r.selection.unsupported.join(", ") + "."]) : ""
+    ]);
     put($("by-model"), r.models.map(function (m) {
       var t = m.totals;
       return h("div", { class: "mline" }, [
@@ -213,7 +221,7 @@
     var shown = showAll ? rows : rows.slice(0, 12);
     $("more").hidden = rows.length <= 12; $("more").textContent = showAll ? "Show fewer" : "Show all " + rows.length + " rows";
     put($("rows"), [
-      h("thead", {}, [h("tr", {}, [h("th", { text: "Country" }), h("th", { text: "Programme" }), h("th", { class: "n", text: "People" }), h("th", { class: "n", text: "Cost each" }), h("th", { class: "n", text: "Market" }), h("th", { class: "n", text: "Multiple" })])]),
+      h("thead", {}, [h("tr", {}, [h("th", { text: "Country" }), h("th", { text: "Programme" }), h("th", { class: "n", text: "People" }), h("th", { class: "n", text: "A year, each" }), h("th", { class: "n", text: "Market" }), h("th", { class: "n", text: "Multiple" })])]),
       h("tbody", {}, shown.map(function (o) {
         var x = o.x;
         return h("tr", {}, [h("td", { text: x.country }), h("td", { text: D.models[o.m].label.split(" ")[0] }),
@@ -233,7 +241,10 @@
     if (!on.length) { e.target.checked = true; return; }
     state.models = on; drawModels(); drawInputs(); go();
   });
-  $("indicator").addEventListener("change", function (e) { state.indicator = e.target.value; state.threshold = String(indicatorMeta().threshold); $("threshold").value = state.threshold; go(); });
+  $("indicator").addEventListener("change", function (e) {
+    state.indicator = e.target.value; state.threshold = String(indicatorMeta().threshold == null ? "" : indicatorMeta().threshold);
+    $("threshold").value = state.threshold; showThreshold(); go();
+  });
   $("threshold").addEventListener("input", function (e) { state.threshold = e.target.value; go(); });
   $("bar").addEventListener("input", function (e) { state.bar = e.target.value; go(); });
   $("iso").addEventListener("input", function (e) { state.iso = e.target.value; go(); });

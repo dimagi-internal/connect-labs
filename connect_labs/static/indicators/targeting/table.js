@@ -304,7 +304,15 @@
       ' is ' +
       (meta.lower_is_worse ? 'below' : 'above') +
       util.esc(thr) +
-      (partly.length ? ' — only part of ' + util.esc(partly.join(', ')) : '') +
+      (partly.length > 3
+        ? ' — only part of <span title="' +
+          util.esc(partly.join(', ')) +
+          '">' +
+          partly.length +
+          ' countries</span>'
+        : partly.length
+          ? ' — only part of ' + util.esc(partly.join(', '))
+          : '') +
       ' · ' +
       (data.projected_to
         ? 'carried to ' + util.esc(String(data.projected_to))

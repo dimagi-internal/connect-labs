@@ -107,7 +107,7 @@ class TestPageAndApi:
         resp = client_in.get(reverse("cea:models"))
         body = resp.content.decode()
         assert resp.status_code == 200
-        assert "Cost-effectiveness models" in body and 'data-testid="cea-tabs"' in body
+        assert "CEA models" in body and 'data-testid="cea-tabs"' in body
         assert 'id="explore-data"' in body and "Connect Child Health Campaign" in body
 
     def test_a_shared_link_restores_the_inputs(self, client_in):

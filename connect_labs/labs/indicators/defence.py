@@ -201,14 +201,11 @@ def sanity_checks(selection) -> list[Check]:
                 Check(
                     "Coherent with UN IGME's national estimates",
                     "consistent" if incoherent == 0 else "inconsistent",
-                    f"Of {compared} selected areas that can be compared against their own country's "
-                    f"national estimate — which comes from UN IGME, not from anything used to build "
-                    f"this table — {worse_than_national} are worse than the national figure and "
-                    f"{compared - worse_than_national} are better. Both are expected: the threshold "
-                    "here is not the national average, so an area can clear it while still sitting on "
-                    "the better side of its country. What would be incoherent is an area selected "
-                    "under a threshold at least as severe as the national figure yet scoring better "
-                    f"than it, and there are {incoherent} of those.",
+                    f"{compared} selected areas have a UN IGME national estimate to compare with: "
+                    f"{worse_than_national} sit worse than it and {compared - worse_than_national} better, "
+                    "both expected because the threshold is not the national average. Incoherent would be "
+                    "an area selected under a threshold at least as severe as the national figure yet "
+                    f"scoring better than it: {incoherent}.",
                 )
             )
     return checks
