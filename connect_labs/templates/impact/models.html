@@ -17,7 +17,7 @@
   .cem .chip { flex:1 1 220px; min-width:0; max-width:100%; box-sizing:border-box; }
   .cem .chip small { white-space:normal; overflow-wrap:anywhere; }
   .cem .chip.on { border-color:var(--acc); background:#eef2ff; color:#3730a3; }
-  .cem .layout { display:grid; grid-template-columns:minmax(300px,380px) minmax(0,1fr); gap:16px; align-items:start;
+  .cem .layout { display:grid; grid-template-columns:minmax(340px,480px) minmax(0,1fr); gap:16px; align-items:start;
                  grid-template-areas:"inputs results"; }
   .cem .inputs-col { grid-area:inputs; } .cem .results-col { grid-area:results; min-width:0; }
   @media (max-width: 900px) { .cem .layout { grid-template-columns:minmax(0,1fr); grid-template-areas:"results" "inputs"; } }
@@ -37,12 +37,28 @@
   .cem .inp .row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; margin-top:4px; }
   .cem .inp input[type=number] { width:110px; }
   .cem .inp .unit { color:var(--muted); font-size:12px; }
+  .cem .inp .cases { font-size:12px; color:var(--muted); }
   .cem .inp .cases button { border:0; background:none; color:var(--acc); font-size:12px; cursor:pointer; padding:0 2px; text-decoration:underline; }
   .cem .inp.changed label { font-weight:600; } .cem .inp.changed input { border-color:var(--acc); background:#eef2ff; }
   .cem .inp .def { color:var(--muted); font-size:11.5px; }
   .cem .inp details summary { font-size:11.5px; color:var(--muted); cursor:pointer; }
   .cem .inp details p { font-size:12px; color:var(--muted); margin:4px 0 0; line-height:1.4; }
-  .cem .torn { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
+  .cem .grp { border-top:1px solid var(--rule); padding:10px 0 2px; }
+  .cem .grp > summary { cursor:pointer; list-style:none; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 10px; }
+  .cem .grp > summary::-webkit-details-marker { display:none; }
+  .cem .grp .gt { font-size:14px; font-weight:600; } .cem .grp .gh { font-size:12px; color:var(--muted); }
+  .cem .grp .gs { margin-left:auto; font-size:12px; font-variant-numeric:tabular-nums; color:var(--muted); }
+  .cem .inp .top { display:flex; align-items:flex-start; gap:8px; }
+  .cem .inp .top input[type=checkbox] { margin-top:2px; flex:none; }
+  .cem .inp .top label { flex:1; min-width:0; }
+  .cem .inp .mini { margin:6px 0 0 24px; }
+  .cem .inp .mini .track { height:10px; }
+  .cem .inp .mini .nums { font-size:11px; }
+  .cem .inp.off .mini { display:none; }
+  .cem .sens { margin-top:12px; padding-top:10px; border-top:1px solid var(--rule); }
+  .cem .sens .lab { font-size:13px; margin-bottom:4px; }
+  .cem .tools { display:flex; gap:8px; align-items:center; margin:0 0 6px; font-size:12.5px; }
+  .cem .tools button { border:0; background:none; color:var(--acc); cursor:pointer; text-decoration:underline; padding:0; font-size:12.5px; }
   .cem .tr .lab { font-size:12.5px; margin-bottom:3px; }
   .cem .track { position:relative; height:18px; background:#f3f4f6; border-radius:4px; }
   .cem .seg { position:absolute; top:0; bottom:0; opacity:.85; }
@@ -69,12 +85,7 @@
 {% include "components/cea_tabs.html" with active="models" %}
 <div class="cem">
   <h1>Cost-effectiveness models</h1>
-  <p class="lede">
-    Run one of Connect's models, change any input, read the chain that gives the answer, and see which inputs it
-    is most sensitive to. These are the models' own formulas, the same ones that value every delivered opportunity
-    and every scenario, so a number here is the number there. A multiple is a multiple of GiveWell's benchmark;
-    only deaths and the effects each model names are counted.
-  </p>
+  <p class="lede">Pick a model, change any input, and see what moves the answer. A multiple is a multiple of GiveWell's benchmark.</p>
 
   <div class="chips" id="model-chips"></div>
   <div id="error" class="err" hidden></div>
@@ -92,20 +103,13 @@
           <span>Deaths averted per 100,000: <b id="h-deaths">–</b></span>
           <span>Bar: <b id="h-bar">–</b>x</span>
         </div>
+        <div class="sens" id="overall"></div>
         <p class="foot" id="source-note"></p>
       </div>
 
       <div class="card">
-        <h2>Sensitivity: one input at a time</h2>
-        <p class="sub">Each input that has a low and a high case, moved to those cases with everything else held where it is now.
-          The bar shows the multiple at the low and the high case; the black line is today's answer and the dashed line is the bar.</p>
-        <div class="torn" id="tornado"></div>
-      </div>
-
-      <div class="card">
-        <h2>Sensitivity: two inputs together</h2>
-        <p class="sub">The multiple across two inputs, each from half to one and a half times its current value (a share stops at 100%).
-          Green clears the bar.</p>
+        <h2>Two inputs together</h2>
+        <p class="sub">Each from half to one and a half times its value. Green clears the bar.</p>
         <div class="gridsel">
           <label>Across <select id="grid-x"></select></label>
           <label>Down <select id="grid-y"></select></label>
@@ -116,19 +120,16 @@
 
       <div class="card">
         <h2>How the answer is built</h2>
-        <p class="sub">Every row of the model, in order, at the inputs above.</p>
         <div class="scroll"><table id="chain"></table></div>
       </div>
 
       <div class="card">
         <h2>The model's own scenarios</h2>
-        <p class="sub">The cases its builders wrote. Run one to load its inputs.</p>
         <div class="scroll"><table id="scenarios"></table></div>
       </div>
 
       <div class="card" id="places-card">
         <h2>Country by country</h2>
-        <p class="sub">The model at each country's own published figures. Use one to load that country's inputs.</p>
         <input type="search" id="place-q" placeholder="Filter by country" style="margin-bottom:8px">
         <div class="scroll" style="max-height:420px;overflow-y:auto"><table id="places"></table></div>
       </div>
@@ -136,11 +137,12 @@
 
     <div class="inputs-col">
       <div class="card">
-        <h2>Inputs</h2>
-        <p class="sub">Change a value and the answer recomputes. Anything you change is kept in the link, so a configuration can be shared.</p>
+        <h2>Inputs and sensitivity</h2>
+        <p class="sub">Tick an input to include it in the sensitivity. Its bar shows the answer at its low and high case.</p>
         <label style="font-size:13px">Start from
           <select id="preset" style="display:block;margin-top:4px;width:100%"></select></label>
-        <div id="inputs" style="margin-top:8px"></div>
+        <div class="tools"><span>Sensitivity:</span><button type="button" id="sens-all">all on</button><button type="button" id="sens-none">all off</button></div>
+        <div id="inputs"></div>
       </div>
     </div>
   </div>
@@ -204,37 +206,45 @@
     " · version " + (D.spec.version || "") + " · vendored from " + (D.spec.repo || "connect-cea-models") + " @ " + String(D.spec.commit || "").slice(0, 7)
   ]);
 
-  // ---- inputs form
+  // ---- inputs form: one row per input, with its sensitivity switch and bar
+  var included = {};
+  D.sensitivity.rows.forEach(function (r) { included[r.key] = r.included; });
+  var defaultOn = D.sensitivity.rows.map(function (r) { return r.key; }).sort().join(",");
   function currentValue(i) { return overrides.hasOwnProperty(i.key) ? overrides[i.key] : i.value; }
   function caseButton(i, which) {
     return h("button", { type: "button", data: { set: i.key, v: String(i[which]) }, text: fmt(i[which], i.format) });
   }
   function inputRow(i) {
     var isSwitch = i.unit === "switch";
+    var ranged = i.low != null && i.high != null && !isSwitch;
     var field = isSwitch
       ? h("input", { type: "checkbox", data: { key: i.key }, checked: currentValue(i) ? true : null })
       : h("input", { type: "number", step: "any", data: { key: i.key }, value: String(currentValue(i)) });
-    var cases = (i.low != null && i.high != null && !isSwitch)
-      ? h("span", { class: "cases" }, ["low ", caseButton(i, "low"), " high ", caseButton(i, "high")]) : null;
+    var cases = ranged ? h("span", { class: "cases" }, ["low ", caseButton(i, "low"), " high ", caseButton(i, "high")]) : null;
     var more = null;
     if (i.meaning || i.where || i.range) {
       var paras = [];
       if (i.meaning) paras.push(h("p", { text: i.meaning }));
       if (i.where) paras.push(h("p", {}, [h("b", { text: "Source: " }), i.where]));
       if (i.range) paras.push(h("p", {}, [h("b", { text: "Range: " }), i.range]));
-      more = h("details", {}, [h("summary", { text: "What it is, and where it comes from" })].concat(paras));
+      more = h("details", {}, [h("summary", { text: "More" })].concat(paras));
     }
-    return h("div", { class: "inp", data: { row: i.key } }, [
-      h("label", { text: i.label }),
-      h("div", { class: "row" }, [field, h("span", { class: "unit", text: i.unit }), h("span", { class: "def", text: "model: " + fmt(i.value, i.format) }), cases]),
-      more
+    var sw = ranged
+      ? h("input", { type: "checkbox", class: "sens-on", data: { sens: i.key }, title: "Include in the sensitivity", "aria-label": "Include " + i.label + " in the sensitivity", checked: included[i.key] ? true : null })
+      : h("span", { css: { width: "13px", flex: "none" } });
+    return h("div", { class: "inp" + (ranged && included[i.key] ? "" : " off"), data: { row: i.key } }, [
+      h("div", { class: "top" }, [sw, h("label", { text: i.label })]),
+      h("div", { class: "row", css: { marginLeft: "24px" } }, [field, h("span", { class: "unit", text: i.unit }), h("span", { class: "def", text: "model: " + fmt(i.value, i.format) }), cases]),
+      ranged ? h("div", { class: "mini", data: { mini: i.key } }) : null,
+      h("div", { css: { marginLeft: "24px" } }, [more])
     ]);
   }
   put($("inputs"), D.blocks.map(function (b) {
-    var items = D.inputs.filter(function (i) { return i.block === b.key; });
+    var items = D.inputs.filter(function (i) { return i.group === b.key; });
     if (!items.length) return null;
-    return h("details", { class: "blk", open: items[0].editable ? true : null },
-      [h("summary", { text: b.title + " (" + items.length + ")" })].concat(items.map(inputRow)));
+    return h("details", { class: "grp", open: b.key !== "other" ? true : null }, [
+      h("summary", {}, [h("span", { class: "gt", text: b.title }), h("span", { class: "gh", text: b.hint }), h("span", { class: "gs", data: { gs: b.key } })])
+    ].concat(items.map(inputRow)));
   }).filter(Boolean));
 
   function syncRows() {
@@ -248,6 +258,7 @@
   }
 
   // ---- calls
+  function includedKeys() { return Object.keys(included).filter(function (k) { return included[k]; }); }
   function query(extra) {
     var p = new URLSearchParams({ model: D.model });
     Object.keys(overrides).forEach(function (k) { p.set("i_" + k, overrides[k]); });
@@ -255,11 +266,15 @@
     return p;
   }
   function writeUrl() {
-    try { history.replaceState(null, "", location.pathname + "?" + query().toString()); } catch (e) { /* sandboxed frame */ }
+    var p = query();
+    var on = includedKeys().sort().join(",");
+    if (on !== defaultOn) p.set("s", on);
+    try { history.replaceState(null, "", location.pathname + "?" + p.toString()); } catch (e) { /* sandboxed frame */ }
   }
   function showError(msg) { var e = $("error"); e.hidden = !msg; e.textContent = msg || ""; }
   function call(extra) {
-    return fetch(D.run_url + "?" + query(extra).toString(), { credentials: "same-origin" })
+    var q = query(extra); q.set("s", includedKeys().join(","));
+    return fetch(D.run_url + "?" + q.toString(), { credentials: "same-origin" })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); });
   }
   var timer = null, seq = 0;
@@ -271,7 +286,7 @@
       call().then(function (res) {
         if (mine !== seq) return;
         if (!res.ok) { showError(res.j.error || "That did not run."); return; }
-        showError(""); draw(res.j.run, res.j.tornado);
+        showError(""); draw(res.j.run, res.j.sensitivity);
       }).catch(function () { showError("The server did not respond. Try again."); });
     }, 200);
   }
@@ -285,22 +300,46 @@
     $("h-bar").textContent = x.bar;
     var pill = $("h-pill"); pill.textContent = x.clears_bar ? "Clears the bar" : "Below the bar"; pill.className = "pill " + (x.clears_bar ? "ok" : "lo");
   }
-  function drawTornado(rows) {
-    if (!rows.length) { put($("tornado"), [h("p", { class: "sub", text: "This model gives no low and high cases to test." })]); return; }
-    var base = rows[0].base, vals = [base, D.bar];
-    rows.forEach(function (r) { vals.push(r.multiple_at_low, r.multiple_at_high); });
+  function scale(vals) {
     var max = Math.max.apply(null, vals) * 1.05, min = Math.min(0, Math.min.apply(null, vals));
-    var pos = function (v) { return ((v - min) / (max - min) * 100).toFixed(2) + "%"; };
-    var width = function (a, b) { return (Math.abs(b - a) / (max - min) * 100).toFixed(2) + "%"; };
-    put($("tornado"), rows.map(function (r) {
-      var seg = function (cls, v) { return h("div", { class: "seg " + cls, css: { left: pos(Math.min(v, base)), width: width(v, base) } }); };
-      return h("div", { class: "tr" }, [
-        h("div", { class: "lab" }, [r.label + " ", h("span", { css: { color: "#6b7280", fontSize: "11.5px" }, text: "low " + fmt(r.low, r.format) + ", high " + fmt(r.high, r.format) })]),
-        h("div", { class: "track" }, [seg("lo", r.multiple_at_low), seg("hi", r.multiple_at_high),
-          h("div", { class: "barline", css: { left: pos(D.bar) } }), h("div", { class: "mark", css: { left: pos(base) } })]),
-        h("div", { class: "nums" }, [h("span", { text: mult(r.multiple_at_low) + "x at the low case" }), h("span", { text: mult(r.multiple_at_high) + "x at the high case" })])
+    return {
+      pos: function (v) { return ((v - min) / (max - min) * 100).toFixed(2) + "%"; },
+      width: function (a, b) { return (Math.abs(b - a) / (max - min) * 100).toFixed(2) + "%"; }
+    };
+  }
+  function track(sc, base, lo, hi) {
+    var seg = function (cls, v) { return h("div", { class: "seg " + cls, css: { left: sc.pos(Math.min(v, base)), width: sc.width(v, base) } }); };
+    return h("div", { class: "track" }, [seg("lo", lo), seg("hi", hi), h("div", { class: "barline", css: { left: sc.pos(D.bar) } }), h("div", { class: "mark", css: { left: sc.pos(base) } })]);
+  }
+  function drawSensitivity(sn) {
+    var c = sn.combined, vals = [sn.base, D.bar];
+    sn.rows.forEach(function (r) { if (r.included) vals.push(r.multiple_at_low, r.multiple_at_high); });
+    if (c) vals.push(c.worst, c.best);
+    var sc = scale(vals);
+    if (!c) {
+      put($("overall"), [h("div", { class: "lab", text: "No input is switched on for sensitivity." })]);
+    } else {
+      put($("overall"), [
+        h("div", { class: "lab" }, [h("b", { text: "All " + c.n + " switched-on inputs together" })]),
+        track(sc, sn.base, c.worst, c.best),
+        h("div", { class: "nums", css: { display: "flex", justifyContent: "space-between", fontSize: "12px", color: "#6b7280", marginTop: "2px" } },
+          [h("span", { text: mult(c.worst) + "x if all go the worst way" }), h("span", { text: mult(c.best) + "x if all go the best way" })])
       ]);
-    }));
+    }
+    sn.rows.forEach(function (r) {
+      var mini = document.querySelector('[data-mini="' + r.key + '"]'), row = document.querySelector('[data-row="' + r.key + '"]');
+      if (!mini || !row) return;
+      row.classList.toggle("off", !r.included);
+      var cb = row.querySelector("input[data-sens]"); if (cb) cb.checked = !!r.included;
+      if (!r.included) { put(mini, []); return; }
+      put(mini, [track(sc, sn.base, r.multiple_at_low, r.multiple_at_high),
+        h("div", { class: "nums", css: { display: "flex", justifyContent: "space-between" } },
+          [h("span", { text: fmt(r.low, r.format) + " → " + mult(r.multiple_at_low) + "x" }), h("span", { text: fmt(r.high, r.format) + " → " + mult(r.multiple_at_high) + "x" })])]);
+    });
+    document.querySelectorAll("[data-gs]").forEach(function (el) {
+      var g = sn.groups[el.dataset.gs];
+      el.textContent = g ? mult(g.worst) + "x to " + mult(g.best) + "x" : "";
+    });
   }
   function drawChain(run) {
     var step = null, body = [];
@@ -310,8 +349,8 @@
     });
     put($("chain"), [h("thead", {}, [h("tr", {}, [h("th", { text: "Row" }), h("th", { class: "n", text: "Value" })])]), h("tbody", {}, body)]);
   }
-  function draw(run, tornado) { drawHeadline(run); drawTornado(tornado); drawChain(run); }
-  draw(D.run, D.tornado);
+  function draw(run, sn) { drawHeadline(run); drawSensitivity(sn); drawChain(run); }
+  draw(D.run, D.sensitivity);
 
   // ---- scenarios and countries
   function head(cols) { return h("thead", {}, [h("tr", {}, cols.map(function (c) { return h("th", { class: c[1] || "", text: c[0] }); }))]); }
@@ -351,6 +390,13 @@
     if (v === byKey[key].value) delete overrides[key]; else overrides[key] = v;
     refresh();
   }
+  $("inputs").addEventListener("change", function (e) {
+    var el = e.target; if (!el.dataset.sens) return;
+    included[el.dataset.sens] = el.checked; refresh();
+  });
+  function setAll(on) { Object.keys(included).forEach(function (k) { included[k] = on; }); refresh(); }
+  $("sens-all").addEventListener("click", function () { setAll(true); });
+  $("sens-none").addEventListener("click", function () { setAll(false); });
   $("inputs").addEventListener("input", function (e) {
     var el = e.target; if (!el.dataset.key) return;
     setOverride(el.dataset.key, el.type === "checkbox" ? (el.checked ? 1 : 0) : parseFloat(el.value));
