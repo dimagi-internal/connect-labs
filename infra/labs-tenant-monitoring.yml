@@ -100,8 +100,9 @@ Resources:
         2026-09-08 a full disk showed up here as ~1,200 5xx in 45 minutes). Its own
         deploys 5xx for up to two buckets (it migrates before cutover; 2026-10-09 ran
         62 then 89), so a third means a stuck deploy or a real fault: gh run list -R
-        dimagi-internal/canopy-web -w "Deploy to Labs (AWS)". If neither, read
-        /ecs/labs-jj-canopy-web (labs SSO). Runbook: docs/PERFORMANCE_RUNBOOK.md §10.
+        dimagi-internal/canopy-web -w "Deploy to Labs (AWS)". If neither, name the
+        failing route (no SSO): runbook §10, Logs Insights on /labs-jj/observe/alb-requests.
+        Traceback: /ecs/labs-jj-canopy-web (labs SSO). Runbook: docs/PERFORMANCE_RUNBOOK.md §10.
       Namespace: AWS/ApplicationELB
       MetricName: HTTPCode_Target_5XX_Count
       Dimensions:

@@ -754,20 +754,41 @@ Resources:
             Unit: Count,
             Dimensions: [{ Key: logger, Value: $logger }],
           }
+  # canopy-web is NOT the root-formatter shape above: production.py logs one JSON
+  # object per line (`severity`, `logger`, ... apps/common/log_format.py), which the
+  # text pattern never matched, so this filter sat dark (no Labs/CanopyWeb datapoint
+  # in 14 days) through the 2026-11-12 websocket-handshake 500 burst. uvicorn's OWN
+  # lines (`ERROR:    Exception in ASGI application`, the traceback for any unhandled
+  # exception, HTTP or websocket) are plain text and match neither shape, so they
+  # get their own count below.
   CanopyWebErrorLines:
     Type: AWS::Logs::MetricFilter
     Condition: HasCanopyWeb
     Properties:
       LogGroupName: !Ref CanopyWebLogGroupName
       FilterName: labs-jj-observe-error-lines
-      FilterPattern: '[level="ERROR", date, time, logger, ...]'
+      FilterPattern: '{ $.severity = "ERROR" && $.logger = * }'
       MetricTransformations:
         - {
             MetricNamespace: Labs/CanopyWeb,
             MetricName: ErrorLines,
             MetricValue: '1',
             Unit: Count,
-            Dimensions: [{ Key: logger, Value: $logger }],
+            Dimensions: [{ Key: logger, Value: $.logger }],
+          }
+  CanopyWebAsgiExceptions:
+    Type: AWS::Logs::MetricFilter
+    Condition: HasCanopyWeb
+    Properties:
+      LogGroupName: !Ref CanopyWebLogGroupName
+      FilterName: labs-jj-observe-asgi-exceptions
+      FilterPattern: '"Exception in ASGI application"'
+      MetricTransformations:
+        - {
+            MetricNamespace: Labs/CanopyWeb,
+            MetricName: AsgiExceptions,
+            MetricValue: '1',
+            Unit: Count,
           }
   AceWebErrorLines:
     Type: AWS::Logs::MetricFilter
