@@ -108,6 +108,14 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   that actual rate is always shown beside it. "Not seen for N days = out of
   treatment" is the forecast's own rule (`lost_after_days`), programme-settable, and
   is not the definition of default.
+- **A wrong ledger entry is removed, never deleted** (2026-11-12, chlorine supply demo: a network
+  manager needs to take out bad data without losing the trail). The movements page's Remove button
+  (`movement_remove`) asks for a reason and posts a removal: an `adjustment` the other way, on the
+  entry's own date, naming the entry in `reverses`. Every figure leaves the pair out
+  (`MovementQuerySet.standing`, applied by `for_program`), so a removed handout is not "issued" and a
+  removed refill is not "dispensed"; the ledger shows the entry struck through with who removed it,
+  when and why. Once only; a removal is not removed (record the entry again instead), and a rejected
+  visit's put-back is not removed by hand.
 
 ## Synthetic clones
 

@@ -420,7 +420,12 @@ def detect_movements(subscription, now) -> int:
         if not _within_filters(subscription, scope, partner_points):
             continue
         point_id = movement.to_supply_point_id or movement.from_supply_point_id
-        reversal = "reversal of " if movement.reverses_id else ""
+        # A removal (an adjustment naming the entry it cancels) is said as one, never as an adjustment of stock.
+        reversal = (
+            ("removal of an entry: " if movement.kind == "adjustment" else "reversal of ")
+            if movement.reverses_id
+            else ""
+        )
         AlertNotice.objects.create(
             subscription=subscription,
             program_id=subscription.program_id,

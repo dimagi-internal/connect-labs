@@ -1342,8 +1342,27 @@ class MovementQuerySet(models.QuerySet):
     would bury the one finding this domain exists to surface.
     """
 
-    def for_program(self, program_id):
-        return self.filter(program_id=program_id)
+    def for_program(self, program_id, *, include_removed=False):
+        """This programme's ledger as every figure reads it: without removed entries.
+
+        `include_removed=True` is for the one reader that has to show them -- the
+        ledger itself (`movement_list`), where a removed entry stays on its row,
+        marked removed, beside the removal that cancels it.
+        """
+        qs = self.filter(program_id=program_id)
+        return qs if include_removed else qs.standing()
+
+    def standing(self):
+        """Without removed entries: an entry somebody removed, and the removal cancelling it, both left out.
+
+        A removal (`posting.post_removal`) is an `adjustment` naming the entry it
+        cancels in `reverses`. The pair nets to nothing on any date, so leaving both
+        out changes no balance -- and it also keeps the entry out of every figure
+        that reads by kind (issued, released, dispensed), which netting alone would
+        not. A visit's reversal is a `consumption`, not an adjustment, and is read
+        as it always was.
+        """
+        return self.exclude(kind="adjustment", reverses__isnull=False).exclude(reversal__kind="adjustment")
 
     def for_opportunity(self, opportunity_id):
         return self.filter(opportunity_id=opportunity_id)
@@ -1442,8 +1461,10 @@ class Movement(SourcedModel):
     # it, which is what makes re-reading the same visits write nothing.
     visit_id = models.CharField(max_length=64, blank=True, default="", db_default="", db_index=True)
     # A reversal: a `consumption` INTO the worker's point cancelling the row
-    # named here (design 2026-09-28 section 3.2). Never an edit -- the ledger
-    # stays append-only. One-to-one, so a movement can be reversed at most once.
+    # named here (design 2026-09-28 section 3.2), or a removal -- an
+    # `adjustment` cancelling an entry somebody removed (`posting.post_removal`).
+    # Never an edit -- the ledger stays append-only. One-to-one, so a movement
+    # can be reversed or removed at most once.
     reverses = models.OneToOneField("self", null=True, blank=True, on_delete=models.PROTECT, related_name="reversal")
     # True when any part of the quantity came from a protocol -- the form said
     # only THAT something was given -- rather than a number somebody entered.
@@ -1494,11 +1515,15 @@ class Movement(SourcedModel):
                 condition=~Q(visit_id="") & Q(reverses__isnull=False),
                 name="movement_one_reversal_per_visit_item",
             ),
-            # A reversal puts stock back: a consumption into a point, from nowhere.
+            # A reversal is a visit's consumption put back -- a consumption into a
+            # point, from nowhere -- or a removal: an adjustment cancelling an
+            # entry somebody removed (`posting.post_removal`). Nothing else may
+            # name an entry it cancels.
             models.CheckConstraint(
                 condition=Q(reverses__isnull=True)
-                | Q(kind="consumption", from_supply_point__isnull=True, to_supply_point__isnull=False),
-                name="movement_reversal_is_consumption_back_in",
+                | Q(kind="consumption", from_supply_point__isnull=True, to_supply_point__isnull=False)
+                | Q(kind="adjustment"),
+                name="movement_reversal_is_visit_put_back_or_removal",
             ),
         ]
 

@@ -283,6 +283,26 @@ def movement_record(access, data):
     return record(access.record_movement(data))
 
 
+@register_operation(
+    name="movement_remove",
+    summary=(
+        "Remove one ledger entry that should not have been posted -- a wrong receipt, a "
+        "handout that never happened, a refill counted that should not have been. Nothing is "
+        "deleted: a removal is posted that cancels the entry on its own date, every figure "
+        "leaves both out, and the entry stays on the ledger marked removed, with who removed "
+        "it, when and why. Give the reason. An entry is removed once; a removal, or a "
+        "rejected visit's put-back, cannot be removed."
+    ),
+    input_schema=obj(
+        {"movement_id": ID, "reason": {"type": "string", "minLength": 5, "maxLength": 500}},
+        required=("movement_id", "reason"),
+    ),
+    is_write=True,
+)
+def movement_remove(access, movement_id, reason):
+    return record(access.remove_movement(movement_id, reason))
+
+
 # ---- consignments: our own stock on the road ---------------------------
 
 _CONSIGNMENT_DATA = _data_with(

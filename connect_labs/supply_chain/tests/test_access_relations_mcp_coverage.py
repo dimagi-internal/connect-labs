@@ -84,6 +84,7 @@ UNCOVERED_TODAY = frozenset(
         "item_offer_from_quote",
         "item_upsert",
         "movement_record",
+        "movement_remove",
         "network_stock",
         "network_tree",
         "org_list",

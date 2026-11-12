@@ -385,6 +385,11 @@ urlpatterns = [
     # and a correction is another movement naming its cause.
     path("stock/movements/", views.MovementsView.as_view(), name="movements"),
     path("stock/movements/new/", stock_views.MovementRecordView.as_view(), name="movement_record"),
+    path(
+        "stock/movements/<int:movement_id>/remove/",
+        stock_views.MovementRemoveView.as_view(),
+        name="movement_remove",
+    ),
     path("stock/counts/new/", stock_views.StockCountRecordView.as_view(), name="stock_count_record"),
     # What a visit gives out, per opportunity and item. "new" before the id.
     path("stock/dispensing/", visit_views.DispensingRulesView.as_view(), name="dispensing_rules"),

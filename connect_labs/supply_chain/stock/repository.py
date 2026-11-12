@@ -107,9 +107,10 @@ class StockRepositoryMixin:
     # ---- the ledger ------------------------------------------------------
 
     def list_movements(self, supply_point_id=None, item_id=None, kind=None, since=None, until=None, limit=500):
-        qs = restrict(self, Movement.objects.for_program(self._require_program()), Movement).select_related(
-            "commodity"
-        )
+        # The ledger shows removed entries, marked removed, beside their removals.
+        qs = restrict(
+            self, Movement.objects.for_program(self._require_program(), include_removed=True), Movement
+        ).select_related("commodity", "reversal")
         if supply_point_id is not None:
             qs = qs.touching(self._require_supply_point(supply_point_id))
         if item_id is not None:
@@ -121,6 +122,27 @@ class StockRepositoryMixin:
         if until is not None:
             qs = qs.filter(occurred_on__lte=until)
         return list(qs[:limit])
+
+    @transaction.atomic
+    def remove_movement(self, movement_id, reason):
+        """Remove one ledger entry that should not have been posted (`posting.post_removal`).
+
+        The entry stays on the ledger, marked removed, with who removed it, when and
+        why; the removal cancels it in every figure.
+        """
+        from connect_labs.supply_chain.data_access import _fresh
+
+        original = (
+            Movement.objects.for_program(self._require_program(), include_removed=True)
+            .select_for_update()
+            .filter(pk=movement_id)
+            .first()
+        )
+        if original is None:
+            raise ValueError(f"entry {movement_id} is not on this programme's ledger")
+        user = self.user if getattr(self.user, "is_authenticated", False) else None
+        removed_by = ((user.get_full_name() or user.get_username()) if user is not None else "")[:80]
+        return _fresh(posting.post_removal(original, reason=reason, removed_by=removed_by))
 
     def record_movement(self, data):
         """Post one movement directly.

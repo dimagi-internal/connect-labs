@@ -215,6 +215,7 @@ TAB_FOR_VIEW = {
     "supply_chain:supply_point_create": "supply_chain:network",
     "supply_chain:supply_point_edit": "supply_chain:network",
     "supply_chain:movement_record": "supply_chain:stock",
+    "supply_chain:movement_remove": "supply_chain:stock",
     "supply_chain:consignment_dispatch": "supply_chain:stock",
     "supply_chain:consignment_receive": "supply_chain:stock",
     "supply_chain:stock_count_record": "supply_chain:stock",
