@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load humanize %}
-{% block title %}{{ d.row.name }} · Implementation cost-effectiveness{% endblock %}
+{% block title %}{{ d.row.name }} · Implementations{% endblock %}
 
 {% block css %}
 {{ block.super }}
@@ -40,7 +40,7 @@
 {% block content %}
 {% include "components/cea_tabs.html" with active="implementation" %}
 <div class="ceo">
-  <a href="{% url 'cea:implementation' %}">&larr; Implementation cost-effectiveness</a>
+  <a href="{% url 'cea:implementation' %}">&larr; Implementations</a>
   <h1>{{ d.row.name }}</h1>
   <div class="meta">
     {{ d.row.org_slug }} · {{ d.row.service_name }} · {{ d.row.country_name }}
@@ -80,7 +80,7 @@
 
   <div class="card">
     <h2><span class="step">1</span>Where it was delivered</h2>
-    <p class="sub">Each approved visit's GPS, placed in the most local area Labs holds baseline figures for (a district where loaded, else the state or province). An area's share is its share of approved visits.
+    <p class="sub">Where its approved visits fell, by GPS.
       {% if d.placement.visits %}{{ d.placement.visits|intcomma }} approved visits with GPS{% if d.placement.unplaced %}; {{ d.placement.unplaced|intcomma }} fell outside every area{% endif %}.{% elif d.placed_at %}No approved visit carries GPS, so it is valued at {{ row.country_name }}'s figures.{% else %}Visits have not been placed yet (that runs every six hours), so for now it is valued at {{ row.country_name }}'s figures.{% endif %}
       {% if d.placed_at %}<span class="muted">Placed {{ d.placed_at|slice:":10" }} at {{ d.placed_at|slice:"11:16" }} UTC.</span>{% endif %}</p>
     <div class="wrap"><table>
@@ -96,7 +96,7 @@
 
   <div class="card">
     <h2><span class="step">2</span>Baseline in those places</h2>
-    <p class="sub">The model's inputs that describe a place. Each takes the most local figure Labs holds; with nothing more local it takes the model's own figure for the country, which is what the published per-country results use.
+    <p class="sub">The model's place inputs, from the most local figure Labs holds.
       {% if not r.location_labels %}This model has no place inputs: its risk is the model's own figure everywhere.{% endif %}</p>
     {% if r.location_labels %}
     <div class="wrap"><table>
@@ -115,7 +115,7 @@
 
   <div class="card">
     <h2><span class="step">3</span>The model, run there</h2>
-    <p class="sub">The model's own formulas ({{ d.model_meta.label }}, connect-cea-models {{ r.spec.commit|slice:":7" }}{% if r.spec.version %}, {{ r.spec.version }}{% endif %}), run once per area with that area's baseline. Key steps for each area:</p>
+    <p class="sub">{{ d.model_meta.label }} (connect-cea-models {{ r.spec.commit|slice:":7" }}{% if r.spec.version %}, {{ r.spec.version }}{% endif %}), run once per area. Key steps:</p>
     {% for a in r.areas %}
     <details {% if forloop.first %}open{% endif %}><summary>{{ a.name }} ({% widthratio a.share 1 100 %}% of visits)</summary>
       <div class="wrap"><table>
@@ -134,7 +134,7 @@
 
   <div class="card">
     <h2><span class="step">4</span>What it cost, and who it reached</h2>
-    <p class="sub">From Connect: everything paid for the opportunity in USD (worker pay, the organisation's fee, invoices and costs entered in Labs), and the distinct people with approved work.</p>
+    <p class="sub">What was paid, in USD, and the distinct people with approved work.</p>
     <table><tbody>
       <tr><td>Total cost</td><td class="n">${{ row.total_usd|floatformat:0|intcomma }}</td></tr>
       {% if row.pooled_usd %}<tr><td class="muted">of which paid through opportunit{{ row.pooled_from|length|pluralize:"y,ies" }} {{ row.pooled_from|join:", " }} (same programme and partner, shared by people reached)</td><td class="n">${{ row.pooled_usd|floatformat:0|intcomma }}</td></tr>{% endif %}
@@ -148,7 +148,7 @@
 
   <div class="card">
     <h2><span class="step">5</span>Result</h2>
-    <p class="sub">Every model here runs with GiveWell's leveraging adjustment at 1, so the benefit per person is set by the place and the multiple scales with price exactly. Deaths only, so each multiple is a floor.</p>
+    <p class="sub">Deaths only, so each multiple is a floor.</p>
     {% if r.x %}
     <div class="eq">
       Model multiple, visit-weighted across the areas: <b>{{ r.model_x|floatformat:2 }}x</b><br>

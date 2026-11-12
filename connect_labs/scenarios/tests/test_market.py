@@ -82,3 +82,9 @@ class TestPageAndApi:
     def test_the_old_baseline_page_points_to_market_size(self, client_in):
         body = client_in.get(reverse("targeting:index")).content.decode()
         assert "Health indicators" in body and reverse("cea:market") in body
+
+    def test_everywhere_means_no_threshold_on_the_widest_indicator(self, client_in):
+        got = client_in.get(reverse("cea:market_data"), {"models": "chc", "indicator": "all"}).json()
+        sel = got["selection"]
+        assert sel["everywhere"] is True and sel["indicator"] == "all" and sel["africa_total"] > 50
+        assert sel["threshold"] == 0 or sel["threshold"] <= 1

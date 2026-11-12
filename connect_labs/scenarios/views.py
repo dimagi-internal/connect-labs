@@ -13,6 +13,7 @@ from django.views import View
 from connect_labs.impact import engine, explore, valuation
 from connect_labs.labs.chrome import NOT_USED, page_chrome
 from connect_labs.labs.indicators import measures, response_cache
+from connect_labs.labs.indicators.africa import ISO_CODES
 from connect_labs.labs.indicators.bases import UnitBasis, measure_for
 from connect_labs.labs.indicators.resolve import select_above
 from connect_labs.labs.indicators.response_cache import CachedJsonMixin
@@ -180,17 +181,21 @@ class InterventionsView(OpenLocallyMixin, View):
         )
 
 
-#: The indicators the market-size page offers for choosing places: where need is highest, in the baseline's own terms.
-TARGET_INDICATORS = (
-    "u5mr",
-    "nmr",
-    "diarrhoea_prevalence",
-    "ors_coverage",
-    "vitamin_a_coverage",
-    "measles_vaccination",
-    "itn_use_children",
-)
+#: The burden indicators the market-size page offers for choosing places (higher means more need).
+TARGET_INDICATORS = ("u5mr", "nmr", "diarrhoea_prevalence")
+#: "Everywhere with data": the indicator that has values in the most countries, with no threshold, so the market is
+#: every place the baseline can count people in rather than only the highest-burden ones.
+EVERYWHERE = "all"
+EVERYWHERE_INDICATOR = "diarrhoea_prevalence"
 CONTEXT_NOT_USED = method_decorator(page_chrome(labs_context=NOT_USED), name="dispatch")
+
+
+def _where(request) -> tuple[str, float]:
+    """The indicator and threshold that choose the places; ``indicator=all`` means everywhere with data."""
+    if request.GET.get("indicator") == EVERYWHERE:
+        return EVERYWHERE_INDICATOR, measures.get(EVERYWHERE_INDICATOR).threshold_min
+    indicator = _indicator(request)
+    return indicator, _float(request, "threshold", measures.get(indicator).threshold_default)
 
 
 def _models(request) -> list[str]:
@@ -269,7 +274,8 @@ class MarketSizeView(OpenLocallyMixin, View):
                 }
                 for k in engine.MODELS
             },
-            "indicators": [
+            "indicators": [{"key": EVERYWHERE, "label": "Everywhere with data", "threshold": None}]
+            + [
                 {"key": k, "label": measures.get(k).label, "threshold": measures.get(k).threshold_default}
                 for k in TARGET_INDICATORS
                 if k in measures.MEASURES
@@ -292,8 +298,7 @@ class MarketSizeDataView(OpenLocallyMixin, View):
 
     def get(self, request):
         keys = _models(request)
-        indicator = _indicator(request)
-        threshold = _float(request, "threshold", measures.get(indicator).threshold_default)
+        indicator, threshold = _where(request)
         bar = _float(request, "bar", valuation.bar())
         try:
             overrides = {k: _overrides(request, k) for k in keys}
@@ -321,6 +326,8 @@ class MarketSizeDataView(OpenLocallyMixin, View):
                     "threshold": threshold,
                     "method": found["method"],
                     "countries": len(found["countries"]),
+                    "africa_total": len(ISO_CODES),
+                    "everywhere": request.GET.get("indicator") == EVERYWHERE,
                     "regions": found["regions"],
                     "unsupported": found["unsupported"],
                 },

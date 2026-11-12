@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Cost-effectiveness models · Connect Labs{% endblock %}
+{% block title %}CEA models · Connect Labs{% endblock %}
 
 {% block css %}
 {{ block.super }}
@@ -84,7 +84,7 @@
 {% block content %}
 {% include "components/cea_tabs.html" with active="models" %}
 <div class="cem">
-  <h1>Cost-effectiveness models</h1>
+  <h1>CEA models</h1>
   <p class="lede">Pick a model, change any input, and see what moves the answer. A multiple is a multiple of GiveWell's benchmark.</p>
 
   <div class="chips" id="model-chips"></div>
@@ -322,7 +322,7 @@
       put($("overall"), [
         h("div", { class: "lab" }, [h("b", { text: "All " + c.n + " switched-on inputs together" })]),
         track(sc, sn.base, c.worst, c.best),
-        h("div", { class: "nums", css: { display: "flex", justifyContent: "space-between", fontSize: "12px", color: "#6b7280", marginTop: "2px" } },
+        h("div", { class: "nums", css: { display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "2px 12px", fontSize: "12px", color: "#6b7280", marginTop: "2px" } },
           [h("span", { text: mult(c.worst) + "x if all go the worst way" }), h("span", { text: mult(c.best) + "x if all go the best way" })])
       ]);
     }

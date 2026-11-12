@@ -385,6 +385,21 @@ describe('the line above the totals', () => {
     );
   });
 
+  it('counts the partly covered countries when there are more than three, and keeps the names in a tooltip', () => {
+    const text = render(u5, {
+      indicator_label: 'Under-5 mortality rate',
+      indicator_unit: 'per 1,000 live births',
+      threshold: 80,
+      counts: { units: 190 },
+      countries_partly_above: ['Angola', 'Benin', 'Burundi', 'Cameroon'],
+      projected_to: null,
+    });
+    expect(text).toBe(
+      'Totals for the 190 areas where Under-5 mortality rate is above 80 per 1,000 live births' +
+        ' — only part of 4 countries · as published, not projected to a delivery year',
+    );
+  });
+
   it('says below for a coverage measure, and names the year counts were carried to', () => {
     const text = render(
       { indicator: 'ors', indicatorMeta: { ors: { lower_is_worse: true } } },
