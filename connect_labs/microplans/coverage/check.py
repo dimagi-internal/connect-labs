@@ -302,3 +302,27 @@ def total_row(result: dict) -> dict:
     for t in cycles.values():
         t["share"] = (t["buildings_reached"] / t["buildings"]) if t["buildings"] else None
     return {"buildings": sum(a["buildings"] for a in result["areas"]), "cycles": cycles}
+
+
+def rollup(result: dict, labels: dict) -> list[dict]:
+    """The areas gathered under a label each (``labels``: group id -> e.g. its district), headline row per label.
+
+    A group with no label is gathered under ``"(none)"``. Same rule as ``total_row``: a cycle's share is out of
+    the buildings of the areas that ran it. The data-quality counts add up; nothing else is carried."""
+    gathered: dict = {}
+    for a in result["areas"]:
+        gathered.setdefault(labels.get(a["group"]) or "(none)", []).append(a)
+    out = []
+    for label, areas in sorted(gathered.items()):
+        head = total_row({"areas": areas})
+        quality = {k: sum(a["data_quality"][k] for a in areas) for k in areas[0]["data_quality"]}
+        out.append(
+            {
+                "label": label,
+                "areas": len(areas),
+                "households": sum(a["households"] for a in areas),
+                "data_quality": quality,
+                **head,
+            }
+        )
+    return out
