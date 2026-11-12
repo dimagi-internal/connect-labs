@@ -6,38 +6,38 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('microplans', '0008_task_owner'),
+        ("microplans", "0008_task_owner"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='simplemicroplan',
-            name='context_program_id',
+            model_name="simplemicroplan",
+            name="context_program_id",
             field=models.IntegerField(blank=True, db_index=True, null=True),
         ),
         migrations.AddField(
-            model_name='simplemicroplan',
-            name='opportunity_id',
+            model_name="simplemicroplan",
+            name="opportunity_id",
             field=models.IntegerField(blank=True, db_index=True, null=True),
         ),
         migrations.AddField(
-            model_name='simplemicroplan',
-            name='opportunity_name',
-            field=models.CharField(blank=True, default='', max_length=255),
+            model_name="simplemicroplan",
+            name="opportunity_name",
+            field=models.CharField(blank=True, default="", max_length=255),
         ),
         migrations.AddField(
-            model_name='simplemicroplan',
-            name='organization_name',
-            field=models.CharField(blank=True, default='', max_length=255),
+            model_name="simplemicroplan",
+            name="organization_name",
+            field=models.CharField(blank=True, default="", max_length=255),
         ),
         migrations.AddField(
-            model_name='simplemicroplan',
-            name='organization_slug',
-            field=models.CharField(blank=True, db_index=True, default='', max_length=255),
+            model_name="simplemicroplan",
+            name="organization_slug",
+            field=models.CharField(blank=True, db_index=True, default="", max_length=255),
         ),
         migrations.AddField(
-            model_name='simplemicroplan',
-            name='program_name',
-            field=models.CharField(blank=True, default='', max_length=255),
+            model_name="simplemicroplan",
+            name="program_name",
+            field=models.CharField(blank=True, default="", max_length=255),
         ),
     ]

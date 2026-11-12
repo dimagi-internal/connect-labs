@@ -193,6 +193,7 @@ urlpatterns = [
         procurement_views.TenderCloseView.as_view(),
         name="procurement_tender_close",
     ),
+    path("procurement/signed-as/", procurement_views.SignedAsView.as_view(), name="procurement_signed_as"),
     path(
         "procurement/tenders/<int:tender_id>/duty-terms/",
         procurement_views.TenderDutyTermsView.as_view(),

@@ -6,18 +6,18 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('pulse', '0016_remove_pulsepartneralias_partner_delete_pulsepartner_and_more'),
+        ("pulse", "0016_remove_pulsepartneralias_partner_delete_pulsepartner_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='pulseopportunity',
-            name='budget_per_user',
+            model_name="pulseopportunity",
+            name="budget_per_user",
             field=models.BigIntegerField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='pulseopportunity',
-            name='max_visits_per_user',
+            model_name="pulseopportunity",
+            name="max_visits_per_user",
             field=models.BigIntegerField(blank=True, null=True),
         ),
     ]

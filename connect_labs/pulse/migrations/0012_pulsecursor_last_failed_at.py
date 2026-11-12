@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('pulse', '0011_pulsecursor_backfill_complete_to'),
+        ("pulse", "0011_pulsecursor_backfill_complete_to"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='pulsecursor',
-            name='last_failed_at',
+            model_name="pulsecursor",
+            name="last_failed_at",
             field=models.DateTimeField(blank=True, null=True),
         ),
     ]

@@ -307,6 +307,7 @@ next action on anyone (design doc section 22).
 <details id="drafts" class="fold scroll-mt-20">
   <summary>Draft emails <span class="text-sm font-normal tabular-nums text-gray-600">{{ drafts.drafts|length }}</span>{% if drafts_breakdown %} <span data-testid="drafts-breakdown" class="text-sm font-normal text-gray-600">{{ drafts_breakdown }}</span>{% endif %}{% if award_card %} <span data-testid="award-emails-note" class="text-sm font-normal text-gray-600">&middot; plus {{ award_card.emails }} award email{{ award_card.emails|pluralize }} on <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' award_card.id %}#selection-drafts">the award page</a></span>{% endif %}</summary>
   <div class="fold-body">
+    {% if not supply_as_of %}{% url 'supply_chain:procurement_tender_detail' tender.id as tender_url %}{% with back=tender_url|add:"#drafts" back_id="tender" %}{% include "supply_chain/procurement/_signed_as.html" %}{% endwith %}{% endif %}
     {% if not supply_as_of %}
     <form method="post" action="{% url 'communications:outbox' %}?kind=supply_chain.tender_emails&amp;about={{ tender.id }}" class="mt-1 flex flex-wrap items-center gap-2" data-testid="send-from-labs">
       {% csrf_token %}

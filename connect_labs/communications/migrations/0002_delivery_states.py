@@ -6,13 +6,17 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('communications', '0001_initial'),
+        ("communications", "0001_initial"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='sentmessage',
-            name='delivery',
-            field=models.CharField(choices=[('queued', 'Sending'), ('delivered', 'Sent'), ('failed', 'Failed'), ('not_sent', 'Not sent')], default='queued', max_length=12),
+            model_name="sentmessage",
+            name="delivery",
+            field=models.CharField(
+                choices=[("queued", "Sending"), ("delivered", "Sent"), ("failed", "Failed"), ("not_sent", "Not sent")],
+                default="queued",
+                max_length=12,
+            ),
         ),
     ]

@@ -15,24 +15,42 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='SavedQuery',
+            name="SavedQuery",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=200)),
-                ('sql', models.TextField()),
-                ('opportunity_ids', models.JSONField(default=list)),
-                ('program_ids', models.JSONField(blank=True, default=list)),
-                ('workflow', models.JSONField(blank=True, default=dict)),
-                ('max_rows', models.PositiveIntegerField(default=500)),
-                ('display', models.JSONField(blank=True, default=dict)),
-                ('version', models.PositiveIntegerField(default=1)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('owner', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='saved_queries', to=settings.AUTH_USER_MODEL)),
-                ('parent', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='next_versions', to='labsdata.savedquery')),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("name", models.CharField(max_length=200)),
+                ("sql", models.TextField()),
+                ("opportunity_ids", models.JSONField(default=list)),
+                ("program_ids", models.JSONField(blank=True, default=list)),
+                ("workflow", models.JSONField(blank=True, default=dict)),
+                ("max_rows", models.PositiveIntegerField(default=500)),
+                ("display", models.JSONField(blank=True, default=dict)),
+                ("version", models.PositiveIntegerField(default=1)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "owner",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="saved_queries",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "parent",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="next_versions",
+                        to="labsdata.savedquery",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-created_at'],
-                'constraints': [models.UniqueConstraint(fields=('owner', 'name', 'version'), name='labsdata_saved_query_version')],
+                "ordering": ["-created_at"],
+                "constraints": [
+                    models.UniqueConstraint(fields=("owner", "name", "version"), name="labsdata_saved_query_version")
+                ],
             },
         ),
     ]

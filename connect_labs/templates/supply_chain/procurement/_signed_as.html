@@ -1,0 +1,29 @@
+{% comment %}
+Who the drafted emails below are signed as. Include inside a drafts panel with `back` = the page and panel to
+return to. A name the person set wins; with only a bare login known, nothing is signed with it: the drafts keep
+"[your name]" and this asks, open. (identity.signature)
+{% endcomment %}
+{% if signature and not signature.service_account %}
+<div data-testid="signed-as" class="mt-2 text-sm">
+  {% if signature.needs_name %}
+  <form method="post" action="{% url 'supply_chain:procurement_signed_as' %}" class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 flex flex-wrap items-center gap-2" data-testid="signed-as-prompt">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ back }}">
+    <label for="signed-as-{{ back_id }}" class="text-amber-900"><b>Signed as: [your name]</b> &mdash; labs only knows you by your login, so these emails are not signed with it. Type the name to sign with, once:</label>
+    <input id="signed-as-{{ back_id }}" name="signed_as" maxlength="120" required class="base-input h-auto py-1 w-56" placeholder="Your full name" autocomplete="name">
+    <button class="text-sm px-3 py-1 rounded-md bg-brand-deep-purple text-white">Save</button>
+  </form>
+  {% else %}
+  <details class="text-gray-700">
+    <summary class="cursor-pointer">Signed as: <b data-testid="signed-as-name">{{ signature.name }}</b> <span class="text-brand-indigo hover:underline">(change)</span></summary>
+    <form method="post" action="{% url 'supply_chain:procurement_signed_as' %}" class="mt-1 flex flex-wrap items-center gap-2">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ back }}">
+      <input name="signed_as" value="{% if signature.source == 'chosen' %}{{ signature.name }}{% endif %}" maxlength="120" class="base-input h-auto py-1 w-56" placeholder="{{ signature.name }}" aria-label="Sign emails as">
+      <button class="text-sm px-3 py-1 rounded-md bg-brand-deep-purple text-white">Save</button>
+      <span class="text-xs text-gray-600">Leave it empty to go back to your own name from your profile.</span>
+    </form>
+  </details>
+  {% endif %}
+</div>
+{% endif %}

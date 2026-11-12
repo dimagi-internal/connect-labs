@@ -49,6 +49,7 @@ from connect_labs.supply_chain.history.timeline import (
     timeline_for_tender,
 )
 from connect_labs.supply_chain.identity import person_name as _person_name
+from connect_labs.supply_chain.identity import set_signed_as, signature
 from connect_labs.supply_chain.navigation import supply_tabs
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.procurement.forms import (
@@ -255,6 +256,8 @@ class _Base(TemplateView):
         context["supply_tabs"] = supply_tabs(self.request)
         context["supply_program_line"] = program_line(self.request)
         context["acl_scoped"] = page_is_scoped(self.request, has_program_context, _access)
+        # Who the drafted emails are signed as, with the control to change it (_signed_as.html).
+        context["signature"] = signature(self.request.user)
         return context
 
 
@@ -1714,6 +1717,30 @@ class ReplySentView(OperationActionView):
 
     def redirect_to(self, **kwargs):
         return reverse("supply_chain:procurement_tender_detail", args=[kwargs["tender_id"]]) + "#owed"
+
+
+@method_decorator(login_required, name="dispatch")
+class SignedAsView(View):
+    """Set the name this person's drafted emails are signed with (the "Signed as" box on a drafts panel).
+
+    The person's own preference, not a record of the programme's: it needs no programme standing, and changes
+    nobody's data but their own settings. Blank clears it. Lands back where they were, drafts panel open.
+    """
+
+    def post(self, request, *args, **kwargs):
+        from django.contrib import messages
+        from django.utils.http import url_has_allowed_host_and_scheme
+
+        back = request.POST.get("next") or ""
+        if not back.startswith("/supply/") or not url_has_allowed_host_and_scheme(back, {request.get_host()}):
+            back = reverse("supply_chain:procurement_tender_board")
+        try:
+            name = set_signed_as(request.user, request.POST.get("signed_as", ""), request=request)
+        except ValueError as exc:
+            messages.error(request, str(exc))
+        else:
+            messages.success(request, f"Emails will be signed {name}." if name else "Back to your own name.")
+        return redirect(back)
 
 
 @method_decorator(login_required, name="dispatch")

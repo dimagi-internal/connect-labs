@@ -215,6 +215,8 @@ class SettingsView(LoginRequiredMixin, TemplateView):
         # Reading and changing differ for a labs-only organisation (service.write_refusal).
         write_note = service.write_refusal(caller, scope, service.tree_for(caller))
         for namespace in all_namespaces():
+            if namespace.layers == {"user"} and scope.type != "user":
+                continue  # a person's own preferences are not a scope's setup
             got = service.get(namespace.key, scope, caller)
             own_label = got["scope"]["label"]
             supply_tabs = _supply_tabs(got) if namespace.key == "supply" else None

@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('pulse', '0025_drop_unused_indexes'),
+        ("pulse", "0025_drop_unused_indexes"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='pulsework',
-            name='beneficiary_key',
-            field=models.CharField(blank=True, default='', max_length=64),
+            model_name="pulsework",
+            name="beneficiary_key",
+            field=models.CharField(blank=True, default="", max_length=64),
         ),
     ]

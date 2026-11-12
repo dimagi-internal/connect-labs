@@ -6,19 +6,19 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('audit', '0001_initial'),
+        ("audit", "0001_initial"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='PriorAuditProjectionState',
+            name="PriorAuditProjectionState",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('opportunity_id', models.IntegerField(unique=True)),
-                ('built_at', models.DateTimeField(auto_now=True)),
-                ('built_by', models.CharField(blank=True, default='', max_length=150)),
-                ('source_sessions', models.IntegerField(default=0)),
-                ('rows', models.IntegerField(default=0)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("opportunity_id", models.IntegerField(unique=True)),
+                ("built_at", models.DateTimeField(auto_now=True)),
+                ("built_by", models.CharField(blank=True, default="", max_length=150)),
+                ("source_sessions", models.IntegerField(default=0)),
+                ("rows", models.IntegerField(default=0)),
             ],
         ),
     ]

@@ -2,6 +2,7 @@
 in a project space with real data, so a passkey approval for each of its tokens would
 guard nothing. Ticks ``FullAccessSelfMint`` for its account when that account exists;
 the admin (Django admin › Full-access self-mints) changes it from then on."""
+
 from django.conf import settings
 from django.db import migrations
 

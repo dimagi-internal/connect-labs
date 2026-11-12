@@ -27,6 +27,7 @@ Three ways in, and each knows the user:
 
 import logging
 import re
+from dataclasses import dataclass
 
 from connect_labs.labs.models import LabsOrg
 from connect_labs.utils.dimagi_user import is_dimagi_user
@@ -455,6 +456,110 @@ def person_name(user) -> str:
         login = name or (user.get_username() or "").strip() or (sorted(handles)[0] if handles else "")
         return _readable(login) if login else ""
     return name
+
+
+# --- the name an email is signed with ----------------------------------------------------------
+
+SIGNED_AS_NAMESPACE = "profile"  # scope_config namespace, user layer: a person's own "sign my emails as"
+SIGNED_AS_MAX = 120
+
+
+@dataclass(frozen=True)
+class Signature:
+    """What a person's drafted emails are signed with, and whether the page should ask them for a name.
+
+    `source`: "chosen" (the name they set), "profile" (their Connect name, or a login written readably as one),
+    "handle" (only a bare login is known: NOT signed, the draft keeps its visible placeholder and the page asks),
+    or "none" (a service account, or nothing at all).
+    """
+
+    name: str
+    source: str
+    service_account: bool = False
+
+    @property
+    def needs_name(self) -> bool:
+        return self.source in ("handle", "none") and not self.service_account
+
+
+def clean_signed_as(raw) -> str:
+    """A name to sign with: one line of plain text, whitespace collapsed, at most SIGNED_AS_MAX characters."""
+    text = " ".join(str(raw or "").split())
+    if any(ord(c) < 32 or ord(c) == 127 for c in text):
+        raise ValueError("a name is one line of plain text")
+    if len(text) > SIGNED_AS_MAX:
+        raise ValueError(f"a name is at most {SIGNED_AS_MAX} characters")
+    return text
+
+
+def chosen_signed_as(user) -> str:
+    """The name this person set for their emails, or "" (read from their own settings layer; never anyone else's)."""
+    username = (user.get_username() or "") if user is not None and getattr(user, "pk", None) else ""
+    if not username:
+        return ""
+    from connect_labs.scope_config.models import ScopeConfig
+
+    row = ScopeConfig.objects.filter(scope_type="user", scope_key=username, namespace=SIGNED_AS_NAMESPACE).first()
+    value = ((row.data if row else None) or {}).get("signed_as")
+    try:
+        return clean_signed_as(value) if isinstance(value, str) else ""
+    except ValueError:
+        return ""
+
+
+def set_signed_as(user, name, *, request=None) -> str:
+    """Save (or, with a blank name, clear) the name this person signs their emails with. Raises ValueError.
+
+    Through the settings service, so it is attributed, versioned and undoable like every other setting; a
+    person can only ever write their own layer. A service account has no name to sign with, so it cannot set one.
+    """
+    from connect_labs.labs.access.scopes import Caller
+    from connect_labs.scope_config import service
+    from connect_labs.scope_config.scopes import Scope
+
+    if user is None or not getattr(user, "pk", None):
+        raise ValueError("sign in to set a name")
+    if is_service_account(user):
+        raise ValueError("a service account is never signed as a person")
+    name = clean_signed_as(name)
+    try:
+        service.update(
+            SIGNED_AS_NAMESPACE,
+            Scope.of("user", user.get_username()),
+            {"signed_as": name or None},
+            Caller(user=user, request=request),
+            via="supply:signed_as",
+        )
+    except service.ConfigError as exc:
+        raise ValueError(str(exc)) from None
+    return name
+
+
+def signature(user) -> Signature:
+    """The name `user`'s drafted emails are signed with.
+
+    A name they chose wins; then their own name, or a login that reads as one ("sophie.feintuch"). A login with
+    no break in it ("sfeintuch") is not a name -- signing it put a handle at the foot of an award email -- so it
+    is left as the visible "[your name]" and the page asks. A service account is never signed, whatever it set.
+    """
+    if user is None:
+        return Signature("", "none")
+    if is_service_account(user):
+        return Signature("", "none", service_account=True)
+    chosen = chosen_signed_as(user)
+    if chosen:
+        return Signature(chosen, "chosen")
+    name = person_name(user)
+    handles = {
+        (user.get_username() or "").strip().lower(),
+        (getattr(user, "email", "") or "").split("@")[0].strip().lower(),
+    }
+    handles.discard("")
+    if not name:
+        return Signature("", "none")
+    if name.lower() in handles:
+        return Signature("", "handle")
+    return Signature(name, "profile")
 
 
 def acting_org_name(access) -> str:

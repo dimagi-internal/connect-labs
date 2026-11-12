@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('audit', '0004_priorauditverdict'),
+        ("audit", "0004_priorauditverdict"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='priorauditprojectionstate',
-            name='watermark',
+            model_name="priorauditprojectionstate",
+            name="watermark",
             field=models.DateTimeField(blank=True, null=True),
         ),
     ]
