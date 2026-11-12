@@ -305,7 +305,11 @@
       (meta.lower_is_worse ? 'below' : 'above') +
       util.esc(thr) +
       (partly.length > 3
-        ? ' — only part of <span title="' + util.esc(partly.join(', ')) + '">' + partly.length + ' countries</span>'
+        ? ' — only part of <span title="' +
+          util.esc(partly.join(', ')) +
+          '">' +
+          partly.length +
+          ' countries</span>'
         : partly.length
           ? ' — only part of ' + util.esc(partly.join(', '))
           : '') +
