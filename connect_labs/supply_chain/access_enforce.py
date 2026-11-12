@@ -27,10 +27,11 @@ FAIL CLOSED. A partner whose organisations cannot be established, or whose stand
 to nothing (`access_relations.scope`). A switch that cannot be READ is treated as off: an unreadable setting
 must not turn a working programme into an empty one. (A viewer's organisations are the other way round.)
 
-WHO CAN FLIP IT. Only the programme's own people (members of the running organisation) and platform support
-(`config._check_writer`, enforced in scope_config/service.py on every route). A partner can open the settings page
-like any member of the programme, but may not change this switch: it is the restriction on them. The switch is read from the PROGRAMME layer only; an
-organisation-layer value is ignored on purpose, so one setting cannot silently switch on every programme an organisation owns.
+WHO CAN FLIP IT. Only the programme's own people (members of the running organisation) and platform
+support (`config._check_writer`, enforced in scope_config/service.py on every route). A partner can open the
+settings page like any member of the programme, but may not change this switch: it is the restriction on them.
+The switch is read from the PROGRAMME layer only; an organisation-layer value is ignored on purpose, so one
+setting cannot silently switch on every programme an organisation owns.
 """
 
 from __future__ import annotations
