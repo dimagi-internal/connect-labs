@@ -128,3 +128,20 @@ LABS = register_namespace(
         check_targets=_home_is_a_page,
     )
 )
+
+
+# A person's own preferences. User layer only: nobody else reads or writes it (service.refusal), and it is not
+# shown on an organisation, programme or opportunity's settings page.
+PROFILE = register_namespace(
+    Namespace(
+        key="profile",
+        label="Your profile",
+        description="How you want things written in your name: the name Supply signs its drafted emails with.",
+        schema={
+            "type": "object",
+            "properties": {"signed_as": {"type": "string", "minLength": 1, "maxLength": 120}},
+            "additionalProperties": False,
+        },
+        layers=frozenset({"user"}),
+    )
+)

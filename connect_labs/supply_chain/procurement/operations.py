@@ -653,7 +653,7 @@ def _replied_since(access, tender, suppliers, set_on) -> set:
 
 def _sender(access) -> Sender:
     """Who signs a draft: the signed-in person (over MCP, the token's user) and their organisation."""
-    from connect_labs.supply_chain.identity import acting_org_name, person_name
+    from connect_labs.supply_chain.identity import acting_org_name, signature
 
     organisation = acting_org_name(access)
     if not organisation and getattr(access, "program_id", None):
@@ -662,7 +662,8 @@ def _sender(access) -> Sender:
         from connect_labs.supply_chain.banner import _buyer_of_record
 
         organisation = _buyer_of_record(access, access.program_id)
-    return Sender(name=person_name(getattr(access, "user", None)), organisation=organisation)
+    # The name they set, else their own; a bare login is left as the visible placeholder (identity.signature).
+    return Sender(name=signature(getattr(access, "user", None)).name, organisation=organisation)
 
 
 def _day(value) -> date:

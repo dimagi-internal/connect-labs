@@ -8,32 +8,42 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('labsdata', '0002_data_space'),
+        ("labsdata", "0002_data_space"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='PageHold',
+            name="PageHold",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('page_token_checksum', models.CharField(max_length=64, unique=True)),
-                ('page_key', models.CharField(max_length=100)),
-                ('space_id', models.IntegerField(blank=True, null=True)),
-                ('workflow', models.JSONField(blank=True, default=dict)),
-                ('opportunity_ids', models.JSONField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True, db_index=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='+', to=settings.AUTH_USER_MODEL)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("page_token_checksum", models.CharField(max_length=64, unique=True)),
+                ("page_key", models.CharField(max_length=100)),
+                ("space_id", models.IntegerField(blank=True, null=True)),
+                ("workflow", models.JSONField(blank=True, default=dict)),
+                ("opportunity_ids", models.JSONField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True, db_index=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE, related_name="+", to=settings.AUTH_USER_MODEL
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='PageGrant',
+            name="PageGrant",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('grant_jti', models.CharField(max_length=64, unique=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('hold', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='grants', to='labsdata.pagehold')),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("grant_jti", models.CharField(max_length=64, unique=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "hold",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE, related_name="grants", to="labsdata.pagehold"
+                    ),
+                ),
             ],
         ),
     ]

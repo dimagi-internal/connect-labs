@@ -21,34 +21,52 @@ def carry_over_failed_followups(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('communications', '0002_delivery_states'),
+        ("communications", "0002_delivery_states"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='sentmessage',
-            name='followup',
-            field=models.CharField(blank=True, choices=[('', 'None'), ('pending', 'Pending'), ('done', 'Done'), ('failed', 'Failed')], db_index=True, default='', max_length=8),
+            model_name="sentmessage",
+            name="followup",
+            field=models.CharField(
+                blank=True,
+                choices=[("", "None"), ("pending", "Pending"), ("done", "Done"), ("failed", "Failed")],
+                db_index=True,
+                default="",
+                max_length=8,
+            ),
         ),
         migrations.AddField(
-            model_name='sentmessage',
-            name='followup_at',
+            model_name="sentmessage",
+            name="followup_at",
             field=models.DateTimeField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='sentmessage',
-            name='followup_attempts',
+            model_name="sentmessage",
+            name="followup_attempts",
             field=models.PositiveSmallIntegerField(default=0),
         ),
         migrations.AddField(
-            model_name='sentmessage',
-            name='followup_error',
-            field=models.TextField(blank=True, default=''),
+            model_name="sentmessage",
+            name="followup_error",
+            field=models.TextField(blank=True, default=""),
         ),
         migrations.AlterField(
-            model_name='sentmessage',
-            name='delivery',
-            field=models.CharField(choices=[('queued', 'Sending'), ('delivered', 'Sent'), ('failed', 'Failed'), ('not_sent', 'Not sent'), ('unknown', 'Outcome unknown')], default='queued', max_length=12),
+            model_name="sentmessage",
+            name="delivery",
+            field=models.CharField(
+                choices=[
+                    ("queued", "Sending"),
+                    ("delivered", "Sent"),
+                    ("failed", "Failed"),
+                    ("not_sent", "Not sent"),
+                    ("unknown", "Outcome unknown"),
+                ],
+                default="queued",
+                max_length=12,
+            ),
         ),
-        migrations.RunPython(carry_over_failed_followups, migrations.RunPython.noop, hints={"run_on_secondary": False}),
+        migrations.RunPython(
+            carry_over_failed_followups, migrations.RunPython.noop, hints={"run_on_secondary": False}
+        ),
     ]

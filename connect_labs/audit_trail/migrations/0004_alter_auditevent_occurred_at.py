@@ -7,13 +7,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('audit_trail', '0003_alter_auditevent_request_id'),
+        ("audit_trail", "0003_alter_auditevent_request_id"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='auditevent',
-            name='occurred_at',
+            model_name="auditevent",
+            name="occurred_at",
             field=models.DateTimeField(db_index=True, default=django.utils.timezone.now),
         ),
     ]

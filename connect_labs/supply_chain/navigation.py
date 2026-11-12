@@ -261,6 +261,8 @@ VIEWS_WITHOUT_TABS = frozenset(
         "supply_chain:cell_edit",
         # Streams a stored file back.
         "supply_chain:document_open",
+        # A POST that saves the person's own "sign my emails as" name and redirects back to the drafts panel.
+        "supply_chain:procurement_signed_as",
         # A supplier's own login-free page: deliberately no programme chrome,
         # because the person reading it is not in the programme.
         "supply_chain:update_link_public",

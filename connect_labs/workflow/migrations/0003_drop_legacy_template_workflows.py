@@ -2,7 +2,6 @@
 
 from django.db import migrations
 
-
 # connect-labs#2236: template workflows moved to LabsRecords under the LabsRecord ACL
 # (workflow/template_workflows.py). Their one live template (25528, opp 523) was
 # recreated there with workflow_template_import_legacy before this ran, so these

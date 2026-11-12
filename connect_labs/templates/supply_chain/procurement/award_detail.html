@@ -152,6 +152,7 @@ the award, so the page says so where the order button would otherwise be.
 
 <details class="bg-white border border-gray-200 rounded-lg mb-4" id="selection-drafts" data-testid="selection-drafts">
   <summary class="px-4 py-2.5 cursor-pointer text-xs font-semibold text-gray-600">Emails for this award <span class="font-normal ml-1">the selection email to the supplier{% if order_set.partners_total %}, and a handover for each partner{% endif %}</span></summary>
+  <div class="px-4">{% url 'supply_chain:award_detail' award.pk as award_url %}{% with back=award_url|add:"#selection-drafts" back_id="award" %}{% include "supply_chain/procurement/_signed_as.html" %}{% endwith %}</div>
   <form method="post" action="{% url 'communications:outbox' %}?kind=supply_chain.award_emails&amp;about={{ award.pk }}" class="px-4 py-2 flex flex-wrap items-center gap-2" data-testid="send-from-labs">
     {% csrf_token %}
     <button class="text-sm px-3 py-1.5 rounded-md bg-brand-deep-purple text-white">Send these from labs</button>

@@ -9,12 +9,10 @@ def gen_uuid(apps, schema_editor):
     connection = schema_editor.connection
 
     with connection.cursor() as cursor:
-        cursor.execute(
-            """
+        cursor.execute("""
             UPDATE users_user
             SET user_id = gen_random_uuid();
-        """
-        )
+        """)
 
 
 class Migration(migrations.Migration):
