@@ -100,6 +100,44 @@ SCHEMA = {
 }
 
 
+# Settings that decide what a PARTNER may see. A partner can open a programme's Supply settings like any
+# member of it, but must not be able to switch off the restriction on itself, so only the programme's own
+# people (the running organisation's members) and platform support change these (runner.standing).
+ACCESS_CONTROL_KEYS = ("acl_enforce_reads",)
+
+
+def _check_writer(before: dict, after: dict, scope, caller) -> str | None:
+    """Why `caller` may not make this change to an access-control setting, or None (scope_config check_writer)."""
+    changed = [key for key in ACCESS_CONTROL_KEYS if before.get(key) != after.get(key)]
+    if not changed:
+        return None
+    names = ", ".join(changed)
+    if scope.type != "program":
+        return f"{names} is read from the program's own settings only; set it on the program, not on a {scope.type}"
+    from connect_labs.supply_chain import runner
+    from connect_labs.supply_chain.data_access import SupplyDataAccess
+
+    try:
+        access = SupplyDataAccess(
+            access_token=getattr(caller, "access_token", None),
+            program_id=int(scope.key),
+            request=getattr(caller, "request", None),
+            user=getattr(caller, "user", None),
+            caller=caller,
+        )
+        held = runner.standing(access)
+    except Exception:  # noqa: BLE001 -- standing that cannot be established is a partner's: refuse
+        return f"{names} was not changed: who you act for in this program could not be established"
+    if held.is_programme:
+        return None
+    if held.runner is None:
+        return runner.refusal(access, held)
+    return (
+        f"{names} decides what partners see, so only {held.runner.name}, which runs program {scope.key}, or "
+        "platform support can change it. You can read it; ask the running organisation to change it."
+    )
+
+
 def _check_layer(data: dict) -> None:
     """What one layer may say on its own: keys, and Overview left alone."""
     builtins = set(_builtin_names())
@@ -169,6 +207,7 @@ SUPPLY = register_namespace(
         check=_check_layer,
         check_resolved=_check_resolved,
         owners=_owners,
+        check_writer=_check_writer,
     )
 )
 

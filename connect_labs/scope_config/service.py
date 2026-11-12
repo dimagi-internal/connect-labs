@@ -239,6 +239,15 @@ def _check_targets(namespace: Namespace, before: dict, after: dict, caller) -> N
         raise Invalid(str(exc)) from None
 
 
+def _require_writer(namespace: Namespace, before: dict, after: dict, scope: Scope, caller) -> None:
+    """The namespace's per-key writer rule (namespace.check_writer): refused changes name why."""
+    if not namespace.check_writer or caller.is_system:
+        return
+    reason = namespace.check_writer(before or {}, after or {}, scope, caller)
+    if reason:
+        raise Forbidden(reason)
+
+
 def _require_owners(namespace: Namespace, before: dict, after: dict, caller, tree: dict) -> None:
     """Every scope the change newly points records at must be one `caller` may use."""
     if not namespace.owners or caller.is_system:
@@ -402,6 +411,7 @@ def update(
         new = merge_patch(row.data, patch)
         _validate(namespace, scope, new, tree)
         _require_owners(namespace, row.data, new, caller, tree)
+        _require_writer(namespace, row.data, new, scope, caller)
         _check_targets(namespace, row.data, new, caller)
         if new != row.data:
             _write(row, new, actor, via)
@@ -466,6 +476,7 @@ def undo(
         # point only at scopes the person undoing it may use.
         _validate(namespace, scope, change.before, tree)
         _require_owners(namespace, row.data, change.before, caller, tree)
+        _require_writer(namespace, row.data, change.before, scope, caller)
         _check_targets(namespace, row.data, change.before, caller)
         _write(row, change.before, actor, via or f"undo:{change.id}")
     return get(namespace_key, scope, caller)
