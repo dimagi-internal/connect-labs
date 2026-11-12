@@ -281,3 +281,66 @@ def test_a_partner_loads_all_three_plan_pages_without_error(page, world, monkeyp
     html = page.get(reverse("supply_chain:plan")).content.decode()
     assert "Scoped P" in html and "worker-acacia" in html
     assert "your own organisation runs" in html
+
+
+# ---- the dosing check at CBI's own protocol path ---------------------------------------
+
+PROTOCOL_PATH = "form.rutf_dispensing.amount_to_dispense"
+
+
+def _answer_protocol(world, value, point="acacia"):
+    for visit_row in WorkerVisit.objects.filter(program_id=PROGRAM, supply_point=world[point]).exclude(entity_id=""):
+        visit_row.answers = {**(visit_row.answers or {}), PROTOCOL_PATH: value}
+        visit_row.save()
+
+
+def _cbi_rule(world):
+    from connect_labs.supply_chain.stock.services.dispensing import CBI_HOUSEHOLD_PATHS
+
+    rule = world["rule"]
+    rule.reports = {"household": CBI_HOUSEHOLD_PATHS}
+    rule.save()
+
+
+def test_cbis_household_paths_carry_the_apps_protocol_amount_at_the_visit_forms_path():
+    from connect_labs.supply_chain.stock.services.dispensing import CBI_HOUSEHOLD_PATHS, validate_household
+
+    assert CBI_HOUSEHOLD_PATHS["protocol_paths"] == [PROTOCOL_PATH]
+    assert validate_household(CBI_HOUSEHOLD_PATHS) == CBI_HOUSEHOLD_PATHS
+
+
+def test_a_rule_reading_cbis_dispensed_answer_gets_the_protocol_path_by_default(dosed):
+    from connect_labs.supply_chain.stock.services.dispensing import household_paths
+
+    rule = dosed["rule"]
+    rule.reports = {}
+    rule.lines = [{"kind": "stated", "paths": ["form.rutf_dispensing.rutf_sachets_dispensed"], "unit": "sachet"}]
+    assert household_paths(rule)["protocol_paths"] == [PROTOCOL_PATH]
+
+
+def test_the_check_compares_what_was_given_with_the_protocol_amount_at_that_path(dosed, monkeypatch):
+    from connect_labs.supply_chain.stock.services import forecast
+
+    monkeypatch.setattr(forecast, "K_MIN", 1)
+    _cbi_rule(dosed)
+    _answer_protocol(dosed, "14")
+    acacia = service.protocol_by_worker(PROGRAM, dosed["item"], [dosed["rule"]], TODAY, "sachet")[dosed["acacia"].pk]
+    assert acacia["visits"] > 0 and acacia["protocol"] == Decimal(14) * acacia["visits"] and acacia["given"] > 0
+    row = {r["name"]: r for r in _view(dosed)["dosing"]}["worker-acacia"]
+    assert row["basis"] == "app"
+    assert row["share"] == int((acacia["given"] / acacia["protocol"] * 100).quantize(Decimal(1)))
+
+
+def test_blank_or_non_numeric_protocol_amounts_are_no_protocol_amount_not_zero(dosed):
+    _cbi_rule(dosed)
+    for bad in ("", "  ", "n/a", "-3", None):
+        _answer_protocol(dosed, bad)
+        assert service.protocol_by_worker(PROGRAM, dosed["item"], [dosed["rule"]], TODAY, "sachet") == {}
+        rows = {r["name"]: r for r in _view(dosed)["dosing"]}
+        assert {r["basis"] for r in rows.values()} == {"flat"}
+
+
+def test_the_plan_page_loads_and_labels_the_flat_fallback(page, dosed):
+    _cbi_rule(dosed)
+    html = page.get(reverse("supply_chain:plan")).content.decode()
+    assert "Stock follow-up" in html and "flat check" in html and PROTOCOL_PATH in html
