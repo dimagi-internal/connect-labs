@@ -120,6 +120,15 @@ class TestContacts:
         assert any(c.get("note") == "names not matched to addresses" for c in contacts)
         assert not any(c.get("name") == "Ada" and c.get("email") for c in contacts)
 
+    def test_phones_ride_with_matched_people_when_there_is_one_each(self):
+        contacts = t._contacts(self._row("Ada; Grace", "ada@example.test; grace@example.test", "0801; 0802"))
+        assert [(c["name"], c["phone"]) for c in contacts] == [("Ada", "0801"), ("Grace", "0802")]
+
+    def test_phones_that_do_not_pair_up_are_kept_as_a_line_of_their_own(self):
+        contacts = t._contacts(self._row("Ada; Grace", "ada@example.test; grace@example.test", "0801"))
+        assert [c.get("phone") for c in contacts] == [None, None, "0801"]
+        assert contacts[-1] == {"phone": "0801", "role": "sales"}
+
     def test_a_dash_is_not_a_contact(self):
         assert t._contacts(self._row("-", "-")) == []
 

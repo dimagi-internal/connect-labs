@@ -217,7 +217,14 @@ def _contacts(row):
     phones = [p.strip() for p in _cell(row, PHONE).split(";") if p.strip() and p.strip() != "-"]
 
     if names and len(names) == len(emails):
-        return [{"name": name, "email": email, "role": "sales"} for name, email in zip(names, emails, strict=True)]
+        paired = [{"name": name, "email": email, "role": "sales"} for name, email in zip(names, emails, strict=True)]
+        if phones and len(phones) == len(paired):
+            for contact, phone in zip(paired, phones, strict=True):
+                contact["phone"] = phone
+        elif phones:
+            # The numbers are not one per person: kept, as a line of their own, never pinned on one of them.
+            paired.append({"phone": "; ".join(phones), "role": "sales"})
+        return paired
     contacts = [{"email": email, "role": "sales"} for email in emails]
     if names:
         contacts.append({"name": "; ".join(names), "role": "sales", "note": "names not matched to addresses"})
