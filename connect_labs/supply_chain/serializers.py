@@ -534,6 +534,8 @@ def _removal(obj) -> dict | None:
     note = removal.note
     # "Removed by Asha: entered twice" -> "by Asha: entered twice", for a line that already says "Removed <day>".
     said = note[len("Removed ") :] if note.startswith("Removed ") else note
+    # The first removals (12 Nov 2026) were signed from get_full_name(), which labs users do not have.
+    said = said.removeprefix("by None None: ")
     return {"movement_id": removal.pk, "on": _date(removal.created_at.date()), "note": note, "said": said}
 
 

@@ -170,3 +170,10 @@ class TestRemovingAnEntry:
         other = SupplyDataAccess(access_token="unused", program_id=PROGRAM + 1, caller=SYSTEM)
         with pytest.raises(ValueError, match="not on this programme's ledger"):
             op(other, "movement_remove", movement_id=entry["id"], reason="not mine to remove")
+
+    def test_the_removal_is_signed_with_the_persons_name(self, da, item, store, django_user_model):
+        entry = _receive(da, store, item, 5)
+        da.user = django_user_model.objects.create(username="asha.k", email="asha@example.org", name="Asha K")
+        da.remove_movement(entry["id"], "entered twice")
+        row = next(m for m in op(da, "movement_list") if m["id"] == entry["id"])
+        assert row["removed"]["said"] == "by Asha K: entered twice"
