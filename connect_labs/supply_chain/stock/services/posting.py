@@ -263,6 +263,54 @@ def post_visit_reversal(original: Movement, *, reason: str) -> Movement:
     return movement
 
 
+def post_removal(original: Movement, *, reason: str, removed_by: str = "") -> Movement:
+    """Remove an entry that should never have been posted, without deleting it.
+
+    Posts an `adjustment` that runs the other way -- from where the entry put the
+    stock, back to where it took it from -- naming the entry in `reverses`. The
+    pair nets to nothing on every date, so the removal carries the entry's own
+    date: a balance, a count's variance or a rate over any window reads as if
+    the entry had never been posted, and every figure leaves the pair out
+    (`MovementQuerySet.standing`). The entry stays on the ledger, marked
+    removed, with who removed it, when and why. Like a visit's reversal, this is
+    the record corrected, not a new event: the stock pages, which read what had
+    happened by a past day, read the entry as never posted on that day too.
+
+    Once only, and never a removal: undoing a removal would be a third row
+    arguing with two others, so a wrong removal is corrected by recording the
+    entry again.
+    """
+    if original.reverses_id is not None:
+        if original.kind == "adjustment":
+            raise ValueError("this is a removal; record the entry again rather than removing a removal")
+        raise ValueError("this puts back a rejected visit's stock; it is not removed by hand")
+    if Movement.objects.filter(reverses=original).exists():
+        raise ValueError(f"entry {original.pk} has already been removed")
+    reason = " ".join((reason or "").split())
+    if len(reason) < 5:
+        raise ValueError("say why the entry is being removed (at least 5 characters)")
+    movement = Movement(
+        program_id=original.program_id,
+        opportunity_id=original.opportunity_id,
+        kind="adjustment",
+        occurred_on=original.occurred_on,
+        from_supply_point_id=original.to_supply_point_id,
+        to_supply_point_id=original.from_supply_point_id,
+        item_id=original.item_id,
+        commodity_id=original.commodity_id,
+        batch=original.batch,
+        expiry=original.expiry,
+        quantity=original.quantity,
+        quantity_unit=original.quantity_unit,
+        reverses=original,
+        reference=f"removes entry {original.pk}"[:64],
+        note=f"Removed by {removed_by}: {reason}" if removed_by else f"Removed: {reason}",
+        source="we_recorded",
+    )
+    movement.save()
+    return movement
+
+
 # ---- stock issues -----------------------------------------------------
 
 

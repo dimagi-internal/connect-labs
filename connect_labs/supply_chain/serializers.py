@@ -15,6 +15,8 @@ pricing design refuses to lose -- the same reason the input schemas refuse to
 accept one.
 """
 
+from django.core.exceptions import ObjectDoesNotExist
+
 from connect_labs.supply_chain import records
 from connect_labs.supply_chain.values import decimal_string
 
@@ -521,6 +523,20 @@ def supply_point(obj) -> dict:
     }
 
 
+def _removal(obj) -> dict | None:
+    """The removal cancelling this entry, when somebody removed it (`posting.post_removal`)."""
+    try:
+        removal = obj.reversal
+    except ObjectDoesNotExist:
+        return None
+    if removal.kind != "adjustment":
+        return None  # a rejected visit's put-back: shown as its own row, not as a removal
+    note = removal.note
+    # "Removed by Asha: entered twice" -> "by Asha: entered twice", for a line that already says "Removed <day>".
+    said = note[len("Removed ") :] if note.startswith("Removed ") else note
+    return {"movement_id": removal.pk, "on": _date(removal.created_at.date()), "note": note, "said": said}
+
+
 def movement(obj) -> dict:
     return {
         "id": obj.pk,
@@ -539,6 +555,7 @@ def movement(obj) -> dict:
         "visit_id": obj.visit_id,
         "estimated": obj.estimated,
         "reverses_movement_id": obj.reverses_id,
+        "removed": _removal(obj),
         "caused_by": {
             "receipt_id": obj.receipt_id,
             "shipment_id": obj.shipment_id,

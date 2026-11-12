@@ -140,6 +140,12 @@ class TestTheSpecificationCoversEachComponent:
         kinds = {c["kind"] for c in op(da, "checks_list")["checks"]}
         assert "item_fails_specification" not in kinds
 
+    def test_a_discontinued_item_is_no_longer_held_to_the_specification(self, da, catalogue):
+        """No longer bought or issued: a failed QC batch recorded as an item is retired this way."""
+        _kit(da, "EHA-CP-10", 10, zinc_mg=10, status="discontinued")
+        kinds = {c["kind"] for c in op(da, "checks_list")["checks"]}
+        assert "item_fails_specification" not in kinds
+
 
 def _tender_with_quotes(da, *kits):
     supplier = op(da, "supplier_create", data={"name": "EHA Clinics"})

@@ -410,6 +410,28 @@ class MovementRecordView(OperationFormView):
         return reverse("supply_chain:stock")
 
 
+class MovementRemoveView(OperationActionView):
+    """Remove one ledger entry: the Remove button on the movements page, with its reason.
+
+    Nothing is deleted (`posting.post_removal`): the entry stays on its row, marked
+    removed, and the removal cancels it in every figure. The refusal -- no reason,
+    already removed, a removal -- goes back to the page the button was on.
+    """
+
+    operation = "movement_remove"
+    success_message = "Entry removed. It stays on the ledger, marked removed, and no longer counts."
+
+    def fixed(self, **kwargs):
+        return {"movement_id": int(kwargs["movement_id"]), "reason": self.request.POST.get("reason", "")}
+
+    def redirect_to(self, **kwargs):
+        back = self.request.POST.get("next", "")
+        # Back to the ledger the button was on, and only ever to a supply page.
+        if back.startswith("/supply/stock/movements/") and "//" not in back:
+            return back
+        return reverse("supply_chain:movements")
+
+
 class StockCountRecordView(OperationFormView):
     operation = "stock_count_record"
     form_class = StockCountForm

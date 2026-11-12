@@ -189,6 +189,14 @@ def ingest_visit_consumption(access, *, opportunity_id, visits, until=None, toda
             "visit_id", "item_id"
         )
     )
+    # A consumption somebody removed by hand (posting.post_removal) is already
+    # cancelled: a later rejection must not try to put the same stock back twice.
+    removed = set(
+        Movement.objects.filter(reverses__in=list(posted.values()), kind="adjustment").values_list(
+            "reverses_id", flat=True
+        )
+    )
+    reversed_ |= {key for key, movement in posted.items() if movement.pk in removed}
     seen = {w.visit_id: w for w in WorkerVisit.objects.filter(program_id=program_id, visit_id__in=ids)}
     index = WorkerIndex(access, opportunity_id)
     pending_reports: dict[int, dict] = {}

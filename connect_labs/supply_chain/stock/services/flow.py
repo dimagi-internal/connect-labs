@@ -123,7 +123,7 @@ def flow(program_id: int, item, *, on_date: date | None = None, point_ids=None) 
     """`point_ids` narrows the flow to the movements that start or end at those places (one partner's)."""
     on_date = on_date or date.today()
     unit = unit_of(item)
-    movements = Movement.objects.filter(program_id=program_id, item=item, occurred_on__lte=on_date)
+    movements = Movement.objects.for_program(program_id).filter(item=item, occurred_on__lte=on_date)
     if point_ids is not None:
         movements = movements.filter(Q(from_supply_point_id__in=point_ids) | Q(to_supply_point_id__in=point_ids))
     rows = list(

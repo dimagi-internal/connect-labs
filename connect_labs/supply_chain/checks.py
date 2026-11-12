@@ -277,7 +277,11 @@ def _catalogue(access, as_of):
             "slug", "spec_requirements"
         )
     }
-    for item in Item.objects.filter(scope_key=access.scope_key).select_related("commodity"):
+    # A discontinued item is no longer bought or issued, so its specification is no longer a finding --
+    # this is also how a QC test recorded as an item is retired once its batch is gone.
+    for item in (
+        Item.objects.filter(scope_key=access.scope_key).exclude(status="discontinued").select_related("commodity")
+    ):
         # A kit is checked part by part: the zinc inside a co-pack is held to
         # the zinc specification, not to the co-pack's.
         checked = kit_spec_verdict(
