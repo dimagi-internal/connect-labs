@@ -83,6 +83,7 @@ urlpatterns = [
     path("labs/marketplace/", include("connect_labs.marketplace.urls", namespace="marketplace")),
     path("labs/admin/", include("connect_labs.labs.admin.urls", namespace="labs_admin")),
     path("labs/targeting/", include("connect_labs.labs.indicators.urls", namespace="targeting")),
+    path("labs/scenarios/", include("connect_labs.scenarios.urls", namespace="scenarios")),
     path("labs/cea/", include("connect_labs.cea_urls", namespace="cea")),
     path("labs/benchmarks/", include("connect_labs.benchmarks.urls", namespace="benchmarks")),
     path("labs/data/", include("connect_labs.labsdata.urls", namespace="labsdata")),

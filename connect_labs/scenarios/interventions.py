@@ -45,108 +45,15 @@ multiplies anything.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 
+from connect_labs.impact import engine
 from connect_labs.labs.indicators import measures
+from connect_labs.labs.indicators.bases import UnitBasis, measure_for  # noqa: F401  (re-exported)
 
 
-class UnitBasis(str, Enum):
-    """What one unit of cost buys.
-
-    Each maps to a count already in the registry, so an eligible-unit figure is
-    always the same arithmetic shown in the table. DISEASE_CASE is the one that
-    depends on context — a "case" means untreated diarrhoea when targeting
-    diarrhoea and an unvaccinated child when targeting measles — so it resolves
-    against the indicator in play.
-
-    DISEASE_CASE and CASE_YEAR are the same cases counted over different spans,
-    and the difference is not a rounding. A survey asks about the last two
-    weeks, so a prevalence-derived case count is **a fortnight's worth**;
-    Liberia's 51,429 untreated diarrhoea episodes become 1,210,108 over a year.
-    Costing a year of supply against the fortnight figure under-prices it
-    twentyfold. Both are offered because both are legitimate questions — how
-    many are sick now, and how many treatments a year needs — but the basis has
-    to say which, and neither can be the silent default for the other.
-    """
-
-    BIRTH = "birth"
-    #: A newborn under 2,500 g. What Kangaroo Mother Care is priced per, and
-    #: roughly a seventh of births in sub-Saharan Africa.
-    LBW_BIRTH = "lbw_birth"
-    UNDER_5 = "under_5"
-    PERSON = "person"
-    HOUSEHOLD = "household"
-    DISEASE_CASE = "case"
-    CASE_YEAR = "case_year"
-
-    @property
-    def label(self) -> str:
-        return {
-            "birth": "per birth",
-            "lbw_birth": "per low-birthweight birth",
-            "under_5": "per child under 5",
-            "person": "per person",
-            "household": "per household",
-            "case": "per case (survey recall window)",
-            "case_year": "per case (a year of cases)",
-        }[self.value]
-
-    @property
-    def noun(self) -> str:
-        return {
-            "birth": "newborn",
-            "lbw_birth": "low-birthweight newborn",
-            "under_5": "child",
-            "person": "person",
-            "household": "household",
-            "case": "case",
-            "case_year": "annual case",
-        }[self.value]
-
-
-#: Fixed bases map straight to a count.
-_FIXED: dict[UnitBasis, str] = {
-    UnitBasis.BIRTH: "births",
-    UnitBasis.LBW_BIRTH: "births_lbw",
-    UnitBasis.UNDER_5: "pop_u5",
-    UnitBasis.PERSON: "pop_total",
-    UnitBasis.HOUSEHOLD: "households",
-}
-
-
-def measure_for(basis: UnitBasis, indicator: str = "u5mr") -> str | None:
-    """The count that a basis resolves to for this indicator.
-
-    Returns ``None`` when a case basis has no case count for the indicator —
-    a prevalence with no coverage figure cannot say how many cases go untreated,
-    and inventing one would be worse than declining.
-    """
-    if basis in _FIXED:
-        return _FIXED[basis]
-
-    if basis is UnitBasis.CASE_YEAR:
-        # No annualisation is possible without a recall window and an episode
-        # duration on the underlying prevalence. Declining is the right answer:
-        # multiplying by an assumed 26 would be an invention wearing the same
-        # units as a measurement.
-        # Same aliasing as the fortnight case below: the ORS question is
-        # asked on either the prevalence or the coverage measure, and both
-        # mean the same untreated episodes.
-        if indicator in ("diarrhoea_prevalence", "ors_coverage"):
-            indicator = "ors_coverage"
-        annual = f"{indicator}_gap_annual"
-        return annual if annual in measures.MEASURES else None
-
-    # DISEASE_CASE. Prefer a measured untreated count, then the unreached
-    # population for a coverage indicator, then expected deaths for mortality.
-    if indicator in ("diarrhoea_prevalence", "ors_coverage"):
-        return "ors_gap_children"
-    gap = f"{indicator}_gap"
-    if gap in measures.MEASURES:
-        return gap
-    if indicator in ("u5mr", "nmr"):
-        return "expected_deaths"
-    return None
+def model_price(model: str) -> float:
+    """A model's own price per person, so a preset and the model it follows cannot disagree."""
+    return float(engine.defaults(model)["cost"])
 
 
 @dataclass(frozen=True)
@@ -155,12 +62,15 @@ class Intervention:
     label: str
     #: What one unit of cost buys.
     basis: UnitBasis
-    #: Default unit cost in USD. A starting point for a scenario, not a fact.
+    #: Default unit cost in USD. A starting point for a scenario, not a fact. Where ``model`` is set it is that
+    #: model's own price per person (``model_price``), never typed here a second time.
     unit_cost_usd: float
     #: The indicator this is usually selected on.
     targets: str
     description: str = ""
     caveat: str = ""
+    #: The cost-effectiveness model this preset follows, if there is one (``impact/data/<model>.json``).
+    model: str | None = None
 
     @property
     def unit_noun(self) -> str:
@@ -202,7 +112,8 @@ register(
         slug="kmc",
         label="Kangaroo Mother Care",
         basis=UnitBasis.LBW_BIRTH,
-        unit_cost_usd=60.0,
+        unit_cost_usd=model_price("kc"),
+        model="kc",
         targets="u5mr",
         description=(
             "Skin-to-skin care for low-birthweight and preterm newborns, " "targeted where newborn survival is worst."
@@ -226,7 +137,8 @@ register(
         slug="ors",
         label="Oral rehydration salts",
         basis=UnitBasis.DISEASE_CASE,
-        unit_cost_usd=2.50,
+        unit_cost_usd=model_price("chc"),
+        model="chc",
         targets="diarrhoea_prevalence",
         description=(
             "ORS for under-5s with diarrhoea not currently receiving it — the "
@@ -235,7 +147,8 @@ register(
         caveat=(
             "A point-prevalence count on a two-week recall: children sick at any "
             "given moment, not an annual episode total. Annual demand is several "
-            "times higher."
+            "times higher. Priced at the Child Health Campaign model's cost per child per "
+            "visit, which covers ORS, zinc and the vitamin A capsule."
         ),
     )
 )
@@ -245,7 +158,8 @@ register(
         slug="ors_annual",
         label="Oral rehydration salts (a year of episodes)",
         basis=UnitBasis.CASE_YEAR,
-        unit_cost_usd=2.50,
+        unit_cost_usd=model_price("chc"),
+        model="chc",
         # Targets coverage, not prevalence, unlike its fortnight sibling. The
         # annual figure answers "how much ORS does a year of untreated episodes
         # need", which is a coverage question -- and a preset that agrees with
@@ -265,7 +179,8 @@ register(
             "et al. report for sub-Saharan Africa -- which is the check on it. "
             "It assumes the survey window is representative of the whole year; "
             "diarrhoea is seasonal, so the annual total is sound while any "
-            "single month is not."
+            "single month is not. Priced at the Child Health Campaign model's cost per "
+            "child per visit, which covers ORS, zinc and the vitamin A capsule."
         ),
     )
 )

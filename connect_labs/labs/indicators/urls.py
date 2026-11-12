@@ -31,8 +31,9 @@ urlpatterns = [
     path("api/methods/", views.MethodsView.as_view(), name="methods"),
     path("api/scope/", views.ScopeView.as_view(), name="scope"),
     path("api/methodology/", views.MethodologyView.as_view(), name="methodology"),
-    path("api/interventions/", views.InterventionsView.as_view(), name="interventions"),
-    path("api/scenario/", views.ScenarioView.as_view(), name="scenario"),
+    # Market sizing moved to the scenarios component (/labs/scenarios/); these keep the old addresses working.
+    path("api/interventions/", _moved_api("scenarios:interventions")),
+    path("api/scenario/", _moved_api("scenarios:scenario")),
     path("download/", views.SelectionDownloadView.as_view(), name="download"),
     # Malaria PMC is a view of the cost-effectiveness explorer and moved to /labs/cea/targeting/pmc/
     # (connect_labs/cea_urls.py). These keep the old addresses working: the page for a person's saved
