@@ -43,12 +43,18 @@ _CMP = {
 _FN = {"MIN": min, "MAX": max, "SQRT": math.sqrt, "ABS": abs}
 
 
+#: Each model's spec file, fixed here: a model name is a key into this table, never part of a path.
+_SPEC_FILES = {m: DATA / f"{m}.json" for m in MODELS}
+
+
 @lru_cache(maxsize=None)
 def spec(model: str) -> dict:
-    """A model's vendored spec.json. Only the models in ``MODELS`` have one, so a name is never a path."""
-    if model not in MODELS:
-        raise KeyError(f"unknown model {model!r}")
-    with (DATA / f"{model}.json").open(encoding="utf-8") as f:
+    """A model's vendored spec.json."""
+    try:
+        path = _SPEC_FILES[model]
+    except KeyError:
+        raise KeyError(f"unknown model {model!r}") from None
+    with path.open(encoding="utf-8") as f:
         return json.load(f)
 
 
