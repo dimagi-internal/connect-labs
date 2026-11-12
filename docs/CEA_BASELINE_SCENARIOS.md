@@ -9,7 +9,7 @@ Three components, built in layers: each may use the one before it and none may u
 | Uses | nothing above it | the baseline | the baseline and the CEA |
 | Data model | `IndicatorValue`, `AdminBoundary`, `Source`, the measure registry (`measures.py`), `Resolved` | the vendored model specs (`impact/data/*.json`), `valuation`, the place layer (`impact/baseline.py`, `places.py`) | not built (see below) |
 | UI | `/labs/targeting/`, the Baseline explorer | `/labs/cea/`: Models, Implementation, Targeting tabs | not built |
-| Agent tools | `targeting_indicators`, `_select`, `_methodology`, `_admin_levels`, `_compare_criteria`, `_research*` | `targeting_pmc_*` | `targeting_scenario` (sizing) |
+| Agent tools | `targeting_indicators`, `_select`, `_methodology`, `_admin_levels`, `_compare_criteria`, `_research*` | `cea_model_run` (the Models page's engine), `targeting_pmc_*` | `targeting_scenario` (sizing) |
 
 ## The cost-effectiveness component
 
@@ -17,6 +17,7 @@ One evaluator, reached three ways, so a number is the same wherever it appears.
 
 - **The core** (`impact/engine.py`, `valuation.py`, `result.py`, `explore.py`) is pure Python with no Django and no database. `engine` runs a model's own formulas from its spec; `valuation` is GiveWell's value of a death, the benchmark and the bar, read from the specs; `explore` adds run, one-way sensitivity (`tornado`), a two-input `grid`, the model's scenarios and country figures. The boundary test keeps it pure.
 - **Binding to places**: `impact/baseline.py` resolves each model's location inputs from the most local figure the baseline holds (district, else state, else the model's country figure) and records where each came from. `impact/places.py` places a delivered opportunity's visits in areas.
+- **For agents**: `cea_model_run` (`mcp/tools/cea.py`) calls `explore` directly and returns the Models page's link with the same inputs set, so what an agent computes is what the page shows.
 - **Three views** (tabs of one explorer): **Models** (`/labs/cea/models/`, `impact/views.py`): pick a model, edit any input, see the chain and sensitivity. **Implementation** (`/labs/cea/implementation/`, `pulse/cea.py`): every delivered opportunity, priced at what it cost. **Targeting** (`/labs/cea/targeting/pmc/`): malaria PMC, deaths from the EMOD simulation, valued as the CHC model values a death.
 
 ### Where the models come from, and how they stay current

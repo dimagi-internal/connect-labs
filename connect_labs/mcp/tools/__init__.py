@@ -7,6 +7,7 @@ Importing this package triggers all registration.
 from . import apps  # noqa: F401
 from . import benchmarks  # noqa: F401  -- registers benchmarks_cohort_*
 from . import campaign  # noqa: F401  -- registers campaign_build_national
+from . import cea  # noqa: F401  -- registers cea_model_run (the cost-effectiveness explorer, for an agent)
 from . import communications  # noqa: F401  -- communications_* (drafts only; a person sends in labs)
 from . import coverage_check  # noqa: F401  -- registers microplans_coverage_check (buildings reached)
 from . import funds  # noqa: F401

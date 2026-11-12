@@ -103,6 +103,7 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
             "targeting_admin_levels",
             "targeting_research",
             "targeting_compare_criteria",
+            "cea_model_run",
             "targeting_pmc_schedules",
             "targeting_pmc_rank",
             "targeting_pmc_states",
