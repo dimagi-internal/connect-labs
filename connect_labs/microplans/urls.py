@@ -1,6 +1,7 @@
 from django.urls import path
 
 from connect_labs.microplans import simple_views, views
+from connect_labs.microplans.coverage import page as reached_page
 
 app_name = "microplans"
 
@@ -8,6 +9,9 @@ urlpatterns = [
     path("", views.MicroplansHubView.as_view(), name="hub"),
     # Simple Microplan: saved test plans made in the browser, outside any program
     # (a workspace program's own are under program/<id>/simple/ below).
+    # Buildings reached: the share of a facility's buildings the recorded households got near, per cycle.
+    path("buildings-reached/", reached_page.BuildingsReachedPage.as_view(), name="buildings_reached"),
+    path("buildings-reached/run/", reached_page.BuildingsReachedRun.as_view(), name="buildings_reached_run"),
     path("simple/", simple_views.SimpleMicroplanListView.as_view(), name="simple_list"),
     path("simple/<int:plan_id>/", simple_views.SimpleMicroplanEditorView.as_view(), name="simple_editor"),
     path("simple/<int:plan_id>/api/", simple_views.SimpleMicroplanAPIView.as_view(), name="simple_api"),

@@ -14,7 +14,7 @@ import logging
 from connect_labs.labsdata import service
 from connect_labs.labsdata.engine import QueryError
 from connect_labs.labsdata.scope import ScopeError
-from connect_labs.microplans.coverage import check
+from connect_labs.microplans.coverage import check, read
 
 from ..tool_registry import MCPToolError, register
 from .labsdata import _caller, _from_canopy, _query_error, _scope_error, _space
@@ -22,23 +22,12 @@ from .labsdata import _caller, _from_canopy, _query_error, _scope_error, _space
 logger = logging.getLogger(__name__)
 
 
-def _rows(caller, space, sql, agent):
-    out = service.query(caller, space, sql, max_rows=5000, for_agent=agent, shaped=False)
-    if out.get("truncated"):
-        raise MCPToolError(
-            "CAPACITY", "A read hit the row cap; narrow the opportunities and run again.", {"reason": "truncated"}
-        )
-    return out["rows"]
-
-
 def read_households(caller, space, spec: check.CheckSpec, agent: bool) -> list:
-    """Every household row of the space, shard by shard."""
-    count = _rows(caller, space, check.count_sql(spec), agent)
-    households = int(count[0][0]) if count and count[0] and count[0][0] is not None else 0
-    rows: list = []
-    for shard in check.shard_bounds(households):
-        rows.extend(_rows(caller, space, check.points_sql(spec, shard), agent))
-    return rows
+    """Every household row of the space, shard by shard (``microplans/coverage/read.py``)."""
+    try:
+        return read.read_households(caller, space, spec, agent)
+    except read.RowCapExceeded as e:
+        raise MCPToolError("CAPACITY", str(e), {"reason": "truncated"}) from e
 
 
 @register(
