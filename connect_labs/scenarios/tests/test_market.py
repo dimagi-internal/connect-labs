@@ -75,8 +75,9 @@ class TestPageAndApi:
         r = client_in.get(reverse("cea:market_data"), {"models": "chc", "i.chc.nonsense": 1})
         assert r.status_code == 400 and "nonsense" in r.json()["error"]
 
-    def test_an_unknown_indicator_is_refused(self, client_in):
-        assert client_in.get(reverse("cea:market_data"), {"indicator": "nope"}).status_code == 400
+    def test_an_unknown_indicator_falls_back_to_the_default_as_the_other_endpoints_do(self, client_in):
+        got = client_in.get(reverse("cea:market_data"), {"indicator": "nope"})
+        assert got.status_code == 200 and got.json()["selection"]["indicator"] == "u5mr"
 
     def test_the_old_baseline_page_points_to_market_size(self, client_in):
         body = client_in.get(reverse("targeting:index")).content.decode()

@@ -293,8 +293,6 @@ class MarketSizeDataView(OpenLocallyMixin, View):
     def get(self, request):
         keys = _models(request)
         indicator = _indicator(request)
-        if indicator not in measures.MEASURES:
-            return JsonResponse({"error": f"unknown indicator {indicator!r}"}, status=400)
         threshold = _float(request, "threshold", measures.get(indicator).threshold_default)
         bar = _float(request, "bar", valuation.bar())
         try:
