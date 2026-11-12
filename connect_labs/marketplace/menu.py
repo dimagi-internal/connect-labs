@@ -14,7 +14,7 @@ from connect_labs.labs.rail_menu import Group, Item, Menu, build
 MARKETPLACE_MENU = Menu(
     key="marketplace",
     title="Marketplace",
-    subtitle="Every kind of work on Connect: where it goes, who does it, and what it buys.",
+    subtitle="From where Connect works to what it buys.",
     groups=(
         Group(
             "Overview",

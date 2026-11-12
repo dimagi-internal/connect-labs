@@ -85,7 +85,7 @@
 {% include "components/cea_tabs.html" with active="models" %}
 <div class="cem">
   <h1>CEA models</h1>
-  <p class="lede">Pick a model, change any input, and see what moves the answer. A multiple is a multiple of GiveWell's benchmark.</p>
+  <p class="lede">Change an input, see what moves the answer.</p>
 
   <div class="chips" id="model-chips"></div>
   <div id="error" class="err" hidden></div>
@@ -107,16 +107,6 @@
         <p class="foot" id="source-note"></p>
       </div>
 
-      <div class="card">
-        <h2>Two inputs together</h2>
-        <p class="sub">Each from half to one and a half times its value. Green clears the bar.</p>
-        <div class="gridsel">
-          <label>Across <select id="grid-x"></select></label>
-          <label>Down <select id="grid-y"></select></label>
-          <button type="button" class="btn" id="grid-run">Show grid</button>
-        </div>
-        <div class="scroll"><table id="grid"></table></div>
-      </div>
 
       <div class="card">
         <h2>How the answer is built</h2>
@@ -138,10 +128,9 @@
     <div class="inputs-col">
       <div class="card">
         <h2>Inputs and sensitivity</h2>
-        <p class="sub">Tick an input to include it in the sensitivity. Its bar shows the answer at its low and high case.</p>
-        <label style="font-size:13px">Start from
+                <label style="font-size:13px">Start from
           <select id="preset" style="display:block;margin-top:4px;width:100%"></select></label>
-        <div class="tools"><span>Sensitivity:</span><button type="button" id="sens-all">all on</button><button type="button" id="sens-none">all off</button></div>
+        <div class="tools"><span>In sensitivity:</span><button type="button" id="sens-all">all on</button><button type="button" id="sens-none">all off</button></div>
         <div id="inputs"></div>
       </div>
     </div>
@@ -197,13 +186,13 @@
   // ---- model chips, source note
   put($("model-chips"), Object.keys(D.models).map(function (k) {
     var m = D.models[k];
-    return h("a", { class: "chip" + (k === D.model ? " on" : ""), href: "?model=" + encodeURIComponent(k) }, [m.label, h("small", { text: m.variant || "" })]);
+    return h("a", { class: "chip" + (k === D.model ? " on" : ""), href: "?model=" + encodeURIComponent(k) }, [m.label]);
   }));
   var M = D.models[D.model];
   $("h-unit").textContent = M.unit;
   put($("source-note"), [
-    "Model: ", h("a", { href: safeUrl(M.sheet), target: "_blank", rel: "noopener", text: M.label + " live Sheet" }),
-    " · version " + (D.spec.version || "") + " · vendored from " + (D.spec.repo || "connect-cea-models") + " @ " + String(D.spec.commit || "").slice(0, 7)
+    h("a", { href: safeUrl(M.sheet), target: "_blank", rel: "noopener", text: "Live Sheet" }),
+    " · v" + String(D.spec.version || "").replace(/^v/i, "") + " · " + String(D.spec.commit || "").slice(0, 7)
   ]);
 
   // ---- inputs form: one row per input, with its sensitivity switch and bar
@@ -408,34 +397,6 @@
     if (t.dataset && t.dataset.place) { $("preset").value = "p" + t.dataset.place; load(D.places[+t.dataset.place].inputs); window.scrollTo({ top: 0, behavior: "smooth" }); }
   });
 
-  // ---- two-input grid
-  var numeric = D.inputs.filter(function (i) { return i.unit !== "switch" && (i.editable || i.low != null); });
-  function gridOptions() {
-    return numeric.map(function (i) { return h("option", { value: i.key, text: i.label.length > 60 ? i.label.slice(0, 58) + "…" : i.label }); });
-  }
-  put($("grid-x"), gridOptions()); put($("grid-y"), gridOptions());
-  $("grid-x").value = byKey.cost ? "cost" : numeric[0].key;
-  $("grid-y").value = byKey.ors ? "ors" : numeric[Math.min(1, numeric.length - 1)].key;
-  function span(i) {
-    var v = currentValue(i), f = [0.5, 0.75, 1, 1.25, 1.5];
-    return f.map(function (k) { var x = v * k; if (i.unit === "share" && x > 1) x = 1; return +x.toPrecision(4); }).filter(function (x, n, a) { return a.indexOf(x) === n; });
-  }
-  $("grid-run").addEventListener("click", function () {
-    var xk = $("grid-x").value, yk = $("grid-y").value;
-    if (xk === yk) { showError("Pick two different inputs for the grid."); return; }
-    var xs = span(byKey[xk]), ys = span(byKey[yk]);
-    call({ grid_x: xk, grid_xs: xs.join(","), grid_y: yk, grid_ys: ys.join(",") }).then(function (res) {
-      if (!res.ok) { showError(res.j.error || "That grid did not run."); return; }
-      showError("");
-      var g = res.j.grid, X = byKey[g.x_key], Y = byKey[g.y_key];
-      var headRow = h("tr", {}, [h("th", { text: Y.label.slice(0, 28) + " \\ " + X.label.slice(0, 28) })].concat(g.xs.map(function (x) { return h("th", { class: "n", text: fmt(x, X.format) }); })));
-      put($("grid"), [h("thead", {}, [headRow]), h("tbody", {}, g.ys.map(function (y, r) {
-        return h("tr", {}, [h("td", {}, [h("b", { text: fmt(y, Y.format) })])].concat(g.multiples[r].map(function (m) {
-          return h("td", { class: "n " + (m >= D.bar ? "cell-ok" : "cell-lo"), text: mult(m) + "x" });
-        })));
-      }))]);
-    });
-  });
   syncRows();
 })();
 </script>

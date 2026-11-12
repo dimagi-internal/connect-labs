@@ -511,9 +511,12 @@
     var gaps = [];
     if (data.countries_unsupported && data.countries_unsupported.length) {
       gaps.push(
-        '<strong>Cannot answer with this method:</strong> ' +
+        '<details class="inline"><summary class="inline cursor-pointer"><strong>' +
+          data.countries_unsupported.length +
+          (data.countries_unsupported.length === 1 ? ' country has' : ' countries have') +
+          ' no data with this method</strong></summary> ' +
           data.countries_unsupported.join(', ') +
-          '. Left out rather than answered at a different level.',
+          '.</details>',
       );
     }
     // A coverage measure is worse when LOW, so its selection is the places

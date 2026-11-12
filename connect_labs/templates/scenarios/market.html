@@ -51,7 +51,7 @@
 {% include "components/cea_tabs.html" with active="market" %}
 <div class="mk">
   <h1>Market size</h1>
-  <p class="lede">What it would cost to reach everyone in the places you choose, and where the models say it is worth it.</p>
+  <p class="lede">The cost of reaching everyone in chosen places, and where it is worth it.</p>
   <p class="small-link">Malaria PMC, a one-off: <a href="{% url 'cea:pmc' %}">open the PMC explorer</a></p>
   <div id="error" class="err" hidden></div>
 
@@ -149,7 +149,7 @@
       var m = D.models[k], on = state.models.indexOf(k) >= 0;
       return h("label", { class: "mchip" + (on ? " on" : "") }, [
         h("input", { type: "checkbox", data: { model: k }, checked: on ? true : null }),
-        h("span", {}, [m.label, h("small", { text: "per " + m.unit })])
+        h("span", {}, [m.label])
       ]);
     }));
   }
