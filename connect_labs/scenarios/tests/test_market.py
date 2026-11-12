@@ -87,4 +87,4 @@ class TestPageAndApi:
         got = client_in.get(reverse("cea:market_data"), {"models": "chc", "indicator": "all"}).json()
         sel = got["selection"]
         assert sel["everywhere"] is True and sel["indicator"] == "diarrhoea_prevalence" and sel["africa_total"] > 50
-        assert sel["threshold"] == 0 or sel["threshold"] <= 1
+        assert sel["threshold"] == 0  # no threshold: not even the slider minimum

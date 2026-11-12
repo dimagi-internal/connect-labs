@@ -193,7 +193,7 @@ CONTEXT_NOT_USED = method_decorator(page_chrome(labs_context=NOT_USED), name="di
 def _where(request) -> tuple[str, float]:
     """The indicator and threshold that choose the places; ``indicator=all`` means everywhere with data."""
     if request.GET.get("indicator") == EVERYWHERE:
-        return EVERYWHERE_INDICATOR, measures.get(EVERYWHERE_INDICATOR).threshold_min
+        return EVERYWHERE_INDICATOR, 0.0
     indicator = _indicator(request)
     return indicator, _float(request, "threshold", measures.get(indicator).threshold_default)
 
