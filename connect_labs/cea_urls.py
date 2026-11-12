@@ -2,6 +2,8 @@
 
 One explorer, two views (tabs on every page, ``templates/components/cea_tabs.html``):
 
+* ``models/``: run any Connect model, change its inputs, see its chain and its sensitivity
+  (``impact.explore``). The landing page.
 * ``implementation/``: what delivered opportunities achieved, priced at what they cost
   (``pulse.cea``).
 * ``targeting/``: what spend would buy where it has not been delivered yet. Malaria PMC is
@@ -15,17 +17,16 @@ and has no cost-effectiveness in it. The old addresses of these pages redirect h
 from django.urls import path
 from django.views.generic import RedirectView
 
+from connect_labs.impact import views as impact_views
 from connect_labs.labs.indicators import views as indicator_views
 from connect_labs.pulse import views as pulse_views
 
 app_name = "cea"
 
 urlpatterns = [
-    path(
-        "",
-        RedirectView.as_view(pattern_name="cea:implementation", query_string=True, permanent=False),
-        name="index",
-    ),
+    path("", RedirectView.as_view(pattern_name="cea:models", query_string=True, permanent=False), name="index"),
+    path("models/", impact_views.ModelExplorerView.as_view(), name="models"),
+    path("models/api/run/", impact_views.ModelRunView.as_view(), name="models_run"),
     path("implementation/", pulse_views.PulseCEAView.as_view(), name="implementation"),
     path("implementation/opp/<int:opp_id>/", pulse_views.PulseCEAOppView.as_view(), name="implementation_opp"),
     path(

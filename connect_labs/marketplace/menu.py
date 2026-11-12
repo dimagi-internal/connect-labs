@@ -58,10 +58,11 @@ MARKETPLACE_MENU = Menu(
         Group(
             "Cost-Effectiveness",
             (
-                # ONE explorer with two views on tabs: Implementation (what delivered opportunities
-                # achieved, at what they cost) and Targeting (what spend would buy before delivery:
-                # malaria PMC today). Every page under /labs/cea/ lights this one item.
-                Item("Cost-effectiveness explorer", "cea:implementation", owns=("/labs/cea/",)),
+                # ONE explorer, three views on tabs: Models (run a model, change inputs, test sensitivity),
+                # Implementation (what delivered opportunities achieved, at what they cost) and Targeting
+                # (what spend would buy before delivery: malaria PMC today). Every page under /labs/cea/
+                # lights this one item.
+                Item("Cost-effectiveness explorer", "cea:models", owns=("/labs/cea/",)),
                 Item("Cost data", "pulse:costs"),
                 Item("Donor reports", "pulse:report_list"),
             ),

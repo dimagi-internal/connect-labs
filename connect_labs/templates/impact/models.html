@@ -1,0 +1,349 @@
+{% extends 'base.html' %}
+{% block title %}Cost-effectiveness models · Connect Labs{% endblock %}
+
+{% block css %}
+{{ block.super }}
+<style>
+  .cem { --ink:#1f2433; --muted:#6b7280; --rule:#e5e7eb; --card:#fff; --good:#15803d; --low:#b91c1c; --acc:#4338ca;
+         color:var(--ink); max-width:1280px; margin:0 auto; padding:18px 16px 64px; }
+  .cem h1 { font-size:24px; font-weight:600; margin:0; }
+  .cem h2 { font-size:15px; font-weight:600; margin:0 0 2px; }
+  .cem .lede { color:var(--muted); font-size:14px; max-width:820px; line-height:1.5; margin:6px 0 14px; }
+  .cem .sub { color:var(--muted); font-size:12.5px; margin:0 0 10px; line-height:1.45; }
+  .cem .card { background:var(--card); border-radius:10px; box-shadow:0 1px 2px rgba(0,0,0,.05); padding:16px; margin-bottom:16px; min-width:0; }
+  .cem .chips { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 12px; }
+  .cem .chip { text-decoration:none; padding:7px 12px; border:1px solid var(--rule); border-radius:8px; background:#fff; color:var(--ink); font-size:13px; font-weight:600; }
+  .cem .chip small { display:block; font-weight:400; color:var(--muted); font-size:11.5px; }
+  .cem .chip.on { border-color:var(--acc); background:#eef2ff; color:#3730a3; }
+  .cem .layout { display:grid; grid-template-columns:minmax(300px,380px) minmax(0,1fr); gap:16px; align-items:start;
+                 grid-template-areas:"inputs results"; }
+  .cem .inputs-col { grid-area:inputs; } .cem .results-col { grid-area:results; min-width:0; }
+  @media (max-width: 900px) { .cem .layout { grid-template-columns:minmax(0,1fr); grid-template-areas:"results" "inputs"; } }
+  .cem .head { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 14px; }
+  .cem .big { font-size:40px; font-weight:600; font-variant-numeric:tabular-nums; line-height:1; }
+  .cem .pill { font-size:12px; padding:3px 9px; border-radius:999px; background:#f3f4f6; color:var(--muted); }
+  .cem .pill.ok { background:#dcfce7; color:var(--good); } .cem .pill.lo { background:#fee2e2; color:var(--low); }
+  .cem .facts { display:flex; flex-wrap:wrap; gap:6px 22px; margin-top:10px; font-size:13px; color:var(--muted); }
+  .cem .facts b { color:var(--ink); font-variant-numeric:tabular-nums; }
+  .cem .btn { font-size:13px; padding:5px 11px; border:1px solid #d1d5db; border-radius:6px; background:#fff; color:var(--ink); cursor:pointer; }
+  .cem select, .cem input[type=number], .cem input[type=search] { border:1px solid var(--rule); border-radius:6px; padding:5px 8px; font-size:13px; background:#fff; color:var(--ink); max-width:100%; box-sizing:border-box; }
+  .cem .err { background:#fef2f2; color:var(--low); padding:8px 10px; border-radius:6px; font-size:13px; margin:0 0 10px; }
+  .cem details.blk { border-top:1px solid var(--rule); padding:8px 0; }
+  .cem details.blk > summary { cursor:pointer; font-size:13px; font-weight:600; }
+  .cem .inp { padding:7px 0; border-top:1px solid #f3f4f6; }
+  .cem .inp label { display:block; font-size:12.5px; line-height:1.35; }
+  .cem .inp .row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; margin-top:4px; }
+  .cem .inp input[type=number] { width:110px; }
+  .cem .inp .unit { color:var(--muted); font-size:12px; }
+  .cem .inp .cases button { border:0; background:none; color:var(--acc); font-size:12px; cursor:pointer; padding:0 2px; text-decoration:underline; }
+  .cem .inp.changed label { font-weight:600; } .cem .inp.changed input { border-color:var(--acc); background:#eef2ff; }
+  .cem .inp .def { color:var(--muted); font-size:11.5px; }
+  .cem .inp details summary { font-size:11.5px; color:var(--muted); cursor:pointer; }
+  .cem .inp details p { font-size:12px; color:var(--muted); margin:4px 0 0; line-height:1.4; }
+  .cem .torn { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
+  .cem .tr .lab { font-size:12.5px; margin-bottom:3px; }
+  .cem .track { position:relative; height:18px; background:#f3f4f6; border-radius:4px; }
+  .cem .seg { position:absolute; top:0; bottom:0; opacity:.85; }
+  .cem .seg.lo { background:#f87171; } .cem .seg.hi { background:#4ade80; }
+  .cem .mark { position:absolute; top:-3px; bottom:-3px; width:2px; background:#111827; }
+  .cem .barline { position:absolute; top:-3px; bottom:-3px; width:0; border-left:2px dashed #7c3aed; }
+  .cem .tr .nums { display:flex; justify-content:space-between; font-size:11.5px; color:var(--muted); margin-top:2px; font-variant-numeric:tabular-nums; }
+  .cem .scroll { overflow-x:auto; }
+  .cem table { border-collapse:collapse; font-size:13px; width:100%; }
+  .cem th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); padding:6px 8px; border-bottom:1px solid var(--rule); white-space:nowrap; }
+  .cem td { padding:6px 8px; border-bottom:1px solid #f3f4f6; vertical-align:top; }
+  .cem td.n, .cem th.n { text-align:right; font-variant-numeric:tabular-nums; }
+  .cem tr.step td { background:#f9fafb; font-weight:600; font-size:12px; }
+  .cem .gridsel { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin:0 0 10px; font-size:13px; }
+  .cem .gridsel label { flex:1 1 220px; min-width:0; }
+  .cem .gridsel label select { display:block; width:100%; margin-top:3px; }
+  .cem .cell-ok { background:#dcfce7; } .cem .cell-lo { background:#fee2e2; }
+  .cem .foot { font-size:12px; color:var(--muted); margin-top:6px; }
+  @media (max-width: 700px) { .cem { padding:14px 12px 48px; } .cem h1 { font-size:21px; } .cem .big { font-size:34px; } }
+</style>
+{% endblock %}
+
+{% block content %}
+{% include "components/cea_tabs.html" with active="models" %}
+<div class="cem">
+  <h1>Cost-effectiveness models</h1>
+  <p class="lede">
+    Run one of Connect's models, change any input, read the chain that gives the answer, and see which inputs it
+    is most sensitive to. These are the models' own formulas, the same ones that value every delivered opportunity
+    and every scenario, so a number here is the number there. A multiple is a multiple of GiveWell's benchmark;
+    only deaths and the effects each model names are counted.
+  </p>
+
+  <div class="chips" id="model-chips"></div>
+  <div id="error" class="err" hidden></div>
+
+  <div class="layout">
+    <div class="results-col">
+      <div class="card" id="headline-card">
+        <div class="head">
+          <div class="big" id="h-x">–</div>
+          <div><div style="font-size:13px">of GiveWell's benchmark</div><span class="pill" id="h-pill"></span></div>
+          <button type="button" class="btn" id="reset" style="margin-left:auto">Reset to the model</button>
+        </div>
+        <div class="facts">
+          <span>Price per <span id="h-unit"></span>: <b id="h-price">–</b></span>
+          <span>Deaths averted per 100,000: <b id="h-deaths">–</b></span>
+          <span>Bar: <b id="h-bar">–</b>x</span>
+        </div>
+        <p class="foot" id="source-note"></p>
+      </div>
+
+      <div class="card">
+        <h2>Sensitivity: one input at a time</h2>
+        <p class="sub">Each input that has a low and a high case, moved to those cases with everything else held where it is now.
+          The bar shows the multiple at the low and the high case; the black line is today's answer and the dashed line is the bar.</p>
+        <div class="torn" id="tornado"></div>
+      </div>
+
+      <div class="card">
+        <h2>Sensitivity: two inputs together</h2>
+        <p class="sub">The multiple across two inputs, each from half to one and a half times its current value (a share stops at 100%).
+          Green clears the bar.</p>
+        <div class="gridsel">
+          <label>Across <select id="grid-x"></select></label>
+          <label>Down <select id="grid-y"></select></label>
+          <button type="button" class="btn" id="grid-run">Show grid</button>
+        </div>
+        <div class="scroll"><table id="grid"></table></div>
+      </div>
+
+      <div class="card">
+        <h2>How the answer is built</h2>
+        <p class="sub">Every row of the model, in order, at the inputs above.</p>
+        <div class="scroll"><table id="chain"></table></div>
+      </div>
+
+      <div class="card">
+        <h2>The model's own scenarios</h2>
+        <p class="sub">The cases its builders wrote. Run one to load its inputs.</p>
+        <div class="scroll"><table id="scenarios"></table></div>
+      </div>
+
+      <div class="card" id="places-card">
+        <h2>Country by country</h2>
+        <p class="sub">The model at each country's own published figures. Use one to load that country's inputs.</p>
+        <input type="search" id="place-q" placeholder="Filter by country" style="margin-bottom:8px">
+        <div class="scroll" style="max-height:420px;overflow-y:auto"><table id="places"></table></div>
+      </div>
+    </div>
+
+    <div class="inputs-col">
+      <div class="card">
+        <h2>Inputs</h2>
+        <p class="sub">Change a value and the answer recomputes. Anything you change is kept in the link, so a configuration can be shared.</p>
+        <label style="font-size:13px">Start from
+          <select id="preset" style="display:block;margin-top:4px;width:100%"></select></label>
+        <div id="inputs" style="margin-top:8px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{ data|json_script:"explore-data" }}
+<script>
+(function () {
+  "use strict";
+  var D = JSON.parse(document.getElementById("explore-data").textContent);
+  var overrides = Object.assign({}, D.overrides);
+  var byKey = {}; D.inputs.forEach(function (i) { byKey[i.key] = i; });
+  var $ = function (id) { return document.getElementById(id); };
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  function dec(f) { return ((String(f || "").split(".")[1]) || "").replace(/[^0#]/g, "").length; }
+  function fmt(v, f) {
+    if (v == null || isNaN(v)) return "–";
+    f = f || "";
+    var d = dec(f);
+    if (f.indexOf("%") >= 0) return (v * 100).toFixed(d) + "%";
+    if (f.indexOf("$") >= 0) return "$" + Number(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+    if (!f || f === "General") return Number(v).toLocaleString(undefined, { maximumSignificantDigits: 4 });
+    return Number(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+  }
+  function mult(v) { return v == null ? "–" : (v >= 10 ? v.toFixed(0) : v.toFixed(1)); }
+
+  // ---- model chips, source note
+  $("model-chips").innerHTML = Object.keys(D.models).map(function (k) {
+    var m = D.models[k];
+    return '<a class="chip' + (k === D.model ? " on" : "") + '" href="?model=' + k + '">' + esc(m.label) + "<small>" + esc(m.variant || "") + "</small></a>";
+  }).join("");
+  var M = D.models[D.model];
+  $("h-unit").textContent = M.unit;
+  $("source-note").innerHTML = 'Model: <a href="' + esc(M.sheet) + '" target="_blank" rel="noopener">' + esc(M.label) + " live Sheet</a> · version " +
+    esc(D.spec.version || "") + " · vendored from " + esc(D.spec.repo || "connect-cea-models") + " @ " + esc(String(D.spec.commit || "").slice(0, 7));
+
+  // ---- inputs form
+  function currentValue(i) { return overrides.hasOwnProperty(i.key) ? overrides[i.key] : i.value; }
+  function inputRow(i) {
+    var isSwitch = i.unit === "switch";
+    var field = isSwitch
+      ? '<input type="checkbox" data-key="' + i.key + '"' + (currentValue(i) ? " checked" : "") + ">"
+      : '<input type="number" step="any" data-key="' + i.key + '" value="' + currentValue(i) + '">';
+    var cases = (i.low != null && i.high != null && !isSwitch)
+      ? '<span class="cases">low <button type="button" data-set="' + i.key + '" data-v="' + i.low + '">' + fmt(i.low, i.format) + '</button> high <button type="button" data-set="' + i.key + '" data-v="' + i.high + '">' + fmt(i.high, i.format) + "</button></span>" : "";
+    var more = (i.meaning || i.where || i.range)
+      ? "<details><summary>What it is, and where it comes from</summary>" + (i.meaning ? "<p>" + esc(i.meaning) + "</p>" : "") +
+        (i.where ? "<p><b>Source:</b> " + esc(i.where) + "</p>" : "") + (i.range ? "<p><b>Range:</b> " + esc(i.range) + "</p>" : "") + "</details>" : "";
+    return '<div class="inp" data-row="' + i.key + '"><label>' + esc(i.label) + '</label><div class="row">' + field +
+      '<span class="unit">' + esc(i.unit) + '</span><span class="def">model: ' + fmt(i.value, i.format) + "</span>" + cases + "</div>" + more + "</div>";
+  }
+  $("inputs").innerHTML = D.blocks.map(function (b) {
+    var items = D.inputs.filter(function (i) { return i.block === b.key; });
+    if (!items.length) return "";
+    var open = items[0].editable ? " open" : "";
+    return '<details class="blk"' + open + "><summary>" + esc(b.title) + " (" + items.length + ")</summary>" + items.map(inputRow).join("") + "</details>";
+  }).join("");
+
+  function syncRows() {
+    D.inputs.forEach(function (i) {
+      var row = document.querySelector('[data-row="' + i.key + '"]'); if (!row) return;
+      var inp = row.querySelector("input[data-key]");
+      var v = currentValue(i);
+      if (inp.type === "checkbox") inp.checked = !!v; else if (document.activeElement !== inp) inp.value = v;
+      row.classList.toggle("changed", overrides.hasOwnProperty(i.key));
+    });
+  }
+
+  // ---- calls
+  function query(extra) {
+    var p = new URLSearchParams({ model: D.model });
+    Object.keys(overrides).forEach(function (k) { p.set("i_" + k, overrides[k]); });
+    Object.keys(extra || {}).forEach(function (k) { p.set(k, extra[k]); });
+    return p;
+  }
+  function writeUrl() {
+    var q = query().toString();
+    try { history.replaceState(null, "", location.pathname + "?" + q); } catch (e) { /* sandboxed frame */ }
+  }
+  function showError(msg) { var e = $("error"); e.hidden = !msg; e.textContent = msg || ""; }
+  var timer = null, seq = 0;
+  function refresh() {
+    syncRows(); writeUrl();
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      var mine = ++seq;
+      fetch(D.run_url + "?" + query().toString(), { credentials: "same-origin" }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (mine !== seq) return;
+          if (!res.ok) { showError(res.j.error || "That did not run."); return; }
+          showError(""); draw(res.j.run, res.j.tornado);
+        }).catch(function () { showError("The server did not respond. Try again."); });
+    }, 200);
+  }
+
+  // ---- drawing
+  function drawHeadline(run) {
+    var h = run.headline;
+    $("h-x").textContent = mult(h.multiple) + "x";
+    $("h-price").textContent = "$" + h.price_per_person.toFixed(2);
+    $("h-deaths").textContent = h.deaths_per_100k.toFixed(1);
+    $("h-bar").textContent = h.bar;
+    var pill = $("h-pill"); pill.textContent = h.clears_bar ? "Clears the bar" : "Below the bar"; pill.className = "pill " + (h.clears_bar ? "ok" : "lo");
+  }
+  function drawTornado(rows) {
+    if (!rows.length) { $("tornado").innerHTML = '<p class="sub">This model gives no low and high cases to test.</p>'; return; }
+    var base = rows[0].base, vals = [base, D.bar];
+    rows.forEach(function (r) { vals.push(r.multiple_at_low, r.multiple_at_high); });
+    var max = Math.max.apply(null, vals) * 1.05, min = Math.min(0, Math.min.apply(null, vals));
+    var pos = function (v) { return ((v - min) / (max - min) * 100).toFixed(2) + "%"; };
+    var width = function (a, b) { return (Math.abs(b - a) / (max - min) * 100).toFixed(2) + "%"; };
+    $("tornado").innerHTML = rows.map(function (r) {
+      var lo = Math.min(r.multiple_at_low, base), hi = Math.max(r.multiple_at_high, base);
+      var segLo = '<div class="seg lo" style="left:' + pos(Math.min(r.multiple_at_low, base)) + ";width:" + width(r.multiple_at_low, base) + '"></div>';
+      var segHi = '<div class="seg hi" style="left:' + pos(Math.min(r.multiple_at_high, base)) + ";width:" + width(r.multiple_at_high, base) + '"></div>';
+      return '<div class="tr"><div class="lab">' + esc(r.label) + ' <span class="unit" style="color:#6b7280;font-size:11.5px">low ' + fmt(r.low, r.format) + ", high " + fmt(r.high, r.format) + "</span></div>" +
+        '<div class="track">' + segLo + segHi + '<div class="barline" style="left:' + pos(D.bar) + '"></div><div class="mark" style="left:' + pos(base) + '"></div></div>' +
+        '<div class="nums"><span>' + mult(r.multiple_at_low) + "x at the low case</span><span>" + mult(r.multiple_at_high) + "x at the high case</span></div></div>";
+    }).join("");
+  }
+  function drawChain(run) {
+    var step = null, out = '<thead><tr><th>Row</th><th class="n">Value</th></tr></thead><tbody>';
+    run.chain.forEach(function (r) {
+      if (r.step !== step) { step = r.step; out += '<tr class="step"><td colspan="2">' + esc(step || "") + "</td></tr>"; }
+      out += "<tr><td>" + esc(r.label) + '</td><td class="n">' + fmt(r.value, r.format) + "</td></tr>";
+    });
+    $("chain").innerHTML = out + "</tbody>";
+  }
+  function draw(run, tornado) { drawHeadline(run); drawTornado(tornado); drawChain(run); }
+  draw(D.run, D.tornado);
+
+  // ---- scenarios and countries
+  $("scenarios").innerHTML = "<thead><tr><th>Scenario</th><th class=n>Multiple</th><th class=n>Price</th><th class=n>Deaths / 100k</th><th></th></tr></thead><tbody>" +
+    D.scenarios.map(function (s, n) {
+      return "<tr><td>" + esc(s.name) + '</td><td class="n">' + mult(s.multiple) + 'x</td><td class="n">$' + s.price_per_person.toFixed(2) + '</td><td class="n">' + s.deaths_per_100k.toFixed(1) +
+        '</td><td><button type="button" class="btn" data-scn="' + n + '">Run</button></td></tr>';
+    }).join("") + "</tbody>";
+  if (!D.places.length) $("places-card").hidden = true;
+  function drawPlaces() {
+    var q = ($("place-q").value || "").toLowerCase();
+    $("places").innerHTML = "<thead><tr><th>Country</th><th class=n>Multiple</th><th class=n>Price</th><th class=n>Deaths / 100k</th><th></th></tr></thead><tbody>" +
+      D.places.map(function (p, n) { return [p, n]; }).filter(function (pn) { return !q || pn[0].name.toLowerCase().indexOf(q) >= 0; }).map(function (pn) {
+        var p = pn[0];
+        return "<tr><td>" + esc(p.name) + '</td><td class="n">' + mult(p.x) + 'x</td><td class="n">$' + p.price.toFixed(2) + '</td><td class="n">' + p.deaths_per_100k.toFixed(1) +
+          '</td><td><button type="button" class="btn" data-place="' + pn[1] + '">Use</button></td></tr>';
+      }).join("") + "</tbody>";
+  }
+  drawPlaces();
+  $("place-q").addEventListener("input", drawPlaces);
+
+  // ---- presets
+  var presetOpts = '<option value="">The model\'s own inputs</option>';
+  D.scenarios.forEach(function (s, n) { presetOpts += '<option value="s' + n + '">Scenario: ' + esc(s.name) + "</option>"; });
+  D.places.forEach(function (p, n) { presetOpts += '<option value="p' + n + '">Country: ' + esc(p.name) + "</option>"; });
+  $("preset").innerHTML = presetOpts;
+  function load(sets) { overrides = {}; Object.keys(sets || {}).forEach(function (k) { if (byKey[k] && sets[k] !== byKey[k].value) overrides[k] = sets[k]; }); refresh(); }
+  $("preset").addEventListener("change", function (e) {
+    var v = e.target.value;
+    if (!v) load({}); else if (v[0] === "s") load(D.scenarios[+v.slice(1)].sets); else load(D.places[+v.slice(1)].inputs);
+  });
+  $("reset").addEventListener("click", function () { $("preset").value = ""; load({}); });
+
+  // ---- input changes, low/high buttons, run buttons
+  function setOverride(key, v) {
+    if (v === "" || v == null || isNaN(v)) return;
+    if (v === byKey[key].value) delete overrides[key]; else overrides[key] = v;
+    refresh();
+  }
+  $("inputs").addEventListener("input", function (e) {
+    var el = e.target; if (!el.dataset.key) return;
+    setOverride(el.dataset.key, el.type === "checkbox" ? (el.checked ? 1 : 0) : parseFloat(el.value));
+  });
+  document.addEventListener("click", function (e) {
+    var t = e.target;
+    if (t.dataset && t.dataset.set) setOverride(t.dataset.set, parseFloat(t.dataset.v));
+    if (t.dataset && t.dataset.scn) { $("preset").value = "s" + t.dataset.scn; load(D.scenarios[+t.dataset.scn].sets); window.scrollTo({ top: 0, behavior: "smooth" }); }
+    if (t.dataset && t.dataset.place) { $("preset").value = "p" + t.dataset.place; load(D.places[+t.dataset.place].inputs); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  });
+
+  // ---- two-input grid
+  var numeric = D.inputs.filter(function (i) { return i.unit !== "switch" && (i.editable || i.low != null); });
+  var opts = numeric.map(function (i) { return '<option value="' + i.key + '">' + esc(i.label.length > 60 ? i.label.slice(0, 58) + "…" : i.label) + "</option>"; }).join("");
+  $("grid-x").innerHTML = opts; $("grid-y").innerHTML = opts;
+  var pickX = byKey.cost ? "cost" : numeric[0].key, pickY = byKey.ors ? "ors" : numeric[Math.min(1, numeric.length - 1)].key;
+  $("grid-x").value = pickX; $("grid-y").value = pickY;
+  function span(i) {
+    var v = currentValue(i), f = [0.5, 0.75, 1, 1.25, 1.5];
+    return f.map(function (k) { var x = v * k; if (i.unit === "share" && x > 1) x = 1; return +x.toPrecision(4); }).filter(function (x, n, a) { return a.indexOf(x) === n; });
+  }
+  $("grid-run").addEventListener("click", function () {
+    var xk = $("grid-x").value, yk = $("grid-y").value;
+    if (xk === yk) { showError("Pick two different inputs for the grid."); return; }
+    var xs = span(byKey[xk]), ys = span(byKey[yk]);
+    fetch(D.run_url + "?" + query({ grid_x: xk, grid_xs: xs.join(","), grid_y: yk, grid_ys: ys.join(",") }).toString(), { credentials: "same-origin" })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); }).then(function (res) {
+        if (!res.ok) { showError(res.j.error || "That grid did not run."); return; }
+        showError(""); var g = res.j.grid, X = byKey[g.x_key], Y = byKey[g.y_key];
+        var head = "<thead><tr><th>" + esc(Y.label.slice(0, 28)) + " \\ " + esc(X.label.slice(0, 28)) + "</th>" + g.xs.map(function (x) { return '<th class="n">' + fmt(x, X.format) + "</th>"; }).join("") + "</tr></thead><tbody>";
+        $("grid").innerHTML = head + g.ys.map(function (y, r) {
+          return "<tr><td><b>" + fmt(y, Y.format) + "</b></td>" + g.multiples[r].map(function (m) { return '<td class="n ' + (m >= D.bar ? "cell-ok" : "cell-lo") + '">' + mult(m) + "x</td>"; }).join("") + "</tr>";
+        }).join("") + "</tbody>";
+      });
+  });
+  syncRows();
+})();
+</script>
+{% endblock %}

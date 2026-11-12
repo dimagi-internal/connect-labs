@@ -11,6 +11,8 @@ def signed_in(client, django_user_model):
 
 
 def test_the_explorer_has_one_address_space():
+    assert reverse("cea:models") == "/labs/cea/models/"
+    assert reverse("cea:models_run") == "/labs/cea/models/api/run/"
     assert reverse("cea:implementation") == "/labs/cea/implementation/"
     assert reverse("cea:implementation_opp", args=[7]) == "/labs/cea/implementation/opp/7/"
     assert reverse("cea:pmc") == "/labs/cea/targeting/pmc/"
@@ -22,7 +24,7 @@ def test_the_explorer_has_one_address_space():
 @pytest.mark.parametrize(
     "old, new",
     [
-        ("/labs/cea/", "/labs/cea/implementation/"),
+        ("/labs/cea/", "/labs/cea/models/"),
         ("/labs/cea/targeting/", "/labs/cea/targeting/pmc/"),
         ("/labs/pulse/cea/", "/labs/cea/implementation/"),
         ("/labs/pulse/cea/opp/7/", "/labs/cea/implementation/opp/7/"),
