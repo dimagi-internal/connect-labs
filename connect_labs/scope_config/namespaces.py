@@ -36,6 +36,11 @@ class Namespace:
     # home must be a page): called as (before, after, caller) for a person's change,
     # read as that person. Raises ValueError with a message for the person.
     check_targets: Callable[[dict, dict, object], None] | None = None
+    # Keys only some of a scope's writers may change (an access-control switch is not for the people it
+    # restricts). Called as (before, after, scope, caller) for every person's change AND undo, on every route
+    # (the settings page, MCP, anything through `service`); returns why `caller` may not make THIS change, or
+    # None. Membership of the scope is the generic rule; this narrows it per key.
+    check_writer: Callable[[dict, dict, object, object], str | None] | None = None
 
 
 _REGISTRY: dict[str, Namespace] = {}
