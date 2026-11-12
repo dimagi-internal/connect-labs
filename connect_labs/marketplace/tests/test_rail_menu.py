@@ -49,6 +49,7 @@ def test_headings_are_the_agreed_ones():
         ("solicitations:public_list", "Calls for partners"),
         ("pulse:index", "Live delivery"),
         ("pulse:network", "Network growth"),
+        ("cea:models", "Cost-effectiveness explorer"),
         ("cea:implementation", "Cost-effectiveness explorer"),
         ("pulse:costs", "Cost data"),
         ("supply_chain:market", "Supplier marketplace"),

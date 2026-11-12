@@ -1,6 +1,7 @@
-{% comment %} The cost-effectiveness explorer's two views, as tabs on both pages. `active` is "implementation" or "targeting".
-   Implementation = what delivered opportunities achieved, at what they cost. Targeting = what spend would buy where it
-   has not been delivered yet. One explorer, two questions; the baseline explorer (/labs/targeting/) has neither.
+{% comment %} The cost-effectiveness explorer's views, as tabs on every page of it. `active` is "models", "implementation"
+   or "targeting". Models = run a Connect model, change its inputs, test sensitivity. Implementation = what delivered
+   opportunities achieved, at what they cost. Targeting = what spend would buy where it has not been delivered yet (PMC).
+   The baseline explorer (/labs/targeting/) has none of these.
 {% endcomment %}
 <style>
   .ceatabs { max-width:1280px; margin:0 auto; padding:14px 16px 0; font-family:inherit; }
@@ -14,6 +15,7 @@
 <nav class="ceatabs" aria-label="Cost-effectiveness explorer" data-testid="cea-tabs">
   <div class="ct-title">Cost-effectiveness explorer</div>
   <div class="ct-row">
+    <a href="{% url 'cea:models' %}" {% if active == "models" %}class="on" aria-current="page"{% endif %}>Models<small>change the inputs, test sensitivity</small></a>
     <a href="{% url 'cea:implementation' %}" {% if active == "implementation" %}class="on" aria-current="page"{% endif %}>Implementation<small>what delivery achieved, at actual cost</small></a>
     <a href="{% url 'cea:pmc' %}" {% if active == "targeting" %}class="on" aria-current="page"{% endif %}>Targeting<small>what spend would buy, before delivery (malaria PMC)</small></a>
   </div>
