@@ -27,7 +27,6 @@ def test_headings_are_the_agreed_ones():
     menu = build(MARKETPLACE_MENU, _req(reverse("marketplace:home")))
     assert [g["label"] for g in menu["groups"]] == [
         "Overview",
-        "Baseline",
         "Solicitations",
         "Network",
         "Cost-Effectiveness",
@@ -35,7 +34,14 @@ def test_headings_are_the_agreed_ones():
     ]
     labels = [i["label"] for g in menu["groups"] for i in g["items"]]
     assert "Supply" not in labels and "Funds and portfolio" not in labels
-    assert "Malaria PMC explorer" not in labels  # a tab of the cost-effectiveness explorer
+    assert "Malaria PMC explorer" not in labels  # a link on Market size
+    cost_eff = next(g for g in menu["groups"] if g["label"] == "Cost-Effectiveness")
+    assert [i["label"] for i in cost_eff["items"]] == [
+        "Health indicators",
+        "CEA models",
+        "Implementations",
+        "Market size",
+    ]
     assert labels[-1] == "Supplier marketplace"
 
 
@@ -44,13 +50,14 @@ def test_headings_are_the_agreed_ones():
     [
         ("marketplace:home", "Programs"),
         ("marketplace:network", "Partners"),
-        ("targeting:index", "Baseline explorer"),
-        ("cea:pmc", "Cost-effectiveness explorer"),
+        ("targeting:index", "Health indicators"),
+        ("cea:pmc", "Market size"),
+        ("cea:market", "Market size"),
         ("solicitations:public_list", "Calls for partners"),
         ("pulse:index", "Live delivery"),
         ("pulse:network", "Network growth"),
-        ("cea:models", "Cost-effectiveness explorer"),
-        ("cea:implementation", "Cost-effectiveness explorer"),
+        ("cea:models", "CEA models"),
+        ("cea:implementation", "Implementations"),
         ("pulse:costs", "Cost data"),
         ("supply_chain:market", "Supplier marketplace"),
     ],
