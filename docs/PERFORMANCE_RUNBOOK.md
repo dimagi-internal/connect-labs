@@ -600,6 +600,25 @@ use the same `labs-jj-postgres`. So answer "which service?" from metrics before 
   for a failing route means that route's 500 is not a handled one, so the traceback is in
   `/ecs/labs-jj-web` and needs the `labs` SSO session.
 
+  **canopy-web and ace-web have no `Labs/Requests` rows** (that metric is labs web's own). Their
+  routes are in the ALB projection, which the observe role can read. One query, no SSO:
+
+  ```bash
+  QID=$(aws logs start-query --profile labs-observe --region us-east-1 \
+    --log-group-name /labs-jj/observe/alb-requests --start-time <page-30m epoch s> --end-time <now epoch s> \
+    --query-string 'filter target_group="labs-jj-canopy-web-tg" and target_status >= 500
+      | stats count() as n, min(@timestamp) as first, max(@timestamp) as last by method, route, target_status
+      | sort n desc | limit 10' --query queryId --output text)
+  sleep 8; aws logs get-query-results --profile labs-observe --region us-east-1 --query-id "$QID"
+  ```
+
+  Swap the target group for `labs-jj-ace-web-tg`. A route of `/ws/...` with status 500 is a
+  websocket handshake that raised before `accept()` (2026-11-12 10:35Z: 101 of them in 20 minutes,
+  one route, `GET /ws/canopy-sessions/{id}/`, a client reconnecting in a loop while the ALB's
+  success statuses for the same route stayed 101). The exception class is the
+  `Labs/CanopyWeb` `AsgiExceptions` count (uvicorn's `Exception in ASGI application`) and
+  `ErrorLines` by `logger`; the traceback itself is in `/ecs/labs-jj-canopy-web` (labs SSO).
+
   Every route failing at once points at the shared tier: read the RDS alarm states
   (`aws cloudwatch describe-alarms --profile labs-observe --region us-east-1 --alarm-name-prefix labs-jj-rds`).
   For canopy-web, a page in one or two buckets is usually its own migrating deploy (`gh run list
