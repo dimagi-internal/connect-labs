@@ -140,8 +140,11 @@ class StockRepositoryMixin:
         )
         if original is None:
             raise ValueError(f"entry {movement_id} is not on this programme's ledger")
+        from connect_labs.supply_chain.identity import person_name
+
         user = self.user if getattr(self.user, "is_authenticated", False) else None
-        removed_by = ((user.get_full_name() or user.get_username()) if user is not None else "")[:80]
+        # Not get_full_name(): labs users have no first/last name, so it read "None None".
+        removed_by = person_name(user)[:80]
         return _fresh(posting.post_removal(original, reason=reason, removed_by=removed_by))
 
     def record_movement(self, data):
