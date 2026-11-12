@@ -36,7 +36,14 @@ BLOCK_TITLES = {
 
 
 class ExploreError(ValueError):
-    """A request the explorer cannot run, in words a person can act on."""
+    """A request the explorer cannot run, in words a person can act on.
+
+    ``message`` is the only text a caller shows: it is written here, never an exception's own text.
+    """
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
 
 
 def models() -> dict[str, dict]:

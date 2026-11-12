@@ -45,7 +45,9 @@ _FN = {"MIN": min, "MAX": max, "SQRT": math.sqrt, "ABS": abs}
 
 @lru_cache(maxsize=None)
 def spec(model: str) -> dict:
-    """A model's vendored spec.json."""
+    """A model's vendored spec.json. Only the models in ``MODELS`` have one, so a name is never a path."""
+    if model not in MODELS:
+        raise KeyError(f"unknown model {model!r}")
     with (DATA / f"{model}.json").open(encoding="utf-8") as f:
         return json.load(f)
 

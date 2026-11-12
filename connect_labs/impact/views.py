@@ -45,7 +45,7 @@ class ModelExplorerView(LoginRequiredMixin, View):
             overrides = explore.clean_overrides(model, raw)
             run = explore.run(model, overrides)
         except explore.ExploreError as exc:
-            overrides, error = {}, str(exc)
+            overrides, error = {}, exc.message
             run = explore.run(model)
         meta = explore.models()
         data = {
@@ -88,5 +88,5 @@ class ModelRunView(LoginRequiredMixin, View):
                     overrides,
                 )
         except explore.ExploreError as exc:
-            return JsonResponse({"error": str(exc)}, status=400)
+            return JsonResponse({"error": exc.message}, status=400)
         return JsonResponse(out)

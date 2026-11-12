@@ -152,7 +152,31 @@
   var overrides = Object.assign({}, D.overrides);
   var byKey = {}; D.inputs.forEach(function (i) { byKey[i.key] = i; });
   var $ = function (id) { return document.getElementById(id); };
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  // Everything is built as DOM nodes with text set through textContent: nothing from the model data is ever
+  // parsed as HTML, so there is nothing to escape.
+  function h(tag, props, kids) {
+    var e = document.createElement(tag);
+    Object.keys(props || {}).forEach(function (k) {
+      var v = props[k];
+      if (v == null || v === false) return;
+      if (k === "class") e.className = v;
+      else if (k === "text") e.textContent = v;
+      else if (k === "css") Object.keys(v).forEach(function (c) { e.style[c] = v[c]; });
+      else if (k === "data") Object.keys(v).forEach(function (d) { e.dataset[d] = v[d]; });
+      else if (v === true) e.setAttribute(k, "");
+      else e.setAttribute(k, v);
+    });
+    [].concat(kids == null ? [] : kids).forEach(function (c) {
+      if (c != null) e.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+    });
+    return e;
+  }
+  function put(el, nodes) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+    nodes.forEach(function (n) { el.appendChild(typeof n === "string" ? document.createTextNode(n) : n); });
+  }
+  function safeUrl(u) { return /^https:\/\//.test(u || "") ? u : "#"; }
 
   function dec(f) { return ((String(f || "").split(".")[1]) || "").replace(/[^0#]/g, "").length; }
   function fmt(v, f) {
@@ -167,36 +191,49 @@
   function mult(v) { return v == null ? "–" : (v >= 10 ? v.toFixed(0) : v.toFixed(1)); }
 
   // ---- model chips, source note
-  $("model-chips").innerHTML = Object.keys(D.models).map(function (k) {
+  put($("model-chips"), Object.keys(D.models).map(function (k) {
     var m = D.models[k];
-    return '<a class="chip' + (k === D.model ? " on" : "") + '" href="?model=' + k + '">' + esc(m.label) + "<small>" + esc(m.variant || "") + "</small></a>";
-  }).join("");
+    return h("a", { class: "chip" + (k === D.model ? " on" : ""), href: "?model=" + encodeURIComponent(k) }, [m.label, h("small", { text: m.variant || "" })]);
+  }));
   var M = D.models[D.model];
   $("h-unit").textContent = M.unit;
-  $("source-note").innerHTML = 'Model: <a href="' + esc(M.sheet) + '" target="_blank" rel="noopener">' + esc(M.label) + " live Sheet</a> · version " +
-    esc(D.spec.version || "") + " · vendored from " + esc(D.spec.repo || "connect-cea-models") + " @ " + esc(String(D.spec.commit || "").slice(0, 7));
+  put($("source-note"), [
+    "Model: ", h("a", { href: safeUrl(M.sheet), target: "_blank", rel: "noopener", text: M.label + " live Sheet" }),
+    " · version " + (D.spec.version || "") + " · vendored from " + (D.spec.repo || "connect-cea-models") + " @ " + String(D.spec.commit || "").slice(0, 7)
+  ]);
 
   // ---- inputs form
   function currentValue(i) { return overrides.hasOwnProperty(i.key) ? overrides[i.key] : i.value; }
+  function caseButton(i, which) {
+    return h("button", { type: "button", data: { set: i.key, v: String(i[which]) }, text: fmt(i[which], i.format) });
+  }
   function inputRow(i) {
     var isSwitch = i.unit === "switch";
     var field = isSwitch
-      ? '<input type="checkbox" data-key="' + i.key + '"' + (currentValue(i) ? " checked" : "") + ">"
-      : '<input type="number" step="any" data-key="' + i.key + '" value="' + currentValue(i) + '">';
+      ? h("input", { type: "checkbox", data: { key: i.key }, checked: currentValue(i) ? true : null })
+      : h("input", { type: "number", step: "any", data: { key: i.key }, value: String(currentValue(i)) });
     var cases = (i.low != null && i.high != null && !isSwitch)
-      ? '<span class="cases">low <button type="button" data-set="' + i.key + '" data-v="' + i.low + '">' + fmt(i.low, i.format) + '</button> high <button type="button" data-set="' + i.key + '" data-v="' + i.high + '">' + fmt(i.high, i.format) + "</button></span>" : "";
-    var more = (i.meaning || i.where || i.range)
-      ? "<details><summary>What it is, and where it comes from</summary>" + (i.meaning ? "<p>" + esc(i.meaning) + "</p>" : "") +
-        (i.where ? "<p><b>Source:</b> " + esc(i.where) + "</p>" : "") + (i.range ? "<p><b>Range:</b> " + esc(i.range) + "</p>" : "") + "</details>" : "";
-    return '<div class="inp" data-row="' + i.key + '"><label>' + esc(i.label) + '</label><div class="row">' + field +
-      '<span class="unit">' + esc(i.unit) + '</span><span class="def">model: ' + fmt(i.value, i.format) + "</span>" + cases + "</div>" + more + "</div>";
+      ? h("span", { class: "cases" }, ["low ", caseButton(i, "low"), " high ", caseButton(i, "high")]) : null;
+    var more = null;
+    if (i.meaning || i.where || i.range) {
+      var paras = [];
+      if (i.meaning) paras.push(h("p", { text: i.meaning }));
+      if (i.where) paras.push(h("p", {}, [h("b", { text: "Source: " }), i.where]));
+      if (i.range) paras.push(h("p", {}, [h("b", { text: "Range: " }), i.range]));
+      more = h("details", {}, [h("summary", { text: "What it is, and where it comes from" })].concat(paras));
+    }
+    return h("div", { class: "inp", data: { row: i.key } }, [
+      h("label", { text: i.label }),
+      h("div", { class: "row" }, [field, h("span", { class: "unit", text: i.unit }), h("span", { class: "def", text: "model: " + fmt(i.value, i.format) }), cases]),
+      more
+    ]);
   }
-  $("inputs").innerHTML = D.blocks.map(function (b) {
+  put($("inputs"), D.blocks.map(function (b) {
     var items = D.inputs.filter(function (i) { return i.block === b.key; });
-    if (!items.length) return "";
-    var open = items[0].editable ? " open" : "";
-    return '<details class="blk"' + open + "><summary>" + esc(b.title) + " (" + items.length + ")</summary>" + items.map(inputRow).join("") + "</details>";
-  }).join("");
+    if (!items.length) return null;
+    return h("details", { class: "blk", open: items[0].editable ? true : null },
+      [h("summary", { text: b.title + " (" + items.length + ")" })].concat(items.map(inputRow)));
+  }).filter(Boolean));
 
   function syncRows() {
     D.inputs.forEach(function (i) {
@@ -216,85 +253,89 @@
     return p;
   }
   function writeUrl() {
-    var q = query().toString();
-    try { history.replaceState(null, "", location.pathname + "?" + q); } catch (e) { /* sandboxed frame */ }
+    try { history.replaceState(null, "", location.pathname + "?" + query().toString()); } catch (e) { /* sandboxed frame */ }
   }
   function showError(msg) { var e = $("error"); e.hidden = !msg; e.textContent = msg || ""; }
+  function call(extra) {
+    return fetch(D.run_url + "?" + query(extra).toString(), { credentials: "same-origin" })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); });
+  }
   var timer = null, seq = 0;
   function refresh() {
     syncRows(); writeUrl();
     clearTimeout(timer);
     timer = setTimeout(function () {
       var mine = ++seq;
-      fetch(D.run_url + "?" + query().toString(), { credentials: "same-origin" }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-        .then(function (res) {
-          if (mine !== seq) return;
-          if (!res.ok) { showError(res.j.error || "That did not run."); return; }
-          showError(""); draw(res.j.run, res.j.tornado);
-        }).catch(function () { showError("The server did not respond. Try again."); });
+      call().then(function (res) {
+        if (mine !== seq) return;
+        if (!res.ok) { showError(res.j.error || "That did not run."); return; }
+        showError(""); draw(res.j.run, res.j.tornado);
+      }).catch(function () { showError("The server did not respond. Try again."); });
     }, 200);
   }
 
   // ---- drawing
   function drawHeadline(run) {
-    var h = run.headline;
-    $("h-x").textContent = mult(h.multiple) + "x";
-    $("h-price").textContent = "$" + h.price_per_person.toFixed(2);
-    $("h-deaths").textContent = h.deaths_per_100k.toFixed(1);
-    $("h-bar").textContent = h.bar;
-    var pill = $("h-pill"); pill.textContent = h.clears_bar ? "Clears the bar" : "Below the bar"; pill.className = "pill " + (h.clears_bar ? "ok" : "lo");
+    var x = run.headline;
+    $("h-x").textContent = mult(x.multiple) + "x";
+    $("h-price").textContent = "$" + x.price_per_person.toFixed(2);
+    $("h-deaths").textContent = x.deaths_per_100k.toFixed(1);
+    $("h-bar").textContent = x.bar;
+    var pill = $("h-pill"); pill.textContent = x.clears_bar ? "Clears the bar" : "Below the bar"; pill.className = "pill " + (x.clears_bar ? "ok" : "lo");
   }
   function drawTornado(rows) {
-    if (!rows.length) { $("tornado").innerHTML = '<p class="sub">This model gives no low and high cases to test.</p>'; return; }
+    if (!rows.length) { put($("tornado"), [h("p", { class: "sub", text: "This model gives no low and high cases to test." })]); return; }
     var base = rows[0].base, vals = [base, D.bar];
     rows.forEach(function (r) { vals.push(r.multiple_at_low, r.multiple_at_high); });
     var max = Math.max.apply(null, vals) * 1.05, min = Math.min(0, Math.min.apply(null, vals));
     var pos = function (v) { return ((v - min) / (max - min) * 100).toFixed(2) + "%"; };
     var width = function (a, b) { return (Math.abs(b - a) / (max - min) * 100).toFixed(2) + "%"; };
-    $("tornado").innerHTML = rows.map(function (r) {
-      var lo = Math.min(r.multiple_at_low, base), hi = Math.max(r.multiple_at_high, base);
-      var segLo = '<div class="seg lo" style="left:' + pos(Math.min(r.multiple_at_low, base)) + ";width:" + width(r.multiple_at_low, base) + '"></div>';
-      var segHi = '<div class="seg hi" style="left:' + pos(Math.min(r.multiple_at_high, base)) + ";width:" + width(r.multiple_at_high, base) + '"></div>';
-      return '<div class="tr"><div class="lab">' + esc(r.label) + ' <span class="unit" style="color:#6b7280;font-size:11.5px">low ' + fmt(r.low, r.format) + ", high " + fmt(r.high, r.format) + "</span></div>" +
-        '<div class="track">' + segLo + segHi + '<div class="barline" style="left:' + pos(D.bar) + '"></div><div class="mark" style="left:' + pos(base) + '"></div></div>' +
-        '<div class="nums"><span>' + mult(r.multiple_at_low) + "x at the low case</span><span>" + mult(r.multiple_at_high) + "x at the high case</span></div></div>";
-    }).join("");
+    put($("tornado"), rows.map(function (r) {
+      var seg = function (cls, v) { return h("div", { class: "seg " + cls, css: { left: pos(Math.min(v, base)), width: width(v, base) } }); };
+      return h("div", { class: "tr" }, [
+        h("div", { class: "lab" }, [r.label + " ", h("span", { css: { color: "#6b7280", fontSize: "11.5px" }, text: "low " + fmt(r.low, r.format) + ", high " + fmt(r.high, r.format) })]),
+        h("div", { class: "track" }, [seg("lo", r.multiple_at_low), seg("hi", r.multiple_at_high),
+          h("div", { class: "barline", css: { left: pos(D.bar) } }), h("div", { class: "mark", css: { left: pos(base) } })]),
+        h("div", { class: "nums" }, [h("span", { text: mult(r.multiple_at_low) + "x at the low case" }), h("span", { text: mult(r.multiple_at_high) + "x at the high case" })])
+      ]);
+    }));
   }
   function drawChain(run) {
-    var step = null, out = '<thead><tr><th>Row</th><th class="n">Value</th></tr></thead><tbody>';
+    var step = null, body = [];
     run.chain.forEach(function (r) {
-      if (r.step !== step) { step = r.step; out += '<tr class="step"><td colspan="2">' + esc(step || "") + "</td></tr>"; }
-      out += "<tr><td>" + esc(r.label) + '</td><td class="n">' + fmt(r.value, r.format) + "</td></tr>";
+      if (r.step !== step) { step = r.step; body.push(h("tr", { class: "step" }, [h("td", { colspan: "2", text: step || "" })])); }
+      body.push(h("tr", {}, [h("td", { text: r.label }), h("td", { class: "n", text: fmt(r.value, r.format) })]));
     });
-    $("chain").innerHTML = out + "</tbody>";
+    put($("chain"), [h("thead", {}, [h("tr", {}, [h("th", { text: "Row" }), h("th", { class: "n", text: "Value" })])]), h("tbody", {}, body)]);
   }
   function draw(run, tornado) { drawHeadline(run); drawTornado(tornado); drawChain(run); }
   draw(D.run, D.tornado);
 
   // ---- scenarios and countries
-  $("scenarios").innerHTML = "<thead><tr><th>Scenario</th><th class=n>Multiple</th><th class=n>Price</th><th class=n>Deaths / 100k</th><th></th></tr></thead><tbody>" +
-    D.scenarios.map(function (s, n) {
-      return "<tr><td>" + esc(s.name) + '</td><td class="n">' + mult(s.multiple) + 'x</td><td class="n">$' + s.price_per_person.toFixed(2) + '</td><td class="n">' + s.deaths_per_100k.toFixed(1) +
-        '</td><td><button type="button" class="btn" data-scn="' + n + '">Run</button></td></tr>';
-    }).join("") + "</tbody>";
+  function head(cols) { return h("thead", {}, [h("tr", {}, cols.map(function (c) { return h("th", { class: c[1] || "", text: c[0] }); }))]); }
+  var tableHead = [["Scenario"], ["Multiple", "n"], ["Price", "n"], ["Deaths / 100k", "n"], [""]];
+  put($("scenarios"), [head(tableHead), h("tbody", {}, D.scenarios.map(function (s, n) {
+    return h("tr", {}, [h("td", { text: s.name }), h("td", { class: "n", text: mult(s.multiple) + "x" }), h("td", { class: "n", text: "$" + s.price_per_person.toFixed(2) }),
+      h("td", { class: "n", text: s.deaths_per_100k.toFixed(1) }), h("td", {}, [h("button", { type: "button", class: "btn", data: { scn: String(n) }, text: "Run" })])]);
+  }))]);
   if (!D.places.length) $("places-card").hidden = true;
   function drawPlaces() {
     var q = ($("place-q").value || "").toLowerCase();
-    $("places").innerHTML = "<thead><tr><th>Country</th><th class=n>Multiple</th><th class=n>Price</th><th class=n>Deaths / 100k</th><th></th></tr></thead><tbody>" +
-      D.places.map(function (p, n) { return [p, n]; }).filter(function (pn) { return !q || pn[0].name.toLowerCase().indexOf(q) >= 0; }).map(function (pn) {
-        var p = pn[0];
-        return "<tr><td>" + esc(p.name) + '</td><td class="n">' + mult(p.x) + 'x</td><td class="n">$' + p.price.toFixed(2) + '</td><td class="n">' + p.deaths_per_100k.toFixed(1) +
-          '</td><td><button type="button" class="btn" data-place="' + pn[1] + '">Use</button></td></tr>';
-      }).join("") + "</tbody>";
+    var rows = D.places.map(function (p, n) { return [p, n]; }).filter(function (pn) { return !q || pn[0].name.toLowerCase().indexOf(q) >= 0; });
+    put($("places"), [head([["Country"], ["Multiple", "n"], ["Price", "n"], ["Deaths / 100k", "n"], [""]]), h("tbody", {}, rows.map(function (pn) {
+      var p = pn[0];
+      return h("tr", {}, [h("td", { text: p.name }), h("td", { class: "n", text: mult(p.x) + "x" }), h("td", { class: "n", text: "$" + p.price.toFixed(2) }),
+        h("td", { class: "n", text: p.deaths_per_100k.toFixed(1) }), h("td", {}, [h("button", { type: "button", class: "btn", data: { place: String(pn[1]) }, text: "Use" })])]);
+    }))]);
   }
   drawPlaces();
   $("place-q").addEventListener("input", drawPlaces);
 
   // ---- presets
-  var presetOpts = '<option value="">The model\'s own inputs</option>';
-  D.scenarios.forEach(function (s, n) { presetOpts += '<option value="s' + n + '">Scenario: ' + esc(s.name) + "</option>"; });
-  D.places.forEach(function (p, n) { presetOpts += '<option value="p' + n + '">Country: ' + esc(p.name) + "</option>"; });
-  $("preset").innerHTML = presetOpts;
+  var presetOpts = [h("option", { value: "", text: "The model's own inputs" })];
+  D.scenarios.forEach(function (s, n) { presetOpts.push(h("option", { value: "s" + n, text: "Scenario: " + s.name })); });
+  D.places.forEach(function (p, n) { presetOpts.push(h("option", { value: "p" + n, text: "Country: " + p.name })); });
+  put($("preset"), presetOpts);
   function load(sets) { overrides = {}; Object.keys(sets || {}).forEach(function (k) { if (byKey[k] && sets[k] !== byKey[k].value) overrides[k] = sets[k]; }); refresh(); }
   $("preset").addEventListener("change", function (e) {
     var v = e.target.value;
@@ -304,7 +345,7 @@
 
   // ---- input changes, low/high buttons, run buttons
   function setOverride(key, v) {
-    if (v === "" || v == null || isNaN(v)) return;
+    if (v === "" || v == null || isNaN(v) || !byKey[key]) return;
     if (v === byKey[key].value) delete overrides[key]; else overrides[key] = v;
     refresh();
   }
@@ -321,10 +362,12 @@
 
   // ---- two-input grid
   var numeric = D.inputs.filter(function (i) { return i.unit !== "switch" && (i.editable || i.low != null); });
-  var opts = numeric.map(function (i) { return '<option value="' + i.key + '">' + esc(i.label.length > 60 ? i.label.slice(0, 58) + "…" : i.label) + "</option>"; }).join("");
-  $("grid-x").innerHTML = opts; $("grid-y").innerHTML = opts;
-  var pickX = byKey.cost ? "cost" : numeric[0].key, pickY = byKey.ors ? "ors" : numeric[Math.min(1, numeric.length - 1)].key;
-  $("grid-x").value = pickX; $("grid-y").value = pickY;
+  function gridOptions() {
+    return numeric.map(function (i) { return h("option", { value: i.key, text: i.label.length > 60 ? i.label.slice(0, 58) + "…" : i.label }); });
+  }
+  put($("grid-x"), gridOptions()); put($("grid-y"), gridOptions());
+  $("grid-x").value = byKey.cost ? "cost" : numeric[0].key;
+  $("grid-y").value = byKey.ors ? "ors" : numeric[Math.min(1, numeric.length - 1)].key;
   function span(i) {
     var v = currentValue(i), f = [0.5, 0.75, 1, 1.25, 1.5];
     return f.map(function (k) { var x = v * k; if (i.unit === "share" && x > 1) x = 1; return +x.toPrecision(4); }).filter(function (x, n, a) { return a.indexOf(x) === n; });
@@ -333,15 +376,17 @@
     var xk = $("grid-x").value, yk = $("grid-y").value;
     if (xk === yk) { showError("Pick two different inputs for the grid."); return; }
     var xs = span(byKey[xk]), ys = span(byKey[yk]);
-    fetch(D.run_url + "?" + query({ grid_x: xk, grid_xs: xs.join(","), grid_y: yk, grid_ys: ys.join(",") }).toString(), { credentials: "same-origin" })
-      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); }).then(function (res) {
-        if (!res.ok) { showError(res.j.error || "That grid did not run."); return; }
-        showError(""); var g = res.j.grid, X = byKey[g.x_key], Y = byKey[g.y_key];
-        var head = "<thead><tr><th>" + esc(Y.label.slice(0, 28)) + " \\ " + esc(X.label.slice(0, 28)) + "</th>" + g.xs.map(function (x) { return '<th class="n">' + fmt(x, X.format) + "</th>"; }).join("") + "</tr></thead><tbody>";
-        $("grid").innerHTML = head + g.ys.map(function (y, r) {
-          return "<tr><td><b>" + fmt(y, Y.format) + "</b></td>" + g.multiples[r].map(function (m) { return '<td class="n ' + (m >= D.bar ? "cell-ok" : "cell-lo") + '">' + mult(m) + "x</td>"; }).join("") + "</tr>";
-        }).join("") + "</tbody>";
-      });
+    call({ grid_x: xk, grid_xs: xs.join(","), grid_y: yk, grid_ys: ys.join(",") }).then(function (res) {
+      if (!res.ok) { showError(res.j.error || "That grid did not run."); return; }
+      showError("");
+      var g = res.j.grid, X = byKey[g.x_key], Y = byKey[g.y_key];
+      var headRow = h("tr", {}, [h("th", { text: Y.label.slice(0, 28) + " \\ " + X.label.slice(0, 28) })].concat(g.xs.map(function (x) { return h("th", { class: "n", text: fmt(x, X.format) }); })));
+      put($("grid"), [h("thead", {}, [headRow]), h("tbody", {}, g.ys.map(function (y, r) {
+        return h("tr", {}, [h("td", {}, [h("b", { text: fmt(y, Y.format) })])].concat(g.multiples[r].map(function (m) {
+          return h("td", { class: "n " + (m >= D.bar ? "cell-ok" : "cell-lo"), text: mult(m) + "x" });
+        })));
+      }))]);
+    });
   });
   syncRows();
 })();
