@@ -183,3 +183,28 @@ def test_a_load_that_failed_is_said_not_answered_with_zeros(client, person):
             content_type="application/json",
         )
     assert resp.status_code == 400 and "no Connect token" in resp.json()["message"]
+
+
+@pytest.mark.django_db
+def test_the_page_carries_the_csrf_token_the_run_needs(django_user_model):
+    """Labs keeps the CSRF token in the session and hides the cookie (CSRF_USE_SESSIONS, HttpOnly), so a script
+    that reads ``document.cookie`` posts with no token and gets a 403. The page must render the token itself.
+    The default test client skips CSRF checks, which is how that shipped; this one enforces them."""
+    import re
+
+    from django.test import Client
+
+    client = Client(enforce_csrf_checks=True)
+    user = django_user_model.objects.create(username="csrf-reader", email="c@example.com")
+    client.force_login(user)
+    session = client.session
+    session["labs_oauth"] = {"access_token": "t", "expires_at": time.time() + 3600}
+    session.save()
+    run_url = reverse("microplans:buildings_reached_run")
+    page_html = client.get(reverse("microplans:buildings_reached")).content.decode()
+    token = re.search(r'var CSRF = "([^"]+)"', page_html).group(1)
+    assert token and token != "{{ csrf_token }}"
+    body = json.dumps({"opps": "1"})  # incomplete on purpose: a 400 means the token was accepted
+    assert client.post(run_url, data=body, content_type="application/json").status_code == 403
+    ok = client.post(run_url, data=body, content_type="application/json", HTTP_X_CSRFTOKEN=token)
+    assert ok.status_code == 400 and ok.json()["error"] == "bad_request"
