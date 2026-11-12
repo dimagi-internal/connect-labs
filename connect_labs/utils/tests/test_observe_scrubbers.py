@@ -541,3 +541,92 @@ def test_every_scrubbed_group_is_under_the_observe_prefix():
 
     groups = re.findall(r"LogGroupName: (/labs-jj/[^,}\s]+)", text)
     assert groups and all(g.startswith("/labs-jj/observe/") for g in groups)
+
+
+# ── canopy-web error lines ──────────────────────────────────────────────────
+
+_SID = "0b6a1c2e-3f4d-4a5b-8c6d-7e8f9a0b1c2d"
+_TRACE = (
+    "Traceback (most recent call last):\n"
+    '  File "/app/apps/canopy_sessions/consumers.py", line 145, in connect\n'
+    "    await self._connect()\n"
+    '  File "/usr/local/lib/python3.12/site-packages/asgiref/sync.py", line 468, in __call__\n'
+    "    ret = await asyncio.shield(exec_coro)\n"
+    '  File "/app/apps/canopy_sessions/sensitivity.py", line 88, in reads_content\n'
+    f"    return {SENTINEL}_source_line\n"
+    f"KeyError: '{SENTINEL} key from user data'"
+)
+
+
+def _canopy_line(**over):
+    rec = {
+        "timestamp": "2026-11-12T10:38:00.000+00:00",
+        "severity": "ERROR",
+        "logger": "apps.canopy_sessions.consumers",
+        "module": "consumers",
+        "message": f"session socket connect failed: session={_SID} user=7 contact=None via_widget=False {SENTINEL}",
+        "request_id": SENTINEL,
+        "exc_info": _TRACE,
+        "client": SENTINEL,
+    }
+    rec.update(over)
+    return json.dumps(rec)
+
+
+def test_canopy_web_error_keeps_class_frames_and_ids_never_content(monkeypatch):
+    mod, _ = _load("canopy_web_errors_scrubber", monkeypatch)
+    out = mod.scrub(_canopy_line())
+    assert out == {
+        "severity": "ERROR",
+        "logger": "apps.canopy_sessions.consumers",
+        "module": "consumers",
+        "template": "session socket connect failed",
+        "session": _SID,
+        "user": "7",
+        "exc_type": "KeyError",
+        "frames": [
+            "apps/canopy_sessions/consumers.py:145 connect",
+            "apps/canopy_sessions/sensitivity.py:88 reads_content",
+        ],
+    }
+    _no_sentinel(out)
+
+
+def test_canopy_web_record_session_line_keeps_runner_agent_and_turn(monkeypatch):
+    mod, _ = _load("canopy_web_errors_scrubber", monkeypatch)
+    msg = (
+        f"record-session failed: runner={_SID} agent=hal project='{SENTINEL}' "
+        f"thread_key='{SENTINEL}' session_key='{SENTINEL}' turn_id={_SID}"
+    )
+    out = mod.scrub(_canopy_line(message=msg, logger="apps.harness.api_session_sync"))
+    assert out["template"] == "record-session failed"
+    assert (out["runner"], out["agent"], out["turn_id"]) == (_SID, "hal", _SID)
+    _no_sentinel(out)
+
+
+def test_canopy_web_free_text_message_and_odd_logger_are_dropped(monkeypatch):
+    mod, _ = _load("canopy_web_errors_scrubber", monkeypatch)
+    out = mod.scrub(_canopy_line(message=f"failed for {SENTINEL}@example.org", logger=f"{SENTINEL} x", exc_info=None))
+    assert out == {"severity": "ERROR", "module": "consumers"}
+
+
+def test_canopy_web_non_error_and_non_json_are_dropped(monkeypatch):
+    mod, _ = _load("canopy_web_errors_scrubber", monkeypatch)
+    assert mod.scrub(_canopy_line(severity="INFO")) is None
+    assert mod.scrub(f"ERROR:    Exception in ASGI application {SENTINEL}") is None
+
+
+def test_canopy_web_errors_handler_writes_scrubbed_records(monkeypatch):
+    monkeypatch.setenv("GROUP", "/labs-jj/observe/canopy-web-errors")
+    mod, fake = _load("canopy_web_errors_scrubber", monkeypatch)
+    payload = {
+        "messageType": "DATA_MESSAGE",
+        "logEvents": [
+            {"timestamp": 2, "message": _canopy_line()},
+            {"timestamp": 1, "message": _canopy_line(severity="INFO")},
+        ],
+    }
+    ev = {"awslogs": {"data": base64.b64encode(gzip.compress(json.dumps(payload).encode())).decode()}}
+    assert mod.handler(ev, None) == {"written": 1}
+    assert [g for g, _ in fake.events] == ["/labs-jj/observe/canopy-web-errors"]
+    _no_sentinel(fake.events)
