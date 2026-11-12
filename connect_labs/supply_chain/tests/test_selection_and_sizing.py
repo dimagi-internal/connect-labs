@@ -145,6 +145,64 @@ class TestSelectionAndHandover:
         assert "place your order with the supplier" in first and handovers[0]["to"] == "amina@p1.example"
         assert "We will place and pay for this order" in handovers[1]["text"]
 
+    @staticmethod
+    def _handover(da, world, contacts):
+        from connect_labs.supply_chain.models import SupplierProfile
+
+        SupplierProfile.objects.filter(org__supplier_links__pk=world["supplier"]["id"]).update(contacts=contacts)
+        drafts = op(da, "selection_drafts_render", award_id=world["award"]["id"])["drafts"]
+        return next(d["text"] for d in drafts if d["kind"] == "handover")
+
+    def test_the_phone_on_another_line_is_still_the_suppliers_phone(self, da, world):
+        """A tracker import keeps a phone as a line of its own (no name, no address); the main contact has none."""
+        text = self._handover(
+            da,
+            world,
+            [
+                {"name": "Jane Okoro", "email": "jane@quill.example", "use": "to"},
+                {"name": "Sales desk", "email": "sales@quill.example", "use": "cc"},
+                {"phone": "+234 800 111 2222", "role": "sales"},
+            ],
+        )
+        assert "Supplier phone: +234 800 111 2222" in text and "ask Quill Foods" not in text
+
+    def test_the_main_contacts_phone_comes_first_and_a_named_other_is_named(self, da, world):
+        text = self._handover(
+            da,
+            world,
+            [
+                {"name": "Jane Okoro", "email": "jane@quill.example", "use": "to"},
+                {"name": "Sales desk", "email": "sales@quill.example", "phone": "+234 800 333 4444", "use": "cc"},
+            ],
+        )
+        assert "Supplier phone: +234 800 333 4444 (Sales desk)" in text
+        mixed = self._handover(
+            da,
+            world,
+            [
+                {"name": "Jane Okoro", "email": "jane@quill.example", "phone": "+234 800 000 0000", "use": "to"},
+                {"name": "Sales desk", "email": "sales@quill.example", "phone": "+234 800 333 4444", "use": "cc"},
+            ],
+        )
+        assert "Supplier phone: +234 800 000 0000" in mixed and "333 4444" not in mixed
+
+    def test_an_old_contacts_phone_is_the_last_resort(self, da, world):
+        text = self._handover(
+            da,
+            world,
+            [
+                {"name": "Jane Okoro", "email": "jane@quill.example", "use": "to"},
+                {"name": "Old Hand", "email": "old@quill.example", "phone": "+234 800 555 6666", "use": "history"},
+            ],
+        )
+        assert "Supplier phone: +234 800 555 6666 (Old Hand)" in text
+
+    def test_with_no_phone_anywhere_the_handover_says_to_ask_for_one(self, da, world):
+        text = self._handover(
+            da, world, [{"name": "Jane Okoro", "email": "jane@quill.example", "phone": " ", "use": "to"}]
+        )
+        assert "Supplier phone: not on file; please ask Quill Foods for a phone number" in text
+
     def test_an_unsplit_tender_gets_only_the_selection_email(self, da):
         op(da, "commodity_upsert", data={"slug": "rutf", "name": "RUTF", "base_unit": "sachet", "pack_unit": "carton"})
         supplier = op(da, "supplier_create", data={"name": "Solo Foods"})

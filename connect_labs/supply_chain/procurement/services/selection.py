@@ -12,7 +12,13 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from connect_labs.supply_chain.procurement.services.contacts import clean_email, greeting, recipients, split_names
+from connect_labs.supply_chain.procurement.services.contacts import (
+    clean_email,
+    greeting,
+    phone_of,
+    recipients,
+    split_names,
+)
 from connect_labs.supply_chain.procurement.services.render import Draft, Sender, _priced_per, _sign_off
 from connect_labs.supply_chain.values import day_text, money_digits, possessive, quantity_phrase
 
@@ -193,7 +199,14 @@ def render_handover(award, tender, quote, supplier, commodity, split, *, sender:
     quantity = quantity_phrase(split["quantity"], split.get("quantity_unit"))
     total = _line_total(quote, commodity, split)
     expected, firm = _expected_on(award, tender, split, quote)
-    phone = (main.get("phone") or "").strip()
+    phone, phone_of_whom = phone_of(supplier)
+    own = (main.get("phone") or "").strip()
+    if phone and phone == own:
+        phone_line = f"Supplier phone: {phone}"  # the main contact's, already named on the line above
+    elif phone:
+        phone_line = f"Supplier phone: {phone}" + (f" ({phone_of_whom})" if phone_of_whom else "")
+    else:
+        phone_line = f"Supplier phone: not on file; please ask {supplier.name} for a phone number"
     lines = [
         f"Dear {who},",
         "",
@@ -201,7 +214,7 @@ def render_handover(award, tender, quote, supplier, commodity, split, *, sender:
         f"{possessive(split['org_name'])} share is below.",
         "",
         f"Supplier: {supplier.name}" + (f"; main contact {contact}" if contact else ""),
-        *([f"Supplier phone: {phone}"] if phone else []),
+        phone_line,
         f"Winning {_quote_name(quote, commodity, quote.item)}"
         + (f", {quote.incoterm}" if quote.incoterm else "")
         + (f", lead time {quote.lead_time_days} days" if quote.lead_time_days else "")

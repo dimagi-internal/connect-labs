@@ -74,6 +74,25 @@ def recipients(supplier) -> Recipients:
     return Recipients(to=to or None, cc=cc, names=names)
 
 
+def phone_of(supplier) -> tuple[str, str]:
+    """(phone, whose) for a supplier: the main contact's, else the first other live contact's, else an old one's.
+
+    Contacts imported from a tracker keep a phone as a contact of its own (no name, no address), so the main
+    contact often has none: the number is still on file, on another line. ("", "") when no contact has one;
+    `whose` is "" when that line names nobody. Never guessed: only a number that is written down.
+    """
+    contacts = _dicts(supplier)
+    to = recipients(supplier).to
+    main = [c for c in contacts if to and clean_email(c.get("email")) == to and c.get("use") != "history"]
+    live = [c for c in contacts if c.get("use") != "history" and c not in main]
+    old = [c for c in contacts if c.get("use") == "history"]
+    for contact in (*main, *live, *old):
+        phone = str(contact.get("phone") or "").strip()
+        if phone:
+            return phone, ", ".join(split_names(contact.get("name")))
+    return "", ""
+
+
 def greeting(supplier) -> str:
     """ "Dear Jane," for one person; "Dear Jane and Joy," for two or three; the
     company's team when a cell holds more, because five names in a row is not a greeting."""
