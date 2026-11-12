@@ -143,8 +143,7 @@ plain words, and each step says where it came from.
     <h2 class="text-lg font-semibold text-gray-900">Stock follow-up</h2>
     <p class="text-xs text-gray-600 mb-2">
       What each field worker's children were given, against the protocol.
-      {% if picture.dosing.0.basis == "app" %}Compared with the amount the app itself worked out for each visit (it allows for sachets a household still had), so only real gaps are flagged.
-      {% else %}Compared with the protocol's flat {{ picture.dosing.0.protocol_per_day|default:"" }} sachets a day, from the days between each child's visits. This is a rough check: it does not allow for sachets a household still had, so it flags nearly everyone. It becomes exact once this opportunity's protocol-amount question is set on its dispensing rule (household paths).{% endif %} Counts that do not match the records are on
+      Where a visit carries the amount the app itself worked out (<code>form.rutf_dispensing.amount_to_dispense</code>, which allows for sachets a household still had), what was given is compared with that, so only real gaps are flagged. A worker with no such amount on enough visits is marked <em>flat check</em>: compared with the protocol's flat {{ picture.dosing.0.protocol_per_day|default:"" }} sachets a day from the days between each child's visits, a rough check that flags nearly everyone. Counts that do not match the records are on
       <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:workers' %}">Workers</a>; missing or damaged stock is on
       <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:issues' %}">Issues</a>.
     </p>
@@ -157,7 +156,7 @@ plain words, and each step says where it came from.
               <td class="py-1">{{ d.name }}</td>
               <td class="py-1 text-right tabular-nums">{{ d.children }}<span class="text-xs text-gray-600"> ({{ d.in_treatment }} in treatment now)</span></td>
               <td class="py-1 text-right tabular-nums">{% if d.per_day %}{{ d.per_day|floatformat:1 }}{% else %}&mdash;{% endif %}</td>
-              <td class="py-1 pl-4 {% if d.flag %}text-amber-800 font-medium{% endif %}">{{ d.verdict|capfirst }}{% if d.share %} ({{ d.share }}%){% endif %}</td>
+              <td class="py-1 pl-4 {% if d.flag %}text-amber-800 font-medium{% endif %}">{{ d.verdict|capfirst }}{% if d.share %} ({{ d.share }}%){% endif %}{% if d.basis == "flat" %} <span class="text-xs text-gray-600 font-normal">flat check</span>{% endif %}</td>
             </tr>
           {% endfor %}
         </tbody>

@@ -149,8 +149,8 @@ HOUSEHOLD_FIELDS = (
     ("misused_paths", "sachets misused"),
     ("reason_paths", "the reasons sachets were misused"),
     # The amount the app itself says should be given at this visit (it subtracts what the household still
-    # has). The Plan page's dosing check compares what was given against it. No default: CBI's path is not
-    # among the known ones, so a programme names it on its rule or the check falls back to a flat daily dose.
+    # has). The Plan page's dosing check compares what was given against it. CBI's path is the default for
+    # its form (CBI_HOUSEHOLD_PATHS); a rule that reads no such answer falls back to a flat daily dose.
     ("protocol_paths", "the protocol amount the app worked out for the visit"),
 )
 
@@ -170,6 +170,8 @@ CBI_HOUSEHOLD_PATHS = {
     "missing_paths": [f"{_RUTF_PAST_WEEK}.packets_missing"],
     "misused_paths": [f"{_RUTF_PAST_WEEK}.misused_rutf_amount"],
     "reason_paths": [f"{_RUTF_PAST_WEEK}.misused_RUTF"],
+    # The app's own protocol amount for the visit (Visit Forms, supplied by the programme, 2026-11-12).
+    "protocol_paths": ["form.rutf_dispensing.amount_to_dispense"],
 }
 
 
