@@ -17,7 +17,7 @@ import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 TEMPLATE = HERE.parent / "labs-observe-pipeline.yml"
-SOURCES = ("events_projector.py", "request_telemetry_scrubber.py", "alb_scrubber.py")
+SOURCES = ("events_projector.py", "request_telemetry_scrubber.py", "alb_scrubber.py", "canopy_web_errors_scrubber.py")
 INDENT = " " * 10
 MAX_BYTES = 4096
 
