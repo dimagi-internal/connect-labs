@@ -125,3 +125,46 @@ class TestPageAndApi:
     def test_both_need_a_login(self, client):
         assert client.get(reverse("cea:models")).status_code == 302
         assert client.get(reverse("cea:models_run")).status_code == 302
+
+
+class TestSheetsCheck:
+    """The drift check, on rows built from the spec itself (no Google), with one cell moved."""
+
+    @staticmethod
+    def _rows(model):
+        """The Sheet's Model tab as the spec says it computes it: one row per spec row, in order."""
+        from connect_labs.impact import engine
+
+        spec = engine.spec(model)
+        columns = list(spec["results"])
+        return [
+            [r["label"]] + [spec["results"][c].get(r["key"]) for c in columns]
+            for r in spec["rows"]
+            if not r.get("text")
+        ]
+
+    def test_an_identical_sheet_is_in_sync(self):
+        from connect_labs.impact import sheets_check
+
+        for m in engine.MODELS:
+            got = sheets_check.compare(m, self._rows(m))
+            assert got["in_sync"] and got["cells_compared"] > 100 and not got["differing"], got
+
+    def test_one_moved_cell_is_named(self):
+        from connect_labs.impact import sheets_check
+
+        rows = self._rows("chc")
+        heads = [r for r in rows if r[0].startswith("Cost-effectiveness: multiple of GiveWell")]
+        assert len(heads) >= 2, "the headline and its working row share a label: both must be checked"
+        head = heads[0]
+        head[1] = head[1] + 1  # the headline's "current inputs" multiple, edited
+        got = sheets_check.compare("chc", rows)
+        assert got["in_sync"] is False
+        assert [d["row"] for d in got["differing"]] == [head[0]]
+        assert got["differing"][0]["live"] == pytest.approx(got["differing"][0]["vendored"] + 1)
+
+    def test_a_row_deleted_from_the_sheet_is_reported(self):
+        from connect_labs.impact import sheets_check
+
+        rows = [r for r in self._rows("kc") if not r[0].startswith("Cost per")]
+        assert sheets_check.compare("kc", rows)["rows_missing_in_live"]
