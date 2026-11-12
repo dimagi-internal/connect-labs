@@ -238,3 +238,29 @@ def test_data_access_is_closed_on_failure(auth_user):
         ExperimentAuditImageConnectView.as_view()(_request(auth_user), opp_id=OPP_ID, blob_id=BLOB_ID)
 
     data_access.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# 3. The 502 is counted by exception class, so a 5xx page names its cause
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "error, counted",
+    [
+        (ImageDownloadError("Failed to download image (HTTP 503)", status_code=503), True),
+        (RuntimeError("pool exhausted"), True),
+        (ImageDownloadError("Failed to download image (HTTP 404)", status_code=404), False),
+    ],
+)
+def test_502_is_counted_as_a_handled_exception_and_404_is_not(auth_user, error, counted):
+    data_access = Mock()
+    data_access.download_image_from_connect.side_effect = error
+
+    with patch("connect_labs.audit.views.AuditDataAccess", return_value=data_access):
+        with patch("connect_labs.audit.views.emit_handled_exception_metric") as emit:
+            ExperimentAuditImageConnectView.as_view()(_request(auth_user), opp_id=OPP_ID, blob_id=BLOB_ID)
+
+    assert emit.call_count == (1 if counted else 0)
+    if counted:
+        assert emit.call_args.args[1] is error
