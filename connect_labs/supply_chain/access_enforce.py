@@ -29,8 +29,8 @@ must not turn a working programme into an empty one. (A viewer's organisations a
 
 WHO CAN FLIP IT. Only the programme's own people (members of the running organisation) and platform support
 (`config._check_writer`, enforced in scope_config/service.py on every route). A partner can open the settings page
-like any member of the programme, but may not change this switch: it is the restriction on them. The switch is read from the PROGRAMME layer only; an organisation-layer value is
-ignored on purpose, so one setting cannot silently switch on every programme an organisation owns.
+like any member of the programme, but may not change this switch: it is the restriction on them. The switch is read from the PROGRAMME layer only; an
+organisation-layer value is ignored on purpose, so one setting cannot silently switch on every programme an organisation owns.
 """
 
 from __future__ import annotations
