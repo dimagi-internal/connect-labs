@@ -635,6 +635,22 @@ class PulseCEAOppView(LoginRequiredMixin, View):
 
 
 @CONTEXT_NOT_USED
+class PulseCEAViewData(LoginRequiredMixin, View):
+    """The Implementation view as JSON: what-if and filters in the query string, the ranked, rolled-up rows back.
+
+    The page's own parameters (``basis``, ``rank``, ``bar``, ``<model>_<extra|effect|reach>``, ``models``,
+    ``country``, ``active``, ``modelled``, ``min_spend``, ``q``); see ``pulse.cea.view``.
+    """
+
+    def get(self, request):
+        from django.http import JsonResponse
+
+        from connect_labs.pulse import cea
+
+        return JsonResponse(cea.view(request.GET))
+
+
+@CONTEXT_NOT_USED
 class PulseCEAView(LoginRequiredMixin, View):
     """Every opportunity ranked against Connect's cost-effectiveness models.
 
@@ -691,8 +707,14 @@ class PulseCEAView(LoginRequiredMixin, View):
             return response
         from django.conf import settings
 
+        # The page draws a view the server worked out (what-if, filters, ranking, roll-up) and asks for a new one
+        # when either changes; every row is not sent twice, so the base ranking's rows stay out of the page data.
+        page = {k: v for k, v in data.items() if k != "rows"}
+        page["countries"] = sorted({r["country_name"] for r in data["rows"]})
+        page["view"] = cea.view(request.GET, data)
+        page["view_url"] = reverse("cea:implementation_view")
         return render(
             request,
             "pulse/cea.html",
-            {"data": data, "mapbox_token": getattr(settings, "MAPBOX_TOKEN", "") or ""},
+            {"data": data, "page": page, "mapbox_token": getattr(settings, "MAPBOX_TOKEN", "") or ""},
         )

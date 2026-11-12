@@ -191,6 +191,13 @@
   </div>
 
   <div class="card">
+    <h2>By programme</h2>
+    <p class="sub">The same figures rolled up by Connect programme, for the opportunities shown above. Spend counts each dollar once;
+      the multiple is total benefit over total cost, so a large programme counts for more.</p>
+    <div class="tbl-wrap"><table id="programmes"></table></div>
+  </div>
+
+  <div class="card">
     <h2>Every opportunity</h2>
     <p class="sub">Click a heading to sort. Modelled opportunities first, by rank.</p>
     <div class="sort-sm"><label for="sort-sm">Sort by</label><select id="sort-sm"></select>
@@ -216,7 +223,9 @@
       <b>Work / person</b> is approved work per person, a first look at how far people got through a longitudinal programme.
       An opportunity marked <i>estimate</i> has not been re-read since this count existed and uses its busiest payment unit instead.</p>
     <p><b>Re-pricing.</b> Each model's multiple is benefit per person over cost per person, with GiveWell's leveraging adjustment at 1,
-      so multiple at actual cost = model multiple &times; model price &divide; actual cost per person. Model prices:
+      so multiple at actual cost = model multiple &times; model price &divide; actual cost per person. The what-if, the ranking,
+      the filters and every total are worked out by the server with that one formula, the same one the opportunity pages use; this
+      page only draws them. Model prices:
       <span id="model-prices"></span>.</p>
     <p><b>Models.</b> {% for k, m in data.models.items %}<a href="{{ m.sheet }}" target="_blank" rel="noopener">{{ m.label }}</a> ({{ m.variant }}, per {{ m.unit }}){% if not forloop.last %}; {% endif %}{% endfor %}.
       The models' own formulas and country figures, from {{ data.source }}, generated {{ data.generated }}. 45 sub-Saharan countries; an opportunity elsewhere
@@ -228,7 +237,7 @@
   <div class="tip" id="tip"></div>
 </div>
 
-{{ data|json_script:"cea-data" }}
+{{ page|json_script:"cea-data" }}
 <script>window.MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";</script>
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
 <script>
@@ -301,16 +310,9 @@
   // ---------- what-if inputs ----------
   var DEF = { basis: "actual", rank: "x", bar: D.bar_x, m: {} };
   Object.keys(D.models).forEach(function (k) { DEF.m[k] = { extra: 0, effect: 100, reach: 100 }; });
-  var W = JSON.parse(JSON.stringify(DEF));
-  (function readUrl() {
-    var p = new URLSearchParams(location.search);
-    if (p.get("basis")) W.basis = p.get("basis");
-    if (p.get("rank")) W.rank = p.get("rank");
-    if (p.get("bar")) W.bar = +p.get("bar") || W.bar;
-    Object.keys(W.m).forEach(function (k) {
-      ["extra", "effect", "reach"].forEach(function (f) { var v = p.get(k + "_" + f); if (v !== null && v !== "" && !isNaN(+v)) W.m[k][f] = +v; });
-    });
-  })();
+  // The server read the URL (what_if_from) and sent what it understood; the page does not parse it again.
+  var W = JSON.parse(JSON.stringify(D.view.what_if));
+  var V = D.view;
   function writeUrl() {
     var p = new URLSearchParams();
     if (W.basis !== DEF.basis) p.set("basis", W.basis);
@@ -349,39 +351,12 @@
   });
   BAR = W.bar;
 
-  // Recompute one row from the server's inputs and the what-if settings. Same arithmetic as pulse/cea.py:
-  // multiple = model multiple x effect x model price / cost per person (leveraging is 1 in every model).
-  function compute(base) {
-    var r = Object.assign({}, base);
-    if (base.model_x == null || !base.reached || base.total_usd <= 0) return r;
-    var s = W.m[base.model] || DEF.m[base.model];
-    var eff = s.effect / 100, people = base.reached * s.reach / 100;
-    if (people <= 0) return r;
-    var cost = W.basis === "model" ? base.model_cost_per_person * people : base.total_usd + s.extra * people;
-    r.reached = people;
-    r.cost_per_person = cost / people;
-    r.x = base.model_x * eff * base.model_cost_per_person / r.cost_per_person;
-    r.deaths_averted = people * base.model_deaths_per_100k / 100000 * eff;
-    r.cost_per_death = r.deaths_averted ? cost / r.deaths_averted : null;
-    r.cost_used = cost;
-    r.clears_bar = r.x >= BAR;
-    return r;
-  }
   var RANK_LABEL = { x: "multiple of GiveWell's benchmark", deaths_averted: "deaths averted", cost_per_death: "cost per death averted", total_usd: "total cost" };
-  function rankRows(rows) {
-    var m = rows.filter(function (r) { return r.status === "modelled"; });
-    var k = W.rank, dir = k === "cost_per_death" ? 1 : -1;
-    m.sort(function (a, b) { return ((a[k] || 0) - (b[k] || 0)) * dir; });
-    m.forEach(function (r, i) { r.rank = i + 1; });
-    var rest = rows.filter(function (r) { return r.status !== "modelled"; });
-    rest.forEach(function (r) { r.rank = null; });
-    return m.concat(rest);
-  }
 
   // ---------- filters ----------
   var state = { models: { chc: true, mbw: true, kc: true }, active: false, q: "", modelled: false, country: "", minSpend: 0 };
   var csel = document.getElementById("country");
-  Array.from(new Set(D.rows.map(function (r) { return r.country_name; }))).sort().forEach(function (c) {
+  D.countries.forEach(function (c) {
     var o = document.createElement("option"); o.value = c; o.textContent = c; csel.appendChild(o);
   });
   csel.addEventListener("change", function (e) { state.country = e.target.value; draw(); });
@@ -392,42 +367,50 @@
   });
   document.getElementById("active-only").addEventListener("change", function (e) { state.active = e.target.checked; draw(); });
   document.getElementById("q").addEventListener("input", function (e) { state.q = e.target.value.toLowerCase(); draw(); });
-  function passes(r) {
-    if (state.active && !r.active) return false;
-    if (state.modelled && r.status !== "modelled") return false;
-    if (state.country && r.country_name !== state.country) return false;
-    if (state.minSpend && r.total_usd < state.minSpend) return false;
-    if (r.model && !state.models[r.model]) return false;
-    if (state.q) {
-      var hay = (r.name + " " + r.org_slug + " " + r.country_name + " " + r.service_name).toLowerCase();
-      if (hay.indexOf(state.q) < 0) return false;
-    }
-    return true;
-  }
 
   // ---------- tiles ----------
-  function tiles(rows) {
-    var m = rows.filter(function (r) { return r.status === "modelled"; });
-    // Each dollar once: a pooled row's spend already sits inside its delivery rows' total_usd.
-    var spend = rows.reduce(function (a, r) { return a + (r.own_usd != null ? r.own_usd : r.total_usd); }, 0);
-    var mspend = m.reduce(function (a, r) { return a + r.total_usd; }, 0);
-    var used = m.reduce(function (a, r) { return a + (r.cost_used || r.total_usd); }, 0);
-    var px = used ? m.reduce(function (a, r) { return a + r.x * (r.cost_used || r.total_usd); }, 0) / used : null;
-    var deaths = m.reduce(function (a, r) { return a + r.deaths_averted; }, 0);
-    var clear = m.filter(function (r) { return r.clears_bar; }).length;
-    var t = [
-      ["Opportunities", num(rows.length), num(m.length) + " with a model"],
-      ["Total spend", usd(spend), usd(mspend) + " modelled (" + (spend ? Math.round(100 * mspend / spend) : 0) + "%)"],
-      ["Portfolio multiple", xfmt(px), W.basis === "model" ? "at the models' prices" : "cost-weighted, modelled only"],
-      ["Clear GiveWell's bar", num(clear) + " / " + num(m.length), BAR + "x benchmark"],
-      ["Deaths averted (modelled)", "~" + num(deaths, 0), used && deaths ? usd(used / deaths) + " per death" : ""],
+  function tiles(t) {
+    // Every figure is the server's roll-up of the rows shown: nothing is added up here.
+    var tiles = [
+      ["Opportunities", num(t.opportunities), num(t.modelled) + " with a model"],
+      ["Total spend", usd(t.spend), usd(t.spend_modelled) + " modelled (" + (t.spend ? Math.round(100 * t.spend_modelled / t.spend) : 0) + "%)"],
+      ["Portfolio multiple", xfmt(t.portfolio_x), W.basis === "model" ? "at the models' prices" : "cost-weighted, modelled only"],
+      ["Clear GiveWell's bar", num(t.clearing_bar) + " / " + num(t.modelled), BAR + "x benchmark"],
+      ["Deaths averted (modelled)", "~" + num(t.deaths_averted, 0), t.deaths_averted && t.cost_per_death ? usd(t.cost_per_death) + " per death" : ""],
     ];
-    document.getElementById("tiles").innerHTML = t.map(function (x) {
-      return '<div class="tile"><div class="k">' + x[0] + '</div><div class="v">' + x[1] + '</div><div class="s">' + x[2] + "</div></div>";
-    }).join("");
+    var box = document.getElementById("tiles");
+    while (box.firstChild) box.removeChild(box.firstChild);
+    tiles.forEach(function (x) {
+      var d = document.createElement("div"); d.className = "tile";
+      [["k", x[0]], ["v", x[1]], ["s", x[2]]].forEach(function (kv) {
+        var c = document.createElement("div"); c.className = kv[0]; c.textContent = kv[1]; d.appendChild(c);
+      });
+      box.appendChild(d);
+    });
   }
 
-  // ---------- ranked chart ----------
+  // ---------- programmes ----------
+  function programmes(list) {
+    var t = document.getElementById("programmes");
+    while (t.firstChild) t.removeChild(t.firstChild);
+    var head = document.createElement("thead"), hr = document.createElement("tr");
+    [["Programme", ""], ["Partners", ""], ["Opps", "n"], ["Spend", "n"], ["People", "n"], ["Deaths averted", "n"], ["$ / death", "n"], ["Multiple", "n"]].forEach(function (c) {
+      var th = document.createElement("th"); th.textContent = c[0]; th.className = c[1]; hr.appendChild(th);
+    });
+    head.appendChild(hr); t.appendChild(head);
+    var body = document.createElement("tbody");
+    list.forEach(function (g) {
+      var tr = document.createElement("tr");
+      [[g.name, ""], [g.partners.join(", "), ""], [num(g.opportunities), "n"], [usd(g.spend), "n"], [g.modelled ? num(g.people) : "–", "n"],
+       [g.modelled ? num(g.deaths_averted, 1) : "–", "n"], [g.cost_per_death != null ? usd(g.cost_per_death) : "–", "n"], [xfmt(g.portfolio_x), "n"]].forEach(function (c) {
+        var td = document.createElement("td"); td.textContent = c[0]; td.className = c[1]; tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+    t.appendChild(body);
+  }
+
+
   function rankChart(rows) {
     var svg = document.getElementById("rank");
     svg.innerHTML = "";
@@ -671,14 +654,41 @@
   }
 
   var current = [];
-  function draw() {
-    current = rankRows(D.rows.filter(passes).map(compute));
+  function params() {
+    // What the server needs to work the view out: the what-if (as the URL keeps it) and the filters.
+    var p = new URLSearchParams();
+    if (W.basis !== DEF.basis) p.set("basis", W.basis);
+    if (W.rank !== DEF.rank) p.set("rank", W.rank);
+    if (W.bar !== DEF.bar) p.set("bar", W.bar);
+    Object.keys(W.m).forEach(function (k) { ["extra", "effect", "reach"].forEach(function (f) { if (W.m[k][f] !== DEF.m[k][f]) p.set(k + "_" + f, W.m[k][f]); }); });
+    var shown = Object.keys(state.models).filter(function (k) { return state.models[k]; });
+    if (shown.length !== Object.keys(state.models).length) p.set("models", shown.join(","));
+    if (state.country) p.set("country", state.country);
+    if (state.active) p.set("active", "1");
+    if (state.modelled) p.set("modelled", "1");
+    if (state.minSpend) p.set("min_spend", state.minSpend);
+    if (state.q) p.set("q", state.q);
+    return p.toString();
+  }
+  function render() {
+    current = V.rows; BAR = V.bar_x;
     document.getElementById("rank-title").textContent = "Ranked by " + RANK_LABEL[W.rank] +
       (W.basis === "model" ? ", at the models' prices" : ", at what each opportunity cost");
-    tiles(current); rankChart(current); scatter(current); noModel(current); table(current);
+    tiles(V.totals); programmes(V.programmes); rankChart(current); scatter(current); noModel(current); table(current);
     if (mapReady) { map.getSource("opps").setData(geo(current)); fit(); }
   }
-  draw();
+  var asking = null, asked = 0;
+  function draw() {
+    clearTimeout(asking);
+    asking = setTimeout(function () {
+      var mine = ++asked;
+      fetch(D.view_url + "?" + params(), { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (v) {
+        if (mine !== asked || !v.rows) return;
+        V = v; render();
+      });
+    }, 150);
+  }
+  render();
   initMap();
   var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { rankChart(current); scatter(current); noModel(current); }, 150); });
 })();
