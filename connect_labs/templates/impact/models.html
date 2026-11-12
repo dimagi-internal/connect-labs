@@ -14,6 +14,8 @@
   .cem .chips { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 12px; }
   .cem .chip { text-decoration:none; padding:7px 12px; border:1px solid var(--rule); border-radius:8px; background:#fff; color:var(--ink); font-size:13px; font-weight:600; }
   .cem .chip small { display:block; font-weight:400; color:var(--muted); font-size:11.5px; }
+  .cem .chip { flex:1 1 220px; min-width:0; max-width:100%; box-sizing:border-box; }
+  .cem .chip small { white-space:normal; overflow-wrap:anywhere; }
   .cem .chip.on { border-color:var(--acc); background:#eef2ff; color:#3730a3; }
   .cem .layout { display:grid; grid-template-columns:minmax(300px,380px) minmax(0,1fr); gap:16px; align-items:start;
                  grid-template-areas:"inputs results"; }
