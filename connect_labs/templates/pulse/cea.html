@@ -39,6 +39,7 @@
   .cea .pill { font-size:11px; padding:2px 7px; border-radius:999px; background:#f3f4f6; color:var(--muted); white-space:nowrap; }
   .cea .pill.ok { background:#dcfce7; color:var(--good); } .cea .pill.lo { background:#fee2e2; color:var(--low); }
   .cea .tbl-wrap { max-height:620px; overflow:auto; }
+  .cea .tbl-scroll { overflow-x:auto; }
   .cea .tip { position:fixed; pointer-events:none; background:#111827; color:#fff; font-size:12px; line-height:1.45; padding:8px 10px;
               border-radius:6px; max-width:320px; z-index:50; display:none; box-shadow:0 4px 14px rgba(0,0,0,.2); }
   .cea .notes { font-size:12.5px; color:var(--muted); line-height:1.55; }
@@ -194,7 +195,7 @@
     <h2>By programme</h2>
     <p class="sub">The same figures rolled up by Connect programme, for the opportunities shown above. Spend counts each dollar once;
       the multiple is total benefit over total cost, so a large programme counts for more.</p>
-    <div class="tbl-wrap"><table id="programmes"></table></div>
+    <div class="tbl-scroll"><table id="programmes"></table></div>
   </div>
 
   <div class="card">
