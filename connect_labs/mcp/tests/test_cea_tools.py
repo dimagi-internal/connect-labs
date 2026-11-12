@@ -68,3 +68,99 @@ def test_it_is_in_the_targeting_read_scope_and_open_to_a_restricted_caller():
     """Arithmetic on vendored public models: nothing in it is a visit, so a no-visit-data token may call it."""
     assert "cea_model_run" in canopy.SCOPE_TOOLS["targeting:read"]
     assert "cea_model_run" in token_scopes.NO_USERVISIT_DATA_TOOLS
+
+
+def _row(i, **kw):
+    base = {
+        "id": i,
+        "name": f"Opp {i}",
+        "org_slug": "partner-a",
+        "program_id": 7,
+        "service_name": "Child Health Campaign",
+        "country": "NG",
+        "country_name": "Nigeria",
+        "active": True,
+        "status": "modelled",
+        "status_text": "Modelled",
+        "rank": i,
+        "total_usd": 1000.0 * i,
+        "own_usd": 1000.0 * i,
+        "reached": 500 * i,
+        "reach_basis": "distinct_people",
+        "cost_per_person": 2.0,
+        "model_cost_per_person": 1.84,
+        "model_x": 20.0,
+        "x": 30.0 / i,
+        "clears_bar": True,
+        "deaths_averted": 2.0 * i,
+        "cost_per_death": 500.0,
+        "baseline_level": "state or province",
+        "areas_n": 1,
+        "model": "chc",
+    }
+    base.update(kw)
+    return base
+
+
+class TestOpportunities:
+    @pytest.fixture
+    def ranking(self, monkeypatch):
+        from connect_labs.pulse import cea
+
+        rows = [
+            _row(1),
+            _row(2),
+            _row(3, program_id=8, country="UG", country_name="Uganda", model="mbw"),
+            _row(4, status="no_model", status_text="No model", rank=None, model=None),
+        ]
+        data = {"rows": rows, "bar_x": 6, "generated": "2026-11-10", "source": "src", "totals": {}, "programmes": []}
+        monkeypatch.setattr(cea, "ranking", lambda *a, **k: data)
+        monkeypatch.setattr(cea, "programmes", lambda rs: [{"program_id": r["program_id"]} for r in rs])
+        return rows
+
+    def test_it_ranks_filters_and_rolls_up_exactly_the_selection(self, ranking):
+        got = cea.cea_opportunities(None, program_id=7)
+        assert [r["id"] for r in got["rows"]] == [1, 2] and got["count"] == 2
+        assert got["rollup"]["spend"] == pytest.approx(1000 + 2000)
+        assert got["rollup"]["people"] == 500 + 1000
+        assert got["rollup"]["portfolio_x"] == pytest.approx((30 * 1000 + 15 * 2000) / 3000)
+
+    def test_country_matches_a_name_or_an_alpha_2_and_model_filters(self, ranking):
+        assert [r["id"] for r in cea.cea_opportunities(None, country="uganda")["rows"]] == [3]
+        assert [r["id"] for r in cea.cea_opportunities(None, country="NG")["rows"]] == [1, 2]
+        assert [r["id"] for r in cea.cea_opportunities(None, model="mbw")["rows"]] == [3]
+
+    def test_unmodelled_rows_are_left_out_unless_asked_for_by_id(self, ranking):
+        assert 4 not in [r["id"] for r in cea.cea_opportunities(None)["rows"]]
+        assert [r["id"] for r in cea.cea_opportunities(None, opportunity_ids=[4])["rows"]] == [4]
+
+    def test_limit_caps_the_rows_but_not_the_rollup(self, ranking):
+        got = cea.cea_opportunities(None, limit=1)
+        assert got["shown"] == 1 and got["count"] == 3 and got["rollup"]["opportunities"] == 3
+
+    def test_detail_needs_one_opportunity_and_returns_the_explorer_links(self, ranking, monkeypatch):
+        from connect_labs.pulse import cea as pulse_cea
+
+        monkeypatch.setattr(
+            pulse_cea,
+            "opportunity_detail",
+            lambda i: {
+                "placement": {"areas": 1},
+                "result": {"areas": [{"name": "Kaduna"}], "other_inputs": []},
+                "explore": [{"path": "/labs/cea/models/?model=chc"}],
+            },
+        )
+        got = cea.cea_opportunities(None, opportunity_ids=[1], detail=True)
+        assert got["detail"]["explore"][0]["path"].startswith("/labs/cea/models/")
+        with pytest.raises(MCPToolError):
+            cea.cea_opportunities(None, program_id=7, detail=True)
+
+    def test_an_unknown_opportunity_is_not_found(self, ranking):
+        with pytest.raises(MCPToolError) as err:
+            cea.cea_opportunities(None, opportunity_ids=[999])
+        assert "999" in str(err.value)
+
+    def test_it_is_not_open_to_a_no_visit_data_token(self):
+        """It carries what each opportunity cost and how many people it reached."""
+        assert "cea_opportunities" not in token_scopes.NO_USERVISIT_DATA_TOOLS
+        assert "cea_model_run" in token_scopes.NO_USERVISIT_DATA_TOOLS

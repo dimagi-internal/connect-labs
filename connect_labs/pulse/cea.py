@@ -291,6 +291,59 @@ def _pool_cost_only(opps, own_usd: dict, reach_of: dict):
     return pooled_usd, pooled_from, pooled_into
 
 
+def rollup(rows: list[dict]) -> dict:
+    """What a set of opportunities achieved together: the portfolio, a programme, a partner or a country.
+
+    The one place a group's figures are added up, so the page's tiles, the programme table, the JSON and
+    the agent tool cannot disagree. Each dollar counts once (a pooled row's spend is already inside its
+    delivery rows), and the multiple is total benefit over total cost, so it is spend-weighted.
+    """
+    modelled = [r for r in rows if r["status"] == STATUS_MODELLED]
+    spend_modelled = sum(r["total_usd"] for r in modelled)
+    deaths = sum(r["deaths_averted"] for r in modelled)
+    return {
+        "opportunities": len(rows),
+        "modelled": len(modelled),
+        "clearing_bar": sum(1 for r in modelled if r["clears_bar"]),
+        "spend": round(sum(r["own_usd"] for r in rows), 2),
+        "spend_modelled": round(spend_modelled, 2),
+        "people": sum(r["reached"] for r in modelled),
+        "deaths_averted": round(deaths, 2),
+        "cost_per_death": (spend_modelled / deaths) if deaths else None,
+        "portfolio_x": (sum(r["x"] * r["total_usd"] for r in modelled) / spend_modelled) if spend_modelled else None,
+    }
+
+
+def programmes(rows: list[dict]) -> list[dict]:
+    """The same roll-up per Connect programme, biggest spend first.
+
+    A programme is Connect's own grouping (``PulseProgram``); opportunities with none are gathered as
+    "No programme". Its partners and the models that value it are listed so a reader sees what is in it.
+    """
+    from connect_labs.pulse.models import PulseProgram
+
+    names = dict(
+        PulseProgram.objects.filter(program_id__in={r["program_id"] for r in rows}).values_list("program_id", "name")
+    )
+    groups: dict[int | None, list[dict]] = {}
+    for r in rows:
+        groups.setdefault(r["program_id"], []).append(r)
+    out = []
+    for pid, members in groups.items():
+        out.append(
+            {
+                "program_id": pid,
+                "name": names.get(pid) or (f"Programme {pid}" if pid is not None else "No programme"),
+                "partners": sorted({r["org_slug"] for r in members if r["org_slug"]}),
+                "models": sorted({r["model"] for r in members if r.get("model")}),
+                "opportunity_ids": [r["id"] for r in members],
+                **rollup(members),
+            }
+        )
+    out.sort(key=lambda g: -g["spend"])
+    return out
+
+
 def ranking(opps_qs=None) -> dict:
     """Every real opportunity, modelled ones ranked by multiple at their actual cost."""
     from connect_labs.pulse.models import PulseOpportunity
@@ -374,24 +427,10 @@ def ranking(opps_qs=None) -> dict:
         else:
             r["rank"] = None
 
-    modelled = [r for r in rows if r["status"] == STATUS_MODELLED]
-    spend_modelled = sum(r["total_usd"] for r in modelled)
-    deaths = sum(r["deaths_averted"] for r in modelled)
     return {
         "rows": rows,
-        "totals": {
-            "opportunities": len(rows),
-            "modelled": len(modelled),
-            "clearing_bar": sum(1 for r in modelled if r["clears_bar"]),
-            # Each dollar once: a pooled row's spend is already inside its delivery rows.
-            "spend": round(sum(r["own_usd"] for r in rows), 2),
-            "spend_modelled": round(spend_modelled, 2),
-            "deaths_averted": round(deaths, 2),
-            # Spend-weighted: the portfolio's multiple is total benefit over total cost.
-            "portfolio_x": (
-                sum(r["x"] * r["total_usd"] for r in modelled) / spend_modelled if spend_modelled else None
-            ),
-        },
+        "totals": rollup(rows),
+        "programmes": programmes(rows),
         "bar_x": m["bar_x"],
         "bar_note": m["bar_note"],
         "placed_at": _placed_at(),
@@ -460,4 +499,37 @@ def opportunity_detail(opp_id: int) -> dict | None:
     total = 0.0 if row["status"] == STATUS_COST_POOLED else row["total_usd"]
     out["result"] = impact_result.evaluate(key, iso3, areas, row["reached"], total, data["bar_x"], detail=True)
     out["model_meta"] = models()["models"][key]
+    out["explore"] = _explore_links(key, row, out["result"])
     return out
+
+
+def _explore_links(key: str, row: dict, result: dict) -> list[dict]:
+    """Links into the Models explorer with this opportunity's place and its actual cost already set.
+
+    One per area its visits fell in (a delivery across several states is valued state by state), so a
+    reader can test how sensitive the answer is for a real opportunity, on the same evaluator. Pooled and
+    unvalued rows have no cost of their own to carry, so they get none.
+    """
+    from urllib.parse import urlencode
+
+    from django.urls import reverse
+
+    from connect_labs.impact import explore
+
+    if row["status"] != STATUS_MODELLED or not result.get("cost_per_person"):
+        return []
+    links = []
+    for a in result["areas"]:
+        overrides = explore.delivery_overrides(
+            key, {k: v["value"] for k, v in a["inputs"].items()}, result["cost_per_person"]
+        )
+        query = {"model": key, **{f"i_{k}": v for k, v in overrides.items()}}
+        links.append(
+            {
+                "area": a["name"],
+                "level": a["level"],
+                "share": a["share"],
+                "path": f"{reverse('cea:models')}?{urlencode(query)}",
+            }
+        )
+    return links

@@ -6,8 +6,9 @@ from decimal import Decimal
 import pytest
 from django.urls import reverse
 
+from connect_labs.impact import explore
 from connect_labs.pulse import cea, costs
-from connect_labs.pulse.models import PulseCostEntry, PulseEvent, PulseOpportunity, PulseWork
+from connect_labs.pulse.models import PulseCostEntry, PulseEvent, PulseOpportunity, PulseProgram, PulseWork
 
 D = Decimal
 _seq = [0]
@@ -234,3 +235,56 @@ class TestPage:
         csv = client.get(reverse("cea:implementation") + "?format=csv").content.decode()
         assert csv.splitlines()[0].startswith("rank,id,name")
         assert "Opp 40" in csv
+
+
+@pytest.mark.django_db
+class TestProgrammesAndTheExplorer:
+    """Existing opportunities, applied through the same components as everything else."""
+
+    def test_programmes_add_up_to_the_portfolio(self):
+        PulseProgram.objects.create(program_id=7, name="CHC Nigeria 2026", delivery_type="chc")
+        for oid, program, n in ((70, 7, 100), (71, 7, 50), (72, 8, 80)):
+            _opp(oid, "chc", program_id=program)
+            for m in range(n):
+                _work(oid, 2, who=f"p{oid}-{m}")
+        _opp(73, "chlorine", program_id=8)  # no model: counted in spend, not in the multiple
+        for _ in range(40):
+            _work(73, 1)
+        out = cea.ranking()
+        by = {g["program_id"]: g for g in out["programmes"]}
+        assert by[7]["name"] == "CHC Nigeria 2026" and by[8]["name"] == "Programme 8"
+        assert sorted(by[7]["opportunity_ids"]) == [70, 71] and by[7]["models"] == ["chc"]
+        # Each dollar once, and each programme is the same roll-up the portfolio is.
+        assert sum(g["spend"] for g in out["programmes"]) == pytest.approx(out["totals"]["spend"])
+        assert sum(g["deaths_averted"] for g in out["programmes"]) == pytest.approx(out["totals"]["deaths_averted"])
+        assert by[7]["spend"] == pytest.approx(150 * 2)
+        assert by[7]["people"] == 150
+        assert by[7]["cost_per_death"] == pytest.approx(by[7]["spend_modelled"] / by[7]["deaths_averted"])
+        assert out["totals"] == cea.rollup(out["rows"])
+
+    def test_the_explorer_link_reproduces_the_opportunitys_own_multiple(self):
+        from urllib.parse import parse_qsl, urlparse
+
+        _opp(60, "chc", country="NG")
+        for m in range(100):
+            _work(60, 2, who=f"c-{m}")
+        d = cea.opportunity_detail(60)
+        assert d["explore"], "a valued opportunity can be opened in the explorer"
+        query = dict(parse_qsl(urlparse(d["explore"][0]["path"]).query))
+        model = query.pop("model")
+        run = explore.run(model, {k[2:]: float(v) for k, v in query.items()})
+        assert model == "chc"
+        assert run["headline"]["multiple"] == pytest.approx(d["result"]["x"], rel=1e-6)
+        assert run["headline"]["price_per_person"] == pytest.approx(d["result"]["cost_per_person"])
+
+    def test_an_unvalued_opportunity_has_no_explorer_link(self):
+        _opp(61, "chc")  # nothing delivered
+        assert cea.opportunity_detail(61)["explore"] == []
+
+    def test_the_opportunity_page_offers_the_link(self, client, django_user_model):
+        _opp(62, "chc")
+        for m in range(30):
+            _work(62, 1, who=f"d-{m}")
+        client.force_login(django_user_model.objects.create_user(username="impl", password="x"))
+        page = client.get(reverse("cea:implementation_opp", args=[62])).content.decode()
+        assert 'data-testid="explore-links"' in page and "/labs/cea/models/?model=chc" in page

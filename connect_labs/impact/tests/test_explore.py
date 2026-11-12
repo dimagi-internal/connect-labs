@@ -183,3 +183,48 @@ class TestSheetsCheck:
 
         rows = [r for r in self._rows("kc") if not r[0].startswith("Cost per")]
         assert sheets_check.compare("kc", rows)["rows_missing_in_live"]
+
+
+class TestDeliveryIntoTheExplorer:
+    """An opportunity valued where it was delivered gives the same multiple in the explorer."""
+
+    @staticmethod
+    def _delivery(model):
+        from connect_labs.impact import engine, result
+
+        class V:  # a resolved place input, as baseline.Value is read by result.evaluate
+            def __init__(self, value):
+                self.value = value
+
+            def as_dict(self):
+                return {"value": self.value}
+
+        # A place that differs from the model's defaults on every location input it has.
+        inputs = {k: V(engine.defaults(model)[k] * 0.8) for k in engine.location_keys(model)}
+        areas = [{"name": "Somewhere", "level": "state or province", "share": 1.0, "inputs": inputs}]
+        return result, areas, {k: v.value for k, v in inputs.items()}
+
+    @pytest.mark.parametrize("model", ["chc", "mbw", "kc"])
+    def test_the_explorer_at_a_deliverys_inputs_gives_the_deliverys_multiple(self, model):
+        result, areas, place = self._delivery(model)
+        out = result.evaluate(model, "NGA", areas, reached=1200, total_usd=3600.0, bar_x=valuation.bar())
+        overrides = explore.delivery_overrides(model, place, out["cost_per_person"])
+        run = explore.run(model, overrides)
+        assert run["headline"]["price_per_person"] == pytest.approx(out["cost_per_person"])
+        assert run["headline"]["multiple"] == pytest.approx(out["x"], rel=1e-9)
+        assert run["headline"]["deaths_per_100k"] * 1200 / 100_000 == pytest.approx(out["deaths_averted"], rel=1e-9)
+
+    def test_reprice_is_the_one_formula(self):
+        from connect_labs.impact import result
+
+        base = result.reprice(20.0, 2.0, 50.0, 1000, 4000.0, 6.0)
+        assert base["x"] == pytest.approx(20.0 * 2.0 / 4.0) and base["cost_per_person"] == 4.0
+        assert base["deaths_averted"] == pytest.approx(0.5) and base["cost_per_death"] == pytest.approx(8000.0)
+        assert base["clears_bar"] is True
+        # The what-if knobs: half the effect halves the multiple and the deaths; extra cost lowers the multiple.
+        half = result.reprice(20.0, 2.0, 50.0, 1000, 4000.0, 6.0, effect=0.5)
+        assert half["x"] == pytest.approx(base["x"] / 2) and half["deaths_averted"] == pytest.approx(0.25)
+        assert result.reprice(20.0, 2.0, 50.0, 1000, 4000.0, 6.0, extra_per_person=4.0)["x"] == pytest.approx(5.0)
+        # At the model's own price the multiple is the model's.
+        assert result.reprice(20.0, 2.0, 50.0, 1000, 4000.0, 6.0, at_model_price=True)["x"] == pytest.approx(20.0)
+        assert result.reprice(20.0, 2.0, 50.0, 0, 0.0, 6.0) is None

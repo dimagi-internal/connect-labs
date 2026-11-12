@@ -20,6 +20,27 @@ One evaluator, reached three ways, so a number is the same wherever it appears.
 - **For agents**: `cea_model_run` (`mcp/tools/cea.py`) calls `explore` directly and returns the Models page's link with the same inputs set, so what an agent computes is what the page shows.
 - **Three views** (tabs of one explorer): **Models** (`/labs/cea/models/`, `impact/views.py`): pick a model, edit any input, see the chain and sensitivity. **Implementation** (`/labs/cea/implementation/`, `pulse/cea.py`): every delivered opportunity, priced at what it cost. **Targeting** (`/labs/cea/targeting/pmc/`): malaria PMC, deaths from the EMOD simulation, valued as the CHC model values a death.
 
+### Applying the models to existing programmes and opportunities
+
+Implementation is the baseline and the models applied to what Connect delivered, and it has no arithmetic of
+its own. `pulse/cea.py` reads Pulse's own data (approved works, costs) and hands the rest to `impact`:
+
+| Step | Where | Shared with |
+|---|---|---|
+| Where the visits were | `impact/places.py`, on the shared placement core (`labs/admin_boundaries/placement.py`) | Pulse maps, the coverage check |
+| The place's baseline | `impact/baseline.py`, most local figure first, each with its source | the Models explorer's country and place inputs |
+| The model at that place | `impact/result.py` `evaluate`, which runs `impact/engine.py` | the Models explorer |
+| Re-pricing at what it cost | `impact/result.py` `reprice`, the one formula | `evaluate`, and the Implementation what-if |
+| A programme, partner or country | `pulse/cea.py` `rollup` | the page's tiles, the programme table, the JSON, `cea_opportunities` |
+| Test the answer's sensitivity | `explore.delivery_overrides`: the opportunity's place inputs and a cost input chosen so the model's price equals the observed cost, linked from each opportunity page | the explorer gives the opportunity's own multiple (tested to 1e-6) |
+
+Agents read it through `cea_opportunities` (any selection, with its roll-up and, for one opportunity, every step and its
+explorer link). It is for full tokens only: it carries what each opportunity cost and how many people it reached.
+The boundary test keeps `pulse/cea.py` off the baseline package.
+
+Open: the Implementation what-if still recomputes in the page's JavaScript (`compute()` in `cea.html`), which repeats
+`reprice` plus the what-if knobs. It moves behind the server so the page only draws what the API returns.
+
 ### Where the models come from, and how they stay current
 
 The three models (CHC, MBW, KC) are Google Sheets their owner edits by hand; each is built from a builder in `connect-cea-models`, which exports a `spec.json` Labs vendors. Labs reads no Sheet at run time.
