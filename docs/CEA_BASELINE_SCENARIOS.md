@@ -38,8 +38,9 @@ Agents read it through `cea_opportunities` (any selection, with its roll-up and,
 explorer link). It is for full tokens only: it carries what each opportunity cost and how many people it reached.
 The boundary test keeps `pulse/cea.py` off the baseline package.
 
-Open: the Implementation what-if still recomputes in the page's JavaScript (`compute()` in `cea.html`), which repeats
-`reprice` plus the what-if knobs. It moves behind the server so the page only draws what the API returns.
+The Implementation tab's what-if, filters, ranking and roll-up run on the server (`pulse/cea.py` `view()`, served as
+JSON at `cea:implementation_view`); the page only sends the knobs and draws what comes back. Re-pricing is `reprice`
+everywhere, with a test that the server agrees with the formulas the page used to carry.
 
 ### Where the models come from, and how they stay current
 
@@ -68,7 +69,7 @@ Nothing runs the check on a schedule yet: a scheduled run needs a credential in 
 | GiveWell value of a death, benchmark and bar typed in each engine | **Fixed**: one `valuation` module read from the specs |
 | ORS cost-effectiveness chain (GiveWell's grant, a separate calculation) | **Removed**: which components count for CHC is a CHC model decision |
 | The delivered ranking, PMC and the ORS tool disagreeing on what a death is worth | **Fixed**: PMC now uses the CHC valuation (118.05 units) |
-| Re-pricing arithmetic (`multiple x model price / actual price`) in Python (`impact/result.py`) and again in the Implementation tab's JavaScript (`cea.html`) | Open |
+| Re-pricing arithmetic (`multiple x model price / actual price`) in Python (`impact/result.py`) and again in the Implementation tab's JavaScript (`cea.html`) | **Fixed**: one `reprice`, the page draws the server's answer |
 | Default prices: sizing presets (ORS $2.50, KMC $60) against the models' own inputs (CHC $1.80, KC $60, MBW $10). ORS disagrees. | Open: read a preset's price from its model's `cost` input where a model exists |
 | ISO to country-name maps in `pulse/normalize.py` and `labs/indicators/africa.py` (and the vendored summary) | Open |
 | Area baselines resolved separately in PMC (`registry_burden`, `emod/states.py`, `emod/runner.py`) and in `impact/baseline.py` | Open: PMC should read baselines through `impact.baseline` |

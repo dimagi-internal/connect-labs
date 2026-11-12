@@ -28,6 +28,7 @@ urlpatterns = [
     path("models/", impact_views.ModelExplorerView.as_view(), name="models"),
     path("models/api/run/", impact_views.ModelRunView.as_view(), name="models_run"),
     path("implementation/", pulse_views.PulseCEAView.as_view(), name="implementation"),
+    path("implementation/api/view/", pulse_views.PulseCEAViewData.as_view(), name="implementation_view"),
     path("implementation/opp/<int:opp_id>/", pulse_views.PulseCEAOppView.as_view(), name="implementation_opp"),
     path(
         "targeting/",
