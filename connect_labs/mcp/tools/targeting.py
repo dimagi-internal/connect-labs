@@ -54,9 +54,10 @@ MAX_ROW_LIMIT = 200
 
 def _imports():
     """Import inside the handler so tool registration never drags in PostGIS."""
-    from connect_labs.labs.indicators import availability, export, interventions, measures, methods
+    from connect_labs.labs.indicators import availability, export, measures, methods
     from connect_labs.labs.indicators.africa import ISO_CODES
     from connect_labs.labs.indicators.resolve import select_above
+    from connect_labs.scenarios import interventions
 
     return availability, export, interventions, measures, methods, ISO_CODES, select_above
 

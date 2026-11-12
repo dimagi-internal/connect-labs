@@ -7,8 +7,8 @@ Three components, built in layers: each may use the one before it and none may u
 |---|---|---|---|
 | Answers | What do the indicators say about a place? Filter by indicator, place, method. | What does a model say a programme buys, on a place's baseline? Change inputs, test sensitivity. | A chosen set of places, a model and costs, for a proposal or market sizing. |
 | Uses | nothing above it | the baseline | the baseline and the CEA |
-| Data model | `IndicatorValue`, `AdminBoundary`, `Source`, the measure registry (`measures.py`), `Resolved` | the vendored model specs (`impact/data/*.json`), `valuation`, the place layer (`impact/baseline.py`, `places.py`) | not built (see below) |
-| UI | `/labs/targeting/`, the Baseline explorer | `/labs/cea/`: Models, Implementation, Targeting tabs | not built |
+| Data model | `IndicatorValue`, `AdminBoundary`, `Source`, the measure registry (`measures.py`), the unit bases (`bases.py`), `Resolved` | the vendored model specs (`impact/data/*.json`), `valuation`, the place layer (`impact/baseline.py`, `places.py`) | the intervention presets (`scenarios/interventions.py`), priced from the models where one exists |
+| UI | `/labs/targeting/`, the Baseline explorer | `/labs/cea/`: Models, Implementation, Targeting tabs | the "What could this absorb?" panel on the Baseline page, served from `/labs/scenarios/` |
 | Agent tools | `targeting_indicators`, `_select`, `_methodology`, `_admin_levels`, `_compare_criteria`, `_research*` | `cea_model_run` (the Models page's engine), `targeting_pmc_*` | `targeting_scenario` (sizing) |
 
 ## The cost-effectiveness component
@@ -54,13 +54,11 @@ Nothing runs the check on a schedule yet: a scheduled run needs a credential in 
 
 ## Where each stands today
 
-**Baseline: built, with two other components inside it.** `labs/indicators` holds the indicator system and the Baseline explorer, and also:
-- **Market sizing**: `interventions.py` (unit-price presets), `ScenarioView` / `InterventionsView`, the "What could this absorb?" panel, `costing.js`, and the `targeting_scenario` tool. This is scenarios functionality.
-- **PMC**: `pmc.py`, `emod/*`, the PMC views, `PmcModelRun`, the PMC page and script, and the `targeting_pmc_*` tools. This is cost-effectiveness functionality. It is the reason three baseline files import `impact.valuation`, which the boundary test lists.
+**Baseline: built.** `labs/indicators` holds the indicator system, the unit bases (`bases.py`: which count a unit of cost resolves to) and the Baseline explorer. It still carries malaria PMC (`pmc.py`, `emod/*`, its views, `PmcModelRun`, the `targeting_pmc_*` tools), which is cost-effectiveness functionality; PMC is a one-off the owner no longer uses (12 Nov 2026), so it stays where it is, listed in the boundary test's ledger, and is not being invested in.
 
-**Cost-effectiveness: built**, except that the PMC half lives in the baseline package.
+**Cost-effectiveness: built.**
 
-**Scenarios: not built as a component.** What exists is sizing embedded in the Baseline page, and the ACE `build-targeting-model` skill assembling a Sheet outside Labs.
+**Scenarios: market sizing, as its own package.** `scenarios/` holds the intervention presets and the sizing views (`/labs/scenarios/api/scenario/`, `/api/interventions/`; the old `/labs/targeting/` addresses redirect). A preset that follows a model takes its price from that model (`model_price`): KMC from KC ($60), the two ORS presets from CHC ($1.80, which covers ORS, zinc and the vitamin A capsule). The panel is still drawn on the Baseline page, calling the scenarios endpoints. Not built: saved scenarios (a record of places, model and costs for a proposal), and a scenario that combines sizing with a model's multiple for interventions that have one.
 
 ## Duplication found, and what is left
 
@@ -69,13 +67,12 @@ Nothing runs the check on a schedule yet: a scheduled run needs a credential in 
 | GiveWell value of a death, benchmark and bar typed in each engine | **Fixed**: one `valuation` module read from the specs |
 | ORS cost-effectiveness chain (GiveWell's grant, a separate calculation) | **Removed**: which components count for CHC is a CHC model decision |
 | The delivered ranking, PMC and the ORS tool disagreeing on what a death is worth | **Fixed**: PMC now uses the CHC valuation (118.05 units) |
-| Re-pricing arithmetic (`multiple x model price / actual price`) in Python (`impact/result.py`) and again in the Implementation tab's JavaScript (`cea.html`) | **Fixed**: one `reprice`, the page draws the server's answer |
-| Default prices: sizing presets (ORS $2.50, KMC $60) against the models' own inputs (CHC $1.80, KC $60, MBW $10). ORS disagrees. | Open: read a preset's price from its model's `cost` input where a model exists |
-| ISO to country-name maps in `pulse/normalize.py` and `labs/indicators/africa.py` (and the vendored summary) | Open |
-| Area baselines resolved separately in PMC (`registry_burden`, `emod/states.py`, `emod/runner.py`) and in `impact/baseline.py` | Open: PMC should read baselines through `impact.baseline` |
+| Re-pricing arithmetic in Python and again in the Implementation tab's JavaScript | **Fixed**: one `reprice`, the page draws the server's answer |
+| Default prices: sizing presets (ORS $2.50, KMC $60) against the models' own inputs | **Fixed** for presets that follow a model (test pins it); measles, vitamin A, nets and water have no model |
+| ISO to country-name maps | **Not a duplicate**: `labs/indicators/africa.py` is the full African set keyed by alpha-3; `pulse/normalize.py` `COUNTRY_NAMES` is a short display list keyed by alpha-2 and includes India |
+| Area baselines resolved separately in PMC and in `impact/baseline.py` | Left with PMC (a one-off) |
 
 ## Order of work
 
-1. **Move PMC into the cost-effectiveness component** (about 2,400 lines of code, 2,500 of tests, `PmcModelRun`, two Celery tasks, one beat schedule entry, about 60 import sites). Keep the Celery task names (`connect_labs.labs.indicators.emod.tasks.*`) with an explicit `name=` so queued work survives the deploy. Then delete the `BASELINE_IMPORTS_CEA` ledger.
-2. **Build the scenarios component**, move sizing into it, and take the "What could this absorb?" panel off the Baseline page, so the Baseline explorer only looks at indicators and filters. Then delete the `SIZING_IMPORTERS` ledger.
-3. Close the open duplicates above.
+1. **Saved scenarios**: a record of places, a unit price or model and costs that a proposal can link to, and a panel on `/labs/scenarios/` instead of on the Baseline page. Then the Baseline explorer only looks at indicators and filters.
+2. Price measles, vitamin A, nets and water from a model if the team builds one.

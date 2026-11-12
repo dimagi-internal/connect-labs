@@ -14,7 +14,7 @@ Today each answer has its own code path:
 
 | Path | Code |
 |---|---|
-| Absorption | `labs/indicators/interventions.py` |
+| Absorption | `scenarios/interventions.py` |
 | The ORS chain | `labs/indicators/cost_effectiveness.py` |
 | The PMC simulator | `emod/mortality.py` |
 | Precomputed multiples from `connect-cea-models`, re-priced in Python and again in page JavaScript | `pulse/cea.py` + `cea.html` |

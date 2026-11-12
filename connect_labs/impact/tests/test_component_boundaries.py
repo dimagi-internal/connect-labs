@@ -6,8 +6,8 @@ See ``docs/CEA_BASELINE_SCENARIOS.md``. In one line each:
   filters. It knows nothing about models, costs or scenarios.
 * **Cost-effectiveness** (``impact`` and its views, plus ``pulse/cea.py`` for delivered opportunities): the
   models, run on a place's baseline. It may read the baseline; the baseline may not read it.
-* **Scenarios** (``scenarios``, not built yet): a chosen set of places, a model and costs, for proposals and
-  market sizing. It may read both; neither may read it.
+* **Scenarios** (``scenarios``): market sizing today: unit-price presets (priced from the models where one
+  exists) over the places a threshold selects. It may read both; neither may read it.
 
 The test does not ask for a perfect tree today. It pins the exceptions that exist (the ledgers below), so a
 new violation fails and a fixed one has to be taken off the list. Each ledger entry says why it is there and
@@ -33,13 +33,6 @@ BASELINE_IMPORTS_CEA = {
     "labs/indicators/views.py": "PMC views (PmcView, pmc_fixed_assumptions) sit in the baseline views module",
     "labs/indicators/emod/mortality.py": "PMC's deaths-to-multiple valuation sits in the baseline package",
     "labs/indicators/emod/rank.py": "PMC's ranking sits in the baseline package",
-}
-
-#: Files that import the market-sizing presets (``labs/indicators/interventions.py``). Sizing belongs to the
-#: scenarios component; until that exists these two files carry it. No new importer may be added.
-SIZING_IMPORTERS = {
-    "labs/indicators/views.py": "ScenarioView and InterventionsView, and the 'what could this absorb' panel",
-    "mcp/tools/targeting.py": "targeting_scenario",
 }
 
 
@@ -112,10 +105,10 @@ def test_existing_opportunities_reach_the_models_only_through_impact():
     assert {"connect_labs.impact.result", "connect_labs.impact.baseline", "connect_labs.impact.places"} <= imports
 
 
-def test_market_sizing_has_no_new_importers():
-    sizing = "connect_labs.labs.indicators.interventions"
-    found = {rel for rel, p in _files("labs", "mcp", "impact", "pulse", "marketplace") if sizing in _imports(p)}
-    new = sorted(found - set(SIZING_IMPORTERS))
-    assert not new, f"New importers of the sizing presets: {new}. Sizing belongs to the scenarios component."
-    stale = sorted(set(SIZING_IMPORTERS) - found)
-    assert not stale, f"No longer import sizing, so take them off SIZING_IMPORTERS: {stale}"
+def test_scenarios_build_on_the_baseline_and_the_models_only():
+    """Market sizing lives in ``scenarios``: it may read the baseline and ``impact``, never Pulse or the CEA pages."""
+    for rel, p in _files("scenarios"):
+        bad = sorted(m for m in _imports(p) if _under(m, ("connect_labs.pulse", "connect_labs.cea_urls")))
+        assert not bad, f"{rel} imports {bad}"
+    assert (ROOT / "scenarios" / "interventions.py").exists()
+    assert not (ROOT / "labs" / "indicators" / "interventions.py").exists(), "sizing presets belong to scenarios"
