@@ -259,7 +259,11 @@ class TestProgrammesAndTheExplorer:
         assert sum(g["deaths_averted"] for g in out["programmes"]) == pytest.approx(out["totals"]["deaths_averted"])
         assert by[7]["spend"] == pytest.approx(150 * 2)
         assert by[7]["people"] == 150
-        assert by[7]["cost_per_death"] == pytest.approx(by[7]["spend_modelled"] / by[7]["deaths_averted"])
+        # Cost per death divides by the unrounded deaths; the shown figure is rounded to two places.
+        members = [r for r in out["rows"] if r["program_id"] == 7 and r["status"] == cea.STATUS_MODELLED]
+        assert by[7]["cost_per_death"] == pytest.approx(
+            sum(r["total_usd"] for r in members) / sum(r["deaths_averted"] for r in members)
+        )
         assert out["totals"] == cea.rollup(out["rows"])
 
     def test_the_explorer_link_reproduces_the_opportunitys_own_multiple(self):
