@@ -143,7 +143,7 @@ def test_a_run_loads_what_is_missing_reads_as_the_person_and_returns_counts_only
         class selection:
             opportunities = [type("O", (), {"id": 1})()]
 
-    body = {"opps": "1", "facilities": "A1,7.0,13.5,D1", "catchment_k": 2}
+    body = {"opps": "1", "facilities": "A1,7.0,13.5,D1", "catchment_k": 10}
     with (
         patch.object(page.spaces, "from_request", lambda caller, **k: Space()),
         patch.object(page.service, "warm", lambda caller, opps: [{"opportunity_id": 1, "loaded_visits": 5}]),
