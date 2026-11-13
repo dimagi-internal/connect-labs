@@ -21,7 +21,7 @@ effectiveness/
   views/ urls.py                                                                     the pages, mounted at /labs/cea/
   data/                                                                              the vendored model specs (CHC, MBW, KC)
   management/commands/effectiveness_check_sheets, effectiveness_vendor
-templates/effectiveness/  static/effectiveness/                                      the pages' markup and scripts
+templates/effectiveness/                                                             the pages: models, implementation, implementation_opp, market, tabs
 ```
 
 One evaluator, reached every way, so a number is the same wherever it appears. `engine` runs a model's own formulas
