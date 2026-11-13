@@ -308,3 +308,24 @@ def test_the_population_lens_names_the_missing_country_in_words(client, person):
         content_type="application/json",
     )
     assert resp.status_code == 400 and "three-letter code" in resp.json()["message"]
+
+
+def test_the_served_read_shards_by_household_and_cycle_and_doubles_on_a_cut_read():
+    """One row per household and cycle: shards sized by households alone overran the row cap on the live deploy."""
+    from connect_labs.labsdata import service
+    from connect_labs.microplans.coverage import read
+
+    calls = []
+
+    def query(caller, space, sql, max_rows=None, *, for_agent=False, shaped=True):
+        calls.append(sql)
+        if sql.startswith("SELECT count("):
+            return {"rows": [[3000]], "truncated": False}
+        return {"rows": [["hh", "contact_1", 1]], "truncated": len(calls) <= 2}  # the first served read is cut
+
+    spec = check.CheckSpec.from_dict({"facilities": [{"id": "A", "lon": 7.0, "lat": 13.5}], "catchment_k": 60})
+    with patch.object(service, "query", query):
+        rows = read.read_served(None, None, spec)
+    served = [c for c in calls if "count(DISTINCT" in c and "spaq_recu" in c.replace("'", "")]
+    assert rows and len(check.shard_bounds(3000 * 8)) > 1
+    assert len(served) > len(check.shard_bounds(3000 * 8))  # the cut read was retried on more shards

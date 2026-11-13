@@ -33,10 +33,22 @@ def read_households(caller, space, spec: check.CheckSpec, agent: bool = False) -
 
 
 def read_served(caller, space, spec: check.CheckSpec, agent: bool = False) -> list:
-    """Children served per household and cycle, shard by shard (the numerator of the population lens)."""
+    """Children served per household and cycle, shard by shard (the numerator of the population lens).
+
+    One row per household AND cycle, so shards sized by households alone overrun the row cap (seen on the live
+    deploy: 12,862 rows from 3,273 households). Start at several cycles' worth of shards and double on a cut read
+    until the read fits or every household has its own shard; never return a silently cut read."""
     count = _rows(caller, space, check.count_sql(spec), agent)
     households = int(count[0][0]) if count and count[0] and count[0][0] is not None else 0
-    rows: list = []
-    for shard in check.shard_bounds(households):
-        rows.extend(_rows(caller, space, check.served_sql(spec, shard), agent))
-    return rows
+    factor = 8
+    while True:
+        bounds = check.shard_bounds(households * factor)
+        try:
+            rows: list = []
+            for shard in bounds:
+                rows.extend(_rows(caller, space, check.served_sql(spec, shard), agent))
+            return rows
+        except RowCapExceeded:
+            if len(bounds) >= 256:
+                raise
+            factor *= 2
