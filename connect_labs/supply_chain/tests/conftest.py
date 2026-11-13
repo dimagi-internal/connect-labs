@@ -23,6 +23,10 @@ import pytest
 from connect_labs.labs.models import LabsOrg
 from connect_labs.supply_chain.models import Commodity, Item, Quote, Supplier, SupplierProfile, Tender
 
+# Bound here, at collection, so the first import is never inside a test that has patched `api_views`: a module first
+# imported under that patch binds the stub for good (see `scoped` in test_write_screens.py).
+from connect_labs.supply_chain.procurement import purchase_views  # noqa: F401, E402, I001
+
 SCOPE = "prog:10501"
 
 

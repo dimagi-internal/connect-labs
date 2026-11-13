@@ -67,18 +67,18 @@ def test_the_sourcing_page_reads_per_tender_and_shows_the_overview_columns(clien
             "lines": [{"commodity_slug": "rutf", "quantity": "800", "quantity_unit": "carton"}],
         },
     )
-    response = client_in_programme.get(reverse("supply_chain:procurement_tender_board"))
+    response = client_in_programme.get(reverse("supply_chain:purchases"))
     assert response.status_code == 200
     body = response.content.decode()
     assert "All 11 steps done" not in body
     assert 'data-testid="guide-tenders"' in body and "Feb re-quote" in body
-    for heading in ("Stage", "Quotes in", "Local partners (LLOs)", "Needed by", "Next move"):
+    for heading in ("Where it stands", "Quotes in", "Local partners (LLOs)", "Needed by", "Next move"):
         assert heading in body
     assert "Ordered 2 of 3 · Delivered 1 of 3" in body
     assert "To do: Savanna to order" in body
     assert "North Star, Riverbend, Savanna" in body
     assert "RUTF" in body and ">rutf<" not in body
-    assert ">Compare<" in body and "Compare rutf" not in body
+    # Compare moved to the purchase page, where it is the third step (test_purchases.py)
     # the marketplace is not used, so "Restricted" is not said
     assert "Restricted" not in body
     assert "with a reason" not in body
@@ -98,5 +98,5 @@ def test_restricted_is_explained_where_the_marketplace_is_used(client_in_program
         },
     )
     Tender.objects.filter(pk=other["id"]).update(visibility="public", status="open")
-    body = client_in_programme.get(reverse("supply_chain:procurement_tender_board")).content.decode()
+    body = client_in_programme.get(reverse("supply_chain:purchases")).content.decode()
     assert "Invited suppliers only" in body and "Only the suppliers you invited" in body

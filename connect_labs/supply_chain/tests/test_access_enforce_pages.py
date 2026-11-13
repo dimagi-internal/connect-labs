@@ -21,7 +21,7 @@ CONNECT = {"X": 501, "Y": 502, "Z": 503, "W": 504, "N": 505}
 # The main list pages. Each is drawn for one organisation in one programme.
 PAGES = [
     "supply_chain:overview",
-    "supply_chain:procurement_tender_board",
+    "supply_chain:purchases",
     "supply_chain:suppliers",
     "supply_chain:orders",
     "supply_chain:network",
@@ -90,7 +90,7 @@ def test_a_partner_page_with_enforcement_on_is_as_alive_as_with_it_off(w, draw, 
 @pytest.mark.parametrize(
     "name,sentence",
     [
-        ("supply_chain:procurement_tender_board", "You have no tenders in this programme."),
+        ("supply_chain:purchases", "You have no purchases in this program."),
         ("supply_chain:suppliers", "You have no suppliers in this programme."),
         ("supply_chain:orders", "You have no orders in this programme."),
         ("supply_chain:movements", "You have no stock movements in this programme."),
@@ -127,11 +127,11 @@ def test_the_orders_page_lists_only_the_partners_order(w, draw):
 
 def test_the_tender_board_lists_only_the_tenders_the_partner_may_list(w, draw):
     turn_on(worlds.B)
-    mine = draw("supply_chain:procurement_tender_board", worlds.B, "X").content.decode()
-    other = draw("supply_chain:procurement_tender_board", worlds.B, "W").content.decode()
+    mine = draw("supply_chain:purchases", worlds.B, "X").content.decode()
+    other = draw("supply_chain:purchases", worlds.B, "W").content.decode()
     assert "B tender" in mine
     assert "B tender" not in other
-    assert "You have no tenders in this programme." in other
+    assert "You have no purchases in this program." in other
 
 
 def test_tampering_with_the_partner_parameter_shows_nothing_more(w, draw):

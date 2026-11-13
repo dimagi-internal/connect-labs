@@ -159,12 +159,12 @@ def links_issued(links_da, links_world):
 
 
 class TestTheApprovalScreenKeepsItsTab:
-    def test_asking_for_an_approval_still_highlights_sourcing(self, scoped, world):
+    def test_asking_for_an_approval_still_highlights_purchases(self, scoped, world):
         url = reverse("supply_chain:approval_request", args=[world["award"]["id"]])
         response = scoped.get(url)
         assert response.status_code == 200
         body = response.content.decode()
         from connect_labs.supply_chain.navigation import TAB_FOR_VIEW
 
-        assert TAB_FOR_VIEW["supply_chain:approval_request"] == "supply_chain:procurement_tender_board"
-        assert reverse("supply_chain:procurement_tender_board") in body
+        assert TAB_FOR_VIEW["supply_chain:approval_request"] == "supply_chain:purchases"
+        assert reverse("supply_chain:purchases") in body

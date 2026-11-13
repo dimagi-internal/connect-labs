@@ -172,7 +172,7 @@ def test_a_bad_name_is_refused_with_a_message_and_a_safe_redirect(client_in_prog
     response = client_in_program.post(
         reverse("supply_chain:procurement_signed_as"), {"signed_as": "x" * 200, "next": "https://elsewhere.example/"}
     )
-    assert response.status_code == 302 and response["Location"] == reverse("supply_chain:procurement_tender_board")
+    assert response.status_code == 302 and response["Location"] == reverse("supply_chain:purchases")
     assert identity.signature(sfeintuch).source == "handle"
 
 

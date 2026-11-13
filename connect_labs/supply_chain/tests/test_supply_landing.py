@@ -100,8 +100,20 @@ def test_settings_can_keep_a_field_programme_on_the_overview(client_in_programme
 
 
 def test_settings_can_open_any_programme_on_another_tab(client_in_programme):
-    _set({"landing": "supply_chain:orders"})
-    assert client_in_programme.get(reverse("supply_chain:home"))["Location"] == f"/supply/orders/?program_id={PROGRAM}"
+    _set({"landing": "supply_chain:purchases"})
+    assert (
+        client_in_programme.get(reverse("supply_chain:home"))["Location"] == f"/supply/purchases/?program_id={PROGRAM}"
+    )
+
+
+def test_a_landing_saved_as_orders_or_sourcing_opens_on_purchases(client_in_programme):
+    """Sourcing and Orders became Purchases (round 3): a programme that had chosen either still lands somewhere."""
+    for old in ("supply_chain:orders", "supply_chain:procurement_tender_board"):
+        _set({"landing": old})
+        assert (
+            client_in_programme.get(reverse("supply_chain:home"))["Location"]
+            == f"/supply/purchases/?program_id={PROGRAM}"
+        )
 
 
 def test_settings_can_open_on_an_added_tab(client_in_programme):
@@ -177,6 +189,6 @@ def test_settings_says_any_other_programme_opens_on_the_overview(client_in_progr
 
 
 def test_settings_names_a_chosen_landing_and_who_chose_it(client_in_programme):
-    _set({"landing": "supply_chain:orders"})
+    _set({"landing": "supply_chain:purchases"})
     line = _landing_line(client_in_programme)
-    assert "opens on Orders" in line and "this program" in line
+    assert "opens on Purchases" in line and "this program" in line

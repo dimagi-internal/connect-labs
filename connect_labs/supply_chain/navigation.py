@@ -27,8 +27,7 @@ TAB_GROUPS = (
     (
         "Buying",
         (
-            ("supply_chain:procurement_tender_board", "Sourcing"),
-            ("supply_chain:orders", "Orders"),
+            ("supply_chain:purchases", "Purchases"),
             ("supply_chain:suppliers", "Suppliers"),
         ),
     ),
@@ -60,6 +59,15 @@ TAB_GROUPS = (
 
 SUPPLY_TABS = tuple(tab for _, tabs in TAB_GROUPS for tab in tabs)
 
+# The two tabs Purchases replaced, as a programme may still have them switched off in Settings.
+LEGACY_BUYING_TABS = {"supply_chain:procurement_tender_board", "supply_chain:orders"}
+
+
+def canonical_tab(name):
+    """A saved tab name as the tab it is now: Sourcing and Orders are Purchases."""
+    return "supply_chain:purchases" if name in LEGACY_BUYING_TABS else name
+
+
 GROUP_OF_TAB = {name: group for group, tabs in TAB_GROUPS for name, _ in tabs}
 
 # One line per page: what it is for and what you do there, in plain words for a
@@ -70,8 +78,7 @@ PAGE_PURPOSE = {
     # "the entire UI is WAY too text heavy"). Keep each under ~12 words.
     "supply_chain:home": "What is open, and who to chase.",
     "supply_chain:start_here": "What each part is for, step by step.",
-    "supply_chain:procurement_tender_board": "Ask suppliers for prices, compare and choose.",
-    "supply_chain:orders": "What was ordered, and how far each order has got.",
+    "supply_chain:purchases": "Every purchase, from sizing to payment.",
     "supply_chain:suppliers": "The companies you may buy from.",
     "supply_chain:network": "Where stock is kept, and what each place holds.",
     "supply_chain:partners": "Which partner runs which place, and how they hand out.",
@@ -119,6 +126,10 @@ GLOSSARY = {
 # Pages that belong under a tab without being it, so the tab still reads as
 # current when you are one level in.
 TAB_FOR_VIEW = {
+    # The old Sourcing and Orders tabs, now one (round 3): their pages sit under Purchases.
+    "supply_chain:procurement_tender_board": "supply_chain:purchases",
+    "supply_chain:orders": "supply_chain:purchases",
+    "supply_chain:purchase": "supply_chain:purchases",
     # Overview at its own address, which its tab links to: /supply/ itself may
     # open on another tab (landing.py).
     "supply_chain:overview": "supply_chain:home",
@@ -129,19 +140,19 @@ TAB_FOR_VIEW = {
     "supply_chain:worker_detail": "supply_chain:workers",
     "supply_chain:dispensing_rule_create": "supply_chain:stock",
     "supply_chain:dispensing_rule_edit": "supply_chain:stock",
-    "supply_chain:procurement_tender_detail": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_comparison": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_quote_entry": "supply_chain:procurement_tender_board",
+    "supply_chain:procurement_tender_detail": "supply_chain:purchases",
+    "supply_chain:procurement_comparison": "supply_chain:purchases",
+    "supply_chain:procurement_quote_entry": "supply_chain:purchases",
     # A quote's own page had no entry, so landing on it un-highlighted every
     # tab and the nav read as though you had left the domain.
-    "supply_chain:procurement_quote_detail": "supply_chain:procurement_tender_board",
-    "supply_chain:award_detail": "supply_chain:procurement_tender_board",
-    "supply_chain:award_orders_create": "supply_chain:procurement_tender_board",
+    "supply_chain:procurement_quote_detail": "supply_chain:purchases",
+    "supply_chain:award_detail": "supply_chain:purchases",
+    "supply_chain:award_orders_create": "supply_chain:purchases",
     "supply_chain:product_detail": "supply_chain:catalogue",
     "supply_chain:item_detail": "supply_chain:catalogue",
     "supply_chain:supplier_detail": "supply_chain:suppliers",
-    "supply_chain:order_detail": "supply_chain:orders",
-    "supply_chain:shipment_detail": "supply_chain:orders",
+    "supply_chain:order_detail": "supply_chain:purchases",
+    "supply_chain:shipment_detail": "supply_chain:purchases",
     # The checks are the overview's second panel, read in full.
     "supply_chain:checks": "supply_chain:home",
     "supply_chain:alert_create": "supply_chain:alerts",
@@ -166,52 +177,52 @@ TAB_FOR_VIEW = {
     "supply_chain:org_create": "supply_chain:organisations",
     "supply_chain:org_edit": "supply_chain:organisations",
     "supply_chain:org_merge": "supply_chain:organisations",
-    "supply_chain:procurement_tender_create": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_tender_edit": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_tender_splits": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_tender_sizing": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_tender_sizing_apply": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_tender_open": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_tender_close": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_reply_sent": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_tender_duty_terms": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_tender_import_estimates": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_tender_invite_org": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_tender_uninvite_org": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_outreach_log": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_outreach_reply": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_outreach_chase": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_outreach_delete": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_quote_void": "supply_chain:procurement_tender_board",
-    "supply_chain:procurement_quote_correct": "supply_chain:procurement_tender_board",
-    "supply_chain:quote_document_attach": "supply_chain:procurement_tender_board",
-    "supply_chain:tender_document_attach": "supply_chain:procurement_tender_board",
-    "supply_chain:program_document_attach": "supply_chain:procurement_tender_board",
+    "supply_chain:procurement_tender_create": "supply_chain:purchases",
+    "supply_chain:procurement_tender_edit": "supply_chain:purchases",
+    "supply_chain:procurement_tender_splits": "supply_chain:purchases",
+    "supply_chain:procurement_tender_sizing": "supply_chain:purchases",
+    "supply_chain:procurement_tender_sizing_apply": "supply_chain:purchases",
+    "supply_chain:procurement_tender_open": "supply_chain:purchases",
+    "supply_chain:procurement_tender_close": "supply_chain:purchases",
+    "supply_chain:procurement_reply_sent": "supply_chain:purchases",
+    "supply_chain:procurement_tender_duty_terms": "supply_chain:purchases",
+    "supply_chain:procurement_tender_import_estimates": "supply_chain:purchases",
+    "supply_chain:procurement_tender_invite_org": "supply_chain:purchases",
+    "supply_chain:procurement_tender_uninvite_org": "supply_chain:purchases",
+    "supply_chain:procurement_outreach_log": "supply_chain:purchases",
+    "supply_chain:procurement_outreach_reply": "supply_chain:purchases",
+    "supply_chain:procurement_outreach_chase": "supply_chain:purchases",
+    "supply_chain:procurement_outreach_delete": "supply_chain:purchases",
+    "supply_chain:procurement_quote_void": "supply_chain:purchases",
+    "supply_chain:procurement_quote_correct": "supply_chain:purchases",
+    "supply_chain:quote_document_attach": "supply_chain:purchases",
+    "supply_chain:tender_document_attach": "supply_chain:purchases",
+    "supply_chain:program_document_attach": "supply_chain:purchases",
     # Asking for an approval, attaching its letter and answering it are all
     # read from the award, which sits under Sourcing.
-    "supply_chain:approval_request": "supply_chain:procurement_tender_board",
-    "supply_chain:approval_document_attach": "supply_chain:procurement_tender_board",
-    "supply_chain:approval_decide": "supply_chain:procurement_tender_board",
+    "supply_chain:approval_request": "supply_chain:purchases",
+    "supply_chain:approval_document_attach": "supply_chain:purchases",
+    "supply_chain:approval_decide": "supply_chain:purchases",
     # Placing the order is the first Orders screen, not the last Sourcing one.
-    "supply_chain:contract_create": "supply_chain:orders",
-    "supply_chain:contract_edit": "supply_chain:orders",
-    "supply_chain:invoice_record": "supply_chain:orders",
-    "supply_chain:invoice_edit": "supply_chain:orders",
-    "supply_chain:invoice_dispute": "supply_chain:orders",
-    "supply_chain:charge_record": "supply_chain:orders",
-    "supply_chain:payment_record": "supply_chain:orders",
-    "supply_chain:advance_payment_record": "supply_chain:orders",
-    "supply_chain:contract_commitment_record": "supply_chain:orders",
-    "supply_chain:tender_commitment_record": "supply_chain:procurement_tender_board",
+    "supply_chain:contract_create": "supply_chain:purchases",
+    "supply_chain:contract_edit": "supply_chain:purchases",
+    "supply_chain:invoice_record": "supply_chain:purchases",
+    "supply_chain:invoice_edit": "supply_chain:purchases",
+    "supply_chain:invoice_dispute": "supply_chain:purchases",
+    "supply_chain:charge_record": "supply_chain:purchases",
+    "supply_chain:payment_record": "supply_chain:purchases",
+    "supply_chain:advance_payment_record": "supply_chain:purchases",
+    "supply_chain:contract_commitment_record": "supply_chain:purchases",
+    "supply_chain:tender_commitment_record": "supply_chain:purchases",
     "supply_chain:commitment_resolve": "supply_chain:home",
-    "supply_chain:payment_confirm": "supply_chain:orders",
-    "supply_chain:document_attach": "supply_chain:orders",
-    "supply_chain:shipment_record": "supply_chain:orders",
-    "supply_chain:shipment_status": "supply_chain:orders",
-    "supply_chain:shipment_document_attach": "supply_chain:orders",
-    "supply_chain:shipment_require_document": "supply_chain:orders",
-    "supply_chain:shipment_unrequire_document": "supply_chain:orders",
-    "supply_chain:receipt_record": "supply_chain:orders",
+    "supply_chain:payment_confirm": "supply_chain:purchases",
+    "supply_chain:document_attach": "supply_chain:purchases",
+    "supply_chain:shipment_record": "supply_chain:purchases",
+    "supply_chain:shipment_status": "supply_chain:purchases",
+    "supply_chain:shipment_document_attach": "supply_chain:purchases",
+    "supply_chain:shipment_require_document": "supply_chain:purchases",
+    "supply_chain:shipment_unrequire_document": "supply_chain:purchases",
+    "supply_chain:receipt_record": "supply_chain:purchases",
     "supply_chain:supply_point_create": "supply_chain:network",
     "supply_chain:supply_point_edit": "supply_chain:network",
     "supply_chain:movement_record": "supply_chain:stock",
@@ -349,7 +360,11 @@ def hidden_tabs(request) -> set[str]:
     """Built-in tabs the programme in view has turned off in Settings (never Overview)."""
     from connect_labs.supply_chain.config import hidden_from
 
-    return hidden_from(_program_tabs(request))
+    hidden = hidden_from(_program_tabs(request))
+    # Sourcing and Orders became one Purchases tab: a programme that had turned off both has no use for it either.
+    if LEGACY_BUYING_TABS <= hidden:
+        hidden = hidden | {"supply_chain:purchases"}
+    return hidden
 
 
 def scoped_url(request, name: str, args=None, program_id=None) -> str:
@@ -417,7 +432,8 @@ def supply_tabs(request) -> list[dict]:
     # Tabs a programme ADDS sit after the tab they name (`after`), by default with
     # the stock pages; one naming a tab that is not there goes at the end.
     for pin in (p for p in pins if not p.replaces):
-        anchor = pin.after if pin.after in keys else f"pin:{pin.after}"
+        after = "supply_chain:purchases" if pin.after in LEGACY_BUYING_TABS else pin.after
+        anchor = after if after in keys else f"pin:{after}"
         at = keys.index(anchor) + 1 if anchor in keys else len(tabs)
         # After any added tab already placed behind the same anchor, so position order holds.
         while at < len(keys) and keys[at].startswith("pin:"):

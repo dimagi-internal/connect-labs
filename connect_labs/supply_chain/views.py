@@ -248,7 +248,7 @@ def _destination(audience, items):
     # the board is the honest landing place rather than picking one.
     if len(tenders) == 1:
         return reverse("supply_chain:procurement_comparison", args=[tenders.pop()])
-    return reverse("supply_chain:procurement_tender_board")
+    return reverse("supply_chain:purchases")
 
 
 class DomainHomeView(OperationBase):

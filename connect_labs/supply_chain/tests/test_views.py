@@ -33,7 +33,7 @@ def sophie(client, django_user_model):
 
 def test_the_tender_board_renders(client, sophie):
     with patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=[]):
-        response = client.get(reverse("supply_chain:procurement_tender_board"))
+        response = client.get(reverse("supply_chain:purchases"))
     assert response.status_code == 200
 
 
@@ -97,9 +97,9 @@ def test_the_domain_home_does_not_500_with_no_programme_selected(client, sophie)
 
 
 def test_the_tender_board_does_not_500_with_no_programme_selected(client, sophie):
-    response = client.get(reverse("supply_chain:procurement_tender_board"))
+    response = client.get(reverse("supply_chain:purchases"))
     assert response.status_code == 200
-    assert "No programme selected" in response.content.decode()
+    assert "No program selected" in response.content.decode()
 
 
 def test_the_tender_board_does_not_offer_record_a_quote_with_no_programme_selected(client, sophie):
@@ -110,7 +110,7 @@ def test_the_tender_board_does_not_offer_record_a_quote_with_no_programme_select
     raised the same finding-3 ValueError. Marked by its icon, since the nav
     link (base.html) has the same text and href on every supply_chain page
     regardless of context."""
-    response = client.get(reverse("supply_chain:procurement_tender_board"))
+    response = client.get(reverse("supply_chain:purchases"))
     body = response.content.decode()
     assert response.status_code == 200
     assert "fa-plus mr-1" not in body

@@ -280,7 +280,7 @@ class TenderSplitsView(OperationFormView):
 
     def breadcrumb(self, **kwargs):
         return [
-            {"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")},
+            {"label": "Purchases", "href": reverse("supply_chain:purchases")},
             {"label": self.tender().label, "href": self.cancel_href()},
             {"label": "Split between partners"},
         ]

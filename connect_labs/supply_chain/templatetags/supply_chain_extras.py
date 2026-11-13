@@ -1015,7 +1015,7 @@ def source_stages(source):
     differently without fighting a format baked into the data.
     """
     evaluation = source["evaluation"]
-    sourcing = reverse("supply_chain:procurement_tender_board")
+    sourcing = reverse("supply_chain:purchases")
 
     return [
         _cell(

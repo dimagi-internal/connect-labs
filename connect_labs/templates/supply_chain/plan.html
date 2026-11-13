@@ -313,11 +313,11 @@ plain words, and each step says where it came from.
           If every remaining child needs {% if c.key == "carton" %}a full carton{% else %}the maximum {{ c.course|floatformat:"0g" }} sachets{% endif %}, buy about <b>{{ c.to_buy|floatformat:"0g" }}</b> more sachets.{% else %}
           Stock covers the case where every remaining child needs {% if c.key == "carton" %}a full carton{% else %}the maximum course{% endif %}.{% endif %}
         {% endfor %}
-        The quantity to carry into the next <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_board' %}">tender</a> is the larger of the two.
+        The quantity to carry into the next <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:purchases' %}">tender</a> is the larger of the two.
       {% elif b.known %}
         {% if b.to_buy and b.to_buy != "0" %}
           To reach the target, buy about <b>{{ b.to_buy|floatformat:"0g" }}</b> more sachets, in the next
-          <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_board' %}">tender</a>.
+          <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:purchases' %}">tender</a>.
         {% else %}
           The stock left covers the target: nothing more is needed to reach it.
         {% endif %}

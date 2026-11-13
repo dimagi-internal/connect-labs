@@ -33,11 +33,19 @@ def da():
 @pytest.fixture
 def client_in_programme(client, django_user_model, settings, monkeypatch, da):
     from connect_labs.supply_chain import api_views, form_views, views  # noqa: F401  -- bind before patching
+    from connect_labs.supply_chain.procurement import purchase_views  # noqa: F401
     from connect_labs.supply_chain.procurement import views as procurement_views  # noqa: F401
     from connect_labs.supply_chain.stock import visit_views  # noqa: F401
 
     settings.MIDDLEWARE = [*settings.MIDDLEWARE, f"{__name__}._InProgramme"]
-    for module in ("api_views", "form_views", "views", "stock.visit_views", "procurement.views"):
+    for module in (
+        "api_views",
+        "form_views",
+        "views",
+        "stock.visit_views",
+        "procurement.views",
+        "procurement.purchase_views",
+    ):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", lambda request: da)
     client.force_login(django_user_model.objects.create_user(username="pm", password="x"))
     # The runner's page data is WorkflowRunView's; here only the supply frame around it is under test.
@@ -128,7 +136,7 @@ def test_a_past_day_offers_no_new_tender_quote_or_order(client_in_programme, da)
 
     yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
     for name, controls in (
-        ("supply_chain:procurement_tender_board", ("New tender", "Record a quote")),
+        ("supply_chain:purchases", ("New purchase", "Record a purchase outside a tender")),
         ("supply_chain:orders", ("New order",)),
     ):
         today = client_in_programme.get(reverse(name)).content.decode()
