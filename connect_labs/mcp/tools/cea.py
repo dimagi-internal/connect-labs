@@ -10,8 +10,8 @@ Public inputs and arithmetic on vendored models: nothing here is specific to the
 ``targeting:read`` scope with the targeting tools.
 
 ``cea_opportunities`` is the other half: the same models applied to what Connect actually delivered, read
-from ``effectiveness.implementation`` (the Implementation tab's figures, one function for every roll-up). It carries what
-each opportunity cost and how many people it reached, so it is for full tokens only, not the
+from ``effectiveness.implementation`` (the Implementations page's figures, one function for every roll-up). It
+carries what each opportunity cost and how many people it reached, so it is for full tokens only, not the
 no-visit-data ones.
 """
 
