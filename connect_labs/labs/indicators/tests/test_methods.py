@@ -267,8 +267,8 @@ class TestInterventionCosting:
     """A cost is a unit price and a unit of measure — both must be fixed."""
 
     def test_every_intervention_resolves_to_a_real_count(self):
+        from connect_labs.effectiveness import interventions
         from connect_labs.labs.indicators import measures
-        from connect_labs.scenarios import interventions
 
         for i in interventions.all_interventions():
             m = i.cases_measure()
@@ -277,7 +277,7 @@ class TestInterventionCosting:
             measures.get(i.targets)
 
     def test_every_intervention_states_a_caveat(self):
-        from connect_labs.scenarios import interventions
+        from connect_labs.effectiveness import interventions
 
         # A costed number with no stated caveat is the one most likely to be
         # quoted back at us.
@@ -285,14 +285,14 @@ class TestInterventionCosting:
             assert i.caveat, i.slug
 
     def test_cost_is_units_times_unit_price(self):
-        from connect_labs.scenarios import interventions
+        from connect_labs.effectiveness import interventions
 
         assert interventions.cost(1_000, 60.0) == 60_000
         assert interventions.cost(1_000, 2.5) == 2_500
 
     def test_each_basis_maps_to_a_count(self):
+        from connect_labs.effectiveness import interventions
         from connect_labs.labs.indicators import measures
-        from connect_labs.scenarios import interventions
 
         for basis in interventions.UnitBasis:
             m = interventions.measure_for(basis, "u5mr")
@@ -326,7 +326,7 @@ class TestInterventionCosting:
         assert measure_for(UnitBasis.DISEASE_CASE, "stunting") is None
 
     def test_registering_an_impossible_basis_is_rejected(self):
-        from connect_labs.scenarios import interventions
+        from connect_labs.effectiveness import interventions
 
         with pytest.raises(ValueError, match="no count"):
             interventions.register(

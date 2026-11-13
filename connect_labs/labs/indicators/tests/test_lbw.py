@@ -15,13 +15,13 @@ from pathlib import Path
 import pytest
 from django.core.management import call_command
 
+from connect_labs.effectiveness import interventions
 from connect_labs.labs.indicators import export, measures, policy
 from connect_labs.labs.indicators.africa import ISO_CODES, M49_SUBREGION
 from connect_labs.labs.indicators.models import IndicatorValue, Source
 from connect_labs.labs.indicators.resolve import carried_for, resolve, select_above
 from connect_labs.labs.indicators.sources import base, derive, dhs, unicef_lbw
 from connect_labs.labs.indicators.tests.test_resolve import make_boundary, set_value
-from connect_labs.scenarios import interventions
 
 pytestmark = pytest.mark.django_db
 

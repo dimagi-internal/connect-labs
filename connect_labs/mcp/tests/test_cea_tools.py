@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from connect_labs.impact import explore
+from connect_labs.effectiveness import explore
 from connect_labs.labs import canopy
 from connect_labs.mcp import token_scopes
 from connect_labs.mcp.tool_registry import MCPToolError
@@ -105,7 +105,7 @@ def _row(i, **kw):
 class TestOpportunities:
     @pytest.fixture
     def ranking(self, monkeypatch):
-        from connect_labs.pulse import cea
+        from connect_labs.effectiveness import implementation as cea
 
         rows = [
             _row(1),
@@ -139,7 +139,7 @@ class TestOpportunities:
         assert got["shown"] == 1 and got["count"] == 3 and got["rollup"]["opportunities"] == 3
 
     def test_detail_needs_one_opportunity_and_returns_the_explorer_links(self, ranking, monkeypatch):
-        from connect_labs.pulse import cea as pulse_cea
+        from connect_labs.effectiveness import implementation as pulse_cea
 
         monkeypatch.setattr(
             pulse_cea,

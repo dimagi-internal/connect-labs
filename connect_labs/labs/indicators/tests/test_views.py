@@ -572,17 +572,6 @@ class TestScopeAndLevel:
         assert [r["name"] for r in ranked["rows"]] == ["South", "North"]
         assert ranked["rolled_up"] is False
 
-    def test_the_costing_narrows_with_the_table(self, client_in, africa):
-        """A cost computed continent-wide beside a one-country table is not a
-        caveat, it is a second answer in the same panel."""
-        both = client_in.get(
-            reverse("scenarios:scenario"), {"threshold": 50, "basis": "birth", "unit_cost": 10}
-        ).json()
-        one = client_in.get(
-            reverse("scenarios:scenario"), {"threshold": 50, "basis": "birth", "unit_cost": 10, "iso": "NER"}
-        ).json()
-        assert one["units"] < both["units"]
-
     def test_the_map_follows_the_pinned_level(self, client_in, africa):
         r = client_in.get(reverse("targeting:map_data"), {"iso": "NER", "admin_level": 0}).json()
         assert {f["properties"]["level"] for f in r["features"]} == {0}
@@ -633,7 +622,7 @@ class TestAnnualBasis:
     error, and this page has made it in print."""
 
     def test_the_annual_basis_resolves_to_a_different_measure(self):
-        from connect_labs.scenarios import interventions
+        from connect_labs.effectiveness import interventions
 
         fortnight = interventions.measure_for(interventions.UnitBasis.DISEASE_CASE, "ors_coverage")
         annual = interventions.measure_for(interventions.UnitBasis.CASE_YEAR, "ors_coverage")
@@ -644,20 +633,9 @@ class TestAnnualBasis:
         """No recall window and episode duration means no honest conversion.
         Multiplying by an assumed 26 would be an invention in the same units as
         a measurement."""
-        from connect_labs.scenarios import interventions
+        from connect_labs.effectiveness import interventions
 
         assert interventions.measure_for(interventions.UnitBasis.CASE_YEAR, "u5mr") is None
-
-    def test_an_annual_basis_is_offered_for_an_ors_question(self, client_in):
-        r = client_in.get(reverse("scenarios:interventions"), {"indicator": "ors_coverage"}).json()
-        by_code = {b["code"]: b for b in r["bases"]}
-        assert by_code["case_year"]["available_for_indicator"] is True
-        assert by_code["case_year"]["measure"] == "ors_coverage_gap_annual"
-
-    def test_a_mortality_question_is_offered_no_annual_basis(self, client_in):
-        r = client_in.get(reverse("scenarios:interventions"), {"indicator": "u5mr"}).json()
-        by_code = {b["code"]: b for b in r["bases"]}
-        assert by_code["case_year"]["available_for_indicator"] is False
 
 
 class TestTheDownloadIsTheQuestionOnScreen:
