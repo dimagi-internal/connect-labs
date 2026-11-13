@@ -47,7 +47,7 @@ class TestEngineLayer:
         """Labels and sources come from the spec; the page builds nodes with textContent, so none is parsed as HTML."""
         from pathlib import Path
 
-        page = Path(__file__).resolve().parents[2] / "templates" / "impact" / "models.html"
+        page = Path(__file__).resolve().parents[2] / "templates" / "effectiveness" / "models.html"
         assert "innerHTML" not in page.read_text(encoding="utf-8")
 
     def test_unknown_inputs_and_non_numbers_are_refused_by_name(self):

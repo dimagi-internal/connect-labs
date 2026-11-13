@@ -6,8 +6,9 @@ from decimal import Decimal
 import pytest
 from django.urls import reverse
 
-from connect_labs.effectiveness import costs, explore
+from connect_labs.effectiveness import explore
 from connect_labs.effectiveness import implementation as cea
+from connect_labs.pulse import costs
 from connect_labs.pulse.models import PulseCostEntry, PulseEvent, PulseOpportunity, PulseProgram, PulseWork
 
 D = Decimal

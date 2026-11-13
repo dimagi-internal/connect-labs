@@ -4,7 +4,7 @@
     python manage.py effectiveness_vendor                                    # derive only
 
 Labs runs the models' own formulas from ``connect_labs/effectiveness/data/<model>.json``.
-``pulse/data/cea_models.json`` keeps each country's name and alpha-3 code, the
+``effectiveness/data/cea_models.json`` keeps each country's name and alpha-3 code, the
 models' labels and Sheet links, and GiveWell's bar; its numbers (multiple, price
 and deaths averted per 100,000 at the country's own figures) are worked out here
 from the specs, never typed, so the two cannot disagree.
@@ -23,11 +23,11 @@ from django.core.management.base import BaseCommand, CommandError
 from connect_labs.effectiveness import engine
 from connect_labs.effectiveness import result as impact_result
 
-SUMMARY = Path(__file__).resolve().parents[3] / "pulse" / "data" / "cea_models.json"
+SUMMARY = Path(__file__).resolve().parents[2] / "data" / "cea_models.json"
 
 
 class Command(BaseCommand):
-    help = "Vendor connect-cea-models' spec.json files and re-derive pulse/data/cea_models.json from them."
+    help = "Vendor connect-cea-models' spec.json files and re-derive effectiveness/data/cea_models.json from them."
 
     def add_arguments(self, parser):
         parser.add_argument(

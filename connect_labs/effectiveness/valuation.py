@@ -21,7 +21,7 @@ from pathlib import Path
 
 from connect_labs.effectiveness import engine
 
-SUMMARY = Path(__file__).resolve().parents[1] / "pulse" / "data" / "cea_models.json"
+SUMMARY = Path(__file__).with_name("data") / "cea_models.json"
 
 
 @dataclass(frozen=True)
@@ -74,7 +74,7 @@ UNITS_PER_DEATH = Parameter(
     "Connect CHC model: moral weight / mortality share of benefits x excluded effects x leveraging x funging",
 )
 BENCHMARK = Parameter(benchmark(), "Connect models' input `benchmark`: units of value per $ that is GiveWell's 1x")
-BAR = Parameter(bar(), "GiveWell's bar for new grants, as vendored in pulse/data/cea_models.json (`bar_x`)")
+BAR = Parameter(bar(), "GiveWell's bar for new grants, as vendored in effectiveness/data/cea_models.json (`bar_x`)")
 
 
 def multiple(deaths_averted: float, spend: float) -> float:

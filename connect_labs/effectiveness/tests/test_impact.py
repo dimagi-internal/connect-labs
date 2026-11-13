@@ -14,12 +14,13 @@ from django.contrib.gis.geos import MultiPolygon, Polygon
 from django.urls import reverse
 from django.utils import timezone
 
-from connect_labs.effectiveness import baseline, costs, engine
+from connect_labs.effectiveness import baseline, engine
 from connect_labs.effectiveness import implementation as cea
 from connect_labs.effectiveness import places, result
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators import policy
 from connect_labs.labs.indicators.models import IndicatorValue, License
+from connect_labs.pulse import costs
 from connect_labs.pulse.models import PulseEvent, PulseOpportunity, PulseWork
 
 SUMMARY = json.loads((cea.DATA).read_text(encoding="utf-8"))
@@ -51,7 +52,7 @@ class TestEngine:
         assert round(engine.run("mbw", column="check1")["x"], 2) == 13.54
 
     def test_the_per_country_summary_is_derived_from_the_specs(self):
-        # pulse/data/cea_models.json is written by `effectiveness_vendor` from the specs, never typed.
+        # effectiveness/data/cea_models.json is written by `effectiveness_vendor` from the specs, never typed.
         for iso2, c in SUMMARY["countries"].items():
             for m in engine.MODELS:
                 r = result.model_country_result(m, c["iso3"])
