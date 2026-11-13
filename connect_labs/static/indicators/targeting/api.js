@@ -70,25 +70,6 @@
           withThreshold(['resolution=' + encodeURIComponent(resolution)]),
       );
     },
-    scenario: function () {
-      var S = state.get();
-      return getJSON(
-        urls.scenario +
-          withThreshold(
-            [
-              'basis=' + encodeURIComponent(S.basis),
-              'unit_cost=' + S.unitCost,
-            ].concat(
-              S.preset ? ['intervention=' + encodeURIComponent(S.preset)] : [],
-            ),
-          ),
-      );
-    },
-    interventions: function (indicator) {
-      return getJSON(
-        urls.interventions + '?indicator=' + encodeURIComponent(indicator),
-      );
-    },
     downloadHref: function () {
       return urls.download + withThreshold();
     },

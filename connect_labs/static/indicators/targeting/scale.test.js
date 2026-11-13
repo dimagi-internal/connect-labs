@@ -115,13 +115,7 @@ describe('state invalidation', () => {
   });
 
   it('orders channels coarse to fine', () => {
-    expect(state.CHANNELS).toEqual([
-      'methods',
-      'scope',
-      'map',
-      'selection',
-      'costing',
-    ]);
+    expect(state.CHANNELS).toEqual(['methods', 'scope', 'map', 'selection']);
   });
 
   it('every invalidation names a real channel', () => {
@@ -138,7 +132,7 @@ describe('per-channel tickets', () => {
   it('gives every channel its own ticket', () => {
     // One global ticket meant any later apply cancelled any earlier one, even
     // when they touched nothing in common: nudging the threshold and then
-    // editing the unit cost cancelled the selection fetch still in flight, and
+    // changing the level cancelled the selection fetch still in flight, and
     // the table went on showing the previous answer under the new slider
     // value. Fifteen counties where the truth was none, with no error.
     state.CHANNELS.forEach((c) => {
@@ -150,11 +144,11 @@ describe('per-channel tickets', () => {
 
   it('does not treat one channel’s ticket as another’s', () => {
     const sel = state.ticket('selection');
-    const cost = state.ticket('costing');
-    // Distinct counters. If these were the same variable, a costing run would
+    const map = state.ticket('map');
+    // Distinct counters. If these were the same variable, a map run would
     // invalidate a selection run and vice versa — which is the bug.
     expect(state.isCurrent('selection', sel)).toBe(true);
-    expect(state.isCurrent('costing', cost)).toBe(true);
+    expect(state.isCurrent('map', map)).toBe(true);
   });
 });
 
@@ -257,7 +251,7 @@ describe('a channel that cannot answer', () => {
     const ran = [];
     state.setErrorHandler((err, channel) => seen.push(channel));
     state.register('methods', () => Promise.reject(new Error('no server')));
-    ['scope', 'map', 'selection', 'costing'].forEach((c) =>
+    ['scope', 'map', 'selection'].forEach((c) =>
       state.register(c, () => ran.push(c)),
     );
 
@@ -381,7 +375,7 @@ describe('the line above the totals', () => {
     });
     expect(text).toBe(
       'Totals for the 28 areas where Under-5 mortality rate is above 80 per 1,000 live births' +
-        ' — only part of Nigeria · as published, not projected to a delivery year',
+        ' — only part of Nigeria',
     );
   });
 
@@ -396,7 +390,7 @@ describe('the line above the totals', () => {
     });
     expect(text).toBe(
       'Totals for the 190 areas where Under-5 mortality rate is above 80 per 1,000 live births' +
-        ' — only part of 4 countries · as published, not projected to a delivery year',
+        ' — only part of 4 countries',
     );
   });
 

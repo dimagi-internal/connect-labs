@@ -29,21 +29,16 @@
     // meaningful on the scale it was chosen for — 80 per 1,000 carried onto a
     // percentage measure selects almost nothing and reads as missing data.
     thresholdFor: null,
-    // The costing laid over it.
-    basis: null,
-    unitCost: null,
-    preset: null,
     // Reference data fetched from the server.
     methodInfo: null,
     scopeInfo: null,
-    costInfo: null,
     indicatorMeta: {},
   };
 
   // What each field makes stale. Ordered coarse to fine: a channel implies
   // every channel after it, because you cannot honestly paint a selection over
   // a map that is still showing the previous question.
-  var CHANNELS = ['methods', 'scope', 'map', 'selection', 'costing'];
+  var CHANNELS = ['methods', 'scope', 'map', 'selection'];
 
   var INVALIDATES = {
     // A different indicator can be answered by different methods and measured
@@ -59,9 +54,6 @@
     rollup: 'selection',
     year: 'selection',
     threshold: 'selection',
-    basis: 'costing',
-    unitCost: 'costing',
-    preset: 'costing',
   };
 
   var handlers = {};
