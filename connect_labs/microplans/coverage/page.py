@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 
+from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import JsonResponse
 from django.utils.decorators import method_decorator
@@ -44,6 +45,8 @@ def run(request, body: dict) -> dict:
         )
     rows = read.read_households(caller, space, spec, agent=False)
     result = check.run_check(rows, spec)
+    for area in result["areas"]:
+        area["district"] = labels.get(area["group"])
     result["total"] = check.total_row(result)
     result["rollup"] = check.rollup(result, labels) if labels else []
     result["opportunities"] = [o.id for o in space.selection.opportunities]
@@ -53,6 +56,12 @@ def run(request, body: dict) -> dict:
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class BuildingsReachedPage(LoginRequiredMixin, TemplateView):
     template_name = "microplans/buildings_reached.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # The public Mapbox token the other microplans maps use; without one the page shows its tables only.
+        context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
+        return context
 
 
 class BuildingsReachedRun(LoginRequiredMixin, View):

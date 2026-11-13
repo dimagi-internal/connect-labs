@@ -66,6 +66,11 @@ class CheckSpec:
     off_area_m: float = 33000.0
     #: The microplanner's building cleaning (``FilterConfig``): any subset of its fields.
     footprint_filters: dict = field(default_factory=dict)
+    #: Also return the catchments gridded into square cells of this many metres (a map's cells); None leaves it out.
+    #: A cell holding fewer than ``min_cell_buildings`` buildings is not returned, so a cell never stands for a
+    #: household or two (the counts in the tables still include its buildings).
+    cell_m: float | None = None
+    min_cell_buildings: int = 5
 
     @classmethod
     def from_dict(cls, data: dict | None) -> CheckSpec:
@@ -98,6 +103,10 @@ class CheckSpec:
             raise SpecError("set exactly one of catchment_k and catchment_radius_m")
         if self.max_dist_m <= 0:
             raise SpecError("max_dist_m must be positive")
+        if self.cell_m is not None and not 20 <= self.cell_m <= 2000:
+            raise SpecError("cell_m must be between 20 and 2000 metres")
+        if self.min_cell_buildings < 1:
+            raise SpecError("min_cell_buildings must be at least 1")
         bad = sorted(set(self.footprint_filters) - set(FilterConfig.__dataclass_fields__))
         if bad:
             raise SpecError(f"unknown footprint filter(s): {', '.join(bad)}")
@@ -215,6 +224,37 @@ def catchment(spec: CheckSpec, facility: dict, fetch) -> tuple[pd.DataFrame, flo
     return blds.iloc[order].reset_index(drop=True), float(dist[order].max())
 
 
+def cells(blds: pd.DataFrame, masks: dict, lon0: float, lat0: float, size_m: float, min_buildings: int) -> dict:
+    """A catchment's buildings gridded into square cells, with how many of each were reached in each cycle.
+
+    ``masks`` maps a cycle to the per-building reached flags. The grid is anchored on the facility, so it does not
+    depend on where visits happened. Cells under ``min_buildings`` are left out. Returns the cell size in degrees
+    and rows ``[lon, lat, buildings, [reached per cycle, in the order of "cycles"]]`` (the cell's centre)."""
+    d_lat = size_m / 111_320.0
+    d_lon = size_m / (111_320.0 * max(np.cos(np.radians(lat0)), 1e-6))
+    order = sorted(masks)
+    gi = np.floor((blds["lon"].to_numpy(float) - lon0) / d_lon).astype(int)
+    gj = np.floor((blds["lat"].to_numpy(float) - lat0) / d_lat).astype(int)
+    frame = pd.DataFrame({"gi": gi, "gj": gj, "n": 1})
+    for c in order:
+        frame[f"r{c}"] = masks[c].astype(int)
+    grouped = frame.groupby(["gi", "gj"], sort=True).sum().reset_index()
+    rows = []
+    for rec in grouped.itertuples(index=False):
+        if rec.n < min_buildings:
+            continue
+        reached_counts = [int(getattr(rec, f"r{c}")) for c in order]
+        rows.append(
+            [
+                round(float(lon0 + (rec.gi + 0.5) * d_lon), 6),
+                round(float(lat0 + (rec.gj + 0.5) * d_lat), 6),
+                int(rec.n),
+                reached_counts,
+            ]
+        )
+    return {"size_m": size_m, "d_lon": d_lon, "d_lat": d_lat, "cycles": order, "rows": rows}
+
+
 def run_check(rows, spec: CheckSpec, fetch=None) -> dict:
     """Run the check over ``rows`` (``points_sql`` rows). ``fetch(lon, lat, radius_m)`` returns cleaned buildings."""
     spec.validate()
@@ -243,12 +283,15 @@ def run_check(rows, spec: CheckSpec, fetch=None) -> dict:
         usable = dict(zip(kept["hh"], zip(kept["lon"], kept["lat"])))
         cycles = sorted({c for s in mine["cycles"] for c in s})
         by_cycle = {}
+        masks = {}
         for c in cycles:
             seen = [h for h, s in zip(mine["hh"], mine["cycles"]) if c in s]
             pts = pd.DataFrame([{"lon": usable[h][0], "lat": usable[h][1], "cycle": c} for h in seen if h in usable])
             if not len(pts):
                 pts = pd.DataFrame({"lon": [], "lat": [], "cycle": []})
             res = reached.reached_by_cycle(blds, pts, max_dist_m=spec.max_dist_m, cycles=[c])
+            if spec.cell_m:
+                masks[c] = reached.reached_mask(blds, pts, max_dist_m=spec.max_dist_m)
             by_cycle[c] = {
                 "households_visited": len(seen),
                 "households_unplaced": sum(1 for h in seen if h not in usable),
@@ -260,6 +303,7 @@ def run_check(rows, spec: CheckSpec, fetch=None) -> dict:
                 "group": gid,
                 "buildings": len(blds),
                 "catchment_radius_m": round(radius, 1),
+                "facility": [flon, flat],
                 "households": len(mine),
                 "data_quality": {
                     "no_point": int(len(mine) - len(located)),
@@ -269,6 +313,11 @@ def run_check(rows, spec: CheckSpec, fetch=None) -> dict:
                     "usable": quality.valid,
                 },
                 "cycles": by_cycle,
+                **(
+                    {"cells": cells(blds, masks, flon, flat, spec.cell_m, spec.min_cell_buildings)}
+                    if spec.cell_m and len(blds)
+                    else {}
+                ),
             }
         )
     unknown = sorted(set(hh["grp"].astype(str)) - set(facilities))
@@ -316,10 +365,16 @@ def rollup(result: dict, labels: dict) -> list[dict]:
     for label, areas in sorted(gathered.items()):
         head = total_row({"areas": areas})
         quality = {k: sum(a["data_quality"][k] for a in areas) for k in areas[0]["data_quality"]}
+        points = [a["facility"] for a in areas if a.get("facility")]
         out.append(
             {
                 "label": label,
                 "areas": len(areas),
+                "center": (
+                    [sum(p[0] for p in points) / len(points), sum(p[1] for p in points) / len(points)]
+                    if points
+                    else None
+                ),
                 "households": sum(a["households"] for a in areas),
                 "data_quality": quality,
                 **head,

@@ -69,6 +69,8 @@ def build_spec(body: dict) -> tuple[check.CheckSpec, dict, list[int]]:
         "facilities": facilities,
         "max_dist_m": _number(body, "max_dist_m", 30.0, 1.0, 500.0),
         "catchment_k": int(_number(body, "catchment_k", 260, 10, 5000)),
+        # The page draws the catchments as a map of cells; a cell under five buildings is never drawn.
+        "cell_m": 100.0,
     }
     for key in ("household_path", "cycle_path", "group_path"):
         if body.get(key):

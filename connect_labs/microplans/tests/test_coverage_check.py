@@ -155,3 +155,59 @@ def test_a_cycle_run_in_only_some_areas_is_measured_against_those_areas_only():
     assert tot["buildings"] == 120
     assert tot["cycles"][1]["buildings"] == 120 and tot["cycles"][2]["buildings"] == 60
     assert tot["cycles"][2]["share"] == pytest.approx(tot["cycles"][2]["buildings_reached"] / 60)
+
+
+# --- cells: the catchment gridded for a map ------------------------------------------------------------
+
+
+def test_cells_grid_the_catchment_and_count_reached_per_cycle():
+    blds = _village(100, spacing=40)
+    rows = [["C1", f"hh{i}", gps(i), "contact_1" if i % 2 == 0 else "contact_2"] for i in range(0, 100, 3)]
+    out = check.run_check(rows, spec(cell_m=100), fetch)
+    (area,) = out["areas"]
+    grid = area["cells"]
+    assert grid["size_m"] == 100 and grid["cycles"] == [1, 2]
+    assert sum(r[2] for r in grid["rows"]) <= len(blds)  # cells under the floor are left out, never invented
+    assert all(r[2] >= 5 for r in grid["rows"])
+    assert all(0 <= x <= r[2] for r in grid["rows"] for x in r[3])
+    assert area["facility"] == [FACILITY["lon"], FACILITY["lat"]]
+
+
+def test_a_cell_under_the_floor_is_not_returned_but_its_buildings_still_count():
+    rows = [["C1", "hh0", gps(0), "contact_1"]]
+    with_cells = check.run_check(rows, spec(cell_m=100, min_cell_buildings=10_000), fetch)
+    (area,) = with_cells["areas"]
+    assert area["cells"]["rows"] == []
+    assert area["buildings"] == 60  # the table's denominator is untouched by the map's floor
+
+
+def test_no_cells_unless_asked_and_a_bad_cell_size_is_refused():
+    rows = [["C1", "hh0", gps(0), "contact_1"]]
+    assert "cells" not in check.run_check(rows, spec(), fetch)["areas"][0]
+    with pytest.raises(check.SpecError):
+        spec(cell_m=5)
+
+
+def test_the_rollup_carries_the_centre_of_its_facilities():
+    result = {
+        "areas": [
+            {
+                "group": "A",
+                "facility": [8.0, 13.0],
+                "buildings": 10,
+                "households": 1,
+                "data_quality": {"usable": 1},
+                "cycles": {},
+            },
+            {
+                "group": "B",
+                "facility": [8.2, 13.2],
+                "buildings": 10,
+                "households": 1,
+                "data_quality": {"usable": 1},
+                "cycles": {},
+            },
+        ]
+    }
+    (row,) = check.rollup(result, {"A": "D1", "B": "D1"})
+    assert row["center"] == pytest.approx([8.1, 13.1])
