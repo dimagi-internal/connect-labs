@@ -79,7 +79,7 @@ class TestPageAndApi:
         assert got.status_code == 200 and got.json()["selection"]["indicator"] == "u5mr"
 
     def test_the_old_baseline_page_points_to_market_size(self, client_in):
-        body = client_in.get(reverse("targeting:index")).content.decode()
+        body = client_in.get(reverse("indicators:index")).content.decode()
         assert "Health indicators" in body and reverse("cea:market") in body
 
     def test_everywhere_means_no_threshold_on_the_widest_indicator(self, client_in):

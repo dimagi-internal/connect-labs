@@ -1,8 +1,8 @@
 """Seed a programme's catalogue with the CMAM reference set.
 
 A management command and not an MCP tool, which is how every other bootstrap
-in this codebase is reached -- `bootstrap_targeting`, `load_indicators`,
-`targeting_import`, `marketplace_import`, `seed_semantic_registry`,
+in this codebase is reached -- `indicators_bootstrap`, `load_indicators`,
+`indicators_import`, `marketplace_import`, `seed_semantic_registry`,
 `seed_campaign_demo`. Seeding is an engineer's deliberate act against one
 programme, not something to leave one mistaken tool call away from every MCP
 client.

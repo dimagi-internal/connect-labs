@@ -1053,7 +1053,7 @@ _prevalence(
 )
 
 
-# Tier 3 of docs/targeting-data-acquisition.md: the motorized companion to the
+# Tier 3 of docs/indicators-data-acquisition.md: the motorized companion to the
 # walking travel-time surface already loaded.
 #
 # Walking answers *community reach* — whether a household can get itself to a
@@ -1109,7 +1109,7 @@ register(
 )
 
 
-# --- Tier 1 of docs/targeting-data-acquisition.md --------------------------
+# --- Tier 1 of docs/indicators-data-acquisition.md --------------------------
 #
 # Twenty measures DHS has always published subnationally and this system never
 # asked for. They are grouped by the question they let someone ask, because

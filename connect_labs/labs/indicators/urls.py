@@ -1,7 +1,6 @@
-"""URLs for the targeting surface, mounted at /labs/targeting/."""
+"""URLs for the indicators explorer, mounted at /labs/indicators/ (it was /labs/targeting/ until 13 Nov 2026)."""
 
 from django.urls import path
-from django.views.generic import RedirectView
 
 from connect_labs.labs.indicators import views
 
@@ -9,7 +8,7 @@ app_name = "indicators"
 
 
 urlpatterns = [
-    path("", views.TargetingView.as_view(), name="index"),
+    path("", views.IndicatorsExplorerView.as_view(), name="index"),
     path("api/map/", views.MapDataView.as_view(), name="map_data"),
     path("api/selection/", views.SelectionView.as_view(), name="selection"),
     path("api/coverage/", views.CoverageView.as_view(), name="coverage"),
@@ -17,6 +16,4 @@ urlpatterns = [
     path("api/scope/", views.ScopeView.as_view(), name="scope"),
     path("api/methodology/", views.MethodologyView.as_view(), name="methodology"),
     path("download/", views.SelectionDownloadView.as_view(), name="download"),
-    # Malaria PMC was retired on 13 Nov 2026: a saved link lands on Market size.
-    path("pmc/", RedirectView.as_view(pattern_name="cea:market", permanent=False)),
 ]

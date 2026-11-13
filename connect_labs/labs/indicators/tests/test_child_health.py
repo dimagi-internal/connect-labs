@@ -180,7 +180,7 @@ class TestUncertainty:
         c = Client()
         c.force_login(u)
         row = c.get(
-            reverse("targeting:selection"),
+            reverse("indicators:selection"),
             {"indicator": "malaria_prevalence", "threshold": 20, "method": "subnational_survey"},
         ).json()["rows"][0]
 
@@ -204,7 +204,7 @@ class TestUncertainty:
         c = Client()
         c.force_login(u)
         row = c.get(
-            reverse("targeting:selection"),
+            reverse("indicators:selection"),
             {"indicator": "malaria_prevalence", "threshold": 20, "method": "subnational_survey"},
         ).json()["rows"][0]
 
@@ -450,7 +450,7 @@ class TestDerivedRowsAreSwept:
 
 
 class TestTier1Measures:
-    """The twenty measures of docs/targeting-data-acquisition.md tier 1.
+    """The twenty measures of docs/indicators-data-acquisition.md tier 1.
 
     They were not missing because the data is thin -- every one has African
     subnational coverage at or near the measures we already rely on. They were

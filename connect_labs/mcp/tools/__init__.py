@@ -11,6 +11,7 @@ from . import cea  # noqa: F401  -- registers cea_model_run (the cost-effectiven
 from . import communications  # noqa: F401  -- communications_* (drafts only; a person sends in labs)
 from . import coverage_check  # noqa: F401  -- registers microplans_coverage_check (buildings reached)
 from . import funds  # noqa: F401
+from . import indicators  # noqa: F401  -- registers the indicators_* tools
 from . import jobs  # noqa: F401  -- registers job_status, job_cancel (mcp/jobs.py)
 from . import labs_context  # noqa: F401
 from . import labsdata  # noqa: F401  -- registers data_* (and the explorer_* names scout-queries uses)
@@ -41,6 +42,3 @@ from . import workflow_snapshots  # noqa: F401  -- registers workflow_save_snaps
 from . import workflow_template_sync  # noqa: F401
 from . import workflow_templates_data  # noqa: F401  -- template workflows: draft/publish/rollback/follow
 from . import workflows  # noqa: F401
-from . import (  # noqa: F401  -- registers targeting_* (indicators/select/methodology/scenario/admin_levels/research)
-    targeting,
-)

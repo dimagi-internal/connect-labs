@@ -11,7 +11,7 @@ reading it backwards.
 
 Not destructive by default: organisations absent from the sheet are left alone
 unless ``--prune`` says the sheet is authoritative. That mirrors
-``targeting_import`` and exists for the same reason — a half-loaded sheet should
+``indicators_import`` and exists for the same reason — a half-loaded sheet should
 not silently delete an organisation mid-run.
 
 The sheet is never written. Import is a read-only path over the master registry,

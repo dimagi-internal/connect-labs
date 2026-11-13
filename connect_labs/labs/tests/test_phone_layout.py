@@ -18,7 +18,7 @@ pytestmark = pytest.mark.django_db
 
 
 def _shell(**context):
-    request = RequestFactory().get("/labs/targeting/")
+    request = RequestFactory().get("/labs/indicators/")
     request.user = AnonymousUser()
     return render_to_string("base.html", context, request=request)
 

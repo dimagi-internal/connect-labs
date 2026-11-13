@@ -162,13 +162,13 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         # An organisation's answers to a round (owner-gated in the tool).
         "marketplace_round_responses",
         # Targeting: population and burden data, not visits.
-        "targeting_indicators",
-        "targeting_select",
-        "targeting_methodology",
-        "targeting_scenario",
-        "targeting_admin_levels",
-        "targeting_research",
-        "targeting_compare_criteria",
+        "indicators_list",
+        "indicators_select",
+        "indicators_methodology",
+        "cea_market_size",
+        "indicators_admin_levels",
+        "indicators_research",
+        "indicators_compare_criteria",
         # The cost-effectiveness explorer: arithmetic on vendored public models, nothing visit-specific.
         "cea_model_run",
         # Microplans. A plan handed off from WA Revisit carries per-ward

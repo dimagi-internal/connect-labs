@@ -49,7 +49,7 @@ def test_headings_are_the_agreed_ones():
     [
         ("marketplace:home", "Programs"),
         ("marketplace:network", "Partners"),
-        ("targeting:index", "Health indicators"),
+        ("indicators:index", "Health indicators"),
         ("cea:market", "Market size"),
         ("solicitations:public_list", "Calls for partners"),
         ("pulse:index", "Live delivery"),

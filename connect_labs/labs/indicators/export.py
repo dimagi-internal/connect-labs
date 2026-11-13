@@ -273,7 +273,7 @@ def to_methodology(selection: Selection, *, alternatives: bool = True) -> str:
     add = out.append
 
     add("# Targeting selection — methodology\n")
-    add(f"Generated {generated} by Connect Labs targeting (`/labs/targeting/`).\n")
+    add(f"Generated {generated} by Connect Labs indicators (`/labs/indicators/`).\n")
 
     add("## What this table is\n")
     add(
@@ -531,7 +531,7 @@ def to_zip(selection: Selection) -> bytes:
     """The table and its documentation, together."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("targeting_selection.csv", to_csv(selection))
+        z.writestr("indicators_selection.csv", to_csv(selection))
         z.writestr("METHODOLOGY.md", to_methodology(selection))
     return buf.getvalue()
 
@@ -542,7 +542,7 @@ def filename_stem(selection: Selection) -> str:
     A coverage measure selects the places BELOW its threshold, so calling every
     export ``gt`` asserted the opposite of the contents for half the catalogue:
     an ORS selection of the fifteen counties under 90% arrived as
-    ``targeting_ors_coverage_gt90.zip``.
+    ``indicators_ors_coverage_gt90.zip``.
     """
     direction = "lt" if selection.indicator in measures.LOWER_IS_WORSE else "gt"
-    return f"targeting_{selection.indicator}_{direction}{selection.threshold:g}"
+    return f"indicators_{selection.indicator}_{direction}{selection.threshold:g}"

@@ -1,1 +1,1 @@
-"""Population and burden indicators for intervention targeting."""
+"""Population, burden and coverage indicators: a baseline others build on (effectiveness reads it)."""

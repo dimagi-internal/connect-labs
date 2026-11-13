@@ -54,7 +54,7 @@ MARKETPLACE_MENU = Menu(
             (
                 # What the indicators say, then the models, then the models applied to what was delivered, then
                 # the models applied to a market that has not been served yet (Jonathan, 2026-11-12).
-                Item("Health indicators", "targeting:index"),
+                Item("Health indicators", "indicators:index"),
                 Item("CEA models", "cea:models", owns=("/labs/cea/models/",)),
                 Item("Implementations", "cea:implementation", owns=("/labs/cea/implementation/",)),
                 Item("Market size", "cea:market", owns=("/labs/cea/market/",)),

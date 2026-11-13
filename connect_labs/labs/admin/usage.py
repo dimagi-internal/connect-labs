@@ -76,7 +76,8 @@ AREAS = (
     ("/labs/data/", "Data explorer"),
     ("/labs/explorer/", "Data explorer"),
     ("/labs/cea/", "Cost-effectiveness"),
-    ("/labs/targeting/", "Baseline explorer"),
+    ("/labs/indicators/", "Health indicators"),
+    ("/labs/targeting/", "Health indicators"),  # the old address, for earlier usage
     ("/labs/marketplace/", "Marketplace"),
     ("/labs/pulse/", "Pulse"),
     ("/labs/settings/", "Settings"),

@@ -292,7 +292,7 @@ POLICY: dict[str, tuple[Eligible, ...]] = {
     "improved_water": _wash("the household's water source"),
     "improved_sanitation": _wash("the household's sanitation facility"),
     "mean_household_size": _survey("household roster size"),
-    # --- Tier 1 of docs/targeting-data-acquisition.md ----------------------
+    # --- Tier 1 of docs/indicators-data-acquisition.md ----------------------
     #
     # All twenty are household-survey measures, so DHS alone answers them
     # subnationally and each entry says which question in the field produced

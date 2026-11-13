@@ -6,7 +6,7 @@ deserves the same scrutiny as code. And it is restorable: the database is
 rebuilt from a snapshot, and knowledge that only ever lived in a row would be
 lost every time somebody reset an environment.
 
-``manage.py seed_targeting_research`` writes these in. Notes edited through the
+``manage.py indicators_seed_research`` writes these in. Notes edited through the
 MCP live only in the database; that is deliberate, because a session recording
 what it just found should not need a deploy. The seeds are the floor, not the
 ceiling.
@@ -171,7 +171,7 @@ the reason is not a missing dataset — it is that most countries have never dra
 one. Of 55 African countries, three reach village level: Rwanda (14,815
 *umudugudu*), Madagascar (17,465 *fokontany*) and Burundi (2,615 *collines*).
 Twenty-one stop at ward or district; twenty-five stop at district. Check
-`targeting_admin_levels` before promising a count.
+`indicators_admin_levels` before promising a count.
 
 **Detection from building footprints does not substitute.** This was tested
 properly, not assumed. All 5,578,654 Overture buildings inside Rwanda were

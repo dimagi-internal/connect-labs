@@ -15,7 +15,8 @@ import pytest
 from connect_labs.labs.indicators.models import Source
 from connect_labs.labs.indicators.tests.test_resolve import make_boundary, set_value
 from connect_labs.mcp.tool_registry import MCPToolError
-from connect_labs.mcp.tools import targeting
+from connect_labs.mcp.tools import cea as cea_tools
+from connect_labs.mcp.tools import indicators as indicator_tools
 
 pytestmark = pytest.mark.django_db
 
@@ -29,7 +30,7 @@ def _nigeria():
 
 class TestIndicators:
     def test_it_says_which_way_each_family_reads(self):
-        listed = {i["indicator"]: i for i in targeting.targeting_indicators(None)["indicators"]}
+        listed = {i["indicator"]: i for i in indicator_tools.indicators_list(None)["indicators"]}
 
         assert listed["u5mr"]["family"] == "burden"
         assert listed["u5mr"]["selects"] == "above the threshold"
@@ -38,14 +39,14 @@ class TestIndicators:
 
     def test_only_a_per_1000_rate_carries_a_percent_reading(self):
         """A percent threshold rendered as a tenth of itself is the bug this prevents."""
-        listed = {i["indicator"]: i for i in targeting.targeting_indicators(None)["indicators"]}
+        listed = {i["indicator"]: i for i in indicator_tools.indicators_list(None)["indicators"]}
 
         assert listed["u5mr"]["percent_equivalent_of_default"] == 8.0
         assert listed["improved_sanitation"]["percent_equivalent_of_default"] is None
 
     def test_an_unknown_indicator_is_refused_with_a_way_forward(self):
         with pytest.raises(MCPToolError) as err:
-            targeting.targeting_indicators(None, indicator="not_a_measure")
+            indicator_tools.indicators_list(None, indicator="not_a_measure")
         assert "not_a_measure" in str(err.value)
 
 
@@ -57,7 +58,7 @@ class TestSelect:
         set_value(region, "u5mr", 150, source=Source.DHS)
         set_value(region, "births", 1000)
 
-        got = targeting.targeting_select(None, indicator="u5mr", threshold=80, method="subnational_survey")
+        got = indicator_tools.indicators_select(None, indicator="u5mr", threshold=80, method="subnational_survey")
 
         assert got["counts"]["units"] == 1
         assert got["totals"]["births"] == 1000
@@ -70,7 +71,7 @@ class TestSelect:
         set_value(other, "u5mr", 150, source=Source.DHS)
         set_value(region, "births", 1000)  # only one of the two selected units
 
-        got = targeting.targeting_select(None, indicator="u5mr", threshold=80, method="subnational_survey")
+        got = indicator_tools.indicators_select(None, indicator="u5mr", threshold=80, method="subnational_survey")
 
         assert got["coverage"]["births"] == {"with_value": 1, "of": 2}
 
@@ -79,7 +80,7 @@ class TestSelect:
         _, region, _ = _nigeria()
         set_value(region, "improved_sanitation", 20, source=Source.DHS)
 
-        got = targeting.targeting_select(
+        got = indicator_tools.indicators_select(
             None, indicator="improved_sanitation", threshold=50, method="subnational_igme"
         )
 
@@ -91,7 +92,7 @@ class TestSelect:
         _, region, _ = _nigeria()
         set_value(region, "improved_sanitation", 20, source=Source.DHS)
 
-        got = targeting.targeting_select(None, indicator="improved_sanitation", threshold=50)
+        got = indicator_tools.indicators_select(None, indicator="improved_sanitation", threshold=50)
 
         assert got["method"] != "subnational_igme"
         assert got["counts"]["units"] == 1
@@ -109,7 +110,7 @@ class TestSelect:
         # Boundaries and an unrelated measure exist; this indicator does not.
         set_value(region, "u5mr", 90, source=Source.DHS)
 
-        got = targeting.targeting_select(None, indicator="improved_water", threshold=50)
+        got = indicator_tools.indicators_select(None, indicator="improved_water", threshold=50)
 
         assert got["counts"]["areas"] == 0
         assert got["countries_supported"] == []
@@ -120,7 +121,7 @@ class TestSelect:
         # Nigeria CAN answer; no area simply clears the bar.
         set_value(region, "improved_water", 95.0, source=Source.DHS)
 
-        got = targeting.targeting_select(None, indicator="improved_water", threshold=10)
+        got = indicator_tools.indicators_select(None, indicator="improved_water", threshold=10)
 
         assert got["counts"]["areas"] == 0
         assert got["countries_supported"], "the country could answer, so it must be listed"
@@ -130,9 +131,11 @@ class TestSelect:
         _, region, _ = _nigeria()
         set_value(region, "u5mr", 150, source=Source.DHS)
 
-        got = targeting.targeting_select(None, indicator="u5mr", threshold=80, method="subnational_survey", limit=9999)
+        got = indicator_tools.indicators_select(
+            None, indicator="u5mr", threshold=80, method="subnational_survey", limit=9999
+        )
 
-        assert got["rows_returned"] <= targeting.MAX_ROW_LIMIT
+        assert got["rows_returned"] <= indicator_tools.MAX_ROW_LIMIT
         assert got["rows_total"] == got["counts"]["areas"]
 
 
@@ -144,7 +147,7 @@ class TestMethodology:
         _, region, _ = _nigeria()
         set_value(region, "u5mr", 150, source=Source.DHS)
 
-        got = targeting.targeting_methodology(None, indicator="u5mr", threshold=80, method="subnational_survey")
+        got = indicator_tools.indicators_methodology(None, indicator="u5mr", threshold=80, method="subnational_survey")
         expected = export.to_methodology(select_above(indicator="u5mr", threshold=80.0, method="subnational_survey"))
 
         # Line 2 is a timestamp; everything after it must match exactly.
@@ -158,7 +161,7 @@ class TestScenario:
         set_value(other, "u5mr", 150, source=Source.DHS)
         set_value(region, "births", 1000)
 
-        got = targeting.targeting_scenario(
+        got = cea_tools.cea_market_size(
             None, indicator="u5mr", threshold=80, basis="birth", unit_cost=60, method="subnational_survey"
         )
 
@@ -172,7 +175,7 @@ class TestScenario:
         set_value(region, "stunting", 40, source=Source.DHS)
 
         with pytest.raises(MCPToolError) as err:
-            targeting.targeting_scenario(None, indicator="stunting", basis="case", unit_cost=10)
+            cea_tools.cea_market_size(None, indicator="stunting", basis="case", unit_cost=10)
 
         assert "no count" in str(err.value)
         # The decline is only useful if it says what to use instead, and it must
@@ -191,7 +194,7 @@ class TestScenario:
         set_value(region, "u5mr", 150, source=Source.DHS)
 
         with pytest.raises(MCPToolError) as err:
-            targeting.targeting_scenario(None, indicator="u5mr", basis="not_a_basis", unit_cost=10)
+            cea_tools.cea_market_size(None, indicator="u5mr", basis="not_a_basis", unit_cost=10)
 
         message = str(err.value)
         assert "not_a_basis" in message
@@ -199,16 +202,16 @@ class TestScenario:
             assert legal in message
 
     def test_a_count_field_name_is_accepted_as_a_basis(self):
-        """pop_u5 is what the rows and targeting_compare_criteria's `count` call it."""
+        """pop_u5 is what the rows and indicators_compare_criteria's `count` call it."""
         _, region, other = _nigeria()
         set_value(region, "u5mr", 150, source=Source.DHS)
         set_value(other, "u5mr", 150, source=Source.DHS)
         set_value(region, "pop_u5", 2000)
 
-        by_column = targeting.targeting_scenario(
+        by_column = cea_tools.cea_market_size(
             None, indicator="u5mr", threshold=80, basis="pop_u5", unit_cost=3, method="subnational_survey"
         )
-        by_basis = targeting.targeting_scenario(
+        by_basis = cea_tools.cea_market_size(
             None, indicator="u5mr", threshold=80, basis="under_5", unit_cost=3, method="subnational_survey"
         )
 
@@ -234,7 +237,7 @@ class TestLowBirthweightBasis:
     def test_lbw_birth_prices_the_low_birthweight_count(self):
         self._nigeria_on_a_regional_rate()
 
-        got = targeting.targeting_scenario(
+        got = cea_tools.cea_market_size(
             None, indicator="u5mr", threshold=80, basis="lbw_birth", unit_cost=60, method="subnational_survey"
         )
 
@@ -245,7 +248,7 @@ class TestLowBirthweightBasis:
     def test_a_regional_rate_is_disclosed_in_the_scenario(self):
         self._nigeria_on_a_regional_rate()
 
-        got = targeting.targeting_scenario(
+        got = cea_tools.cea_market_size(
             None, indicator="u5mr", threshold=80, basis="lbw_birth", unit_cost=60, method="subnational_survey"
         )
 
@@ -255,7 +258,7 @@ class TestLowBirthweightBasis:
     def test_the_plain_birth_basis_still_works_and_is_not_flagged(self):
         self._nigeria_on_a_regional_rate()
 
-        got = targeting.targeting_scenario(
+        got = cea_tools.cea_market_size(
             None, indicator="u5mr", threshold=80, basis="birth", unit_cost=60, method="subnational_survey"
         )
 
@@ -265,7 +268,7 @@ class TestLowBirthweightBasis:
 
     def test_the_count_field_name_is_accepted_as_the_basis(self):
         self._nigeria_on_a_regional_rate()
-        got = targeting.targeting_scenario(
+        got = cea_tools.cea_market_size(
             None, indicator="u5mr", threshold=80, basis="births_lbw", unit_cost=60, method="subnational_survey"
         )
         assert got["basis"] == "lbw_birth"
@@ -273,7 +276,7 @@ class TestLowBirthweightBasis:
     def test_select_carries_the_count_and_both_honesty_fields(self):
         self._nigeria_on_a_regional_rate()
 
-        got = targeting.targeting_select(None, indicator="u5mr", threshold=80, method="subnational_survey")
+        got = indicator_tools.indicators_select(None, indicator="u5mr", threshold=80, method="subnational_survey")
 
         assert got["totals"]["births_lbw"] == 143
         assert got["regional_proxy_units"] == {"births_lbw": 1}
@@ -287,7 +290,7 @@ class TestLowBirthweightBasis:
         set_value(region, "births", 1000)
         set_value(region, "pop_u5", 100_000)  # 0.01 births per under-five
 
-        got = targeting.targeting_select(None, indicator="u5mr", threshold=80, method="subnational_survey")
+        got = indicator_tools.indicators_select(None, indicator="u5mr", threshold=80, method="subnational_survey")
 
         assert got["births_implausible_units"] == 1
 
@@ -295,7 +298,7 @@ class TestLowBirthweightBasis:
         country, _, _ = _nigeria()
         set_value(country, "lbw_rate", 14.26, year=2020, source=Source.UNICEF_LBW_REGIONAL)
 
-        listed = {i["indicator"]: i for i in targeting.targeting_indicators(None)["indicators"]}
+        listed = {i["indicator"]: i for i in indicator_tools.indicators_list(None)["indicators"]}
 
         assert listed["lbw_rate"]["unit"] == "% of live births"
         assert listed["lbw_rate"]["methods_that_can_answer"] == [
@@ -330,7 +333,7 @@ class TestAdminLevelsSelectability:
             geometry=_square(4, 0),
         )
 
-        got = targeting.targeting_admin_levels(None, iso_codes=["NGA"])
+        got = indicator_tools.indicators_admin_levels(None, iso_codes=["NGA"])
 
         assert got["selectable_by_targeting"]["NGA"]["levels"] == [0, 1]
         assert got["selectable_by_targeting"]["NGA"]["levels_only_in_other_sources"] == [2]
@@ -344,10 +347,10 @@ class TestSchemaMatchesImplementation:
     Every tool sets ``additionalProperties: False``, so a parameter the function
     accepts but the schema omits is not merely undocumented — it is unreachable,
     and it fails as though it were never built. Both defects this class guards
-    shipped that way: ``targeting_select`` implemented ``admin_level``,
+    shipped that way: ``indicators_select`` implemented ``admin_level``,
     ``target_year`` and ``rollup`` while offering none of them (and two sibling
-    tools described their own ``target_year`` as "See targeting_select"), and
-    ``targeting_scenario``'s enum omitted the ``case_year`` basis, leaving callers
+    tools described their own ``target_year`` as "See indicators_select"), and
+    ``cea_market_size``'s enum omitted the ``case_year`` basis, leaving callers
     able to price only a fortnight of cases where they meant a year.
     """
 
@@ -361,14 +364,14 @@ class TestSchemaMatchesImplementation:
     @pytest.mark.parametrize(
         "name",
         [
-            "targeting_indicators",
-            "targeting_select",
-            "targeting_methodology",
-            "targeting_scenario",
-            "targeting_admin_levels",
-            "targeting_research",
-            "targeting_research_write",
-            "targeting_compare_criteria",
+            "indicators_list",
+            "indicators_select",
+            "indicators_methodology",
+            "cea_market_size",
+            "indicators_admin_levels",
+            "indicators_research",
+            "indicators_research_write",
+            "indicators_compare_criteria",
         ],
     )
     def test_every_accepted_parameter_is_offered_by_the_schema(self, name):
@@ -391,7 +394,7 @@ class TestSchemaMatchesImplementation:
     def test_the_basis_enum_offers_every_unit_basis(self):
         from connect_labs.effectiveness import interventions
 
-        offered = set(self._tool("targeting_scenario").input_schema["properties"]["basis"]["enum"])
+        offered = set(self._tool("cea_market_size").input_schema["properties"]["basis"]["enum"])
         assert offered == {b.value for b in interventions.UnitBasis}
 
 
@@ -399,14 +402,14 @@ class TestAdminLevels:
     def test_it_reports_what_is_loaded_per_source(self):
         _nigeria()
 
-        got = targeting.targeting_admin_levels(None, iso_codes=["NGA"])
+        got = indicator_tools.indicators_admin_levels(None, iso_codes=["NGA"])
 
         assert got["loaded"]["NGA"]["geoboundaries"]["ADM1"] == 2
         # The shared-table warning must travel with the answer, not live in a doc.
         assert "double-counts" in got["note"]
 
     def test_a_country_with_nothing_loaded_is_reported_as_empty_not_missing(self):
-        got = targeting.targeting_admin_levels(None, iso_codes=["ZZZ"])
+        got = indicator_tools.indicators_admin_levels(None, iso_codes=["ZZZ"])
 
         assert got["loaded"] == {"ZZZ": {}}
 
@@ -435,7 +438,7 @@ class TestCompareCriteria:
 
     def test_it_reports_which_screen_keeps_each_area(self):
         self._two_counties()
-        got = targeting.targeting_compare_criteria(
+        got = indicator_tools.indicators_compare_criteria(
             None,
             criteria=[
                 {"indicator": "ors_coverage", "threshold": 70, "label": "coverage"},
@@ -449,7 +452,7 @@ class TestCompareCriteria:
 
     def test_it_says_how_much_of_the_answer_is_contested(self):
         self._two_counties()
-        got = targeting.targeting_compare_criteria(
+        got = indicator_tools.indicators_compare_criteria(
             None,
             criteria=[
                 {"indicator": "ors_coverage", "threshold": 70},
@@ -470,7 +473,7 @@ class TestCompareCriteria:
         """
         self._two_counties()
 
-        got = targeting.targeting_compare_criteria(
+        got = indicator_tools.indicators_compare_criteria(
             None,
             criteria=[
                 {"indicator": "ors_coverage", "threshold": 70, "label": "coverage"},
@@ -497,7 +500,7 @@ class TestCompareCriteria:
         """
         self._two_counties()
 
-        got = targeting.targeting_compare_criteria(
+        got = indicator_tools.indicators_compare_criteria(
             None,
             criteria=[
                 {"indicator": "improved_water", "threshold": 50},
@@ -525,7 +528,7 @@ class TestCompareCriteria:
 
         Live: Nigeria and Kenya carry ADM2 in geopode but NOT in geoBoundaries,
         which is what targeting selects on -- so admin_level=2 returned zero for
-        both, while targeting_admin_levels still advertised 774 and 316 units.
+        both, while indicators_admin_levels still advertised 774 and 316 units.
         """
         make_boundary("LBR", 0, "Liberia", "LBR-0", x=0)
         county = make_boundary("LBR", 1, "Bong", "LBR-1-1", x=2)
@@ -539,7 +542,7 @@ class TestCompareCriteria:
         set_value(state, "ors_coverage", 30.0, source=Source.DHS)
         set_value(state, "pop_u5", 5000, source=Source.WORLDPOP_RASTER)
 
-        pinned = targeting.targeting_select(
+        pinned = indicator_tools.indicators_select(
             None, indicator="ors_coverage", threshold=50, iso_codes=["LBR", "NGA"], admin_level=2
         )
 
@@ -553,7 +556,7 @@ class TestCompareCriteria:
         state = make_boundary("NGA", 1, "Kano", "NGA-1-1", x=12)
         set_value(state, "ors_coverage", 30.0, source=Source.DHS)
 
-        got = targeting.targeting_select(None, indicator="ors_coverage", threshold=50, iso_codes=["NGA"])
+        got = indicator_tools.indicators_select(None, indicator="ors_coverage", threshold=50, iso_codes=["NGA"])
 
         assert got["countries_missing_level"] == []
         assert got["rows_total"] >= 1, "unpinned, Nigeria answers at ADM1"
@@ -562,7 +565,7 @@ class TestCompareCriteria:
         """Answerable screens that simply keep nothing stay a real finding."""
         self._two_counties()
 
-        got = targeting.targeting_compare_criteria(
+        got = indicator_tools.indicators_compare_criteria(
             None,
             criteria=[
                 # Both answerable in Liberia; neither county clears these bars.
@@ -577,11 +580,13 @@ class TestCompareCriteria:
 
     def test_one_criterion_is_refused_because_there_is_nothing_to_compare(self):
         with pytest.raises(Exception):
-            targeting.targeting_compare_criteria(None, criteria=[{"indicator": "ors_coverage"}], iso_codes=["LBR"])
+            indicator_tools.indicators_compare_criteria(
+                None, criteria=[{"indicator": "ors_coverage"}], iso_codes=["LBR"]
+            )
 
     def test_a_criterion_without_an_indicator_says_which_one(self):
         with pytest.raises(MCPToolError, match=r"criteria\[1\]"):
-            targeting.targeting_compare_criteria(
+            indicator_tools.indicators_compare_criteria(
                 None,
                 criteria=[{"indicator": "ors_coverage"}, {"threshold": 15}],
                 iso_codes=["LBR"],
@@ -606,7 +611,7 @@ class TestRankingControls:
 
     def test_by_default_a_wholly_qualifying_country_is_one_row(self):
         self._liberia()
-        got = targeting.targeting_select(
+        got = indicator_tools.indicators_select(
             None, indicator="ors_coverage", threshold=95, iso_codes=["LBR"], method="subnational_survey"
         )
         assert got["counts"]["areas"] == 1
@@ -614,7 +619,7 @@ class TestRankingControls:
 
     def test_rollup_false_returns_the_units_themselves(self):
         self._liberia()
-        got = targeting.targeting_select(
+        got = indicator_tools.indicators_select(
             None,
             indicator="ors_coverage",
             threshold=95,
@@ -634,7 +639,7 @@ class TestRankingControls:
         v.save(update_fields=["extra"])
         set_value(b, "pop_u5", 20_000, source=Source.WORLDPOP_RASTER)
 
-        got = targeting.targeting_select(
+        got = indicator_tools.indicators_select(
             None,
             indicator="ors_coverage",
             threshold=95,
@@ -659,10 +664,10 @@ class TestResearchWriteRefusesWhatTheColumnCannotHold:
     """
 
     def test_it_names_the_field_and_the_limit(self):
-        from connect_labs.mcp.tools import targeting
+        from connect_labs.mcp.tools import indicators as indicator_tools
 
         with pytest.raises(MCPToolError) as excinfo:
-            targeting.targeting_research_write(
+            indicator_tools.indicators_research_write(
                 None,
                 topic="a-topic",
                 summary="x" * 301,
@@ -674,9 +679,9 @@ class TestResearchWriteRefusesWhatTheColumnCannotHold:
         assert "301" in message and "300" in message
 
     def test_a_summary_at_the_limit_is_accepted(self):
-        from connect_labs.mcp.tools import targeting
+        from connect_labs.mcp.tools import indicators as indicator_tools
 
-        got = targeting.targeting_research_write(
+        got = indicator_tools.indicators_research_write(
             None,
             topic="a-topic",
             summary="x" * 300,

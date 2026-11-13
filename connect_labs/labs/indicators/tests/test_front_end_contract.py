@@ -18,10 +18,10 @@ from django.conf import settings
 
 from connect_labs.labs.indicators import measures
 
-JS_DIR = Path(settings.APPS_DIR if hasattr(settings, "APPS_DIR") else ".") / "static/indicators/targeting"
+JS_DIR = Path(settings.APPS_DIR if hasattr(settings, "APPS_DIR") else ".") / "static/indicators/explorer"
 if not JS_DIR.exists():  # running from the repo root rather than the app dir
-    JS_DIR = Path("connect_labs/static/indicators/targeting")
-TEMPLATE = Path("connect_labs/templates/indicators/targeting.html")
+    JS_DIR = Path("connect_labs/static/indicators/explorer")
+TEMPLATE = Path("connect_labs/templates/indicators/explorer.html")
 
 
 def _js_source() -> str:

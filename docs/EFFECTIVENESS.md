@@ -35,7 +35,7 @@ The Cost-Effectiveness menu group, and the same four tabs on each page:
 
 | Page | URL | What it does |
 |---|---|---|
-| **Health indicators** | `/labs/targeting/` | The baseline's explorer: map, tiles and table of an indicator over places. |
+| **Health indicators** | `/labs/indicators/` | The baseline's explorer: map, tiles and table of an indicator over places. |
 | **CEA models** | `/labs/cea/models/` | Pick a model and change any input in one table, grouped as baseline, counterfactual, effectiveness, cost, then other assumptions. Each input has a switch for whether it is in the sensitivity; the page shows the spread of everything switched on together, and each group's. |
 | **Implementations** | `/labs/cea/implementation/` | Every delivered opportunity, priced at what it cost, with a server-side what-if, filters and a By programme table; each opportunity has a page that links to CEA models set to it. |
 | **Market size** | `/labs/cea/market/` | People in chosen places (default: everywhere with data) times each chosen model's cost per person per year, with the part where the model clears the bar. |
@@ -45,7 +45,7 @@ Cost data and Donor reports are Pulse pages under Network. Malaria PMC was retir
 ## Agent tools
 
 `cea_model_run` (the models page's engine, with a link to the page at the same inputs), `cea_opportunities` (any selection
-of delivered opportunities with its roll-up; full tokens only), `targeting_scenario` (sizing), and the baseline's own tools.
+of delivered opportunities with its roll-up; full tokens only), `cea_market_size` (sizing), and the baseline's own tools.
 
 ## Applying the models to delivered opportunities
 

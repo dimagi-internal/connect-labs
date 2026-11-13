@@ -11,7 +11,7 @@
 </style>
 <nav class="ceatabs" aria-label="Cost-effectiveness" data-testid="cea-tabs">
   <div class="ct-row">
-    <a href="{% url 'targeting:index' %}" {% if active == "indicators" %}class="on" aria-current="page"{% endif %}>Health indicators</a>
+    <a href="{% url 'indicators:index' %}" {% if active == "indicators" %}class="on" aria-current="page"{% endif %}>Health indicators</a>
     <a href="{% url 'cea:models' %}" {% if active == "models" %}class="on" aria-current="page"{% endif %}>CEA models</a>
     <a href="{% url 'cea:implementation' %}" {% if active == "implementation" %}class="on" aria-current="page"{% endif %}>Implementations</a>
     <a href="{% url 'cea:market' %}" {% if active == "market" %}class="on" aria-current="page"{% endif %}>Market size</a>

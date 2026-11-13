@@ -1,8 +1,8 @@
 """Load a snapshot instead of re-fetching everything from source.
 
-    make manage CMD="targeting_import --path targeting-snapshot-20260827.zip"
-    make manage CMD="targeting_import --drive-file-id <id>"
-    make manage CMD="targeting_import --from-manifest"
+    make manage CMD="indicators_import --path targeting-snapshot-20260827.zip"
+    make manage CMD="indicators_import --drive-file-id <id>"
+    make manage CMD="indicators_import --from-manifest"
 
 Seconds, against 30-45 minutes of API calls — and it does not spend WorldPop's
 daily quota, which a second environment can otherwise exhaust for the first.
@@ -107,4 +107,4 @@ class Command(BaseCommand):
             )
         if m.get("contains_non_commercial"):
             self.stdout.write(self.style.WARNING("  This snapshot contains non-commercial data. Do not pass it on."))
-        self.stdout.write('\nVerify with: make manage CMD="targeting_status"')
+        self.stdout.write('\nVerify with: make manage CMD="indicators_status"')

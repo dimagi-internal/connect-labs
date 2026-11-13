@@ -390,7 +390,7 @@ class Command(BaseCommand):
             "mean_household_size",
             "improved_water",
             "improved_sanitation",
-            # Tier 1 of docs/targeting-data-acquisition.md.
+            # Tier 1 of docs/indicators-data-acquisition.md.
             "zero_dose",
             "fp_unmet_need",
             "fp_modern_method",
