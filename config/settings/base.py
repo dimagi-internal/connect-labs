@@ -160,7 +160,7 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
-    "connect_labs.impact",
+    "connect_labs.effectiveness",
     "connect_labs.ai",
     "connect_labs.tasks",
     "connect_labs.audit",
@@ -847,10 +847,10 @@ CELERY_BEAT_SCHEDULE = {
     # sooner.
     # Delete the copied run behind public links past their expiry (workflow/public_shares.py).
     # Place every modelled opportunity's visits in their most local areas for the
-    # cost-effectiveness pages (connect_labs/impact/places.py). About a minute of
+    # cost-effectiveness pages (connect_labs/effectiveness/places.py). About a minute of
     # database time, so every six hours; pages only read the stored result.
     "impact-refresh-opportunity-places": {
-        "task": "connect_labs.impact.tasks.refresh_opportunity_places",
+        "task": "connect_labs.effectiveness.tasks.refresh_opportunity_places",
         "schedule": crontab(minute=23, hour="*/6"),
     },
     "sweep-public-run-shares": {

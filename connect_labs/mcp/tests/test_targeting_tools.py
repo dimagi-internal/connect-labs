@@ -389,7 +389,7 @@ class TestSchemaMatchesImplementation:
         )
 
     def test_the_basis_enum_offers_every_unit_basis(self):
-        from connect_labs.scenarios import interventions
+        from connect_labs.effectiveness import interventions
 
         offered = set(self._tool("targeting_scenario").input_schema["properties"]["basis"]["enum"])
         assert offered == {b.value for b in interventions.UnitBasis}
