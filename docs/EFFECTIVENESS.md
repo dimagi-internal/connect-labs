@@ -22,6 +22,7 @@ effectiveness/
   data/                                                                              the vendored model specs (CHC, MBW, KC)
   management/commands/effectiveness_check_sheets, effectiveness_vendor
 templates/effectiveness/                                                             the pages: models, implementation, implementation_opp, market, tabs
+static/effectiveness/                                                                ui.js (DOM builder, number formats) and one script per page
 ```
 
 One evaluator, reached every way, so a number is the same wherever it appears. `engine` runs a model's own formulas
