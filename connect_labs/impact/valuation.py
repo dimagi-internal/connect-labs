@@ -3,16 +3,14 @@
 Every cost-effectiveness view in Labs turns deaths averted into "a multiple of GiveWell's
 benchmark" with the same few numbers: what a death averted is worth, what 1x is worth per
 dollar, and the bar a grant has to clear. They live here, read from the vendored models
-(``python manage.py impact_vendor`` refreshes them), so the delivered ranking and the PMC
-explorer cannot value a death differently, and tests fail if the specs
+(``python manage.py impact_vendor`` refreshes them), so the delivered ranking and every
+scenario cannot value a death differently, and tests fail if the specs
 disagree or a value moves without a deliberate change.
 
 A death averted is valued as the Connect CHC model values it (``units_per_death``): the
 GiveWell moral weight (113 units) grossed up for the share of a programme's benefit that
 comes from deaths and for effects the model does not count, then adjusted for leveraging and
-funging, all taken from that model's own rows. That is also what the PMC explorer uses, by the
-owner's decision of 2026-11-11; before it valued a death at the bare 113.
-"""
+funging, all taken from that model's own rows."""
 
 from __future__ import annotations
 

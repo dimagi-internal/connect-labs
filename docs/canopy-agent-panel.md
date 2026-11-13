@@ -235,7 +235,7 @@ offers no panel, and the Agent box says why.
 
 Keeping a tool's result is labs' own MCP feature, plain MCP that any client uses (Claude
 Code, ACE, canopy); canopy is one client of it. A tool that produces rows does not put
-them in its result. `data_query`, `workflow_run_indicators` and `targeting_pmc_states`
+them in its result. `data_query` and `workflow_run_indicators`
 keep what they produced as a **kept result** in labs' database (`mcp.KeptResult`, table
 `mcp_kept_result`; `connect_labs/mcp/kept_results.py`) and return **facts** -- the row
 count, the columns, a sample, what was asked (the SQL) -- plus an MCP `resource_link`
@@ -274,7 +274,7 @@ part of this that goes through the canopy SDK.
 - **Who may read it.** The labs user the call ran as (the owner, read from the MCP
   request's token), and anyone who could run the same thing themselves (`may_read`): holds
   every opportunity the query read, can open the run the indicators came from; a public
-  PMC ranking, any labs user. Nobody else (`forbidden`).
+  result (none today), any labs user. Nobody else (`forbidden`).
 - **What a read may carry** (`kept_results.read_denial`, every reader, the owner too): a
   result holding sensitive data (`KeptResult.sensitive`) goes back through canopy only to
   an agent whose own `Canopy-Execution` statement clears it, or to the person's own card --
@@ -285,7 +285,7 @@ part of this that goes through the canopy SDK.
   (`resource_type` `labs_result`, `source` `mcp`, the MCP request id, `path`
   `mcp:resources/read`, the token's `auth_method` and client, and for a canopy call the
   `Canopy-Execution` facts).
-- **For a day** (the public PMC ranking, which holds no visit data, for 30 days). Expired
+- **For a day** (a public result, which holds no visit data, for 30 days; none today). Expired
   results read as `expired`; `connect_labs.mcp.tasks.sweep_kept_results` (beat
   `sweep-kept-results`, hourly) deletes them. RDS snapshots and point-in-time recovery
   keep a deleted row for the backup window (`docs/AUDIT_LOGGING.md`).
@@ -413,9 +413,7 @@ display}` fills the Save dialog, saving nothing; `showVisit {visit_id}` opens a 
 instead). No page action changes the page's selection. `data_describe` teaches a canopy agent these
 (`guidance.PAGE_ACTIONS`, and `guidance.SPACE_RULES` with a `space_id`).
 
-The PMC
-card (`ui://labs/pmc-states`) reads its ranking the same way and re-totals ticked states
-through `targeting_pmc_rank` as the viewer. The coaching preview and the edit-confirm
+The coaching preview and the edit-confirm
 cards deliberately preview again as the viewer: their confirm token must be the viewer's
 own, never the agent's.
 

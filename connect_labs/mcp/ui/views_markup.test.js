@@ -46,7 +46,6 @@ it('finds every View', () => {
   expect(VIEWS).toEqual(
     expect.arrayContaining([
       'data_result.html',
-      'pmc_states.html',
       'workflow_action_preview.html',
       'workflow_edit_confirm.html',
     ]),

@@ -7,7 +7,7 @@ the same inputs, and it hands back the page's link with those inputs set, so the
 exactly what the agent computed.
 
 Public inputs and arithmetic on vendored models: nothing here is specific to the caller, so it sits in the
-``targeting:read`` scope with the PMC tools.
+``targeting:read`` scope with the targeting tools.
 
 ``cea_opportunities`` is the other half: the same models applied to what Connect actually delivered, read
 from ``pulse.cea`` (the Implementation tab's figures, one function for every roll-up). It carries what

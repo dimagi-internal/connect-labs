@@ -119,8 +119,7 @@
   // about a selection the visitor had already moved away from. Each new
   // selection now re-declares the question (the same parameters the URL
   // carries) and names the areas it selected, so the agent can act on what
-  // is on screen -- e.g. hand the selected Nigerian states to
-  // targeting_pmc_schedules. Names, never rows: the page state is small.
+  // is on screen. Names, never rows: the page state is small.
   var agentBase = null;
   var lastShared = null;
 

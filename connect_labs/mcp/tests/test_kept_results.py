@@ -402,10 +402,9 @@ def test_an_agents_page_is_cut_as_its_query_was(owner, connect):
     assert "[cut:" in json.loads(content["text"])["rows"][0][0]
 
 
-def test_the_public_pmc_ranking_lasts_a_month(owner):
-    link = kept_results.save(
-        owner, kept_results.KIND_PMC, {"recommendation": {}}, access={"sensitive": False}, name="PMC"
-    )
+def test_a_public_result_lasts_a_month(owner, monkeypatch):
+    monkeypatch.setattr(kept_results, "PUBLIC_KINDS", frozenset({kept_results.KIND_QUERY}))
+    link = kept_results.save(owner, kept_results.KIND_QUERY, {"rows": []}, access={"sensitive": False}, name="Public")
     row = Row.objects.get(pk=link["uri"].split("://")[1])
     assert row.expires_at - row.created_at == timedelta(seconds=kept_results.PUBLIC_TTL_SECONDS)
 
@@ -542,6 +541,6 @@ def test_every_link_labs_returns_is_one_canopy_keeps_in_a_sensitive_conversation
     from canopy_sdk.django import conf
 
     for _ in range(50):
-        link = kept_results.save(owner, kept_results.KIND_PMC, {"x": 1}, access={"sensitive": False}, name="r")
+        link = kept_results.save(owner, kept_results.KIND_QUERY, {"x": 1}, access={"sensitive": False}, name="r")
         assert resources.validate_link(link, conf.resource_id_lengths(), keep_name=False) is not None
     assert resources.validate_link({**link, "uri": link["uri"] + "x"}, conf.resource_id_lengths()) is None

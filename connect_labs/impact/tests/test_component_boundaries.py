@@ -26,14 +26,8 @@ BASELINE_DIRS = ("labs/indicators", "labs/admin_boundaries")
 ABOVE_BASELINE = ("connect_labs.impact", "connect_labs.pulse", "connect_labs.scenarios", "connect_labs.cea_urls")
 CEA_PURE_CORE = ("engine", "valuation", "result", "explore")
 
-#: Baseline files that import the CEA valuation, because PMC (cost per death averted by state) lives in
-#: the baseline package. Remove an entry by moving PMC (``labs/indicators/pmc.py``, ``emod/``, the PMC views,
-#: ``PmcModelRun``) into the cost-effectiveness component; the test then fails until the entry is deleted.
-BASELINE_IMPORTS_CEA = {
-    "labs/indicators/views.py": "PMC views (PmcView, pmc_fixed_assumptions) sit in the baseline views module",
-    "labs/indicators/emod/mortality.py": "PMC's deaths-to-multiple valuation sits in the baseline package",
-    "labs/indicators/emod/rank.py": "PMC's ranking sits in the baseline package",
-}
+#: The baseline imports nothing above it. (Malaria PMC, which did, was retired on 13 Nov 2026.)
+BASELINE_IMPORTS_CEA: dict[str, str] = {}
 
 
 def _files(*dirs: str):
