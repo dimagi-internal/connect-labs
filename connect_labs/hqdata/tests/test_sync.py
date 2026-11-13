@@ -1,8 +1,10 @@
 """The sync engine, against a backend that returns what we tell it to."""
 
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from django.utils import timezone as dj_timezone
 
 from connect_labs.hqdata import sync as sync_module
 from connect_labs.hqdata.backends.base import BackendUnavailable
@@ -163,8 +165,9 @@ def test_reconcile_marks_what_a_full_walk_did_not_see_and_a_return_clears_it(for
 
 def test_reconcile_only_marks_rows_its_own_selector_covers(project):
     narrow = HQSource.objects.create(project=project, kind=HQSource.KIND_FORMS, xmlns="http://x/1")
-    HQForm.objects.create(project_id=project.pk, form_id="other", xmlns="http://x/2")
-    HQForm.objects.create(project_id=project.pk, form_id="mine", xmlns="http://x/1")
+    long_ago = T0 - timedelta(days=1)
+    HQForm.objects.create(project_id=project.pk, form_id="other", xmlns="http://x/2", synced_at=long_ago)
+    HQForm.objects.create(project_id=project.pk, form_id="mine", xmlns="http://x/1", synced_at=long_ago)
     sync_source(narrow, FakeBackend([]), mode=HQSyncRun.MODE_RECONCILE, now=T0)
     assert HQForm.objects.get(form_id="mine").deleted_at == T0
     assert HQForm.objects.get(form_id="other").deleted_at is None
@@ -245,3 +248,100 @@ def test_deleting_a_project_purges_its_rows_and_only_its_rows(project, forms_sou
     project.delete()
     assert not HQForm.objects.filter(form_id="f1").exists() and not HQCase.objects.filter(case_id="c1").exists()
     assert HQForm.objects.filter(form_id="theirs").exists()
+
+
+# -- time-boxed, resumable, and honest about interrupted work ------------------------------------
+
+
+def test_a_run_past_its_deadline_stops_after_a_committed_batch_and_the_next_one_carries_on(forms_source, monkeypatch):
+    monkeypatch.setattr(sync_module, "BATCH_SIZE", 2)
+    records = [form(f"f{i}", at=T0 + timedelta(minutes=i)) for i in range(5)]
+    run = sync_source(forms_source, FakeBackend(records), now=T0, deadline=0.0)
+    assert run.status == HQSyncRun.STATUS_PARTIAL and run.fetched == 2 and HQForm.objects.count() == 2
+    forms_source.refresh_from_db()
+    assert forms_source.watermark == T0 + timedelta(minutes=1) and not forms_source.backfill_complete
+    assert choose_mode(forms_source, T0) == HQSyncRun.MODE_DELTA  # carries on from the checkpoint
+
+    done = sync_source(forms_source, FakeBackend(records), now=T0 + timedelta(hours=1))
+    assert done.status == HQSyncRun.STATUS_OK and HQForm.objects.count() == 5
+    forms_source.refresh_from_db()
+    assert forms_source.backfill_complete
+
+
+def test_a_deadline_that_has_not_passed_changes_nothing(forms_source):
+    run = sync_source(forms_source, FakeBackend([form("f1")]), now=T0, deadline=time.monotonic() + 3600)
+    assert run.status == HQSyncRun.STATUS_OK
+
+
+def test_a_reconcile_that_outlasts_one_run_resumes_and_only_then_marks_what_vanished(forms_source, monkeypatch):
+    monkeypatch.setattr(sync_module, "BATCH_SIZE", 1)
+    t = [T0 + timedelta(minutes=i) for i in range(3)]
+    sync_source(
+        forms_source,
+        FakeBackend([form("f0", at=t[0]), form("f1", at=t[1]), form("f2", at=t[2]), form("gone", at=t[2])]),
+        now=T0,
+    )
+    later = T0 + timedelta(days=9)
+    still_there = [form("f0", at=t[0]), form("f1", at=t[1]), form("f2", at=t[2])]
+
+    first = sync_source(forms_source, FakeBackend(still_there), now=later, deadline=0.0)
+    assert first.status == HQSyncRun.STATUS_PARTIAL and first.mode == HQSyncRun.MODE_RECONCILE
+    forms_source.refresh_from_db()
+    assert forms_source.reconcile_started_at == later and forms_source.reconcile_cursor == t[0]
+    assert HQForm.objects.get(form_id="gone").deleted_at is None  # nothing is declared gone half way through
+    assert choose_mode(forms_source, later + timedelta(hours=1)) == HQSyncRun.MODE_RECONCILE  # not a new one
+
+    second = sync_source(forms_source, FakeBackend(still_there), now=later + timedelta(hours=1))
+    assert second.status == HQSyncRun.STATUS_OK and second.deleted == 1
+    assert HQForm.objects.get(form_id="gone").deleted_at is not None
+    assert all(HQForm.objects.get(form_id=i).deleted_at is None for i in ("f0", "f1", "f2"))
+    forms_source.refresh_from_db()
+    assert forms_source.reconcile_started_at is None and forms_source.reconcile_cursor is None
+    assert forms_source.last_reconciled_at == later + timedelta(hours=1)
+
+
+def test_a_dead_runs_lease_is_waited_out_by_the_run_that_replaces_it(forms_source, monkeypatch):
+    forms_source.claim(dj_timezone.now())  # a worker was killed holding it
+    sleeps = []
+    monkeypatch.setattr(sync_module.time, "sleep", lambda s: (sleeps.append(s), forms_source.release()))
+    run = sync_source(forms_source, FakeBackend([form("f1")]), now=T0, wait_for_lease_s=60)
+    assert run.status == HQSyncRun.STATUS_OK and sleeps == [5]
+
+
+def test_a_lease_that_never_lapses_is_given_up_on_after_the_wait(forms_source, monkeypatch):
+    forms_source.claim(dj_timezone.now())
+    monkeypatch.setattr(sync_module.time, "sleep", lambda s: None)
+    monkeypatch.setattr(sync_module.time, "monotonic", iter(range(0, 10_000, 100)).__next__)
+    with pytest.raises(SourceBusy):
+        sync_source(forms_source, FakeBackend([form("f1")]), now=T0, wait_for_lease_s=60)
+
+
+def test_history_of_a_run_a_stopped_worker_never_closed_is_closed_honestly(forms_source):
+    now = dj_timezone.now()
+    orphan = HQSyncRun.objects.create(source=forms_source, mode="delta", started_at=now - timedelta(hours=1))
+    live = HQSyncRun.objects.create(source=forms_source, mode="delta", started_at=now - timedelta(hours=1))
+    HQSyncRun.objects.filter(pk=live.pk).update(
+        source=HQSource.objects.create(project=forms_source.project, kind="cases", running_since=now)
+    )
+    assert sync_module.reap_interrupted_runs(now) == 1
+    orphan.refresh_from_db()
+    live.refresh_from_db()
+    assert orphan.status == HQSyncRun.STATUS_ERROR and "Interrupted" in orphan.error and orphan.finished_at
+    assert live.status == HQSyncRun.STATUS_RUNNING
+
+
+def test_summarize_says_when_there_is_more_to_read(forms_source, cases_source):
+    ok = HQSyncRun(status=HQSyncRun.STATUS_OK, fetched=3, deleted=1)
+    partial = HQSyncRun(status=HQSyncRun.STATUS_PARTIAL, fetched=2)
+    assert sync_module.summarize({1: ok}) == {
+        "complete": True,
+        "more_to_read": False,
+        "rows": 3,
+        "removed": 1,
+        "errors": [],
+    }
+    assert sync_module.summarize({1: ok, 2: partial})["complete"] is False
+    assert sync_module.summarize({1: ok, 2: partial})["more_to_read"] is True
+    assert sync_module.summarize({1: ok, 2: None})["more_to_read"] is True
+    failed = sync_module.summarize({1: ok, 2: RuntimeError("x")})
+    assert failed["complete"] is False and failed["more_to_read"] is False and failed["errors"] == ["x"]

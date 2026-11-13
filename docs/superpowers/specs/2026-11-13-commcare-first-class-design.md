@@ -101,11 +101,25 @@ into `RawVisitCache` where a watermark is known.
 - **reconcile** (weekly): a full walk that also marks as deleted any stored row the walk
   did not see. This is the only way to learn a hard delete; it is why delta alone is never
   declared complete.
-- Every run writes an `HQSyncRun` (mode, fetched, upserted, error). A failing source keeps
-  its watermark, so the next run resumes; two runs of one source never overlap (Postgres
-  advisory lock, as `single_flight.py` does).
-- Runs as a Celery task. A beat entry every 5 minutes enqueues each persistent project
-  whose `sync_interval_minutes` has elapsed.
+- Every run writes an `HQSyncRun` (mode, fetched, deleted, status `ok` / `partial` / `error`). A failing
+  source keeps its checkpoint, so the next run resumes; two runs of one source never overlap (a lease on the
+  source, 5 minutes, renewed with every batch, so a run a deploy killed is not waited on for long).
+- **A sync is a durable job**, not a bare Celery task: it is the long-running MCP tool `hq_project_sync`
+  (`connect_labs/mcp/jobs.py`), so it is recorded in the labs database, redelivered when its worker is lost
+  to a deploy, followed with `job_status` and stopped with `job_cancel`. The handler is safe to run again from
+  the start because every batch commits with its checkpoint. A redelivered job waits out the lease the killed
+  run left behind.
+- **Time-boxed, so any size is a chain of short jobs.** A job stops after a committed batch once it has used its
+  budget (35 minutes, under the worker's 45 minute limit) and queues its own continuation, having stored
+  something newer than where it started so a chain always moves forward. A reconcile is resumable too: it
+  stamps every row it writes with the moment it began and keeps a cursor, and only when it finishes does it
+  mark rows still carrying an older stamp as deleted (so it also needs no in-memory set of ids).
+- **The schedule** is a beat entry every 5 minutes that queues a job for each persistent project that is due,
+  unless one is already queued or running for it; a project whose last sync failed is tried again no more than
+  every 15 minutes; runs a stopped worker left "running" are closed as interrupted.
+- A job runs as whoever asked (a page, an MCP caller) or, for the schedule and continuations, as the project's
+  sync owner. The sync owner may always run their own project's sync: CommCare checks their sign-in on every
+  call, which is the authority, not the 24 hour membership stamp.
 - **Credential for a headless run**: the project's sync owner's `UserCCHQToken`. If the
   refresh fails, the project goes to `needs_reauth` and the page says so; nothing falls back
   to another person's token.

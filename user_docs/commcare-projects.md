@@ -24,7 +24,8 @@ sync asks CommCare only for what changed since the last one, so a large project 
 beginning. If a sync stops part way (a network problem, CommCare being down) the next one carries on from where
 the last one got to.
 
-* **Sync now** brings the project up to date straight away.
+* **Sync now** starts a background job that brings the project up to date. A labs update does not lose it: it
+  carries on afterwards, and a large first read simply continues as further jobs until it is done.
 * **Keep it and refresh on a schedule** (admins) refreshes it about every hour. A scheduled sync runs as the
   person who turned it on, using their CommCare sign-in, so the project page always says whose it is. If that
   sign-in stops working, the project says so and any member can attach their own.

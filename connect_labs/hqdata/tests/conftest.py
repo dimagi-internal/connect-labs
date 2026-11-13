@@ -20,9 +20,9 @@ def hq_settings(settings):
 
 @pytest.fixture
 def queued():
-    """Stands in for the Celery queue: records what a page asked to run."""
-    with mock.patch("connect_labs.hqdata.web.views.sync_project_task") as task:
-        yield task
+    """Stands in for the job queue: records what a page asked to run."""
+    with mock.patch("connect_labs.hqdata.web.views.queue_sync", return_value={"job_id": "j", "state": "queued"}) as q:
+        yield q
 
 
 def make_hq_user(client, *, domains=("demo",), username="simon@example.org", **user_kwargs):

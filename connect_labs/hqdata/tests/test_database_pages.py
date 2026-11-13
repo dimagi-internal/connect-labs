@@ -115,11 +115,11 @@ def test_using_the_database_moves_the_project_and_queues_a_fresh_read(client, mi
     save_usable(client, mine, customer_db)
     source = HQSource.objects.create(project=mine, kind="forms")
     sync_source(source, FakeBackend([form("f1")]), now=T0)
-    with mock.patch("connect_labs.hqdata.web.views.sync_project_task") as queued:
+    with mock.patch("connect_labs.hqdata.web.views.queue_sync", return_value={"job_id": "j"}) as queued:
         resp = post(client, mine, "use_database")
     mine.refresh_from_db()
     assert mine.store == "external" and not HQForm.objects.filter(project_id=mine.pk).exists()
-    queued.delay.assert_called_once_with(mine.pk)
+    assert queued.call_count == 1 and queued.call_args.args[0].pk == mine.pk
     assert any("in your database" in m for m in messages_of(resp))
     page = client.get(f"/hq/projects/{mine.pk}/").content.decode()
     assert "Labs keeps none of this project" in page and customer_db["password"] not in page
@@ -127,16 +127,16 @@ def test_using_the_database_moves_the_project_and_queues_a_fresh_read(client, mi
 
 def test_a_database_that_fails_its_checks_is_not_moved_to(client, mine, customer_db):
     save_usable(client, mine, customer_db, password="wrong")
-    with mock.patch("connect_labs.hqdata.web.views.sync_project_task") as queued:
+    with mock.patch("connect_labs.hqdata.web.views.queue_sync", return_value={"job_id": "j"}) as queued:
         resp = post(client, mine, "use_database")
     mine.refresh_from_db()
-    assert mine.store == "labs" and not queued.delay.called
+    assert mine.store == "labs" and not queued.called
     assert any("connect" in m for m in messages_of(resp))
 
 
 def test_where_the_project_keeps_its_data_pins_the_connection_except_for_the_password(client, mine, customer_db):
     save_usable(client, mine, customer_db)
-    with mock.patch("connect_labs.hqdata.web.views.sync_project_task"):
+    with mock.patch("connect_labs.hqdata.web.views.queue_sync", return_value={"job_id": "j"}):
         post(client, mine, "use_database")
     resp = post(client, mine, "save_database", **details(customer_db, host="elsewhere.example.org", password=""))
     assert any("Move it back to labs" in m for m in messages_of(resp))

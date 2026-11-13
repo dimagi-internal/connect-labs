@@ -12,9 +12,11 @@ from django.utils import timezone
 from connect_labs.hqdata.scope import hq_scope_id
 from connect_labs.utils.encrypted_fields import EncryptedTextField
 
-# A sync that has not heartbeat for this long is presumed dead (a deploy hard-kills
-# every task with no drain), and the next run may take its lease.
-LEASE_SECONDS = 30 * 60
+# A sync that has not heartbeat for this long is presumed dead (a deploy hard-kills every task
+# with no drain), and the next run may take its lease. Short on purpose: a job a deploy killed is
+# redelivered at once (mcp/jobs.py), and it must not find the source held for half an hour. A
+# batch commits, and so heartbeats, well inside this (one HQ page has a 2 minute timeout).
+LEASE_SECONDS = 5 * 60
 
 
 class HQProject(models.Model):
@@ -193,6 +195,11 @@ class HQSource(models.Model):
     backfill_complete = models.BooleanField(default=False)
     last_full_sync_at = models.DateTimeField(null=True, blank=True)
     last_reconciled_at = models.DateTimeField(null=True, blank=True)
+    # A reconcile (a full re-read that learns what HQ deleted) can outlast one job, so it is
+    # resumable too: when it began (the stamp every row it sees gets) and how far it has got.
+    # Whatever still carries an older stamp when it finishes was not there to be seen.
+    reconcile_started_at = models.DateTimeField(null=True, blank=True)
+    reconcile_cursor = models.DateTimeField(null=True, blank=True)
     last_error = models.TextField(blank=True)
     # The lease: set while a run owns the source, refreshed on every batch.
     running_since = models.DateTimeField(null=True, blank=True)
@@ -272,7 +279,8 @@ class HQForm(models.Model):
     form_json = models.JSONField(default=dict)
     # Set by a reconcile that did not see the row (a purge HQ never announces).
     deleted_at = models.DateTimeField(null=True, blank=True)
-    synced_at = models.DateTimeField(auto_now=True)
+    # Set by the sync, not by the clock at save: a reconcile compares it with the moment the reconcile began.
+    synced_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         app_label = "hqdata"
@@ -299,7 +307,8 @@ class HQCase(models.Model):
     properties = models.JSONField(default=dict)
     indices = models.JSONField(default=dict)
     deleted_at = models.DateTimeField(null=True, blank=True)
-    synced_at = models.DateTimeField(auto_now=True)
+    # Set by the sync, not by the clock at save: a reconcile compares it with the moment the reconcile began.
+    synced_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         app_label = "hqdata"
@@ -318,6 +327,8 @@ class HQSyncRun(models.Model):
 
     STATUS_RUNNING = "running"
     STATUS_OK = "ok"
+    # Stopped at its time budget with everything it read committed; the next run carries on.
+    STATUS_PARTIAL = "partial"
     STATUS_ERROR = "error"
 
     source = models.ForeignKey(HQSource, on_delete=models.CASCADE, related_name="runs")

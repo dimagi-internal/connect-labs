@@ -14,6 +14,7 @@ from django.views.decorators.http import require_POST
 from connect_labs.hqdata.access import may_use_project, visible_projects
 from connect_labs.hqdata.external import SECURE_SSLMODES, check_connection
 from connect_labs.hqdata.identity import hq_host
+from connect_labs.hqdata.jobs import queue_sync
 from connect_labs.hqdata.models import (
     HQExternalDatabase,
     HQIdentity,
@@ -28,7 +29,6 @@ from connect_labs.hqdata.pipelines import PipelineProblem, config_for, run_pipel
 from connect_labs.hqdata.projects import Refused, register_project, set_storage
 from connect_labs.hqdata.store_schema import SCHEMA_NAME_RE
 from connect_labs.hqdata.store_switch import SwitchRefused, switch_store
-from connect_labs.hqdata.tasks import sync_project_task
 from connect_labs.hqdata.web.decorators import hq_login_required
 
 
@@ -108,6 +108,20 @@ def project_detail(request: HttpRequest, project_id: int) -> HttpResponse:
     )
 
 
+def _queue(request: HttpRequest, project: HQProject, success: str, mode: str | None = None) -> None:
+    if project.sync_owner_id is None or project.status == HQProject.STATUS_NEEDS_REAUTH:
+        messages.error(request, "Nobody's CommCare sign-in is attached to this project. Use mine, below.")
+        return
+    try:
+        reply = queue_sync(project, user=request.user, mode=mode, actor="page")
+    except Refused as exc:
+        messages.error(request, str(exc))
+        return
+    messages.success(
+        request, "A sync is already running for this project." if reply.get("already_running") else success
+    )
+
+
 _ADMIN_ONLY = {
     "set_storage",
     "pause",
@@ -136,14 +150,14 @@ def project_action(request: HttpRequest, project_id: int) -> HttpResponse:
     back = redirect("hq:project_detail", project_id=project.pk)
 
     if action == "sync_now":
-        if project.sync_owner_id is None or project.status == HQProject.STATUS_NEEDS_REAUTH:
-            messages.error(request, "Nobody's CommCare sign-in is attached to this project. Use mine, below.")
-            return back
-        sync_project_task.delay(project.pk)
-        messages.success(request, "Sync queued. Refresh in a moment.")
+        _queue(request, project, "Sync queued. Refresh in a moment.")
     elif action == "full_resync":
-        sync_project_task.delay(project.pk, HQSyncRun.MODE_RECONCILE)
-        messages.success(request, "A full re-read is queued. It also marks anything CommCare has since deleted.")
+        _queue(
+            request,
+            project,
+            "A full re-read is queued. It also marks anything CommCare has since deleted.",
+            mode=HQSyncRun.MODE_RECONCILE,
+        )
     elif action == "take_over":
         HQProject.objects.filter(pk=project.pk).update(sync_owner=request.user, status=HQProject.STATUS_ACTIVE)
         messages.success(request, "Scheduled syncs will now use your CommCare sign-in.")
@@ -209,9 +223,9 @@ def project_action(request: HttpRequest, project_id: int) -> HttpResponse:
             messages.error(request, str(exc))
         else:
             if outcome["changed"]:
-                sync_project_task.delay(project.pk)
-                messages.success(
+                _queue(
                     request,
+                    project,
                     "The project now keeps its data "
                     + ("in your database" if action == "use_database" else "in labs")
                     + ". Everything is being read from CommCare again; this takes a while for a large project.",

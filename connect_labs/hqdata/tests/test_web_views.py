@@ -160,7 +160,7 @@ def test_any_member_can_sync_but_only_an_admin_can_change_storage(client, queued
     HQProjectMember.objects.create(project=project, user=member, role="member")
 
     post(client, project, "sync_now")
-    queued.delay.assert_called_once_with(project.pk)
+    queued.assert_called_once_with(project, user=member, mode=None, actor="page")
 
     post(client, project, "set_storage", storage_mode="persistent")
     project.refresh_from_db()
@@ -170,7 +170,7 @@ def test_any_member_can_sync_but_only_an_admin_can_change_storage(client, queued
         post(client, project, action, confirm_domain="demo", kind="cases")
     project.refresh_from_db()
     assert project.status == "active" and HQProject.objects.filter(pk=project.pk).exists()
-    assert queued.delay.call_count == 1
+    assert queued.call_count == 1
 
 
 def test_an_admin_turning_persistence_on_takes_the_sync_on_with_their_own_sign_in(client):
@@ -188,19 +188,19 @@ def test_nobody_to_sync_as_is_said_not_silently_queued(client, queued):
     user = make_hq_user(client)
     project = add_project(user, sync_owner=None)
     resp = post(client, project, "sync_now")
-    assert not queued.delay.called and resp.status_code == 302
+    assert not queued.called and resp.status_code == 302
     post(client, project, "take_over")
     project.refresh_from_db()
     assert project.sync_owner == user
     post(client, project, "sync_now")
-    queued.delay.assert_called_once_with(project.pk)
+    assert queued.call_count == 1 and queued.call_args.kwargs["user"] == user
 
 
 def test_a_full_re_read_asks_for_a_reconcile(client, queued):
     user = make_hq_user(client)
     project = add_project(user)
     post(client, project, "full_resync")
-    queued.delay.assert_called_once_with(project.pk, HQSyncRun.MODE_RECONCILE)
+    queued.assert_called_once_with(project, user=user, mode=HQSyncRun.MODE_RECONCILE, actor="page")
 
 
 def test_adding_a_source_narrows_it_and_a_duplicate_is_refused(client):

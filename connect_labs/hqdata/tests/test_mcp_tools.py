@@ -312,26 +312,50 @@ def test_only_an_author_or_an_admin_can_delete_a_pipeline(project):
     assert not HQPipeline.objects.exists()
 
 
-def test_sync_is_queued_and_a_full_read_needs_an_admin(me, project):
+def ran(results=None):
+    """Stands in for the sync itself: what sync_project would hand back for one finished source."""
+    return mock.patch("connect_labs.hqdata.jobs.sync_project", return_value=results or {})
+
+
+def test_sync_is_a_durable_job_that_reports_progress():
+    tool = get_tool("hq_project_sync")
+    assert tool.long_running and tool.wants_progress and tool.is_write
+
+
+def test_any_member_can_sync_but_a_full_read_needs_an_admin(me, project):
     member = UserFactory()
     HQProjectMember.objects.create(project=project, user=member, role="member")
-    with mock.patch("connect_labs.hqdata.tasks.sync_project_task") as task:
-        assert call("hq_project_sync", member, project_id=project.pk)["queued"]
-        task.delay.assert_called_once_with(project.pk, None)
+    with ran() as sync:
+        out = call("hq_project_sync", member, project_id=project.pk)
+        assert out["project_id"] == project.pk and out["complete"] is True and sync.call_args.kwargs["mode"] is None
         with pytest.raises(MCPToolError):
             call("hq_project_sync", member, project_id=project.pk, mode="reconcile")
         call("hq_project_sync", me, project_id=project.pk, mode="reconcile")
-        task.delay.assert_called_with(project.pk, "reconcile")
+        assert sync.call_args.kwargs["mode"] == "reconcile"
         with pytest.raises(MCPToolError):
             call("hq_project_sync", me, project_id=project.pk, mode="bogus")
 
 
+def test_the_person_whose_sign_in_syncs_the_project_may_run_it_after_their_membership_has_lapsed(me, project):
+    """The schedule runs as that person. CommCare checks their sign-in on every call, not a 24 hour stamp."""
+    HQProjectMember.objects.filter(project=project, user=me).update(
+        verified_at=datetime(2020, 1, 1, tzinfo=timezone.utc)
+    )
+    with ran():
+        assert call("hq_project_sync", me, project_id=project.pk)["complete"] is True
+    stranger = UserFactory()
+    with ran() as sync:
+        with pytest.raises(MCPToolError) as caught:
+            call("hq_project_sync", stranger, project_id=project.pk)
+    assert caught.value.code == "NOT_FOUND" and not sync.called
+
+
 def test_a_project_with_nobodys_sign_in_cannot_be_synced(me, project):
     HQProject.objects.filter(pk=project.pk).update(sync_owner=None)
-    with mock.patch("connect_labs.hqdata.tasks.sync_project_task") as task:
+    with ran() as sync:
         with pytest.raises(MCPToolError):
             call("hq_project_sync", me, project_id=project.pk)
-    assert not task.delay.called
+    assert not sync.called
 
 
 def test_storage_is_an_admins_to_change_and_names_whose_sign_in_syncs(me, project):

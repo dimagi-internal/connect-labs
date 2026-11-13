@@ -13,12 +13,14 @@ nothing.
 from __future__ import annotations
 
 import logging
+import time
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 from django.utils import timezone
 
 from connect_labs.hqdata.backends.base import BackendUnavailable, SourceBackend
-from connect_labs.hqdata.models import HQCase, HQForm, HQProject, HQSource, HQSyncRun
+from connect_labs.hqdata.models import LEASE_SECONDS, HQCase, HQForm, HQProject, HQSource, HQSyncRun
 from connect_labs.hqdata.records import CaseRecord, FormRecord
 from connect_labs.hqdata.stores import store_for
 from connect_labs.labs.integrations.commcare.api_client import CCHQAuthError
@@ -94,17 +96,6 @@ class SourceBusy(Exception):
     """Another run holds this source's lease."""
 
 
-def choose_mode(source: HQSource, now: datetime | None = None) -> str:
-    now = now or timezone.now()
-    if source.watermark is None:
-        return HQSyncRun.MODE_FULL
-    if not source.backfill_complete:
-        return HQSyncRun.MODE_DELTA  # resume the unfinished backfill from its checkpoint
-    if source.last_reconciled_at is None or now - source.last_reconciled_at >= RECONCILE_EVERY:
-        return HQSyncRun.MODE_RECONCILE
-    return HQSyncRun.MODE_DELTA
-
-
 def _upsert(store, source: HQSource, batch: list, now: datetime) -> None:
     project_id = source.project_id
     if source.kind == HQSource.KIND_FORMS:
@@ -160,15 +151,33 @@ def _record_stamp(record: FormRecord | CaseRecord) -> datetime | None:
     return record.indexed_on
 
 
-def _mark_unseen_deleted(store, source: HQSource, seen: set[str], now: datetime) -> int:
-    """Rows the source covers that a full walk did not return were purged on the other side."""
-    id_field = "form_id" if source.kind == HQSource.KIND_FORMS else "case_id"
-    live = source.rows(store).filter(deleted_at__isnull=True)
-    stale = [i for i in live.values_list(id_field, flat=True) if i not in seen]
-    marked = 0
-    for start in range(0, len(stale), 1000):
-        marked += live.filter(**{f"{id_field}__in": stale[start : start + 1000]}).update(deleted_at=now)
-    return marked
+def choose_mode(source: HQSource, now: datetime | None = None) -> str:
+    now = now or timezone.now()
+    if source.reconcile_started_at is not None:
+        return HQSyncRun.MODE_RECONCILE  # one is part way through: carry on, do not start another
+    if source.watermark is None:
+        return HQSyncRun.MODE_FULL
+    if not source.backfill_complete:
+        return HQSyncRun.MODE_DELTA  # resume the unfinished backfill from its checkpoint
+    if source.last_reconciled_at is None or now - source.last_reconciled_at >= RECONCILE_EVERY:
+        return HQSyncRun.MODE_RECONCILE
+    return HQSyncRun.MODE_DELTA
+
+
+def _take_lease(source: HQSource, now: datetime, wait_for_lease_s: float) -> None:
+    """Claim the source, waiting up to ``wait_for_lease_s`` for a dead run's lease to lapse.
+
+    A job a deploy killed is redelivered at once, and finds the source still held by the run that was
+    killed; waiting out the lease (minutes) is how it carries on instead of giving up.
+    """
+    if source.claim(now):
+        return
+    give_up = time.monotonic() + wait_for_lease_s
+    while time.monotonic() < give_up:
+        time.sleep(5)
+        if source.claim(timezone.now()):
+            return
+    raise SourceBusy(f"{source} is already being synced")
 
 
 def sync_source(
@@ -177,25 +186,47 @@ def sync_source(
     *,
     mode: str | None = None,
     now: datetime | None = None,
+    deadline: float | None = None,
+    wait_for_lease_s: float = 0,
+    progress: Callable | None = None,
 ) -> HQSyncRun:
     """Run one sync of ``source``.
 
+    ``deadline`` is a ``time.monotonic()`` instant: past it the run stops after its next committed
+    batch with status ``partial``, everything it read already stored and checkpointed, and the next
+    run carries on. That is what lets a sync of any size run as jobs shorter than the worker's limit.
     Raises SourceBusy if another run holds it; re-raises a failure after recording it.
     """
     now = now or timezone.now()
-    if not source.claim(now):
-        raise SourceBusy(f"{source} is already being synced")
+    _take_lease(source, now, wait_for_lease_s)
     source.refresh_from_db()
     mode = mode or choose_mode(source, now)
+    reconciling = mode == HQSyncRun.MODE_RECONCILE
     walks_everything = mode in (HQSyncRun.MODE_FULL, HQSyncRun.MODE_RECONCILE)
-    since = None if walks_everything or source.watermark is None else source.watermark - OVERLAP
+
+    if reconciling and source.reconcile_started_at is None:
+        HQSource.objects.filter(pk=source.pk).update(reconcile_started_at=now, reconcile_cursor=None)
+        source.reconcile_started_at, source.reconcile_cursor = now, None
+    # Every row a reconcile writes carries the moment it began. What still carries an older one at
+    # the end was not in what HQ returned: HQ no longer has it.
+    stamp = source.reconcile_started_at if reconciling else now
+
+    if reconciling:
+        since = source.reconcile_cursor - OVERLAP if source.reconcile_cursor else None
+        max_seen: datetime | None = source.reconcile_cursor
+    elif walks_everything or source.watermark is None:
+        since, max_seen = None, None
+    else:
+        since, max_seen = source.watermark - OVERLAP, source.watermark
     run = HQSyncRun.objects.create(source=source, mode=mode, started_at=now, since=since)
+    # Where this run's checkpoint stood. A run starts a little BEFORE it (the overlap), so it re-reads
+    # rows it already has; it must not stop at its deadline until it has stored something newer, or a
+    # run that always ran out of time inside the overlap would never move on.
+    started_from = max_seen
 
-    seen: set[str] = set()
     batch: list = []
-    max_seen: datetime | None = source.watermark if mode == HQSyncRun.MODE_DELTA else None
     fetched = 0
-
+    stopped_early = False
     store = None
 
     def commit_batch() -> None:
@@ -204,13 +235,15 @@ def sync_source(
         # steps, rows first. A crash between them leaves the checkpoint behind the rows, which the
         # next walk simply writes again.
         with store.atomic():
-            _upsert(store, source, batch, now)
-        # The checkpoint moves with the batch it covers. A reconcile keeps its own until it has
-        # seen everything, so a half-finished one never claims progress.
-        if mode != HQSyncRun.MODE_RECONCILE and max_seen is not None:
-            HQSource.objects.filter(pk=source.pk).update(watermark=max_seen)
+            _upsert(store, source, batch, stamp)
+        if max_seen is not None:
+            HQSource.objects.filter(pk=source.pk).update(
+                **{"reconcile_cursor" if reconciling else "watermark": max_seen}
+            )
         batch = []
         source.heartbeat()
+        if progress is not None:
+            progress(fetched, None, f"{source}: {fetched} rows read")
 
     try:
         store = store_for(source.project)
@@ -219,31 +252,42 @@ def sync_source(
             for record in backend.iter_records(source, since):
                 batch.append(record)
                 fetched += 1
-                if mode == HQSyncRun.MODE_RECONCILE:
-                    seen.add(_record_id(record))
-                stamp = _record_stamp(record)
-                if stamp and (max_seen is None or stamp > max_seen):
-                    max_seen = stamp
+                point = _record_stamp(record)
+                if point and (max_seen is None or point > max_seen):
+                    max_seen = point
                 if len(batch) >= BATCH_SIZE:
                     commit_batch()
-            if batch:
+                    if (
+                        deadline is not None
+                        and time.monotonic() >= deadline
+                        and (started_from is None or (max_seen is not None and max_seen > started_from))
+                    ):
+                        stopped_early = True
+                        break
+            if batch and not stopped_early:
                 commit_batch()
 
             deleted = 0
-            if mode == HQSyncRun.MODE_RECONCILE:
-                deleted = _mark_unseen_deleted(store, source, seen, now)
+            if reconciling and not stopped_early:
+                deleted = (
+                    source.rows(store).filter(deleted_at__isnull=True, synced_at__lt=stamp).update(deleted_at=now)
+                )
 
-        updates: dict = {"last_error": ""}
-        if mode == HQSyncRun.MODE_RECONCILE and max_seen is not None:
-            updates["watermark"] = max_seen
-        if walks_everything or not source.backfill_complete:
-            # Walked from the beginning (or resumed a walk that began there): complete.
-            updates.update(backfill_complete=True, last_full_sync_at=now, last_reconciled_at=now)
-        HQSource.objects.filter(pk=source.pk).update(**updates)
-
-        run.status = HQSyncRun.STATUS_OK
+        if stopped_early:
+            run.status = HQSyncRun.STATUS_PARTIAL
+        else:
+            updates: dict = {"last_error": ""}
+            if reconciling:
+                if max_seen is not None and (source.watermark is None or max_seen > source.watermark):
+                    updates["watermark"] = max_seen
+                updates.update(reconcile_started_at=None, reconcile_cursor=None)
+            if walks_everything or not source.backfill_complete:
+                # Walked from the beginning (or resumed a walk that began there): complete.
+                updates.update(backfill_complete=True, last_full_sync_at=now, last_reconciled_at=now)
+            HQSource.objects.filter(pk=source.pk).update(**updates)
+            run.status = HQSyncRun.STATUS_OK
+            run.deleted = deleted
         run.fetched = fetched
-        run.deleted = deleted
     except Exception as exc:
         run.status = HQSyncRun.STATUS_ERROR
         run.fetched = fetched
@@ -263,10 +307,32 @@ def sync_source(
     return run
 
 
-def sync_project(project: HQProject, backend: SourceBackend | None = None, *, mode: str | None = None) -> dict:
+def summarize(results: dict) -> dict:
+    """What a pass over a project's sources came to: ``complete`` is False while any has more to read."""
+    runs = [r for r in results.values() if isinstance(r, HQSyncRun)]
+    errors = [str(r) for r in results.values() if isinstance(r, Exception)]
+    return {
+        "complete": not errors and all(r.status == HQSyncRun.STATUS_OK for r in runs) and len(runs) == len(results),
+        "more_to_read": any(r.status == HQSyncRun.STATUS_PARTIAL for r in runs) or None in results.values(),
+        "rows": sum(r.fetched for r in runs),
+        "removed": sum(r.deleted for r in runs),
+        "errors": errors,
+    }
+
+
+def sync_project(
+    project: HQProject,
+    backend: SourceBackend | None = None,
+    *,
+    mode: str | None = None,
+    deadline: float | None = None,
+    wait_for_lease_s: float = 0,
+    progress: Callable | None = None,
+) -> dict:
     """Sync every enabled source of a project; record the outcome on the project.
 
-    Returns ``{source_id: HQSyncRun | Exception}`` so one failing source does not hide the rest.
+    Returns ``{source_id: HQSyncRun | Exception | None}`` so one failing source does not hide the
+    rest. ``None`` is a source not reached before the deadline.
     """
     from connect_labs.hqdata.backends.factory import backend_for
 
@@ -280,9 +346,16 @@ def sync_project(project: HQProject, backend: SourceBackend | None = None, *, mo
         return {None: exc}
 
     failures: list[Exception] = []
-    for source in project.sources.filter(enabled=True):
+    for source in project.sources.filter(enabled=True).order_by("pk"):
+        # Always start the first source: a job that read nothing would hand on a continuation that
+        # reads nothing either. After that the deadline decides what is left for the next job.
+        if deadline is not None and results and time.monotonic() >= deadline:
+            results[source.pk] = None
+            continue
         try:
-            results[source.pk] = sync_source(source, backend, mode=mode)
+            results[source.pk] = sync_source(
+                source, backend, mode=mode, deadline=deadline, wait_for_lease_s=wait_for_lease_s, progress=progress
+            )
         except SourceBusy as exc:
             results[source.pk] = exc
         except Exception as exc:  # recorded on the run and source by sync_source
@@ -297,7 +370,25 @@ def sync_project(project: HQProject, backend: SourceBackend | None = None, *, mo
     else:
         status, error = HQProject.STATUS_ACTIVE, ""
     updates = {"status": status, "last_error": error[:2000]}
-    if not failures:
+    if not failures and summarize(results)["complete"]:
         updates["last_synced_at"] = timezone.now()
     HQProject.objects.filter(pk=project.pk).update(**updates)
     return results
+
+
+def reap_interrupted_runs(now: datetime | None = None) -> int:
+    """Close the history of runs whose worker died: still "running", and nobody holds their source.
+
+    A deploy hard-kills a worker; its run row never learns. The data is fine (every batch committed
+    with its checkpoint, and the job is redelivered), so this only keeps the history honest.
+    """
+    now = now or timezone.now()
+    cutoff = now - timedelta(seconds=LEASE_SECONDS)
+    stuck = HQSyncRun.objects.filter(status=HQSyncRun.STATUS_RUNNING, started_at__lt=cutoff).exclude(
+        source__running_since__gt=cutoff
+    )
+    return stuck.update(
+        status=HQSyncRun.STATUS_ERROR,
+        finished_at=now,
+        error="Interrupted (the worker running it was stopped). It carries on from its last checkpoint.",
+    )

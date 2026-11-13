@@ -19,6 +19,7 @@ from connect_labs.hqdata.pipelines import PipelineProblem, config_for, run_pipel
 from connect_labs.hqdata.projects import Refused, register_project, set_storage
 from connect_labs.hqdata.stores import StoreUnavailable, store_for
 from connect_labs.labs.integrations.commcare.cchq_tokens import cchq_token_or_none
+from connect_labs.labs.progress import NULL_PROGRESS
 from connect_labs.mcp.tool_registry import MCPToolError, register
 
 MAX_ROWS = 200
@@ -173,7 +174,11 @@ def hq_project_create(user, domain="", **_):
 
 @register(
     name="hq_project_sync",
-    description="Bring a project up to date from CommCare now. Returns at once; the sync runs in the background.",
+    description=(
+        "Bring a project up to date from CommCare. Runs as a background job that a labs deploy does not lose: a "
+        "large first read carries on as further jobs until it is done. Returns the result if it finishes within "
+        "about half a minute, otherwise a job_id to follow with job_status."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -190,11 +195,18 @@ def hq_project_create(user, domain="", **_):
         "required": ["project_id"],
     },
     is_write=True,
+    long_running=True,
+    wants_progress=True,
 )
-def hq_project_sync(user, project_id=None, mode=None, **_):
-    from connect_labs.hqdata.tasks import sync_project_task
+def hq_project_sync(user, project_id=None, mode=None, progress=NULL_PROGRESS, **_):
+    from connect_labs.hqdata.jobs import run_sync
 
-    project = _project(user, project_id)
+    project = HQProject.objects.filter(pk=project_id).first() if isinstance(project_id, int) else None
+    # The person whose CommCare sign-in the project syncs with may always run it (that sign-in, which
+    # CommCare checks on every call, is the authority, not a 24 hour membership stamp). Anyone else
+    # must be a member.
+    if project is None or (project.sync_owner_id != user.pk and not may_use_project(user, project)):
+        raise MCPToolError("NOT_FOUND", "No such CommCare project, or you are not a member of it.")
     if mode not in (None, "delta", "full", "reconcile"):
         raise MCPToolError("INVALID_SCHEMA", "mode must be delta, full or reconcile.")
     if mode in ("full", "reconcile"):
@@ -204,8 +216,7 @@ def hq_project_sync(user, project_id=None, mode=None, **_):
             "PERMISSION_DENIED",
             "Nobody's CommCare sign-in is attached to this project. Use the project page to attach yours.",
         )
-    sync_project_task.delay(project.pk, mode)
-    return {"queued": True, **_summary(project)}
+    return {**_summary(project), **run_sync(project, user, mode, progress)}
 
 
 @register(
