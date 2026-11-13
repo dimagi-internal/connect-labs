@@ -311,6 +311,74 @@
         <select id="tg-year"
                 class="w-full mt-1 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
         <p id="tg-year-note" class="text-[11px] text-stone-500 mt-1"></p>
+
+      </div>
+
+      <a id="tg-download" href="#"
+         class="block text-center bg-stone-900 text-white rounded-lg px-4 py-2.5 text-sm font-medium hover:bg-stone-700">
+        Download table + methodology (.zip)
+      </a>
+    </aside>
+
+    <div class="flex-1 min-w-0 space-y-4">
+
+      <div>
+        {% comment %}
+          "mortality data for 54" used to sit here on every one of the 52
+          indicators, a few centimetres above a method chip reading "43/55
+          countries" for improved water. Two coverage figures for two different
+          questions, and the wrong one was the larger and the more prominent.
+
+          How many countries can answer depends on the indicator AND the
+          method, so it belongs where it is already computed and already
+          correct — the method panel. What is left here is the one coverage
+          fact that is genuinely page-level: which countries have boundaries
+          loaded at all.
+        {% endcomment %}
+        <p class="text-xs text-stone-500 mt-2">
+          <span class="tg-num">{{ countries_with_boundaries }}</span> of
+          <span class="tg-num">{{ africa_total }}</span> African countries have boundaries
+        </p>
+      </div>
+
+      <!-- Four quantities of equal standing, except that the one being targeted is emphasised — for a coverage indicator that is the unreached count, which the engine already computes and the old surface buried. -->
+      <!-- What the four totals add up: only the areas past the threshold, so
+           "Nigeria, 150M" read as a wrong census when it was 28 of 37 states. -->
+      <p id="tg-totals-scope" class="text-xs text-stone-600"></p>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div class="bg-white rounded-lg border border-stone-200 p-3">
+          <div class="text-[11px] text-stone-500 leading-tight">Total population</div>
+          <div id="tg-poptotal" class="text-2xl font-semibold text-stone-900 tg-num mt-0.5 tracking-tight">—</div>
+        </div>
+        <div class="bg-white rounded-lg border border-stone-200 p-3">
+          <div id="tg-popu5-label" class="text-[11px] text-stone-500 leading-tight">Under-5 population</div>
+          <div id="tg-popu5" class="text-2xl font-semibold text-stone-900 tg-num mt-0.5 tracking-tight">—</div>
+        </div>
+        <div class="bg-white rounded-lg border border-stone-200 p-3">
+          <div class="text-[11px] text-stone-500 leading-tight">Annual births</div>
+          <div id="tg-births" class="text-2xl font-semibold text-stone-900 tg-num mt-0.5 tracking-tight">—</div>
+        </div>
+        <div id="tg-burden-tile" class="bg-white rounded-lg border border-teal-300 p-3">
+          <div id="tg-burden-label" class="text-[11px] text-teal-800 leading-tight">Expected under-5 deaths / year</div>
+          <div id="tg-deaths" class="text-2xl font-semibold text-teal-900 tg-num mt-0.5 tracking-tight">—</div>
+          <!-- A survey measures a fortnight. Where the annual sibling exists it
+               is stated here rather than left to be assumed: quoting a
+               recall-window count as a year's is a twentyfold error, and this
+               page has made it in print. -->
+          <div id="tg-burden-annual" class="hidden text-[11px] text-teal-800 tg-num mt-1"></div>
+        </div>
+      </div>
+
+      <div>
+        <div id="tg-map" class="tg-map bg-stone-200"></div>
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-xs text-stone-600">
+          <span class="font-medium" id="tg-legend-title">Under-5 mortality (per 1,000 live births)</span>
+          <div class="flex items-center gap-1" id="tg-legend"></div>
+          <span class="ml-auto flex items-center gap-1">
+            <span class="inline-block w-3 h-3 rounded-sm" style="background:#0f766e"></span>
+            <span id="tg-legend-selected">above threshold</span>
+          </span>
+        </div>
       </div>
 
       <div class="bg-white rounded-lg border border-stone-200 p-4">
