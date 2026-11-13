@@ -1718,3 +1718,92 @@ describe('proxyFetch reads an answer with a cap', () => {
     expect(new TextDecoder().decode(ok)).toBe('hello');
   });
 });
+
+describe('a workflow may open a CommCare HQ form and its forwarding record', () => {
+  const FORM = '0b5e2c1d-7a3f-4e9b-8c2d-1f6a9e4b3c7d';
+  const HQ = 'https://www.commcarehq.org';
+  const formUrl = `${HQ}/a/demo-project/reports/form_data/${FORM}/`;
+  const forwardingUrl = `${HQ}/a/demo-project/settings/project/repeat_record_report/?payload_id=${FORM}`;
+
+  it('opens exactly those two addresses, by the parsed address', () => {
+    expect(checkNavigate(formUrl, LABS, 'full', true)).toBe(formUrl);
+    expect(checkNavigate(forwardingUrl, LABS, 'full', true)).toBe(
+      forwardingUrl,
+    );
+  });
+
+  it('a page may not, nor a workflow anywhere else off labs', () => {
+    expect(() => checkNavigate(formUrl, LABS, 'page')).toThrow();
+    expect(() => checkNavigate(formUrl, LABS, 'full')).toThrow();
+    const refused = [
+      `${HQ}/a/demo-project/settings/users/`,
+      `${HQ}/a/demo-project/reports/form_data/${FORM}/edit/`,
+      `${HQ}/a/demo-project/reports/form_data/not-a-form-id/`,
+      `${HQ}/a/demo-project/reports/form_data/${FORM}/?next=/accounts/logout/`,
+      `${HQ}/a/demo-project/reports/form_data/${FORM}/#x`,
+      `${HQ}/a/demo-project/settings/project/repeat_record_report/`,
+      `${forwardingUrl}&repeater=1`,
+      `${forwardingUrl}&payload_id=${FORM}`,
+      `${HQ}/a/demo-project/settings/project/repeat_record_report/?payload_id=x`,
+      `${HQ}/a/../reports/form_data/${FORM}/`,
+      `http://www.commcarehq.org/a/demo-project/reports/form_data/${FORM}/`,
+      `https://india.commcarehq.org/a/x/reports/form_data/${FORM}/`,
+      `https://www.commcarehq.org.evil.com/a/x/reports/form_data/${FORM}/`,
+      `https://user:pw@www.commcarehq.org/a/x/reports/form_data/${FORM}/`,
+      `https://evil.com/a/x/reports/form_data/${FORM}/`,
+    ];
+    for (const url of refused) {
+      expect(() => checkNavigate(url, LABS, 'full', true), url).toThrow();
+    }
+  });
+
+  it('always opens in a new tab: the labs page is never navigated away', async () => {
+    const { d, h } = wfDispatcher();
+    const out = await d({
+      id: 1,
+      method: 'navigate',
+      params: { url: formUrl, newTab: false },
+    });
+    expect(out.error).toBeUndefined();
+    expect(h.navigate).toHaveBeenCalledWith(formUrl, true);
+  });
+
+  it('a page answered the full method set still may not open them', async () => {
+    const h = pageHandlers();
+    const d = createDispatcher(h, {
+      labsOrigin: LABS,
+      hasActivation: () => true,
+      mode: 'page',
+      routeContext: { ...CTX, runId: null },
+      workflow: workflowHandlers(),
+    });
+    const out = await d({
+      id: 1,
+      method: 'navigate',
+      params: { url: formUrl, newTab: true },
+    });
+    expect(out.error).toMatch(/only labs pages/);
+    expect(h.navigate).not.toHaveBeenCalled();
+    // ...while its labs links still open.
+    await d({ id: 2, method: 'navigate', params: { url: '/audit/5/bulk/' } });
+    expect(h.navigate).toHaveBeenCalledWith(`${LABS}/audit/5/bulk/`, false);
+  });
+
+  it('without a click it is asked, naming the site', async () => {
+    const ask = vi.fn(async () => false);
+    const { d, h } = wfDispatcher({
+      w: workflowHandlers({ ask }),
+      activation: false,
+    });
+    const out = await d({
+      id: 1,
+      method: 'navigate',
+      params: { url: formUrl },
+    });
+    expect(ask).toHaveBeenCalledWith(
+      `This workflow wants to open www.commcarehq.org/a/demo-project/reports/form_data/${FORM}/.`,
+    );
+    expect(out.error).toMatch(/needs a click/);
+    expect(h.navigate).not.toHaveBeenCalled();
+  });
+});
