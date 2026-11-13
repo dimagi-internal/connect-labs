@@ -1065,7 +1065,7 @@ class TestBadQueryParametersDegrade:
     @pytest.mark.parametrize("params", BAD)
     def test_every_endpoint_answers_rather_than_erroring(self, client_in, africa, params):
         for name in ("selection", "methods", "map_data", "scope", "methodology"):
-            r = client_in.get(reverse(f"targeting:{name}"), params)
+            r = client_in.get(reverse(f"indicators:{name}"), params)
             assert r.status_code == 200, f"{name} returned {r.status_code} for {params}"
 
     def test_an_unknown_indicator_falls_back_to_the_default(self, client_in, africa):
