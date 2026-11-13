@@ -128,6 +128,32 @@ class HQProjectMember(models.Model):
         constraints = [models.UniqueConstraint(fields=["project", "user"], name="uniq_hqmember_project_user")]
 
 
+class HQIdentity(models.Model):
+    """What CommCare HQ last said about a person who has used it with labs.
+
+    One row per labs user. A person who signs in with CommCare and has no Connect login
+    (their ``User`` is created here, with no email) is a CommCare-ONLY identity; a Connect
+    person who connected their CommCare account gets the same row, so memberships are proven
+    the same way for both.
+    """
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="hq_identity")
+    hq_host = models.CharField(max_length=255)
+    hq_username = models.CharField(max_length=255)
+    # Kept for display only. Never matched against a labs user and never read as a
+    # Dimagi address: HQ's word about an email is not labs' proof of it.
+    email = models.CharField(max_length=255, blank=True)
+    name = models.CharField(max_length=255, blank=True)
+    domains = models.JSONField(default=list)
+    refreshed_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        app_label = "hqdata"
+        constraints = [
+            models.UniqueConstraint(fields=["hq_host", "hq_username"], name="uniq_hqidentity_host_username")
+        ]
+
+
 class HQSource(models.Model):
     """What is pulled from a project (forms or cases, optionally narrowed) and how far it has got."""
 
@@ -290,3 +316,33 @@ class HQSyncRun(models.Model):
         app_label = "hqdata"
         ordering = ["-started_at"]
         indexes = [models.Index(fields=["source", "-started_at"])]
+
+
+class HQPipeline(models.Model):
+    """A saved pipeline over a project's forms or cases.
+
+    The ``schema`` is the same shape workflows use (fields with a ``path``, an ``aggregation``,
+    a ``grouping_key``...). Its ``data_source`` is NOT stored here: where the data comes from is
+    this row's own project and narrowing, stamped on at run time (``pipelines.config_for``), so
+    a schema can never be pointed at a project the person does not belong to.
+    """
+
+    project = models.ForeignKey(HQProject, on_delete=models.CASCADE, related_name="pipelines")
+    name = models.CharField(max_length=120)
+    store_kind = models.CharField(max_length=8, choices=HQSource.KIND_CHOICES)
+    app_id = models.CharField(max_length=64, blank=True)
+    xmlns = models.CharField(max_length=512, blank=True)
+    case_type = models.CharField(max_length=255, blank=True)
+    schema = models.JSONField(default=dict)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = "hqdata"
+        constraints = [models.UniqueConstraint(fields=["project", "name"], name="uniq_hqpipeline_project_name")]
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return f"{self.project}: {self.name}"

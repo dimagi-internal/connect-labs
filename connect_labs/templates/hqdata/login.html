@@ -1,0 +1,14 @@
+{% extends "hqdata/base.html" %}
+{% block hq_content %}
+  <div class="mx-auto max-w-md rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm">
+    <h1 class="mb-2 text-2xl font-semibold">Work with your CommCare data</h1>
+    <p class="mb-6 text-sm text-gray-600">
+      Sign in with your CommCare account. You will see the projects CommCare says you belong to,
+      and nothing from Connect.
+    </p>
+    <a href="{% url 'hq:login_initiate' %}?next={{ next|urlencode }}"
+       class="inline-block rounded-lg bg-brand-indigo px-5 py-2.5 font-semibold text-white">
+      Sign in with CommCare
+    </a>
+  </div>
+{% endblock %}

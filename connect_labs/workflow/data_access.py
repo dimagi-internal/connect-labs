@@ -3202,8 +3202,9 @@ class PipelineDataAccess(BaseDataAccess):
             return []
         return [serialize_pipeline_row(row) for row in result.rows]
 
-    def _schema_to_config(self, schema: dict, definition_id: int):
-        """Convert JSON schema to AnalysisPipelineConfig."""
+    @staticmethod
+    def _schema_to_config(schema: dict, definition_id: int):
+        """Convert JSON schema to AnalysisPipelineConfig. Uses no instance state (hqdata calls it bare)."""
         from connect_labs.labs.analysis.config import (
             AnalysisPipelineConfig,
             CacheStage,
@@ -3435,6 +3436,9 @@ class PipelineDataAccess(BaseDataAccess):
             case_type=data_source_dict.get("case_type", ""),
             form_lookback_days=data_source_dict.get("form_lookback_days", 0) or 0,
             domain=data_source_dict.get("domain", ""),
+            project_id=data_source_dict.get("project_id", 0) or 0,
+            store_kind=data_source_dict.get("store_kind", ""),
+            xmlns=data_source_dict.get("xmlns", ""),
             file_id=data_source_dict.get("file_id", ""),
             folder_id=data_source_dict.get("folder_id", ""),
             file_pattern=data_source_dict.get("file_pattern", ""),

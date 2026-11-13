@@ -220,7 +220,7 @@ LOGIN_URL = "/labs/login/"
 # so a satellite login never becomes a labs login. Each satellite MUST list its
 # URL prefix here (next to its INSTALLED_APPS + urls.py entries) or its own
 # users get logged out on every request to it. See docs/multi-site-auth.md.
-LABS_SATELLITE_URL_PREFIXES = ["/campaign/"]
+LABS_SATELLITE_URL_PREFIXES = ["/campaign/", "/hq/"]
 
 # PASSWORDS
 # ------------------------------------------------------------------------------

@@ -43,6 +43,33 @@ This is why a satellite login cannot become a labs login, and it's verified by
 
 One person can hold several authorizations at once; each surface checks its own.
 
+## `/hq/`: signing in with CommCare instead of Connect
+
+`connect_labs/hqdata/web/` is a satellite for people with **no Connect login**. They sign in
+with CommCare HQ OAuth (`/hq/login/`), see the CommCare projects HQ says they belong to, and
+nothing else. It adds a fourth row to the table above:
+
+| User | `labs_oauth`? | Labs | `/hq/` |
+|------|:---:|:---:|:---:|
+| CommCare-only | no | logged out on any labs path (the boundary above, unchanged) | ✅ |
+
+Three rules keep that row honest:
+
+1. **Never merge by email.** The labs user for a CommCare account is found by
+   `hqdata.identity.identity_username` and nothing else, and is created with no email. Dimagi
+   status is read from `User.email`, so a CommCare-only identity is never staff, whatever address
+   CommCare reports. (Campaign's login matches an existing user by email; do not copy that here.)
+2. **No MCP.** `/o/` (the MCP sign-in) is skip-listed by the boundary, so a CommCare-only session
+   could mint a token there. `mcp/server.py::_verify_bearer_sync` refuses any user for whom
+   `hqdata.access.is_commcare_only` holds (an HQ identity, no Connect token) until that identity
+   has a tool set of its own.
+3. **Access is membership proven by CommCare.** `hqdata.access.may_use_project`; see
+   `docs/superpowers/specs/2026-11-13-commcare-first-class-design.md`.
+
+The OAuth redirect URI `/hq/login/callback/` must be registered on the CommCare HQ OAuth
+application (the one `COMMCARE_OAUTH_CLIENT_ID` names) or HQ refuses the sign-in.
+Verified by `connect_labs/hqdata/tests/test_boundary.py`.
+
 ## Adding a new satellite site N — checklist
 
 A satellite is a self-contained site that should be liftable into its own

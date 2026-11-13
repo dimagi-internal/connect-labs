@@ -65,6 +65,22 @@ _CASE_FIELDS = [
 ]
 
 
+def invalidate_project_caches(project_id: int) -> None:
+    """Drop every cached pipeline result built from this project's rows.
+
+    A project's cached results are kept for weeks (``HQ_PIPELINE_CACHE_TTL_HOURS``) because
+    this is what ends them: rows changed, so what was computed from them is stale. Failing to
+    drop them must not fail the sync that already stored the rows, but it is loud in the log.
+    """
+    try:
+        from connect_labs.hqdata.scope import hq_scope_id
+        from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
+
+        SQLCacheManager.delete_all_cache(hq_scope_id(project_id))
+    except Exception:
+        logger.exception("hqdata could not clear cached results for project %s", project_id)
+
+
 class SourceBusy(Exception):
     """Another run holds this source's lease."""
 
@@ -232,6 +248,9 @@ def sync_source(
         run.finished_at = timezone.now()
         run.save()
         source.release()
+        # Rows may have changed even when the run did not finish: batches commit as they go.
+        if run.fetched or run.deleted:
+            invalidate_project_caches(source.project_id)
     return run
 
 

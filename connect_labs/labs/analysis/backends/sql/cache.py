@@ -237,7 +237,13 @@ class SQLCacheManager:
 
         ttl_hours = getattr(settings, "PIPELINE_CACHE_TTL_HOURS", DEFAULT_TTL_HOURS)
         self.ttl = timedelta(hours=ttl_hours)
-        if source_type == "gdrive":
+        if source_type == "hq_store":
+            # A CommCare project's cache is invalidated by its sync (hqdata.sync clears the
+            # project's scope when rows change), so the clock is only the upper bound on
+            # trusting it. Cached results are what a persistent project keeps instead of
+            # rebuilding hourly.
+            self.ttl = timedelta(hours=getattr(settings, "HQ_PIPELINE_CACHE_TTL_HOURS", 24 * 30))
+        elif source_type == "gdrive":
             # A Drive cache is invalidated by its files changing, checked on every
             # read (gdrive_freshness); the expiry is only the upper bound on trusting
             # it without a re-read.

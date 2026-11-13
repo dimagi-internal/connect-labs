@@ -1,0 +1,29 @@
+{% extends "hqdata/base.html" %}
+{% block hq_content %}
+  <p class="mb-2 text-sm"><a class="underline" href="{% url 'hq:project_detail' project.pk %}">&larr; {{ project.domain }}</a></p>
+  <h1 class="mb-4 text-2xl font-semibold">Pipelines</h1>
+
+  <section class="mb-8">
+    {% if pipelines %}
+      <ul class="rounded-lg border border-gray-200 bg-white text-sm">
+        {% for p in pipelines %}
+          <li class="border-t border-gray-100 p-3 first:border-t-0">
+            <a class="font-medium underline" href="{% url 'hq:pipeline_detail' project.pk p.pk %}">{{ p.name }}</a>
+            <span class="text-gray-500">on {{ p.get_store_kind_display|lower }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="text-sm text-gray-600">No pipelines yet.</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2 class="mb-2 font-semibold">New pipeline</h2>
+    <form method="post" class="space-y-3 text-sm">
+      {% csrf_token %}
+      {% include "hqdata/pipeline_fields.html" with pipeline=draft schema_text=draft_schema %}
+      <button class="rounded bg-brand-indigo px-4 py-2 font-semibold text-white">Save</button>
+    </form>
+  </section>
+{% endblock %}

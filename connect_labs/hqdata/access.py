@@ -10,17 +10,21 @@ domains their HQ account lists are written here with a timestamp; a membership o
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 from datetime import datetime, timedelta
 
 from django.utils import timezone
 
-from connect_labs.hqdata.models import HQProject, HQProjectMember
+from connect_labs.hqdata.models import HQIdentity, HQProject, HQProjectMember
 
 MEMBERSHIP_TTL = timedelta(hours=24)
+# What CommCare allows in a domain name. A domain goes into URL paths (/a/<domain>/api/...) and,
+# on a customer store, into object names, so nothing else is ever accepted.
+DOMAIN_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{0,62}$")
 
 
-class ProjectAccessDenied(Exception):
+class ProjectAccessDenied(PermissionError):
     """The person is not (or is no longer) a member of the project."""
 
 
@@ -90,8 +94,8 @@ def create_project(
     in becomes the project's admin and its sync owner (whose token scheduled syncs use).
     """
     domain = domain.strip().lower()
-    if not domain:
-        raise ValueError("A project needs a CommCare domain.")
+    if not DOMAIN_RE.match(domain):
+        raise ValueError("A project needs a CommCare domain: lower-case letters, digits and hyphens.")
     if not can_read_domain():
         raise ProjectAccessDenied(f"CommCare does not let this account read forms in {domain!r}.")
     now = now or timezone.now()
@@ -106,3 +110,17 @@ def create_project(
         defaults={"verified_at": now, **({"role": HQProjectMember.ROLE_ADMIN} if created else {})},
     )
     return project
+
+
+def is_commcare_only(user) -> bool:
+    """A person who reaches labs only through CommCare: an HQ identity and no Connect token.
+
+    Such a person is confined to ``/hq/`` by the labs session boundary (no ``labs_oauth``), and
+    to ``hqdata`` tools elsewhere: anything that acts "as the user" for Connect data has no
+    Connect token to act with.
+    """
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    from connect_labs.labs.models import UserConnectToken
+
+    return HQIdentity.objects.filter(user=user).exists() and not UserConnectToken.objects.filter(user=user).exists()

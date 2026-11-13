@@ -1,0 +1,45 @@
+{% extends "hqdata/base.html" %}
+{% block hq_content %}
+  <section class="mb-8">
+    <h2 class="mb-3 text-lg font-semibold">Your projects</h2>
+    {% if projects %}
+      <table class="w-full rounded-lg border border-gray-200 bg-white text-sm">
+        <thead class="bg-gray-50 text-left text-gray-600">
+          <tr><th class="p-3">Project</th><th class="p-3">Storage</th><th class="p-3">Status</th><th class="p-3">Last synced</th></tr>
+        </thead>
+        <tbody>
+          {% for p in projects %}
+            <tr class="border-t border-gray-100">
+              <td class="p-3"><a class="font-medium underline" href="{% url 'hq:project_detail' p.pk %}">{{ p.domain }}</a></td>
+              <td class="p-3">{{ p.get_storage_mode_display }}</td>
+              <td class="p-3">{{ p.get_status_display }}</td>
+              <td class="p-3">{{ p.last_synced_at|default:"never" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="text-sm text-gray-600">You have not added a project yet.</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2 class="mb-3 text-lg font-semibold">Add a project</h2>
+    {% if unregistered %}
+      <form method="post" action="{% url 'hq:project_create' %}" class="flex items-end gap-3">
+        {% csrf_token %}
+        <label class="text-sm">CommCare project
+          <select name="domain" class="mt-1 block rounded border border-gray-300 p-2">
+            {% for d in unregistered %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+          </select>
+        </label>
+        <button class="rounded-lg bg-brand-indigo px-4 py-2 font-semibold text-white">Add</button>
+      </form>
+      <p class="mt-2 text-xs text-gray-500">
+        CommCare must let your account read forms in the project (the Edit Data permission).
+      </p>
+    {% else %}
+      <p class="text-sm text-gray-600">CommCare lists no further projects for your account.</p>
+    {% endif %}
+  </section>
+{% endblock %}

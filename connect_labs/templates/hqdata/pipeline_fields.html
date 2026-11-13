@@ -1,0 +1,20 @@
+<div class="flex flex-wrap gap-3">
+  <label>Name <input name="name" value="{{ pipeline.name }}" class="mt-1 block rounded border border-gray-300 p-1.5"></label>
+  <label>Reads
+    <select name="store_kind" class="mt-1 block rounded border border-gray-300 p-1.5">
+      <option value="forms" {% if pipeline.store_kind == "forms" %}selected{% endif %}>Forms</option>
+      <option value="cases" {% if pipeline.store_kind == "cases" %}selected{% endif %}>Cases</option>
+    </select>
+  </label>
+  <label>App id <input name="app_id" value="{{ pipeline.app_id }}" class="mt-1 block rounded border border-gray-300 p-1.5"></label>
+  <label>Form namespace <input name="xmlns" value="{{ pipeline.xmlns }}" class="mt-1 block rounded border border-gray-300 p-1.5"></label>
+  <label>Case type <input name="case_type" value="{{ pipeline.case_type }}" class="mt-1 block rounded border border-gray-300 p-1.5"></label>
+</div>
+<label class="block">Schema (JSON)
+  <textarea name="schema" rows="14" class="mt-1 block w-full rounded border border-gray-300 p-2 font-mono text-xs">{{ schema_text }}</textarea>
+</label>
+<p class="text-xs text-gray-500">
+  Field paths start with <code>form.</code> for forms and <code>case.</code> for cases (for example
+  <code>case.properties.age</code>). Where the data comes from is set by the project and the choices above,
+  never by the schema.
+</p>
