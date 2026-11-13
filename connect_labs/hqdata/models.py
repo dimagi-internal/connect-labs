@@ -106,6 +106,28 @@ class HQProject(models.Model):
         )
 
 
+class HQProjectMember(models.Model):
+    """A person who may work in a project, as last proven by CommCare HQ.
+
+    Membership is not granted in labs: it is read off the person's own CommCare account
+    (the domains their HQ identity lists) and expires if not proven again, so a person
+    removed from the domain on HQ loses access here without anyone telling labs.
+    """
+
+    ROLE_ADMIN = "admin"
+    ROLE_MEMBER = "member"
+    ROLE_CHOICES = [(ROLE_ADMIN, "Admin"), (ROLE_MEMBER, "Member")]
+
+    project = models.ForeignKey(HQProject, on_delete=models.CASCADE, related_name="members")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default=ROLE_MEMBER)
+    verified_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        app_label = "hqdata"
+        constraints = [models.UniqueConstraint(fields=["project", "user"], name="uniq_hqmember_project_user")]
+
+
 class HQSource(models.Model):
     """What is pulled from a project (forms or cases, optionally narrowed) and how far it has got."""
 

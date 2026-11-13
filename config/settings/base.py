@@ -112,6 +112,11 @@ DATABASES["default"]["ATOMIC_REQUESTS"] = True
 # password (connect_labs/labsdata/reader_login.py). Unset, it switches to that role
 # from the app's login instead (development and tests).
 LABSDATA_READER_PASSWORD = env("LABSDATA_READER_PASSWORD", default="")
+# Fernet keys for EncryptedTextField (connect_labs/utils/encrypted_fields.py), newest first,
+# comma-separated in the environment. Required where a secret is stored (customer database
+# credentials); an environment that sets REQUIRED refuses to save one without a key.
+LABS_FIELD_ENCRYPTION_KEYS = env.list("LABS_FIELD_ENCRYPTION_KEYS", default=[])
+LABS_FIELD_ENCRYPTION_REQUIRED = env.bool("LABS_FIELD_ENCRYPTION_REQUIRED", default=False)
 LABSDATA_READER_LOGIN_REQUIRED = False
 
 

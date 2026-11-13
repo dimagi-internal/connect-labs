@@ -30,6 +30,8 @@ DATABASES["default"]["CONN_MAX_AGE"] = env.int("CONN_MAX_AGE", default=0)  # noq
 # On AWS the Data page's SQL only ever runs as the reader's own login: without its
 # password it refuses rather than falling back to SET ROLE (labsdata/reader_login.py).
 LABSDATA_READER_LOGIN_REQUIRED = True
+# A customer database password must never be stored in clear on AWS.
+LABS_FIELD_ENCRYPTION_REQUIRED = env.bool("LABS_FIELD_ENCRYPTION_REQUIRED", default=True)
 
 # SECURITY
 # ------------------------------------------------------------------------------
