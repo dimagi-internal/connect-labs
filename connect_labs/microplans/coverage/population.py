@@ -26,6 +26,8 @@ import pandas as pd
 ELIGIBLE_SHARE_OF_U5 = 0.95
 #: A cell is drawn only when at least this many households fall in it.
 MIN_HOUSEHOLDS = 5
+#: The whole admin unit joins a district's range only if the squares its households touched hold this much of it.
+UNIT_FAIR_TOUCHED_SHARE = 0.5
 
 GRID_NAME = "WorldPop 2022, 1 km, UN-adjusted, ages 0-4 (age-sex structure)"
 
@@ -213,6 +215,131 @@ def population_lens(
         "total": summarise(set(cells)),
         "min_households": min_households,
     }
+
+
+def unit_index(lons, lats, geometries) -> np.ndarray:
+    """For each point, the index of the geometry containing it (lowest index wins a border point), or -1."""
+    import shapely
+    from shapely import STRtree
+
+    out = np.full(len(lons), -1, dtype=int)
+    if not len(geometries) or not len(lons):
+        return out
+    tree = STRtree(list(geometries))
+    pts = shapely.points(np.asarray(lons, float), np.asarray(lats, float))
+    point_idx, geom_idx = tree.query(pts, predicate="intersects")
+    for p, g in sorted(zip(point_idx.tolist(), geom_idx.tolist()), reverse=True):
+        out[p] = g  # reversed so the lowest geometry index is written last and wins
+    return out
+
+
+def eligible_in(grid: Grid, geometry, eligible_share: float = ELIGIBLE_SHARE_OF_U5) -> float:
+    """Estimated eligible children in a polygon: the grid cells whose centre falls inside it, times the share."""
+    import shapely
+
+    minx, miny, maxx, maxy = geometry.bounds
+    r_top, c_left = grid.cell_of(minx, maxy)
+    r_bot, c_right = grid.cell_of(maxx, miny)
+    r0, r1 = max(int(r_top), 0), min(int(r_bot) + 1, grid.values.shape[0])
+    c0, c1 = max(int(c_left), 0), min(int(c_right) + 1, grid.values.shape[1])
+    if r1 <= r0 or c1 <= c0:
+        return 0.0
+    rows, cols = np.mgrid[r0:r1, c0:c1]
+    xs = grid.origin_x + (cols + 0.5) * grid.pixel_w
+    ys = grid.origin_y + (rows + 0.5) * grid.pixel_h
+    inside = shapely.contains_xy(geometry, xs, ys)
+    block = grid.values[r0:r1, c0:c1]
+    return float(np.nansum(np.where(inside, block, 0.0))) * eligible_share
+
+
+def denominators(placed: pd.DataFrame, served: dict, grid: Grid, units, lens: dict, labels=None, targets=None) -> dict:
+    """Per district, coverage against every denominator available, so they can be read side by side.
+
+    * ``squares``: the 1 km cells the district's households touch (the lens's own denominator);
+    * ``unit``: the whole admin unit(s) (``units``, e.g. ADM2) the households fall in, summed WorldPop under-fives
+      times the eligible share. It is the denominator a district programme is judged on, but only a fair one when
+      the campaign covers the unit: ``touched_share`` says how much of the unit's children sit in the squares the
+      households touched, so a low coverage over a low ``touched_share`` reads as 'campaign covers a small part of
+      this unit', not as 'low coverage';
+    * ``target``: the administrative target, if the facility list gave one.
+
+    ``range`` is the lowest and highest coverage the denominators give for a cycle: where they disagree is the
+    finding. Each denominator carries its source."""
+    labels, targets = labels or {}, targets or {}
+    cycles = lens.get("cycles", [])
+    units = list(units or [])
+    if not len(placed):
+        return {"districts": [], "cycles": cycles}
+    idx = unit_index(placed["lon"].to_numpy(float), placed["lat"].to_numpy(float), [u.geometry for u in units])
+    frame = placed.assign(unit=idx, district=[labels.get(str(g)) or "(none)" for g in placed["grp"]])
+    unit_eligible = {i: eligible_in(grid, u.geometry) for i, u in enumerate(units)}
+    squares = {d["label"]: d for d in lens.get("districts", [])}
+    target_by_district: dict = {}
+    for gid, value in targets.items():
+        target_by_district[labels.get(str(gid)) or "(none)"] = target_by_district.get(
+            labels.get(str(gid)) or "(none)", 0
+        ) + float(value)
+    out = []
+    for label, rows in frame.groupby("district", sort=True):
+        sq = squares.get(label, {})
+        served_by = {c: sum(served.get(h, {}).get(c, 0) for h in rows["hh"]) for c in cycles}
+        touched = sorted({int(i) for i in rows["unit"] if i >= 0})
+        unit_total = sum(unit_eligible[i] for i in touched)
+        unplaced_in_unit = int((rows["unit"] < 0).sum())
+        entry = {
+            "label": label,
+            "served": served_by,
+            "squares": {
+                "eligible": sq.get("eligible"),
+                "source": GRID_NAME,
+                "share": sq.get("share", {}),
+            },
+            "unit": {
+                "units": [
+                    {
+                        "name": units[i].name,
+                        "level": units[i].level,
+                        "parent": units[i].parent_name,
+                        "eligible": round(unit_eligible[i], 1),
+                    }
+                    for i in touched
+                ],
+                "eligible": round(unit_total, 1) if touched else None,
+                "source": GRID_NAME + ", summed over the unit",
+                "share": {c: (served_by[c] / unit_total) if touched and unit_total else None for c in cycles},
+                "touched_share": (
+                    (sq["eligible"] / unit_total) if touched and unit_total and sq.get("eligible") else None
+                ),
+                "households_outside_any_unit": unplaced_in_unit,
+            },
+            "target": None,
+        }
+        t = target_by_district.get(label)
+        if t:
+            entry["target"] = {
+                "value": t,
+                "source": "administrative target supplied with the facility list",
+                "share": {c: served_by[c] / t for c in cycles},
+            }
+        entry["range"] = {}
+        # The whole unit is a fair denominator only when the campaign covers most of it: if the squares the
+        # households touched hold under half of the unit's children, its share stays in the table but out of the range.
+        touched = entry["unit"]["touched_share"]
+        unit_is_fair = touched is not None and touched >= UNIT_FAIR_TOUCHED_SHARE
+        entry["range_excludes"] = [] if unit_is_fair or entry["unit"]["eligible"] is None else ["unit"]
+        for c in cycles:
+            vals = [
+                v
+                for v in (
+                    entry["squares"]["share"].get(c),
+                    entry["unit"]["share"].get(c) if unit_is_fair else None,
+                    entry["target"]["share"].get(c) if entry["target"] else None,
+                )
+                if v is not None
+            ]
+            entry["range"][c] = [min(vals), max(vals)] if vals else None
+        out.append(entry)
+    return {"districts": out, "cycles": cycles}
 
 
 def _grid_facts(grid: Grid, eligible_share: float = ELIGIBLE_SHARE_OF_U5) -> dict:

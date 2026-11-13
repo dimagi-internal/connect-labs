@@ -17,6 +17,12 @@ urlpatterns = [
         reached_page.BuildingsReachedPopulation.as_view(),
         name="buildings_reached_population",
     ),
+    path("buildings-reached/upload/", reached_page.BuildingsReachedUpload.as_view(), name="buildings_reached_upload"),
+    path(
+        "buildings-reached/template.csv",
+        reached_page.BuildingsReachedTemplate.as_view(),
+        name="buildings_reached_template",
+    ),
     path("buildings-reached/run/", reached_page.BuildingsReachedRun.as_view(), name="buildings_reached_run"),
     path("simple/", simple_views.SimpleMicroplanListView.as_view(), name="simple_list"),
     path("simple/<int:plan_id>/", simple_views.SimpleMicroplanEditorView.as_view(), name="simple_editor"),

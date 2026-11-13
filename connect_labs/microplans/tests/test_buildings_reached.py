@@ -20,7 +20,7 @@ def test_facilities_parse_with_and_without_a_district():
 
 @pytest.mark.parametrize(
     "text",
-    ["", "A1,7.1", "A1,x,13.5", "A1,13.5,200", "A1,7.1,13.5,D1,extra"],
+    ["", "A1,7.1", "A1,x,13.5", "A1,13.5,200", "A1,7.1,13.5,D1,extra", "A1,7.1,13.5,D1,5,more"],
 )
 def test_a_bad_facility_list_is_refused_with_a_reason(text):
     with pytest.raises(BadRequest):
