@@ -100,8 +100,12 @@
       <label>Distance (m) <input id="br-dist" type="number" min="1" max="500" value="30"></label>
       <label>Buildings per facility <input id="br-k" type="number" min="10" max="5000" value="260"></label>
       <div style="display:flex;align-items:flex-end"><button id="br-run" type="submit" class="br-run" style="width:100%">Run</button></div>
-      <label class="br-wide">Facilities: <code>id,lon,lat,district,target</code>, one per line or separated by <code>;</code> (district and target optional; id is the value the data records for the facility; target is the administrative number of children expected there)
-        <textarea id="br-fac" rows="4" style="font-family:monospace;font-size:.75rem"></textarea></label>
+      <p class="br-note br-wide" style="margin:0">Distance: how close a household's point must be to a building for it to count as reached. Buildings per facility: each facility's catchment is its nearest this-many buildings.</p>
+      <label class="br-wide">Facilities: <code>id,lon,lat,district,target</code> (district and target optional)
+        <textarea id="br-fac" rows="4" placeholder="D1-01,7.089,13.51,Maradi,250&#10;D1-02,7.113,13.51,Maradi,310" style="font-family:monospace;font-size:.75rem"></textarea></label>
+      <details class="br-wide br-sec"><summary>About the facility list</summary>
+        <p class="br-note">One facility per line (or separated by <code>;</code>). <code>id</code> must match the facility value in the data (<code>facility_id</code> in an uploaded file). <code>lon,lat</code> is the facility's location: from the HQ location data, or a public health-facility layer (HDX, OpenStreetMap). <code>district</code> groups facilities on the map and in the tables. <code>target</code> is the administrative number of children expected at that facility, and adds a column to the denominators panel.</p>
+      </details>
       <details class="br-wide br-sec"><summary>Form paths (defaults are the eCHIS Niger SMC form)</summary>
         <div class="br-form" style="margin-top:.5rem">
           <label>Household id <input id="br-hh" placeholder="form.var_menage.case_id_menage"></label>
@@ -275,7 +279,7 @@
     steps.forEach(function (s) { h += '<span><span class="br-sw" style="background:' + s[1] + '"></span>' + s[2] + '</span>'; });
     h += '<span><span class="br-sw" style="background:' + NO_DATA + '"></span>cycle not run</span></div>';
     if (lens === 'population') {
-      h += '<div>Each square is one kilometre. Colour = children served / estimated eligible children in it (' + esc(popData.grid.name) + '). Squares with fewer than ' + popData.min_households + ' households are not drawn. Over 110% means the grid under-estimates that square or the campaign counts people from neighbouring squares. Click for figures.</div>';
+      h += '<div>Each square is one kilometre; colour is children served divided by estimated eligible children. Click a square for its figures.</div>';
     } else {
       h += '<div>Zoomed out: one dot per district. Zoomed in: 100 m cells (cells with fewer than 5 buildings are not drawn) inside each facility\'s catchment. Click anything for its figures.</div>';
     }
@@ -485,7 +489,11 @@
     $('br-legend').innerHTML = MAPBOX_TOKEN ? legendHtml() : '';
     var q = popData && popData.quality;
     $('br-lensnote').className = 'br-note';
-    $('br-lensnote').innerHTML = pop ? esc(popData.grid.assumption) + (q ? ' ' + n(q.usable) + ' of ' + n(q.households) + ' households had a usable point; the rest cannot be placed, so children served is a floor.' : '') : '';
+    $('br-lensnote').innerHTML = pop
+      ? (q ? n(q.usable) + ' of ' + n(q.households) + ' households had a usable point; the rest cannot be placed, so children served is a floor. ' : '') +
+        '<details class="br-how"><summary>About this grid and its limits</summary><p style="margin:.4rem 0">' + esc(popData.grid.name) + '. ' + esc(popData.grid.assumption) +
+        ' Squares with fewer than ' + popData.min_households + ' households are not drawn. Over 110% means the grid under-estimates that square, or children are counted from neighbouring squares.</p></details>'
+      : '';
     if (mapState.ready) {
       mapState.map.setPaintProperty('br-cells', 'fill-color', colorExpr());
       mapState.map.setPaintProperty('br-dist', 'circle-color', colorExpr());
