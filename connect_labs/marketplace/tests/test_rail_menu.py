@@ -34,7 +34,6 @@ def test_headings_are_the_agreed_ones():
     ]
     labels = [i["label"] for g in menu["groups"] for i in g["items"]]
     assert "Supply" not in labels and "Funds and portfolio" not in labels
-    assert "Malaria PMC explorer" not in labels  # a link on Market size
     cost_eff = next(g for g in menu["groups"] if g["label"] == "Cost-Effectiveness")
     assert [i["label"] for i in cost_eff["items"]] == [
         "Health indicators",
@@ -51,7 +50,6 @@ def test_headings_are_the_agreed_ones():
         ("marketplace:home", "Programs"),
         ("marketplace:network", "Partners"),
         ("targeting:index", "Health indicators"),
-        ("cea:pmc", "Market size"),
         ("cea:market", "Market size"),
         ("solicitations:public_list", "Calls for partners"),
         ("pulse:index", "Live delivery"),

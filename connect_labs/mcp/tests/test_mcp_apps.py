@@ -165,7 +165,6 @@ def test_only_view_tools_carry_ui_meta():
     assert with_ui == {
         "workflow_run_action",
         "workflow_action_preview_view",
-        "targeting_pmc_states",
         "data_query",
         "workflow_edit_propose",
         "workflow_edit_review_view",
@@ -422,70 +421,6 @@ def test_the_card_previews_from_the_agents_result_not_the_hosts_input_copy():
     assert "out.bot" not in script and "item.prompt" not in script
     # A failed preview says so at the top instead of sitting on "Preparing…".
     assert "prepare this card" in script
-
-
-# ---------------------------------------------------------------------------
-# The PMC candidate-states View
-# ---------------------------------------------------------------------------
-
-
-def _pmc_resource():
-    from connect_labs.mcp.ui import PMC_STATES_URI
-
-    return next(r for r in RESOURCES if r.uri == PMC_STATES_URI)
-
-
-def test_the_candidate_states_card_has_its_own_tool_and_the_ranking_stays_plain():
-    from connect_labs.mcp.ui import PMC_STATES_URI
-
-    _, tools, *_ = _session()
-    # The card is its own tool, so explaining the PMC page (targeting_pmc_rank) draws no
-    # second copy of the page in the chat; the card re-totals through the ranking.
-    assert tools["targeting_pmc_states"].meta["ui"] == {"resourceUri": PMC_STATES_URI, "visibility": ["model", "app"]}
-    assert "ui" not in (tools["targeting_pmc_rank"].meta or {})
-    assert get_tool("targeting_pmc_states").is_write is False
-    assert "labs-targeting://pmc" in get_tool("targeting_pmc_states").description
-
-
-def test_the_candidate_states_view_is_self_contained():
-    resource = _pmc_resource()
-    doc = _Doc()
-    doc.feed(resource.html())
-    for tag, attrs in doc.tags:
-        assert not (tag == "script" and attrs.get("src")), "external script"
-        assert tag not in ("link", "iframe", "object", "embed", "base"), tag
-        assert not (tag == "img" and attrs.get("src")), "a static image"
-    html = resource.html()
-    assert not re.search(r"""(src|href)\s*=\s*["']?https?:""", html)
-    for banned in ("fetch(", "XMLHttpRequest", "WebSocket", "eval(", "new Function"):
-        assert banned not in doc.script, banned
-
-
-def test_the_candidate_states_view_re_totals_as_the_viewer_and_hands_the_selection_on():
-    doc = _Doc()
-    doc.feed(_pmc_resource().html())
-    script = doc.script.replace("'", '"')
-    for method in (
-        '"ui/initialize"',
-        '"ui/notifications/initialized"',
-        '"ui/notifications/tool-result"',
-        '"ui/notifications/size-changed"',
-        '"tools/call"',
-        '"ui/update-model-context"',
-        '"ui/message"',
-        '"ui/open-link"',
-    ):
-        assert method in script, method
-    # It reads the ranking the agent's call kept, from the result's labs-result:// link, as
-    # the viewer -- it no longer asks the agent's question again.
-    assert '"resources/read"' in script and '"labs-result://"' in script
-    assert "askAgain" not in script
-    # It starts with the four BEST kept states ticked: `keep` is not in rank order (live: it
-    # ticked Ondo and Imo and left Benue, the best, unticked).
-    assert "kept.indexOf(r.state)" in script and "(reco.keep || []).slice(0, 4)" not in script
-    # It re-totals through the same read-only tool the agent called, and opens only https.
-    assert '"targeting_pmc_rank"' in script
-    assert 'indexOf("https://") !== 0' in script
 
 
 def _data_result_resource():

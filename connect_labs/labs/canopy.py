@@ -90,10 +90,6 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
     "page:read": frozenset({"page_context"}),
     # Public open data (WorldPop, DHS, UN IGME, geoBoundaries) and arithmetic on it:
     # nothing here is specific to the visitor, so the scope adds no exposure.
-    # targeting_pmc_run_model starts a compute job (IDM's EMOD on a shared on-demand box) and
-    # targeting_pmc_run_status polls it. They are read-scope on purpose: they take public inputs,
-    # write no user data (a run is cached by the hash of its inputs and shared by everyone who asks
-    # the same question), and mutate nothing the visitor owns.
     "targeting:read": frozenset(
         {
             "targeting_indicators",
@@ -104,11 +100,6 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
             "targeting_research",
             "targeting_compare_criteria",
             "cea_model_run",
-            "targeting_pmc_schedules",
-            "targeting_pmc_rank",
-            "targeting_pmc_states",
-            "targeting_pmc_run_model",
-            "targeting_pmc_run_status",
         }
     ),
     # A tender and its quotes, read as the visitor through the supply operations, which
@@ -194,7 +185,6 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "labs:page": ("page:read",),
     "supply_chain:workflow_view": ("page:read",),
     "targeting:index": ("targeting:read",),
-    "cea:pmc": ("targeting:read",),
     "labsdata:index": ("data:read",),
     # A data space's page: the same scope; the data_* tools read the space only through
     # labsdata.spaces.open, as the visitor.
@@ -217,7 +207,6 @@ PAGE_TITLES: dict[str, str] = {
     "labs:page": "A page",
     "supply_chain:workflow_view": "A supply page",
     "targeting:index": "Baseline explorer",
-    "cea:pmc": "Cost-effectiveness: targeting view (malaria PMC)",
     "labsdata:index": "Data",
     "labsdata:space": "A data space (a named set of sources on the Data page)",
     "supply_chain:procurement_tender_detail": "A tender",

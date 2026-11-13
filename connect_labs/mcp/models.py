@@ -346,7 +346,7 @@ class KeptResult(models.Model):
     """What a tool produced, kept for the person it ran as and named by ``labs-result://<id>``.
 
     A tool that produces rows (``data_query``, ``workflow_run_indicators``) or a result a
-    View draws (``targeting_pmc_states``) keeps it here and returns a summary plus an MCP
+    View draws keep it here and returns a summary plus an MCP
     ``resource_link``; any MCP client reads it back with ``resources/read``, as itself, a
     page at a time (``mcp/kept_results.py``). It lives a day: an expired one reads as
     ``expired`` and the hourly sweep deletes it.

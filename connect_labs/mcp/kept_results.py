@@ -1,7 +1,7 @@
 """Kept results: a tool returns a summary and a ``labs-result://`` link to what it produced.
 
 A tool that produces rows (``data_query``, ``workflow_run_indicators``) or a result a
-View draws (``targeting_pmc_states``) keeps it here (``models.KeptResult``), for the
+View draws keep it here (``models.KeptResult``), for the
 person the call ran as, for a day, and returns an MCP ``resource_link`` naming it beside
 a short summary. Any MCP client -- Claude Code, ACE, canopy -- reads it back with
 ``resources/read``, as itself, a page at a time
@@ -15,7 +15,7 @@ a private conversation.
 * **Who may read it** (``may_read``, the owner included): an active labs user who could
   run the same thing themselves -- holds every opportunity a query read, can open the run
   its indicators came from -- now, not when it was made (a yes is cached a minute). Public
-  results (``targeting_pmc_states``) any signed-in labs user may read. A token reads back
+  results any signed-in labs user may read. A token reads back
   only what a tool in its scope keeps (``scope_denial``).
 * **What a read may carry** (``read_denial``, asked of EVERY reader, the owner
   included): a result holding labs' sensitive data (rows from production visits) goes
@@ -30,7 +30,7 @@ a private conversation.
   own id and path, how the token signed in, and what canopy stated).
 * **Only for a reader.** ``data_query`` and ``workflow_run_indicators`` keep rows only for
   a caller that reads them back (canopy, or a client passing ``keep_result``); everyone
-  else gets them inline and labs keeps no copy. ``targeting_pmc_states`` keeps its
+  else gets them inline and labs keeps no copy. a public result keeps its
   ranking for every caller: it is public data, and its View reads it on any host. At
   most ``KEPT_RESULT_MAX_BYTES`` (5 MB) of JSON per result. An agent's read is cut as
   its query was (``labsdata.service.shape_for_agent``).
@@ -58,7 +58,7 @@ SCHEME = "labs-result"
 #: A day: long enough to come back to a conversation, short enough that a result does not
 #: become a standing copy of production rows.
 TTL_SECONDS = 24 * 60 * 60
-#: A public result (``PUBLIC_KINDS``: the PMC ranking, no visit data) lasts a month, so a
+#: A public result (``PUBLIC_KINDS``: no visit data) lasts a month, so a
 #: card drawn from one does not die with the day.
 PUBLIC_TTL_SECONDS = 30 * 24 * 60 * 60
 #: When ``settings.KEPT_RESULT_MAX_BYTES`` is not set.
@@ -84,8 +84,9 @@ RESOURCE_TYPE = "labs_result"
 #: What each kind of result is, for its ``name`` and the read rules below.
 KIND_QUERY = "data_query"
 KIND_INDICATORS = "workflow_run_indicators"
-KIND_PMC = "pmc_states"
-PUBLIC_KINDS = frozenset({KIND_PMC})
+#: Kinds with no visit data, kept for a month instead of a day. None today (the malaria PMC ranking was the
+#: only one, retired 13 Nov 2026); the mechanism stays for the next public result.
+PUBLIC_KINDS: frozenset = frozenset()
 
 _ID_BYTES = 18
 
@@ -650,7 +651,7 @@ def _could_run(user, result) -> str | None:
 
 #: The tool that keeps each kind of result: a token reads a result back only when it may
 #: call that tool (``scope_denial``).
-KIND_TOOLS = {KIND_QUERY: "data_query", KIND_INDICATORS: "workflow_run_indicators", KIND_PMC: "targeting_pmc_states"}
+KIND_TOOLS = {KIND_QUERY: "data_query", KIND_INDICATORS: "workflow_run_indicators"}
 
 
 def scope_denial(result, access_token) -> str | None:

@@ -3,7 +3,6 @@
 import pytest
 
 from connect_labs.impact import engine, valuation
-from connect_labs.labs.indicators.emod import mortality
 
 
 def test_the_three_models_agree_on_the_benchmark():
@@ -26,8 +25,6 @@ def test_the_values_are_the_ones_every_published_figure_uses():
     assert (valuation.benchmark(), valuation.bar()) == (0.003, 6.0)
 
 
-def test_the_pmc_explorer_values_a_death_the_same_way():
+def test_a_death_at_the_break_even_spend_is_exactly_the_benchmark():
     one_x = valuation.units_per_death() / valuation.benchmark()  # dollars a death at GiveWell's 1x
-    got = mortality.value(deaths_averted=4, spend=4 * one_x)
-    assert got["multiple_of_benchmark"] == pytest.approx(1.0)
     assert valuation.multiple(4, 4 * one_x) == pytest.approx(1.0)

@@ -35,12 +35,6 @@ urlpatterns = [
     path("api/interventions/", _moved_api("scenarios:interventions")),
     path("api/scenario/", _moved_api("scenarios:scenario")),
     path("download/", views.SelectionDownloadView.as_view(), name="download"),
-    # Malaria PMC is a view of the cost-effectiveness explorer and moved to /labs/cea/targeting/pmc/
-    # (connect_labs/cea_urls.py). These keep the old addresses working: the page for a person's saved
-    # link, the API for a page that was open across the deploy (307, so a POST stays a POST).
-    path("pmc/", RedirectView.as_view(pattern_name="cea:pmc", query_string=True, permanent=False)),
-    path("api/pmc/", _moved_api("cea:pmc_data")),
-    path("api/pmc/rank/", _moved_api("cea:pmc_rank")),
-    path("api/pmc/run/", _moved_api("cea:pmc_run")),
-    path("api/pmc/run/<int:pk>/", _moved_api("cea:pmc_run_status")),
+    # Malaria PMC was retired on 13 Nov 2026: a saved link lands on Market size.
+    path("pmc/", RedirectView.as_view(pattern_name="cea:market", permanent=False)),
 ]

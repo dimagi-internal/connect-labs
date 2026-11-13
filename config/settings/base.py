@@ -818,14 +818,6 @@ AUDIT_TRAIL_ARCHIVE_BUCKET = env("AUDIT_TRAIL_ARCHIVE_BUCKET", default=None)
 # whose day has a verified S3 archive object.
 AUDIT_TRAIL_HOT_RETENTION_DAYS = env.int("AUDIT_TRAIL_HOT_RETENTION_DAYS", default=400)
 
-# On-demand EMOD worker
-# ------------------------------------------------------------------------------
-# For live PMC scenario runs (connect_labs.labs.indicators.emod).
-# All three are unset locally; the runner refuses to execute without them.
-LABS_EMOD_INSTANCE_ID = env("LABS_EMOD_INSTANCE_ID", default=None)
-LABS_EMOD_BUCKET = env("LABS_EMOD_BUCKET", default=None)
-LABS_EMOD_REGION = env("LABS_EMOD_REGION", default=None)
-
 # Prior-audit projection: may a STALE projection be served while its full rebuild
 # runs on a worker, instead of the reader rebuilding it inline?
 #
@@ -869,8 +861,6 @@ CELERY_BEAT_SCHEDULE = {
         "task": "connect_labs.workflow.tasks.sweep_stale_workflow_runs",
         "schedule": crontab(minute="*/10"),
     },
-    # Finish live EMOD runs whose task a deploy killed: the instance writes the result to S3 whether or
-    # not anyone is waiting (connect_labs/labs/indicators/emod/tasks.py, sweep_dead_pmc_runs).
     # Stop synthetic jobs' own machines that overran their limit, and fail jobs whose
     # machine stopped without recording how it ended (labs/synthetic/ecs_runner.reap).
     # Ten minutes: ECS lists a stopped task for about an hour.
@@ -889,10 +879,6 @@ CELERY_BEAT_SCHEDULE = {
     "sweep-kept-results": {
         "task": "connect_labs.mcp.tasks.sweep_kept_results",
         "schedule": crontab(minute=41),
-    },
-    "heal-dead-pmc-runs": {
-        "task": "connect_labs.labs.indicators.emod.tasks.sweep_dead_pmc_runs",
-        "schedule": crontab(minute="*/5"),
     },
     "audit-trail-archive": {
         "task": "connect_labs.audit_trail.tasks.archive_audit_events",

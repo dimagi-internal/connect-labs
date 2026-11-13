@@ -61,9 +61,9 @@ class TestPageAndApi:
         client.force_login(django_user_model.objects.create_user(username="market", password="x"))
         return client
 
-    def test_the_page_opens_with_its_tabs_and_the_pmc_link(self, client_in):
+    def test_the_page_opens_with_its_tabs(self, client_in):
         body = client_in.get(reverse("cea:market")).content.decode()
-        assert "Market size" in body and 'data-testid="cea-tabs"' in body and reverse("cea:pmc") in body
+        assert "Market size" in body and 'data-testid="cea-tabs"' in body
 
     def test_the_api_sizes_each_chosen_model(self, client_in):
         r = client_in.get(reverse("cea:market_data"), {"models": "chc,kc", "indicator": "u5mr", "threshold": 80})
