@@ -1,4 +1,4 @@
-"""The impact engine end to end: the models' own formulas, the place layer, and one delivery valued.
+"""The engine, the place layer and one delivery valued, end to end: the models' own formulas, invented places.
 
 Places and figures are invented; the model specs are the real vendored ones.
 """

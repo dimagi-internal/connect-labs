@@ -4,7 +4,7 @@ One explorer, tabs on every page (``templates/effectiveness/tabs.html``):
 
 * Health indicators: the baseline explorer, ``/labs/indicators/``.
 * ``models/``: run any Connect model, change its inputs, see its chain and its sensitivity
-  (``impact.explore``). The landing page.
+  (``effectiveness.explore``). The landing page.
 * ``implementation/``: what delivered opportunities achieved, priced at what they cost
   (``effectiveness.implementation``).
 * ``market/``: what it would cost to reach everyone in chosen places, and where the models say it is worth it

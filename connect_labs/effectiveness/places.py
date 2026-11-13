@@ -109,6 +109,7 @@ def _compute(opps: dict[int, str]) -> dict[int, dict]:
     return out
 
 
+#: The key under which Pulse stores the placement (a stored name; it predates the effectiveness app, do not rename).
 SCALAR_KEY = "impact_places"
 
 

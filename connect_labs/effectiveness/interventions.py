@@ -69,7 +69,7 @@ class Intervention:
     targets: str
     description: str = ""
     caveat: str = ""
-    #: The cost-effectiveness model this preset follows, if there is one (``impact/data/<model>.json``).
+    #: The cost-effectiveness model this preset follows, if there is one (``effectiveness/data/<model>.json``).
     model: str | None = None
 
     @property

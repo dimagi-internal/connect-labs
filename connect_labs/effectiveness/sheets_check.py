@@ -1,7 +1,7 @@
 """Has a live model Sheet moved away from the vendored spec?
 
 Each Connect model lives in a Google Sheet its owner edits by hand (Shayoni Mazumdar for the three
-models). Labs runs a vendored copy of each model's formulas (``impact/data/<model>.json``), so a hand
+models). Labs runs a vendored copy of each model's formulas (``effectiveness/data/<model>.json``), so a hand
 edit to a Sheet is invisible to Labs until the specs are refreshed. This compares what the live Sheet's
 Model tab *computes*, cell by cell, with what the vendored spec computes for the same column, and says
 exactly where they differ.

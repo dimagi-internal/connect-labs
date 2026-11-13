@@ -4,7 +4,7 @@ Pick the places (the baseline's selection: an indicator over a threshold, in som
 cost-effectiveness models, and set the models' inputs. For each model and country the market is the people the
 programme serves there times what the model says it costs per person per year, and the model is run at that
 country's own figures to say whether it clears GiveWell's bar. Nothing here has arithmetic of its own: the cost per
-person and the multiple are the models' (``impact.engine``).
+person and the multiple are the models' (``effectiveness.engine``).
 
 Pure: the caller gives the people per country (from the baseline), this module prices and tests them.
 """
@@ -13,8 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from connect_labs.effectiveness import engine, groups
-from connect_labs.effectiveness import result as impact_result
+from connect_labs.effectiveness import engine, groups, result
 
 
 @dataclass(frozen=True)
@@ -62,7 +61,7 @@ def size(model: str, people: dict[str, dict], overrides: dict | None, bar: float
     for iso3, p in sorted(people.items(), key=lambda kv: kv[1]["name"]):
         base, modelled = _country_inputs(model, iso3)
         o = engine.run(model, {**base, **(overrides or {})})
-        x = impact_result.OUTPUTS[model](o)[0]
+        x = result.OUTPUTS[model](o)[0]
         per_person = unit.annual_cost(o)
         units = p["units"]
         rows.append(
