@@ -10,9 +10,9 @@ Every stage is idempotent: values are upserted on
 ``(indicator, boundary, year, source)``, so re-running repairs rather than
 duplicates. Safe to interrupt and re-run.
 
-    make manage CMD="bootstrap_targeting"                  # everything
-    make manage CMD="bootstrap_targeting --skip-worldpop"  # skip the slow, quota-limited stage
-    make manage CMD="bootstrap_targeting --iso NGA,KEN"    # a couple of countries, for a trial
+    make manage CMD="indicators_bootstrap"                  # everything
+    make manage CMD="indicators_bootstrap --skip-worldpop"  # skip the slow, quota-limited stage
+    make manage CMD="indicators_bootstrap --iso NGA,KEN"    # a couple of countries, for a trial
 
 Expect roughly 25-40 minutes without WorldPop, most of it geoBoundaries
 downloads. WorldPop adds hours and is subject to an undocumented daily quota —

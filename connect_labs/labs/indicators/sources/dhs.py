@@ -74,7 +74,7 @@ INDICATORS = {
     # Household environment — the background risk for diarrhoeal disease
     "improved_water": {"value": "WS_SRCE_P_IMP", "lo": None, "hi": None},
     "improved_sanitation": {"value": "WS_TLET_P_IMP", "lo": None, "hi": None},
-    # --- Tier 1 of docs/targeting-data-acquisition.md -----------------------
+    # --- Tier 1 of docs/indicators-data-acquisition.md -----------------------
     #
     # These were not missing because the data is thin. Every one of them has
     # African subnational coverage at or near `ors_coverage` (41 countries,

@@ -36,5 +36,21 @@ def test_old_page_addresses_redirect_and_keep_the_query(signed_in, old, new):
     assert resp["Location"].startswith(new)
 
 
-def test_the_baseline_explorer_stays_where_it_was():
-    assert reverse("targeting:index") == "/labs/targeting/"
+def test_the_indicators_explorer_has_its_own_address():
+    assert reverse("indicators:index") == "/labs/indicators/"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "old, new",
+    [
+        ("/labs/targeting/", "/labs/indicators/"),
+        ("/labs/targeting/api/selection/", "/labs/indicators/api/selection/"),
+        ("/labs/targeting/download/", "/labs/indicators/download/"),
+    ],
+)
+def test_the_old_targeting_addresses_redirect_with_307_so_a_post_stays_a_post(signed_in, old, new):
+    for method in (signed_in.get, signed_in.post):
+        resp = method(old + "?threshold=80")
+        assert resp.status_code == 307
+        assert resp["Location"] == new + "?threshold=80"

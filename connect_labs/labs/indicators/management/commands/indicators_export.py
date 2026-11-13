@@ -1,8 +1,8 @@
 """Write a snapshot of the targeting dataset, optionally straight to Drive.
 
-make manage CMD="targeting_export"
-make manage CMD="targeting_export --out /tmp/snap.zip"
-make manage CMD="targeting_export --to-drive <folder_id>"
+make manage CMD="indicators_export"
+make manage CMD="indicators_export --out /tmp/snap.zip"
+make manage CMD="indicators_export --to-drive <folder_id>"
 """
 
 from __future__ import annotations
@@ -76,5 +76,5 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"  uploaded to Drive as {canonical} ({file_id})"))
             self.stdout.write(
                 "  Pin it in connect_labs/labs/indicators/fixtures/snapshot.json so\n"
-                "  `targeting_import --from-manifest` finds it."
+                "  `indicators_import --from-manifest` finds it."
             )

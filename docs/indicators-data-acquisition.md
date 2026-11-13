@@ -353,4 +353,4 @@ never having started.
 
 After each tier: re-derive, sweep, export a snapshot, and import to production
 **with `--prune`** — a restore without it is additive, and would leave superseded
-arithmetic behind. See `derive.sweep_derived` and `targeting_import --prune`.
+arithmetic behind. See `derive.sweep_derived` and `indicators_import --prune`.

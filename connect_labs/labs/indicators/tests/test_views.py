@@ -67,7 +67,7 @@ class TestPage:
     def test_page_requires_login_when_deployed(self, client):
         # Django forces DEBUG=False under test settings, so this is the
         # deployed behaviour.
-        resp = client.get(reverse("targeting:index"))
+        resp = client.get(reverse("indicators:index"))
         assert resp.status_code in (302, 301)
 
     def test_page_is_open_locally(self, client, africa):
@@ -75,24 +75,24 @@ class TestPage:
         # user-specific, so it must not demand a Connect OAuth round trip —
         # which is unusable on a laptop with an expired CLI token.
         with override_settings(DEBUG=True):
-            resp = client.get(reverse("targeting:index"))
+            resp = client.get(reverse("indicators:index"))
         assert resp.status_code == 200
 
     def test_apis_are_open_locally(self, client, africa):
         with override_settings(DEBUG=True):
-            assert client.get(reverse("targeting:selection"), {"threshold": 80}).status_code == 200
-            assert client.get(reverse("targeting:map_data")).status_code == 200
-            assert client.get(reverse("targeting:download"), {"threshold": 80}).status_code == 200
+            assert client.get(reverse("indicators:selection"), {"threshold": 80}).status_code == 200
+            assert client.get(reverse("indicators:map_data")).status_code == 200
+            assert client.get(reverse("indicators:download"), {"threshold": 80}).status_code == 200
 
     def test_page_renders(self, client_in, africa):
-        resp = client_in.get(reverse("targeting:index"))
+        resp = client_in.get(reverse("indicators:index"))
         assert resp.status_code == 200
         assert b"Health indicators" in resp.content
 
 
 class TestSelectionApi:
     def test_returns_births_above_threshold(self, client_in, africa):
-        resp = client_in.get(reverse("targeting:selection"), {"threshold": 80})
+        resp = client_in.get(reverse("indicators:selection"), {"threshold": 80})
         data = resp.json()
 
         # Niger rolls up (both regions above); Nigeria contributes only its hot region.
@@ -101,17 +101,17 @@ class TestSelectionApi:
         assert data["counts"]["units"] == 3
 
     def test_threshold_is_echoed_in_both_units(self, client_in, africa):
-        data = client_in.get(reverse("targeting:selection"), {"threshold": 80}).json()
+        data = client_in.get(reverse("indicators:selection"), {"threshold": 80}).json()
         assert data["threshold"] == 80
         assert data["threshold_pct"] == 8.0
 
     def test_raising_threshold_reduces_births(self, client_in, africa):
-        low = client_in.get(reverse("targeting:selection"), {"threshold": 50}).json()
-        high = client_in.get(reverse("targeting:selection"), {"threshold": 130}).json()
+        low = client_in.get(reverse("indicators:selection"), {"threshold": 50}).json()
+        high = client_in.get(reverse("indicators:selection"), {"threshold": 130}).json()
         assert high["totals"]["births"] < low["totals"]["births"]
 
     def test_rolled_up_row_is_labelled(self, client_in, africa):
-        data = client_in.get(reverse("targeting:selection"), {"threshold": 80}).json()
+        data = client_in.get(reverse("indicators:selection"), {"threshold": 80}).json()
         rolled = [r for r in data["rows"] if r["whole_country"]]
         assert len(rolled) == 1
         # The curated country name wins over the boundary file's label.
@@ -119,13 +119,13 @@ class TestSelectionApi:
         assert rolled[0]["units_covered"] == 2
 
     def test_bad_threshold_falls_back_rather_than_500s(self, client_in, africa):
-        resp = client_in.get(reverse("targeting:selection"), {"threshold": "not-a-number"})
+        resp = client_in.get(reverse("indicators:selection"), {"threshold": "not-a-number"})
         assert resp.status_code == 200
 
 
 class TestMapApi:
     def test_returns_features_with_indicator_values(self, client_in, africa):
-        data = client_in.get(reverse("targeting:map_data")).json()
+        data = client_in.get(reverse("indicators:map_data")).json()
         assert data["type"] == "FeatureCollection"
         assert len(data["features"]) == 4  # ADM1 units only; both countries have them
 
@@ -138,7 +138,7 @@ class TestMapApi:
         # figure where the legend promises regional detail, so the country is
         # now simply absent from a subnational map.
         make_boundary("MLI", 0, "Regionless", "MLI-0", x=12)
-        data = client_in.get(reverse("targeting:map_data"), {"method": "subnational_survey"}).json()
+        data = client_in.get(reverse("indicators:map_data"), {"method": "subnational_survey"}).json()
         names = {f["properties"]["name"] for f in data["features"]}
         assert "Regionless" not in names
 
@@ -151,7 +151,7 @@ class TestMapApi:
             adm0 = AdminBoundary.objects.get(iso_code=iso, admin_level=0)
             set_value(adm0, "u5mr", 100, source=Source.IGME)
 
-        data = client_in.get(reverse("targeting:map_data"), {"method": "national_igme"}).json()
+        data = client_in.get(reverse("indicators:map_data"), {"method": "national_igme"}).json()
 
         assert {f["properties"]["level"] for f in data["features"]} == {0}
         assert len(data["features"]) == 2
@@ -159,21 +159,21 @@ class TestMapApi:
 
 class TestDownload:
     def test_zip_carries_table_and_methodology_together(self, client_in, africa):
-        resp = client_in.get(reverse("targeting:download"), {"threshold": 80})
+        resp = client_in.get(reverse("indicators:download"), {"threshold": 80})
         assert resp.status_code == 200
         assert resp["Content-Type"] == "application/zip"
 
         z = zipfile.ZipFile(io.BytesIO(resp.content))
-        assert sorted(z.namelist()) == ["METHODOLOGY.md", "targeting_selection.csv"]
+        assert sorted(z.namelist()) == ["METHODOLOGY.md", "indicators_selection.csv"]
 
     def test_csv_rows_match_the_selection(self, client_in, africa):
-        resp = client_in.get(reverse("targeting:download"), {"threshold": 80, "format": "csv"})
+        resp = client_in.get(reverse("indicators:download"), {"threshold": 80, "format": "csv"})
         rows = list(csv.DictReader(io.StringIO(resp.content.decode())))
         assert len(rows) == 2  # one rolled-up country, one region
         assert {r["Country"] for r in rows} == {"Niger", "Nigeria"}
 
     def test_methodology_names_sources_and_the_derivation(self, client_in, africa):
-        resp = client_in.get(reverse("targeting:download"), {"threshold": 80})
+        resp = client_in.get(reverse("indicators:download"), {"threshold": 80})
         doc = zipfile.ZipFile(io.BytesIO(resp.content)).read("METHODOLOGY.md").decode()
 
         assert "UN IGME" in doc
@@ -185,7 +185,7 @@ class TestDownload:
         assert "measured at ADM1 at best" in doc
 
     def test_methodology_states_the_threshold_in_both_units(self, client_in, africa):
-        resp = client_in.get(reverse("targeting:download"), {"threshold": 80})
+        resp = client_in.get(reverse("indicators:download"), {"threshold": 80})
         doc = zipfile.ZipFile(io.BytesIO(resp.content)).read("METHODOLOGY.md").decode()
         assert "80 per 1,000 live births" in doc
         assert "8%" in doc
@@ -199,7 +199,7 @@ class TestDownload:
         set_value(region, "births", 5_000, source=Source.DERIVED)
 
         resp = client_in.get(
-            reverse("targeting:download"),
+            reverse("indicators:download"),
             {"threshold": 80, "format": "csv", "method": "subnational_survey"},
         )
         rows = list(csv.DictReader(io.StringIO(resp.content.decode())))
@@ -213,7 +213,7 @@ class TestDownload:
         set_value(region, "births", 5_000, source=Source.DERIVED)
 
         resp = client_in.get(
-            reverse("targeting:download"),
+            reverse("indicators:download"),
             {"threshold": 80, "format": "csv", "method": "national_igme"},
         )
         rows = list(csv.DictReader(io.StringIO(resp.content.decode())))
@@ -230,7 +230,7 @@ class TestMissingBirthsSurfacing:
         set_value(r, "u5mr", 150, source=Source.IGME_SUBNATIONAL)
         set_value(r, "pop_u5", 400_000, source=Source.WORLDPOP)
 
-        data = client_in.get(reverse("targeting:selection"), {"threshold": 80}).json()
+        data = client_in.get(reverse("indicators:selection"), {"threshold": 80}).json()
         row = data["rows"][0]
 
         assert row["births"] is None
@@ -245,7 +245,7 @@ class TestMissingBirthsSurfacing:
         r = make_boundary("TCD", 1, "Region", "TCD-1", x=32)
         set_value(r, "u5mr", 150, source=Source.IGME_SUBNATIONAL)
 
-        resp = client_in.get(reverse("targeting:download"), {"threshold": 80, "format": "csv"})
+        resp = client_in.get(reverse("indicators:download"), {"threshold": 80, "format": "csv"})
         rows = list(csv.DictReader(io.StringIO(resp.content.decode())))
 
         assert rows[0]["Est. annual births"] == ""
@@ -256,7 +256,7 @@ class TestMissingBirthsSurfacing:
         r = make_boundary("TCD", 1, "Region", "TCD-1", x=32)
         set_value(r, "u5mr", 150, source=Source.IGME_SUBNATIONAL)
 
-        resp = client_in.get(reverse("targeting:download"), {"threshold": 80})
+        resp = client_in.get(reverse("indicators:download"), {"threshold": 80})
         doc = zipfile.ZipFile(io.BytesIO(resp.content)).read("METHODOLOGY.md").decode()
 
         assert "floor, not a measurement" in doc
@@ -278,7 +278,7 @@ class TestSourceColumns:
         v.source_url = "https://dhsprogram.com/methodology/survey/survey-display-123.cfm"
         v.save()
 
-        row = client_in.get(reverse("targeting:selection"), {"threshold": 80}).json()["rows"][0]
+        row = client_in.get(reverse("indicators:selection"), {"threshold": 80}).json()["rows"][0]
 
         assert row["source_name"] == "UN IGME (subnational model)"
         assert row["source_detail"] == "Chad DHS 2019"
@@ -301,7 +301,7 @@ class TestSourceColumns:
         v.source_url = "https://dhsprogram.com/x.cfm"
         v.save()
 
-        resp = client_in.get(reverse("targeting:download"), {"threshold": 80, "format": "csv"})
+        resp = client_in.get(reverse("indicators:download"), {"threshold": 80, "format": "csv"})
         rows = list(csv.DictReader(io.StringIO(resp.content.decode())))
 
         assert rows[0]["Source"] == "UN IGME (subnational model)"
@@ -329,7 +329,7 @@ class TestSourceColumns:
         set_value(make_boundary("COD", 1, "Kinshasa", "COD-1-3", x=46), "u5mr", 50, source=Source.DHS)
 
         resp = client_in.get(
-            reverse("targeting:download"),
+            reverse("indicators:download"),
             {"threshold": 80, "format": "csv", "method": "subnational_survey"},
         )
         rows = {r["Area"]: r for r in csv.DictReader(io.StringIO(resp.content.decode()))}
@@ -351,7 +351,7 @@ class TestSourceColumns:
         set_value(make_boundary("TZA", 1, "Measured", "TZA-1-3", x=56), "u5mr", 20, source=Source.DHS)
 
         resp = client_in.get(
-            reverse("targeting:download"),
+            reverse("indicators:download"),
             {"threshold": 80, "format": "csv", "method": "subnational_survey"},
         )
         rows = {r["Area"]: r for r in csv.DictReader(io.StringIO(resp.content.decode()))}
@@ -367,7 +367,7 @@ class TestSourceColumns:
         """
         from pathlib import Path
 
-        root = Path("connect_labs/static/indicators/targeting")
+        root = Path("connect_labs/static/indicators/explorer")
         js = "\n".join(p.read_text(encoding="utf-8") for p in sorted(root.glob("*.js")))
 
         assert "function esc(" in js
@@ -436,7 +436,7 @@ class TestThresholdIsReadInItsOwnUnit:
         set_value(region, "improved_sanitation", 20)
 
         resp = client_in.get(
-            reverse("targeting:selection"),
+            reverse("indicators:selection"),
             {"indicator": "improved_sanitation", "threshold": 50, "resolution": "subnational"},
         )
 
@@ -453,7 +453,7 @@ class TestDefaultMethodCanAnswer:
         set_value(region, "improved_sanitation", 20, source=Source.DHS)
 
         resp = client_in.get(
-            reverse("targeting:selection"),
+            reverse("indicators:selection"),
             {"indicator": "improved_sanitation", "threshold": 50, "resolution": "subnational"},
         )
         body = resp.json()
@@ -468,7 +468,7 @@ class TestDefaultMethodCanAnswer:
         set_value(region, "improved_sanitation", 20, source=Source.DHS)
 
         resp = client_in.get(
-            reverse("targeting:selection"),
+            reverse("indicators:selection"),
             {
                 "indicator": "improved_sanitation",
                 "threshold": 50,
@@ -495,7 +495,7 @@ class TestMethodologyOnThePage:
         set_value(region, "u5mr", 150)
 
         params = {"indicator": "u5mr", "threshold": 80, "method": "subnational_survey"}
-        resp = client_in.get(reverse("targeting:methodology"), params)
+        resp = client_in.get(reverse("indicators:methodology"), params)
         body = resp.json()
 
         expected = export.to_methodology(
@@ -512,7 +512,7 @@ class TestMethodologyOnThePage:
         set_value(region, "improved_sanitation", 20, source=Source.DHS)
 
         resp = client_in.get(
-            reverse("targeting:methodology"),
+            reverse("indicators:methodology"),
             {"indicator": "improved_sanitation", "threshold": 50, "resolution": "subnational"},
         )
         md = resp.json()["markdown"]
@@ -526,7 +526,7 @@ class TestMethodologyOnThePage:
 class TestTemplateRenders:
     def test_no_template_comment_leaks_into_the_page(self, client_in):
         """Django's {# #} is single-line only; a multi-line one renders as text."""
-        resp = client_in.get(reverse("targeting:index"))
+        resp = client_in.get(reverse("indicators:index"))
 
         assert b"{#" not in resp.content
 
@@ -544,8 +544,8 @@ class TestScopeAndLevel:
     """
 
     def test_scoping_to_a_country_drops_the_others(self, client_in, africa):
-        both = client_in.get(reverse("targeting:selection"), {"threshold": 50}).json()
-        one = client_in.get(reverse("targeting:selection"), {"threshold": 50, "iso": "NER"}).json()
+        both = client_in.get(reverse("indicators:selection"), {"threshold": 50}).json()
+        one = client_in.get(reverse("indicators:selection"), {"threshold": 50, "iso": "NER"}).json()
 
         assert {r["iso"] for r in both["rows"]} == {"NER", "NGA"}
         assert {r["iso"] for r in one["rows"]} == {"NER"}
@@ -558,12 +558,12 @@ class TestScopeAndLevel:
         An empty answer reads as "nowhere qualifies", which is a finding. A
         misspelled country code is not a finding.
         """
-        r = client_in.get(reverse("targeting:selection"), {"threshold": 50, "iso": "XXX"}).json()
+        r = client_in.get(reverse("indicators:selection"), {"threshold": 50, "iso": "XXX"}).json()
         assert r["scope"]["whole_continent"] is True
 
     def test_ranking_the_parts_unrolls_a_wholly_selected_country(self, client_in, africa):
-        rolled = client_in.get(reverse("targeting:selection"), {"threshold": 50, "iso": "NER"}).json()
-        ranked = client_in.get(reverse("targeting:selection"), {"threshold": 50, "iso": "NER", "rollup": "0"}).json()
+        rolled = client_in.get(reverse("indicators:selection"), {"threshold": 50, "iso": "NER"}).json()
+        ranked = client_in.get(reverse("indicators:selection"), {"threshold": 50, "iso": "NER", "rollup": "0"}).json()
 
         assert len(rolled["rows"]) == 1 and rolled["rows"][0]["whole_country"]
         # Ranked, not alphabetised: the point of unrolling is to see which
@@ -573,20 +573,20 @@ class TestScopeAndLevel:
         assert ranked["rolled_up"] is False
 
     def test_the_map_follows_the_pinned_level(self, client_in, africa):
-        r = client_in.get(reverse("targeting:map_data"), {"iso": "NER", "admin_level": 0}).json()
+        r = client_in.get(reverse("indicators:map_data"), {"iso": "NER", "admin_level": 0}).json()
         assert {f["properties"]["level"] for f in r["features"]} == {0}
 
     def test_districts_are_not_drawn_across_the_continent(self, client_in, africa):
         """The limit is the map's, not the analysis's: 47,000 polygons is a
         download, not a map. The table will still rank them."""
-        r = client_in.get(reverse("targeting:map_data"), {"admin_level": 2}).json()
+        r = client_in.get(reverse("indicators:map_data"), {"admin_level": 2}).json()
         assert all(f["properties"]["level"] == 1 for f in r["features"])
 
     def test_scope_reports_which_levels_are_measured(self, client_in, africa):
         """Boundary depth and measurement depth are different facts, and the
         difference is the whole trap: a level where nothing is measured is the
         same information on a finer grid, and every unit ties."""
-        r = client_in.get(reverse("targeting:scope"), {"iso": "NER"}).json()
+        r = client_in.get(reverse("indicators:scope"), {"iso": "NER"}).json()
         assert [c["iso"] for c in r["countries"] if c["iso"] == "NER"] == ["NER"]
         assert r["depth"]["1"]["measured"] == 2
         assert r["depth"]["1"]["inherited"] == 0
@@ -597,9 +597,9 @@ class TestDeliveryYear:
         for b in africa.values():
             set_value(b, "pop_growth_rate", 3.0, source=Source.WORLDBANK)
 
-        now = client_in.get(reverse("targeting:selection"), {"threshold": 50, "iso": "NER"}).json()
+        now = client_in.get(reverse("indicators:selection"), {"threshold": 50, "iso": "NER"}).json()
         later = client_in.get(
-            reverse("targeting:selection"), {"threshold": 50, "iso": "NER", "target_year": 2030}
+            reverse("indicators:selection"), {"threshold": 50, "iso": "NER", "target_year": 2030}
         ).json()
 
         assert later["projected_to"] == 2030
@@ -609,11 +609,11 @@ class TestDeliveryYear:
         assert later["totals"]["u5mr"] == now["totals"]["u5mr"]
 
     def test_a_country_with_no_growth_series_is_named(self, client_in, africa):
-        r = client_in.get(reverse("targeting:selection"), {"threshold": 50, "iso": "NER", "target_year": 2030}).json()
+        r = client_in.get(reverse("indicators:selection"), {"threshold": 50, "iso": "NER", "target_year": 2030}).json()
         assert "Niger" in r["projected_without_rate"]
 
     def test_an_implausible_year_is_ignored_rather_than_obeyed(self, client_in, africa):
-        r = client_in.get(reverse("targeting:selection"), {"threshold": 50, "target_year": "9999"}).json()
+        r = client_in.get(reverse("indicators:selection"), {"threshold": 50, "target_year": "9999"}).json()
         assert r["projected_to"] is None
 
 
@@ -648,11 +648,11 @@ class TestTheDownloadIsTheQuestionOnScreen:
             set_value(b, "pop_growth_rate", 3.0, source=Source.WORLDBANK)
 
         page = client_in.get(
-            reverse("targeting:selection"),
+            reverse("indicators:selection"),
             {"threshold": 50, "iso": "NER", "admin_level": 1, "rollup": "0", "target_year": 2030},
         ).json()
         csv_text = client_in.get(
-            reverse("targeting:download"),
+            reverse("indicators:download"),
             {
                 "threshold": 50,
                 "iso": "NER",
@@ -670,9 +670,9 @@ class TestTheDownloadIsTheQuestionOnScreen:
     def test_the_methodology_is_produced_for_the_same_selection(self, client_in, africa):
         """It used to be built continent-wide whatever the page showed."""
         scoped = client_in.get(
-            reverse("targeting:methodology"), {"threshold": 50, "iso": "NER", "rollup": "0"}
+            reverse("indicators:methodology"), {"threshold": 50, "iso": "NER", "rollup": "0"}
         ).json()["markdown"]
-        whole = client_in.get(reverse("targeting:methodology"), {"threshold": 50, "rollup": "0"}).json()["markdown"]
+        whole = client_in.get(reverse("indicators:methodology"), {"threshold": 50, "rollup": "0"}).json()["markdown"]
         assert "across **1 countries**" in scoped
         assert "across **2 countries**" in whole
 
@@ -692,7 +692,7 @@ class TestTheDownloadIsTheQuestionOnScreen:
         set_value(b, "ors_gap_children", 5_000, source=Source.DERIVED)
 
         text = client_in.get(
-            reverse("targeting:download"),
+            reverse("indicators:download"),
             {
                 "indicator": "ors_coverage",
                 "threshold": 80,
@@ -734,8 +734,8 @@ class TestTheUrlCarriesTheQuestion:
             "rollup": "0",
             "threshold": 50,
         }
-        first = client_in.get(reverse("targeting:selection"), link).json()
-        again = client_in.get(reverse("targeting:selection"), link).json()
+        first = client_in.get(reverse("indicators:selection"), link).json()
+        again = client_in.get(reverse("indicators:selection"), link).json()
 
         assert [r["name"] for r in first["rows"]] == [r["name"] for r in again["rows"]]
         assert first["totals"] == again["totals"]
@@ -746,14 +746,14 @@ class TestTheUrlCarriesTheQuestion:
 
     def test_a_link_that_omits_everything_is_still_a_valid_question(self, client_in, africa):
         """The bare page and a stripped link have to mean the same thing."""
-        bare = client_in.get(reverse("targeting:selection")).json()
+        bare = client_in.get(reverse("indicators:selection")).json()
         assert bare["scope"]["whole_continent"] is True
         assert bare["projected_to"] is None
         assert bare["pinned_level"] is None
 
     def test_a_country_without_growth_is_named_not_coded(self, client_in, africa):
         """Every sibling caveat on this page lists country names."""
-        r = client_in.get(reverse("targeting:selection"), {"threshold": 50, "iso": "NER", "target_year": 2030}).json()
+        r = client_in.get(reverse("indicators:selection"), {"threshold": 50, "iso": "NER", "target_year": 2030}).json()
         assert r["projected_without_rate"] == ["Niger"]
 
 
@@ -792,7 +792,7 @@ class TestIndicatorGrouping:
         assert measures.group_of("not_a_measure") is None
 
     def test_the_api_carries_the_group_on_every_indicator(self, client_in):
-        r = client_in.get(reverse("targeting:methods"), {"indicator": "u5mr"}).json()
+        r = client_in.get(reverse("indicators:methods"), {"indicator": "u5mr"}).json()
 
         assert r["groups"] == list(measures.GROUPS)
         ungrouped = [i["code"] for i in r["indicators"] if not i.get("group")]
@@ -809,7 +809,7 @@ class TestIndicatorGrouping:
 class TestDownloadFilenameNamesTheQuestion:
     def test_a_coverage_selection_is_lt_not_gt(self, client_in):
         """An ORS selection of the counties UNDER 90% arrived as
-        `targeting_ors_coverage_gt90.zip` — the opposite of its contents."""
+        `indicators_ors_coverage_gt90.zip` — the opposite of its contents."""
         from connect_labs.labs.indicators import export
         from connect_labs.labs.indicators.resolve import Selection
 
@@ -824,7 +824,7 @@ class TestDownloadFilenameNamesTheQuestion:
             countries_partly_above=[],
             skipped_no_data=[],
         )
-        assert export.filename_stem(sel) == "targeting_ors_coverage_lt90"
+        assert export.filename_stem(sel) == "indicators_ors_coverage_lt90"
 
     def test_a_burden_selection_is_still_gt(self):
         from connect_labs.labs.indicators import export
@@ -841,7 +841,7 @@ class TestDownloadFilenameNamesTheQuestion:
             countries_partly_above=[],
             skipped_no_data=[],
         )
-        assert export.filename_stem(sel) == "targeting_u5mr_gt80"
+        assert export.filename_stem(sel) == "indicators_u5mr_gt80"
 
 
 class TestHeadlineFollowsTheMeasure:
@@ -855,28 +855,28 @@ class TestHeadlineFollowsTheMeasure:
     """
 
     def test_a_measure_about_women_reports_women(self, client_in, africa):
-        r = client_in.get(reverse("targeting:selection"), {"indicator": "fp_unmet_need"}).json()
+        r = client_in.get(reverse("indicators:selection"), {"indicator": "fp_unmet_need"}).json()
         assert r["denominator"] == "pop_f_15_49"
         assert "women" in r["denominator_label"].lower()
 
     def test_a_measure_about_children_still_reports_children(self, client_in, africa):
-        r = client_in.get(reverse("targeting:selection"), {"indicator": "ors_coverage"}).json()
+        r = client_in.get(reverse("indicators:selection"), {"indicator": "ors_coverage"}).json()
         assert r["denominator"] == "pop_u5"
 
     def test_mortality_reports_the_cohort_it_is_measured_over(self, client_in, africa):
         """U5MR is per 1,000 LIVE BIRTHS, so births is its denominator."""
-        r = client_in.get(reverse("targeting:selection"), {"indicator": "u5mr"}).json()
+        r = client_in.get(reverse("indicators:selection"), {"indicator": "u5mr"}).json()
         assert r["denominator"] == "births"
 
     def test_a_burden_with_no_derived_count_offers_no_gap_label(self, client_in, africa):
         """Which is what tells the surface to hide the emphasised tile rather
         than fill it with expected under-5 deaths."""
         for code in ("stunting", "fp_unmet_need", "open_defecation", "women_anaemia"):
-            r = client_in.get(reverse("targeting:selection"), {"indicator": code}).json()
+            r = client_in.get(reverse("indicators:selection"), {"indicator": code}).json()
             assert r["gap_label"] is None, code
 
     def test_a_coverage_measure_does_offer_one(self, client_in, africa):
-        r = client_in.get(reverse("targeting:selection"), {"indicator": "improved_water"}).json()
+        r = client_in.get(reverse("indicators:selection"), {"indicator": "improved_water"}).json()
         assert r["gap_label"] is not None
 
 
@@ -890,7 +890,7 @@ class TestFloorWarningCoversEveryCount:
     """
 
     def test_every_coverage_entry_is_named(self, client_in, africa):
-        r = client_in.get(reverse("targeting:selection"), {"indicator": "u5mr"}).json()
+        r = client_in.get(reverse("indicators:selection"), {"indicator": "u5mr"}).json()
         assert r["coverage"], "a selection carries counts, so it reports coverage for them"
         for code, cov in r["coverage"].items():
             assert cov.get("label"), f"{code} has no label for the floor warning to name"
@@ -925,7 +925,7 @@ class TestABareLinkLandsSomewhereUsable:
     def test_the_methods_api_reports_both_so_the_surface_can_choose(self, client_in, africa):
         set_value(africa["a1"], "zero_dose", 22.0, source=Source.DHS)
 
-        r = client_in.get(reverse("targeting:methods"), {"indicator": "zero_dose"}).json()
+        r = client_in.get(reverse("indicators:methods"), {"indicator": "zero_dose"}).json()
 
         assert r["methods"]["subnational_igme"]["countries_available"] == 0
         usable = [c for c, m in r["methods"].items() if m["countries_available"]]
@@ -1069,11 +1069,11 @@ class TestBadQueryParametersDegrade:
             assert r.status_code == 200, f"{name} returned {r.status_code} for {params}"
 
     def test_an_unknown_indicator_falls_back_to_the_default(self, client_in, africa):
-        r = client_in.get(reverse("targeting:selection"), {"indicator": "NOT_A_REAL"}).json()
+        r = client_in.get(reverse("indicators:selection"), {"indicator": "NOT_A_REAL"}).json()
         assert r["indicator"] == "u5mr"
 
     def test_a_known_indicator_is_still_honoured(self, client_in, africa):
-        r = client_in.get(reverse("targeting:selection"), {"indicator": "stunting"}).json()
+        r = client_in.get(reverse("indicators:selection"), {"indicator": "stunting"}).json()
         assert r["indicator"] == "stunting"
 
 
@@ -1109,7 +1109,7 @@ class TestDefaultMethodAnswersTheIndicator:
         assert mortality.resolution is methods.Resolution.SUBNATIONAL
 
     def test_methods_payload_advertises_a_default_that_works(self, client_in, survey_only):
-        payload = client_in.get(reverse("targeting:methods"), {"indicator": "improved_water"}).json()
+        payload = client_in.get(reverse("indicators:methods"), {"indicator": "improved_water"}).json()
         default = payload["default"]
         assert (
             payload["methods"][default]["countries_available"] > 0
@@ -1118,7 +1118,7 @@ class TestDefaultMethodAnswersTheIndicator:
     def test_selection_without_an_explicit_method_is_not_silently_empty(self, client_in, survey_only):
         # The shape a shared link and every MCP call take: an indicator, a
         # threshold, and no opinion about method.
-        resp = client_in.get(reverse("targeting:selection"), {"indicator": "improved_water", "threshold": 90})
+        resp = client_in.get(reverse("indicators:selection"), {"indicator": "improved_water", "threshold": 90})
         assert resp.status_code == 200
         assert resp.json()["rows"], "an indicator with data returned nothing without ?method="
 
@@ -1136,7 +1136,7 @@ class TestAnswersAreCachedUntilTheDataChanges:
         return len(ctx.captured_queries), resp.json()
 
     def test_a_repeat_request_is_served_from_the_cache(self, client_in, africa):
-        url = reverse("targeting:selection")
+        url = reverse("indicators:selection")
         first, a = self._queries(client_in, url, {"threshold": 80})
         again, b = self._queries(client_in, url, {"threshold": 80})
 
@@ -1145,14 +1145,14 @@ class TestAnswersAreCachedUntilTheDataChanges:
         assert again < first and again <= 8
 
     def test_another_query_is_not_served_the_cached_answer(self, client_in, africa):
-        url = reverse("targeting:selection")
+        url = reverse("indicators:selection")
         _, high = self._queries(client_in, url, {"threshold": 80})
         _, low = self._queries(client_in, url, {"threshold": 10})
 
         assert high["totals"]["births"] != low["totals"]["births"]
 
     def test_new_data_is_seen_at_once(self, client_in, africa):
-        url = reverse("targeting:selection")
+        url = reverse("indicators:selection")
         _, before = self._queries(client_in, url, {"threshold": 80})
         # Nigeria's cool region now clears the bar: a new row, a new version.
         set_value(africa["b2"], "u5mr", 150, source=Source.IGME_SUBNATIONAL, year=2025)
@@ -1164,7 +1164,7 @@ class TestAnswersAreCachedUntilTheDataChanges:
         from connect_labs.labs.indicators import response_cache
         from connect_labs.labs.indicators.models import IndicatorValue
 
-        url = reverse("targeting:selection")
+        url = reverse("indicators:selection")
         _, before = self._queries(client_in, url, {"threshold": 80})
         IndicatorValue.objects.filter(boundary=africa["b2"], indicator="u5mr").update(value=150)
         response_cache.invalidate()

@@ -20,6 +20,7 @@ from __future__ import annotations
 from urllib.parse import urlencode
 
 from ..tool_registry import MCPToolError, register
+from .indicators import _selection
 
 INCLUDE = ("tornado", "scenarios", "places", "inputs")
 
@@ -215,3 +216,173 @@ def cea_opportunities(
             "explore": (d or {}).get("explore") or [],
         }
     return out
+
+
+@register(
+    name="cea_market_size",
+    description=(
+        "Size a market: what it would cost to reach everyone a selection of places holds, at a unit cost "
+        "you set (the Market size page prices it from the models; this takes your own price). Two things must be "
+        "fixed and neither can be inferred from the "
+        "data: what one unit costs, and what a unit IS — a birth, a child under 5, a "
+        "person, a household, or a case of disease. Which applies is a property of the "
+        "programme (KMC is priced per LOW-BIRTHWEIGHT newborn -- 'lbw_birth' -- a bednet per "
+        "child, a water connection per household), so it is chosen, not guessed. Returns "
+        "the absorbable spend, the unit count behind it, and any caveat -- including how "
+        "many units rest on a regional rather than national rate ('regional_proxy_units'). "
+        "Where an indicator implies no case count the 'case' basis is declined rather "
+        "than approximated."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "indicator": {"type": "string"},
+            "threshold": {"type": "number"},
+            "basis": {
+                "type": "string",
+                # 'case_year' was implemented and reachable in Python but missing from
+                # this enum, so no MCP caller could select it. That is not a cosmetic
+                # gap: 'case' is a survey recall window (a fortnight) and 'case_year' is
+                # a year of the same episodes, and for ORS across Africa they are
+                # 10.8M against 215.1M. Costing a year of supply on the fortnight figure
+                # under-prices it roughly twentyfold, and the enum offered only the
+                # fortnight.
+                "enum": ["birth", "lbw_birth", "under_5", "person", "household", "case", "case_year"],
+                "description": (
+                    "What one unit of cost buys. 'lbw_birth' counts births under 2,500 g "
+                    "(births x the UNICEF-WHO national low-birthweight rate) -- the KMC "
+                    "denominator, roughly a seventh of 'birth'; it includes small-for-"
+                    "gestational-age term babies and most preterm babies but not preterm "
+                    "babies of 2,500 g or more. 'case' counts a survey recall window "
+                    "(a fortnight); 'case_year' counts a year of the same episodes -- "
+                    "pick deliberately, they differ by more than an order of magnitude."
+                ),
+            },
+            "unit_cost": {"type": "number", "description": "USD per unit."},
+            "resolution": {"type": "string", "enum": ["national", "subnational"], "default": "subnational"},
+            "method": {"type": "string"},
+            "iso_codes": {"type": "array", "items": {"type": "string"}},
+            "reach": {
+                "type": "number",
+                "description": (
+                    "Share of the units present that a campaign actually reaches, 0-1. Default 1.0, "
+                    "which prices a programme nobody has run: independent post-round surveys of "
+                    "door-to-door campaigns measure 70-92%. The response returns both 'units_present' "
+                    "and the reached 'units' the cost is built on, so the assumption stays visible."
+                ),
+            },
+            "target_year": {
+                "type": "integer",
+                "description": "Carry counts to the delivery year before costing. See indicators_select.",
+            },
+        },
+        "required": ["indicator", "basis", "unit_cost"],
+        "additionalProperties": False,
+    },
+)
+def cea_market_size(
+    user,
+    *,
+    indicator,
+    basis,
+    unit_cost,
+    threshold=None,
+    resolution="subnational",
+    method=None,
+    iso_codes=None,
+    reach=1.0,
+    target_year=None,
+):
+    from connect_labs.effectiveness import interventions as interventions_mod
+
+    legal = [b.value for b in interventions_mod.UnitBasis]
+    # The count fields every indicators tool speaks -- rows and totals carry
+    # 'pop_u5'/'births'/'pop_total', and indicators_compare_criteria's `count` takes
+    # them verbatim -- while a basis is named for the unit rather than the column.
+    # Reusing the field you just read off a selection is the obvious move and it used
+    # to fail. Derived from measure_for() so it cannot drift from the real mapping.
+    aliases = {}
+    for b in interventions_mod.UnitBasis:
+        if b in (interventions_mod.UnitBasis.DISEASE_CASE, interventions_mod.UnitBasis.CASE_YEAR):
+            continue  # these resolve against the indicator, so they have no fixed column
+        column = interventions_mod.measure_for(b)
+        if column:
+            aliases[column] = b.value
+
+    requested = basis
+    if basis in aliases:
+        basis = aliases[basis]
+    try:
+        unit_basis = interventions_mod.UnitBasis(basis)
+    except ValueError:
+        raise MCPToolError(
+            "BAD_REQUEST",
+            f"Unknown basis {requested!r}. Choose one of: {', '.join(legal)}. "
+            f"(Count-field names are accepted too: {', '.join(sorted(aliases))}.)",
+        ) from None
+
+    cases_measure = interventions_mod.measure_for(unit_basis, indicator)
+    if cases_measure is None:
+        alternatives = [b for b in legal if b not in ("case", "case_year")]
+        raise MCPToolError(
+            "BAD_REQUEST",
+            f"A {basis!r} basis has no count for {indicator!r} — that indicator implies no "
+            "case count, so pricing per case would be an approximation dressed as a figure. "
+            f"Choose one of: {', '.join(alternatives)}.",
+        )
+
+    if not 0 < reach <= 1:
+        raise MCPToolError("BAD_REQUEST", f"reach must be between 0 and 1, got {reach!r}")
+
+    selection, measure, chosen = _selection(
+        indicator,
+        threshold,
+        resolution,
+        method,
+        iso_codes,
+        extra_counts=(cases_measure,),
+        target_year=target_year,
+    )
+    present = selection.totals.get(cases_measure)
+    # Present and reached are different numbers, and a programme is costed on
+    # the second. Door-to-door campaigns measure 70-92% in post-round surveys;
+    # costing at 100% prices a programme nobody has run.
+    units = None if present is None else present * reach
+    got, of = selection.coverage.get(cases_measure, (0, 0))
+    proxied = selection.regional_proxy_units.get(cases_measure, 0)
+    caveats = []
+    if of and got < of:
+        caveats.append(
+            f"{of - got} of {of} selected units carry no {cases_measure} figure and contribute "
+            "nothing, so this is a floor rather than a total."
+        )
+    if proxied:
+        caveats.append(
+            f"{proxied} of {of} selected units' {cases_measure} rest on a REGIONAL aggregate rate: "
+            "their country publishes no national estimate, so its UN subregion's figure is applied. "
+            "Included in the total, not a national measurement."
+        )
+    if selection.births_implausible_units:
+        caveats.append(
+            f"{selection.births_implausible_units} selected units carry a births figure outside the "
+            "plausible range for their under-five population; any births-based count here is suspect "
+            "until they are explained."
+        )
+    return {
+        "indicator": indicator,
+        "threshold": selection.threshold,
+        "method": chosen,
+        "basis": basis,
+        "counts_measure": cases_measure,
+        "units_present": round(present) if present is not None else None,
+        "reach": reach,
+        "projected_to": selection.projected_to,
+        "units": round(units) if units is not None else None,
+        "unit_cost": unit_cost,
+        "absorbable_usd": round(units * unit_cost) if units is not None else None,
+        "coverage": {"units_with_a_figure": got, "of_units_selected": of},
+        "is_floor": bool(of and got < of),
+        "regional_proxy_units": proxied,
+        "births_implausible_units": selection.births_implausible_units,
+        "caveat": " ".join(caveats) or None,
+    }

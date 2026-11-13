@@ -96,8 +96,8 @@ make manage CMD="migrate indicators"
 ## Fast path: restore a snapshot
 
 ```bash
-make manage CMD="targeting_import --from-manifest"
-make manage CMD="targeting_status"
+make manage CMD="indicators_import --from-manifest"
+make manage CMD="indicators_status"
 ```
 
 `--from-manifest` reads the Drive file id pinned in
@@ -120,13 +120,13 @@ disk, pass it for the one command instead:
 ```bash
 LABS_SYNTHETIC_GDRIVE_SA_KEY="$(aws secretsmanager get-secret-value --profile labs \
   --secret-id labs-jj-synthetic-gdrive-sa-key --query SecretString --output text)" \
-  make manage CMD="targeting_import --from-manifest"
+  make manage CMD="indicators_import --from-manifest"
 ```
 
 With no credentials at all, restore from a file someone hands you:
 
 ```bash
-make manage CMD="targeting_import --path targeting-snapshot-20260828-1440.zip"
+make manage CMD="indicators_import --path targeting-snapshot-20260828-1440.zip"
 ```
 
 Import is idempotent and upserts on natural keys, so it is safe to re-run, safe
@@ -139,7 +139,7 @@ in place.
 After a load that adds or corrects data:
 
 ```bash
-make manage CMD="targeting_export --to-drive 1cXbkUDjoE539aG3BOMtIh67r2ROde9sn"
+make manage CMD="indicators_export --to-drive 1cXbkUDjoE539aG3BOMtIh67r2ROde9sn"
 ```
 
 That folder is `targeting-snapshots`, under the same Drive parent the synthetic
@@ -191,7 +191,7 @@ Two deliberate properties worth knowing:
 One command, correct order, idempotent:
 
 ```bash
-make manage CMD="bootstrap_targeting --skip-worldpop"
+make manage CMD="indicators_bootstrap --skip-worldpop"
 ```
 
 **~25–40 minutes**, mostly geoBoundaries downloads. `--skip-worldpop` is
@@ -223,7 +223,7 @@ take several days of quota to finish. Do it after ADM1 is complete, not instead:
 ### Check it
 
 ```bash
-make manage CMD="targeting_status"
+make manage CMD="indicators_status"
 ```
 
 Reports boundaries, indicators, per-method country coverage, and — for anything
@@ -277,7 +277,7 @@ spend the WorldPop quota that local development also draws on:
 ```bash
 aws ecs execute-command --profile labs --cluster labs-jj-cluster \
   --task <task-id> --container web --interactive \
-  --command "python manage.py targeting_import --from-manifest"
+  --command "python manage.py indicators_import --from-manifest"
 ```
 
 `LABS_SYNTHETIC_GDRIVE_SA_KEY` is already in the task definition for the
@@ -285,7 +285,7 @@ synthetic fixtures, so no new secret is needed. Only if there is no published
 snapshot:
 
 ```bash
-  --command "python manage.py bootstrap_targeting --skip-worldpop"
+  --command "python manage.py indicators_bootstrap --skip-worldpop"
 ```
 
 ### Two things that will bite
@@ -332,7 +332,7 @@ than retrying, keeps whatever was written, and tells you to resume with
 
 ## Stage order, and why
 
-`bootstrap_targeting` encodes this. It matters because a wrong order produces a
+`indicators_bootstrap` encodes this. It matters because a wrong order produces a
 dataset that looks loaded but is quietly short.
 
 ```
@@ -366,7 +366,7 @@ anything held only at ADM1 cannot reach ADM2 **at all**, because there is no
 ADM0 row to inherit from — which is why household counts were empty below the
 region level until the links existed.
 
-`bootstrap_targeting` runs this straight after the boundary load. Run it by hand
+`indicators_bootstrap` runs this straight after the boundary load. Run it by hand
 after loading boundaries any other way:
 
 ```bash
@@ -389,8 +389,8 @@ With a published snapshot — the normal case:
 grep MAPBOX_TOKEN .env || echo "MAPBOX_TOKEN=$(op read 'op://Employee/Connect Labs .env/MAPBOX_TOKEN')" >> .env
 npm ci && inv build-js
 make manage CMD="migrate"
-make manage CMD="targeting_import --from-manifest"
-make manage CMD="targeting_status"
+make manage CMD="indicators_import --from-manifest"
+make manage CMD="indicators_status"
 make manage CMD="runserver 8899"
 ```
 
@@ -399,5 +399,5 @@ A few minutes, nearly all of it `npm ci`.
 Without one, substitute the rebuild and add half an hour:
 
 ```bash
-make manage CMD="bootstrap_targeting --skip-worldpop"
+make manage CMD="indicators_bootstrap --skip-worldpop"
 ```

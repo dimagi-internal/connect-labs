@@ -1,4 +1,4 @@
-"""The targeting surface: a map, a threshold, and a downloadable answer."""
+"""The indicators explorer: a map, a threshold, and a downloadable answer."""
 
 from __future__ import annotations
 
@@ -277,10 +277,10 @@ CONTEXT_NOT_USED = method_decorator(page_chrome(labs_context=NOT_USED), name="di
 
 
 @CONTEXT_NOT_USED
-class TargetingView(OpenLocallyMixin, TemplateView):
+class IndicatorsExplorerView(OpenLocallyMixin, TemplateView):
     """The map page."""
 
-    template_name = "indicators/targeting.html"
+    template_name = "indicators/explorer.html"
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -304,7 +304,7 @@ class TargetingView(OpenLocallyMixin, TemplateView):
             }
         )
         # The agent panel. Everything on this page is public open data and the
-        # agent reads it through the same targeting_* tools, so the page state
+        # agent reads it through the same indicators_* tools, so the page state
         # carries only what the visitor asked for in the URL. Signed-in visitors
         # only: the panel mints a token about request.user, and the page is open
         # to anonymous visitors when running locally.
@@ -314,8 +314,8 @@ class TargetingView(OpenLocallyMixin, TemplateView):
             ctx["canopy_panel"] = canopy_panel.panel(
                 self.request,
                 reads=canopy_panel.NO_VISIT_DATA,  # public open data
-                resource="labs-targeting://map",
-                backing_tool="targeting_select",
+                resource="labs-indicators://map",
+                backing_tool="indicators_select",
                 filters={k: v for k, v in self.request.GET.items() if k in PANEL_FILTER_KEYS and v},
                 path=self.request.path,
             )

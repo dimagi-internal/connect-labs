@@ -4,7 +4,7 @@ Population and burden primitives for deciding **where to deploy Connect
 interventions** — and for showing the working, so any number can be traced back
 to a source, a year, and a licence.
 
-Surface: `/labs/targeting/`
+Surface: `/labs/indicators/`
 
 ## The question it answers today
 
@@ -102,11 +102,11 @@ The short version:
 
 ```bash
 make manage CMD="migrate"
-make manage CMD="bootstrap_targeting --skip-worldpop"   # ~30 min
-make manage CMD="targeting_status"                      # verify
+make manage CMD="indicators_bootstrap --skip-worldpop"   # ~30 min
+make manage CMD="indicators_status"                      # verify
 ```
 
-`bootstrap_targeting` encodes the stage order, which matters: births need
+`indicators_bootstrap` encodes the stage order, which matters: births need
 mortality _and_ population, calibration needs both the surveys and the IGME
 series, households need population and the household-size ratio. Getting it
 wrong produces a dataset that looks loaded and is quietly short.
@@ -115,7 +115,7 @@ Every stage upserts on `(indicator, boundary, year, source)`, so re-running
 repairs rather than duplicates. `--from-stage <name>` resumes partway;
 `--iso NGA,KEN` scopes to a few countries.
 
-`targeting_status` reports what is loaded, what is missing, and the stage that
+`indicators_status` reports what is loaded, what is missing, and the stage that
 produces anything absent.
 
 ### WorldPop's three sharp edges

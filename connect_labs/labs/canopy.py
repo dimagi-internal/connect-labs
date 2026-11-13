@@ -90,15 +90,17 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
     "page:read": frozenset({"page_context"}),
     # Public open data (WorldPop, DHS, UN IGME, geoBoundaries) and arithmetic on it:
     # nothing here is specific to the visitor, so the scope adds no exposure.
+    # The scope keeps its original name (`targeting:read`): canopy holds grants against it, so renaming it would
+    # silently drop them. It covers the indicators tools and the cost-effectiveness tools.
     "targeting:read": frozenset(
         {
-            "targeting_indicators",
-            "targeting_select",
-            "targeting_methodology",
-            "targeting_scenario",
-            "targeting_admin_levels",
-            "targeting_research",
-            "targeting_compare_criteria",
+            "indicators_list",
+            "indicators_select",
+            "indicators_methodology",
+            "cea_market_size",
+            "indicators_admin_levels",
+            "indicators_research",
+            "indicators_compare_criteria",
             "cea_model_run",
         }
     ),
@@ -184,7 +186,7 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "labs:page_home": ("page:read",),
     "labs:page": ("page:read",),
     "supply_chain:workflow_view": ("page:read",),
-    "targeting:index": ("targeting:read",),
+    "indicators:index": ("targeting:read",),
     "labsdata:index": ("data:read",),
     # A data space's page: the same scope; the data_* tools read the space only through
     # labsdata.spaces.open, as the visitor.
@@ -206,7 +208,7 @@ PAGE_TITLES: dict[str, str] = {
     "labs:page_home": "An organisation's or programme's home page",
     "labs:page": "A page",
     "supply_chain:workflow_view": "A supply page",
-    "targeting:index": "Baseline explorer",
+    "indicators:index": "Baseline explorer",
     "labsdata:index": "Data",
     "labsdata:space": "A data space (a named set of sources on the Data page)",
     "supply_chain:procurement_tender_detail": "A tender",
@@ -327,7 +329,7 @@ SCOPE_LABELS: dict[str, str] = {
     "workflow:act": "propose actions on a workflow run, such as messaging workers; each is sent only on your click",
     "workflow:edit": "propose changes to the workflow; each is saved only when you confirm it",
     "page:read": "read what this page is built from",
-    "targeting:read": "read targeting data: population and burden figures, models and scenarios",
+    "targeting:read": "read indicators and cost-effectiveness data: population, burden, the models, market sizing",
     "data:read": "run read-only queries over the data you can access, including visits and workflows",
     "supply:read": "read supply-chain records: tenders, quotes, awards and commitments",
 }

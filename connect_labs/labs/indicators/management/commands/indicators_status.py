@@ -157,6 +157,6 @@ class Command(BaseCommand):
         else:
             self.stdout.write(
                 self.style.ERROR(
-                    "Dataset is incomplete — see above. " 'Usually: make manage CMD="bootstrap_targeting"'
+                    "Dataset is incomplete — see above. " 'Usually: make manage CMD="indicators_bootstrap"'
                 )
             )

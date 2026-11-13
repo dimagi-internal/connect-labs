@@ -69,7 +69,7 @@ class Operation:
     # Engineer-only, and so kept OFF the MCP catalogue. Bulk loads, seeds and
     # imports are run deliberately by someone with a shell (ECS Exec against
     # the labs task, see docs/OUTBOUND_EMAIL.md for the recipe), the way every
-    # other labs app does it -- `bootstrap_targeting`, `load_indicators`,
+    # other labs app does it -- `indicators_bootstrap`, `load_indicators`,
     # `marketplace_import`, `seed_semantic_registry` are all management
     # commands and none of them is an MCP tool.
     #

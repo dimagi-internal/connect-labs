@@ -456,12 +456,12 @@
       defaultThreshold: {{ default_threshold }},
       defaultMethod: "{{ default_method }}",
       urls: {
-        map: "{% url 'targeting:map_data' %}",
-        methods: "{% url 'targeting:methods' %}",
-        methodology: "{% url 'targeting:methodology' %}",
-        scope: "{% url 'targeting:scope' %}",
-        selection: "{% url 'targeting:selection' %}",
-        download: "{% url 'targeting:download' %}"
+        map: "{% url 'indicators:map_data' %}",
+        methods: "{% url 'indicators:methods' %}",
+        methodology: "{% url 'indicators:methodology' %}",
+        scope: "{% url 'indicators:scope' %}",
+        selection: "{% url 'indicators:selection' %}",
+        download: "{% url 'indicators:download' %}"
       }
     };
   </script>
@@ -472,17 +472,17 @@
     hashes filenames and does NOT rewrite import specifiers, so `import
     './state.js'` would resolve to a file that does not exist in production.
   {% endcomment %}
-  <script src="{% static 'indicators/targeting/util.js' %}"></script>
-  <script src="{% static 'indicators/targeting/state.js' %}"></script>
-  <script src="{% static 'indicators/targeting/api.js' %}"></script>
-  <script src="{% static 'indicators/targeting/scale.js' %}"></script>
-  <script src="{% static 'indicators/targeting/popovers.js' %}"></script>
-  <script src="{% static 'indicators/targeting/map.js' %}"></script>
-  <script src="{% static 'indicators/targeting/menu.js' %}"></script>
-  <script src="{% static 'indicators/targeting/controls.js' %}"></script>
-  <script src="{% static 'indicators/targeting/table.js' %}"></script>
-  <script src="{% static 'indicators/targeting/methodology.js' %}"></script>
-  <script src="{% static 'indicators/targeting/main.js' %}"></script>
+  <script src="{% static 'indicators/explorer/util.js' %}"></script>
+  <script src="{% static 'indicators/explorer/state.js' %}"></script>
+  <script src="{% static 'indicators/explorer/api.js' %}"></script>
+  <script src="{% static 'indicators/explorer/scale.js' %}"></script>
+  <script src="{% static 'indicators/explorer/popovers.js' %}"></script>
+  <script src="{% static 'indicators/explorer/map.js' %}"></script>
+  <script src="{% static 'indicators/explorer/menu.js' %}"></script>
+  <script src="{% static 'indicators/explorer/controls.js' %}"></script>
+  <script src="{% static 'indicators/explorer/table.js' %}"></script>
+  <script src="{% static 'indicators/explorer/methodology.js' %}"></script>
+  <script src="{% static 'indicators/explorer/main.js' %}"></script>
   {% comment %}
     The agent panel ("Ask an agent"): it can run every targeting_* tool as the
     visitor. Last in the body, never in

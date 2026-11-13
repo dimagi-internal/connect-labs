@@ -81,7 +81,7 @@ def _resolve_method(availability_mod, methods_mod, indicator: str, resolution: s
     """
     if method:
         if method not in methods_mod.METHODS:
-            raise MCPToolError("BAD_REQUEST", f"Unknown method {method!r}. Call targeting_indicators to list them.")
+            raise MCPToolError("BAD_REQUEST", f"Unknown method {method!r}. Call indicators_list to list them.")
         return method
     res = methods_mod.Resolution(resolution)
     return availability_mod.default_method_for(indicator, res).code
@@ -100,7 +100,7 @@ def _selection(
 ):
     availability_mod, _, _, measures_mod, methods_mod, ISO_CODES, select_above = _imports()
     if indicator not in measures_mod.MEASURES:
-        raise MCPToolError("BAD_REQUEST", f"Unknown indicator {indicator!r}. Call targeting_indicators to list them.")
+        raise MCPToolError("BAD_REQUEST", f"Unknown indicator {indicator!r}. Call indicators_list to list them.")
     measure = measures_mod.get(indicator)
     if threshold is None:
         threshold = measure.threshold_default
@@ -119,7 +119,7 @@ def _selection(
 
 
 @register(
-    name="targeting_indicators",
+    name="indicators_list",
     description=(
         "List the indicators you can target on, and — crucially — what KIND of question "
         "each one is. A 'burden' indicator (under-5 mortality, stunting, malaria "
@@ -143,7 +143,7 @@ def _selection(
         "additionalProperties": False,
     },
 )
-def targeting_indicators(user, *, indicator=None):
+def indicators_list(user, *, indicator=None):
     availability_mod, _, _, measures_mod, methods_mod, _, _ = _imports()
 
     codes = [indicator] if indicator else sorted(measures_mod.TARGETABLE)
@@ -178,7 +178,7 @@ def targeting_indicators(user, *, indicator=None):
 
 
 @register(
-    name="targeting_select",
+    name="indicators_select",
     description=(
         "The core query: where does an indicator cross a threshold, and who lives there? "
         "Returns totals (population, under-5s, annual births, expected deaths, and the "
@@ -220,9 +220,9 @@ def targeting_indicators(user, *, indicator=None):
             "limit": {"type": "integer", "description": f"Rows to return (default {DEFAULT_ROW_LIMIT})."},
             # These three were implemented and callable in Python but absent from the
             # schema, and `additionalProperties: False` made them unreachable over MCP.
-            # `target_year` was the loudest: targeting_scenario and
-            # targeting_compare_criteria both describe theirs as "See targeting_select",
-            # pointing at a parameter targeting_select did not offer.
+            # `target_year` was the loudest: cea_market_size and
+            # indicators_compare_criteria both describe theirs as "See indicators_select",
+            # pointing at a parameter indicators_select did not offer.
             "target_year": {
                 "type": "integer",
                 "description": (
@@ -238,7 +238,7 @@ def targeting_indicators(user, *, indicator=None):
                     "that does not is DROPPED from a level-2 answer entirely (subnational spans "
                     "levels 1-2 with no national fallback). Read 'countries_missing_level' "
                     "before concluding anything from a small level-2 result: Nigeria and Kenya "
-                    "land there, and targeting_admin_levels will still show them an ADM2 under "
+                    "land there, and indicators_admin_levels will still show them an ADM2 under "
                     "a different source."
                 ),
             },
@@ -255,7 +255,7 @@ def targeting_indicators(user, *, indicator=None):
         "additionalProperties": False,
     },
 )
-def targeting_select(
+def indicators_select(
     user,
     *,
     indicator,
@@ -353,7 +353,7 @@ def targeting_select(
 
 
 @register(
-    name="targeting_methodology",
+    name="indicators_methodology",
     description=(
         "The workings behind a selection, as markdown: what the table is, how rows are "
         "rolled up, why rates are never summed, every source with its year and licence, "
@@ -385,7 +385,7 @@ def targeting_select(
         "additionalProperties": False,
     },
 )
-def targeting_methodology(
+def indicators_methodology(
     user,
     *,
     indicator,
@@ -421,174 +421,7 @@ def targeting_methodology(
 
 
 @register(
-    name="targeting_scenario",
-    description=(
-        "Cost a selection. Two things must be fixed and neither can be inferred from the "
-        "data: what one unit costs, and what a unit IS — a birth, a child under 5, a "
-        "person, a household, or a case of disease. Which applies is a property of the "
-        "programme (KMC is priced per LOW-BIRTHWEIGHT newborn -- 'lbw_birth' -- a bednet per "
-        "child, a water connection per household), so it is chosen, not guessed. Returns "
-        "the absorbable spend, the unit count behind it, and any caveat -- including how "
-        "many units rest on a regional rather than national rate ('regional_proxy_units'). "
-        "Where an indicator implies no case count the 'case' basis is declined rather "
-        "than approximated."
-    ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "indicator": {"type": "string"},
-            "threshold": {"type": "number"},
-            "basis": {
-                "type": "string",
-                # 'case_year' was implemented and reachable in Python but missing from
-                # this enum, so no MCP caller could select it. That is not a cosmetic
-                # gap: 'case' is a survey recall window (a fortnight) and 'case_year' is
-                # a year of the same episodes, and for ORS across Africa they are
-                # 10.8M against 215.1M. Costing a year of supply on the fortnight figure
-                # under-prices it roughly twentyfold, and the enum offered only the
-                # fortnight.
-                "enum": ["birth", "lbw_birth", "under_5", "person", "household", "case", "case_year"],
-                "description": (
-                    "What one unit of cost buys. 'lbw_birth' counts births under 2,500 g "
-                    "(births x the UNICEF-WHO national low-birthweight rate) -- the KMC "
-                    "denominator, roughly a seventh of 'birth'; it includes small-for-"
-                    "gestational-age term babies and most preterm babies but not preterm "
-                    "babies of 2,500 g or more. 'case' counts a survey recall window "
-                    "(a fortnight); 'case_year' counts a year of the same episodes -- "
-                    "pick deliberately, they differ by more than an order of magnitude."
-                ),
-            },
-            "unit_cost": {"type": "number", "description": "USD per unit."},
-            "resolution": {"type": "string", "enum": ["national", "subnational"], "default": "subnational"},
-            "method": {"type": "string"},
-            "iso_codes": {"type": "array", "items": {"type": "string"}},
-            "reach": {
-                "type": "number",
-                "description": (
-                    "Share of the units present that a campaign actually reaches, 0-1. Default 1.0, "
-                    "which prices a programme nobody has run: independent post-round surveys of "
-                    "door-to-door campaigns measure 70-92%. The response returns both 'units_present' "
-                    "and the reached 'units' the cost is built on, so the assumption stays visible."
-                ),
-            },
-            "target_year": {
-                "type": "integer",
-                "description": "Carry counts to the delivery year before costing. See targeting_select.",
-            },
-        },
-        "required": ["indicator", "basis", "unit_cost"],
-        "additionalProperties": False,
-    },
-)
-def targeting_scenario(
-    user,
-    *,
-    indicator,
-    basis,
-    unit_cost,
-    threshold=None,
-    resolution="subnational",
-    method=None,
-    iso_codes=None,
-    reach=1.0,
-    target_year=None,
-):
-    _, _, interventions_mod, _, _, _, _ = _imports()
-    legal = [b.value for b in interventions_mod.UnitBasis]
-    # The count fields every other targeting tool speaks -- rows and totals carry
-    # 'pop_u5'/'births'/'pop_total', and targeting_compare_criteria's `count` takes
-    # them verbatim -- while a basis is named for the unit rather than the column.
-    # Reusing the field you just read off a selection is the obvious move and it used
-    # to fail. Derived from measure_for() so it cannot drift from the real mapping.
-    aliases = {}
-    for b in interventions_mod.UnitBasis:
-        if b in (interventions_mod.UnitBasis.DISEASE_CASE, interventions_mod.UnitBasis.CASE_YEAR):
-            continue  # these resolve against the indicator, so they have no fixed column
-        column = interventions_mod.measure_for(b)
-        if column:
-            aliases[column] = b.value
-
-    requested = basis
-    if basis in aliases:
-        basis = aliases[basis]
-    try:
-        unit_basis = interventions_mod.UnitBasis(basis)
-    except ValueError:
-        raise MCPToolError(
-            "BAD_REQUEST",
-            f"Unknown basis {requested!r}. Choose one of: {', '.join(legal)}. "
-            f"(Count-field names are accepted too: {', '.join(sorted(aliases))}.)",
-        ) from None
-
-    cases_measure = interventions_mod.measure_for(unit_basis, indicator)
-    if cases_measure is None:
-        alternatives = [b for b in legal if b not in ("case", "case_year")]
-        raise MCPToolError(
-            "BAD_REQUEST",
-            f"A {basis!r} basis has no count for {indicator!r} — that indicator implies no "
-            "case count, so pricing per case would be an approximation dressed as a figure. "
-            f"Choose one of: {', '.join(alternatives)}.",
-        )
-
-    if not 0 < reach <= 1:
-        raise MCPToolError("BAD_REQUEST", f"reach must be between 0 and 1, got {reach!r}")
-
-    selection, measure, chosen = _selection(
-        indicator,
-        threshold,
-        resolution,
-        method,
-        iso_codes,
-        extra_counts=(cases_measure,),
-        target_year=target_year,
-    )
-    present = selection.totals.get(cases_measure)
-    # Present and reached are different numbers, and a programme is costed on
-    # the second. Door-to-door campaigns measure 70-92% in post-round surveys;
-    # costing at 100% prices a programme nobody has run.
-    units = None if present is None else present * reach
-    got, of = selection.coverage.get(cases_measure, (0, 0))
-    proxied = selection.regional_proxy_units.get(cases_measure, 0)
-    caveats = []
-    if of and got < of:
-        caveats.append(
-            f"{of - got} of {of} selected units carry no {cases_measure} figure and contribute "
-            "nothing, so this is a floor rather than a total."
-        )
-    if proxied:
-        caveats.append(
-            f"{proxied} of {of} selected units' {cases_measure} rest on a REGIONAL aggregate rate: "
-            "their country publishes no national estimate, so its UN subregion's figure is applied. "
-            "Included in the total, not a national measurement."
-        )
-    if selection.births_implausible_units:
-        caveats.append(
-            f"{selection.births_implausible_units} selected units carry a births figure outside the "
-            "plausible range for their under-five population; any births-based count here is suspect "
-            "until they are explained."
-        )
-    return {
-        "indicator": indicator,
-        "threshold": selection.threshold,
-        "method": chosen,
-        "basis": basis,
-        "counts_measure": cases_measure,
-        "units_present": round(present) if present is not None else None,
-        "reach": reach,
-        "projected_to": selection.projected_to,
-        "units": round(units) if units is not None else None,
-        "unit_cost": unit_cost,
-        "absorbable_usd": round(units * unit_cost) if units is not None else None,
-        "coverage": {"units_with_a_figure": got, "of_units_selected": of},
-        "is_floor": bool(of and got < of),
-        "regional_proxy_units": proxied,
-        "births_implausible_units": selection.births_implausible_units,
-        "caveat": " ".join(caveats) or None,
-    }
-
-
-@register(
-    name="targeting_admin_levels",
+    name="indicators_admin_levels",
     description=(
         "How deep the open boundary data goes for a country — which is what decides "
         "whether 'how many villages' is answerable at all. Most African countries stop at "
@@ -607,7 +440,7 @@ def targeting_scenario(
         "additionalProperties": False,
     },
 )
-def targeting_admin_levels(user, *, iso_codes):
+def indicators_admin_levels(user, *, iso_codes):
     """Levels loaded per source, and which of them targeting can actually use."""
     from collections import defaultdict
 
@@ -664,7 +497,7 @@ def targeting_admin_levels(user, *, iso_codes):
 
 
 @register(
-    name="targeting_research",
+    name="indicators_research",
     description=(
         "Read what has already been worked out about an indicator — which sources can "
         "answer it, which were rejected and why, what the traps are — so an investigation "
@@ -695,7 +528,7 @@ def targeting_admin_levels(user, *, iso_codes):
         "additionalProperties": False,
     },
 )
-def targeting_research(user, *, indicator=None, topic=None, include_body=True):
+def indicators_research(user, *, indicator=None, topic=None, include_body=True):
     from connect_labs.labs.indicators import research
     from connect_labs.labs.indicators.models import ResearchNote
 
@@ -712,7 +545,7 @@ def targeting_research(user, *, indicator=None, topic=None, include_body=True):
                 else "No research notes exist yet. "
             )
             + "Investigate from first principles, then write what you learn back with "
-            "targeting_research_write so the next session inherits it — including the "
+            "indicators_research_write so the next session inherits it — including the "
             "sources you rejected and why, which is the half that never gets written down.",
         }
 
@@ -750,7 +583,7 @@ def targeting_research(user, *, indicator=None, topic=None, include_body=True):
 
 
 @register(
-    name="targeting_research_write",
+    name="indicators_research_write",
     description=(
         "Record what you worked out about an indicator, so the next session inherits it "
         "instead of repeating the work. Writes over an existing note with the same "
@@ -817,7 +650,7 @@ def targeting_research(user, *, indicator=None, topic=None, include_body=True):
         "additionalProperties": False,
     },
 )
-def targeting_research_write(
+def indicators_research_write(
     user, *, topic, summary, body, indicator=None, checks=None, alternatives=None, scanned_now=False
 ):
     from django.utils import timezone
@@ -831,7 +664,7 @@ def targeting_research_write(
         except KeyError:
             raise MCPToolError(
                 "BAD_REQUEST",
-                f"Unknown indicator {indicator!r}. Call targeting_indicators for the list, or omit "
+                f"Unknown indicator {indicator!r}. Call indicators_list for the list, or omit "
                 "the field for research that spans indicators.",
             ) from None
 
@@ -887,7 +720,7 @@ def targeting_research_write(
 
 
 @register(
-    name="targeting_compare_criteria",
+    name="indicators_compare_criteria",
     description=(
         "Run the SAME question through several selection criteria and show where they "
         "disagree. Targeting is usually presented as one answer, and the honest version is "
@@ -941,7 +774,7 @@ def targeting_research_write(
         "additionalProperties": False,
     },
 )
-def targeting_compare_criteria(
+def indicators_compare_criteria(
     user,
     *,
     criteria,
@@ -962,7 +795,7 @@ def targeting_compare_criteria(
     if len(criteria) < 2:
         raise MCPToolError(
             "BAD_REQUEST",
-            "Comparing criteria needs at least two. For a single screen use targeting_select.",
+            "Comparing criteria needs at least two. For a single screen use indicators_select.",
         )
 
     screens = []
@@ -994,7 +827,7 @@ def targeting_compare_criteria(
                 "units": sum(a.units_covered for a in selection.areas),
                 count: round(selection.totals.get(count) or 0),
                 "small_sample_units": selection.small_sample_units,
-                # Same honesty flag targeting_select carries, per screen. Without it a
+                # Same honesty flag indicators_select carries, per screen. Without it a
                 # comparison run at a level or in a scope the indicator cannot answer
                 # returns zeros that read as a finding -- "nowhere is kept by every
                 # screen" -- when the truth is that the question was never asked. The
@@ -1046,7 +879,7 @@ def targeting_compare_criteria(
             "country filter the method cannot answer; if you pinned an admin_level, check "
             "'countries_missing_level' as well -- targeting selects on geoBoundaries and a "
             "country with no ADM2 there is dropped from a level-2 answer outright. Widen the "
-            "scope, or call targeting_indicators to see what can be answered."
+            "scope, or call indicators_list to see what can be answered."
         )
     elif unanswerable:
         advice = (

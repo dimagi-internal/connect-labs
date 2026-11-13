@@ -3,13 +3,14 @@ from canopy_sdk.django.views import jwt_bearer_view
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
 from django.views import defaults as default_views
 from django.views.generic import RedirectView, TemplateView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from oauth2_provider.views import TokenView
 from rest_framework.authtoken.views import obtain_auth_token
 
+from connect_labs.labs.indicators import legacy as indicators_legacy
 from connect_labs.mcp.admin_views import create_token_browser
 from connect_labs.mcp.oauth import MCPAuthorizationView
 from connect_labs.mcp.oauth import register_client as mcp_register_client
@@ -82,7 +83,10 @@ urlpatterns = [
     path("labs/pulse/", include("connect_labs.pulse.urls", namespace="pulse")),
     path("labs/marketplace/", include("connect_labs.marketplace.urls", namespace="marketplace")),
     path("labs/admin/", include("connect_labs.labs.admin.urls", namespace="labs_admin")),
-    path("labs/targeting/", include("connect_labs.labs.indicators.urls", namespace="targeting")),
+    path("labs/indicators/", include("connect_labs.labs.indicators.urls", namespace="indicators")),
+    # The explorer was /labs/targeting/ until 13 Nov 2026; malaria PMC, retired the same day, lands on Market size.
+    path("labs/targeting/pmc/", RedirectView.as_view(pattern_name="cea:market", permanent=False)),
+    re_path(r"^labs/targeting/(?P<rest>.*)$", indicators_legacy.moved),
     path("labs/cea/", include("connect_labs.effectiveness.urls", namespace="cea")),
     path("labs/benchmarks/", include("connect_labs.benchmarks.urls", namespace="benchmarks")),
     path("labs/data/", include("connect_labs.labsdata.urls", namespace="labsdata")),
