@@ -143,13 +143,6 @@
       <h1 class="text-2xl font-semibold text-stone-900">Health indicators</h1>
       <p class="text-sm text-stone-500 mt-1">Where each indicator is highest. For costs, <a class="underline" href="{% url 'cea:market' %}">Market size</a>.</p>
     </div>
-    <!-- The intervention picker belongs to sizing, which moved to Market size. It stays in the page, hidden, until the
-         costing script that reads it is removed. -->
-    <div class="w-full md:w-[420px] md:ml-auto" hidden>
-      <label for="tg-preset" class="block text-xs font-semibold tracking-wide uppercase text-stone-500">Intervention</label>
-      <select id="tg-preset"
-              class="w-full mt-1 text-base font-medium border border-stone-300 rounded-md px-3 py-2 bg-white"></select>
-    </div>
   </div>
 
   <!-- Controls on the LEFT, where a reader's eye starts and where every other tool of this kind puts them. The map and the table are the answer; the panel is the question, and the question should come first. -->
@@ -312,35 +305,13 @@
         <div class="flex items-center gap-1.5">
           <span class="text-xs font-semibold tracking-wide uppercase text-stone-500">Year</span>
         </div>
-        <!-- The year the programme runs. Counts are carried to it at each
-             country's own growth rate; rates are not, because nothing here
-             models how coverage moves and a projected rate would be invention.
-             It sits in the costing panel because that is where it bites: a 2027
-             programme budgeted on a 2022 population is short by five years of
-             children. -->
+        <!-- Counts are carried to the year at each country's own growth rate; rates are not, because nothing here
+             models how coverage moves and a projected rate would be invention. -->
         <label for="tg-year" class="block text-xs font-medium text-stone-600 mt-2">Delivering in</label>
         <select id="tg-year"
                 class="w-full mt-1 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
         <p id="tg-year-note" class="text-[11px] text-stone-500 mt-1"></p>
 
-        <div class="grid grid-cols-2 gap-3 mt-3" hidden>
-          <div>
-            <label for="tg-basis" class="block text-xs font-medium text-stone-600">Priced per</label>
-            <select id="tg-basis"
-                    class="w-full mt-1 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white"></select>
-          </div>
-          <div>
-            <label for="tg-unitcost" class="block text-xs font-medium text-stone-600">Unit cost (USD)</label>
-            <input id="tg-unitcost" type="number" min="0" step="0.10" value="60"
-                   class="w-full mt-1 text-sm border border-stone-300 rounded-md px-2 py-1.5 bg-white tg-num">
-          </div>
-        </div>
-        <div class="mt-4 pt-4 border-t border-stone-200" hidden>
-          <div class="text-xs text-stone-500">Absorbable spend</div>
-          <div id="tg-absorb" class="text-3xl font-semibold text-stone-900 tg-num mt-1">—</div>
-          <div id="tg-absorb-detail" class="text-sm text-stone-600 mt-1">—</div>
-          <div id="tg-absorb-caveat" class="text-xs text-amber-700 mt-2"></div>
-        </div>
       </div>
 
       <a id="tg-download" href="#"
@@ -488,8 +459,6 @@
         map: "{% url 'targeting:map_data' %}",
         methods: "{% url 'targeting:methods' %}",
         methodology: "{% url 'targeting:methodology' %}",
-        interventions: "{% url 'scenarios:interventions' %}",
-        scenario: "{% url 'scenarios:scenario' %}",
         scope: "{% url 'targeting:scope' %}",
         selection: "{% url 'targeting:selection' %}",
         download: "{% url 'targeting:download' %}"
@@ -512,7 +481,6 @@
   <script src="{% static 'indicators/targeting/menu.js' %}"></script>
   <script src="{% static 'indicators/targeting/controls.js' %}"></script>
   <script src="{% static 'indicators/targeting/table.js' %}"></script>
-  <script src="{% static 'indicators/targeting/costing.js' %}"></script>
   <script src="{% static 'indicators/targeting/methodology.js' %}"></script>
   <script src="{% static 'indicators/targeting/main.js' %}"></script>
   {% comment %}

@@ -313,10 +313,9 @@
         : partly.length
           ? ' — only part of ' + util.esc(partly.join(', '))
           : '') +
-      ' · ' +
       (data.projected_to
-        ? 'carried to ' + util.esc(String(data.projected_to))
-        : 'as published, not projected to a delivery year');
+        ? ' · carried to ' + util.esc(String(data.projected_to))
+        : '');
   }
 
   function renderHeadline(data) {

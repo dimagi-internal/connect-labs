@@ -55,17 +55,6 @@
     });
   }
 
-  // A preset survives a costing refresh if it is still on offer and still
-  // aimed at the indicator on screen.
-  function keptPreset(S, info) {
-    if (!S.preset) return null;
-    var still = (info.interventions || []).filter(function (i) {
-      return i.slug === S.preset;
-    })[0];
-    if (!still) return null;
-    return !still.targets || still.targets === S.indicator ? S.preset : null;
-  }
-
   // "TypeError: Failed to fetch" is what the browser says when nothing
   // answered. Name that case; pass anything else through unchanged.
   function describe(err) {
@@ -196,38 +185,6 @@
         S.thresholdFor = S.indicator;
       }
       T.controls.renderPicker();
-
-      // Which bases a costing can use is a property of the INDICATOR — a
-      // per-case basis needs that indicator's case count. Fetched once at boot
-      // and never again, the panel kept under-5 mortality's answer: looking at
-      // ORS coverage, "per case (a year of cases)" was greyed out as "not
-      // available for this indicator" when it is exactly the basis that
-      // indicator is for.
-      return api.interventions(S.indicator).then(function (info) {
-        S.costInfo = info;
-        var basis = info.bases.filter(function (b) {
-          return b.code === S.basis;
-        })[0];
-        // A preset names the indicator it is FOR. Kept across a change of
-        // indicator it kept its caveat too, so targeting household ITN
-        // ownership displayed Kangaroo Mother Care's warning about
-        // low-birthweight newborns — a different intervention's fine print
-        // under a different question's numbers.
-        //
-        // Drop it only when it does not belong here. Clearing it outright
-        // also cleared a preset the reader had just picked, whenever this
-        // request was still in flight when they picked it — and a preset
-        // with no slug sends no intervention, so the costing panel answered
-        // a question nobody asked.
-        S.preset = keptPreset(S, info);
-        if (!basis || !basis.available_for_indicator) {
-          var usable = info.bases.filter(function (b) {
-            return b.available_for_indicator;
-          });
-          if (usable.length) S.basis = usable[usable.length - 1].code;
-        }
-        T.costing.renderControls();
-      });
     });
   });
 
@@ -270,10 +227,6 @@
       });
   });
 
-  state.register('costing', function () {
-    return T.costing.refresh();
-  });
-
   // --- the one way the indicator changes -----------------------------------
 
   function selectIndicator(code) {
@@ -305,7 +258,6 @@
     T.popovers.init();
     T.menu.init();
     T.controls.init();
-    T.costing.init();
     guardDownloads();
     // Any channel that cannot answer reports here. Without this a failure in
     // an early channel skipped every later one — including the selection
@@ -374,24 +326,6 @@
         return T.map.init();
       })
       .then(function () {
-        return api.interventions(S.indicator);
-      })
-      .then(function (info) {
-        S.costInfo = info;
-        // Seed from a preset that is FOR this indicator, not from whichever
-        // happens to be first. interventions[0] is Kangaroo Mother Care, so
-        // every cold load — of any of the fifty-two indicators — opened
-        // costing ITN ownership or family planning as KMC per birth, complete
-        // with KMC's caveat about low-birthweight newborns.
-        var preset =
-          info.interventions.filter(function (i) {
-            return i.targets === S.indicator;
-          })[0] || null;
-        S.preset = preset ? preset.slug : null;
-        S.basis = preset ? preset.basis : 'person';
-        S.unitCost = preset ? preset.unit_cost_usd : 1;
-        document.getElementById('tg-unitcost').value = S.unitCost;
-        T.costing.renderControls();
         // One full pass from the widest channel, so the first paint goes
         // through exactly the same path as every later change.
         return state.apply({}, { channel: 'scope' });
