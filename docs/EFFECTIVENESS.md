@@ -79,3 +79,7 @@ Nothing runs the check on a schedule yet: a scheduled run needs a credential in 
 
 - Saved scenarios: a record of places, models and inputs that a proposal can link to (Market size state is already in the link).
 - Price measles, vitamin A, nets and water from a model if the team builds one.
+
+## See also
+
+- `docs/ON_DEMAND_COMPUTE.md`: how to run an expensive external model (a simulation) from Labs. The malaria PMC explorer was the one consumer; it is retired and kept at the tag `archive/pmc-emod`.
