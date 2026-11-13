@@ -181,6 +181,7 @@ LOCAL_APPS = [
     "connect_labs.organization",
     "connect_labs.program",
     "connect_labs.microplans",
+    "connect_labs.hqdata",
     "connect_labs.mopup",
     "connect_labs.pulse",
     "connect_labs.scope_config",
@@ -873,6 +874,12 @@ CELERY_BEAT_SCHEDULE = {
     "reap-synthetic-job-tasks": {
         "task": "connect_labs.labs.synthetic.tasks.reap_synthetic_job_tasks",
         "schedule": crontab(minute="*/10"),
+    },
+    # Queue each persistent CommCare project whose sync interval has elapsed
+    # (connect_labs/hqdata/tasks.py). The tick is cheap: one query, a task per due project.
+    "hqdata-sync-due-projects": {
+        "task": "connect_labs.hqdata.tasks.sync_due_projects",
+        "schedule": crontab(minute="*/5"),
     },
     # Long-running MCP jobs: fail ones that were lost, stop standalone tasks that overran
     # or record ones whose machine died, prune finished jobs past retention (mcp/jobs.py).

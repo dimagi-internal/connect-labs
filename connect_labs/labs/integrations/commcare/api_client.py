@@ -939,6 +939,134 @@ class CommCareDataAccess:
 
         logger.info(f"[iter_forms] Done — yielded {total_yielded} forms total from CommCare")
 
+    # -- Incremental reads (hqdata sync) ---------------------------------------
+    #
+    # Unlike fetch_forms / fetch_cases above, these never swallow a failed page:
+    # a sync that stops half way and reports success would advance its watermark
+    # past rows it never saw. Every error propagates; the sync keeps its old
+    # watermark and the next run resumes from it.
+
+    # HQ's documented maximum page sizes (docs/api/list-forms.rst, cases-v2.rst in
+    # dimagi/commcare-hq). fetch_forms asks for 2500 against a 1000 cap.
+    FORM_PAGE_LIMIT = 1000
+    CASE_PAGE_LIMIT = 5000
+
+    def _get_page(self, url: str, params: dict | None) -> dict:
+        """GET one API page as JSON. 401/403 earns one token refresh, then CCHQAuthError."""
+        if not self.check_token_valid():
+            raise ValueError(
+                "CommCare OAuth not configured or expired. "
+                "Please authorize CommCare access at /labs/commcare/initiate/"
+            )
+        for attempt in (1, 2):
+            response = httpx.get(
+                url, params=params, headers={"Authorization": f"Bearer {self.access_token}"}, timeout=120.0
+            )
+            if response.status_code in (401, 403):
+                if attempt == 1 and self._refresh_token():
+                    continue
+                raise CCHQAuthError(
+                    f"CommCare HQ rejected the request with HTTP {response.status_code} "
+                    f"for domain {self.domain!r} after token refresh+retry.",
+                    status_code=response.status_code,
+                    domain=self.domain,
+                )
+            response.raise_for_status()
+            return response.json()
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    def _absolute(self, endpoint: str, next_url: str) -> str:
+        if next_url.startswith("http"):
+            return next_url
+        if next_url.startswith("?"):
+            return f"{endpoint}{next_url}"
+        return f"{self.base_url}{next_url}"
+
+    def iter_forms_since(
+        self,
+        indexed_on_start: str | None = None,
+        *,
+        xmlns: str | None = None,
+        app_id: str | None = None,
+        include_archived: bool = True,
+    ) -> Iterator[dict]:
+        """Yield forms HQ has indexed at or after ``indexed_on_start`` (all of them when None).
+
+        The way commcare-export pages forms (its ``date_indexed`` mode): ask for a page
+        ordered by ``indexed_on``, then ask again starting at the LAST row's
+        ``indexed_on``. Offset paging over a deep result set gets slower with every page
+        and shifts under a live domain; re-anchoring does neither. The boundary rows come
+        back once more, so callers must upsert (the sync does). A whole page that shares
+        one ``indexed_on`` (a bulk re-index) cannot move the anchor, so within it the walk
+        pages by offset until the anchor moves.
+
+        Archived forms are included by default: archiving re-indexes a form, which is the
+        only way a delta learns that it happened.
+        """
+        endpoint = f"{self.base_url}/a/{self.domain}/api/form/v1/"
+        base: dict = {"limit": self.FORM_PAGE_LIMIT, "order_by": "indexed_on"}
+        if xmlns:
+            base["xmlns"] = xmlns
+        if app_id:
+            base["app_id"] = app_id
+        if include_archived:
+            base["include_archived"] = "true"
+
+        anchor, offset = indexed_on_start, 0
+        while True:
+            params = dict(base)
+            if anchor:
+                params["indexed_on_start"] = anchor
+            if offset:
+                params["offset"] = offset
+            objects = self._get_page(endpoint, params).get("objects", [])
+            yield from objects
+            if len(objects) < self.FORM_PAGE_LIMIT:
+                return
+            last = objects[-1].get("indexed_on")
+            if not last:
+                raise ValueError(
+                    f"HQ returned a form with no indexed_on for {self.domain!r}; the walk cannot continue safely"
+                )
+            if last == anchor:
+                offset += len(objects)
+            else:
+                anchor, offset = last, 0
+
+    def iter_cases_since(
+        self,
+        indexed_on_start: str | None = None,
+        *,
+        case_type: str | None = None,
+    ) -> Iterator[dict]:
+        """Yield cases HQ has indexed since ``indexed_on_start`` (all of them when None).
+
+        Uses the Case API v2 cursor ("next" link), oldest to newest by ``indexed_on``.
+        A case updated mid-walk reappears near the end, so callers must upsert.
+        Open and closed cases both come back: closing a case is an update the delta
+        has to see.
+        """
+        endpoint = f"{self.base_url}/a/{self.domain}/api/case/v2/"
+        params: dict = {"limit": self.CASE_PAGE_LIMIT}
+        if indexed_on_start:
+            params["indexed_on.gte"] = indexed_on_start
+        if case_type:
+            params["case_type"] = case_type
+
+        url, page_params = endpoint, params
+        while url:
+            data = self._get_page(url, page_params)
+            next_url = data.get("next")
+            yield from data.get("cases", [])
+            data = None
+            url = self._absolute(endpoint, next_url) if next_url else None
+            if url and not self._validate_pagination_url(url):
+                raise CCHQAuthError(
+                    f"HQ pagination left the configured host: {urlparse(url).netloc}",
+                    domain=self.domain,
+                )
+            page_params = None
+
     def get_form_xmlns(self, app_id: str, form_name: str = "Register Mother") -> str | None:
         """Look up a form's xmlns from the Application Structure API.
 
