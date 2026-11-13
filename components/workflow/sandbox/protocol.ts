@@ -254,6 +254,26 @@ export const NAVIGATE_DENIED_PARAMS = [
   'return_url',
 ];
 
+/** Outside labs, a WORKFLOW may open these and nothing else, always in a new tab: a
+ * CommCare HQ form, and HQ's data-forwarding (repeat record) report for one form, so
+ * a report can show the evidence behind a number. HQ decides who may see them. */
+export const EXTERNAL_NAVIGATE_ORIGINS = ['https://www.commcarehq.org'];
+const HQ_FORM_ID =
+  '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+export const EXTERNAL_NAVIGATE_PATTERNS: {
+  path: RegExp;
+  params: Record<string, RegExp>;
+}[] = [
+  {
+    path: new RegExp(`^/a/[a-z0-9-]+/reports/form_data/${HQ_FORM_ID}/$`),
+    params: {},
+  },
+  {
+    path: /^\/a\/[a-z0-9-]+\/settings\/project\/repeat_record_report\/$/,
+    params: { payload_id: new RegExp(`^${HQ_FORM_ID}$`) },
+  },
+];
+
 export type StorageArea = 'local' | 'session';
 export const STORAGE_AREAS: StorageArea[] = ['local', 'session'];
 

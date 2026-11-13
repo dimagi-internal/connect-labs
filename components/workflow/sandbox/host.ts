@@ -11,6 +11,8 @@
 
 import {
   DOWNLOAD_TYPES,
+  EXTERNAL_NAVIGATE_ORIGINS,
+  EXTERNAL_NAVIGATE_PATTERNS,
   HELLO,
   INIT,
   LIMITS,
@@ -65,8 +67,9 @@ export class BridgeError extends Error {}
 
 /**
  * Where a navigate request may go: a labs page on the allowlist, on labs' own
- * origin and scheme, with no credentials in the URL. Returns the URL to use (the
- * parsed `href`, never the string the frame sent), or throws.
+ * origin and scheme, with no credentials in the URL -- or, from a workflow, one of
+ * the CommCare HQ addresses in EXTERNAL_NAVIGATE_PATTERNS (`checkExternal`). Returns
+ * the URL to use (the parsed `href`, never the string the frame sent), or throws.
  */
 export function checkNavigate(
   url: unknown,
@@ -88,6 +91,9 @@ export function checkNavigate(
     parsed = new URL(url, base.origin);
   } catch {
     throw new BridgeError('navigate: that address is not a labs page');
+  }
+  if (parsed.origin !== base.origin && mode === 'full') {
+    return checkExternal(parsed);
   }
   if (
     parsed.origin !== base.origin ||
@@ -137,6 +143,41 @@ export function checkNavigate(
     );
   }
   return parsed.href;
+}
+
+/**
+ * Off labs, only an address EXTERNAL_NAVIGATE_PATTERNS names exactly: its origin,
+ * its path, and only the query parameters it lists, each once and well formed.
+ */
+function checkExternal(parsed: URL): string {
+  const refuse = () => {
+    throw new BridgeError('navigate: only labs pages can be opened');
+  };
+  if (
+    !EXTERNAL_NAVIGATE_ORIGINS.includes(parsed.origin) ||
+    parsed.username ||
+    parsed.password ||
+    parsed.hash
+  ) {
+    refuse();
+  }
+  const rule = EXTERNAL_NAVIGATE_PATTERNS.find((r) =>
+    r.path.test(parsed.pathname),
+  );
+  if (!rule) refuse();
+  const keys = Array.from(parsed.searchParams.keys());
+  const wanted = Object.keys(rule!.params);
+  if (keys.length !== wanted.length) refuse();
+  for (const k of wanted) {
+    const all = parsed.searchParams.getAll(k);
+    if (all.length !== 1 || !rule!.params[k].test(all[0])) refuse();
+  }
+  return parsed.href;
+}
+
+/** Whether a checked navigate leads off labs (then it always opens a new tab). */
+export function isOffLabs(href: string, labsOrigin: string): boolean {
+  return new URL(href).origin !== new URL(labsOrigin).origin;
 }
 
 /** Sign-in starts whose `next` may name where to come back to. */
@@ -1136,9 +1177,12 @@ export function createDispatcher(
     // A click inside the frame counts (activation reaches its ancestors). Without
     // one -- a navigation after an await -- the host asks, showing where it leads.
     if (!options.hasActivation()) {
-      const path = new URL(href).pathname;
+      const u = new URL(href);
+      const where = isOffLabs(href, options.labsOrigin)
+        ? u.host + u.pathname
+        : u.pathname;
       const yes = await (full
-        ? askLabs(`This ${noun} wants to open ${path}.`)
+        ? askLabs(`This ${noun} wants to open ${where}.`)
         : Promise.resolve(false));
       if (!yes)
         throw new BridgeError('navigate needs a click on the page first');
@@ -1176,7 +1220,11 @@ export function createDispatcher(
           options.labsOrigin,
           full ? 'full' : 'page',
         );
-        await navigateTo(href, params.newTab === true);
+        // Off labs, always a new tab: the labs page is never navigated away.
+        await navigateTo(
+          href,
+          isOffLabs(href, options.labsOrigin) || params.newTab === true,
+        );
         return true;
       }
       case 'shareSelection':
