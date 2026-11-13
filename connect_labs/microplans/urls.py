@@ -11,6 +11,7 @@ urlpatterns = [
     # (a workspace program's own are under program/<id>/simple/ below).
     # Buildings reached: the share of a facility's buildings the recorded households got near, per cycle.
     path("buildings-reached/", reached_page.BuildingsReachedPage.as_view(), name="buildings_reached"),
+    path("buildings-reached/load/", reached_page.BuildingsReachedLoad.as_view(), name="buildings_reached_load"),
     path("buildings-reached/run/", reached_page.BuildingsReachedRun.as_view(), name="buildings_reached_run"),
     path("simple/", simple_views.SimpleMicroplanListView.as_view(), name="simple_list"),
     path("simple/<int:plan_id>/", simple_views.SimpleMicroplanEditorView.as_view(), name="simple_editor"),

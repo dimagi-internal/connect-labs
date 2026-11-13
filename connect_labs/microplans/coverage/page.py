@@ -31,18 +31,34 @@ from connect_labs.microplans.coverage.request import BadRequest, build_spec
 logger = logging.getLogger(__name__)
 
 
-def run(request, body: dict) -> dict:
-    """Run the check as the person asking and shape the answer for the page."""
-    spec, labels, opp_ids = build_spec(body)
-    caller = Caller(user=request.user, request=request)
+def _caller(request) -> Caller:
+    return Caller(user=request.user, request=request)
+
+
+def load(request, body: dict) -> dict:
+    """Load the visits of any named opportunity that has nothing cached, as the person asking.
+
+    This is its own request on purpose: the loader writes the cache inside the request's transaction
+    (ATOMIC_REQUESTS), and the Data query reads over its own connection, which cannot see rows that are not
+    committed yet. Loading and reading in one request therefore read an empty campaign on a cold cache (seen on the
+    live deploy). The page calls this, waits for it to answer (the commit), then calls ``run``."""
+    opp_ids = parse_ids(body.get("opps"))
+    caller = _caller(request)
     space = spaces.from_request(caller, opportunity_ids=opp_ids)
-    # A synthetic or expired cache holds nothing to read: load what is missing, as this person, then read.
     loaded = service.warm(caller, space.selection.opportunities)
     failed = [r for r in loaded if r.get("error")]
     if failed:
         raise BadRequest(
             "could not load " + "; ".join(f"opportunity {r['opportunity_id']}: {r['error']}" for r in failed)
         )
+    return {"opportunities": [o.id for o in space.selection.opportunities], "loaded": loaded}
+
+
+def run(request, body: dict) -> dict:
+    """Run the check as the person asking and shape the answer for the page. Reads what ``load`` committed."""
+    spec, labels, opp_ids = build_spec(body)
+    caller = _caller(request)
+    space = spaces.from_request(caller, opportunity_ids=opp_ids)
     rows = read.read_households(caller, space, spec, agent=False)
     result = check.run_check(rows, spec)
     for area in result["areas"]:
@@ -65,12 +81,14 @@ class BuildingsReachedPage(LoginRequiredMixin, TemplateView):
 
 
 class BuildingsReachedRun(LoginRequiredMixin, View):
+    action = staticmethod(run)
+
     def post(self, request):
         try:
             body = json.loads(request.body or b"{}")
             if not isinstance(body, dict):
                 raise BadRequest("the body must be a JSON object")
-            return JsonResponse(run(request, body))
+            return JsonResponse(self.action(request, body))
         except json.JSONDecodeError:
             return JsonResponse({"error": "invalid_json", "message": "Body must be JSON."}, status=400)
         except BadRequest as e:
@@ -84,3 +102,9 @@ class BuildingsReachedRun(LoginRequiredMixin, View):
             return JsonResponse({"error": e.code, "message": e.message}, status=404)
         except QueryError as e:
             return JsonResponse(e.as_dict(), status=400)
+
+
+class BuildingsReachedLoad(BuildingsReachedRun):
+    """Same answers and errors as the run, for the load step."""
+
+    action = staticmethod(load)
