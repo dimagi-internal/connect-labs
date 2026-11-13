@@ -15,6 +15,13 @@
   .br-form label { font-size: .8rem; color: #374151; display: block; }
   .br-form input, .br-form textarea { display: block; width: 100%; margin-top: .2rem; border: 1px solid #d1d5db; border-radius: .35rem; padding: .35rem .5rem; font-size: .85rem; }
   .br-wide { grid-column: 1 / -1; }
+  .br-wide[hidden] { display: none; }
+  .br-src { font-size: .85rem; color: #374151; display: flex; flex-wrap: wrap; gap: .3rem 1.2rem; align-items: center; }
+  .br-src label { display: inline-flex; gap: .35rem; align-items: center; font-size: .85rem; }
+  .br-src input { display: inline; width: auto; margin: 0; }
+  .br-sub { font-size: .7rem; color: #6b7280; font-weight: 400; }
+  .br-dc { text-align: center; }
+  .br-weak { color: #6b7280; font-style: italic; }
   .br-run { background: #059669; color: #fff; border: 0; border-radius: .4rem; padding: .5rem 1rem; font-weight: 600; cursor: pointer; }
   .br-run:disabled { opacity: .5; cursor: wait; }
   .br-status { font-size: .85rem; color: #4b5563; margin: .75rem 0; min-height: 1.2rem; }
@@ -68,7 +75,7 @@
   <a href="{% url 'microplans:hub' %}" class="text-sm text-indigo-600 hover:underline"><i class="fa-solid fa-arrow-left mr-1"></i>Microplans</a>
   <div class="br-card" style="margin-top:.75rem">
     <h1 class="text-2xl font-bold text-gray-900"><i class="fa-solid fa-house-circle-check text-emerald-600 mr-2"></i>Buildings reached</h1>
-    <p class="br-sub">Of the buildings around each facility, the share that visited households' GPS points came within the chosen distance of, by cycle.</p>
+    <p class="br-sub" id="br-subtitle">Of the buildings around each facility, the share that visited households' GPS points came within the chosen distance of, by cycle.</p>
 
     <div id="br-bar" class="br-bar" hidden>
       <span id="br-summary"></span>
@@ -76,11 +83,24 @@
     </div>
 
     <form id="br-form" class="br-form">
-      <label>Opportunity ids <input id="br-opps" placeholder="10184,10185"></label>
+      <div class="br-wide br-src">Data:
+        <label><input type="radio" name="br-source" value="opps" checked> Labs opportunities</label>
+        <label><input type="radio" name="br-source" value="upload"> Upload a household CSV (real data from a CommCare export)</label>
+      </div>
+      <label id="br-opps-wrap">Opportunity ids <input id="br-opps" placeholder="10184,10185"></label>
+      <div id="br-upload-wrap" class="br-wide" hidden>
+        <label>Household CSV <input id="br-file" type="file" accept=".csv,text/csv"></label>
+        <p class="br-note">Read in memory for this request as you, and never saved. Only counts and 1 km squares come back, never a household or a point.</p>
+        <details class="br-sec"><summary>What to export, and a template</summary>
+          <p class="br-note">One row per household and cycle with these columns: <code>facility_id, household_id, lat, lon, cycle, children_served</code>, and optionally <code>accuracy_m</code>. <code>facility_id</code> must match the ids in the facility list below; <code>cycle</code> is any label ending in the cycle number (1, cycle 2, contact_3); <code>children_served</code> is how many children the household's records show given the dose in that cycle (0 if visited and none served); <code>lat, lon</code> is the household's recorded point. Rows with no usable point still count as households but cannot be placed.</p>
+          <p class="br-note">From CommCare HQ: export the distribution form (one row per child) with the household case id, the household's point, the facility and the passage; then count the children who received the dose per household and passage (in pandas: <code>df[df.dose=="oui"].groupby(["facility_id","household_id","lat","lon","cycle"]).size().reset_index(name="children_served")</code>), and add rows with 0 for visited households where nobody was served.</p>
+          <p class="br-note"><a class="br-link" href="{% url 'microplans:buildings_reached_template' %}">Download the CSV template</a></p>
+        </details>
+      </div>
       <label>Distance (m) <input id="br-dist" type="number" min="1" max="500" value="30"></label>
       <label>Buildings per facility <input id="br-k" type="number" min="10" max="5000" value="260"></label>
       <div style="display:flex;align-items:flex-end"><button id="br-run" type="submit" class="br-run" style="width:100%">Run</button></div>
-      <label class="br-wide">Facilities: <code>id,lon,lat,district</code>, one per line or separated by <code>;</code> (district optional; id is the value the form records for the facility)
+      <label class="br-wide">Facilities: <code>id,lon,lat,district,target</code>, one per line or separated by <code>;</code> (district and target optional; id is the value the data records for the facility; target is the administrative number of children expected there)
         <textarea id="br-fac" rows="4" style="font-family:monospace;font-size:.75rem"></textarea></label>
       <details class="br-wide br-sec"><summary>Form paths (defaults are the eCHIS Niger SMC form)</summary>
         <div class="br-form" style="margin-top:.5rem">
@@ -119,13 +139,14 @@
   var RUN_URL = "{% url 'microplans:buildings_reached_run' %}";
   var LOAD_URL = "{% url 'microplans:buildings_reached_load' %}";
   var POP_URL = "{% url 'microplans:buildings_reached_population' %}";
+  var UPLOAD_URL = "{% url 'microplans:buildings_reached_upload' %}";
   var LOW_POINTS = 0.10;
   var params = new URLSearchParams(location.search);
   Object.keys(FIELDS).forEach(function (k) { if (params.get(k)) { $(FIELDS[k]).value = params.get(k); } });
 
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }
   function n(v) { return Number(v).toLocaleString('en-US'); }
-  function pct(v) { return (100 * v).toFixed(0) + '%'; }
+  function pct(v) { return v > 0 && v < 0.005 ? '<1%' : (100 * v).toFixed(0) + '%'; }
   function cycleKeys(rows) {
     var s = {};
     rows.forEach(function (r) { Object.keys(r.cycles || {}).forEach(function (c) { s[c] = 1; }); });
@@ -182,7 +203,8 @@
   var STEPS = [[0.60, '#d73027', 'under 60%'], [0.75, '#fc8d59', '60-75%'], [0.85, '#fee08b', '75-85%'], [0.95, '#91cf60', '85-95%'], [1.01, '#1a9850', '95% and over']];
   var POP_STEPS = [[0.60, '#d73027', 'under 60%'], [0.75, '#fc8d59', '60-75%'], [0.85, '#fee08b', '75-85%'], [0.95, '#91cf60', '85-95%'], [1.10, '#1a9850', '95-110%'], [99, '#7b3294', 'over 110%']];
   var NO_DATA = '#9ca3af';
-  var lens = 'buildings', popData = null, lastRes = null, lastBody = null;
+  var lens = 'buildings', popData = null, lastRes = null, lastBody = null, lastFile = null;
+  var source = params.get('source') === 'upload' ? 'upload' : 'opps';
   var mapState = {map: null, res: null, cycle: null, ready: false};
   function colorFor(share) {
     if (share === null || share === undefined) { return NO_DATA; }
@@ -262,17 +284,16 @@
   function popupHtml(p, cycle, extra) {
     return '<div style="font-size:.8rem"><b>' + esc(p.id || p.label) + '</b><br>' + extra + '</div>';
   }
-  function drawMap(res) {
-    var holder = $('br-map');
-    if (!holder) { return; }
-    if (!MAPBOX_TOKEN || !window.mapboxgl) { holder.parentNode.innerHTML = '<div class="br-nomap">The map needs a Mapbox token and a browser with WebGL; the tables below carry the same figures.</div>'; return; }
-    mapState.res = res;
-    var cycles = Object.keys(res.total.cycles).map(Number).sort(function (a, b) { return a - b; });
+
+  function cycleList(res) {
+    return Object.keys(res.total.cycles).map(Number).sort(function (a, b) { return a - b; });
+  }
+  function cycleBar(res) {
+    var cycles = cycleList(res);
     mapState.cycle = cycles.length ? cycles[0] : null;
     var bar = '<span>Cycle:</span>';
     cycles.forEach(function (c) { bar += '<button type="button" data-c="' + c + '"' + (c === mapState.cycle ? ' class="on"' : '') + '>' + c + '</button>'; });
     $('br-cyc').innerHTML = bar;
-    $('br-legend').innerHTML = legendHtml();
     Array.prototype.forEach.call($('br-cyc').querySelectorAll('button'), function (b) {
       b.addEventListener('click', function () {
         mapState.cycle = Number(b.getAttribute('data-c'));
@@ -280,6 +301,13 @@
         refreshMap();
       });
     });
+  }
+  function drawMap(res) {
+    var holder = $('br-map');
+    if (!holder) { return; }
+    if (!MAPBOX_TOKEN || !window.mapboxgl) { $('br-legend').innerHTML = ''; holder.parentNode.innerHTML = '<div class="br-nomap">The map needs a Mapbox token and a browser with WebGL; the tables below carry the same figures.</div>'; return; }
+    mapState.res = res;
+    $('br-legend').innerHTML = legendHtml();
     try {
       mapboxgl.accessToken = MAPBOX_TOKEN;
       var map = new mapboxgl.Map({container: 'br-map', style: 'mapbox://styles/mapbox/satellite-streets-v12', center: [8.0, 13.5], zoom: 5});
@@ -334,11 +362,45 @@
     });
   }
   function refreshMap() {
+    renderDenoms();
     if (!mapState.ready) { return; }
     var d = mapData(mapState.res, mapState.cycle);
     ['cells', 'catchment', 'fac', 'dist'].forEach(function (k) { mapState.map.getSource('br-' + k).setData(d[k]); });
   }
 
+
+  function denomRows(pd, cycle) {
+    var dd = pd.denominators && pd.denominators.districts;
+    if (!dd || !dd.length) { return ''; }
+    var c = String(cycle), anyUnit = false, anyTarget = false;
+    dd.forEach(function (d) { if (d.unit && d.unit.eligible) { anyUnit = true; } if (d.target) { anyTarget = true; } });
+    var h = '<div class="br-h2">Coverage against each denominator, cycle ' + esc(cycle) + '</div><table class="br-t"><thead><tr><th>District</th><th style="text-align:center">1 km squares touched</th>';
+    if (anyUnit) { h += '<th style="text-align:center">Whole admin unit</th>'; }
+    if (anyTarget) { h += '<th style="text-align:center">Admin target</th>'; }
+    h += '<th style="text-align:center">Range</th></tr></thead><tbody>';
+    var one = function (share, den, served, weak, tip) {
+      if (share === null || share === undefined || !den) { return '<td class="br-dc br-weak">&ndash;</td>'; }
+      return '<td class="br-dc' + (weak ? ' br-weak' : '') + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '><b>' + pct(share) + '</b><br><span class="br-sub">' + n(served) + ' / ' + n(Math.round(den)) + '</span></td>';
+    };
+    dd.forEach(function (d) {
+      var served = d.served[c], sq = d.squares, un = d.unit, tg = d.target, rg = d.range[c];
+      var sqEl = (pd.districts.filter(function (x) { return x.label === d.label; })[0] || {eligible_in_cycle: {}}).eligible_in_cycle[c];
+      var names = un && un.units && un.units.length ? un.units.map(function (u) { return u.name; }).join(', ') : '';
+      var weak = un && un.touched_share !== null && un.touched_share !== undefined && un.touched_share < 0.5;
+      h += '<tr><td>' + esc(d.label) + (names ? '<br><span class="br-sub">in ' + esc(names) + '</span>' : '') + '</td>' + one(sq.share[c], sqEl, served, false, '');
+      if (anyUnit) { h += one(un ? un.share[c] : null, un ? un.eligible : 0, served, weak, weak ? 'The squares the households touched hold only ' + pct(un.touched_share) + ' of this unit\'s estimated children, so this share is a floor: the campaign covers a small part of the unit.' : ''); }
+      if (anyTarget) { h += one(tg ? tg.share[c] : null, tg ? tg.value : 0, served, false, ''); }
+      var rgTip = d.range_excludes && d.range_excludes.length ? ' title="The whole admin unit is left out of this range: the campaign touched too little of it for it to be a fair denominator."' : '';
+      h += '<td class="br-dc"' + rgTip + '>' + (rg ? (rg[0] === rg[1] ? pct(rg[0]) : (100 * rg[0]).toFixed(0) + '\u2013' + pct(rg[1])) : '&ndash;') + (rgTip ? ' <span class="br-sub">*</span>' : '') + '</td></tr>';
+    });
+    h += '</tbody></table><div class="br-note">Where the denominators disagree, that is the finding. The whole-unit share is a fair coverage only when the campaign covers the unit: grey italics mean the squares the households touched hold under half of the unit\'s estimated children, so read it as a floor, and it is left out of the range (marked *). Admin target is the number supplied with the facility list.' +
+      (pd.denominators.unit_note ? ' Admin units: ' + esc(pd.denominators.unit_note) + '.' : '') + '</div>';
+    return h;
+  }
+  function renderDenoms() {
+    var el = $('br-denoms');
+    if (el) { el.innerHTML = lens === 'population' && popData ? denomRows(popData, mapState.cycle) : ''; }
+  }
   function popTiles(pd) {
     var h = '<div class="br-tiles">';
     pd.cycles.forEach(function (c) {
@@ -349,7 +411,7 @@
     return h + '</div>';
   }
   function popDistrictTable(pd) {
-    var h = '<table class="br-t"><thead><tr><th>District</th><th class="b">Eligible</th>';
+    var h = '<table class="br-t"><thead><tr><th>District</th><th class="b">Eligible in squares</th>';
     pd.cycles.forEach(function (c) { h += '<th style="text-align:center">C' + c + '</th>'; });
     h += '</tr></thead><tbody>';
     pd.districts.forEach(function (d) {
@@ -361,6 +423,21 @@
       h += '</tr>';
     });
     return h + '</tbody></table>';
+  }
+  function setSource(next) {
+    source = next;
+    Array.prototype.forEach.call(document.getElementsByName('br-source'), function (r) { r.checked = r.value === next; });
+    $('br-opps-wrap').hidden = next === 'upload';
+    $('br-upload-wrap').hidden = next !== 'upload';
+  }
+  function postForm(url, body, file, lensName) {
+    var fd = new FormData();
+    Object.keys(body).forEach(function (k) { fd.append(k, body[k]); });
+    fd.append('lens', lensName);
+    fd.append('file', file);
+    return fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'X-CSRFToken': CSRF}, body: fd})
+      .then(function (r) { return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (e) { /* an HTML error page */ } return {status: r.status, ok: r.ok, j: j}; }); })
+      .then(function (x) { if (!x.ok || !x.j) { throw new Error(failure(x.status, x.j && x.j.message)); } return x.j; });
   }
   function currentBody() {
     var body = {};
@@ -390,7 +467,7 @@
     note.className = 'br-note';
     note.textContent = 'Reading the population grid and placing the children served. The first run on a country can take about a minute.';
     Array.prototype.forEach.call($('br-lensbar').querySelectorAll('button'), function (b) { b.disabled = true; });
-    post(POP_URL, lastBody)
+    (source === 'upload' ? postForm(UPLOAD_URL, lastBody, lastFile, 'population') : post(POP_URL, lastBody))
       .then(function (r) { popData = r; lens = 'population'; applyLens(); })
       .catch(function (e) { note.className = 'br-note br-err'; note.textContent = 'The population lens could not run: ' + e.message; lensBar(); })
       .finally(function () { Array.prototype.forEach.call($('br-lensbar').querySelectorAll('button'), function (b) { b.disabled = false; }); });
@@ -398,11 +475,14 @@
   function applyLens() {
     var res = lastRes, pop = lens === 'population';
     lensBar();
+    $('br-subtitle').textContent = pop ? 'Children served in each 1 km square against the children a population grid estimates live there, by cycle, with the other denominators beside it.' : "Of the buildings around each facility, the share that visited households' GPS points came within the chosen distance of, by cycle.";
     $('br-tiles').innerHTML = pop ? popTiles(popData) : tiles(res.total);
     $('br-lows').style.display = pop ? 'none' : '';
-    $('br-disttable').innerHTML = pop ? '<div class="br-h2">By district: children served / estimated eligible</div>' + popDistrictTable(popData)
+    if ($('br-amber')) { $('br-amber').style.display = pop ? 'none' : ''; }
+    $('br-disttable').innerHTML = pop ? '<div class="br-h2">By district: children served / estimated eligible</div>' + popDistrictTable(popData) + '<div id="br-denoms"></div>'
       : ((res.rollup || []).length ? '<div class="br-h2">By district</div>' + table(res.rollup, 'District', res.total.cycles) : '');
-    $('br-legend').innerHTML = legendHtml();
+    renderDenoms();
+    $('br-legend').innerHTML = MAPBOX_TOKEN ? legendHtml() : '';
     var q = popData && popData.quality;
     $('br-lensnote').className = 'br-note';
     $('br-lensnote').innerHTML = pop ? esc(popData.grid.assumption) + (q ? ' ' + n(q.usable) + ' of ' + n(q.households) + ' households had a usable point; the rest cannot be placed, so children served is a floor.' : '') : '';
@@ -424,6 +504,7 @@
     var areas = (res.areas || []).map(function (a) { return {label: a.group, buildings: a.buildings, cycles: a.cycles}; });
     var rollup = res.rollup || [];
     lastRes = res; popData = null; lens = 'buildings';
+    $('br-subtitle').textContent = "Of the buildings around each facility, the share that visited households' GPS points came within the chosen distance of, by cycle.";
     var h = '<div class="br-h2">All facilities</div><div id="br-tiles">' + tiles(res.total) + '</div>';
     var lows = [];
     if (rollup.length > 1) { lows.push('Lowest districts: ' + lowest(rollup, 2, function (r) { return r.label; })); }
@@ -432,13 +513,14 @@
     h += '<div class="br-h2">Map</div><div id="br-lensbar" class="br-cyc"></div><div id="br-cyc" class="br-cyc"></div><div class="br-mapbox"><div id="br-map"></div></div><div id="br-legend" class="br-legend"></div><div id="br-lensnote" class="br-note"></div>';
     h += '<div id="br-disttable">' + (rollup.length ? '<div class="br-h2">By district</div>' + table(rollup, 'District', res.total.cycles) : '') + '</div>';
     h += '<details class="br-sec"><summary class="br-h2" style="display:list-item">By facility (' + areas.length + ')</summary>' + table(areas, 'Facility', res.total.cycles) + '</details>';
-    h += '<div class="br-legend">Amber: more than 10 points below the all-facilities share for that cycle. Hover a cell for the building counts.</div>';
+    h += '<div id="br-amber" class="br-legend">Amber: more than 10 points below the all-facilities share for that cycle. Hover a cell for the building counts.</div>';
     h += dq(res.areas || []);
     if ((res.groups_without_a_facility || []).length) {
       h += '<p style="font-size:.85rem;color:#b45309;margin-top:.6rem">Groups in the data with no facility in your list (not counted): ' + res.groups_without_a_facility.map(esc).join(', ') + '</p>';
     }
     $('br-out').innerHTML = h;
     lensBar();
+    cycleBar(res);
     drawMap(res);
   }
   function settingsSummary(body) {
@@ -460,16 +542,27 @@
     lastBody = body;
     var q = new URLSearchParams();
     Object.keys(body).forEach(function (k) { if (body[k]) { q.set(k, body[k]); } });
+    if (source === 'upload') { q.set('source', 'upload'); }
     history.replaceState(null, '', '?' + q.toString());
-    $('br-summary').innerHTML = settingsSummary(body);
+    $('br-summary').innerHTML = settingsSummary(body) + (source === 'upload' ? ' &middot; ' + esc(($('br-file').files[0] || {}).name || 'your file') : '');
     $('br-status').className = 'br-status';
     $('br-status').textContent = 'Loading the visits and reading the footprints. The first run can take about a minute.';
     $('br-out').innerHTML = ''; $('br-run').disabled = true; setOpen(false);
-    // Load first (its own request, so the visits are committed), then read them.
-    post(LOAD_URL, body)
-      .then(function () { $('br-status').textContent = 'Reading the footprints and placing the households.'; return post(RUN_URL, body); })
+    var empty = 'No households with a recorded first visit were found in these opportunities, or their visits could not be read. Check the opportunity ids and the form paths under Change settings.';
+    var chain;
+    if (source === 'upload') {
+      lastFile = $('br-file').files[0];
+      if (!lastFile) { setOpen(true); $('br-run').disabled = false; $('br-status').className = 'br-status br-err'; $('br-status').textContent = 'Choose the household CSV to upload.'; return; }
+      $('br-status').textContent = 'Reading your file and the footprints. Nothing is saved.';
+      chain = postForm(UPLOAD_URL, body, lastFile, 'buildings');
+      empty = 'The file has no household with a usable row. Check the columns against the template.';
+    } else {
+      // Load first (its own request, so the visits are committed), then read them.
+      chain = post(LOAD_URL, body).then(function () { $('br-status').textContent = 'Reading the footprints and placing the households.'; return post(RUN_URL, body); });
+    }
+    chain
       .then(function (res) {
-        if (!res.households_total) { throw new Error('No households with a recorded first visit were found in these opportunities, or their visits could not be read. Check the opportunity ids and the form paths under Change settings.'); }
+        if (!res.households_total) { throw new Error(empty); }
         $('br-status').textContent = '';
         show(res);
       })
@@ -478,7 +571,9 @@
   }
   $('br-form').addEventListener('submit', function (e) { e.preventDefault(); run(); });
   $('br-change').addEventListener('click', function () { setOpen(true); });
-  if (params.get('opps') && params.get('facilities')) { run(); } else { setOpen(true); }
+  Array.prototype.forEach.call(document.getElementsByName('br-source'), function (r) { r.addEventListener('change', function () { setSource(r.value); }); });
+  setSource(source);
+  if (source === 'opps' && params.get('opps') && params.get('facilities')) { run(); } else { setOpen(true); }
 }());
 </script>
 {% endblock %}

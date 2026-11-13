@@ -22,8 +22,10 @@ def parse_facilities(text: str) -> tuple[list[dict], dict]:
         if not raw:
             continue
         parts = [p.strip() for p in raw.split(",")]
-        if len(parts) not in (3, 4):
-            raise BadRequest(f"facility {raw!r}: write it as id,lon,lat or id,lon,lat,area")
+        if len(parts) not in (3, 4, 5):
+            raise BadRequest(
+                f"facility {raw!r}: write it as id,lon,lat or id,lon,lat,district or id,lon,lat,district,target"
+            )
         try:
             lon, lat = float(parts[1]), float(parts[2])
         except ValueError as e:
@@ -31,7 +33,12 @@ def parse_facilities(text: str) -> tuple[list[dict], dict]:
         if not (-180 <= lon <= 180 and -90 <= lat <= 90):
             raise BadRequest(f"facility {raw!r}: longitude/latitude out of range (lon first, then lat)")
         facilities.append({"id": parts[0], "lon": lon, "lat": lat})
-        if len(parts) == 4 and parts[3]:
+        if len(parts) == 5 and parts[4]:
+            try:
+                float(parts[4].replace(" ", ""))
+            except ValueError as e:
+                raise BadRequest(f"facility {raw!r}: the target (fifth column) must be a number") from e
+        if len(parts) >= 4 and parts[3]:
             labels[parts[0]] = parts[3]
     if not facilities:
         raise BadRequest("name at least one facility: id,lon,lat")
@@ -62,8 +69,8 @@ def _number(body: dict, key: str, default, lo, hi):
     return value
 
 
-def build_spec(body: dict) -> tuple[check.CheckSpec, dict, list[int]]:
-    """The check's settings from what the page sent."""
+def build_spec(body: dict, need_opps: bool = True) -> tuple[check.CheckSpec, dict, list[int]]:
+    """The check's settings from what the page sent. An uploaded file needs no opportunity ids."""
     facilities, labels = parse_facilities(body.get("facilities"))
     settings = {
         "facilities": facilities,
@@ -81,7 +88,7 @@ def build_spec(body: dict) -> tuple[check.CheckSpec, dict, list[int]]:
     if body.get("gps_paths"):
         settings["gps_paths"] = [p.strip() for p in str(body["gps_paths"]).split(",") if p.strip()]
     try:
-        return check.CheckSpec.from_dict(settings), labels, parse_ids(body.get("opps"))
+        return check.CheckSpec.from_dict(settings), labels, (parse_ids(body.get("opps")) if need_opps else [])
     except check.SpecError as e:
         raise BadRequest(str(e)) from e
 
@@ -92,3 +99,19 @@ def parse_iso(text) -> str:
     if not iso.isalpha() or len(iso) != 3:
         raise BadRequest("name the country as a three-letter code such as NER (the population lens reads its grid)")
     return iso
+
+
+def parse_targets(text) -> dict:
+    """The optional fifth column of the facility list: an administrative target (children expected) per facility."""
+    targets: dict = {}
+    for raw in str(text or "").replace("\n", ";").split(";"):
+        parts = [p.strip() for p in raw.split(",")]
+        if len(parts) >= 5 and parts[4]:
+            try:
+                value = float(parts[4].replace(" ", ""))
+            except ValueError as e:
+                raise BadRequest(f"facility {parts[0]!r}: the target must be a number") from e
+            if value < 0:
+                raise BadRequest(f"facility {parts[0]!r}: the target cannot be negative")
+            targets[parts[0]] = value
+    return targets
