@@ -103,7 +103,7 @@
   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
     <div>
       <h1>Implementations</h1>
-      <p class="lede">Each delivered opportunity, valued with the models and re-priced at what it actually cost. A multiple is of GiveWell's benchmark; the bar is {{ data.bar_x }}x.</p>
+      <p class="lede">Delivered opportunities, valued at what they actually cost. Bar: {{ data.bar_x }}x.</p>
     </div>
     <div style="display:flex;gap:8px">
       <a class="btn" href="?format=csv">Download CSV</a>
@@ -116,7 +116,7 @@
   <div class="card whatif" id="whatif">
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
       <div><h2>What if</h2>
-        <p class="sub">Everything below recomputes. Settings are kept in the link.</p></div>
+        <p class="sub">Everything below recomputes.</p></div>
       <button type="button" class="btn" id="wi-reset">Reset to the models</button>
     </div>
     <div class="wi-top">
@@ -158,44 +158,38 @@
 
   <div class="card">
     <h2 id="rank-title">Ranked by multiple at actual cost</h2>
-    <p class="sub">Bar = the opportunity's multiple at what it really cost per person. Hollow tick = the model's multiple for that
-      country at the model's default price, so the gap between them is what price did. Bar height scales with total spend.</p>
+    <p class="sub">Bar: multiple at actual cost. Tick: the model's own price.</p>
     <div id="rank-wrap"><svg id="rank"></svg></div>
   </div>
 
   <div class="grid2">
     <div class="card">
       <h2>Price versus return</h2>
-      <p class="sub">Actual cost per person as a share of the model's price (log scale), against the multiple at actual cost.
-        Left of 1x the opportunity delivered cheaper than the model assumes. Circle area = spend.</p>
+      <p class="sub">Left of 1x: cheaper than the model's price.</p>
       <svg id="scatter"></svg>
     </div>
     <div class="card">
       <h2>Where it was delivered</h2>
-      <p class="sub">The centre of each opportunity's approved visits. Colour = multiple at actual cost; grey = no model.
-        Circle area = spend.</p>
+      <p class="sub">Colour: multiple. Grey: no model. Size: spend.</p>
       <div id="map"></div>
     </div>
   </div>
 
   <div class="card">
     <h2>Spend with no model yet</h2>
-    <p class="sub">Delivery types Connect has no cost-effectiveness model for, by total spend. These are listed as "No model" below,
-      never valued with another intervention's chain.</p>
+    <p class="sub">By total spend.</p>
     <svg id="nomodel"></svg>
   </div>
 
   <div class="card">
     <h2>By programme</h2>
-    <p class="sub">The same figures rolled up by Connect programme, for the opportunities shown above. Spend counts each dollar once;
-      the multiple is total benefit over total cost, so a large programme counts for more.</p>
+    <p class="sub">The opportunities above, by programme.</p>
     <div class="tbl-scroll"><table id="programmes"></table></div>
   </div>
 
   <div class="card">
     <h2>Every opportunity</h2>
-    <p class="sub">Click a heading to sort. Modelled opportunities first, by rank.</p>
-    <div class="sort-sm"><label for="sort-sm">Sort by</label><select id="sort-sm"></select>
+        <div class="sort-sm"><label for="sort-sm">Sort by</label><select id="sort-sm"></select>
       <button type="button" class="btn" id="sort-dir" aria-label="Reverse the sort order">⇅</button></div>
     <div class="tbl-wrap"><table id="tbl"></table></div>
   </div>

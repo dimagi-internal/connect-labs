@@ -48,8 +48,7 @@
     {% if d.model_meta %} · model: <a href="{{ d.model_meta.sheet }}" target="_blank" rel="noopener">{{ d.model_meta.label }}</a>{% endif %}
   </div>
   {% if d.explore %}
-  <p class="meta" data-testid="explore-links">Test how sensitive this answer is in the model explorer, with this opportunity's place and
-    what it actually cost per person already set:
+  <p class="meta" data-testid="explore-links">Test sensitivity in CEA models, set to this opportunity:
     {% for l in d.explore %}<a href="{{ l.path }}">{{ l.area }}{% if d.explore|length > 1 %} ({% widthratio l.share 1 100 %}% of visits){% endif %}</a>{% if not forloop.last %} · {% endif %}{% endfor %}
   </p>
   {% endif %}
@@ -80,7 +79,7 @@
 
   <div class="card">
     <h2><span class="step">1</span>Where it was delivered</h2>
-    <p class="sub">Where its approved visits fell, by GPS.
+    <p class="sub">Placed by GPS.
       {% if d.placement.visits %}{{ d.placement.visits|intcomma }} approved visits with GPS{% if d.placement.unplaced %}; {{ d.placement.unplaced|intcomma }} fell outside every area{% endif %}.{% elif d.placed_at %}No approved visit carries GPS, so it is valued at {{ row.country_name }}'s figures.{% else %}Visits have not been placed yet (that runs every six hours), so for now it is valued at {{ row.country_name }}'s figures.{% endif %}
       {% if d.placed_at %}<span class="muted">Placed {{ d.placed_at|slice:":10" }} at {{ d.placed_at|slice:"11:16" }} UTC.</span>{% endif %}</p>
     <div class="wrap"><table>
