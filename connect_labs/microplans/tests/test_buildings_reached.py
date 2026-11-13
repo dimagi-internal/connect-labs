@@ -120,6 +120,7 @@ def test_the_page_and_its_endpoint_need_a_login(client):
 def test_the_page_renders_for_a_person(client, person):
     resp = client.get(reverse("microplans:buildings_reached"))
     assert resp.status_code == 200 and b"Buildings reached" in resp.content
+    assert b"mapbox-gl.js" in resp.content and b"var MAPBOX_TOKEN" in resp.content
 
 
 @pytest.mark.django_db
@@ -163,6 +164,8 @@ def test_a_run_loads_what_is_missing_reads_as_the_person_and_returns_counts_only
     out = resp.json()
     assert seen == {"caller_user": person, "agent": False}
     assert out["opportunities"] == [1] and out["total"]["buildings"] == 2
+    assert out["areas"][0]["district"] == "D1" and out["areas"][0]["cells"]["size_m"] == 100.0
+    assert out["rollup"][0]["center"] == [7.0, 13.5]
     assert [r["label"] for r in out["rollup"]] == ["D1"]
     assert "hh1" not in resp.content.decode() and "13.50005" not in resp.content.decode()
 

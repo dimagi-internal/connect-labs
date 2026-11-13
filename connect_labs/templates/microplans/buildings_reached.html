@@ -2,6 +2,7 @@
 {% block title %}Buildings reached{% endblock %}
 
 {% block content %}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
 <style>
   .br-wrap { max-width: 80rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
   .br-card { background: #fff; border-radius: .75rem; box-shadow: 0 1px 2px rgba(0,0,0,.06); padding: 1.25rem; }
@@ -40,12 +41,21 @@
   details.br-how { margin-top: 1.4rem; font-size: .85rem; color: #4b5563; }
   details.br-how summary, details.br-sec summary { cursor: pointer; color: #374151; font-weight: 600; }
   .br-legend { font-size: .75rem; color: #6b7280; margin-top: .4rem; }
+  .br-cyc { display: flex; flex-wrap: wrap; gap: .35rem; margin: .4rem 0; align-items: center; font-size: .8rem; color: #374151; }
+  .br-cyc button { border: 1px solid #d1d5db; background: #fff; border-radius: 999px; padding: .2rem .8rem; cursor: pointer; font-size: .8rem; }
+  .br-cyc button.on { background: #065f46; color: #fff; border-color: #065f46; }
+  .br-mapbox { position: relative; height: 30rem; border-radius: .5rem; overflow: hidden; background: #e5e7eb; }
+  #br-map { position: absolute; inset: 0; }
+  .br-swatches { display: flex; flex-wrap: wrap; gap: .3rem .9rem; align-items: center; }
+  .br-sw { display: inline-block; width: .8rem; height: .8rem; border-radius: 2px; vertical-align: -1px; margin-right: .25rem; }
+  .br-nomap { padding: 1rem; color: #6b7280; font-size: .85rem; }
   @media (max-width: 640px) {
     .br-form { grid-template-columns: 1fr; }
     .br-t .b { display: none; }
     .br-t { font-size: .78rem; }
     .br-t th:first-child, .br-t td:first-child { width: 30%; }
     .br-tile { flex-basis: 45%; }
+    .br-mapbox { height: 24rem; }
   }
 </style>
 
@@ -88,12 +98,14 @@
   </div>
 </div>
 
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var FIELDS = {opps: 'br-opps', max_dist_m: 'br-dist', catchment_k: 'br-k', facilities: 'br-fac',
                 household_path: 'br-hh', gps_paths: 'br-gps', cycle_path: 'br-cycle', group_path: 'br-group'};
   var CSRF = "{{ csrf_token }}";
+  var MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
   var RUN_URL = "{% url 'microplans:buildings_reached_run' %}";
   var LOW_POINTS = 0.10;
   var params = new URLSearchParams(location.search);
@@ -153,6 +165,131 @@
     return '<div class="br-h2">Data quality</div><div class="br-chips"><span class="br-chip">' + n(t.households) + ' households</span><span class="br-chip ok">' + n(t.usable) + ' usable' + share + '</span>' +
       '<span class="br-chip">' + n(t.no_point) + ' no point</span><span class="br-chip">' + n(t.null_island) + ' at 0,0</span><span class="br-chip">' + n(t.off_area) + ' far from facility</span><span class="br-chip">' + n(t.poor_accuracy) + ' poor accuracy</span></div>';
   }
+
+  var STEPS = [[0.60, '#d73027', 'under 60%'], [0.75, '#fc8d59', '60-75%'], [0.85, '#fee08b', '75-85%'], [0.95, '#91cf60', '85-95%'], [1.01, '#1a9850', '95% and over']];
+  var NO_DATA = '#9ca3af';
+  var mapState = {map: null, res: null, cycle: null, ready: false};
+  function colorFor(share) {
+    if (share === null || share === undefined) { return NO_DATA; }
+    for (var i = 0; i < STEPS.length; i++) { if (share < STEPS[i][0]) { return STEPS[i][1]; } }
+    return STEPS[STEPS.length - 1][1];
+  }
+  function circlePoly(lon, lat, r, n) {
+    var pts = [], dLat = r / 111320, dLon = r / (111320 * Math.cos(lat * Math.PI / 180));
+    for (var i = 0; i <= n; i++) { var a = 2 * Math.PI * i / n; pts.push([lon + dLon * Math.cos(a), lat + dLat * Math.sin(a)]); }
+    return [pts];
+  }
+  function cycleShare(cyc, key) { var v = cyc && cyc[key]; return v && v.share !== null && v.share !== undefined ? v.share : null; }
+  function mapData(res, cycle) {
+    var cells = [], catch_ = [], fac = [], dist = [];
+    (res.areas || []).forEach(function (a) {
+      var share = cycleShare(a.cycles, cycle);
+      var f = a.facility;
+      if (f) {
+        fac.push({type: 'Feature', geometry: {type: 'Point', coordinates: f}, properties: {id: a.group, share: share, district: a.district || ''}});
+        if (a.catchment_radius_m) {
+          catch_.push({type: 'Feature', geometry: {type: 'Polygon', coordinates: circlePoly(f[0], f[1], a.catchment_radius_m, 48)}, properties: {id: a.group, share: share}});
+        }
+      }
+      var c = a.cells;
+      if (c) {
+        var ci = c.cycles.indexOf(Number(cycle));
+        c.rows.forEach(function (r) {
+          var hl = c.d_lon / 2, ha = c.d_lat / 2, x = r[0], y = r[1];
+          var reached = ci >= 0 ? r[3][ci] : null;
+          cells.push({type: 'Feature', geometry: {type: 'Polygon', coordinates: [[[x - hl, y - ha], [x + hl, y - ha], [x + hl, y + ha], [x - hl, y + ha], [x - hl, y - ha]]]},
+                      properties: {id: a.group, n: r[2], reached: reached, share: reached === null ? null : reached / r[2]}});
+        });
+      }
+    });
+    (res.rollup || []).forEach(function (d) {
+      if (d.center) { dist.push({type: 'Feature', geometry: {type: 'Point', coordinates: d.center}, properties: {label: d.label, share: cycleShare(d.cycles, cycle), text: d.label.split(' ')[0] + ' ' + (cycleShare(d.cycles, cycle) === null ? '' : pct(cycleShare(d.cycles, cycle)))}}); }
+    });
+    var wrap = function (f) { return {type: 'FeatureCollection', features: f}; };
+    return {cells: wrap(cells), catch_: wrap(catch_), fac: wrap(fac), dist: wrap(dist)};
+  }
+  function colorExpr() {
+    var e = ['case', ['==', ['get', 'share'], null], NO_DATA, ['step', ['get', 'share'], STEPS[0][1]]];
+    for (var i = 0; i < STEPS.length - 1; i++) { e[3].push(STEPS[i][0], STEPS[i + 1][1]); }
+    return e;
+  }
+  function legendHtml() {
+    var h = '<div class="br-swatches">';
+    STEPS.forEach(function (s) { h += '<span><span class="br-sw" style="background:' + s[1] + '"></span>' + s[2] + '</span>'; });
+    h += '<span><span class="br-sw" style="background:' + NO_DATA + '"></span>cycle not run</span></div>' +
+      '<div>Zoomed out: one dot per district. Zoomed in: 100 m cells (cells with fewer than 5 buildings are not drawn) inside each facility\'s catchment. Click anything for its figures.</div>';
+    return h;
+  }
+  function popupHtml(p, cycle, extra) {
+    return '<div style="font-size:.8rem"><b>' + esc(p.id || p.label) + '</b><br>' + extra + '</div>';
+  }
+  function drawMap(res) {
+    var holder = $('br-map');
+    if (!holder) { return; }
+    if (!MAPBOX_TOKEN || !window.mapboxgl) { holder.parentNode.innerHTML = '<div class="br-nomap">The map needs a Mapbox token and a browser with WebGL; the tables below carry the same figures.</div>'; return; }
+    mapState.res = res;
+    var cycles = Object.keys(res.total.cycles).map(Number).sort(function (a, b) { return a - b; });
+    mapState.cycle = cycles.length ? cycles[0] : null;
+    var bar = '<span>Cycle:</span>';
+    cycles.forEach(function (c) { bar += '<button type="button" data-c="' + c + '"' + (c === mapState.cycle ? ' class="on"' : '') + '>' + c + '</button>'; });
+    $('br-cyc').innerHTML = bar;
+    $('br-legend').innerHTML = legendHtml();
+    Array.prototype.forEach.call($('br-cyc').querySelectorAll('button'), function (b) {
+      b.addEventListener('click', function () {
+        mapState.cycle = Number(b.getAttribute('data-c'));
+        Array.prototype.forEach.call($('br-cyc').querySelectorAll('button'), function (x) { x.className = x === b ? 'on' : ''; });
+        refreshMap();
+      });
+    });
+    try {
+      mapboxgl.accessToken = MAPBOX_TOKEN;
+      var map = new mapboxgl.Map({container: 'br-map', style: 'mapbox://styles/mapbox/satellite-streets-v12', center: [8.0, 13.5], zoom: 5});
+      map.addControl(new mapboxgl.NavigationControl({showCompass: false}), 'top-left');
+      mapState.map = map;
+    } catch (e) { holder.parentNode.innerHTML = '<div class="br-nomap">This browser cannot draw the map (WebGL); the tables below carry the same figures.</div>'; return; }
+    var map2 = mapState.map;
+    map2.on('load', function () {
+      var d = mapData(res, mapState.cycle);
+      ['cells', 'catch_', 'fac', 'dist'].forEach(function (k) { map2.addSource('br-' + k, {type: 'geojson', data: d[k]}); });
+      map2.addLayer({id: 'br-cells', type: 'fill', source: 'br-cells', minzoom: 9.5, paint: {'fill-color': colorExpr(), 'fill-opacity': 0.62}});
+      map2.addLayer({id: 'br-cells-line', type: 'line', source: 'br-cells', minzoom: 12, paint: {'line-color': '#ffffff', 'line-opacity': 0.35, 'line-width': 0.5}});
+      map2.addLayer({id: 'br-catch', type: 'line', source: 'br-catch', minzoom: 9.5, paint: {'line-color': '#ffffff', 'line-width': 1.6, 'line-dasharray': [2, 2]}});
+      map2.addLayer({id: 'br-fac', type: 'circle', source: 'br-fac', minzoom: 11, paint: {'circle-radius': 5, 'circle-color': '#111827', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2}});
+      map2.addLayer({id: 'br-fac-label', type: 'symbol', source: 'br-fac', minzoom: 12, layout: {'text-field': ['get', 'id'], 'text-size': 11, 'text-offset': [0, 1.3], 'text-anchor': 'top'}, paint: {'text-color': '#ffffff', 'text-halo-color': '#111827', 'text-halo-width': 1.4}});
+      map2.addLayer({id: 'br-dist', type: 'circle', source: 'br-dist', maxzoom: 9.5, paint: {'circle-radius': 17, 'circle-color': colorExpr(), 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5}});
+      map2.addLayer({id: 'br-dist-label', type: 'symbol', source: 'br-dist', maxzoom: 9.5, layout: {'text-field': ['get', 'text'], 'text-size': 11, 'text-offset': [0, 2.3], 'text-anchor': 'top', 'text-allow-overlap': true}, paint: {'text-color': '#ffffff', 'text-halo-color': '#111827', 'text-halo-width': 1.6}});
+      mapState.ready = true;
+      var b = new mapboxgl.LngLatBounds(), any = false;
+      (res.areas || []).forEach(function (a) { if (a.facility) { b.extend(a.facility); any = true; } });
+      if (any) { map2.fitBounds(b, {padding: 60, maxZoom: 13, duration: 0}); }
+      map2.on('click', 'br-dist', function (e) {
+        var p = e.features[0].properties, d = (res.rollup || []).filter(function (x) { return x.label === p.label; })[0];
+        var rows = d ? Object.keys(d.cycles).map(Number).sort(function (a, c) { return a - c; }).map(function (c) { return 'Cycle ' + c + ': ' + pct(d.cycles[c].share); }).join('<br>') : '';
+        new mapboxgl.Popup().setLngLat(e.lngLat).setHTML(popupHtml(p, mapState.cycle, rows + '<br><i>zoom in for the cells</i>')).addTo(map2);
+        var fs = (res.areas || []).filter(function (a) { return a.district === p.label && a.facility; });
+        if (fs.length) { var bb = new mapboxgl.LngLatBounds(); fs.forEach(function (a) { bb.extend(a.facility); }); map2.fitBounds(bb, {padding: 80, maxZoom: 14}); }
+      });
+      map2.on('click', 'br-cells', function (e) {
+        var p = e.features[0].properties;
+        var txt = p.share === null || p.share === 'null' || p.share === undefined ? 'cycle not run here' : n(p.reached) + ' of ' + n(p.n) + ' buildings reached (' + pct(Number(p.share)) + ')';
+        new mapboxgl.Popup().setLngLat(e.lngLat).setHTML(popupHtml(p, mapState.cycle, 'Cycle ' + mapState.cycle + ': ' + txt)).addTo(map2);
+      });
+      map2.on('click', 'br-fac', function (e) {
+        var p = e.features[0].properties, a = (res.areas || []).filter(function (x) { return x.group === p.id; })[0];
+        var rows = a ? Object.keys(a.cycles).map(Number).sort(function (x, y) { return x - y; }).map(function (c) { return 'Cycle ' + c + ': ' + pct(a.cycles[c].share) + ' (' + n(a.cycles[c].buildings_reached) + ' of ' + n(a.buildings) + ')'; }).join('<br>') : '';
+        new mapboxgl.Popup().setLngLat(e.lngLat).setHTML(popupHtml(p, mapState.cycle, rows)).addTo(map2);
+      });
+      ['br-dist', 'br-cells', 'br-fac'].forEach(function (l) {
+        map2.on('mouseenter', l, function () { map2.getCanvas().style.cursor = 'pointer'; });
+        map2.on('mouseleave', l, function () { map2.getCanvas().style.cursor = ''; });
+      });
+    });
+  }
+  function refreshMap() {
+    if (!mapState.ready) { return; }
+    var d = mapData(mapState.res, mapState.cycle);
+    ['cells', 'catch_', 'fac', 'dist'].forEach(function (k) { mapState.map.getSource('br-' + k).setData(d[k]); });
+  }
   function show(res) {
     var areas = (res.areas || []).map(function (a) { return {label: a.group, buildings: a.buildings, cycles: a.cycles}; });
     var rollup = res.rollup || [];
@@ -161,14 +298,16 @@
     if (rollup.length > 1) { lows.push('Lowest districts: ' + lowest(rollup, 2, function (r) { return r.label; })); }
     lows.push('lowest facilities: ' + lowest(areas, 3, function (r) { return r.label; }));
     h += '<div class="br-lows">' + lows.join(' &middot; ') + ' <span style="color:#6b7280">(average over cycles)</span></div>';
+    h += '<div class="br-h2">Map</div><div id="br-cyc" class="br-cyc"></div><div class="br-mapbox"><div id="br-map"></div></div><div id="br-legend" class="br-legend"></div>';
     if (rollup.length) { h += '<div class="br-h2">By district</div>' + table(rollup, 'District', res.total.cycles); }
-    h += '<details class="br-sec" open><summary class="br-h2" style="display:list-item">By facility (' + areas.length + ')</summary>' + table(areas, 'Facility', res.total.cycles) + '</details>';
+    h += '<details class="br-sec"><summary class="br-h2" style="display:list-item">By facility (' + areas.length + ')</summary>' + table(areas, 'Facility', res.total.cycles) + '</details>';
     h += '<div class="br-legend">Amber: more than 10 points below the all-facilities share for that cycle. Hover a cell for the building counts.</div>';
     h += dq(res.areas || []);
     if ((res.groups_without_a_facility || []).length) {
       h += '<p style="font-size:.85rem;color:#b45309;margin-top:.6rem">Groups in the data with no facility in your list (not counted): ' + res.groups_without_a_facility.map(esc).join(', ') + '</p>';
     }
     $('br-out').innerHTML = h;
+    drawMap(res);
   }
   function settingsSummary(body) {
     var fac = String(body.facilities || '').split(/[;\n]/).map(function (x) { return x.trim(); }).filter(Boolean);
