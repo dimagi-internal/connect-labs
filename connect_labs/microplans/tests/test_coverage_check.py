@@ -211,3 +211,32 @@ def test_the_rollup_carries_the_centre_of_its_facilities():
     }
     (row,) = check.rollup(result, {"A": "D1", "B": "D1"})
     assert row["center"] == pytest.approx([8.1, 13.1])
+
+
+# --- the population lens: people served against a 1 km grid -----------------------------------------------
+
+
+def test_served_sql_counts_distinct_children_per_household_and_cycle_and_rejects_a_hostile_value():
+    sql = check.served_sql(check.CheckSpec.from_dict({"facilities": [FACILITY], "catchment_k": 60}), ("00", "7f"))
+    assert "count(DISTINCT" in sql and "= 'oui'" in sql and "BETWEEN '00' AND '7f'" in sql
+    with pytest.raises(check.SpecError):
+        check.CheckSpec.from_dict({"facilities": [FACILITY], "catchment_k": 60, "served_value": "x'; DROP TABLE"})
+
+
+def test_parse_served_sums_cycles_and_skips_what_it_cannot_read():
+    out = check.parse_served([("h1", "contact_1", 2), ("h1", "contact_2", 3), ("h2", "contact_1", 1), ("h3", None, 4)])
+    assert out == {"h1": {1: 2, 2: 3}, "h2": {1: 1}}
+
+
+def test_placed_households_keeps_the_usable_ones_and_counts_the_rest_by_kind():
+    rows = [
+        ["C1", "ok", gps(0), "contact_1"],
+        ["C1", "none", None, "contact_1"],
+        ["C1", "zero", "0 0 0.0 5.0", "contact_1"],
+        ["C1", "poor", f"{VILLAGE.iloc[1].lat:.6f} {VILLAGE.iloc[1].lon:.6f} 0.0 500.0", "contact_1"],
+        ["C1", "far", "20.0 20.0 0.0 5.0", "contact_1"],
+    ]
+    frame, quality = check.placed_households(rows, spec())
+    assert list(frame["hh"]) == ["ok"]
+    assert (quality["no_point"], quality["null_island"], quality["off_area"], quality["poor_accuracy"]) == (1, 1, 1, 1)
+    assert quality["households"] == 5 and quality["usable"] == 1

@@ -25,8 +25,8 @@ from connect_labs.labs.access.scopes import Caller
 from connect_labs.labsdata import service, spaces
 from connect_labs.labsdata.engine import QueryError
 from connect_labs.labsdata.scope import ScopeError
-from connect_labs.microplans.coverage import check, read
-from connect_labs.microplans.coverage.request import BadRequest, build_spec, parse_ids
+from connect_labs.microplans.coverage import check, population, read
+from connect_labs.microplans.coverage.request import BadRequest, build_spec, parse_ids, parse_iso
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,27 @@ def run(request, body: dict) -> dict:
     return result
 
 
+def population_lens(request, body: dict) -> dict:
+    """Children served against the population grid, per 1 km cell and district. Reads what ``load`` committed."""
+    spec, labels, opp_ids = build_spec(body)
+    iso = parse_iso(body.get("iso"))
+    caller = _caller(request)
+    space = spaces.from_request(caller, opportunity_ids=opp_ids)
+    rows = read.read_households(caller, space, spec, agent=False)
+    served = check.parse_served(read.read_served(caller, space, spec, agent=False))
+    placed, quality = check.placed_households(rows, spec)
+    if not len(placed):
+        raise BadRequest("no household has a usable point, so there is nothing to place on the grid")
+    try:
+        grid = population.fetch_grid(iso, population.bounds_of(placed))
+    except ValueError as e:
+        raise BadRequest(str(e)) from e
+    result = population.population_lens(placed, served, grid, labels)
+    result["quality"] = quality
+    result["iso"] = iso
+    return result
+
+
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class BuildingsReachedPage(LoginRequiredMixin, TemplateView):
     template_name = "microplans/buildings_reached.html"
@@ -108,3 +129,9 @@ class BuildingsReachedLoad(BuildingsReachedRun):
     """Same answers and errors as the run, for the load step."""
 
     action = staticmethod(load)
+
+
+class BuildingsReachedPopulation(BuildingsReachedRun):
+    """Same answers and errors as the run, for the population lens."""
+
+    action = staticmethod(population_lens)

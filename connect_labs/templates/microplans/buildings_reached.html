@@ -34,6 +34,7 @@
   .br-t td.b { color: #6b7280; width: 12%; }
   .br-c { text-align: center; color: #064e3b; border-radius: .25rem; background: linear-gradient(to right, #a7f3d0 var(--v), #f3f4f6 var(--v)); }
   .br-c.low { color: #78350f; background: linear-gradient(to right, #fcd34d var(--v), #f3f4f6 var(--v)); font-weight: 700; }
+  .br-c.over { color: #3b0764; background: linear-gradient(to right, #c4b5fd var(--v), #f3f4f6 var(--v)); font-weight: 700; }
   .br-c.none { background: none; color: #9ca3af; }
   .br-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
   .br-chip { background: #f3f4f6; border-radius: 999px; padding: .15rem .6rem; font-size: .8rem; color: #374151; }
@@ -48,6 +49,10 @@
   #br-map { position: absolute; inset: 0; }
   .br-swatches { display: flex; flex-wrap: wrap; gap: .3rem .9rem; align-items: center; }
   .br-sw { display: inline-block; width: .8rem; height: .8rem; border-radius: 2px; vertical-align: -1px; margin-right: .25rem; }
+  .br-lens { display: inline-flex; border: 1px solid #d1d5db; border-radius: 999px; overflow: hidden; margin-right: .8rem; }
+  .br-lens button { border: 0; background: #fff; padding: .25rem .9rem; cursor: pointer; font-size: .8rem; color: #374151; }
+  .br-lens button.on { background: #1e3a8a; color: #fff; }
+  .br-note { font-size: .75rem; color: #6b7280; margin-top: .3rem; }
   .br-nomap { padding: 1rem; color: #6b7280; font-size: .85rem; }
   @media (max-width: 640px) {
     .br-form { grid-template-columns: 1fr; }
@@ -83,6 +88,10 @@
           <label>GPS, comma separated <input id="br-gps" placeholder="form.administration_dose.geolocalisation,form.geolocalisation_nonelligble"></label>
           <label>Cycle <input id="br-cycle" placeholder="form.var.passage"></label>
           <label>Facility <input id="br-group" placeholder="form.localisation.csi_id"></label>
+          <label>Country for the population grid (ISO-3) <input id="br-iso" value="NER" maxlength="3"></label>
+          <label>Served: field <input id="br-served" placeholder="form.administration_dose.spaq_recu"></label>
+          <label>Served: value <input id="br-servedv" placeholder="oui"></label>
+          <label>Child id <input id="br-child" placeholder="form.case.@case_id"></label>
         </div>
       </details>
     </form>
@@ -103,11 +112,13 @@
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var FIELDS = {opps: 'br-opps', max_dist_m: 'br-dist', catchment_k: 'br-k', facilities: 'br-fac',
-                household_path: 'br-hh', gps_paths: 'br-gps', cycle_path: 'br-cycle', group_path: 'br-group'};
+                household_path: 'br-hh', gps_paths: 'br-gps', cycle_path: 'br-cycle', group_path: 'br-group',
+                iso: 'br-iso', served_path: 'br-served', served_value: 'br-servedv', child_path: 'br-child'};
   var CSRF = "{{ csrf_token }}";
   var MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
   var RUN_URL = "{% url 'microplans:buildings_reached_run' %}";
   var LOAD_URL = "{% url 'microplans:buildings_reached_load' %}";
+  var POP_URL = "{% url 'microplans:buildings_reached_population' %}";
   var LOW_POINTS = 0.10;
   var params = new URLSearchParams(location.search);
   Object.keys(FIELDS).forEach(function (k) { if (params.get(k)) { $(FIELDS[k]).value = params.get(k); } });
@@ -123,7 +134,8 @@
   function cell(v, head) {
     if (!v || v.share === null || v.share === undefined) { return '<td class="br-c none">&ndash;</td>'; }
     var low = head !== undefined && head !== null && v.share < head - LOW_POINTS;
-    return '<td class="br-c' + (low ? ' low' : '') + '" style="--v:' + Math.min(100, 100 * v.share).toFixed(0) + '%" title="' + n(v.buildings_reached) + ' of ' + n(v.buildings || 0) + ' buildings">' + pct(v.share) + '</td>';
+    var over = lens === 'population' && v.share > 1.1;
+    return '<td class="br-c' + (low ? ' low' : '') + (over ? ' over' : '') + '" style="--v:' + Math.min(100, 100 * v.share).toFixed(0) + '%" title="' + n(v.buildings_reached) + ' of ' + n(v.buildings || 0) + ' buildings">' + pct(v.share) + '</td>';
   }
   function table(rows, label, headCycles) {
     var cycles = cycleKeys(rows);
@@ -168,7 +180,9 @@
   }
 
   var STEPS = [[0.60, '#d73027', 'under 60%'], [0.75, '#fc8d59', '60-75%'], [0.85, '#fee08b', '75-85%'], [0.95, '#91cf60', '85-95%'], [1.01, '#1a9850', '95% and over']];
+  var POP_STEPS = [[0.60, '#d73027', 'under 60%'], [0.75, '#fc8d59', '60-75%'], [0.85, '#fee08b', '75-85%'], [0.95, '#91cf60', '85-95%'], [1.10, '#1a9850', '95-110%'], [99, '#7b3294', 'over 110%']];
   var NO_DATA = '#9ca3af';
+  var lens = 'buildings', popData = null, lastRes = null, lastBody = null;
   var mapState = {map: null, res: null, cycle: null, ready: false};
   function colorFor(share) {
     if (share === null || share === undefined) { return NO_DATA; }
@@ -181,6 +195,23 @@
     return [pts];
   }
   function cycleShare(cyc, key) { var v = cyc && cyc[key]; return v && v.share !== null && v.share !== undefined ? v.share : null; }
+  function popMapData(res, cycle) {
+    var cells = [], dist = [], pd = popData, ci = pd.cycles.indexOf(Number(cycle));
+    var hw = pd.grid.pixel[0] / 2, hh = pd.grid.pixel[1] / 2;
+    pd.cells.forEach(function (r) {
+      var served = ci >= 0 ? r[4][ci] : null, el = r[2];
+      var share = (served === null || el === null || el <= 0 || served === 0) ? null : served / el;
+      cells.push({type: 'Feature', geometry: {type: 'Polygon', coordinates: [[[r[0] - hw, r[1] - hh], [r[0] + hw, r[1] - hh], [r[0] + hw, r[1] + hh], [r[0] - hw, r[1] + hh], [r[0] - hw, r[1] - hh]]]},
+                  properties: {n: el, reached: served, households: r[3], share: share}});
+    });
+    var centers = {};
+    (res.rollup || []).forEach(function (d) { if (d.center) { centers[d.label] = d.center; } });
+    pd.districts.forEach(function (d) {
+      var c = centers[d.label], sh = d.share ? d.share[cycle] : null;
+      if (c) { dist.push({type: 'Feature', geometry: {type: 'Point', coordinates: c}, properties: {label: d.label, share: sh === undefined ? null : sh, text: d.label.split(' ')[0] + ' ' + (sh === null || sh === undefined ? '' : pct(sh))}}); }
+    });
+    return {cells: cells, dist: dist};
+  }
   function mapData(res, cycle) {
     var cells = [], catchment = [], fac = [], dist = [];
     (res.areas || []).forEach(function (a) {
@@ -206,19 +237,26 @@
     (res.rollup || []).forEach(function (d) {
       if (d.center) { dist.push({type: 'Feature', geometry: {type: 'Point', coordinates: d.center}, properties: {label: d.label, share: cycleShare(d.cycles, cycle), text: d.label.split(' ')[0] + ' ' + (cycleShare(d.cycles, cycle) === null ? '' : pct(cycleShare(d.cycles, cycle)))}}); }
     });
+    if (lens === 'population' && popData) { var pm = popMapData(res, cycle); cells = pm.cells; dist = pm.dist; }
     var wrap = function (f) { return {type: 'FeatureCollection', features: f}; };
     return {cells: wrap(cells), catchment: wrap(catchment), fac: wrap(fac), dist: wrap(dist)};
   }
   function colorExpr() {
-    var e = ['case', ['==', ['get', 'share'], null], NO_DATA, ['step', ['get', 'share'], STEPS[0][1]]];
-    for (var i = 0; i < STEPS.length - 1; i++) { e[3].push(STEPS[i][0], STEPS[i + 1][1]); }
+    var steps = lens === 'population' ? POP_STEPS : STEPS;
+    var e = ['case', ['==', ['get', 'share'], null], NO_DATA, ['step', ['get', 'share'], steps[0][1]]];
+    for (var i = 0; i < steps.length - 1; i++) { e[3].push(steps[i][0], steps[i + 1][1]); }
     return e;
   }
   function legendHtml() {
+    var steps = lens === 'population' ? POP_STEPS : STEPS;
     var h = '<div class="br-swatches">';
-    STEPS.forEach(function (s) { h += '<span><span class="br-sw" style="background:' + s[1] + '"></span>' + s[2] + '</span>'; });
-    h += '<span><span class="br-sw" style="background:' + NO_DATA + '"></span>cycle not run</span></div>' +
-      '<div>Zoomed out: one dot per district. Zoomed in: 100 m cells (cells with fewer than 5 buildings are not drawn) inside each facility\'s catchment. Click anything for its figures.</div>';
+    steps.forEach(function (s) { h += '<span><span class="br-sw" style="background:' + s[1] + '"></span>' + s[2] + '</span>'; });
+    h += '<span><span class="br-sw" style="background:' + NO_DATA + '"></span>cycle not run</span></div>';
+    if (lens === 'population') {
+      h += '<div>Each square is one kilometre. Colour = children served / estimated eligible children in it (' + esc(popData.grid.name) + '). Squares with fewer than ' + popData.min_households + ' households are not drawn. Over 110% means the grid under-estimates that square or the campaign counts people from neighbouring squares. Click for figures.</div>';
+    } else {
+      h += '<div>Zoomed out: one dot per district. Zoomed in: 100 m cells (cells with fewer than 5 buildings are not drawn) inside each facility\'s catchment. Click anything for its figures.</div>';
+    }
     return h;
   }
   function popupHtml(p, cycle, extra) {
@@ -252,27 +290,36 @@
     map2.on('load', function () {
       var d = mapData(res, mapState.cycle);
       ['cells', 'catchment', 'fac', 'dist'].forEach(function (k) { map2.addSource('br-' + k, {type: 'geojson', data: d[k]}); });
-      map2.addLayer({id: 'br-cells', type: 'fill', source: 'br-cells', minzoom: 9.5, paint: {'fill-color': colorExpr(), 'fill-opacity': 0.62}});
+      map2.addLayer({id: 'br-cells', type: 'fill', source: 'br-cells', minzoom: 8, paint: {'fill-color': colorExpr(), 'fill-opacity': 0.62}});
       map2.addLayer({id: 'br-cells-line', type: 'line', source: 'br-cells', minzoom: 12, paint: {'line-color': '#ffffff', 'line-opacity': 0.35, 'line-width': 0.5}});
       map2.addLayer({id: 'br-catch', type: 'line', source: 'br-catchment', minzoom: 9.5, paint: {'line-color': '#ffffff', 'line-width': 1.6, 'line-dasharray': [2, 2]}});
       map2.addLayer({id: 'br-fac', type: 'circle', source: 'br-fac', minzoom: 11, paint: {'circle-radius': 5, 'circle-color': '#111827', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2}});
       map2.addLayer({id: 'br-fac-label', type: 'symbol', source: 'br-fac', minzoom: 12, layout: {'text-field': ['get', 'id'], 'text-size': 11, 'text-offset': [0, 1.3], 'text-anchor': 'top'}, paint: {'text-color': '#ffffff', 'text-halo-color': '#111827', 'text-halo-width': 1.4}});
-      map2.addLayer({id: 'br-dist', type: 'circle', source: 'br-dist', maxzoom: 9.5, paint: {'circle-radius': 17, 'circle-color': colorExpr(), 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5}});
-      map2.addLayer({id: 'br-dist-label', type: 'symbol', source: 'br-dist', maxzoom: 9.5, layout: {'text-field': ['get', 'text'], 'text-size': 11, 'text-offset': [0, 2.3], 'text-anchor': 'top', 'text-allow-overlap': true}, paint: {'text-color': '#ffffff', 'text-halo-color': '#111827', 'text-halo-width': 1.6}});
+      map2.addLayer({id: 'br-dist', type: 'circle', source: 'br-dist', maxzoom: 8, paint: {'circle-radius': 17, 'circle-color': colorExpr(), 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5}});
+      map2.addLayer({id: 'br-dist-label', type: 'symbol', source: 'br-dist', maxzoom: 8, layout: {'text-field': ['get', 'text'], 'text-size': 11, 'text-offset': [0, 2.3], 'text-anchor': 'top', 'text-allow-overlap': true}, paint: {'text-color': '#ffffff', 'text-halo-color': '#111827', 'text-halo-width': 1.6}});
       mapState.ready = true;
       var b = new mapboxgl.LngLatBounds(), any = false;
       (res.areas || []).forEach(function (a) { if (a.facility) { b.extend(a.facility); any = true; } });
       if (any) { map2.fitBounds(b, {padding: 60, maxZoom: 13, duration: 0}); }
       map2.on('click', 'br-dist', function (e) {
-        var p = e.features[0].properties, d = (res.rollup || []).filter(function (x) { return x.label === p.label; })[0];
-        var rows = d ? Object.keys(d.cycles).map(Number).sort(function (a, c) { return a - c; }).map(function (c) { return 'Cycle ' + c + ': ' + pct(d.cycles[c].share); }).join('<br>') : '';
+        var p = e.features[0].properties, rows = '';
+        if (lens === 'population' && popData) {
+          var pdist = popData.districts.filter(function (x) { return x.label === p.label; })[0];
+          rows = pdist ? popData.cycles.map(function (c) { var sh = pdist.share[c]; return 'Cycle ' + c + ': ' + (sh === null || sh === undefined ? 'not run' : pct(sh) + ' (' + n(pdist.served[c]) + ' served of about ' + n(Math.round(pdist.eligible_in_cycle[c])) + ')'); }).join('<br>') : '';
+        } else {
+          var d = (res.rollup || []).filter(function (x) { return x.label === p.label; })[0];
+          rows = d ? Object.keys(d.cycles).map(Number).sort(function (a, c) { return a - c; }).map(function (c) { return 'Cycle ' + c + ': ' + pct(d.cycles[c].share); }).join('<br>') : '';
+        }
         new mapboxgl.Popup().setLngLat(e.lngLat).setHTML(popupHtml(p, mapState.cycle, rows + '<br><i>zoom in for the cells</i>')).addTo(map2);
         var fs = (res.areas || []).filter(function (a) { return a.district === p.label && a.facility; });
-        if (fs.length) { var bb = new mapboxgl.LngLatBounds(); fs.forEach(function (a) { bb.extend(a.facility); }); map2.fitBounds(bb, {padding: 80, maxZoom: 14}); }
+        if (fs.length) { var bb = new mapboxgl.LngLatBounds(); fs.forEach(function (a) { bb.extend(a.facility); }); map2.fitBounds(bb, {padding: 80, maxZoom: lens === 'population' ? 12 : 14}); }
       });
       map2.on('click', 'br-cells', function (e) {
         var p = e.features[0].properties;
-        var txt = p.share === null || p.share === 'null' || p.share === undefined ? 'cycle not run here' : n(p.reached) + ' of ' + n(p.n) + ' buildings reached (' + pct(Number(p.share)) + ')';
+        var none = p.share === null || p.share === 'null' || p.share === undefined;
+        var txt = none ? 'cycle not run here' : (lens === 'population'
+          ? n(p.reached) + ' children served of about ' + n(Math.round(p.n)) + ' estimated eligible (' + pct(Number(p.share)) + '); ' + n(p.households) + ' households recorded in this square'
+          : n(p.reached) + ' of ' + n(p.n) + ' buildings reached (' + pct(Number(p.share)) + ')');
         new mapboxgl.Popup().setLngLat(e.lngLat).setHTML(popupHtml(p, mapState.cycle, 'Cycle ' + mapState.cycle + ': ' + txt)).addTo(map2);
       });
       map2.on('click', 'br-fac', function (e) {
@@ -291,16 +338,99 @@
     var d = mapData(mapState.res, mapState.cycle);
     ['cells', 'catchment', 'fac', 'dist'].forEach(function (k) { mapState.map.getSource('br-' + k).setData(d[k]); });
   }
+
+  function popTiles(pd) {
+    var h = '<div class="br-tiles">';
+    pd.cycles.forEach(function (c) {
+      var sh = pd.total.share[c];
+      h += '<div class="br-tile"><div class="k">Cycle ' + c + '</div><div class="v">' + (sh === null || sh === undefined ? '&ndash;' : pct(sh)) + '</div><div class="n">' +
+        n(pd.total.served[c]) + ' children served<br>of about ' + n(Math.round(pd.total.eligible_in_cycle[c])) + ' estimated eligible</div></div>';
+    });
+    return h + '</div>';
+  }
+  function popDistrictTable(pd) {
+    var h = '<table class="br-t"><thead><tr><th>District</th><th class="b">Eligible</th>';
+    pd.cycles.forEach(function (c) { h += '<th style="text-align:center">C' + c + '</th>'; });
+    h += '</tr></thead><tbody>';
+    pd.districts.forEach(function (d) {
+      h += '<tr><td>' + esc(d.label) + '</td><td class="b">' + n(Math.round(d.eligible)) + '</td>';
+      pd.cycles.forEach(function (c) {
+        var sh = d.share ? d.share[c] : null;
+        h += cell(sh === null || sh === undefined ? null : {share: sh, buildings_reached: d.served[c], buildings: Math.round(d.eligible_in_cycle[c])}, null);
+      });
+      h += '</tr>';
+    });
+    return h + '</tbody></table>';
+  }
+  function currentBody() {
+    var body = {};
+    Object.keys(FIELDS).forEach(function (k) { body[k] = $(FIELDS[k]).value.trim(); });
+    return body;
+  }
+  function post(url, body) {
+    return fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF}, body: JSON.stringify(body)})
+      .then(function (r) { return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (e) { /* an HTML error page */ } return {status: r.status, ok: r.ok, j: j}; }); })
+      .then(function (x) { if (!x.ok || !x.j) { throw new Error(failure(x.status, x.j && x.j.message)); } return x.j; });
+  }
+  function lensBar() {
+    var bar = '<span class="br-lens"><button type="button" data-l="buildings"' + (lens === 'buildings' ? ' class="on"' : '') + '>Buildings reached</button>' +
+      '<button type="button" data-l="population"' + (lens === 'population' ? ' class="on"' : '') + '>Population served</button></span>';
+    $('br-lensbar').innerHTML = bar;
+    Array.prototype.forEach.call($('br-lensbar').querySelectorAll('button'), function (b) {
+      b.addEventListener('click', function () { setLens(b.getAttribute('data-l')); });
+    });
+  }
+  function setLens(next) {
+    if (next === lens) { return; }
+    if (next === 'population' && !popData) { loadPopulation(); return; }
+    lens = next; applyLens();
+  }
+  function loadPopulation() {
+    var note = $('br-lensnote');
+    note.className = 'br-note';
+    note.textContent = 'Reading the population grid and placing the children served. The first run on a country can take about a minute.';
+    Array.prototype.forEach.call($('br-lensbar').querySelectorAll('button'), function (b) { b.disabled = true; });
+    post(POP_URL, lastBody)
+      .then(function (r) { popData = r; lens = 'population'; applyLens(); })
+      .catch(function (e) { note.className = 'br-note br-err'; note.textContent = 'The population lens could not run: ' + e.message; lensBar(); })
+      .finally(function () { Array.prototype.forEach.call($('br-lensbar').querySelectorAll('button'), function (b) { b.disabled = false; }); });
+  }
+  function applyLens() {
+    var res = lastRes, pop = lens === 'population';
+    lensBar();
+    $('br-tiles').innerHTML = pop ? popTiles(popData) : tiles(res.total);
+    $('br-lows').style.display = pop ? 'none' : '';
+    $('br-disttable').innerHTML = pop ? '<div class="br-h2">By district: children served / estimated eligible</div>' + popDistrictTable(popData)
+      : ((res.rollup || []).length ? '<div class="br-h2">By district</div>' + table(res.rollup, 'District', res.total.cycles) : '');
+    $('br-legend').innerHTML = legendHtml();
+    var q = popData && popData.quality;
+    $('br-lensnote').className = 'br-note';
+    $('br-lensnote').innerHTML = pop ? esc(popData.grid.assumption) + (q ? ' ' + n(q.usable) + ' of ' + n(q.households) + ' households had a usable point; the rest cannot be placed, so children served is a floor.' : '') : '';
+    if (mapState.ready) {
+      mapState.map.setPaintProperty('br-cells', 'fill-color', colorExpr());
+      mapState.map.setPaintProperty('br-dist', 'circle-color', colorExpr());
+      mapState.map.setLayoutProperty('br-catch', 'visibility', pop ? 'none' : 'visible');
+      var cyc = Object.keys(pop ? popData.total.share : res.total.cycles).map(Number).sort(function (a, b) { return a - b; });
+      if (cyc.indexOf(mapState.cycle) < 0 && cyc.length) { mapState.cycle = cyc[0]; }
+      refreshMap();
+      if (pop && popData.cells.length) {
+        var b = new mapboxgl.LngLatBounds();
+        popData.cells.forEach(function (r) { b.extend([r[0], r[1]]); });
+        mapState.map.fitBounds(b, {padding: 70, maxZoom: 12});
+      }
+    }
+  }
   function show(res) {
     var areas = (res.areas || []).map(function (a) { return {label: a.group, buildings: a.buildings, cycles: a.cycles}; });
     var rollup = res.rollup || [];
-    var h = '<div class="br-h2">All facilities</div>' + tiles(res.total);
+    lastRes = res; popData = null; lens = 'buildings';
+    var h = '<div class="br-h2">All facilities</div><div id="br-tiles">' + tiles(res.total) + '</div>';
     var lows = [];
     if (rollup.length > 1) { lows.push('Lowest districts: ' + lowest(rollup, 2, function (r) { return r.label; })); }
     lows.push('lowest facilities: ' + lowest(areas, 3, function (r) { return r.label; }));
-    h += '<div class="br-lows">' + lows.join(' &middot; ') + ' <span style="color:#6b7280">(average over cycles)</span></div>';
-    h += '<div class="br-h2">Map</div><div id="br-cyc" class="br-cyc"></div><div class="br-mapbox"><div id="br-map"></div></div><div id="br-legend" class="br-legend"></div>';
-    if (rollup.length) { h += '<div class="br-h2">By district</div>' + table(rollup, 'District', res.total.cycles); }
+    h += '<div id="br-lows" class="br-lows">' + lows.join(' &middot; ') + ' <span style="color:#6b7280">(average over cycles)</span></div>';
+    h += '<div class="br-h2">Map</div><div id="br-lensbar" class="br-cyc"></div><div id="br-cyc" class="br-cyc"></div><div class="br-mapbox"><div id="br-map"></div></div><div id="br-legend" class="br-legend"></div><div id="br-lensnote" class="br-note"></div>';
+    h += '<div id="br-disttable">' + (rollup.length ? '<div class="br-h2">By district</div>' + table(rollup, 'District', res.total.cycles) : '') + '</div>';
     h += '<details class="br-sec"><summary class="br-h2" style="display:list-item">By facility (' + areas.length + ')</summary>' + table(areas, 'Facility', res.total.cycles) + '</details>';
     h += '<div class="br-legend">Amber: more than 10 points below the all-facilities share for that cycle. Hover a cell for the building counts.</div>';
     h += dq(res.areas || []);
@@ -308,6 +438,7 @@
       h += '<p style="font-size:.85rem;color:#b45309;margin-top:.6rem">Groups in the data with no facility in your list (not counted): ' + res.groups_without_a_facility.map(esc).join(', ') + '</p>';
     }
     $('br-out').innerHTML = h;
+    lensBar();
     drawMap(res);
   }
   function settingsSummary(body) {
@@ -325,8 +456,8 @@
     return message || 'The request failed (' + status + ').';
   }
   function run() {
-    var body = {};
-    Object.keys(FIELDS).forEach(function (k) { body[k] = $(FIELDS[k]).value.trim(); });
+    var body = currentBody();
+    lastBody = body;
     var q = new URLSearchParams();
     Object.keys(body).forEach(function (k) { if (body[k]) { q.set(k, body[k]); } });
     history.replaceState(null, '', '?' + q.toString());
@@ -334,14 +465,9 @@
     $('br-status').className = 'br-status';
     $('br-status').textContent = 'Loading the visits and reading the footprints. The first run can take about a minute.';
     $('br-out').innerHTML = ''; $('br-run').disabled = true; setOpen(false);
-    function post(url) {
-      return fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF}, body: JSON.stringify(body)})
-        .then(function (r) { return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (e) { /* an HTML error page */ } return {status: r.status, ok: r.ok, j: j}; }); })
-        .then(function (x) { if (!x.ok || !x.j) { throw new Error(failure(x.status, x.j && x.j.message)); } return x.j; });
-    }
     // Load first (its own request, so the visits are committed), then read them.
-    post(LOAD_URL)
-      .then(function () { $('br-status').textContent = 'Reading the footprints and placing the households.'; return post(RUN_URL); })
+    post(LOAD_URL, body)
+      .then(function () { $('br-status').textContent = 'Reading the footprints and placing the households.'; return post(RUN_URL, body); })
       .then(function (res) {
         if (!res.households_total) { throw new Error('No households with a recorded first visit were found in these opportunities, or their visits could not be read. Check the opportunity ids and the form paths under Change settings.'); }
         $('br-status').textContent = '';

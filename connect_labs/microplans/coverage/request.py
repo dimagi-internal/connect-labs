@@ -75,9 +75,20 @@ def build_spec(body: dict) -> tuple[check.CheckSpec, dict, list[int]]:
     for key in ("household_path", "cycle_path", "group_path"):
         if body.get(key):
             settings[key] = str(body[key]).strip()
+    for key in ("served_path", "served_value", "child_path"):
+        if body.get(key):
+            settings[key] = str(body[key]).strip()
     if body.get("gps_paths"):
         settings["gps_paths"] = [p.strip() for p in str(body["gps_paths"]).split(",") if p.strip()]
     try:
         return check.CheckSpec.from_dict(settings), labels, parse_ids(body.get("opps"))
     except check.SpecError as e:
         raise BadRequest(str(e)) from e
+
+
+def parse_iso(text) -> str:
+    """The country the population grid is read for: an ISO-3 code such as NER."""
+    iso = str(text or "").strip().upper()
+    if not iso.isalpha() or len(iso) != 3:
+        raise BadRequest("name the country as a three-letter code such as NER (the population lens reads its grid)")
+    return iso
