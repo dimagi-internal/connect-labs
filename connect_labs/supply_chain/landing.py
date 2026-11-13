@@ -19,7 +19,7 @@ from urllib.parse import urlencode
 from django.urls import reverse
 
 from connect_labs.supply_chain.config import HOME, resolved_for, slug_of
-from connect_labs.supply_chain.navigation import SUPPLY_TABS
+from connect_labs.supply_chain.navigation import SUPPLY_TABS, canonical_tab
 
 # The built-in Workers page is what each worker holds; a programme that fills
 # that tab with a workflow (its Stock review) opens on the workflow instead.
@@ -50,7 +50,8 @@ def landing_url(request) -> str | None:
     except (TypeError, ValueError):
         return None
     settings = resolved_for(request, program_id)
-    key = settings.get("landing") or (FIELD_LANDING if holds_stock_in_the_field(program_id) else HOME)
+    # A landing saved before Sourcing and Orders became Purchases still opens somewhere: on Purchases.
+    key = canonical_tab(settings.get("landing")) or (FIELD_LANDING if holds_stock_in_the_field(program_id) else HOME)
     if key == HOME:
         return None
     tab = (settings.get("tabs") or {}).get(key) or {}

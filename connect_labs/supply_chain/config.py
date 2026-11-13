@@ -49,6 +49,18 @@ def _builtin_names() -> tuple[str, ...]:
     return tuple(name for name, _ in SUPPLY_TABS)
 
 
+def _accepted_names() -> set[str]:
+    """The built-in tabs, and the two Purchases replaced (Sourcing, Orders), which saved settings may still name.
+
+    A `landing` or a hidden tab saved under an old name must keep saving and reading: its address still answers
+    (Sourcing redirects to Purchases, Orders is the "All orders" record list). Only the built-in set above decides
+    which tab a fill replaces.
+    """
+    from connect_labs.supply_chain.navigation import LEGACY_BUYING_TABS
+
+    return set(_builtin_names()) | set(LEGACY_BUYING_TABS)
+
+
 TAB = {
     "type": "object",
     "properties": {
@@ -140,7 +152,7 @@ def _check_writer(before: dict, after: dict, scope, caller) -> str | None:
 
 def _check_layer(data: dict) -> None:
     """What one layer may say on its own: keys, and Overview left alone."""
-    builtins = set(_builtin_names())
+    builtins = _accepted_names()
     landing = data.get("landing")
     if landing and landing not in builtins and not _is_slug(landing):
         raise ValueError(f"landing: {landing!r} is neither a Supply tab nor an added tab's key")
@@ -164,7 +176,7 @@ def _check_resolved(value: dict) -> None:
     tab its organisation added says only {"hidden": true} -- the fill is the
     organisation's -- and two layers can each pick a slug the other already uses.
     """
-    builtins = set(_builtin_names())
+    builtins = _accepted_names()
     slugs: dict[str, str] = {}
     for key, tab in (value.get("tabs") or {}).items():
         if key not in builtins and not tab.get("fill"):

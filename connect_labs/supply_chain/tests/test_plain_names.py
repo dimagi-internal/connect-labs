@@ -49,10 +49,10 @@ def test_the_supplier_page_offers_marketplace_access_by_that_name(client_in_prog
 
 
 @pytest.mark.django_db
-def test_the_sourcing_page_is_called_sourcing_like_its_tab(client_in_programme):
-    body = client_in_programme.get(reverse("supply_chain:procurement_tender_board")).content.decode()
+def test_the_purchases_page_is_called_purchases_like_its_tab(client_in_programme):
+    body = client_in_programme.get(reverse("supply_chain:purchases")).content.decode()
     assert "Quote tenders" not in body
-    assert ">Sourcing</h1>" in body
+    assert ">Purchases</h2>" in body
 
 
 @pytest.mark.django_db

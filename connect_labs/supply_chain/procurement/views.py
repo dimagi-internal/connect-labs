@@ -1466,12 +1466,12 @@ class QuoteEntryView(OperationFormView):
 
     def breadcrumb(self, **kwargs):
         return [
-            {"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")},
+            {"label": "Purchases", "href": reverse("supply_chain:purchases")},
             {"label": self.title},
         ]
 
     def cancel_href(self, **kwargs):
-        return reverse("supply_chain:procurement_tender_board")
+        return reverse("supply_chain:purchases")
 
     def redirect_to(self, result):
         url = reverse("supply_chain:procurement_comparison", args=[result["tender_id"]])
@@ -1565,12 +1565,12 @@ class _TenderScreen(OperationFormView):
 
     def breadcrumb(self, **kwargs):
         return [
-            {"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")},
+            {"label": "Purchases", "href": reverse("supply_chain:purchases")},
             {"label": self.title},
         ]
 
     def cancel_href(self, **kwargs):
-        return reverse("supply_chain:procurement_tender_board")
+        return reverse("supply_chain:purchases")
 
     def redirect_to(self, result):
         return reverse("supply_chain:procurement_tender_detail", args=[result["id"]])
@@ -1733,7 +1733,7 @@ class SignedAsView(View):
 
         back = request.POST.get("next") or ""
         if not back.startswith("/supply/") or not url_has_allowed_host_and_scheme(back, {request.get_host()}):
-            back = reverse("supply_chain:procurement_tender_board")
+            back = reverse("supply_chain:purchases")
         try:
             name = set_signed_as(request.user, request.POST.get("signed_as", ""), request=request)
         except ValueError as exc:
@@ -1822,7 +1822,7 @@ class OutreachLogView(OperationFormView):
 
     def breadcrumb(self, **kwargs):
         return [
-            {"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")},
+            {"label": "Purchases", "href": reverse("supply_chain:purchases")},
             {"label": "Tender", "href": reverse("supply_chain:procurement_tender_detail", args=[kwargs["tender_id"]])},
             {"label": "Ask for a quote"},
         ]
@@ -2118,7 +2118,7 @@ class _AwardScreen(OperationFormView):
     def breadcrumb(self, **kwargs):
         award = self.award()
         return [
-            {"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")},
+            {"label": "Purchases", "href": reverse("supply_chain:purchases")},
             {
                 "label": award.tender.label,
                 "href": reverse("supply_chain:procurement_tender_detail", args=[award.tender_id]),
@@ -2226,7 +2226,7 @@ class QuoteDocumentAttachView(OperationFormView):
     def breadcrumb(self, **kwargs):
         quote = self.quote()
         return [
-            {"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")},
+            {"label": "Purchases", "href": reverse("supply_chain:purchases")},
             {
                 "label": quote.tender.label,
                 "href": reverse("supply_chain:procurement_tender_detail", args=[quote.tender_id]),
@@ -2288,7 +2288,7 @@ class TenderDocumentAttachView(OperationFormView):
     def breadcrumb(self, **kwargs):
         tender = self.tender()
         return [
-            {"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")},
+            {"label": "Purchases", "href": reverse("supply_chain:purchases")},
             {"label": tender.label, "href": reverse("supply_chain:procurement_tender_detail", args=[tender.pk])},
             {"label": self.title},
         ]

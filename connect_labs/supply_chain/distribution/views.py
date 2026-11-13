@@ -159,7 +159,7 @@ class QuoteCorrectView(OperationFormView):
     def breadcrumb(self, **kwargs):
         quote = self.quote()
         return [
-            {"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")},
+            {"label": "Purchases", "href": reverse("supply_chain:purchases")},
             {
                 "label": f"Tender {quote.tender_id}",
                 "href": reverse("supply_chain:procurement_tender_detail", args=[quote.tender_id]),

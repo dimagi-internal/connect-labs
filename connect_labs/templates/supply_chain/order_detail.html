@@ -21,8 +21,8 @@ out on every render and never stored.
 <div id="order-page" class="flex flex-col gap-5" data-testid="order-view">
   <div class="flex flex-wrap items-center justify-between gap-3">
     <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-600" aria-label="Breadcrumb">
-      <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:overview' %}">Overview</a><span aria-hidden="true">›</span>
-      {% if contract.tender_id %}<a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_detail' contract.tender_id %}">{{ tender_label|default:"Tender" }}</a><span aria-hidden="true">›</span>{% endif %}
+      <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:purchases' %}">Purchases</a><span aria-hidden="true">›</span>
+      {% if contract.tender_id %}<a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:purchase' contract.tender_id %}" data-testid="back-to-purchase">{{ tender_label|default:"Purchase" }}</a><span aria-hidden="true">›</span>{% endif %}
       <span>{{ contract.reference|default:"Order" }}</span>
     </nav>
     {% include "supply_chain/_src_legend.html" %}

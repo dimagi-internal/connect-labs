@@ -48,6 +48,7 @@ def scoped(client, user, monkeypatch):
     """
     from connect_labs.supply_chain import form_views, views  # noqa: F401  -- bind before patching
     from connect_labs.supply_chain.api_views import _access as real_access
+    from connect_labs.supply_chain.procurement import purchase_views  # noqa: F401
     from connect_labs.supply_chain.procurement import views as procurement_views  # noqa: F401
 
     def _scoped(request):
@@ -55,7 +56,7 @@ def scoped(client, user, monkeypatch):
         access.program_id = PROGRAM
         return access
 
-    for module in ("form_views", "views", "procurement.views"):
+    for module in ("form_views", "views", "procurement.views", "procurement.purchase_views"):
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}.has_program_context", lambda request: True)
         monkeypatch.setattr(f"connect_labs.supply_chain.{module}._access", _scoped)
     return client
@@ -339,7 +340,7 @@ class TestTheScreensAreReachable:
         assert "tomselect.css" in body
 
     def test_the_board_offers_a_new_tender(self, scoped):
-        body = scoped.get(reverse("supply_chain:procurement_tender_board")).content.decode()
+        body = scoped.get(reverse("supply_chain:purchases")).content.decode()
         assert reverse("supply_chain:procurement_tender_create") in body
 
     def test_a_draft_tender_offers_opening_and_an_open_one_offers_closing(self, scoped, a_tender):

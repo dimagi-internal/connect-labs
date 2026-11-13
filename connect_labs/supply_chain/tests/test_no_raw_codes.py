@@ -431,7 +431,7 @@ PAGES = [
     ("suppliers", lambda w: []),
     ("supplier_detail", lambda w: [w["supplier"]["id"]]),
     ("supplier_detail", lambda w: [w["donor"]["id"]]),
-    ("procurement_tender_board", lambda w: []),
+    ("purchases", lambda w: []),
     ("procurement_tender_detail", lambda w: [w["tender"]["id"]]),
     ("procurement_quote_detail", lambda w: [w["quote"]["id"]]),
     ("award_detail", lambda w: [w["award"]["id"]]),

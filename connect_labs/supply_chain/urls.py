@@ -12,7 +12,7 @@ from connect_labs.supply_chain.network import views as network_views
 from connect_labs.supply_chain.partners import views as partner_views
 from connect_labs.supply_chain.plan import views as plan_views
 from connect_labs.supply_chain.portfolio import views as portfolio_views
-from connect_labs.supply_chain.procurement import split_screens
+from connect_labs.supply_chain.procurement import purchase_views, split_screens
 from connect_labs.supply_chain.procurement import views as procurement_views
 from connect_labs.supply_chain.reference import people as people_views
 from connect_labs.supply_chain.reference import views as reference_views
@@ -130,9 +130,13 @@ urlpatterns = [
     path("api/operations/", api_views.OperationListView.as_view(), name="api_operations"),
     path("api/<str:name>/", api_views.OperationDispatchView.as_view(), name="api_operation"),
     # sub-component one: procurement
+    # Purchases (round 3, "organise Supply around workflows"): the list, and one page per purchase from
+    # sizing to payment. Sourcing's list and the Orders list live here now; each old address still answers.
+    path("purchases/", purchase_views.PurchasesView.as_view(), name="purchases"),
+    path("purchases/<int:tender_id>/", purchase_views.PurchaseView.as_view(), name="purchase"),
     path(
         "procurement/",
-        procurement_views.TenderBoardView.as_view(),
+        RedirectView.as_view(pattern_name="supply_chain:purchases", query_string=True),
         name="procurement_tender_board",
     ),
     path(

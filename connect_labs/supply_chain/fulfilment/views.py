@@ -55,10 +55,10 @@ class _ContractScreen(OperationFormView):
     form_class = ContractForm
 
     def breadcrumb(self, **kwargs):
-        return [{"label": "Orders", "href": reverse("supply_chain:orders")}, {"label": self.title}]
+        return [{"label": "Purchases", "href": reverse("supply_chain:purchases")}, {"label": self.title}]
 
     def cancel_href(self, **kwargs):
-        return reverse("supply_chain:orders")
+        return reverse("supply_chain:purchases")
 
     def redirect_to(self, result):
         return reverse("supply_chain:order_detail", args=[result["id"]])
@@ -158,7 +158,7 @@ class ContractUpdateView(_ContractScreen):
 
     def breadcrumb(self, **kwargs):
         return [
-            {"label": "Orders", "href": reverse("supply_chain:orders")},
+            {"label": "Purchases", "href": reverse("supply_chain:purchases")},
             {
                 "label": str(_contract(self.request, kwargs["contract_id"])),
                 "href": reverse("supply_chain:order_detail", args=[kwargs["contract_id"]]),
@@ -184,7 +184,7 @@ class _UnderAContract(OperationFormView):
 
     def breadcrumb(self, **kwargs):
         return [
-            {"label": "Orders", "href": reverse("supply_chain:orders")},
+            {"label": "Purchases", "href": reverse("supply_chain:purchases")},
             {
                 "label": str(self.contract()),
                 "href": reverse("supply_chain:order_detail", args=[kwargs["contract_id"]]),
@@ -272,7 +272,7 @@ class InvoiceUpdateView(OperationFormView):
     def breadcrumb(self, **kwargs):
         invoice = self.invoice()
         return [
-            {"label": "Orders", "href": reverse("supply_chain:orders")},
+            {"label": "Purchases", "href": reverse("supply_chain:purchases")},
             {
                 "label": str(invoice.contract),
                 "href": reverse("supply_chain:order_detail", args=[invoice.contract_id]),
@@ -338,7 +338,7 @@ class PaymentRecordView(OperationFormView):
     def breadcrumb(self, **kwargs):
         invoice = self.invoice()
         return [
-            {"label": "Orders", "href": reverse("supply_chain:orders")},
+            {"label": "Purchases", "href": reverse("supply_chain:purchases")},
             {
                 "label": str(invoice.contract),
                 "href": reverse("supply_chain:order_detail", args=[invoice.contract_id]),
@@ -393,7 +393,7 @@ class InvoiceDisputeView(OperationFormView):
     def breadcrumb(self, **kwargs):
         invoice = self.invoice()
         return [
-            {"label": "Orders", "href": reverse("supply_chain:orders")},
+            {"label": "Purchases", "href": reverse("supply_chain:purchases")},
             {"label": str(invoice.contract), "href": reverse("supply_chain:order_detail", args=[invoice.contract_id])},
             {"label": self.title},
         ]
@@ -453,7 +453,7 @@ class PaymentConfirmView(OperationFormView):
     def breadcrumb(self, **kwargs):
         contract = self.payment().invoice.contract
         return [
-            {"label": "Orders", "href": reverse("supply_chain:orders")},
+            {"label": "Purchases", "href": reverse("supply_chain:purchases")},
             {"label": str(contract), "href": reverse("supply_chain:order_detail", args=[contract.pk])},
             {"label": self.title},
         ]
@@ -521,10 +521,10 @@ class ProgramDocumentAttachView(OperationFormView):
 
     def _back(self):
         back = self.request.GET.get("next") or ""
-        return back if back.startswith("/supply/") else reverse("supply_chain:procurement_tender_board")
+        return back if back.startswith("/supply/") else reverse("supply_chain:purchases")
 
     def breadcrumb(self, **kwargs):
-        return [{"label": "Sourcing", "href": reverse("supply_chain:procurement_tender_board")}, {"label": self.title}]
+        return [{"label": "Purchases", "href": reverse("supply_chain:purchases")}, {"label": self.title}]
 
     def cancel_href(self, **kwargs):
         return self._back()

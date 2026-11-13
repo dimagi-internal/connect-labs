@@ -68,9 +68,9 @@ def test_an_added_tab_needs_a_workflow():
 
 
 def test_an_added_tab_goes_after_the_tab_it_names(client_in_programme):
-    _set({"coverage": {"label": "Coverage", "fill": {"workflow": WORKFLOW}, "after": "supply_chain:orders"}})
+    _set({"coverage": {"label": "Coverage", "fill": {"workflow": WORKFLOW}, "after": "supply_chain:purchases"}})
     labels = [label.strip() for _, _, label in _tabs(client_in_programme)]
-    assert labels.index("Coverage") == labels.index("Orders") + 1
+    assert labels.index("Coverage") == labels.index("Purchases") + 1
 
 
 def test_an_organisation_fills_a_tab_for_every_programme_it_owns(client_in_programme, monkeypatch):

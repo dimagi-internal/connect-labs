@@ -46,6 +46,7 @@ def client_in_programme(client, account, monkeypatch):
     from connect_labs.supply_chain.distribution import views as distribution_views  # noqa: F401
     from connect_labs.supply_chain.fulfilment import views as fulfilment_views  # noqa: F401
     from connect_labs.supply_chain.network import views as network_views  # noqa: F401
+    from connect_labs.supply_chain.procurement import purchase_views  # noqa: F401
     from connect_labs.supply_chain.procurement import views as procurement_views  # noqa: F401
     from connect_labs.supply_chain.reference import views as reference_views  # noqa: F401
     from connect_labs.supply_chain.stock import views as stock_views  # noqa: F401
