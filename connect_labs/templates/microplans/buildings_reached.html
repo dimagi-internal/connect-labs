@@ -107,6 +107,7 @@
   var CSRF = "{{ csrf_token }}";
   var MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
   var RUN_URL = "{% url 'microplans:buildings_reached_run' %}";
+  var LOAD_URL = "{% url 'microplans:buildings_reached_load' %}";
   var LOW_POINTS = 0.10;
   var params = new URLSearchParams(location.search);
   Object.keys(FIELDS).forEach(function (k) { if (params.get(k)) { $(FIELDS[k]).value = params.get(k); } });
@@ -333,12 +334,18 @@
     $('br-status').className = 'br-status';
     $('br-status').textContent = 'Loading the visits and reading the footprints. The first run can take about a minute.';
     $('br-out').innerHTML = ''; $('br-run').disabled = true; setOpen(false);
-    fetch(RUN_URL, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF}, body: JSON.stringify(body)})
-      .then(function (r) { return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (e) { /* an HTML error page */ } return {status: r.status, ok: r.ok, j: j}; }); })
-      .then(function (x) {
-        if (!x.ok || !x.j) { throw new Error(failure(x.status, x.j && x.j.message)); }
+    function post(url) {
+      return fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF}, body: JSON.stringify(body)})
+        .then(function (r) { return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (e) { /* an HTML error page */ } return {status: r.status, ok: r.ok, j: j}; }); })
+        .then(function (x) { if (!x.ok || !x.j) { throw new Error(failure(x.status, x.j && x.j.message)); } return x.j; });
+    }
+    // Load first (its own request, so the visits are committed), then read them.
+    post(LOAD_URL)
+      .then(function () { $('br-status').textContent = 'Reading the footprints and placing the households.'; return post(RUN_URL); })
+      .then(function (res) {
+        if (!res.households_total) { throw new Error('No households with a recorded first visit were found in these opportunities, or their visits could not be read. Check the opportunity ids and the form paths under Change settings.'); }
         $('br-status').textContent = '';
-        show(x.j);
+        show(res);
       })
       .catch(function (e) { setOpen(true); $('br-status').className = 'br-status br-err'; $('br-status').textContent = e.message; })
       .finally(function () { $('br-run').disabled = false; });

@@ -132,7 +132,7 @@ def test_a_bad_request_is_a_400_with_the_reason(client, person):
 
 
 @pytest.mark.django_db
-def test_a_run_loads_what_is_missing_reads_as_the_person_and_returns_counts_only(client, person):
+def test_a_run_reads_as_the_person_and_returns_counts_only(client, person):
     rows = [["A1", "hh1", "13.50005 7.00005 0.0 5.0", "contact_1"]]
     seen = {}
 
@@ -147,7 +147,6 @@ def test_a_run_loads_what_is_missing_reads_as_the_person_and_returns_counts_only
     body = {"opps": "1", "facilities": "A1,7.0,13.5,D1", "catchment_k": 10}
     with (
         patch.object(page.spaces, "from_request", lambda caller, **k: Space()),
-        patch.object(page.service, "warm", lambda caller, opps: [{"opportunity_id": 1, "loaded_visits": 5}]),
         patch.object(page.read, "read_households", read_households),
         patch.object(
             page.check,
@@ -171,6 +170,29 @@ def test_a_run_loads_what_is_missing_reads_as_the_person_and_returns_counts_only
 
 
 @pytest.mark.django_db
+def test_the_load_step_loads_what_is_missing_in_its_own_request(client, person):
+    """Loading and reading in one request read an empty campaign on a cold cache: the loader writes inside the
+    request's transaction (ATOMIC_REQUESTS) and the Data query reads over another connection. The page therefore
+    loads first and reads second, and a run never loads."""
+
+    class Space:
+        class selection:
+            opportunities = [type("O", (), {"id": 1})(), type("O", (), {"id": 2})()]
+
+    called = []
+    with (
+        patch.object(page.spaces, "from_request", lambda caller, **k: Space()),
+        patch.object(page.service, "warm", lambda caller, opps: called.append(len(opps)) or [{"opportunity_id": 1}]),
+    ):
+        resp = client.post(
+            reverse("microplans:buildings_reached_load"),
+            data=json.dumps({"opps": "1,2"}),
+            content_type="application/json",
+        )
+    assert resp.status_code == 200 and resp.json()["opportunities"] == [1, 2] and called == [2]
+
+
+@pytest.mark.django_db
 def test_a_load_that_failed_is_said_not_answered_with_zeros(client, person):
     class Space:
         class selection:
@@ -181,11 +203,40 @@ def test_a_load_that_failed_is_said_not_answered_with_zeros(client, person):
         patch.object(page.service, "warm", lambda caller, opps: [{"opportunity_id": 9, "error": "no Connect token"}]),
     ):
         resp = client.post(
-            reverse("microplans:buildings_reached_run"),
-            data=json.dumps({"opps": "9", "facilities": "A1,7,13"}),
+            reverse("microplans:buildings_reached_load"),
+            data=json.dumps({"opps": "9"}),
             content_type="application/json",
         )
     assert resp.status_code == 400 and "no Connect token" in resp.json()["message"]
+
+
+@pytest.mark.django_db
+def test_a_run_never_loads(client, person):
+    class Space:
+        class selection:
+            opportunities = [type("O", (), {"id": 1})()]
+
+    def boom(*a, **k):
+        raise AssertionError("a run must not load")
+
+    with (
+        patch.object(page.spaces, "from_request", lambda caller, **k: Space()),
+        patch.object(page.service, "warm", boom),
+        patch.object(page.read, "read_households", lambda *a, **k: []),
+        patch.object(
+            page.check,
+            "default_fetch",
+            lambda f: lambda lon, lat, r: __import__("pandas").DataFrame(
+                {"lon": [7.0], "lat": [13.5], "area_m2": [50.0]}
+            ),
+        ),
+    ):
+        resp = client.post(
+            reverse("microplans:buildings_reached_run"),
+            data=json.dumps({"opps": "1", "facilities": "A1,7.0,13.5"}),
+            content_type="application/json",
+        )
+    assert resp.status_code == 200 and resp.json()["households_total"] == 0
 
 
 @pytest.mark.django_db
