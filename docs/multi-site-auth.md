@@ -59,10 +59,11 @@ Three rules keep that row honest:
    `hqdata.identity.identity_username` and nothing else, and is created with no email. Dimagi
    status is read from `User.email`, so a CommCare-only identity is never staff, whatever address
    CommCare reports. (Campaign's login matches an existing user by email; do not copy that here.)
-2. **No MCP.** `/o/` (the MCP sign-in) is skip-listed by the boundary, so a CommCare-only session
-   could mint a token there. `mcp/server.py::_verify_bearer_sync` refuses any user for whom
-   `hqdata.access.is_commcare_only` holds (an HQ identity, no Connect token) until that identity
-   has a tool set of its own.
+2. **One MCP credential.** `/o/` (the MCP sign-in) is skip-listed by the boundary, so a CommCare-only
+   session could mint a token there. `mcp/server.py::_verify_bearer_sync` lets a user for whom
+   `hqdata.access.is_commcare_only` holds (an HQ identity, no Connect token) in with a PAT of the
+   `commcare` scope only, and refuses every other credential. That scope reaches
+   `token_scopes.COMMCARE_TOOLS` (the `hq_*` tools) and nothing else, whoever holds it.
 3. **Access is membership proven by CommCare.** `hqdata.access.may_use_project`; see
    `docs/superpowers/specs/2026-11-13-commcare-first-class-design.md`.
 

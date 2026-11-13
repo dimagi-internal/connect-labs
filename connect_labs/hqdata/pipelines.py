@@ -33,7 +33,9 @@ def config_for(pipeline: HQPipeline):
         raise PipelineProblem("Pipelines over a CommCare project cannot join other pipelines yet.")
     stamped = {**schema, "data_source": data_source_for(pipeline)}
     try:
-        return PipelineDataAccess._schema_to_config(stamped, pipeline.pk or 0)
+        # `_schema_to_config` never reads `self` (checked with ast); passing None avoids building a
+        # PipelineDataAccess, which needs a Connect token, for a conversion that does not use one.
+        return PipelineDataAccess._schema_to_config(None, stamped, pipeline.pk or 0)
     except PipelineProblem:
         raise
     except Exception as exc:  # a bad transform, an unknown aggregation...
@@ -46,14 +48,17 @@ def run_pipeline(user, pipeline: HQPipeline, *, force_refresh: bool = False) -> 
     ``require_project`` is checked here and again, inside the pipeline, on the read itself, so a
     caller that skips this function still cannot read.
     """
+    from connect_labs.hqdata.stores import store_for
     from connect_labs.labs.analysis.pipeline import AnalysisPipeline
     from connect_labs.workflow.data_access import serialize_pipeline_row
 
     require_project(user, pipeline.project)
     config = config_for(pipeline)
-    result = AnalysisPipeline(None, local_only_user=user).stream_analysis_ignore_events(
-        config, opportunity_id=pipeline.project.scope_id, force_refresh=force_refresh
-    )
+    # The session closes whatever connection into a customer's database the run opened.
+    with store_for(pipeline.project).session():
+        result = AnalysisPipeline(None, local_only_user=user).stream_analysis_ignore_events(
+            config, opportunity_id=pipeline.project.scope_id, force_refresh=force_refresh
+        )
     rows = [serialize_pipeline_row(r) for r in result.rows]
     columns: list[str] = []
     for row in rows[:MAX_ROWS_SHOWN]:

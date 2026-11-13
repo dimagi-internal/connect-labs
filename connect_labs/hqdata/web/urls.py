@@ -14,5 +14,6 @@ urlpatterns = [
     path("projects/<int:project_id>/act/", views.project_action, name="project_action"),
     path("projects/<int:project_id>/pipelines/", views.pipeline_list, name="pipeline_list"),
     path("projects/<int:project_id>/pipelines/<int:pipeline_id>/", views.pipeline_detail, name="pipeline_detail"),
+    path("tokens/", views.tokens, name="tokens"),
     path("", views.home, name="home"),
 ]

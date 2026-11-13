@@ -10,6 +10,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from connect_labs.hqdata.scope import hq_scope_id
+from connect_labs.utils.encrypted_fields import EncryptedTextField
 
 # A sync that has not heartbeat for this long is presumed dead (a deploy hard-kills
 # every task with no drain), and the next run may take its lease.
@@ -27,10 +28,13 @@ class HQProject(models.Model):
     ]
 
     BACKEND_HQ_API = "hq_api"
-    BACKEND_EXTERNAL_DB = "external_db"
-    BACKEND_CHOICES = [
-        (BACKEND_HQ_API, "CommCare HQ API"),
-        (BACKEND_EXTERNAL_DB, "Customer-hosted database"),
+    BACKEND_CHOICES = [(BACKEND_HQ_API, "CommCare HQ API")]
+
+    STORE_LABS = "labs"
+    STORE_EXTERNAL = "external"
+    STORE_CHOICES = [
+        (STORE_LABS, "Labs"),
+        (STORE_EXTERNAL, "A database the customer hosts"),
     ]
 
     STATUS_ACTIVE = "active"
@@ -49,7 +53,9 @@ class HQProject(models.Model):
     name = models.CharField(max_length=255, blank=True)
 
     storage_mode = models.CharField(max_length=16, choices=STORAGE_CHOICES, default=STORAGE_LIVE)
+    # Where the rows COME FROM and where they LIVE are separate choices (see stores.py).
     backend = models.CharField(max_length=16, choices=BACKEND_CHOICES, default=BACKEND_HQ_API)
+    store = models.CharField(max_length=16, choices=STORE_CHOICES, default=STORE_LABS)
     sync_interval_minutes = models.PositiveIntegerField(default=60)
 
     # Whose CommCare token a scheduled (headless) sync uses. Never another person's.
@@ -81,12 +87,20 @@ class HQProject(models.Model):
         """The integer the analysis caches key this project's rows by."""
         return hq_scope_id(self.pk)
 
-    def purge_rows(self) -> dict[str, int]:
-        """Delete every stored form and case of this project. Rows carry no foreign key to the
-        project (see ``HQForm``), so deleting the project does not do this by itself."""
-        forms, _ = HQForm.objects.filter(project_id=self.pk).delete()
-        cases, _ = HQCase.objects.filter(project_id=self.pk).delete()
-        return {"forms": forms, "cases": cases}
+    def purge_rows(self) -> dict[str, int] | None:
+        """Delete every stored form and case of this project, from wherever its store is.
+
+        Rows carry no foreign key to the project (see ``HQForm``), so deleting the project does
+        not do this by itself. Returns None when the store could not be reached: the project can
+        still be deleted, and what a customer's own database holds stays theirs to remove.
+        """
+        from connect_labs.hqdata.stores import StoreUnavailable, store_for
+
+        try:
+            with store_for(self).session() as store:
+                return store.purge(self.pk)
+        except StoreUnavailable:
+            return None
 
     def delete(self, *args, **kwargs):
         self.purge_rows()
@@ -220,15 +234,19 @@ class HQSource(models.Model):
 
     # -- The rows this source's selector covers --------------------------------
 
-    def rows(self):
+    def rows(self, store=None):
+        """The stored rows this source's selector covers, in the project's store."""
+        from connect_labs.hqdata.stores import store_for
+
+        store = store or store_for(self.project)
         if self.kind == self.KIND_FORMS:
-            qs = HQForm.objects.filter(project_id=self.project_id)
+            qs = store.forms(self.project_id)
             if self.app_id:
                 qs = qs.filter(app_id=self.app_id)
             if self.xmlns:
                 qs = qs.filter(xmlns=self.xmlns)
             return qs
-        qs = HQCase.objects.filter(project_id=self.project_id)
+        qs = store.cases(self.project_id)
         if self.case_type:
             qs = qs.filter(case_type=self.case_type)
         return qs
@@ -346,3 +364,46 @@ class HQPipeline(models.Model):
 
     def __str__(self) -> str:
         return f"{self.project}: {self.name}"
+
+
+class HQExternalDatabase(models.Model):
+    """The customer-hosted PostgreSQL a project keeps its data in (``HQProject.store == "external"``).
+
+    The connection is stored as its parts, not a URL, so each can be checked on its own (see
+    ``external.spec_for``). The password is encrypted at rest and never shown again, logged, put in
+    an error or returned by an API. A project's connection cannot be deleted while it is in use.
+    """
+
+    SSLMODE_CHOICES = [
+        ("verify-full", "Verify the certificate and the host name"),
+        ("verify-ca", "Verify the certificate"),
+    ]
+
+    project = models.OneToOneField(HQProject, on_delete=models.CASCADE, related_name="external_database")
+    host = models.CharField(max_length=253)
+    port = models.PositiveIntegerField(default=5432)
+    dbname = models.CharField(max_length=63)
+    schema = models.CharField(max_length=63, default="labs_commcare")
+    username = models.CharField(max_length=63)
+    password = EncryptedTextField(blank=True)
+    sslmode = models.CharField(max_length=12, choices=SSLMODE_CHOICES, default="verify-full")
+    # Set by Dimagi staff, never by the customer: the database sits on a private network labs
+    # reaches over a tunnel or a peering (``netguard``).
+    allow_private_network = models.BooleanField(default=False)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = "hqdata"
+
+    def __str__(self) -> str:
+        return f"{self.username}@{self.host}/{self.dbname}"
+
+    def __repr__(self) -> str:
+        return f"<HQExternalDatabase project={self.project_id} {self.host}:{self.port}/{self.dbname}>"
+
+    def delete(self, *args, **kwargs):
+        if HQProject.objects.filter(pk=self.project_id, store=HQProject.STORE_EXTERNAL).exists():
+            raise models.ProtectedError("The project is keeping its data in this database.", {self})
+        return super().delete(*args, **kwargs)

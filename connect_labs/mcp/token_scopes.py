@@ -62,6 +62,10 @@ from __future__ import annotations
 
 FULL = "full"
 NO_USERVISIT_DATA = "no-uservisit-data"
+#: Reaches ``COMMCARE_TOOLS`` and nothing else: the CommCare projects a person belongs to
+#: (``connect_labs/hqdata``). It is the only kind of token a CommCare-only person (no Connect
+#: login) can hold, and it is deliberately not a way to widen what a Connect person can reach.
+COMMCARE = "commcare"
 #: Not an MCP scope at all: a token an Open Chat Studio team holds to fetch the
 #: coaching pictures a coaching session links to (``workflow/coach_image.py``). It
 #: reaches that one view and nothing else -- the MCP server refuses it outright
@@ -72,6 +76,7 @@ COACH_IMAGES = "coach-images"
 SCOPE_CHOICES = [
     (FULL, "Full access"),
     (NO_USERVISIT_DATA, "No user visit data"),
+    (COMMCARE, "CommCare projects only"),
     (COACH_IMAGES, "Coaching pictures only"),
 ]
 
@@ -86,6 +91,10 @@ ACCESS_TEXT = {
         "edit workflow and indicator definitions and trigger saved-run generation; and profile real "
         "opportunities and generate synthetic data from the profile. Same reach as the /mcp/no_user_visit/ address."
     ),
+    COMMCARE: (
+        "Reads and works with the CommCare projects you belong to: their forms and cases as stored in labs "
+        "or in your own database, their sync, and pipelines over them. Nothing from Connect."
+    ),
     COACH_IMAGES: "Lets an Open Chat Studio team fetch coaching pictures. Nothing else.",
 }
 
@@ -98,7 +107,36 @@ NOT_MCP_SCOPES = frozenset({COACH_IMAGES})
 TOKEN_SCOPE_STRINGS = {
     FULL: "connect_labs:user",
     NO_USERVISIT_DATA: "connect_labs:no-uservisit-data",
+    COMMCARE: "connect_labs:commcare",
 }
+
+#: The scope string that confines a caller to ``COMMCARE_TOOLS``.
+COMMCARE_SCOPE_STRING = TOKEN_SCOPE_STRINGS[COMMCARE]
+
+
+def is_commcare(scopes) -> bool:
+    """True when these scope strings confine the caller to the CommCare tools."""
+    return COMMCARE_SCOPE_STRING in set(scopes or [])
+
+
+#: Every tool a CommCare-scoped token may call. Deny-by-default like the sets below: a tool added to
+#: the catalogue reaches no such caller until it is named here, and a test pins that every ``hq_*``
+#: tool is named, that every name here is registered, and that none reads Connect data.
+COMMCARE_TOOLS: frozenset[str] = frozenset(
+    {
+        "hq_project_list",
+        "hq_project_get",
+        "hq_project_create",
+        "hq_project_sync",
+        "hq_project_set_storage",
+        "hq_forms",
+        "hq_cases",
+        "hq_pipeline_list",
+        "hq_pipeline_save",
+        "hq_pipeline_run",
+        "hq_pipeline_delete",
+    }
+)
 
 #: The OAuth scope an MCP sign-in through the restricted endpoint asks for.
 OAUTH_NO_USERVISIT_SCOPE = "mcp:no-uservisit-data"

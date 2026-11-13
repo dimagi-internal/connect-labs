@@ -104,6 +104,8 @@ class AnalysisPipeline:
         """
         self.request = request
         self.backend = get_backend()
+        # The labs backend, kept so `_select_backend` can swap `self.backend` per config and back.
+        self._base_backend = self.backend
         self.backend_name = "sql"
 
         # Resolve access token: explicit kwarg wins, otherwise extract from session
@@ -523,6 +525,7 @@ class AnalysisPipeline:
         if not opp_id:
             return None
         self._check_drive_access(config, opp_id)
+        self._select_backend(config)
         if self._never_served_from_cache(config):
             return None
         expected = self._expected_count_for_cache(config, opp_id)
@@ -558,6 +561,18 @@ class AnalysisPipeline:
             access_token=self.access_token,
             opportunity_id=opp_id,
         )
+
+    def _select_backend(self, config: AnalysisPipelineConfig) -> None:
+        """Point ``self.backend`` at wherever this config's cache operations belong.
+
+        Labs' own backend, except for a CommCare project that keeps its data in a customer's
+        database: its staged rows and computed results must not land in labs either, so its
+        backend runs every call against that database (``hqdata.redirect``)."""
+        self.backend = self._base_backend
+        if config.data_source.type == "hq_store":
+            from connect_labs.hqdata.pipeline_source import cache_backend_for
+
+            self.backend = cache_backend_for(config.data_source, self._base_backend)
 
     def _fetch_hq_store(self, config: AnalysisPipelineConfig, opp_id: int) -> list[dict]:
         """An hq_store source's rows: what the CommCare project keeps, as visit dicts.
@@ -677,6 +692,7 @@ class AnalysisPipeline:
         if not opp_id:
             return None
         self._check_drive_access(config, opp_id)
+        self._select_backend(config)
         terminal_stage = config.terminal_stage
         if terminal_stage == CacheStage.AGGREGATED:
             return self.backend.get_cached_flw_result(opp_id, config, 0)
@@ -703,6 +719,7 @@ class AnalysisPipeline:
         if config.terminal_stage != CacheStage.AGGREGATED:
             return None
         self._check_drive_access(config, opp_id)
+        self._select_backend(config)
         return self.backend.get_period_scoped_flw_result(opp_id, config)
 
     def _consume_raw_visits_stream(
@@ -847,6 +864,7 @@ class AnalysisPipeline:
 
         try:
             self._check_drive_access(config, opp_id)
+            self._select_backend(config)
 
             # Check cache first
             stage_name = _stage_name(terminal_stage)

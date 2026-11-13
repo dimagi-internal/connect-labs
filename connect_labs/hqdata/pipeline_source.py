@@ -10,8 +10,9 @@ from __future__ import annotations
 from datetime import datetime
 
 from connect_labs.hqdata.access import ProjectAccessDenied, may_use_project
-from connect_labs.hqdata.models import HQCase, HQForm, HQProject
+from connect_labs.hqdata.models import HQCase, HQProject
 from connect_labs.hqdata.scope import hq_scope_id
+from connect_labs.hqdata.stores import store_for
 
 
 def check_project_access(data_source, user) -> HQProject:
@@ -53,12 +54,18 @@ def case_as_hq_dict(row: HQCase) -> dict:
 
 def fetch_store_as_visit_dicts(data_source) -> list[dict]:
     """The project's stored rows, deleted ones and archived forms left out, as visit dicts."""
+    project = HQProject.objects.get(pk=data_source.project_id)
+    with store_for(project).session() as store:
+        return _read(store, data_source)
+
+
+def _read(store, data_source) -> list[dict]:
     from connect_labs.labs.analysis.backends.sql.cchq_cases_fetcher import normalize_cchq_case_to_visit_dict
     from connect_labs.labs.analysis.backends.sql.cchq_fetcher import normalize_cchq_form_to_visit_dict
 
     project_id = data_source.project_id
     if data_source.store_kind == "forms":
-        qs = HQForm.objects.filter(project_id=project_id, deleted_at__isnull=True, archived=False)
+        qs = store.forms(project_id).filter(deleted_at__isnull=True, archived=False)
         if data_source.app_id:
             qs = qs.filter(app_id=data_source.app_id)
         if data_source.xmlns:
@@ -68,7 +75,7 @@ def fetch_store_as_visit_dicts(data_source) -> list[dict]:
             normalize_cchq_form_to_visit_dict(row.form_json, i) for i, row in enumerate(qs.iterator(chunk_size=2000))
         ]
 
-    qs = HQCase.objects.filter(project_id=project_id, deleted_at__isnull=True)
+    qs = store.cases(project_id).filter(deleted_at__isnull=True)
     if data_source.case_type:
         qs = qs.filter(case_type=data_source.case_type)
     qs = qs.order_by("date_opened", "case_id")
@@ -77,3 +84,19 @@ def fetch_store_as_visit_dicts(data_source) -> list[dict]:
         normalize_cchq_case_to_visit_dict(case_as_hq_dict(row), scope, i)
         for i, row in enumerate(qs.iterator(chunk_size=2000))
     ]
+
+
+def cache_backend_for(data_source, base_backend):
+    """The backend a ``hq_store`` pipeline's cache operations go through.
+
+    Labs' own for a project kept in labs. For one kept in a customer's database, the same backend
+    run against that database, so nothing staged or computed from the project is written in labs.
+    """
+    from connect_labs.hqdata.redirect import RedirectedBackend
+
+    project = HQProject.objects.get(pk=data_source.project_id)
+    store = store_for(project)
+    if store.alias == "default":
+        return base_backend
+    store.ensure_schema()  # a pipeline can run before the first sync has made the cache tables
+    return RedirectedBackend(base_backend, store.alias)

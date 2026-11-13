@@ -4,6 +4,8 @@ Each submodule registers its tools with the @register decorator at import time.
 Importing this package triggers all registration.
 """
 
+from connect_labs.hqdata import mcp_tools as _hq_tools  # noqa: E402,F401  -- registers hq_* (CommCare projects)
+
 from . import apps  # noqa: F401
 from . import benchmarks  # noqa: F401  -- registers benchmarks_cohort_*
 from . import campaign  # noqa: F401  -- registers campaign_build_national

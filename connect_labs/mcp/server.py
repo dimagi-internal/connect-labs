@@ -187,18 +187,21 @@ def _verify_pat_sync(raw: str):
 
 
 def _verify_bearer_sync(raw: str, presented_jkt: str | None = None):
-    """``_resolve_bearer_sync``, minus anyone who reaches labs only through CommCare.
+    """``_resolve_bearer_sync``, narrowed for anyone who reaches labs only through CommCare.
 
     ``/o/`` (the MCP sign-in) is outside the labs session boundary, so a CommCare-only session
-    could mint a token there. Every tool acts as the user and a CommCare-only identity has no
-    Connect token to act with, so it is refused here, at the one door, until it has a tool set
-    of its own (hqdata, ``COMMCARE_ONLY``).
+    could mint a token there, and every Connect tool acts as the user with a Connect token a
+    CommCare-only identity does not have. So such a person gets in with exactly one kind of
+    credential, a PAT of the ``commcare`` scope (minted at /hq/tokens/), which
+    ``allowed_tools`` confines to ``COMMCARE_TOOLS``. Any other credential is refused here, at the
+    one door.
     """
     resolved = _resolve_bearer_sync(raw, presented_jkt)
     if resolved is not None:
         from connect_labs.hqdata.access import is_commcare_only
 
-        if is_commcare_only(resolved[0]):
+        user, method, _client_id, scopes, _extra = resolved
+        if is_commcare_only(user) and not (method == "pat" and token_scopes.is_commcare(scopes)):
             return None
     return resolved
 
@@ -374,6 +377,8 @@ def allowed_tools(access_token) -> frozenset[str] | None:
             permitted = permitted | token_scopes.JOB_TOOLS
     if restricted_call(access_token):
         permitted = token_scopes.RESTRICTED_TOOLS if permitted is None else permitted & token_scopes.RESTRICTED_TOOLS
+    if token_scopes.is_commcare(getattr(access_token, "scopes", None)):
+        permitted = token_scopes.COMMCARE_TOOLS if permitted is None else permitted & token_scopes.COMMCARE_TOOLS
     return permitted
 
 

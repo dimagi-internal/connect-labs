@@ -11,19 +11,25 @@ from django.shortcuts import redirect
 from django.shortcuts import render as django_render
 from django.views.decorators.http import require_POST
 
-from connect_labs.hqdata.access import (
-    DOMAIN_RE,
-    ProjectAccessDenied,
-    create_project,
-    may_use_project,
-    visible_projects,
-)
+from connect_labs.hqdata.access import may_use_project, visible_projects
+from connect_labs.hqdata.external import SECURE_SSLMODES, check_connection
 from connect_labs.hqdata.identity import hq_host
-from connect_labs.hqdata.models import HQIdentity, HQPipeline, HQProject, HQProjectMember, HQSource, HQSyncRun
+from connect_labs.hqdata.models import (
+    HQExternalDatabase,
+    HQIdentity,
+    HQPipeline,
+    HQProject,
+    HQProjectMember,
+    HQSource,
+    HQSyncRun,
+)
+from connect_labs.hqdata.netguard import HostRefused, check_host, check_port
 from connect_labs.hqdata.pipelines import PipelineProblem, config_for, run_pipeline
+from connect_labs.hqdata.projects import Refused, register_project, set_storage
+from connect_labs.hqdata.store_schema import SCHEMA_NAME_RE
+from connect_labs.hqdata.store_switch import SwitchRefused, switch_store
 from connect_labs.hqdata.tasks import sync_project_task
 from connect_labs.hqdata.web.decorators import hq_login_required
-from connect_labs.labs.integrations.commcare.api_client import CommCareDataAccess
 
 
 def render(request, template, context=None, **kwargs):
@@ -43,12 +49,6 @@ def _is_admin(request: HttpRequest, project: HQProject) -> bool:
     return HQProjectMember.objects.filter(project=project, user=request.user, role=HQProjectMember.ROLE_ADMIN).exists()
 
 
-def _ensure_default_sources(project: HQProject) -> None:
-    for kind in (HQSource.KIND_FORMS, HQSource.KIND_CASES):
-        if not project.sources.filter(kind=kind).exists():
-            HQSource.objects.create(project=project, kind=kind)
-
-
 @hq_login_required
 def home(request: HttpRequest) -> HttpResponse:
     projects = visible_projects(request.user).order_by("domain")
@@ -64,32 +64,12 @@ def home(request: HttpRequest) -> HttpResponse:
 @require_POST
 def project_create(request: HttpRequest) -> HttpResponse:
     domain = (request.POST.get("domain") or "").strip().lower()
-    if not DOMAIN_RE.match(domain):
-        messages.error(request, "Enter a CommCare project name: lower-case letters, digits and hyphens.")
-        return redirect("hq:home")
-    identity = HQIdentity.objects.filter(user=request.user).first()
-    if identity is None or domain not in {d.lower() for d in identity.domains}:
-        # Cheap and before any call to HQ: only a domain CommCare lists for this person is even tried.
-        messages.error(request, f"CommCare does not list {domain} among your projects.")
-        return redirect("hq:home")
     try:
-        project = create_project(
-            request.user,
-            domain,
-            hq_host=hq_host(),
-            can_read_domain=lambda: CommCareDataAccess(
-                None, domain, cchq_access_token=request.hq_token
-            ).verify_hq_access(),
-        )
-    except ProjectAccessDenied:
-        messages.error(
-            request,
-            f"CommCare would not let your account read forms in {domain}. "
-            "Reading data needs the Edit Data permission.",
-        )
+        project = register_project(request.user, domain, request.hq_token)
+    except Refused as exc:
+        messages.error(request, str(exc))
         return redirect("hq:home")
-    _ensure_default_sources(project)
-    messages.success(request, f"{domain} is added. Sync it to bring its data in.")
+    messages.success(request, f"{project.domain} is added. Sync it to bring its data in.")
     return redirect("hq:project_detail", project_id=project.pk)
 
 
@@ -98,7 +78,16 @@ def project_detail(request: HttpRequest, project_id: int) -> HttpResponse:
     project = _project_for(request, project_id)
     sources = list(project.sources.order_by("kind", "app_id", "xmlns", "case_type"))
     runs = HQSyncRun.objects.filter(source__project=project).select_related("source").order_by("-started_at")[:15]
-    from connect_labs.hqdata.models import HQCase, HQForm
+    from connect_labs.hqdata.stores import StoreUnavailable, store_for
+
+    try:
+        with store_for(project).session() as store:
+            form_count = store.forms(project.pk).filter(deleted_at__isnull=True).count()
+            case_count = store.cases(project.pk).filter(deleted_at__isnull=True).count()
+        store_problem = ""
+    except StoreUnavailable as exc:
+        form_count = case_count = None
+        store_problem = str(exc)
 
     return render(
         request,
@@ -109,14 +98,31 @@ def project_detail(request: HttpRequest, project_id: int) -> HttpResponse:
             "runs": runs,
             "is_admin": _is_admin(request, project),
             "members": project.members.select_related("user").order_by("role", "user__name"),
-            "form_count": HQForm.objects.filter(project_id=project.pk, deleted_at__isnull=True).count(),
-            "case_count": HQCase.objects.filter(project_id=project.pk, deleted_at__isnull=True).count(),
+            "form_count": form_count,
+            "case_count": case_count,
+            "store_problem": store_problem,
+            "external": HQExternalDatabase.objects.filter(project=project).first(),
+            "db_modes": HQExternalDatabase.SSLMODE_CHOICES,
             "sync_owner_is_me": project.sync_owner_id == request.user.pk,
         },
     )
 
 
-_ADMIN_ONLY = {"set_storage", "pause", "resume", "add_source", "toggle_source", "delete_project", "full_resync"}
+_ADMIN_ONLY = {
+    "set_storage",
+    "pause",
+    "resume",
+    "add_source",
+    "toggle_source",
+    "delete_project",
+    "full_resync",
+    "save_database",
+    "check_database",
+    "use_database",
+    "use_labs",
+    "remove_database",
+}
+_CONNECTION_FIELDS = ("host", "port", "dbname", "schema", "username")
 
 
 @hq_login_required
@@ -142,23 +148,16 @@ def project_action(request: HttpRequest, project_id: int) -> HttpResponse:
         HQProject.objects.filter(pk=project.pk).update(sync_owner=request.user, status=HQProject.STATUS_ACTIVE)
         messages.success(request, "Scheduled syncs will now use your CommCare sign-in.")
     elif action == "set_storage":
-        mode = request.POST.get("storage_mode")
-        if mode not in (HQProject.STORAGE_LIVE, HQProject.STORAGE_PERSISTENT):
-            messages.error(request, "Unknown storage choice.")
+        try:
+            set_storage(project, request.user, request.POST.get("storage_mode") or "")
+        except Refused as exc:
+            messages.error(request, str(exc))
             return back
-        updates = {"storage_mode": mode}
-        if mode == HQProject.STORAGE_PERSISTENT:
-            # Whose token a scheduled sync uses must be said out loud, and it is the person turning it on.
-            updates["sync_owner"] = request.user
-            if project.status == HQProject.STATUS_NEEDS_REAUTH:
-                updates["status"] = HQProject.STATUS_ACTIVE
-            _ensure_default_sources(project)
-        HQProject.objects.filter(pk=project.pk).update(**updates)
         messages.success(
             request,
             (
                 "Kept and refreshed on a schedule, using your CommCare sign-in."
-                if mode == HQProject.STORAGE_PERSISTENT
+                if request.POST.get("storage_mode") == HQProject.STORAGE_PERSISTENT
                 else "Fetched when asked. Anything already stored stays until you delete it."
             ),
         )
@@ -190,6 +189,42 @@ def project_action(request: HttpRequest, project_id: int) -> HttpResponse:
             raise Http404
         source.enabled = not source.enabled
         source.save(update_fields=["enabled"])
+    elif action == "save_database":
+        _save_database(request, project)
+    elif action == "check_database":
+        record = HQExternalDatabase.objects.filter(project=project).first()
+        if record is None:
+            messages.error(request, "Save the database details first.")
+        else:
+            for check in check_connection(record):
+                (messages.success if check.ok else messages.error)(
+                    request, f"{check.name}{': ' + check.detail if check.detail else ''}"
+                )
+    elif action in ("use_database", "use_labs"):
+        try:
+            outcome = switch_store(
+                project, HQProject.STORE_EXTERNAL if action == "use_database" else HQProject.STORE_LABS
+            )
+        except SwitchRefused as exc:
+            messages.error(request, str(exc))
+        else:
+            if outcome["changed"]:
+                sync_project_task.delay(project.pk)
+                messages.success(
+                    request,
+                    "The project now keeps its data "
+                    + ("in your database" if action == "use_database" else "in labs")
+                    + ". Everything is being read from CommCare again; this takes a while for a large project.",
+                )
+    elif action == "remove_database":
+        record = HQExternalDatabase.objects.filter(project=project).first()
+        if record is None:
+            messages.error(request, "There is no database to remove.")
+        elif project.store == HQProject.STORE_EXTERNAL:
+            messages.error(request, "The project is keeping its data there. Move it back to labs first.")
+        else:
+            record.delete()
+            messages.success(request, "The database details are removed.")
     elif action == "delete_project":
         if (request.POST.get("confirm_domain") or "").strip().lower() != project.domain:
             messages.error(request, "Type the project name to confirm. Nothing was deleted.")
@@ -200,6 +235,57 @@ def project_action(request: HttpRequest, project_id: int) -> HttpResponse:
     else:
         messages.error(request, "Unknown action.")
     return back
+
+
+def _save_database(request: HttpRequest, project: HQProject) -> None:
+    post = request.POST
+    record = HQExternalDatabase.objects.filter(project=project).first()
+    fresh = {
+        "host": (post.get("host") or "").strip().lower(),
+        "port": (post.get("port") or "5432").strip(),
+        "dbname": (post.get("dbname") or "").strip(),
+        "schema": (post.get("schema") or "labs_commcare").strip().lower(),
+        "username": (post.get("username") or "").strip(),
+        "sslmode": post.get("sslmode") or "verify-full",
+    }
+    password = post.get("password") or ""
+    try:
+        port = check_port(fresh["port"])
+        check_host(fresh["host"], allow_private=bool(record and record.allow_private_network))
+    except HostRefused as exc:
+        messages.error(request, str(exc))
+        return
+    if not SCHEMA_NAME_RE.match(fresh["schema"]):
+        messages.error(request, "The schema name may only use lower-case letters, digits and underscores.")
+        return
+    if not (fresh["dbname"] and fresh["username"]):
+        messages.error(request, "The database name and user are needed.")
+        return
+    if fresh["sslmode"] not in SECURE_SSLMODES:
+        messages.error(request, "Labs only connects with the database's certificate verified.")
+        return
+    if record is None and not password:
+        messages.error(request, "Enter the database password.")
+        return
+    if (
+        record is not None
+        and project.store == HQProject.STORE_EXTERNAL
+        and any(str(getattr(record, f)) != str(port if f == "port" else fresh[f]) for f in _CONNECTION_FIELDS)
+    ):
+        messages.error(
+            request,
+            "The project is keeping its data in this database, so only the password and the "
+            "certificate setting can change. Move it back to labs first to point it somewhere else.",
+        )
+        return
+    record = record or HQExternalDatabase(project=project)
+    record.host, record.port, record.dbname = fresh["host"], port, fresh["dbname"]
+    record.schema, record.username, record.sslmode = fresh["schema"], fresh["username"], fresh["sslmode"]
+    if password:
+        record.password = password
+    record.verified_at = None
+    record.save()
+    messages.success(request, "Saved. Run the check to make sure labs can use it.")
 
 
 # -- pipelines ----------------------------------------------------------------
@@ -305,4 +391,48 @@ def pipeline_detail(request: HttpRequest, project_id: int, pipeline_id: int) -> 
         request,
         "hqdata/pipeline.html",
         {"project": project, "pipeline": pipeline, "schema_text": schema_text, "result": result, "error": error},
+    )
+
+
+# -- API tokens ---------------------------------------------------------------
+
+
+@hq_login_required
+def tokens(request: HttpRequest) -> HttpResponse:
+    """Mint and revoke the person's CommCare-scope MCP tokens (``token_scopes.COMMCARE``).
+
+    A token made here reaches the ``hq_*`` tools and nothing else, so it is something a person with
+    no Connect login may hold. The raw token is shown once, in the response that creates it.
+    """
+    from connect_labs.mcp import token_scopes
+    from connect_labs.mcp.models import MCPAccessToken
+
+    raw = None
+    if request.method == "POST":
+        action = request.POST.get("action")
+        if action == "create":
+            name = (request.POST.get("name") or "").strip()[:100] or "CommCare access"
+            try:
+                days = int(request.POST.get("days") or 90)
+            except ValueError:
+                days = 90
+            days = max(1, min(days, MCPAccessToken.MAX_TTL_DAYS))
+            _token, raw = MCPAccessToken.create_token(request.user, name, days, scope=token_scopes.COMMCARE)
+        elif action == "revoke":
+            MCPAccessToken.objects.filter(
+                pk=request.POST.get("token_id"), user=request.user, scope=token_scopes.COMMCARE
+            ).update(is_active=False)
+            messages.success(request, "Token revoked.")
+    mine = MCPAccessToken.objects.filter(user=request.user, scope=token_scopes.COMMCARE, is_active=True).order_by(
+        "-created_at"
+    )
+    return render(
+        request,
+        "hqdata/tokens.html",
+        {
+            "tokens": mine,
+            "raw_token": raw,
+            "mcp_url": request.build_absolute_uri("/mcp/"),
+            "max_days": MCPAccessToken.MAX_TTL_DAYS,
+        },
     )

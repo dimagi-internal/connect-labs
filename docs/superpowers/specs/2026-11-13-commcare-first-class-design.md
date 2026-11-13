@@ -173,13 +173,14 @@ takes any backend, so it would be a new class, not a rework.)
   below) in the schema the customer names, with `schema_editor` on that connection. The role
   labs connects as needs create/insert/update/delete on that schema and nothing else; the
   test-connection step proves it can do exactly that and cannot read other schemas' tables.
-- **Nothing from the project is kept in the labs database**, including derived caches. A pipeline
-  over an external store does not stage rows into `labs_raw_visit_cache`; it runs its compiled SQL
-  on the store through a `labs_raw_visit_cache` **view** that maps the form table onto the
-  columns the query builder expects (`opportunity_id` = the project's scope id, `pipeline_id` =
-  -1, `visit_id`, `username`, `visit_date`, `form_json`, ...), and its computed results are not
-  cached in labs (computed on demand, or held in the store where the customer allows writes).
-  Pipeline results returned to the person are not stored by labs.
+- **Nothing from the project is kept in the labs database**, including derived caches. The pipeline
+  layer stages a source's rows into `labs_raw_visit_cache` and keeps results in three more cache tables,
+  all through the default connection. For an external store labs creates those four tables in the
+  customer's schema (schema version 2) and, for the length of one backend call, makes the thread's
+  `default` connection the customer's (`redirect.default_connection_is`, applied by `RedirectedBackend`
+  around the cache operations only; the project gate and every labs-table read run outside it). The
+  pipeline code is unchanged, and a test asserts the four labs tables hold no row for the project's scope.
+  Cost: the customer's database holds the staged copy and results, on their disk.
 - **Safety.** The host is resolved and refused if loopback, link-local, metadata
   (169.254.169.254) or RFC 1918 unless staff set `allow_private_network` on the record (a
   customer reachable over a tunnel); `sslmode=verify-full` is required; labs sets
@@ -233,7 +234,9 @@ with OAuth, not a pasted key. So the engine is native and mirrors its mechanics.
 ## Not in scope
 
 Workflows over a project (they are stored as Connect LabsRecords owned by an opportunity or
-programme, which a CommCare-only user does not have); writing back to HQ; HQ user and
+programme, which a CommCare-only user does not have); the Data page's SQL explorer over a project
+(its read boundary is built around `labs_raw_visit_cache` in the labs database and its row-level
+security); writing back to HQ; HQ user and
 location data; UCR/exports/OData as sources; a second customer-DB engine (MySQL, SQL
 Server).
 

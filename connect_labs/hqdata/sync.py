@@ -15,12 +15,12 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 
-from django.db import transaction
 from django.utils import timezone
 
 from connect_labs.hqdata.backends.base import BackendUnavailable, SourceBackend
 from connect_labs.hqdata.models import HQCase, HQForm, HQProject, HQSource, HQSyncRun
 from connect_labs.hqdata.records import CaseRecord, FormRecord
+from connect_labs.hqdata.stores import store_for
 from connect_labs.labs.integrations.commcare.api_client import CCHQAuthError
 
 logger = logging.getLogger(__name__)
@@ -69,14 +69,23 @@ def invalidate_project_caches(project_id: int) -> None:
     """Drop every cached pipeline result built from this project's rows.
 
     A project's cached results are kept for weeks (``HQ_PIPELINE_CACHE_TTL_HOURS``) because
-    this is what ends them: rows changed, so what was computed from them is stale. Failing to
-    drop them must not fail the sync that already stored the rows, but it is loud in the log.
+    this is what ends them: rows changed, so what was computed from them is stale. They live
+    where the project's data lives (in a customer's database, theirs), so that is where they are
+    dropped. Failing to drop them must not fail the sync that already stored the rows, but it is
+    loud in the log.
     """
     try:
+        from connect_labs.hqdata.redirect import default_connection_is
         from connect_labs.hqdata.scope import hq_scope_id
         from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
 
-        SQLCacheManager.delete_all_cache(hq_scope_id(project_id))
+        project = HQProject.objects.get(pk=project_id)
+        with store_for(project).session() as store:
+            if store.alias == "default":
+                SQLCacheManager.delete_all_cache(hq_scope_id(project_id))
+            else:
+                with default_connection_is(store.alias):
+                    SQLCacheManager.delete_all_cache(hq_scope_id(project_id))
     except Exception:
         logger.exception("hqdata could not clear cached results for project %s", project_id)
 
@@ -96,7 +105,7 @@ def choose_mode(source: HQSource, now: datetime | None = None) -> str:
     return HQSyncRun.MODE_DELTA
 
 
-def _upsert(source: HQSource, batch: list, now: datetime) -> None:
+def _upsert(store, source: HQSource, batch: list, now: datetime) -> None:
     project_id = source.project_id
     if source.kind == HQSource.KIND_FORMS:
         by_id = {
@@ -118,12 +127,7 @@ def _upsert(source: HQSource, batch: list, now: datetime) -> None:
             )
             for r in batch
         }
-        HQForm.objects.bulk_create(
-            by_id.values(),
-            update_conflicts=True,
-            unique_fields=["project_id", "form_id"],
-            update_fields=_FORM_FIELDS,
-        )
+        store.upsert_forms(list(by_id.values()))
     else:
         by_id = {
             r.case_id: HQCase(
@@ -145,12 +149,7 @@ def _upsert(source: HQSource, batch: list, now: datetime) -> None:
             )
             for r in batch
         }
-        HQCase.objects.bulk_create(
-            by_id.values(),
-            update_conflicts=True,
-            unique_fields=["project_id", "case_id"],
-            update_fields=_CASE_FIELDS,
-        )
+        store.upsert_cases(list(by_id.values()))
 
 
 def _record_id(record: FormRecord | CaseRecord) -> str:
@@ -161,10 +160,10 @@ def _record_stamp(record: FormRecord | CaseRecord) -> datetime | None:
     return record.indexed_on
 
 
-def _mark_unseen_deleted(source: HQSource, seen: set[str], now: datetime) -> int:
+def _mark_unseen_deleted(store, source: HQSource, seen: set[str], now: datetime) -> int:
     """Rows the source covers that a full walk did not return were purged on the other side."""
     id_field = "form_id" if source.kind == HQSource.KIND_FORMS else "case_id"
-    live = source.rows().filter(deleted_at__isnull=True)
+    live = source.rows(store).filter(deleted_at__isnull=True)
     stale = [i for i in live.values_list(id_field, flat=True) if i not in seen]
     marked = 0
     for start in range(0, len(stale), 1000):
@@ -197,34 +196,42 @@ def sync_source(
     max_seen: datetime | None = source.watermark if mode == HQSyncRun.MODE_DELTA else None
     fetched = 0
 
+    store = None
+
     def commit_batch() -> None:
         nonlocal batch
-        with transaction.atomic():
-            _upsert(source, batch, now)
-            # The checkpoint moves with the batch it covers. A reconcile keeps its own
-            # until it has seen everything, so a half-finished one never claims progress.
-            if mode != HQSyncRun.MODE_RECONCILE and max_seen is not None:
-                HQSource.objects.filter(pk=source.pk).update(watermark=max_seen)
+        # The rows go to the project's store and the checkpoint to labs: two databases, so two
+        # steps, rows first. A crash between them leaves the checkpoint behind the rows, which the
+        # next walk simply writes again.
+        with store.atomic():
+            _upsert(store, source, batch, now)
+        # The checkpoint moves with the batch it covers. A reconcile keeps its own until it has
+        # seen everything, so a half-finished one never claims progress.
+        if mode != HQSyncRun.MODE_RECONCILE and max_seen is not None:
+            HQSource.objects.filter(pk=source.pk).update(watermark=max_seen)
         batch = []
         source.heartbeat()
 
     try:
-        for record in backend.iter_records(source, since):
-            batch.append(record)
-            fetched += 1
-            if mode == HQSyncRun.MODE_RECONCILE:
-                seen.add(_record_id(record))
-            stamp = _record_stamp(record)
-            if stamp and (max_seen is None or stamp > max_seen):
-                max_seen = stamp
-            if len(batch) >= BATCH_SIZE:
+        store = store_for(source.project)
+        with store.translated():
+            store.ensure_schema()
+            for record in backend.iter_records(source, since):
+                batch.append(record)
+                fetched += 1
+                if mode == HQSyncRun.MODE_RECONCILE:
+                    seen.add(_record_id(record))
+                stamp = _record_stamp(record)
+                if stamp and (max_seen is None or stamp > max_seen):
+                    max_seen = stamp
+                if len(batch) >= BATCH_SIZE:
+                    commit_batch()
+            if batch:
                 commit_batch()
-        if batch:
-            commit_batch()
 
-        deleted = 0
-        if mode == HQSyncRun.MODE_RECONCILE:
-            deleted = _mark_unseen_deleted(source, seen, now)
+            deleted = 0
+            if mode == HQSyncRun.MODE_RECONCILE:
+                deleted = _mark_unseen_deleted(store, source, seen, now)
 
         updates: dict = {"last_error": ""}
         if mode == HQSyncRun.MODE_RECONCILE and max_seen is not None:
@@ -248,6 +255,8 @@ def sync_source(
         run.finished_at = timezone.now()
         run.save()
         source.release()
+        if store is not None:
+            store.close()
         # Rows may have changed even when the run did not finish: batches commit as they go.
         if run.fetched or run.deleted:
             invalidate_project_caches(source.project_id)

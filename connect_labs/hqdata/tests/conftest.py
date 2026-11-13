@@ -1,3 +1,4 @@
+import secrets
 from datetime import timedelta
 from unittest import mock
 
@@ -42,3 +43,101 @@ def make_hq_user(client, *, domains=("demo",), username="simon@example.org", **u
     session["hq_auth"] = {"host": hq_host(), "at": timezone.now().timestamp()}
     session.save()
     return user
+
+
+# -- a second, real PostgreSQL database standing in for a customer's -------------------------
+
+
+@pytest.fixture
+def encryption_key(settings):
+    from cryptography.fernet import Fernet
+
+    settings.LABS_FIELD_ENCRYPTION_KEYS = [Fernet.generate_key().decode()]
+    settings.LABS_FIELD_ENCRYPTION_REQUIRED = True
+
+
+@pytest.fixture
+def customer_db(settings, django_db_blocker, encryption_key):
+    """A database and a LIMITED role that owns it, as a customer would give labs.
+
+    Created in the test cluster, dropped afterwards. The host check is bypassed (the cluster is on
+    loopback, which labs refuses by design) and so is the TLS requirement; both are tested on their
+    own in test_netguard and test_external_store.
+    """
+    import psycopg2
+    from psycopg2 import sql
+
+    base = settings.DATABASES["default"]
+    name, role, password = f"hq_cust_{secrets.token_hex(4)}", f"hq_role_{secrets.token_hex(4)}", secrets.token_hex(12)
+    settings.HQ_EXTERNAL_DB_ALLOW_INSECURE_TLS = True
+
+    def admin():
+        conn = psycopg2.connect(
+            host=base["HOST"], port=base["PORT"], user=base["USER"], password=base["PASSWORD"], dbname="postgres"
+        )
+        conn.autocommit = True
+        return conn
+
+    with django_db_blocker.unblock():
+        conn = admin()
+        with conn.cursor() as cur:
+            cur.execute(
+                sql.SQL("CREATE ROLE {} LOGIN PASSWORD {} NOSUPERUSER NOCREATEDB NOCREATEROLE").format(
+                    sql.Identifier(role), sql.Literal(password)
+                )
+            )
+            cur.execute(sql.SQL("CREATE DATABASE {} OWNER {}").format(sql.Identifier(name), sql.Identifier(role)))
+        conn.close()
+        try:
+            with mock.patch("connect_labs.hqdata.external.check_host", return_value=""):
+                yield {
+                    "host": base["HOST"],
+                    "port": int(base["PORT"]),
+                    "dbname": name,
+                    "username": role,
+                    "password": password,
+                    "admin_user": base["USER"],
+                    "admin_password": base["PASSWORD"],
+                }
+        finally:
+            from django.db import connections
+
+            for alias in [a for a in list(connections.settings) if a.startswith("hqstore_")]:
+                try:
+                    connections[alias].close()
+                except Exception:
+                    pass
+                connections.settings.pop(alias, None)
+                try:
+                    del connections[alias]
+                except Exception:
+                    pass
+            conn = admin()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    "WHERE datname = %s AND pid <> pg_backend_pid()",
+                    [name],
+                )
+                cur.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(name)))
+                cur.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+            conn.close()
+
+
+def read_customer(customer_db, query, params=None):
+    """Run a query in the customer's database as its OWN user, the way the customer would look."""
+    import psycopg2
+
+    conn = psycopg2.connect(
+        host=customer_db["host"],
+        port=customer_db["port"],
+        user=customer_db["username"],
+        password=customer_db["password"],
+        dbname=customer_db["dbname"],
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            return cur.fetchall()
+    finally:
+        conn.close()

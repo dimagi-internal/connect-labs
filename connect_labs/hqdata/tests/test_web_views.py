@@ -84,7 +84,7 @@ def test_home_lists_my_projects_and_offers_only_unregistered_domains(client):
 
 def test_adding_a_project_needs_commcare_to_list_it_and_to_let_me_read_it(client):
     user = make_hq_user(client, domains=("demo",))
-    with mock.patch("connect_labs.hqdata.web.views.CommCareDataAccess") as access:
+    with mock.patch("connect_labs.hqdata.projects.CommCareDataAccess") as access:
         access.return_value.verify_hq_access.return_value = True
         resp = client.post("/hq/projects/new/", {"domain": "demo"})
     project = HQProject.objects.get(domain="demo")
@@ -97,14 +97,14 @@ def test_adding_a_project_needs_commcare_to_list_it_and_to_let_me_read_it(client
 
 def test_a_domain_commcare_does_not_list_for_me_is_never_even_tried(client):
     make_hq_user(client, domains=("demo",))
-    with mock.patch("connect_labs.hqdata.web.views.CommCareDataAccess") as access:
+    with mock.patch("connect_labs.hqdata.projects.CommCareDataAccess") as access:
         client.post("/hq/projects/new/", {"domain": "someone-elses"})
     assert not HQProject.objects.exists() and not access.called
 
 
 def test_commcare_refusing_to_let_me_read_the_forms_creates_nothing(client):
     make_hq_user(client, domains=("demo",))
-    with mock.patch("connect_labs.hqdata.web.views.CommCareDataAccess") as access:
+    with mock.patch("connect_labs.hqdata.projects.CommCareDataAccess") as access:
         access.return_value.verify_hq_access.return_value = False
         resp = client.post("/hq/projects/new/", {"domain": "demo"}, follow=True)
     assert not HQProject.objects.exists() and b"Edit Data" in resp.content
@@ -113,7 +113,7 @@ def test_commcare_refusing_to_let_me_read_the_forms_creates_nothing(client):
 @pytest.mark.parametrize("domain", ["", "../x", "A B", "a" * 64, "demo/../x"])
 def test_a_malformed_domain_is_refused_before_anything_else(client, domain):
     make_hq_user(client, domains=(domain,) if domain else ())
-    with mock.patch("connect_labs.hqdata.web.views.CommCareDataAccess") as access:
+    with mock.patch("connect_labs.hqdata.projects.CommCareDataAccess") as access:
         client.post("/hq/projects/new/", {"domain": domain})
     assert not HQProject.objects.exists() and not access.called
 

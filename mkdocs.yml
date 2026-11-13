@@ -33,6 +33,7 @@ nav:
       - Task Management: task-management.md
       - Solicitations: solicitations.md
       - Simple Microplan: simple-microplan.md
+      - CommCare Projects: commcare-projects.md
       - AI Features: ai-features.md
   - For Power Users:
       - Reports with Claude: reports-with-claude.md
