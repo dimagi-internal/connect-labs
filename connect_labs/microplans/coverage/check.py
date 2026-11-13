@@ -71,6 +71,11 @@ class CheckSpec:
     #: household or two (the counts in the tables still include its buildings).
     cell_m: float | None = None
     min_cell_buildings: int = 5
+    #: The population lens counts people served: distinct ``child_path`` values per household and cycle on records
+    #: where ``served_path`` equals ``served_value`` (defaults: the SMC dose given).
+    served_path: str = "form.administration_dose.spaq_recu"
+    served_value: str = "oui"
+    child_path: str = "form.case.@case_id"
 
     @classmethod
     def from_dict(cls, data: dict | None) -> CheckSpec:
@@ -107,6 +112,10 @@ class CheckSpec:
             raise SpecError("cell_m must be between 20 and 2000 metres")
         if self.min_cell_buildings < 1:
             raise SpecError("min_cell_buildings must be at least 1")
+        _sql_path(self.served_path, "served_path")
+        _sql_path(self.child_path, "child_path")
+        if not re.fullmatch(r"[A-Za-z0-9_ \-]{1,40}", str(self.served_value)):
+            raise SpecError("served_value must be a short plain word such as oui or yes")
         bad = sorted(set(self.footprint_filters) - set(FilterConfig.__dataclass_fields__))
         if bad:
             raise SpecError(f"unknown footprint filter(s): {', '.join(bad)}")
@@ -148,6 +157,38 @@ def points_sql(spec: CheckSpec, shard: tuple[str, str] | None = None) -> str:
         f"SELECT {group} AS grp, {hh} AS hh, min({gps}) AS gps, string_agg(DISTINCT {cyc}, ',') AS cycles "
         f"FROM visits WHERE {where} GROUP BY 2 ORDER BY 2"
     )
+
+
+def served_sql(spec: CheckSpec, shard: tuple[str, str] | None = None) -> str:
+    """People served: per household and cycle, how many distinct children the records say were served.
+
+    Same shards as ``points_sql`` (a household falls in the range its id's md5 prefix does)."""
+    hh = _sql_path(spec.household_path, "household_path")
+    cyc = _sql_path(spec.cycle_path, "cycle_path")
+    child = _sql_path(spec.child_path, "child_path")
+    served = _sql_path(spec.served_path, "served_path")
+    where = f"{hh} IS NOT NULL AND {child} IS NOT NULL AND {served} = '{spec.served_value}'"
+    if shard:
+        lo, hi = shard
+        if not (re.fullmatch(r"[0-9a-f]{2}", lo) and re.fullmatch(r"[0-9a-f]{2}", hi)):
+            raise SpecError("a shard is a pair of two-digit hex prefixes")
+        where += f" AND left(md5({hh}), 2) BETWEEN '{lo}' AND '{hi}'"
+    return (
+        f"SELECT {hh} AS hh, {cyc} AS cyc, count(DISTINCT {child}) AS n "
+        f"FROM visits WHERE {where} GROUP BY 1, 2 ORDER BY 1, 2"
+    )
+
+
+def parse_served(rows) -> dict:
+    """``served_sql`` rows -> {household: {cycle number: children served}}."""
+    out: dict = {}
+    for hh, cyc, n in rows:
+        c = cycle_number(cyc)
+        if c is None or n is None:
+            continue
+        slot = out.setdefault(hh, {})
+        slot[c] = slot.get(c, 0) + int(n)
+    return out
 
 
 def parse_gps(text) -> tuple[float, float, float | None] | None:
@@ -195,6 +236,54 @@ def _meters(lon0, lat0, lon, lat):
         np.concatenate([[lon0], np.asarray(lon, float)]), np.concatenate([[lat0], np.asarray(lat, float)])
     )
     return np.hypot(x[1:] - x[0], y[1:] - y[0])
+
+
+def placed_households(rows, spec: CheckSpec) -> tuple[pd.DataFrame, dict]:
+    """The households whose recorded point can place them, with the same rules ``run_check`` applies per facility:
+    no point and 0,0 dropped, far from the facility dropped (a bad fix), poor accuracy dropped.
+
+    Returns ``(frame with grp, hh, lon, lat, cycles, one row per placed household, quality counts)``. Households of
+    a group with no facility cannot be judged for distance and are left out (``run_check`` lists those groups)."""
+    hh = _households(rows)
+    facilities = {str(f["id"]): f for f in spec.facilities}
+    kept, quality = [], {
+        "households": int(len(hh)),
+        "no_point": 0,
+        "null_island": 0,
+        "off_area": 0,
+        "poor_accuracy": 0,
+    }
+    for gid, facility in facilities.items():
+        mine = hh[hh["grp"].astype(str) == gid]
+        located = mine.dropna(subset=["lon", "lat"])
+        quality["no_point"] += int(len(mine) - len(located))
+        null_island = (located["lon"].abs() < 1e-6) & (located["lat"].abs() < 1e-6)
+        quality["null_island"] += int(null_island.sum())
+        placed = located[~null_island.to_numpy()]
+        if not len(placed):
+            continue
+        far = (
+            _meters(
+                float(facility["lon"]),
+                float(facility["lat"]),
+                placed["lon"].to_numpy(float),
+                placed["lat"].to_numpy(float),
+            )
+            > spec.off_area_m
+        )
+        quality["off_area"] += int(far.sum())
+        near = placed[~far]
+        good, q = reached.valid_points(
+            near[["lon", "lat", "accuracy_m"]].assign(hh=near["hh"]),
+            max_accuracy_m=spec.max_accuracy_m,
+            drop_duplicates=False,
+        )
+        quality["poor_accuracy"] += q.poor_accuracy
+        keep = near[near["hh"].isin(set(good["hh"]))]
+        kept.append(keep[["grp", "hh", "lon", "lat", "cycles"]])
+    frame = pd.concat(kept, ignore_index=True) if kept else pd.DataFrame(columns=["grp", "hh", "lon", "lat", "cycles"])
+    quality["usable"] = int(len(frame))
+    return frame, quality
 
 
 def default_fetch(filters: dict):

@@ -30,3 +30,13 @@ def read_households(caller, space, spec: check.CheckSpec, agent: bool = False) -
     for shard in check.shard_bounds(households):
         rows.extend(_rows(caller, space, check.points_sql(spec, shard), agent))
     return rows
+
+
+def read_served(caller, space, spec: check.CheckSpec, agent: bool = False) -> list:
+    """Children served per household and cycle, shard by shard (the numerator of the population lens)."""
+    count = _rows(caller, space, check.count_sql(spec), agent)
+    households = int(count[0][0]) if count and count[0] and count[0][0] is not None else 0
+    rows: list = []
+    for shard in check.shard_bounds(households):
+        rows.extend(_rows(caller, space, check.served_sql(spec, shard), agent))
+    return rows

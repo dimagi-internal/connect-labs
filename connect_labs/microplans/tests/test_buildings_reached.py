@@ -262,3 +262,49 @@ def test_the_page_carries_the_csrf_token_the_run_needs(django_user_model):
     assert client.post(run_url, data=body, content_type="application/json").status_code == 403
     ok = client.post(run_url, data=body, content_type="application/json", HTTP_X_CSRFTOKEN=token)
     assert ok.status_code == 400 and ok.json()["error"] == "bad_request"
+
+
+def _population_patches(rows, served_rows):
+    import numpy as np
+
+    from connect_labs.microplans.coverage import population
+
+    class Space:
+        class selection:
+            opportunities = [type("O", (), {"id": 1})()]
+
+    grid = population.Grid(np.full((6, 6), 800.0), 6.9, 13.6, 0.05, -0.05)
+    return (
+        patch.object(page.spaces, "from_request", lambda caller, **k: Space()),
+        patch.object(page.read, "read_households", lambda *a, **k: rows),
+        patch.object(page.read, "read_served", lambda *a, **k: served_rows),
+        patch.object(page.population, "fetch_grid", lambda iso, bbox: grid),
+    )
+
+
+@pytest.mark.django_db
+def test_the_population_lens_places_children_served_on_the_grid_and_returns_counts_only(client, person):
+    rows = [["A1", f"hh{i}", "13.50005 7.00005 0.0 5.0", "contact_1"] for i in range(6)]
+    served_rows = [[f"hh{i}", "contact_1", 2] for i in range(6)]
+    a, b, c, d = _population_patches(rows, served_rows)
+    body = {"opps": "1", "facilities": "A1,7.0,13.5,D1", "iso": "ner"}
+    with a, b, c, d:
+        resp = client.post(
+            reverse("microplans:buildings_reached_population"), data=json.dumps(body), content_type="application/json"
+        )
+    assert resp.status_code == 200
+    out = resp.json()
+    assert out["iso"] == "NER" and out["cycles"] == [1] and out["quality"]["usable"] == 6
+    assert out["districts"][0]["served"] == {"1": 12} and out["total"]["cells"] == 1
+    text = resp.content.decode()
+    assert "hh0" not in text and "13.50005" not in text
+
+
+@pytest.mark.django_db
+def test_the_population_lens_names_the_missing_country_in_words(client, person):
+    resp = client.post(
+        reverse("microplans:buildings_reached_population"),
+        data=json.dumps({"opps": "1", "facilities": "A1,7.0,13.5"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400 and "three-letter code" in resp.json()["message"]
