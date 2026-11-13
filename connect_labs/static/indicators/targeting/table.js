@@ -513,7 +513,9 @@
       gaps.push(
         '<details class="inline"><summary class="inline cursor-pointer"><strong>' +
           data.countries_unsupported.length +
-          (data.countries_unsupported.length === 1 ? ' country has' : ' countries have') +
+          (data.countries_unsupported.length === 1
+            ? ' country has'
+            : ' countries have') +
           ' no data with this method</strong></summary> ' +
           data.countries_unsupported.join(', ') +
           '.</details>',
