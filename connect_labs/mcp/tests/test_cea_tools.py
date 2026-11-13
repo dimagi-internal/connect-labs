@@ -37,9 +37,9 @@ def test_it_returns_a_link_to_the_page_with_the_inputs_set():
 
 def test_include_adds_what_is_asked_for_and_nothing_else():
     base = cea.cea_model_run(None)
-    assert "tornado" in base and "scenarios" not in base and "places" not in base and "inputs" not in base
+    assert "sensitivity" in base and "scenarios" not in base and "places" not in base and "inputs" not in base
     more = cea.cea_model_run(None, include=["scenarios", "places", "inputs"])
-    assert "tornado" not in more
+    assert "sensitivity" not in more
     assert len(more["scenarios"]) == 6 and len(more["places"]) == 45 and all("inputs" not in p for p in more["places"])
     assert {i["key"] for i in more["inputs"]} >= {"ors", "cost", "va_on", "funging"}
 
@@ -164,3 +164,44 @@ class TestOpportunities:
         """It carries what each opportunity cost and how many people it reached."""
         assert "cea_opportunities" not in token_scopes.NO_USERVISIT_DATA_TOOLS
         assert "cea_model_run" in token_scopes.NO_USERVISIT_DATA_TOOLS
+
+
+def test_the_sensitivity_can_be_narrowed_to_the_inputs_switched_on():
+    full = cea.cea_model_run(None)["sensitivity"]
+    cost_only = cea.cea_model_run(None, sensitivity_inputs=["cost"])["sensitivity"]
+    assert cost_only["combined"]["n"] == 1 and full["combined"]["n"] > 1
+    assert [r["key"] for r in cost_only["rows"] if r["included"]] == ["cost"]
+
+
+class _FakeSelection:
+    """Two countries' areas, as the baseline's selection returns them (the pure sizing needs nothing else)."""
+
+    threshold = 80.0
+    method = "subnational_igme"
+    countries_unsupported = ["TUN"]
+    unit_count = 3
+
+    class _Area:
+        def __init__(self, iso, name, u5):
+            self.iso_code, self.country_name, self.counts = iso, name, {"pop_u5": u5, "births_lbw": 10, "births": 20}
+
+    areas = [_Area("NGA", "Nigeria", 1_000_000), _Area("NGA", "Nigeria", 500_000), _Area("NER", "Niger", 200_000)]
+
+
+def test_market_size_with_a_model_is_the_market_pages_answer(monkeypatch):
+    from connect_labs.mcp.tools import cea as cea_tools
+
+    monkeypatch.setattr(cea_tools, "_selection", lambda *a, **k: (_FakeSelection(), None, "subnational_igme"))
+    got = cea.cea_market_size(None, indicator="u5mr", model="chc", overrides={"cost": 3.0})
+    rows = {r["iso3"]: r for r in got["market"]["rows"]}
+    assert rows["NGA"]["units"] == 1_500_000 and rows["NER"]["units"] == 200_000
+    assert got["market"]["totals"]["market_usd"] == pytest.approx(1_700_000 * rows["NGA"]["cost_per_person"])
+    assert got["explorer_path"].startswith("/labs/cea/market/?") and "i.chc.cost=3.0" in got["explorer_path"]
+    assert got["countries_with_no_data"] == ["TUN"] and got["overrides"] == {"cost": 3.0}
+
+
+def test_market_size_needs_a_model_or_a_unit_cost():
+    with pytest.raises(MCPToolError):
+        cea.cea_market_size(None, indicator="u5mr")
+    with pytest.raises(MCPToolError):
+        cea.cea_market_size(None, indicator="u5mr", model="nope")

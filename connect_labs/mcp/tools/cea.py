@@ -2,7 +2,7 @@
 
 ``cea_model_run`` runs one of Connect's models (CHC, MBW, KC) at inputs the caller sets and returns what
 the Models page shows: the headline, the chain row by row, sensitivity, and the model's own scenarios and
-country figures on request. It calls ``impact.explore``, so an answer here is the answer on the page for
+country figures on request. It calls ``effectiveness.explore``, so an answer here is the answer on the page for
 the same inputs, and it hands back the page's link with those inputs set, so the person asking can open
 exactly what the agent computed.
 
@@ -22,7 +22,7 @@ from urllib.parse import urlencode
 from ..tool_registry import MCPToolError, register
 from .indicators import _selection
 
-INCLUDE = ("tornado", "scenarios", "places", "inputs")
+INCLUDE = ("sensitivity", "scenarios", "places", "inputs")
 
 
 @register(
@@ -36,7 +36,8 @@ INCLUDE = ("tornado", "scenarios", "places", "inputs")
         'figure there. `overrides` maps an input key to a number; call with `include: ["inputs"]` to see every '
         "input's key, unit, low and high case, meaning and source. Which components count for CHC are inputs: "
         "`va_on` and `dw_on` are 1/0 switches for vitamin A and deworming (ORS and zinc are always in). "
-        "`include` adds: `tornado` (default; one-at-a-time sensitivity, biggest swing first), `scenarios` (the "
+        "`include` adds: `sensitivity` (default; each input with a low and high case alone, then everything switched "
+        "on together worst and best, per group: baseline, counterfactual, effectiveness, cost), `scenarios` (the "
         "cases the model's builders wrote, each run), `places` (the model at each country's own published figures), "
         "`inputs`. `grid` runs two inputs against each other. The chain lists every row of the model. Returns "
         "`explorer_path`: the explorer page with these inputs set, to give the person asking. Modelled, not "
@@ -54,7 +55,12 @@ INCLUDE = ("tornado", "scenarios", "places", "inputs")
             "include": {
                 "type": "array",
                 "items": {"type": "string", "enum": list(INCLUDE)},
-                "default": ["tornado"],
+                "default": ["sensitivity"],
+            },
+            "sensitivity_inputs": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Input keys in the sensitivity; default every input with a low and a high case.",
             },
             "grid": {
                 "type": "object",
@@ -71,20 +77,20 @@ INCLUDE = ("tornado", "scenarios", "places", "inputs")
         "additionalProperties": False,
     },
 )
-def cea_model_run(user, *, model="chc", overrides=None, include=None, grid=None):
+def cea_model_run(user, *, model="chc", overrides=None, include=None, grid=None, sensitivity_inputs=None):
     from django.urls import reverse
 
     from connect_labs.effectiveness import engine, explore
 
-    include = ["tornado"] if include is None else list(include)
+    include = ["sensitivity"] if include is None else list(include)
     unknown = [i for i in include if i not in INCLUDE]
     if unknown:
         raise MCPToolError("BAD_REQUEST", f"Unknown include {unknown}. Choose from {', '.join(INCLUDE)}.")
     try:
         clean = explore.clean_overrides(model, overrides)
         out = {"model": model, "run": explore.run(model, clean)}
-        if "tornado" in include:
-            out["tornado"] = explore.tornado(model, clean)
+        if "sensitivity" in include:
+            out["sensitivity"] = explore.sensitivity(model, clean, sensitivity_inputs)
         if "scenarios" in include:
             out["scenarios"] = explore.scenarios(model)
         if "places" in include:
@@ -221,8 +227,10 @@ def cea_opportunities(
 @register(
     name="cea_market_size",
     description=(
-        "Size a market: what it would cost to reach everyone a selection of places holds, at a unit cost "
-        "you set (the Market size page prices it from the models; this takes your own price). Two things must be "
+        "Size a market: what it would cost to reach everyone a selection of places holds. With `model` (chc, mbw "
+        "or kc) it prices them at that Connect model's own cost per person per year, runs the model at each "
+        "country's published figures and says where it clears GiveWell's bar: the Market size page's answer, with "
+        "a link to it. Without `model` it takes a unit cost you set. For the unit-cost mode two things must be "
         "fixed and neither can be inferred from the "
         "data: what one unit costs, and what a unit IS — a birth, a child under 5, a "
         "person, a household, or a case of disease. Which applies is a property of the "
@@ -259,6 +267,22 @@ def cea_opportunities(
                 ),
             },
             "unit_cost": {"type": "number", "description": "USD per unit."},
+            "model": {
+                "type": "string",
+                "enum": ["chc", "mbw", "kc"],
+                "description": (
+                    "Size the market at this Connect model's own cost per person per year instead of `basis` and "
+                    "`unit_cost`: the same answer as the Market size page for the same places and inputs, run at each "
+                    "country's published figures, with the part where the model clears the bar. Returns "
+                    "`explorer_path`, the page with these inputs set."
+                ),
+            },
+            "overrides": {
+                "type": "object",
+                "additionalProperties": {"type": "number"},
+                "description": "With `model`: input key to value, as for cea_model_run.",
+            },
+            "bar": {"type": "number", "description": "With `model`: GiveWell's bar in multiples of the benchmark."},
             "resolution": {"type": "string", "enum": ["national", "subnational"], "default": "subnational"},
             "method": {"type": "string"},
             "iso_codes": {"type": "array", "items": {"type": "string"}},
@@ -276,7 +300,7 @@ def cea_opportunities(
                 "description": "Carry counts to the delivery year before costing. See indicators_select.",
             },
         },
-        "required": ["indicator", "basis", "unit_cost"],
+        "required": ["indicator"],
         "additionalProperties": False,
     },
 )
@@ -284,8 +308,11 @@ def cea_market_size(
     user,
     *,
     indicator,
-    basis,
-    unit_cost,
+    basis=None,
+    unit_cost=None,
+    model=None,
+    overrides=None,
+    bar=None,
     threshold=None,
     resolution="subnational",
     method=None,
@@ -293,6 +320,24 @@ def cea_market_size(
     reach=1.0,
     target_year=None,
 ):
+    if model:
+        return _market_size_by_model(
+            model=model,
+            overrides=overrides,
+            bar=bar,
+            indicator=indicator,
+            threshold=threshold,
+            resolution=resolution,
+            method=method,
+            iso_codes=iso_codes,
+            target_year=target_year,
+        )
+    if basis is None or unit_cost is None:
+        raise MCPToolError(
+            "BAD_REQUEST",
+            "Give `model` (chc, mbw or kc) to size a market at that model's price, "
+            "or `basis` and `unit_cost` to size it at your own.",
+        )
     from connect_labs.effectiveness import interventions as interventions_mod
 
     legal = [b.value for b in interventions_mod.UnitBasis]
@@ -385,4 +430,53 @@ def cea_market_size(
         "regional_proxy_units": proxied,
         "births_implausible_units": selection.births_implausible_units,
         "caveat": " ".join(caveats) or None,
+    }
+
+
+def _market_size_by_model(*, model, overrides, bar, indicator, threshold, resolution, method, iso_codes, target_year):
+    """``cea_market_size`` with a model: ``effectiveness.market`` over the baseline's people, as the page does."""
+    from urllib.parse import urlencode
+
+    from django.urls import reverse
+
+    from connect_labs.effectiveness import engine, explore, market, people, valuation
+
+    if model not in engine.MODELS:
+        raise MCPToolError("BAD_REQUEST", f"Unknown model {model!r}. Choose one of: {', '.join(engine.MODELS)}.")
+    try:
+        clean = explore.clean_overrides(model, overrides)
+    except explore.ExploreError as exc:
+        raise MCPToolError("BAD_REQUEST", exc.message) from None
+    selection, _, chosen = _selection(
+        indicator,
+        threshold,
+        resolution,
+        method,
+        iso_codes,
+        extra_counts=market.count_measures(),
+        target_year=target_year,
+    )
+    found = people.group_selection(selection)
+    bar = float(bar) if bar is not None else valuation.bar()
+    try:
+        sized = market.size(model, people.for_model(found, model), clean, bar)
+    except ZeroDivisionError:
+        raise MCPToolError("BAD_REQUEST", f"Those inputs divide by zero in the {model} model.") from None
+    query = {"models": model, "indicator": indicator, "threshold": selection.threshold, "bar": bar}
+    query.update({f"i.{model}.{k}": v for k, v in clean.items()})
+    return {
+        "indicator": indicator,
+        "threshold": selection.threshold,
+        "method": chosen,
+        "bar": bar,
+        "overrides": clean,
+        "countries": len(found["countries"]),
+        "countries_with_no_data": found["unsupported"],
+        "market": sized,
+        "explorer_path": f"{reverse('cea:market')}?{urlencode(query)}",
+        "caveat": (
+            "A year of cost to reach everyone in these places at the model's price. A country with no published "
+            "model figures counts in the market and never in the part that clears the bar; a place with no count "
+            "makes the total a floor."
+        ),
     }

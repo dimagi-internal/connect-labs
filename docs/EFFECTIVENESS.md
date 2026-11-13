@@ -14,20 +14,33 @@ enforces the direction.
 ```
 effectiveness/
   engine.py valuation.py result.py groups.py explore.py sheets_check.py market.py   pure: no Django, no database
-  baseline.py places.py                                                              bind the models to places (reads the baseline, Pulse)
-  implementation.py                                                                  delivered opportunities, valued (reads Pulse)
-  interventions.py                                                                   sizing presets, priced from the models (reads the baseline)
+  baseline.py places.py                                                              bind the models to places (read the baseline, Pulse)
+  people.py                                                                          people per country in the baseline's selected places
+  interventions.py                                                                   sizing presets, priced from the models
+  implementation/                                                                    delivered opportunities, valued (below)
   views/ urls.py                                                                     the pages, mounted at /labs/cea/
   data/                                                                              the vendored model specs (CHC, MBW, KC)
   management/commands/effectiveness_check_sheets, effectiveness_vendor
-templates/effectiveness/                                                             models, implementation, implementation_opp, market, tabs
+templates/effectiveness/  static/effectiveness/                                      the pages' markup and scripts
 ```
 
 One evaluator, reached every way, so a number is the same wherever it appears. `engine` runs a model's own formulas
 from its spec; `valuation` is GiveWell's value of a death, the benchmark and the bar, read from the specs; `result`
 turns a run into a multiple and holds the one re-pricing formula (`reprice`); `explore` adds sensitivity;
-`groups` places each input among the four that decide an answer; `market` sizes a market. The test keeps this core pure
-and says which modules may read the baseline (`baseline.py`, `places.py`, `interventions.py`, `views/market.py`).
+`groups` places each input among the four that decide an answer; `market` sizes a market.
+
+`implementation/` is split along its seams, each module one concern: `catalog` (which model values which delivery),
+`reach` and `pooling` (what Pulse knows: people, places, where a cost-only opportunity's spend goes), `delivery`
+(valuing one delivery), `totals` (roll-ups), `build` (the ranking), `whatif` (the what-if, filters and ordering, pure),
+`page` (the page's view of the ranking) and `detail` (one opportunity end to end).
+
+The baseline is read through its public modules: `labs/indicators/query.py` turns a query string into a `Question` that
+selects places, `access.py` is the page gate, `measures.py` and `bases.py` describe the indicators. Effectiveness never
+imports the baseline's views. `people.py` is the one seam from a selection to people per country, shared by the Market
+size page and the `cea_market_size` tool.
+
+The boundary test keeps the layers apart, the core pure, and says which modules may read the baseline (`baseline.py`,
+`places.py`, `interventions.py`, `people.py`, `views/market.py`).
 
 ## The pages
 
@@ -44,12 +57,17 @@ Cost data and Donor reports are Pulse pages under Network. Malaria PMC was retir
 
 ## Agent tools
 
-`cea_model_run` (the models page's engine, with a link to the page at the same inputs), `cea_opportunities` (any selection
-of delivered opportunities with its roll-up; full tokens only), `cea_market_size` (sizing), and the baseline's own tools.
+An agent computes what the page shows, from the same code, and gets the page's link back:
+
+- `cea_model_run`: a model at inputs you set, with the sensitivity (inputs switched on, grouped), scenarios, places.
+- `cea_opportunities`: any selection of delivered opportunities with its roll-up (full tokens only).
+- `cea_market_size`: Market size. With `model` it is the page's answer (the model's own price, run at each country's
+  figures, with the part that clears the bar); without it, a unit cost you set.
+- `indicators_*`: the baseline's own tools (list, select, methodology, admin_levels, compare_criteria, research).
 
 ## Applying the models to delivered opportunities
 
-`effectiveness/implementation.py` has no arithmetic of its own: it reads Pulse's data (approved works, costs) and hands
+`effectiveness/implementation/` has no arithmetic of its own: it reads Pulse's data (approved works, costs) and hands
 the rest to the core.
 
 | Step | Where | Shared with |
@@ -58,7 +76,7 @@ the rest to the core.
 | The place's baseline | `baseline.py`, most local figure first, each with its source | the models page's country and place inputs |
 | The model at that place | `result.evaluate`, which runs `engine` | the models page |
 | Re-pricing at what it cost | `result.reprice`, the one formula | `evaluate`, and the what-if |
-| A programme, partner or country | `implementation.rollup` | the tiles, the programme table, the JSON, `cea_opportunities` |
+| A programme, partner or country | `implementation.totals.rollup` | the tiles, the programme table, the JSON, `cea_opportunities` |
 | Test the answer's sensitivity | `explore.delivery_overrides`: the place inputs and a cost input chosen so the model's price equals the observed cost | the models page gives the opportunity's own multiple (tested to 1e-6) |
 
 ## Where the models come from, and how they stay current

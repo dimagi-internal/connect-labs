@@ -1,4 +1,4 @@
-"""Timed jobs for the impact models."""
+"""Timed jobs for the effectiveness models."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 @celery_app.task(name="connect_labs.effectiveness.tasks.refresh_opportunity_places")
 def refresh_opportunity_places() -> int:
-    """Place every modelled opportunity's approved visits in their most local areas (``impact.places``).
+    """Place every modelled opportunity's approved visits in their most local areas (``effectiveness.places``).
 
     About a minute of database time on production, so it runs every six hours
     rather than when a page asks. New visits within those hours change an
@@ -28,5 +28,5 @@ def refresh_opportunity_places() -> int:
         if cea.SERVICE_MODEL.get(o.service_slug or "") and cea.iso3_for(o.country)
     }
     value = places.refresh(opps)
-    logger.info("[impact] placed %s opportunities", len(value["opps"]))
+    logger.info("[effectiveness] placed %s opportunities", len(value["opps"]))
     return len(value["opps"])

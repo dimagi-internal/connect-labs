@@ -63,17 +63,15 @@ class TestEngineLayer:
         assert got[0]["multiple"] == pytest.approx(23.976866689655893)
         assert len(got) == len(engine.spec("chc")["scenarios"])
 
-    def test_tornado_orders_by_swing_and_keeps_the_base_answer(self):
-        rows = explore.tornado("chc")
+    def test_sensitivity_rows_cover_the_ranged_inputs_and_keep_the_base_answer(self):
+        out = explore.sensitivity("chc")
         base = explore.run("chc")["headline"]["multiple"]
-        assert rows and all(r["base"] == pytest.approx(base) for r in rows)
-        assert [r["swing"] for r in rows] == sorted((r["swing"] for r in rows), reverse=True)
-        # Only inputs the spec gives a low and a high case for.
+        assert out["base"] == pytest.approx(base)
         with_cases = {i["key"] for i in explore.inputs("chc") if i["low"] is not None and i["high"] is not None}
-        assert {r["key"] for r in rows} == with_cases
+        assert {r["key"] for r in out["rows"]} == with_cases
         # A lower cost (the high case) buys more than a higher one.
-        cost = next(r for r in rows if r["key"] == "cost")
-        assert cost["multiple_at_high"] > cost["multiple_at_low"]
+        cost = next(r for r in out["rows"] if r["key"] == "cost")
+        assert cost["multiple_at_high"] > cost["multiple_at_low"] and cost["swing"] > 0
 
     def test_a_grid_agrees_with_single_runs_and_refuses_a_repeated_input(self):
         g = explore.grid("chc", "cost", [1.44, 2.5], "ors", [0.2, 0.6])
@@ -259,8 +257,8 @@ class TestSensitivity:
     def test_one_input_alone_matches_the_one_at_a_time_figures(self):
         out = explore.sensitivity("chc", include=["cost"])
         row = next(r for r in out["rows"] if r["key"] == "cost")
-        one = next(r for r in explore.tornado("chc") if r["key"] == "cost")
-        assert row["multiple_at_low"] == pytest.approx(one["multiple_at_low"])
+        alone = explore.run("chc", {"cost": row["low"]})["headline"]["multiple"]
+        assert row["multiple_at_low"] == pytest.approx(alone)
         assert {out["combined"]["worst"], out["combined"]["best"]} == {row["multiple_at_low"], row["multiple_at_high"]}
 
     def test_groups_cover_the_inputs_that_are_in(self):

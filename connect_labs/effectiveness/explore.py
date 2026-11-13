@@ -6,7 +6,7 @@ what the delivered ranking and any scenario compute for the same inputs.
 
 A model's inputs come with the metadata its builders wrote in the spec: a label, what it means, where
 to find it, the range seen in the countries, and a low and a high case. Those drive the explorer's form
-and its one-way sensitivity (``tornado``): the low and high case of each input that has them, one at a
+and its sensitivity (``sensitivity``): the low and high case of each input that has them, one at a
 time, against the multiple the model gives. ``grid`` varies two inputs together; ``scenarios`` and
 ``places`` run the cases the spec already holds.
 
@@ -18,9 +18,7 @@ from __future__ import annotations
 import json
 import math
 
-from connect_labs.effectiveness import engine, groups
-from connect_labs.effectiveness import result as impact_result
-from connect_labs.effectiveness import valuation
+from connect_labs.effectiveness import engine, groups, result, valuation
 
 #: Blocks a person sets for a place and a programme; the rest are the model's published and fixed values.
 EDITABLE_BLOCKS = ("location", "program", "judgement call")
@@ -101,7 +99,7 @@ def clean_overrides(model: str, raw: dict | None) -> dict[str, float]:
 def _headline(model: str, overrides: dict) -> tuple[float, float, float]:
     """(multiple of the benchmark, price per person, deaths per 100,000) at these inputs."""
     try:
-        return impact_result.OUTPUTS[model](engine.run(model, overrides))
+        return result.OUTPUTS[model](engine.run(model, overrides))
     except ZeroDivisionError:
         raise ExploreError(
             "Those inputs divide by zero somewhere in the model: check for a zero or a blank."
@@ -117,7 +115,7 @@ def run(model: str, overrides: dict | None = None) -> dict:
         raise ExploreError(
             "Those inputs divide by zero somewhere in the model: check for a zero or a blank."
         ) from None
-    x, price, deaths = impact_result.OUTPUTS[model](rows)
+    x, price, deaths = result.OUTPUTS[model](rows)
     chain = [
         {"key": r["key"], "label": r["label"], "step": r["step"], "value": rows[r["key"]], "format": r.get("format")}
         for r in engine.spec(model)["rows"]
@@ -138,37 +136,6 @@ def run(model: str, overrides: dict | None = None) -> dict:
     }
 
 
-def tornado(model: str, overrides: dict | None = None) -> list[dict]:
-    """One-way sensitivity: each input's low and high case against the multiple, biggest swing first.
-
-    Only inputs the spec gives a low and a high case for. An input the caller has already set keeps the
-    caller's value everywhere else; it is varied from there to its own low and high.
-    """
-    overrides = clean_overrides(model, overrides)
-    base = _headline(model, overrides)[0]
-    out = []
-    for i in inputs(model):
-        if i["low"] is None or i["high"] is None:
-            continue
-        x_low = _headline(model, {**overrides, i["key"]: i["low"]})[0]
-        x_high = _headline(model, {**overrides, i["key"]: i["high"]})[0]
-        out.append(
-            {
-                "key": i["key"],
-                "label": i["label"],
-                "unit": i["unit"],
-                "format": i["format"],
-                "low": i["low"],
-                "high": i["high"],
-                "multiple_at_low": x_low,
-                "multiple_at_high": x_high,
-                "swing": abs(x_high - x_low),
-            }
-        )
-    out.sort(key=lambda r: -r["swing"])
-    return [{**r, "base": base} for r in out]
-
-
 def default_included(model: str) -> list[str]:
     """The inputs sensitivity covers until the caller chooses: every input the spec gives a low and a high case."""
     return [i["key"] for i in inputs(model) if i["low"] is not None and i["high"] is not None]
@@ -178,7 +145,7 @@ def sensitivity(model: str, overrides: dict | None = None, include: list[str] | 
     """What moves the multiple, for the inputs the caller has switched on.
 
     ``rows`` has one entry per input that has a low and a high case, whether or not it is included; an included
-    one carries the multiple at each case (the others one at a time, as in ``tornado``). ``combined`` moves every
+    one carries the multiple at each case (each moved alone, the rest where they are). ``combined`` moves every
     included input to its worse case together, and to its better case together, so the spread of the whole set
     is visible and not only each input's own. ``groups`` gives the same per group (baseline, counterfactual,
     effectiveness, cost, other). Which case is worse is read per input from the model, so an input whose "low"
@@ -276,7 +243,7 @@ def places(model: str) -> list[dict]:
     """The model at each country's own figures, where the spec holds them, best multiple first."""
     out = []
     for iso3, p in (engine.spec(model).get("places") or {}).items():
-        r = impact_result.model_country_result(model, iso3)
+        r = result.model_country_result(model, iso3)
         if r:
             out.append({"iso3": iso3, "name": p.get("name") or iso3, "inputs": p.get("inputs") or {}, **r})
     out.sort(key=lambda r: -r["x"])

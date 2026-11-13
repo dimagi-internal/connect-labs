@@ -12,6 +12,7 @@ import itertools
 import pytest
 
 from connect_labs.effectiveness import implementation as cea
+from connect_labs.effectiveness.implementation import page
 
 BAR = 6.0
 
@@ -198,7 +199,7 @@ class TestSelectAndRank:
         assert [r["id"] for r in out][:3] == [3, 1, 2]
 
     def test_view_returns_the_selection_ranked_and_rolled_up(self, monkeypatch):
-        monkeypatch.setattr(cea, "programmes", lambda rows: [{"program_id": 7, "n": len(rows)}])
+        monkeypatch.setattr(page, "programmes", lambda rows: [{"program_id": 7, "n": len(rows)}])
         data = {"rows": [dict(r) for r in self.ROWS], "bar_x": BAR}
         got = cea.view({"models": "chc", "rank": "deaths_averted"}, data)
         assert [r["id"] for r in got["rows"]] == [3, 1, 4] and got["totals"]["opportunities"] == 3
@@ -206,7 +207,7 @@ class TestSelectAndRank:
         assert got["what_if"]["rank"] == "deaths_averted" and got["bar_x"] == BAR
 
     def test_the_multiple_of_a_rollup_is_weighted_by_the_cost_it_was_valued_at(self, monkeypatch):
-        monkeypatch.setattr(cea, "programmes", lambda rows: [])
+        monkeypatch.setattr(page, "programmes", lambda rows: [])
         rows = [
             _row(1),
             _row(

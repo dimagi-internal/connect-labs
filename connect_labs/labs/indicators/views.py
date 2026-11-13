@@ -7,7 +7,6 @@ import logging
 
 import markdown
 from django.conf import settings
-from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Count
 from django.http import HttpResponse, JsonResponse
 from django.utils.decorators import method_decorator
@@ -18,17 +17,25 @@ from connect_labs.labs.chrome import NOT_USED, page_chrome
 from connect_labs.labs.indicators import availability
 from connect_labs.labs.indicators import boundaries as boundary_set
 from connect_labs.labs.indicators import export, measures, methods
+from connect_labs.labs.indicators.access import OpenLocallyMixin
 from connect_labs.labs.indicators.africa import ISO_CODES, name_for
 from connect_labs.labs.indicators.bases import UnitBasis, measure_for
 from connect_labs.labs.indicators.models import IndicatorValue, IngestRun, Source
-from connect_labs.labs.indicators.resolve import BulkResolver, select_above
+from connect_labs.labs.indicators.query import (
+    DEFAULT_INDICATOR,
+    DEFAULT_METHOD,
+    DEFAULT_THRESHOLD,
+    Question,
+    admin_level_param,
+    float_param,
+    indicator_param,
+    iso_codes_param,
+    method_param,
+)
+from connect_labs.labs.indicators.resolve import BulkResolver
 from connect_labs.labs.indicators.response_cache import CachedJsonMixin
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_THRESHOLD = 80.0
-DEFAULT_INDICATOR = "u5mr"
-DEFAULT_METHOD = methods.default_for(methods.Resolution.SUBNATIONAL).code
 
 #: Query parameters that describe what the visitor is looking at, passed to the
 #: agent panel as its page filters. Anything else in the URL is not forwarded.
@@ -43,26 +50,6 @@ MAP_SIMPLIFY = 0.02
 #: map's, not the analysis's: the table and the download will happily rank every
 #: district in a dozen countries, but drawing 47,000 polygons is not a map.
 MAX_COUNTRIES_AT_DISTRICT = 3
-
-
-class OpenLocallyMixin(LoginRequiredMixin):
-    """Login-gated when deployed, open when running locally.
-
-    This surface shows only public open data — WorldPop, DHS, UN IGME,
-    geoBoundaries — and nothing specific to the signed-in user, so requiring the
-    Connect OAuth round trip to look at it locally buys no protection and costs
-    real friction: on a laptop with an expired CLI token the OAuth flow simply
-    fails and the page is unreachable.
-
-    Deployments keep the gate, matching every other labs page. If this should be
-    public on labs too, drop the mixin rather than widening the exception.
-    """
-
-    def dispatch(self, request, *args, **kwargs):
-        if settings.DEBUG:
-            # Skip LoginRequiredMixin's check, keep the rest of the MRO.
-            return super(LoginRequiredMixin, self).dispatch(request, *args, **kwargs)
-        return super().dispatch(request, *args, **kwargs)
 
 
 def source_name(code: str) -> str:
@@ -142,134 +129,9 @@ def _row_logic(r, area) -> str:
     return "; ".join(x for x in steps if x)
 
 
-def _plural(noun: str) -> str:
-    """Enough English for the handful of nouns interventions actually use."""
-    if noun.endswith("ild"):
-        return noun + "ren"
-    if noun.endswith(("s", "x", "ch", "sh")):
-        return noun + "es"
-    return noun + "s"
-
-
 def _round_or_none(value):
     """Round for display, but keep "no estimate" distinct from zero."""
     return None if value is None else round(value)
-
-
-def _method(request, indicator: str = "u5mr") -> str:
-    """The requested method, or a default that can actually answer this indicator.
-
-    An explicit choice is honoured even when it has no data — the surface then
-    says so, which is the point. Only the default adapts.
-    """
-    code = request.GET.get("method")
-    if code and code in methods.METHODS:
-        return code
-    resolution = request.GET.get("resolution")
-    res = methods.Resolution(resolution) if resolution in (r.value for r in methods.Resolution) else None
-    # No resolution asked for still means "the subnational default", but which
-    # method that is depends on the indicator. The flat constant is right for
-    # the mortality measures this began as and answers no country at all for,
-    # say, improved drinking water — so a link without ?method= landed on a
-    # method with nothing behind it.
-    return availability.default_method_for(indicator, res or methods.Resolution.SUBNATIONAL).code
-
-
-def _float(request, key, default):
-    try:
-        return float(request.GET.get(key, default))
-    except (TypeError, ValueError):
-        return default
-
-
-def _indicator(request, default: str = DEFAULT_INDICATOR) -> str:
-    """The requested indicator, or the default if it names nothing.
-
-    Every other query parameter already degrades: a misspelled ISO, an
-    impossible admin level, a year of 1066 all fall back and the page still
-    answers. The indicator did not — `?indicator=NOT_A_REAL_INDICATOR` reached
-    `measures.get()` and raised, so one endpoint returned 500 while the others
-    returned 200 for the same request. Falling back keeps the surface usable
-    and consistent with everything beside it.
-    """
-    code = request.GET.get("indicator")
-    if code and code in measures.MEASURES:
-        return code
-    return default
-
-
-def _iso_codes(request) -> list[str]:
-    """The countries in scope, defaulting to the whole continent.
-
-    Scoping is what turns this from a continental scan into a country
-    proposal. Unknown codes are dropped rather than passed through: a
-    misspelled ISO would otherwise silently return an empty selection, which
-    reads as "nowhere qualifies" rather than "that is not a country".
-    """
-    raw = request.GET.get("iso", "")
-    wanted = [c.strip().upper() for c in raw.replace(" ", ",").split(",") if c.strip()]
-    kept = [c for c in wanted if c in ISO_CODES]
-    return kept or list(ISO_CODES)
-
-
-def _admin_level(request) -> int | None:
-    """The level to evaluate at, or None to take the deepest carrying values.
-
-    Deepest is not always most informative. Liberia measures ORS coverage for
-    its fifteen counties and no district, so all 136 districts inherit one of
-    fifteen numbers -- a finer grid over the same information. Pinning the
-    level is how a reader asks for the units that were actually measured.
-    """
-    v = request.GET.get("admin_level")
-    if v and v.isdigit() and int(v) in boundary_set.LEVELS:
-        return int(v)
-    return None
-
-
-def _rollup(request) -> bool:
-    """Whether a wholly-selected country collapses into one row.
-
-    On, a country every one of whose regions clears the threshold is stated as
-    the country -- truer and shorter. Off, the regions are listed, which is
-    what a ranking question wants: you cannot rank fifteen counties against
-    each other if they have been added together first.
-    """
-    return request.GET.get("rollup", "1").lower() not in ("0", "false", "no", "off")
-
-
-def _target_year(request) -> int | None:
-    """The year the programme runs, if one was named.
-
-    Counts are carried to it at each country's own growth rate; rates are left
-    alone, because nothing here models how coverage or mortality moves and a
-    projected rate would be invention.
-    """
-    v = request.GET.get("target_year")
-    if v and v.isdigit() and 2000 <= int(v) <= 2050:
-        return int(v)
-    return None
-
-
-def _selection_for(request):
-    """The one selection every view on this page answers from.
-
-    Built here rather than in each view because the map, the table, the
-    download and the methodology have to be asking the same question -- four
-    hand-assembled parameter lists is how they come to disagree, and how
-    ``target_year`` came to reach the download but not the workings.
-    """
-    indicator = _indicator(request)
-    measure = measures.get(indicator)
-    return select_above(
-        indicator=indicator,
-        threshold=_float(request, "threshold", measure.threshold_default),
-        year=int(y) if (y := request.GET.get("year")) and y.isdigit() else None,
-        iso_codes=_iso_codes(request),
-        method=_method(request, indicator),
-        target_year=_target_year(request),
-        rollup=_rollup(request),
-        admin_level=_admin_level(request),
-    )
 
 
 # Targeting reads Africa-wide indicators, never the labs context (labs/chrome.py).
@@ -332,13 +194,13 @@ class MapDataView(OpenLocallyMixin, CachedJsonMixin, View):
     cache_name = "map"
 
     def get(self, request):
-        indicator = _indicator(request)
+        indicator = indicator_param(request)
         year = request.GET.get("year")
         year = int(year) if year and year.isdigit() else None
-        simplify = _float(request, "simplify", MAP_SIMPLIFY)
+        simplify = float_param(request, "simplify", MAP_SIMPLIFY)
 
-        method = methods.get(_method(request, indicator))
-        scope = _iso_codes(request)
+        method = methods.get(method_param(request, indicator))
+        scope = iso_codes_param(request)
         supported = set(availability.countries_supporting(method, indicator)) & set(scope)
 
         # A national method paints one shape per country. Painting a national
@@ -350,7 +212,7 @@ class MapDataView(OpenLocallyMixin, CachedJsonMixin, View):
         # for a scoped selection: ADM2 across Africa is some 47,000 polygons,
         # which is not a map, it is a download.
         # `or 1` here would swallow a deliberate ADM0 pin, zero being falsy.
-        pinned = _admin_level(request)
+        pinned = admin_level_param(request)
         level = 0 if method.is_national else (1 if pinned is None else pinned)
         if level == 2 and len(scope) > MAX_COUNTRIES_AT_DISTRICT:
             level = 1
@@ -399,10 +261,10 @@ class SelectionView(OpenLocallyMixin, CachedJsonMixin, View):
     cache_name = "selection"
 
     def get(self, request):
-        indicator = _indicator(request)
+        indicator = indicator_param(request)
         measure = measures.get(indicator)
-        threshold = _float(request, "threshold", measure.threshold_default)
-        scope = _iso_codes(request)
+        threshold = float_param(request, "threshold", measure.threshold_default)
+        scope = iso_codes_param(request)
         # Resolved through the intervention layer rather than by name, so the
         # aliasing that makes an ORS question answerable from either the
         # prevalence or the coverage measure is stated once.
@@ -410,7 +272,7 @@ class SelectionView(OpenLocallyMixin, CachedJsonMixin, View):
 
         # Scoped, levelled and projected exactly as the map is, and produced
         # with the requested method, so the table and the map always agree.
-        selection = _selection_for(request)
+        selection = Question.from_request(request).select()
 
         return JsonResponse(
             {
@@ -559,7 +421,7 @@ class SelectionDownloadView(OpenLocallyMixin, View):
 
     def get(self, request):
         fmt = request.GET.get("format", "zip")
-        selection = _selection_for(request)
+        selection = Question.from_request(request).select()
         stem = export.filename_stem(selection)
 
         if fmt == "csv":
@@ -583,7 +445,7 @@ class MethodologyView(OpenLocallyMixin, View):
     """
 
     def get(self, request):
-        selection = _selection_for(request)
+        selection = Question.from_request(request).select()
         source = export.to_methodology(selection)
         return JsonResponse(
             {
@@ -597,7 +459,7 @@ class MethodsView(OpenLocallyMixin, View):
     """What methods exist, and how much of the continent each can answer for."""
 
     def get(self, request):
-        indicator = _indicator(request)
+        indicator = indicator_param(request)
         return JsonResponse(
             {
                 "resolutions": availability.resolutions(),
@@ -652,8 +514,8 @@ class ScopeView(OpenLocallyMixin, View):
     """
 
     def get(self, request):
-        indicator = _indicator(request)
-        method = methods.get(_method(request, indicator))
+        indicator = indicator_param(request)
+        method = methods.get(method_param(request, indicator))
         supported = set(availability.countries_supporting(method, indicator))
 
         counts = (
@@ -684,7 +546,7 @@ class ScopeView(OpenLocallyMixin, View):
         # computed when a country was named -- resolving every district in
         # Africa to answer a control's label would be a minute of work for a
         # tooltip.
-        scope = _iso_codes(request)
+        scope = iso_codes_param(request)
         if len(scope) <= MAX_COUNTRIES_AT_DISTRICT:
             units = list(boundary_set.owned().filter(iso_code__in=scope))
             bulk = BulkResolver(units, source_order=method.source_order, lens_on=indicator)

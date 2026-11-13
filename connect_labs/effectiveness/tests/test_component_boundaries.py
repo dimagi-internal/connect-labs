@@ -9,8 +9,9 @@ See ``docs/EFFECTIVENESS.md``. Three layers, each reading only the ones below:
   (Implementations) and to places not yet served (Market size). The only layer that reads the other two.
 
 Inside effectiveness the arithmetic (``engine``, ``valuation``, ``result``, ``groups``, ``explore``,
-``sheets_check``, ``market``) is pure: no Django, no database, so every page and agent tool that shows a
-number shows the one the models give.
+``sheets_check``, ``market``, and the Implementations catalog and what-if) is pure: no Django, no database, so every
+page and agent tool that shows a number shows the one the models give. The baseline is read through its public
+modules only (``query``, ``access``, ``measures``, ...), never through its views.
 """
 
 from __future__ import annotations
@@ -24,9 +25,19 @@ BASELINE_DIRS = ("labs/indicators", "labs/admin_boundaries")
 BASELINE_PKGS = ("connect_labs.labs.indicators", "connect_labs.labs.admin_boundaries")
 #: What the baseline must not import: the layers built on top of it.
 ABOVE_BASELINE = ("connect_labs.effectiveness", "connect_labs.pulse")
-PURE_CORE = ("engine", "valuation", "result", "groups", "explore", "sheets_check", "market")
+PURE_CORE = (
+    "engine.py",
+    "valuation.py",
+    "result.py",
+    "groups.py",
+    "explore.py",
+    "sheets_check.py",
+    "market.py",
+    "implementation/catalog.py",
+    "implementation/whatif.py",
+)
 #: The only effectiveness modules that read the baseline packages.
-READS_BASELINE = {"baseline.py", "places.py", "interventions.py", "views/market.py"}
+READS_BASELINE = {"baseline.py", "places.py", "interventions.py", "people.py", "views/market.py"}
 
 
 def _files(*dirs: str):
@@ -71,16 +82,22 @@ def test_pulse_does_not_import_effectiveness():
 
 def test_the_arithmetic_is_pure():
     """The core imports no Django and only other core modules: the one evaluator everything calls."""
-    core = {f"connect_labs.effectiveness.{n}" for n in PURE_CORE}
+    core = {"connect_labs.effectiveness." + n.removesuffix(".py").replace("/", ".") for n in PURE_CORE}
+    # a package's own __init__ is imported on the way to its modules
+    core |= {"connect_labs.effectiveness", "connect_labs.effectiveness.implementation"}
     for name in PURE_CORE:
         outside = sorted(
             m
-            for m in _imports(ROOT / "effectiveness" / f"{name}.py")
-            if m.split(".")[0] in ("django", "connect_labs")
-            and not _under(m, core)
-            and m != "connect_labs.effectiveness"
+            for m in _imports(ROOT / "effectiveness" / name)
+            if m.split(".")[0] in ("django", "connect_labs") and not _under(m, core)
         )
-        assert not outside, f"effectiveness/{name}.py must stay pure, but imports {outside}"
+        assert not outside, f"effectiveness/{name} must stay pure, but imports {outside}"
+
+
+def test_the_baseline_is_read_through_its_public_modules_not_its_views():
+    for rel, p in _files("effectiveness"):
+        found = sorted(m for m in _imports(p) if _under(m, ("connect_labs.labs.indicators.views",)))
+        assert not found, f"{rel} imports the baseline's views ({found}); use its query/access modules"
 
 
 def test_only_the_place_layer_and_the_market_page_read_the_baseline():
@@ -94,7 +111,9 @@ def test_only_the_place_layer_and_the_market_page_read_the_baseline():
 
 def test_implementations_reach_the_models_only_through_the_place_layer():
     """It applies the models to what was delivered, placed and baselined by ``places`` and ``baseline``."""
-    imports = _imports(ROOT / "effectiveness" / "implementation.py")
+    imports = set()
+    for _, p in _files("effectiveness/implementation"):
+        imports |= _imports(p)
     assert {
         "connect_labs.effectiveness.result",
         "connect_labs.effectiveness.baseline",

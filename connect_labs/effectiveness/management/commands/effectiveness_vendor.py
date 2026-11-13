@@ -20,8 +20,7 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 
-from connect_labs.effectiveness import engine
-from connect_labs.effectiveness import result as impact_result
+from connect_labs.effectiveness import engine, result
 
 SUMMARY = Path(__file__).resolve().parents[2] / "data" / "cea_models.json"
 
@@ -66,7 +65,7 @@ class Command(BaseCommand):
         summary = json.loads(SUMMARY.read_text(encoding="utf-8"))
         for iso2, c in summary["countries"].items():
             for m in engine.MODELS:
-                r = impact_result.model_country_result(m, c["iso3"])
+                r = result.model_country_result(m, c["iso3"])
                 if r is None:
                     raise CommandError(f"{m} has no figures for {c['iso3']}")
                 c[m] = {"x": r["x"], "unit_cost": r["price"], "deaths_per_100k": r["deaths_per_100k"]}
