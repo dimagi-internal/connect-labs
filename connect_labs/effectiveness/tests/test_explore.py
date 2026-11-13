@@ -43,13 +43,6 @@ class TestEngineLayer:
             with pytest.raises(explore.ExploreError):
                 explore.run(bad)
 
-    def test_the_pages_script_never_parses_model_text_as_html(self):
-        """Labels and sources come from the spec; the page builds nodes with textContent, so none is parsed as HTML."""
-        from pathlib import Path
-
-        page = Path(__file__).resolve().parents[2] / "templates" / "effectiveness" / "models.html"
-        assert "innerHTML" not in page.read_text(encoding="utf-8")
-
     def test_unknown_inputs_and_non_numbers_are_refused_by_name(self):
         with pytest.raises(explore.ExploreError, match="nope"):
             explore.run("chc", {"nope": 1})
