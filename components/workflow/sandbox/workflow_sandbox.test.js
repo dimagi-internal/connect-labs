@@ -1726,12 +1726,15 @@ describe('a workflow may open a CommCare HQ form and its forwarding record', () 
   const forwardingUrl = `${HQ}/a/demo-project/settings/project/repeat_record_report/?payload_id=${FORM}`;
 
   it('opens exactly those two addresses, by the parsed address', () => {
-    expect(checkNavigate(formUrl, LABS, 'full')).toBe(formUrl);
-    expect(checkNavigate(forwardingUrl, LABS, 'full')).toBe(forwardingUrl);
+    expect(checkNavigate(formUrl, LABS, 'full', true)).toBe(formUrl);
+    expect(checkNavigate(forwardingUrl, LABS, 'full', true)).toBe(
+      forwardingUrl,
+    );
   });
 
   it('a page may not, nor a workflow anywhere else off labs', () => {
     expect(() => checkNavigate(formUrl, LABS, 'page')).toThrow();
+    expect(() => checkNavigate(formUrl, LABS, 'full')).toThrow();
     const refused = [
       `${HQ}/a/demo-project/settings/users/`,
       `${HQ}/a/demo-project/reports/form_data/${FORM}/edit/`,
@@ -1750,7 +1753,7 @@ describe('a workflow may open a CommCare HQ form and its forwarding record', () 
       `https://evil.com/a/x/reports/form_data/${FORM}/`,
     ];
     for (const url of refused) {
-      expect(() => checkNavigate(url, LABS, 'full'), url).toThrow();
+      expect(() => checkNavigate(url, LABS, 'full', true), url).toThrow();
     }
   });
 
@@ -1763,6 +1766,27 @@ describe('a workflow may open a CommCare HQ form and its forwarding record', () 
     });
     expect(out.error).toBeUndefined();
     expect(h.navigate).toHaveBeenCalledWith(formUrl, true);
+  });
+
+  it('a page answered the full method set still may not open them', async () => {
+    const h = pageHandlers();
+    const d = createDispatcher(h, {
+      labsOrigin: LABS,
+      hasActivation: () => true,
+      mode: 'page',
+      routeContext: { ...CTX, runId: null },
+      workflow: workflowHandlers(),
+    });
+    const out = await d({
+      id: 1,
+      method: 'navigate',
+      params: { url: formUrl, newTab: true },
+    });
+    expect(out.error).toMatch(/only labs pages/);
+    expect(h.navigate).not.toHaveBeenCalled();
+    // ...while its labs links still open.
+    await d({ id: 2, method: 'navigate', params: { url: '/audit/5/bulk/' } });
+    expect(h.navigate).toHaveBeenCalledWith(`${LABS}/audit/5/bulk/`, false);
   });
 
   it('without a click it is asked, naming the site', async () => {

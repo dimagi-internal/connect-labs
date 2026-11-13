@@ -67,14 +67,17 @@ export class BridgeError extends Error {}
 
 /**
  * Where a navigate request may go: a labs page on the allowlist, on labs' own
- * origin and scheme, with no credentials in the URL -- or, from a workflow, one of
- * the CommCare HQ addresses in EXTERNAL_NAVIGATE_PATTERNS (`checkExternal`). Returns
- * the URL to use (the parsed `href`, never the string the frame sent), or throws.
+ * origin and scheme, with no credentials in the URL -- or, when `offLabs` says the
+ * frame draws a WORKFLOW, one of the CommCare HQ addresses in
+ * EXTERNAL_NAVIGATE_PATTERNS (`checkExternal`). A page never may, even one answered
+ * the full method set. Returns the URL to use (the parsed `href`, never the string
+ * the frame sent), or throws.
  */
 export function checkNavigate(
   url: unknown,
   labsOrigin: string,
   mode: NavigateSet = 'page',
+  offLabs = false,
 ): string {
   if (typeof url !== 'string' || !url || url.length > LIMITS.urlLength) {
     throw new BridgeError('navigate: url must be a short string');
@@ -92,7 +95,7 @@ export function checkNavigate(
   } catch {
     throw new BridgeError('navigate: that address is not a labs page');
   }
-  if (parsed.origin !== base.origin && mode === 'full') {
+  if (parsed.origin !== base.origin && offLabs) {
     return checkExternal(parsed);
   }
   if (
@@ -1219,6 +1222,7 @@ export function createDispatcher(
           params.url,
           options.labsOrigin,
           full ? 'full' : 'page',
+          full && mode === 'workflow',
         );
         // Off labs, always a new tab: the labs page is never navigated away.
         await navigateTo(
