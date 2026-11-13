@@ -185,7 +185,6 @@
         S.thresholdFor = S.indicator;
       }
       T.controls.renderPicker();
-
     });
   });
 

@@ -313,7 +313,9 @@
         : partly.length
           ? ' — only part of ' + util.esc(partly.join(', '))
           : '') +
-      (data.projected_to ? ' · carried to ' + util.esc(String(data.projected_to)) : '');
+      (data.projected_to
+        ? ' · carried to ' + util.esc(String(data.projected_to))
+        : '');
   }
 
   function renderHeadline(data) {
