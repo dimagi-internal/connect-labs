@@ -28,9 +28,14 @@
   if (!state.models.length) state.models = ['chc'];
   q.forEach(function (v, k) {
     var m = /^i\.(\w+)\.(\w+)$/.exec(k);
-    if (m) {
-      (state.over[m[1]] = state.over[m[1]] || {})[m[2]] = parseFloat(v);
-    }
+    // Only a known model and one of its own inputs: a crafted link cannot name `__proto__` or anything else.
+    if (!m || !Object.prototype.hasOwnProperty.call(D.models, m[1])) return;
+    var known = D.models[m[1]].inputs.some(function (i) {
+      return i.key === m[2];
+    });
+    if (!known || isNaN(parseFloat(v))) return;
+    state.over[m[1]] = state.over[m[1]] || {};
+    state.over[m[1]][m[2]] = parseFloat(v);
   });
   function indicatorMeta() {
     return (

@@ -1,6 +1,7 @@
 """The effectiveness pages' scripts live in static files, and the data-driven ones never parse model text as HTML."""
 
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -26,12 +27,33 @@ def test_each_page_loads_its_scripts_from_static_files(page, scripts):
     assert "{% load static %}" in html
 
 
+class _InlineScripts(HTMLParser):
+    """The text of every ``<script>`` that has no ``src`` (case-insensitive, whatever the markup around it)."""
+
+    def __init__(self):
+        super().__init__()
+        self.found, self._open = [], False
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "script" and "src" not in dict(attrs) and dict(attrs).get("type") is None:
+            self._open = True
+            self.found.append("")
+
+    def handle_endtag(self, tag):
+        if tag == "script":
+            self._open = False
+
+    def handle_data(self, data):
+        if self._open:
+            self.found[-1] += data
+
+
 @pytest.mark.parametrize("page", PAGES)
 def test_no_page_carries_inline_code(page):
-    """Data goes in through ``json_script``; the only inline script allowed besides is the map token."""
-    html = (TEMPLATES / page).read_text(encoding="utf-8")
-    inline = [b for b in re.findall(r"<script>(.*?)</script>", html, flags=re.S) if "MAPBOX_TOKEN" not in b]
-    assert inline == []
+    """Data goes in through ``json_script`` (typed JSON); the only inline script allowed besides is the map token."""
+    parser = _InlineScripts()
+    parser.feed((TEMPLATES / page).read_text(encoding="utf-8"))
+    assert [b for b in parser.found if "MAPBOX_TOKEN" not in b] == []
 
 
 @pytest.mark.parametrize("name", ["ui.js", "models.js", "market.js"])

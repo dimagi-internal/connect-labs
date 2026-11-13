@@ -830,27 +830,14 @@
   var COLS = [
     ['rank', '#', 'n'],
     ['name', 'Opportunity'],
-    [
-      'x',
-      'x at actual cost',
-      'n',
-      function (v, r) {
-        return r && r.model
-          ? '<a href="/labs/cea/implementation/opp/' +
-              r.id +
-              '/" title="How this was worked out, end to end">' +
-              xfmt(v) +
-              '</a>'
-          : xfmt(v);
-      },
-    ],
+    ['x', 'x at actual cost', 'n', xfmt],
     ['status_text', 'Status'],
     [
       'baseline_level',
       'Baseline from',
       '',
       function (v) {
-        return v ? esc(v) : '–';
+        return v || '–';
       },
       'Where the place figures came from: the most local area Labs holds for where the visits happened',
     ],
@@ -858,13 +845,8 @@
       'reached',
       'People',
       'n',
-      function (v, r) {
-        return (
-          num(v) +
-          (r && r.reach_basis === 'busiest_payment_unit'
-            ? ' <i title="Busiest payment unit, not yet a distinct count">estimate</i>'
-            : '')
-        );
+      function (v) {
+        return num(v);
       },
       'Distinct people with approved work (see the notes below)',
     ],
@@ -925,81 +907,86 @@
         if (y == null) return -1;
         return (x > y ? 1 : x < y ? -1 : 0) * sortDir;
       });
-    var h =
-      '<thead><tr>' +
-      COLS.map(function (c) {
-        return (
-          '<th data-k="' +
-          c[0] +
-          '" class="' +
-          (c[2] || '') +
-          '"' +
-          (c[4] ? ' title="' + esc(c[4]) + '"' : '') +
-          '>' +
-          c[1] +
-          (sortKey === c[0] ? (sortDir > 0 ? ' ▲' : ' ▼') : '') +
-          '</th>'
-        );
-      }).join('') +
-      '</tr></thead><tbody>';
-    h +=
-      list
-        .map(function (r) {
-          return (
-            '<tr>' +
-            COLS.map(function (c) {
-              var v = r[c[0]],
-                s;
-              if (c[0] === 'status_text') {
-                var cls =
-                  r.status === 'modelled' ? (r.clears_bar ? 'ok' : 'lo') : '';
-                s =
-                  '<span class="pill ' +
-                  cls +
-                  '">' +
-                  esc(
-                    r.status === 'modelled'
-                      ? r.clears_bar
-                        ? 'Clears bar'
-                        : 'Below bar'
-                      : v,
-                  ) +
-                  '</span>';
-              } else if (c[0] === 'name') {
-                s =
-                  (r.rank ? '<span class="rk">#' + r.rank + ' </span>' : '') +
-                  '<a href="/labs/pulse/opp/' +
-                  r.id +
-                  '/">' +
-                  esc(v) +
-                  '</a><div style="color:#9ca3af;font-size:11px">' +
-                  esc(r.org_slug || '') +
-                  (r.active ? ' · active' : '') +
-                  '</div>';
-              } else if (c[0] === 'service_name' && r.model) {
-                s =
-                  '<span class="sw" style="background:' +
-                  COL[r.model] +
-                  ';margin-right:5px"></span>' +
-                  esc(v);
-              } else s = c[3] ? c[3](v, r) : esc(v == null ? '–' : v);
-              return (
-                '<td class="c-' +
-                c[0] +
-                ' ' +
-                (c[2] || '') +
-                '" data-l="' +
-                esc(c[1]) +
-                '">' +
-                s +
-                '</td>'
-              );
-            }).join('') +
-            '</tr>'
+    // Built as nodes with textContent, so nothing from the data is ever parsed as HTML.
+    function node(tag, cls, text) {
+      var e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text != null) e.textContent = text;
+      return e;
+    }
+    var thead = node('thead'),
+      hr = node('tr');
+    COLS.forEach(function (c) {
+      var th = node(
+        'th',
+        c[2] || '',
+        c[1] + (sortKey === c[0] ? (sortDir > 0 ? ' ▲' : ' ▼') : ''),
+      );
+      th.dataset.k = c[0];
+      if (c[4]) th.title = c[4];
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr);
+    var tbody = node('tbody');
+    list.forEach(function (r) {
+      var tr = node('tr');
+      COLS.forEach(function (c) {
+        var v = r[c[0]],
+          td = node('td', 'c-' + c[0] + ' ' + (c[2] || ''));
+        td.setAttribute('data-l', c[1]);
+        if (c[0] === 'status_text') {
+          var cls = r.status === 'modelled' ? (r.clears_bar ? 'ok' : 'lo') : '';
+          td.appendChild(
+            node(
+              'span',
+              'pill ' + cls,
+              r.status === 'modelled'
+                ? r.clears_bar
+                  ? 'Clears bar'
+                  : 'Below bar'
+                : v,
+            ),
           );
-        })
-        .join('') + '</tbody>';
-    t.innerHTML = h;
+        } else if (c[0] === 'name') {
+          if (r.rank) td.appendChild(node('span', 'rk', '#' + r.rank + ' '));
+          var a = node('a', '', v);
+          a.href = '/labs/pulse/opp/' + encodeURIComponent(r.id) + '/';
+          td.appendChild(a);
+          var sub = node(
+            'div',
+            '',
+            (r.org_slug || '') + (r.active ? ' · active' : ''),
+          );
+          sub.style.cssText = 'color:#9ca3af;font-size:11px';
+          td.appendChild(sub);
+        } else if (c[0] === 'service_name' && r.model) {
+          var sw = node('span', 'sw');
+          sw.style.background = COL[r.model];
+          sw.style.marginRight = '5px';
+          td.appendChild(sw);
+          td.appendChild(document.createTextNode(v == null ? '–' : v));
+        } else if (c[0] === 'x' && r.model) {
+          var xa = node('a', '', xfmt(v));
+          xa.href =
+            '/labs/cea/implementation/opp/' + encodeURIComponent(r.id) + '/';
+          xa.title = 'How this was worked out, end to end';
+          td.appendChild(xa);
+        } else {
+          td.appendChild(
+            document.createTextNode(c[3] ? c[3](v, r) : v == null ? '–' : v),
+          );
+          if (c[0] === 'reached' && r.reach_basis === 'busiest_payment_unit') {
+            var est = node('i', '', 'estimate');
+            est.title = 'Busiest payment unit, not yet a distinct count';
+            td.appendChild(document.createTextNode(' '));
+            td.appendChild(est);
+          }
+        }
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    t.replaceChildren(thead, tbody);
     sortSel.value = sortKey || '';
     t.querySelectorAll('th').forEach(function (th) {
       th.addEventListener('click', function () {
