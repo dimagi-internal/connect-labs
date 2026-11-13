@@ -26,7 +26,7 @@ from connect_labs.labsdata import service, spaces
 from connect_labs.labsdata.engine import QueryError
 from connect_labs.labsdata.scope import ScopeError
 from connect_labs.microplans.coverage import check, read
-from connect_labs.microplans.coverage.request import BadRequest, build_spec
+from connect_labs.microplans.coverage.request import BadRequest, build_spec, parse_ids
 
 logger = logging.getLogger(__name__)
 
