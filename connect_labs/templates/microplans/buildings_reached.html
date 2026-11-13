@@ -181,14 +181,14 @@
   }
   function cycleShare(cyc, key) { var v = cyc && cyc[key]; return v && v.share !== null && v.share !== undefined ? v.share : null; }
   function mapData(res, cycle) {
-    var cells = [], catch_ = [], fac = [], dist = [];
+    var cells = [], catchment = [], fac = [], dist = [];
     (res.areas || []).forEach(function (a) {
       var share = cycleShare(a.cycles, cycle);
       var f = a.facility;
       if (f) {
         fac.push({type: 'Feature', geometry: {type: 'Point', coordinates: f}, properties: {id: a.group, share: share, district: a.district || ''}});
         if (a.catchment_radius_m) {
-          catch_.push({type: 'Feature', geometry: {type: 'Polygon', coordinates: circlePoly(f[0], f[1], a.catchment_radius_m, 48)}, properties: {id: a.group, share: share}});
+          catchment.push({type: 'Feature', geometry: {type: 'Polygon', coordinates: circlePoly(f[0], f[1], a.catchment_radius_m, 48)}, properties: {id: a.group, share: share}});
         }
       }
       var c = a.cells;
@@ -206,7 +206,7 @@
       if (d.center) { dist.push({type: 'Feature', geometry: {type: 'Point', coordinates: d.center}, properties: {label: d.label, share: cycleShare(d.cycles, cycle), text: d.label.split(' ')[0] + ' ' + (cycleShare(d.cycles, cycle) === null ? '' : pct(cycleShare(d.cycles, cycle)))}}); }
     });
     var wrap = function (f) { return {type: 'FeatureCollection', features: f}; };
-    return {cells: wrap(cells), catch_: wrap(catch_), fac: wrap(fac), dist: wrap(dist)};
+    return {cells: wrap(cells), catchment: wrap(catchment), fac: wrap(fac), dist: wrap(dist)};
   }
   function colorExpr() {
     var e = ['case', ['==', ['get', 'share'], null], NO_DATA, ['step', ['get', 'share'], STEPS[0][1]]];
@@ -250,10 +250,10 @@
     var map2 = mapState.map;
     map2.on('load', function () {
       var d = mapData(res, mapState.cycle);
-      ['cells', 'catch_', 'fac', 'dist'].forEach(function (k) { map2.addSource('br-' + k, {type: 'geojson', data: d[k]}); });
+      ['cells', 'catchment', 'fac', 'dist'].forEach(function (k) { map2.addSource('br-' + k, {type: 'geojson', data: d[k]}); });
       map2.addLayer({id: 'br-cells', type: 'fill', source: 'br-cells', minzoom: 9.5, paint: {'fill-color': colorExpr(), 'fill-opacity': 0.62}});
       map2.addLayer({id: 'br-cells-line', type: 'line', source: 'br-cells', minzoom: 12, paint: {'line-color': '#ffffff', 'line-opacity': 0.35, 'line-width': 0.5}});
-      map2.addLayer({id: 'br-catch', type: 'line', source: 'br-catch', minzoom: 9.5, paint: {'line-color': '#ffffff', 'line-width': 1.6, 'line-dasharray': [2, 2]}});
+      map2.addLayer({id: 'br-catch', type: 'line', source: 'br-catchment', minzoom: 9.5, paint: {'line-color': '#ffffff', 'line-width': 1.6, 'line-dasharray': [2, 2]}});
       map2.addLayer({id: 'br-fac', type: 'circle', source: 'br-fac', minzoom: 11, paint: {'circle-radius': 5, 'circle-color': '#111827', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2}});
       map2.addLayer({id: 'br-fac-label', type: 'symbol', source: 'br-fac', minzoom: 12, layout: {'text-field': ['get', 'id'], 'text-size': 11, 'text-offset': [0, 1.3], 'text-anchor': 'top'}, paint: {'text-color': '#ffffff', 'text-halo-color': '#111827', 'text-halo-width': 1.4}});
       map2.addLayer({id: 'br-dist', type: 'circle', source: 'br-dist', maxzoom: 9.5, paint: {'circle-radius': 17, 'circle-color': colorExpr(), 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5}});
@@ -288,7 +288,7 @@
   function refreshMap() {
     if (!mapState.ready) { return; }
     var d = mapData(mapState.res, mapState.cycle);
-    ['cells', 'catch_', 'fac', 'dist'].forEach(function (k) { mapState.map.getSource('br-' + k).setData(d[k]); });
+    ['cells', 'catchment', 'fac', 'dist'].forEach(function (k) { mapState.map.getSource('br-' + k).setData(d[k]); });
   }
   function show(res) {
     var areas = (res.areas || []).map(function (a) { return {label: a.group, buildings: a.buildings, cycles: a.cycles}; });
