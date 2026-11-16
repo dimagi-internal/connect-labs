@@ -9,6 +9,10 @@ exactly what the agent computed.
 Public inputs and arithmetic on vendored models: nothing here is specific to the caller, so it sits in the
 ``targeting:read`` scope with the targeting tools.
 
+``cea_scenarios`` and ``cea_scenario_save`` keep a scenario (places, programmes, dials, assumptions, the bar) under a
+name, as the scenario panel on Market size and the workspace does, under the same rules (``effectiveness.saved``): a
+scenario is private until shared, and a saved name is replaced only when asked.
+
 ``cea_opportunities`` is the other half: the same models applied to what Connect actually delivered, read
 from ``effectiveness.implementation`` (the Implementations page's figures, one function for every roll-up). It
 carries what each opportunity cost and how many people it reached, so it is for full tokens only, not the
@@ -483,3 +487,135 @@ def _market_size_by_model(*, model, overrides, bar, indicator, threshold, resolu
             "makes the total a floor."
         ),
     }
+
+
+_SAVED_STATUS = {403: "PERMISSION_DENIED", 404: "NOT_FOUND", 409: "CONFLICT"}
+
+
+def _saved_error(exc) -> MCPToolError:
+    return MCPToolError(_SAVED_STATUS.get(exc.status, "BAD_REQUEST"), exc.message)
+
+
+@register(
+    name="cea_scenarios",
+    description=(
+        "Saved cost-effectiveness scenarios: the places, programmes, dials, assumptions and bar someone chose on "
+        "Market size or the Workspace, kept under a name. With no `id`, lists the caller's own scenarios and the "
+        "ones others have shared (`mine`, `shared`), each with its `params` (the page link as a dict), `note`, "
+        "`models_changed` (the programmes whose model has moved since it was saved, so its numbers may differ) and "
+        "`open_path`, where it opens on the workspace. With an `id`, returns that one; add `run: true` to size its "
+        "market now, with the models as they are today (the answer `cea_market_size` gives for the same scenario)."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "id": {"type": "integer"},
+            "run": {"type": "boolean", "default": False},
+        },
+        "additionalProperties": False,
+    },
+)
+def cea_scenarios(user, *, id=None, run=False):
+    from connect_labs.effectiveness import explore, saved, sizing
+
+    try:
+        if id is None:
+            return saved.listing(user)
+        record = saved.get(user, id)
+        out = saved.as_dict(record, user)
+        if run:
+            try:
+                out["market"] = sizing.market_of(saved.scenario_of(record))
+            except explore.ExploreError as exc:
+                raise MCPToolError("BAD_REQUEST", f"That scenario can no longer be run: {exc.message}") from None
+        return out
+    except saved.SavedError as exc:
+        raise _saved_error(exc) from None
+
+
+@register(
+    name="cea_scenario_save",
+    is_write=True,
+    description=(
+        "Save a cost-effectiveness scenario under a name, for the caller. Private unless `shared` is true (then every "
+        "signed-in Labs user can read and copy it; only the caller can replace or delete it). Saving a name the "
+        "caller already has is refused unless `overwrite` is true. Give the scenario as the pages do: `models` "
+        "(chc, kc, "
+        "mbw), `indicator` (a burden indicator such as u5mr, or `all` for everywhere with data) and its `threshold`, "
+        "`iso_codes` (blank for all Africa), `bar`, `dials` per model (`extra` dollars a person a year, `effect` and "
+        "`reach` as percent of the model's and of the people in the places) and `overrides` per model "
+        "(input key to number; `cea_model_run` with include `inputs` lists the keys). Anything left out is the models "
+        "as published. Returns the saved scenario and `open_path`."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "maxLength": 200},
+            "note": {"type": "string"},
+            "shared": {"type": "boolean", "default": False},
+            "overwrite": {"type": "boolean", "default": False},
+            "models": {"type": "array", "items": {"type": "string", "enum": ["chc", "kc", "mbw"]}, "minItems": 1},
+            "indicator": {"type": "string", "default": "all"},
+            "threshold": {"type": "number"},
+            "iso_codes": {"type": "array", "items": {"type": "string"}},
+            "bar": {"type": "number"},
+            "dials": {
+                "type": "object",
+                "additionalProperties": {
+                    "type": "object",
+                    "properties": {k: {"type": "number"} for k in ("extra", "effect", "reach")},
+                    "additionalProperties": False,
+                },
+            },
+            "overrides": {
+                "type": "object",
+                "additionalProperties": {"type": "object", "additionalProperties": {"type": "number"}},
+            },
+        },
+        "required": ["name", "models"],
+        "additionalProperties": False,
+    },
+)
+def cea_scenario_save(
+    user,
+    *,
+    name,
+    models,
+    note="",
+    shared=False,
+    overwrite=False,
+    indicator="all",
+    threshold=None,
+    iso_codes=None,
+    bar=None,
+    dials=None,
+    overrides=None,
+):
+    from connect_labs.effectiveness import engine, saved
+    from connect_labs.effectiveness.scenario import KNOBS
+
+    params = {"models": ",".join(models), "indicator": indicator}
+    if threshold is not None:
+        params["threshold"] = threshold
+    if iso_codes:
+        params["iso"] = ",".join(iso_codes)
+    if bar is not None:
+        params["bar"] = bar
+    for kind, per_model in (("dials", dials), ("overrides", overrides)):
+        for model, changes in (per_model or {}).items():
+            if model not in engine.MODELS:
+                raise MCPToolError(
+                    "BAD_REQUEST", f"`{kind}` names {model!r}, which is not a model: {', '.join(engine.MODELS)}."
+                )
+            for key, value in changes.items():
+                if kind == "dials":
+                    if key not in KNOBS:
+                        raise MCPToolError("BAD_REQUEST", f"{key!r} is not a dial: {', '.join(KNOBS)}.")
+                    params[f"{model}_{key}"] = value
+                else:
+                    params[f"i.{model}.{key}"] = value
+    try:
+        record, created = saved.save(user, name, params, note=note, shared=shared, overwrite=overwrite)
+    except saved.SavedError as exc:
+        raise _saved_error(exc) from None
+    return {**saved.as_dict(record, user), "created": created}

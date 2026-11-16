@@ -310,3 +310,41 @@
   color: var(--acc);
   font-size: 12.5px;
 }
+.mk label.f.chk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+.mk .scn-status {
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.mk .srow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid #f3f4f6;
+}
+.mk .srow.cur {
+  background: #eef2ff;
+  margin: 0 -6px;
+  padding: 6px;
+  border-radius: 6px;
+}
+.mk .srow .sn {
+  min-width: 0;
+  font-size: 13px;
+}
+.mk .srow .sn small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+.mk .srow .sb {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}

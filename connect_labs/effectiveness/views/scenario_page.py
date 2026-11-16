@@ -6,9 +6,10 @@ here, once.
 
 from __future__ import annotations
 
+from django.middleware.csrf import get_token
 from django.urls import reverse
 
-from connect_labs.effectiveness import engine, explore, groups, market, people, valuation
+from connect_labs.effectiveness import engine, explore, groups, market, people, saved, valuation
 from connect_labs.effectiveness.scenario import DIALS, Scenario
 from connect_labs.labs.indicators.access import OpenLocallyMixin
 
@@ -16,15 +17,31 @@ from connect_labs.labs.indicators.access import OpenLocallyMixin
 ScenarioPageGate = OpenLocallyMixin
 
 
-def scenario_or_default(request) -> tuple[Scenario, str | None]:
-    """The scenario in the link, or the default and the reason when the link cannot be run (a page still opens)."""
+def scenario_or_default(request) -> tuple[Scenario, dict | None, str | None]:
+    """The scenario in the link, the saved scenario it opened (if any), and why it could not be run (if so).
+
+    ``?scenario=<id>`` opens a saved scenario; any other key in the link changes it, so a saved scenario with one dial
+    moved is a link. A link that cannot be run still opens the page, at the default, and says why."""
+    params = dict(request.GET.items())
+    sid = params.pop("scenario", None)
+    record, error = None, None
+    if sid:
+        try:
+            record = saved.get(request.user, int(sid))
+            params = {**record.params, **params}
+        except (ValueError, saved.SavedError):
+            error = "That saved scenario is not available to you."
     try:
-        return Scenario.from_params(request.GET), None
+        return (
+            Scenario.from_params(params),
+            (saved.as_dict(record, request.user) if record and not error else None),
+            error,
+        )
     except explore.ExploreError as exc:
-        return Scenario(), exc.message
+        return Scenario(), None, exc.message
 
 
-def page_data(request, scenario: Scenario, error: str | None = None) -> dict:
+def page_data(request, scenario: Scenario, loaded: dict | None = None, error: str | None = None) -> dict:
     """The JSON a scenario page embeds: the starting state and everything its controls need to draw themselves."""
     meta = explore.models()
     bar = valuation.bar()
@@ -44,6 +61,10 @@ def page_data(request, scenario: Scenario, error: str | None = None) -> dict:
         "blocks": [{"key": g, "title": groups.TITLES[g]} for g in groups.KEY_GROUPS],
         "dials": list(DIALS),
         "bar": bar,
+        "loaded": loaded,
+        "signed_in": saved.signed_in(request.user),
+        "csrf": get_token(request),
+        "scenarios_url": reverse("cea:scenarios"),
         "api_url": reverse("cea:market_data"),
         "models_url": reverse("cea:models"),
     }

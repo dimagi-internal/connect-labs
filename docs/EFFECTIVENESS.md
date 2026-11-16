@@ -44,6 +44,21 @@ turns the scenario's places into the baseline's own question. In the browser the
 `areamap.js` (a country choropleth that knows nothing of models). `tests/scenario_contract.json` is the one definition of
 the link, tested from Python (`test_scenario.py`) and from the page's script (`scenario.test.js`).
 
+### Saved scenarios
+
+A person keeps a scenario under a name (`models.SavedScenario`, rules in `saved.py`, HTTP in `views/scenarios.py`, the
+panel in `scenarios.js`, shared by Market size and the workspace). What is stored is the scenario's canonical link, never
+the numbers, so opening one reads it with today's models; `saved_against` (the vendored model commit and each programme's
+spec version) is how a scenario says "the models have moved since this was saved" (`models_changed`).
+
+* Private until its owner shares it; a shared one is read and copied by every signed-in user, replaced or deleted only by its
+  owner. Someone else's private scenario is "not found", the same answer as one that does not exist.
+* A name is per person. Saving a name you already have is refused (409) unless `overwrite`, and the panel asks first.
+* Open one with `?scenario=<id>` on either page (any other key in the link then changes it); the address bar becomes the plain
+  link at once. One that cannot be opened (not yours, or an input of a model that has gone) opens the default and says why.
+* An agent has the same: `cea_scenarios` (list, or one by `id`, `run: true` to size it now) and `cea_scenario_save`
+  (full tokens only, like the other tools that write; not in the restricted sets).
+
 One evaluator, reached every way, so a number is the same wherever it appears. `engine` runs a model's own formulas
 from its spec; `valuation` is GiveWell's value of a death, the benchmark and the bar, read from the specs; `result`
 turns a run into a multiple and holds the one re-pricing formula (`reprice`); `explore` adds sensitivity;
@@ -81,6 +96,7 @@ Cost data and Donor reports are Pulse pages under Network. Malaria PMC was retir
 An agent computes what the page shows, from the same code, and gets the page's link back:
 
 - `cea_model_run`: a model at inputs you set, with the sensitivity (inputs switched on, grouped), scenarios, places.
+- `cea_scenarios`, `cea_scenario_save`: save, list and open scenarios (above).
 - `cea_opportunities`: any selection of delivered opportunities with its roll-up (full tokens only).
 - `cea_market_size`: Market size. With `model` it is the page's answer (the model's own price, run at each country's
   figures, with the part that clears the bar); without it, a unit cost you set.
@@ -117,7 +133,7 @@ ERROR (Sentry) and the models page shows a one-line note until the specs are ref
 
 ## Left to do
 
-- Saved scenarios: a record of a scenario that a proposal can link to (the link already carries all of it).
+- Saved scenarios: rename and share/unshare without re-saving, versions, and a way to attach one to a proposal.
 - Put CEA models and Implementations on the scenario too (their own link keys differ: `i_<input>`, `m`), and give the
   workspace a Need lens, a Delivered layer, and region-level shapes (the models hold country figures, so a region's number
   would be an allocation of its country's).

@@ -8,6 +8,7 @@
   };
 
   var scn = window.EffScenario.create(D);
+  window.EffScenarios.mount($('scenarios'), scn, D);
   window.EffDials.mount($('controls'), scn, D);
   var view = window.EffMarketView.create(
     {

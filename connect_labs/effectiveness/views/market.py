@@ -24,8 +24,8 @@ class MarketSizeView(ScenarioPageGate, View):
     """The page: choose places and models, change inputs, read the market. The numbers come from the API below."""
 
     def get(self, request):
-        scenario, error = scenario_or_default(request)
-        return render(request, "effectiveness/market.html", {"data": page_data(request, scenario, error)})
+        scenario, loaded, error = scenario_or_default(request)
+        return render(request, "effectiveness/market.html", {"data": page_data(request, scenario, loaded, error)})
 
 
 class MarketSizeDataView(ScenarioPageGate, View):

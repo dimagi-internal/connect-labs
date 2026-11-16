@@ -30,7 +30,9 @@ class TestPage:
         market = client_in.get(reverse("cea:market"), {"models": "kc", "kc_reach": "50"}).content.decode()
         same = json.loads(re.search(r'id="scenario-data"[^>]*>(.*?)</script>', market, re.S).group(1))
         assert data["shapes_url"] == "/labs/cea/workspace/shapes/"
-        assert {k: v for k, v in data.items() if k != "shapes_url"} == same
+        # the workspace adds the outlines' address; a CSRF token is masked afresh on every response
+        ignore = {"shapes_url", "csrf"}
+        assert {k: v for k, v in data.items() if k not in ignore} == {k: v for k, v in same.items() if k not in ignore}
 
     def test_the_numbers_come_from_the_market_api_so_the_two_pages_cannot_differ(self, client_in):
         body = client_in.get(reverse("cea:workspace")).content.decode()

@@ -212,3 +212,82 @@ def test_market_size_needs_a_model_or_a_unit_cost():
         cea.cea_market_size(None, indicator="u5mr")
     with pytest.raises(MCPToolError):
         cea.cea_market_size(None, indicator="u5mr", model="nope")
+
+
+@pytest.mark.django_db
+class TestSavedScenarios:
+    @pytest.fixture
+    def ann(self, django_user_model):
+        return django_user_model.objects.create_user(username="ann", password="x")
+
+    @pytest.fixture
+    def bob(self, django_user_model):
+        return django_user_model.objects.create_user(username="bob", password="x")
+
+    SAVE = dict(
+        name="Sahel",
+        models=["chc", "kc"],
+        indicator="u5mr",
+        threshold=80,
+        iso_codes=["NGA", "NER"],
+        bar=8,
+        dials={"chc": {"reach": 50}},
+        overrides={"chc": {"cost": 3}},
+    )
+
+    def test_a_scenario_saved_with_structured_arguments_is_the_pages_link(self, ann):
+        got = cea.cea_scenario_save(ann, **self.SAVE)
+        assert got["created"] and got["params"] == {
+            "models": "chc,kc",
+            "indicator": "u5mr",
+            "threshold": "80",
+            "iso": "NGA,NER",
+            "bar": "8",
+            "chc_reach": "50",
+            "i.chc.cost": "3",
+        }
+        assert got["open_path"] == f"/labs/cea/workspace/?scenario={got['id']}"
+
+    def test_it_lists_what_is_yours_and_what_is_shared_and_opens_one_with_its_numbers(self, ann, bob):
+        mine = cea.cea_scenario_save(ann, **self.SAVE)
+        cea.cea_scenario_save(bob, name="Open", models=["kc"], shared=True)
+        listed = cea.cea_scenarios(ann)
+        assert [s["name"] for s in listed["mine"]] == ["Sahel"] and [s["name"] for s in listed["shared"]] == ["Open"]
+        one = cea.cea_scenarios(ann, id=mine["id"], run=True)
+        assert one["name"] == "Sahel" and [m["model"] for m in one["market"]["models"]] == ["chc", "kc"]
+        assert one["market"]["models"][0]["dials"]["reach"] == 50.0
+
+    def test_the_rules_are_the_pages(self, ann, bob):
+        mine = cea.cea_scenario_save(ann, **self.SAVE)
+        with pytest.raises(MCPToolError) as e:
+            cea.cea_scenario_save(ann, **self.SAVE)
+        assert e.value.code == "CONFLICT"
+        with pytest.raises(MCPToolError) as e:
+            cea.cea_scenarios(bob, id=mine["id"])
+        assert e.value.code == "NOT_FOUND"
+        with pytest.raises(MCPToolError) as e:
+            cea.cea_scenario_save(None, name="x", models=["chc"])
+        assert e.value.code == "PERMISSION_DENIED"
+
+    @pytest.mark.parametrize(
+        "extra, words",
+        [
+            ({"dials": {"nope": {"reach": 5}}}, "not a model"),
+            ({"dials": {"chc": {"speed": 5}}}, "not a dial"),
+            ({"overrides": {"chc": {"nonsense": 5}}}, "nonsense"),
+        ],
+    )
+    def test_a_scenario_that_names_nothing_real_is_refused_with_a_reason(self, ann, extra, words):
+        with pytest.raises(MCPToolError) as e:
+            cea.cea_scenario_save(ann, name="x", models=["chc"], **extra)
+        assert e.value.code == "BAD_REQUEST" and words in str(e.value)
+
+    def test_saving_is_a_write_and_neither_tool_is_open_to_a_restricted_caller(self):
+        from connect_labs.mcp import tool_registry
+
+        assert (
+            tool_registry.get_tool("cea_scenario_save").is_write
+            and not tool_registry.get_tool("cea_scenarios").is_write
+        )
+        for name in ("cea_scenarios", "cea_scenario_save"):
+            assert name not in token_scopes.RESTRICTED_TOOLS

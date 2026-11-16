@@ -17,6 +17,7 @@
   };
 
   var scn = window.EffScenario.create(D);
+  window.EffScenarios.mount($('scenarios'), scn, D);
   window.EffDials.mount($('controls'), scn, D);
 
   // ---- what the map shows

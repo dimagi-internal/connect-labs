@@ -7,6 +7,7 @@ from connect_labs.effectiveness.views.implementation import (
 )
 from connect_labs.effectiveness.views.market import MarketSizeDataView, MarketSizeView
 from connect_labs.effectiveness.views.models import ModelExplorerView, ModelRunView
+from connect_labs.effectiveness.views.scenarios import ScenarioDetailView, ScenarioListView
 from connect_labs.effectiveness.views.workspace import WorkspaceShapesView, WorkspaceView
 
 __all__ = [
@@ -17,6 +18,8 @@ __all__ = [
     "MarketSizeView",
     "ModelExplorerView",
     "ModelRunView",
+    "ScenarioDetailView",
+    "ScenarioListView",
     "WorkspaceShapesView",
     "WorkspaceView",
 ]

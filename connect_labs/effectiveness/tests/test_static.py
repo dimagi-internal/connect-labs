@@ -13,8 +13,16 @@ TEMPLATES = ROOT / "templates" / "effectiveness"
 #: Template -> the scripts it loads, in order. ``ui.js`` (the DOM builder and number formats) comes first where used.
 PAGES = {
     "models.html": ["ui.js", "models.js"],
-    "market.html": ["ui.js", "scenario.js", "dials.js", "marketview.js", "market.js"],
-    "workspace.html": ["ui.js", "scenario.js", "dials.js", "marketview.js", "areamap.js", "workspace.js"],
+    "market.html": ["ui.js", "scenario.js", "dials.js", "scenarios.js", "marketview.js", "market.js"],
+    "workspace.html": [
+        "ui.js",
+        "scenario.js",
+        "dials.js",
+        "scenarios.js",
+        "marketview.js",
+        "areamap.js",
+        "workspace.js",
+    ],
     "implementation.html": ["implementation.js"],
 }
 
@@ -59,7 +67,17 @@ def test_no_page_carries_inline_code(page):
 
 @pytest.mark.parametrize(
     "name",
-    ["ui.js", "models.js", "scenario.js", "dials.js", "marketview.js", "areamap.js", "market.js", "workspace.js"],
+    [
+        "ui.js",
+        "models.js",
+        "scenario.js",
+        "dials.js",
+        "scenarios.js",
+        "marketview.js",
+        "areamap.js",
+        "market.js",
+        "workspace.js",
+    ],
 )
 def test_the_dom_builder_pages_never_parse_model_text_as_html(name):
     """Labels and sources come from the model specs; these scripts build nodes with textContent, so none is HTML."""

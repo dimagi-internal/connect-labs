@@ -9,6 +9,7 @@ One explorer, tabs on every page (``templates/effectiveness/tabs.html``):
   (``effectiveness.implementation``).
 * ``market/``: what it would cost to reach everyone in chosen places, and where the models say it is worth it
   (``scenarios.market``).
+* ``scenarios/``: save, list and delete scenarios (``effectiveness.saved``); ``?scenario=<id>`` opens one on a page.
 * ``workspace/``: the same scenario on a map, a preview of one layout for every page (``effectiveness.scenario``).
 
 The old addresses of these pages redirect here (see ``pulse/urls.py`` and ``labs/indicators/urls.py``).
@@ -32,6 +33,8 @@ urlpatterns = [
     path("market/api/", views.MarketSizeDataView.as_view(), name="market_data"),
     path("workspace/", views.WorkspaceView.as_view(), name="workspace"),
     path("workspace/shapes/", views.WorkspaceShapesView.as_view(), name="workspace_shapes"),
+    path("scenarios/", views.ScenarioListView.as_view(), name="scenarios"),
+    path("scenarios/<int:pk>/", views.ScenarioDetailView.as_view(), name="scenario"),
     # Malaria PMC was retired on 13 Nov 2026: a saved link lands on Market size.
     path("targeting/", RedirectView.as_view(pattern_name="cea:market", permanent=False)),
     path("targeting/pmc/", RedirectView.as_view(pattern_name="cea:market", permanent=False)),

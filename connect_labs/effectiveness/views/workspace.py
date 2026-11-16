@@ -23,8 +23,8 @@ CONTEXT_NOT_USED = method_decorator(page_chrome(labs_context=NOT_USED), name="di
 @CONTEXT_NOT_USED
 class WorkspaceView(ScenarioPageGate, View):
     def get(self, request):
-        scenario, error = scenario_or_default(request)
-        data = {**page_data(request, scenario, error), "shapes_url": reverse("cea:workspace_shapes")}
+        scenario, loaded, error = scenario_or_default(request)
+        data = {**page_data(request, scenario, loaded, error), "shapes_url": reverse("cea:workspace_shapes")}
         token = getattr(settings, "MAPBOX_TOKEN", "") or ""
         return render(request, "effectiveness/workspace.html", {"data": data, "mapbox_token": token})
 
