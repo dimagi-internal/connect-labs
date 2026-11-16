@@ -141,8 +141,18 @@ class SyntheticOpportunity(models.Model):
 
     @classmethod
     def next_labs_only_opp_id(cls) -> int:
-        """Allocate the next integer opp_id in the labs-only reserved range."""
-        current_max = cls.objects.filter(labs_only=True).aggregate(m=Max("opportunity_id"))["m"]
+        """The next labs-only id nobody holds yet: above every labs-only opp, program and reservation.
+
+        A PEEK, not an allocation: two callers can read the same value. Anything that
+        is about to create a row under the id it gets back must take it with
+        ``provisioning.reserve_labs_only_id`` instead -- a clone job reads its ids
+        minutes before it registers anything, and two jobs in that window used to be
+        handed the same program and opportunity id, the second registration
+        overwriting the first.
+        """
+        opps = cls.objects.filter(labs_only=True).aggregate(o=Max("opportunity_id"), p=Max("program_id"))
+        reserved = LabsOnlyIdReservation.objects.aggregate(m=Max("value"))["m"]
+        current_max = max((v for v in (opps["o"], opps["p"], reserved) if v is not None), default=None)
         if current_max is None or current_max < LABS_ONLY_OPP_ID_FLOOR:
             return LABS_ONLY_OPP_ID_FLOOR
         return current_max + 1
@@ -254,6 +264,32 @@ class SyntheticOpportunity(models.Model):
             )
             return True
         return any(email.endswith(d.strip().lower()) for d in self.allowed_domains)
+
+
+class LabsOnlyIdReservation(models.Model):
+    """One labs-only id (a program's or an opportunity's), taken by whoever is about to use it.
+
+    The unique ``value`` is the lock: two jobs that read the same next id race to
+    insert it, and the loser moves on to the next one. A reservation outlives a job
+    that never registers anything (a clone whose every source failed), so its program
+    id is never handed to the next job -- program ids live nowhere else until an
+    opportunity is filed under them.
+    """
+
+    KIND_PROGRAM = "program"
+    KIND_OPPORTUNITY = "opportunity"
+    KIND_CHOICES = [(KIND_PROGRAM, "Program"), (KIND_OPPORTUNITY, "Opportunity")]
+
+    value = models.IntegerField(unique=True)
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "labs_synthetic_id_reservation"
+        verbose_name = "Labs-only id reservation"
+
+    def __str__(self):
+        return f"{self.kind} {self.value}"
 
 
 class LabsLocalRecord(models.Model):

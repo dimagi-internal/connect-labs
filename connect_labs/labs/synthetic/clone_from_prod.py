@@ -22,7 +22,7 @@ from .generator.fixtures.schema_loader import parse_form_schema_from_app_json
 from .generator.io.uploader import upload_fixtures
 from .models import SyntheticOpportunity
 from .provenance import mark_generated, replays_real_cases
-from .provisioning import allocate_shared_program_id, register_labs_only_opp
+from .provisioning import allocate_shared_program_id, register_labs_only_opp, reserve_labs_only_id
 
 logger = logging.getLogger(__name__)
 
@@ -497,7 +497,8 @@ def _plan_one(
     elif existing:
         opp_id = existing.opportunity_id
     else:
-        opp_id = max(SyntheticOpportunity.next_labs_only_opp_id(), program_id + 1)
+        # Reserved, not just read: another clone job running now must never be handed it.
+        opp_id = reserve_labs_only_id(above=program_id)
     # Checked before any work: the destination is chosen by the caller (a target) or
     # by the source (a twin somebody else may own), so it is the caller's to write
     # only if the authorizer says so.
@@ -705,7 +706,6 @@ def _generate_in_parallel(
     results: list[CloneResult] = []
     plans: list[_Plan] = []
     done = 0
-    next_new_id: int | None = None
     for handle in handles:
         try:
             bundle = store.read(handle)
@@ -716,11 +716,8 @@ def _generate_in_parallel(
                 done += 1
                 safe_call(progress, done, total, f"out of scope: {bundle.source_opp_id} ({done}/{total})")
                 continue
-            target = None
-            if new_opportunities:
-                if next_new_id is None:
-                    next_new_id = max(SyntheticOpportunity.next_labs_only_opp_id(), program_id + 1)
-                target, next_new_id = next_new_id, next_new_id + 1
+            # Each new clone reserves its own id, so a job running alongside this one cannot take it.
+            target = reserve_labs_only_id(above=program_id) if new_opportunities else None
             plan = _plan_one(
                 bundle, program_id=program_id, fresh=fresh, target_opportunity_id=target, authorize=authorize
             )
@@ -729,9 +726,6 @@ def _generate_in_parallel(
                 done += 1
                 safe_call(progress, done, total, f"already cloned: {bundle.source_opp_id} ({done}/{total})")
                 continue
-            if not new_opportunities and any(p.opp_id == plan.opp_id for p in plans):
-                # Two brand-new clones were both offered the next free id; give this one the one after.
-                plan.opp_id = max(p.opp_id for p in plans) + 1
             plans.append(plan)
         except Exception:  # noqa: BLE001
             logger.exception("generate_opps_bulk: failed to plan bundle %s", handle)
@@ -873,11 +867,7 @@ def generate_opps_bulk(
                     person_names=person_names,
                     authorize=authorize,
                     created_by=created_by,
-                    target_opportunity_id=(
-                        max(SyntheticOpportunity.next_labs_only_opp_id(), program_id + 1)
-                        if new_opportunities
-                        else None
-                    ),
+                    target_opportunity_id=(reserve_labs_only_id(above=program_id) if new_opportunities else None),
                 )
             )
             outcome = f"generated opportunity {bundle.source_opp_id}"

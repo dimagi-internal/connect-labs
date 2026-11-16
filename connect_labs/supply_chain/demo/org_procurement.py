@@ -117,7 +117,9 @@ def ensure_programme(key, spec, *, admin=None):
     if existing is not None and existing.labs_org_id != org.pk:
         raise ValueError(f"{spec['label']!r} is already registered under another organisation; refusing to seed it")
     if existing is None:
-        opp_id = SyntheticOpportunity.next_labs_only_opp_id()
+        from connect_labs.labs.synthetic.provisioning import reserve_labs_only_id
+
+        opp_id = reserve_labs_only_id()
         # Filed under the example organisation before its first save, so the
         # registry never files it by name.
         SyntheticOpportunity(
