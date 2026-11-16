@@ -345,3 +345,13 @@ def test_summarize_says_when_there_is_more_to_read(forms_source, cases_source):
     assert sync_module.summarize({1: ok, 2: None})["more_to_read"] is True
     failed = sync_module.summarize({1: ok, 2: RuntimeError("x")})
     assert failed["complete"] is False and failed["more_to_read"] is False and failed["errors"] == ["x"]
+
+
+def test_ids_longer_than_sixty_four_characters_are_stored(forms_source, cases_source):
+    """Read live 2026-11-16: connect-ace-prod has case ids of 86 characters; a 64-character column failed the sync."""
+    long_case = "c" * 86
+    long_form = "f" * 120
+    sync_source(cases_source, FakeBackend([case(long_case)]))
+    sync_source(forms_source, FakeBackend([form(long_form)]))
+    assert HQCase.objects.filter(case_id=long_case).count() == 1
+    assert HQForm.objects.filter(form_id=long_form).count() == 1

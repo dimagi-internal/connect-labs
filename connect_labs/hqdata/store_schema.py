@@ -12,7 +12,7 @@ import re
 from connect_labs.hqdata.models import HQCase, HQForm
 
 VERSION_TABLE = "labs_commcare_schema_version"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 SCHEMA_NAME_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 
 
@@ -46,8 +46,26 @@ def _step_2(connection) -> None:
             editor.create_model(model)
 
 
+#: The id columns widened in step 3, as (table, column). HQ case ids reach 86 characters.
+_WIDENED = [
+    ("labs_commcare_form", "form_id"),
+    ("labs_commcare_form", "app_id"),
+    ("labs_commcare_form", "build_id"),
+    ("labs_commcare_form", "user_id"),
+    ("labs_commcare_case", "case_id"),
+    ("labs_commcare_case", "owner_id"),
+]
+
+
+def _step_3(connection) -> None:
+    """Room for the ids HQ really sends: a case id longer than 64 characters failed the whole sync."""
+    with connection.cursor() as cursor:
+        for table, column in _WIDENED:
+            cursor.execute(f'ALTER TABLE "{table}" ALTER COLUMN "{column}" TYPE varchar(255)')
+
+
 #: version -> the step that brings a store TO that version.
-_STEPS = {1: _step_1, 2: _step_2}
+_STEPS = {1: _step_1, 2: _step_2, 3: _step_3}
 
 
 def _exists(cursor, table: str) -> bool:

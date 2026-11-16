@@ -83,6 +83,20 @@ class CCHQHeadlessError(Exception):
     """
 
 
+def naive_utc_text(stamp: str) -> str:
+    """An HQ timestamp as the naive UTC text HQ accepts back as ``indexed_on_start``.
+
+    HQ writes ``...Z`` and rejects ``...Z`` and ``...+00:00`` in a query; only a time with no zone is
+    accepted. Every stamp HQ sends is UTC, so dropping the marker loses nothing.
+    """
+    text = str(stamp).strip()
+    if text.endswith("Z"):
+        return text[:-1]
+    if text.endswith("+00:00"):
+        return text[: -len("+00:00")]
+    return text
+
+
 class CommCareDataAccess:
     """
     Fetch cases from CommCare Case API v2 using the user's CommCare OAuth token.
@@ -1028,6 +1042,9 @@ class CommCareDataAccess:
                 raise ValueError(
                     f"HQ returned a form with no indexed_on for {self.domain!r}; the walk cannot continue safely"
                 )
+            # HQ answers "2026-10-30T02:54:50.525767Z" but rejects that same text as indexed_on_start
+            # ("Unknown date format", HTTP 400, read live 2026-11-16): it takes a naive UTC time.
+            last = naive_utc_text(last)
             if last == anchor:
                 offset += len(objects)
             else:

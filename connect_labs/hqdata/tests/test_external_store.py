@@ -489,3 +489,29 @@ def test_a_backend_call_that_returns_a_generator_is_refused(project, customer_db
             backend.streams()
     finally:
         store.close()
+
+
+def test_a_customer_database_made_before_the_wider_ids_is_upgraded_in_place(project, customer_db):
+    from django.db import connections
+
+    from connect_labs.hqdata import stores
+    from connect_labs.hqdata.store_schema import _WIDENED
+
+    store = external_store_for(project)
+    with store.session():
+        store.ensure_schema()
+        # Put the schema back as version 2 made it: 64-character ids, no step-3 row.
+        with connections[store.alias].cursor() as cursor:
+            for table, column in _WIDENED:
+                cursor.execute(f'ALTER TABLE "{table}" ALTER COLUMN "{column}" TYPE varchar(64)')
+            cursor.execute("DELETE FROM labs_commcare_schema_version WHERE version = 3")
+        stores._ENSURED.clear()
+        store.ensure_schema()
+    widths = dict(
+        read_customer(
+            customer_db,
+            "SELECT table_name || '.' || column_name, character_maximum_length FROM information_schema.columns "
+            "WHERE table_schema = 'labs_commcare' AND column_name IN ('case_id', 'form_id')",
+        )
+    )
+    assert widths == {"labs_commcare_case.case_id": 255, "labs_commcare_form.form_id": 255}

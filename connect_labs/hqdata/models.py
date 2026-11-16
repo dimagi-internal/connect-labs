@@ -271,15 +271,15 @@ class HQForm(models.Model):
     (``HQProject.purge_rows``)."""
 
     project_id = models.IntegerField(db_index=True)
-    form_id = models.CharField(max_length=64)
+    form_id = models.CharField(max_length=255)
     xmlns = models.CharField(max_length=512, blank=True, db_index=True)
-    app_id = models.CharField(max_length=64, blank=True, db_index=True)
-    build_id = models.CharField(max_length=64, blank=True)
+    app_id = models.CharField(max_length=255, blank=True, db_index=True)
+    build_id = models.CharField(max_length=255, blank=True)
     received_on = models.DateTimeField(null=True, blank=True, db_index=True)
     server_modified_on = models.DateTimeField(null=True, blank=True)
     indexed_on = models.DateTimeField(null=True, blank=True)
     username = models.CharField(max_length=255, blank=True, db_index=True)
-    user_id = models.CharField(max_length=64, blank=True)
+    user_id = models.CharField(max_length=255, blank=True)
     archived = models.BooleanField(default=False)
     form_json = models.JSONField(default=dict)
     # Set by a reconcile that did not see the row (a purge HQ never announces).
@@ -299,10 +299,11 @@ class HQCase(models.Model):
     """A case. ``project_id`` is a plain integer for the reason on ``HQForm``."""
 
     project_id = models.IntegerField(db_index=True)
-    case_id = models.CharField(max_length=64)
+    # HQ case ids are not all UUIDs: 86 characters read live on connect-ace-prod (2026-11-16).
+    case_id = models.CharField(max_length=255)
     case_type = models.CharField(max_length=255, blank=True, db_index=True)
     case_name = models.CharField(max_length=1024, blank=True)
-    owner_id = models.CharField(max_length=64, blank=True, db_index=True)
+    owner_id = models.CharField(max_length=255, blank=True, db_index=True)
     external_id = models.CharField(max_length=255, blank=True)
     closed = models.BooleanField(default=False)
     date_opened = models.DateTimeField(null=True, blank=True)
