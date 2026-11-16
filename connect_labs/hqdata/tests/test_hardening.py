@@ -1,4 +1,4 @@
-"""What an operator can count on: access is on the audit trail, big reads fail clearly, silent sync failures are loud."""
+"""What an operator can count on: access is audited, big reads fail clearly, sync failures are loud."""
 
 import logging
 from datetime import datetime, timedelta, timezone
