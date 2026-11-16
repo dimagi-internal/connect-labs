@@ -159,6 +159,7 @@ It is about what Claude *sees*, not about whether it may change things.
 - **Edit definitions.** It can change a workflow's configuration and its opportunity list, and create and edit indicator registries. (Render code is the exception: it can only be edited on a workflow whose opportunities are all generated, because render code later runs over real data in whoever opens the page.)
 - **Set work going on the server.** Creating runs, saving snapshots, rebuilding a report's history, warming a visit cache, handing a report down and publishing a benchmark all work. For these the **server** reads the visits and keeps the result; what comes back to Claude is ids, versions, dates and counts.
 - **Make synthetic data.** It can measure a real opportunity on the server and generate a synthetic copy from that measurement — see [Synthetic Data](synthetic-data.md).
+- **Work with cost-effectiveness scenarios.** It can list and open saved scenarios and size one using `cea_scenarios`. Saving a scenario with `cea_scenario_save` requires a full-access token.
 
 !!! note "Counts and dates are allowed"
     Opportunity-level counts and dates are on the allowed side of the line, as are the contact details of people who submitted something as an organisation. The line is drawn at an individual visit and its values.
@@ -223,4 +224,4 @@ Personal Access Tokens let you connect an MCP client to Labs without going throu
 
 **Expiry dates** on the tokens page include the time of day, so you can tell exactly when a token will stop working.
 
-**Agent token requests** appear at the top of the tokens page when an agent running elsewhere has sent you a link. The request panel shows who asked, which runner it came from, what it says it needs, the access level and how long the token will last. Your active tokens
+**Agent token requests** appear at the top of the
