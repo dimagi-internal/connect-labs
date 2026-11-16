@@ -77,9 +77,18 @@ result cache.
 
 | Consumer | Status | Code |
 |---|---|---|
-| Malaria PMC schedules (IDM EMOD) | Retired 13 Nov 2026 | tag `archive/pmc-emod`: `labs/indicators/emod/`, `tools/pmc_emod/`, `deploy/aws/` |
+| Malaria PMC schedules (IDM EMOD) | Retired 13 Nov 2026; AWS stack decommissioned 16 Nov 2026 | tag `archive/pmc-emod`: `labs/indicators/emod/`, `tools/pmc_emod/`, `deploy/aws/` |
 
 The retirement removed the code, the `labs_pmc_model_run` table (migration `0015_delete_pmc_model_run`; it held only
-cached run results) and the six `targeting_pmc_*` tools. **The AWS stack `labs-emod` (instance, artifacts bucket,
-idle alarm) was not touched.** Decommission it or reuse it for the next consumer; either is a decision for whoever
-owns the account.
+cached run results) and the six `targeting_pmc_*` tools. **The AWS stack `labs-emod` was decommissioned on
+16 Nov 2026**: `aws cloudformation delete-stack --stack-name labs-emod` (removing the launch template, the idle alarm
+and the `ondemand-emod-consumer` policy on `labs-jj-ecs-task-role`), then, by hand, the resources the template marks
+`DeletionPolicy: Retain`: the instance `i-0271a313a8ffb86e3` (terminated, with its root volume), security group
+`ondemand-emod`, instance role and profile `ondemand-emod-instance`, and the artifacts bucket (emptied, then deleted;
+it held only the `worker/` install copy and cached `burnin/` files). `labs-jj-ecs-task-role` kept its other policies.
+Nothing of the runner is left in AWS: the tag `archive/pmc-emod` is the only copy.
+
+**Tearing down a stack built from the SDK template:** `delete-stack` alone leaves the instance (still billing its
+disk), bucket, security group and instance role behind, because the template retains them so a stack delete can never
+take the runner with it. Delete those by hand afterwards, instance first (the security group and role are in use
+until it is terminated).
