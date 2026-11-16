@@ -22,7 +22,12 @@ from .generator.fixtures.schema_loader import parse_form_schema_from_app_json
 from .generator.io.uploader import upload_fixtures
 from .models import SyntheticOpportunity
 from .provenance import mark_generated, replays_real_cases
-from .provisioning import allocate_shared_program_id, register_labs_only_opp, reserve_labs_only_id
+from .provisioning import (
+    allocate_shared_program_id,
+    claim_labs_only_id,
+    register_labs_only_opp,
+    reserve_labs_only_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -469,6 +474,7 @@ def _plan_one(
     fresh: bool = False,
     target_opportunity_id: int | None = None,
     authorize=None,
+    target_reserved: bool = False,
 ) -> _Plan | CloneResult:
     """Choose the destination, or return the existing clone when there is nothing to do.
 
@@ -505,6 +511,9 @@ def _plan_one(
     pre_existing = SyntheticOpportunity.objects.filter(opportunity_id=opp_id).exists()
     if authorize is not None and (target_opportunity_id is not None or pre_existing):
         authorize(opp_id)
+    if target_opportunity_id is not None and not pre_existing and not target_reserved:
+        # A caller-named destination nobody holds yet: claim it, so a concurrent job cannot be handed it too.
+        claim_labs_only_id(opp_id)
     return _Plan(bundle=bundle, opp_id=opp_id, pre_existing=pre_existing)
 
 
@@ -636,6 +645,7 @@ def _generate_one(
     person_names: dict | None = None,
     authorize=None,
     created_by=None,
+    target_reserved: bool = False,
 ) -> CloneResult:
     """Generate fixtures + register a labs-only opp from an already-read bundle.
 
@@ -644,7 +654,12 @@ def _generate_one(
     :func:`generate_opps_bulk` runs in parallel for a cohort.
     """
     plan = _plan_one(
-        bundle, program_id=program_id, fresh=fresh, target_opportunity_id=target_opportunity_id, authorize=authorize
+        bundle,
+        program_id=program_id,
+        fresh=fresh,
+        target_opportunity_id=target_opportunity_id,
+        authorize=authorize,
+        target_reserved=target_reserved,
     )
     if isinstance(plan, CloneResult):
         return plan
@@ -719,7 +734,12 @@ def _generate_in_parallel(
             # Each new clone reserves its own id, so a job running alongside this one cannot take it.
             target = reserve_labs_only_id(above=program_id) if new_opportunities else None
             plan = _plan_one(
-                bundle, program_id=program_id, fresh=fresh, target_opportunity_id=target, authorize=authorize
+                bundle,
+                program_id=program_id,
+                fresh=fresh,
+                target_opportunity_id=target,
+                authorize=authorize,
+                target_reserved=new_opportunities,
             )
             if isinstance(plan, CloneResult):
                 results.append(plan)
@@ -868,6 +888,7 @@ def generate_opps_bulk(
                     authorize=authorize,
                     created_by=created_by,
                     target_opportunity_id=(reserve_labs_only_id(above=program_id) if new_opportunities else None),
+                    target_reserved=new_opportunities,
                 )
             )
             outcome = f"generated opportunity {bundle.source_opp_id}"

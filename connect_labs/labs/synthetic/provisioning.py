@@ -26,6 +26,9 @@ def reserve_labs_only_id(kind: str = LabsOnlyIdReservation.KIND_OPPORTUNITY, *, 
         candidate = SyntheticOpportunity.next_labs_only_opp_id()
         if above is not None and candidate <= above:
             candidate = above + 1
+        # The peek ignores real-backed rows (labs_only=False), so step past any id a row already holds.
+        while SyntheticOpportunity.objects.filter(opportunity_id=candidate).exists():
+            candidate += 1
         try:
             with transaction.atomic():
                 LabsOnlyIdReservation.objects.create(value=candidate, kind=kind)
@@ -33,6 +36,21 @@ def reserve_labs_only_id(kind: str = LabsOnlyIdReservation.KIND_OPPORTUNITY, *, 
             continue
         return candidate
     raise RuntimeError(f"Could not reserve a labs-only id after {_RESERVE_ATTEMPTS} attempts")
+
+
+def claim_labs_only_id(value: int, kind: str = LabsOnlyIdReservation.KIND_OPPORTUNITY) -> None:
+    """Reserve a caller-chosen id, refusing one another job has already reserved.
+
+    For a destination the caller names itself (``target_opportunity_id``) that no row
+    holds yet: without this, a concurrent job reserving the next free id could be
+    handed the same one. Regenerating into a target that was registered before needs
+    no claim -- its row already holds the id.
+    """
+    try:
+        with transaction.atomic():
+            LabsOnlyIdReservation.objects.create(value=value, kind=kind)
+    except IntegrityError:
+        raise ValueError(f"Labs-only id {value} is already reserved by another job; choose another target") from None
 
 
 def allocate_shared_program_id() -> int:

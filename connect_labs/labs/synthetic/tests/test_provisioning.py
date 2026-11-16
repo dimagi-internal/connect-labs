@@ -65,3 +65,22 @@ def test_register_without_id_reserves_one_above_the_program():
     a = register_labs_only_opp(label="a", gdrive_folder_id="fa", program_id=program_id)
     b = register_labs_only_opp(label="b", gdrive_folder_id="fb", program_id=program_id)
     assert program_id < a.opportunity_id < b.opportunity_id
+
+
+def test_reserve_skips_an_id_held_by_a_real_backed_row():
+    from connect_labs.labs.synthetic.models import SyntheticOpportunity
+    from connect_labs.labs.synthetic.provisioning import reserve_labs_only_id
+
+    # The peek ignores labs_only=False rows, so it would offer 10_000.
+    SyntheticOpportunity.objects.create(opportunity_id=10_000, gdrive_folder_id="real", labs_only=False)
+    assert reserve_labs_only_id() == 10_001
+
+
+def test_claim_refuses_a_target_another_job_reserved():
+    from connect_labs.labs.synthetic.provisioning import claim_labs_only_id, reserve_labs_only_id
+
+    taken = reserve_labs_only_id()
+    with pytest.raises(ValueError, match="already reserved"):
+        claim_labs_only_id(taken)
+    claim_labs_only_id(taken + 50)  # a free caller-chosen id is fine
+    assert reserve_labs_only_id() == taken + 51
