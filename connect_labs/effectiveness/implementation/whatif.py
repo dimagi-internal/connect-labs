@@ -8,27 +8,15 @@ from __future__ import annotations
 
 from connect_labs.effectiveness.implementation.catalog import STATUS_MODELLED, models
 from connect_labs.effectiveness.result import reprice
+from connect_labs.effectiveness.scenario import KNOB_DEFAULT, KNOBS, number  # noqa: F401  (re-exported)
 
-KNOBS = ("extra", "effect", "reach")  # per model: extra $ per person, effect % of the model, people counted %
-
-
-KNOB_DEFAULT = {"extra": 0.0, "effect": 100.0, "reach": 100.0}
-
+# The dials are the scenario's (``effectiveness.scenario.DIALS``): per model, extra $ per person, effect % of the
+# model, people counted %. A scenario link and this page's link spell them the same way, ``<model>_<dial>``.
 
 RANK_KEYS = ("x", "deaths_averted", "cost_per_death", "total_usd")
 
 
 BASES = ("actual", "model")
-
-
-def _number(value, default=None, *, positive=False):
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return default
-    if v != v or v in (float("inf"), float("-inf")) or v < 0 or (positive and v == 0):
-        return default
-    return v
 
 
 def what_if_from(params, bar_x: float, model_keys=None) -> dict:
@@ -39,12 +27,12 @@ def what_if_from(params, bar_x: float, model_keys=None) -> dict:
     out = {
         "basis": basis if basis in BASES else "actual",
         "rank": rank if rank in RANK_KEYS else "x",
-        "bar": _number(params.get("bar"), bar_x, positive=True),
+        "bar": number(params.get("bar"), bar_x, positive=True),
         "m": {k: dict(KNOB_DEFAULT) for k in model_keys},
     }
     for k in model_keys:
         for knob in KNOBS:
-            out["m"][k][knob] = _number(params.get(f"{k}_{knob}"), KNOB_DEFAULT[knob])
+            out["m"][k][knob] = number(params.get(f"{k}_{knob}"), KNOB_DEFAULT[knob])
     return out
 
 
@@ -57,7 +45,7 @@ def filters_from(params, model_keys=None) -> dict:
         "country": (params.get("country") or "").strip(),
         "active": params.get("active") in ("1", "true"),
         "modelled": params.get("modelled") in ("1", "true"),
-        "min_spend": _number(params.get("min_spend"), 0.0),
+        "min_spend": number(params.get("min_spend"), 0.0),
         "q": (params.get("q") or "").strip().lower(),
     }
 

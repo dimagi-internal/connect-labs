@@ -1,0 +1,29 @@
+{
+  "_doc": "One link and the state a page starts from. effectiveness/tests/test_scenario.py checks the server reads the link into this state and writes it back; static/effectiveness/scenario.test.js checks the browser writes this state back to this link. Change the link's spelling in one place and both fail.",
+  "default_bar": 6.0,
+  "link": {
+    "models": "chc,kc",
+    "indicator": "u5mr",
+    "threshold": "80",
+    "iso": "NGA,NER",
+    "bar": "8",
+    "chc_reach": "50",
+    "kc_extra": "2.5",
+    "i.chc.cost": "3",
+    "method": "dhs"
+  },
+  "state": {
+    "models": ["chc", "kc"],
+    "indicator": "u5mr",
+    "threshold": 80.0,
+    "iso": "NGA,NER",
+    "bar": 8.0,
+    "dials": {
+      "chc": { "extra": 0.0, "effect": 100.0, "reach": 50.0 },
+      "kc": { "extra": 2.5, "effect": 100.0, "reach": 100.0 },
+      "mbw": { "extra": 0.0, "effect": 100.0, "reach": 100.0 }
+    },
+    "overrides": { "chc": { "cost": 3.0 } },
+    "extras": { "method": "dhs" }
+  }
+}

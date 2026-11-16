@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Workspace · Connect Labs{% endblock %}
+
+{% block css %}
+{{ block.super }}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'effectiveness/market.css' %}">
+{% endblock %}
+
+{% block content %}
+{% include "effectiveness/tabs.html" with active="workspace" %}
+<div class="mk">
+  <h1>Workspace <span class="muted">(preview)</span></h1>
+  <p class="lede">One scenario: the places, the programmes and what you assume about them. The map and the numbers follow it.</p>
+  <div id="notice" class="err" hidden></div>
+  <div id="error" class="err" hidden></div>
+
+  <div class="layout">
+    <div class="results">
+      <div class="card"><div class="tiles" id="tiles"></div><p class="muted" id="sel-note" style="margin:10px 0 0"></p></div>
+      <div class="card">
+        <div class="head"><h2>Map</h2><div class="lens" id="lens"></div></div>
+        <div class="map" id="map"></div>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="card detail" id="detail" hidden></div>
+      <div class="card">
+        <h2>By programme</h2>
+        <div id="by-model"></div>
+      </div>
+      <div class="card">
+        <h2>By country</h2>
+        <div class="scroll"><table id="rows"></table></div>
+        <p style="margin:8px 0 0"><button type="button" class="btn" id="more" hidden>Show all countries</button></p>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="card" id="scenarios"></div>
+      <div class="card" id="controls"></div>
+    </div>
+  </div>
+</div>
+
+{{ data|json_script:"scenario-data" }}
+<script>window.MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";</script>
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+<script src="{% static 'effectiveness/ui.js' %}"></script>
+<script src="{% static 'effectiveness/scenario.js' %}"></script>
+<script src="{% static 'effectiveness/dials.js' %}"></script>
+<script src="{% static 'effectiveness/scenarios.js' %}"></script>
+<script src="{% static 'effectiveness/marketview.js' %}"></script>
+<script src="{% static 'effectiveness/areamap.js' %}"></script>
+<script src="{% static 'effectiveness/workspace.js' %}"></script>
+
+{% endblock %}

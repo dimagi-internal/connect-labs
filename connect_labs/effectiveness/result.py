@@ -50,6 +50,15 @@ CHAIN = {
 }
 
 
+def scale_multiple(model_x: float, model_price: float, cost_per_person: float, effect: float = 1.0) -> float:
+    """The multiple of the benchmark at another cost per person and effect, from the model's at its own price.
+
+    Every model here runs with GiveWell's leveraging adjustment at 1, so benefit per person is fixed by the place and
+    the multiple scales exactly with price (and with the share of the model's effect you believe). The one statement
+    of that: ``reprice`` (a delivery) and ``market.size`` (a market) both call it."""
+    return model_x * effect * model_price / cost_per_person
+
+
 def reprice(
     model_x: float,
     model_price: float,
@@ -82,7 +91,7 @@ def reprice(
         return None
     cost = model_price * people if at_model_price else total_usd + extra_per_person * people
     cost_per_person = cost / people
-    x = model_x * effect * model_price / cost_per_person
+    x = scale_multiple(model_x, model_price, cost_per_person, effect)
     deaths = people * deaths_per_100k / 100_000 * effect
     return {
         "reached": people,

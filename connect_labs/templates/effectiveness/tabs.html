@@ -1,5 +1,5 @@
 {% comment %} The tabs on every page of the cost-effectiveness explorer. `active` is "indicators", "models",
-   "implementation" or "market". Health indicators = what the baseline says about a place. CEA models = run a Connect
+   "implementation", "market" or "workspace". Health indicators = what the baseline says about a place. CEA models = run a Connect
    model, change its inputs, test sensitivity. Implementations = what delivered opportunities achieved, at what they
    cost. Market size = what it would cost to reach everyone in chosen places, and where the models say it is worth it.
 {% endcomment %}
@@ -15,5 +15,6 @@
     <a href="{% url 'cea:models' %}" {% if active == "models" %}class="on" aria-current="page"{% endif %}>CEA models</a>
     <a href="{% url 'cea:implementation' %}" {% if active == "implementation" %}class="on" aria-current="page"{% endif %}>Implementations</a>
     <a href="{% url 'cea:market' %}" {% if active == "market" %}class="on" aria-current="page"{% endif %}>Market size</a>
+    <a href="{% url 'cea:workspace' %}" {% if active == "workspace" %}class="on" aria-current="page"{% endif %}>Workspace (preview)</a>
   </div>
 </nav>

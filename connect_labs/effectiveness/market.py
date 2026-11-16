@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from connect_labs.effectiveness import engine, groups, result
+from connect_labs.effectiveness.scenario import KNOB_DEFAULT
 
 
 @dataclass(frozen=True)
@@ -49,26 +50,33 @@ def _country_inputs(model: str, iso3: str) -> tuple[dict, bool]:
     return ((place or {}).get("inputs") or {}), place is not None or model == "kc"
 
 
-def size(model: str, people: dict[str, dict], overrides: dict | None, bar: float) -> dict:
+def size(model: str, people: dict[str, dict], overrides: dict | None, bar: float, dials: dict | None = None) -> dict:
     """The model's market over ``people`` = ``{iso3: {"name", "units"}}``, run at each country's figures.
 
-    ``overrides`` are the caller's input changes, applied on top of every country. A country the model has no
-    published figures for is priced at the model's own inputs and flagged ``modelled: False``; it counts in the
-    market but never in the part that clears the bar, because nothing says it does.
+    ``overrides`` are the caller's input changes, applied on top of every country. ``dials`` are the scenario's three
+    (``scenario.DIALS``): ``reach`` counts only that share of the people, ``extra`` adds dollars a person a year the
+    model does not count, ``effect`` scales the model's effect; the multiple moves by ``result.scale_multiple``. A
+    country the model has no published figures for is priced at the model's own inputs and flagged
+    ``modelled: False``; it counts in the market but never in the part that clears the bar: nothing says it does.
     """
     unit = UNITS[model]
+    dial = {**KNOB_DEFAULT, **(dials or {})}
+    reach, effect, extra = dial["reach"] / 100, dial["effect"] / 100, dial["extra"]
     rows = []
     for iso3, p in sorted(people.items(), key=lambda kv: kv[1]["name"]):
         base, modelled = _country_inputs(model, iso3)
         o = engine.run(model, {**base, **(overrides or {})})
-        x = result.OUTPUTS[model](o)[0]
-        per_person = unit.annual_cost(o)
-        units = p["units"]
+        model_x = result.OUTPUTS[model](o)[0]
+        price = unit.annual_cost(o)
+        per_person = price + extra
+        x = result.scale_multiple(model_x, price, per_person, effect)
+        units = p["units"] * reach if p["units"] is not None else None
         rows.append(
             {
                 "iso3": iso3,
                 "country": p["name"],
                 "units": units,
+                "units_all": p["units"],
                 "cost_per_person": per_person,
                 "market_usd": units * per_person if units is not None else None,
                 "multiple": x if modelled else None,

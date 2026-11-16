@@ -16,6 +16,7 @@ def test_the_explorer_has_one_address_space():
     assert reverse("cea:implementation") == "/labs/cea/implementation/"
     assert reverse("cea:implementation_opp", args=[7]) == "/labs/cea/implementation/opp/7/"
     assert reverse("cea:market") == "/labs/cea/market/"
+    assert reverse("cea:workspace") == "/labs/cea/workspace/"
 
 
 @pytest.mark.django_db

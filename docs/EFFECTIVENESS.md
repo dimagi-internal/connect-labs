@@ -14,16 +14,50 @@ enforces the direction.
 ```
 effectiveness/
   engine.py valuation.py result.py groups.py explore.py sheets_check.py market.py   pure: no Django, no database
+  scenario.py                                                                        pure: the scenario, what someone is working on (below)
   baseline.py places.py                                                              bind the models to places (read the baseline, Pulse)
   people.py                                                                          people per country in the baseline's selected places
+  sizing.py                                                                          a scenario's market: people x models x dials, the one payload
+  shapes.py                                                                          country outlines for the workspace map
   interventions.py                                                                   sizing presets, priced from the models
   implementation/                                                                    delivered opportunities, valued (below)
   views/ urls.py                                                                     the pages, mounted at /labs/cea/
   data/                                                                              the vendored model specs (CHC, MBW, KC)
   management/commands/effectiveness_check_sheets, effectiveness_vendor
-templates/effectiveness/                                                             the pages: models, implementation, implementation_opp, market, tabs
-static/effectiveness/                                                                ui.js (DOM builder, number formats) and one script per page
+templates/effectiveness/                                                             the pages: models, implementation, implementation_opp, market, workspace, tabs
+static/effectiveness/                                                                ui.js (DOM builder, number formats), the shared scenario parts, and one script per page
 ```
+
+### The scenario
+
+The pages are views of one object, a `Scenario` (`effectiveness/scenario.py`): the **places** (an indicator over a
+threshold in some countries; `indicator=all` is everywhere with data), the **programmes** (models), three **dials**
+(`extra` dollars a person a year, `effect` and `reach` as percent; link key `<model>_<dial>`), any model **assumptions**
+(`i.<model>.<input>`) and the **bar**. It is read from a link and written back to one, and only what differs from the
+default is written, so the default scenario is the bare page. The dials are the Implementations what-if's (`whatif.py`
+imports them), and `result.scale_multiple` is the one statement of how cost and effect move a multiple, used by both
+`result.reprice` (a delivery) and `market.size` (a market).
+
+`sizing.market_of(scenario)` is the answer Market size and the workspace both draw (`cea:market_data`); `people.question_for`
+turns the scenario's places into the baseline's own question. In the browser the same parts are shared:
+`scenario.js` (state, link, fetch), `dials.js` (the controls), `marketview.js` (tiles, programme lines, country table) and
+`areamap.js` (a country choropleth that knows nothing of models). `tests/scenario_contract.json` is the one definition of
+the link, tested from Python (`test_scenario.py`) and from the page's script (`scenario.test.js`).
+
+### Saved scenarios
+
+A person keeps a scenario under a name (`models.SavedScenario`, rules in `saved.py`, HTTP in `views/scenarios.py`, the
+panel in `scenarios.js`, shared by Market size and the workspace). What is stored is the scenario's canonical link, never
+the numbers, so opening one reads it with today's models; `saved_against` (the vendored model commit and each programme's
+spec version) is how a scenario says "the models have moved since this was saved" (`models_changed`).
+
+* Private until its owner shares it; a shared one is read and copied by every signed-in user, replaced or deleted only by its
+  owner. Someone else's private scenario is "not found", the same answer as one that does not exist.
+* A name is per person. Saving a name you already have is refused (409) unless `overwrite`, and the panel asks first.
+* Open one with `?scenario=<id>` on either page (any other key in the link then changes it); the address bar becomes the plain
+  link at once. One that cannot be opened (not yours, or an input of a model that has gone) opens the default and says why.
+* An agent has the same: `cea_scenarios` (list, or one by `id`, `run: true` to size it now) and `cea_scenario_save`
+  (full tokens only, like the other tools that write; not in the restricted sets).
 
 One evaluator, reached every way, so a number is the same wherever it appears. `engine` runs a model's own formulas
 from its spec; `valuation` is GiveWell's value of a death, the benchmark and the bar, read from the specs; `result`
@@ -53,6 +87,7 @@ The Cost-Effectiveness menu group, and the same four tabs on each page:
 | **CEA models** | `/labs/cea/models/` | Pick a model and change any input in one table, grouped as baseline, counterfactual, effectiveness, cost, then other assumptions. Each input has a switch for whether it is in the sensitivity; the page shows the spread of everything switched on together, and each group's. |
 | **Implementations** | `/labs/cea/implementation/` | Every delivered opportunity, priced at what it cost, with a server-side what-if, filters and a By programme table; each opportunity has a page that links to CEA models set to it. |
 | **Market size** | `/labs/cea/market/` | People in chosen places (default: everywhere with data) times each chosen model's cost per person per year, with the part where the model clears the bar. |
+| **Workspace** (preview) | `/labs/cea/workspace/` | The same scenario around a map: lenses (Market, Worth it) paint the countries, a click opens a country's card, and the scenario panel (places, programmes, three dials, the bar, every assumption) is one component shared with Market size. A candidate layout for every page, kept beside the others to compare. |
 
 Cost data and Donor reports are Pulse pages under Network. Malaria PMC was retired on 13 Nov 2026.
 
@@ -61,6 +96,7 @@ Cost data and Donor reports are Pulse pages under Network. Malaria PMC was retir
 An agent computes what the page shows, from the same code, and gets the page's link back:
 
 - `cea_model_run`: a model at inputs you set, with the sensitivity (inputs switched on, grouped), scenarios, places.
+- `cea_scenarios`, `cea_scenario_save`: save, list and open scenarios (above).
 - `cea_opportunities`: any selection of delivered opportunities with its roll-up (full tokens only).
 - `cea_market_size`: Market size. With `model` it is the page's answer (the model's own price, run at each country's
   figures, with the part that clears the bar); without it, a unit cost you set.
@@ -97,7 +133,10 @@ ERROR (Sentry) and the models page shows a one-line note until the specs are ref
 
 ## Left to do
 
-- Saved scenarios: a record of places, models and inputs that a proposal can link to (Market size state is already in the link).
+- Saved scenarios: rename and share/unshare without re-saving, versions, and a way to attach one to a proposal.
+- Put CEA models and Implementations on the scenario too (their own link keys differ: `i_<input>`, `m`), and give the
+  workspace a Need lens, a Delivered layer, and region-level shapes (the models hold country figures, so a region's number
+  would be an allocation of its country's).
 - Price measles, vitamin A, nets and water from a model if the team builds one.
 
 ## See also

@@ -4,46 +4,7 @@
 
 {% block css %}
 {{ block.super }}
-<style>
-  .mk { --ink:#1f2433; --muted:#6b7280; --rule:#e5e7eb; --good:#15803d; --low:#b91c1c; --acc:#4338ca;
-        color:var(--ink); max-width:1280px; margin:0 auto; padding:18px 16px 64px; }
-  .mk [hidden] { display:none !important; }
-  .mk h1 { font-size:24px; font-weight:600; margin:0; }
-  .mk h2 { font-size:15px; font-weight:600; margin:0 0 6px; }
-  .mk .lede { color:var(--muted); font-size:14px; margin:6px 0 4px; }
-  .mk .card { background:#fff; border-radius:10px; box-shadow:0 1px 2px rgba(0,0,0,.05); padding:16px; margin-bottom:16px; min-width:0; }
-  .mk .layout { display:grid; grid-template-columns:minmax(320px,440px) minmax(0,1fr); gap:16px; align-items:start; grid-template-areas:"controls results"; }
-  .mk .controls { grid-area:controls; } .mk .results { grid-area:results; min-width:0; }
-  @media (max-width: 900px) { .mk .layout { grid-template-columns:minmax(0,1fr); grid-template-areas:"results" "controls"; } }
-  .mk label.f { display:block; font-size:12.5px; margin:10px 0 0; }
-  .mk label.f span { display:block; color:var(--muted); font-size:11.5px; margin-bottom:3px; }
-  .mk select, .mk input[type=number], .mk input[type=text] { border:1px solid var(--rule); border-radius:6px; padding:6px 8px; font-size:13px; background:#fff; color:var(--ink); width:100%; box-sizing:border-box; }
-  .mk .two { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-  .mk .models { display:flex; flex-wrap:wrap; gap:8px; }
-  .mk .mchip { display:flex; align-items:center; gap:7px; padding:7px 11px; border:1px solid var(--rule); border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; flex:1 1 130px; }
-  .mk .mchip.on { border-color:var(--acc); background:#eef2ff; color:#3730a3; }
-  .mk .mchip small { display:block; font-weight:400; color:var(--muted); font-size:11px; }
-  .mk details.mi { border-top:1px solid var(--rule); margin-top:12px; padding-top:8px; }
-  .mk details.mi > summary { cursor:pointer; font-size:13px; font-weight:600; }
-  .mk .gt { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:10px 0 2px; }
-  .mk .ir { display:grid; grid-template-columns:minmax(0,1fr) 96px; gap:8px; align-items:center; padding:4px 0; font-size:12.5px; }
-  .mk .ir.changed input { border-color:var(--acc); background:#eef2ff; }
-  .mk .ir small { color:var(--muted); display:block; font-size:11px; }
-  .mk .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; }
-  .mk .tile .big { font-size:30px; font-weight:600; font-variant-numeric:tabular-nums; line-height:1.1; }
-  .mk .tile .cap { font-size:12px; color:var(--muted); margin-top:3px; }
-  .mk .err { background:#fef2f2; color:var(--low); padding:8px 10px; border-radius:6px; font-size:13px; margin:0 0 10px; }
-  .mk .scroll { overflow-x:auto; }
-  .mk table { border-collapse:collapse; font-size:13px; width:100%; }
-  .mk th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); padding:6px 8px; border-bottom:1px solid var(--rule); white-space:nowrap; }
-  .mk td { padding:6px 8px; border-bottom:1px solid #f3f4f6; }
-  .mk td.n, .mk th.n { text-align:right; font-variant-numeric:tabular-nums; }
-  .mk .ok { color:var(--good); font-weight:600; } .mk .lo { color:var(--low); }
-  .mk .btn { font-size:13px; padding:5px 11px; border:1px solid #d1d5db; border-radius:6px; background:#fff; color:var(--ink); cursor:pointer; }
-  .mk .muted { color:var(--muted); font-size:12px; }
-  .mk .mline { display:flex; flex-wrap:wrap; gap:4px 16px; font-size:13px; padding:5px 0; border-top:1px solid #f3f4f6; }
-  .mk .mline b { font-variant-numeric:tabular-nums; }
-</style>
+<link rel="stylesheet" href="{% static 'effectiveness/market.css' %}">
 {% endblock %}
 
 {% block content %}
@@ -51,6 +12,7 @@
 <div class="mk">
   <h1>Market size</h1>
   <p class="lede">The cost of reaching everyone in chosen places, and where it is worth it.</p>
+  <div id="notice" class="err" hidden></div>
   <div id="error" class="err" hidden></div>
 
   <div class="layout">
@@ -68,24 +30,18 @@
     </div>
 
     <div class="controls">
-      <div class="card">
-        <h2>Programmes</h2>
-        <div class="models" id="models"></div>
-        <h2 style="margin-top:16px">Places</h2>
-        <label class="f"><span>Where</span><select id="indicator"></select></label>
-        <div class="two">
-          <label class="f" id="thr-wrap"><span>Above</span><input type="number" id="threshold" step="any"></label>
-          <label class="f"><span>GiveWell's bar (x)</span><input type="number" id="bar" step="any"></label>
-        </div>
-        <label class="f"><span>Countries (ISO codes, blank for all Africa)</span><input type="text" id="iso" placeholder="NGA, NER, TCD"></label>
-        <div id="inputs"></div>
-      </div>
+      <div class="card" id="scenarios"></div>
+      <div class="card" id="controls"></div>
     </div>
   </div>
 </div>
 
-{{ data|json_script:"market-data" }}
+{{ data|json_script:"scenario-data" }}
 <script src="{% static 'effectiveness/ui.js' %}"></script>
+<script src="{% static 'effectiveness/scenario.js' %}"></script>
+<script src="{% static 'effectiveness/dials.js' %}"></script>
+<script src="{% static 'effectiveness/scenarios.js' %}"></script>
+<script src="{% static 'effectiveness/marketview.js' %}"></script>
 <script src="{% static 'effectiveness/market.js' %}"></script>
 
 {% endblock %}

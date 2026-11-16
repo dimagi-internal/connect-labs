@@ -9,28 +9,61 @@ sizing code (``market``) plain dictionaries.
 from __future__ import annotations
 
 import hashlib
+from types import SimpleNamespace
 
 from django.core.cache import cache
 
 from connect_labs.effectiveness import market
+from connect_labs.effectiveness.scenario import EVERYWHERE, Scenario
 from connect_labs.labs.indicators import measures, response_cache
+from connect_labs.labs.indicators.africa import ISO_CODES
 from connect_labs.labs.indicators.query import Question, float_param, indicator_param
 
 #: The burden indicators the market page offers for choosing places (higher means more need).
 TARGET_INDICATORS = ("u5mr", "nmr", "diarrhoea_prevalence")
-#: "Everywhere with data": the indicator that has values in the most countries, with no threshold, so the market is
-#: every place the baseline can count people in rather than only the highest-burden ones.
-EVERYWHERE = "all"
+#: "Everywhere with data" (``scenario.EVERYWHERE``): the indicator that has values in the most countries, with no
+#: threshold, so the market is every place the baseline can count people in rather than only the highest-burden ones.
 EVERYWHERE_INDICATOR = "diarrhoea_prevalence"
 
 
-def places_question(request) -> tuple[Question, bool]:
-    """The question that chooses the places, and whether it means everywhere (``indicator=all``)."""
-    if request.GET.get("indicator") == EVERYWHERE:
-        return Question.from_request(request, indicator=EVERYWHERE_INDICATOR, threshold=0.0), True
-    indicator = indicator_param(request)
-    threshold = float_param(request, "threshold", measures.get(indicator).threshold_default)
-    return Question.from_request(request, indicator=indicator, threshold=threshold), False
+def question_for(scenario: Scenario) -> tuple[Question, bool]:
+    """The baseline question a scenario's places ask, and whether it means everywhere (``indicator=all``).
+
+    The baseline reads a question from ``request.GET``; a scenario hands it the same keys, so there is one reader."""
+    ask = SimpleNamespace(GET=scenario.place_params())
+    if scenario.everywhere:
+        return Question.from_request(ask, indicator=EVERYWHERE_INDICATOR, threshold=0.0), True
+    indicator = indicator_param(ask)
+    threshold = float_param(ask, "threshold", measures.get(indicator).threshold_default)
+    return Question.from_request(ask, indicator=indicator, threshold=threshold), False
+
+
+def indicator_choices() -> list[dict]:
+    """What a page offers for choosing places: everywhere, then each burden indicator with its usual threshold."""
+    return [{"key": EVERYWHERE, "label": "Everywhere with data", "threshold": None}] + [
+        {"key": k, "label": measures.get(k).label, "threshold": measures.get(k).threshold_default}
+        for k in TARGET_INDICATORS
+        if k in measures.MEASURES
+    ]
+
+
+def africa_total() -> int:
+    return len(ISO_CODES)
+
+
+def describe(question: Question, found: dict, everywhere: bool) -> dict:
+    """How the places were chosen and what came back, for a page to say beside the numbers."""
+    return {
+        "indicator": question.indicator,
+        "indicator_label": measures.get(question.indicator).label,
+        "threshold": question.threshold,
+        "method": found["method"],
+        "countries": len(found["countries"]),
+        "africa_total": africa_total(),
+        "everywhere": everywhere,
+        "regions": found["regions"],
+        "unsupported": found["unsupported"],
+    }
 
 
 def group_selection(selection) -> dict:
