@@ -107,7 +107,12 @@ class HQProject(models.Model):
             return None
 
     def delete(self, *args, **kwargs):
+        from connect_labs.hqdata.scope import hq_scope_id
+        from connect_labs.labs.synthetic.models import LabsLocalRecord
+
         self.purge_rows()
+        # The project's workflows, pipeline definitions and render code (hqdata.workflows).
+        LabsLocalRecord.objects.filter(opportunity_id=hq_scope_id(self.pk)).delete()
         return super().delete(*args, **kwargs)
 
     @property

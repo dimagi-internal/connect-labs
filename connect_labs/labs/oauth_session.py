@@ -70,6 +70,11 @@ _LABS_SKIP_PATH_PREFIXES = (
     # embed's own cookie, never this session, and a signed-in staffer opening one
     # should not be logged out by it.
     "/embed/",
+    # The sandbox shell (workflow/sandbox.py): a fixed, data-free page served to a
+    # frame. It authenticates nobody and grants nothing, and a browser that sends the
+    # session cookie with it (Safari does) must not log a CommCare-only person out of
+    # /hq/ for opening a workflow there.
+    "/labs/sandbox/render/",
     "/admin/",
     "/o/",
     "/health/",

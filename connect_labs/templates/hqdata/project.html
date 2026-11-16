@@ -9,6 +9,12 @@
   </p>
 
   <section class="mb-8 rounded-lg border border-gray-200 bg-white p-4">
+    <h2 class="mb-2 font-semibold">Workflows</h2>
+    <p class="mb-3 text-sm text-gray-700">Dashboards drawn from this project's stored forms.</p>
+    <a class="rounded bg-brand-indigo px-3 py-1.5 text-sm font-semibold text-white" href="{% url 'hq:workflow_list' project.pk %}">Open workflows</a>
+  </section>
+
+  <section class="mb-8 rounded-lg border border-gray-200 bg-white p-4">
     <h2 class="mb-2 font-semibold">Storage</h2>
     <p class="mb-3 text-sm text-gray-700">
       {{ project.get_storage_mode_display }}.

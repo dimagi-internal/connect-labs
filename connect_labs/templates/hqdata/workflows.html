@@ -1,0 +1,18 @@
+{% extends "hqdata/base.html" %}
+{% block hq_content %}
+  <p class="mb-2 text-sm"><a class="underline" href="{% url 'hq:project_detail' project.pk %}">&larr; {{ project.domain }}</a></p>
+  <h1 class="mb-4 text-2xl font-semibold">Workflows in {{ project.domain }}</h1>
+  <div class="mb-6 divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white">
+    {% for page in pages %}
+      <a class="block px-4 py-3 hover:bg-gray-50" href="{% url 'hq:workflow_page' project.pk page.id %}">
+        <span class="font-medium text-brand-indigo">{{ page.name }}</span>
+        <span class="ml-2 text-sm text-gray-600">{{ page.description }}</span>
+      </a>
+    {% empty %}
+      <p class="px-4 py-3 text-sm text-gray-600">No workflows yet.</p>
+    {% endfor %}
+  </div>
+  <form method="post">{% csrf_token %}
+    <button class="rounded bg-brand-indigo px-3 py-1.5 text-sm font-semibold text-white">Open the project overview</button>
+  </form>
+{% endblock %}

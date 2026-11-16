@@ -504,6 +504,10 @@ class LabsRecordAPIClient:
         leak a private one. If the by-id form returns nothing, it falls back to the
         public listing filtered by id -- the read `copy_workflow` already relies on.
         """
+        from connect_labs.hqdata.scope import is_hq_scope
+
+        if is_hq_scope(self.opportunity_id):
+            return None  # a CommCare project holds no public records, and has no Connect token to ask with
         url = f"{self.base_url}/export/labs_record/"
         base = {k: v for k, v in (("experiment", experiment), ("type", type)) if v}
         record_class = model_class if model_class else LocalLabsRecord

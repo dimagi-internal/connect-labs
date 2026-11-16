@@ -105,3 +105,15 @@ def test_a_connect_person_still_gets_through_the_mcp_door():
     token, raw = MCPAccessToken.create_token(user, "t", scope=token_scopes.NO_USERVISIT_DATA)
     resolved = mcp_server._verify_bearer_sync(raw)
     assert resolved is not None and resolved[0].pk == user.pk
+
+
+def test_a_url_context_on_an_hq_path_is_never_validated_or_saved(client, with_labs_boundary):
+    make_hq_user(client)
+    assert client.get("/hq/?opportunity_id=-1000000005&program_id=42").status_code == 200
+    assert "labs_context" not in client.session
+
+
+def test_opening_the_sandbox_shell_does_not_sign_a_commcare_person_out(client, with_labs_boundary):
+    make_hq_user(client)
+    client.get("/labs/sandbox/render/")
+    assert signed_in(client)
