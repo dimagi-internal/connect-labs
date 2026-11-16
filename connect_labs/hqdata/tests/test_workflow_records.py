@@ -7,7 +7,7 @@ from connect_labs.hqdata.models import HQProject
 from connect_labs.hqdata.scope import hq_scope_id
 from connect_labs.hqdata.workflows import ProjectWorkflowsUnavailable, pipeline_dao, workflow_dao
 from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
-from connect_labs.labs.synthetic.local_records_backend import is_labs_only_opportunity_id
+from connect_labs.labs.synthetic.local_records_backend import is_hq_project_scope, is_labs_only_opportunity_id
 from connect_labs.labs.synthetic.models import LabsLocalRecord
 from connect_labs.users.tests.factories import UserFactory
 from connect_labs.workflow.data_access import WorkflowDataAccess
@@ -47,20 +47,37 @@ def test_a_person_who_is_not_a_member_cannot_open_the_project(project):
         workflow_dao(UserFactory(), project)
 
 
-def test_the_scope_is_refused_everywhere_but_project_dao():
-    scope = hq_scope_id(5)
-    me = UserFactory()
+def test_the_scope_is_refused_to_anyone_who_is_not_a_verified_member_whoever_asks(alice, project):
+    scope = hq_scope_id(project.pk)
+    stranger = UserFactory()
     with pytest.raises(PermissionError):
-        WorkflowDataAccess(opportunity_id=scope, user=me, access_token="tok")
+        WorkflowDataAccess(opportunity_id=scope, user=stranger, access_token="tok")  # a token does not help
     with pytest.raises(PermissionError):
-        WorkflowDataAccess(opportunity_id=scope, user=me, hq_access_user=UserFactory())  # someone else's proof
+        WorkflowDataAccess(opportunity_id=scope)  # no user at all
     with pytest.raises(PermissionError):
-        WorkflowDataAccess(program_id=scope, user=me, hq_access_user=me)
+        WorkflowDataAccess(program_id=scope, user=alice)  # only ever the opportunity scope
+    with pytest.raises(PermissionError):
+        WorkflowDataAccess(opportunity_id=hq_scope_id(project.pk + 99), user=alice)  # no such project
+    assert WorkflowDataAccess(opportunity_id=str(scope), user=alice).opportunity_id == scope  # a string id is fine
 
 
-def test_the_local_backend_knows_only_projects_that_exist(project):
-    assert is_labs_only_opportunity_id(hq_scope_id(project.pk))
-    assert not is_labs_only_opportunity_id(hq_scope_id(project.pk + 99))
+def test_membership_that_has_lapsed_opens_nothing(alice, project):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from connect_labs.hqdata.models import HQProjectMember
+
+    HQProjectMember.objects.filter(project=project).update(verified_at=timezone.now() - timedelta(days=3))
+    with pytest.raises(PermissionError):
+        WorkflowDataAccess(opportunity_id=hq_scope_id(project.pk), user=alice)
+
+
+def test_a_project_is_not_a_labs_only_opportunity_to_anyone_else_who_asks(project):
+    # scope_config, supply scopes and the synthetic tools read this as "a SyntheticOpportunity row exists".
+    assert not is_labs_only_opportunity_id(hq_scope_id(project.pk))
+    assert is_hq_project_scope(hq_scope_id(project.pk))
+    assert not is_hq_project_scope(hq_scope_id(project.pk + 99))
 
 
 def test_a_public_record_is_never_looked_for_in_production_for_a_project(project):
@@ -106,4 +123,26 @@ def test_the_project_dashboard_is_made_once_and_reads_the_projects_forms(alice, 
     assert ensure_project_dashboard(alice, project) == first
     data = read_project_pipeline_data(alice, project, first)
     assert sorted((r["username"], r["forms"]) for r in data["workers"]["rows"]) == [("ann", 2), ("bob", 1)]
-    print("ROW", data["workers"]["rows"][0], data["workers"]["metadata"])
+    # a change to the overview in the repo reaches a project that already has one
+    from connect_labs.hqdata import workflows as module
+
+    module.DASHBOARD_RENDER_CODE = module.DASHBOARD_RENDER_CODE + "\n// v2"
+    try:
+        assert ensure_project_dashboard(alice, project) == first
+        assert workflow_dao(alice, project).get_render_code(first).data["component_code"].endswith("// v2")
+    finally:
+        module.DASHBOARD_RENDER_CODE = module.DASHBOARD_RENDER_CODE.removesuffix("\n// v2")
+
+
+def test_a_queryset_delete_of_projects_also_removes_their_workflows(alice, project):
+    workflow_dao(alice, project).create_definition(name="x", description="", statuses=[])
+    scope = hq_scope_id(project.pk)
+    HQProject.objects.filter(pk=project.pk).delete()
+    assert not LabsLocalRecord.objects.filter(opportunity_id=scope).exists()
+
+
+def test_a_scope_that_arrives_as_text_does_not_break_every_other_data_access():
+    from connect_labs.hqdata.scope import is_hq_scope
+
+    assert not is_hq_scope("12") and not is_hq_scope("an-org-slug") and not is_hq_scope(None)
+    assert is_hq_scope(str(hq_scope_id(3)))

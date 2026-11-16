@@ -29,17 +29,27 @@ def is_labs_only_opportunity_id(opportunity_id: int | None) -> bool:
     still count — disabling controls whether fixtures are SERVED, not whether
     the opp_id namespace is local.
     """
-    from connect_labs.hqdata.scope import is_hq_scope, project_id_from_scope
-
-    if is_hq_scope(opportunity_id):
-        # A CommCare project's records are labs' own, whoever holds the project. Who may open
-        # them is hqdata.workflows.project_dao's decision; here the scope only has to exist.
-        from connect_labs.hqdata.models import HQProject
-
-        return HQProject.objects.filter(pk=project_id_from_scope(opportunity_id)).exists()
     if opportunity_id is None or opportunity_id < LABS_ONLY_OPP_ID_FLOOR:
         return False
     return SyntheticOpportunity.objects.filter(opportunity_id=opportunity_id, labs_only=True).exists()
+
+
+def is_hq_project_scope(opportunity_id: int | None) -> bool:
+    """True if ``opportunity_id`` is the records scope of a CommCare project that exists.
+
+    Deliberately NOT part of ``is_labs_only_opportunity_id``: that predicate means "a
+    ``SyntheticOpportunity`` row exists" to every caller that trusts it (scope_config's staff rule,
+    supply scopes, the synthetic MCP tools), and a project has none. Only the records client asks
+    this, to send a project's reads and writes to the local store; who may open them is decided in
+    ``BaseDataAccess`` (membership), never here.
+    """
+    from connect_labs.hqdata.scope import is_hq_scope, project_id_from_scope
+
+    if not is_hq_scope(opportunity_id):
+        return False
+    from connect_labs.hqdata.models import HQProject
+
+    return HQProject.objects.filter(pk=project_id_from_scope(int(opportunity_id))).exists()
 
 
 def is_labs_only_program_id(program_id: int | None) -> bool:

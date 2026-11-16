@@ -21,6 +21,7 @@ from connect_labs.audit_trail.models import Action as _AuditAction
 from connect_labs.audit_trail.models import Outcome as _AuditOutcome
 from connect_labs.labs.models import LocalLabsRecord
 from connect_labs.labs.synthetic import local_records_backend as _local_backend
+from connect_labs.labs.synthetic.local_records_backend import is_hq_project_scope as _is_hq_project_scope
 from connect_labs.utils import request_telemetry
 from connect_labs.workflow.run_codec import RUN_RECORD_TYPE, decode_snapshot, encode_record_data, encode_snapshot
 from connect_labs.workflow.run_snapshot_store import (
@@ -229,7 +230,8 @@ class LabsRecordAPIClient:
         return opportunity_id if opportunity_id is not None else self.opportunity_id
 
     def _is_labs_only(self, opportunity_id: int | None = None) -> bool:
-        if _local_backend.is_labs_only_opportunity_id(self._effective_opportunity_id(opportunity_id)):
+        effective = self._effective_opportunity_id(opportunity_id)
+        if _local_backend.is_labs_only_opportunity_id(effective) or _is_hq_project_scope(effective):
             return True
         # Program-scoped requests with no opportunity selected (e.g. the Workflows
         # list for a synthetic program) must also dispatch to the local backend —

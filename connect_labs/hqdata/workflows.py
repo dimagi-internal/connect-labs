@@ -5,13 +5,17 @@ A project's workflow records (definitions, render code, pipeline definitions) ar
 as a labs-only opportunity's are, so the workflow engine reads and writes them unchanged. Nothing
 is asked of Connect: there is no Connect token for a person who reaches labs only through CommCare.
 
-``project_dao`` is the ONLY door. The local backend itself checks nothing but that the scope
-exists (it is the tenant boundary), so a data access object over a project is built here, after
-``require_project``, and ``BaseDataAccess`` refuses a project scope that did not come through
-here. Never build one from ``labs_context``, a URL or a tool argument.
+The local backend itself checks nothing (the scope is the tenant boundary), so membership is checked
+where a data access object is built: ``BaseDataAccess`` refuses a project scope for anyone who is not
+a verified member right now. ``project_dao`` is the front door (it also refuses a project that keeps
+its data in a customer's database). Never build one from ``labs_context`` or a URL.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
+
+from django.db import transaction
 
 from connect_labs.hqdata.access import require_project
 from connect_labs.hqdata.models import HQProject
@@ -37,7 +41,7 @@ def project_dao(user, project: HQProject, cls=WorkflowDataAccess):
     """A data access object over this project's workflow records, for a verified member only."""
     require_project(user, project)
     _refuse_external(project)
-    return cls(opportunity_id=hq_scope_id(project.pk), user=user, hq_access_user=user)
+    return cls(opportunity_id=hq_scope_id(project.pk), user=user)
 
 
 def workflow_dao(user, project: HQProject) -> WorkflowDataAccess:
@@ -69,91 +73,50 @@ def dashboard_pipeline_schema(project: HQProject) -> dict:
 
 
 #: Drawn in the page sandbox (workflow/sandbox.py): this code is data to the frame, not code the host runs.
-DASHBOARD_RENDER_CODE = r"""function WorkflowUI({ definition, pipelines }) {
-  var data = (pipelines || {}).workers || {};
-  var rows = (data.rows || []).slice().sort(function (a, b) { return (b.forms || 0) - (a.forms || 0); });
-  var total = rows.reduce(function (n, r) { return n + (r.forms || 0); }, 0);
-  var top = rows.length ? rows[0].forms || 1 : 1;
-  var error = data.metadata && data.metadata.per_opp && Object.values(data.metadata.per_opp).map(function (m) { return m.error; }).filter(Boolean)[0];
-
-  function tile(label, value) {
-    return (
-      <div className="bg-white border border-gray-200 rounded-lg p-4">
-        <div className="text-xs text-gray-600 uppercase tracking-wide">{label}</div>
-        <div className="text-3xl font-bold text-brand-indigo mt-1">{value}</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="max-w-4xl">
-      <h1 className="text-2xl font-bold text-brand-indigo mb-1">{(definition && definition.name) || 'Project overview'}</h1>
-      <p className="text-sm text-gray-600 mb-6">Forms submitted per worker, from the forms this project keeps in labs.</p>
-      {error ? <div className="mb-4 rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm text-red-800">{error}</div> : null}
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        {tile('Forms', total.toLocaleString())}
-        {tile('Workers', rows.length.toLocaleString())}
-      </div>
-      {rows.length === 0 ? (
-        <div className="rounded-md border border-yellow-300 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
-          No forms stored yet. Sync the project, then reload this page.
-        </div>
-      ) : (
-        <div className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100">
-          {rows.map(function (r) {
-            return (
-              <div key={r.username} className="flex items-center gap-3 px-4 py-2">
-                <div className="w-48 truncate text-sm text-gray-900">{r.username || '(no username)'}</div>
-                <div className="flex-1 bg-gray-100 rounded h-3">
-                  <div className="bg-brand-indigo h-3 rounded" style={{ width: Math.max(2, Math.round(((r.forms || 0) / top) * 100)) + '%' }}></div>
-                </div>
-                <div className="w-16 text-right text-sm text-gray-700">{(r.forms || 0).toLocaleString()}</div>
-                <div className="w-28 text-right text-xs text-gray-500">{r.last_visit_date || ''}</div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-"""
+DASHBOARD_RENDER_CODE = (Path(__file__).with_name("project_overview.jsx")).read_text()
 
 
 def ensure_project_dashboard(user, project: HQProject) -> int:
-    """Make the project's overview workflow (and its pipeline) if it has none yet. Returns the workflow id.
+    """Make the project's overview workflow (and its pipeline) if it has none, else bring it up to date.
 
     A page-kind definition with repo-owned render code and one pipeline over the project's forms.
-    Idempotent by name, so opening a project twice never makes two.
+    Idempotent by name and serialised per project, so a double click or two members opening it at once
+    never make two. The render code and schema are rewritten when the repo's differ, so a fix to the
+    overview reaches projects that already have one.
     """
+    from django.db import connection
+
     workflows, pipelines = workflow_dao(user, project), pipeline_dao(user, project)
     try:
-        for existing in workflows.list_definitions():
-            if existing.name == DASHBOARD_NAME:
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [74_001, project.pk])
+            schema = dashboard_pipeline_schema(project)
+            pipeline = next((p for p in pipelines.list_definitions() if p.name == DASHBOARD_PIPELINE_NAME), None)
+            if pipeline is None:
+                pipeline = pipelines.create_definition(
+                    DASHBOARD_PIPELINE_NAME, "Forms per worker, from this project's stored forms.", schema
+                )
+            elif pipeline.schema != schema:
+                pipelines.update_definition(pipeline.id, schema=schema)
+            existing = next((d for d in workflows.list_definitions() if d.name == DASHBOARD_NAME), None)
+            if existing is not None:
+                stored = workflows.get_render_code(existing.id)
+                if stored is None or (stored.data or {}).get("component_code") != DASHBOARD_RENDER_CODE:
+                    workflows.save_render_code(existing.id, DASHBOARD_RENDER_CODE)
                 return existing.id
-        pipeline = next((p for p in pipelines.list_definitions() if p.name == DASHBOARD_PIPELINE_NAME), None)
-        if pipeline is None:
-            pipeline = pipelines.create_definition(
-                DASHBOARD_PIPELINE_NAME,
-                "Forms per worker, from this project's stored forms.",
-                dashboard_pipeline_schema(project),
+            definition = workflows.create_definition(
+                DASHBOARD_NAME,
+                "Forms per worker over this CommCare project.",
+                kind="page",
+                statuses=[],
+                templateType="hq_project_overview",
+                config={"templateType": "hq_project_overview", "showFilters": False, "showSummaryCards": False},
+                pipeline_sources=[{"pipeline_id": pipeline.id, "alias": "workers"}],
+                opportunity_ids=[],
             )
-        definition = workflows.create_definition(
-            DASHBOARD_NAME,
-            "Forms per worker over this CommCare project.",
-            kind="page",
-            statuses=[],
-            templateType="hq_project_overview",
-            config={
-                "templateType": "hq_project_overview",
-                "showFilters": False,
-                "showSummaryCards": False,
-            },
-            pipeline_sources=[{"pipeline_id": pipeline.id, "alias": "workers"}],
-            opportunity_ids=[],
-        )
-        workflows.save_render_code(definition.id, DASHBOARD_RENDER_CODE)
-        return definition.id
+            workflows.save_render_code(definition.id, DASHBOARD_RENDER_CODE)
+            return definition.id
     finally:
         workflows.close()
         pipelines.close()
