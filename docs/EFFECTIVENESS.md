@@ -92,7 +92,8 @@ exports a `spec.json` Labs vendors. Labs reads no Sheet at run time.
 3. When the check reports drift, someone with the repo runs the refresh and opens a PR; the tests pin the Sheets' headline
    numbers, so a model change is seen in review.
 
-Nothing runs the check on a schedule yet: a scheduled run needs a credential in CI.
+A daily task (`tasks.check_model_sheets`, 06:12 UTC) runs the same check inside Labs, where the service account already is. On drift it logs an
+ERROR (Sentry) and the models page shows a one-line note until the specs are refreshed; a Sheet it cannot read fails the task.
 
 ## Left to do
 
