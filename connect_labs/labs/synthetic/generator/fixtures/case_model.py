@@ -101,6 +101,22 @@ _GATE_MAX_TRIES = 20
 # ---------------------------------------------------------------------------
 
 
+def _interp_at(values: np.ndarray, pos: float) -> float:
+    """``values`` linearly interpolated at index ``pos`` (0 <= pos <= len - 1).
+
+    ``np.interp(pos, np.arange(len(values)), values)`` to the last bit or two, without
+    building and searching a ``len(values)`` array on every call. (Not always bit-equal:
+    numpy's compiled loop fuses the multiply-add on some builds, e.g. macOS arm64, so
+    np.interp was never bit-stable across platforms either.) The pools sampled
+    this way hold one entry per reading in the opportunity, and a draw is taken per
+    reading, so the ``np.interp`` form was quadratic in case count: a 35,000-case
+    opportunity spent two hours here and the next one hit the worker's 6h limit
+    (labs-jj-synthetic-job-overran, 2026-11-11)."""
+    lo = int(math.floor(pos))
+    hi = min(lo + 1, len(values) - 1)
+    return float(values[lo] + (values[hi] - values[lo]) * (pos - lo))
+
+
 @dataclass
 class _Margin:
     """An empirical margin: sorted observed values, sampled by interpolated quantile."""
@@ -1828,7 +1844,7 @@ def _sample_case(
                 copied = rng.random() < shares.get(owner, shares["*"]) or not len(diffs)
                 if not copied:
                     u = rng.random() * (len(diffs) - 1)
-                    first = _on_grid(first + float(np.interp(u, np.arange(len(diffs)), diffs)), pm, owner, rng)
+                    first = _on_grid(first + _interp_at(diffs, u), pm, owner, rng)
                 params[f"b:{path}"] = first - params.get(f"s:{path}", 0.0) * day
                 last_resid[path] = 0.0
                 values[path] = float(first) if copied else _round_clamp(first, pm)
@@ -1842,11 +1858,7 @@ def _sample_case(
                 # much as the source's carry (resid_ar); same spread whatever the carry.
                 prev = last_resid.get(path)
                 if pm.resid_pool is not None:
-                    fresh = float(
-                        np.interp(
-                            nrng.uniform() * (len(pm.resid_pool) - 1), np.arange(len(pm.resid_pool)), pm.resid_pool
-                        )
-                    )
+                    fresh = _interp_at(pm.resid_pool, nrng.uniform() * (len(pm.resid_pool) - 1))
                 else:
                     fresh = nrng.normal(0.0, pm.resid_sd)
                 e = fresh if prev is None else pm.resid_ar * prev + math.sqrt(1 - pm.resid_ar**2) * fresh
