@@ -1,6 +1,6 @@
 from django.urls import path
 
-from connect_labs.hqdata.web import auth_views, views
+from connect_labs.hqdata.web import auth_views, views, workflow_views
 
 app_name = "hq"
 
@@ -14,6 +14,17 @@ urlpatterns = [
     path("projects/<int:project_id>/act/", views.project_action, name="project_action"),
     path("projects/<int:project_id>/pipelines/", views.pipeline_list, name="pipeline_list"),
     path("projects/<int:project_id>/pipelines/<int:pipeline_id>/", views.pipeline_detail, name="pipeline_detail"),
+    path("projects/<int:project_id>/workflows/", workflow_views.workflow_list, name="workflow_list"),
+    path(
+        "projects/<int:project_id>/workflows/<int:definition_id>/",
+        workflow_views.workflow_page,
+        name="workflow_page",
+    ),
+    path(
+        "projects/<int:project_id>/workflows/<int:definition_id>/pipeline-data/",
+        workflow_views.workflow_pipeline_data,
+        name="workflow_pipeline_data",
+    ),
     path("tokens/", views.tokens, name="tokens"),
     path("", views.home, name="home"),
 ]

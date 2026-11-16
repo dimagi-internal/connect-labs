@@ -610,6 +610,10 @@ class PipelineChatHistoryRecord(LocalLabsRecord):
 class BaseDataAccess:
     """Base class with shared functionality for data access."""
 
+    #: True only for a data access opened over a CommCare project by ``hqdata.workflows.project_dao``.
+    #: A class attribute so an object built without ``__init__`` (tests do) is simply not one.
+    hq_scope = False
+
     def __init__(
         self,
         opportunity_id: int | None = None,
@@ -629,6 +633,10 @@ class BaseDataAccess:
             user: Django User object (for OAuth token extraction)
             request: HttpRequest object (for extracting token and org context)
             access_token: OAuth token for Connect production APIs
+
+        A CommCare project's scope id (``hqdata.scope.hq_scope_id``) as the opportunity is accepted only
+        for a user who is a verified member of that project right now: the check is here, not left to
+        callers, so no tool, task or view can open a project's records by naming its id.
         """
         self.opportunity_id = opportunity_id
         self.organization_id = organization_id
@@ -652,6 +660,13 @@ class BaseDataAccess:
                 self.program_id = labs_context["program_id"]
             if "organization_id" in labs_context:
                 self.organization_id = labs_context["organization_id"]
+
+        # A CommCare project's records live in labs' own database and no Connect token reaches them.
+        from connect_labs.hqdata.scope import is_hq_scope
+
+        if is_hq_scope(self.opportunity_id) or is_hq_scope(self.program_id) or is_hq_scope(self.organization_id):
+            self._open_hq_scope(user)
+            return
 
         # Get OAuth token
         if not access_token and request:
@@ -681,6 +696,24 @@ class BaseDataAccess:
             organization_id=self.organization_id,
             program_id=self.program_id,
         )
+
+    def _open_hq_scope(self, user) -> None:
+        """Set up a data access over a CommCare project, for a verified member of it only."""
+        from connect_labs.hqdata.access import may_use_project
+        from connect_labs.hqdata.models import HQProject
+        from connect_labs.hqdata.scope import is_hq_scope, project_id_from_scope
+
+        if not is_hq_scope(self.opportunity_id) or self.program_id is not None or self.organization_id is not None:
+            raise PermissionError("A CommCare project's scope is only ever the opportunity scope.")
+        self.opportunity_id = int(self.opportunity_id)
+        project = HQProject.objects.filter(pk=project_id_from_scope(self.opportunity_id)).first()
+        if project is None or not may_use_project(user, project):
+            raise PermissionError("Not a verified member of that CommCare project.")
+        self.hq_scope = True
+        self.access_token = None
+        self.production_url = settings.CONNECT_PRODUCTION_URL.rstrip("/")
+        self.http_client = None
+        self.labs_api = LabsRecordAPIClient("", opportunity_id=self.opportunity_id)
 
     def close(self):
         """Close HTTP client. Safe to call multiple times (idempotent)."""
@@ -2958,6 +2991,21 @@ class PipelineDataAccess(BaseDataAccess):
     # Pipeline Execution
     # -------------------------------------------------------------------------
 
+    def _analysis_pipeline(self, pipeline_cls, *, cchq: bool = False):
+        """The analysis pipeline for whoever this data access acts as.
+
+        Over a CommCare project there is no Connect token and no web session to take one from:
+        the pipeline runs as the verified member (``local_only_user``) and refuses every source but
+        that project's own rows.
+        """
+        if self.hq_scope:
+            return pipeline_cls(None, local_only_user=self.user)
+        if self.request is not None:
+            return pipeline_cls(self.request)
+        if cchq:
+            return pipeline_cls(access_token=self.access_token, cchq_access_token=self.cchq_access_token)
+        return pipeline_cls(access_token=self.access_token)
+
     def execute_pipeline(self, definition_id: int, opportunity_id: int, config=None) -> dict:
         """
         Execute a pipeline and return results.
@@ -3006,10 +3054,7 @@ class PipelineDataAccess(BaseDataAccess):
             # Execute pipeline using the AnalysisPipeline.
             # Works with either a Django request (web UI path) or a bare access_token
             # (MCP server path, which has no browser session).
-            if self.request is not None:
-                pipeline = AnalysisPipeline(self.request)
-            else:
-                pipeline = AnalysisPipeline(access_token=self.access_token, cchq_access_token=self.cchq_access_token)
+            pipeline = self._analysis_pipeline(AnalysisPipeline, cchq=True)
             result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
 
             rows = self._serialize_pipeline_rows(result)
@@ -3070,10 +3115,7 @@ class PipelineDataAccess(BaseDataAccess):
         try:
             if config is None:
                 config = self._schema_to_config(schema, definition_id)
-            if self.request is not None:
-                pipeline = AnalysisPipeline(self.request)
-            else:
-                pipeline = AnalysisPipeline(access_token=self.access_token)
+            pipeline = self._analysis_pipeline(AnalysisPipeline)
             result = pipeline.get_cached_result_only(config, opportunity_id)
             if result is None:
                 return None
@@ -3130,10 +3172,7 @@ class PipelineDataAccess(BaseDataAccess):
             # used — the raw-visit slot is found identically.
             config.date_from = date_from or ""
             config.date_to = date_to or ""
-            if self.request is not None:
-                pipeline = AnalysisPipeline(self.request)
-            else:
-                pipeline = AnalysisPipeline(access_token=self.access_token)
+            pipeline = self._analysis_pipeline(AnalysisPipeline)
             result = pipeline.get_period_scoped_result_only(config, opportunity_id)
             if result is None:
                 return None
@@ -3447,6 +3486,13 @@ class PipelineDataAccess(BaseDataAccess):
             columns=data_source_dict.get("columns"),
             authorization=data_source_dict.get("authorization") or {},
         )
+        if getattr(self, "hq_scope", False) and data_source.type == "hq_store":
+            # Over a CommCare project a stored schema cannot name another project: the scope this data
+            # access was opened for (and the member proven for) is the only project it reads. getattr,
+            # because hqdata.pipelines.config_for calls this with no self at all.
+            from connect_labs.hqdata.scope import project_id_from_scope
+
+            data_source.project_id = project_id_from_scope(self.opportunity_id)
 
         # Window fields (e.g., distance_from_prev_case_visit_m via lag_haversine).
         # Each entry references already-extracted fields by name — config-level

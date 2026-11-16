@@ -228,6 +228,7 @@ def test_anonymous_user_is_no_op():
         "/labs/commcare/initiate/",
         "/labs/ocs/callback/",
         "/mcp/",
+        "/labs/sandbox/render/",
         "/admin/users/",
     ],
 )

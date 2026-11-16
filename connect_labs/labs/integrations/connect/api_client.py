@@ -21,6 +21,7 @@ from connect_labs.audit_trail.models import Action as _AuditAction
 from connect_labs.audit_trail.models import Outcome as _AuditOutcome
 from connect_labs.labs.models import LocalLabsRecord
 from connect_labs.labs.synthetic import local_records_backend as _local_backend
+from connect_labs.labs.synthetic.local_records_backend import is_hq_project_scope as _is_hq_project_scope
 from connect_labs.utils import request_telemetry
 from connect_labs.workflow.run_codec import RUN_RECORD_TYPE, decode_snapshot, encode_record_data, encode_snapshot
 from connect_labs.workflow.run_snapshot_store import (
@@ -229,7 +230,8 @@ class LabsRecordAPIClient:
         return opportunity_id if opportunity_id is not None else self.opportunity_id
 
     def _is_labs_only(self, opportunity_id: int | None = None) -> bool:
-        if _local_backend.is_labs_only_opportunity_id(self._effective_opportunity_id(opportunity_id)):
+        effective = self._effective_opportunity_id(opportunity_id)
+        if _local_backend.is_labs_only_opportunity_id(effective) or _is_hq_project_scope(effective):
             return True
         # Program-scoped requests with no opportunity selected (e.g. the Workflows
         # list for a synthetic program) must also dispatch to the local backend —
@@ -504,6 +506,10 @@ class LabsRecordAPIClient:
         leak a private one. If the by-id form returns nothing, it falls back to the
         public listing filtered by id -- the read `copy_workflow` already relies on.
         """
+        from connect_labs.hqdata.scope import is_hq_scope
+
+        if is_hq_scope(self.opportunity_id):
+            return None  # a CommCare project holds no public records, and has no Connect token to ask with
         url = f"{self.base_url}/export/labs_record/"
         base = {k: v for k, v in (("experiment", experiment), ("type", type)) if v}
         record_class = model_class if model_class else LocalLabsRecord

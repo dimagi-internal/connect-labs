@@ -1,0 +1,25 @@
+{% extends "hqdata/base.html" %}
+{% load static %}
+{% comment %}
+A project's workflow page, drawn by the workflow runner in page mode and sandboxed
+(hqdata/web/workflow_views.py). The runner reads #workflow-data and mounts into #workflow-root.
+{% endcomment %}
+{% block javascript %}
+{{ block.super }}
+{% if workflow_data and render_code and not error %}
+{% include "workflow/_runner_scripts.html" %}
+{% endif %}
+{% endblock javascript %}
+{% block hq_content %}
+  <p class="mb-2 text-sm"><a class="underline" href="{% url 'hq:workflow_list' project.pk %}">&larr; Workflows in {{ project.domain }}</a></p>
+  {% if error %}
+    <div class="rounded-md border border-yellow-300 bg-yellow-50 p-4 text-sm text-yellow-800" data-testid="hq-workflow-error">{{ error }}</div>
+  {% elif not render_code %}
+    <div class="rounded-md border border-yellow-300 bg-yellow-50 p-4 text-sm text-yellow-800">This page has nothing to draw yet.</div>
+  {% else %}
+    {{ workflow_data|json_script:"workflow-data" }}
+    <div id="workflow-root" data-csrf-token="{{ csrf_token }}" data-testid="hq-workflow">
+      <div class="py-12 text-center text-gray-600">Loading…</div>
+    </div>
+  {% endif %}
+{% endblock %}

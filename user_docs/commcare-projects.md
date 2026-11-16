@@ -64,6 +64,12 @@ What labs needs from you:
 **Check the connection** runs everything labs relies on and tells you which step fails. Moving a project to your
 database (or back) starts its read from CommCare again into the new place and removes what was in the old one.
 
+## Workflows
+
+**Open workflows** on a project's page, then **Open the project overview**. It is a dashboard drawn from the forms
+the project has stored: the number of forms and workers, and forms per worker with each worker's latest submission.
+Only people who belong to the project can open it, and it reads nothing from Connect.
+
 ## Using a project from a script or an AI assistant
 
 **Access tokens** (top right) makes a token that lets a script or an MCP client list your projects, read their
@@ -72,6 +78,7 @@ from Connect. Shown once when you make it; revoke it any time.
 
 ## What is not here yet
 
-* Workflows and dashboards over a CommCare project (they are built on Connect opportunities).
+* Workflow runs, saved snapshots and scheduled runs over a CommCare project, dashboards you write yourself, and
+  workflows for a project that keeps its data in your own database.
 * The Data page's SQL explorer over a project's forms and cases.
 * A project's users and locations.

@@ -34,6 +34,24 @@ def is_labs_only_opportunity_id(opportunity_id: int | None) -> bool:
     return SyntheticOpportunity.objects.filter(opportunity_id=opportunity_id, labs_only=True).exists()
 
 
+def is_hq_project_scope(opportunity_id: int | None) -> bool:
+    """True if ``opportunity_id`` is the records scope of a CommCare project that exists.
+
+    Deliberately NOT part of ``is_labs_only_opportunity_id``: that predicate means "a
+    ``SyntheticOpportunity`` row exists" to every caller that trusts it (scope_config's staff rule,
+    supply scopes, the synthetic MCP tools), and a project has none. Only the records client asks
+    this, to send a project's reads and writes to the local store; who may open them is decided in
+    ``BaseDataAccess`` (membership), never here.
+    """
+    from connect_labs.hqdata.scope import is_hq_scope, project_id_from_scope
+
+    if not is_hq_scope(opportunity_id):
+        return False
+    from connect_labs.hqdata.models import HQProject
+
+    return HQProject.objects.filter(pk=project_id_from_scope(int(opportunity_id))).exists()
+
+
 def is_labs_only_program_id(program_id: int | None) -> bool:
     """Return True if ``program_id`` is a labs-only program (reserved >= 10_000 range).
 

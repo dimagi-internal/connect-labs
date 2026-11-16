@@ -14,8 +14,12 @@ def hq_scope_id(project_id: int) -> int:
     return -(HQ_SCOPE_FLOOR + int(project_id))
 
 
-def is_hq_scope(scope_id: int | None) -> bool:
-    return scope_id is not None and scope_id <= -HQ_SCOPE_FLOOR
+def is_hq_scope(scope_id) -> bool:
+    """True for a project scope id. Takes whatever a caller holds: MCP and URL arguments arrive as strings."""
+    try:
+        return scope_id is not None and int(scope_id) <= -HQ_SCOPE_FLOOR
+    except (TypeError, ValueError):
+        return False
 
 
 def project_id_from_scope(scope_id: int) -> int:

@@ -7,6 +7,8 @@ from datetime import timedelta
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 from django.utils import timezone
 
 from connect_labs.hqdata.scope import hq_scope_id
@@ -421,3 +423,15 @@ class HQExternalDatabase(models.Model):
         if HQProject.objects.filter(pk=self.project_id, store=HQProject.STORE_EXTERNAL).exists():
             raise models.ProtectedError("The project is keeping its data in this database.", {self})
         return super().delete(*args, **kwargs)
+
+
+@receiver(post_delete, sender=HQProject)
+def _delete_project_workflow_records(sender, instance, **kwargs):
+    """A project's workflows, pipeline definitions and render code (hqdata.workflows) go with it.
+
+    A signal, not ``delete()``: a queryset delete or a cascade skips the method and would orphan them.
+    """
+    from connect_labs.hqdata.scope import hq_scope_id
+    from connect_labs.labs.synthetic.models import LabsLocalRecord
+
+    LabsLocalRecord.objects.filter(opportunity_id=hq_scope_id(instance.pk)).delete()
