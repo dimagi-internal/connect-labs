@@ -47,6 +47,7 @@
       String(D.spec.version || '').replace(/^v/i, '') +
       ' · ' +
       String(D.spec.commit || '').slice(0, 7),
+    D.spec.drift ? h('span', { text: ' · ' + D.spec.drift }) : '',
   ]);
 
   // ---- inputs form: one row per input, with its sensitivity switch and bar
