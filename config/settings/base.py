@@ -853,6 +853,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "connect_labs.effectiveness.tasks.refresh_opportunity_places",
         "schedule": crontab(minute=23, hour="*/6"),
     },
+    # Has a live model Sheet moved away from the vendored copy? (connect_labs/effectiveness/sheet_drift.py)
+    # The Sheets are hand-edited by their owner, so the only way Labs hears of a change is to read them.
+    "effectiveness-check-model-sheets": {
+        "task": "connect_labs.effectiveness.tasks.check_model_sheets",
+        "schedule": crontab(minute=12, hour=6),
+    },
     "sweep-public-run-shares": {
         "task": "connect_labs.workflow.tasks.sweep_public_run_shares",
         "schedule": crontab(minute=17),

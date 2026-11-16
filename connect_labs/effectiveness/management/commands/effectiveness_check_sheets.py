@@ -4,7 +4,8 @@
     python manage.py effectiveness_check_sheets --json     # the same, as JSON
 
 Reads the Model tab of each model's live Sheet as the labs service account (the Sheets are public, and
-the account needs no edit access). Run it on a schedule, or before relying on a number in a proposal.
+the account needs no edit access). A daily task (``tasks.check_model_sheets``) runs the same comparison;
+run this by hand before relying on a number in a proposal.
 When it reports drift, refresh the specs from the model repo (``effectiveness_vendor --from <checkout>``) and
 commit the result; the vendored commit is shown on every page of the cost-effectiveness explorer.
 """
@@ -12,38 +13,10 @@ commit the result; the vendored commit is shown on every page of the cost-effect
 from __future__ import annotations
 
 import json
-import re
-from urllib.parse import quote
 
 from django.core.management.base import BaseCommand, CommandError
 
-from connect_labs.effectiveness import engine, explore, sheets_check
-
-
-def sheet_id(url: str) -> str:
-    m = re.search(r"/spreadsheets/d/([A-Za-z0-9_-]+)", url or "")
-    if not m:
-        raise CommandError(f"No spreadsheet id in {url!r}")
-    return m.group(1)
-
-
-def read_model_tab(spreadsheet_id: str) -> list[list]:
-    """The Model tab with numbers as numbers (``UNFORMATTED_VALUE``), as the labs service account."""
-    import httpx
-    from google.auth.transport.requests import Request
-
-    from connect_labs.labs.synthetic.gdrive import _load_credentials
-
-    creds = _load_credentials()
-    if not creds.valid:
-        creds.refresh(Request())
-    url = (
-        f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{quote('Model!A1:N400', safe='')}"
-        "?valueRenderOption=UNFORMATTED_VALUE"
-    )
-    got = httpx.get(url, headers={"Authorization": f"Bearer {creds.token}"}, timeout=60)
-    got.raise_for_status()
-    return got.json().get("values", [])
+from connect_labs.effectiveness import engine, sheet_drift
 
 
 class Command(BaseCommand):
@@ -53,10 +26,7 @@ class Command(BaseCommand):
         parser.add_argument("--json", action="store_true", dest="as_json", help="Print the report as JSON.")
 
     def handle(self, *args, as_json=False, **options):
-        meta = explore.models()
-        reports = []
-        for model in engine.MODELS:
-            reports.append(sheets_check.compare(model, read_model_tab(sheet_id(meta[model]["sheet"]))))
+        reports = sheet_drift.check_all()
         if as_json:
             self.stdout.write(json.dumps(reports, indent=1))
         else:

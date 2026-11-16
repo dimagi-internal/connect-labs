@@ -14,7 +14,7 @@ from django.shortcuts import render
 from django.utils.decorators import method_decorator
 from django.views import View
 
-from connect_labs.effectiveness import engine, explore, groups, valuation
+from connect_labs.effectiveness import engine, explore, groups, sheet_drift, valuation
 from connect_labs.labs.chrome import NOT_USED, page_chrome
 
 CONTEXT_NOT_USED = method_decorator(page_chrome(labs_context=NOT_USED), name="dispatch")
@@ -67,7 +67,11 @@ class ModelExplorerView(LoginRequiredMixin, View):
             "scenarios": explore.scenarios(model),
             "places": explore.places(model),
             "bar": valuation.bar(),
-            "spec": {"version": engine.spec(model).get("version"), **engine.source()},
+            "spec": {
+                "version": engine.spec(model).get("version"),
+                **engine.source(),
+                "drift": sheet_drift.drift_note(),
+            },
             "run_url": request.path + "api/run/",
         }
         return render(request, "effectiveness/models.html", {"data": data})

@@ -30,3 +30,23 @@ def refresh_opportunity_places() -> int:
     value = places.refresh(opps)
     logger.info("[effectiveness] placed %s opportunities", len(value["opps"]))
     return len(value["opps"])
+
+
+@celery_app.task(name="connect_labs.effectiveness.tasks.check_model_sheets")
+def check_model_sheets() -> list[str]:
+    """Has a live model Sheet moved away from the vendored spec? Daily; the answer is shown on the models page.
+
+    A drifted Sheet is an ERROR log, which Sentry reports, because someone has to run
+    ``effectiveness_vendor`` and commit the refresh. A check that could not read a Sheet raises, so a broken
+    credential is a failed task rather than a quiet "no drift".
+    """
+    from connect_labs.effectiveness import sheet_drift
+
+    status = sheet_drift.record(sheet_drift.check_all())
+    if status["drifted"]:
+        logger.error(
+            "[effectiveness] live model Sheet(s) differ from the vendored spec: %s. "
+            "Refresh with effectiveness_vendor and commit.",
+            ", ".join(status["drifted"]),
+        )
+    return status["drifted"]
