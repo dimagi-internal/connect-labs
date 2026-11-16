@@ -13,7 +13,8 @@ TEMPLATES = ROOT / "templates" / "effectiveness"
 #: Template -> the scripts it loads, in order. ``ui.js`` (the DOM builder and number formats) comes first where used.
 PAGES = {
     "models.html": ["ui.js", "models.js"],
-    "market.html": ["ui.js", "market.js"],
+    "market.html": ["ui.js", "scenario.js", "dials.js", "marketview.js", "market.js"],
+    "workspace.html": ["ui.js", "scenario.js", "dials.js", "marketview.js", "areamap.js", "workspace.js"],
     "implementation.html": ["implementation.js"],
 }
 
@@ -56,7 +57,16 @@ def test_no_page_carries_inline_code(page):
     assert [b for b in parser.found if "MAPBOX_TOKEN" not in b] == []
 
 
-@pytest.mark.parametrize("name", ["ui.js", "models.js", "market.js"])
+@pytest.mark.parametrize(
+    "name",
+    ["ui.js", "models.js", "scenario.js", "dials.js", "marketview.js", "areamap.js", "market.js", "workspace.js"],
+)
 def test_the_dom_builder_pages_never_parse_model_text_as_html(name):
     """Labels and sources come from the model specs; these scripts build nodes with textContent, so none is HTML."""
     assert "innerHTML" not in (STATIC / name).read_text(encoding="utf-8")
+
+
+def test_the_two_scenario_pages_share_every_part_but_their_own_script():
+    """Market size and the workspace are layouts of one scenario: what they load in common is the shared parts."""
+    market, workspace = PAGES["market.html"], PAGES["workspace.html"]
+    assert market[:-1] == workspace[: len(market) - 1]

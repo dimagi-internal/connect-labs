@@ -1,4 +1,4 @@
-"""The effectiveness pages' views: CEA models, Implementations and Market size."""
+"""The effectiveness pages' views: CEA models, Implementations, Market size and the workspace."""
 
 from connect_labs.effectiveness.views.implementation import (
     ImplementationDataView,
@@ -7,6 +7,7 @@ from connect_labs.effectiveness.views.implementation import (
 )
 from connect_labs.effectiveness.views.market import MarketSizeDataView, MarketSizeView
 from connect_labs.effectiveness.views.models import ModelExplorerView, ModelRunView
+from connect_labs.effectiveness.views.workspace import WorkspaceShapesView, WorkspaceView
 
 __all__ = [
     "ImplementationDataView",
@@ -16,4 +17,6 @@ __all__ = [
     "MarketSizeView",
     "ModelExplorerView",
     "ModelRunView",
+    "WorkspaceShapesView",
+    "WorkspaceView",
 ]

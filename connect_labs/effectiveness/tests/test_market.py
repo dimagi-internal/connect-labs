@@ -1,7 +1,7 @@
 import pytest
 from django.urls import reverse
 
-from connect_labs.effectiveness import engine, market
+from connect_labs.effectiveness import engine, market, result
 
 PEOPLE = {
     "NGA": {"name": "Nigeria", "units": 30_000_000},
@@ -53,6 +53,38 @@ def test_each_model_names_a_count_the_baseline_holds():
         assert unit.measure in measures.MEASURES and not measures.get(unit.measure).is_rate
 
 
+def test_reach_counts_only_that_share_of_the_people():
+    full = market.size("kc", PEOPLE, {}, 6.0)
+    half = market.size("kc", PEOPLE, {}, 6.0, {"reach": 50})
+    assert half["totals"]["units"] == pytest.approx(full["totals"]["units"] / 2)
+    assert half["totals"]["market_usd"] == pytest.approx(full["totals"]["market_usd"] / 2)
+    row = next(r for r in half["rows"] if r["iso3"] == "NER")
+    assert row["units"] == 2_000_000 and row["units_all"] == 4_000_000
+    assert row["multiple"] == next(r for r in full["rows"] if r["iso3"] == "NER")["multiple"]
+
+
+def test_extra_cost_raises_the_price_and_lowers_the_multiple_by_the_one_formula():
+    base = next(r for r in market.size("kc", PEOPLE, {}, 6.0)["rows"] if r["iso3"] == "NER")
+    dear = next(r for r in market.size("kc", PEOPLE, {}, 6.0, {"extra": 30})["rows"] if r["iso3"] == "NER")
+    assert dear["cost_per_person"] == pytest.approx(base["cost_per_person"] + 30)
+    assert dear["multiple"] == pytest.approx(
+        result.scale_multiple(base["multiple"], base["cost_per_person"], base["cost_per_person"] + 30)
+    )
+
+
+def test_effect_scales_the_multiple_and_nothing_else():
+    base = next(r for r in market.size("kc", PEOPLE, {}, 6.0)["rows"] if r["iso3"] == "NER")
+    half = next(r for r in market.size("kc", PEOPLE, {}, 6.0, {"effect": 50})["rows"] if r["iso3"] == "NER")
+    assert half["multiple"] == pytest.approx(base["multiple"] / 2)
+    assert half["market_usd"] == base["market_usd"]
+
+
+def test_default_dials_change_nothing():
+    assert market.size("chc", PEOPLE, {}, 6.0, {"extra": 0, "effect": 100, "reach": 100}) == market.size(
+        "chc", PEOPLE, {}, 6.0
+    )
+
+
 @pytest.mark.django_db
 class TestPageAndApi:
     @pytest.fixture
@@ -87,3 +119,25 @@ class TestPageAndApi:
         sel = got["selection"]
         assert sel["everywhere"] is True and sel["indicator"] == "diarrhoea_prevalence" and sel["africa_total"] > 50
         assert sel["threshold"] == 0  # no threshold: not even the slider minimum
+
+    def test_the_dials_travel_in_the_link_and_come_back_in_the_answer(self, client_in):
+        got = client_in.get(reverse("cea:market_data"), {"models": "kc", "kc_reach": "50"}).json()
+        assert got["models"][0]["dials"]["reach"] == 50.0 and got["changes"] == {"dials": 1, "assumptions": 0}
+        assert got["link"] == {"models": "kc", "kc_reach": "50"}
+
+    def test_the_page_starts_from_the_link_as_the_server_read_it(self, client_in):
+        import json
+        import re
+
+        body = client_in.get(reverse("cea:market"), {"models": "kc", "kc_reach": "50"}).content.decode()
+        data = json.loads(re.search(r'id="scenario-data"[^>]*>(.*?)</script>', body, re.S).group(1))
+        assert data["state"]["models"] == ["kc"] and data["state"]["dials"]["kc"]["reach"] == 50.0
+        assert [d["key"] for d in data["dials"]] == ["extra", "effect", "reach"]
+
+    def test_a_link_that_cannot_run_still_opens_the_page_and_says_why(self, client_in):
+        import json
+        import re
+
+        body = client_in.get(reverse("cea:market"), {"i.chc.nonsense": "1"}).content.decode()
+        data = json.loads(re.search(r'id="scenario-data"[^>]*>(.*?)</script>', body, re.S).group(1))
+        assert "nonsense" in data["error"] and data["state"]["overrides"] == {}

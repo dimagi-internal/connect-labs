@@ -196,7 +196,14 @@ def test_market_size_with_a_model_is_the_market_pages_answer(monkeypatch):
     rows = {r["iso3"]: r for r in got["market"]["rows"]}
     assert rows["NGA"]["units"] == 1_500_000 and rows["NER"]["units"] == 200_000
     assert got["market"]["totals"]["market_usd"] == pytest.approx(1_700_000 * rows["NGA"]["cost_per_person"])
-    assert got["explorer_path"].startswith("/labs/cea/market/?") and "i.chc.cost=3.0" in got["explorer_path"]
+    assert got["explorer_path"].startswith("/labs/cea/market/?") and "i.chc.cost=3" in got["explorer_path"]
+    # the link is the page's own: the scenario it reads comes back as the one the tool sized
+    from urllib.parse import parse_qsl, urlsplit
+
+    from connect_labs.effectiveness.scenario import Scenario
+
+    back = Scenario.from_params(dict(parse_qsl(urlsplit(got["explorer_path"]).query)))
+    assert back.models == ("chc",) and back.overrides == {"chc": {"cost": 3.0}} and back.indicator == "u5mr"
     assert got["countries_with_no_data"] == ["TUN"] and got["overrides"] == {"cost": 3.0}
 
 

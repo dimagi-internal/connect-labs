@@ -33,11 +33,19 @@ PURE_CORE = (
     "explore.py",
     "sheets_check.py",
     "market.py",
+    "scenario.py",
     "implementation/catalog.py",
     "implementation/whatif.py",
 )
 #: The only effectiveness modules that read the baseline packages.
-READS_BASELINE = {"baseline.py", "places.py", "interventions.py", "people.py", "views/market.py"}
+READS_BASELINE = {
+    "baseline.py",
+    "places.py",
+    "interventions.py",
+    "people.py",
+    "shapes.py",
+    "views/scenario_page.py",
+}
 
 
 def _files(*dirs: str):

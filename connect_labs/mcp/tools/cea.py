@@ -440,6 +440,7 @@ def _market_size_by_model(*, model, overrides, bar, indicator, threshold, resolu
     from django.urls import reverse
 
     from connect_labs.effectiveness import engine, explore, market, people, valuation
+    from connect_labs.effectiveness.scenario import Scenario
 
     if model not in engine.MODELS:
         raise MCPToolError("BAD_REQUEST", f"Unknown model {model!r}. Choose one of: {', '.join(engine.MODELS)}.")
@@ -462,8 +463,10 @@ def _market_size_by_model(*, model, overrides, bar, indicator, threshold, resolu
         sized = market.size(model, people.for_model(found, model), clean, bar)
     except ZeroDivisionError:
         raise MCPToolError("BAD_REQUEST", f"Those inputs divide by zero in the {model} model.") from None
-    query = {"models": model, "indicator": indicator, "threshold": selection.threshold, "bar": bar}
-    query.update({f"i.{model}.{k}": v for k, v in clean.items()})
+    # The page's own link, spelled by the scenario that the page reads it with.
+    link = Scenario(
+        models=(model,), indicator=indicator, threshold=selection.threshold, bar=bar, overrides={model: clean}
+    ).to_params()
     return {
         "indicator": indicator,
         "threshold": selection.threshold,
@@ -473,7 +476,7 @@ def _market_size_by_model(*, model, overrides, bar, indicator, threshold, resolu
         "countries": len(found["countries"]),
         "countries_with_no_data": found["unsupported"],
         "market": sized,
-        "explorer_path": f"{reverse('cea:market')}?{urlencode(query)}",
+        "explorer_path": f"{reverse('cea:market')}?{urlencode(link)}",
         "caveat": (
             "A year of cost to reach everyone in these places at the model's price. A country with no published "
             "model figures counts in the market and never in the part that clears the bar; a place with no count "
