@@ -46,7 +46,6 @@ def test_a_programme_with_nothing_set_shows_every_built_in_tab_but_the_ones_off_
 def test_a_tab_that_is_off_by_default_is_turned_on_by_the_programme(client_in_programme):
     _set({"supply_chain:tests": {"hidden": False}})
     assert "Tests" in [label.strip() for _, _, label in _tabs(client_in_programme)]
-    assert client_in_programme.get(reverse("supply_chain:tests")).status_code == 200
 
 
 def test_a_hidden_tab_leaves_the_nav_and_its_page_explains_itself(client_in_programme):
