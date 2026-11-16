@@ -139,6 +139,13 @@ def _subject_scope(subject_type, subject_id, facts):
     if subject_type == "tender":
         tender = Tender.objects.filter(pk=subject_id).first()
         return (set(), _tender_commodities(tender)) if tender else None
+    if subject_type == "quality_test":
+        from connect_labs.supply_chain.models import QualityTest
+
+        test = QualityTest.objects.filter(pk=subject_id).first()
+        if test is None:
+            return None
+        return {test.supply_point_id}, ({test.commodity_id} if test.commodity_id else set())
 
     facts = facts or {}
     for key, kind in (("contract_id", "contract"), ("shipment_id", "shipment"), ("supply_point_id", "supply_point")):
@@ -257,6 +264,8 @@ def record_url(subject_type, subject_id, facts, program_id) -> str:
             return _url("product_detail", slug, program_id=program_id)
     if subject_type == "supply_point":
         return _url("stock", program_id=program_id)
+    if subject_type == "quality_test":
+        return _url("tests", program_id=program_id)
     if facts.get("contract_id"):
         return _url("order_detail", facts["contract_id"], program_id=program_id)
     return _url("home", program_id=program_id)

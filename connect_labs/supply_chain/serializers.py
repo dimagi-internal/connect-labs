@@ -648,6 +648,35 @@ def stock_issue_follow_up(obj) -> dict:
     }
 
 
+def quality_test(obj) -> dict:
+    return {
+        "id": obj.pk,
+        "kind": obj.kind,
+        "supply_point_id": obj.supply_point_id,
+        "tested_on": _date(obj.tested_on),
+        "tested_by": obj.tested_by,
+        "commodity_slug": obj.commodity.slug if obj.commodity_id else None,
+        "item_id": obj.item_id,
+        "batch": obj.batch,
+        "sample_ref": obj.sample_ref,
+        "dispenser": obj.dispenser,
+        "collected_by": obj.collected_by,
+        "collected_on": _date(obj.collected_on),
+        "readings": dict(obj.readings or {}),
+        "trials": list(obj.trials or []),
+        "storage": dict(obj.storage or {}),
+        "result": obj.result,
+        "findings": list(obj.findings or []),
+        "withdrawn": obj.is_withdrawn,
+        "withdrawn_on": _date(obj.withdrawn_on),
+        "withdrawn_by": obj.withdrawn_by,
+        "withdrawn_reason": obj.withdrawn_reason,
+        "opportunity_id": obj.opportunity_id,
+        "recorded_at": obj.created_at.isoformat() if obj.created_at else None,
+        **_sourced(obj),
+    }
+
+
 def stock_plan(obj) -> dict:
     return {
         "id": obj.pk,

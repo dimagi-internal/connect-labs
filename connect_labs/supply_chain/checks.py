@@ -109,6 +109,9 @@ KIND_CATEGORIES = {
     "delivery_after_stockout": "threshold",
     "tender_start_by": "threshold",
     "item_fails_specification": "threshold",
+    # The newest quality test of a batch, a dispenser or a store failed the product's own specification
+    # (or a storage check). The bound is the specification; a newer passing test clears it.
+    "quality_test_failed": "threshold",
     # The bound is a date the record itself holds: the shipment's expected
     # date, or the contract's signature plus its promised lead time.
     "shipment_overdue": "threshold",
@@ -1307,6 +1310,46 @@ def _expiring_stock(access, as_of, opportunity_id=None):
     return out
 
 
+def _failed_quality_tests(access, as_of, opportunity_id=None):
+    """The newest test of each batch, dispenser and store, where it failed (quality.service.latest_standing).
+
+    `since` is the day of the test. The facts carry what a page needs to say what to do: the batch, the
+    dispenser, the findings in words.
+    """
+    from connect_labs.supply_chain.quality import service as quality
+
+    out = []
+    for test in quality.latest_standing(access.program_id, as_of=as_of, opportunity_id=opportunity_id):
+        if test.result != "fail":
+            continue
+        out.append(
+            _check(
+                "quality_test_failed",
+                subject_type="quality_test",
+                subject_id=test.pk,
+                label=quality.subject_label(test),
+                audience="internal",
+                facts={
+                    "test_kind": test.kind,
+                    "tested_on": test.tested_on.isoformat(),
+                    "tested_by": test.tested_by,
+                    "supply_point": {"id": test.supply_point_id, "name": test.supply_point.name},
+                    "commodity": (
+                        {"slug": test.commodity.slug, "name": test.commodity.name} if test.commodity_id else None
+                    ),
+                    "trade_item_id": test.item_id,
+                    "batch": test.batch,
+                    "dispenser": test.dispenser,
+                    "readings": dict(test.readings or {}),
+                    "fails": list(test.findings or []),
+                },
+                since=test.tested_on,
+                as_of=as_of,
+            )
+        )
+    return out
+
+
 def run_checks(access, *, opportunity_id=None, kinds=None, categories=None, as_of=None) -> list[dict]:
     """Run every check over this programme, unranked.
 
@@ -1317,6 +1360,7 @@ def run_checks(access, *, opportunity_id=None, kinds=None, categories=None, as_o
     found = _sourcing(access, as_of) + _catalogue(access, as_of) + _fulfilment(access, as_of)
     found += _stock(access, as_of, opportunity_id=opportunity_id)
     found += _expiring_stock(access, as_of, opportunity_id=opportunity_id)
+    found += _failed_quality_tests(access, as_of, opportunity_id=opportunity_id)
     if kinds:
         from connect_labs.supply_chain.partners.planning import PLANNING_KINDS, planning_checks
 

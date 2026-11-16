@@ -136,6 +136,22 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
 - **Expiry warnings are a check (`stock_expiring`), with the lead time on the product**
   (`Commodity.expiry_warning_days`, 90 days to begin with), so alerts pick it up like any other.
 
+## Quality tests (chlorine programme, 2026-11-16)
+
+- **Tests a supervisor or store keeper carries out are recorded in Supply, not in the field app.** A batch
+  test at the store, a dispenser sample a rider brings back, and a storage check are not paid field work, so
+  they live beside the stock they are about (`QualityTest`, the Tests tab). Paid field tests (a water point's
+  FCR) stay in the app and reach Labs through Connect.
+- **The product's own specification is the rule.** A sample passes only when every figure in
+  `Commodity.spec_requirements` was measured and met; nothing measured against an unset figure is a pass.
+  The trials' average is worked out (`records.TRIALS_AVERAGE_FIELD`). Changing what passes is a Catalogue
+  edit, not code.
+- **The newest standing test decides.** `quality_test_failed` is raised for a batch, dispenser or store whose
+  latest test failed, and clears when a newer one passes. A test is never edited or deleted: one recorded by
+  mistake is withdrawn with a reason and stays listed.
+- **Off unless a programme turns it on.** Tests is hidden by default (`config.SUPPLY` defaults); a programme
+  that tests what it hands out turns it on in Settings.
+
 ## Partners: how each distributes, and who runs which place (Sophie's RUTF feedback, 2026-11)
 
 - **Each partner states how it distributes** (`PartnerPlan`: through facilities, straight to field workers, or

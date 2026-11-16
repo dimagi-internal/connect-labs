@@ -14,6 +14,7 @@ from connect_labs.supply_chain.plan import views as plan_views
 from connect_labs.supply_chain.portfolio import views as portfolio_views
 from connect_labs.supply_chain.procurement import purchase_views, split_screens
 from connect_labs.supply_chain.procurement import views as procurement_views
+from connect_labs.supply_chain.quality import views as quality_views
 from connect_labs.supply_chain.reference import people as people_views
 from connect_labs.supply_chain.reference import views as reference_views
 from connect_labs.supply_chain.runner import views as runner_views
@@ -433,6 +434,11 @@ urlpatterns = [
     path("issues/<int:issue_id>/close/", issue_views.IssueResolveView.as_view(), name="issue_resolve"),
     path("issues/<int:issue_id>/evidence/", issue_views.IssueEvidenceView.as_view(), name="issue_evidence"),
     path("issues/custodian/", issue_views.CustodianAssignView.as_view(), name="custodian_assign"),
+    # Quality tests a supervisor or store keeper carried out: a batch in store, a dispenser sample, storage.
+    path("tests/", quality_views.TestsView.as_view(), name="tests"),
+    path("tests/download/", quality_views.TestsDownloadView.as_view(), name="tests_download"),
+    path("tests/new/<slug:kind>/", quality_views.TestRecordView.as_view(), name="test_record"),
+    path("tests/<int:test_id>/withdraw/", quality_views.TestWithdrawView.as_view(), name="test_withdraw"),
     path("distribution/new/", distribution_views.DistributionRecordView.as_view(), name="distribution_record"),
     # How each partner distributes, and who runs which place.
     path("partners/", partner_views.PartnersView.as_view(), name="partners"),

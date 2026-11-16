@@ -214,7 +214,9 @@ SUPPLY = register_namespace(
             "which an award must give its reason."
         ),
         schema=SCHEMA,
-        defaults={"tabs": {}},
+        # Tests (quality tests, quality/) is for a programme whose staff test what they hand out (chlorine, so
+        # far): off unless a programme or its organisation turns it on with {"hidden": false}.
+        defaults={"tabs": {"supply_chain:tests": {"hidden": True}}},
         layers=frozenset({"organization", "program"}),
         check=_check_layer,
         check_resolved=_check_resolved,

@@ -1680,6 +1680,61 @@ class StockIssueFollowUp(TimestampedModel):
         return f"{self.followed_on}: {self.by}"
 
 
+class QualityTest(SourcedModel):
+    """A quality test somebody in the programme carried out: a batch in store, a dispenser sample, a store.
+
+    Recorded in Supply rather than in a field app because these tests are a supervisor's or store
+    keeper's job, not paid field work. Each reading is kept under the name of the product's own
+    specification figure (`readings`, e.g. {"pH": 11.4, "double_dilution_avg_mg_l": 1.2}), and the
+    result is that specification applied to them (`quality.judge`), stored with the sentences that
+    say why, so the list, the CSV and the checks all read one verdict.
+
+    Never edited and never deleted: a test recorded by mistake is withdrawn with a reason, stays on
+    the list marked withdrawn, and stops counting. A retest is a new row.
+    """
+
+    program_id = models.IntegerField(db_index=True)
+    opportunity_id = models.IntegerField(null=True, blank=True, db_index=True)
+    kind = models.CharField(max_length=24, choices=_choices(records.QUALITY_TEST_KINDS))
+    # Where the test was done: the store the batch is in, or the store a dispenser sample was brought to.
+    supply_point = models.ForeignKey(SupplyPoint, on_delete=models.PROTECT, related_name="quality_tests")
+    tested_on = models.DateField(db_index=True)
+    tested_by = models.CharField(max_length=255)
+    commodity = models.ForeignKey(
+        Commodity, null=True, blank=True, on_delete=models.PROTECT, related_name="quality_tests"
+    )
+    item = models.ForeignKey(Item, null=True, blank=True, on_delete=models.PROTECT, related_name="quality_tests")
+    batch = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    # The sample bottle's own label, so a reading can be traced to the bottle it came from.
+    sample_ref = models.CharField(max_length=64, blank=True, default="")
+    # A dispenser sample: which dispenser (or water point), who collected it and when.
+    dispenser = models.CharField(max_length=255, blank=True, default="")
+    collected_by = models.CharField(max_length=255, blank=True, default="")
+    collected_on = models.DateField(null=True, blank=True)
+    readings = models.JSONField(default=dict, blank=True)
+    # The repeat readings an average was taken from ("trial 1, 2, 3"), kept as they were read.
+    trials = models.JSONField(default=list, blank=True)
+    # A storage check: {check: true/false} for records.STORAGE_CHECKS.
+    storage = models.JSONField(default=dict, blank=True)
+    result = models.CharField(max_length=16, choices=_choices(records.QUALITY_TEST_RESULTS), db_index=True)
+    # Why, in words: each requirement not met, or not measured.
+    findings = models.JSONField(default=list, blank=True)
+    withdrawn_on = models.DateField(null=True, blank=True)
+    withdrawn_by = models.CharField(max_length=255, blank=True, default="")
+    withdrawn_reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-tested_on", "-id"]
+        indexes = [models.Index(fields=["program_id", "kind", "tested_on"])]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} test, {self.tested_on}"
+
+    @property
+    def is_withdrawn(self) -> bool:
+        return self.withdrawn_on is not None
+
+
 class Distribution(SourcedModel):
     """One resupply run from a store out to field workers.
 

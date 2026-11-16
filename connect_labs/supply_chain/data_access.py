@@ -55,6 +55,7 @@ from connect_labs.supply_chain.models import (
     Outreach,
     PartnerPlan,
     PartnerProfile,
+    QualityTest,
     Quote,
     Receipt,
     Shipment,
@@ -485,6 +486,8 @@ class SupplyDataAccess(
                 drop("documents", Document.objects.filter(program_id=program_id))
                 drop("stock counts", StockCount.objects.filter(program_id=program_id))
                 # An issue names its custodian, and both PROTECT the store.
+                # A test names the store it was done at, and PROTECTs it.
+                drop("quality tests", QualityTest.objects.filter(program_id=program_id))
                 drop("issue follow-ups", StockIssueFollowUp.objects.filter(program_id=program_id))
                 drop("stock issues", StockIssue.objects.filter(program_id=program_id))
                 drop("custodians", Custodian.objects.filter(program_id=program_id))

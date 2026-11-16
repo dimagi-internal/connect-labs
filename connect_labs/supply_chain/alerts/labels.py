@@ -25,6 +25,7 @@ WATCH_LABELS = {
     "delivery_after_stockout": "A place runs out before its next delivery",
     "tender_start_by": "It is time to start the next tender",
     "item_fails_specification": "A product does not meet its specification",
+    "quality_test_failed": "A quality test failed: a batch, a dispenser sample or a store",
     "shipment_overdue": "A shipment is later than expected",
     "shipment_documents_outstanding": "A shipment is missing documents",
     "shipment_delivered_unevidenced": "A delivery is recorded with no proof",

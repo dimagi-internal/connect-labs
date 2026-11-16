@@ -49,6 +49,7 @@ _SERIALIZERS = {
     models.PartnerProfile: serializers.partner_profile,
     models.StockIssue: serializers.stock_issue,
     models.StockIssueFollowUp: serializers.stock_issue_follow_up,
+    models.QualityTest: serializers.quality_test,
     models.StockPlan: serializers.stock_plan,
     models.Distribution: serializers.distribution,
     models.Consignment: serializers.consignment,

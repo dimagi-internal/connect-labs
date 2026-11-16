@@ -37,8 +37,15 @@ def _set(patch):
     return service.update("supply", SCOPE, {"tabs": patch}, SYSTEM)
 
 
-def test_a_programme_with_nothing_set_shows_every_built_in_tab(client_in_programme):
-    assert [label.strip() for _, _, label in _tabs(client_in_programme)] == [label for _, label in SUPPLY_TABS]
+def test_a_programme_with_nothing_set_shows_every_built_in_tab_but_the_ones_off_by_default(client_in_programme):
+    # Tests is off until a programme turns it on (config.py: SUPPLY defaults).
+    shown = [label for name, label in SUPPLY_TABS if name != "supply_chain:tests"]
+    assert [label.strip() for _, _, label in _tabs(client_in_programme)] == shown
+
+
+def test_a_tab_that_is_off_by_default_is_turned_on_by_the_programme(client_in_programme):
+    _set({"supply_chain:tests": {"hidden": False}})
+    assert "Tests" in [label.strip() for _, _, label in _tabs(client_in_programme)]
 
 
 def test_a_hidden_tab_leaves_the_nav_and_its_page_explains_itself(client_in_programme):

@@ -102,7 +102,10 @@ def test_an_opportunitys_page_reads_its_programme_owners_org_not_its_partners():
 def test_a_page_gets_the_settings_it_declares():
     service.update("supply", Scope.of("program", 25), {"tabs": {"supply_chain:alerts": {"hidden": True}}}, SYSTEM)
     context, _ = _run_context({**PAGE, "config_reads": ["supply", "no-such-namespace"]})
-    assert context["workflow_data"]["config"] == {"supply": {"tabs": {"supply_chain:alerts": {"hidden": True}}}}
+    # The namespace's own default (Tests off) is part of what the page reads.
+    assert context["workflow_data"]["config"] == {
+        "supply": {"tabs": {"supply_chain:tests": {"hidden": True}, "supply_chain:alerts": {"hidden": True}}}
+    }
 
 
 @pytest.mark.django_db
