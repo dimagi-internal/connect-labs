@@ -14,7 +14,9 @@ from datetime import datetime
 from django.db.models.fields.json import KeyTransform
 from django.utils.dateparse import parse_datetime
 
+from connect_labs.audit_trail.models import Action
 from connect_labs.hqdata.access import may_use_project, visible_projects
+from connect_labs.hqdata.audit import project_denied, project_event
 from connect_labs.hqdata.models import HQPipeline, HQProject, HQProjectMember, HQSource, HQSyncRun
 from connect_labs.hqdata.pipelines import PipelineProblem, config_for, run_pipeline
 from connect_labs.hqdata.projects import Refused, register_project, set_storage
@@ -30,6 +32,7 @@ _PROP_KEY = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 def _project(user, project_id) -> HQProject:
     project = HQProject.objects.filter(pk=project_id).first() if isinstance(project_id, int) else None
     if project is None or not may_use_project(user, project):
+        project_denied(project_id if isinstance(project_id, int) else None, user, kind="mcp")
         raise MCPToolError("NOT_FOUND", "No such CommCare project, or you are not a member of it.")
     return project
 
@@ -207,6 +210,7 @@ def hq_project_sync(user, project_id=None, mode=None, progress=NULL_PROGRESS, **
     # CommCare checks on every call, is the authority, not a 24 hour membership stamp). Anyone else
     # must be a member.
     if project is None or (project.sync_owner_id != user.pk and not may_use_project(user, project)):
+        project_denied(project_id if isinstance(project_id, int) else None, user, kind="sync")
         raise MCPToolError("NOT_FOUND", "No such CommCare project, or you are not a member of it.")
     if mode not in (None, "delta", "full", "reconcile"):
         raise MCPToolError("INVALID_SCHEMA", "mode must be delta, full or reconcile.")
@@ -302,6 +306,7 @@ def hq_forms(
             rows = list(qs.order_by("received_on", "form_id")[offset : offset + limit])
     except StoreUnavailable as exc:
         raise MCPToolError("UPSTREAM_ERROR", str(exc))
+    project_event(Action.LIST, project.pk, user=user, kind="forms", record_count=len(rows))
     return {
         "total": total,
         "offset": offset,
@@ -393,6 +398,7 @@ def hq_cases(
         if paths:
             case = {**case, "values": {p: _path(case, p) for p in paths}}
         out.append(case)
+    project_event(Action.LIST, project.pk, user=user, kind="cases", record_count=len(out))
     return {"total": total, "offset": offset, "cases": out}
 
 
@@ -500,6 +506,7 @@ def hq_pipeline_run(user, project_id=None, pipeline_id=None, name=None, fresh=Fa
         raise MCPToolError("INVALID_SCHEMA", str(exc))
     except StoreUnavailable as exc:
         raise MCPToolError("UPSTREAM_ERROR", str(exc))
+    project_event(Action.READ, project.pk, user=user, kind="pipeline", record_count=result["count"])
     return {
         "count": result["count"],
         "truncated": result["truncated"],

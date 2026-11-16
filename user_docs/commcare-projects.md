@@ -34,7 +34,13 @@ the last one got to.
 
 Which forms and cases are read can be narrowed to one app, one form or one case type under **What is pulled**.
 
+If a project stops syncing, labs reports it to the team: once when a sync starts failing or needs its owner
+to sign in again, and again if a project has not synced for several times its interval.
+
 ## Pipelines
+
+A pipeline reads the rows it works on all at once, so one over a very large project (more than 500,000 rows) is
+refused with a message asking you to narrow it to one app, form or case type.
 
 A pipeline computes over a project's stored forms or cases, the same way a workflow's pipelines compute over
 Connect data. Write the schema as JSON (field paths start `form.` for forms and `case.` for cases, for example

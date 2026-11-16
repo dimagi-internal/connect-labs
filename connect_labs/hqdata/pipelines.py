@@ -54,6 +54,9 @@ def run_pipeline(user, pipeline: HQPipeline, *, force_refresh: bool = False) -> 
 
     require_project(user, pipeline.project)
     config = config_for(pipeline)
+    from connect_labs.hqdata.pipeline_source import ensure_fits
+
+    ensure_fits(config.data_source)  # a very large project fails here, in words, not in the worker
     # The session closes whatever connection into a customer's database the run opened.
     with store_for(pipeline.project).session():
         result = AnalysisPipeline(None, local_only_user=user).stream_analysis_ignore_events(

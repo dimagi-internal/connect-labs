@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from connect_labs.audit_trail.models import Action
 from connect_labs.hqdata.access import DOMAIN_RE, ProjectAccessDenied, create_project
+from connect_labs.hqdata.audit import project_event
 from connect_labs.hqdata.identity import hq_host, sync_identity
 from connect_labs.hqdata.models import HQIdentity, HQProject, HQSource
 from connect_labs.labs.integrations.commcare.api_client import CommCareDataAccess
@@ -45,6 +47,7 @@ def register_project(user, domain: str, token: str) -> HQProject:
             f"CommCare would not let your account read forms in {domain}. Reading data needs the Edit Data permission."
         )
     ensure_default_sources(project)
+    project_event(Action.CREATE, project.pk, user=user, kind="register")
     return project
 
 
@@ -64,4 +67,5 @@ def set_storage(project: HQProject, user, mode: str) -> HQProject:
         ensure_default_sources(project)
     HQProject.objects.filter(pk=project.pk).update(**updates)
     project.refresh_from_db()
+    project_event(Action.UPDATE, project.pk, user=user, kind="storage", metadata={"storage_mode": mode})
     return project

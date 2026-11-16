@@ -8,6 +8,7 @@ from datetime import timedelta
 from django.utils import timezone
 
 from config import celery_app
+from connect_labs.hqdata.alerts import stale_projects
 from connect_labs.hqdata.jobs import queue_sync
 from connect_labs.hqdata.models import HQProject, HQSyncRun
 from connect_labs.hqdata.projects import Refused
@@ -49,4 +50,4 @@ def sync_due_projects() -> dict:
             continue
         if not reply.get("already_running"):
             queued += 1
-    return {"queued": queued, "skipped": skipped, "reaped": reaped}
+    return {"queued": queued, "skipped": skipped, "reaped": reaped, "stale": len(stale_projects(now))}
