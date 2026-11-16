@@ -12,6 +12,7 @@ from django.shortcuts import render as django_render
 from django.views.decorators.http import require_POST
 
 from connect_labs.hqdata.access import may_use_project, visible_projects
+from connect_labs.hqdata.audit import project_denied
 from connect_labs.hqdata.external import SECURE_SSLMODES, check_connection
 from connect_labs.hqdata.identity import hq_host
 from connect_labs.hqdata.jobs import queue_sync
@@ -41,6 +42,7 @@ def _project_for(request: HttpRequest, project_id: int) -> HQProject:
     """The project, or a 404: a project the person cannot use is indistinguishable from one that is not there."""
     project = HQProject.objects.filter(pk=project_id).first()
     if project is None or not may_use_project(request.user, project):
+        project_denied(project_id, request.user, kind="page")
         raise Http404
     return project
 

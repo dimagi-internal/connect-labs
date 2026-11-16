@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 
 from django.utils import timezone
 
+from connect_labs.hqdata.alerts import sync_state_changed
 from connect_labs.hqdata.backends.base import BackendUnavailable, SourceBackend
 from connect_labs.hqdata.models import LEASE_SECONDS, HQCase, HQForm, HQProject, HQSource, HQSyncRun
 from connect_labs.hqdata.records import CaseRecord, FormRecord
@@ -353,9 +354,11 @@ def sync_project(
     from connect_labs.hqdata.backends.factory import backend_for
 
     results: dict = {}
+    was = HQProject.objects.filter(pk=project.pk).values_list("status", flat=True).first() or project.status
     try:
         backend = backend or backend_for(project)
     except BackendUnavailable as exc:
+        sync_state_changed(project.pk, was, HQProject.STATUS_NEEDS_REAUTH, str(exc))
         HQProject.objects.filter(pk=project.pk).update(
             status=HQProject.STATUS_NEEDS_REAUTH, last_error=str(exc)[:2000]
         )
@@ -389,6 +392,7 @@ def sync_project(
     if not failures and summarize(results)["complete"]:
         updates["last_synced_at"] = timezone.now()
     HQProject.objects.filter(pk=project.pk).update(**updates)
+    sync_state_changed(project.pk, was, status, error)
     return results
 
 
