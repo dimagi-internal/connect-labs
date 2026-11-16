@@ -78,8 +78,8 @@ def test_forms_re_anchor_on_the_last_rows_indexed_on_like_commcare_export():
     }
     assert [p["indexed_on_start"] for p in sent] == [
         "2026-11-01T00:00:00",
-        "2026-11-01T10:00:02Z",
-        "2026-11-01T10:00:03Z",
+        "2026-11-01T10:00:02",  # HQ sends ...Z but rejects it back (HTTP 400, read live), so the anchor is naive
+        "2026-11-01T10:00:03",
     ]
     assert all("offset" not in p for p in sent)
     assert get.call_args_list[0].args[0].endswith("/a/demo/api/form/v1/")
@@ -87,6 +87,7 @@ def test_forms_re_anchor_on_the_last_rows_indexed_on_like_commcare_export():
 
 def test_a_page_sharing_one_indexed_on_pages_by_offset_until_the_anchor_moves():
     same = "2026-11-01T10:00:02Z"
+    same_naive = "2026-11-01T10:00:02"
     pages = [
         Resp({"objects": [hq_form("f1", indexed_on=same), hq_form("f2", indexed_on=same)]}),
         Resp({"objects": [hq_form("f1", indexed_on=same), hq_form("f2", indexed_on=same)]}),
@@ -100,8 +101,8 @@ def test_a_page_sharing_one_indexed_on_pages_by_offset_until_the_anchor_moves():
     sent = [c.kwargs["params"] for c in get.call_args_list]
     assert [(p["indexed_on_start"], p.get("offset")) for p in sent] == [
         ("2026-11-01T00:00:00", None),
-        (same, None),
-        (same, 2),
+        (same_naive, None),
+        (same_naive, 2),
     ]
 
 
@@ -215,3 +216,19 @@ def test_backend_translates_sources_and_sends_hqs_timestamp_format():
     assert isinstance(out[0], FormRecord)
     fake.iter_forms_since.assert_called_once_with("2026-11-01T09:00:33.250000", xmlns=None, app_id="app1")
     assert _hq_timestamp(since) == "2026-11-01T09:00:33.250000"
+
+
+@pytest.mark.parametrize("stamp", ["2026-10-30T02:54:50.525767Z", "2026-10-30T02:54:50.525767+00:00"])
+def test_the_anchor_never_carries_a_zone_because_hq_rejects_one(stamp):
+    """Read live 2026-11-16: HQ answers 400 'Unknown date format' to indexed_on_start with Z or +00:00."""
+    pages = [
+        Resp({"objects": [hq_form("f1", indexed_on=stamp), hq_form("f2", indexed_on=stamp)]}),
+        Resp({"objects": [hq_form("f3", indexed_on="2026-10-31T00:00:00Z")]}),
+    ]
+    with (
+        mock.patch.object(CommCareDataAccess, "FORM_PAGE_LIMIT", 2),
+        mock.patch("httpx.get", side_effect=pages) as get,
+    ):
+        list(access().iter_forms_since(None))
+    second = get.call_args_list[1].kwargs["params"]["indexed_on_start"]
+    assert second == "2026-10-30T02:54:50.525767"
