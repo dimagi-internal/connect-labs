@@ -324,6 +324,8 @@ PARTNER_CHECKS = (
     "stock_stockout",
     "stock_below_minimum",
     "stock_expiring",
+    # A failed batch or dispenser test at the partner's own store is for its supervisor to act on.
+    "quality_test_failed",
     "stock_negative",
     "delivery_after_stockout",
     # Small count gaps at a field worker are for the partner's supervisor (the summary leaves them out when

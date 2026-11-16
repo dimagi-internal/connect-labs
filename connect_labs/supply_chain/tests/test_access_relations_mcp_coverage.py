@@ -107,6 +107,9 @@ UNCOVERED_TODAY = frozenset(
         "programme_team_list",
         "programme_team_remove",
         "purchase_sizing",
+        "quality_test_list",
+        "quality_test_record",
+        "quality_test_withdraw",
         "quote_correct",
         "quote_record",
         "quote_void",
@@ -238,7 +241,7 @@ def test_the_numbers_phase_two_leaves():
     tools = set(agent_operations())
     writes = {n for n, op in agent_operations().items() if op.is_write}
     assert len(tools) == len(COVERED) + len(UNCOVERED_TODAY)
-    assert (len(ENFORCED), len(RUNNER_ONLY), len(UNCOVERED_TODAY)) == (20, 1, 128)
+    assert (len(ENFORCED), len(RUNNER_ONLY), len(UNCOVERED_TODAY)) == (20, 1, 131)
     assert writes <= UNCOVERED_TODAY, "writes are phase 3's (per-object write capabilities); none is covered yet"
 
 

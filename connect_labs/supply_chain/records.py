@@ -193,6 +193,28 @@ STOCK_ISSUE_MOVEMENT_KIND = {"expired": "expiry", "expiring": "expiry"}
 # What keeps stock safe at a storage point. Several can apply at once.
 SECURITY_MEASURES = ("locked_room", "locked_box", "separate_shelf", "facility_agreement", "none")
 
+# Quality tests (models.QualityTest): a supervisor's or store keeper's own test, recorded in Supply.
+#   batch             a sample from a batch in store, tested where it is kept (the LLO's own store test)
+#   dispenser_sample  a sample a field worker brought back from a dispenser, tested at the store
+#   storage           a look at how the stock is kept: shade, off the floor, sealed, no leaks, in date
+QUALITY_TEST_KINDS = ("batch", "dispenser_sample", "storage")
+# pass: every requirement the product sets was measured and met. fail: one was not met. incomplete: nothing
+# failed but a requirement was not measured, or the product sets none to test against.
+QUALITY_TEST_RESULTS = ("pass", "fail", "incomplete")
+# What a storage check looks at. Each is answered yes (as it should be) or no.
+STORAGE_CHECKS = ("shaded", "off_the_floor", "sealed", "no_leaks", "in_date", "labelled")
+STORAGE_CHECK_WORDS = {
+    "shaded": "Kept out of the sun",
+    "off_the_floor": "Off the floor",
+    "sealed": "Caps sealed",
+    "no_leaks": "No leaks",
+    "in_date": "In date",
+    "labelled": "Labelled with batch and expiry",
+}
+# Where a test's repeat readings ("trial 1, 2, 3" of a double dilution) are averaged to, when the reading
+# is not given outright: the product's specification judges the average, not any one trial.
+TRIALS_AVERAGE_FIELD = "double_dilution_avg_mg_l"
+
 CONTRACT_STATUSES = (
     "draft",
     "placed",

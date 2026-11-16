@@ -43,6 +43,8 @@ TAB_GROUPS = (
             ("supply_chain:plan", "Plan"),
             ("supply_chain:flow", "Where it went"),
             ("supply_chain:issues", "Issues"),
+            # Off unless a programme turns it on (config.py: SUPPLY defaults).
+            ("supply_chain:tests", "Tests"),
         ),
     ),
     (
@@ -89,6 +91,7 @@ PAGE_PURPOSE = {
     "supply_chain:workers": "Each field worker's stock, and how long it lasts.",
     "supply_chain:flow": "Where the stock went after delivery.",
     "supply_chain:issues": "Stock missing, damaged or expired, followed up.",
+    "supply_chain:tests": "Quality tests: batches in store, dispenser samples, storage.",
     "supply_chain:catalogue": "What you buy.",
     "supply_chain:organisations": "Every organisation in this program.",
     "supply_chain:alerts": "Who is told, and when.",
@@ -246,6 +249,10 @@ TAB_FOR_VIEW = {
     "supply_chain:issue_resolve": "supply_chain:issues",
     "supply_chain:issue_evidence": "supply_chain:issues",
     "supply_chain:custodian_assign": "supply_chain:issues",
+    "supply_chain:test_record": "supply_chain:tests",
+    "supply_chain:test_withdraw": "supply_chain:tests",
+    # The list as a CSV: under the tab, so a programme that has the tab off has no download either.
+    "supply_chain:tests_download": "supply_chain:tests",
     "supply_chain:partner_plan": "supply_chain:partners",
     "supply_chain:partner_places": "supply_chain:partners",
     "supply_chain:partner_contact": "supply_chain:partners",
