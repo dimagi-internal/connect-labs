@@ -187,6 +187,26 @@ def _verify_pat_sync(raw: str):
 
 
 def _verify_bearer_sync(raw: str, presented_jkt: str | None = None):
+    """``_resolve_bearer_sync``, narrowed for anyone who reaches labs only through CommCare.
+
+    ``/o/`` (the MCP sign-in) is outside the labs session boundary, so a CommCare-only session
+    could mint a token there, and every Connect tool acts as the user with a Connect token a
+    CommCare-only identity does not have. So such a person gets in with exactly one kind of
+    credential, a PAT of the ``commcare`` scope (minted at /hq/tokens/), which
+    ``allowed_tools`` confines to ``COMMCARE_TOOLS``. Any other credential is refused here, at the
+    one door.
+    """
+    resolved = _resolve_bearer_sync(raw, presented_jkt)
+    if resolved is not None:
+        from connect_labs.hqdata.access import is_commcare_only
+
+        user, method, _client_id, scopes, _extra = resolved
+        if is_commcare_only(user) and not (method == "pat" and token_scopes.is_commcare(scopes)):
+            return None
+    return resolved
+
+
+def _resolve_bearer_sync(raw: str, presented_jkt: str | None = None):
     """Resolve a bearer to ``(user, auth_method, client_id, scopes, extra_claims)``, or None.
 
     A Personal Access Token first -- unchanged, for scripts and headless agents --
@@ -357,6 +377,13 @@ def allowed_tools(access_token) -> frozenset[str] | None:
             permitted = permitted | token_scopes.JOB_TOOLS
     if restricted_call(access_token):
         permitted = token_scopes.RESTRICTED_TOOLS if permitted is None else permitted & token_scopes.RESTRICTED_TOOLS
+    if token_scopes.is_commcare(getattr(access_token, "scopes", None)):
+        if permitted is None:
+            # hq_project_sync hands back a job id for anything past 30s; a CommCare-only person
+            # must be able to follow and cancel it. Never added once another limit narrows the set.
+            permitted = token_scopes.COMMCARE_TOOLS | token_scopes.JOB_TOOLS
+        else:
+            permitted = permitted & token_scopes.COMMCARE_TOOLS
     return permitted
 
 

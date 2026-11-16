@@ -80,6 +80,7 @@ class AnalysisPipeline:
         *,
         access_token: str | None = None,
         cchq_access_token: str | None = None,
+        local_only_user=None,
     ):
         """
         Initialize pipeline with request context or explicit access_token.
@@ -93,19 +94,26 @@ class AnalysisPipeline:
                           get_valid_cchq_access_token(user). Mutually exclusive
                           with deriving the token from the request's session.
 
+        local_only_user: a person reading a CommCare project's own data (``hq_store``)
+            with no Connect token at all. The pipeline then reads nothing from Connect and
+            refuses any other data source; the project gate is checked against this person.
+
         Either ``request`` (with a valid labs_oauth session) or ``access_token``
-        must be provided.  When both are given, ``access_token`` takes precedence.
+        must be provided, unless ``local_only_user`` is.  When both are given, ``access_token`` takes precedence.
         Same precedence for ``cchq_access_token`` vs. the request's session.
         """
         self.request = request
         self.backend = get_backend()
+        # The labs backend, kept so `_select_backend` can swap `self.backend` per config and back.
+        self._base_backend = self.backend
         self.backend_name = "sql"
 
         # Resolve access token: explicit kwarg wins, otherwise extract from session
         if access_token is None and request is not None:
             access_token = request.session.get("labs_oauth", {}).get("access_token")
 
-        if not access_token:
+        self.local_only_user = local_only_user
+        if not access_token and local_only_user is None:
             raise ValueError(
                 "AnalysisPipeline requires either a request with labs_oauth session or access_token kwarg"
             )
@@ -424,6 +432,10 @@ class AnalysisPipeline:
         ``gdrive_fetcher.program_cache_scope`` -- whichever opportunity (if any) the
         caller asked for. Idempotent, so a caller that already mapped is safe.
         """
+        if config.data_source.type == "hq_store":
+            from connect_labs.hqdata.scope import hq_scope_id
+
+            return hq_scope_id(config.data_source.project_id)
         if config.data_source.type != "gdrive":
             return opp_id
         from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import drive_cache_scope
@@ -437,6 +449,15 @@ class AnalysisPipeline:
         a fetch: a valid stamp for this opportunity and a caller who belongs to it --
         or, for a program-scoped source, a caller in the program's owning organization.
         """
+        if config.data_source.type == "hq_store":
+            from connect_labs.hqdata.pipeline_source import check_project_access
+
+            check_project_access(config.data_source, self.local_only_user or getattr(self.request, "user", None))
+            return
+        if self.local_only_user is not None:
+            # A person with no Connect token reads CommCare projects and nothing else; a
+            # schema naming any other source is refused before it can ask Connect for anything.
+            raise PermissionError("This sign-in can read CommCare projects only.")
         if config.data_source.type == "gdrive":
             from connect_labs.labs.analysis.backends.sql.gdrive_fetcher import check_gdrive_access
 
@@ -504,6 +525,7 @@ class AnalysisPipeline:
         if not opp_id:
             return None
         self._check_drive_access(config, opp_id)
+        self._select_backend(config)
         if self._never_served_from_cache(config):
             return None
         expected = self._expected_count_for_cache(config, opp_id)
@@ -539,6 +561,25 @@ class AnalysisPipeline:
             access_token=self.access_token,
             opportunity_id=opp_id,
         )
+
+    def _select_backend(self, config: AnalysisPipelineConfig) -> None:
+        """Point ``self.backend`` at wherever this config's cache operations belong.
+
+        Labs' own backend, except for a CommCare project that keeps its data in a customer's
+        database: its staged rows and computed results must not land in labs either, so its
+        backend runs every call against that database (``hqdata.redirect``)."""
+        self.backend = self._base_backend
+        if config.data_source.type == "hq_store":
+            from connect_labs.hqdata.pipeline_source import cache_backend_for
+
+            self.backend = cache_backend_for(config.data_source, self._base_backend)
+
+    def _fetch_hq_store(self, config: AnalysisPipelineConfig, opp_id: int) -> list[dict]:
+        """An hq_store source's rows: what the CommCare project keeps, as visit dicts.
+        The caller has passed ``_check_drive_access`` for THIS config, which is the project gate."""
+        from connect_labs.hqdata.pipeline_source import fetch_store_as_visit_dicts
+
+        return fetch_store_as_visit_dicts(config.data_source)
 
     def _fill_gdrive_raw(self, config: AnalysisPipelineConfig, opp_id: int, force_refresh: bool):
         """Make the gdrive source's SHARED raw slot hold its rows; yield progress events.
@@ -651,6 +692,7 @@ class AnalysisPipeline:
         if not opp_id:
             return None
         self._check_drive_access(config, opp_id)
+        self._select_backend(config)
         terminal_stage = config.terminal_stage
         if terminal_stage == CacheStage.AGGREGATED:
             return self.backend.get_cached_flw_result(opp_id, config, 0)
@@ -677,6 +719,7 @@ class AnalysisPipeline:
         if config.terminal_stage != CacheStage.AGGREGATED:
             return None
         self._check_drive_access(config, opp_id)
+        self._select_backend(config)
         return self.backend.get_period_scoped_flw_result(opp_id, config)
 
     def _consume_raw_visits_stream(
@@ -821,6 +864,7 @@ class AnalysisPipeline:
 
         try:
             self._check_drive_access(config, opp_id)
+            self._select_backend(config)
 
             # Check cache first
             stage_name = _stage_name(terminal_stage)
@@ -950,6 +994,11 @@ class AnalysisPipeline:
                         elif unfiltered_config.data_source.type == "labs_audits":
                             yield (EVENT_STATUS, {"message": f"Reading Labs audit results for opp {opp_id}..."})
                             visit_dicts = self._fetch_labs_audits(unfiltered_config, opp_id)
+                            visit_count = None
+                            raw_data_already_stored = False
+                        elif unfiltered_config.data_source.type == "hq_store":
+                            yield (EVENT_STATUS, {"message": "Reading the CommCare project's stored data..."})
+                            visit_dicts = self._fetch_hq_store(unfiltered_config, opp_id)
                             visit_count = None
                             raw_data_already_stored = False
                         elif unfiltered_config.data_source.type == "cchq_cases":
@@ -1101,6 +1150,11 @@ class AnalysisPipeline:
                     elif unfiltered_config.data_source.type == "labs_audits":
                         yield (EVENT_STATUS, {"message": f"Reading Labs audit results for opp {opp_id}..."})
                         visit_dicts = self._fetch_labs_audits(unfiltered_config, opp_id)
+                        visit_count = None
+                        raw_data_already_stored = False
+                    elif unfiltered_config.data_source.type == "hq_store":
+                        yield (EVENT_STATUS, {"message": "Reading the CommCare project's stored data..."})
+                        visit_dicts = self._fetch_hq_store(unfiltered_config, opp_id)
                         visit_count = None
                         raw_data_already_stored = False
                     elif unfiltered_config.data_source.type == "cchq_cases":
@@ -1338,6 +1392,23 @@ class AnalysisPipeline:
                     yield (EVENT_STATUS, {"message": "No audited visits found"})
                 else:
                     yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} audited visits..."})
+                result = self.backend.process_and_cache(
+                    self.request,
+                    config,
+                    opp_id,
+                    visit_dicts,
+                    skip_raw_store=False,
+                )
+                yield (EVENT_STATUS, {"message": "Complete!"})
+                yield (EVENT_RESULT, result)
+                return
+
+            # A CommCare project's own stored forms or cases: already in labs, so no download and
+            # no streaming; one pass over what the project keeps (hqdata).
+            if config.data_source.type == "hq_store":
+                yield (EVENT_STATUS, {"message": "Reading the CommCare project's stored data..."})
+                visit_dicts = self._fetch_hq_store(config, opp_id)
+                yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} rows..."})
                 result = self.backend.process_and_cache(
                     self.request,
                     config,

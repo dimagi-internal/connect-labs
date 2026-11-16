@@ -1,0 +1,32 @@
+{% extends "hqdata/base.html" %}
+{% block hq_content %}
+  <p class="mb-2 text-sm"><a class="underline" href="{% url 'hq:pipeline_list' project.pk %}">&larr; Pipelines in {{ project.domain }}</a></p>
+  <h1 class="mb-4 text-2xl font-semibold">{{ pipeline.name }}</h1>
+
+  {% if error %}<p class="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{{ error }}</p>{% endif %}
+
+  <form method="post" class="mb-8 space-y-3 text-sm">
+    {% csrf_token %}
+    {% include "hqdata/pipeline_fields.html" with schema_text=schema_text %}
+    <div class="flex gap-3">
+      <button name="action" value="run" class="rounded bg-brand-indigo px-4 py-2 font-semibold text-white">Run</button>
+      <label class="flex items-center gap-1"><input type="checkbox" name="fresh" value="1"> Recompute from the stored data</label>
+      <button name="action" value="save" class="rounded border border-gray-300 px-4 py-2">Save</button>
+      <button name="action" value="delete" class="rounded border border-red-300 px-4 py-2 text-red-800">Delete</button>
+    </div>
+  </form>
+
+  {% if result %}
+    <h2 class="mb-2 font-semibold">{{ result.count }} row{{ result.count|pluralize }}{% if result.truncated %} (first {{ result.rows|length }} shown){% endif %}</h2>
+    <div class="overflow-x-auto">
+      <table class="min-w-full rounded-lg border border-gray-200 bg-white text-xs">
+        <thead class="bg-gray-50 text-left text-gray-600"><tr>{% for c in result.columns %}<th class="p-2">{{ c }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for row in result.table %}
+            <tr class="border-t border-gray-100">{% for cell in row %}<td class="p-2">{{ cell|default_if_none:"" }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+{% endblock %}

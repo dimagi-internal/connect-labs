@@ -95,6 +95,7 @@ urlpatterns = [
     path("labs/", include("connect_labs.labs.urls", namespace="labs")),
     path("ai/", include("connect_labs.ai.urls", namespace="ai")),
     path("campaign/", include("connect_labs.campaign.urls", namespace="campaign")),
+    path("hq/", include("connect_labs.hqdata.web.urls", namespace="hq")),
     path("supply/", include("connect_labs.supply_chain.urls", namespace="supply_chain")),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 

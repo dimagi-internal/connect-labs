@@ -112,6 +112,11 @@ DATABASES["default"]["ATOMIC_REQUESTS"] = True
 # password (connect_labs/labsdata/reader_login.py). Unset, it switches to that role
 # from the app's login instead (development and tests).
 LABSDATA_READER_PASSWORD = env("LABSDATA_READER_PASSWORD", default="")
+# Fernet keys for EncryptedTextField (connect_labs/utils/encrypted_fields.py), newest first,
+# comma-separated in the environment. Required where a secret is stored (customer database
+# credentials); an environment that sets REQUIRED refuses to save one without a key.
+LABS_FIELD_ENCRYPTION_KEYS = env.list("LABS_FIELD_ENCRYPTION_KEYS", default=[])
+LABS_FIELD_ENCRYPTION_REQUIRED = env.bool("LABS_FIELD_ENCRYPTION_REQUIRED", default=False)
 LABSDATA_READER_LOGIN_REQUIRED = False
 
 
@@ -181,6 +186,7 @@ LOCAL_APPS = [
     "connect_labs.organization",
     "connect_labs.program",
     "connect_labs.microplans",
+    "connect_labs.hqdata",
     "connect_labs.mopup",
     "connect_labs.pulse",
     "connect_labs.scope_config",
@@ -214,7 +220,7 @@ LOGIN_URL = "/labs/login/"
 # so a satellite login never becomes a labs login. Each satellite MUST list its
 # URL prefix here (next to its INSTALLED_APPS + urls.py entries) or its own
 # users get logged out on every request to it. See docs/multi-site-auth.md.
-LABS_SATELLITE_URL_PREFIXES = ["/campaign/"]
+LABS_SATELLITE_URL_PREFIXES = ["/campaign/", "/hq/"]
 
 # PASSWORDS
 # ------------------------------------------------------------------------------
@@ -873,6 +879,12 @@ CELERY_BEAT_SCHEDULE = {
     "reap-synthetic-job-tasks": {
         "task": "connect_labs.labs.synthetic.tasks.reap_synthetic_job_tasks",
         "schedule": crontab(minute="*/10"),
+    },
+    # Queue each persistent CommCare project whose sync interval has elapsed
+    # (connect_labs/hqdata/tasks.py). The tick is cheap: one query, a task per due project.
+    "hqdata-sync-due-projects": {
+        "task": "connect_labs.hqdata.tasks.sync_due_projects",
+        "schedule": crontab(minute="*/5"),
     },
     # Long-running MCP jobs: fail ones that were lost, stop standalone tasks that overran
     # or record ones whose machine died, prune finished jobs past retention (mcp/jobs.py).

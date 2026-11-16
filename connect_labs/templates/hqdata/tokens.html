@@ -1,0 +1,41 @@
+{% extends "hqdata/base.html" %}
+{% block hq_content %}
+  <p class="mb-2 text-sm"><a class="underline" href="{% url 'hq:home' %}">&larr; Projects</a></p>
+  <h1 class="mb-2 text-2xl font-semibold">Access tokens</h1>
+  <p class="mb-6 text-sm text-gray-700">
+    A token lets a script or an AI assistant work with your CommCare projects from outside this site: read their
+    stored forms and cases, start a sync, and run pipelines. It reaches only the projects you belong to, and nothing
+    from Connect. Point an MCP client at <code>{{ mcp_url }}</code> and send the token as a Bearer token.
+  </p>
+
+  {% if raw_token %}
+    <div class="mb-6 rounded-lg border border-green-300 bg-green-50 p-4 text-sm">
+      <p class="mb-2 font-semibold">Copy this token now. It is not shown again.</p>
+      <code class="block break-all rounded bg-white p-2">{{ raw_token }}</code>
+    </div>
+  {% endif %}
+
+  <form method="post" class="mb-8 flex items-end gap-3 text-sm">
+    {% csrf_token %}<input type="hidden" name="action" value="create">
+    <label>Name <input name="name" placeholder="my notebook" class="mt-1 block rounded border border-gray-300 p-1.5"></label>
+    <label>Lasts (days, up to {{ max_days }}) <input name="days" value="90" size="4" class="mt-1 block rounded border border-gray-300 p-1.5"></label>
+    <button class="rounded bg-brand-indigo px-4 py-2 font-semibold text-white">Make a token</button>
+  </form>
+
+  <table class="w-full rounded-lg border border-gray-200 bg-white text-sm">
+    <thead class="bg-gray-50 text-left text-gray-600"><tr><th class="p-3">Name</th><th class="p-3">Expires</th><th class="p-3">Last used</th><th class="p-3"></th></tr></thead>
+    <tbody>
+      {% for t in tokens %}
+        <tr class="border-t border-gray-100">
+          <td class="p-3">{{ t.name }}</td><td class="p-3">{{ t.expires_at|date:"Y-m-d" }}</td><td class="p-3">{{ t.last_used_at|default:"never" }}</td>
+          <td class="p-3">
+            <form method="post">{% csrf_token %}<input type="hidden" name="action" value="revoke"><input type="hidden" name="token_id" value="{{ t.pk }}">
+              <button class="underline">Revoke</button></form>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td class="p-3 text-gray-500" colspan="4">No tokens.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

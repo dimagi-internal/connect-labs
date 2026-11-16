@@ -437,6 +437,7 @@ DATA_SOURCE_TYPES = (
     "cchq_cases",
     "gdrive",
     "labs_audits",
+    "hq_store",
 )
 
 # DataSourceConfig keys that belong to one particular source type.
@@ -457,6 +458,9 @@ _SOURCE_SPECIFIC_KEYS = (
     "date_column",
     "columns",
     "authorization",
+    "project_id",
+    "xmlns",
+    "store_kind",
 )
 
 
@@ -482,6 +486,13 @@ class DataSourceConfig:
               n_pending, n_decided) under form_json["audit"]. Takes no other
               data_source keys. See backends/sql/labs_audits_fetcher.py and
               connect_labs/audit/audited_visit_rows.py.
+              "hq_store" reads the forms or cases a CommCare PROJECT keeps in labs
+              (connect_labs/hqdata): ``project_id`` and ``store_kind`` ("forms" or "cases"),
+              narrowed by ``app_id`` / ``xmlns`` (forms) or ``case_type`` (cases). The
+              rows are exactly what the ``cchq_forms`` / ``cchq_cases`` sources produce
+              (paths start ``form.`` / ``case.``), so one schema works against either.
+              Every read, cached or not, is gated on the caller being a verified member
+              of the project (``hqdata.access``).
         form_name: (cchq_forms only) Form name for xmlns discovery,
                    e.g., "Register Mother", "Gold Standard Visit Checklist"
         app_id: (cchq_forms only) Explicit CommCare app ID.
@@ -554,6 +565,12 @@ class DataSourceConfig:
     null_values: list = field(default_factory=lambda: [""])
     columns: list | None = None
     authorization: dict = field(default_factory=dict)
+    # (hq_store only) The CommCare project (hqdata.HQProject id), whether to read its
+    # "forms" or "cases", and the form namespace to narrow forms to (app_id and case_type
+    # above narrow by app and by case type).
+    project_id: int = 0
+    store_kind: str = ""
+    xmlns: str = ""
     # (ocs_sessions only) A specific person's OCS OAuth access token, read as a
     # Bearer instead of a team key: set for an MCP caller (ocs_tokens.current_mcp_caller)
     # so they read only sessions they can see in OCS. Never stored, never hashed.
@@ -562,6 +579,25 @@ class DataSourceConfig:
     def __post_init__(self):
         if self.type not in DATA_SOURCE_TYPES:
             raise ValueError(f"Invalid data source type: {self.type}")
+        if self.type == "hq_store":
+            if not isinstance(self.project_id, int) or self.project_id <= 0:
+                raise ValueError("an hq_store data_source needs project_id: the CommCare project to read")
+            if self.store_kind not in ("forms", "cases"):
+                raise ValueError("an hq_store data_source needs store_kind 'forms' or 'cases'")
+            if self.store_kind == "forms" and self.case_type:
+                raise ValueError("data_source.case_type narrows cases; an hq_store of forms takes app_id / xmlns")
+            if self.store_kind == "cases" and (self.app_id or self.xmlns):
+                raise ValueError("data_source.app_id / xmlns narrow forms; an hq_store of cases takes case_type")
+            allowed = {"type", "project_id", "store_kind", "app_id", "xmlns", "case_type", "null_values"}
+            stray = [
+                n
+                for n in _SOURCE_SPECIFIC_KEYS
+                if n not in allowed and getattr(self, n) not in ("", 0, None, [""], {})
+            ]
+            if stray:
+                raise ValueError(f"an hq_store data_source takes no other keys; remove {', '.join(sorted(stray))}")
+        elif self.project_id or self.store_kind or self.xmlns:
+            raise ValueError("data_source.project_id / store_kind / xmlns are only valid for type='hq_store'")
         if self.type == "labs_audits":
             # Reads the opportunity's own audit sessions and nothing else: a stray
             # source key (an endpoint, a form name, a domain) would otherwise be
