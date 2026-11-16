@@ -1,5 +1,7 @@
 """A project's workflow records: stored in labs, opened only by a verified member of that project."""
 
+import datetime as dt
+
 import pytest
 
 from connect_labs.hqdata.access import ProjectAccessDenied, create_project
@@ -104,7 +106,7 @@ def test_pipeline_definitions_live_in_the_same_place(alice, project):
 
 
 def test_the_project_dashboard_is_made_once_and_reads_the_projects_forms(alice, project):
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from connect_labs.hqdata.models import HQForm
     from connect_labs.hqdata.workflows import ensure_project_dashboard, read_project_pipeline_data
@@ -116,7 +118,7 @@ def test_the_project_dashboard_is_made_once_and_reads_the_projects_forms(alice, 
             xmlns="http://x/1",
             app_id="app1",
             username=name,
-            received_on=datetime(2026, 11, 1, 10, tzinfo=timezone.utc),
+            received_on=datetime(2026, 11, 1, 10, tzinfo=dt.timezone.utc),
             form_json={"id": f"f{i}", "received_on": "2026-11-01T10:00:00Z", "form": {"meta": {"username": name}}},
         )
     first = ensure_project_dashboard(alice, project)
