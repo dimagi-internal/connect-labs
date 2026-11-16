@@ -151,6 +151,27 @@ register(
 
 register(
     Method(
+        code="national_survey",
+        label="National survey figure (DHS)",
+        resolution=Resolution.NATIONAL,
+        source_order=("dhs_national",),
+        description=(
+            "The household survey's own country-wide figure, from the latest DHS in each "
+            "country. The national answer for the survey indicators (ORS, breastfeeding, "
+            "vitamin A, stunting, immunisation), where no modelled national series exists."
+        ),
+        caveat=(
+            "Carries the survey's date, and countries are surveyed in different years, so a "
+            "ranking mixes vintages. DHS has not surveyed every African country. Not the sum "
+            "of the regional rows: DHS withholds regions with too few cases, and this is the "
+            "figure it publishes for the whole country regardless."
+        ),
+    )
+)
+
+
+register(
+    Method(
         code="national_surface",
         label="National estimate from gridded surfaces",
         resolution=Resolution.NATIONAL,

@@ -339,6 +339,89 @@ def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]
     return rows
 
 
+NATIONAL_METHOD = (
+    "DHS Program {survey} national estimate, the survey's own figure for the whole country. "
+    "Not the sum of its regions: DHS withholds regions with too few cases, and this is the "
+    "number it publishes regardless."
+)
+
+
+def national_records(records: list[dict], indicator_id: str) -> dict[str, dict]:
+    """The latest survey's country-wide record for each DHS country code.
+
+    ``breakdown=national`` returns one ``Total`` row per survey. Same rule as the
+    regional rows: one survey per country, the latest, so a country is never a
+    blend of vintages. A record that is not the country total (the API can add
+    characteristic rows) is dropped rather than guessed at.
+    """
+    totals = [
+        r
+        for r in _only(records, indicator_id)
+        if (r.get("CharacteristicCategory") or "Total") == "Total"
+        and (r.get("CharacteristicLabel") or "Total") == "Total"
+    ]
+    return {code: rec for (code, _label), rec in _latest_survey_per_country(totals).items()}
+
+
+def load_national(measure: str, iso_codes: list[str] | None = None) -> list[Row]:
+    """One country-wide row per country at ADM0, from the same indicators as ``load``.
+
+    Stored under ``Source.DHS_NATIONAL``, not ``Source.DHS``. The regional rows
+    mean "measured in this region"; a country figure under the same source would
+    let every unsurveyed region inherit it without saying so. Kept apart, it
+    answers only the national method and the country row.
+    """
+    spec = INDICATORS[measure]
+    iso_by_dhs = african_countries()
+    wanted_iso = {c.upper() for c in iso_codes} if iso_codes else None
+    surveys = survey_index()
+
+    logger.info("DHS: fetching %s (national)", measure)
+    latest = national_records(_fetch([spec["value"]], "national"), spec["value"])
+
+    rows: list[Row] = []
+    for dhs_code, rec in sorted(latest.items()):
+        iso = iso_by_dhs.get(dhs_code)
+        if not iso or (wanted_iso and iso not in wanted_iso):
+            continue
+        value = rec.get("Value")
+        if value in (None, ""):
+            continue
+        boundary = _country_boundary(iso)
+        if boundary is None:
+            logger.info("DHS: %s has no ADM0 boundary loaded, skipping", iso)
+            continue
+        survey_id = rec.get("SurveyId") or f"{iso}{rec['SurveyYear']}DHS"
+        meta = surveys.get(survey_id, {})
+        rows.append(
+            Row(
+                indicator=measure,
+                boundary=boundary,
+                year=int(rec["SurveyYear"]),
+                value=float(value),
+                source=Source.DHS_NATIONAL,
+                source_ref=_readable(meta, survey_id, rec),
+                source_url=(SURVEY_PAGE.format(num=meta["SurveyNum"]) if meta.get("SurveyNum") else ""),
+                license_code=License.OPEN_API,
+                method=NATIONAL_METHOD.format(survey=survey_id),
+                extra={
+                    "sample_unweighted": _int(rec.get("DenominatorUnweighted")),
+                    "sample_weighted": _int(rec.get("DenominatorWeighted")),
+                    "survey_id": survey_id,
+                    "fieldwork": f"{meta.get('FieldworkStart', '')} to {meta.get('FieldworkEnd', '')}".strip(" to"),
+                },
+            )
+        )
+    logger.info("DHS %s: %d national values", measure, len(rows))
+    return rows
+
+
+def _country_boundary(iso: str):
+    from connect_labs.labs.indicators import boundaries
+
+    return boundaries.owned().filter(iso_code=iso, admin_level=0).first()
+
+
 def _readable(meta: dict, survey_id: str, rec: dict) -> str:
     """ "Nigeria DHS 2024" rather than "NG2024DHS"."""
     country = meta.get("CountryName") or rec.get("CountryName")

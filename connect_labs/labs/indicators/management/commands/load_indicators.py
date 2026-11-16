@@ -20,6 +20,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from connect_labs.labs.indicators import boundaries as boundary_set
+from connect_labs.labs.indicators import policy
 from connect_labs.labs.indicators.africa import ISO_CODES
 from connect_labs.labs.indicators.models import IndicatorValue, IngestRun, Source
 from connect_labs.labs.indicators.sources import (
@@ -50,6 +51,7 @@ STAGES = (
     "births",
     "lbw",
     "child_health",
+    "national_survey",
     "malaria",
     "population_raster",
     "population_agesex",
@@ -429,6 +431,21 @@ class Command(BaseCommand):
             ctx["rows"] = base.upsert(rows)
             ctx["countries"] = len({r.boundary.iso_code for r in rows})
             ctx["swept"] = derive.sweep_derived(rows, derive.gap_indicators(), iso_codes=codes)
+
+    def _stage_national_survey(self, codes, opts):
+        """The survey's own country figure for every survey indicator the policy admits it for.
+
+        Additive and independent of the regional stages: it writes ``dhs_national``
+        rows only, so it can be run alone (``--stage national_survey``) against a
+        populated database. Needs ADM0 boundaries, which every other stage already does.
+        """
+        for measure in dhs.INDICATORS:
+            if not any(e.source == Source.DHS_NATIONAL for e in policy.POLICY.get(measure, ())):
+                continue  # a row no policy admits would sit unread
+            with self._run(Source.DHS_NATIONAL, measure) as ctx:
+                rows = dhs.load_national(measure, iso_codes=codes)
+                ctx["rows"] = base.upsert(rows)
+                ctx["countries"] = len({r.boundary.iso_code for r in rows})
 
     def _stage_rainfall(self, codes, opts):
         """Rainfall seasonality, so a schedule can be defended rather than asserted.

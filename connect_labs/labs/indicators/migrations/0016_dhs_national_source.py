@@ -1,0 +1,65 @@
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ("indicators", "0015_delete_pmc_model_run"),
+    ]
+
+    operations = [
+        migrations.AlterField(
+            model_name="indicatorvalue",
+            name="source",
+            field=models.CharField(
+                choices=[
+                    ("dhs", "DHS Program"),
+                    ("dhs_national", "DHS Program (national)"),
+                    ("igme", "UN IGME (via UNICEF SDMX)"),
+                    ("worldpop", "WorldPop"),
+                    ("worldpop_raster", "WorldPop (1km grid, UN-adjusted)"),
+                    ("hapi", "HDX HAPI"),
+                    ("worldbank", "World Bank (WDI)"),
+                    ("igme_subnational", "UN IGME (subnational model)"),
+                    ("dhs_calibrated", "DHS (re-levelled)"),
+                    ("map", "Malaria Atlas Project"),
+                    ("map_worldpop", "MAP accessibility x WorldPop"),
+                    ("ghsl", "GHS-SMOD (DEGURBA) x WorldPop"),
+                    ("unicef_sdmx", "UNICEF (subnational SDMX)"),
+                    ("chirps", "CHIRPS x WorldPop"),
+                    ("unicef_lbw", "UNICEF-WHO low birthweight (national)"),
+                    ("unicef_lbw_region", "UNICEF-WHO low birthweight (regional aggregate)"),
+                    ("derived", "Derived"),
+                ],
+                db_index=True,
+                max_length=20,
+            ),
+        ),
+        migrations.AlterField(
+            model_name="ingestrun",
+            name="source",
+            field=models.CharField(
+                choices=[
+                    ("dhs", "DHS Program"),
+                    ("dhs_national", "DHS Program (national)"),
+                    ("igme", "UN IGME (via UNICEF SDMX)"),
+                    ("worldpop", "WorldPop"),
+                    ("worldpop_raster", "WorldPop (1km grid, UN-adjusted)"),
+                    ("hapi", "HDX HAPI"),
+                    ("worldbank", "World Bank (WDI)"),
+                    ("igme_subnational", "UN IGME (subnational model)"),
+                    ("dhs_calibrated", "DHS (re-levelled)"),
+                    ("map", "Malaria Atlas Project"),
+                    ("map_worldpop", "MAP accessibility x WorldPop"),
+                    ("ghsl", "GHS-SMOD (DEGURBA) x WorldPop"),
+                    ("unicef_sdmx", "UNICEF (subnational SDMX)"),
+                    ("chirps", "CHIRPS x WorldPop"),
+                    ("unicef_lbw", "UNICEF-WHO low birthweight (national)"),
+                    ("unicef_lbw_region", "UNICEF-WHO low birthweight (regional aggregate)"),
+                    ("derived", "Derived"),
+                ],
+                db_index=True,
+                max_length=20,
+            ),
+        ),
+    ]
