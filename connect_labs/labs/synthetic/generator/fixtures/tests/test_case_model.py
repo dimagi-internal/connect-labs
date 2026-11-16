@@ -174,3 +174,20 @@ def test_a_short_case_never_carries_a_rare_real_series():
     synthetic, _ = synthesize_case_pool(copy.deepcopy(real), seed=5)
     shipped = {tuple(v["values"].get(WEIGHT) for v in s["visits"]) for s in synthetic}
     assert not shipped & {(float(w), float(w)) for w in range(1001, 1006)}
+
+
+def test_pool_draws_match_np_interp_exactly():
+    """_interp_at replaced np.interp(pos, arange(m), pool), which was O(m) per draw and
+    made sampling quadratic in case count. It must give the same number, to rounding
+    (np.interp itself differs by an ulp between builds that fuse the multiply-add and
+    builds that do not)."""
+    from connect_labs.labs.synthetic.generator.fixtures.case_model import _interp_at
+
+    rng = np.random.default_rng(7)
+    for m in (1, 2, 5, 1000):
+        pool = np.sort(rng.normal(0.0, 40.0, m))
+        positions = [0.0, float(m - 1), *range(m), *(rng.uniform() * (m - 1) for _ in range(200))]
+        for pos in positions:
+            assert _interp_at(pool, pos) == pytest.approx(
+                float(np.interp(pos, np.arange(m), pool)), rel=1e-12, abs=1e-9
+            )
