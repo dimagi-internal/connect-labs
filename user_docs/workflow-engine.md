@@ -158,6 +158,21 @@ This means each workflow appears in exactly one place. If you cannot find a work
 !!! note "Program-owned reports loading their data"
     Program-owned workflows — such as the CHC Work Area Tracker — load all of their pipeline data correctly when you open them. Previously, if a pipeline's data had not yet been cached, the report could show a "workflow not found" error and display no rows at all. This is now fixed: the report fetches its data under the program context and shows rows as expected.
 
+### Workflows for CommCare projects (no Connect login required)
+
+If you access Labs through CommCare rather than through a Connect account, you can now open a workflow directly over your CommCare project. No Connect login is needed.
+
+On your project's page, click **Open workflows**, then **Open the project overview**. This opens a dashboard showing a summary of the forms your project has stored:
+
+- Total number of forms submitted
+- Total number of workers who have submitted forms
+- A per-worker breakdown showing each worker's form count and the date and time of their latest submission
+
+Only people who are members of that CommCare project can open the project overview.
+
+!!! note "Early access"
+    The project overview is the first workflow available over a CommCare project. The ability to create your own runs, save snapshots, and build custom dashboards over a project will come later.
+
 ### Embedded workflows
 
 Certain workflows and pages can be shown inside another system's interface — for example, inside Connect — without the person needing to sign in to Labs separately. The embedded view displays exactly the same report the person would see if they opened Labs directly, but without the Labs menus or navigation chrome.
@@ -205,13 +220,4 @@ If you are asked to confirm an action you did not expect, that is the protection
 
 When you open a workflow or page in the sandbox, it looks and scrolls exactly like the normal (non-sandboxed) version:
 
-- The page grows to match the length of its content — there is no second scrollbar inside the report.
-- The page scrolls as a whole, so the browser's own scrollbar is the only one you use.
-- Dialogs open where you are looking, toasts appear at the bottom of the window, and tooltips appear beneath whatever you hover.
-- **Jump to** buttons and fields that receive focus scroll the page to bring themselves into view.
-
-One deliberate difference from the normal page: a header row set to stay fixed at the top of the report sticks just below the Labs header, where it remains visible as you scroll. On the normal page, that same sticky header can slide underneath the Labs header and become hidden.
-
-#### Dialogs in the sandbox
-
-When you open a dialog inside a sandboxed workflow or page — such as a detail panel, an image viewer, a confirmation box, or any other modal — it now covers the entire window, including the
+- The page grows to match the length of its content — there is
