@@ -48,6 +48,11 @@ NON_COMMERCIAL = frozenset({License.CC_BY_NC_SA_3_IGO})
 
 class Source(models.TextChoices):
     DHS = "dhs", "DHS Program"
+    # The survey's own country figure (breakdown=national), kept apart from the
+    # regional rows above so that a region with no survey value of its own is
+    # never silently handed the country's. Only the national_survey method and
+    # the country-level answer read it. See sources/dhs.py load_national.
+    DHS_NATIONAL = "dhs_national", "DHS Program (national)"
     IGME = "igme", "UN IGME (via UNICEF SDMX)"
     WORLDPOP = "worldpop", "WorldPop"
     WORLDPOP_RASTER = "worldpop_raster", "WorldPop (1km grid, UN-adjusted)"

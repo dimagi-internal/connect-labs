@@ -113,10 +113,21 @@ _MORTALITY = (
 )
 
 
+#: The survey's own country figure. A separate source from the regional rows so
+#: that it answers a country question and is never inherited by a region.
+_DHS_NATIONAL = Eligible(
+    Source.DHS_NATIONAL,
+    "The same survey's own figure for the whole country. Eligible because a country row IS "
+    "a national figure; DHS withholds regions with too few cases, so summing regions would "
+    "drop countries this still answers. Never read for a region.",
+)
+
+
 def _survey(what: str) -> tuple[Eligible, ...]:
     """A household-survey measure, which DHS alone answers subnationally."""
     return (
         Eligible(Source.DHS, f"DHS measures {what} directly in the field. No other source answers it subnationally."),
+        _DHS_NATIONAL,
     )
 
 
@@ -140,6 +151,7 @@ def _wash(what: str) -> tuple[Eligible, ...]:
             "one definition. Second because it may rest on a survey we cannot name, and "
             "present because it is the only route to countries DHS has never surveyed.",
         ),
+        _DHS_NATIONAL,
     )
 
 
