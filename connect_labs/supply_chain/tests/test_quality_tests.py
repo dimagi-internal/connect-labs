@@ -390,3 +390,14 @@ def test_the_tab_is_off_until_the_programme_turns_it_on(world, client, django_us
     from connect_labs.supply_chain.config import SUPPLY
 
     assert SUPPLY.defaults["tabs"]["supply_chain:tests"] == {"hidden": True}
+
+
+def test_a_dispenser_named_with_the_word_is_said_once(world):
+    from connect_labs.supply_chain.quality.service import subject_label
+
+    _, item, _, mine, _ = world
+    test = QualityTest(kind="dispenser_sample", dispenser="Dispenser WP-04", supply_point=mine)
+    assert subject_label(test) == "Dispenser WP-04, tested at Mine Store"
+    assert subject_label(QualityTest(kind="dispenser_sample", dispenser="WP-04", supply_point=mine)).startswith(
+        "Dispenser WP-04,"
+    )

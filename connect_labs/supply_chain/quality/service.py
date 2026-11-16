@@ -186,5 +186,7 @@ def subject_label(test) -> str:
         product = test.commodity.name if test.commodity_id else "product"
         return f"Batch {test.batch} ({product}) at {test.supply_point.name}"
     if test.kind == "dispenser_sample":
-        return f"Dispenser {test.dispenser}, tested at {test.supply_point.name}"
+        # People often type the word themselves ("Dispenser WP-04"): say it once.
+        named = test.dispenser if test.dispenser.lower().startswith("dispenser") else f"Dispenser {test.dispenser}"
+        return f"{named}, tested at {test.supply_point.name}"
     return f"Storage at {test.supply_point.name}"
