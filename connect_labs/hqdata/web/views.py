@@ -123,6 +123,7 @@ def _queue(request: HttpRequest, project: HQProject, success: str, mode: str | N
 
 
 _ADMIN_ONLY = {
+    "take_over",
     "set_storage",
     "pause",
     "resume",
@@ -159,7 +160,11 @@ def project_action(request: HttpRequest, project_id: int) -> HttpResponse:
             mode=HQSyncRun.MODE_RECONCILE,
         )
     elif action == "take_over":
-        HQProject.objects.filter(pk=project.pk).update(sync_owner=request.user, status=HQProject.STATUS_ACTIVE)
+        # Taking over is the way out of "needs sign-in", never out of a pause an admin chose.
+        changes = {"sync_owner": request.user}
+        if project.status != HQProject.STATUS_PAUSED:
+            changes["status"] = HQProject.STATUS_ACTIVE
+        HQProject.objects.filter(pk=project.pk).update(**changes)
         messages.success(request, "Scheduled syncs will now use your CommCare sign-in.")
     elif action == "set_storage":
         try:
@@ -387,6 +392,11 @@ def pipeline_detail(request: HttpRequest, project_id: int, pipeline_id: int) -> 
         elif action in ("save", "run"):
             schema_text = request.POST.get("schema") or schema_text
             problem = _apply_pipeline_form(request, pipeline)
+            if (
+                problem is None
+                and HQPipeline.objects.filter(project=project, name=pipeline.name).exclude(pk=pipeline.pk).exists()
+            ):
+                problem = "A pipeline with that name already exists."
             if problem is not None:
                 error = problem
                 pipeline.refresh_from_db()

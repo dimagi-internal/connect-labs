@@ -10,7 +10,7 @@ from django.utils import timezone
 from connect_labs.hqdata.external import check_connection, passed
 from connect_labs.hqdata.models import LEASE_SECONDS, HQExternalDatabase, HQProject, HQSource
 from connect_labs.hqdata.stores import StoreUnavailable, store_for
-from connect_labs.hqdata.sync import invalidate_project_caches
+from connect_labs.hqdata.sync import drop_labs_cache_copies, invalidate_project_caches
 
 
 class SwitchRefused(Exception):
@@ -47,7 +47,10 @@ def switch_store(project: HQProject, to: str) -> dict:
             failed = next(c for c in checks if not c.ok)
             raise SwitchRefused(f"{failed.name}: {failed.detail or 'failed'}")
 
-    old_store = store_for(project)
+    try:
+        old_store = store_for(project)
+    except StoreUnavailable:
+        old_store = None  # a database that has gone away must not stop the way back to labs
     with transaction.atomic():
         HQProject.objects.filter(pk=project.pk).update(store=to)
         HQSource.objects.filter(project=project).update(
@@ -58,10 +61,12 @@ def switch_store(project: HQProject, to: str) -> dict:
     project.refresh_from_db()
 
     purged = None
-    try:
-        with old_store.session() as store:
-            purged = store.purge(project.pk)
-    except StoreUnavailable:
-        purged = None  # their database is unreachable: the rows there are theirs to remove
+    if old_store is not None:
+        try:
+            with old_store.session() as store:
+                purged = store.purge(project.pk)
+        except StoreUnavailable:
+            purged = None  # their database is unreachable: the rows there are theirs to remove
+    drop_labs_cache_copies(project.pk)  # whatever the old store was, labs may hold staged copies
     invalidate_project_caches(project.pk)
     return {"changed": True, "purged": purged}

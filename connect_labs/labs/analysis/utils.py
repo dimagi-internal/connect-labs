@@ -122,6 +122,14 @@ def get_config_hash(config) -> str:
             identity += f":columns={json.dumps(sorted(set(ds.columns)))}"
         parts.append(f"gdrive:{hashlib.sha256(identity.encode()).hexdigest()}")
 
+    # A CommCare project's stored rows are narrowed by project, kind, app, form namespace
+    # and case type, none of which the field list sees: left out, two pipelines over one
+    # project with the same fields would share a cache key, and re-narrowing one would keep
+    # serving the old rows. Scoped to hq_store so every other source keeps its hash.
+    if ds is not None and ds.type == "hq_store":
+        identity = f"{ds.project_id}:{ds.store_kind}:{ds.app_id}:{ds.xmlns}:{ds.case_type}"
+        parts.append(f"hq_store:{hashlib.sha256(identity.encode()).hexdigest()}")
+
     # Generate hash
     config_str = "|".join(parts)
     return hashlib.md5(config_str.encode()).hexdigest()[:12]

@@ -65,9 +65,9 @@ def test_no_other_scope_reaches_an_hq_tool():
     assert not hq & set(token_scopes.DEFINITION_WRITE_TOOLS)
 
 
-def test_a_commcare_token_reaches_exactly_the_commcare_tools():
+def test_a_commcare_token_reaches_the_commcare_tools_and_the_jobs_they_start():
     token = SimpleNamespace(claims={"auth_method": "pat"}, scopes=[token_scopes.COMMCARE_SCOPE_STRING])
-    assert mcp_server.allowed_tools(token) == token_scopes.COMMCARE_TOOLS
+    assert mcp_server.allowed_tools(token) == token_scopes.COMMCARE_TOOLS | token_scopes.JOB_TOOLS
 
 
 def test_a_full_token_still_reaches_everything_including_them():
@@ -111,7 +111,7 @@ def test_a_connect_person_may_hold_a_commcare_token_too_and_it_stays_narrow(clie
     assert resolved is not None
     assert (
         mcp_server.allowed_tools(SimpleNamespace(claims={"auth_method": "pat"}, scopes=resolved[3]))
-        == token_scopes.COMMCARE_TOOLS
+        == token_scopes.COMMCARE_TOOLS | token_scopes.JOB_TOOLS
     )
 
 

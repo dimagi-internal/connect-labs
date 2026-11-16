@@ -378,7 +378,12 @@ def allowed_tools(access_token) -> frozenset[str] | None:
     if restricted_call(access_token):
         permitted = token_scopes.RESTRICTED_TOOLS if permitted is None else permitted & token_scopes.RESTRICTED_TOOLS
     if token_scopes.is_commcare(getattr(access_token, "scopes", None)):
-        permitted = token_scopes.COMMCARE_TOOLS if permitted is None else permitted & token_scopes.COMMCARE_TOOLS
+        if permitted is None:
+            # hq_project_sync hands back a job id for anything past 30s; a CommCare-only person
+            # must be able to follow and cancel it. Never added once another limit narrows the set.
+            permitted = token_scopes.COMMCARE_TOOLS | token_scopes.JOB_TOOLS
+        else:
+            permitted = permitted & token_scopes.COMMCARE_TOOLS
     return permitted
 
 

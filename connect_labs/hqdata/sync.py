@@ -67,6 +67,22 @@ _CASE_FIELDS = [
 ]
 
 
+def drop_labs_cache_copies(project_id: int) -> None:
+    """Delete what labs' own database holds of a project's cached rows, whichever store the project uses.
+
+    ``RawVisitCache`` keeps a ``form_json`` copy of every staged row, and the computed caches
+    keep what pipelines built from them. A project that moved to a customer's database, or was
+    deleted, must not leave those behind in labs. Never raises: purging the rows already happened.
+    """
+    try:
+        from connect_labs.hqdata.scope import hq_scope_id
+        from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
+
+        SQLCacheManager.delete_all_cache(hq_scope_id(project_id))
+    except Exception:
+        logger.exception("hqdata could not drop labs' cached copies for project %s", project_id)
+
+
 def invalidate_project_caches(project_id: int) -> None:
     """Drop every cached pipeline result built from this project's rows.
 

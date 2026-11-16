@@ -110,7 +110,10 @@ def test_signing_in_again_reuses_the_user_and_restamps_memberships(client, arriv
     HQProjectMember.objects.create(project=gone, user=user)
     client.get("/hq/logout/")
     client.get("/hq/login/initiate/")
-    call_back(client, client.session["hq_login_state"])
+    with mock.patch(
+        "connect_labs.labs.integrations.commcare.api_client.CommCareDataAccess.verify_hq_access", return_value=True
+    ):
+        call_back(client, client.session["hq_login_state"])
     assert User.objects.filter(username=user.username).count() == 1
     assert HQProjectMember.objects.get(project=project, user=user).verified_at > timezone.now() - timedelta(minutes=1)
     assert not HQProjectMember.objects.filter(project=gone, user=user).exists()

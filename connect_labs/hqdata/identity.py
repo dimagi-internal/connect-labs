@@ -130,5 +130,11 @@ def sync_identity(
             "refreshed_at": now,
         },
     )
-    refresh_memberships(user, identity["domains"], hq_host=host, now=now)
+
+    def can_read(domain: str) -> bool:
+        from connect_labs.labs.integrations.commcare.api_client import CommCareDataAccess
+
+        return CommCareDataAccess(None, domain, cchq_access_token=access_token).verify_hq_access()
+
+    refresh_memberships(user, identity["domains"], hq_host=host, now=now, can_read=can_read)
     return row

@@ -97,7 +97,9 @@ class HQProject(models.Model):
         still be deleted, and what a customer's own database holds stays theirs to remove.
         """
         from connect_labs.hqdata.stores import StoreUnavailable, store_for
+        from connect_labs.hqdata.sync import drop_labs_cache_copies
 
+        drop_labs_cache_copies(self.pk)  # staged form copies and computed results kept in labs
         try:
             with store_for(self).session() as store:
                 return store.purge(self.pk)
@@ -165,9 +167,10 @@ class HQIdentity(models.Model):
 
     class Meta:
         app_label = "hqdata"
-        constraints = [
-            models.UniqueConstraint(fields=["hq_host", "hq_username"], name="uniq_hqidentity_host_username")
-        ]
+        # Not unique: one CommCare account can be a Connect person's linked account AND the
+        # CommCare-only login they used first. Those are two labs users, each proving its own
+        # memberships; a unique constraint turned the second sign-in into a 500.
+        indexes = [models.Index(fields=["hq_host", "hq_username"], name="hqidentity_host_username")]
 
 
 class HQSource(models.Model):

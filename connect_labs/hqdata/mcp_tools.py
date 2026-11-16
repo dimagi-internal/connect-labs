@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
+from django.db.models.fields.json import KeyTransform
 from django.utils.dateparse import parse_datetime
 
 from connect_labs.hqdata.access import may_use_project, visible_projects
@@ -369,8 +370,10 @@ def hq_cases(
                 qs = qs.filter(owner_id=owner_id)
             if closed is not None:
                 qs = qs.filter(closed=bool(closed))
-            for key, value in (properties or {}).items():
-                qs = qs.filter(**{f"properties__{key}": value})
+            for i, (key, value) in enumerate((properties or {}).items()):
+                # KeyTransform, not ``properties__<key>``: a property named "in", "regex" or
+                # "exact" would otherwise be read as a lookup on the whole JSON column.
+                qs = qs.annotate(**{f"_prop{i}": KeyTransform(key, "properties")}).filter(**{f"_prop{i}": value})
             total = qs.count()
             rows = list(qs.order_by("date_opened", "case_id")[offset : offset + limit])
     except StoreUnavailable as exc:

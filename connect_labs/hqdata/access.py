@@ -54,8 +54,15 @@ def refresh_memberships(
     *,
     hq_host: str,
     now: datetime | None = None,
+    can_read: Callable[[str], bool] | None = None,
 ) -> dict[str, list[str]]:
     """Record what CommCare says about this person's domains.
+
+    ``can_read(domain)``, when given, is the same proof ``create_project`` asks for. A domain
+    merely LISTED on the account is not enough to keep reading its stored rows: someone demoted
+    to a role that lists the domain but cannot view forms must not stay verified. A domain the
+    probe rejects is not re-stamped, so the membership ages out like any unproven one (a probe
+    cannot tell a revoked role from a network blip, so it never deletes).
 
     ``domains`` is the list the person's HQ identity returns. Existing memberships for a
     listed domain are re-stamped; one for a domain no longer listed is DELETED, not left to
@@ -68,6 +75,8 @@ def refresh_memberships(
     restamped, removed = [], []
     for membership in HQProjectMember.objects.filter(user=user, project__hq_host=hq_host).select_related("project"):
         if membership.project.domain.lower() in listed:
+            if can_read is not None and not can_read(membership.project.domain):
+                continue
             membership.verified_at = now
             membership.save(update_fields=["verified_at"])
             restamped.append(membership.project.domain)
