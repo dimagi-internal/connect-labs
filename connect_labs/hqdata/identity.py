@@ -43,8 +43,45 @@ def hq_host() -> str:
     return urlparse(hq_base_url()).netloc
 
 
+#: Most pages of project spaces one person's list may span. A person is in a handful; this only stops a loop.
+MAX_DOMAIN_PAGES = 20
+
+
+def fetch_domains(access_token: str) -> list[str]:
+    """The project spaces this person belongs to, from ``GET /api/v0.5/user_domains/``.
+
+    HQ's ``/identity/`` answer carries no domains (read live, 2026-11-16: only id, username, name
+    and email), so this is the list. Raises IdentityError on ANY failure: an empty answer deletes
+    memberships (``refresh_memberships``), so "could not ask" must never look like "belongs to none".
+    """
+    url: str | None = f"{hq_base_url()}/api/v0.5/user_domains/?limit=100"
+    names: list[str] = []
+    for _ in range(MAX_DOMAIN_PAGES):
+        try:
+            resp = httpx.get(url, headers={"Authorization": f"Bearer {access_token}"}, timeout=15.0)
+        except httpx.RequestError as exc:
+            raise IdentityError(f"CommCare project list request failed: {exc}") from exc
+        if resp.status_code != 200:
+            raise IdentityError(f"CommCare project list returned {resp.status_code}")
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            raise IdentityError("CommCare project list was not JSON") from exc
+        objects = data.get("objects")
+        if not isinstance(objects, list):
+            raise IdentityError("CommCare project list had no objects")
+        names.extend(
+            o["domain_name"] for o in objects if isinstance(o, dict) and isinstance(o.get("domain_name"), str)
+        )
+        next_path = (data.get("meta") or {}).get("next")
+        if not next_path:
+            return sorted({n.strip().lower() for n in names if n.strip()})
+        url = next_path if next_path.startswith("http") else f"{hq_base_url()}{next_path}"
+    raise IdentityError("CommCare project list did not end")
+
+
 def fetch_identity(access_token: str) -> dict:
-    """GET /api/v0.5/identity/ with the person's own token."""
+    """The person (``/api/v0.5/identity/``) and their project spaces (``fetch_domains``), with their own token."""
     try:
         resp = httpx.get(
             f"{hq_base_url()}/api/v0.5/identity/",
@@ -61,7 +98,7 @@ def fetch_identity(access_token: str) -> dict:
         "username": data.get("username") or "",
         "email": data.get("email") or "",
         "name": name,
-        "domains": [d for d in (data.get("domains") or []) if isinstance(d, str)],
+        "domains": fetch_domains(access_token),
     }
 
 
