@@ -5,11 +5,15 @@ The rules that turn a visit's answers into stock leaving a worker's bag.
 Each line says which question it reads; a protocol or value-map line is
 labelled Estimated here and on every figure it feeds.
 {% endcomment %}
+{% block page_info %}{% info "About dispensing rules" %}
+  <p>A rule says which form answers tell what each visit gave out, per opportunity and item. Each line names the question it reads.</p>
+  <p>A <b>Protocol</b> or <b>Dose looked up</b> line works the amount out rather than reading it, so it is marked <b>Estimated</b> here and on every figure it feeds.</p>
+  <p>Until there is a rule, no visit moves any stock.</p>
+{% endinfo %}{% endblock %}
 {% block supply_content %}
 <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Dispensing rules</h1>
-    <p class="text-sm text-gray-600 mt-1">Which form answers say what each visit gave out, per opportunity and item.</p>
   </div>
   {% if has_program_context and not supply_as_of %}
     <a href="{% url 'supply_chain:dispensing_rule_create' %}" class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">New rule</a>

@@ -92,7 +92,8 @@ def test_a_pin_that_replaces_workers_takes_its_place_in_the_nav(client_in_progra
     labels = [label for _, label in tabs]
     assert "Workers" not in labels
     assert (f"/supply/views/stock-review/?program_id={PROGRAM}", "Stock review") in tabs
-    assert labels.index("Stock review") == labels.index("Stock") + 1
+    # Workers' own place: after Where it went (navigation.TAB_GROUPS, family order).
+    assert labels.index("Stock review") == labels.index("Where it went") + 1
 
 
 def test_the_classic_page_still_highlights_the_pinned_tab(client_in_programme, da):

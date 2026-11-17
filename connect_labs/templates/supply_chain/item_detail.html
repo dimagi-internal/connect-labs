@@ -9,6 +9,8 @@ computed through it: a price per carton means nothing until you know how many
 sachets are in the carton, and neither does a balance.
 {% endcomment %}
 
+{% block page_info %}{% info "About this page" %}<p>A trade item is one manufacturer's version of a product, and the only level that can be ordered, shipped and counted.</p><p>How it is packed comes first because everything else on the page is worked out through it: a price per carton means nothing until you know how many units are in the carton, and neither does a stock balance.</p>{% endinfo %}{% endblock %}
+
 {% block supply_content %}
 
 <nav class="text-sm text-gray-600 mb-3">
@@ -84,19 +86,22 @@ sachets are in the carton, and neither does a balance.
 
     {% if item.one_course_is %}
       {% comment %}The unit every later quantity is read in, so it is the statement on the page.{% endcomment %}
-      <p class="mt-3 rounded-md bg-blue-50 border border-blue-100 px-3 py-2 text-base font-semibold text-blue-900">
+      <div class="mt-3 rounded-md bg-blue-50 border border-blue-100 px-3 py-2 text-base font-semibold text-blue-900">
         {% if item.one_course_is == "pack" %}
           One {{ item.pack_unit|default:product.pack_unit|default:"pack"|unit_words }} is one full course
         {% else %}
           One {{ item.base_unit|default:product.base_unit|default:"unit"|unit_words }} is one full course
         {% endif %}
-        <span class="text-sm font-normal text-gray-700">— so its cost per course needs no conversion.</span>
-      </p>
+        {% info "About one course" %}<p>So its cost per course needs no conversion.</p>{% endinfo %}
+      </div>
     {% endif %}
 
     {% if item.is_kit %}
       <div class="mt-4">
-        <h2 class="text-base font-semibold text-gray-900">What is inside — one {{ item.components_unit|unit_words }} holds</h2>
+        <h2 class="text-base font-semibold text-gray-900">What is inside — one {{ item.components_unit|unit_words }} holds{% info "About kits" %}<p>
+          Counted in stock as whole kits: the ledger never breaks one apart. Two
+          suppliers' kits are ranked against each other only when they hold the same
+          products in the same numbers.</p>{% endinfo %}</h2>
         <div class="overflow-x-auto mt-1" tabindex="0" role="region" aria-label="Table, scrolls sideways">
           <table class="min-w-[32rem] w-full text-sm">
             <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
@@ -122,22 +127,17 @@ sachets are in the carton, and neither does a balance.
             </tbody>
           </table>
         </div>
-        <p class="text-xs text-gray-600 mt-1 max-w-2xl">
-          Counted in stock as whole kits — the ledger never breaks one apart. Two
-          suppliers' kits are ranked against each other only when they hold the same
-          products in the same numbers.
-        </p>
       </div>
     {% endif %}
 
     {% if item.differs_from_product %}
-      <p class="mt-3 text-sm text-orange-800 bg-orange-50 border border-orange-200 rounded px-3 py-2 max-w-2xl">
+      <div class="mt-3 text-sm text-orange-800 bg-orange-50 border border-orange-200 rounded px-3 py-2 max-w-2xl">
         Packed {{ item.base_per_pack }} to the {{ item.pack_unit|default:product.pack_unit|unit_words }} where
         <a class="underline" href="{% url 'supply_chain:product_detail' product.slug %}">{{ product.name }}</a>
-        says {{ product.base_per_pack }}. Often legitimate — but every price
+        says {{ product.base_per_pack }}.{% info "Why this matters" %}<p>Often legitimate, but every price
         quoted per {{ item.pack_unit|default:product.pack_unit|unit_words }} has to be divided by
-        this number, not the product's.
-      </p>
+        this number, not the product's.</p>{% endinfo %}
+      </div>
     {% endif %}
 
     <div class="mt-4">
@@ -156,11 +156,11 @@ sachets are in the carton, and neither does a balance.
           {% endfor %}
         </ul>
       {% else %}
-        <p class="text-sm text-gray-600 mt-0.5 max-w-2xl">
-          None recorded. Without a GTIN, a carton arriving in a store is
-          matched to this row by name — which is how two manufacturers' products
-          end up counted as one.
-        </p>
+        <div class="text-sm text-gray-600 mt-0.5 max-w-2xl">
+          None recorded.{% info "Why GS1 keys matter" %}<p>Without a GTIN, a carton arriving in a store is
+          matched to this row by name, which is how two manufacturers' products
+          end up counted as one.</p>{% endinfo %}
+        </div>
       {% endif %}
     </div>
 
@@ -217,11 +217,11 @@ sachets are in the carton, and neither does a balance.
           {% endfor %}
         </ul>
       {% else %}
-        <p class="px-5 py-5 text-sm text-gray-600 max-w-lg">
-          No quote has named this trade item. A quote that names only the
+        <div class="px-5 py-5 text-sm text-gray-600 max-w-lg">
+          No quote has named this trade item.{% info "Why this is worth asking for" %}<p>A quote that names only the
           product cannot be turned into a per&#8209;{{ item.base_unit|default:product.base_unit|default:"unit"|unit_words }}
-          price, so this is worth asking for.
-        </p>
+          price, so ask suppliers to name the trade item.</p>{% endinfo %}
+        </div>
       {% endif %}
     </div>
 
@@ -251,11 +251,8 @@ sachets are in the carton, and neither does a balance.
 
   <div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
     <div class="px-5 py-4 border-b border-brand-border-light">
-      <h2 class="text-base font-semibold text-gray-900">Where it is now</h2>
-      <p class="text-sm text-gray-600 mt-0.5">
-        The ledger balance, per supply point. Goods in transit are real but
-        are not cover, so they are not added in here.
-      </p>
+      <h2 class="text-base font-semibold text-gray-900">Where it is now{% info "About this table" %}<p>The ledger balance, per supply point. Goods in transit are real but
+        are not cover, so they are not added in here.</p>{% endinfo %}</h2>
     </div>
     {% if network.points %}
       <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
@@ -304,18 +301,15 @@ sachets are in the carton, and neither does a balance.
       </div>
     {% else %}
       <p class="px-5 py-5 text-sm text-gray-600">
-        Nothing of this has been received anywhere yet, so there is no balance to show.
+        Nothing of this has been received anywhere yet.
       </p>
     {% endif %}
   </div>
 
   <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
     <div class="px-5 py-4 border-b border-brand-border-light">
-      <h2 class="text-base font-semibold text-gray-900">Documents</h2>
-      <p class="text-sm text-gray-600 mt-0.5">
-        Specification sheets, certificates and photographs held against this
-        trade item rather than against one order of it.
-      </p>
+      <h2 class="text-base font-semibold text-gray-900">Documents{% info "About documents" %}<p>Specification sheets, certificates and photographs held against this
+        trade item rather than against one order of it.</p>{% endinfo %}</h2>
     </div>
     {% if documents %}
       <ul class="divide-y divide-gray-100">

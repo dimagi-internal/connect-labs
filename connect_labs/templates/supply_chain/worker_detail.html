@@ -13,6 +13,12 @@ dispensing and is never listed as stock that arrived. "Issued" is this
 worker's own figure (what arrived at them); stores show what came in from
 outside instead, on the Network page.
 {% endcomment %}
+{% block page_info %}{% info "About this page" %}
+  <p>One field worker's stock of one item: the figures, a day-by-day chart, then the visits and deliveries behind each step.</p>
+  <p><b>Issued</b> is what arrived at this worker. <b>Dispensed</b> is what their visits gave out; a visit whose form did not say is not counted.</p>
+  <p>When a rejected visit's stock comes back, it is shown as <b>put back</b>: it undoes that visit's dispensing and is never listed as stock that arrived.</p>
+  <p>Each visit shows its status, how it was read, and the form answers the figure rests on.</p>
+{% endinfo %}{% endblock %}
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">

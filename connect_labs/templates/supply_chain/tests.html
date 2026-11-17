@@ -1,6 +1,13 @@
 {% extends 'supply_chain/base.html' %}
 {% load supply_chain_extras %}
 
+{% block page_info %}{% info "How a test is judged" %}
+  <p>A batch test or a dispenser sample is held to the product's own specification in the Catalogue: each figure must be measured and met to pass. The average of the trials is worked out for you.</p>
+  <p>A storage check fails on any &ldquo;No&rdquo;.</p>
+  <p>A failed batch, dispenser or store is shown at the top, and on the Overview, until a newer test of the same one passes. "Failing now" counts those whose latest test failed.</p>
+  <p>The list shows what was measured; each test's result is in the download. A test recorded by mistake is withdrawn with a reason, never deleted.</p>
+{% endinfo %}{% endblock %}
+
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
@@ -9,7 +16,7 @@
   </div>
 {% else %}
 
-<div class="flex flex-wrap items-start justify-between gap-4 mb-2">
+<div class="flex flex-wrap items-start justify-between gap-4 mb-4">
   <h2 class="text-lg font-semibold text-gray-900">
     Tests{% if partner_name %} — {{ partner_name }}{% endif %}
   </h2>
@@ -22,21 +29,11 @@
     {% endfor %}
   </div>
 </div>
-<details class="text-xs text-gray-600 mb-4 max-w-3xl">
-  <summary class="cursor-pointer">How a test is judged</summary>
-  <p class="mt-1">
-  A batch test or a dispenser sample is held to the product's own specification in the Catalogue: each figure must
-  be measured and met to pass. The average of the trials is worked out for you. A storage check fails on any
-  &ldquo;No&rdquo;. A failed batch, dispenser or store is shown at the top, and on the Overview, until a newer
-  test of the same one passes. The list shows what was measured; each test's result is in the download.
-  A test recorded by mistake is withdrawn with a reason, never deleted.
-  </p>
-</details>
 
 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
   <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
     <div class="text-2xl font-semibold tabular-nums {% if counts.failing_now %}text-red-700{% else %}text-gray-900{% endif %}">{{ counts.failing_now }}</div>
-    <div class="text-xs text-gray-600">failing now (latest test failed)</div>
+    <div class="text-xs text-gray-600">failing now</div>
   </div>
   <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
     <div class="text-2xl font-semibold tabular-nums text-gray-900">{{ counts.recent }}</div>
@@ -108,7 +105,7 @@
 </form>
 
 <div class="flex items-center justify-between mb-2">
-  <p class="text-sm text-gray-700">{{ rows|length }} test{{ rows|length|pluralize }}{% if partner_name %} at {{ partner_name }}'s places{% endif %}.</p>
+  <p class="text-sm text-gray-700">{{ rows|length }} test{{ rows|length|pluralize }}{% if partner_name %} at {{ partner_name }}'s places{% endif %}</p>
   <a href="{{ csv_url }}" class="text-sm text-brand-indigo hover:underline" data-testid="tests-download">
     <i class="fa-solid fa-download mr-1"></i> Download these as a spreadsheet (CSV)
   </a>

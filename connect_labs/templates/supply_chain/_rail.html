@@ -39,6 +39,22 @@ Plain CSS rather than utilities, so nothing waits on the stylesheet being rebuil
   .supply-tab { position: relative; display: block; padding: 0.375rem 0.625rem; border-radius: 0.375rem; font-size: 0.875rem; line-height: 1.25rem; color: #3b3f52; text-decoration: none; }
   .supply-tab:hover { background: #e2def2; color: #16006d; }
   .supply-tab.is-active { background: #fff; color: #16006d; font-weight: 600; box-shadow: 0 1px 2px rgb(22 0 109 / 0.12); color: #3843d0; }
+  .supply-family > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
+  .supply-family > summary::-webkit-details-marker { display: none; }
+  .supply-family > summary::after { content: ""; width: 0.4rem; height: 0.4rem; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); margin-right: 0.25rem; transition: transform .15s ease; opacity: .7; }
+  .supply-family[open] > summary::after { transform: rotate(45deg); }
+  .supply-family-head.has-active { color: #16006d; font-weight: 600; }
+  .supply-family-tabs { margin: 0.125rem 0 0.25rem 0.625rem; padding-left: 0.375rem; border-left: 1px solid #dfdcef; }
+  .supply-family-tabs .supply-tab { font-size: 0.8125rem; padding-top: 0.3125rem; padding-bottom: 0.3125rem; }
+  .supply-tab-name { display: inline-flex; align-items: center; gap: 0.5rem; }
+  .supply-tab-icon { width: 1rem; text-align: center; font-size: 0.8125rem; color: #6b6f80; }
+  .supply-family-head.has-active .supply-tab-icon { color: #3843d0; }
+  /* A tab standing alone wears its icon before its name, drawn from data-icon by the script below. */
+  .supply-tab[data-icon] { display: flex; align-items: center; gap: 0.5rem; }
+  .supply-badge, .supply-tab[data-badge]::after { margin-left: auto; min-width: 1.25rem; padding: 0 0.375rem; border-radius: 9999px; background: #b91c1c; color: #fff; font-size: 0.6875rem; line-height: 1.125rem; font-weight: 600; text-align: center; }
+  .supply-tab[data-badge]::after { content: attr(data-badge); }
+  .supply-family-head { gap: 0.5rem; }
+  .supply-family-tabs .supply-tab[data-icon] .supply-tab-icon { display: none; }
   .supply-rail-foot { margin-top: auto; padding: 1rem 0.625rem 0; border-top: 1px solid #dfdcef; font-size: 0.8125rem; }
   .supply-tabs-bar + .supply-rail-foot { margin-top: 1.25rem; }
   .supply-rail-foot a { display: block; padding: 0.3125rem 0; color: #3843d0; text-decoration: none; }
@@ -77,10 +93,28 @@ Plain CSS rather than utilities, so nothing waits on the stylesheet being rebuil
     <nav data-testid="supply-tabs" class="supply-tabs-wide supply-tabs-bar" aria-label="Supply">
       {% for group in supply_tabs|tab_groups %}
       <div data-testid="supply-tab-group" data-group="{{ group.label }}" class="supply-tab-group">
-        {% if group.label %}<span class="supply-tab-group-name">{{ group.label }}</span>{% endif %}
-        {% for tab in group.tabs %}
-        <a href="{{ tab.url }}"{% if tab.active %} aria-current="page"{% endif %} class="supply-tab{% if tab.active %} is-active{% endif %}">{{ tab.label }}</a>
+        {% with entries=group.tabs|rail_entries %}
+        {% comment %}A group that is one family of the same name (Setup) is not named twice.{% endcomment %}
+        {% if group.label and not entries|length == 1 or group.label and entries.0.family != group.label %}<span class="supply-tab-group-name">{{ group.label }}</span>{% endif %}
+        {% for entry in entries %}
+        {% if entry.family %}
+        {% comment %}A family (navigation.FAMILIES): its name opens to its pages, open by itself where you are.{% endcomment %}
+        <details class="supply-family" data-testid="supply-family"{% if entry.active %} open{% endif %}>
+          <summary class="supply-tab supply-family-head{% if entry.active %} has-active{% endif %}"><span class="supply-tab-name">{% if entry.icon %}<i class="fa-solid {{ entry.icon }} supply-tab-icon" aria-hidden="true"></i>{% endif %}{{ entry.family }}</span>{% if entry.badge and not entry.active %}<span class="supply-badge" title="Needs attention">{{ entry.badge }}</span>{% endif %}</summary>
+          <div class="supply-family-tabs">
+          {% for tab in entry.tabs %}
+          <a href="{{ tab.url }}"{% if tab.active %} aria-current="page"{% endif %} class="supply-tab{% if tab.active %} is-active{% endif %}">{{ tab.label }}</a>
+          {% endfor %}
+          </div>
+        </details>
+        {% else %}
+        {% for tab in entry.tabs %}
+        {% comment %}The label is the link's whole text (tests read it); the icon and count sit in CSS-drawn data attributes.{% endcomment %}
+        <a href="{{ tab.url }}"{% if tab.active %} aria-current="page"{% endif %}{% if tab.icon %} data-icon="{{ tab.icon }}"{% endif %}{% if tab.badge %} data-badge="{{ tab.badge }}"{% endif %} class="supply-tab{% if tab.active %} is-active{% endif %}">{{ tab.label }}</a>
         {% endfor %}
+        {% endif %}
+        {% endfor %}
+        {% endwith %}
       </div>
       {% endfor %}
     </nav>
@@ -93,6 +127,16 @@ Plain CSS rather than utilities, so nothing waits on the stylesheet being rebuil
   </div>
 </aside>
 <button type="button" class="supply-rail-toggle" data-supply-rail-toggle data-testid="supply-rail-show" aria-controls="supply-rail" aria-expanded="true" aria-label="Show menu" title="Show menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+<script>
+  // Icons before the names of tabs that stand alone (a family's pages keep plain names under its icon).
+  document.querySelectorAll("#supply-rail .supply-tab[data-icon]").forEach(function (a) {
+    if (a.closest(".supply-family-tabs")) return;
+    var i = document.createElement("i");
+    i.className = "fa-solid " + a.getAttribute("data-icon") + " supply-tab-icon";
+    i.setAttribute("aria-hidden", "true");
+    a.insertBefore(i, a.firstChild);
+  });
+</script>
 <script>
   (function () {
     var shell = document.currentScript.parentElement, KEY = "supplyRail";

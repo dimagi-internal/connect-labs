@@ -14,6 +14,8 @@ own arithmetic -- so workers sit in the tree under their store, behind one
 "show" so a store with two hundred of them stays one row.
 {% endcomment %}
 
+{% block page_info %}{% info "About this page" %}<p>Every place stock can rest in this programme, each under the place it is resupplied from, down to each field worker's own holding.</p><p data-testid="network-readings">Two readings can look like they disagree. <b>On its own shelf</b> and its status chip (ok, low) are about the store itself. <b>With everything below it</b> adds the stores and field workers it supplies, so a store can be "ok" on its own shelf while the whole branch beneath it is "overstocked".</p><p>A store's field workers sit behind "Show the workers", so a big store stays one row. "Details" has where a place is, its stock level, when it was last counted and its record name.</p>{% endinfo %}{% endblock %}
+
 {% block supply_content %}
 <style>
   .nw-list, .nw-children { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
@@ -41,13 +43,6 @@ own arithmetic -- so workers sit in the tree under their store, behind one
 <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Network</h1>
-    <details class="text-sm text-gray-600 mt-1">
-      <summary class="cursor-pointer">What the tree shows</summary>
-      <p class="mt-1 max-w-2xl">
-        Every place stock can rest in this programme, each under the place it is resupplied from,
-        down to each field worker's own holding.
-      </p>
-    </details>
   </div>
   {% if has_program_context %}
     <div class="flex items-center gap-4">
@@ -66,17 +61,11 @@ own arithmetic -- so workers sit in the tree under their store, behind one
 {% if not has_program_context %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
     <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
-    <p class="text-sm text-message-warning-text/90">
-      Choose a programme above. A network belongs to one.
-    </p>
+    <p class="text-sm text-message-warning-text/90">Choose a programme above.</p>
   </div>
 {% elif not roots %}
   <div class="bg-white border border-brand-border-light rounded-lg px-5 py-8 text-center">
-    <p class="text-sm text-gray-600">Nothing here yet.</p>
-    <p class="text-sm text-gray-600 mt-1 max-w-lg mx-auto">
-      Stock has to arrive somewhere before there is any to look at, so a receipt needs at least
-      one supply point to name.
-    </p>
+    <div class="text-sm text-gray-600">Nothing here yet.{% info "Why add a supply point first" %}<p>Stock has to arrive somewhere before there is any to look at, so a receipt needs at least one supply point to name.</p>{% endinfo %}</div>
     {% if not supply_as_of %}
       <a href="{% url 'supply_chain:supply_point_create' %}"
          class="inline-block mt-4 px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
@@ -106,14 +95,6 @@ own arithmetic -- so workers sit in the tree under their store, behind one
         </form>
       {% endif %}
     </div>
-    <details class="text-xs text-gray-600 mb-2"><summary class="cursor-pointer">Why a store can be "ok" while its branch is not</summary>
-    <p class="mt-1" data-testid="network-readings">
-      Two readings can look like they disagree. <strong>On its own shelf</strong> and its status chip
-      (ok, low) are about the store itself. <strong>With everything below it</strong> adds the
-      stores and field workers it supplies, so a store can be "ok" on its own shelf while the whole
-      branch beneath it is "overstocked".
-    </p>
-    </details>
     {% include "supply_chain/_partner_switcher.html" %}
     {% for partner in partners %}
       <div class="mb-5" data-testid="partner-tree">

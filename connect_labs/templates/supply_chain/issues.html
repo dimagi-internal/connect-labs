@@ -1,6 +1,11 @@
 {% extends 'supply_chain/base.html' %}
 {% load supply_chain_extras %}
 
+{% block page_info %}{% info "How an issue is followed up" %}
+  <p>An issue is stock that is missing, taken, damaged or expired. Report it where it happened: the quantity comes off that place's stock straight away, so the figures show what is really there.</p>
+  <p>An issue is open until it is followed up and ends as recovered, replaced or written off; recovered stock goes back on the ledger linked to the issue.</p>
+{% endinfo %}{% endblock %}
+
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
@@ -9,7 +14,7 @@
   </div>
 {% else %}
 
-<div class="flex flex-wrap items-start justify-between gap-4">
+<div class="flex flex-wrap items-start justify-between gap-4 mb-4">
   <h2 class="text-lg font-semibold text-gray-900 mb-1">
     Issues{% if partner_name %} — {{ partner_name }}{% endif %}
   </h2>
@@ -18,14 +23,6 @@
     <i class="fa-solid fa-plus mr-1"></i> Report an issue
   </a>
 </div>
-<details class="text-xs text-gray-600 mb-4 max-w-3xl">
-  <summary class="cursor-pointer">How an issue is followed up</summary>
-  <p class="mt-1">
-  Stock that is missing, taken, damaged or expired. Report it where it happened: the quantity comes off that
-  place's stock straight away, so the figures show what is really there. An issue is open until it is followed up
-  and ends as recovered, replaced or written off; recovered stock goes back on the ledger linked to the issue.
-  </p>
-</details>
 
 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
   <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
@@ -93,8 +90,8 @@
         <tr>
           <td class="px-4 py-2">
             {% if issue.kind == "expiring" %}
-              Expiring soon
-              <div class="text-xs text-amber-800">A warning, not a loss: still in date, so nothing is taken off stock. Use it first, or move it.</div>
+              Expiring soon{% info "About expiring stock" %}<p>A warning, not a loss: still in date, so nothing is taken off stock. Use it first, or move it.</p>{% endinfo %}
+              <div class="text-xs text-amber-800">Use it first, or move it.</div>
             {% else %}{{ issue.kind|words|capfirst }}{% endif %}
             {% if issue.taken_by %}<div class="text-xs text-gray-600">by {{ issue.taken_by }}</div>{% endif %}
             {% if issue.evidence %}<div class="text-xs text-gray-600 max-w-xs break-words">{{ issue.evidence|urlize }}</div>{% endif %}
@@ -155,8 +152,7 @@
   </div>
 </div>
 
-<h3 class="text-base font-semibold text-gray-900 mb-1">Who is responsible where stock is kept</h3>
-<details class="text-xs text-gray-600 mb-3"><summary class="cursor-pointer">Why name someone</summary><p class="mt-1">A named person at each storage point confirms deliveries and owns the balance there, so a missing carton points to a person and a day. Where a partner's field workers keep stock at home, the field worker is the custodian and the security says how it is kept (for example, a lockable box). Changing the custodian keeps the earlier one as history.</p></details>
+<h3 class="text-base font-semibold text-gray-900 mb-3">Who is responsible where stock is kept{% info "Why name someone" %}<p>A named person at each storage point confirms deliveries and owns the balance there, so a missing carton points to a person and a day.</p><p>Where a partner's field workers keep stock at home, the field worker is the custodian and the security says how it is kept (for example, a lockable box). Changing the custodian keeps the earlier one as history.</p>{% endinfo %}</h3>
 <div class="bg-white border border-gray-200 rounded-lg mb-6 overflow-hidden">
   <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
   <table class="min-w-[44rem] w-full text-sm">
@@ -197,8 +193,7 @@
 </div>
 
 {% if legacy_losses %}
-  <h3 class="text-base font-semibold text-gray-900 mb-1">Earlier losses, recorded as a note</h3>
-  <p class="text-xs text-gray-600 mb-3">Still counted against stock. Report new problems as an issue.</p>
+  <h3 class="text-base font-semibold text-gray-900 mb-3">Earlier losses, recorded as a note{% info "About earlier losses" %}<p>Still counted against stock. Report new problems as an issue.</p>{% endinfo %}</h3>
   <div class="bg-white border border-gray-200 rounded-lg mb-6 overflow-hidden">
     <table class="w-full text-sm">
       <tbody class="divide-y divide-gray-100">

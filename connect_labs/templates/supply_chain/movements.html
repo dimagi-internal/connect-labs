@@ -7,6 +7,11 @@ figure is made of. Newest first. Every class here is one the stock page already
 uses, so nothing ships purged.
 {% endcomment %}
 
+{% block page_info %}{% info "About movements" %}
+  <p>A balance is these movements added up. A correction is another movement naming its cause, never an edit.</p>
+  <p>An entry that should not be here can be removed: it stays in the list, struck through, with who removed it and why, and no longer counts.</p>
+{% endinfo %}{% endblock %}
+
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
@@ -18,18 +23,12 @@ uses, so nothing ships purged.
 <div class="text-xs text-gray-600">
   <a class="hover:underline" href="{% url 'supply_chain:stock' %}">Stock</a> › movements
 </div>
-<div class="flex items-baseline gap-3 mb-1">
+<div class="flex items-baseline gap-3 mb-4">
   <h2 class="text-lg font-semibold text-gray-900">
     {% if point %}What moved in and out of {{ point.name }}{% else %}Every movement{% endif %}
   </h2>
   {% if item %}<span class="text-sm text-gray-600">{{ item.name }}</span>{% endif %}
 </div>
-<p class="text-xs text-gray-600 mb-4">
-  The ledger is append-only: a balance is these movements added up, and a
-  correction is another movement naming its cause, never an edit. An entry that
-  should not be here can be removed: it stays below, struck through, with who
-  removed it and why, and no longer counts.
-</p>
 
 <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
   <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">

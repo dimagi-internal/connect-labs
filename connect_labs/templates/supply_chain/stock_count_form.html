@@ -12,6 +12,12 @@ picks the one for the point and trade item chosen and says it. It states
 figures. It does not suggest a count or ask for agreement with the ledger.
 {% endcomment %}
 
+{% load supply_chain_extras %}
+{% block page_info %}{% info "About counts" %}
+  <p>A count is what is actually on the shelf. It is kept beside Supply's records and shows any difference; it replaces the records only if you mark it as an override.</p>
+  <p>Once you choose the place and item, the form shows what the records hold there, so you can see the difference before you save.</p>
+{% endinfo %}{% endblock %}
+
 {% block extra_fields %}
   {{ ledger_balances|json_script:"ledger-balances" }}
   <script>

@@ -11,6 +11,11 @@ names its sign and its day: reported minus the ledger ON THE COUNT DAY, so
 stock that arrived after the count is not read as a discrepancy. A receipt
 the worker reports that no store recorded is said on the worker's own row.
 {% endcomment %}
+{% block page_info %}{% info "About this page" %}
+  <p>One row per field worker, sorted by name until you choose a column heading. The page states facts and ranks nobody.</p>
+  <p>A figure that rests on unapproved visits or on protocol estimates says so in its own cell ("of 30 given out: 30 on unapproved visits").</p>
+  <p><b>Count − ledger</b> is the worker's count less Supply's records on the count day, so stock that arrived after the count is not read as a difference. A receipt the worker reports that no store recorded is said on the worker's row.</p>
+{% endinfo %}{% endblock %}
 {% block supply_content %}
 <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
   <div>
@@ -18,8 +23,7 @@ the worker reports that no store recorded is said on the worker's own row.
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Workers{% if review_tab %} <span class="text-base font-normal text-gray-600">(classic view)</span>{% endif %}</h1>
     {% if review_tab %}
       <p class="text-sm text-gray-700 mt-1" data-testid="classic-workers-note">
-        This is the classic Workers page. Your programme's usual page for this is
-        <a href="{{ review_tab.url }}" class="text-brand-indigo hover:underline">{{ review_tab.label }}</a>, the tab highlighted above.
+        Your programme's usual page: <a href="{{ review_tab.url }}" class="text-brand-indigo hover:underline">{{ review_tab.label }}</a>
       </p>
     {% endif %}
   </div>
@@ -33,7 +37,7 @@ the worker reports that no store recorded is said on the worker's own row.
     <p class="text-sm text-message-warning-text/90">Choose a programme above. Workers belong to one.</p>
   </div>
 {% elif not item %}
-  <p class="text-sm text-gray-600">No dispensing rule yet, so no visit has moved any stock and there is nothing to show per worker.</p>
+  <p class="text-sm text-gray-600">No dispensing rule yet, so no visit has moved any stock.</p>
 {% else %}
   {% include "supply_chain/_partner_switcher.html" %}
   <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -53,8 +57,7 @@ the worker reports that no store recorded is said on the worker's own row.
   </div>
   {% if not rows %}
     <div class="bg-white border border-brand-border-light rounded-lg px-5 py-8 text-center">
-      <p class="text-sm text-gray-600">No field worker's holding yet.</p>
-      <p class="text-sm text-gray-600 mt-1">A worker appears here once a visit of theirs is read, or once stock is issued to them.</p>
+      <div class="text-sm text-gray-600">No field worker's holding yet.{% info "When workers appear" %}<p>A worker appears here once a visit of theirs is read, or once stock is issued to them.</p>{% endinfo %}</div>
     </div>
   {% else %}
     <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
@@ -68,7 +71,7 @@ the worker reports that no store recorded is said on the worker's own row.
                     {% if sort == key %}aria-sort="{% if descending %}descending{% else %}ascending{% endif %}"{% endif %}>
                   <a class="hover:underline {% if sort == key %}text-gray-900{% endif %}"
                      href="?item_id={{ item.id }}&amp;sort={{ key }}&amp;dir={% if sort == key and not descending %}desc{% else %}asc{% endif %}{% if supply_as_of %}&amp;as_of={{ supply_as_of|date:'Y-m-d' }}{% endif %}">{{ label }}{% if sort == key %} <span aria-hidden="true">{% if descending %}↓{% else %}↑{% endif %}</span>{% endif %}</a>
-                  {% if help %}<div class="normal-case tracking-normal font-normal text-[11px] text-gray-600 mt-0.5">{{ help }}</div>{% endif %}
+                  {% if help %}{% info label %}<p>{{ help|capfirst }}.</p>{% endinfo %}{% endif %}
                 </th>
               {% endfor %}
             </tr>

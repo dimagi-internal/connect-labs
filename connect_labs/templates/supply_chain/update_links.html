@@ -9,19 +9,17 @@ No token appears here, ever -- only its first characters, to tell two links
 apart. The token is shown once, when the link is issued.
 {% endcomment %}
 
+{% block page_info %}{% info "What a link covers" %}<p>An update link lets an organisation with no labs login record its own part of the chain, instead of being asked for it by email.</p><p>
+        A link covers either only the orders, supply points and approvals it was issued for, or everything involving that
+        organisation in the programme, including orders created later. Either way it can only take the
+        organisation's own part, and everything recorded through it is marked as reported by that organisation.</p>
+      <p>Only the first characters of each link are shown here, to tell two apart. The full link is shown once, when it is issued.</p>{% endinfo %}{% endblock %}
+
 {% block supply_content %}
 
 <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">{% term "update links" "Update links" %}</h1>
-    <details class="text-xs text-gray-600 mt-1 max-w-2xl">
-      <summary class="cursor-pointer text-brand-indigo">What a link covers</summary>
-      <p class="mt-1">
-        Either only the orders, supply points and approvals it was issued for, or everything involving that
-        organisation in the programme, including orders created later. Either way it can only take the
-        organisation's own part, and everything recorded through it is marked as reported by that organisation.
-      </p>
-    </details>
   </div>
   {% if has_program_context %}
     <a href="{% url 'supply_chain:update_link_issue' %}"
@@ -123,11 +121,9 @@ apart. The token is shown once, when the link is issued.
   </section>
 {% empty %}
   <div class="bg-white border border-brand-border-light rounded-lg px-5 py-8 text-center">
-    <p class="text-sm text-gray-600">No links yet.</p>
-    <p class="text-sm text-gray-600 mt-1 max-w-lg mx-auto">
+    <div class="text-sm text-gray-600">No links yet.{% info "Why issue one" %}<p>
       Every status update is asked for by email or WhatsApp until there is one. Issue a link to the
-      organisation that holds the stock or ships the order, and they can record it themselves.
-    </p>
+      organisation that holds the stock or ships the order, and they can record it themselves.</p>{% endinfo %}</div>
     <a href="{% url 'supply_chain:update_link_issue' %}"
        class="inline-block mt-4 px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
       Issue the first one

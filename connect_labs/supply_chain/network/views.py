@@ -318,6 +318,7 @@ class OrgMergeView(OperationFormView):
     )
     submit_label = "Merge them"
     danger = True
+    warning = "This cannot be undone."
     footnote = (
         "Refused if the two are linked to different Connect organisations. Two Connect ids means two "
         "organisations, whatever the names look like."

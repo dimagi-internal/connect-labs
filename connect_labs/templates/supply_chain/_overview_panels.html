@@ -1,4 +1,4 @@
-{% comment %}
+{% load supply_chain_extras %}{% comment %}
 Overview, above the buying table: the next step, what to chase, and how
 distribution stands. Worked out in overview.py and the chase list in
 portfolio/chase.py.
@@ -13,11 +13,11 @@ portfolio/chase.py.
 
 <section class="flex flex-col gap-2" data-testid="chase-list" aria-label="To chase">
   <div class="flex flex-wrap items-baseline justify-between gap-x-4">
-    <h2 class="text-brand-deep-purple text-lg font-semibold">To chase{% if not supply_as_of %} <span class="text-sm font-normal tabular-nums text-gray-600">{{ chase_count }}</span>{% endif %}</h2>
-    <a class="text-sm text-brand-indigo underline" href="{{ map_url }}">The same list on the Map, with the places</a>
+    <h2 class="text-brand-deep-purple text-lg font-semibold">To chase{% if not supply_as_of %} <span class="text-sm font-normal tabular-nums text-gray-600">{{ chase_count }}</span>{% endif %}{% info "About To chase" %}<p>What is stuck, who can unblock it and what to ask them. One row per supplier or partner, so one message covers it, oldest first.</p><p>Each row says what to do, how much is at stake and how long it has waited. The Map shows the same list with the places.</p>{% endinfo %}</h2>
+    <a class="text-sm text-brand-indigo underline" href="{{ map_url }}">On the Map</a>
   </div>
   {% if supply_as_of %}
-  <p class="text-xs text-gray-600" data-testid="chase-as-of-note">The chase list is worked out for today; back to today to see it.</p>
+  <p class="text-xs text-gray-600" data-testid="chase-as-of-note">Shown for today only.</p>
   {% else %}
   {% include "supply_chain/_chase_list.html" with chase=chase %}
   {% endif %}
