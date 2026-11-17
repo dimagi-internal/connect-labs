@@ -27,8 +27,9 @@
   <p class="mt-1">
   A batch test or a dispenser sample is held to the product's own specification in the Catalogue: each figure must
   be measured and met to pass. The average of the trials is worked out for you. A storage check fails on any
-  &ldquo;No&rdquo;. A failed batch, dispenser or store stays on the list below, and on the Overview, until a newer
-  test of the same one passes. A test recorded by mistake is withdrawn with a reason, never deleted.
+  &ldquo;No&rdquo;. A failed batch, dispenser or store is shown at the top, and on the Overview, until a newer
+  test of the same one passes. The list shows what was measured; each test's result is in the download.
+  A test recorded by mistake is withdrawn with a reason, never deleted.
   </p>
 </details>
 
@@ -70,7 +71,7 @@
   </div>
 {% endif %}
 
-<form method="get" class="bg-white border border-gray-200 rounded-lg p-3 mb-4 grid grid-cols-2 md:grid-cols-7 gap-3 text-sm items-end" data-testid="tests-filter">
+<form method="get" class="bg-white border border-gray-200 rounded-lg p-3 mb-4 grid grid-cols-2 md:grid-cols-6 gap-3 text-sm items-end" data-testid="tests-filter">
   <label class="block">
     <span class="text-xs text-gray-600">Partner</span>
     <select name="partner" class="base-input">
@@ -83,13 +84,6 @@
     <select name="kind" class="base-input">
       <option value="">Every kind</option>
       {% for value, label in kinds %}<option value="{{ value }}" {% if query.kind == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
-    </select>
-  </label>
-  <label class="block">
-    <span class="text-xs text-gray-600">Result</span>
-    <select name="result" class="base-input">
-      <option value="">Any result</option>
-      {% for value, label in results %}<option value="{{ value }}" {% if query.result == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>
   </label>
   <label class="block">
@@ -130,7 +124,6 @@
         <th class="text-left px-4 py-2">Where</th>
         <th class="text-left px-4 py-2">Batch or dispenser</th>
         {% for column in reading_columns %}<th class="text-right px-4 py-2">{{ column }}</th>{% endfor %}
-        <th class="text-left px-4 py-2">Result</th>
         <th class="text-left px-4 py-2">Tested by</th>
         <th class="px-4 py-2"></th>
       </tr>
@@ -150,19 +143,12 @@
             {% if row.trials %}<div class="text-xs text-gray-600">trials {{ row.trials|join:" / " }}</div>{% endif %}
           </td>
           {% for value in row.reading_cells %}<td class="px-4 py-2 text-right tabular-nums">{{ value|default:"—" }}</td>{% endfor %}
-          <td class="px-4 py-2">
-            {% if row.withdrawn %}
-              <span class="text-gray-600">Withdrawn</span>
-              <div class="text-xs text-gray-600">{{ row.withdrawn_on|day }}{% if row.withdrawn_by %} by {{ row.withdrawn_by }}{% endif %}: {{ row.withdrawn_reason }}</div>
-            {% else %}
-              <span class="inline-block px-2 py-0.5 rounded text-xs font-semibold
-                {% if row.result == 'pass' %}bg-green-100 text-green-800{% elif row.result == 'fail' %}bg-red-100 text-red-800{% else %}bg-amber-100 text-amber-800{% endif %}">{{ row.result_words }}</span>
-              {% for finding in row.findings %}<div class="text-xs text-gray-700 max-w-xs">{{ finding }}</div>{% endfor %}
-            {% endif %}
-          </td>
           <td class="px-4 py-2 text-gray-700">
             {{ row.tested_by }}
             {% if row.note %}<div class="text-xs text-gray-600 max-w-xs">{{ row.note }}</div>{% endif %}
+            {% if row.withdrawn %}
+              <div class="text-xs text-gray-600" data-testid="test-withdrawn">Withdrawn {{ row.withdrawn_on|day }}{% if row.withdrawn_by %} by {{ row.withdrawn_by }}{% endif %}: {{ row.withdrawn_reason }}</div>
+            {% endif %}
           </td>
           <td class="px-4 py-2 text-xs whitespace-nowrap">
             {% if not row.withdrawn %}<a class="text-brand-indigo hover:underline" href="{{ row.withdraw_url }}">Withdraw</a>{% endif %}
@@ -170,7 +156,7 @@
         </tr>
       {% empty %}
         <tr>
-          <td colspan="{{ reading_columns|length|add:7 }}" class="px-4 py-6 text-center text-gray-600">
+          <td colspan="{{ reading_columns|length|add:6 }}" class="px-4 py-6 text-center text-gray-600">
             No tests{% if here %} match these filters{% else %} recorded yet{% endif %}.
           </td>
         </tr>

@@ -311,6 +311,10 @@ def test_the_page_lists_tests_with_their_result_and_what_failed(world, page):
     assert 'data-testid="tests-table"' in body
     assert "GOOD-1" in body and "BAD-1" in body
     assert 'data-testid="tests-failing"' in body and "Do not issue this batch" in body
+    # The history is shared with partners: it shows what was measured, not a verdict on each row.
+    table = body.split('data-testid="tests-table"', 1)[1].split("</table>", 1)[0]
+    assert "Result" not in table and ">Pass<" not in table and ">Fail<" not in table
+    assert "it must be" not in table
 
     mine_only = page.get(
         reverse("supply_chain:tests") + f"?program_id={PROGRAM}&partner={partner.pk}"
