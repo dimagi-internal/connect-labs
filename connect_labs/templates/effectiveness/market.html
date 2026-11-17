@@ -46,4 +46,6 @@
 <script src="{% static 'effectiveness/marketview.js' %}"></script>
 <script src="{% static 'effectiveness/market.js' %}"></script>
 
+{% if canopy_panel %}{% include "canopy_host/panel.html" %}{% endif %}
+<script src="{% static 'effectiveness/agent.js' %}"></script>
 {% endblock %}

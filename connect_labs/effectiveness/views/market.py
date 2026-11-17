@@ -15,7 +15,12 @@ from django.views import View
 
 from connect_labs.effectiveness import explore, sizing
 from connect_labs.effectiveness.scenario import Scenario
-from connect_labs.effectiveness.views.scenario_page import ScenarioPageGate, page_data, scenario_or_default
+from connect_labs.effectiveness.views.scenario_page import (
+    ScenarioPageGate,
+    agent_panel,
+    page_data,
+    scenario_or_default,
+)
 from connect_labs.labs.chrome import NOT_USED, page_chrome
 
 CONTEXT_NOT_USED = method_decorator(page_chrome(labs_context=NOT_USED), name="dispatch")
@@ -27,7 +32,12 @@ class MarketSizeView(ScenarioPageGate, View):
 
     def get(self, request):
         scenario, loaded, error = scenario_or_default(request)
-        return render(request, "effectiveness/market.html", {"data": page_data(request, scenario, loaded, error)})
+        panel = agent_panel(request, "labs-cea://market", "cea_market_size", {"scenario": request.GET.get("scenario")})
+        return render(
+            request,
+            "effectiveness/market.html",
+            {"data": page_data(request, scenario, loaded, error), "canopy_panel": panel},
+        )
 
 
 class MarketSizeDataView(ScenarioPageGate, View):

@@ -15,7 +15,12 @@ from django.utils.decorators import method_decorator
 from django.views import View
 
 from connect_labs.effectiveness import shapes
-from connect_labs.effectiveness.views.scenario_page import ScenarioPageGate, page_data, scenario_or_default
+from connect_labs.effectiveness.views.scenario_page import (
+    ScenarioPageGate,
+    agent_panel,
+    page_data,
+    scenario_or_default,
+)
 from connect_labs.labs.chrome import NOT_USED, page_chrome
 
 CONTEXT_NOT_USED = method_decorator(page_chrome(labs_context=NOT_USED), name="dispatch")
@@ -27,7 +32,12 @@ class WorkspaceView(ScenarioPageGate, View):
         scenario, loaded, error = scenario_or_default(request, default_grain="territory")
         data = {**page_data(request, scenario, loaded, error), "shapes_url": reverse("cea:workspace_shapes")}
         token = getattr(settings, "MAPBOX_TOKEN", "") or ""
-        return render(request, "effectiveness/workspace.html", {"data": data, "mapbox_token": token})
+        panel = agent_panel(
+            request, "labs-cea://workspace", "cea_market_size", {"scenario": request.GET.get("scenario")}
+        )
+        return render(
+            request, "effectiveness/workspace.html", {"data": data, "mapbox_token": token, "canopy_panel": panel}
+        )
 
 
 class WorkspaceShapesView(ScenarioPageGate, View):

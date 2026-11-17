@@ -13,7 +13,7 @@ TEMPLATES = ROOT / "templates" / "effectiveness"
 #: Template -> the scripts it loads, in order. ``ui.js`` (the DOM builder and number formats) comes first where used.
 PAGES = {
     "models.html": ["ui.js", "models.js"],
-    "market.html": ["ui.js", "scenario.js", "dials.js", "scenarios.js", "marketview.js", "market.js"],
+    "market.html": ["ui.js", "scenario.js", "dials.js", "scenarios.js", "marketview.js", "market.js", "agent.js"],
     "workspace.html": [
         "ui.js",
         "scenario.js",
@@ -22,7 +22,9 @@ PAGES = {
         "marketview.js",
         "areamap.js",
         "workspace.js",
+        "agent.js",
     ],
+    "group.html": ["group.js", "agent.js"],
     "implementation.html": ["implementation.js"],
 }
 
@@ -77,6 +79,8 @@ def test_no_page_carries_inline_code(page):
         "areamap.js",
         "market.js",
         "workspace.js",
+        "agent.js",
+        "group.js",
     ],
 )
 def test_the_dom_builder_pages_never_parse_model_text_as_html(name):
@@ -87,4 +91,4 @@ def test_the_dom_builder_pages_never_parse_model_text_as_html(name):
 def test_the_two_scenario_pages_share_every_part_but_their_own_script():
     """Market size and the workspace are layouts of one scenario: what they load in common is the shared parts."""
     market, workspace = PAGES["market.html"], PAGES["workspace.html"]
-    assert market[:-1] == workspace[: len(market) - 1]
+    assert market[:-2] == workspace[: len(market) - 2] and market[-1] == workspace[-1] == "agent.js"

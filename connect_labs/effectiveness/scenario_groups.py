@@ -174,14 +174,28 @@ def _release() -> str:
     return getattr(settings, "APP_RELEASE", None) or ""
 
 
+def _headline_key(record: SavedScenario) -> str:
+    return (
+        "cea:headline:"
+        + hashlib.sha1(f"{people.data_version()}|{json.dumps(record.params, sort_keys=True)}".encode()).hexdigest()
+    )
+
+
+def peek(record: SavedScenario) -> tuple[dict | None, str | None]:
+    """The scenario's headline without computing anything: today's if it is cached, else what it gave when it was
+    baselined, else nothing. Returns ``(headline, "today" | "baseline" | None)``. This is what a page shows at once."""
+    got = cache.get(_headline_key(record))
+    if got is not None:
+        return got, "today"
+    base = (record.snapshot or {}).get("headline")
+    return (base, "baseline") if base else (None, None)
+
+
 def headline_for(record: SavedScenario) -> dict:
     """The scenario's headline now, from the sizing the pages use; cached under the data version and release.
     Raises ``explore.ExploreError`` for a scenario that can no longer be run."""
     scenario = saved.scenario_of(record)
-    key = (
-        "cea:headline:"
-        + hashlib.sha1(f"{people.data_version()}|{json.dumps(record.params, sort_keys=True)}".encode()).hexdigest()
-    )
+    key = _headline_key(record)
     got = cache.get(key)
     if got is None:
         got = compare.headline(sizing.market_of(scenario))
@@ -189,9 +203,13 @@ def headline_for(record: SavedScenario) -> dict:
     return got
 
 
-def compare_group(user, group: ScenarioGroup, *, reference: int | None = None, rebaseline: bool = False) -> dict:
+def compare_group(
+    user, group: ScenarioGroup, *, reference: int | None = None, rebaseline: bool = False, live: bool = True
+) -> dict:
     """The group's visible scenarios side by side. With ``rebaseline`` (owner only) each scenario's snapshot becomes
-    what it gives now."""
+    what it gives now. ``live=False`` computes nothing: each scenario shows today's headline if it is cached, else its
+    baseline (``source`` says which), so a page can open at once and offer to check against today."""
+    live = live or rebaseline
     if rebaseline and group.owner_id != getattr(user, "pk", None):
         raise SavedError("Only the person who made a group can re-baseline it.", 403)
     items = []
@@ -209,7 +227,11 @@ def compare_group(user, group: ScenarioGroup, *, reference: int | None = None, r
         }
         try:
             item["scenario"] = saved.scenario_of(record)
-            item["headline"] = headline_for(record)
+            if live:
+                item["headline"], item["source"] = headline_for(record), "today"
+            else:
+                got, item["source"] = peek(record)
+                item["headline"] = got or {}
             item["models_changed"] = saved.models_changed(record.saved_against, item["scenario"])
         except explore.ExploreError as exc:
             from connect_labs.effectiveness.scenario import Scenario
