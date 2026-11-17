@@ -170,6 +170,12 @@ On your project's page, click **Open workflows**, then **Open the project overvi
 
 Only people who are members of that CommCare project can open the project overview.
 
+#### Saving a run with a period window
+
+When you save a run of a CommCare project page, you can now associate it with a specific date window — for example, "week 45" or "October 2024". Pipelines that are set up to support period scoping and that produce one row per worker will be re-aggregated to cover only the submissions that fall within that run's start and end dates. This means a saved run for week 45 holds week 45's figures, not the project's all-time totals.
+
+Pipelines that are not period-scoped, or that produce one row per form submission rather than per worker, are frozen whole as before — the period window does not affect them.
+
 !!! note "Early access"
     The project overview is the first workflow available over a CommCare project. The ability to create your own runs, save snapshots, and build custom dashboards over a project will come later.
 
@@ -209,15 +215,4 @@ Specifically, the sandbox means a workflow cannot do any of the following withou
 - Start a coaching conversation with a worker
 - Start a background job that creates records
 - Complete or delete a run
-- Attach or detach one of its own pipelines
-- Mark runs it is watching in a control room
-
-On each workflow's listing you will see a line indicating whether it is built to support the protected frame. If it is, a **View it sandboxed** link lets you try the protected version by opening it with `?sandbox=1`.
-
-If you are asked to confirm an action you did not expect, that is the protection working as intended — check what the workflow is about to do before clicking yes.
-
-#### Scrolling and layout in the sandbox
-
-When you open a workflow or page in the sandbox, it looks and scrolls exactly like the normal (non-sandboxed) version:
-
-- The page grows to match the length of its content — there is
+- Attach or detach
