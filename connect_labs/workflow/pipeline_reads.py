@@ -185,7 +185,7 @@ def _configs_signature(configs: dict) -> str:
 
 
 def _alias_metadata(*, pipeline_id, name, rows, opp_ids, per_opp, config) -> dict:
-    from connect_labs.workflow.data_access import program_drive_scope
+    from connect_labs.workflow.data_access import read_once_meta
 
     metadata: dict[str, Any] = {
         "pipeline_id": pipeline_id,
@@ -194,11 +194,8 @@ def _alias_metadata(*, pipeline_id, name, rows, opp_ids, per_opp, config) -> dic
         "opportunity_ids": list(opp_ids),
         "per_opp": per_opp,
     }
-    program_id = program_drive_scope(config)
-    if program_id is not None:
-        # Read once for the program; its rows carry opportunity_id null.
-        metadata["program_id"] = program_id
-        metadata["read_once_for_program"] = True
+    # Read once for the program (or the CommCare project) a source belongs to; its rows carry opportunity_id null.
+    metadata.update(read_once_meta(config))
     # Lifted to the alias so a render can check `pipelines[alias].metadata.auth_error` once,
     # rather than dashboards showing "0 rows" with the real reason buried under per_opp.
     auth_failed = [k for k, m in per_opp.items() if m.get("auth_error") == "commcare_hq"]

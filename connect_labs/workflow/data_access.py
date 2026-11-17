@@ -224,6 +224,18 @@ def program_drive_scope(config) -> int | None:
     return gdrive_program_id(data_source)
 
 
+def project_source_scope(config) -> int | None:
+    """The CommCare project a pipeline config reads (``hq_store``), else None.
+
+    Like a program-scoped Drive source, a project's rows belong to the project, not to any opportunity of the
+    workflow: read once, not once per opportunity (that would multiply every count by the number of them).
+    """
+    data_source = getattr(config, "data_source", None)
+    if data_source is None or getattr(data_source, "type", None) != "hq_store":
+        return None
+    return getattr(data_source, "project_id", None) or None
+
+
 def pipeline_read_targets(config, opp_ids) -> list[tuple[str, int | None, int | None]]:
     """What a workflow fan-out reads for one pipeline: ``[(per_opp key, opportunity_id
     to read, opportunity_id to tag each row with)]``.
@@ -231,19 +243,26 @@ def pipeline_read_targets(config, opp_ids) -> list[tuple[str, int | None, int | 
     One entry per opportunity, except for a program-scoped Drive source: then ONE
     entry, keyed ``"program:<id>"``, read with no opportunity (the pipeline resolves
     the program's own cache scope) and tagging its rows ``opportunity_id: None`` --
-    the rows belong to the program, not to any one of its opportunities.
+    the rows belong to the program, not to any one of its opportunities. A CommCare
+    project source is the same, keyed ``"project:<id>"``.
     """
     program_id = program_drive_scope(config)
     if program_id is not None:
         return [(f"program:{program_id}", None, None)]
+    project_id = project_source_scope(config)
+    if project_id is not None:
+        return [(f"project:{project_id}", None, None)]
     return [(str(opp_id), opp_id, opp_id) for opp_id in opp_ids]
 
 
-def _program_scope_meta(config) -> dict:
+def read_once_meta(config) -> dict:
     """Alias-level metadata naming a program-scoped read, so render code can tell why
     its rows carry ``opportunity_id: null``."""
     program_id = program_drive_scope(config)
-    return {"program_id": program_id, "read_once_for_program": True} if program_id is not None else {}
+    if program_id is not None:
+        return {"program_id": program_id, "read_once_for_program": True}
+    project_id = project_source_scope(config)
+    return {"project_id": project_id, "read_once_for_project": True} if project_id is not None else {}
 
 
 def pipeline_homes_for(sources) -> dict[int, dict]:
@@ -1769,7 +1788,7 @@ class WorkflowDataAccess(BaseDataAccess):
                         "opportunity_ids": list(opp_ids),
                         "per_opp": per_opp_meta,
                         "row_count": len(merged_rows),
-                        **_program_scope_meta(config),
+                        **read_once_meta(config),
                     },
                 }
         finally:
@@ -1952,7 +1971,7 @@ class WorkflowDataAccess(BaseDataAccess):
                         "opportunity_ids": list(opp_ids),
                         "per_opp": per_opp_meta,
                         "row_count": len(merged_rows),
-                        **_program_scope_meta(config),
+                        **read_once_meta(config),
                     },
                 }
                 if not period_scoped and memo is not None:
