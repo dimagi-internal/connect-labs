@@ -51,7 +51,8 @@ def start_ai_session(
     ``coach_image`` (``{"url", "caption"}``, from ``workflow/coach_image.attachment``)
     puts a picture of the worker's figures in the session state as
     ``coach_image_url`` / ``coach_image_caption`` -- only beside a briefing, which is
-    what it pictures.
+    what it pictures. A case chart's card adds ``coach_card_url`` (its ``index.html``)
+    and ``coach_card_call`` (a Markdown tap-to-call line, or empty).
 
     ``participant_data`` is merged by OCS into the participant's record for THIS bot when the
     conversation starts, before the opening message is sent. A dashboard uses it to reset what
@@ -116,6 +117,11 @@ def start_ai_session(
         if coach_image and coach_image.get("url"):
             session_data["coach_image_url"] = coach_image["url"]
             session_data["coach_image_caption"] = coach_image.get("caption") or ""
+        if coach_image and coach_image.get("card_url"):
+            # A case card (card-html): the Coach bot's status node attaches its
+            # index.html in place of the picture, and puts `coach_card_call` in the text.
+            session_data["coach_card_url"] = coach_image["card_url"]
+            session_data["coach_card_call"] = coach_image.get("card_call") or ""
         message = {"message_text": coach_briefing.opening_message(prompt_text)}
     else:
         message = {"prompt_text": prompt_text}

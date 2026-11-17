@@ -36,6 +36,7 @@ urlpatterns = [
     # MCP Personal Access Tokens (self-service)
     # A coaching picture, fetched by Open Chat Studio with a coach-images token.
     path("coach-image/<str:token>/", coach_image_views.coach_image, name="coach_image"),
+    path("coach-card/<str:token>/", coach_image_views.coach_card, name="coach_card"),
     path("mcp/tokens/", mcp_token_views.tokens_index, name="mcp_tokens_index"),
     path("mcp/tokens/create/", mcp_token_views.tokens_create, name="mcp_tokens_create"),
     path("mcp/tokens/<int:pk>/revoke/", mcp_token_views.tokens_revoke, name="mcp_tokens_revoke"),

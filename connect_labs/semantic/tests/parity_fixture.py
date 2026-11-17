@@ -89,6 +89,7 @@ CASE_STATE_COLUMNS = (
     # The case summary's visit columns (registry visit_columns `visit_*`).
     ("visit_child_name", "text", "NULL"),
     ("visit_mother_name", "text", "NULL"),
+    ("visit_mother_phone", "text", "NULL"),
     ("visit_child_sex", "text", "NULL"),
     ("visit_child_dob", "date", "NULL"),
     ("visit_kmc_providers", "text", "NULL"),

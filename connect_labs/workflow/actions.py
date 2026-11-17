@@ -177,6 +177,11 @@ PICTURE = "picture"
 #: briefing and draws the case state's picture.
 CASE = "case"
 
+#: Who a case card names when the case carries no number of its own: ``{label,
+#: number}``, usually set as the coaching action's default in the workflow's config
+#: (``coach_charts/case_card.py``). Only a case conversation reads it.
+SUPERVISOR = "supervisor_contact"
+
 #: Server-owned: the frozen chart each worker's preview showed, ``{worker key: chart
 #: id}`` (``coach_charts/store.py``). Labs writes it; a caller's own is only ever a
 #: reference back to a chart this person previewed, re-checked before it is used.
@@ -436,6 +441,19 @@ ACTION_TYPES: dict[str, ActionType] = {
                         ),
                     },
                     PICTURE: _picture_schema(),
+                    SUPERVISOR: {
+                        "type": "object",
+                        "description": (
+                            "Who a case card says to call when the case has no number of its own "
+                            "(the registry's case_call): {label, number}, e.g. the worker's supervisor."
+                        ),
+                        "properties": {
+                            "label": {"type": "string", "minLength": 1, "maxLength": 60},
+                            "number": {"type": "string", "pattern": "^\\+?[0-9][0-9 ()\\-]{5,22}$"},
+                        },
+                        "required": ["number"],
+                        "additionalProperties": False,
+                    },
                     DELIVER_TO: {
                         "type": "string",
                         "minLength": 1,
@@ -872,7 +890,7 @@ def _picture_workers(merged: dict, roster: dict[str, dict], pictures, prior_char
             continue
         if item.get(CASE):
             # The case state's own picture (coach_charts/case_types.py), not the worker's.
-            charts[item["key"]] = pictures.case(item, prior_charts.get(item["key"]))
+            charts[item["key"]] = pictures.case(item, prior_charts.get(item["key"]), merged.get(SUPERVISOR))
             continue
         who = roster[item["key"]]
         default_topics = [t["key"] for t in coach_briefing.topics_from_briefing(prompt)]
@@ -925,8 +943,9 @@ def picture_source(user, wda, run, definition, roster: dict[str, dict], briefing
             raise ActionError("invalid", f"picture for {worker_name}: {e.public_message}") from e
         return store.save(built, user=user, run=run, worker_key=worker_key, request=req).pk
 
-    def case_picture(item: dict, prior_id):
-        """The frozen picture of a worker item's case, for its case state."""
+    def case_picture(item: dict, prior_id, supervisor: dict | None = None):
+        """The frozen picture of a worker item's case, for its case state, with its card
+        (``coach_charts/case_card.py``) frozen beside it."""
         from connect_labs.semantic import case_states
         from connect_labs.workflow import case_briefing as cb
         from connect_labs.workflow.agent_sharing import split_worker_key
@@ -936,6 +955,8 @@ def picture_source(user, wda, run, definition, roster: dict[str, dict], briefing
             "case_state"
         )
         req = {"type": "case_state", "params": {"case": item[CASE]["id"], "case_state": state_name}}
+        if supervisor:
+            req["params"]["supervisor"] = dict(supervisor)
         prior = store.load_bound(prior_id, user=user, run=run, worker_key=item["key"], request=req)
         if prior is not None:
             return prior.pk
@@ -959,6 +980,19 @@ def picture_source(user, wda, run, definition, roster: dict[str, dict], briefing
             )
         except datasets.ChartError as e:
             raise ActionError("invalid", f"picture of case {item[CASE]['id']}: {e.public_message}") from e
+        if (state.get("picture") or {}).get("type") == "case_summary":
+            from connect_labs.workflow.coach_charts import case_card
+
+            built["card"] = case_card.card_data(
+                state,
+                row,
+                cases.visits(opp, item[CASE]["id"]),
+                cases.series(opp),
+                cases.case_name(opp, row),
+                as_of=getattr(cases, "as_of", None),
+                call=case_states.case_call(cases.props_doc(opp)) or None,
+                fallback_contact=supervisor,
+            )
         return store.save(built, user=user, run=run, worker_key=item["key"], request=req).pk
 
     pictures.case = case_picture

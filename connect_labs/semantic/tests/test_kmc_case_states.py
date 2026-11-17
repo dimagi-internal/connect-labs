@@ -44,6 +44,7 @@ COLUMNS = [
     # what the case summary pictures read (the registry's visit_* columns)
     ("child_name", "text"),
     ("mother_name", "text"),
+    ("mother_phone", "text"),
     ("gender", "text"),
     ("dob", "text"),
     ("kmc_providers", "text"),
