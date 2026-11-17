@@ -15,7 +15,7 @@ for a past day. Plain CSS in `_rail.html`, so nothing waits on the stylesheet be
     .supply-purpose { display: none; }
   }
 </style>
-{% supply_settings_url as settings_url %}
+{% supply_settings_url as settings_url %}{% compact_layout as supply_compact %}
 {% comment %}The toolbar (the page's purpose and its (i)) is drawn by base.html, where a page's `page_info` block can reach it;
 a page that includes this header on its own (the programme map) has neither.{% endcomment %}
 {% if acl_scoped %}<p data-testid="acl-scoped-note" class="mb-3 text-sm text-gray-700">You are seeing the part of this programme you are involved in: your own bids, the orders and deliveries that concern you, and the stores you run.</p>{% endif %}
@@ -32,7 +32,7 @@ a page that includes this header on its own (the programme map) has neither.{% e
     <a href="{{ tab.url }}"{% if tab.active %} aria-current="page"{% endif %} class="block px-3 py-2 {% if tab.active %}bg-brand-indigo text-white{% else %}text-gray-700 hover:bg-gray-50{% endif %}">{{ tab.label }}</a>
     {% endfor %}
     {% endfor %}
-    {% if settings_url %}<a href="{{ settings_url }}" class="block px-3 py-2 border-t border-gray-100 text-brand-indigo">Menu and tabs</a>{% endif %}
+    {% if settings_url %}<a href="{{ settings_url }}" class="block px-3 py-2 border-t border-gray-100 text-brand-indigo">{% if supply_compact %}Menu and tabs{% else %}Settings{% endif %}</a>{% endif %}
     {% comment %}The banner's marketplace link, which a phone's one-line banner has no room for.{% endcomment %}
     <a href="{% url 'supply_chain:market' %}" class="block px-3 py-2 border-t border-gray-100 text-brand-indigo">Supplier marketplace</a>
   </nav>

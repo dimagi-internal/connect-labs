@@ -12,8 +12,6 @@ belongs to a trade item, since two manufacturers' cartons hold different
 numbers of sachets and adding them needs the pack spec.
 {% endcomment %}
 
-{% block page_info %}{% info "About this page" %}<p>A product is a specification, not something you can order. Each manufacturer's version of it is a trade item, and only trade items can be quoted against, shipped or counted.</p><p>The page reads top to bottom: what it must be, who can supply it, what they quoted, and what was ordered. Stock is kept per trade item, on each trade item's page.</p>{% endinfo %}{% endblock %}
-
 {% block supply_content %}
 
 <nav class="text-sm text-gray-600 mb-3">
@@ -28,6 +26,7 @@ numbers of sachets and adding them needs the pack spec.
     <p class="text-sm text-gray-600 mt-1">
       <code class="text-xs bg-gray-50 border border-brand-border-light rounded px-1.5 py-0.5">{{ product.slug }}</code>
       {% if product.category %}<span class="ml-1">{{ product.category|humanise }}</span>{% endif %}
+      · a specification, not something you can order
     </p>
   </div>
   <div class="flex flex-wrap items-center gap-3">
@@ -108,11 +107,13 @@ numbers of sachets and adding them needs the pack spec.
         </p>
       {% else %}
         <div class="mt-4 rounded-md bg-message-warning border border-message-warning-border/50 px-3 py-2.5">
-          <div class="text-sm font-medium text-message-warning-text">No ration table set{% info "About the ration table" %}<p>
+          <p class="text-sm font-medium text-message-warning-text">No ration table set</p>
+          <p class="text-sm text-message-warning-text/90 mt-0.5 max-w-2xl">
             {{ product.base_unit|unit_plural|capfirst }} per day and days per course is
-            this programme's treatment protocol, not part of the specification,
-            so cost per course and cost per child stay unconfirmed until it
-            is set. Nobody outside can answer it.</p>{% endinfo %}</div>
+            this programme's treatment protocol, not part of the specification
+            — so cost per course and cost per child stay unconfirmed until it
+            is set. Nobody outside can answer it.
+          </p>
         </div>
       {% endif %}
     {% endif %}
@@ -125,7 +126,7 @@ numbers of sachets and adding them needs the pack spec.
         {% if product.weight_values|length > 1 %}
           Their unit weights differ: {{ product.weight_values|join:" g and " }} g.
         {% endif %}
-        {% info "Why this matters" %}<p>A single per&#8209;{{ product.base_unit|unit_words }} figure across them is not one number.</p>{% endinfo %}
+        A single per&#8209;{{ product.base_unit|unit_words }} figure across them is not one number.
       </div>
     {% endif %}
   </div>
@@ -134,8 +135,11 @@ numbers of sachets and adding them needs the pack spec.
 {% comment %} ---- the orderable versions ---- {% endcomment %}
 <div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
   <div class="px-5 py-4 border-b border-brand-border-light">
-    <h2 class="text-base font-semibold text-gray-900">What you can actually order{% info "About this table" %}<p>One row per manufacturer's version. Only these can be quoted against,
-      shipped, or counted.</p>{% endinfo %}</h2>
+    <h2 class="text-base font-semibold text-gray-900">What you can actually order</h2>
+    <p class="text-sm text-gray-600 mt-0.5">
+      One row per manufacturer's version. Only these can be quoted against,
+      shipped, or counted.
+    </p>
   </div>
   {% if product.items %}
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
@@ -186,11 +190,11 @@ numbers of sachets and adding them needs the pack spec.
       </table>
     </div>
   {% else %}
-    <div class="px-5 py-5 text-sm text-gray-600 max-w-2xl">
-      No trade items yet.{% info "About trade items" %}<p>Nothing can be ordered against a product until at
+    <p class="px-5 py-5 text-sm text-gray-600 max-w-2xl">
+      No trade items yet. Nothing can be ordered against a product until at
       least one manufacturer's version of it is on file, and a quote naming no
-      trade item cannot be turned into a per&#8209;{{ product.base_unit|default:"unit"|unit_words }} price.</p>{% endinfo %}
-    </div>
+      trade item cannot be turned into a per&#8209;{{ product.base_unit|default:"unit"|unit_words }} price.
+    </p>
   {% endif %}
 </div>
 
@@ -206,7 +210,8 @@ numbers of sachets and adding them needs the pack spec.
     {% include "supply_chain/_supply_base.html" with scope_note="across this programme's tenders" %}
     {% if market_offers %}
       <div class="mt-4 bg-white border border-brand-border-light rounded-lg px-5 py-4">
-        <h3 class="text-sm font-semibold text-gray-900">On the supplier marketplace, not yet suppliers here{% info "About the marketplace" %}<p>Companies that say they sell this. It is their own claim and nobody has checked it: a list of who to approach next.</p>{% endinfo %}</h3>
+        <h3 class="text-sm font-semibold text-gray-900">On the supplier marketplace, not yet suppliers here</h3>
+        <p class="text-xs text-gray-600 mt-0.5">Companies that say they sell this. Their own claim, unverified — who to approach next.</p>
         <ul class="mt-2 text-sm divide-y">
           {% for offer in market_offers %}
             <li class="py-1.5">
@@ -223,9 +228,12 @@ numbers of sachets and adding them needs the pack spec.
   {% comment %} ---- what it has cost ---- {% endcomment %}
   <div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
     <div class="px-5 py-4 border-b border-brand-border-light">
-      <h2 class="text-base font-semibold text-gray-900">What has been quoted{% info "About these prices" %}<p>As each supplier stated it, on their own terms, not converted. Two
+      <h2 class="text-base font-semibold text-gray-900">What has been quoted</h2>
+      <p class="text-sm text-gray-600 mt-0.5">
+        As each supplier stated it, on their own terms — not normalised. Two
         prices here are only comparable once both name a pack specification,
-        which is what the tender's comparison does.</p>{% endinfo %}</h2>
+        which is what the tender's comparison does.
+      </p>
     </div>
     {% if quotes %}
       <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">

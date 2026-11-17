@@ -41,6 +41,11 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   for the product to decide comparability is out of scope. A figure that is
   unclear, unsortable or wrong is a real defect.
 
+- **The compact layout is a programme's choice, not Supply's** (2026-11-17, Akash Lohi: "only for CL and not all
+  supply being changed"). `compact_layout: true` in a programme's Supply settings turns on the two entries below; every
+  other programme keeps the usual menu and pages, unchanged. Compact pages live in `templates/supply_chain/compact/`
+  and are swapped in by `compact_templates.CompactLayoutMiddleware`; a page with no compact copy is drawn as usual.
+  On for the chlorine programmes (10182, 183).
 - **Little text on a page; the explanation behind an (i)** (2026-11-17, Akash Lohi, chlorine programme: "too much
   text everywhere"). A page shows its heading, a one-line purpose, figures, tables and buttons. How a figure is worked
   out, what a rule means and what to do with it opens from `{% info %}` (supply_chain_extras), at the top of the page

@@ -5,7 +5,7 @@ the tall banner and three rows of tab buttons that pushed every page's content b
 is remembered in this browser (localStorage "supplyRail"). Below 768px the rail is not drawn and the Supply menu
 (`_header.html`) takes over. Included by base.html and by the programme map, inside a `.supply-shell`.
 Plain CSS rather than utilities, so nothing waits on the stylesheet being rebuilt.{% endcomment %}
-{% supply_settings_url as settings_url %}
+{% supply_settings_url as settings_url %}{% compact_layout as supply_compact %}
 <style>
   /* The rail is the second level of the Labs sidebar, not a panel on the page: it runs the full height of the window
      from the very top, flush against the purple bar (whose Supply item is lit), and the Labs header moves over to start
@@ -120,7 +120,7 @@ Plain CSS rather than utilities, so nothing waits on the stylesheet being rebuil
     </nav>
     <div class="supply-rail-foot">
       <div data-testid="as-of-slot">{% include 'supply_chain/_as_of_bar.html' with as_of_part="form" %}</div>
-      {% if settings_url %}<a data-testid="supply-settings" href="{{ settings_url }}" title="Which menu entries this programme shows, and which workflow fills a tab">Menu and tabs</a>{% endif %}
+      {% if settings_url %}<a data-testid="supply-settings" href="{{ settings_url }}" title="Which tabs this programme shows, and what fills them">{% if supply_compact %}Menu and tabs{% else %}Settings{% endif %}</a>{% endif %}
       {% comment %}Above the program tabs, because it is above programs: what suppliers see of every open tender.{% endcomment %}
       <a href="{% url 'supply_chain:market' %}">Supplier marketplace</a>
     </div>

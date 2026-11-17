@@ -34,38 +34,41 @@ TAB_GROUPS = (
     (
         "Distribution and stock",
         (
-            # In family order (FAMILIES below): Network, Distribution, Workers and plan; then Issues, Tests.
             ("supply_chain:network", "Network"),
             ("supply_chain:partners", "Partners"),
             ("supply_chain:programme_map", "Map"),
             ("supply_chain:distribution", "Distribution"),
             ("supply_chain:stock", "Stock"),
-            ("supply_chain:flow", "Where it went"),
             ("supply_chain:workers", "Workers"),
             ("supply_chain:plan", "Plan"),
+            ("supply_chain:flow", "Where it went"),
             ("supply_chain:issues", "Issues"),
             # Off unless a programme turns it on (config.py: SUPPLY defaults).
             ("supply_chain:tests", "Tests"),
         ),
     ),
     (
-        # Named Settings, not Setup (Akash, 2026-11-17: "setup also is way to weirdly named").
-        "Settings",
+        "Setup",
         (
             ("supply_chain:catalogue", "Catalogue"),
             ("supply_chain:organisations", "Organisations"),
             ("supply_chain:alerts", "Alerts"),
-            ("supply_chain:update_links", "Update links"),
             ("supply_chain:programme_team", "Team"),
+            ("supply_chain:update_links", "Update links"),
         ),
     ),
 )
 
 SUPPLY_TABS = tuple(tab for _, tabs in TAB_GROUPS for tab in tabs)
 
-# Tabs that share one entry in the menu (Akash, 2026-11-17: "less tabs are fine"). Each page keeps its own address,
-# Settings switch, pin and highlight; the menu shows the family's name and opens to its pages, open by itself on the
-# family you are in. A family with one page showing (the rest turned off) is that page's own entry.
+# THE COMPACT LAYOUT -- a programme's own choice (`compact_layout` in its Supply settings, config.py), made for the
+# chlorine programmes (Akash, 2026-11-17: "too much text everywhere", "less tabs are fine", "only for CL and not all
+# supply"). Every other programme keeps the menu above and the pages as they are.
+#
+# In it, tabs share one entry in the menu. Each page keeps its own address, Settings switch, pin and highlight; the
+# menu shows the family's name and opens to its pages, open by itself on the family you are in. A family with one page
+# showing (the rest turned off) is that page's own entry. Pages are drawn from templates/supply_chain/compact/ when
+# there is one (compact_templates.py), with their explanations behind an (i).
 FAMILIES = (
     ("Overview", ("supply_chain:home", "supply_chain:start_here")),
     ("Purchases", ("supply_chain:purchases", "supply_chain:suppliers")),
@@ -86,6 +89,10 @@ FAMILIES = (
     ),
 )
 FAMILY_OF = {name: family for family, names in FAMILIES for name in names}
+# The compact menu's order: each family's pages together, in the order its families are listed.
+COMPACT_ORDER = [name for _, names in FAMILIES for name in names]
+# Group names the compact menu says differently ("setup also is way to weirdly named").
+COMPACT_GROUP_NAMES = {"Setup": "Settings"}
 
 # One Font Awesome icon per menu entry, so the menu reads at a glance. A family's entry wears the family's icon.
 FAMILY_ICONS = {
@@ -472,15 +479,31 @@ def supply_tabs(request) -> list[dict]:
             "label": pin.label,
             "active": current_slug == pin.slug or also_active,
             "group": group,
-            "icon": PIN_ICON,
+            "icon": PIN_ICON if compact else "",
         }
 
-    badges = _badges(request)
+    compact = compact_layout(request)
+    badges = _badges(request) if compact else {}
+
+    def family_of(name):
+        return FAMILY_OF.get(name, "") if compact else ""
+
+    def icon_of(name, default=""):
+        return TAB_ICONS.get(name, default) if compact else ""
+
+    def group_of(name):
+        group = GROUP_OF_TAB.get(name, "")
+        return COMPACT_GROUP_NAMES.get(group, group) if compact else group
+
+    ordered = SUPPLY_TABS
+    if compact:
+        # Each family's pages together; a tab in no family keeps its place.
+        ordered = _compact_order(SUPPLY_TABS, {name: i for i, name in enumerate(COMPACT_ORDER)})
 
     hidden = hidden_tabs(request)
     tabs = []
     keys = []
-    for name, label in SUPPLY_TABS:
+    for name, label in ordered:
         if name in hidden:
             continue
         pin = replacing.get(name)
@@ -488,9 +511,9 @@ def supply_tabs(request) -> list[dict]:
             # The pinned workflow stands in for this tab; its own page ("classic view") still counts as here.
             tabs.append(
                 {
-                    **pin_tab(pin, also_active=current == name, group=GROUP_OF_TAB.get(name, "")),
-                    "family": FAMILY_OF.get(name, ""),
-                    "icon": TAB_ICONS.get(name, PIN_ICON),
+                    **pin_tab(pin, also_active=current == name, group=group_of(name)),
+                    "family": family_of(name),
+                    "icon": icon_of(name, PIN_ICON),
                 }
             )
         else:
@@ -500,9 +523,9 @@ def supply_tabs(request) -> list[dict]:
                 "url": href,
                 "label": label,
                 "active": name == current,
-                "group": GROUP_OF_TAB.get(name, ""),
-                "family": FAMILY_OF.get(name, ""),
-                "icon": TAB_ICONS.get(name, ""),
+                "group": group_of(name),
+                "family": family_of(name),
+                "icon": icon_of(name),
             }
             if badges.get(name):
                 tab["badge"] = badges[name]
@@ -526,6 +549,40 @@ def supply_tabs(request) -> list[dict]:
         tabs.insert(at, {**pin_tab(pin, group=before.get("group", "")), "family": before.get("family", "")})
         keys.insert(at, f"pin:{pin.slug}")
     return tabs
+
+
+def _compact_order(tabs, rank) -> tuple:
+    """`tabs` with each family's pages brought together (COMPACT_ORDER), groups and the rest left in place."""
+    out, placed = [], set()
+    for name, label in tabs:
+        if name in placed:
+            continue
+        family = FAMILY_OF.get(name)
+        if family:
+            members = [t for t in tabs if FAMILY_OF.get(t[0]) == family]
+            members.sort(key=lambda t: rank[t[0]])
+            out.extend(members)
+            placed.update(m[0] for m in members)
+        else:
+            out.append((name, label))
+            placed.add(name)
+    return tuple(out)
+
+
+def compact_layout(request) -> bool:
+    """Whether the programme in view has chosen the compact layout (config.py), read once per request."""
+    cached = getattr(request, "_supply_compact", None)
+    if cached is not None:
+        return cached
+    from connect_labs.supply_chain.config import resolved_for
+
+    program_id = (getattr(request, "labs_context", None) or {}).get("program_id")
+    try:
+        compact = bool(resolved_for(request, program_id).get("compact_layout")) if program_id else False
+    except Exception:  # noqa: BLE001 -- unreadable settings draw the usual layout
+        compact = False
+    request._supply_compact = compact
+    return compact
 
 
 def _badges(request) -> dict:

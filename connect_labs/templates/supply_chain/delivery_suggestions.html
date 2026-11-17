@@ -1,17 +1,17 @@
 {% extends 'supply_chain/base.html' %}
-{% load supply_chain_extras %}
-
-{% block page_info %}{% info "About this page" %}<p>For each shared facility: a few days of what the field workers it supplies are expected to use (from the Forecast), less what the facility already holds.</p><p>Keeping stock low where many people can reach it leaves less to go missing.</p><p>This is a suggestion: nothing is recorded until you send the stock.</p>{% endinfo %}{% endblock %}
 
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
     <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
-    <p class="text-sm text-amber-900">Choose a programme to see suggested deliveries.</p>
+    <p class="text-sm text-amber-900">Suggested deliveries are programme-scoped.</p>
   </div>
 {% else %}
 <h2 class="text-lg font-semibold text-gray-900 mb-1">Suggested deliveries to shared facilities</h2>
 <p class="text-xs text-gray-600 mb-4">
+  A few days of what the field workers each facility supplies are expected to use (from the Forecast), less what the
+  facility already holds. Keeping stock low where many people can reach it leaves less to go missing. This is a
+  suggestion: nothing is recorded until you send the stock.
   <a class="underline" href="{% url 'supply_chain:partners' %}">Back to Partners</a>
 </p>
 

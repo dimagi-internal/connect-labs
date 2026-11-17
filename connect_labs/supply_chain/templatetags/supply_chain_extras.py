@@ -2176,6 +2176,15 @@ def tab_groups_filter(tabs):
     return tab_groups(list(tabs or []))
 
 
+@register.simple_tag(takes_context=True)
+def compact_layout(context):
+    """Whether the programme in view uses the compact layout (navigation.compact_layout)."""
+    from connect_labs.supply_chain.navigation import compact_layout as chosen
+
+    request = context.get("request")
+    return chosen(request) if request is not None else False
+
+
 @register.filter(name="rail_entries")
 def rail_entries_filter(tabs):
     """One group's tabs as the menu draws them, families folded (navigation.rail_entries)."""

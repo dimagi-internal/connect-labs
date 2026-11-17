@@ -5,10 +5,6 @@ The planning pages (Sophie Feintuch's RUTF feedback, "Combining Supply with our 
 page per person and rhythm, all reading `stock_plan_view`. Every number is worked out step by step in
 plain words, and each step says where it came from.
 {% endcomment %}
-{% block page_info %}{% info "About the plan" %}
-  <p>Three views of one plan: <b>Supervisor</b> (what to issue at the next handout), <b>Stores</b> (what to send each store) and <b>Programme</b> (will the stock last, and what to buy).</p>
-  <p>Every figure is worked out from the visits, the stock records and the plan's numbers. Open a field worker's name to see the steps behind their figure.</p>
-{% endinfo %}{% endblock %}
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
@@ -44,22 +40,22 @@ plain words, and each step says where it came from.
 
 {% if role == "supervisor" %}
   <section class="mb-8" data-testid="plan-issue">
-    <h2 class="text-lg font-semibold text-gray-900">What to issue at the next handout{% info "About what to issue" %}
-      <p>For each field worker: the sachets their children need from this handout to the next, plus children expected to enrol, plus appetite tests, plus the buffer, less what they will still hold at the handout.</p>
-      <p>Open a worker's name to see the steps and where each number came from. Children leave the list when their course ends. Each place's total is what it has to pack.</p>
-      <p><b>Buffer</b>: extra stock on top of what is needed until the next handout. With 0, each field worker is planned to reach zero just as the next handout arrives.</p>
-      <p><b>Lasts after the handout</b>: how long what they will hold plus what is issued lasts at their children's pace, counted from the handout. It is a planning figure, not a warning; "short of the next handout" is the one to act on.</p>
-      <p>Appetite tests are included where the app records them, at the average of the last four weeks.</p>
-      <p><b>What a worker holds</b> is the official figure: the phone balance until their partner's handovers are recorded in Supply (until then Supply's own figure is only an estimate), then Supply's records; less what they will use before the handout. Both figures are kept, and a row says when they differ.</p>
-    {% endinfo %}</h2>
+    <h2 class="text-lg font-semibold text-gray-900">What to issue at the next handout</h2>
     <p class="text-sm text-gray-800 mb-1" data-testid="plan-handout">
-      Handout on <b>{{ picture.handout.on|day }}</b>{% if picture.handout.planned %} (planned){% else %} (today: none planned yet){% endif %}
-      &middot; Next handout after it: <b>{{ picture.handout.next_on|day }}</b>
-      {% if picture.handout.data_to %}&middot; <span class="text-gray-600">Based on visits up to {{ picture.handout.data_to|day }}</span>{% endif %}
+      Handout on <b>{{ picture.handout.on|day }}</b>{% if picture.handout.planned %} (the next one planned){% else %} (today: none is planned yet){% endif %}.
+      Next handout after it: <b>{{ picture.handout.next_on|day }}</b>.
+      {% if picture.handout.data_to %}Based on visits up to {{ picture.handout.data_to|day }}.{% endif %}
     </p>
-    <p class="text-sm text-gray-800 mb-3" data-testid="plan-buffer">
+    <p class="text-sm text-gray-800 mb-1" data-testid="plan-buffer">
       Buffer: <b>{{ plan.buffer_days.value }} day{{ plan.buffer_days.value|pluralize }}</b>
+      <span class="text-gray-600">(extra stock on top of what is needed until the next handout; with 0, each field worker is planned to reach zero just as the next handout arrives)</span>
       &middot; <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:plan_inputs' %}?item_id={{ item.id }}">change</a>
+    </p>
+    <p class="text-xs text-gray-600 mb-3">
+      For each field worker: the sachets their children will need from this handout to the next, plus children
+      expected to enrol, plus appetite tests, plus the buffer, less what they will still hold at the handout.
+      Open a row to see the steps and where each number came from. Children leave the list when their course ends.
+      Each place's total is what it has to pack.
     </p>
     {% for partner in picture.issue_groups %}
       <h3 class="text-sm font-semibold text-gray-900 mt-4 mb-1">{{ partner.name }} <span class="font-normal text-gray-600">&middot; to issue in all: {{ partner.to_issue|floatformat:0 }}</span></h3>
@@ -88,9 +84,10 @@ plain words, and each step says where it came from.
                     <summary class="cursor-pointer text-brand-indigo">{{ r.name }}</summary>
                     <ol class="mt-2 mb-1 space-y-1 text-xs text-gray-700 list-none pl-0">
                       {% for s in r.steps %}
-                        <li title="{{ s.source }}"><span class="font-medium">{% if s.sign %}{{ s.sign }} {% endif %}{{ s.label }}:</span> {{ s.value }}</li>
+                        <li><span class="font-medium">{% if s.sign %}{{ s.sign }} {% endif %}{{ s.label }}:</span> {{ s.value }}
+                          <span class="text-gray-600">&mdash; {{ s.source }}</span></li>
                       {% endfor %}
-                      <li class="font-semibold">= {{ r.result }}{% info "Where each number comes from" %}<ul>{% for s in r.steps %}<li><b>{{ s.label }}</b>: {{ s.source }}</li>{% endfor %}</ul>{% endinfo %}</li>
+                      <li class="font-semibold">= {{ r.result }}</li>
                     </ol>
                   </details>
                 </td>
@@ -117,10 +114,19 @@ plain words, and each step says where it came from.
     {% empty %}
       <p class="text-sm text-gray-600 px-1 py-4">No field workers yet.</p>
     {% endfor %}
+    <p class="text-xs text-gray-600 mt-2">
+      Lasts after the handout: how long what they will hold plus what is issued lasts at their children's pace,
+      counted from the handout. It is a planning figure, not a warning; "short of the next handout" is the one
+      to act on. Appetite tests are included where the app records them, at the average of the last four weeks.
+      <b>What a worker holds</b> is the official figure: the balance on their phone until their partner's handovers are
+      recorded in Supply (without recorded handovers, Supply's own figure is only an estimate), then Supply's records;
+      less what they will use before the handout. Both figures are always shown, and a row says when they differ.
+    </p>
   </section>
 
   <section class="mb-8" data-testid="plan-short">
-    <h2 class="text-lg font-semibold text-gray-900 mb-2">Who may run short this week{% info "About who may run short" %}<p>Field workers who hold less than their children and expected new children will need in the next seven days.</p>{% endinfo %}</h2>
+    <h2 class="text-lg font-semibold text-gray-900">Who may run short this week</h2>
+    <p class="text-xs text-gray-600 mb-2">Field workers who hold less than their children and expected new children will need in the next seven days.</p>
     {% if picture.short %}
       <ul class="text-sm space-y-1">
         {% for r in picture.short %}
@@ -134,14 +140,12 @@ plain words, and each step says where it came from.
   </section>
 
   <section class="mb-8" data-testid="plan-followup">
-    <h2 class="text-lg font-semibold text-gray-900">Stock follow-up{% info "About stock follow-up" %}
-      <p>What each field worker's children were given, against the protocol.</p>
-      <p>Where a visit carries the amount the app itself worked out (<code>form.rutf_dispensing.amount_to_dispense</code>, which allows for sachets a household still had), what was given is compared with that, so only real gaps are flagged.</p>
-      <p>A worker with no such amount on enough visits is marked <em>flat check</em>: compared with the protocol's flat {{ picture.dosing.0.protocol_per_day|default:"" }} sachets a day from the days between each child's visits. It is a rough check that flags nearly everyone.</p>
-    {% endinfo %}</h2>
+    <h2 class="text-lg font-semibold text-gray-900">Stock follow-up</h2>
     <p class="text-xs text-gray-600 mb-2">
-      Count mismatches: <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:workers' %}">Workers</a> &middot;
-      missing or damaged stock: <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:issues' %}">Issues</a>
+      What each field worker's children were given, against the protocol.
+      Where a visit carries the amount the app itself worked out (<code>form.rutf_dispensing.amount_to_dispense</code>, which allows for sachets a household still had), what was given is compared with that, so only real gaps are flagged. A worker with no such amount on enough visits is marked <em>flat check</em>: compared with the protocol's flat {{ picture.dosing.0.protocol_per_day|default:"" }} sachets a day from the days between each child's visits, a rough check that flags nearly everyone. Counts that do not match the records are on
+      <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:workers' %}">Workers</a>; missing or damaged stock is on
+      <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:issues' %}">Issues</a>.
     </p>
     {% if picture.dosing %}
       <table class="text-sm w-full max-w-3xl">
@@ -162,28 +166,29 @@ plain words, and each step says where it came from.
     {% endif %}
     {% if picture.household %}
       <div class="mt-4 max-w-3xl" data-testid="plan-household">
-        <h3 class="text-sm font-semibold text-gray-900">Household leakage: where the sachets went at home{% info "About household leakage" %}<p>The same figures as Where it went, from the delivery form over {{ picture.household.visits }} visit{{ picture.household.visits|pluralize }}. They add up to what was dispensed.</p>{% endinfo %}</h3>
+        <h3 class="text-sm font-semibold text-gray-900">Household leakage: where the sachets went at home</h3>
+        <p class="text-xs text-gray-600">The same figures as Where it went, from the delivery form over {{ picture.household.visits }} visit{{ picture.household.visits|pluralize }}. They add up to what was dispensed.</p>
         <table class="w-full text-sm mt-1"><tbody class="divide-y divide-gray-100">
           {% for row in picture.household.rows %}
             <tr><th scope="row" class="text-left font-medium py-1 pr-3">{{ row.label }}</th><td class="text-right tabular-nums py-1">{% if row.amount is None %}<span class="text-gray-600">not recorded</span>{% else %}{{ row.amount|floatformat:"0g" }}{% endif %}</td></tr>
           {% endfor %}
         </tbody></table>
-        <p class="text-xs text-gray-600 mt-1">Reasons and visits: <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:flow' %}?item_id={{ item.id }}">Where it went</a></p>
+        <p class="text-xs text-gray-600 mt-1">Reasons, and the visits behind each line, are on <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:flow' %}?item_id={{ item.id }}">Where it went</a>.</p>
       </div>
     {% else %}
-      <div class="text-xs text-gray-600 mt-2">Household leakage not shown{% info "Why household leakage is not shown" %}<p>This programme's dispensing rule does not say where the delivery form records it.</p>{% endinfo %}</div>
+      <p class="text-xs text-gray-600 mt-2">Household leakage is not shown: this programme's dispensing rule does not say where the delivery form records it.</p>
     {% endif %}
   </section>
 {% endif %}
 
 {% if role == "stores" %}
   <section class="mb-8" data-testid="plan-stores">
-    <h2 class="text-lg font-semibold text-gray-900 mb-3">Store restocking{% info "About store restocking" %}
-      <p>For each store, four weeks ahead: what the field workers and facilities below it will need, how much of that they already hold, what the store must supply, what it holds, and so how much to send it. Stores are grouped by the partner that runs them.</p>
-      <p>Each row adds up: what they need, less what the field workers already hold, is what the store must supply; less what it holds and what is expected within the four weeks, is what to send.</p>
-      <p>"Runs out" is counted from the same figures, week by week, at the children's need after what workers already hold. So a store that holds less than the total need can still last longer when its workers hold stock.</p>
-      <p>Only deliveries with an expected day count as arriving; supplier deliveries on the road count too.</p>
-    {% endinfo %}</h2>
+    <h2 class="text-lg font-semibold text-gray-900">Store restocking</h2>
+    <p class="text-xs text-gray-600 mb-3">
+      For each store, four weeks ahead: what the field workers and facilities below it will need, how much of that they
+      already hold, what the store must supply, what it holds, and so how much to send it. Stores are grouped by the
+      partner that runs them.
+    </p>
     {% for g in picture.store_groups %}
     <h3 class="text-sm font-semibold text-gray-900 mt-4 mb-1">{{ g.name }}</h3>
     <div class="bg-white border border-gray-200 rounded-lg overflow-hidden mb-3">
@@ -219,7 +224,7 @@ plain words, and each step says where it came from.
               <td class="px-4 py-2 {% if s.lasts_until_delivery == 'no' or s.lasts_until_delivery == 'no delivery planned' %}text-amber-800 font-medium{% endif %}">
                 {{ s.lasts_until_delivery|capfirst }}
                 <div class="text-xs text-gray-600 font-normal">
-                  {% if s.runs_dry_on %}runs out {{ s.runs_dry_text }}{% else %}does not run out in the weeks ahead{% endif %}
+                  {% if s.runs_dry_on %}runs out {{ s.runs_dry_text }}, at the children's need after what workers already hold{% else %}does not run out in the weeks ahead{% endif %}
                 </div>
               </td>
             </tr>
@@ -231,13 +236,19 @@ plain words, and each step says where it came from.
     {% empty %}
       <p class="text-sm text-gray-600 px-1 py-4">No stores with field workers below them yet.</p>
     {% endfor %}
+    <p class="text-xs text-gray-600 mt-2">
+      Each row adds up: what they need, less what the field workers already hold, is what the store must supply; less
+      what it holds and what is expected within the four weeks, is what to send. "Runs out" is counted from the same
+      figures, week by week, so a store that holds less than the total need can still last longer when its workers hold
+      stock. Only deliveries with an expected day count as arriving; supplier deliveries on the road count too.
+    </p>
   </section>
 {% endif %}
 
 {% if role == "programme" and picture.scoped %}
   <p class="text-sm text-gray-700 max-w-3xl mb-8" data-testid="plan-programme-only">
-    This view adds up every partner's stock, so it is for the organisation that runs the programme.
-    Your own places are on Supervisor and Stores.
+    This page adds up every partner's stock, so it is for the organisation that runs the programme.
+    Your own places are on the other two pages.
   </p>
 {% endif %}
 {% if role == "programme" and not picture.scoped %}
@@ -245,7 +256,8 @@ plain words, and each step says where it came from.
   <section class="mb-8" data-testid="plan-break-even">
     <h2 class="text-lg font-semibold text-gray-900">Will we have enough?</h2>
     {% if b.children %}
-    <h3 class="text-sm font-semibold text-gray-800 mt-2 mb-1">1. The children{% if b.children.text %}{% info "About the children" %}<p data-testid="plan-children-total">{{ b.children.text }} Every step below uses these.</p>{% endinfo %}{% endif %}</h3>
+    <h3 class="text-sm font-semibold text-gray-800 mt-2 mb-1">1. The children</h3>
+    {% if b.children.text %}<p class="text-xs text-gray-700 mb-1 max-w-3xl" data-testid="plan-children-total">{{ b.children.text }} Every step below uses these.</p>{% endif %}
     <ul class="text-sm space-y-1 max-w-3xl list-disc pl-5" data-testid="plan-children">
       <li><b>{{ b.children.seen|floatformat:"0g" }}</b> children seen in the visits so far: <b>{{ b.children.exited|floatformat:"0g" }}</b> have exited treatment{% if b.children.lost %}, <b>{{ b.children.lost|floatformat:"0g" }}</b> were lost to follow-up{% endif %} and <b>{{ b.children.in_treatment|floatformat:"0g" }}</b> are still in treatment.</li>
       <li>The {{ b.children.in_treatment|floatformat:"0g" }} in treatment have received <b>{{ b.children.received_so_far|floatformat:"0g" }}</b> sachets so far{% if b.children.received_each %} (about {{ b.children.received_each|floatformat:"0" }} each){% endif %}.</li>
@@ -259,7 +271,7 @@ plain words, and each step says where it came from.
         </ul>
       </li>
       {% endif %}
-      <li>Stock held across the whole network: <b>{{ b.held|floatformat:"0g" }}</b> sachets{% info "About stock held" %}<p>Supply's records: receipts and handovers less what visits gave out.</p>{% endinfo %}{% if b.on_order and b.on_order != "0" %} Already on order: <b>{{ b.on_order|floatformat:"0g" }}</b>.{% endif %}</li>
+      <li>Stock held across the whole network: <b>{{ b.held|floatformat:"0g" }}</b> sachets <span class="text-gray-600">&mdash; Supply's records: receipts and handovers less what visits gave out.</span>{% if b.on_order and b.on_order != "0" %} Already on order: <b>{{ b.on_order|floatformat:"0g" }}</b>.{% endif %}</li>
     </ul>
     <h3 class="text-sm font-semibold text-gray-800 mt-4 mb-1">2. Is it enough? Two cases</h3>
     <div class="grid md:grid-cols-2 gap-3 max-w-5xl">
@@ -280,9 +292,10 @@ plain words, and each step says where it came from.
     </div>
     {% if not b.known %}<p class="text-sm text-gray-900 mt-3 max-w-3xl">{{ b.answer }}</p>{% endif %}
     {% if b.known %}
-    <div class="text-sm text-gray-900 mt-3 max-w-3xl">
-      At the course the visits measure ({{ b.course|floatformat:"0g" }} sachets): {{ b.answer }}{% info "About the course" %}<p>The course used here is {% if b.course_chosen == "low" %}the low estimate, from the {{ b.course_children|floatformat:"0g" }} children who completed treatment{% else %}the protocol's course{% endif %}: {{ b.course|floatformat:"0g" }} sachets.</p>{% endinfo %}
-    </div>
+    <p class="text-xs text-gray-600 mt-3 max-w-3xl">
+      At the course the visits measure ({% if b.course_chosen == "low" %}the low estimate, from the {{ b.course_children|floatformat:"0g" }} children who completed treatment{% else %}the protocol's course{% endif %}:
+      {{ b.course|floatformat:"0g" }} sachets) the answer is: {{ b.answer }}
+    </p>
     {% endif %}
     {% else %}
     <p class="text-sm text-gray-900 mb-3 max-w-3xl">{{ b.answer }}</p>
@@ -320,15 +333,19 @@ plain words, and each step says where it came from.
   {% endwith %}
 
   <section class="mb-8" data-testid="plan-account">
-    <h2 class="text-lg font-semibold text-gray-900 mb-2">Can we account for every sachet?{% if account %}{% info "About accounting for every sachet" %}<p>Step by step from what arrived to where it is now. The first line is all that was received; every line after it says where part of it is. The lines add up to the first.</p>{% endinfo %}{% endif %}</h2>
+    <h2 class="text-lg font-semibold text-gray-900">Can we account for every sachet?</h2>
     {% if account %}
+      <p class="text-xs text-gray-600 mb-2">
+        Step by step from what arrived to where it is now. The first line is all that was received; every line after it
+        says where part of it is. The lines add up to the first.
+      </p>
       <ol class="text-sm space-y-1 max-w-3xl list-decimal pl-5">
         <li><b>{{ account.arrived }}</b> sachets arrived in all.</li>
         {% for st in account.stages %}
-          <li><b>{{ st.amount }}</b>{% if st.percent is not None %} ({{ st.percent }}%){% endif %}: {{ st.label|lower }}{% if st.help %}{% info st.label %}<p>{{ st.help }}</p>{% endinfo %}{% endif %}</li>
+          <li><b>{{ st.amount }}</b>{% if st.percent is not None %} ({{ st.percent }}%){% endif %}: {{ st.label|lower }}. <span class="text-gray-600">{{ st.help }}</span></li>
         {% endfor %}
       </ol>
-      <p class="text-xs text-gray-600 mt-2">Week by week: <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:flow' %}?item_id={{ item.id }}">Where it went</a></p>
+      <p class="text-xs text-gray-600 mt-2">The full picture, week by week, is on <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:flow' %}?item_id={{ item.id }}">Where it went</a>.</p>
     {% else %}
       <p class="text-sm text-gray-600">Nothing has been received yet.</p>
     {% endif %}
@@ -337,20 +354,17 @@ plain words, and each step says where it came from.
 
 <section class="mb-8" data-testid="plan-inputs">
   <div class="flex flex-wrap items-center justify-between gap-2">
-    <h2 class="text-lg font-semibold text-gray-900">The plan{% info "About the plan's numbers" %}
-      <p>Three numbers you can change. A change is saved as the plan, with your name and the default left beside it.</p>
-      {% if picture.recent_rate.workers %}<p>The recent rate is the average of {{ picture.recent_rate.workers }} of {{ picture.recent_rate.all_workers }} field workers (new children a week each, from their own last weeks of enrolment).</p>{% endif %}
-      {% if plan.target_cases_by_partner %}<p>The target is the partners' own targets added up (each is set separately; the programme-wide {{ plan.target_cases.value|floatformat:"0g" }} is not used).</p>{% endif %}
-    {% endinfo %}</h2>
+    <h2 class="text-lg font-semibold text-gray-900">The plan</h2>
     <a href="{% url 'supply_chain:plan_inputs' %}?item_id={{ item.id }}" class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
       <i class="fa-solid fa-pen mr-1"></i> Change the plan
     </a>
   </div>
+  <p class="text-xs text-gray-600 mb-2">Three numbers you can change. A change is saved as the plan, with your name and the default left beside it.</p>
   <dl class="grid md:grid-cols-3 gap-3 text-sm">
     <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
       <dt class="text-xs text-gray-600">New children each field worker enrols a week</dt>
       <dd class="text-lg font-semibold">{% if plan.enrolment_per_flw_per_week.value %}{{ plan.enrolment_per_flw_per_week.value|floatformat:"-2" }}{% else %}recent rate: {% if picture.recent_rate.per_flw_per_week %}{{ picture.recent_rate.per_flw_per_week|floatformat:"-2" }}{% else %}not known yet{% endif %}{% endif %}</dd>
-      <dd class="text-xs text-gray-600">default: {{ plan.enrolment_per_flw_per_week.default_text }}</dd>
+      <dd class="text-xs text-gray-600">default: {{ plan.enrolment_per_flw_per_week.default_text }}{% if picture.recent_rate.workers %}; the recent rate is the average of {{ picture.recent_rate.workers }} of {{ picture.recent_rate.all_workers }} field workers (new children a week each, from their own last weeks of enrolment){% endif %}</dd>
     </div>
     <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
       <dt class="text-xs text-gray-600">Extra days of stock (buffer)</dt>
@@ -363,7 +377,7 @@ plain words, and each step says where it came from.
       <dt class="text-xs text-gray-600">Target number of children</dt>
       <dd class="text-lg font-semibold">{{ plan.target_effective|floatformat:"0g" }}</dd>
       <dd class="text-xs text-gray-600">
-        {% if plan.target_cases_by_partner %}partners' targets added up{% else %}one for the programme; default: {{ plan.target_cases.default_text }}{% endif %}
+        {% if plan.target_cases_by_partner %}the partners' own targets added up (each is set below; the programme-wide {{ plan.target_cases.value|floatformat:"0g" }} is not used){% else %}one target for the whole programme; default: {{ plan.target_cases.default_text }}{% endif %}
         &middot; <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:plan_inputs' %}?item_id={{ item.id }}">set one per partner</a>
       </dd>
     </div>

@@ -1,13 +1,11 @@
 {% extends 'supply_chain/base.html' %}
 {% load supply_chain_extras %}
 
-{% block page_info %}{% info "About this page" %}<p>Each partner runs its own network and says how it gets stock to its field workers. Its card is its home: who to write to, how it distributes, its places and who looks after each, and a line on how it stands today.</p><p>Network, stock, issues and alerts are then shown partner by partner, with a roll-up across all of them.</p><p>Award emails are addressed to a partner's main contact. To add the first partner, state how it distributes; its network is then set up.</p>{% endinfo %}{% endblock %}
-
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
     <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
-    <p class="text-sm text-amber-900">Choose a programme to see its partners.</p>
+    <p class="text-sm text-amber-900">Partners are programme-scoped.</p>
   </div>
 {% else %}
 
@@ -21,7 +19,14 @@
     </a>
   </div>
 </div>
-<div class="mb-4"></div>
+<details class="text-xs text-gray-600 mb-4 max-w-3xl">
+  <summary class="cursor-pointer">What a partner's card is for</summary>
+  <p class="mt-1">
+  Each partner runs its own network and says how it gets stock to its field workers. Its card is its home: who to
+  write to, how it distributes, its places and who looks after each, and a line on how it stands today. Network,
+  stock, issues and alerts are then shown partner by partner, with a roll-up across all of them.
+  </p>
+</details>
 
 {% if without_plan %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 mb-4 text-sm text-amber-900">
@@ -41,7 +46,7 @@
         </p>
         <p class="text-sm text-gray-700">
           {% if p.contact.name or p.contact.email %}Main contact: {{ p.contact.name|default:"(no name)" }}{% if p.contact.email %} · {{ p.contact.email }}{% endif %}{% if p.contact.phone %} · {{ p.contact.phone }}{% endif %}
-          {% else %}<span class="text-amber-800">No main contact recorded:</span> <a class="underline" href="{% url 'supply_chain:partner_contact' %}?org={{ p.org_id }}">add one</a>{% endif %}
+          {% else %}<span class="text-amber-800">No main contact recorded:</span> <a class="underline" href="{% url 'supply_chain:partner_contact' %}?org={{ p.org_id }}">add one</a> so award emails have someone to address.{% endif %}
         </p>
         {% if p.contact.copy_to %}<p class="text-xs text-gray-600">Copy: {% for c in p.contact.copy_to %}{{ c.name|default:c.email }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
         {% if p.contact.connect_username %}<p class="text-xs text-gray-600">Connect username for alerts: {{ p.contact.connect_username }}</p>{% endif %}
@@ -97,14 +102,15 @@
   </section>
 {% empty %}
   <div class="bg-white border border-gray-200 rounded-lg p-4 text-sm text-gray-700 mb-3">
-    No partner is recorded in this programme yet.
+    No partner is recorded in this programme yet. State how the first one distributes and its network is set up.
   </div>
 {% endfor %}
 
 {% if unassigned %}
   <section class="bg-white border border-gray-200 rounded-lg p-4 mt-4">
-    <h3 class="text-base font-semibold text-gray-900">Places with no partner{% info "About places with no partner" %}<p>These read "Run by: not recorded" and are left out of every partner's own pages until they are assigned.</p>{% endinfo %}</h3>
+    <h3 class="text-base font-semibold text-gray-900">Places with no partner</h3>
     <p class="text-xs text-gray-600 mb-2">
+      These read "Run by: not recorded" and are left out of every partner's own pages.
       {% for place in unassigned|slice:":12" %}{{ place.name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if unassigned|length > 12 %} and {{ unassigned|length|add:"-12" }} more{% endif %}.
     </p>
     <a href="{% url 'supply_chain:partner_places' %}" class="text-sm underline text-brand-indigo">Assign them to a partner</a>

@@ -18,10 +18,10 @@ stored, so it cannot be shown again.
 
 <div class="max-w-3xl bg-white border border-brand-border-light rounded-lg overflow-hidden">
   <div class="px-5 py-4 border-b border-brand-border-light">
-    <h1 class="text-base font-semibold text-gray-900">Link issued for {{ link.org_name }}{% info "About this link" %}<p>Send this to them however you normally would. It opens with no labs account, and lets them
-      record only what it covers below.</p>{% endinfo %}</h1>
+    <h1 class="text-base font-semibold text-gray-900">Link issued for {{ link.org_name }}</h1>
     <p class="text-sm text-gray-600 mt-0.5">
-      Works until {{ link.expires_at|day }}, or until you revoke it.
+      Send this to them however you normally would. It opens with no labs account, and lets them
+      record only what it covers below. It works until {{ link.expires_at|day }}, or until you revoke it.
     </p>
   </div>
 
@@ -60,7 +60,7 @@ stored, so it cannot be shown again.
 
     <div>
       <p class="text-sm text-gray-700">
-        Phone stock-count page (works with no signal):
+        On a phone it also opens a light stock-count page that works with no signal:
         <code class="text-xs break-all" data-field-url>{{ link.field_url }}</code>
       </p>
     </div>

@@ -1,5 +1,4 @@
 {% extends "supply_chain/operation_form.html" %}
-{% load supply_chain_extras %}
 
 {% comment %}
 A trade item, and what is inside it when it is a kit. The components are a
@@ -10,12 +9,13 @@ __prefix__ for the next index, bump TOTAL_FORMS.
 
 {% block extra_fields %}
 <div class="pt-4 border-t border-gray-100" x-data="{ count: {{ components.total_form_count }} }">
-  <h2 class="text-sm font-semibold text-gray-900">What is inside, if this is a kit{% info "About kits" %}<p>
-    For a co-pack, a treatment packet or a test
+  <h2 class="text-sm font-semibold text-gray-900">What is inside, if this is a kit</h2>
+  <p class="text-xs text-gray-600 mt-0.5 mb-3 max-w-2xl">
+    Leave empty for an ordinary item. For a co-pack, a treatment packet or a test
     kit, one row per product inside it. Stock is still counted in whole kits; the
     rows are what let each product be checked against its own specification, and
-    two suppliers' kits be compared only when they hold the same things.</p>{% endinfo %}</h2>
-  <p class="text-xs text-gray-600 mt-0.5 mb-3">Leave empty for an ordinary item.</p>
+    two suppliers' kits be compared only when they hold the same things.
+  </p>
 
   {{ components.management_form }}
   {% if components.non_form_errors %}
@@ -67,9 +67,11 @@ __prefix__ for the next index, bump TOTAL_FORMS.
 
 {% if stated %}
 <div class="pt-4 border-t border-gray-100 mt-4">
-  <h2 class="text-sm font-semibold text-gray-900 mb-3">What the manufacturer states{% info "About stated figures" %}<p>
-    The figures the specification check reads, for this item itself or for a product
-    inside the kit. Use the figure names the product's requirements use.</p>{% endinfo %}</h2>
+  <h2 class="text-sm font-semibold text-gray-900">What the manufacturer states</h2>
+  <p class="text-xs text-gray-600 mt-0.5 mb-3 max-w-2xl">
+    The figures the specification check reads — for this item itself, or for a product
+    inside the kit. Use the figure names the product's requirements use.
+  </p>
   {% include "supply_chain/_line_formset.html" with formset=stated rows_id="stated-rows" columns="minmax(0,1.6fr) minmax(0,1.4fr) minmax(0,1fr) auto" add_label="+ Add a stated figure" %}
 </div>
 {% endif %}

@@ -7,27 +7,6 @@ disagree routinely and the disagreement is the finding, so a screen showing
 one of them would destroy the only signal it had.
 {% endcomment %}
 
-{% block page_info %}{% info "About this page" %}
-<div data-testid="stock-how-it-works">
-<div data-testid="stock-forms-explained">
-  <p><b>Two ways to record stock</b></p>
-  <ul>
-    <li><strong>Stock in or out</strong>: something moved (a delivery, a handout, a loss).</li>
-    <li><strong>Count</strong>: what is actually on the shelf. A count is compared with the records and shows any difference. It replaces the records only if you mark it as an override.</li>
-  </ul>
-  <p><strong>Which number counts?</strong> Supply's records are the official figure, for a field worker as much as for a store. A field worker's own balance on their phone is shown as a <em>self-report</em>, beside the records, with the difference.</p>
-</div>
-<p><b>Cover</b> is days of stock: what is on hand, at the rate this point has been using it (from {{ min_rate_days }} days of use on). It is measured against each point's own minimum and maximum. Goods on order or in transit are not cover. Each point is topped up to its maximum; a point with none above it is restocked by reordering from its supplier.</p>
-<p><b>Demand</b> comes from the consumption movements on each store's records, whoever recorded it (a visit, a partner's report or a clerk's entry). A store that dispenses nothing itself is rated on what it releases to others.</p>
-{% pinned_tab "supply_chain:workers" as stock_review_tab %}
-{% if stock_review_tab %}
-<p>Who runs out soonest, and whether the figures add up: <a class="text-brand-indigo underline" href="{{ stock_review_tab.url }}">{{ stock_review_tab.label }}</a>.</p>
-{% else %}
-<p>For who runs out soonest, create a <strong>Supply Stock Review</strong> from the <a class="text-brand-indigo underline" href="{% url 'labs:workflow:list' %}">workflow templates</a>.</p>
-{% endif %}
-</div>
-{% endinfo %}{% endblock %}
-
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
@@ -435,6 +414,66 @@ Plain CSS, so nothing waits on the stylesheet being rebuilt.
   {% endfor %}
 </ul>
 
+<details class="mt-5 rounded-lg border border-gray-200 bg-white text-sm" data-testid="stock-how-it-works">
+<summary class="cursor-pointer px-4 py-2.5 font-medium text-gray-800">How this works</summary>
+<section class="grid gap-6 border-t border-gray-200 px-4 py-4 md:grid-cols-2" aria-label="How to read this page">
+<div class="space-y-3 max-w-xl">
+<div class="text-sm text-gray-700" data-testid="stock-forms-explained">
+  <p class="font-medium text-gray-900 mb-1">Two ways to record stock</p>
+  <ul class="list-disc ml-5 space-y-1">
+    <li><strong>Stock in or out</strong>: something moved (a delivery, a handout, a loss).</li>
+    <li><strong>Count</strong>: what is actually on the shelf. A count is compared with the records and shows any difference. It replaces the records only if you mark it as an override.</li>
+  </ul>
+  <p class="mt-2"><strong>Which number counts?</strong> Supply's records are the official figure.</p>
+  <details class="mt-1 text-gray-600">
+    <summary class="cursor-pointer">More on records and self-reports</summary>
+    <p class="mt-1">This holds for a field worker as much as for a store. A field worker's own balance on their phone is shown as a <em>self-report</em>, beside the records, with the difference. These forms are the fallback: regular handovers need the simpler route.</p>
+  </details>
+</div>
+</div>
+<div class="space-y-2 max-w-xl text-sm text-gray-700">
+{% comment %}One line, and only where it is news: a programme with the review pinned
+already has it as a tab, and telling it to go and create one sent people looking
+for something they had.{% endcomment %}
+{% pinned_tab "supply_chain:workers" as stock_review_tab %}
+{% if stock_review_tab %}
+<p class="mb-4 text-sm text-gray-700">
+  Who runs out soonest, and whether the figures add up:
+  <a class="text-brand-indigo underline" href="{{ stock_review_tab.url }}">{{ stock_review_tab.label }}</a>.
+</p>
+{% else %}
+<p class="mb-4 text-sm text-gray-700">
+  For who runs out soonest, create a <strong>Supply Stock Review</strong> from the
+  <a class="text-brand-indigo underline" href="{% url 'labs:workflow:list' %}">workflow templates</a>.
+</p>
+{% endif %}
+{% comment %}How the figures are worked out, a click away: open by default it was two
+paragraphs of method above a one-row table.{% endcomment %}
+<details class="text-sm text-gray-600">
+<summary class="cursor-pointer text-gray-700">How cover is measured</summary>
+<p class="mt-1">
+  Cover is days of stock: what is on hand, at the rate this point has been
+  using it (from {{ min_rate_days }} days of use on). It is measured against each
+  point's own minimum and maximum, so "below its band" means below what this
+  programme set. Goods in
+  transit are excluded: they are real, but they are not cover.
+  Each point is topped up to its maximum; below its minimum it is overdue.
+  A point with none above it in the network is restocked by reordering from its supplier.
+</p>
+</details>
+<details class="text-sm text-gray-600">
+<summary class="cursor-pointer text-gray-700">Where demand comes from</summary>
+<p class="mt-1">
+  Demand is read from the consumption movements on each store's ledger, whoever
+  recorded them — a Connect visit, a partner's report or a clerk's entry. A store that dispenses nothing itself, such as
+  a distributor's warehouse, is rated on what it releases to other supply points. A worker's reported figure is kept beside
+  the ledger rather than overwriting it; moving the ledger takes a deliberate
+  override with a reason.
+</p>
+</details>
+</div>
+</section>
+</details>
 
 <script>
   (function () {

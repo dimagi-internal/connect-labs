@@ -14,7 +14,13 @@ invitation evidence and so "send an invitation" is not the way to start it.
 
 <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
   <div class="px-5 py-4 border-b border-brand-border-light">
-    <h2 class="text-base font-semibold text-gray-900">Who can supply this{% info "About who can supply this" %}<p>Nobody is recorded as "a supplier of" anything: this is read back off what actually happened{% if scope_note %}, {{ scope_note }}{% endif %}.</p><p>A contract and an unanswered email are both connections, but not the same connection, so each says which it is and when.</p>{% endinfo %}</h2>
+    <h2 class="text-base font-semibold text-gray-900">Who can supply this</h2>
+    <p class="text-sm text-gray-600 mt-0.5 max-w-2xl">
+      Nobody is recorded as "a supplier of" anything — this is read back off
+      what actually happened{% if scope_note %}, {{ scope_note }}{% endif %}. A
+      contract and an unanswered email are both connections; they are not the
+      same connection, so each says which it is and when.
+    </p>
   </div>
 
   {% if supply_base %}
@@ -67,19 +73,35 @@ invitation evidence and so "send an invitation" is not the way to start it.
           </ul>
 
           {% if claim.basis == 'declared' %}
-            <div class="mt-2 text-xs text-gray-600">Unverified; never quoted here.{% info "About this match" %}<p>Their own statement on the supplier marketplace, unverified. They have never quoted here.</p>{% endinfo %}</div>
+            <p class="mt-2 text-xs text-gray-600 max-w-2xl">
+              Their own statement on the supplier marketplace, unverified. They have never quoted here.
+            </p>
           {% endif %}
           {% if claim.basis == 'named_as_manufacturer' %}
-            <div class="mt-2 text-xs text-gray-600">Matched on the manufacturer name; never quoted here.{% info "About this match" %}<p>Matched on the manufacturer name typed on the trade item, which is free text with no link to this company's record. They have never quoted here.</p>{% endinfo %}</div>
+            <p class="mt-2 text-xs text-gray-600 max-w-2xl">
+              Matched on the manufacturer name typed on the trade item, which is
+              free text with no link to this company's record. They have never
+              quoted here.
+            </p>
           {% endif %}
         </li>
       {% endfor %}
     </ul>
   {% else %}
     {% if narrowed_to_item %}
-      <div class="px-5 py-5 text-sm text-gray-600">Nobody yet: no quote, award or contract names this trade item.{% info "About an empty list" %}<p>A request for a quote does not count here: it is sent for the product and says nothing about which manufacturer's version a supplier would offer. Asking a supplier which trade item they are quoting is what starts it.</p>{% endinfo %}</div>
+      <p class="px-5 py-5 text-sm text-gray-600 max-w-2xl">
+        Nobody yet. No quote, award or contract names this trade item — and an
+        request for a quote would not count here, because an RFQ is issued against the
+        product and says nothing about which manufacturer's version a supplier
+        would offer. Asking a supplier which trade item they are quoting is
+        what starts it.
+      </p>
     {% else %}
-      <div class="px-5 py-5 text-sm text-gray-600">Nobody yet. Ask a supplier for a quote to start it.{% info "About an empty list" %}<p>Nothing has been quoted, awarded or contracted against this, and no request for a quote has gone out, so there is nothing to read this list off.</p>{% endinfo %}</div>
+      <p class="px-5 py-5 text-sm text-gray-600 max-w-2xl">
+        Nobody yet. Nothing has been quoted, awarded or contracted against this,
+        and no request for a quote has gone out — so there is nothing to read a supply
+        base off. Asking a supplier for a quote is what starts it.
+      </p>
     {% endif %}
   {% endif %}
 </div>

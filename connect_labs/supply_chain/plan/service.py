@@ -287,13 +287,13 @@ def issue_rows(  # noqa: C901
     rate_source = (
         "the plan's rate"
         if plan_vals["enrolment_per_flw_per_week"]["value"] is not None
-        else "this worker's recent rate"
+        else "this worker's own recent rate from their visits"
     )
     rows = []
     for w in fc["workers"]:
         known = w["stock_known"]
         length = int(cadence.get(w["supply_point_id"]) or DEFAULT_HANDOUT_EVERY_DAYS)
-        period = "this week" if length == 7 else f"next {length} days"
+        period = "this week" if length == 7 else f"in the {length} days to the next handout"
         committed_weeks, new_weeks = _weekly(w["weeks"], "committed"), _weekly(w["weeks"], "new")
         need_weeks = [c + n for c, n in zip(committed_weeks, new_weeks)]
         end = offset_days + length
@@ -304,8 +304,9 @@ def issue_rows(  # noqa: C901
         used_before = need_between(need_weeks, 0, offset_days)
         official = w["official_stock"]
         held_now = _d(official["amount"]) if known else None
-        where = "phone balance" if official["source"] == "phone" else "Supply’s records"
-        stock_source = f"{where}: {official['note']}"
+        stock_source = (
+            f"{'the phone balance' if official['source'] == 'phone' else 'Supply’s records'}: {official['note']}"
+        )
         run = run_out_text(w["run_out"]["date"], today, fc.get("data_to"))
         held = max(ZERO, held_now - used_before) if known else None
         days = _buffer_for(plan_vals, w["supply_point_id"])
@@ -319,34 +320,35 @@ def issue_rows(  # noqa: C901
             steps = [
                 _step(
                     "Children due a follow-up",
-                    f"{_plain(due)} sachets for {children} children's visits {period}",
+                    f"{_plain(due)} sachets for these {children} children's visits {period}",
                     "their visits: children enrolled and not yet finished",
                 ),
                 _step(
                     "New children expected",
-                    f"{_plain(new)} sachets ({_plain(_d(w['enrolled_per_week']), 1)} a week)",
-                    f"{rate_source} × the first week's ration of {_plain(ration)} sachets",
+                    f"{_plain(_d(w['enrolled_per_week']), 1)} a week, {_plain(new)} sachets",
+                    f"{rate_source}, times the first week's ration of {_plain(ration)} sachets",
                     "+",
                 ),
                 _step(
                     "Appetite tests",
                     f"{_plain(tests)} sachets" if appetite_week is not None else "not counted",
                     (
-                        f"about {_plain(appetite_week, 1)} a week, the average of the last four weeks"
+                        f"about {_plain(appetite_week, 1)} a week, the average of the last four weeks of visits"
                         if appetite_week is not None
-                        else "the app has no appetite-test question"
+                        else "this opportunity's app has no appetite-test question set up"
                     ),
                     "+",
                 ),
                 _step(
                     "Buffer",
-                    f"{_plain(buffer)} sachets ({days} {'day' if days == 1 else 'days'})",
-                    "the plan, "
+                    f"{days} extra {'day' if days == 1 else 'days'}, {_plain(buffer)} sachets",
+                    "the plan: "
                     + (
                         "set for this place"
                         if str(w["supply_point_id"]) in plan_vals["buffer_days_by_point"]
                         else "the same for everyone"
-                    ),
+                    )
+                    + ", as that share of the need above",
                     "+",
                 ),
                 _step(
@@ -365,14 +367,14 @@ def issue_rows(  # noqa: C901
             children = None
             steps = [
                 _step(
-                    f"Next {length} days at their present pace",
+                    f"The {length} days at their present pace",
                     f"{_plain(due)} sachets",
-                    "the pace of their last weeks of visits (no case rule here)",
+                    "no case rule on this opportunity, so the pace of the last weeks of visits",
                 ),
                 _step(
                     "Buffer",
-                    f"{_plain(buffer)} sachets ({days} {'day' if days == 1 else 'days'})",
-                    "the plan",
+                    f"{days} extra days, {_plain(buffer)} sachets",
+                    "the plan, as that share of the need above",
                     "+",
                 ),
                 _step(
@@ -420,7 +422,7 @@ def issue_rows(  # noqa: C901
                 "run_out_method": w["run_out"]["method"],
                 "short": short,
                 "steps": steps,
-                "result": (f"Issue {issue:,} sachets" if issue else "Nothing to issue"),
+                "result": (f"Issue {issue:,} sachets" if issue else "Nothing to issue: they hold enough"),
             }
         )
     return rows

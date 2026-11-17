@@ -1,13 +1,11 @@
 {% extends 'supply_chain/base.html' %}
 {% load supply_chain_extras %}
 
-{% block page_info %}{% info "About this page" %}<p>The chain, in order: stock reaches a store or facility (<a href="#deliveries" class="underline">deliveries</a>), then goes out to field workers in a weekly handout.</p><p>A handout is planned first, then confirmed with what was actually given (from a WhatsApp message, a photo of the paper list, or one button). The person who received it can confirm too, so each handover is recorded from both sides. Only confirmed amounts move stock.</p>{% endinfo %}{% endblock %}
-
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
     <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
-    <p class="text-sm text-amber-900">Choose a programme to see its handouts.</p>
+    <p class="text-sm text-amber-900">Distribution is programme-scoped.</p>
   </div>
 {% else %}
 
@@ -29,6 +27,15 @@
   </div>
 </div>
 {% include "supply_chain/_partner_switcher.html" %}
+<details class="text-xs text-gray-600 mb-4 max-w-3xl">
+  <summary class="cursor-pointer">How a handout is recorded</summary>
+  <p class="mt-1">
+  The chain, in order: stock reaches a store or facility (<a href="#deliveries" class="underline">deliveries</a>),
+  then goes out to field workers in a weekly handout. A handout is planned first, then confirmed with what was
+  actually given (from a WhatsApp message, a photo of the paper list, or one button), and the person who received
+  it can confirm too, so each handover is recorded from both sides. Only confirmed amounts move stock.
+  </p>
+</details>
 
 <h3 id="waiting" class="text-sm font-semibold text-gray-900 mt-5 mb-2">Handouts waiting to be confirmed</h3>
 {% for run in waiting %}
@@ -73,7 +80,7 @@
           Confirm everything as planned
         </button>
       </form>
-      {% info "About confirming as planned" %}<p>Confirming as planned says every place got exactly what the list says.</p>{% endinfo %}
+      <span class="text-xs text-gray-600">Confirming as planned says every place got exactly what the list says.</span>
     </div>
     {% if run.document_ids or run.message_text %}
       {% include "supply_chain/_distribution_evidence.html" %}
@@ -81,7 +88,7 @@
   </div>
 {% empty %}
   <div class="bg-white border border-gray-200 rounded-lg px-4 py-4 text-sm text-gray-600 mb-3">
-    No handouts are waiting.
+    No handouts are waiting. Plan the next one with “Plan one by hand” or “Fill in this week's from the plan”.
   </div>
 {% endfor %}
 
@@ -130,8 +137,10 @@
         <button type="submit" class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
           All received as given
         </button>
-        <span class="text-xs text-gray-600">{{ run.awaiting_receipt }} place{{ run.awaiting_receipt|pluralize }} still open</span>
-        {% info "About confirming receipt" %}<p>Confirms receipt at every place still open. If someone received a different amount, type it in the "Received" column first; only those places differ.</p>{% endinfo %}
+        <span class="text-xs text-gray-600">
+          Confirms receipt at the {{ run.awaiting_receipt }} place{{ run.awaiting_receipt|pluralize }} still open. If someone received a different
+          amount, type it in the "Received" column first; only those places differ.
+        </span>
       </form>
     {% endif %}
     {% if run.document_ids or run.message_text %}

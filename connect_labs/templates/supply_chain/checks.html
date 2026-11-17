@@ -8,8 +8,6 @@ the database cannot make (design doc sections 22 and 24). Each row links to
 the record it is about, because that is where it gets answered.
 {% endcomment %}
 
-{% block page_info %}{% info "About this page" %}<p>Each check is something nobody has told us yet, two records that disagree, or a figure past a limit you set.</p><p>Checks are grouped by kind. None is ranked and none says what to do: open the record it is about to answer it.</p><p>Every check is read from the records as they stand{% if as_of %} at {{ as_of }}{% endif %}. An empty list means nothing is missing, nothing disagrees and nothing is past a limit.</p>{% endinfo %}{% endblock %}
-
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
@@ -22,7 +20,10 @@ the record it is about, because that is where it gets answered.
     <a class="hover:underline" href="{% url 'supply_chain:overview' %}">Overview</a> › Checks
   </div>
   <h2 class="text-lg font-semibold text-gray-900">{% term "checks" "Checks" %}: what is missing, in conflict or overdue</h2>
-  <p class="text-sm text-gray-600 max-w-3xl">{{ checks.count }} check{{ checks.count|pluralize }}</p>
+  <p class="text-sm text-gray-600 max-w-3xl">
+    {{ checks.count }} check{{ checks.count|pluralize }}. Each is something nobody has told us yet, two
+    records that disagree, or a figure past a limit you set. None is ranked and none says what to do.
+  </p>
   <div class="flex flex-wrap gap-2 mt-3 text-sm">
     <a href="{% url 'supply_chain:checks' %}"
        class="px-2.5 py-1 rounded-md border {% if not category and not kind %}border-brand-indigo text-brand-indigo{% else %}border-gray-300 text-gray-700 hover:bg-gray-50{% endif %}">All</a>
@@ -79,6 +80,7 @@ the record it is about, because that is where it gets answered.
 {% empty %}
   <div class="bg-white border border-brand-border-light rounded-lg px-5 py-4">
     <p class="text-sm font-semibold text-gray-900">Nothing to report{% if kind or category %} of this kind{% endif %}.</p>
+    <p class="text-sm text-gray-600 mt-0.5">Every check is read from the records as they stand{% if as_of %} at {{ as_of }}{% endif %}: nothing is missing, nothing disagrees, nothing is past a limit.</p>
     {% if arrived %}
       {% comment %}What the list would have said about, and what it says now: the consignments that
       have arrived, each with its documents, so an empty list reads as settled rather than blank.{% endcomment %}

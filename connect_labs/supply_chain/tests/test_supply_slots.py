@@ -80,7 +80,8 @@ def test_an_added_tab_goes_after_the_tab_it_names(client_in_programme):
     assert labels.index("Coverage") == labels.index("Purchases") + 1
 
 
-def test_an_added_tab_joins_the_menu_entry_of_the_tab_it_follows(client_in_programme):
+def test_in_the_compact_layout_an_added_tab_joins_the_menu_entry_of_the_tab_it_follows(client_in_programme):
+    service.update("supply", SCOPE, {"compact_layout": True}, SYSTEM)
     _set({"desk": {"label": "Desk", "fill": {"workflow": WORKFLOW}, "after": "supply_chain:plan"}})
     body = client_in_programme.get(reverse("supply_chain:catalogue")).content.decode()
     family = body.split("Workers and plan</span>", 1)[1].split("</details>", 1)[0]

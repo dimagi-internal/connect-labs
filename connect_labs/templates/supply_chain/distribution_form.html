@@ -1,5 +1,4 @@
 {% extends "supply_chain/operation_form.html" %}
-{% load supply_chain_extras %}
 
 {% comment %}
 A resupply run's lines: one row per worker. Each posts a movement, which is
@@ -9,8 +8,11 @@ ruling the whole stock model rests on.
 
 {% block extra_fields %}
 <div class="pt-4 border-t border-gray-100" x-data="{ count: {{ lines.total_form_count }} }">
-  <h2 class="text-sm font-semibold text-gray-900">Who it went to{% info "About the rows" %}<p>Each row moves stock out of the store and into that worker's own holding, so both balances move together.</p>{% endinfo %}</h2>
-  <p class="text-xs text-gray-600 mt-0.5 mb-3 max-w-2xl">One row per worker.</p>
+  <h2 class="text-sm font-semibold text-gray-900">Who it went to</h2>
+  <p class="text-xs text-gray-600 mt-0.5 mb-3 max-w-2xl">
+    One row per worker. Each row posts a movement out of the store and into that worker's
+    own holding, so both balances move together and neither needs its own arithmetic.
+  </p>
 
   {% if no_workers %}
     {% comment %}
@@ -18,11 +20,12 @@ ruling the whole stock model rests on.
     screen, and a dropdown with nothing in it does not say which.
     {% endcomment %}
     <div class="rounded-md border border-message-warning-border/50 bg-message-warning px-4 py-3 mb-3">
-      <div class="text-sm text-message-warning-text">
-        This programme has no field workers on file yet. Add them on the
-        <a href="{% url 'supply_chain:network' %}" class="underline">Network</a> page.
-        {% info "How to add field workers" %}<p>Add each one as a supply point of kind “a field worker's own holding”. Until then there is nobody to distribute to.</p>{% endinfo %}
-      </div>
+      <p class="text-sm text-message-warning-text">
+        This programme has no field workers on file yet, so there is nobody to distribute to.
+        Add them on the
+        <a href="{% url 'supply_chain:network' %}" class="underline">Network</a>
+        page as supply points of kind “a field worker's own holding”.
+      </p>
     </div>
   {% endif %}
 

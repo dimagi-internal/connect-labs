@@ -10,8 +10,6 @@ still the working surfaces for their detail, and each is linked from the step it
 arranging is in supply_chain/purchases.py.
 {% endcomment %}
 
-{% block page_info %}{% info "About this page" %}<p>One purchase, from sizing to payment. The bar shows the seven steps; each step below says where it stands and links to where you act.</p><p>Every local partner's order is a row under Orders. "What happened?" opens the form that records a dispatch, a receipt, an invoice or a payment.</p>{% endinfo %}{% endblock %}
-
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4"><h3 class="text-lg font-semibold text-blue-900">No program selected</h3></div>

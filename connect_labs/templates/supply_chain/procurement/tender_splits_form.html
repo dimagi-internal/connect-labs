@@ -1,5 +1,4 @@
 {% extends "supply_chain/operation_form.html" %}
-{% load supply_chain_extras %}
 
 {% comment %}
 One row per partner. A place offered for a partner is one that partner runs (the options carry data-org and the
@@ -29,12 +28,13 @@ script below hides the rest); the total is the sum of the quantities, shown as t
             window.splitRefresh();
           ">+ Add a partner</button>
 
-  <div class="mt-4 text-sm text-gray-900" data-testid="split-total">
+  <p class="mt-4 text-sm text-gray-900" data-testid="split-total">
     Total asked of suppliers:
     <strong><span id="split-total-number">{{ current_total|floatformat:"-4" }}</span></strong> {{ unit }}
-    <span class="text-xs text-gray-600">· saved {{ current_total|floatformat:"-4" }} {{ unit }}</span>{% info "About the total" %}<p>The sum of the rows above, updated as you type. "Saved" is the total as it stands on the tender now.</p>{% endinfo %}
-  </div>
-  <p class="text-xs"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_sizing' tender.id %}">Work out each partner's quantity from target cases</a></p>
+    <span class="text-xs text-gray-600">— the sum of the rows above. Saved: {{ current_total|floatformat:"-4" }} {{ unit }}.</span>
+  </p>
+  <p class="text-xs text-gray-600">Not sure how much each partner needs?
+    <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_sizing' tender.id %}">Work it out from target cases</a>.</p>
 </div>
 <script>
   (function () {

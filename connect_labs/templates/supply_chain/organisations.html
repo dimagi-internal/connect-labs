@@ -12,16 +12,6 @@ record their own shipments, receipts and counts. We record on their behalf
 until it is set.
 {% endcomment %}
 
-{% block page_info %}{% info "Who belongs here, and what a change does" %}<div data-testid="organisations-explained">
-      <p>
-        Start here for <strong>partners</strong>: the local organisations that buy or hold stock on your behalf.
-        Each one needs an entry before it can be named as a buyer or as a place that keeps stock.</p>
-      <p>Manufacturers and traders are added from <a href="{% url 'supply_chain:suppliers' %}" class="text-brand-indigo hover:underline">Suppliers</a>
-        instead (New supplier finds or creates the company), so you do not need to add them here.</p>
-      <p>Everyone is shared across every programme: a change here shows everywhere this organisation appears.
-        <span data-testid="organisations-merge-note">Merging two organisations changes every programme that uses either, not just this one.</span></p>
-    </div>{% endinfo %}{% endblock %}
-
 {% block supply_content %}
 
 <nav class="text-sm text-gray-600 mb-3">
@@ -33,6 +23,16 @@ until it is set.
 <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Organisations</h1>
+    <details class="text-sm text-gray-600 mt-1 max-w-2xl" data-testid="organisations-explained">
+      <summary class="cursor-pointer">Who belongs here, and what a change does</summary>
+      <p class="mt-1">
+        Start here for <strong>partners</strong>: the local organisations that buy or hold stock on your behalf.
+        Each one needs an entry before it can be named as a buyer or as a place that keeps stock.
+        Manufacturers and traders are added from <a href="{% url 'supply_chain:suppliers' %}" class="text-brand-indigo hover:underline">Suppliers</a>
+        instead (New supplier finds or creates the company), so you do not need to add them here.
+        Everyone is shared across every programme: a change here shows everywhere this organisation appears.
+      </p>
+    </details>
   </div>
   <div class="flex items-center gap-3">
     <a href="{% url 'supply_chain:org_merge' %}"
@@ -60,15 +60,15 @@ until it is set.
   {% endif %}
 </form>
 
-<div class="text-sm text-gray-600 mb-3" data-testid="organisations-count">
+<p class="text-sm text-gray-600 mb-3" data-testid="organisations-count">
   {% if has_program_context and not show_all %}
     {{ orgs|length }} organisation{{ orgs|length|pluralize }} used in this programme (of {{ total_orgs }} in all).
   {% else %}
     {{ orgs|length }} organisation{{ orgs|length|pluralize }}.
   {% endif %}
-  {% if orgs %}{{ linked }} of them {{ linked|pluralize:"is,are" }} bound to a Connect organisation.{% info "About Known to Connect" %}<p>An organisation with no Connect organisation is one whose own staff cannot sign in and
-  record their own shipments, receipts and counts. We record on their behalf until it is set.</p>{% endinfo %}{% endif %}
-</div>
+  {% if orgs %}{{ linked }} of them {{ linked|pluralize:"is,are" }} bound to a Connect organisation. The rest we record on behalf of.{% endif %}
+  <span data-testid="organisations-merge-note">Merging two organisations changes every programme that uses either, not just this one.</span>
+</p>
 
 <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
   <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
@@ -112,9 +112,13 @@ until it is set.
         {% empty %}
           <tr>
             <td colspan="4" class="px-4 py-8 text-center">
-              <div class="text-sm text-gray-600">{% if query or total_orgs %}No organisations match{% if not show_all and has_program_context %} in this programme yet: use Show all {{ total_orgs }} organisations above to look wider{% endif %}.{% else %}No organisations yet.{% info "Why this comes first" %}<p>
-                A contract needs a {% term "buyer of record" %}, and it has to be one of these, so this is
-                the first thing to fill in before anything can be ordered.</p>{% endinfo %}{% endif %}</div>
+              <p class="text-sm text-gray-600">{% if query or total_orgs %}No organisations match{% if not show_all and has_program_context %} in this programme yet: use Show all {{ total_orgs }} organisations above to look wider{% endif %}.{% else %}No organisations yet.{% endif %}</p>
+{% if not total_orgs %}
+              <p class="text-sm text-gray-600 mt-1 max-w-lg mx-auto">
+                A contract needs a {% term "buyer of record" %}, and it has to be one of these — so this is
+                the first thing to fill in before anything can be ordered.
+              </p>
+{% endif %}
             </td>
           </tr>
         {% endfor %}

@@ -8,24 +8,9 @@ can. The batch -- which physical lot arrived -- is the third level and lives
 on the Stock page.
 {% endcomment %}
 
-{% comment %}
-The three levels as the steps you take, not definitions: product, then trade item, and why there is no
-"add batch". Behind the page's (i) rather than on the page; the numbered list is kept as it was.
-{% endcomment %}
-{% block page_info %}{% info "How the catalogue works" %}
-<ol data-testid="catalogue-steps" class="space-y-1.5">
-  <li><b>1. Add a product</b> once: what you need and how it is used ("RUTF, 92&nbsp;g sachet, 2 a day").</li>
-  <li><b>2. Add a {% term "trade item" %}</b> when you place an order, once for each manufacturer's version
-    you actually buy (not once per quote): their carton size, shelf life and barcode.</li>
-  <li><b>3. Batches are not added here.</b> A {% term "batch" %} is a physical delivery, with the expiry
-    date and certificate that arrive with the goods, so it is recorded when stock is received or sent on
-    (see <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:stock' %}">Stock</a>).</li>
-</ol>
-{% endinfo %}{% endblock %}
-
 {% block supply_content %}
 
-<div class="flex flex-wrap items-end justify-between gap-4 mb-5">
+<div class="flex flex-wrap items-end justify-between gap-4 mb-1">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Catalogue</h1>
     <p class="text-sm text-gray-600 mt-1">
@@ -41,6 +26,22 @@ The three levels as the steps you take, not definitions: product, then trade ite
     </a>
   </div>
 </div>
+
+{% comment %}
+The three levels as the steps you take, not definitions (Sophie's RUTF feedback): product, then trade
+item, and why there is no "add batch". The identity is load bearing -- conflating the levels is how a
+per-sachet figure goes wrong -- so it stays on the page, as a short numbered list.
+{% endcomment %}
+<details class="mb-5 max-w-3xl text-sm text-gray-700"><summary class="cursor-pointer text-gray-600">How the catalogue works</summary>
+<ol data-testid="catalogue-steps" class="mt-2 space-y-1.5">
+  <li><b>1. Add a product</b> once: what you need and how it is used ("RUTF, 92&nbsp;g sachet, 2 a day").</li>
+  <li><b>2. Add a {% term "trade item" %}</b> when you place an order, once for each manufacturer's version
+    you actually buy (not once per quote): their carton size, shelf life and barcode.</li>
+  <li><b>3. Batches are not added here.</b> A {% term "batch" %} is a physical delivery, with the expiry
+    date and certificate that arrive with the goods, so it is recorded when stock is received or sent on
+    (see <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:stock' %}">Stock</a>).</li>
+</ol>
+</details>
 
 {% for product in products %}
   <div class="bg-white border border-brand-border-light rounded-lg mb-4 overflow-hidden">
@@ -130,11 +131,11 @@ The three levels as the steps you take, not definitions: product, then trade ite
           noun comes from the product, because "sachets per day" against a
           box of tablets is wrong.
           {% endcomment %}
-          <div class="mt-3 text-sm text-message-warning-text">
-            No ration table set{% info "About the ration table" %}<p>The cost per course and cost per child stay
+          <p class="mt-3 text-sm text-message-warning-text">
+            No ration table set — cost per course and cost per child stay
             unconfirmed until someone here says how many
-            {{ product.base_unit|unit_plural }} a course is. Set it on the product's page.</p>{% endinfo %}
-          </div>
+            {{ product.base_unit|unit_plural }} a course is.
+          </p>
         {% endif %}
       {% endif %}
 
@@ -165,8 +166,8 @@ The three levels as the steps you take, not definitions: product, then trade ite
           {% if product.weight_values|length > 1 %}
             Their unit weights differ: {{ product.weight_values|join:" g and " }} g.
           {% endif %}
-          {% info "Why this matters" %}<p>A single per&#8209;{{ product.base_unit|unit_words }} figure across them is not one number,
-          which is why each manufacturer's version is recorded as its own trade item.</p>{% endinfo %}
+          A single per&#8209;{{ product.base_unit|unit_words }} figure across them is not one number —
+          which is exactly why the trade item layer exists.
         </div>
       {% endif %}
     </div>
@@ -251,12 +252,12 @@ The three levels as the steps you take, not definitions: product, then trade ite
       </table>
       </div>
     {% else %}
-      <div class="px-4 py-4 text-sm text-gray-600">
-        No trade items yet.{% info "About trade items" %}<p>Nothing can be ordered against a product until at
+      <p class="px-4 py-4 text-sm text-gray-600">
+        No trade items yet. Nothing can be ordered against a product until at
         least one manufacturer's version of it is recorded, and a quote that
         names no trade item cannot be converted to a per&#8209;{{ product.base_unit|unit_words }}
-        price.</p>{% endinfo %}
-      </div>
+        price.
+      </p>
     {% endif %}
   </div>
 {% empty %}
@@ -268,9 +269,12 @@ The three levels as the steps you take, not definitions: product, then trade ite
 {% if orphan_items %}
   <div class="bg-white border border-orange-200 rounded-lg px-4 py-3">
     <div class="text-xs font-semibold text-orange-800">
-      Trade items with no product{% info "About trade items with no product" %}<p>Nothing checks these against a
-      specification, so nothing can say whether they are the right thing.</p>{% endinfo %}
+      Trade items with no product
     </div>
+    <p class="text-xs text-gray-600 mt-1">
+      Nothing checks these against a specification, so nothing can say whether
+      they are the right thing.
+    </p>
     <ul class="text-sm mt-1 list-disc list-inside">
       {% for item in orphan_items %}
         <li>

@@ -10,13 +10,18 @@ Counts, not status words. "Quoting" is a label somebody typed; "3 quotes, last
 heard 12 Jun" is the record.
 {% endcomment %}
 
-{% block page_info %}{% info "About this page" %}<p>Who you can buy from. The counts come from the records: how often each was asked to quote, how many quotes and orders, and the last dated record.</p><p data-testid="suppliers-vs-organisations">To add a manufacturer or trader, use <strong>New supplier</strong>: it finds the company if labs already knows it, or creates it. You do not need to add it under Organisations first. Organisations is the separate list of <strong>partners who buy or hold stock on your behalf</strong>; they are not suppliers.</p>{% if has_program_context %}<p>"Qualifications to check" counts the approvals and registrations usually checked for what this programme buys that are not on file.</p>{% endif %}{% endinfo %}{% endblock %}
-
 {% block supply_content %}
 
 <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Suppliers</h1>
+    <details class="text-sm text-gray-600 mt-1 max-w-2xl"><summary class="cursor-pointer">Supplier or organisation?</summary>
+    <p class="mt-1" data-testid="suppliers-vs-organisations">
+      To add a manufacturer or trader, use <strong>New supplier</strong>: it finds the company if labs already
+      knows it, or creates it. You do not need to add it under Organisations first. Organisations
+      is the separate list of <strong>partners who buy or hold stock on your behalf</strong>; they are not suppliers.
+    </p>
+    </details>
   </div>
   <div class="flex items-center gap-4">
     <p class="text-sm text-gray-600">{{ suppliers|length }} on file</p>
@@ -75,7 +80,9 @@ heard 12 Jun" is the record.
 </div>
 
 {% if not has_program_context %}
-  <p class="mt-4 text-sm text-gray-600">Choose a programme to see quotes and orders.</p>
+  <p class="mt-4 text-sm text-gray-600">
+    Choose a programme to see what each has been asked for and what they answered.
+  </p>
 {% endif %}
 
 {% endblock %}

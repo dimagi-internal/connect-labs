@@ -107,6 +107,10 @@ SCHEMA = {
         # related to, on the main Supply lists and pages. Unset or false: unchanged. Read from the programme layer
         # only. Check `supply_chain_access_preview` for an organisation first.
         "acl_enforce_reads": {"type": "boolean"},
+        # The compact layout (navigation.py): fewer menu entries, tabs atop a page, and each page's explanations
+        # behind an (i) (templates/supply_chain/compact/). Unset or false: Supply as it always was. Chosen by the
+        # chlorine programmes, 2026-11-17.
+        "compact_layout": {"type": "boolean"},
     },
     "additionalProperties": False,
 }

@@ -1,0 +1,81 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+Who we can buy from. Replaces a "Registries" page that no link in the product
+ever pointed at, listed suppliers beside a second copy of the commodity table,
+and showed a GLN column the model has no field for.
+
+Counts, not status words. "Quoting" is a label somebody typed; "3 quotes, last
+heard 12 Jun" is the record.
+{% endcomment %}
+
+{% block page_info %}{% info "About this page" %}<p>Who you can buy from. The counts come from the records: how often each was asked to quote, how many quotes and orders, and the last dated record.</p><p data-testid="suppliers-vs-organisations">To add a manufacturer or trader, use <strong>New supplier</strong>: it finds the company if labs already knows it, or creates it. You do not need to add it under Organisations first. Organisations is the separate list of <strong>partners who buy or hold stock on your behalf</strong>; they are not suppliers.</p>{% if has_program_context %}<p>"Qualifications to check" counts the approvals and registrations usually checked for what this programme buys that are not on file.</p>{% endif %}{% endinfo %}{% endblock %}
+
+{% block supply_content %}
+
+<div class="flex flex-wrap items-end justify-between gap-4 mb-5">
+  <div>
+    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Suppliers</h1>
+  </div>
+  <div class="flex items-center gap-4">
+    <p class="text-sm text-gray-600">{{ suppliers|length }} on file</p>
+    <a href="{% url 'supply_chain:organisations' %}"
+       class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md"
+       title="Partners who buy or hold stock for the programme. Not needed to add a supplier.">Partners (Organisations)</a>
+    <a href="{% url 'supply_chain:supplier_create' %}" class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+      <i class="fa-solid fa-plus mr-1"></i> New supplier
+    </a>
+  </div>
+</div>
+
+{% comment %}A sheet: the supplier's own facts (name, type, city, country) edit where they sit
+(cells.py, supplier_update); the counts are the record's and are not typed.{% endcomment %}
+<div class="sheet-wrap" tabindex="0" role="region" aria-label="Suppliers, scrolls sideways" id="suppliers-sheet" data-live>
+  <table class="sheet min-w-[52rem]" data-testid="suppliers-table">
+    <thead>
+      <tr>
+        <th scope="col" data-sort>Supplier</th>
+        <th scope="col" data-sort>Type</th>
+        <th scope="col" data-sort>City</th>
+        <th scope="col" data-sort>Country</th>
+        <th scope="col" data-sort>Status</th>
+        {% if has_program_context %}
+          <th scope="col" class="text-right" data-sort>Asked to quote</th>
+          <th scope="col" class="text-right" data-sort>Quotes</th>
+          <th scope="col" class="text-right" data-sort>Orders</th>
+          <th scope="col" data-sort>Last dated record</th>
+          <th scope="col" data-sort title="The approvals and registrations usually checked for what this programme buys">Qualifications to check</th>
+        {% endif %}
+        <th scope="col"><span class="sr-only">Open</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for supplier in suppliers %}
+        <tr>
+          <th scope="row" class="text-left font-medium text-gray-900" {% if has_program_context %}{% edit_cell "supplier" supplier.id "name" supplier.name %}{% endif %}>{{ supplier.name }}</th>
+          <td {% if has_program_context %}{% edit_cell "supplier" supplier.id "type" supplier.type %}{% endif %}>{% if supplier.type == "donor" %}<span class="text-blue-900">Donor — supplies in kind</span>{% elif supplier.type %}{{ supplier.type|words|capfirst }}{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
+          <td {% if has_program_context %}{% edit_cell "supplier" supplier.id "city" supplier.city %}{% endif %}>{{ supplier.city|default:"—" }}</td>
+          <td {% if has_program_context %}{% edit_cell "supplier" supplier.id "country" supplier.country %}{% endif %}>{{ supplier.country|default:"—" }}</td>
+          <td class="text-gray-600" title="{{ supplier.status|supplier_status_note }}">{{ supplier.status|humanise|default:"identified" }}</td>
+          {% if has_program_context %}
+            <td class="num text-gray-700">{{ supplier.invitation_count }}</td>
+            <td class="num text-gray-700">{{ supplier.quote_count }}</td>
+            <td class="num text-gray-700">{{ supplier.contract_count }}</td>
+            <td class="text-gray-600">{% if supplier.last_activity %}{{ supplier.last_activity|day }}{% else %}nothing dated{% endif %}</td>
+            <td data-testid="usual-lacks" {% if supplier.usual_lacks %}class="text-amber-800" title="{{ supplier.usual_lacks|join:', ' }}"{% else %}class="text-gray-600"{% endif %}>{% if supplier.usual_lacks %}{{ supplier.usual_lacks|length }} not on file{% else %}—{% endif %}</td>
+          {% endif %}
+          <td class="text-right"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:supplier_detail' supplier.id %}">Open</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="11" class="py-6 text-center text-gray-600">{% if acl_scoped %}You have no suppliers in this programme.{% else %}No suppliers on file yet.{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if not has_program_context %}
+  <p class="mt-4 text-sm text-gray-600">Choose a programme to see quotes and orders.</p>
+{% endif %}
+
+{% endblock %}

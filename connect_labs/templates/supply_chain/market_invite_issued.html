@@ -15,10 +15,10 @@ header, browser history or an access log; only a keyed fingerprint is kept.
 </nav>
 <div class="max-w-3xl bg-white border border-brand-border-light rounded-lg overflow-hidden">
   <div class="px-5 py-4 border-b border-brand-border-light">
-    <h1 class="text-base font-semibold text-gray-900">Invitation for {{ invite.org_name }}{% info "About this invitation" %}<p>They sign in to labs with their own Connect account, open the link,
-      and can then keep {{ invite.org_name|possessive }} profile up to date and bid on open tenders themselves.</p>{% endinfo %}</h1>
+    <h1 class="text-base font-semibold text-gray-900">Invitation for {{ invite.org_name }}</h1>
     <p class="text-sm text-gray-600 mt-0.5">
-      Send this to {{ invite.email|default:"them" }}. It works once, until {{ invite.expires_at|day }}.
+      Send this to {{ invite.email|default:"them" }}. They sign in to labs with their own Connect account, open the link,
+      and can then keep {{ invite.org_name|possessive }} profile up to date and bid on open tenders themselves. It works once, until {{ invite.expires_at|day }}.
     </p>
   </div>
   <div class="px-5 py-4 space-y-3">

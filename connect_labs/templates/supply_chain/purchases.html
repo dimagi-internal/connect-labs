@@ -8,8 +8,6 @@ in for the old Orders list: unpaid invoices, in transit, everything. The full li
 one click away ("All orders") for finance and audit.
 {% endcomment %}
 
-{% block page_info %}{% info "About this page" %}<p>Each purchase runs from sizing to payment on one page. Open a purchase to see its steps and what to do next.</p><p>The filters show what is in progress, unpaid invoices or goods in transit. "All orders (records)" lists every order as a record, for finance and audit.</p>{% endinfo %}{% endblock %}
-
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
@@ -20,6 +18,7 @@ one click away ("All orders") for finance and audit.
 <div class="mb-4 flex flex-wrap items-end justify-between gap-4">
   <div>
     <h2 class="text-xl font-semibold text-brand-deep-purple">Purchases</h2>
+    <p class="mt-0.5 text-sm text-gray-600">Each purchase runs from sizing to payment on one page.</p>
   </div>
   {% if not supply_as_of %}{# a past day is read-only #}
   <div class="flex flex-wrap items-center gap-2">
@@ -74,7 +73,7 @@ one click away ("All orders") for finance and audit.
 </div>
 
 {% if direct %}
-<h3 class="mt-6 mb-2 text-base font-semibold text-brand-deep-purple">Bought outside a tender{% info "About purchases outside a tender" %}<p>Orders recorded directly, without a tender. Each opens its own order page.</p>{% endinfo %}</h3>
+<h3 class="mt-6 mb-2 text-base font-semibold text-brand-deep-purple">Bought outside a tender</h3>
 <div class="bg-white rounded-lg shadow-sm overflow-hidden">
   <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Purchases outside a tender, scrolls sideways">
   <table class="min-w-[44rem] w-full divide-y divide-gray-200" data-testid="direct-table">

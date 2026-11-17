@@ -61,24 +61,18 @@ FileField and a form that does not declare multipart posts an empty
 `request.FILES`, and Django reports it as "this field is required" on the
 upload -- a message that describes the symptom and not the cause.
 {% endcomment %}
-<form method="post" class="max-w-3xl supply-operation-form"
+<form method="post" class="max-w-3xl"
       {% if form.is_multipart %}enctype="multipart/form-data"{% endif %}>
   {% csrf_token %}
 
-  {% comment %}
-  Not overflow-hidden: an (i) opened near the bottom of a short form would be cut off by the card's edge.
-  The header and footer round their own corners instead.
-  {% endcomment %}
-  <div class="bg-white border rounded-lg
+  <div class="bg-white border rounded-lg overflow-hidden
               {% if danger %}border-message-error-border/50{% else %}border-brand-border-light{% endif %}">
 
-    <div class="px-5 py-4 border-b rounded-t-lg
+    <div class="px-5 py-4 border-b
                 {% if danger %}border-message-error-border/40 bg-message-error/20{% else %}border-brand-border-light{% endif %}">
-      {% comment %}What the form is for, and what follows from saving it, sit behind the (i) beside the title
-      (the screen's `intro` and `footnote`). A destructive form keeps its one-line `warning` in view.{% endcomment %}
-      <h1 class="text-base font-semibold {% if danger %}text-message-error-text{% else %}text-gray-900{% endif %}">{{ title }}{% if intro or footnote %}{% info "About this form" %}{% if intro %}<p data-testid="form-intro">{{ intro }}</p>{% endif %}{% if footnote %}<p data-testid="form-footnote">{{ footnote }}</p>{% endif %}{% endinfo %}{% endif %}</h1>
-      {% if warning %}
-        <p class="text-sm mt-0.5 max-w-2xl text-message-error-text/90" data-testid="form-warning">{{ warning }}</p>
+      <h1 class="text-base font-semibold {% if danger %}text-message-error-text{% else %}text-gray-900{% endif %}">{{ title }}</h1>
+      {% if intro %}
+        <p class="text-sm mt-0.5 max-w-2xl {% if danger %}text-message-error-text/90{% else %}text-gray-600{% endif %}">{{ intro }}</p>
       {% endif %}
     </div>
 
@@ -101,7 +95,7 @@ upload -- a message that describes the symptom and not the cause.
       {% block extra_fields %}{% endblock %}
     </div>
 
-    <div class="px-5 py-3 border-t border-brand-border-light bg-gray-50/60 rounded-b-lg flex items-center justify-end gap-3">
+    <div class="px-5 py-3 border-t border-brand-border-light bg-gray-50/60 flex items-center justify-end gap-3">
       {% if cancel_href %}
         <a href="{{ cancel_href }}" class="px-3 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</a>
       {% endif %}
@@ -114,55 +108,16 @@ upload -- a message that describes the symptom and not the cause.
       </button>
     </div>
   </div>
+
+  {% if footnote %}
+    <p class="text-xs text-gray-600 mt-3 max-w-2xl">{{ footnote }}</p>
+  {% endif %}
 </form>
 {% comment %}
 A select marked data-durable-hides="batch expiry" hides those fields while the
 chosen option is data-durable: a dispenser has no batch and no expiry, so the
 form does not ask. Here, after the form, so the fields exist when it runs.
 {% endcomment %}
-{% comment %}
-A field's help text (crispy's <small id="id_<name>_helptext">) moves behind a small (i) beside the field's label,
-the same (i) the {% info %} tag draws, so a form shows its labels and boxes and not a sentence under each.
-Supply forms only: this runs on this page, not in crispy's shared templates. The node itself is moved, id and
-all, so an input's aria-describedby still finds it; with no script the help stays where crispy put it.
-Errors are not touched.
-{% endcomment %}
-<script>
-  (function () {
-    var form = document.querySelector("form.supply-operation-form");
-    if (!form) return;
-    form.querySelectorAll('[id$="_helptext"]').forEach(function (help) {
-      var fieldId = help.id.slice(0, -"_helptext".length);
-      var label = form.querySelector('label[for="' + fieldId + '"]');
-      if (!label || !help.textContent.trim()) return;
-      var info = document.createElement("details");
-      info.className = "supply-info";
-      info.setAttribute("data-testid", "field-info");
-      var summary = document.createElement("summary");
-      var name = "About " + label.textContent.replace(/\*/g, "").trim();
-      summary.setAttribute("aria-label", name);
-      summary.setAttribute("title", name);
-      summary.innerHTML = '<i class="fa-solid fa-circle-info" aria-hidden="true"></i>';
-      var body = document.createElement("div");
-      body.className = "supply-info-body";
-      body.setAttribute("role", "note");
-      help.classList.remove("text-gray-600");
-      help.style.display = "block";
-      body.appendChild(help);
-      info.appendChild(summary);
-      info.appendChild(body);
-      // The label stays a label; the (i) sits just after it on the same line, not inside it
-      // (a click inside a label would also focus its field).
-      label.classList.remove("block");
-      label.classList.add("inline-block");
-      label.insertAdjacentElement("afterend", info);
-      var after = info.nextElementSibling;
-      if (after && getComputedStyle(after).display.indexOf("inline") === 0) {
-        info.insertAdjacentElement("afterend", document.createElement("br"));
-      }
-    });
-  })();
-</script>
 <script>
   (function () {
     document.querySelectorAll("select[data-durable-hides]").forEach(function (select) {

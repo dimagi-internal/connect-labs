@@ -10,18 +10,19 @@ The log says how each notice left, including when it did not: "email off" and
 "no address" are shown as such, never as sent.
 {% endcomment %}
 
-{% block page_info %}{% info "How alerts are sent" %}<p>
-      A message, by email or as a Connect message, when something you chose to watch becomes true or stock moves.
-      Each states what is now true and links to the record: no advice, no ranking.</p><p>Something that stays true is
-      sent once; if it clears and comes back, it is sent again. Alerts are checked every five minutes; Check now runs
-      the same check for this programme straight away.</p><p>A message that could not be sent shows in the sent
-      log and on the Overview chase list.</p>{% endinfo %}{% endblock %}
-
 {% block supply_content %}
 
 <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Alerts</h1>
+    <details class="text-sm text-gray-600 mt-1 max-w-2xl"><summary class="cursor-pointer">How alerts are sent</summary>
+    <p class="mt-1">
+      A message, by email or as a Connect message, when something you chose to watch becomes true or stock moves.
+      Each states what is now true and links to the record — no advice, no ranking. Something that stays true is
+      sent once; if it clears and comes back, it is sent again. A message that could not be sent shows in the sent
+      log and on the Overview chase list.
+    </p>
+    </details>
   </div>
   {% if has_program_context %}
     <div class="flex items-center gap-2">
@@ -113,7 +114,8 @@ The log says how each notice left, including when it did not: "email off" and
               <td colspan="6" class="px-4 py-8 text-center">
                 <p class="text-sm text-gray-600">No alerts yet.</p>
                 <p class="text-sm text-gray-600 mt-1 max-w-lg mx-auto">
-                  Start with stock below its minimum, sent to whoever restocks it.
+                  Start with the one the field asked for: stock below its minimum, sent to whoever
+                  restocks it.
                 </p>
                 <a href="{% url 'supply_chain:alert_create' %}"
                    class="inline-block mt-4 px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
@@ -129,7 +131,8 @@ The log says how each notice left, including when it did not: "email off" and
 </section>
 
 <section>
-  <h2 class="text-sm font-semibold text-gray-900 mb-2">Sent log <span class="ml-1 font-normal text-gray-600">newest 50</span></h2>
+  <h2 class="text-sm font-semibold text-gray-900 mb-1">Sent log</h2>
+  <p class="text-xs text-gray-600 mb-2">Newest 50.</p>
   <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
       <table class="min-w-[52rem] w-full text-sm">
@@ -181,7 +184,7 @@ The log says how each notice left, including when it did not: "email off" and
           {% empty %}
             <tr>
               <td colspan="5" class="px-4 py-6 text-center text-sm text-gray-600">
-                Nothing has been sent yet.
+                Nothing has been sent yet. Alerts are checked every five minutes.
               </td>
             </tr>
           {% endfor %}
