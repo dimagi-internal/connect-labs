@@ -195,19 +195,19 @@ def load_expected_deaths(iso_codes: list[str] | None = None, year: int | None = 
     return rows
 
 
-def _population_of(boundary, children: list, year: int | None):
-    """``(people, where from)`` for a boundary: its own stored population, else (a country) the sum of its admin-1
-    units', but only when every one of them has one: a sum with a unit missing would divide a whole country's deaths by
-    part of its people."""
-    own = resolve("pop_total", boundary, year)
+def _total_of(indicator: str, boundary, children: list, year: int | None):
+    """``(value, where from)`` for a COUNT at a boundary: its own stored value, else (a country) the sum of its admin-1
+    units', but only when every one of them has one: a sum with a unit missing would put the whole country's figure
+    against part of its people. A country has no stored count of its own for anything derived from the grid."""
+    own = resolve(indicator, boundary, year)
     if own and own.value > 0:
-        return own.value, own.source_ref or own.source
+        return own.value, own.source_ref or own.source, own.year
     if boundary.admin_level != 0 or not children:
         return None
-    parts = [resolve("pop_total", c, year) for c in children]
+    parts = [resolve(indicator, c, year) for c in children]
     if any(p is None or p.value <= 0 for p in parts):
         return None
-    return sum(p.value for p in parts), "the sum of its admin-1 populations"
+    return sum(p.value for p in parts), "the sum of its admin-1 units", max(p.year for p in parts)
 
 
 def load_conflict_rate(iso_codes: list[str] | None = None, year: int | None = None) -> list[Row]:
@@ -228,10 +228,10 @@ def load_conflict_rate(iso_codes: list[str] | None = None, year: int | None = No
             children.setdefault(b.iso_code, []).append(b)
     for boundary in boundaries:
         deaths = resolve("conflict_deaths", boundary, year)
-        got = _population_of(boundary, children.get(boundary.iso_code, []), year)
+        got = _total_of("pop_total", boundary, children.get(boundary.iso_code, []), year)
         if not (deaths and got):
             continue
-        people, people_from = got
+        people, people_from, _ = got
         rows.append(
             Row(
                 indicator="conflict_rate",
@@ -630,22 +630,26 @@ def births_audit(iso_codes: list[str] | None = None) -> list[dict]:
     """
     out = []
     # Countries only, and without their outlines: a boundary row carries its whole geometry.
-    countries = boundary_set.owned().filter(admin_level=0).defer("geometry")
+    units = boundary_set.owned().filter(admin_level__in=(0, 1)).defer("geometry")
     if iso_codes:
-        countries = countries.filter(iso_code__in=[c.upper() for c in iso_codes])
+        units = units.filter(iso_code__in=[c.upper() for c in iso_codes])
+    children: dict[str, list] = {}
+    countries = []
+    for b in units:
+        (countries if b.admin_level == 0 else children.setdefault(b.iso_code, [])).append(b)
     for country in countries:
-        ours = resolve("births", country)
-        theirs = resolve("births_wpp", country, ours.year if ours else None)
+        ours = _total_of("births", country, children.get(country.iso_code, []), None)
+        theirs = resolve("births_wpp", country, ours[2] if ours else None)
         if not (ours and theirs and theirs.value > 0):
             continue
-        ratio = ours.value / theirs.value
+        ratio = ours[0] / theirs.value
         out.append(
             {
                 "iso": country.iso_code,
-                "ours": ours.value,
+                "ours": ours[0],
                 "wpp": theirs.value,
                 "ratio": ratio,
-                "year": ours.year,
+                "year": ours[2],
                 "wpp_year": theirs.year,
                 "off": abs(ratio - 1) > BIRTHS_TOLERANCE,
             }
