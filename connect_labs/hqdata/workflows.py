@@ -52,6 +52,25 @@ def pipeline_dao(user, project: HQProject) -> PipelineDataAccess:
     return project_dao(user, project, PipelineDataAccess)
 
 
+def load_page(user, project: HQProject, definition_id: int):
+    """``(definition, render_code)`` of one of the project's pages for a verified member, else None.
+
+    Only a page (no runs) is ever served over a project. The definition is read in the project's own
+    scope, so an id that belongs to another project is simply not found.
+    """
+    from connect_labs.workflow.page_mode import is_page
+
+    dao = workflow_dao(user, project)
+    try:
+        definition = dao.get_definition(int(definition_id))
+        if definition is None or not is_page(definition):
+            return None
+        record = dao.get_render_code(definition.id)
+        return definition, ((record.data or {}).get("component_code") if record else "") or ""
+    finally:
+        dao.close()
+
+
 # -- the project dashboard ---------------------------------------------------------------------------
 
 DASHBOARD_PIPELINE_NAME = "Forms per worker"

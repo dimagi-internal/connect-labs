@@ -121,6 +121,21 @@ def create_project(
     return project
 
 
+def vouch_member(user, project: HQProject, now: datetime | None = None) -> HQProjectMember:
+    """Record that CommCare HQ itself says ``user`` belongs to ``project`` (an embed client that vouches).
+
+    Only ever a plain member, and only of the one project named: an existing role is left as it is, so
+    HQ's word can neither promote anyone nor reach another project. The membership is the same revocable,
+    24-hour record every other path uses, so ``may_use_project`` stays the single place access is decided.
+    """
+    member, created = HQProjectMember.objects.get_or_create(
+        project=project, user=user, defaults={"verified_at": now or timezone.now()}
+    )
+    if not created:
+        HQProjectMember.objects.filter(pk=member.pk).update(verified_at=now or timezone.now())
+    return member
+
+
 def is_commcare_only(user) -> bool:
     """A person who reaches labs only through CommCare: an HQ identity and no Connect token.
 

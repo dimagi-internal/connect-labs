@@ -177,6 +177,10 @@ The frame posts these to its parent, addressed only to your registered origins:
 
 A token posted in at any time **replaces** the frame's session, so when the person signed in to your system changes, post in a token for the new person.
 
+### CommCare HQ: showing a project page
+
+CommCare HQ shows a labs page over a CommCare project to a person who has no Connect login. It is the same handshake with three differences. HQ registers with a **CommCare host**; its resources are `{"kind": "hq_workflow", "id": <page>, "project_id": <project>}`; and `sub` is `cchq:<host>:<username>`. Labs then checks that the person belongs to the project in its own revocable record of membership (or, for a client that **vouches**, records HQ's statement that they do), draws the page in the same sandboxed frame, and lets the frame make one read. See [CommCare project pages](../embedding-labs.md#commcare-project-pages) for the rules, including that membership is re-checked on every request.
+
 ### 6. Errors from the token endpoint
 
 Errors follow OAuth (RFC 6749): a JSON body `{"error": ..., "error_description": ...}`. The description is safe to show to a person.
@@ -186,8 +190,8 @@ Errors follow OAuth (RFC 6749): a JSON body `{"error": ..., "error_description":
 | `invalid_request` | The `assertion` parameter is missing. |
 | `unsupported_grant_type` | `grant_type` is not `urn:ietf:params:oauth:grant-type:jwt-bearer`. |
 | `invalid_client` (401) | Unknown or inactive client id, or the signature does not check out: wrong key, unknown `kid`, or an algorithm labs does not accept (HMAC and `none` never are). |
-| `invalid_grant` | Wrong `aud`, expired, valid for more than five minutes, `jti` missing or already used, no labs account for `sub`, the person has never signed in to labs, or **the person cannot open this report**. |
-| `unauthorized_client` | This client is not allowed to say who people are (not an identity authority). |
+| `invalid_grant` | Wrong `aud`, expired, valid for more than five minutes, `jti` missing or already used, no labs account for `sub`, the person has never signed in to labs, or **the person cannot open this report**. A CommCare client also gets it when `sub` is not `cchq:<its host>:<username>` and, unless it vouches, when the person has not signed in to labs with CommCare. |
+| `unauthorized_client` | This client is not allowed to say who people are (not an identity authority, and not a CommCare client), or a CommCare client asked for a kind that is not a CommCare kind (and the reverse). |
 | `invalid_target` | `resource` is not a labs embed address, or names a report this client is not registered for. |
 
 

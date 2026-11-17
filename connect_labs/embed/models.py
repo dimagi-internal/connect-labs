@@ -12,6 +12,7 @@ from django.utils import timezone
 #: An embed session never outlives a working day, whatever a client asks for.
 MAX_SESSION_SECONDS = 8 * 3600
 
+_HOST = re.compile(r"^[a-z0-9.-]+(:\d{1,5})?$")
 _ORIGIN = re.compile(r"^https://[a-z0-9.-]+(:\d{1,5})?$")
 _LOCAL_ORIGIN = re.compile(r"^http://(localhost|127\.0\.0\.1)(:\d{1,5})?$")
 
@@ -43,6 +44,24 @@ class EmbedClient(models.Model):
             "are (Connect, labs' identity provider). Staff only."
         ),
     )
+    commcare_host = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=(
+            "A CommCare HQ host (www.commcarehq.org). Set, this client may assert ONLY people named "
+            "'cchq:<host>:<username>', and only for kinds that take them (hq_workflow); it is never "
+            "an identity authority. Staff only."
+        ),
+    )
+    vouches_for_membership = models.BooleanField(
+        default=False,
+        help_text=(
+            "For a commcare_host client: labs accepts its assertion that the person belongs to the "
+            "registered project (and creates their labs user, with no email, on first sight). Off: the "
+            "person must already be a verified member in labs, proven from their own HQ sign-in. "
+            "Staff only; it makes HQ the authority on who belongs to the projects it is registered for."
+        ),
+    )
     generated_data_only = models.BooleanField(
         default=False,
         help_text=(
@@ -70,6 +89,13 @@ class EmbedClient(models.Model):
     def clean(self):
         from connect_labs.embed.kinds import get_kind
 
+        if self.commcare_host:
+            if self.identity_authority:
+                raise ValidationError({"commcare_host": "A CommCare client cannot also be an identity authority."})
+            if not _HOST.match(self.commcare_host):
+                raise ValidationError({"commcare_host": "A bare host name, e.g. www.commcarehq.org."})
+        elif self.vouches_for_membership:
+            raise ValidationError({"vouches_for_membership": "Only a CommCare client (commcare_host) can vouch."})
         if bool(self.jwks_uri) == bool(self.jwks):
             raise ValidationError("Give either a JWKS URL or an inline JWKS, not both or neither.")
         if self.jwks_uri and not self.jwks_uri.startswith("https://"):
@@ -80,13 +106,24 @@ class EmbedClient(models.Model):
             raise ValidationError({"allowed_origins": "A list of exact origins, e.g. https://connect.dimagi.com."})
         if not isinstance(self.resources, list):
             raise ValidationError({"resources": "A list of resources."})
+        seen = set()
         for entry in self.resources:
             if not isinstance(entry, dict):
                 raise ValidationError({"resources": "Each resource is an object."})
+            # A session and its cookie are named by (kind, id), so two entries with one pair would be
+            # indistinguishable: which one a token opened would depend on list order.
+            pair = (entry.get("kind"), str(entry.get("id")))
+            if pair in seen:
+                raise ValidationError({"resources": f"{pair[0]} {pair[1]} is listed twice."})
+            seen.add(pair)
             kind = get_kind(entry.get("kind"))
             if kind is None:
                 raise ValidationError({"resources": f"No embeddable kind {entry.get('kind')!r}."})
             kind.validate_entry(entry)
+            kind.validate_for_client(self, entry)
+            if bool(kind.commcare_subjects) != bool(self.commcare_host):
+                who = "CommCare clients (commcare_host)" if kind.commcare_subjects else "Connect-style clients"
+                raise ValidationError({"resources": f"{kind.name!r} resources belong to {who}."})
         if not 60 <= self.session_seconds <= MAX_SESSION_SECONDS:
             raise ValidationError({"session_seconds": f"Between 60 and {MAX_SESSION_SECONDS} seconds."})
 

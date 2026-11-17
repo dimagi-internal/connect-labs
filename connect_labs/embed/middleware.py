@@ -167,31 +167,41 @@ class EmbedSessionMiddleware:
             if (request.headers.get("origin") or "").lower() not in allowed_origins(request):
                 return JsonResponse({"error": "An embedded read must come from the labs frame."}, status=403)
 
-        from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token
-        from connect_labs.labs.models import UserConnectToken
+        # What let this person in may not hold for the whole session (a project member removed
+        # since): the kind says so on every request.
+        if not kind.still_allowed(session):
+            return JsonResponse({"error": "This embed can no longer show that to you."}, status=401)
 
-        try:
-            access_token = get_valid_access_token(session.user)
-            expires_at = UserConnectToken.objects.get(user=session.user).expires_at.timestamp()
-        except (ConnectTokenError, UserConnectToken.DoesNotExist):
-            # The person's Connect sign-in has lapsed: the frame asks its parent to start over.
-            return JsonResponse({"error": "This embed can no longer reach Connect as you."}, status=401)
+        if kind.needs_connect_token:
+            from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token
+            from connect_labs.labs.models import UserConnectToken
 
-        labs_oauth = {"access_token": access_token, "expires_at": expires_at}
-        # What login stores beside the token: the person's organisations, programmes and
-        # opportunities, which labs' own access checks read (labs/access/scopes.py). Cached
-        # per person by the fetch itself, so this is not a Connect call per request.
-        from connect_labs.labs.integrations.connect.oauth import fetch_user_organization_data
+            try:
+                access_token = get_valid_access_token(session.user)
+                expires_at = UserConnectToken.objects.get(user=session.user).expires_at.timestamp()
+            except (ConnectTokenError, UserConnectToken.DoesNotExist):
+                # The person's Connect sign-in has lapsed: the frame asks its parent to start over.
+                return JsonResponse({"error": "This embed can no longer reach Connect as you."}, status=401)
 
-        org_data = fetch_user_organization_data(access_token, owner=session.user.username)
-        if org_data is not None:
-            labs_oauth["organization_data"] = org_data
+            labs_oauth = {"access_token": access_token, "expires_at": expires_at}
+            # What login stores beside the token: the person's organisations, programmes and
+            # opportunities, which labs' own access checks read (labs/access/scopes.py). Cached
+            # per person by the fetch itself, so this is not a Connect call per request.
+            from connect_labs.labs.integrations.connect.oauth import fetch_user_organization_data
+
+            org_data = fetch_user_organization_data(access_token, owner=session.user.username)
+            if org_data is not None:
+                labs_oauth["organization_data"] = org_data
+            session_data = {"labs_oauth": labs_oauth}
+        else:
+            # A kind that reads nothing from Connect: the session carries no token at all.
+            session_data = {}
 
         original_session = getattr(request, "session", None)
         request.user = session.user
         request._cached_user = session.user
-        request.session = _session_class()({"labs_oauth": labs_oauth})
-        request.labs_context = kind.scope(session.entry)
+        request.session = _session_class()(session_data)
+        request.labs_context = kind.context(session.entry)
         request.labs_embed = session
         if request.method not in SAFE_METHODS:
             request._dont_enforce_csrf_checks = True

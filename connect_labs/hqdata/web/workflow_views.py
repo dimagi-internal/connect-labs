@@ -19,6 +19,7 @@ from connect_labs.hqdata.web.views import _project_for, render
 from connect_labs.hqdata.workflows import (
     ProjectWorkflowsUnavailable,
     ensure_project_dashboard,
+    load_page,
     read_project_pipeline_data,
     workflow_dao,
 )
@@ -43,46 +44,18 @@ def _unavailable(request: HttpRequest, exc: _Unavailable) -> HttpResponse:
     return render(request, "hqdata/workflow.html", {"project": exc.project, "error": exc.message}, status=409)
 
 
-@hq_login_required
-@require_http_methods(["GET", "POST"])
-def workflow_list(request: HttpRequest, project_id: int) -> HttpResponse:
-    """The project's pages. POST makes the overview dashboard if the project has none, then opens it."""
-    try:
-        project, dao = _open(request, project_id)
-    except _Unavailable as exc:
-        return _unavailable(request, exc)
-    dao.close()
-    if request.method == "POST":
-        definition_id = ensure_project_dashboard(request.user, project)
-        return redirect("hq:workflow_page", project_id=project.pk, definition_id=definition_id)
-    dao = workflow_dao(request.user, project)
-    try:
-        pages = [d for d in dao.list_definitions() if is_page(d)]
-    finally:
-        dao.close()
-    return render(request, "hqdata/workflows.html", {"project": project, "pages": pages})
+def build_workflow_data(
+    request: HttpRequest, project: HQProject, definition, render_code: str, *, data_url: str
+) -> dict:
+    """The ``workflow-data`` the runner reads to draw one of a project's pages.
 
-
-@hq_login_required
-@require_GET
-def workflow_page(request: HttpRequest, project_id: int, definition_id: int) -> HttpResponse:
-    try:
-        project, dao = _open(request, project_id)
-    except _Unavailable as exc:
-        return _unavailable(request, exc)
-    try:
-        definition = dao.get_definition(definition_id)
-        render_record = dao.get_render_code(definition_id) if definition else None
-    finally:
-        dao.close()
-    if definition is None or not is_page(definition):
-        raise Http404  # a project's runs are not served here, only its pages
-    render_code = (render_record.data or {}).get("component_code") if render_record else ""
-    base = f"/hq/projects/{project.pk}/workflows/{definition.id}/"
+    ``data_url`` is the ONE endpoint the page reads; every other ``apiEndpoints`` entry is ``None``, so
+    nothing reaches a ``/labs/...`` route. Shared by the ``/hq/`` page and the embed frame.
+    """
     user = request.user
     api = {
         "getWorkers": None,
-        "getPipelineData": base + "pipeline-data/",
+        "getPipelineData": data_url,
         "authStatus": None,
         "streamPipelineData": None,
         "queryPipelineRows": None,
@@ -93,7 +66,7 @@ def workflow_page(request: HttpRequest, project_id: int, definition_id: int) -> 
         "updateOpportunityIds": None,
         **dict.fromkeys(RUN_ENDPOINTS),
     }
-    workflow_data = {
+    return {
         "definition": definition.data,
         "definition_id": definition.id,
         "opportunity_id": None,
@@ -128,6 +101,47 @@ def workflow_page(request: HttpRequest, project_id: int, definition_id: int) -> 
         "sandbox": {**host_payload(request), "readable_definitions": []},
         "mapboxToken": settings.MAPBOX_TOKEN or "",
     }
+
+
+@hq_login_required
+@require_http_methods(["GET", "POST"])
+def workflow_list(request: HttpRequest, project_id: int) -> HttpResponse:
+    """The project's pages. POST makes the overview dashboard if the project has none, then opens it."""
+    try:
+        project, dao = _open(request, project_id)
+    except _Unavailable as exc:
+        return _unavailable(request, exc)
+    dao.close()
+    if request.method == "POST":
+        definition_id = ensure_project_dashboard(request.user, project)
+        return redirect("hq:workflow_page", project_id=project.pk, definition_id=definition_id)
+    dao = workflow_dao(request.user, project)
+    try:
+        pages = [d for d in dao.list_definitions() if is_page(d)]
+    finally:
+        dao.close()
+    return render(request, "hqdata/workflows.html", {"project": project, "pages": pages})
+
+
+@hq_login_required
+@require_GET
+def workflow_page(request: HttpRequest, project_id: int, definition_id: int) -> HttpResponse:
+    try:
+        project, dao = _open(request, project_id)
+    except _Unavailable as exc:
+        return _unavailable(request, exc)
+    dao.close()
+    loaded = load_page(request.user, project, definition_id)
+    if loaded is None:
+        raise Http404  # a project's runs are not served here, only its pages
+    definition, render_code = loaded
+    workflow_data = build_workflow_data(
+        request,
+        project,
+        definition,
+        render_code,
+        data_url=f"/hq/projects/{project.pk}/workflows/{definition.id}/pipeline-data/",
+    )
     response = render(
         request,
         "hqdata/workflow.html",
