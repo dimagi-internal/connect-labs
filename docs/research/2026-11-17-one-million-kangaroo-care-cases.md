@@ -3,6 +3,11 @@
 What the Market size page and `cea_market_size` say on 17 November 2026, on production data, and how far to believe it. Every
 figure comes from the scenarios below (change the link's keys to rerun one); none is a forecast.
 
+> **This is the 17 November snapshot.** The living version is the scenario group "Reaching 1M Kangaroo Care cases" in Labs
+> (the Scenario groups tab, or `cea_scenario_groups`): its summary holds what we know, what was decided and what is open, its six
+> scenarios are the ones below, and `manage.py cea_group_report "Reaching 1M Kangaroo Care cases"` reruns them and says what has
+> moved. Continue there; update this note only to record a milestone.
+
 ## The question
 
 Which places should a Kangaroo Care programme work in to reach one million low-birthweight newborns a year at the best
