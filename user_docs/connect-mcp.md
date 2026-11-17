@@ -17,6 +17,8 @@ Normally, editing a workflow's display logic or data fields requires a developer
 
 Claude reads the workflow's current definition, makes the change, and pushes it back to Labs.
 
+You can also build dashboards over a CommCare project in the same way. A page can show tiles, tables and charts drawn from the project's forms and cases, opens at its own address under `/hq/`, and can be embedded inside CommCare HQ. Anyone in the project can open and edit a page; only its author or a project admin can delete it.
+
 ---
 
 ## Prerequisites
@@ -157,6 +159,7 @@ It is about what Claude *sees*, not about whether it may change things.
 
 - **Read how your programme is built.** Workflow definitions, pipeline schemas, indicator registries, CommCare app structure, solicitations and their responses, funds, the organisation directory, admin boundaries, targeting data and microplan sampling.
 - **Edit definitions.** It can change a workflow's configuration and its opportunity list, and create and edit indicator registries. (Render code is the exception: it can only be edited on a workflow whose opportunities are all generated, because render code later runs over real data in whoever opens the page.)
+- **Build and edit CommCare project pages.** It can create and update dashboard pages for a CommCare project — tiles, tables and charts drawn from that project's forms and cases. Anyone in the project can open or edit a page; only its author or a project admin can delete it.
 - **Set work going on the server.** Creating runs, saving snapshots, rebuilding a report's history, warming a visit cache, handing a report down and publishing a benchmark all work. For these the **server** reads the visits and keeps the result; what comes back to Claude is ids, versions, dates and counts.
 - **Make synthetic data.** It can measure a real opportunity on the server and generate a synthetic copy from that measurement — see [Synthetic Data](synthetic-data.md).
 - **Work with cost-effectiveness scenarios.** It can list and open saved scenarios and size one using `cea_scenarios`. It can also plan to a reach target, work at territory (state/province) level, and read place-level cost-effectiveness figures that account for local newborn mortality. Saving a scenario with `cea_scenario_save` requires a full-access token.
@@ -218,8 +221,4 @@ Personal Access Tokens let you connect an MCP client to Labs without going throu
 
 **No-user-visit tokens** can be created and rotated by you directly on the tokens page, with no extra step.
 
-**Full-access (Standard) tokens** require a passkey confirmation through canopy. When you create or rotate a Standard token, a small canopy window opens over the tokens page, you touch your passkey, and the token appears — you stay on the same page throughout. If the window cannot open, a link lets you approve in canopy instead. Every outcome shows a message at the top of the page: for example, if you decline, if canopy does not recognise your account (in which case you can create a no-user-visit token instead), or if canopy is temporarily unreachable.
-
-**Token lifetime** defaults to **1 day** for new tokens. You can type any value up to 365 days when creating a token. Agents doing a single job can request a token that lasts **one hour** and cannot renew — this leaves your own setup untouched and expires automatically when the job is done. When you rotate a token, you can set a new lifetime the same way.
-
-**Expiry
+**Full-access (Standard) tokens** require a passkey confirmation through canopy. When you create or rotate a Standard token, a small canopy window opens over the tokens page, you touch your passkey, and the token appears — you stay on the same page throughout. If the window cannot open, a link lets you approve in canopy instead. Every outcome shows
