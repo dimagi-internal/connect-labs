@@ -247,3 +247,83 @@ class EmbedWorkflowView(WorkflowRunView):
         context["chat_widget_enabled"] = False
         context["embed_config"] = embed_config(self.request.labs_embed)
         return context
+
+
+# --- the CommCare project workflow kind's view and read -----------------------------------
+
+
+def render_hq_workflow(request, session):
+    """One of a CommCare project's pages, drawn for the embed session's person (``hq_kind``).
+
+    The same payload as the page's own ``/hq/`` address, from the same builder; the project comes
+    from the session's registered entry, never from the request, and no Connect token is involved.
+    """
+    from connect_labs.embed.hq_kind import data_path
+    from connect_labs.hqdata.web.workflow_views import build_workflow_data
+    from connect_labs.hqdata.workflows import ProjectWorkflowsUnavailable, load_page
+    from connect_labs.workflow.sandbox import host_frame_src, labs_origin
+
+    kind = get_kind(session.kind)
+    project = kind.project_for(session.entry)
+    context = {"present_mode": True, "chat_widget_enabled": False, "embed_config": embed_config(session)}
+    try:
+        loaded = load_page(request.user, project, session.resource_id) if project else None
+    except ProjectWorkflowsUnavailable as exc:
+        loaded = None
+        context["error"] = str(exc)
+    if loaded is None:
+        context.setdefault("error", "This page is not available.")
+        return render(request, "embed/workflow.html", context)
+    definition, render_code = loaded
+    context.update(
+        {
+            "definition": definition,
+            "render_code": render_code,
+            "has_context": True,
+            "sandboxed": True,
+            "workflow_data": build_workflow_data(
+                request, project, definition, render_code, data_url=data_path(project.pk, definition.id)
+            ),
+        }
+    )
+    response = render(request, "embed/workflow.html", context)
+    # The enforced policy every sandboxed workflow page sets: the frame may be navigated only to its shell.
+    response["Content-Security-Policy"] = host_frame_src(labs_origin(request))
+    response.csp_extra_policy = True
+    return response
+
+
+@require_GET
+def hq_data_view(request, project_id, definition_id):
+    """The one read an ``hq_workflow`` frame makes: the page's pipelines, over its project.
+
+    Reached only through the embed middleware (a live session, from its own frame, on the route its
+    kind allows); the project and page are the SESSION's, so the URL cannot name anything else.
+    """
+    from connect_labs.hqdata.workflows import ProjectWorkflowsUnavailable, read_project_pipeline_data
+
+    _not_found_when_off()
+    session = getattr(request, "labs_embed", None)
+    entry = (session.entry or {}) if session is not None else {}
+    if (
+        session is None
+        or session.kind != "hq_workflow"
+        or str(entry.get("project_id")) != str(project_id)
+        or str(session.resource_id) != str(definition_id)
+    ):
+        raise Http404("no such embed")
+    project = get_kind(session.kind).project_for(entry)
+    if project is None:
+        raise Http404("no such embed")
+    audit.record(
+        Action.READ,
+        resource_type="embed_hq_workflow",
+        resource_id=f"{project.pk}:{definition_id}",
+        user=request.user,
+        metadata={"embed_client": session.client.client_id, "embed_session": session.pk},
+        **get_kind(session.kind).scope(entry),
+    )
+    try:
+        return _json(read_project_pipeline_data(request.user, project, int(definition_id)))
+    except ProjectWorkflowsUnavailable as exc:
+        return _json({"error": str(exc)}, 409)

@@ -35,6 +35,12 @@ SCOPE_KEYS = ("opportunity_id", "program_id")
 
 class EmbedKind:
     name = ""
+    #: Whether a session of this kind acts with the person's stored Connect token (and the
+    #: organisation list fetched with it). A kind that reads nothing from Connect says False.
+    needs_connect_token = True
+    #: Whether this kind is shown to people a CommCare client names (``cchq:<host>:<user>``) instead of
+    #: to labs users a Connect-style identity authority names. Never both.
+    commcare_subjects = False
 
     def validate_entry(self, entry: dict) -> None:
         raise NotImplementedError
@@ -44,6 +50,18 @@ class EmbedKind:
 
     def check_access(self, user, access_token: str, entry: dict) -> str | None:
         raise NotImplementedError
+
+    def context(self, entry: dict) -> dict:
+        """The ``labs_context`` a request of this session carries. By default the resource's scope."""
+        return self.scope(entry)
+
+    def still_allowed(self, session) -> bool:
+        """Re-asked on EVERY request of a live session: is the person still allowed this resource?
+
+        A session lasts up to a working day; what let the person in may not. Default: yes (the kind's
+        reads are checked by the system they go to).
+        """
+        return True
 
     def reads_only_generated(self, user, entry: dict) -> bool:
         return False
@@ -220,3 +238,6 @@ class WorkflowKind(EmbedKind):
 
 
 register(WorkflowKind())
+
+
+from connect_labs.embed import hq_kind  # noqa: E402,F401 -- registers the CommCare project workflow kind
