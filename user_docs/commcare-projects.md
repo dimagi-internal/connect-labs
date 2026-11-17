@@ -82,6 +82,13 @@ With an access token (see below), the tools are `commcare_pipeline_save` and `co
 `commcare_workflow_delete` for the pages. `commcare_workflow_authoring_guide` explains the shape and gives an example.
 Anyone in the project can open and change a page; only its author or a project admin can delete it.
 
+### Saved runs
+
+A page shows live data. **Save a run now** (above the page) freezes the data the page has at that moment, with the
+period it is about, so you can come back to "week 45" as it was and it does not move when the project syncs again.
+Saved runs are listed above the page; open one to see the page drawn from the frozen data. The author of a run or a
+project admin can delete it. Through an access token: `commcare_workflow_run_save`, `_list`, `_get` and `_delete`.
+
 ## Using a project from a script or an AI assistant
 
 **Access tokens** (top right) makes a token that lets a script or an MCP client list your projects, read their

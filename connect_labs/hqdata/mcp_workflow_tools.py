@@ -23,8 +23,12 @@ from connect_labs.hqdata.workflows import (
     ProjectWorkflowsUnavailable,
     create_page,
     delete_page,
+    delete_run,
+    get_run,
+    list_runs,
     load_page,
     read_project_pipeline_data,
+    save_run,
     update_page,
     workflow_dao,
 )
@@ -257,6 +261,115 @@ def commcare_workflow_data(user, project_id=None, workflow_id=None, max_rows=20,
     return {"pipelines": out}
 
 
+_RUN_ID = {"type": "integer", "description": "The saved run's id (from commcare_workflow_run_list)."}
+
+
+def _run_url(project: HQProject, workflow_id: int, run_id: int) -> str:
+    return f"{_url(project, workflow_id)}?run={run_id}"
+
+
+@register(
+    name="commcare_workflow_run_save",
+    description=(
+        "Save a run of a workflow page: freeze the data the page has right now (every pipeline's rows) as a "
+        "completed, saved run, so a report can be kept as it was (for example weekly). The page's own code draws a "
+        "saved run unchanged. period_start / period_end (YYYY-MM-DD) say what span it is about; default today."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "project_id": _PROJECT_ID,
+            "workflow_id": _WORKFLOW_ID,
+            "period_start": {"type": "string"},
+            "period_end": {"type": "string"},
+            "name": {"type": "string", "description": "A label, e.g. 'Week 45'."},
+        },
+        "required": ["project_id", "workflow_id"],
+    },
+    is_write=True,
+)
+def commcare_workflow_run_save(
+    user, project_id=None, workflow_id=None, period_start=None, period_end=None, name="", **_
+):
+    project = _project(user, project_id)
+    if not isinstance(workflow_id, int):
+        raise MCPToolError("INVALID_SCHEMA", "workflow_id is the page's id.")
+    run = _guard(
+        lambda: save_run(user, project, workflow_id, period_start=period_start, period_end=period_end, name=name)
+    )
+    project_event(Action.CREATE, project.pk, user=user, kind="workflow_run")
+    return {**run, "url": _run_url(project, workflow_id, run["id"])}
+
+
+@register(
+    name="commcare_workflow_run_list",
+    description="A workflow page's saved runs, newest first: id, name, period, when it was captured and row counts.",
+    input_schema={
+        "type": "object",
+        "properties": {"project_id": _PROJECT_ID, "workflow_id": _WORKFLOW_ID},
+        "required": ["project_id", "workflow_id"],
+    },
+)
+def commcare_workflow_run_list(user, project_id=None, workflow_id=None, **_):
+    project = _project(user, project_id)
+    if not isinstance(workflow_id, int):
+        raise MCPToolError("INVALID_SCHEMA", "workflow_id is the page's id.")
+    runs = _guard(lambda: list_runs(user, project, workflow_id))
+    return {"runs": [{**r, "url": _run_url(project, workflow_id, r["id"])} for r in runs]}
+
+
+@register(
+    name="commcare_workflow_run_get",
+    description="One saved run: its summary and (up to max_rows per pipeline) the rows it froze.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "project_id": _PROJECT_ID,
+            "workflow_id": _WORKFLOW_ID,
+            "run_id": _RUN_ID,
+            "max_rows": {"type": "integer", "default": 20},
+        },
+        "required": ["project_id", "workflow_id", "run_id"],
+    },
+)
+def commcare_workflow_run_get(user, project_id=None, workflow_id=None, run_id=None, max_rows=20, **_):
+    project = _project(user, project_id)
+    if not isinstance(workflow_id, int) or not isinstance(run_id, int):
+        raise MCPToolError("INVALID_SCHEMA", "workflow_id and run_id are ids.")
+    run = _guard(lambda: get_run(user, project, workflow_id, run_id))
+    cap = max(1, min(int(max_rows or 20), 200))
+    pipelines = ((run.data or {}).get("snapshot") or {}).get("pipelines") or {}
+    summary = next(r for r in list_runs(user, project, workflow_id) if r["id"] == run.id)
+    return {
+        **summary,
+        "url": _run_url(project, workflow_id, run.id),
+        "pipelines": {
+            alias: {"rows": (e.get("rows") or [])[:cap], "row_count": len(e.get("rows") or [])}
+            for alias, e in pipelines.items()
+        },
+    }
+
+
+@register(
+    name="commcare_workflow_run_delete",
+    description="Delete a saved run. Its author or a project admin only.",
+    input_schema={
+        "type": "object",
+        "properties": {"project_id": _PROJECT_ID, "workflow_id": _WORKFLOW_ID, "run_id": _RUN_ID},
+        "required": ["project_id", "workflow_id", "run_id"],
+    },
+    is_write=True,
+)
+def commcare_workflow_run_delete(user, project_id=None, workflow_id=None, run_id=None, **_):
+    project = _project(user, project_id)
+    if not isinstance(workflow_id, int) or not isinstance(run_id, int):
+        raise MCPToolError("INVALID_SCHEMA", "workflow_id and run_id are ids.")
+    is_admin = HQProjectMember.objects.filter(project=project, user=user, role=HQProjectMember.ROLE_ADMIN).exists()
+    _guard(lambda: delete_run(user, project, workflow_id, run_id, is_admin=is_admin))
+    project_event(Action.DELETE, project.pk, user=user, kind="workflow_run")
+    return {"deleted": True}
+
+
 GUIDE = """\
 Workflow pages over a CommCare project
 ======================================
@@ -280,6 +393,9 @@ belong to the project. It reads pipelines you save with commcare_pipeline_save.
                                             pipeline_sources=[{commcare_pipeline_id, alias}])
 3. Look at its data: commcare_workflow_data(project_id, workflow_id)   -- exactly what render code receives
 4. Change it:        commcare_workflow_update(project_id, workflow_id, render_code=...)
+5. Keep it:          commcare_workflow_run_save(project_id, workflow_id, period_start, period_end, name)
+                     freezes the page's data as a saved run; the same render code draws it (the page's
+                     address with ?run=<id>). commcare_workflow_run_list / _get / _delete manage them.
 
 Render code is JSX defining ONE function component:
 

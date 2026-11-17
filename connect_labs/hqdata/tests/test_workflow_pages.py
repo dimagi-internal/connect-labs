@@ -117,3 +117,44 @@ def test_a_run_is_not_served_here_only_a_page(client):
     run_like = dao.create_definition(name="not a page", description="", statuses=[{"id": "a", "label": "A"}])
     dao.close()
     assert client.get(f"/commcare/projects/{project.pk}/workflows/{run_like.id}/").status_code == 404
+
+
+def test_saving_a_run_then_opening_it_draws_the_frozen_data_with_no_live_endpoint(client):
+    user = make_hq_user(client)
+    project = add_project(user)
+    for i, name in enumerate(["ann", "ann", "bob"]):
+        store(project, f"f{i}", name)
+    wid = ensure_project_dashboard(user, project)
+    base = f"/commcare/projects/{project.pk}/workflows/{wid}/"
+    saved = client.post(f"{base}runs/", {"name": "week 45"})
+    assert saved.status_code == 302 and "?run=" in saved["Location"]
+    page = client.get(saved["Location"])
+    assert page.status_code == 200
+    data = workflow_data(page)
+    assert data["apiEndpoints"]["getPipelineData"] is None  # nothing is read live
+    assert data["instance"]["status"] == "completed" and data["instance"]["name"] == "week 45"
+    assert sorted((r["username"], r["forms"]) for r in data["pipeline_data"]["workers"]["rows"]) == [
+        ("ann", 2),
+        ("bob", 1),
+    ]
+    assert "week 45" in client.get(base).content.decode()  # listed on the live page
+
+
+def test_a_run_id_of_another_page_or_project_is_a_404(client):
+    user = make_hq_user(client)
+    project = add_project(user)
+    store(project, "f0", "ann")
+    wid = ensure_project_dashboard(user, project)
+    assert client.get(f"/commcare/projects/{project.pk}/workflows/{wid}/?run=999999").status_code == 404
+    assert client.get(f"/commcare/projects/{project.pk}/workflows/{wid}/?run=abc").status_code == 404
+
+
+def test_a_run_can_be_deleted_by_its_author(client):
+    user = make_hq_user(client)
+    project = add_project(user)
+    store(project, "f0", "ann")
+    wid = ensure_project_dashboard(user, project)
+    base = f"/commcare/projects/{project.pk}/workflows/{wid}/"
+    run_id = client.post(f"{base}runs/")["Location"].split("run=")[1]
+    assert client.post(f"{base}runs/", {"action": "delete", "run": run_id}).status_code == 302
+    assert client.get(f"{base}?run={run_id}").status_code == 404

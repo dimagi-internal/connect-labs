@@ -340,3 +340,31 @@ def test_a_stray_lookup_error_is_not_reported_as_a_missing_page(me, project, pip
     monkeypatch.setattr("connect_labs.hqdata.mcp_workflow_tools.read_project_pipeline_data", boom)
     with pytest.raises(KeyError):
         call("commcare_workflow_data", me, project_id=project.pk, workflow_id=wid)
+
+
+# --- saved runs ------------------------------------------------------------------------------
+
+
+def test_a_run_freezes_the_data_the_page_has_now_and_survives_the_data_changing(me, project, pipeline):
+    from connect_labs.hqdata.workflows import get_run, list_runs, save_run
+
+    wid = make(me, project, pipeline)["workflow_id"]
+    run = save_run(me, project, wid, period_start="2026-11-01", period_end="2026-11-07", name="week 45")
+    assert run["status"] == "completed" and run["rows"] == {"workers": 2} and run["name"] == "week 45"
+    from connect_labs.hqdata.sync import invalidate_project_caches
+
+    HQForm.objects.create(
+        project_id=project.pk,
+        form_id="f9",
+        xmlns="http://x/1",
+        app_id="app1",
+        username="cat",
+        received_on=datetime(2026, 11, 2, 10, tzinfo=timezone.utc),
+        form_json={"id": "f9", "received_on": "2026-11-02T10:00:00Z", "form": {"meta": {"username": "cat"}}},
+    )
+    invalidate_project_caches(project.pk)  # a sync would have done this: the live data moves on
+    live = call("commcare_workflow_data", me, project_id=project.pk, workflow_id=wid)["pipelines"]["workers"]
+    assert live["row_count"] == 3
+    frozen = get_run(me, project, wid, run["id"]).data["snapshot"]["pipelines"]["workers"]["rows"]
+    assert sorted((r["username"], r["forms"]) for r in frozen) == [("ann", 2), ("bob", 1)]
+    assert [r["id"] for r in list_runs(me, project, wid)] == [run["id"]]
