@@ -195,44 +195,65 @@ def load_expected_deaths(iso_codes: list[str] | None = None, year: int | None = 
     return rows
 
 
+def _population_of(boundary, children: list, year: int | None):
+    """``(people, where from)`` for a boundary: its own stored population, else (a country) the sum of its admin-1
+    units', but only when every one of them has one: a sum with a unit missing would divide a whole country's deaths by
+    part of its people."""
+    own = resolve("pop_total", boundary, year)
+    if own and own.value > 0:
+        return own.value, own.source_ref or own.source
+    if boundary.admin_level != 0 or not children:
+        return None
+    parts = [resolve("pop_total", c, year) for c in children]
+    if any(p is None or p.value <= 0 for p in parts):
+        return None
+    return sum(p.value for p in parts), "the sum of its admin-1 populations"
+
+
 def load_conflict_rate(iso_codes: list[str] | None = None, year: int | None = None) -> list[Row]:
     """Reported conflict deaths per 100,000 people a year: ``conflict_deaths`` over the boundary's population.
 
     Written under the UCDP source (see the comment on the row), at the same boundaries ``ucdp.load`` writes.
 
     The year is the conflict window's last year, the population is the nearest the resolver has. A boundary with no
-    population has no rate (never a zero): nothing says how many people the deaths are among.
+    population has no rate (never a zero): nothing says how many people the deaths are among. A country has no
+    population of its own stored (it is the sum of its units'), so its rate divides by that sum, and only when no
+    unit is missing one.
     """
     rows: list[Row] = []
-    for boundary in _boundaries(iso_codes):
-        if boundary.admin_level > 1:
-            continue
+    boundaries = [b for b in _boundaries(iso_codes) if b.admin_level <= 1]
+    children: dict[str, list] = {}
+    for b in boundaries:
+        if b.admin_level == 1:
+            children.setdefault(b.iso_code, []).append(b)
+    for boundary in boundaries:
         deaths = resolve("conflict_deaths", boundary, year)
-        pop = resolve("pop_total", boundary, year)
-        if not (deaths and pop and pop.value > 0):
+        got = _population_of(boundary, children.get(boundary.iso_code, []), year)
+        if not (deaths and got):
             continue
+        people, people_from = got
         rows.append(
             Row(
                 indicator="conflict_rate",
                 boundary=boundary,
                 year=deaths.year,
-                value=deaths.value / pop.value * 100_000,
+                value=deaths.value / people * 100_000,
                 # The UCDP source, not DERIVED: this is the figure the conflict method answers with, and a derived
                 # row is exempt from methods and so could never be targeted on. The population it divides by has
                 # its own source and licence, named in the method text.
                 source=Source.UCDP,
-                source_ref=f"UCDP deaths / population ({pop.source})",
+                source_ref=f"UCDP deaths / population ({people_from})",
                 license_code=License.CC_BY_4,
                 method=(
                     f"Derived: reported conflict deaths a year per 100,000 people = conflict_deaths / pop_total x "
                     f"100,000. Deaths {deaths.value:,.1f} a year ({deaths.source_ref or deaths.source}); population "
-                    f"{pop.value:,.0f} from {pop.source_ref or pop.source}."
+                    f"{people:,.0f} from {people_from}."
                 ),
-                ci_low=deaths.ci_low / pop.value * 100_000 if deaths.ci_low is not None else None,
-                ci_high=deaths.ci_high / pop.value * 100_000 if deaths.ci_high is not None else None,
+                ci_low=deaths.ci_low / people * 100_000 if deaths.ci_low is not None else None,
+                ci_high=deaths.ci_high / people * 100_000 if deaths.ci_high is not None else None,
                 extra={
                     "conflict_deaths": deaths.value,
-                    "pop_total": pop.value,
+                    "pop_total": people,
                     "located_share": (deaths.extra or {}).get("located_share"),
                 },
             )
