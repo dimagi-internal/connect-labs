@@ -7,8 +7,10 @@ read-only frame as ``/hq/``, with one data read. Differences from the Connect-sh
 * no Connect token is stored, asked for or used (``needs_connect_token = False``);
 * the resource names a PROJECT as well as a page (``{"kind": "hq_workflow", "id": <page>, "project_id": <n>}``),
   and the page is read in that project's scope, so another project's page id is not found;
-* membership is re-checked on EVERY request (``still_allowed``): a session lasts up to a working day
-  and a person removed from the project must stop reading when they are removed, not when it ends;
+* labs' own record of membership is re-checked on EVERY request (``still_allowed``), so a session ends as
+  soon as that record is deleted or lapses (24 hours), not when the session would. It does not ask HQ:
+  for a person HQ vouches for, "removed in HQ" reaches labs only as HQ ceasing to assert them, so the
+  longest a removal can go unnoticed is the client's session length. Keep that short;
 * the only route a session may reach is this page's one data read.
 
 Who may be shown it is ``hqdata.access.may_use_project``, labs' own revocable record of membership.
@@ -52,6 +54,13 @@ class HQWorkflowKind(EmbedKind):
         extra = set(entry) - {"kind", "id", "project_id"}
         if extra:
             raise ValidationError(f"An hq_workflow resource names only id and project_id, not {sorted(extra)}.")
+
+    def validate_for_client(self, client, entry):
+        project = self.project_for(entry)
+        if project is None:
+            raise ValidationError(f"No CommCare project {entry.get('project_id')}.")
+        if client.commcare_host and project.hq_host != client.commcare_host:
+            raise ValidationError(f"Project {project.pk} is on {project.hq_host}, not {client.commcare_host}.")
 
     def scope(self, entry):
         # Only for the audit trail: the project's own scope id, which meets no opportunity or programme.
@@ -103,7 +112,7 @@ class HQWorkflowKind(EmbedKind):
         # Nothing here writes, so every write from this frame is refused outright by the middleware --
         # except the frame trading its bootstrap token for its session (its own POST, which is the
         # credential; embed/views.py session_view).
-        return method not in ("GET", "HEAD", "OPTIONS") and path != "/embed/session/"
+        return method not in ("GET", "HEAD", "OPTIONS") and not (method == "POST" and path == "/embed/session/")
 
 
 register(HQWorkflowKind())

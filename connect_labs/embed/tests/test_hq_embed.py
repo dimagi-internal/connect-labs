@@ -367,3 +367,81 @@ def test_the_session_carries_no_connect_session_and_the_users_labs_session_is_un
     client.get(frame)
     assert "labs_oauth" not in client.session
     assert EmbedSession.objects.get().user.username == sub_of()
+
+
+# --- review fixes: a refused assertion changes nothing; the host binds every CommCare client ---------
+
+
+def test_a_replayed_vouching_assertion_does_not_keep_a_membership_alive(client, key, vouching, page, project, member):
+    token = assertion(key, page, sub_of())
+    assert redeem(client, token).status_code == 200
+    old = dj_timezone.now() - timedelta(hours=20)
+    HQProjectMember.objects.filter(project=project, user=member).update(verified_at=old)
+    assert redeem(client, token).status_code == 400  # replayed
+    assert HQProjectMember.objects.get(project=project, user=member).verified_at == old
+
+
+def test_an_assertion_refused_after_the_person_was_seen_creates_nobody(client, key, vouching, page, project):
+    HQProject.objects.filter(pk=project.pk).update(store=HQProject.STORE_EXTERNAL)  # workflows unavailable
+    response = redeem(client, assertion(key, page, sub_of("late@example.org")))
+    assert response.status_code == 400
+    assert not User.objects.filter(username=sub_of("late@example.org")).exists()
+    assert not HQProjectMember.objects.filter(user__username=sub_of("late@example.org")).exists()
+
+
+@pytest.mark.parametrize("name", [{"a": 1}, 12345, "x" * 5000, None])
+def test_a_strange_name_claim_never_breaks_the_grant(client, key, vouching, page, name):
+    response = redeem(client, assertion(key, page, sub_of("named@example.org"), name=name))
+    assert response.status_code == 200
+    assert len(User.objects.get(username=sub_of("named@example.org")).name) <= 100
+
+
+def test_a_project_on_another_host_is_refused_even_when_hq_does_not_vouch(client, key, hq, page, project):
+    HQProject.objects.filter(pk=project.pk).update(hq_host="other.example.org")
+    assert redeem(client, assertion(key, page, sub_of())).status_code == 400
+
+
+def test_registering_a_project_on_another_host_or_a_missing_one_is_refused(key, project, page):
+    for entry in (
+        {"kind": "hq_workflow", "id": page, "project_id": project.pk + 999},
+        {"kind": "hq_workflow", "id": page, "project_id": project.pk},
+    ):
+        HQProject.objects.filter(pk=project.pk).update(hq_host="other.example.org")
+        row = EmbedClient(
+            client_id="hq4",
+            name="HQ",
+            commcare_host=HOST,
+            jwks={"keys": [public_jwk(key)]},
+            allowed_origins=[HQ_ORIGIN],
+            resources=[entry],
+        )
+        with pytest.raises(ValidationError):
+            row.full_clean()
+
+
+def test_one_page_id_cannot_be_listed_twice_for_two_projects(key, project, page, member):
+    second = create_project(member, "second", hq_host=HOST, can_read_domain=lambda: True)
+    row = EmbedClient(
+        client_id="hq5",
+        name="HQ",
+        commcare_host=HOST,
+        jwks={"keys": [public_jwk(key)]},
+        allowed_origins=[HQ_ORIGIN],
+        resources=[
+            {"kind": "hq_workflow", "id": page, "project_id": project.pk},
+            {"kind": "hq_workflow", "id": page, "project_id": second.pk},
+        ],
+    )
+    with pytest.raises(ValidationError):
+        row.full_clean()
+
+
+def test_only_a_post_to_the_session_start_is_exempt_from_the_read_only_rule():
+    from connect_labs.embed.kinds import get_kind
+
+    kind = get_kind("hq_workflow")
+    assert not kind.writes("POST", "/embed/session/")
+    for method in ("PUT", "DELETE", "PATCH"):
+        assert kind.writes(method, "/embed/session/")
+    assert kind.writes("POST", "/embed/hq/1/2/pipeline-data/")
+    assert not kind.writes("GET", "/embed/hq/1/2/pipeline-data/")

@@ -48,6 +48,9 @@ class EmbedKind:
     def scope(self, entry: dict) -> dict:
         raise NotImplementedError
 
+    def validate_for_client(self, client, entry: dict) -> None:
+        """Registration check that needs the client too (admin save). Default: nothing more."""
+
     def check_access(self, user, access_token: str, entry: dict) -> str | None:
         raise NotImplementedError
 

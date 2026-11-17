@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import re
 import secrets
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import timedelta
 from urllib.parse import urlsplit
@@ -34,6 +35,7 @@ from urllib.parse import urlsplit
 from canopy_sdk.contract import JWT_BEARER_GRANT, ContractError, token_checksum
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 from django.urls import reverse
 from django.utils import timezone
 
@@ -126,6 +128,12 @@ def _commcare_person(client: EmbedClient, kind, entry: dict, claims: dict):
     user = User.objects.filter(username=username).first()
     if user is not None and not user.is_active:
         raise EmbedRefused("invalid_grant", "No labs account for that person.", "unknown_user", 400, client)
+    project = kind.project_for(entry)
+    if project is None or project.hq_host != client.commcare_host:
+        # The host binding holds for every CommCare client, vouching or not.
+        raise EmbedRefused(
+            "invalid_target", "That project is not on this client's host.", "project_not_on_host", 400, client
+        )
     if not client.vouches_for_membership:
         if user is None:
             raise EmbedRefused(
@@ -136,15 +144,18 @@ def _commcare_person(client: EmbedClient, kind, entry: dict, claims: dict):
                 client,
             )
         return user
-    project = kind.project_for(entry)
-    if project is None or project.hq_host != client.commcare_host:
-        raise EmbedRefused(
-            "invalid_target", "That project is not on this client's host.", "project_not_on_host", 400, client
-        )
     if user is None:
-        user = user_for_identity(
-            {"username": hq_username, "name": claims.get("name") or ""}, host=client.commcare_host
-        )
+        name = claims.get("name")
+        name = name.strip()[:100] if isinstance(name, str) else ""
+        try:
+            with transaction.atomic():
+                user = user_for_identity({"username": hq_username, "name": name}, host=client.commcare_host)
+        except IntegrityError:  # two first assertions for one person at once: the other one made them
+            user = User.objects.filter(username=username).first()
+            if user is None:
+                raise EmbedRefused(
+                    "invalid_grant", "No labs account for that person.", "unknown_user", 400, client
+                ) from None
     from connect_labs.hqdata.access import vouch_member
 
     vouch_member(user, project)
@@ -202,44 +213,53 @@ def issue(form, request) -> Issued:
             "unauthorized_client", "This client may not show that kind.", "kind_not_for_client", 400, client
         )
 
-    # --- 5. The person. ------------------------------------------------------------------
-    if client.commcare_host:
-        user = _commcare_person(client, kind, entry, claims)
-        access_token = None
-    else:
-        user = get_user_model().objects.filter(username=claims["sub"], is_active=True).first()
-        if user is None:
-            raise EmbedRefused("invalid_grant", "No labs account for that person.", "unknown_user", 400, client)
-        access_token = None
-        if kind.needs_connect_token:
-            from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token
+    # Steps 5-7 are one transaction for a CommCare client: a person created and a membership recorded for
+    # a vouching one are undone if anything after them refuses, so a refused (or replayed) assertion changes
+    # nothing. Not for a Connect-style client: its step 5 may refresh and persist a rotated Connect token,
+    # which a rollback would lose.
+    with transaction.atomic() if client.commcare_host else nullcontext():
+        # --- 5. The person. ------------------------------------------------------------------
+        if client.commcare_host:
+            user = _commcare_person(client, kind, entry, claims)
+            access_token = None
+        else:
+            user = get_user_model().objects.filter(username=claims["sub"], is_active=True).first()
+            if user is None:
+                raise EmbedRefused("invalid_grant", "No labs account for that person.", "unknown_user", 400, client)
+            access_token = None
+            if kind.needs_connect_token:
+                from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token
 
-            try:
-                access_token = get_valid_access_token(user)
-            except ConnectTokenError:
-                # Phase 2 (Connect's jwt-bearer grant) removes this: labs would then get a token
-                # for the person from Connect instead of needing one stored.
-                raise EmbedRefused(
-                    "invalid_grant", "That person has not signed in to labs yet.", "no_connect_token", 400, client
-                ) from None
+                try:
+                    access_token = get_valid_access_token(user)
+                except ConnectTokenError:
+                    # Phase 2 (Connect's jwt-bearer grant) removes this: labs would then get a token
+                    # for the person from Connect instead of needing one stored.
+                    raise EmbedRefused(
+                        "invalid_grant", "That person has not signed in to labs yet.", "no_connect_token", 400, client
+                    ) from None
 
-    # --- 6. May they open it, read as them. ----------------------------------------------
-    refusal = kind.check_access(user, access_token, entry)
-    if refusal:
-        raise EmbedRefused("invalid_grant", refusal, "no_access", 400, client)
-    if client.generated_data_only and not kind.reads_only_generated(user, entry):
-        # Whatever the resources list says: a client limited to generated data (a demo,
-        # the reference example) never shows a real visit, even if registered wrongly.
-        raise EmbedRefused("invalid_target", "This system may show only generated data.", "not_generated", 400, client)
+        # --- 6. May they open it, read as them. ----------------------------------------------
+        refusal = kind.check_access(user, access_token, entry)
+        if refusal:
+            raise EmbedRefused("invalid_grant", refusal, "no_access", 400, client)
+        if client.generated_data_only and not kind.reads_only_generated(user, entry):
+            # Whatever the resources list says: a client limited to generated data (a demo,
+            # the reference example) never shows a real visit, even if registered wrongly.
+            raise EmbedRefused(
+                "invalid_target", "This system may show only generated data.", "not_generated", 400, client
+            )
 
-    # --- 7. The assertion works once. -------------------------------------------------
-    from canopy_sdk.django.stores import DjangoJtiStore
-    from canopy_sdk.stores import Replayed
+        # --- 7. The assertion works once. -------------------------------------------------
+        from canopy_sdk.django.stores import DjangoJtiStore
+        from canopy_sdk.stores import Replayed
 
-    try:
-        DjangoJtiStore().consume([(f"embed:{client.client_id}", claims["jti"], int(claims["exp"]))])
-    except Replayed:
-        raise EmbedRefused("invalid_grant", "This assertion has already been used.", "replayed", 400, client) from None
+        try:
+            DjangoJtiStore().consume([(f"embed:{client.client_id}", claims["jti"], int(claims["exp"]))])
+        except Replayed:
+            raise EmbedRefused(
+                "invalid_grant", "This assertion has already been used.", "replayed", 400, client
+            ) from None
 
     token = secrets.token_urlsafe(32)
     session = EmbedSession.objects.create(

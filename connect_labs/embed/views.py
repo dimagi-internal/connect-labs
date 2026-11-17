@@ -271,6 +271,9 @@ def render_hq_workflow(request, session):
     except ProjectWorkflowsUnavailable as exc:
         loaded = None
         context["error"] = str(exc)
+    except PermissionError:  # membership lapsed since the middleware looked
+        loaded = None
+        context["error"] = "You no longer have access to this page."
     if loaded is None:
         context.setdefault("error", "This page is not available.")
         return render(request, "embed/workflow.html", context)
@@ -327,3 +330,5 @@ def hq_data_view(request, project_id, definition_id):
         return _json(read_project_pipeline_data(request.user, project, int(definition_id)))
     except ProjectWorkflowsUnavailable as exc:
         return _json({"error": str(exc)}, 409)
+    except PermissionError:  # membership lapsed between the middleware's check and the read
+        return _json({"error": "This embed can no longer show that to you."}, 401)

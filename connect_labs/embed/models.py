@@ -106,13 +106,21 @@ class EmbedClient(models.Model):
             raise ValidationError({"allowed_origins": "A list of exact origins, e.g. https://connect.dimagi.com."})
         if not isinstance(self.resources, list):
             raise ValidationError({"resources": "A list of resources."})
+        seen = set()
         for entry in self.resources:
             if not isinstance(entry, dict):
                 raise ValidationError({"resources": "Each resource is an object."})
+            # A session and its cookie are named by (kind, id), so two entries with one pair would be
+            # indistinguishable: which one a token opened would depend on list order.
+            pair = (entry.get("kind"), str(entry.get("id")))
+            if pair in seen:
+                raise ValidationError({"resources": f"{pair[0]} {pair[1]} is listed twice."})
+            seen.add(pair)
             kind = get_kind(entry.get("kind"))
             if kind is None:
                 raise ValidationError({"resources": f"No embeddable kind {entry.get('kind')!r}."})
             kind.validate_entry(entry)
+            kind.validate_for_client(self, entry)
             if bool(kind.commcare_subjects) != bool(self.commcare_host):
                 who = "CommCare clients (commcare_host)" if kind.commcare_subjects else "Connect-style clients"
                 raise ValidationError({"resources": f"{kind.name!r} resources belong to {who}."})
