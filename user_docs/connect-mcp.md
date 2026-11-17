@@ -159,7 +159,7 @@ It is about what Claude *sees*, not about whether it may change things.
 - **Edit definitions.** It can change a workflow's configuration and its opportunity list, and create and edit indicator registries. (Render code is the exception: it can only be edited on a workflow whose opportunities are all generated, because render code later runs over real data in whoever opens the page.)
 - **Set work going on the server.** Creating runs, saving snapshots, rebuilding a report's history, warming a visit cache, handing a report down and publishing a benchmark all work. For these the **server** reads the visits and keeps the result; what comes back to Claude is ids, versions, dates and counts.
 - **Make synthetic data.** It can measure a real opportunity on the server and generate a synthetic copy from that measurement — see [Synthetic Data](synthetic-data.md).
-- **Work with cost-effectiveness scenarios.** It can list and open saved scenarios and size one using `cea_scenarios`. Saving a scenario with `cea_scenario_save` requires a full-access token.
+- **Work with cost-effectiveness scenarios.** It can list and open saved scenarios and size one using `cea_scenarios`. It can also plan to a reach target, work at territory (state/province) level, and read place-level cost-effectiveness figures that account for local newborn mortality. Saving a scenario with `cea_scenario_save` requires a full-access token.
 
 !!! note "Counts and dates are allowed"
     Opportunity-level counts and dates are on the allowed side of the line, as are the contact details of people who submitted something as an organisation. The line is drawn at an individual visit and its values.
@@ -222,6 +222,4 @@ Personal Access Tokens let you connect an MCP client to Labs without going throu
 
 **Token lifetime** defaults to **1 day** for new tokens. You can type any value up to 365 days when creating a token. Agents doing a single job can request a token that lasts **one hour** and cannot renew — this leaves your own setup untouched and expires automatically when the job is done. When you rotate a token, you can set a new lifetime the same way.
 
-**Expiry dates** on the tokens page include the time of day, so you can tell exactly when a token will stop working.
-
-**Agent token requests** appear at the top of the
+**Expiry
