@@ -20,7 +20,8 @@ sea) cannot be put in a territory, are left out of every territory's figure, and
 ``located_share``: the share of the country's coded deaths that were placed, so a country whose war is mostly coded
 "somewhere in the north" says its territory figures are floors.
 
-Licence: CC BY 4.0, https://ucdp.uu.se/downloads/. Method: Sundberg and Melander (2013), Journal of Peace Research 50(4).
+Licence: CC BY 4.0, https://ucdp.uu.se/downloads/. Method: Sundberg and Melander (2013), Journal of Peace
+Research 50(4).
 """
 
 from __future__ import annotations
@@ -149,13 +150,20 @@ def rows_for(events: list[Event], window: range, boundaries: list) -> list[Row]:
     years = len(window)
     inside = [e for e in events if e.year in window]
     by_level = {lvl: {b.pk: b for b in boundaries if b.admin_level == lvl} for lvl in (0, 1)}
-    placed = {lvl: assign(inside, {pk: _polygon(b) for pk, b in bs.items()}, MAX_PRECISION_FOR_TERRITORY) for lvl, bs in by_level.items()}
+    placed = {
+        lvl: assign(inside, {pk: _polygon(b) for pk, b in bs.items()}, MAX_PRECISION_FOR_TERRITORY)
+        for lvl, bs in by_level.items()
+    }
     coded = assign(inside, {pk: _polygon(b) for pk, b in by_level[0].items()}, MAX_PRECISION_FOR_COUNTRY)
     rows: list[Row] = []
     for lvl, bs in by_level.items():
         for pk, b in bs.items():
             best, low, high = (v / years for v in placed[lvl][pk])
-            extra = {"window": [window.start, window.stop - 1], "release": RELEASE, "max_precision": MAX_PRECISION_FOR_TERRITORY}
+            extra = {
+                "window": [window.start, window.stop - 1],
+                "release": RELEASE,
+                "max_precision": MAX_PRECISION_FOR_TERRITORY,
+            }
             if lvl == 0:
                 total = coded[pk][0]
                 extra["located_share"] = (placed[0][pk][0] / total) if total else None
@@ -170,9 +178,10 @@ def rows_for(events: list[Event], window: range, boundaries: list) -> list[Row]:
                     source_url=PORTAL,
                     license_code=License.CC_BY_4,
                     method=(
-                        f"Reported conflict deaths a year: UCDP GED {RELEASE} best estimates of events {window.start} to "
-                        f"{window.stop - 1} placed inside this boundary (coordinates good to admin-1 or better), divided by "
-                        f"{years}. Bounds are UCDP's low and high estimates. Reported deaths, not all deaths."
+                        f"Reported conflict deaths a year: UCDP GED {RELEASE} best estimates of events "
+                        f"{window.start} to {window.stop - 1} placed inside this boundary (coordinates good to "
+                        f"admin-1 or better), divided by {years}. Bounds are UCDP's low and high estimates. "
+                        "Reported deaths, not all deaths."
                     ),
                     ci_low=low,
                     ci_high=high,

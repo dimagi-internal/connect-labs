@@ -84,7 +84,8 @@ class TestTheRows:
     def rows(self, country, events):
         window = range(2023, 2026)
         return {
-            r.boundary.name: r for r in ucdp.rows_for(events, window, [country["ng"], country["west"], country["east"]])
+            r.boundary.name: r
+            for r in ucdp.rows_for(events, window, [country["ng"], country["west"], country["east"]])
         }
 
     def test_deaths_are_a_yearly_mean_over_the_window_with_ucdps_own_bounds(self, country):

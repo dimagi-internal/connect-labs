@@ -115,8 +115,8 @@ class PlanLimits:
 
     ``min_place`` leaves out a place that can give fewer people than that, ``max_countries`` keeps to the countries
     the best plan leans on most, and ``max_conflict`` leaves out a place whose reported conflict deaths (per 100,000
-    people a year, UCDP) are above it. One object so that a new limit is one field here, one in ``Scenario`` (which hands them over as ``limits()``), and its
-    rule in ``market.plan``, not a new argument through every layer between.
+    people a year, UCDP) are above it. One object so that a new limit is one field here, one in ``Scenario`` (which
+    hands them over as ``limits()``), and its rule in ``market.plan``, not a new argument through every layer between.
     """
 
     min_place: float | None = None

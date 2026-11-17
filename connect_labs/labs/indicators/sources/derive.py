@@ -230,7 +230,11 @@ def load_conflict_rate(iso_codes: list[str] | None = None, year: int | None = No
                 ),
                 ci_low=deaths.ci_low / pop.value * 100_000 if deaths.ci_low is not None else None,
                 ci_high=deaths.ci_high / pop.value * 100_000 if deaths.ci_high is not None else None,
-                extra={"conflict_deaths": deaths.value, "pop_total": pop.value, "located_share": (deaths.extra or {}).get("located_share")},
+                extra={
+                    "conflict_deaths": deaths.value,
+                    "pop_total": pop.value,
+                    "located_share": (deaths.extra or {}).get("located_share"),
+                },
             )
         )
     logger.info("derive: %d conflict-rate rows", len(rows))

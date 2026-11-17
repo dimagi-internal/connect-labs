@@ -359,7 +359,9 @@ def plan(rows: list[dict], target: float, limits: PlanLimits | None = None) -> d
     unsafe = [
         r
         for r in able
-        if limits.max_conflict is not None and r.get("conflict_rate") is not None and r["conflict_rate"] > limits.max_conflict
+        if limits.max_conflict is not None
+        and r.get("conflict_rate") is not None
+        and r["conflict_rate"] > limits.max_conflict
     ]
     left_out = {id(r) for r in too_small + unsafe}
     able = [r for r in able if id(r) not in left_out]

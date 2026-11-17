@@ -744,7 +744,8 @@
                   class: 'n',
                   title:
                     'Reported conflict deaths a year per 100,000 people (UCDP, latest three years). Reported, not all: a low figure where few report is weaker evidence.',
-                  text: x.conflict_rate == null ? '–' : x.conflict_rate.toFixed(1),
+                  text:
+                    x.conflict_rate == null ? '–' : x.conflict_rate.toFixed(1),
                 }),
               );
             cells.push(
