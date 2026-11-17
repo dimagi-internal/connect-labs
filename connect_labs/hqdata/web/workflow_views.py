@@ -13,7 +13,8 @@ from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect
 from django.views.decorators.http import require_GET, require_http_methods
 
-from connect_labs.hqdata.models import HQProject, HQProjectMember
+from connect_labs.hqdata.access import is_project_admin
+from connect_labs.hqdata.models import HQProject
 from connect_labs.hqdata.web.decorators import hq_login_required
 from connect_labs.hqdata.web.views import _project_for, render
 from connect_labs.hqdata.workflows import (
@@ -192,9 +193,7 @@ def workflow_page(request: HttpRequest, project_id: int, definition_id: int) -> 
             "has_context": True,
             "run": run,
             "runs": list_runs(request.user, project, definition.id),
-            "is_admin": HQProjectMember.objects.filter(
-                project=project, user=request.user, role=HQProjectMember.ROLE_ADMIN
-            ).exists(),
+            "is_admin": is_project_admin(request.user, project),
         },
     )
     # The enforced policy the workflow page sets: the sandboxed frame may be navigated only to its shell.
@@ -217,9 +216,7 @@ def workflow_runs(request: HttpRequest, project_id: int, definition_id: int) -> 
     page_url = redirect("hq:workflow_page", project_id=project.pk, definition_id=definition_id)
     try:
         if request.POST.get("action") == "delete":
-            is_admin = HQProjectMember.objects.filter(
-                project=project, user=request.user, role=HQProjectMember.ROLE_ADMIN
-            ).exists()
+            is_admin = is_project_admin(request.user, project)
             delete_run(request.user, project, definition_id, int(request.POST.get("run") or 0), is_admin=is_admin)
             messages.success(request, "Saved run deleted.")
             return page_url

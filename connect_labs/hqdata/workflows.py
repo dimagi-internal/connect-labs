@@ -22,6 +22,7 @@ from django.db import transaction
 
 from connect_labs.hqdata.access import require_project
 from connect_labs.hqdata.models import HQProject
+from connect_labs.hqdata.pipelines import find_pipeline, save_pipeline
 from connect_labs.hqdata.scope import hq_scope_id
 from connect_labs.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
 
@@ -41,9 +42,14 @@ def _refuse_external(project: HQProject) -> None:
 
 
 def project_dao(user, project: HQProject, cls=WorkflowDataAccess):
-    """A data access object over this project's workflow records, for a verified member only."""
+    """A data access object over this project's workflow records, for a verified member only.
+
+    Refuses a project that keeps its data in a customer's database unless ``cls`` only holds definitions
+    (pipelines): a workflow's run snapshots hold data and would land in labs.
+    """
     require_project(user, project)
-    _refuse_external(project)
+    if cls is not PipelineDataAccess:
+        _refuse_external(project)
     return cls(opportunity_id=hq_scope_id(project.pk), user=user)
 
 
@@ -82,16 +88,11 @@ DASHBOARD_NAME = "Project overview"
 DASHBOARD_SYSTEM_KEY = "commcare_project_overview"
 
 
-def dashboard_pipeline_schema(project: HQProject) -> dict:
-    """Forms per worker, read from the project's stored forms.
-
-    The data source names the project because a schema must validate on its own; whatever a stored
-    schema says, a read through ``project_dao`` is pinned to the scope it was opened for.
-    """
+def dashboard_pipeline_schema() -> dict:
+    """Forms per worker over the project's stored forms (the data source is stamped on by ``save_pipeline``)."""
     return {
         "grouping_key": "username",
         "terminal_stage": "aggregated",
-        "data_source": {"type": "hq_store", "project_id": project.pk, "store_kind": "forms"},
         "fields": [{"name": "forms", "path": "form.meta.username", "aggregation": "count"}],
     }
 
@@ -110,19 +111,14 @@ def ensure_project_dashboard(user, project: HQProject) -> int:
     """
     from django.db import connection
 
-    workflows, pipelines = workflow_dao(user, project), pipeline_dao(user, project)
+    workflows = workflow_dao(user, project)
     try:
         with transaction.atomic():
             with connection.cursor() as cursor:
                 cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [74_001, project.pk])
-            schema = dashboard_pipeline_schema(project)
-            pipeline = next((p for p in pipelines.list_definitions() if p.name == DASHBOARD_PIPELINE_NAME), None)
-            if pipeline is None:
-                pipeline = pipelines.create_definition(
-                    DASHBOARD_PIPELINE_NAME, "Forms per worker, from this project's stored forms.", schema
-                )
-            elif pipeline.schema != schema:
-                pipelines.update_definition(pipeline.id, schema=schema)
+            pipeline = save_pipeline(
+                user, project, name=DASHBOARD_PIPELINE_NAME, store_kind="forms", schema=dashboard_pipeline_schema()
+            )
             existing = next(
                 (
                     d
@@ -166,23 +162,22 @@ def ensure_project_dashboard(user, project: HQProject) -> int:
             return definition.id
     finally:
         workflows.close()
-        pipelines.close()
 
 
 def _source_alias(source: dict) -> str:
-    return source.get("alias") or f"pipeline_{source.get('commcare_pipeline_id') or source.get('pipeline_id')}"
+    return source.get("alias") or f"pipeline_{source.get('pipeline_id')}"
 
 
-def _hq_pipeline_entry(user, project: HQProject, source: dict, window=None) -> dict:
-    """One ``pipelines`` entry for a source naming a saved ``commcare_pipeline_*`` pipeline of this project."""
+def _pipeline_entry(user, project: HQProject, source: dict, window=None) -> dict:
+    """One ``pipelines`` entry for a source naming a saved pipeline of this project."""
     from connect_labs.hqdata.pipelines import PipelineProblem, config_for, pipeline_rows
     from connect_labs.hqdata.stores import StoreUnavailable
     from connect_labs.workflow.pipeline_reads import _alias_metadata
 
     scope = hq_scope_id(project.pk)
-    pipeline_id = source.get("commcare_pipeline_id")
-    pipeline = project.pipelines.filter(pk=pipeline_id).first() if isinstance(pipeline_id, int) else None
-    if pipeline is None:
+    pipeline_id = source.get("pipeline_id")
+    record = find_pipeline(user, project, pipeline_id=pipeline_id)
+    if record is None:
         error = f"Pipeline {pipeline_id!r} is not in this project."
         return {
             "rows": [],
@@ -197,25 +192,25 @@ def _hq_pipeline_entry(user, project: HQProject, source: dict, window=None) -> d
     error = None
     rows: list[dict] = []
     try:
-        rows = pipeline_rows(user, pipeline, window=window)
+        rows = pipeline_rows(user, project, record, window=window)
     except (PipelineProblem, StoreUnavailable) as exc:
         error = str(exc)
     per_opp = {str(scope): {"row_count": len(rows), "from_cache": False, **({"error": error} if error else {})}}
     try:
         metadata = _alias_metadata(
-            pipeline_id=pipeline.pk,
-            name=pipeline.name,
+            pipeline_id=record.id,
+            name=record.name,
             rows=rows,
             opp_ids=[scope],
             per_opp=per_opp,
-            config=config_for(pipeline),
+            config=config_for(record.schema, record.id),
         )
     except PipelineProblem as exc:
         # One source that cannot run shows its own error; it never takes the page's other sources down with it.
         per_opp[str(scope)]["error"] = per_opp[str(scope)].get("error") or str(exc)
         metadata = {
-            "pipeline_id": pipeline.pk,
-            "pipeline_name": pipeline.name,
+            "pipeline_id": record.id,
+            "pipeline_name": record.name,
             "row_count": len(rows),
             "opportunity_ids": [scope],
             "per_opp": per_opp,
@@ -226,59 +221,28 @@ def _hq_pipeline_entry(user, project: HQProject, source: dict, window=None) -> d
 def read_project_pipeline_data(user, project: HQProject, definition_id: int, *, aliases=None, window=None) -> dict:
     """The ``pipelines`` prop of one of this project's workflows: ``{alias: {"rows", "metadata"}}``.
 
-    A source names either a saved project pipeline (``{"commcare_pipeline_id", "alias"}``: what the
-    ``commcare_pipeline_*`` tools manage) or a pipeline record in the project's workflow store
-    (``{"pipeline_id", "alias"}``: what the overview uses). Computed inline from the project's stored rows
-    (they are labs' own, so there is no download to wait on). Every read passes the project gate again,
-    inside the pipeline, as this member.
+    A source is ``{"pipeline_id", "alias"}``: a pipeline saved in this project (what the ``commcare_pipeline_*``
+    tools manage). Computed inline from the project's stored rows (they are labs' own, so there is no download
+    to wait on). Every read passes the project gate again, inside the pipeline, as this member.
 
     ``aliases`` limits the read to those sources; ``window`` (``(start, end)``, half-open) limits a
     ``period_scoped`` pipeline to that span (see ``pipelines.pipeline_rows``).
     """
-    from connect_labs.workflow.pipeline_reads import _alias_metadata
-
-    scope = hq_scope_id(project.pk)
-    workflows, pipelines = workflow_dao(user, project), pipeline_dao(user, project)
+    workflows = workflow_dao(user, project)
     try:
         definition = workflows.get_definition(definition_id)
         if definition is None:
             return {}
         out: dict[str, dict] = {}
         for source in definition.pipeline_sources or []:
-            if not isinstance(source, dict):
+            if not isinstance(source, dict) or source.get("pipeline_id") is None:
                 continue
             alias = _source_alias(source)
-            if aliases is not None and alias not in aliases:
-                continue
-            if source.get("commcare_pipeline_id") is not None:
-                out[alias] = _hq_pipeline_entry(user, project, source, window)
-                continue
-            pipeline_id = source.get("pipeline_id")
-            record = pipelines.get_definition(pipeline_id) if pipeline_id else None
-            if record is None:
-                continue
-            result = pipelines.execute_pipeline(pipeline_id, scope)
-            rows = result.get("rows") or []
-            error = (result.get("metadata") or {}).get("error")
-            config = pipelines._schema_to_config(record.schema, pipeline_id)
-            per_opp = {
-                str(scope): {"row_count": len(rows), "from_cache": False, **({"error": error} if error else {})}
-            }
-            out[alias] = {
-                "rows": rows,
-                "metadata": _alias_metadata(
-                    pipeline_id=pipeline_id,
-                    name=record.name,
-                    rows=rows,
-                    opp_ids=[scope],
-                    per_opp=per_opp,
-                    config=config,
-                ),
-            }
+            if aliases is None or alias in aliases:
+                out[alias] = _pipeline_entry(user, project, source, window)
         return out
     finally:
         workflows.close()
-        pipelines.close()
 
 
 # -- authoring a project's pages ---------------------------------------------------------------------
@@ -298,8 +262,8 @@ class PageNotFound(LookupError):
     """No such page in this project. Its own type so a stray KeyError is never mistaken for it."""
 
 
-def clean_sources(project: HQProject, sources) -> list[dict]:
-    """``[{"commcare_pipeline_id", "alias"}]`` for pipelines saved in THIS project, or ``PageProblem``.
+def clean_sources(user, project: HQProject, sources) -> list[dict]:
+    """``[{"pipeline_id", "alias"}]`` for pipelines saved in THIS project, or ``PageProblem``.
 
     A source names a saved ``commcare_pipeline_*`` pipeline by id and the alias the page reads it under
     (``pipelines.<alias>.rows``). Nothing else is accepted, so a page cannot point at another project's pipeline,
@@ -311,21 +275,19 @@ def clean_sources(project: HQProject, sources) -> list[dict]:
         raise PageProblem(f"pipeline_sources is a list of at most {MAX_PAGE_SOURCES} entries.")
     out, seen = [], set()
     for entry in sources:
-        if not isinstance(entry, dict) or set(entry) - {"commcare_pipeline_id", "alias"}:
-            raise PageProblem(
-                'Each pipeline source is {"commcare_pipeline_id": <id>, "alias": "<name>"} and nothing else.'
-            )
-        pipeline_id, alias = entry.get("commcare_pipeline_id"), entry.get("alias")
+        if not isinstance(entry, dict) or set(entry) - {"pipeline_id", "alias"}:
+            raise PageProblem('Each pipeline source is {"pipeline_id": <id>, "alias": "<name>"} and nothing else.')
+        pipeline_id, alias = entry.get("pipeline_id"), entry.get("alias")
         if not isinstance(pipeline_id, int) or isinstance(pipeline_id, bool):
-            raise PageProblem("commcare_pipeline_id must be the id of a pipeline saved in this project.")
+            raise PageProblem("pipeline_id must be the id of a pipeline saved in this project.")
         if not isinstance(alias, str) or not _ALIAS.match(alias):
             raise PageProblem("alias starts with a letter and is letters, digits and underscores (at most 41).")
         if alias in seen:
             raise PageProblem(f"alias {alias!r} is used twice.")
-        if not project.pipelines.filter(pk=pipeline_id).exists():
+        if find_pipeline(user, project, pipeline_id=pipeline_id) is None:
             raise PageProblem(f"Pipeline {pipeline_id} is not saved in this project.")
         seen.add(alias)
-        out.append({"commcare_pipeline_id": pipeline_id, "alias": alias})
+        out.append({"pipeline_id": pipeline_id, "alias": alias})
     return out
 
 
@@ -370,7 +332,7 @@ def create_page(
     name = (name or "").strip() if isinstance(name, str) else ""
     if not name or len(name) > 200:
         raise PageProblem("A page needs a name (at most 200 characters).")
-    sources, flags = clean_sources(project, pipeline_sources), clean_config(config)
+    sources, flags = clean_sources(user, project, pipeline_sources), clean_config(config)
     code = _check_render_code(render_code) if render_code is not None else None
     dao = workflow_dao(user, project)
     try:
@@ -413,7 +375,9 @@ def update_page(user, project: HQProject, workflow_id: int, **changes):
         if not name or len(name) > 200:
             raise PageProblem("A page needs a name (at most 200 characters).")
     sources = (
-        clean_sources(project, changes["pipeline_sources"]) if changes.get("pipeline_sources") is not None else None
+        clean_sources(user, project, changes["pipeline_sources"])
+        if changes.get("pipeline_sources") is not None
+        else None
     )
     flags = clean_config(changes["config"]) if changes.get("config") is not None else None
     code = _check_render_code(changes["render_code"]) if changes.get("render_code") is not None else None

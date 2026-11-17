@@ -65,7 +65,7 @@ def make(me, project, pipeline, **extra):
         project_id=project.pk,
         name="Workers",
         render_code=CODE,
-        pipeline_sources=[{"commcare_pipeline_id": pipeline, "alias": "workers"}],
+        pipeline_sources=[{"pipeline_id": pipeline, "alias": "workers"}],
         **extra,
     )
 
@@ -81,9 +81,7 @@ def test_a_member_creates_a_page_that_reads_a_saved_pipeline_and_sees_exactly_wh
     made = make(me, project, pipeline)
     assert made["url"].endswith(f"/commcare/projects/{project.pk}/workflows/{made['workflow_id']}/")
     got = call("commcare_workflow_get", me, project_id=project.pk, workflow_id=made["workflow_id"])
-    assert got["render_code"] == CODE and got["pipeline_sources"] == [
-        {"commcare_pipeline_id": pipeline, "alias": "workers"}
-    ]
+    assert got["render_code"] == CODE and got["pipeline_sources"] == [{"pipeline_id": pipeline, "alias": "workers"}]
     data = call("commcare_workflow_data", me, project_id=project.pk, workflow_id=made["workflow_id"])["pipelines"]
     assert sorted((r["username"], r["forms"]) for r in data["workers"]["rows"]) == [("ann", 2), ("bob", 1)]
     listed = call("commcare_workflow_list", me, project_id=project.pk)["workflows"]
@@ -113,9 +111,9 @@ def test_a_page_updates_in_place_and_a_change_to_the_pipeline_reaches_it(me, pro
 @pytest.mark.parametrize(
     "bad",
     [
-        {"pipeline_sources": [{"commcare_pipeline_id": 999999, "alias": "x"}]},  # not in this project
-        {"pipeline_sources": [{"pipeline_id": 1, "alias": "x"}]},  # a source kind that is not allowed
-        {"pipeline_sources": [{"commcare_pipeline_id": 1, "alias": "1bad"}]},
+        {"pipeline_sources": [{"pipeline_id": 999999, "alias": "x"}]},  # not in this project
+        {"pipeline_sources": [{"commcare_pipeline_id": 1, "alias": "x"}]},  # the retired source kind
+        {"pipeline_sources": [{"pipeline_id": 1, "alias": "1bad"}]},
         {"config": {"sandbox": False}},  # not an author's to choose
         {"config": {"showFilters": "yes"}},
         {"render_code": ""},
@@ -142,7 +140,7 @@ def test_a_page_cannot_name_another_projects_pipeline(me, project, pipeline):
             me,
             project_id=project.pk,
             name="x",
-            pipeline_sources=[{"commcare_pipeline_id": foreign, "alias": "a"}],
+            pipeline_sources=[{"pipeline_id": foreign, "alias": "a"}],
         )
 
 
@@ -239,11 +237,12 @@ def test_one_source_that_cannot_run_shows_its_own_error_and_leaves_the_others_al
         me,
         project_id=project.pk,
         workflow_id=wid,
-        pipeline_sources=[{"commcare_pipeline_id": pipeline, "alias": "workers"}],
+        pipeline_sources=[{"pipeline_id": pipeline, "alias": "workers"}],
     )
-    from connect_labs.hqdata.models import HQPipeline
+    from connect_labs.hqdata.pipelines import find_pipeline
+    from connect_labs.hqdata.tests.conftest import force_schema
 
-    HQPipeline.objects.filter(pk=pipeline).update(schema={"fields": []})  # no longer runnable
+    force_schema(me, project, find_pipeline(me, project, pipeline_id=pipeline), {"fields": []})  # no longer runnable
     other = call("commcare_pipeline_save", me, project_id=project.pk, name="ok", store_kind="forms", schema=SCHEMA)[
         "id"
     ]
@@ -253,8 +252,8 @@ def test_one_source_that_cannot_run_shows_its_own_error_and_leaves_the_others_al
         project_id=project.pk,
         workflow_id=wid,
         pipeline_sources=[
-            {"commcare_pipeline_id": pipeline, "alias": "broken"},
-            {"commcare_pipeline_id": other, "alias": "good"},
+            {"pipeline_id": pipeline, "alias": "broken"},
+            {"pipeline_id": other, "alias": "good"},
         ],
     )
     data = call("commcare_workflow_data", me, project_id=project.pk, workflow_id=wid)["pipelines"]

@@ -2608,6 +2608,7 @@ class PipelineDataAccess(BaseDataAccess):
         description: str,
         schema: dict,
         render_code: str = "",
+        created_by: int | None = None,
     ) -> PipelineDefinitionRecord:
         """Create a new pipeline definition."""
         definition_data = {
@@ -2618,6 +2619,8 @@ class PipelineDataAccess(BaseDataAccess):
             "is_shared": False,
             "shared_scope": "global",
         }
+        if created_by is not None:
+            definition_data["created_by"] = created_by
 
         result = self.labs_api.create_record(
             experiment=self.EXPERIMENT,

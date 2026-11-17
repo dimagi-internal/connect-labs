@@ -141,3 +141,30 @@ def read_customer(customer_db, query, params=None):
             return cur.fetchall()
     finally:
         conn.close()
+
+
+GOOD_SCHEMA = {
+    "grouping_key": "username",
+    "terminal_stage": "aggregated",
+    "fields": [{"name": "forms", "path": "form.meta.username", "aggregation": "count"}],
+}
+
+
+def make_pipeline(project, *, name="per worker", store_kind="forms", schema=None, created_by=None, **narrowing):
+    """Save a pipeline in the project as one of its members (the first, unless ``created_by``); returns the record."""
+    from connect_labs.hqdata.models import HQProjectMember
+    from connect_labs.hqdata.pipelines import save_pipeline
+
+    user = created_by or HQProjectMember.objects.filter(project=project).order_by("pk").first().user
+    return save_pipeline(user, project, name=name, store_kind=store_kind, schema=schema or GOOD_SCHEMA, **narrowing)
+
+
+def force_schema(user, project, record, schema):
+    """Write a schema onto a saved pipeline WITHOUT ``save_pipeline``'s checks."""
+    from connect_labs.hqdata.workflows import pipeline_dao
+
+    dao = pipeline_dao(user, project)
+    try:
+        return dao.update_definition(record.id, schema=schema)
+    finally:
+        dao.close()

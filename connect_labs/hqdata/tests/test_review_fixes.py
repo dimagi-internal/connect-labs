@@ -10,9 +10,10 @@ import connect_labs.hqdata.mcp_tools  # noqa: F401 -- registers the tools
 from connect_labs.hqdata.access import create_project, may_use_project, refresh_memberships
 from connect_labs.hqdata.backends.hq_api import HQApiBackend
 from connect_labs.hqdata.identity import hq_host
-from connect_labs.hqdata.models import HQCase, HQIdentity, HQPipeline, HQProject, HQProjectMember, HQSource
+from connect_labs.hqdata.models import HQCase, HQIdentity, HQProject, HQProjectMember, HQSource
+from connect_labs.hqdata.pipelines import find_pipeline
 from connect_labs.hqdata.sync import drop_labs_cache_copies
-from connect_labs.hqdata.tests.conftest import make_hq_user
+from connect_labs.hqdata.tests.conftest import make_hq_user, make_pipeline
 from connect_labs.hqdata.tests.test_web_views import SCHEMA, add_project, post
 from connect_labs.labs.analysis.config import AnalysisPipelineConfig, DataSourceConfig
 from connect_labs.labs.analysis.utils import get_config_hash
@@ -120,15 +121,14 @@ def test_a_commcare_token_can_follow_and_cancel_the_job_a_sync_hands_back_and_no
 def test_renaming_a_pipeline_to_a_name_in_use_says_so_instead_of_failing(client):
     user = make_hq_user(client)
     project = add_project(user)
-    HQPipeline.objects.create(project=project, name="taken", store_kind="forms", schema={}, created_by=user)
-    mine = HQPipeline.objects.create(project=project, name="mine", store_kind="forms", schema={}, created_by=user)
+    make_pipeline(project, name="taken", created_by=user)
+    mine = make_pipeline(project, name="mine", created_by=user)
     resp = client.post(
-        f"/commcare/projects/{project.pk}/pipelines/{mine.pk}/",
+        f"/commcare/projects/{project.pk}/pipelines/{mine.id}/",
         {"action": "save", "name": "taken", "store_kind": "forms", "schema": SCHEMA},
     )
     assert resp.status_code == 200 and b"already exists" in resp.content
-    mine.refresh_from_db()
-    assert mine.name == "mine"
+    assert find_pipeline(user, project, pipeline_id=mine.id).name == "mine"
 
 
 def test_a_domain_listed_on_the_account_is_not_re_stamped_unless_the_person_can_still_read_it():

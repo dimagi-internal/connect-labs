@@ -353,36 +353,6 @@ class HQSyncRun(models.Model):
         indexes = [models.Index(fields=["source", "-started_at"])]
 
 
-class HQPipeline(models.Model):
-    """A saved pipeline over a project's forms or cases.
-
-    The ``schema`` is the same shape workflows use (fields with a ``path``, an ``aggregation``,
-    a ``grouping_key``...). Its ``data_source`` is NOT stored here: where the data comes from is
-    this row's own project and narrowing, stamped on at run time (``pipelines.config_for``), so
-    a schema can never be pointed at a project the person does not belong to.
-    """
-
-    project = models.ForeignKey(HQProject, on_delete=models.CASCADE, related_name="pipelines")
-    name = models.CharField(max_length=120)
-    store_kind = models.CharField(max_length=8, choices=HQSource.KIND_CHOICES)
-    app_id = models.CharField(max_length=64, blank=True)
-    xmlns = models.CharField(max_length=512, blank=True)
-    case_type = models.CharField(max_length=255, blank=True)
-    schema = models.JSONField(default=dict)
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
-    )
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        app_label = "hqdata"
-        constraints = [models.UniqueConstraint(fields=["project", "name"], name="uniq_hqpipeline_project_name")]
-        ordering = ["name"]
-
-    def __str__(self) -> str:
-        return f"{self.project}: {self.name}"
-
-
 class HQExternalDatabase(models.Model):
     """The customer-hosted PostgreSQL a project keeps its data in (``HQProject.store == "external"``).
 

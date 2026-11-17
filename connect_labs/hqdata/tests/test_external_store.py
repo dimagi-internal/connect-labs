@@ -7,12 +7,12 @@ import pytest
 from connect_labs.hqdata import sync as sync_module
 from connect_labs.hqdata.access import create_project
 from connect_labs.hqdata.external import check_connection, external_store_for, passed, spec_for
-from connect_labs.hqdata.models import HQCase, HQExternalDatabase, HQForm, HQPipeline, HQProject, HQSource, HQSyncRun
+from connect_labs.hqdata.models import HQCase, HQExternalDatabase, HQForm, HQProject, HQSource, HQSyncRun
 from connect_labs.hqdata.pipelines import run_pipeline
 from connect_labs.hqdata.store_schema import SCHEMA_VERSION, ensure_schema
 from connect_labs.hqdata.stores import StoreUnavailable
 from connect_labs.hqdata.sync import OVERLAP, sync_source
-from connect_labs.hqdata.tests.conftest import read_customer
+from connect_labs.hqdata.tests.conftest import make_pipeline, read_customer
 from connect_labs.hqdata.tests.test_sync import T0, FakeBackend, case, form
 from connect_labs.users.tests.factories import UserFactory
 
@@ -277,8 +277,8 @@ def test_every_run_lets_go_of_its_connection(project, forms_source, customer_db)
 
 def test_a_pipeline_reads_from_the_customers_database(project, forms_source, owner, customer_db):
     sync_source(forms_source, FakeBackend([form("f1"), form("f2"), form("f3")]), now=T0)
-    pipeline = HQPipeline.objects.create(
-        project=project,
+    pipeline = make_pipeline(
+        project,
         name="n",
         store_kind="forms",
         schema={
@@ -290,7 +290,7 @@ def test_a_pipeline_reads_from_the_customers_database(project, forms_source, own
     from connect_labs.hqdata.models import HQProjectMember
 
     assert HQProjectMember.objects.filter(project=project, user=owner).exists()
-    result = run_pipeline(owner, pipeline)
+    result = run_pipeline(owner, project, pipeline)
     assert result["count"] == 1 and result["rows"][0]["forms"] == 3
 
 
@@ -363,8 +363,8 @@ def customer_cache_rows(customer_db, project, table):
 @pytest.fixture
 def per_worker(project, forms_source, owner, customer_db):
     sync_source(forms_source, FakeBackend([form("f1"), form("f2"), form("f3")]), now=T0)
-    return HQPipeline.objects.create(
-        project=project,
+    return make_pipeline(
+        project,
         name="per worker",
         store_kind="forms",
         schema={
@@ -378,7 +378,7 @@ def per_worker(project, forms_source, owner, customer_db):
 def test_a_pipeline_stages_and_caches_in_the_customers_database_and_writes_nothing_to_labs(
     project, per_worker, owner, customer_db
 ):
-    result = run_pipeline(owner, per_worker)
+    result = run_pipeline(owner, project, per_worker)
     assert result["count"] == 1 and result["rows"][0]["forms"] == 3
     assert labs_cache_rows(project) == 0
     assert customer_cache_rows(customer_db, project, "labs_raw_visit_cache") == 3
@@ -394,8 +394,8 @@ def test_the_second_run_is_served_from_the_customers_cache_without_reading_the_r
 
     real = pipeline_source.fetch_store_as_visit_dicts
     with mock.patch.object(pipeline_source, "fetch_store_as_visit_dicts", side_effect=real) as fetch:
-        first = run_pipeline(owner, per_worker)
-        second = run_pipeline(owner, per_worker)
+        first = run_pipeline(owner, project, per_worker)
+        second = run_pipeline(owner, project, per_worker)
     assert fetch.call_count == 1 and second["rows"] == first["rows"]
     assert labs_cache_rows(project) == 0
 
@@ -403,17 +403,17 @@ def test_the_second_run_is_served_from_the_customers_cache_without_reading_the_r
 def test_a_sync_that_changes_rows_clears_the_customers_cache_not_just_labs(
     project, per_worker, forms_source, owner, customer_db
 ):
-    run_pipeline(owner, per_worker)
+    run_pipeline(owner, project, per_worker)
     assert customer_cache_rows(customer_db, project, "labs_raw_visit_cache") == 3
     sync_source(forms_source, FakeBackend([form("f4", at=T0 + timedelta(hours=1))]), now=T0 + timedelta(hours=2))
     for table in LABS_CACHE_TABLES:
         assert customer_cache_rows(customer_db, project, table) == 0, table
-    assert run_pipeline(owner, per_worker)["rows"][0]["forms"] == 4
+    assert run_pipeline(owner, project, per_worker)["rows"][0]["forms"] == 4
 
 
 def test_a_non_member_is_refused_and_the_customers_database_is_not_touched(project, per_worker, owner, customer_db):
     with pytest.raises(PermissionError):
-        run_pipeline(UserFactory(), per_worker)
+        run_pipeline(UserFactory(), project, per_worker)
     assert customer_cache_rows(customer_db, project, "labs_raw_visit_cache") == 0
 
 
@@ -423,7 +423,7 @@ def test_labs_own_connection_is_back_after_a_run_and_after_a_failed_one(project,
     from django.db import connection, connections
 
     labs_name = connections["default"].settings_dict["NAME"]
-    run_pipeline(owner, per_worker)
+    run_pipeline(owner, project, per_worker)
     assert (
         connections["default"].settings_dict["NAME"] == labs_name and HQProject.objects.filter(pk=project.pk).exists()
     )
@@ -433,7 +433,7 @@ def test_labs_own_connection_is_back_after_a_run_and_after_a_failed_one(project,
         side_effect=RuntimeError("boom"),
     ):
         with pytest.raises(Exception):
-            run_pipeline(owner, per_worker, force_refresh=True)
+            run_pipeline(owner, project, per_worker, force_refresh=True)
     assert (
         connections["default"].settings_dict["NAME"] == labs_name and HQProject.objects.filter(pk=project.pk).exists()
     )

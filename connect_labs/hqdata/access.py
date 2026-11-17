@@ -35,6 +35,11 @@ def may_use_project(user, project: HQProject, now: datetime | None = None) -> bo
     return HQProjectMember.objects.filter(project=project, user=user, verified_at__gt=now - MEMBERSHIP_TTL).exists()
 
 
+def is_project_admin(user, project: HQProject) -> bool:
+    """Whether the person is an admin of the project (the one who added it, or one made so)."""
+    return HQProjectMember.objects.filter(project=project, user=user, role=HQProjectMember.ROLE_ADMIN).exists()
+
+
 def require_project(user, project: HQProject, now: datetime | None = None) -> None:
     if not may_use_project(user, project, now):
         raise ProjectAccessDenied(f"{user!r} is not a verified member of project {project.pk}")

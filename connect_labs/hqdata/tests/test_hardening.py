@@ -9,8 +9,9 @@ from django.utils import timezone as dj_timezone
 from connect_labs.audit_trail.models import Action, AuditEvent, Outcome
 from connect_labs.hqdata.access import ProjectAccessDenied, create_project
 from connect_labs.hqdata.alerts import stale_projects, sync_state_changed
-from connect_labs.hqdata.models import HQForm, HQPipeline, HQProject
+from connect_labs.hqdata.models import HQForm, HQProject
 from connect_labs.hqdata.pipelines import PipelineProblem, run_pipeline
+from connect_labs.hqdata.tests.conftest import make_pipeline
 from connect_labs.users.tests.factories import UserFactory
 
 pytestmark = pytest.mark.django_db
@@ -41,10 +42,8 @@ def add_form(project, form_id):
 
 @pytest.fixture
 def pipeline(project, alice):
-    return HQPipeline.objects.create(
-        project=project,
-        name="per worker",
-        store_kind="forms",
+    return make_pipeline(
+        project,
         created_by=alice,
         schema={
             "grouping_key": "username",
@@ -60,7 +59,7 @@ def events(project, action):
 
 def test_a_pipeline_read_is_on_the_audit_trail_without_the_data(alice, project, pipeline):
     add_form(project, "f1")
-    run_pipeline(alice, pipeline)
+    run_pipeline(alice, project, pipeline)
     event = events(project, Action.READ).get()
     assert event.user_id == alice.pk and event.outcome == Outcome.SUCCESS
     assert event.metadata == {"kind": "pipeline"}  # an id and a kind: no domain, row or answer
@@ -69,7 +68,7 @@ def test_a_pipeline_read_is_on_the_audit_trail_without_the_data(alice, project, 
 def test_a_refused_read_is_recorded_as_a_denial(project, pipeline):
     stranger = UserFactory()
     with pytest.raises(ProjectAccessDenied):
-        run_pipeline(stranger, pipeline)
+        run_pipeline(stranger, project, pipeline)
     # require_project refuses before the pipeline gate; the pipeline gate itself records its own refusal.
     from connect_labs.hqdata.pipeline_source import check_project_access
 
@@ -87,7 +86,7 @@ def test_a_project_too_big_to_read_whole_says_so_before_loading_it(alice, projec
     for i in range(3):
         add_form(project, f"f{i}")
     with pytest.raises(PipelineProblem, match=r"3 rows.*at most 2"):
-        run_pipeline(alice, pipeline, force_refresh=True)
+        run_pipeline(alice, project, pipeline, force_refresh=True)
 
 
 def test_a_failing_sync_alerts_once_not_on_every_retry(project, caplog):

@@ -11,21 +11,28 @@ from django.shortcuts import redirect
 from django.shortcuts import render as django_render
 from django.views.decorators.http import require_POST
 
-from connect_labs.hqdata.access import may_use_project, visible_projects
+from connect_labs.hqdata.access import is_project_admin, may_use_project, visible_projects
 from connect_labs.hqdata.audit import project_denied
 from connect_labs.hqdata.external import SECURE_SSLMODES, check_connection
 from connect_labs.hqdata.jobs import queue_sync
 from connect_labs.hqdata.models import (
     HQExternalDatabase,
     HQIdentity,
-    HQPipeline,
     HQProject,
-    HQProjectMember,
     HQSource,
     HQSyncRun,
 )
 from connect_labs.hqdata.netguard import HostRefused, check_host, check_port
-from connect_labs.hqdata.pipelines import PipelineProblem, config_for, run_pipeline
+from connect_labs.hqdata.pipelines import (
+    PipelineProblem,
+    SavedPipeline,
+    delete_pipeline,
+    describe,
+    find_pipeline,
+    list_pipelines,
+    run_pipeline,
+    save_pipeline,
+)
 from connect_labs.hqdata.projects import Refused, register_project, set_storage
 from connect_labs.hqdata.store_schema import SCHEMA_NAME_RE
 from connect_labs.hqdata.store_switch import SwitchRefused, switch_store
@@ -52,10 +59,6 @@ def _project_for(request: HttpRequest, project_id: int) -> HQProject:
         project_denied(project_id, request.user, kind="page")
         raise ProjectNotYours
     return project
-
-
-def _is_admin(request: HttpRequest, project: HQProject) -> bool:
-    return HQProjectMember.objects.filter(project=project, user=request.user, role=HQProjectMember.ROLE_ADMIN).exists()
 
 
 @hq_login_required
@@ -107,7 +110,7 @@ def project_detail(request: HttpRequest, project_id: int) -> HttpResponse:
             "project": project,
             "sources": sources,
             "runs": runs,
-            "is_admin": _is_admin(request, project),
+            "is_admin": is_project_admin(request.user, project),
             "members": project.members.select_related("user").order_by("role", "user__name"),
             "form_count": form_count,
             "case_count": case_count,
@@ -156,7 +159,7 @@ _CONNECTION_FIELDS = ("host", "port", "dbname", "schema", "username")
 def project_action(request: HttpRequest, project_id: int) -> HttpResponse:
     project = _project_for(request, project_id)
     action = request.POST.get("action", "")
-    if action in _ADMIN_ONLY and not _is_admin(request, project):
+    if action in _ADMIN_ONLY and not is_project_admin(request.user, project):
         messages.error(request, "Only a project admin can do that.")
         return redirect("hq:project_detail", project_id=project.pk)
     back = redirect("hq:project_detail", project_id=project.pk)
@@ -327,58 +330,53 @@ _EXAMPLE_SCHEMA = {
 }
 
 
-def _pipeline_for(request: HttpRequest, project: HQProject, pipeline_id: int) -> HQPipeline:
-    pipeline = project.pipelines.filter(pk=pipeline_id).first()
-    if pipeline is None:
+def _pipeline_for(request: HttpRequest, project: HQProject, pipeline_id: int):
+    record = find_pipeline(request.user, project, pipeline_id=pipeline_id)
+    if record is None:
         raise Http404
-    return pipeline
+    return record
 
 
-def _apply_pipeline_form(request: HttpRequest, pipeline: HQPipeline) -> str | None:
-    """Copy the posted fields onto ``pipeline``. Returns what is wrong with them, or None."""
-    name = (request.POST.get("name") or "").strip()
-    kind = request.POST.get("store_kind") or pipeline.store_kind
-    if not name:
-        return "Give the pipeline a name."
-    if kind not in (HQSource.KIND_FORMS, HQSource.KIND_CASES):
-        return "Choose forms or cases."
+def _posted_pipeline(request: HttpRequest, store_kind: str) -> tuple[dict | None, str | None]:
+    """The pipeline fields posted by the form, as ``save_pipeline`` keywords, or what is wrong with them."""
+    kind = request.POST.get("store_kind") or store_kind
     try:
         schema = json.loads(request.POST.get("schema") or "")
     except json.JSONDecodeError as exc:
-        return f"The schema is not valid JSON: {exc}"
+        return None, f"The schema is not valid JSON: {exc}"
     if not isinstance(schema, dict):
-        return "The schema must be a JSON object."
-    pipeline.name, pipeline.store_kind, pipeline.schema = name, kind, schema
-    pipeline.app_id = (request.POST.get("app_id") or "").strip() if kind == HQSource.KIND_FORMS else ""
-    pipeline.xmlns = (request.POST.get("xmlns") or "").strip() if kind == HQSource.KIND_FORMS else ""
-    pipeline.case_type = (request.POST.get("case_type") or "").strip() if kind == HQSource.KIND_CASES else ""
-    try:
-        config_for(pipeline)
-    except PipelineProblem as exc:
-        return str(exc)
-    return None
+        return None, "The schema must be a JSON object."
+    return {
+        "name": request.POST.get("name") or "",
+        "store_kind": kind,
+        "schema": schema,
+        "app_id": (request.POST.get("app_id") or "").strip(),
+        "xmlns": (request.POST.get("xmlns") or "").strip(),
+        "case_type": (request.POST.get("case_type") or "").strip(),
+    }, None
 
 
 @hq_login_required
 def pipeline_list(request: HttpRequest, project_id: int) -> HttpResponse:
     project = _project_for(request, project_id)
-    draft = HQPipeline(project=project, store_kind=HQSource.KIND_FORMS, schema=_EXAMPLE_SCHEMA)
+    draft = SavedPipeline(0, "", "forms", "", "", "", _EXAMPLE_SCHEMA, None)
     if request.method == "POST":
-        problem = _apply_pipeline_form(request, draft)
-        if problem is None and project.pipelines.filter(name=draft.name).exists():
-            problem = "A pipeline with that name already exists."
+        fields, problem = _posted_pipeline(request, "forms")
         if problem is None:
-            draft.created_by = request.user
-            draft.save()
-            messages.success(request, "Pipeline saved.")
-            return redirect("hq:pipeline_detail", project_id=project.pk, pipeline_id=draft.pk)
+            try:
+                record = save_pipeline(request.user, project, must_be_new=True, **fields)
+            except PipelineProblem as exc:
+                problem = str(exc)
+            else:
+                messages.success(request, "Pipeline saved.")
+                return redirect("hq:pipeline_detail", project_id=project.pk, pipeline_id=record.id)
         messages.error(request, problem)
     return render(
         request,
         "hqdata/pipelines.html",
         {
             "project": project,
-            "pipelines": project.pipelines.all(),
+            "pipelines": list_pipelines(request.user, project),
             "draft": draft,
             "draft_schema": request.POST.get("schema") or json.dumps(_EXAMPLE_SCHEMA, indent=2),
         },
@@ -388,36 +386,37 @@ def pipeline_list(request: HttpRequest, project_id: int) -> HttpResponse:
 @hq_login_required
 def pipeline_detail(request: HttpRequest, project_id: int, pipeline_id: int) -> HttpResponse:
     project = _project_for(request, project_id)
-    pipeline = _pipeline_for(request, project, pipeline_id)
+    record = _pipeline_for(request, project, pipeline_id)
+    pipeline = describe(record)
     result, error = None, None
     schema_text = json.dumps(pipeline.schema, indent=2)
     if request.method == "POST":
         action = request.POST.get("action")
         if action == "delete":
-            if not (_is_admin(request, project) or pipeline.created_by_id == request.user.pk):
-                messages.error(request, "Only the person who saved it, or a project admin, can delete it.")
+            try:
+                delete_pipeline(request.user, project, record, is_admin=is_project_admin(request.user, project))
+            except PermissionError as exc:
+                messages.error(request, str(exc))
             else:
-                pipeline.delete()
                 messages.success(request, "Pipeline deleted.")
                 return redirect("hq:pipeline_list", project_id=project.pk)
         elif action in ("save", "run"):
             schema_text = request.POST.get("schema") or schema_text
-            problem = _apply_pipeline_form(request, pipeline)
-            if (
-                problem is None
-                and HQPipeline.objects.filter(project=project, name=pipeline.name).exclude(pk=pipeline.pk).exists()
-            ):
-                problem = "A pipeline with that name already exists."
+            fields, problem = _posted_pipeline(request, pipeline.store_kind)
+            if problem is None:
+                try:
+                    record = save_pipeline(request.user, project, pipeline_id=record.id, **fields)
+                except PipelineProblem as exc:
+                    problem = str(exc)
             if problem is not None:
                 error = problem
-                pipeline.refresh_from_db()
+            elif action == "save":
+                messages.success(request, "Pipeline saved.")
+                return redirect("hq:pipeline_detail", project_id=project.pk, pipeline_id=record.id)
             else:
-                if action == "save":
-                    pipeline.save()
-                    messages.success(request, "Pipeline saved.")
-                    return redirect("hq:pipeline_detail", project_id=project.pk, pipeline_id=pipeline.pk)
+                pipeline = describe(record)
                 try:
-                    result = run_pipeline(request.user, pipeline, force_refresh=bool(request.POST.get("fresh")))
+                    result = run_pipeline(request.user, project, record, force_refresh=bool(request.POST.get("fresh")))
                 except PipelineProblem as exc:
                     error = str(exc)
                 except Exception as exc:  # shown, not swallowed: the person wrote this schema

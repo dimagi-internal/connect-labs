@@ -13,9 +13,10 @@ from __future__ import annotations
 from django.conf import settings
 
 from connect_labs.audit_trail.models import Action
+from connect_labs.hqdata.access import is_project_admin
 from connect_labs.hqdata.audit import project_event
 from connect_labs.hqdata.mcp_tools import _PROJECT_ID, _project
-from connect_labs.hqdata.models import HQProject, HQProjectMember
+from connect_labs.hqdata.models import HQProject
 from connect_labs.hqdata.pipelines import PipelineProblem
 from connect_labs.hqdata.workflows import (
     PageNotFound,
@@ -118,7 +119,7 @@ def commcare_workflow_get(user, project_id=None, workflow_id=None, **_):
         "Create a workflow page over a CommCare project: render_code (JSX defining function WorkflowUI({definition, "
         "pipelines, scope})) drawn in the standard sandboxed runner, reading pipelines saved with "
         "commcare_pipeline_save. "
-        "pipeline_sources is [{commcare_pipeline_id, alias}]; the page reads pipelines.<alias>.rows. Read "
+        "pipeline_sources is [{pipeline_id, alias}]; the page reads pipelines.<alias>.rows. Read "
         "commcare_workflow_authoring_guide first. Returns the page's address."
     ),
     input_schema={
@@ -132,8 +133,8 @@ def commcare_workflow_get(user, project_id=None, workflow_id=None, **_):
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "properties": {"commcare_pipeline_id": {"type": "integer"}, "alias": {"type": "string"}},
-                    "required": ["commcare_pipeline_id", "alias"],
+                    "properties": {"pipeline_id": {"type": "integer"}, "alias": {"type": "string"}},
+                    "required": ["pipeline_id", "alias"],
                 },
             },
             "config": {
@@ -219,7 +220,7 @@ def commcare_workflow_delete(user, project_id=None, workflow_id=None, **_):
     project = _project(user, project_id)
     if not isinstance(workflow_id, int):
         raise MCPToolError("INVALID_SCHEMA", "workflow_id is the page's id.")
-    is_admin = HQProjectMember.objects.filter(project=project, user=user, role=HQProjectMember.ROLE_ADMIN).exists()
+    is_admin = is_project_admin(user, project)
     _guard(lambda: delete_page(user, project, workflow_id, is_admin=is_admin))
     project_event(Action.DELETE, project.pk, user=user, kind="workflow")
     return {"deleted": True}
@@ -364,7 +365,7 @@ def commcare_workflow_run_delete(user, project_id=None, workflow_id=None, run_id
     project = _project(user, project_id)
     if not isinstance(workflow_id, int) or not isinstance(run_id, int):
         raise MCPToolError("INVALID_SCHEMA", "workflow_id and run_id are ids.")
-    is_admin = HQProjectMember.objects.filter(project=project, user=user, role=HQProjectMember.ROLE_ADMIN).exists()
+    is_admin = is_project_admin(user, project)
     _guard(lambda: delete_run(user, project, workflow_id, run_id, is_admin=is_admin))
     project_event(Action.DELETE, project.pk, user=user, kind="workflow_run")
     return {"deleted": True}
@@ -390,7 +391,7 @@ belong to the project. It reads pipelines you save with commcare_pipeline_save.
                 "fields": [{"name": "case_type", "path": "case.case_type", "aggregation": "first"}]}
      then count rows per case_type with a plain JS reduce.
 2. Make a page:      commcare_workflow_create(project_id, name, render_code,
-                                            pipeline_sources=[{commcare_pipeline_id, alias}])
+                                            pipeline_sources=[{pipeline_id, alias}])
 3. Look at its data: commcare_workflow_data(project_id, workflow_id)   -- exactly what render code receives
 4. Change it:        commcare_workflow_update(project_id, workflow_id, render_code=...)
 5. Keep it:          commcare_workflow_run_save(project_id, workflow_id, period_start, period_end, name)
