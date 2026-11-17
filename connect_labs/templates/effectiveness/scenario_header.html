@@ -3,18 +3,17 @@
 {% if loaded %}
 <div class="card scn-head" data-testid="scenario-header">
   {% if loaded.group %}
-  <p class="muted" style="margin:0 0 4px">
-    <a href="{{ loaded.group.path }}">{{ loaded.group.name }}</a> · scenario {{ loaded.group.position }} of {{ loaded.group.count }}
-    {% if loaded.group.previous %} · <a href="{{ loaded.group.previous.open_path }}">&larr; {{ loaded.group.previous.name }}</a>{% endif %}
-    {% if loaded.group.next %} · <a href="{{ loaded.group.next.open_path }}">{{ loaded.group.next.name }} &rarr;</a>{% endif %}
-    · <a href="{{ loaded.group.path }}">compare them</a>
-  </p>
+  <div class="trail">
+    <span class="where">{{ loaded.group.name }} · scenario {{ loaded.group.position }} of {{ loaded.group.count }}</span>
+    {% if loaded.group.previous %}<a class="btn small" href="{{ loaded.group.previous.open_path }}" title="{{ loaded.group.previous.name }}">&larr; Previous</a>{% endif %}
+    {% if loaded.group.next %}<a class="btn small" href="{{ loaded.group.next.open_path }}" title="{{ loaded.group.next.name }}">Next &rarr;</a>{% endif %}
+    <a class="btn small" href="{{ loaded.group.path }}">Compare all {{ loaded.group.count }}</a>
+  </div>
   {% endif %}
-  <h2 style="margin:0 0 4px">{{ loaded.name }}</h2>
+  <h2>{{ loaded.name }}</h2>
   {% if loaded.derived_from %}<p class="muted" style="margin:0 0 4px">Made from <a href="{{ loaded.derived_from.open_path }}">{{ loaded.derived_from.name }}</a></p>{% endif %}
-  {% if loaded.note %}<p style="margin:0 0 6px; white-space:pre-wrap">{{ loaded.note }}</p>{% endif %}
-  {% if loaded.sets %}<p class="muted" style="margin:0"><b>Sets:</b> {{ loaded.sets|join:" · " }}</p>
-  {% else %}<p class="muted" style="margin:0"><b>Sets:</b> nothing: the models as published.</p>{% endif %}
-  {% if loaded.models_changed %}<p class="lo" style="margin:4px 0 0">The models have changed since this was saved ({{ loaded.models_changed|join:", " }}): its numbers may differ from its note.</p>{% endif %}
+  {% if loaded.note %}<p class="note">{{ loaded.note }}</p>{% endif %}
+  <ul class="sets"><li class="lead">Sets</li>{% for x in loaded.sets %}<li>{{ x }}</li>{% empty %}<li>nothing: the models as published</li>{% endfor %}</ul>
+  {% if loaded.models_changed %}<p class="lo" style="margin:6px 0 0">The models have changed since this was saved ({{ loaded.models_changed|join:", " }}): its numbers may differ from its note.</p>{% endif %}
 </div>
 {% endif %}

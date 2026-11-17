@@ -136,9 +136,23 @@ CHARTS = (
 )
 
 
+def shortened(names: list[str], ids: list[int]) -> dict[int, str]:
+    """The scenarios' names without what they all start with ("KC 1M · "), so a chart label says what differs."""
+    prefix = ""
+    if len(names) > 1:
+        first, last = min(names), max(names)
+        i = 0
+        while i < min(len(first), len(last)) and first[i] == last[i]:
+            i += 1
+        prefix = first[:i]
+        prefix = prefix[: prefix.rfind(" · ") + 3] if " · " in prefix else ""
+    return {i: (n[len(prefix) :] if prefix else n) for i, n in zip(ids, names, strict=True)}
+
+
 def charts(data: dict) -> list[dict]:
     """The scenarios as horizontal bars on one scale per result, best marked, with the range where there is one."""
     by_key = {r["key"]: r for r in data["attributes"]}
+    short = shortened([s["name"] for s in data["scenarios"]], [s["id"] for s in data["scenarios"]])
     out = []
     for key, title, hint, ranged in CHARTS:
         unit = by_key[key]["unit"]
@@ -158,6 +172,7 @@ def charts(data: dict) -> list[dict]:
                 {
                     "id": s["id"],
                     "name": s["name"],
+                    "short": short[s["id"]],
                     "text": show(unit, v),
                     "width": 0 if v is None else v / top * 100,
                     "lo": None if lo is None else lo / top * 100,
@@ -171,6 +186,31 @@ def charts(data: dict) -> list[dict]:
             )
         out.append({"key": key, "title": title, "hint": hint, "rows": rows})
     return out
+
+
+def landing(group: dict) -> dict:
+    """A group as its landing card: what it is, and each scenario with what it gave (from what is stored)."""
+    rows = []
+    for s in group["scenarios"]:
+        h = s.get("headline") or {}
+        rows.append(
+            {
+                "id": s["id"],
+                "number": len(rows) + 1,
+                "name": s["name"],
+                "why": first_sentence(s["note"]),
+                "open_path": s["open_path"],
+                "deaths": show("count", h.get("deaths")) if h else None,
+                "multiple": show("multiple", h.get("multiple")) if h else None,
+            }
+        )
+    best = max((s["headline"]["deaths"] for s in group["scenarios"] if s.get("headline")), default=None)
+    worst = min((s["headline"]["deaths"] for s in group["scenarios"] if s.get("headline")), default=None)
+    return {
+        **group,
+        "rows": rows,
+        "span": None if best is None else f"{show('count', worst)} to {show('count', best)} deaths averted a year",
+    }
 
 
 def cards(data: dict) -> list[dict]:
@@ -295,7 +335,8 @@ class GroupListView(ScenarioPageGate, View):
         groups = scenario_groups.listing(request.user)
         if request.GET.get("format") == "json":
             return JsonResponse({"groups": groups})
-        return render(request, "effectiveness/groups.html", {"groups": groups})
+        shown = scenario_groups.listing(request.user, headlines=True)
+        return render(request, "effectiveness/groups.html", {"groups": [landing(g) for g in shown]})
 
     def post(self, request):
         try:

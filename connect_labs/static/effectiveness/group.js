@@ -2,7 +2,8 @@
  * typed JSON (`#group-data`); nothing is built from model text as HTML. */
 (function () {
   'use strict';
-  var data = JSON.parse(document.getElementById('group-data').textContent);
+  var node = document.getElementById('group-data');
+  var data = node ? JSON.parse(node.textContent) : {};
   var csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
 
   function send(url, method, body, stateId, done) {
@@ -48,5 +49,14 @@
       send(data.baseline, 'POST', {}, 'b-state', function () {
         location.reload();
       });
+    });
+
+  // "Compare against": choosing a scenario reloads the page with it as the reference.
+  var pick = document.getElementById('ref-pick');
+  if (pick)
+    pick.addEventListener('change', function () {
+      var u = new URL(window.location.href);
+      u.searchParams.set('ref', pick.value);
+      window.location.assign(u.toString());
     });
 })();

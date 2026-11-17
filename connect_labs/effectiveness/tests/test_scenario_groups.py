@@ -64,6 +64,12 @@ class TestComparing:
         got = compare.compare([self.item(1, 1000, 100.0), self.item(2, 1000, 100.0, max_remote="40")])["scenarios"]
         assert got[0]["best"] == [] and got[1]["best"] == []
 
+    def test_a_tie_for_the_top_is_nobodys_win_but_a_clear_leader_is_marked(self):
+        got = compare.compare([self.item(1, 900, 100.0), self.item(2, 1000, 100.0), self.item(3, 1000, 100.0)])
+        assert "deaths" not in got["scenarios"][1]["best"] and "deaths" not in got["scenarios"][2]["best"]
+        lead = compare.compare([self.item(1, 900, 100.0), self.item(2, 1000, 100.0)])["scenarios"][1]
+        assert "deaths" in lead["best"]
+
     def test_another_scenario_can_be_the_reference(self):
         got = compare.compare([self.item(1, 1000, 100.0), self.item(2, 1200, 130.0)], reference=2)
         assert got["reference"] == 2 and got["scenarios"][0]["delta"]["deaths"] == pytest.approx(-16.666, abs=0.01)
@@ -262,7 +268,8 @@ class TestPages:
 
     def test_the_list_page_names_each_group_and_its_scenarios(self, client, seen):
         body = client.get(reverse("cea:groups")).content.decode()
-        assert "A million" in body and "one" in body and "two" in body
+        assert "A million" in body and 'data-testid="group-card"' in body
+        assert "Compare the 2 scenarios" in body and body.count("Open in Workspace") == 2
 
     def test_a_group_is_made_edited_baselined_and_deleted_over_http(self, client, ann, seen):
         made = client.post(
@@ -286,7 +293,7 @@ class TestPages:
         body = client.get(reverse("cea:workspace"), {"scenario": second.pk}).content.decode()
         assert 'data-testid="scenario-header"' in body
         assert "A million" in body and "scenario 2 of 2" in body and "Why two." in body
-        assert "Limits: remote at most 40" in body and "&larr; one" in body
+        assert "Limits: remote at most 40" in body and "&larr; Previous" in body and "Compare all 2" in body
 
 
 @pytest.mark.django_db
@@ -358,3 +365,12 @@ class TestTheGroupPageIsQuickAndReadable:
             assert canopy.PAGE_SCOPES[page] == ("targeting:read", "scenarios:read") and page in canopy.PAGE_TITLES
         assert canopy.SCOPE_TOOLS["scenarios:read"] == {"cea_scenarios", "cea_scenario_groups"}
         assert "scenarios:read" in canopy.SCOPE_LABELS
+
+
+def test_a_charts_labels_drop_what_every_name_starts_with():
+    from connect_labs.effectiveness.views.groups import shortened
+
+    got = shortened(["KC 1M · 1 · flat", "KC 1M · 2 · scaled", "KC 1M · 3 · ceilings"], [1, 2, 3])
+    assert got == {1: "1 · flat", 2: "2 · scaled", 3: "3 · ceilings"}
+    assert shortened(["Only one"], [1]) == {1: "Only one"}
+    assert shortened(["Alpha", "Beta"], [1, 2]) == {1: "Alpha", 2: "Beta"}

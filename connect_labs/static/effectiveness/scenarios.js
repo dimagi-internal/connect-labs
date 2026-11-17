@@ -163,14 +163,26 @@
         new Date(s.updated_at).toLocaleDateString() +
         (s.mine && s.shared ? ' · shared' : '') +
         (s.models_changed.length ? ' · models changed' : '');
+      // A long note is a paragraph of results; the list shows the sentence that says what the scenario is.
+      var gist = s.note ? s.note.split('. ')[0].replace(/\.$/, '') + '.' : '';
       return h(
         'div',
         { class: 'srow' + (loaded && loaded.id === s.id ? ' cur' : '') },
         [
           h('div', { class: 'sn' }, [
             h('b', { text: s.name }),
+            s.group
+              ? h('small', {
+                  text:
+                    s.group.name +
+                    ' · ' +
+                    s.group.position +
+                    ' of ' +
+                    s.group.count,
+                })
+              : null,
             h('small', { text: meta }),
-            s.note ? h('small', { text: s.note }) : null,
+            gist ? h('small', { text: gist }) : null,
           ]),
           h('div', { class: 'sb' }, kids),
         ],
@@ -185,20 +197,29 @@
             : [h('p', { class: 'muted', text: empty })],
         );
       }
-      put(
-        listBox,
-        block(
-          'Yours',
-          lists.mine,
-          data.signed_in ? 'Nothing saved yet.' : 'Sign in to save scenarios.',
-        ).concat(
-          block(
-            'Shared with everyone on Labs',
-            lists.shared,
-            'Nothing shared yet.',
+      var total = lists.mine.length + lists.shared.length;
+      put(listBox, [
+        h('details', { class: 'saved', open: total <= 4 ? true : null }, [
+          h('summary', { text: 'Saved scenarios (' + total + ')' }),
+          h(
+            'div',
+            {},
+            block(
+              'Yours',
+              lists.mine,
+              data.signed_in
+                ? 'Nothing saved yet.'
+                : 'Sign in to save scenarios.',
+            ).concat(
+              block(
+                'Shared with everyone on Labs',
+                lists.shared,
+                'Nothing shared yet.',
+              ),
+            ),
           ),
-        ),
-      );
+        ]),
+      ]);
     }
 
     function refresh() {

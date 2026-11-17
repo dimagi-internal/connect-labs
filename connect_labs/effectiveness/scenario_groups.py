@@ -53,7 +53,7 @@ def members(user, group: ScenarioGroup) -> list[SavedScenario]:
     return list(saved._visible(user).filter(group=group).select_related("owner").order_by("position", "pk"))
 
 
-def as_dict(group: ScenarioGroup, viewer, *, with_scenarios: bool = True) -> dict:
+def as_dict(group: ScenarioGroup, viewer, *, with_scenarios: bool = True, headlines: bool = False) -> dict:
     out = {
         "id": group.pk,
         "name": group.name,
@@ -74,18 +74,20 @@ def as_dict(group: ScenarioGroup, viewer, *, with_scenarios: bool = True) -> dic
                 "position": s.position,
                 "derived_from": s.derived_from_id,
                 "open_path": f"{reverse('cea:workspace')}?scenario={s.pk}",
+                # what it gave (today's if cached, else its baseline's): nothing is computed to list a group
+                **({"headline": peek(s)[0]} if headlines else {}),
             }
             for s in members(viewer, group)
         ]
     return out
 
 
-def listing(user) -> list[dict]:
-    """The groups the viewer owns, then the ones others have shared, each with a count and its scenario names."""
+def listing(user, *, headlines: bool = False) -> list[dict]:
+    """The groups the viewer owns, then the ones others have shared, each with a count and its scenario names (and,
+    with ``headlines``, what each gave, without computing anything)."""
     rows = list(_visible(user).select_related("owner"))
-    return [
-        as_dict(g, user) for g in sorted(rows, key=lambda g: (not (signed_in(user) and g.owner_id == user.pk), g.name))
-    ]
+    ordered = sorted(rows, key=lambda g: (not (signed_in(user) and g.owner_id == user.pk), g.name))
+    return [as_dict(g, user, headlines=headlines) for g in ordered]
 
 
 def save(
