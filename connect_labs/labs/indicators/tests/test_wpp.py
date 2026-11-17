@@ -60,6 +60,15 @@ class TestLoadingAndAuditing:
         base.upsert(wpp.load(["NGA"], gz([row("NGA", 2023, 7500)])))
         assert derive.births_audit(["NGA"])[0]["off"] is False
 
+    def test_a_country_with_no_births_of_its_own_is_audited_on_the_sum_of_its_units(self, nigeria):
+        a, b = boundary(1, "A", "NGA-A", 0, 0), boundary(1, "B", "NGA-B", 1, 0)
+        base.upsert(wpp.load(["NGA"], gz([row("NGA", 2023, 7500)])))
+        value(a, "births", 3_000_000.0, year=2023, source=Source.DERIVED)
+        assert derive.births_audit(["NGA"]) == []  # B has none: the sum would be a part, not the country
+        value(b, "births", 3_300_000.0, year=2023, source=Source.DERIVED)
+        (got,) = derive.births_audit(["NGA"])
+        assert got["ours"] == 6_300_000 and got["ratio"] == pytest.approx(0.84) and got["off"] is True
+
     def test_a_country_missing_either_figure_is_not_audited_rather_than_called_fine(self, nigeria):
         value(nigeria, "births", 7_000_000.0, year=2023, source=Source.DERIVED)
         assert derive.births_audit(["NGA"]) == []

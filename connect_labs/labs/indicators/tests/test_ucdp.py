@@ -139,7 +139,7 @@ class TestTheRate:
         value(b, "pop_total", 2_000_000.0, year=2025)
         (got,) = derive.load_conflict_rate(["NGA"])
         assert got.boundary.name == "Nigeria" and got.value == pytest.approx(2.0)
-        assert "sum of its admin-1 populations" in got.method
+        assert "sum of its admin-1 units" in got.method
 
     def test_it_is_a_registered_policy_governed_measure(self):
         assert measures.get("conflict_rate").unit == "per 100,000 people a year"
