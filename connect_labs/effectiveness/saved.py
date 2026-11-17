@@ -14,8 +14,8 @@ from __future__ import annotations
 from django.db.models import Q
 from django.urls import reverse
 
-from connect_labs.effectiveness import engine, explore
-from connect_labs.effectiveness.models import SavedScenario
+from connect_labs.effectiveness import compare, engine, explore
+from connect_labs.effectiveness.models import SavedScenario, ScenarioGroup
 from connect_labs.effectiveness.scenario import Scenario
 
 MAX_NAME = 200
@@ -72,12 +72,48 @@ def _owner_label(record: SavedScenario) -> str:
     return getattr(o, "name", "") or o.get_username()
 
 
+def _brief(record: SavedScenario) -> dict:
+    return {"id": record.pk, "name": record.name, "open_path": f"{reverse('cea:workspace')}?scenario={record.pk}"}
+
+
+def group_view(record: SavedScenario, viewer) -> dict | None:
+    """Where a scenario sits in its group, for navigating: the group, its position among the scenarios the viewer can
+    see, and the ones either side of it."""
+    group = record.group
+    if group is None or not (group.shared or (signed_in(viewer) and group.owner_id == viewer.pk)):
+        return None
+    members = list(_visible(viewer).filter(group=group).order_by("position", "pk"))
+    ids = [m.pk for m in members]
+    i = ids.index(record.pk) if record.pk in ids else None
+    return {
+        "id": group.pk,
+        "name": group.name,
+        "question": group.question,
+        "path": reverse("cea:group", args=[group.pk]),
+        "position": None if i is None else i + 1,
+        "count": len(members),
+        "previous": _brief(members[i - 1]) if i else None,
+        "next": _brief(members[i + 1]) if i is not None and i + 1 < len(members) else None,
+    }
+
+
 def as_dict(record: SavedScenario, viewer) -> dict:
     try:
-        changed = models_changed(record.saved_against, scenario_of(record))
+        scenario = scenario_of(record)
+        changed = models_changed(record.saved_against, scenario)
+        sets = compare.sets(scenario)
     except explore.ExploreError:
-        changed = list(engine.MODELS)
+        changed, sets = list(engine.MODELS), []
+    parent = (
+        record.derived_from
+        if record.derived_from_id and _visible(viewer).filter(pk=record.derived_from_id).exists()
+        else None
+    )
     return {
+        "group": group_view(record, viewer),
+        "derived_from": _brief(parent) if parent else None,
+        "sets": sets,
+        "baselined_at": (record.snapshot or {}).get("at"),
         "id": record.pk,
         "name": record.name,
         "note": record.note,
@@ -107,8 +143,36 @@ def get(user, pk: int) -> SavedScenario:
     return record
 
 
-def save(user, name: str, params: dict, *, note: str = "", shared: bool = False, overwrite: bool = False):
-    """Keep a scenario under ``name`` for ``user``. Returns ``(record, created)``."""
+def _own_group(user, group) -> ScenarioGroup | None:
+    """The group (an id) a scenario may be put in: one the user owns."""
+    if group in (None, ""):
+        return None
+    found = ScenarioGroup.objects.filter(pk=group, owner=user).first()
+    if found is None:
+        raise SavedError("That group is not yours: save a scenario only into a group you made.", 403)
+    return found
+
+
+def _parent(user, derived_from) -> SavedScenario | None:
+    if derived_from in (None, ""):
+        return None
+    return get(user, int(derived_from))  # a scenario the user may see
+
+
+def save(
+    user,
+    name: str,
+    params: dict,
+    *,
+    note: str = "",
+    shared: bool = False,
+    overwrite: bool = False,
+    group=None,
+    position: int | None = None,
+    derived_from=None,
+):
+    """Keep a scenario under ``name`` for ``user``, optionally in one of their groups and derived from another
+    scenario. Returns ``(record, created)``. A new scenario in a group goes last unless ``position`` says otherwise."""
     _need_user(user)
     name = (name or "").strip()
     if not name:
@@ -128,12 +192,26 @@ def save(user, name: str, params: dict, *, note: str = "", shared: bool = False,
         "saved_against": stamp(scenario),
         "shared": bool(shared),
     }
+    if group is not None:
+        fields["group"] = _own_group(user, group)
+        fields["position"] = position if position is not None else _next_position(fields["group"])
+    if derived_from is not None:
+        fields["derived_from"] = _parent(user, derived_from)
     if existing:
+        if existing.params != fields["params"]:
+            fields["snapshot"] = {}  # a different scenario: its old headline is not a baseline for it
         for k, v in fields.items():
             setattr(existing, k, v)
         existing.save()
         return existing, False
     return SavedScenario.objects.create(owner=user, name=name, **fields), True
+
+
+def _next_position(group: ScenarioGroup | None) -> int:
+    if group is None:
+        return 0
+    last = group.scenarios.order_by("-position").values_list("position", flat=True).first()
+    return 0 if last is None else last + 1
 
 
 def update(

@@ -128,6 +128,29 @@ downloads as a CSV (`/labs/cea/market/plan.csv`, same link keys). A place with n
 On real data the best 1M-case Kangaroo Care plan is spread over 145 territories in 26 countries, but ten countries reach the
 same million at 97% of its deaths averted: concentrating costs little, which is what the limits are for.
 
+### Scenario groups
+
+A scenario is one answer; a **group** (`models.ScenarioGroup`, rules in `scenario_groups.py`) is the question the answers
+belong to. It has a `question` (what we are trying to think about), a living `summary` (what the scenarios showed, what was
+decided, what is open: written to be read cold by whoever continues) and its scenarios in order (`SavedScenario.group`,
+`position`). A scenario can also say which one it was `derived_from`, so the group reads as a trail of single changes.
+
+* **Navigate.** A saved scenario opened on the Workspace or Market size shows a header above its numbers: its group, "scenario
+  2 of 6" with the ones either side, its note, what it sets (only what differs from the model as published), and a link to compare
+  them. `groups/` lists the groups; `groups/<id>/` is the comparison page.
+* **Compare.** `compare.py` (pure) sets the scenarios side by side: what each sets, what each gave (`compare.RESULTS`: deaths
+  averted with its redraw range, cost, cost per death, the multiple, people, places, countries, steadiness, the people resting on
+  a regional rate or on births far from the UN's), the change against a reference (the first, or `?ref=<id>`), the best of
+  each result, and what differs in words from the scenario it was derived from. The headlines are computed by the sizing the pages
+  use and cached under the data version and release, so a compare after a data load or a deploy recomputes.
+* **Pick it up again.** Each scenario's headline is stored when the group is *re-baselined* (`groups/<id>/baseline/`, the
+  page's button, `cea_scenario_groups rebaseline`, or `manage.py cea_group_report <group> --rebaseline`); a later compare shows
+  every figure that has moved since, with what it was. The scenario notes say why each exists; the group summary is where
+  decisions and open questions live, and it is the first thing to read.
+* **Agents.** `cea_scenario_groups` lists groups and returns one with its comparison (far smaller than `cea_market_size` for
+  the same scenarios), `cea_scenario_group_save` makes or updates a group (question, summary, `scenario_ids` in order), and
+  `cea_scenario_save` takes `group` and `derived_from`.
+
 ### Saved scenarios
 
 A person keeps a scenario under a name (`models.SavedScenario`, rules in `saved.py`, HTTP in `views/scenarios.py`, the

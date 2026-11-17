@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}{{ group.name|default:"Scenario group" }} · Connect Labs{% endblock %}
+{% block css %}{{ block.super }}
+<link rel="stylesheet" href="{% static 'effectiveness/market.css' %}">
+<style>
+  .cmp { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .cmp th, .cmp td { padding: 6px 10px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+  .cmp thead th { position: sticky; top: 0; background: #fff; }
+  .cmp td.n { text-align: right; white-space: nowrap; }
+  .cmp tr.sec th { background: #f9fafb; text-transform: uppercase; letter-spacing: .04em; font-size: 11px; color: var(--muted); }
+  .cmp td.best { color: var(--good); font-weight: 700; }
+  .cmp .delta { display: block; color: var(--muted); font-size: 11px; font-weight: 400; }
+  .cmp .was { display: block; color: var(--low); font-size: 11px; font-weight: 400; }
+  .cmp tr.varies td { background: #fffbeb; }
+  .cmp th a.ref { font-size: 11px; font-weight: 400; display: block; }
+  .cmp .differs { font-weight: 400; color: var(--muted); font-size: 11px; display: block; }
+  .grp-summary { white-space: pre-wrap; }
+</style>
+{% endblock %}
+{% block content %}
+{% include "effectiveness/tabs.html" with active="groups" %}
+<div class="mk">
+  {% if error %}
+  <h1>Scenario group</h1><div class="card"><p class="err">{{ error }}</p><p><a href="{% url 'cea:groups' %}">All groups</a></p></div>
+  {% else %}
+  <p class="muted" style="margin:0"><a href="{% url 'cea:groups' %}">Scenario groups</a></p>
+  <h1>{{ group.name }}</h1>
+  {% if group.question %}<p class="lede" style="font-size:15px; color:var(--ink)">{{ group.question }}</p>{% endif %}
+  <div class="card">
+    <h2>What we know so far</h2>
+    {% if group.summary %}<p class="grp-summary" id="summary" style="margin:0">{{ group.summary }}</p>
+    {% else %}<p class="muted" style="margin:0">No summary yet. Write what the scenarios showed, what was decided and what is open, so whoever picks this up can start here.</p>{% endif %}
+    {% if group.mine %}
+    <details style="margin-top:8px"><summary class="muted">Edit the question and summary</summary>
+      <p><label>Question<br><textarea id="g-question" rows="2" style="width:100%">{{ group.question }}</textarea></label></p>
+      <p><label>Summary<br><textarea id="g-summary" rows="10" style="width:100%">{{ group.summary }}</textarea></label></p>
+      <p><button type="button" class="btn" id="g-save">Save</button> <span class="muted" id="g-state"></span></p>
+    </details>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>The scenarios, side by side</h2>
+    <p class="muted" style="margin:0 0 8px">Each scenario against <b>{% for s in scenarios %}{% if s.id == data.reference %}{{ s.name }}{% endif %}{% endfor %}</b>; the best of each result is in green, a differing setting is shaded, and a figure that has moved since it was baselined shows what it was. Open one to change it.</p>
+    <div class="scroll">
+    <table class="cmp" data-testid="group-compare">
+      <thead><tr><th></th>
+        {% for s in scenarios %}
+        <th><a href="{{ s.open_path }}">{{ s.name }}</a>
+          {% if s.id != data.reference %}<a class="ref" href="?ref={{ s.id }}">compare against this</a>{% else %}<span class="muted" style="font-weight:400;font-size:11px;display:block">the reference</span>{% endif %}
+          {% if s.differs %}<span class="differs">Changes from {{ s.differs_from.name }}: {{ s.differs|join:"; " }}</span>{% endif %}
+          {% if s.error %}<span class="lo" style="display:block;font-weight:400">cannot run: {{ s.error }}</span>{% endif %}
+          {% if s.models_changed %}<span class="lo" style="display:block;font-weight:400">models changed since saved</span>{% endif %}
+        </th>{% endfor %}
+      </tr></thead>
+      <tbody>
+        <tr class="sec"><th colspan="{{ scenarios|length|add:1 }}">What it sets</th></tr>
+        {% for r in table.settings %}
+        <tr class="{% if r.varies %}varies{% endif %}"><th>{{ r.label }}</th>{% for c in r.cells %}<td>{{ c.text }}</td>{% endfor %}</tr>
+        {% endfor %}
+        <tr class="sec"><th colspan="{{ scenarios|length|add:1 }}">What it gave</th></tr>
+        {% for r in table.results %}
+        <tr><th>{{ r.label }}</th>{% for c in r.cells %}<td class="n {% if c.best %}best{% endif %}">{{ c.text }}{% if c.delta %}<span class="delta">{{ c.delta }}</span>{% endif %}{% if c.was %}<span class="was">was {{ c.was }}</span>{% endif %}</td>{% endfor %}</tr>
+        {% endfor %}
+        <tr class="sec"><th colspan="{{ scenarios|length|add:1 }}">Notes</th></tr>
+        <tr><th>Why it is here</th>{% for s in scenarios %}<td style="white-space:pre-wrap">{{ s.note }}</td>{% endfor %}</tr>
+      </tbody>
+    </table>
+    </div>
+    {% if group.mine %}<p style="margin:10px 0 0"><button type="button" class="btn" id="g-baseline">Re-baseline: make these numbers the ones later runs are compared with</button> <span class="muted" id="b-state"></span></p>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% if group.mine %}
+<script>
+  (function () {
+    var csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
+    function send(url, method, body, state, done) {
+      var el = document.getElementById(state);
+      el.textContent = 'Saving…';
+      fetch(url, { method: method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf }, body: JSON.stringify(body || {}) })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { el.textContent = j.error ? j.error : 'Saved.'; if (!j.error && done) done(); });
+    }
+    document.getElementById('g-save').addEventListener('click', function () {
+      send("{% url 'cea:group' group.id %}", 'PATCH', { question: document.getElementById('g-question').value, summary: document.getElementById('g-summary').value }, 'g-state', function () { location.reload(); });
+    });
+    document.getElementById('g-baseline').addEventListener('click', function () {
+      send("{% url 'cea:group_baseline' group.id %}", 'POST', {}, 'b-state', function () { location.reload(); });
+    });
+  })();
+</script>
+{% endif %}
+{% endblock %}
