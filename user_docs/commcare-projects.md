@@ -87,7 +87,9 @@ Anyone in the project can open and change a page; only its author or a project a
 A page shows live data. **Save a run now** (above the page) freezes the data the page has at that moment, with the
 period it is about, so you can come back to "week 45" as it was and it does not move when the project syncs again.
 Saved runs are listed above the page; open one to see the page drawn from the frozen data. The author of a run or a
-project admin can delete it. Through an access token: `commcare_workflow_run_save`, `_list`, `_get` and `_delete`.
+project admin can delete it. A pipeline saved with `period_scoped: true` that groups to one row per worker is
+re-aggregated over the run's period (start included, end excluded), so "week 45" holds week 45's rows; any other
+pipeline is frozen whole. Through an access token: `commcare_workflow_run_save`, `_list`, `_get` and `_delete`.
 
 ## Using a project from a script or an AI assistant
 

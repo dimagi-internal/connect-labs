@@ -710,6 +710,7 @@ class BaseDataAccess:
         if project is None or not may_use_project(user, project):
             raise PermissionError("Not a verified member of that CommCare project.")
         self.hq_scope = True
+        self.hq_user = user
         self.access_token = None
         self.production_url = settings.CONNECT_PRODUCTION_URL.rstrip("/")
         self.http_client = None
@@ -1767,6 +1768,20 @@ class WorkflowDataAccess(BaseDataAccess):
 
         return results
 
+    def _get_hq_pipeline_data(self, definition_id, aliases, period_start, period_end) -> dict[str, dict]:
+        """The pipelines of a page over a CommCare project, for a snapshot: the project's own stored rows read
+        as the verified member (nothing here is a Connect cache), over the run's window where a pipeline opts in.
+        """
+        from connect_labs.hqdata.models import HQProject
+        from connect_labs.hqdata.scope import project_id_from_scope
+        from connect_labs.hqdata.workflows import read_project_pipeline_data
+
+        project = HQProject.objects.get(pk=project_id_from_scope(self.opportunity_id))
+        window = (period_start, period_end) if period_start and period_end else None
+        return read_project_pipeline_data(
+            self.hq_user, project, definition_id, aliases=None if aliases is None else set(aliases), window=window
+        )
+
     def get_cached_pipeline_data(
         self,
         definition_id: int,
@@ -1810,6 +1825,9 @@ class WorkflowDataAccess(BaseDataAccess):
             if key not in memo:
                 memo[key] = load()
             return memo[key]
+
+        if self.hq_scope is True:
+            return self._get_hq_pipeline_data(definition_id, aliases, period_start, period_end)
 
         definition = _once(("definition", definition_id), lambda: self.get_definition(definition_id))
         if not definition:
