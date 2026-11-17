@@ -14,10 +14,11 @@ Living Standards Survey, Ethiopia's 2021 HCES, ...) and *lines it up* to a refer
 sees "surveyed 2022, lined up to 2024" and not a measurement of 2024.
 
 **Placement.** GSAP's regions are keyed to GAUL or GADM codes that do not match our boundaries, so a region is
-joined to an admin-1 boundary by name (``base.BoundaryMatcher``, with the aliases in ``base.ALIASES``). A region that does not
-match, or a boundary GSAP has no region for (Nigeria's Zamfara and Taraba, Ethiopia's Tigray), is left WITHOUT a value:
-never filled from a neighbour or the country. A country GSAP reports as one region is written at the country level and
-reaches its territories by inheritance, flagged as inherited like any country figure a territory takes.
+joined to an admin-1 boundary by name (``base.BoundaryMatcher``, with the aliases in ``base.ALIASES``). A region that
+does not match, or a boundary GSAP has no region for (Nigeria's Zamfara and Taraba, Ethiopia's Tigray), is left
+WITHOUT a value: never filled from a neighbour or the country. A country GSAP reports as one region is written at the
+country level and reaches its territories by inheritance, flagged as inherited like any country figure a territory
+takes.
 
 Licence: CC BY 4.0, https://datacatalog.worldbank.org/search/dataset/0042041
 """
