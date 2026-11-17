@@ -139,7 +139,7 @@ def vouch_member(user, project: HQProject, now: datetime | None = None) -> HQPro
 def is_commcare_only(user) -> bool:
     """A person who reaches labs only through CommCare: an HQ identity and no Connect token.
 
-    Such a person is confined to ``/hq/`` by the labs session boundary (no ``labs_oauth``), and
+    Such a person is confined to ``/commcare/`` by the labs session boundary (no ``labs_oauth``), and
     to ``hqdata`` tools elsewhere: anything that acts "as the user" for Connect data has no
     Connect token to act with.
     """

@@ -35,7 +35,7 @@ _WORKFLOW_ID = {"type": "integer", "description": "The page's id (from hq_workfl
 
 def _url(project: HQProject, workflow_id: int) -> str:
     base = (getattr(settings, "LABS_PUBLIC_URL", "") or "").rstrip("/")
-    return f"{base}/hq/projects/{project.pk}/workflows/{workflow_id}/"
+    return f"{base}/commcare/projects/{project.pk}/workflows/{workflow_id}/"
 
 
 def _guard(call):
@@ -290,7 +290,7 @@ Render code is JSX defining ONE function component:
   Chart.js is available as window.Chart for charts. Do not fetch(): the frame has no network.
 - The page is read-only and sandboxed: no buttons that save, no runs, no links out except plain <a href>.
 - A pipeline over a very large project is refused in words by hq_pipeline_run; narrow it (app_id/xmlns/case_type).
-- The page's address (returned by create/get/list) is /hq/projects/<id>/workflows/<id>/; the same page can be
+- The page's address (returned by create/get/list) is /commcare/projects/<id>/workflows/<id>/; the same page can be
   embedded inside CommCare HQ once HQ is registered as an embed client.
 """
 

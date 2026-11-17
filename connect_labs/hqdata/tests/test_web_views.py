@@ -24,31 +24,31 @@ def add_project(user, domain="demo", **kwargs):
 
 
 def post(client, project, action, **fields):
-    return client.post(f"/hq/projects/{project.pk}/act/", {"action": action, **fields})
+    return client.post(f"/commcare/projects/{project.pk}/act/", {"action": action, **fields})
 
 
 # -- the door ---------------------------------------------------------------
 
 
 def test_anonymous_goes_to_the_login_page_and_comes_back(client):
-    resp = client.get("/hq/projects/3/")
-    assert resp.status_code == 302 and resp["Location"] == "/hq/login/?next=/hq/projects/3/"
-    assert client.get("/hq/login/").status_code == 200
+    resp = client.get("/commcare/projects/3/")
+    assert resp.status_code == 302 and resp["Location"] == "/commcare/login/?next=/commcare/projects/3/"
+    assert client.get("/commcare/login/").status_code == 200
 
 
 def test_a_connect_person_without_commcare_is_sent_to_connect_theirs_first(client):
     connect_user = UserFactory()
     client.force_login(connect_user)
-    resp = client.get("/hq/")
+    resp = client.get("/commcare/")
     assert resp.status_code == 302 and resp["Location"] == "/labs/commcare/initiate/"
-    assert client.session["commcare_oauth_next"] == "/hq/"
+    assert client.session["commcare_oauth_next"] == "/commcare/"
 
 
 def test_a_commcare_session_whose_token_is_gone_is_signed_out(client):
     user = make_hq_user(client)
     user.cchq_token.delete()
-    resp = client.get("/hq/")
-    assert resp.status_code == 302 and resp["Location"].startswith("/hq/login/")
+    resp = client.get("/commcare/")
+    assert resp.status_code == 302 and resp["Location"].startswith("/commcare/login/")
     assert "_auth_user_id" not in client.session
 
 
@@ -64,7 +64,7 @@ def test_a_connect_person_with_commcare_connected_uses_the_same_pages(client):
         "connect_labs.hqdata.identity.fetch_identity",
         return_value={"username": "ann@example.org", "email": "ann@example.org", "name": "Ann", "domains": ["demo"]},
     ):
-        resp = client.get("/hq/")
+        resp = client.get("/commcare/")
     assert resp.status_code == 200 and b"demo" in resp.content
 
 
@@ -76,8 +76,8 @@ def test_home_lists_my_projects_and_offers_every_other_domain_commcare_lists_for
     add_project(user, "demo")
     stranger = UserFactory()
     add_project(stranger, "other")  # registered by someone else: I am not a member
-    body = client.get("/hq/").content.decode()
-    assert "/hq/projects/" in body and ">demo<" in body
+    body = client.get("/commcare/").content.decode()
+    assert "/commcare/projects/" in body and ">demo<" in body
     assert '<option value="third">' in body and '<option value="demo">' not in body
     # One a colleague already added is offered too: adding it joins it (a second person must be able to
     # reach a project the first registered).
@@ -90,13 +90,13 @@ def test_joining_a_project_a_colleague_added_makes_me_a_plain_member_after_commc
     project = add_project(stranger, "other")
     with mock.patch("connect_labs.hqdata.projects.CommCareDataAccess") as access:
         access.return_value.verify_hq_access.return_value = False
-        refused = client.post("/hq/projects/new/", {"domain": "other"})
+        refused = client.post("/commcare/projects/new/", {"domain": "other"})
     assert not HQProjectMember.objects.filter(project=project, user=user).exists()  # CommCare said no
-    assert refused["Location"] == "/hq/"
+    assert refused["Location"] == "/commcare/"
     with mock.patch("connect_labs.hqdata.projects.CommCareDataAccess") as access:
         access.return_value.verify_hq_access.return_value = True
-        resp = client.post("/hq/projects/new/", {"domain": "other"})
-    assert resp["Location"] == f"/hq/projects/{project.pk}/"
+        resp = client.post("/commcare/projects/new/", {"domain": "other"})
+    assert resp["Location"] == f"/commcare/projects/{project.pk}/"
     assert HQProjectMember.objects.get(project=project, user=user).role == HQProjectMember.ROLE_MEMBER
     project.refresh_from_db()
     assert project.sync_owner == stranger  # joining takes nothing over
@@ -106,9 +106,9 @@ def test_adding_a_project_needs_commcare_to_list_it_and_to_let_me_read_it(client
     user = make_hq_user(client, domains=("demo",))
     with mock.patch("connect_labs.hqdata.projects.CommCareDataAccess") as access:
         access.return_value.verify_hq_access.return_value = True
-        resp = client.post("/hq/projects/new/", {"domain": "demo"})
+        resp = client.post("/commcare/projects/new/", {"domain": "demo"})
     project = HQProject.objects.get(domain="demo")
-    assert resp["Location"] == f"/hq/projects/{project.pk}/"
+    assert resp["Location"] == f"/commcare/projects/{project.pk}/"
     assert project.sync_owner == user
     assert set(project.sources.values_list("kind", flat=True)) == {"forms", "cases"}
     assert HQProjectMember.objects.get(project=project, user=user).role == "admin"
@@ -118,7 +118,7 @@ def test_adding_a_project_needs_commcare_to_list_it_and_to_let_me_read_it(client
 def test_a_domain_commcare_does_not_list_for_me_is_never_even_tried(client):
     make_hq_user(client, domains=("demo",))
     with mock.patch("connect_labs.hqdata.projects.CommCareDataAccess") as access:
-        client.post("/hq/projects/new/", {"domain": "someone-elses"})
+        client.post("/commcare/projects/new/", {"domain": "someone-elses"})
     assert not HQProject.objects.exists() and not access.called
 
 
@@ -126,7 +126,7 @@ def test_commcare_refusing_to_let_me_read_the_forms_creates_nothing(client):
     make_hq_user(client, domains=("demo",))
     with mock.patch("connect_labs.hqdata.projects.CommCareDataAccess") as access:
         access.return_value.verify_hq_access.return_value = False
-        resp = client.post("/hq/projects/new/", {"domain": "demo"}, follow=True)
+        resp = client.post("/commcare/projects/new/", {"domain": "demo"}, follow=True)
     assert not HQProject.objects.exists() and b"Edit Data" in resp.content
 
 
@@ -134,7 +134,7 @@ def test_commcare_refusing_to_let_me_read_the_forms_creates_nothing(client):
 def test_a_malformed_domain_is_refused_before_anything_else(client, domain):
     make_hq_user(client, domains=(domain,) if domain else ())
     with mock.patch("connect_labs.hqdata.projects.CommCareDataAccess") as access:
-        client.post("/hq/projects/new/", {"domain": domain})
+        client.post("/commcare/projects/new/", {"domain": domain})
     assert not HQProject.objects.exists() and not access.called
 
 
@@ -145,15 +145,15 @@ def test_the_project_page_shows_what_is_stored_and_how_it_is_going(client):
     HQForm.objects.create(project_id=project.pk, form_id="f2", deleted_at=timezone.now())
     HQCase.objects.create(project_id=project.pk, case_id="c1")
     HQSyncRun.objects.create(source=project.sources.first(), mode="full", status="error", error="HQ went away")
-    body = client.get(f"/hq/projects/{project.pk}/").content.decode()
+    body = client.get(f"/commcare/projects/{project.pk}/").content.decode()
     assert "1 forms and 1 cases stored" in body and "HQ went away" in body and "Delete this project" in body
 
 
 def test_a_project_i_am_not_in_is_not_found_whether_or_not_it_exists(client):
     make_hq_user(client)
     other = add_project(UserFactory(), "secret")
-    assert client.get(f"/hq/projects/{other.pk}/").status_code == 404
-    assert client.get("/hq/projects/99999/").status_code == 404
+    assert client.get(f"/commcare/projects/{other.pk}/").status_code == 404
+    assert client.get("/commcare/projects/99999/").status_code == 404
     assert post(client, other, "sync_now").status_code == 404
     assert post(client, other, "delete_project", confirm_domain="secret").status_code == 404
     assert HQProject.objects.filter(pk=other.pk).exists()
@@ -167,7 +167,7 @@ def test_an_expired_membership_is_not_found_either(client):
     from connect_labs.hqdata.models import HQIdentity
 
     HQIdentity.objects.filter(user=user).update(domains=[], refreshed_at=timezone.now())
-    assert client.get(f"/hq/projects/{project.pk}/").status_code == 404
+    assert client.get(f"/commcare/projects/{project.pk}/").status_code == 404
 
 
 # -- actions ----------------------------------------------------------------
@@ -262,7 +262,7 @@ def test_deleting_a_project_needs_its_name_and_removes_its_data_and_only_its_dat
     assert HQProject.objects.filter(pk=project.pk).exists() and HQForm.objects.filter(project_id=project.pk).exists()
 
     resp = post(client, project, "delete_project", confirm_domain="DEMO")
-    assert resp["Location"] == "/hq/"
+    assert resp["Location"] == "/commcare/"
     assert not HQProject.objects.filter(pk=project.pk).exists()
     assert not HQForm.objects.filter(project_id=project.pk).exists()
     assert HQForm.objects.filter(project_id=other.pk).exists()
@@ -271,8 +271,8 @@ def test_deleting_a_project_needs_its_name_and_removes_its_data_and_only_its_dat
 def test_actions_are_post_only(client):
     user = make_hq_user(client)
     project = add_project(user)
-    assert client.get(f"/hq/projects/{project.pk}/act/").status_code == 405
-    assert client.get("/hq/projects/new/").status_code == 405
+    assert client.get(f"/commcare/projects/{project.pk}/act/").status_code == 405
+    assert client.get("/commcare/projects/new/").status_code == 405
 
 
 # -- pipelines --------------------------------------------------------------
@@ -298,13 +298,15 @@ def test_saving_a_pipeline_and_running_it_shows_the_rows(client):
     store_a_form(project, "f1", "ann")
     store_a_form(project, "f2", "ann")
     resp = client.post(
-        f"/hq/projects/{project.pk}/pipelines/", {"name": "per worker", "store_kind": "forms", "schema": SCHEMA}
+        f"/commcare/projects/{project.pk}/pipelines/", {"name": "per worker", "store_kind": "forms", "schema": SCHEMA}
     )
     pipeline = project.pipelines.get(name="per worker")
-    assert resp["Location"] == f"/hq/projects/{project.pk}/pipelines/{pipeline.pk}/" and pipeline.created_by == user
+    assert (
+        resp["Location"] == f"/commcare/projects/{project.pk}/pipelines/{pipeline.pk}/" and pipeline.created_by == user
+    )
 
     resp = client.post(
-        f"/hq/projects/{project.pk}/pipelines/{pipeline.pk}/",
+        f"/commcare/projects/{project.pk}/pipelines/{pipeline.pk}/",
         {"action": "run", "name": "per worker", "store_kind": "forms", "schema": SCHEMA},
     )
     body = resp.content.decode()
@@ -324,7 +326,7 @@ def test_a_schema_that_cannot_run_is_refused_with_the_reason(client, schema, mes
     user = make_hq_user(client)
     project = add_project(user)
     resp = client.post(
-        f"/hq/projects/{project.pk}/pipelines/",
+        f"/commcare/projects/{project.pk}/pipelines/",
         {"name": "bad", "store_kind": "forms", "schema": schema},
         follow=True,
     )
@@ -335,7 +337,9 @@ def test_a_duplicate_name_is_refused(client):
     user = make_hq_user(client)
     project = add_project(user)
     for _ in range(2):
-        client.post(f"/hq/projects/{project.pk}/pipelines/", {"name": "p", "store_kind": "forms", "schema": SCHEMA})
+        client.post(
+            f"/commcare/projects/{project.pk}/pipelines/", {"name": "p", "store_kind": "forms", "schema": SCHEMA}
+        )
     assert project.pipelines.count() == 1
 
 
@@ -350,15 +354,15 @@ def test_pipelines_of_a_project_i_am_not_in_do_not_exist_for_me(client):
         store_kind="forms",
         schema={"fields": [{"name": "n", "path": "form.x", "aggregation": "count"}]},
     )
-    assert client.get(f"/hq/projects/{other.pk}/pipelines/").status_code == 404
+    assert client.get(f"/commcare/projects/{other.pk}/pipelines/").status_code == 404
     assert (
         client.post(
-            f"/hq/projects/{other.pk}/pipelines/", {"name": "x", "store_kind": "forms", "schema": SCHEMA}
+            f"/commcare/projects/{other.pk}/pipelines/", {"name": "x", "store_kind": "forms", "schema": SCHEMA}
         ).status_code
         == 404
     )
-    assert client.get(f"/hq/projects/{other.pk}/pipelines/{pipeline.pk}/").status_code == 404
-    assert client.post(f"/hq/projects/{other.pk}/pipelines/{pipeline.pk}/", {"action": "run"}).status_code == 404
+    assert client.get(f"/commcare/projects/{other.pk}/pipelines/{pipeline.pk}/").status_code == 404
+    assert client.post(f"/commcare/projects/{other.pk}/pipelines/{pipeline.pk}/", {"action": "run"}).status_code == 404
     # and a pipeline id from one project does not open under another I do belong to
     mine = add_project(HQProject.objects.get(pk=other.pk).members.first().user, "mine")
     assert mine is not None
@@ -371,7 +375,7 @@ def test_a_pipeline_id_from_another_project_does_not_open_under_mine(client):
     from connect_labs.hqdata.models import HQPipeline
 
     pipeline = HQPipeline.objects.create(project=other, name="p", store_kind="forms", schema={})
-    assert client.get(f"/hq/projects/{mine.pk}/pipelines/{pipeline.pk}/").status_code == 404
+    assert client.get(f"/commcare/projects/{mine.pk}/pipelines/{pipeline.pk}/").status_code == 404
 
 
 def test_only_its_author_or_an_admin_can_delete_a_pipeline(client):
@@ -386,9 +390,9 @@ def test_only_its_author_or_an_admin_can_delete_a_pipeline(client):
     )
     mine = HQPipeline.objects.create(project=project, name="mine", store_kind="forms", schema={}, created_by=author)
 
-    client.post(f"/hq/projects/{project.pk}/pipelines/{other_members_pipeline.pk}/", {"action": "delete"})
+    client.post(f"/commcare/projects/{project.pk}/pipelines/{other_members_pipeline.pk}/", {"action": "delete"})
     assert HQPipeline.objects.filter(pk=other_members_pipeline.pk).exists()
-    client.post(f"/hq/projects/{project.pk}/pipelines/{mine.pk}/", {"action": "delete"})
+    client.post(f"/commcare/projects/{project.pk}/pipelines/{mine.pk}/", {"action": "delete"})
     assert not HQPipeline.objects.filter(pk=mine.pk).exists()
 
 
@@ -396,9 +400,44 @@ def test_a_project_i_have_not_joined_says_what_to_do_and_says_it_the_same_whethe
     make_hq_user(client, domains=("demo",))
     stranger = UserFactory()
     theirs = add_project(stranger, "theirs")
-    for path in (f"/hq/projects/{theirs.pk}/", "/hq/projects/999999/", f"/hq/projects/{theirs.pk}/workflows/1/"):
+    for path in (
+        f"/commcare/projects/{theirs.pk}/",
+        "/commcare/projects/999999/",
+        f"/commcare/projects/{theirs.pk}/workflows/1/",
+    ):
         resp = client.get(path)
         assert resp.status_code == 404, path
         body = resp.content.decode()
-        assert "isn't one of your projects" in body and 'href="/hq/"' in body, path
+        assert "isn't one of your projects" in body and 'href="/commcare/"' in body, path
         assert "theirs" not in body  # nothing about the project leaks
+
+
+# -- the layout ---------------------------------------------------------------
+
+
+def test_a_person_with_a_connect_login_gets_the_standard_labs_layout_and_a_commcare_only_person_the_bare_one(client):
+    from connect_labs.labs.models import UserConnectToken
+
+    both = UserFactory()
+    UserConnectToken.objects.create(
+        user=both, access_token="c", refresh_token="r", expires_at=timezone.now() + timedelta(hours=1)
+    )
+    from connect_labs.labs.models import UserCCHQToken
+
+    UserCCHQToken.objects.create(
+        user=both, access_token="a", refresh_token="r", expires_at=timezone.now() + timedelta(hours=1)
+    )
+    client.force_login(both)
+    with mock.patch(
+        "connect_labs.hqdata.identity.fetch_identity",
+        return_value={"username": "ann@example.org", "email": "", "name": "Ann", "domains": []},
+    ):
+        body = client.get("/commcare/").content.decode()
+    assert 'id="labs-sidenav"' in body and 'data-testid="commcare-breadcrumb"' in body  # the standard chrome
+
+    from django.test import Client
+
+    only = Client()
+    make_hq_user(only)
+    bare = only.get("/commcare/").content.decode()
+    assert 'id="labs-sidenav"' not in bare and 'data-testid="commcare-breadcrumb"' not in bare

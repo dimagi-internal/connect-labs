@@ -1,6 +1,6 @@
-"""The /hq/ door.
+"""The /commcare/ door.
 
-``/hq/`` is a satellite prefix: the labs boundary leaves it alone, so everything here decides
+``/commcare/`` is a satellite prefix: the labs boundary leaves it alone, so everything here decides
 for itself. A person gets in with a CommCare token that works, which is either the CommCare
 login they used to arrive, or the CommCare connection a Connect person made earlier. Their
 domains are proven to labs as they pass (``sync_identity``).
@@ -29,13 +29,13 @@ def hq_login_required(view):
         user = request.user
         here = quote(request.get_full_path(), safe="/")
         if not user.is_authenticated:
-            return redirect(f"/hq/login/?next={here}")
+            return redirect(f"/commcare/login/?next={here}")
         token = cchq_token_or_none(user)
         if token is None:
             if request.session.get("hq_auth"):
                 # Signed in with CommCare, and the token is gone and cannot be refreshed.
                 logout(request)
-                return redirect(f"/hq/login/?next={here}")
+                return redirect(f"/commcare/login/?next={here}")
             # A Connect person who has not connected CommCare yet: the existing connection flow.
             request.session["commcare_oauth_next"] = request.get_full_path()
             return redirect("/labs/commcare/initiate/")
@@ -46,6 +46,10 @@ def hq_login_required(view):
         except ProjectNotYours:
             # A bare "page not found" tells someone who simply has not joined a project nothing about what to do.
             # This says the same thing whether the project exists or not, so it reveals nothing about it.
-            return render(request, "hqdata/not_yours.html", {"present_mode": True}, status=404)
+            from connect_labs.hqdata.access import is_commcare_only
+
+            return render(
+                request, "hqdata/not_yours.html", {"present_mode": is_commcare_only(request.user)}, status=404
+            )
 
     return wrapper

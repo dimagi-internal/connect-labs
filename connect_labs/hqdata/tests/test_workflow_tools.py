@@ -79,7 +79,7 @@ def test_a_member_creates_a_page_that_reads_a_saved_pipeline_and_sees_exactly_wh
     me, project, pipeline
 ):
     made = make(me, project, pipeline)
-    assert made["url"].endswith(f"/hq/projects/{project.pk}/workflows/{made['workflow_id']}/")
+    assert made["url"].endswith(f"/commcare/projects/{project.pk}/workflows/{made['workflow_id']}/")
     got = call("hq_workflow_get", me, project_id=project.pk, workflow_id=made["workflow_id"])
     assert got["render_code"] == CODE and got["pipeline_sources"] == [{"hq_pipeline_id": pipeline, "alias": "workers"}]
     data = call("hq_workflow_data", me, project_id=project.pk, workflow_id=made["workflow_id"])["pipelines"]

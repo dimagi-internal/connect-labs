@@ -2,7 +2,7 @@
 
 HQ (an embed client with a ``commcare_host``) signs an assertion naming the person
 (``cchq:<host>:<username>``), and labs draws one of the project's pages for them: the same sandboxed,
-read-only frame as ``/hq/``, with one data read. Differences from the Connect-shaped ``workflow`` kind:
+read-only frame as ``/commcare/``, with one data read. Differences from the Connect-shaped ``workflow`` kind:
 
 * no Connect token is stored, asked for or used (``needs_connect_token = False``);
 * the resource names a PROJECT as well as a page (``{"kind": "hq_workflow", "id": <page>, "project_id": <n>}``),

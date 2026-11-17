@@ -1,7 +1,7 @@
 # CommCare Projects
 
 Work with the data in a CommCare project space directly, without a Connect login. Sign in with your
-CommCare account at **`/hq/`**, add a project, keep its forms and cases up to date, and compute over them.
+CommCare account at **`/commcare/`**, add a project, keep its forms and cases up to date, and compute over them.
 
 ## Signing in
 

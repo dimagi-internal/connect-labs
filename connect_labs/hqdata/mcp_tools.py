@@ -160,7 +160,8 @@ def hq_project_get(user, project_id=None, **_):
     name="hq_project_create",
     description=(
         "Add a CommCare project you belong to. CommCare must list it among your projects and let your account read "
-        "its forms. Needs you to have signed in with CommCare at /hq/login/ (or connected CommCare in labs) once."
+        "its forms. Needs you to have signed in with CommCare at /commcare/login/ (or connected CommCare in labs) "
+        "once."
     ),
     input_schema={"type": "object", "properties": {"domain": {"type": "string"}}, "required": ["domain"]},
     is_write=True,
@@ -168,7 +169,7 @@ def hq_project_get(user, project_id=None, **_):
 def hq_project_create(user, domain="", **_):
     token = cchq_token_or_none(user)
     if token is None:
-        raise MCPToolError("PERMISSION_DENIED", "Sign in with CommCare at /hq/login/ first, then try again.")
+        raise MCPToolError("PERMISSION_DENIED", "Sign in with CommCare at /commcare/login/ first, then try again.")
     try:
         project = register_project(user, domain, token)
     except Refused as exc:

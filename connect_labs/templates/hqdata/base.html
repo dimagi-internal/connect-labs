@@ -1,17 +1,32 @@
 {% extends "base.html" %}
-{% block title %}CommCare data · Connect Labs{% endblock %}
+{% comment %}
+The CommCare pages. For a person with a Connect login this sits inside the standard labs layout (sidebar, header)
+like any other labs page; a person who reaches labs through CommCare alone gets the bare layout (`present_mode`).
+{% endcomment %}
+{% block title %}CommCare · Connect Labs{% endblock %}
 {% block content %}
-  <div class="mx-auto max-w-5xl py-6">
-    <header class="mb-6 flex items-center justify-between">
-      <a href="{% url 'hq:home' %}" class="text-xl font-semibold text-brand-indigo">CommCare data</a>
-      {% if request.user.is_authenticated %}
-        <div class="text-sm text-gray-600">
-          {{ request.user.name|default:request.user.username }}
-          <a class="ml-3 underline" href="{% url 'hq:tokens' %}">Access tokens</a>
-          <a class="ml-3 underline" href="{% url 'hq:logout' %}">Sign out</a>
-        </div>
-      {% endif %}
-    </header>
-    {% block hq_content %}{% endblock %}
+  <div class="{% if present_mode %}mx-auto max-w-5xl py-6{% else %}max-w-full mx-auto px-4 py-6{% endif %}" data-testid="commcare-page">
+    {% if present_mode %}
+      <header class="mb-6 flex items-center justify-between">
+        <a href="{% url 'hq:home' %}" class="text-xl font-semibold text-brand-indigo">CommCare</a>
+        {% if request.user.is_authenticated %}
+          <div class="text-sm text-gray-600">
+            {{ request.user.name|default:request.user.username }}
+            <a class="ml-3 underline" href="{% url 'hq:tokens' %}">Access tokens</a>
+            <a class="ml-3 underline" href="{% url 'hq:logout' %}">Sign out</a>
+          </div>
+        {% endif %}
+      </header>
+    {% else %}
+      <nav class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-600" data-testid="commcare-breadcrumb">
+        <a href="{% url 'labs:overview' %}" class="hover:text-gray-700">Labs</a>
+        <i class="fa-solid fa-chevron-right text-xs"></i>
+        <a href="{% url 'hq:home' %}" class="text-gray-900 hover:text-gray-700">CommCare</a>
+        <span class="ml-auto"><a class="text-brand-indigo hover:underline" href="{% url 'hq:tokens' %}">Access tokens</a></span>
+      </nav>
+    {% endif %}
+    <div class="{% if not present_mode %}max-w-5xl{% endif %}">
+      {% block hq_content %}{% endblock %}
+    </div>
   </div>
 {% endblock %}

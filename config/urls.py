@@ -10,6 +10,8 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from oauth2_provider.views import TokenView
 from rest_framework.authtoken.views import obtain_auth_token
 
+from connect_labs.hqdata.web import auth_views as hq_auth_views
+from connect_labs.hqdata.web.legacy import hq_legacy_redirect
 from connect_labs.labs.indicators import legacy as indicators_legacy
 from connect_labs.mcp.admin_views import create_token_browser
 from connect_labs.mcp.oauth import MCPAuthorizationView
@@ -95,7 +97,11 @@ urlpatterns = [
     path("labs/", include("connect_labs.labs.urls", namespace="labs")),
     path("ai/", include("connect_labs.ai.urls", namespace="ai")),
     path("campaign/", include("connect_labs.campaign.urls", namespace="campaign")),
-    path("hq/", include("connect_labs.hqdata.web.urls", namespace="hq")),
+    path("commcare/", include("connect_labs.hqdata.web.urls", namespace="hq")),
+    # The pages lived at /hq/ before they moved to /commcare/: the sign-in callback stays where HQ's OAuth app has it
+    # registered, and everything else on the old address redirects (bookmarks, links already sent).
+    path("hq/login/callback/", hq_auth_views.login_callback, name="hq_legacy_login_callback"),
+    re_path(r"^hq/(?P<rest>.*)$", hq_legacy_redirect),
     path("supply/", include("connect_labs.supply_chain.urls", namespace="supply_chain")),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 

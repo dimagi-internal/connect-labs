@@ -1,4 +1,4 @@
-"""The /hq/ pages: a person's CommCare projects, their sync, and what is stored."""
+"""The /commcare/ pages: a person's CommCare projects, their sync, and what is stored."""
 
 from __future__ import annotations
 
@@ -33,8 +33,16 @@ from connect_labs.hqdata.web.decorators import ProjectNotYours, hq_login_require
 
 
 def render(request, template, context=None, **kwargs):
-    """Every /hq/ page without the Connect shell: no sidenav, no Connect context selector."""
-    return django_render(request, template, {"present_mode": True, **(context or {})}, **kwargs)
+    """Every CommCare page, in the standard labs layout (sidebar, header) for anyone who has a Connect login.
+
+    Only a person who reaches labs through CommCare alone gets the bare layout: labs' header and sidebar read
+    their Connect organisations and opportunities, which such a person does not have.
+    """
+    from connect_labs.hqdata.access import is_commcare_only
+
+    return django_render(
+        request, template, {"present_mode": is_commcare_only(request.user), **(context or {})}, **kwargs
+    )
 
 
 def _project_for(request: HttpRequest, project_id: int) -> HQProject:

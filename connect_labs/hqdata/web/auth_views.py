@@ -1,7 +1,7 @@
 """CommCare HQ OAuth as a way into labs for people with no Connect login.
 
 Same HQ OAuth application as Campaign and the labs CommCare connection (``access_apis`` scope,
-PKCE). The redirect URI this flow uses, ``/hq/login/callback/``, has to be registered on that
+PKCE). The redirect URI this flow uses (``settings.HQ_LOGIN_CALLBACK_PATH``), has to be registered on that
 application in CommCare HQ: until it is, HQ refuses the authorization request.
 """
 
@@ -20,7 +20,6 @@ from django.contrib.auth import login, logout
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect
 from django.shortcuts import render as django_render
-from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
@@ -43,14 +42,22 @@ def render(request, template, context=None, **kwargs):
     return django_render(request, template, {"present_mode": True, **(context or {})}, **kwargs)
 
 
+def _callback_uri(request: HttpRequest) -> str:
+    """The redirect URI sent to HQ, which must match one registered on its OAuth app exactly."""
+    return request.build_absolute_uri(getattr(settings, "HQ_LOGIN_CALLBACK_PATH", "/hq/login/callback/"))
+
+
 def _safe_next(value: str | None) -> str:
-    """Only paths under /hq/; anything else (another site, a labs path) goes home."""
+    """Only paths under /commcare/ (a link from the old /hq/ address is moved over); anything else goes home."""
     value = (value or "").replace("\\", "/")
+    if value.startswith("/hq/"):
+        value = "/commcare/" + value[len("/hq/") :]
     if ".." in value.split("?")[0].split("/"):
-        return "/hq/"  # a browser resolves /hq/../x to /x, so it is not under /hq/ whatever it starts with
-    if value.startswith("/hq/") and url_has_allowed_host_and_scheme(value, allowed_hosts=None):
+        # a browser resolves /commcare/../x to /x, so it is not under /commcare/ whatever it starts with
+        return "/commcare/"
+    if value.startswith("/commcare/") and url_has_allowed_host_and_scheme(value, allowed_hosts=None):
         return value
-    return "/hq/"
+    return "/commcare/"
 
 
 def _denied(request: HttpRequest, reason: str, status: int) -> HttpResponse:
@@ -77,7 +84,7 @@ def login_initiate(request: HttpRequest) -> HttpResponse:
 
     params = {
         "client_id": client_id,
-        "redirect_uri": request.build_absolute_uri(reverse("hq:login_callback")),
+        "redirect_uri": _callback_uri(request),
         "scope": "access_apis",
         "response_type": "code",
         "state": state,
@@ -103,7 +110,7 @@ def login_callback(request: HttpRequest) -> HttpResponse:
                 data={
                     "grant_type": "authorization_code",
                     "code": code,
-                    "redirect_uri": request.build_absolute_uri(reverse("hq:login_callback")),
+                    "redirect_uri": _callback_uri(request),
                     "client_id": settings.COMMCARE_OAUTH_CLIENT_ID,
                     "client_secret": settings.COMMCARE_OAUTH_CLIENT_SECRET,
                     "code_verifier": verifier,
@@ -140,7 +147,7 @@ def login_callback(request: HttpRequest) -> HttpResponse:
             "expires_at": timezone.now() + timedelta(seconds=token.get("expires_in", 3600)),
         },
     )
-    nxt = request.session.get(_NEXT) or "/hq/"
+    nxt = request.session.get(_NEXT) or "/commcare/"
     for key in (_STATE, _VERIFIER, _NEXT):
         request.session.pop(key, None)
     login(request, user, backend="django.contrib.auth.backends.ModelBackend")
