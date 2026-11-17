@@ -28,7 +28,7 @@ class TestNewbornMortality:
         assert baseline.Baselines([nigeria["ng"]]).newborn_mortality("NER", None) is None
 
 
-def selection(nigeria, lbw=None):
+def selection(nigeria, lbw=None, proxied=()):
     """What the baseline's selection of the two Nigerian states looks like to ``people``."""
     lbw = lbw or {"kano": 80_000, "lagos": 120_000}
     areas = [
@@ -38,6 +38,7 @@ def selection(nigeria, lbw=None):
             country_name="Nigeria",
             name=nigeria[k].name,
             counts={"births_lbw": lbw[k], "pop_u5": lbw[k] * 10},
+            regional_proxy_units={"births_lbw": lbw[k]} if k in proxied else {},
         )
         for k in ("kano", "lagos")
     ]

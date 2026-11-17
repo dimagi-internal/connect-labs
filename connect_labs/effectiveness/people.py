@@ -92,6 +92,7 @@ def group_selection(selection, grain: str = "country") -> dict:
                 "iso3": area.iso_code,
                 "counts": {},
                 "partial": set(),
+                "proxied": set(),
             },
         )
         if grain == "territory":
@@ -102,8 +103,12 @@ def group_selection(selection, grain: str = "country") -> dict:
                 c["partial"].add(m)
             else:
                 c["counts"][m] = c["counts"].get(m, 0) + v
+            if area.regional_proxy_units.get(m):  # the count rests on a regional rate, not the country's own
+                c["proxied"].add(m)
     return {
-        "places": {k: {**c, "partial": sorted(c["partial"])} for k, c in places.items()},
+        "places": {
+            k: {**c, "partial": sorted(c["partial"]), "proxied": sorted(c["proxied"])} for k, c in places.items()
+        },
         "boundaries": boundaries,
         "regions": selection.unit_count,
         "unsupported": selection.countries_unsupported,
@@ -191,7 +196,7 @@ def people_by_place(question: Question, grain: str = "country") -> dict:
     """``group_selection`` for the question with each place's risk, kept with the data (a selection resolves hundreds
     of regions, and a territory grain resolves every one of them)."""
     key = (
-        "market:people:v3:"
+        "market:people:v4:"
         + hashlib.sha1(f"{response_cache.data_version()}|{grain}|{question.cache_key()}".encode()).hexdigest()
     )
     got = cache.get(key)
@@ -213,6 +218,7 @@ def for_model(found: dict, model: str) -> dict:
             "iso3": p["iso3"],
             "units": p["counts"].get(measure),
             "partial": measure in p["partial"],
+            "proxied": measure in p["proxied"],
             "measures": p.get("measures", {}),
             "measures_how": p.get("measures_how", {}),
             "inputs": p.get("inputs", {}).get(model, {}),

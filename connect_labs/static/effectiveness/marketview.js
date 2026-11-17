@@ -413,6 +413,20 @@
               }),
             );
           }
+          if (p.regional_proxy && p.regional_proxy.people > 0)
+            kids.push(
+              h('p', {
+                class: 'muted',
+                text:
+                  num(p.regional_proxy.people) +
+                  ' of the people planned (' +
+                  p.regional_proxy.places +
+                  (p.regional_proxy.places === 1 ? ' place' : ' places') +
+                  ' in ' +
+                  p.regional_proxy.countries.join(', ') +
+                  ') are counted from a regional low-birthweight rate: UNICEF-WHO publish no national figure for these countries, so the count describes the region.',
+              }),
+            );
           if (p.reliability) {
             var rel = p.reliability,
               dd = rel.deaths;

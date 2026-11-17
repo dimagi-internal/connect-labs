@@ -181,6 +181,7 @@ def size(
                 "modelled": modelled,
                 "clears_bar": bool(modelled and x >= bar),
                 "partial": bool(p.get("partial")),
+                "regional_proxy": bool(p.get("proxied")),
                 "deaths_per_person": deaths_pp,
                 "deaths_averted": deaths,
                 "cost_per_death": (market_usd / deaths) if deaths else None,
@@ -307,6 +308,7 @@ def _part(r: dict, reached: float) -> dict:
         "risk": r["risk"],
         "far_from_country": r["far_from_country"],
         "conflict_rate": r.get("conflict_rate"),
+        "regional_proxy": r.get("regional_proxy", False),
     }
 
 
@@ -409,6 +411,7 @@ def plan(rows: list[dict], target: float, limits: PlanLimits | None = None) -> d
         "places": picked,
         "countries": by_country(picked),
         "countries_needed": needed,
+        "regional_proxy": _proxy(picked),
         "limits": {
             "min_place": limits.min_place,
             "max_countries": limits.max_countries,
@@ -420,6 +423,17 @@ def plan(rows: list[dict], target: float, limits: PlanLimits | None = None) -> d
         "totals": best,
         "even": even,
         "gain": gain,
+    }
+
+
+def _proxy(picked: list[dict]) -> dict:
+    """How much of a plan's people are counted from a regional rate rather than their country's own (low birthweight
+    for the sixteen countries UNICEF-WHO publish no national figure for), and in which countries."""
+    on = [p for p in picked if p.get("regional_proxy")]
+    return {
+        "people": sum(p["reached"] for p in on),
+        "places": len(on),
+        "countries": sorted({p["country"] for p in on}),
     }
 
 
