@@ -348,7 +348,16 @@ def test_the_clone_job_always_asks_for_new_opportunities(monkeypatch, django_use
 
     def _generate(spec, **kwargs):
         seen.update(kwargs)
-        return spec, []
+        made = module.CloneResult(
+            source_opportunity_id=523,
+            opportunity_id=10601,
+            gdrive_folder_id=None,
+            folder_url=None,
+            record_counts={},
+            app_structure_present=False,
+            skipped=False,
+        )
+        return spec, [made]
 
     monkeypatch.setattr(module, "profile_cohort", lambda spec, **k: spec)
     monkeypatch.setattr(module, "generate_cohort", _generate)

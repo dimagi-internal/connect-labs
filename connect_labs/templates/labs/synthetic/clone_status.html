@@ -16,6 +16,14 @@
       <ul class="mb-4 list-disc pl-6 text-sm text-gray-900" data-testid="clone-result">
         {% for c in status.result.clones %}<li>Opportunity <strong>#{{ c.opportunity_id }}</strong>, a copy of #{{ c.source_opportunity_id }}</li>{% endfor %}
       </ul>
+      {% if status.result.failed %}
+        <div class="mb-4 rounded border border-message-error-text p-3" data-testid="clone-failed">
+          <p class="mb-2 text-sm font-medium text-message-error-text"><i class="fa-solid fa-triangle-exclamation mr-1.5"></i> {{ status.result.failed|length }} of the opportunities you chose could not be cloned:</p>
+          <ul class="list-disc pl-6 text-sm text-gray-900">
+            {% for f in status.result.failed %}<li>#{{ f.source_opportunity_id|default:"?" }} failed while {% if f.step == "measure" %}measuring the real opportunity{% else %}generating the clone{% endif %}: <span class="text-gray-700">{{ f.error }}</span></li>{% endfor %}
+          </ul>
+        </div>
+      {% endif %}
       <p class="text-sm text-gray-700">Open <a class="text-brand-indigo underline" href="{% url 'labs:overview' %}">Labs</a> and pick it in the opportunity selector, under that program.</p>
     {% elif status.state == "REVOKED" %}
       <p class="mb-2 font-medium text-gray-900"><i class="fa-solid fa-ban mr-1.5"></i> Cancelled.</p>

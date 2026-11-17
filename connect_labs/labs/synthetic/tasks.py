@@ -16,6 +16,7 @@ same shape audit creation already uses (`run_audit_creation`), including the
 pre-generated task id so a result can be found before the task starts.
 """
 
+import dataclasses
 import functools
 import logging
 from typing import Any
@@ -369,16 +370,40 @@ def run_synthetic_clone_opp(
         if reason:
             raise PermissionError(reason)
 
+    failures = []
     with restricted_job(restricted):
         progress(0, 2, "Step 1 of 2: measuring the real opportunities")
         spec = profile_cohort(
-            spec, base_url=settings.CONNECT_PRODUCTION_URL, oauth_token=oauth_token, drive=drive, progress=progress
+            spec,
+            base_url=settings.CONNECT_PRODUCTION_URL,
+            oauth_token=oauth_token,
+            drive=drive,
+            progress=progress,
+            failures=failures,
         )
+        if len(failures) >= len(spec.opportunity_ids):
+            # Nothing to generate from. Stop before step 2, which would hand out a
+            # program id that holds no clone (and that the next clone then reuses).
+            raise CloneJobFailed(_failure_message(failures, len(spec.opportunity_ids)))
         progress(1, 2, "Step 2 of 2: generating the clones")
         # A new clone every time: "clone this" never hands back an older clone of the same source.
         spec, results = generate_cohort(
-            spec, drive=drive, authorize=authorize, created_by=user, progress=progress, new_opportunities=True
+            spec,
+            drive=drive,
+            authorize=authorize,
+            created_by=user,
+            progress=progress,
+            new_opportunities=True,
+            failures=failures,
         )
+    clones = [
+        {"source_opportunity_id": r.source_opportunity_id, "opportunity_id": r.opportunity_id}
+        for r in results
+        if not r.skipped
+    ]
+    if not clones:
+        # A job that made nothing is a FAILURE, never a "Done" over an empty list.
+        raise CloneJobFailed(_failure_message(failures, len(spec.opportunity_ids)))
     if not user.view_synthetic_opps:
         user.view_synthetic_opps = True
         user.save(update_fields=["view_synthetic_opps"])
@@ -386,17 +411,33 @@ def run_synthetic_clone_opp(
     return {
         "program_id": spec.program_id,
         "program_name": spec.program_name,
-        "clones": [
-            {"source_opportunity_id": r.source_opportunity_id, "opportunity_id": r.opportunity_id}
-            for r in results
-            if not r.skipped
-        ],
+        "clones": clones,
+        # The opportunities that were asked for and not cloned, each with its reason,
+        # so a partly failed job says which and why on its own page.
+        "failed": [dataclasses.asdict(f) for f in failures],
         "profile_bundles": spec.bundle_root,
         "how_to_open": (
             f"Open {labs}/labs/overview/ and pick the clone in the opportunity selector, under program "
             f"'{spec.program_name}'. Synthetic opportunities are now shown in your labs lists."
         ),
     }
+
+
+class CloneJobFailed(RuntimeError):
+    """A clone job that made no clone at all. Its message is what the status page shows."""
+
+
+_STEP_WORDS = {"measure": "while measuring the real opportunity", "generate": "while generating the clone"}
+
+
+def _failure_message(failures, requested: int) -> str:
+    """One readable sentence per opportunity that failed, for the job's FAILURE."""
+    if not failures:
+        return f"No clone was made from the {requested} opportunities asked for, and no error was recorded."
+    lines = [
+        f"#{f.source_opportunity_id or '?'} failed {_STEP_WORDS.get(f.step, f.step)}: {f.error}" for f in failures
+    ]
+    return "No clone was made. " + " ".join(lines)
 
 
 def slot_holders() -> list[str | None]:
