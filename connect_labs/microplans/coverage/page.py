@@ -25,7 +25,9 @@ from connect_labs.labs.access.scopes import Caller
 from connect_labs.labsdata import service, spaces
 from connect_labs.labsdata.engine import QueryError
 from connect_labs.labsdata.scope import ScopeError
-from connect_labs.microplans.coverage import check, population, read, upload
+from connect_labs.microplans.coverage import check
+from connect_labs.microplans.coverage import commcare as commcare_source
+from connect_labs.microplans.coverage import population, read, upload
 from connect_labs.microplans.coverage.request import (
     BadRequest,
     build_spec,
@@ -141,6 +143,70 @@ def from_upload(request, body: dict, data: bytes) -> dict:
     return result
 
 
+class CommCareNotConnected(Exception):
+    """The person has not connected a CommCare login, so no project can be read as them."""
+
+
+#: Where a Connect person connects CommCare (the same flow every CommCare-backed labs page uses).
+CONNECT_COMMCARE_URL = "/labs/commcare/initiate/"
+
+
+def commcare_projects(user) -> tuple[list[dict], bool]:
+    """``(the person's CommCare projects, whether CommCare is connected)``.
+
+    A person signs in to labs with Connect and connects CommCare beside it (one session, two logins). Their projects
+    are the ones CommCare itself lists for them (``sync_identity`` proves it at most once an hour), never a list
+    labs keeps for them."""
+    from connect_labs.hqdata.access import visible_projects
+    from connect_labs.hqdata.identity import sync_identity
+    from connect_labs.labs.integrations.commcare.cchq_tokens import cchq_token_or_none
+
+    token = cchq_token_or_none(user)
+    if token is None:
+        return [], False
+    sync_identity(user, token)
+    return [{"id": p.pk, "domain": p.domain} for p in visible_projects(user).order_by("domain")], True
+
+
+def from_commcare(request, body: dict) -> dict:
+    """Either lens from a CommCare project's stored forms, as the person: nothing is stored, only counts come back."""
+    from connect_labs.hqdata.access import ProjectAccessDenied, may_use_project
+    from connect_labs.hqdata.models import HQProject
+    from connect_labs.hqdata.pipelines import PipelineProblem
+    from connect_labs.hqdata.stores import StoreUnavailable
+
+    spec, labels, _ = build_spec(body, need_opps=False)
+    projects, connected = commcare_projects(request.user)
+    if not connected:
+        raise CommCareNotConnected()
+    try:
+        project = HQProject.objects.filter(pk=int(body.get("project_id"))).first()
+    except (TypeError, ValueError):
+        project = None
+    # The same answer whether the project does not exist or is not the person's.
+    if project is None or not may_use_project(request.user, project):
+        raise BadRequest("choose one of your CommCare projects")
+    try:
+        rows, served = commcare_source.read(
+            request.user,
+            project,
+            spec,
+            app_id=str(body.get("app_id") or "").strip(),
+            xmlns=str(body.get("xmlns") or "").strip(),
+        )
+    except (PipelineProblem, ProjectAccessDenied, StoreUnavailable) as e:
+        raise BadRequest(str(e)) from e
+    if str(body.get("lens")) == "population":
+        result = compute_population(
+            rows, served, spec, labels, parse_iso(body.get("iso")), parse_targets(body.get("facilities"))
+        )
+    else:
+        result = compute_run(rows, spec, labels)
+        result["households_total"] = result.get("households_total", len(rows))
+    result["commcare"] = {"project": project.domain, "households": len(rows)}
+    return result
+
+
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class BuildingsReachedPage(LoginRequiredMixin, TemplateView):
     template_name = "microplans/buildings_reached.html"
@@ -149,6 +215,8 @@ class BuildingsReachedPage(LoginRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         # The public Mapbox token the other microplans maps use; without one the page shows its tables only.
         context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
+        context["commcare_projects"], context["commcare_connected"] = commcare_projects(self.request.user)
+        context["connect_commcare_url"] = CONNECT_COMMCARE_URL
         return context
 
 
@@ -174,6 +242,25 @@ class BuildingsReachedRun(LoginRequiredMixin, View):
             return JsonResponse({"error": e.code, "message": e.message}, status=404)
         except QueryError as e:
             return JsonResponse(e.as_dict(), status=400)
+
+
+class BuildingsReachedCommCare(BuildingsReachedRun):
+    """Either lens from a CommCare project (JSON: ``project_id`` plus the same settings as the run)."""
+
+    action = staticmethod(from_commcare)
+
+    def post(self, request):
+        try:
+            return super().post(request)
+        except CommCareNotConnected:
+            return JsonResponse(
+                {
+                    "error": "commcare_not_connected",
+                    "message": "Connect your CommCare login to read a CommCare project.",
+                    "connect_url": CONNECT_COMMCARE_URL,
+                },
+                status=403,
+            )
 
 
 class BuildingsReachedLoad(BuildingsReachedRun):

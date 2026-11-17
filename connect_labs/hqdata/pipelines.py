@@ -164,18 +164,19 @@ def delete_pipeline(user, project, record, *, is_admin: bool) -> None:
         dao.close()
 
 
-def pipeline_rows(
-    user, project, record, *, force_refresh: bool = False, window: tuple[str, str] | None = None
+def rows_for_schema(
+    user, project, schema: dict, *, pipeline_id: int = 0, force_refresh: bool = False, window=None
 ) -> list[dict]:
-    """EVERY row of a saved pipeline, as the person. The ``rows`` of ``run_pipeline`` are capped for display;
-    a workflow draws from all of them.
+    """EVERY row a pipeline schema computes over this project's stored rows, as the person.
 
-    ``window`` is a half-open ``[start, end)`` visit-date span. It applies only to a pipeline whose schema
-    sets ``period_scoped`` (and groups to one row per worker): that pipeline is re-aggregated over the
-    window, exactly as the workflow engine does for a saved run; any other pipeline returns all its rows.
+    The one function that runs a project pipeline, whether it is a saved one (``pipeline_rows``) or a schema a
+    report builds on the fly (the campaign coverage page). Whatever the schema's ``data_source`` says, it is
+    stamped to this project (and the forms/cases narrowing it carries is kept), so a schema cannot read another
+    project; ``require_project`` is checked here and again inside the pipeline, on the read itself.
 
-    ``require_project`` is checked here and again, inside the pipeline, on the read itself, so a
-    caller that skips this function still cannot read.
+    ``window`` is a half-open ``[start, end)`` visit-date span. It applies only to a schema that sets
+    ``period_scoped`` (and groups to one row per worker): that pipeline is re-aggregated over the window, exactly
+    as the workflow engine does for a saved run; any other returns all its rows.
     """
     from connect_labs.hqdata.pipeline_source import ensure_fits
     from connect_labs.hqdata.stores import store_for
@@ -183,19 +184,18 @@ def pipeline_rows(
     from connect_labs.workflow.data_access import serialize_pipeline_row
 
     require_project(user, project)
-    # Whatever the record's schema says, the data source is this project's.
-    source = (record.schema or {}).get("data_source") or {}
-    schema = stamped_schema(
+    source = (schema or {}).get("data_source") or {}
+    stamped = stamped_schema(
         project,
         source.get("store_kind", "forms"),
-        record.schema,
+        schema,
         source.get("app_id", ""),
         source.get("xmlns", ""),
         source.get("case_type", ""),
     )
-    config = config_for(schema, record.id)
+    config = config_for(stamped, pipeline_id)
     ensure_fits(config.data_source)  # a very large project fails here, in words, not in the worker
-    scoped = bool(window) and bool(schema.get("period_scoped"))
+    scoped = bool(window) and bool(stamped.get("period_scoped"))
     # The session closes whatever connection into a customer's database the run opened.
     with store_for(project).session():
         analysis = AnalysisPipeline(None, local_only_user=user)
@@ -212,6 +212,16 @@ def pipeline_rows(
                 )
             result = windowed
     return [serialize_pipeline_row(r) for r in result.rows]
+
+
+def pipeline_rows(
+    user, project, record, *, force_refresh: bool = False, window: tuple[str, str] | None = None
+) -> list[dict]:
+    """EVERY row of a saved pipeline, as the person (``rows_for_schema`` over its stored schema). The ``rows`` of
+    ``run_pipeline`` are capped for display; a workflow draws from all of them."""
+    return rows_for_schema(
+        user, project, record.schema, pipeline_id=record.id, force_refresh=force_refresh, window=window
+    )
 
 
 def run_pipeline(user, project, record, *, force_refresh: bool = False) -> dict:

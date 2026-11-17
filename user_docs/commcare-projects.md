@@ -97,6 +97,14 @@ pipeline is frozen whole. Through an access token: `commcare_workflow_run_save`,
 stored forms and cases, start a sync and run pipelines. It reaches only the projects you belong to, and nothing
 from Connect. Shown once when you make it; revoke it any time.
 
+## Using a project beside Connect
+
+A person can sign in to labs with Connect and connect their CommCare login too (the **Connect CommCare** link on any
+page that needs it). Their CommCare projects then work in the places that read Connect: the **Buildings reached**
+coverage page offers **A CommCare project** as a data source next to Connect opportunities and a CSV upload, and a
+Connect workflow can name a project's data as a source beside its Connect sources. Only a project the person belongs
+to can be read, and only as them.
+
 ## What is not here yet
 
 * Workflow runs, saved snapshots and scheduled runs over a CommCare project, and workflows for a project that
