@@ -415,7 +415,7 @@
               h('p', {
                 class: 'muted reliability',
                 title:
-                  'Each place\'s newborn mortality is redrawn within its published interval ' +
+                  "Each place's newborn mortality is redrawn within its published interval " +
                   rel.draws +
                   ' times and the plan rebuilt each time.',
                 text:
@@ -733,7 +733,9 @@
                       ' to ' +
                       mult(x.multiple_high) +
                       (x.risk_raw != null
-                        ? ' (the published figure, ' + x.risk_raw.toFixed(1) + ' per 1,000, was pulled toward the country\'s)'
+                        ? ' (the published figure, ' +
+                          x.risk_raw.toFixed(1) +
+                          " per 1,000, was pulled toward the country's)"
                         : '')
                     : null,
                 text: x.modelled ? mult(x.multiple) : 'no model figure',
