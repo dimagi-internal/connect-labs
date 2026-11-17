@@ -1,7 +1,8 @@
 """Saved scenarios over HTTP: what the scenario panel on Market size and the workspace calls.
 
 ``GET`` lists the viewer's own and the shared ones, ``POST`` saves one (``{name, params, note, shared, overwrite}``),
-and a scenario's own address reads and deletes it. All the rules are ``effectiveness.saved``; this only carries them.
+and a scenario's own address reads, changes (``PATCH`` a name, note or ``shared``) and deletes it. All the rules are
+``effectiveness.saved``; this only carries them.
 """
 
 from __future__ import annotations
@@ -57,6 +58,16 @@ class ScenarioDetailView(ScenarioPageGate, View):
             return JsonResponse(saved.as_dict(saved.get(request.user, pk), request.user))
         except saved.SavedError as exc:
             return _fail(exc)
+
+    def patch(self, request, pk):
+        try:
+            body = _body(request)
+            record = saved.update(
+                request.user, pk, name=body.get("name"), note=body.get("note"), shared=body.get("shared")
+            )
+        except saved.SavedError as exc:
+            return _fail(exc)
+        return JsonResponse(saved.as_dict(record, request.user))
 
     def delete(self, request, pk):
         try:

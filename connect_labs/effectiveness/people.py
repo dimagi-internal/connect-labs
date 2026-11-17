@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 from django.core.cache import cache
 
-from connect_labs.effectiveness import market
+from connect_labs.effectiveness import engine, market
 from connect_labs.effectiveness.baseline import Baselines
 from connect_labs.effectiveness.scenario import EVERYWHERE, Scenario
 from connect_labs.labs.indicators import boundaries as boundary_set
@@ -113,31 +113,55 @@ def group_selection(selection, grain: str = "country") -> dict:
 
 
 def attach_risk(found: dict) -> dict:
-    """Put each place's newborn mortality on it (``measures``), for the models whose risk scales to the place.
+    """Put each place's own figures on it, for the models whose answer depends on the place.
 
-    A country's is the country's own estimate; a territory's is its own figure where Labs has one, else the country's
-    scaled by how the territory's under-five mortality compares (``Baselines.newborn_mortality``). A place with no
-    figure is left without one and is sized at the model's own risk, and says so.
+    ``measures``: the place's newborn mortality, and the country's beside it (so a figure far from its country's can be
+    flagged and ``trust`` has something to pull toward). A country's is the country's own estimate; a territory's is
+    its own figure where Labs has one, else the country's scaled by how the territory's under-five mortality compares
+    (``Baselines.newborn_mortality``). A place with no figure is left without one and is sized at the model's own risk.
+
+    ``inputs`` (territories only): for each model, the place inputs the baseline holds for the territory itself, by the
+    same recipes Implementations value a delivery with (``Baselines.for_area``): survey coverage for the territory, the
+    country's death rates scaled by its mortality. An input with nothing local is left out, so the model's country
+    figure stands.
     """
     isos = sorted({p["iso3"] for p in found["places"].values()})
     if not isos:
         return found
-    if found["grain"] == "territory":
+    territory = found["grain"] == "territory"
+    if territory:
         baselines = Baselines(list(found["boundaries"].values()))
     else:
         baselines = Baselines(list(boundary_set.owned().filter(iso_code__in=isos, admin_level=0)))
+    country = {iso: baselines.newborn_mortality(iso, None) for iso in isos}
     for key, p in found["places"].items():
-        got = baselines.newborn_mortality(p["iso3"], found["boundaries"].get(key))
-        p["measures"] = {"nmr": got[0]} if got else {}
-        p["measures_how"] = {"nmr": got[1]} if got else {}
+        boundary = found["boundaries"].get(key)
+        got = baselines.newborn_mortality(p["iso3"], boundary)
+        p["measures"], p["measures_how"] = {}, {}
+        if got:
+            p["measures"]["nmr"], p["measures_how"]["nmr"] = got
+        if country[p["iso3"]]:
+            p["measures"]["nmr_country"] = country[p["iso3"]][0]
+        if territory:
+            local = {}
+            for model in engine.MODELS:
+                values = baselines.for_area(model, p["iso3"], boundary)
+                own = {k: v.value for k, v in values.items() if v.level not in LABS_NOT_LOCAL}
+                if own:
+                    local[model] = own
+            p["inputs"] = local
     return found
+
+
+#: Where a ``Baselines`` value says it came from when it is the model's own figure, not the place's: nothing local.
+LABS_NOT_LOCAL = ("model country figure", "model default")
 
 
 def people_by_place(question: Question, grain: str = "country") -> dict:
     """``group_selection`` for the question with each place's risk, kept with the data (a selection resolves hundreds
     of regions, and a territory grain resolves every one of them)."""
     key = (
-        "market:people:v2:"
+        "market:people:v3:"
         + hashlib.sha1(f"{response_cache.data_version()}|{grain}|{question.cache_key()}".encode()).hexdigest()
     )
     got = cache.get(key)
@@ -160,6 +184,8 @@ def for_model(found: dict, model: str) -> dict:
             "units": p["counts"].get(measure),
             "partial": measure in p["partial"],
             "measures": p.get("measures", {}),
+            "measures_how": p.get("measures_how", {}),
+            "inputs": p.get("inputs", {}).get(model, {}),
         }
         for key, p in found["places"].items()
     }

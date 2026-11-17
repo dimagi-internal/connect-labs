@@ -5,7 +5,7 @@ from connect_labs.effectiveness.views.implementation import (
     ImplementationOppView,
     ImplementationView,
 )
-from connect_labs.effectiveness.views.market import MarketSizeDataView, MarketSizeView
+from connect_labs.effectiveness.views.market import MarketPlanCsvView, MarketSizeDataView, MarketSizeView
 from connect_labs.effectiveness.views.models import ModelExplorerView, ModelRunView
 from connect_labs.effectiveness.views.scenarios import ScenarioDetailView, ScenarioListView
 from connect_labs.effectiveness.views.workspace import WorkspaceShapesView, WorkspaceView
@@ -14,6 +14,7 @@ __all__ = [
     "ImplementationDataView",
     "ImplementationOppView",
     "ImplementationView",
+    "MarketPlanCsvView",
     "MarketSizeDataView",
     "MarketSizeView",
     "ModelExplorerView",

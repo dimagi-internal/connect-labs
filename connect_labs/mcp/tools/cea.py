@@ -331,6 +331,34 @@ def cea_opportunities(
                     "reached (kc starts at 50, the others at 100)."
                 ),
             },
+            "min_place": {
+                "type": "number",
+                "description": (
+                    "With `model` and `target`: leave out any place that can give fewer people than this (too small "
+                    "to be worth a team)."
+                ),
+            },
+            "max_countries": {
+                "type": "integer",
+                "minimum": 1,
+                "description": (
+                    "With `model` and `target`: keep to this many countries, the ones that matter most to the best "
+                    "plan; `plan.countries_needed` says how many it takes to reach the target at all."
+                ),
+            },
+            "trust": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100,
+                "default": 100,
+                "description": (
+                    "With `model`: how far to believe each place's own figures, in %. 100 uses them fully; lower "
+                    "pulls "
+                    "a territory toward its country's and a country toward the model's, to see whether a plan "
+                    "survives "
+                    "noisy data. A plan also carries `check`: how it holds up at 50."
+                ),
+            },
             "place_risk": {
                 "type": "boolean",
                 "default": True,
@@ -366,6 +394,9 @@ def cea_market_size(
     target=None,
     dials=None,
     place_risk=True,
+    min_place=None,
+    max_countries=None,
+    trust=100,
 ):
     if model:
         return _market_size_by_model(
@@ -382,6 +413,9 @@ def cea_market_size(
             target=target,
             dials=dials,
             place_risk=place_risk,
+            min_place=min_place,
+            max_countries=max_countries,
+            trust=trust,
         )
     if basis is None or unit_cost is None:
         raise MCPToolError(
@@ -499,6 +533,9 @@ def _market_size_by_model(
     target=None,
     dials=None,
     place_risk=True,
+    min_place=None,
+    max_countries=None,
+    trust=100,
 ):
     """``cea_market_size`` with a model: the same ``effectiveness.sizing`` the Market size and Workspace pages call,
     so an agent's answer is the page's for the same scenario. The tool only turns its arguments into a scenario."""
@@ -525,6 +562,9 @@ def _market_size_by_model(
         ("target_year", target_year),
         ("bar", bar),
         ("target", target),
+        ("min_place", min_place),
+        ("max_countries", max_countries),
+        ("trust", None if trust == 100 else trust),
         ("place_risk", None if place_risk else "0"),
     ):
         if value is not None:

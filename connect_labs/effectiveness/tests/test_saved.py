@@ -199,3 +199,41 @@ class TestOpeningOne:
     def test_the_page_carries_what_saving_needs(self, signed_in, page):
         data = embedded(signed_in.get(reverse(page)).content.decode())
         assert data["signed_in"] is True and data["csrf"] and data["scenarios_url"] == "/labs/cea/scenarios/"
+
+
+class TestChangingOne:
+    def test_the_owner_can_rename_it_and_share_it_and_make_it_private_again(self, ann):
+        record, _ = saved.save(ann, "Sahel", LINK)
+        got = saved.update(ann, record.pk, name="Sahel push", shared=True, note="why")
+        assert (got.name, got.shared, got.note) == ("Sahel push", True, "why")
+        assert saved.update(ann, record.pk, shared=False).shared is False
+        assert saved.update(ann, record.pk).name == "Sahel push"  # nothing asked, nothing changed
+
+    def test_a_rename_that_collides_with_another_of_yours_is_refused_naming_it(self, ann):
+        saved.save(ann, "One", LINK)
+        two, _ = saved.save(ann, "Two", LINK)
+        err = refuses(409, saved.update, ann, two.pk, name="One")
+        assert "One" in err.message
+        assert saved.update(ann, two.pk, name="Two").name == "Two"  # its own name is no collision
+
+    @pytest.mark.parametrize("name", ["", "  ", "x" * 201])
+    def test_a_name_is_still_needed_and_bounded(self, ann, name):
+        record, _ = saved.save(ann, "Sahel", LINK)
+        refuses(400, saved.update, ann, record.pk, name=name)
+
+    def test_only_the_owner_changes_it_even_when_it_is_shared(self, ann, bob):
+        record, _ = saved.save(ann, "Open", LINK, shared=True)
+        refuses(403, saved.update, bob, record.pk, name="Mine now")
+        mine, _ = saved.save(ann, "Private", LINK)
+        refuses(404, saved.update, bob, mine.pk, shared=True)
+        refuses(403, saved.update, AnonymousUser(), record.pk, shared=False)
+
+    def test_over_http_a_patch_changes_it(self, client, ann):
+        client.force_login(ann)
+        record, _ = saved.save(ann, "Sahel", LINK)
+        url = reverse("cea:scenario", args=[record.pk])
+        r = client.patch(url, json.dumps({"name": "Sahel push", "shared": True}), content_type="application/json")
+        assert r.status_code == 200 and r.json()["name"] == "Sahel push" and r.json()["shared"] is True
+        clash, _ = saved.save(ann, "Other", LINK)
+        r = client.patch(url, json.dumps({"name": "Other"}), content_type="application/json")
+        assert r.status_code == 409 and r.json()["id"] == clash.pk

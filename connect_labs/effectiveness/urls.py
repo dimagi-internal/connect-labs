@@ -31,6 +31,7 @@ urlpatterns = [
     path("implementation/opp/<int:opp_id>/", views.ImplementationOppView.as_view(), name="implementation_opp"),
     path("market/", views.MarketSizeView.as_view(), name="market"),
     path("market/api/", views.MarketSizeDataView.as_view(), name="market_data"),
+    path("market/plan.csv", views.MarketPlanCsvView.as_view(), name="market_plan_csv"),
     path("workspace/", views.WorkspaceView.as_view(), name="workspace"),
     path("workspace/shapes/", views.WorkspaceShapesView.as_view(), name="workspace_shapes"),
     path("scenarios/", views.ScenarioListView.as_view(), name="scenarios"),

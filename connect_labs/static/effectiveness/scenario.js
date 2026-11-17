@@ -3,7 +3,7 @@
  * The server reads the link, fills in everything the link leaves out, and embeds the whole thing in the page
  * (`data.state`). This module starts from that, changes it as the controls do, writes only what differs from the default
  * back to the address bar, and asks the API again. It owns the link's spelling (`<model>_<dial>`, `i.<model>.<input>`,
- * `target`, `place_risk=0`, `grain=territory`), so a page never builds a query string of its own. A dial's default is the
+ * `target`, `min_place`, `max_countries`, `trust`, `place_risk=0`, `grain=territory`), so a page never builds a query string of its own. A dial's default is the
  * model's own (`data.dial_defaults`): Kangaroo Care starts at reaching half of a place's cases, the others at all. */
 (function () {
   'use strict';
@@ -28,6 +28,9 @@
       iso: start.iso || '',
       bar: start.bar,
       target: start.target == null ? null : start.target,
+      min_place: start.min_place == null ? null : start.min_place,
+      max_countries: start.max_countries == null ? null : start.max_countries,
+      trust: start.trust == null ? 100 : start.trust,
       place_risk: start.place_risk !== false,
       grain: start.grain || COUNTRY,
       dials: start.dials,
@@ -76,7 +79,10 @@
 
     // How far the scenario is from the models as published; only programmes in play count.
     function changes() {
-      var out = { dials: 0, assumptions: riskOff() ? 1 : 0 };
+      var out = {
+        dials: 0,
+        assumptions: (riskOff() ? 1 : 0) + (s.trust !== 100 ? 1 : 0),
+      };
       s.models.forEach(function (m) {
         var c = changed(m);
         out.dials += c.dials.length;
@@ -97,6 +103,11 @@
       if (s.iso.trim()) p.set('iso', s.iso.replace(/\s+/g, ''));
       if (s.bar !== data.bar) p.set('bar', str(s.bar));
       if (s.target != null && s.target > 0) p.set('target', str(s.target));
+      if (s.min_place != null && s.min_place > 0)
+        p.set('min_place', str(s.min_place));
+      if (s.max_countries != null && s.max_countries > 0)
+        p.set('max_countries', str(s.max_countries));
+      if (s.trust !== 100) p.set('trust', str(s.trust));
       if (!s.place_risk) p.set('place_risk', '0');
       if (s.grain !== COUNTRY) p.set('grain', s.grain);
       Object.keys(s.extras).forEach(function (k) {
@@ -170,6 +181,16 @@
         s.target = value > 0 ? value : null;
         emit('target');
       },
+      // The plan's limits: the smallest place worth working in (people) and the most countries; nothing means no limit.
+      setLimit: function (key, value) {
+        s[key] = value > 0 ? value : null;
+        emit('target');
+      },
+      // How far to believe each place's own figures, in %: 100 fully; lower pulls them toward what is known a level up.
+      setTrust: function (value) {
+        s.trust = Math.min(100, Math.max(0, value));
+        emit('trust');
+      },
       setPlaceRisk: function (on) {
         s.place_risk = !!on;
         emit('risk');
@@ -199,6 +220,7 @@
         });
         s.overrides = {};
         s.place_risk = true;
+        s.trust = 100;
         s.bar = data.bar;
         emit('reset');
       },

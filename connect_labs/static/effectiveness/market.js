@@ -21,6 +21,11 @@
       sort: $('sort'),
     },
     D,
+    {
+      csvHref: function () {
+        return D.plan_csv_url + '?' + scn.params().toString();
+      },
+    },
   );
 
   function say(text) {

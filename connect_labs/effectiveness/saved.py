@@ -136,6 +136,32 @@ def save(user, name: str, params: dict, *, note: str = "", shared: bool = False,
     return SavedScenario.objects.create(owner=user, name=name, **fields), True
 
 
+def update(
+    user, pk: int, *, name: str | None = None, note: str | None = None, shared: bool | None = None
+) -> SavedScenario:
+    """Rename a scenario, change its note, or share it with everyone (or make it private again). Only its owner."""
+    _need_user(user)
+    record = get(user, pk)
+    if record.owner_id != user.pk:
+        raise SavedError("Only the person who saved a scenario can change it.", 403)
+    if name is not None:
+        name = name.strip()
+        if not name:
+            raise SavedError("Give the scenario a name.")
+        if len(name) > MAX_NAME:
+            raise SavedError(f"A name is at most {MAX_NAME} characters.")
+        clash = SavedScenario.objects.filter(owner=user, name=name).exclude(pk=record.pk).first()
+        if clash:
+            raise SavedError(f"You already have a scenario called {name!r}.", 409, id=clash.pk)
+        record.name = name
+    if note is not None:
+        record.note = note.strip()
+    if shared is not None:
+        record.shared = bool(shared)
+    record.save()
+    return record
+
+
 def delete(user, pk: int) -> None:
     _need_user(user)
     record = get(user, pk)

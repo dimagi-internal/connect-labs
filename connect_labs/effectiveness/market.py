@@ -14,7 +14,11 @@ Two things the models do not say are said here, and labelled as such wherever th
   (Nigeria 18%, Liberia 15.2%, Uganda 9.6%) are each about 4.6 times the national neonatal mortality, so the risk is
   scaled by local neonatal mortality from the point where it is the model's own 13%.
 * ``plan``: with a target number of people, the best places are filled first, each up to the most that can be reached
-  there.
+  there, within any limits on how many places and countries.
+
+A place's figures are only as good as the survey or estimate behind them, so ``trust`` pulls every local figure toward
+what is known one level up (a territory toward its country, a country toward the model's own), and ``plan_check`` says
+how a plan holds up if the local figures are only half to be believed.
 
 Pure: the caller gives the people per place (from the baseline), this module prices and tests them.
 """
@@ -25,6 +29,12 @@ from dataclasses import dataclass
 
 from connect_labs.effectiveness import engine, explore, groups, result
 from connect_labs.effectiveness.scenario import KNOB_DEFAULT
+
+#: A place whose figure is more than this many times its country's, either way, is flagged: such a gap is as often a
+#: survey artefact (under-reporting in a remote area, a small sample) as a real difference.
+FAR_FROM_COUNTRY = 2.0
+#: How far ``plan_check`` pulls each place toward the level above: half way.
+CHECK_TRUST = 0.5
 
 
 @dataclass(frozen=True)
@@ -86,6 +96,11 @@ def _country_inputs(model: str, iso3: str) -> tuple[dict, bool]:
     return ((place or {}).get("inputs") or {}), place is not None or model == "kc"
 
 
+def _pull(local: float, anchor: float, trust: float) -> float:
+    """``local`` believed to the extent of ``trust`` (1 = fully, 0 = not at all, so ``anchor``)."""
+    return anchor + trust * (local - anchor)
+
+
 def size(
     model: str,
     places: dict[str, dict],
@@ -95,35 +110,46 @@ def size(
     *,
     place_risk: bool = True,
     target: float | None = None,
+    trust: float = 1.0,
+    min_place: float | None = None,
+    max_countries: int | None = None,
 ) -> dict:
-    """The model's market over ``places`` = ``{key: {"name", "iso3", "units", "measures"}}``, run at each place's
-    figures.
+    """The model's market over ``places`` = ``{key: {"name", "iso3", "units", "measures", "inputs"}}``, at each
+    place's figures.
 
     ``overrides`` are the caller's input changes, applied on top of every place. ``dials`` are the scenario's three
     (``scenario.DIALS``): ``reach`` is the most of a place's cases that can be reached, ``extra`` adds dollars a
     person a year the model does not count (below zero when delivery costs less), ``effect`` scales the model's
-    effect; the multiple moves by ``result.scale_multiple``. With ``place_risk`` and a place whose ``measures`` hold
-    the model's risk measure (``PLACE_RISK``), the model's risk input is scaled to the place. A place the model has
-    no published figures for is priced at the model's own inputs and flagged ``modelled: False``; it counts in the
-    market but never in the part that clears the bar: nothing says it does. With a ``target`` the best places are
-    filled first (``plan``).
+    effect; the multiple moves by ``result.scale_multiple``. With ``place_risk``, a place's own figures are used: the
+    model's risk input scaled to the place's ``measures`` (``PLACE_RISK``) and any of the model's place inputs the
+    baseline holds for it (``inputs``). ``trust`` is how far to believe them (1 = fully; 0 = a territory takes its
+    country's, a country the model's). A place the model has no published figures for is priced at the model's own
+    inputs and flagged ``modelled: False``; it counts in the market but never in the part that clears the bar:
+    nothing says it does. With a ``target`` the best places are filled first (``plan``), within ``min_place`` and
+    ``max_countries``.
     """
     unit = UNITS[model]
     dial = {**KNOB_DEFAULT, **(dials or {})}
     reach, effect, extra = dial["reach"] / 100, dial["effect"] / 100, dial["extra"]
     risk = PLACE_RISK.get(model) if place_risk else None
+    shown = PLACE_RISK.get(model)
     rows = []
     for key, p in sorted(places.items(), key=lambda kv: (kv[1]["name"], str(kv[0]))):
         base, modelled = _country_inputs(model, p["iso3"])
+        if place_risk:
+            # the place's own figures for the model's place inputs, believed to the extent of `trust`
+            for k, v in (p.get("inputs") or {}).items():
+                base = {**base, k: _pull(v, base.get(k, v), trust)}
         inputs = {**base, **(overrides or {})}
-        scale = None
+        scale = local = country = None
         if risk is not None:
             local = (p.get("measures") or {}).get(risk.measure)
+            country = (p.get("measures") or {}).get(f"{risk.measure}_country")
             if local:
-                scale = local / risk.reference
+                believed = _pull(local, country or risk.reference, trust)
+                scale = believed / risk.reference
                 inputs[risk.input] = inputs.get(risk.input, engine.defaults(model)[risk.input]) * scale
         # the risk the model ran at, whether or not it was scaled: what a reader needs to see beside the multiple
-        shown = PLACE_RISK.get(model)
         used = inputs.get(shown.input, engine.defaults(model)[shown.input]) if shown else None
         o = engine.run(model, inputs)
         model_x = result.OUTPUTS[model](o)[0]
@@ -138,6 +164,7 @@ def size(
         units = p["units"] * reach if p["units"] is not None else None
         market_usd = units * per_person if units is not None else None
         deaths = units * deaths_pp if units is not None else None
+        far = bool(local and country and not (1 / FAR_FROM_COUNTRY <= local / country <= FAR_FROM_COUNTRY))
         rows.append(
             {
                 "key": str(key),
@@ -158,6 +185,13 @@ def size(
                 "risk": used,
                 "risk_scale": scale,
                 "risk_basis": "place" if scale is not None else "model",
+                # what the place's own figure was, the country's beside it, where it came from, and whether it is far
+                # off
+                "measure": local,
+                "measure_country": country,
+                "measure_how": (p.get("measures_how") or {}).get(shown.measure) if shown else None,
+                "far_from_country": far,
+                "local_inputs": sorted((p.get("inputs") or {}).keys()) if place_risk else [],
             }
         )
     counted = [r for r in rows if r["market_usd"] is not None]
@@ -183,15 +217,17 @@ def size(
         "flat": is_flat(rows),
         "place_risk": {
             "applies": model in PLACE_RISK,
-            "on": risk is not None,
+            "on": bool(place_risk),  # the switch: a model with no risk input still uses its territory's own figures
             "input": PLACE_RISK[model].input if model in PLACE_RISK else None,
             "measure": PLACE_RISK[model].measure if model in PLACE_RISK else None,
             "reference": PLACE_RISK[model].reference if model in PLACE_RISK else None,
             "scaled": sum(1 for r in rows if r["risk_basis"] == "place"),
+            "far_from_country": sum(1 for r in rows if r["far_from_country"]),
+            "local_inputs": sum(1 for r in rows if r["local_inputs"]),
         },
     }
     if target:
-        out["plan"] = plan(rows, target)
+        out["plan"] = plan(rows, target, min_place=min_place, max_countries=max_countries)
     return out
 
 
@@ -216,6 +252,7 @@ def _totals(parts: list[dict]) -> dict:
     paid = sum(p["cost"] for p in spent)
     return {
         "places": len(parts),
+        "countries": len({p["country"] for p in parts}),
         "people": sum(p["reached"] for p in parts),
         "cost": cost,
         "deaths_averted": deaths,
@@ -235,18 +272,12 @@ def _part(r: dict, reached: float) -> dict:
         "multiple": r["multiple"],
         "deaths_averted": reached * r["deaths_per_person"],
         "risk": r["risk"],
+        "far_from_country": r["far_from_country"],
     }
 
 
-def plan(rows: list[dict], target: float) -> dict:
-    """The best way to reach ``target`` people: the places with the highest multiple first, each up to the most that
-    can be reached there (a row's ``units``, already capped by the reach dial), until the target is met.
-
-    Compared with the other obvious plan, spreading the target over every place in proportion to what each can give.
-    Places the model has no figures for are never chosen: nothing says what reaching them buys.
-    """
-    able = [r for r in rows if r["units"] and r["multiple"] is not None]
-    capacity = sum(r["units"] for r in able)
+def _fill(able: list[dict], target: float) -> tuple[list[dict], float]:
+    """Best places first, each up to its capacity, until the target is met; and what is left of it."""
     remaining, picked = float(target), []
     for r in sorted(able, key=lambda r: (-r["multiple"], -r["units"], r["name"])):
         if remaining <= 0:
@@ -256,6 +287,64 @@ def plan(rows: list[dict], target: float) -> dict:
         remaining -= take
     if remaining < 1e-6 * target:  # a target met is met exactly, not a rounding error short of it
         remaining = 0.0
+    return picked, remaining
+
+
+def by_country(parts: list[dict]) -> list[dict]:
+    """A plan's places added up by country, the biggest first: where the work would be."""
+    out: dict[str, dict] = {}
+    for p in parts:
+        c = out.setdefault(
+            p["country"], {"country": p["country"], "places": 0, "reached": 0.0, "cost": 0.0, "deaths_averted": 0.0}
+        )
+        c["places"] += 1
+        c["reached"] += p["reached"]
+        c["cost"] += p["cost"]
+        c["deaths_averted"] += p["deaths_averted"]
+    for c in out.values():
+        c["multiple"] = _totals([p for p in parts if p["country"] == c["country"]])["multiple"]
+    return sorted(out.values(), key=lambda c: -c["reached"])
+
+
+def plan(rows: list[dict], target: float, *, min_place: float | None = None, max_countries: int | None = None) -> dict:
+    """The best way to reach ``target`` people: the places with the highest multiple first, each up to the most that
+    can be reached there (a row's ``units``, already capped by the reach dial), until the target is met.
+
+    ``min_place`` leaves out a place that can give fewer people than that (too small to be worth a team), and
+    ``max_countries`` keeps to the countries that matter most to the best plan: the best plan is made, the countries
+    ranked by the deaths it averts in each are taken in order, and it is made again within them. ``countries_needed``
+    says how many countries it takes, in that order, to reach the target at all.
+
+    Compared with the other obvious plan, spreading the target over every allowed place in proportion to what each can
+    give. Places the model has no figures for are never chosen: nothing says what reaching them buys.
+    """
+    able = [r for r in rows if r["units"] and r["multiple"] is not None]
+    left_out = len([r for r in able if min_place and r["units"] < min_place])
+    if min_place:
+        able = [r for r in able if r["units"] >= min_place]
+    ranked: list[str] = []
+    if able:
+        unconstrained, _ = _fill(able, target)
+        gave: dict[str, float] = {}
+        for p in unconstrained:
+            gave[p["country"]] = gave.get(p["country"], 0.0) + p["deaths_averted"]
+        # countries the best plan uses first, then the rest by what they could give per person
+        rest = {}
+        for r in able:
+            if r["country"] not in gave:
+                rest[r["country"]] = max(rest.get(r["country"], 0.0), r["multiple"])
+        ranked = sorted(gave, key=lambda c: -gave[c]) + sorted(rest, key=lambda c: -rest[c])
+    needed, have = None, 0.0
+    for i, c in enumerate(ranked, 1):
+        have += sum(r["units"] for r in able if r["country"] == c)
+        if have >= target:
+            needed = i
+            break
+    if max_countries and ranked:
+        kept = set(ranked[:max_countries])
+        able = [r for r in able if r["country"] in kept]
+    capacity = sum(r["units"] for r in able)
+    picked, remaining = _fill(able, target)
     best = _totals(picked)
     spread = [_part(r, min(r["units"], target * r["units"] / capacity)) for r in able] if capacity else []
     even = _totals(spread) if spread else None
@@ -275,7 +364,34 @@ def plan(rows: list[dict], target: float) -> dict:
         "shortfall": max(0.0, remaining),
         "feasible": remaining <= 0.5,
         "places": picked,
+        "countries": by_country(picked),
+        "countries_needed": needed,
+        "limits": {"min_place": min_place, "max_countries": max_countries, "left_out": left_out},
         "totals": best,
         "even": even,
         "gain": gain,
+    }
+
+
+def plan_check(chosen: dict, rows_if_less_trusted: list[dict], replanned: dict | None) -> dict | None:
+    """How a plan holds up if the local figures are only partly to be believed.
+
+    ``chosen`` is the plan made at the figures as they are; ``rows_if_less_trusted`` the same places sized with each
+    local figure pulled part of the way to what is known a level up; ``replanned`` the best plan for those. The chosen
+    places are valued at the less-trusted figures and set beside the best that could have been done with them: near
+    100% the plan does not depend on the figures being right; low, it does.
+    """
+    if not chosen or not replanned:
+        return None
+    by_key = {r["key"]: r for r in rows_if_less_trusted}
+    kept = sum(p["reached"] * by_key[p["key"]]["deaths_per_person"] for p in chosen["places"] if p["key"] in by_key)
+    best = replanned["totals"]["deaths_averted"]
+    same = {p["key"] for p in chosen["places"]} & {p["key"] for p in replanned["places"]}
+    return {
+        "trust": CHECK_TRUST * 100,
+        "kept_deaths": kept,
+        "best_deaths": best,
+        "kept_share": (kept / best) if best else None,
+        "places_in_common": len(same),
+        "places": len(chosen["places"]),
     }
