@@ -14,9 +14,11 @@
     {
       tiles: $('tiles'),
       note: $('sel-note'),
+      plan: $('plan'),
       byModel: $('by-model'),
       rows: $('rows'),
       more: $('more'),
+      sort: $('sort'),
     },
     D,
   );

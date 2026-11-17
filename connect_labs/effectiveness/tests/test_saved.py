@@ -34,7 +34,7 @@ def refuses(status, fn, *a, **k):
 
 class TestSaving:
     def test_it_keeps_the_canonical_link_and_what_it_was_saved_against(self, ann):
-        record, created = saved.save(ann, "Sahel", {**LINK, "chc_extra": "0", "kc_reach": "100"})
+        record, created = saved.save(ann, "Sahel", {**LINK, "chc_extra": "0", "kc_reach": "50"})
         assert created and record.params == LINK  # what is at the default is not kept
         assert record.saved_against["commit"] and set(record.saved_against["versions"]) == {"chc", "kc"}
 

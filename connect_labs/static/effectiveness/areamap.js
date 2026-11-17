@@ -1,9 +1,9 @@
-/* A map of countries painted by a page: outlines in, a colour per country in, hover and click out.
+/* A map of places painted by a page: outlines in, a colour per place in, hover and click out.
  *
- * It knows nothing about models or scenarios. A page gives it the outlines once (`load`) and a fill and an optional
- * emphasis per country each time its numbers change (`paint`); it reports a hover as a tooltip the page wrote and a
- * click as a country code. `ramp` is the pure part (breaks and colours for a set of numbers), kept apart so a test can
- * run it without a map. */
+ * It knows nothing about models or scenarios. A page gives it the outlines (`load`: countries, or states and provinces,
+ * each carrying a `key`) and a fill and an optional emphasis per place each time its numbers change (`paint`); it
+ * reports a hover as a tooltip the page wrote and a click as a place key. `ramp` is the pure part (breaks and colours for
+ * a set of numbers), kept apart so a test can run it without a map. */
 (function () {
   'use strict';
   var U = window.EffUI;
@@ -16,8 +16,8 @@
   var SEQUENTIAL = ['#e6f4f1', '#a8d8cf', '#5fb8a9', '#2a8f82', '#0b5d57'];
   var NONE = '#e5e7eb';
 
-  // Class boundaries so each colour holds about the same number of countries: a few very large markets must not leave
-  // every other country the same pale shade. Returns the lower edge of every class after the first.
+  // Class boundaries so each colour holds about the same number of places: a few very large values must not leave
+  // every other place the same pale shade. Returns the lower edge of every class after the first.
   function breaks(values, classes) {
     var xs = values
       .filter(function (v) {
@@ -41,15 +41,32 @@
     return colors[Math.min(i, colors.length - 1)];
   }
 
-  // The colours for these numbers, and the legend that explains them: [{color, from, to}] low to high.
+  // The colours for these numbers, and the legend that explains them: [{color, from, to}] low to high. When every number
+  // is the same there is nothing to rank: one class, in the middle colour, rather than a ramp of the same value.
   function ramp(values, colors) {
     colors = colors || SEQUENTIAL;
-    var edges = breaks(values, colors.length);
     var xs = values.filter(function (v) {
       return v != null && isFinite(v);
     });
-    var lo = xs.length ? Math.min.apply(null, xs) : null,
-      hi = xs.length ? Math.max.apply(null, xs) : null;
+    if (!xs.length)
+      return {
+        color: function () {
+          return null;
+        },
+        classes: [],
+      };
+    var lo = Math.min.apply(null, xs),
+      hi = Math.max.apply(null, xs);
+    if (lo === hi) {
+      var only = colors[Math.floor(colors.length / 2)];
+      return {
+        color: function (v) {
+          return v == null || !isFinite(v) ? null : only;
+        },
+        classes: [{ color: only, from: lo, to: hi }],
+      };
+    }
+    var edges = breaks(values, colors.length);
     var classes = [];
     for (var i = 0; i <= edges.length; i++)
       classes.push({
@@ -61,7 +78,7 @@
       color: function (v) {
         return colorFor(v, edges, colors);
       },
-      classes: xs.length ? classes : [],
+      classes: classes,
     };
   }
 
@@ -116,20 +133,21 @@
 
     var ready = false,
       shapes = null,
+      drawn = null,
       painted = null,
       chosen = null;
     var popup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false });
 
     function addLayers() {
-      map.addSource('countries', {
+      map.addSource('places', {
         type: 'geojson',
         data: shapes,
-        promoteId: 'iso',
+        promoteId: 'key',
       });
       map.addLayer({
-        id: 'countries-fill',
+        id: 'places-fill',
         type: 'fill',
-        source: 'countries',
+        source: 'places',
         paint: {
           'fill-color': [
             'to-color',
@@ -139,9 +157,9 @@
         },
       });
       map.addLayer({
-        id: 'countries-line',
+        id: 'places-line',
         type: 'line',
-        source: 'countries',
+        source: 'places',
         paint: {
           'line-color': [
             'case',
@@ -157,16 +175,20 @@
             3,
             ['boolean', ['feature-state', 'edge'], false],
             2,
-            0.5,
+            0.4,
           ],
         },
       });
-      map.on('mousemove', 'countries-fill', function (e) {
+      map.on('mousemove', 'places-fill', function (e) {
         var f = e.features && e.features[0];
         if (!f) return;
         map.getCanvas().style.cursor = 'pointer';
         var tip = opts.tooltip
-          ? opts.tooltip(f.properties.iso, f.properties.name)
+          ? opts.tooltip(
+              f.properties.key,
+              f.properties.name,
+              f.properties.country,
+            )
           : null;
         if (tip == null) return popup.remove();
         popup
@@ -176,26 +198,29 @@
           )
           .addTo(map);
       });
-      map.on('mouseleave', 'countries-fill', function () {
+      map.on('mouseleave', 'places-fill', function () {
         map.getCanvas().style.cursor = '';
         popup.remove();
       });
-      map.on('click', 'countries-fill', function (e) {
+      map.on('click', 'places-fill', function (e) {
         var f = e.features && e.features[0];
-        if (f && opts.onSelect) opts.onSelect(f.properties.iso);
+        if (f && opts.onSelect) opts.onSelect(f.properties.key);
       });
     }
 
     function apply() {
       if (!ready || !shapes) return;
-      if (!map.getSource('countries')) addLayers();
-      map.removeFeatureState({ source: 'countries' });
-      Object.keys(painted || {}).forEach(function (iso) {
-        map.setFeatureState({ source: 'countries', id: iso }, painted[iso]);
+      var src = map.getSource('places');
+      if (!src) addLayers();
+      else if (drawn !== shapes) src.setData(shapes);
+      drawn = shapes;
+      map.removeFeatureState({ source: 'places' });
+      Object.keys(painted || {}).forEach(function (key) {
+        map.setFeatureState({ source: 'places', id: key }, painted[key]);
       });
       if (chosen)
         map.setFeatureState(
-          { source: 'countries', id: chosen },
+          { source: 'places', id: chosen },
           Object.assign({}, painted && painted[chosen], { sel: true }),
         );
     }
@@ -207,17 +232,20 @@
 
     return {
       available: true,
+      // The outlines to draw (countries, or states and provinces); a different set replaces the one on the map.
       load: function (geojson) {
         shapes = geojson;
+        painted = null;
+        chosen = null;
         apply();
       },
-      // `{iso: {fill: '#hex', edge: true}}`: a country with no entry is drawn as having no figure.
-      paint: function (byIso) {
-        painted = byIso;
+      // `{key: {fill: '#hex', edge: true}}`: a place with no entry is drawn as having no figure.
+      paint: function (byKey) {
+        painted = byKey;
         apply();
       },
-      select: function (iso) {
-        chosen = iso;
+      select: function (key) {
+        chosen = key;
         apply();
       },
     };

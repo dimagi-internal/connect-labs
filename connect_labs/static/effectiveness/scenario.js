@@ -2,12 +2,14 @@
  *
  * The server reads the link, fills in everything the link leaves out, and embeds the whole thing in the page
  * (`data.state`). This module starts from that, changes it as the controls do, writes only what differs from the default
- * back to the address bar, and asks the API again. It owns the link's spelling (`<model>_<dial>`, `i.<model>.<input>`),
- * so a page never builds a query string of its own. */
+ * back to the address bar, and asks the API again. It owns the link's spelling (`<model>_<dial>`, `i.<model>.<input>`,
+ * `target`, `place_risk=0`, `grain=territory`), so a page never builds a query string of its own. A dial's default is the
+ * model's own (`data.dial_defaults`): Kangaroo Care starts at reaching half of a place's cases, the others at all. */
 (function () {
   'use strict';
 
   var EVERYWHERE = 'all';
+  var COUNTRY = 'country';
 
   function clone(o) {
     return JSON.parse(JSON.stringify(o));
@@ -19,16 +21,15 @@
 
   function create(data) {
     var start = clone(data.state);
-    var dialDefault = {};
-    data.dials.forEach(function (d) {
-      dialDefault[d.key] = d.default;
-    });
     var s = {
       models: start.models,
       indicator: start.indicator,
       threshold: start.threshold,
       iso: start.iso || '',
       bar: start.bar,
+      target: start.target == null ? null : start.target,
+      place_risk: start.place_risk !== false,
+      grain: start.grain || COUNTRY,
       dials: start.dials,
       overrides: start.overrides || {},
       extras: start.extras || {},
@@ -37,6 +38,9 @@
     var ui = {};
     var listeners = [];
 
+    function dialDefault(model, key) {
+      return data.dial_defaults[model][key];
+    }
     function indicatorMeta(key) {
       return (
         data.indicators.filter(function (i) {
@@ -47,18 +51,32 @@
     if (s.threshold == null && s.indicator !== EVERYWHERE)
       s.threshold = indicatorMeta(s.indicator).threshold;
 
+    function dialKeys() {
+      return data.dials.map(function (d) {
+        return d.key;
+      });
+    }
     function changed(model) {
       return {
-        dials: Object.keys(dialDefault).filter(function (k) {
-          return s.dials[model][k] !== dialDefault[k];
+        dials: dialKeys().filter(function (k) {
+          return s.dials[model][k] !== dialDefault(model, k);
         }),
         assumptions: Object.keys(s.overrides[model] || {}),
       };
     }
+    // Whether a programme in play has a baseline risk that scales to the place, and the switch is off.
+    function riskOff() {
+      return (
+        !s.place_risk &&
+        s.models.some(function (m) {
+          return data.place_risk[m];
+        })
+      );
+    }
 
     // How far the scenario is from the models as published; only programmes in play count.
     function changes() {
-      var out = { dials: 0, assumptions: 0 };
+      var out = { dials: 0, assumptions: riskOff() ? 1 : 0 };
       s.models.forEach(function (m) {
         var c = changed(m);
         out.dials += c.dials.length;
@@ -78,12 +96,15 @@
       }
       if (s.iso.trim()) p.set('iso', s.iso.replace(/\s+/g, ''));
       if (s.bar !== data.bar) p.set('bar', str(s.bar));
+      if (s.target != null && s.target > 0) p.set('target', str(s.target));
+      if (!s.place_risk) p.set('place_risk', '0');
+      if (s.grain !== COUNTRY) p.set('grain', s.grain);
       Object.keys(s.extras).forEach(function (k) {
         p.set(k, s.extras[k]);
       });
       Object.keys(s.dials).forEach(function (m) {
-        Object.keys(dialDefault).forEach(function (k) {
-          if (s.dials[m][k] !== dialDefault[k])
+        dialKeys().forEach(function (k) {
+          if (s.dials[m][k] !== dialDefault(m, k))
             p.set(m + '_' + k, str(s.dials[m][k]));
         });
       });
@@ -103,8 +124,8 @@
       return p;
     }
 
-    // `kind` says what changed (places, models, dial, input, bar, reset, ui) so a control redraws only when it must:
-    // redrawing a field someone is typing in loses their place.
+    // `kind` says what changed (places, models, dial, input, bar, target, risk, reset, ui) so a control redraws only when
+    // it must: redrawing a field someone is typing in loses their place.
     function emit(kind) {
       listeners.forEach(function (fn) {
         fn(api, kind);
@@ -134,11 +155,24 @@
         s.threshold = key === EVERYWHERE ? null : indicatorMeta(key).threshold;
         emit('places');
       },
+      setGrain: function (grain) {
+        s.grain = grain;
+        emit('grain');
+      },
       toggleModel: function (model, on) {
         var at = s.models.indexOf(model);
         if (on && at < 0) s.models.push(model);
         if (!on && at >= 0 && s.models.length > 1) s.models.splice(at, 1);
         emit('models');
+      },
+      // How many people to reach; nothing (or zero) means everyone the programme can reach.
+      setTarget: function (value) {
+        s.target = value > 0 ? value : null;
+        emit('target');
+      },
+      setPlaceRisk: function (on) {
+        s.place_risk = !!on;
+        emit('risk');
       },
       setDial: function (model, key, value) {
         s.dials[model][key] = value;
@@ -155,14 +189,16 @@
         ui[key] = value;
         emit('ui');
       },
-      // The models as published: every dial and assumption back to the default. The places stay.
+      // The models as published: every dial at the model's own start, every assumption unchanged, risk scaled to the place.
+      // The places and the target stay.
       reset: function () {
         Object.keys(s.dials).forEach(function (m) {
-          Object.keys(dialDefault).forEach(function (k) {
-            s.dials[m][k] = dialDefault[k];
+          dialKeys().forEach(function (k) {
+            s.dials[m][k] = dialDefault(m, k);
           });
         });
         s.overrides = {};
+        s.place_risk = true;
         s.bar = data.bar;
         emit('reset');
       },
@@ -217,5 +253,9 @@
     return api;
   }
 
-  window.EffScenario = { create: create, EVERYWHERE: EVERYWHERE };
+  window.EffScenario = {
+    create: create,
+    EVERYWHERE: EVERYWHERE,
+    COUNTRY: COUNTRY,
+  };
 })();

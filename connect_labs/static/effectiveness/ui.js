@@ -82,6 +82,8 @@
   }
 
   function num(v) {
+    // 999,999.6 is a million, not "1000K": round to the unit first, then choose it
+    if (v != null && v >= 999500 && v < 1e6) v = 1e6;
     return v == null
       ? '–'
       : v >= 1e6

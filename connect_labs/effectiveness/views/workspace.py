@@ -1,7 +1,8 @@
 """The workspace page: one scenario, a map of its places, and the numbers beside it.
 
 A new layout of the same scenario Market size reads (``scenario_page``), answered by the same API
-(``cea:market_data``); this page adds the map, so it also serves the country outlines (``shapes``).
+(``cea:market_data``); this page adds the map, so it also serves the outlines (``shapes``). It starts at the territory
+grain, where the best places to work show.
 """
 
 from __future__ import annotations
@@ -23,14 +24,16 @@ CONTEXT_NOT_USED = method_decorator(page_chrome(labs_context=NOT_USED), name="di
 @CONTEXT_NOT_USED
 class WorkspaceView(ScenarioPageGate, View):
     def get(self, request):
-        scenario, loaded, error = scenario_or_default(request)
+        scenario, loaded, error = scenario_or_default(request, default_grain="territory")
         data = {**page_data(request, scenario, loaded, error), "shapes_url": reverse("cea:workspace_shapes")}
         token = getattr(settings, "MAPBOX_TOKEN", "") or ""
         return render(request, "effectiveness/workspace.html", {"data": data, "mapbox_token": token})
 
 
 class WorkspaceShapesView(ScenarioPageGate, View):
-    """Country outlines, the same for every scenario."""
+    """Outlines of the countries or, with ``?grain=territory``, of their states and provinces: the same for every
+    scenario."""
 
     def get(self, request):
-        return JsonResponse(shapes.country_outlines(), json_dumps_params={"separators": (",", ":")})
+        grain = "territory" if request.GET.get("grain") == "territory" else "country"
+        return JsonResponse(shapes.outlines(grain), json_dumps_params={"separators": (",", ":")})

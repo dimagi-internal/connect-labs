@@ -3,7 +3,15 @@
 import pytest
 
 from connect_labs.effectiveness import explore
-from connect_labs.effectiveness.scenario import DIALS, EVERYWHERE, KNOB_DEFAULT, Scenario, number
+from connect_labs.effectiveness.scenario import (
+    DIALS,
+    EVERYWHERE,
+    KNOB_DEFAULT,
+    Scenario,
+    default_dial,
+    dial_defaults,
+    number,
+)
 
 
 def test_the_default_scenario_is_the_bare_page():
@@ -33,6 +41,39 @@ def test_a_link_round_trips_and_only_what_differs_is_written():
 def test_a_dial_left_at_its_default_leaves_the_link():
     sc = Scenario.from_params({"models": "chc", "chc_reach": "100", "chc_effect": "100", "chc_extra": "0"})
     assert sc.dials == {} and sc.to_params() == {"models": "chc"}
+
+
+def test_kangaroo_care_starts_at_the_most_it_can_reach_and_the_others_at_everyone():
+    assert default_dial("kc", "reach") == 50.0 and default_dial("chc", "reach") == 100.0
+    assert Scenario.from_params({"models": "kc"}).dials_for("kc")["reach"] == 50.0
+    assert Scenario.from_params({"models": "kc", "kc_reach": "50"}).to_params() == {"models": "kc"}
+    # 100% is a change for kc, and it is kept
+    assert Scenario.from_params({"models": "kc", "kc_reach": "100"}).to_params() == {"models": "kc", "kc_reach": "100"}
+    assert dial_defaults()["kc"] == {"extra": 0.0, "effect": 100.0, "reach": 50.0}
+
+
+def test_the_extra_cost_dial_may_go_below_zero_and_the_others_may_not():
+    sc = Scenario.from_params({"models": "chc", "chc_extra": "-10", "chc_effect": "-5", "chc_reach": "-1"})
+    assert sc.dials == {"chc": {"extra": -10.0}}
+
+
+def test_a_target_the_risk_switch_and_the_grain_are_in_the_link_only_when_not_the_default():
+    sc = Scenario.from_params({"models": "kc", "target": "1000000", "place_risk": "0", "grain": "territory"})
+    assert sc.target == 1_000_000 and sc.place_risk is False and sc.grain == "territory"
+    assert sc.to_params() == {"models": "kc", "target": "1000000", "place_risk": "0", "grain": "territory"}
+    d = Scenario.from_params({"models": "kc", "target": "-4", "place_risk": "1", "grain": "galaxy"})
+    assert d.target is None and d.place_risk is True and d.grain == "country" and d.to_params() == {"models": "kc"}
+
+
+def test_switching_off_place_risk_counts_as_a_change_only_for_a_model_that_has_it():
+    assert Scenario.from_params({"models": "kc", "place_risk": "0"}).changes() == {"dials": 0, "assumptions": 1}
+    assert Scenario.from_params({"models": "chc", "place_risk": "0"}).changes() == {"dials": 0, "assumptions": 0}
+
+
+def test_a_territory_grain_asks_the_baseline_for_every_state_not_a_country_folded_into_one_row():
+    sc = Scenario.from_params({"grain": "territory", "indicator": "u5mr"})
+    assert sc.place_params()["rollup"] == "0" and sc.place_params()["admin_level"] == "1"
+    assert "rollup" not in Scenario.from_params({"indicator": "u5mr"}).place_params()
 
 
 def test_dials_are_the_implementation_pages_dials_spelled_the_same_way():

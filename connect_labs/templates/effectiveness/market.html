@@ -18,14 +18,15 @@
   <div class="layout">
     <div class="results">
       <div class="card"><div class="tiles" id="tiles"></div><p class="muted" id="sel-note" style="margin:10px 0 0"></p></div>
+      <div class="card plan" id="plan" hidden></div>
       <div class="card">
         <h2>By programme</h2>
         <div id="by-model"></div>
       </div>
       <div class="card">
-        <h2>By country</h2>
+        <div class="head"><h2>By place</h2><label class="sortl">Sort by <select id="sort"></select></label></div>
         <div class="scroll"><table id="rows"></table></div>
-        <p style="margin:8px 0 0"><button type="button" class="btn" id="more" hidden>Show all countries</button></p>
+        <p style="margin:8px 0 0"><button type="button" class="btn" id="more" hidden>Show all places</button></p>
       </div>
     </div>
 

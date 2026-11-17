@@ -183,15 +183,26 @@ class _FakeSelection:
 
     class _Area:
         def __init__(self, iso, name, u5):
-            self.iso_code, self.country_name, self.counts = iso, name, {"pop_u5": u5, "births_lbw": 10, "births": 20}
+            self.iso_code, self.country_name, self.name = iso, name, name
+            self.counts = {"pop_u5": u5, "births_lbw": u5 // 10, "births": 20}
 
     areas = [_Area("NGA", "Nigeria", 1_000_000), _Area("NGA", "Nigeria", 500_000), _Area("NER", "Niger", 200_000)]
 
 
-def test_market_size_with_a_model_is_the_market_pages_answer(monkeypatch):
-    from connect_labs.mcp.tools import cea as cea_tools
+@pytest.fixture
+def fake_people(monkeypatch):
+    from connect_labs.effectiveness import people
 
-    monkeypatch.setattr(cea_tools, "_selection", lambda *a, **k: (_FakeSelection(), None, "subnational_igme"))
+    # grouped by country whatever grain is asked: the tool only has to hand the grain on
+    monkeypatch.setattr(
+        people,
+        "people_by_place",
+        lambda question, grain="country": {**people.group_selection(_FakeSelection(), "country"), "grain": grain},
+    )
+
+
+@pytest.mark.django_db
+def test_market_size_with_a_model_is_the_market_pages_answer(fake_people):
     got = cea.cea_market_size(None, indicator="u5mr", model="chc", overrides={"cost": 3.0})
     rows = {r["iso3"]: r for r in got["market"]["rows"]}
     assert rows["NGA"]["units"] == 1_500_000 and rows["NER"]["units"] == 200_000
@@ -205,6 +216,54 @@ def test_market_size_with_a_model_is_the_market_pages_answer(monkeypatch):
     back = Scenario.from_params(dict(parse_qsl(urlsplit(got["explorer_path"]).query)))
     assert back.models == ("chc",) and back.overrides == {"chc": {"cost": 3.0}} and back.indicator == "u5mr"
     assert got["countries_with_no_data"] == ["TUN"] and got["overrides"] == {"cost": 3.0}
+
+
+@pytest.mark.django_db
+def test_the_tool_and_the_page_give_the_same_answer_for_the_same_scenario(fake_people):
+    from connect_labs.effectiveness import sizing
+    from connect_labs.effectiveness.scenario import Scenario
+
+    got = cea.cea_market_size(None, indicator="u5mr", model="kc", dials={"reach": 60, "extra": -10}, target=100_000)
+    page = sizing.market_of(Scenario.from_params(_params(got)))
+    assert got["market"] == page["models"][0]
+
+
+def _params(got):
+    from urllib.parse import parse_qsl, urlsplit
+
+    return dict(parse_qsl(urlsplit(got["explorer_path"]).query))
+
+
+@pytest.mark.django_db
+def test_a_target_returns_the_plan_and_links_to_the_workspace_where_it_is_shown(fake_people):
+    got = cea.cea_market_size(None, indicator="u5mr", model="kc", target=100_000, dials={"reach": 60})
+    plan = got["plan"]
+    assert plan["target"] == 100_000 and plan["feasible"] and plan["totals"]["people"] == pytest.approx(100_000)
+    assert got["dials"]["reach"] == 60.0 and got["explorer_path"].startswith("/labs/cea/workspace/?")
+    assert got["market"]["place_risk"]["applies"] is True
+
+
+@pytest.mark.django_db
+def test_territories_and_the_flat_figures_can_be_asked_for(fake_people):
+    got = cea.cea_market_size(None, indicator="all", model="kc", grain="territory", place_risk=False)
+    assert got["grain"] == "territory" and got["market"]["place_risk"]["on"] is False
+    assert "place_risk=0" in got["explorer_path"] and "grain=territory" in got["explorer_path"]
+
+
+@pytest.mark.parametrize(
+    "kw, words",
+    [
+        ({"dials": {"speed": 5}}, "not a dial"),
+        ({"indicator": "nope"}, "Unknown indicator"),
+        ({"dials": {"extra": -999}}, "above zero"),
+        ({"overrides": {"nonsense": 1}}, "nonsense"),
+    ],
+)
+@pytest.mark.django_db
+def test_a_scenario_that_cannot_run_is_refused_in_words(fake_people, kw, words):
+    with pytest.raises(MCPToolError) as e:
+        cea.cea_market_size(None, **{"indicator": "u5mr", "model": "kc", **kw})
+    assert e.value.code == "BAD_REQUEST" and words in str(e.value)
 
 
 def test_market_size_needs_a_model_or_a_unit_cost():
