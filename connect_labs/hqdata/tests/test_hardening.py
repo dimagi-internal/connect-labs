@@ -55,7 +55,7 @@ def pipeline(project, alice):
 
 
 def events(project, action):
-    return AuditEvent.objects.filter(resource_type="hq_project", resource_id=str(project.pk), action=action)
+    return AuditEvent.objects.filter(resource_type="commcare_project", resource_id=str(project.pk), action=action)
 
 
 def test_a_pipeline_read_is_on_the_audit_trail_without_the_data(alice, project, pipeline):

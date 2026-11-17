@@ -11,7 +11,7 @@ from __future__ import annotations
 from connect_labs.audit_trail.models import Action, Outcome
 from connect_labs.audit_trail.service import record
 
-RESOURCE = "hq_project"
+RESOURCE = "commcare_project"
 
 
 def project_event(
