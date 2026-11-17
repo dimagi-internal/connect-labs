@@ -135,6 +135,13 @@ COMMCARE_TOOLS: frozenset[str] = frozenset(
         "hq_pipeline_save",
         "hq_pipeline_run",
         "hq_pipeline_delete",
+        "hq_workflow_list",
+        "hq_workflow_get",
+        "hq_workflow_create",
+        "hq_workflow_update",
+        "hq_workflow_delete",
+        "hq_workflow_data",
+        "hq_workflow_authoring_guide",
     }
 )
 

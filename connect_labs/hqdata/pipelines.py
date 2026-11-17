@@ -42,8 +42,9 @@ def config_for(pipeline: HQPipeline):
         raise PipelineProblem(str(exc) or type(exc).__name__) from exc
 
 
-def run_pipeline(user, pipeline: HQPipeline, *, force_refresh: bool = False) -> dict:
-    """Run it and return ``{"rows": [...], "table": [[cell...]...], "count": n, "truncated": bool, "columns": [...]}``.
+def pipeline_rows(user, pipeline: HQPipeline, *, force_refresh: bool = False) -> list[dict]:
+    """EVERY row of a saved pipeline, as the person. The ``rows`` of ``run_pipeline`` are capped for display;
+    a workflow draws from all of them.
 
     ``require_project`` is checked here and again, inside the pipeline, on the read itself, so a
     caller that skips this function still cannot read.
@@ -62,7 +63,15 @@ def run_pipeline(user, pipeline: HQPipeline, *, force_refresh: bool = False) -> 
         result = AnalysisPipeline(None, local_only_user=user).stream_analysis_ignore_events(
             config, opportunity_id=pipeline.project.scope_id, force_refresh=force_refresh
         )
-    rows = [serialize_pipeline_row(r) for r in result.rows]
+    return [serialize_pipeline_row(r) for r in result.rows]
+
+
+def run_pipeline(user, pipeline: HQPipeline, *, force_refresh: bool = False) -> dict:
+    """Run it and return ``{"rows": [...], "table": [[cell...]...], "count": n, "truncated": bool, "columns": [...]}``.
+
+    Rows are capped at ``MAX_ROWS_SHOWN`` for display (``count`` is the true total).
+    """
+    rows = pipeline_rows(user, pipeline, force_refresh=force_refresh)
     columns: list[str] = []
     for row in rows[:MAX_ROWS_SHOWN]:
         for key in row:
