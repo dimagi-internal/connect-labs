@@ -360,7 +360,7 @@ def cea_opportunities(
                     "With `model`: `model` (default) prices a person at the model's own figure everywhere; "
                     "`observed` moves the price toward what delivered opportunities cost in that country, by how "
                     "much delivery stands behind it (rows carry `price_model`, `price_observed` and how many "
-                    "opportunities). Observed costs come from small early programmes: read them as evidence, not a price."
+                    "opportunities). Observed costs come from small early programmes: read them as evidence."
                 ),
             },
             "trust": {

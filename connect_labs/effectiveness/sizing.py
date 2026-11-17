@@ -13,8 +13,9 @@ from connect_labs.effectiveness.scenario import Scenario
 
 
 def observed_costs() -> dict:
-    """What delivered opportunities cost per person, by model and country (``observed.from_rows``), from the ranking the
-    Implementations page shows. Empty where Pulse has nothing, so a scenario asking for it degrades to the model's own.
+    """What delivered opportunities cost per person, by model and country (``observed.from_rows``), from the ranking
+    the Implementations page shows. Empty where Pulse has nothing, so a scenario asking for it degrades to the
+    model's own.
     """
     from connect_labs.effectiveness import implementation
 
