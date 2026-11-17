@@ -128,7 +128,18 @@ class TestTheRate:
         got = {r.boundary.name: r for r in derive.load_conflict_rate()}
         assert got["Kano"].value == pytest.approx(5.0)
         assert (got["Kano"].ci_low, got["Kano"].ci_high) == (pytest.approx(2.5), pytest.approx(10.0))
-        assert "Nigeria" not in got  # no population, so no rate (and never a zero)
+        assert got["Nigeria"].value == pytest.approx(8.0)  # its one unit's population stands for the country's
+
+    def test_a_country_divides_by_the_sum_of_its_units_populations_when_all_have_one(self):
+        ng = boundary(0, "Nigeria", "NGA", 0, 0, size=2)
+        a, b = boundary(1, "A", "NGA-A", 0, 0), boundary(1, "B", "NGA-B", 1, 0)
+        base.upsert([base.Row("conflict_deaths", ng, 2025, 60.0, Source.UCDP)])
+        value(a, "pop_total", 1_000_000.0, year=2025)
+        assert [r.boundary.name for r in derive.load_conflict_rate(["NGA"])] == []  # B has no population yet
+        value(b, "pop_total", 2_000_000.0, year=2025)
+        (got,) = derive.load_conflict_rate(["NGA"])
+        assert got.boundary.name == "Nigeria" and got.value == pytest.approx(2.0)
+        assert "sum of its admin-1 populations" in got.method
 
     def test_it_is_a_registered_policy_governed_measure(self):
         assert measures.get("conflict_rate").unit == "per 100,000 people a year"
