@@ -141,3 +141,18 @@ def test_every_compact_page_includes_and_extends_templates_that_exist():
         get_template(f"supply_chain/compact/{page.relative_to(root).as_posix()}")
         for name in re.findall(r"""{%\s*(?:include|extends)\s+["']([^"']+)["']""", page.read_text(encoding="utf-8")):
             get_template(name)
+
+
+def test_view_as_of_has_a_calendar_in_the_compact_layout_only(rf):
+    from django.template.loader import render_to_string
+
+    for compact in (True, False):
+        request = rf.get("/supply/stock/")
+        request._supply_compact = compact
+        html = render_to_string(
+            "supply_chain/_as_of_bar.html",
+            {"supply_as_of_available": True, "as_of_part": "form", "request": request},
+        )
+        assert 'name="as_of"' in html
+        assert ('data-testid="as-of-calendar"' in html) is compact
+        assert ('type="date"' in html) is compact
