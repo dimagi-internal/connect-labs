@@ -40,7 +40,13 @@ from collections import defaultdict
 from connect_labs.labs.indicators import boundaries
 from connect_labs.labs.indicators.africa import ISO_CODES
 from connect_labs.labs.indicators.models import IndicatorValue, License, Source
-from connect_labs.labs.indicators.sources.base import BoundaryMatcher, Row, http_json
+from connect_labs.labs.indicators.sources.base import (
+    BoundaryMatcher,
+    Row,
+    http_json,
+    sdmx_attribute_positions,
+    sdmx_number,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +107,7 @@ def _parse(payload: dict) -> list[dict]:
     index = {d["id"]: i for i, d in enumerate(dims)}
     ids = {d["id"]: [v.get("id") for v in d["values"]] for d in dims}
     names = {d["id"]: [v.get("name") for v in d["values"]] for d in dims}
+    attributes = sdmx_attribute_positions(structure)
 
     out: list[dict] = []
     for key, obs in (datasets[0].get("observations") or {}).items():
@@ -127,6 +134,8 @@ def _parse(payload: dict) -> list[dict]:
                 "level": int(pick("ADMIN_LEVEL") or 0),
                 "period": pick("TIME_PERIOD"),
                 "value": float(raw),
+                "low": sdmx_number(obs, attributes, "LOWER_BOUND"),
+                "high": sdmx_number(obs, attributes, "UPPER_BOUND"),
             }
         )
     return out
@@ -234,7 +243,11 @@ def load(measure: str = "u5mr", iso_codes: list[str] | None = None) -> list[Row]
                     source_url=PORTAL.format(iso=iso),
                     license_code=License.CC_BY_3_IGO,
                     method=METHOD.format(period=a["period"], level=boundary_level, area=a["area_name"]),
+                    ci_low=a.get("low"),
+                    ci_high=a.get("high"),
                     extra={
+                        # IGME documents 90% uncertainty intervals; the SDMX answer does not say, so it is stated here
+                        "interval_level": 0.90 if a.get("low") is not None and a.get("high") is not None else None,
                         "igme_area_code": a["area_code"],
                         "igme_area_name": a["area_name"],
                         "igme_admin_level": a["level"],

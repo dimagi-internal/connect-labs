@@ -96,6 +96,30 @@ def http_json_post(url: str, data: dict, retries: int = 3, timeout: int | None =
     raise RuntimeError(f"POST {url} failed after {retries} attempts: {last}")
 
 
+def sdmx_attribute_positions(structure: dict) -> dict[str, tuple[int, list[str]]]:
+    """Where each observation attribute sits in an SDMX-JSON observation, and what its coded values are.
+
+    An observation is ``[value, attr0, attr1, ...]`` where each attribute is an index into that attribute's own list of
+    values (or null), so a bound that looks like a small integer is a pointer, not the bound.
+    """
+    attrs = (structure or {}).get("attributes", {}).get("observation", [])
+    return {a["id"]: (1 + i, [v.get("id") for v in a.get("values", [])]) for i, a in enumerate(attrs)}
+
+
+def sdmx_number(obs: list, positions: dict[str, tuple[int, list[str]]], attribute: str) -> float | None:
+    """A numeric attribute of one observation (a published bound, a standard error), or None when it has none."""
+    where = positions.get(attribute)
+    if where is None:
+        return None
+    at, values = where
+    if at >= len(obs) or obs[at] is None:
+        return None
+    try:
+        return float(values[int(obs[at])])
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
 @dataclass
 class Row:
     """One value a loader wants written."""

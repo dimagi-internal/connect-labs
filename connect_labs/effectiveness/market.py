@@ -25,9 +25,10 @@ Pure: the caller gives the people per place (from the baseline), this module pri
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
-from connect_labs.effectiveness import engine, explore, groups, result
+from connect_labs.effectiveness import engine, explore, groups, mortality, reliability, result
 from connect_labs.effectiveness.scenario import KNOB_DEFAULT
 
 #: A place whose figure is more than this many times its country's, either way, is flagged: such a gap is as often a
@@ -141,7 +142,7 @@ def size(
             for k, v in (p.get("inputs") or {}).items():
                 base = {**base, k: _pull(v, base.get(k, v), trust)}
         inputs = {**base, **(overrides or {})}
-        scale = local = country = None
+        scale = local = country = se = shared = None
         if risk is not None:
             local = (p.get("measures") or {}).get(risk.measure)
             country = (p.get("measures") or {}).get(f"{risk.measure}_country")
@@ -149,6 +150,8 @@ def size(
                 believed = _pull(local, country or risk.reference, trust)
                 scale = believed / risk.reference
                 inputs[risk.input] = inputs.get(risk.input, engine.defaults(model)[risk.input]) * scale
+                se = (p.get("measures_se") or {}).get(risk.measure)
+                shared = (p.get("measures_shared_se") or {}).get(risk.measure)
         # the risk the model ran at, whether or not it was scaled: what a reader needs to see beside the multiple
         used = inputs.get(shown.input, engine.defaults(model)[shown.input]) if shown else None
         o = engine.run(model, inputs)
@@ -161,6 +164,7 @@ def size(
             )
         x = result.scale_multiple(model_x, price, per_person, effect)
         deaths_pp = unit.deaths_per_100k(o) / 100_000 * effect
+        spread = _spread(model, unit, inputs, risk, se, (x, unit.deaths_per_100k(o)), effect, extra) if se else None
         units = p["units"] * reach if p["units"] is not None else None
         market_usd = units * per_person if units is not None else None
         deaths = units * deaths_pp if units is not None else None
@@ -192,6 +196,10 @@ def size(
                 "measure_how": (p.get("measures_how") or {}).get(shown.measure) if shown else None,
                 "far_from_country": far,
                 "local_inputs": sorted((p.get("inputs") or {}).keys()) if place_risk else [],
+                "risk_se": se,
+                "risk_shared_se": shared,
+                "risk_raw": (p.get("measures_raw") or {}).get(risk.measure) if risk is not None else None,
+                **(spread or {}),
             }
         )
     counted = [r for r in rows if r["market_usd"] is not None]
@@ -228,7 +236,33 @@ def size(
     }
     if target:
         out["plan"] = plan(rows, target, min_place=min_place, max_countries=max_countries)
+        out["plan"]["reliability"] = reliability.assess(rows, target)
     return out
+
+
+def _spread(model, unit, inputs, risk, se, at, effect, extra) -> dict:
+    """How far a place's multiple and deaths per person move with its risk's uncertainty.
+
+    The model is run once more with the risk 10% higher to measure how steeply the multiple and the deaths per person
+    follow it (their elasticities, ``at`` being the multiple and deaths per 100,000 at the place's own risk); the range
+    is the 90% interval of the risk carried through them. ``se`` is the standard error of the log of the place's
+    mortality.
+    """
+    step = 1.1
+    o = engine.run(model, {**inputs, risk.input: inputs[risk.input] * step})
+    price = unit.annual_cost(o)
+    x1 = result.scale_multiple(result.OUTPUTS[model](o)[0], price, price + extra, effect)
+    d1 = unit.deaths_per_100k(o)
+    x0, d0 = at
+    ex = math.log(x1 / x0) / math.log(step) if x0 > 0 and x1 > 0 else 0.0
+    ed = math.log(d1 / d0) / math.log(step) if d0 > 0 and d1 > 0 else 0.0
+    z = mortality.z_for(0.90)
+    return {
+        "multiple_elasticity": ex,
+        "deaths_elasticity": ed,
+        "multiple_low": x0 * math.exp(-z * ex * se),
+        "multiple_high": x0 * math.exp(z * ex * se),
+    }
 
 
 def blended_multiple(rows: list[dict]) -> float | None:

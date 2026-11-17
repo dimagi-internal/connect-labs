@@ -25,8 +25,9 @@ labelled Labs reading (``market.PLACE_RISK``), from the newborn mortality ``Base
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import NamedTuple
 
-from connect_labs.effectiveness import engine
+from connect_labs.effectiveness import engine, mortality
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators import boundaries as boundary_set
 from connect_labs.labs.indicators.models import IndicatorValue
@@ -74,6 +75,11 @@ def _local(r: Resolved | None) -> Resolved | None:
 def _level(r: Resolved) -> tuple[str, str]:
     b = r.measured_at or r.boundary
     return LEVEL_NAMES.get(b.admin_level, f"ADM{b.admin_level}"), b.name
+
+
+def _se(r: Resolved) -> float | None:
+    """Standard error of ln(value) for a resolved figure, from the interval it was published with."""
+    return mortality.se_ln(r.ci_low, r.ci_high, (r.extra or {}).get("interval_level", 0.95))
 
 
 def _src(r: Resolved) -> str:
@@ -178,6 +184,23 @@ class _Row:
     source: str
     year: int
     value: float
+    ci_low: float | None = None
+    ci_high: float | None = None
+    #: The coverage of the published interval; surveys publish 95%, IGME 90% (its loaders say so in ``extra``).
+    level: float = 0.95
+
+
+class Nmr(NamedTuple):
+    """A place's neonatal mortality (per 1,000 live births) with how it was made and how sure it is."""
+
+    value: float
+    how: str
+    #: Standard error of ln(value) from the published interval, None when none was kept.
+    se: float | None = None
+    #: The part of ``se`` every territory of the country shares (the national estimate's), None for a national figure.
+    shared_se: float | None = None
+    #: "own" (measured below the country), "ratio" (the country's scaled by the area's under-five mortality) or "country".
+    kind: str = "country"
 
 
 class _Ctx:
@@ -215,10 +238,12 @@ class Baselines:
         # mortality series is ~35 years x 3 measures (loading the boundary with each
         # row ran a production task out of memory, 2026-11-09).
         adm0 = boundary_set.owned().filter(iso_code__in=isos, admin_level=0).values("pk")
-        for iso, ind, src, year, value in IndicatorValue.objects.filter(
+        for iso, ind, src, year, value, low, high, extra in IndicatorValue.objects.filter(
             boundary__in=adm0, indicator__in=("u5mr", "imr", "nmr")
-        ).values_list("iso_code", "indicator", "source", "year", "value"):
-            self._country_rows.setdefault(iso, {}).setdefault(ind, []).append(_Row(source=src, year=year, value=value))
+        ).values_list("iso_code", "indicator", "source", "year", "value", "ci_low", "ci_high", "extra"):
+            self._country_rows.setdefault(iso, {}).setdefault(ind, []).append(
+                _Row(src, year, value, low, high, (extra or {}).get("interval_level", 0.95))
+            )
 
     def for_area(self, model: str, iso3: str, boundary: AdminBoundary | None) -> dict[str, Value]:
         """Every location input of ``model`` for one area (or the country, when ``boundary`` is None)."""
@@ -254,27 +279,34 @@ class Baselines:
             out[key] = v
         return out
 
-    def newborn_mortality(self, iso3: str, boundary: AdminBoundary | None) -> tuple[float, str] | None:
-        """Neonatal deaths per 1,000 live births for a place, and how the figure was made. None when there is none.
+    def newborn_mortality(self, iso3: str, boundary: AdminBoundary | None) -> Nmr | None:
+        """Neonatal deaths per 1,000 live births for a place, how the figure was made, and how sure it is. None when
+        there is none.
 
         The place's own figure when Labs has one below the country; else the country's IGME figure scaled by how the
         place's under-five mortality compares with the country's (the models' own recipe for a subnational place, as
-        ``RECIPES["mbw"]["nmr"]`` does); else the country's. ``boundary`` is None for the country as a whole.
+        ``RECIPES["mbw"]["nmr"]`` does); else the country's. ``boundary`` is None for the country as a whole. The
+        uncertainty is what the published interval says (``mortality.se_ln``), None where Labs kept none.
         """
         rows = self._country_rows.get(iso3, {}).get("nmr", [])
         igme = [r for r in rows if r.source == "igme"] or rows
-        national = max(igme, key=lambda r: r.year).value if igme else None
+        latest = max(igme, key=lambda r: r.year) if igme else None
+        national = latest.value if latest else None
+        national_se = mortality.se_ln(latest.ci_low, latest.ci_high, latest.level) if latest else None
         if boundary is not None and self._resolver is not None:
             ctx = _Ctx(self._resolver, boundary, {}, self._country_rows.get(iso3, {}))
             own = _local(ctx.get("nmr"))
             if own is not None:
                 lvl, where = _level(own)
-                return own.value, f"{where} ({lvl}), {_src(own)}"
+                return Nmr(own.value, f"{where} ({lvl}), {_src(own)}", _se(own), national_se, "own")
             got = _ratio(ctx, "u5mr") if national is not None else None
             if got is not None:
                 ratio, area = got
-                return (
+                return Nmr(
                     national * ratio,
                     f"the country's x the area's under-five mortality / the country's ({ratio:.2f})",
+                    mortality.combine(_se(area), national_se),
+                    national_se,
+                    "ratio",
                 )
-        return (national, "the country's IGME estimate") if national is not None else None
+        return Nmr(national, "the country's IGME estimate", national_se) if national is not None else None

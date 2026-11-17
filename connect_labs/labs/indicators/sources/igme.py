@@ -18,7 +18,7 @@ import logging
 
 from connect_labs.labs.indicators import boundaries
 from connect_labs.labs.indicators.models import License, Source
-from connect_labs.labs.indicators.sources.base import Row, http_json
+from connect_labs.labs.indicators.sources.base import Row, http_json, sdmx_attribute_positions, sdmx_number
 
 logger = logging.getLogger(__name__)
 
@@ -45,15 +45,20 @@ INDICATORS = {
 METHOD = (
     "UN Inter-agency Group for Child Mortality Estimation (IGME) {year} national "
     "estimate, retrieved via UNICEF SDMX. Modelled series reconciling surveys and "
-    "vital registration; national level only."
+    "vital registration; national level only. ci_low/ci_high are IGME's published "
+    "uncertainty bounds."
 )
+
+#: The coverage IGME's published bounds are documented to have: 90% uncertainty intervals. The SDMX answer does not say
+#: (its INTERVAL attribute is not this), so it is stated here and travels with every row as ``extra["interval_level"]``.
+INTERVAL_LEVEL = 0.90
 
 #: Dimension order in the CME dataflow.
 _DIMS = ("REF_AREA", "INDICATOR", "SEX", "WEALTH_QUINTILE", "TIME_PERIOD")
 
 
-def _parse(payload: dict) -> list[tuple[str, int, float]]:
-    """Flatten an SDMX-JSON response to (iso3, year, value), totals only."""
+def _parse(payload: dict) -> list[tuple[str, int, float, float | None, float | None]]:
+    """Flatten an SDMX-JSON response to (iso3, year, value, lower bound, upper bound), totals only."""
     data = payload.get("data") or {}
     datasets = data.get("dataSets") or []
     structure = data.get("structure") or {}
@@ -63,8 +68,9 @@ def _parse(payload: dict) -> list[tuple[str, int, float]]:
 
     index = {d["id"]: i for i, d in enumerate(dims)}
     values = {d["id"]: [v.get("id") for v in d["values"]] for d in dims}
+    attributes = sdmx_attribute_positions(structure)
 
-    out: list[tuple[str, int, float]] = []
+    out: list[tuple[str, int, float, float | None, float | None]] = []
     for key, obs in (datasets[0].get("observations") or {}).items():
         parts = key.split(":")
         picked = {dim: values[dim][int(parts[index[dim]])] for dim in _DIMS if dim in index}
@@ -75,7 +81,15 @@ def _parse(payload: dict) -> list[tuple[str, int, float]]:
         raw = obs[0] if obs else None
         if raw in (None, ""):
             continue
-        out.append((picked["REF_AREA"], int(picked["TIME_PERIOD"]), float(raw)))
+        out.append(
+            (
+                picked["REF_AREA"],
+                int(picked["TIME_PERIOD"]),
+                float(raw),
+                sdmx_number(obs, attributes, "LOWER_BOUND"),
+                sdmx_number(obs, attributes, "UPPER_BOUND"),
+            )
+        )
     return out
 
 
@@ -115,7 +129,7 @@ def load(
     )
 
     rows: list[Row] = []
-    for iso, year, value in _parse(payload):
+    for iso, year, value, low, high in _parse(payload):
         boundary = adm0.get(iso)
         if boundary is None:
             continue
@@ -130,6 +144,9 @@ def load(
                 source_url=PORTAL.format(iso=iso),
                 license_code=License.CC_BY_3_IGO,
                 method=METHOD.format(year=year),
+                ci_low=low,
+                ci_high=high,
+                extra={"interval_level": INTERVAL_LEVEL} if low is not None and high is not None else {},
             )
         )
 

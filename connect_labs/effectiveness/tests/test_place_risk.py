@@ -72,6 +72,7 @@ class TestGrain:
             False,
         )
         assert got["measures"] == {"nmr": pytest.approx(40.0), "nmr_country": pytest.approx(30.0)}
+        assert got["measures_se"] == {} and got["measures_raw"] == {}  # the fixture carries no published interval
         assert "Kano" in got["measures_how"]["nmr"] and got["inputs"] == {}  # Kangaroo Care has no place inputs
 
 
