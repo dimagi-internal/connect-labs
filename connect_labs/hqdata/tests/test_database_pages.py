@@ -16,7 +16,7 @@ HOST = "www.commcarehq.org"
 
 
 def post(client, project, action, **fields):
-    return client.post(f"/hq/projects/{project.pk}/act/", {"action": action, **fields}, follow=True)
+    return client.post(f"/commcare/projects/{project.pk}/act/", {"action": action, **fields}, follow=True)
 
 
 def details(customer_db, **over):
@@ -54,7 +54,7 @@ def test_saving_the_details_keeps_the_password_out_of_every_page(client, mine, c
     resp = post(client, mine, "save_database", **details(customer_db))
     record = HQExternalDatabase.objects.get(project=mine)
     assert record.password == customer_db["password"] and record.host == customer_db["host"]
-    page = client.get(f"/hq/projects/{mine.pk}/").content.decode()
+    page = client.get(f"/commcare/projects/{mine.pk}/").content.decode()
     assert customer_db["password"] not in page and customer_db["password"] not in resp.content.decode()
     assert 'placeholder="unchanged"' in page
 
@@ -99,7 +99,7 @@ def test_only_a_project_admin_can_touch_the_database(client, customer_db):
         resp = post(client, project, action, **details(customer_db))
         assert any("project admin" in m for m in messages_of(resp)), action
     assert not HQExternalDatabase.objects.filter(project=project).exists()
-    page = client.get(f"/hq/projects/{project.pk}/").content.decode()
+    page = client.get(f"/commcare/projects/{project.pk}/").content.decode()
     assert "Use a database you host" not in page
 
 
@@ -121,7 +121,7 @@ def test_using_the_database_moves_the_project_and_queues_a_fresh_read(client, mi
     assert mine.store == "external" and not HQForm.objects.filter(project_id=mine.pk).exists()
     assert queued.call_count == 1 and queued.call_args.args[0].pk == mine.pk
     assert any("in your database" in m for m in messages_of(resp))
-    page = client.get(f"/hq/projects/{mine.pk}/").content.decode()
+    page = client.get(f"/commcare/projects/{mine.pk}/").content.decode()
     assert "Labs keeps none of this project" in page and customer_db["password"] not in page
 
 

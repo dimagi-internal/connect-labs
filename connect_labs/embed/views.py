@@ -255,7 +255,7 @@ class EmbedWorkflowView(WorkflowRunView):
 def render_hq_workflow(request, session):
     """One of a CommCare project's pages, drawn for the embed session's person (``hq_kind``).
 
-    The same payload as the page's own ``/hq/`` address, from the same builder; the project comes
+    The same payload as the page's own ``/commcare/`` address, from the same builder; the project comes
     from the session's registered entry, never from the request, and no Connect token is involved.
     """
     from connect_labs.embed.hq_kind import data_path

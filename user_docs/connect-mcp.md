@@ -17,7 +17,7 @@ Normally, editing a workflow's display logic or data fields requires a developer
 
 Claude reads the workflow's current definition, makes the change, and pushes it back to Labs.
 
-You can also build dashboards over a CommCare project in the same way. A page can show tiles, tables and charts drawn from the project's forms and cases, opens at its own address under `/hq/`, and can be embedded inside CommCare HQ. Anyone in the project can open and edit a page; only its author or a project admin can delete it.
+You can also build dashboards over a CommCare project in the same way. A page can show tiles, tables and charts drawn from the project's forms and cases, opens at its own address under `/commcare/`, and can be embedded inside CommCare HQ. Anyone in the project can open and edit a page; only its author or a project admin can delete it.
 
 ---
 

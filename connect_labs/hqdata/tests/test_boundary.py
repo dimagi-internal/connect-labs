@@ -31,7 +31,7 @@ def signed_in(client):
 
 def test_hq_is_a_satellite_so_the_labs_boundary_leaves_it_alone(client, with_labs_boundary):
     make_hq_user(client)
-    assert client.get("/hq/").status_code == 200
+    assert client.get("/commcare/").status_code == 200
     assert signed_in(client)
 
 
@@ -82,7 +82,7 @@ def test_a_connect_person_with_a_labs_session_is_unaffected_by_hq(client, with_l
         "connect_labs.hqdata.identity.fetch_identity",
         return_value={"username": "a@example.org", "email": "", "name": "", "domains": []},
     ):
-        assert client.get("/hq/").status_code == 200
+        assert client.get("/commcare/").status_code == 200
     assert signed_in(client) and "labs_oauth" in client.session
 
 
@@ -109,7 +109,7 @@ def test_a_connect_person_still_gets_through_the_mcp_door():
 
 def test_a_url_context_on_an_hq_path_is_never_validated_or_saved(client, with_labs_boundary):
     make_hq_user(client)
-    assert client.get("/hq/?opportunity_id=-1000000005&program_id=42").status_code == 200
+    assert client.get("/commcare/?opportunity_id=-1000000005&program_id=42").status_code == 200
     assert "labs_context" not in client.session
 
 

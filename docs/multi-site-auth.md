@@ -43,13 +43,13 @@ This is why a satellite login cannot become a labs login, and it's verified by
 
 One person can hold several authorizations at once; each surface checks its own.
 
-## `/hq/`: signing in with CommCare instead of Connect
+## `/commcare/`: signing in with CommCare instead of Connect
 
 `connect_labs/hqdata/web/` is a satellite for people with **no Connect login**. They sign in
-with CommCare HQ OAuth (`/hq/login/`), see the CommCare projects HQ says they belong to, and
+with CommCare HQ OAuth (`/commcare/login/`), see the CommCare projects HQ says they belong to, and
 nothing else. It adds a fourth row to the table above:
 
-| User | `labs_oauth`? | Labs | `/hq/` |
+| User | `labs_oauth`? | Labs | `/commcare/` |
 |------|:---:|:---:|:---:|
 | CommCare-only | no | logged out on any labs path (the boundary above, unchanged) | ✅ |
 
@@ -67,7 +67,7 @@ Three rules keep that row honest:
 3. **Access is membership proven by CommCare.** `hqdata.access.may_use_project`; see
    `docs/superpowers/specs/2026-11-13-commcare-first-class-design.md`.
 
-The OAuth redirect URI `/hq/login/callback/` must be registered on the CommCare HQ OAuth
+The OAuth redirect URI (`/hq/login/callback/` today, `HQ_LOGIN_CALLBACK_PATH`; `/commcare/login/callback/` once it is registered too) must be registered on the CommCare HQ OAuth
 application (the one `COMMCARE_OAUTH_CLIENT_ID` names) or HQ refuses the sign-in.
 Verified by `connect_labs/hqdata/tests/test_boundary.py`.
 
@@ -114,3 +114,6 @@ The middleware is the primary boundary, but treat these as complementary:
 
 See the 2026-07-29 security audit for the finding that motivated documenting
 this contract.
+
+
+The pages were at `/hq/` before they moved to `/commcare/`; the old address redirects (a POST as a 307), except the sign-in callback, which stays at the registered `/hq/login/callback/` until `/commcare/login/callback/` is registered on the HQ OAuth app and `HQ_LOGIN_CALLBACK_PATH` is switched.

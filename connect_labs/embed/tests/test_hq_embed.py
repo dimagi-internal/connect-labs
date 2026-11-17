@@ -327,8 +327,8 @@ def test_a_session_reaches_nothing_but_its_own_pages_read(client, key, hq, page,
     for path in (
         f"/embed/hq/{other.pk}/{page}/pipeline-data/",  # another project
         f"/embed/hq/{project.pk}/{page + 1}/pipeline-data/",  # another page
-        "/hq/",  # the person's /hq/ home is not an embed route
-        f"/hq/projects/{project.pk}/",
+        "/commcare/",  # the person's /hq/ home is not an embed route
+        f"/commcare/projects/{project.pk}/",
         "/labs/workflow/api/1/pipeline-data/",
     ):
         got = client.get(path, HTTP_REFERER=LABS + frame)

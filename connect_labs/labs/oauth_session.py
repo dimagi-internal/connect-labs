@@ -73,7 +73,7 @@ _LABS_SKIP_PATH_PREFIXES = (
     # The sandbox shell (workflow/sandbox.py): a fixed, data-free page served to a
     # frame. It authenticates nobody and grants nothing, and a browser that sends the
     # session cookie with it (Safari does) must not log a CommCare-only person out of
-    # /hq/ for opening a workflow there.
+    # /commcare/ for opening a workflow there.
     "/labs/sandbox/render/",
     "/admin/",
     "/o/",

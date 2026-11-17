@@ -38,7 +38,7 @@ def workflow_data(response):
 def test_opening_the_overview_makes_it_and_draws_it_in_the_sandbox_with_no_connect_endpoints(client):
     user = make_hq_user(client)
     project = add_project(user)
-    resp = client.post(f"/hq/projects/{project.pk}/workflows/")
+    resp = client.post(f"/commcare/projects/{project.pk}/workflows/")
     assert resp.status_code == 302
     page = client.get(resp["Location"])
     assert page.status_code == 200
@@ -57,7 +57,7 @@ def test_the_data_endpoint_returns_the_projects_rows_as_the_member(client):
     for i, name in enumerate(["ann", "ann", "bob"]):
         store(project, f"f{i}", name)
     definition_id = ensure_project_dashboard(user, project)
-    got = client.get(f"/hq/projects/{project.pk}/workflows/{definition_id}/pipeline-data/").json()
+    got = client.get(f"/commcare/projects/{project.pk}/workflows/{definition_id}/pipeline-data/").json()
     assert sorted((r["username"], r["forms"]) for r in got["workers"]["rows"]) == [("ann", 2), ("bob", 1)]
 
 
@@ -67,7 +67,7 @@ def test_a_person_who_is_not_in_the_project_gets_a_404_everywhere(client):
     project = add_project(owner)
     definition_id = ensure_project_dashboard(owner, project)
     make_hq_user(client, username="stranger@example.org")
-    base = f"/hq/projects/{project.pk}/workflows/"
+    base = f"/commcare/projects/{project.pk}/workflows/"
     assert client.get(base).status_code == 404
     assert client.post(base).status_code == 404
     assert client.get(f"{base}{definition_id}/").status_code == 404
@@ -78,8 +78,8 @@ def test_one_projects_page_cannot_be_opened_through_another_projects_url(client)
     user = make_hq_user(client, domains=("one", "two"))
     one, two = add_project(user, "one"), add_project(user, "two")
     definition_id = ensure_project_dashboard(user, one)
-    assert client.get(f"/hq/projects/{two.pk}/workflows/{definition_id}/").status_code == 404
-    assert client.get(f"/hq/projects/{two.pk}/workflows/{definition_id}/pipeline-data/").status_code == 404
+    assert client.get(f"/commcare/projects/{two.pk}/workflows/{definition_id}/").status_code == 404
+    assert client.get(f"/commcare/projects/{two.pk}/workflows/{definition_id}/pipeline-data/").status_code == 404
 
 
 def test_a_url_context_is_ignored_and_a_stored_schema_cannot_name_another_project(client):
@@ -98,7 +98,7 @@ def test_a_url_context_is_ignored_and_a_stored_schema_cannot_name_another_projec
     dao.update_definition(record.id, schema=schema)
     dao.close()
     got = client.get(
-        f"/hq/projects/{one.pk}/workflows/{definition_id}/pipeline-data/?opportunity_id=1&program_id=2"
+        f"/commcare/projects/{one.pk}/workflows/{definition_id}/pipeline-data/?opportunity_id=1&program_id=2"
     ).json()
     assert [r["username"] for r in got["workers"]["rows"]] == ["ann"]  # project one's rows, never two's
 
@@ -106,7 +106,7 @@ def test_a_url_context_is_ignored_and_a_stored_schema_cannot_name_another_projec
 def test_a_project_in_the_customers_database_says_why_instead_of_failing(client):
     user = make_hq_user(client)
     project = add_project(user, store=HQProject.STORE_EXTERNAL)
-    resp = client.get(f"/hq/projects/{project.pk}/workflows/")
+    resp = client.get(f"/commcare/projects/{project.pk}/workflows/")
     assert resp.status_code == 409 and b"your own database" in resp.content
 
 
@@ -116,4 +116,4 @@ def test_a_run_is_not_served_here_only_a_page(client):
     dao = workflow_dao(user, project)
     run_like = dao.create_definition(name="not a page", description="", statuses=[{"id": "a", "label": "A"}])
     dao.close()
-    assert client.get(f"/hq/projects/{project.pk}/workflows/{run_like.id}/").status_code == 404
+    assert client.get(f"/commcare/projects/{project.pk}/workflows/{run_like.id}/").status_code == 404

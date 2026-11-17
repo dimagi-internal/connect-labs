@@ -1,4 +1,4 @@
-"""A CommCare project's workflows, drawn under /hq/ for a person with no Connect login.
+"""A CommCare project's workflows, drawn under /commcare/ for a person with no Connect login.
 
 Only the page kind (no runs) and only GET: a page is drawn by the workflow runner in page mode, in
 the sandbox (``workflow/sandbox.py``), and reads the one endpoint below as the viewer. The project
@@ -50,7 +50,7 @@ def build_workflow_data(
     """The ``workflow-data`` the runner reads to draw one of a project's pages.
 
     ``data_url`` is the ONE endpoint the page reads; every other ``apiEndpoints`` entry is ``None``, so
-    nothing reaches a ``/labs/...`` route. Shared by the ``/hq/`` page and the embed frame.
+    nothing reaches a ``/labs/...`` route. Shared by the ``/commcare/`` page and the embed frame.
     """
     user = request.user
     api = {
@@ -140,7 +140,7 @@ def workflow_page(request: HttpRequest, project_id: int, definition_id: int) -> 
         project,
         definition,
         render_code,
-        data_url=f"/hq/projects/{project.pk}/workflows/{definition.id}/pipeline-data/",
+        data_url=f"/commcare/projects/{project.pk}/workflows/{definition.id}/pipeline-data/",
     )
     response = render(
         request,

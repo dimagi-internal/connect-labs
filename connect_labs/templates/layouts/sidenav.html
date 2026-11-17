@@ -118,6 +118,9 @@ navigates, as before, and the section's own pages have the menu. Closing the dra
                 {# The programme's supply chain. Its pages draw their own menu beside this bar (supply_chain/_rail.html); this item says where you are. #}
                 {% url 'supply_chain:home' as supply_home_url %}
                 {% include "components/sidenav-items.html" with name='Supply' icon='boxes-stacked' target=supply_home_url namespace='supply_chain' except_prefix=supply_market_url %}
+                {# CommCare projects: their stored data and the workflow pages over it (hqdata). #}
+                {% url 'hq:home' as commcare_home_url %}
+                {% include "components/sidenav-items.html" with name='CommCare' icon='database' target=commcare_home_url namespace='hq' %}
             {% endif %}
             {# No sidebar item for the supplier marketplace (Jonathan, 2026-11-06): it is reached from #}
             {# the Marketplace menu (Suppliers) and the Supply rail's foot, and by the link a tender sends. #}

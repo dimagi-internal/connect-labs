@@ -385,4 +385,4 @@ def test_creating_a_project_needs_a_commcare_sign_in_and_commcares_word(client):
 def test_creating_a_project_without_any_commcare_sign_in_is_refused(me):
     with pytest.raises(MCPToolError) as caught:
         call("hq_project_create", me, domain="demo")
-    assert caught.value.code == "PERMISSION_DENIED" and "/hq/login/" in caught.value.message
+    assert caught.value.code == "PERMISSION_DENIED" and "/commcare/login/" in caught.value.message

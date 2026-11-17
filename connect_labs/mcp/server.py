@@ -192,7 +192,7 @@ def _verify_bearer_sync(raw: str, presented_jkt: str | None = None):
     ``/o/`` (the MCP sign-in) is outside the labs session boundary, so a CommCare-only session
     could mint a token there, and every Connect tool acts as the user with a Connect token a
     CommCare-only identity does not have. So such a person gets in with exactly one kind of
-    credential, a PAT of the ``commcare`` scope (minted at /hq/tokens/), which
+    credential, a PAT of the ``commcare`` scope (minted at /commcare/tokens/), which
     ``allowed_tools`` confines to ``COMMCARE_TOOLS``. Any other credential is refused here, at the
     one door.
     """

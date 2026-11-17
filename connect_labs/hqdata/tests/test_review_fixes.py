@@ -123,7 +123,7 @@ def test_renaming_a_pipeline_to_a_name_in_use_says_so_instead_of_failing(client)
     HQPipeline.objects.create(project=project, name="taken", store_kind="forms", schema={}, created_by=user)
     mine = HQPipeline.objects.create(project=project, name="mine", store_kind="forms", schema={}, created_by=user)
     resp = client.post(
-        f"/hq/projects/{project.pk}/pipelines/{mine.pk}/",
+        f"/commcare/projects/{project.pk}/pipelines/{mine.pk}/",
         {"action": "save", "name": "taken", "store_kind": "forms", "schema": SCHEMA},
     )
     assert resp.status_code == 200 and b"already exists" in resp.content

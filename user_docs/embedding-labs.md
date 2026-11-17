@@ -144,7 +144,7 @@ Setting the environment variable `LABS_EMBED_ENABLED=false` on the labs deployme
 
 ## CommCare project pages
 
-A person who works in CommCare HQ and has **no Connect login** can see a labs page over their CommCare project inside HQ, the same read-only, sandboxed page they open at `/hq/`. HQ registers as a client with a **CommCare host** and lists each page as a resource:
+A person who works in CommCare HQ and has **no Connect login** can see a labs page over their CommCare project inside HQ, the same read-only, sandboxed page they open at `/commcare/`. HQ registers as a client with a **CommCare host** and lists each page as a resource:
 
 ```json
 [{"kind": "hq_workflow", "id": 4711, "project_id": 12}]
