@@ -162,7 +162,7 @@ It is about what Claude *sees*, not about whether it may change things.
 - **Build and edit CommCare project pages.** It can create and update dashboard pages for a CommCare project — tiles, tables and charts drawn from that project's forms and cases. Anyone in the project can open or edit a page; only its author or a project admin can delete it.
 - **Set work going on the server.** Creating runs, saving snapshots, rebuilding a report's history, warming a visit cache, handing a report down and publishing a benchmark all work. For these the **server** reads the visits and keeps the result; what comes back to Claude is ids, versions, dates and counts.
 - **Make synthetic data.** It can measure a real opportunity on the server and generate a synthetic copy from that measurement — see [Synthetic Data](synthetic-data.md).
-- **Work with cost-effectiveness scenarios.** It can list and open saved scenarios and size one using `cea_scenarios`. It can also plan to a reach target, work at territory (state/province) level, and read place-level cost-effectiveness figures that account for local newborn mortality. Saving a scenario with `cea_scenario_save` requires a full-access token.
+- **Work with cost-effectiveness scenarios.** It can list and open saved scenarios and size one using `cea_scenarios`. It can also plan to a reach target, work at territory (state/province) level, and read place-level cost-effectiveness figures that account for local newborn mortality. When planning to a reach target it can apply plan limits (smallest place worth including, maximum number of countries), download a by-country summary as a CSV, and assess how the plan holds up if the place figures are only partially reliable. Saving a scenario with `cea_scenario_save` requires a full-access token. Saved scenarios can be renamed, shared with others, or made private again from the scenario list without saving again.
 
 !!! note "Counts and dates are allowed"
     Opportunity-level counts and dates are on the allowed side of the line, as are the contact details of people who submitted something as an organisation. The line is drawn at an individual visit and its values.
@@ -221,4 +221,4 @@ Personal Access Tokens let you connect an MCP client to Labs without going throu
 
 **No-user-visit tokens** can be created and rotated by you directly on the tokens page, with no extra step.
 
-**Full-access (Standard) tokens** require a passkey confirmation through canopy. When you create or rotate a Standard token, a small canopy window opens over the tokens page, you touch your passkey, and the token appears — you stay on the same page throughout. If the window cannot open, a link lets you approve in canopy instead. Every outcome shows
+**Full-access (
