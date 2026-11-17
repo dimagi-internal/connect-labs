@@ -336,6 +336,16 @@ class TestSavedScenarios:
             "place_risk": "0",
         }
 
+    @pytest.mark.parametrize("off", [False, "false", "0", "no"])
+    def test_the_place_risk_switch_is_off_however_the_caller_spells_false(self, ann, off):
+        got = cea.cea_scenario_save(ann, name=f"flat {off}", models=["kc"], place_risk=off)
+        assert got["params"]["place_risk"] == "0"
+
+    @pytest.mark.parametrize("on", [True, "true", "1", None])
+    def test_and_on_adds_nothing(self, ann, on):
+        got = cea.cea_scenario_save(ann, name=f"scaled {on}", models=["kc"], place_risk=on)
+        assert "place_risk" not in got["params"]
+
     def test_a_default_plan_adds_nothing_to_the_link(self, ann):
         got = cea.cea_scenario_save(ann, name="Plain", models=["kc"], grain="country", cost_basis="model", trust=100)
         assert got["params"] == {"models": "kc"}

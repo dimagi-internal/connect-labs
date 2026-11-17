@@ -334,11 +334,16 @@ def _plan_params(
         *[(k, v) for k, v in (caps or {}).items() if k in CAP_KEYS],
         ("cost_basis", None if cost_basis in (None, "model") else cost_basis),
         ("trust", None if trust == 100 else trust),
-        ("place_risk", None if place_risk else "0"),
+        ("place_risk", "0" if _is_off(place_risk) else None),
     ):
         if value is not None:
             out[key] = value
     return out
+
+
+def _is_off(switch) -> bool:
+    """A true/false argument that is false, whether it arrived as a boolean or as the text of one."""
+    return switch is False or str(switch).strip().lower() in ("0", "false", "off", "no")
 
 
 @register(
