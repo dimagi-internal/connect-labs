@@ -272,6 +272,13 @@ def profile_entity_structure(
     date_paths: set[str] | None = None,
     categorical_paths: set[str] | None = None,
 ) -> EntityStructure:
+    # Read the paths in a fixed order. A set of strings iterates in an order Python
+    # picks per process (hash randomisation), that order became each visit's key order,
+    # and the case models draw per key in key order -- so the same source and seed
+    # gave a different clone on every run.
+    numeric_paths, date_paths, categorical_paths = (
+        None if paths is None else sorted(paths) for paths in (numeric_paths, date_paths, categorical_paths)
+    )
     # visits per (entity, flw) so we can both count an entity's visits and find
     # the FLW who did the most of them.
     resolve = build_entity_resolver(visits)
