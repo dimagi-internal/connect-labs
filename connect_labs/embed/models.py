@@ -49,7 +49,7 @@ class EmbedClient(models.Model):
         blank=True,
         help_text=(
             "A CommCare HQ host (www.commcarehq.org). Set, this client may assert ONLY people named "
-            "'cchq:<host>:<username>', and only for kinds that take them (hq_workflow); it is never "
+            "'cchq:<host>:<username>', and only for kinds that take them (commcare_workflow); it is never "
             "an identity authority. Staff only."
         ),
     )

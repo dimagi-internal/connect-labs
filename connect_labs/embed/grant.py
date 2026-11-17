@@ -9,7 +9,7 @@ its authentication. In order:
    keys (``keys.verify_assertion``: audience, lifetime, issuer, jti);
 3. the client may assert users: an identity authority may assert any labs user; a CommCare
    client (``commcare_host``) only people named ``cchq:<its host>:<username>``, and only for
-   a kind that takes them (``hq_workflow``);
+   a kind that takes them (``commcare_workflow``);
 4. ``resource`` names a kind and id this client registered;
 5. the subject is an active labs user (labs holds a Connect token for them, unless the kind
    needs none); for a CommCare client that vouches for membership, an unseen person is

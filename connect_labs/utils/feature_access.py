@@ -10,7 +10,8 @@ from connect_labs.utils.dimagi_user import is_dimagi_user
 # outside Dimagi; who may manage a call is decided per organisation
 # (solicitations/access.py), not by this gate.
 # "data": the Data page shows only data the person already holds (labsdata/spaces.py).
-EXTERNAL_USER_FEATURES = {"tasks", "workflow", "docs", "solicitations", "data"}
+# "commcare": the CommCare pages show only projects CommCare itself says the person belongs to (hqdata/access.py).
+EXTERNAL_USER_FEATURES = {"tasks", "workflow", "docs", "solicitations", "data", "commcare"}
 EXTERNAL_USER_WORKFLOW_TEMPLATES = {"bulk_image_audit"}
 
 

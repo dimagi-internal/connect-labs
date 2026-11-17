@@ -9,7 +9,7 @@ A job is also time-boxed. It stops, cleanly, after ``sync_budget_seconds`` (unde
 with everything it read stored, and queues its own continuation. A sync of any size is therefore a
 chain of short jobs, none of which the worker ever has to kill.
 
-Whose job it is. A person pressing "Sync now" or calling ``hq_project_sync`` owns the job they started.
+Whose job it is. A person pressing "Sync now" or calling ``commcare_project_sync`` owns the job they started.
 The schedule, and a continuation, run as the project's sync owner: the person who chose to keep the
 project up to date, whose CommCare sign-in the sync uses anyway.
 """
@@ -24,7 +24,7 @@ from connect_labs.hqdata.models import HQProject
 from connect_labs.hqdata.projects import Refused
 from connect_labs.hqdata.sync import LEASE_SECONDS, summarize, sync_project
 
-TOOL = "hq_project_sync"
+TOOL = "commcare_project_sync"
 
 
 def sync_budget_seconds() -> int:
@@ -69,7 +69,7 @@ def queue_sync(
 
 
 def run_sync(project: HQProject, user, mode: str | None, progress) -> dict:
-    """The body of the ``hq_project_sync`` job: sync within the time budget, queue the rest."""
+    """The body of the ``commcare_project_sync`` job: sync within the time budget, queue the rest."""
     deadline = time.monotonic() + sync_budget_seconds()
     results = sync_project(
         project,

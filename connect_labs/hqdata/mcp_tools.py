@@ -1,4 +1,4 @@
-"""The ``hq_*`` MCP tools: a person's CommCare projects, for an agent or a script.
+"""The ``commcare_*`` MCP tools: a person's CommCare projects, for an agent or a script.
 
 Every tool acts as the signed-in person and passes the same gate as the pages: a verified member of
 the project (``access.may_use_project``), and a project the person is not in is "not found", the
@@ -95,27 +95,27 @@ def _fields(fields) -> list[str]:
     return fields
 
 
-_PROJECT_ID = {"type": "integer", "description": "The project's id, from hq_project_list."}
+_PROJECT_ID = {"type": "integer", "description": "The project's id, from commcare_project_list."}
 
 
 @register(
-    name="hq_project_list",
+    name="commcare_project_list",
     description="The CommCare projects you belong to: id, domain, where its data is kept and how its sync is going.",
     input_schema={"type": "object", "properties": {}},
 )
-def hq_project_list(user, **_):
+def commcare_project_list(user, **_):
     return {"projects": [_summary(p) for p in visible_projects(user).order_by("domain")]}
 
 
 @register(
-    name="hq_project_get",
+    name="commcare_project_get",
     description=(
         "One CommCare project: its sources and how far each has been read, recent syncs, "
         "and how many forms and cases are stored."
     ),
     input_schema={"type": "object", "properties": {"project_id": _PROJECT_ID}, "required": ["project_id"]},
 )
-def hq_project_get(user, project_id=None, **_):
+def commcare_project_get(user, project_id=None, **_):
     project = _project(user, project_id)
     try:
         with store_for(project).session() as store:
@@ -157,7 +157,7 @@ def hq_project_get(user, project_id=None, **_):
 
 
 @register(
-    name="hq_project_create",
+    name="commcare_project_create",
     description=(
         "Add a CommCare project you belong to. CommCare must list it among your projects and let your account read "
         "its forms. Needs you to have signed in with CommCare at /commcare/login/ (or connected CommCare in labs) "
@@ -166,7 +166,7 @@ def hq_project_get(user, project_id=None, **_):
     input_schema={"type": "object", "properties": {"domain": {"type": "string"}}, "required": ["domain"]},
     is_write=True,
 )
-def hq_project_create(user, domain="", **_):
+def commcare_project_create(user, domain="", **_):
     token = cchq_token_or_none(user)
     if token is None:
         raise MCPToolError("PERMISSION_DENIED", "Sign in with CommCare at /commcare/login/ first, then try again.")
@@ -178,7 +178,7 @@ def hq_project_create(user, domain="", **_):
 
 
 @register(
-    name="hq_project_sync",
+    name="commcare_project_sync",
     description=(
         "Bring a project up to date from CommCare. Runs as a background job that a labs deploy does not lose: a "
         "large first read carries on as further jobs until it is done. Returns the result if it finishes within "
@@ -203,7 +203,7 @@ def hq_project_create(user, domain="", **_):
     long_running=True,
     wants_progress=True,
 )
-def hq_project_sync(user, project_id=None, mode=None, progress=NULL_PROGRESS, **_):
+def commcare_project_sync(user, project_id=None, mode=None, progress=NULL_PROGRESS, **_):
     from connect_labs.hqdata.jobs import run_sync
 
     project = HQProject.objects.filter(pk=project_id).first() if isinstance(project_id, int) else None
@@ -226,7 +226,7 @@ def hq_project_sync(user, project_id=None, mode=None, progress=NULL_PROGRESS, **
 
 
 @register(
-    name="hq_project_set_storage",
+    name="commcare_project_set_storage",
     description=(
         "Choose whether a project is kept and refreshed on a schedule ('persistent', using your CommCare sign-in) "
         "or fetched only when asked ('live'). Project admins only."
@@ -238,7 +238,7 @@ def hq_project_sync(user, project_id=None, mode=None, progress=NULL_PROGRESS, **
     },
     is_write=True,
 )
-def hq_project_set_storage(user, project_id=None, storage_mode=None, **_):
+def commcare_project_set_storage(user, project_id=None, storage_mode=None, **_):
     project = _project(user, project_id)
     _admin(user, project)
     try:
@@ -248,7 +248,7 @@ def hq_project_set_storage(user, project_id=None, storage_mode=None, **_):
 
 
 @register(
-    name="hq_forms",
+    name="commcare_forms",
     description=(
         f"Form submissions a project has stored, newest last, up to {MAX_ROWS} a call. Narrow by xmlns, app_id, "
         "username or received_on; `fields` picks values out of each form by dotted path "
@@ -271,7 +271,7 @@ def hq_project_set_storage(user, project_id=None, storage_mode=None, **_):
         "required": ["project_id"],
     },
 )
-def hq_forms(
+def commcare_forms(
     user,
     project_id=None,
     xmlns="",
@@ -327,7 +327,7 @@ def hq_forms(
 
 
 @register(
-    name="hq_cases",
+    name="commcare_cases",
     description=(
         f"Cases a project has stored, up to {MAX_ROWS} a call. Narrow by case_type, owner_id, closed, or exact "
         "case properties; `fields` picks values out of each case by dotted path "
@@ -348,7 +348,7 @@ def hq_forms(
         "required": ["project_id"],
     },
 )
-def hq_cases(
+def commcare_cases(
     user,
     project_id=None,
     case_type="",
@@ -414,11 +414,11 @@ def _pipeline(project: HQProject, pipeline_id=None, name=None) -> HQPipeline:
 
 
 @register(
-    name="hq_pipeline_list",
+    name="commcare_pipeline_list",
     description="The pipelines saved for a CommCare project.",
     input_schema={"type": "object", "properties": {"project_id": _PROJECT_ID}, "required": ["project_id"]},
 )
-def hq_pipeline_list(user, project_id=None, **_):
+def commcare_pipeline_list(user, project_id=None, **_):
     project = _project(user, project_id)
     return {
         "pipelines": [
@@ -437,7 +437,7 @@ def hq_pipeline_list(user, project_id=None, **_):
 
 
 @register(
-    name="hq_pipeline_save",
+    name="commcare_pipeline_save",
     description=(
         "Create or replace a pipeline over a project's forms or cases (the schema shape workflows use: fields with "
         "a path and an aggregation, a grouping_key, a terminal_stage). Field paths start form. for forms and "
@@ -459,7 +459,7 @@ def hq_pipeline_list(user, project_id=None, **_):
     },
     is_write=True,
 )
-def hq_pipeline_save(
+def commcare_pipeline_save(
     user, project_id=None, name="", store_kind="", schema=None, app_id="", xmlns="", case_type="", **_
 ):
     project = _project(user, project_id)
@@ -482,7 +482,7 @@ def hq_pipeline_save(
 
 
 @register(
-    name="hq_pipeline_run",
+    name="commcare_pipeline_run",
     description=(
         "Run a saved pipeline over a project's stored data and return its rows (up to 500). "
         "Name the pipeline by id or name."
@@ -498,7 +498,7 @@ def hq_pipeline_save(
         "required": ["project_id"],
     },
 )
-def hq_pipeline_run(user, project_id=None, pipeline_id=None, name=None, fresh=False, **_):
+def commcare_pipeline_run(user, project_id=None, pipeline_id=None, name=None, fresh=False, **_):
     project = _project(user, project_id)
     pipeline = _pipeline(project, pipeline_id, name)
     try:
@@ -517,7 +517,7 @@ def hq_pipeline_run(user, project_id=None, pipeline_id=None, name=None, fresh=Fa
 
 
 @register(
-    name="hq_pipeline_delete",
+    name="commcare_pipeline_delete",
     description="Delete a saved pipeline. Its author or a project admin only.",
     input_schema={
         "type": "object",
@@ -526,7 +526,7 @@ def hq_pipeline_run(user, project_id=None, pipeline_id=None, name=None, fresh=Fa
     },
     is_write=True,
 )
-def hq_pipeline_delete(user, project_id=None, pipeline_id=None, name=None, **_):
+def commcare_pipeline_delete(user, project_id=None, pipeline_id=None, name=None, **_):
     project = _project(user, project_id)
     pipeline = _pipeline(project, pipeline_id, name)
     if pipeline.created_by_id != user.pk:

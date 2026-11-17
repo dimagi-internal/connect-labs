@@ -77,9 +77,9 @@ component drawn in the same sandbox as the overview. It reads **pipelines** you 
 a table computed from the project's forms or cases, for example forms per worker, or one row per case), and shows
 them however you like: tiles, tables, charts.
 
-With an access token (see below), the tools are `hq_pipeline_save` and `hq_pipeline_run` for the tables, and
-`hq_workflow_create`, `hq_workflow_update`, `hq_workflow_get`, `hq_workflow_list`, `hq_workflow_data` and
-`hq_workflow_delete` for the pages. `hq_workflow_authoring_guide` explains the shape and gives an example.
+With an access token (see below), the tools are `commcare_pipeline_save` and `commcare_pipeline_run` for the tables, and
+`commcare_workflow_create`, `commcare_workflow_update`, `commcare_workflow_get`, `commcare_workflow_list`, `commcare_workflow_data` and
+`commcare_workflow_delete` for the pages. `commcare_workflow_authoring_guide` explains the shape and gives an example.
 Anyone in the project can open and change a page; only its author or a project admin can delete it.
 
 ## Using a project from a script or an AI assistant

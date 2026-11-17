@@ -179,7 +179,7 @@ A token posted in at any time **replaces** the frame's session, so when the pers
 
 ### CommCare HQ: showing a project page
 
-CommCare HQ shows a labs page over a CommCare project to a person who has no Connect login. It is the same handshake with three differences. HQ registers with a **CommCare host**; its resources are `{"kind": "hq_workflow", "id": <page>, "project_id": <project>}`; and `sub` is `cchq:<host>:<username>`. Labs then checks that the person belongs to the project in its own revocable record of membership (or, for a client that **vouches**, records HQ's statement that they do), draws the page in the same sandboxed frame, and lets the frame make one read. See [CommCare project pages](../embedding-labs.md#commcare-project-pages) for the rules, including that membership is re-checked on every request.
+CommCare HQ shows a labs page over a CommCare project to a person who has no Connect login. It is the same handshake with three differences. HQ registers with a **CommCare host**; its resources are `{"kind": "commcare_workflow", "id": <page>, "project_id": <project>}`; and `sub` is `cchq:<host>:<username>`. Labs then checks that the person belongs to the project in its own revocable record of membership (or, for a client that **vouches**, records HQ's statement that they do), draws the page in the same sandboxed frame, and lets the frame make one read. See [CommCare project pages](../embedding-labs.md#commcare-project-pages) for the rules, including that membership is re-checked on every request.
 
 ### 6. Errors from the token endpoint
 

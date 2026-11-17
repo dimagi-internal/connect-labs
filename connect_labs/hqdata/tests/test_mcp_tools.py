@@ -1,4 +1,4 @@
-"""The hq_* MCP tools, the scope that reaches them, and the door a CommCare-only person comes in by."""
+"""The commcare_* MCP tools, the scope that reaches them, and the door a CommCare-only person comes in by."""
 
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -54,7 +54,7 @@ def stored_form(project, form_id, username, *, q="a", xmlns="http://x/1", at=1, 
 
 
 def test_every_hq_tool_is_named_by_the_commcare_scope_and_the_scope_names_nothing_else():
-    registered = {name for name in _REGISTRY if name.startswith("hq_")}
+    registered = {name for name in _REGISTRY if name.startswith("commcare_")}
     assert registered == set(token_scopes.COMMCARE_TOOLS)
 
 
@@ -118,15 +118,15 @@ def test_a_connect_person_may_hold_a_commcare_token_too_and_it_stays_narrow(clie
 # -- reaching a project ----------------------------------------------------------------------
 
 PROJECT_TOOLS = [
-    "hq_project_get",
-    "hq_project_sync",
-    "hq_project_set_storage",
-    "hq_forms",
-    "hq_cases",
-    "hq_pipeline_list",
-    "hq_pipeline_save",
-    "hq_pipeline_run",
-    "hq_pipeline_delete",
+    "commcare_project_get",
+    "commcare_project_sync",
+    "commcare_project_set_storage",
+    "commcare_forms",
+    "commcare_cases",
+    "commcare_pipeline_list",
+    "commcare_pipeline_save",
+    "commcare_pipeline_run",
+    "commcare_pipeline_delete",
 ]
 
 
@@ -142,16 +142,16 @@ def test_a_project_i_am_not_in_is_not_found_by_every_tool_and_so_is_one_that_is_
 @pytest.mark.parametrize("project_id", [None, "1", 1.5, [1]])
 def test_a_project_id_that_is_not_an_integer_is_not_found_not_a_crash(me, project, project_id):
     with pytest.raises(MCPToolError):
-        call("hq_project_get", me, project_id=project_id)
+        call("commcare_project_get", me, project_id=project_id)
 
 
 def test_list_and_get_describe_my_projects_only(me, project):
     other = create_project(UserFactory(), "theirs", hq_host=HOST, can_read_domain=lambda: True)
     stored_form(project, "f1", "ann")
     HQCase.objects.create(project_id=project.pk, case_id="c1", case_type="child")
-    listed = call("hq_project_list", me)["projects"]
+    listed = call("commcare_project_list", me)["projects"]
     assert [p["domain"] for p in listed] == ["demo"] and other.domain not in str(listed)
-    got = call("hq_project_get", me, project_id=project.pk)
+    got = call("commcare_project_get", me, project_id=project.pk)
     assert got["stored"] == {"forms": 1, "cases": 1} and {s["kind"] for s in got["sources"]} == {"forms", "cases"}
 
 
@@ -165,26 +165,30 @@ def test_forms_are_filtered_paged_and_projected(me, project):
     stored_form(project, "f4", "ann", q="gone", at=4, archived=True)
     HQForm.objects.filter(form_id="f2").update(deleted_at=datetime(2026, 11, 9, tzinfo=timezone.utc))
 
-    everything = call("hq_forms", me, project_id=project.pk)
+    everything = call("commcare_forms", me, project_id=project.pk)
     assert everything["total"] == 2 and [f["form_id"] for f in everything["forms"]] == ["f1", "f3"]
-    assert [f["form_id"] for f in call("hq_forms", me, project_id=project.pk, include_archived=True)["forms"]] == [
+    assert [
+        f["form_id"] for f in call("commcare_forms", me, project_id=project.pk, include_archived=True)["forms"]
+    ] == [
         "f1",
         "f3",
         "f4",
     ]
-    assert [f["form_id"] for f in call("hq_forms", me, project_id=project.pk, xmlns="http://x/2")["forms"]] == ["f3"]
-    assert call("hq_forms", me, project_id=project.pk, username="bob")["total"] == 0  # bob's form was deleted
+    assert [f["form_id"] for f in call("commcare_forms", me, project_id=project.pk, xmlns="http://x/2")["forms"]] == [
+        "f3"
+    ]
+    assert call("commcare_forms", me, project_id=project.pk, username="bob")["total"] == 0  # bob's form was deleted
     window = call(
-        "hq_forms",
+        "commcare_forms",
         me,
         project_id=project.pk,
         received_after="2026-11-02T00:00:00Z",
         received_before="2026-11-04T00:00:00Z",
     )
     assert [f["form_id"] for f in window["forms"]] == ["f3"]
-    page = call("hq_forms", me, project_id=project.pk, limit=1, offset=1)
+    page = call("commcare_forms", me, project_id=project.pk, limit=1, offset=1)
     assert page["total"] == 2 and [f["form_id"] for f in page["forms"]] == ["f3"]
-    picked = call("hq_forms", me, project_id=project.pk, fields=["form.q", "form.meta.username", "form.nope"])[
+    picked = call("commcare_forms", me, project_id=project.pk, fields=["form.q", "form.meta.username", "form.nope"])[
         "forms"
     ][0]["values"]
     assert picked == {"form.q": "one", "form.meta.username": "ann", "form.nope": None}
@@ -203,15 +207,15 @@ def test_forms_are_filtered_paged_and_projected(me, project):
 )
 def test_bad_arguments_are_refused_with_a_reason(me, project, args):
     with pytest.raises(MCPToolError) as caught:
-        call("hq_forms", me, project_id=project.pk, **args)
+        call("commcare_forms", me, project_id=project.pk, **args)
     assert caught.value.code == "INVALID_SCHEMA"
 
 
 def test_a_call_cannot_ask_for_more_than_the_cap(me, project):
     for i in range(3):
         stored_form(project, f"f{i}", "ann", at=i + 1)
-    assert len(call("hq_forms", me, project_id=project.pk, limit=10_000)["forms"]) == 3
-    assert call("hq_forms", me, project_id=project.pk, limit=0)["forms"].__len__() == 1  # clamped up to one
+    assert len(call("commcare_forms", me, project_id=project.pk, limit=10_000)["forms"]) == 3
+    assert call("commcare_forms", me, project_id=project.pk, limit=0)["forms"].__len__() == 1  # clamped up to one
 
 
 def test_cases_are_filtered_by_type_owner_state_and_exact_properties(me, project):
@@ -224,7 +228,7 @@ def test_cases_are_filtered_by_type_owner_state_and_exact_properties(me, project
     HQCase.objects.create(project_id=project.pk, case_id="c3", case_type="household", properties={"village": "A"})
 
     def ids(**kw):
-        return sorted(c["case_id"] for c in call("hq_cases", me, project_id=project.pk, **kw)["cases"])
+        return sorted(c["case_id"] for c in call("commcare_cases", me, project_id=project.pk, **kw)["cases"])
 
     assert ids() == ["c1", "c2", "c3"]
     assert ids(case_type="child") == ["c1", "c2"]
@@ -233,7 +237,7 @@ def test_cases_are_filtered_by_type_owner_state_and_exact_properties(me, project
     assert ids(properties={"village": "A"}) == ["c1", "c3"]
     assert ids(case_type="child", properties={"village": "A"}) == ["c1"]
     got = call(
-        "hq_cases",
+        "commcare_cases",
         me,
         project_id=project.pk,
         case_type="child",
@@ -248,7 +252,7 @@ def test_cases_are_filtered_by_type_owner_state_and_exact_properties(me, project
 )
 def test_a_property_filter_cannot_name_something_other_than_a_property(me, project, properties):
     with pytest.raises(MCPToolError):
-        call("hq_cases", me, project_id=project.pk, properties=properties)
+        call("commcare_cases", me, project_id=project.pk, properties=properties)
 
 
 # -- changing --------------------------------------------------------------------------------
@@ -263,9 +267,11 @@ SCHEMA = {
 def test_a_pipeline_is_saved_replaced_run_listed_and_deleted(me, project):
     stored_form(project, "f1", "ann")
     stored_form(project, "f2", "ann", at=2)
-    saved = call("hq_pipeline_save", me, project_id=project.pk, name="per worker", store_kind="forms", schema=SCHEMA)
+    saved = call(
+        "commcare_pipeline_save", me, project_id=project.pk, name="per worker", store_kind="forms", schema=SCHEMA
+    )
     again = call(
-        "hq_pipeline_save",
+        "commcare_pipeline_save",
         me,
         project_id=project.pk,
         name="per worker",
@@ -274,11 +280,13 @@ def test_a_pipeline_is_saved_replaced_run_listed_and_deleted(me, project):
         xmlns="http://x/1",
     )
     assert again["id"] == saved["id"] and HQPipeline.objects.get(pk=saved["id"]).xmlns == "http://x/1"
-    assert [p["name"] for p in call("hq_pipeline_list", me, project_id=project.pk)["pipelines"]] == ["per worker"]
-    out = call("hq_pipeline_run", me, project_id=project.pk, name="per worker")
+    assert [p["name"] for p in call("commcare_pipeline_list", me, project_id=project.pk)["pipelines"]] == [
+        "per worker"
+    ]
+    out = call("commcare_pipeline_run", me, project_id=project.pk, name="per worker")
     assert out["count"] == 1 and out["rows"][0]["n"] == 2
-    assert call("hq_pipeline_run", me, project_id=project.pk, pipeline_id=saved["id"], fresh=True)["count"] == 1
-    call("hq_pipeline_delete", me, project_id=project.pk, name="per worker")
+    assert call("commcare_pipeline_run", me, project_id=project.pk, pipeline_id=saved["id"], fresh=True)["count"] == 1
+    call("commcare_pipeline_delete", me, project_id=project.pk, name="per worker")
     assert not HQPipeline.objects.exists()
 
 
@@ -286,16 +294,16 @@ def test_a_pipeline_is_saved_replaced_run_listed_and_deleted(me, project):
 def test_a_pipeline_that_cannot_run_is_not_saved(me, project, args):
     base = {"name": "p", "store_kind": "forms", "schema": SCHEMA, **args}
     with pytest.raises(MCPToolError) as caught:
-        call("hq_pipeline_save", me, project_id=project.pk, **base)
+        call("commcare_pipeline_save", me, project_id=project.pk, **base)
     assert caught.value.code == "INVALID_SCHEMA" and not HQPipeline.objects.exists()
 
 
 def test_a_pipeline_of_the_wrong_name_is_not_found_and_another_projects_does_not_open_here(me, project):
     other = create_project(me, "second", hq_host=HOST, can_read_domain=lambda: True)
-    saved = call("hq_pipeline_save", me, project_id=other.pk, name="p", store_kind="forms", schema=SCHEMA)
+    saved = call("commcare_pipeline_save", me, project_id=other.pk, name="p", store_kind="forms", schema=SCHEMA)
     for args in ({"name": "missing"}, {"pipeline_id": saved["id"]}):
         with pytest.raises(MCPToolError) as caught:
-            call("hq_pipeline_run", me, project_id=project.pk, **args)
+            call("commcare_pipeline_run", me, project_id=project.pk, **args)
         assert caught.value.code == "NOT_FOUND"
 
 
@@ -306,9 +314,9 @@ def test_only_an_author_or_an_admin_can_delete_a_pipeline(project):
         project=project, name="theirs", store_kind="forms", schema=SCHEMA, created_by=project.created_by
     )
     with pytest.raises(MCPToolError) as caught:
-        call("hq_pipeline_delete", member, project_id=project.pk, pipeline_id=pipeline.pk)
+        call("commcare_pipeline_delete", member, project_id=project.pk, pipeline_id=pipeline.pk)
     assert caught.value.code == "PERMISSION_DENIED" and HQPipeline.objects.filter(pk=pipeline.pk).exists()
-    call("hq_pipeline_delete", project.created_by, project_id=project.pk, pipeline_id=pipeline.pk)
+    call("commcare_pipeline_delete", project.created_by, project_id=project.pk, pipeline_id=pipeline.pk)
     assert not HQPipeline.objects.exists()
 
 
@@ -318,7 +326,7 @@ def ran(results=None):
 
 
 def test_sync_is_a_durable_job_that_reports_progress():
-    tool = get_tool("hq_project_sync")
+    tool = get_tool("commcare_project_sync")
     assert tool.long_running and tool.wants_progress and tool.is_write
 
 
@@ -326,14 +334,14 @@ def test_any_member_can_sync_but_a_full_read_needs_an_admin(me, project):
     member = UserFactory()
     HQProjectMember.objects.create(project=project, user=member, role="member")
     with ran() as sync:
-        out = call("hq_project_sync", member, project_id=project.pk)
+        out = call("commcare_project_sync", member, project_id=project.pk)
         assert out["project_id"] == project.pk and out["complete"] is True and sync.call_args.kwargs["mode"] is None
         with pytest.raises(MCPToolError):
-            call("hq_project_sync", member, project_id=project.pk, mode="reconcile")
-        call("hq_project_sync", me, project_id=project.pk, mode="reconcile")
+            call("commcare_project_sync", member, project_id=project.pk, mode="reconcile")
+        call("commcare_project_sync", me, project_id=project.pk, mode="reconcile")
         assert sync.call_args.kwargs["mode"] == "reconcile"
         with pytest.raises(MCPToolError):
-            call("hq_project_sync", me, project_id=project.pk, mode="bogus")
+            call("commcare_project_sync", me, project_id=project.pk, mode="bogus")
 
 
 def test_the_person_whose_sign_in_syncs_the_project_may_run_it_after_their_membership_has_lapsed(me, project):
@@ -342,11 +350,11 @@ def test_the_person_whose_sign_in_syncs_the_project_may_run_it_after_their_membe
         verified_at=datetime(2020, 1, 1, tzinfo=timezone.utc)
     )
     with ran():
-        assert call("hq_project_sync", me, project_id=project.pk)["complete"] is True
+        assert call("commcare_project_sync", me, project_id=project.pk)["complete"] is True
     stranger = UserFactory()
     with ran() as sync:
         with pytest.raises(MCPToolError) as caught:
-            call("hq_project_sync", stranger, project_id=project.pk)
+            call("commcare_project_sync", stranger, project_id=project.pk)
     assert caught.value.code == "NOT_FOUND" and not sync.called
 
 
@@ -354,7 +362,7 @@ def test_a_project_with_nobodys_sign_in_cannot_be_synced(me, project):
     HQProject.objects.filter(pk=project.pk).update(sync_owner=None)
     with ran() as sync:
         with pytest.raises(MCPToolError):
-            call("hq_project_sync", me, project_id=project.pk)
+            call("commcare_project_sync", me, project_id=project.pk)
     assert not sync.called
 
 
@@ -362,27 +370,27 @@ def test_storage_is_an_admins_to_change_and_names_whose_sign_in_syncs(me, projec
     member = UserFactory()
     HQProjectMember.objects.create(project=project, user=member, role="member")
     with pytest.raises(MCPToolError) as caught:
-        call("hq_project_set_storage", member, project_id=project.pk, storage_mode="persistent")
+        call("commcare_project_set_storage", member, project_id=project.pk, storage_mode="persistent")
     assert caught.value.code == "PERMISSION_DENIED"
-    out = call("hq_project_set_storage", me, project_id=project.pk, storage_mode="persistent")
+    out = call("commcare_project_set_storage", me, project_id=project.pk, storage_mode="persistent")
     project.refresh_from_db()
     assert out["storage_mode"] == "persistent" and project.sync_owner == me
     with pytest.raises(MCPToolError):
-        call("hq_project_set_storage", me, project_id=project.pk, storage_mode="forever")
+        call("commcare_project_set_storage", me, project_id=project.pk, storage_mode="forever")
 
 
 def test_creating_a_project_needs_a_commcare_sign_in_and_commcares_word(client):
     user = make_hq_user(client, domains=("demo",))
     with mock.patch("connect_labs.hqdata.projects.CommCareDataAccess") as access:
         access.return_value.verify_hq_access.return_value = True
-        created = call("hq_project_create", user, domain="demo")
+        created = call("commcare_project_create", user, domain="demo")
         assert created["domain"] == "demo"
         with pytest.raises(MCPToolError):
-            call("hq_project_create", user, domain="someone-elses")
+            call("commcare_project_create", user, domain="someone-elses")
     access.assert_called_once()
 
 
 def test_creating_a_project_without_any_commcare_sign_in_is_refused(me):
     with pytest.raises(MCPToolError) as caught:
-        call("hq_project_create", me, domain="demo")
+        call("commcare_project_create", me, domain="demo")
     assert caught.value.code == "PERMISSION_DENIED" and "/commcare/login/" in caught.value.message

@@ -284,6 +284,15 @@ class LabsOverviewView(LoginRequiredMixin, TemplateView):
                 "feature": "data",
             },
             {
+                "name": "CommCare",
+                "url": "/commcare/",
+                "icon": "fa-mobile-screen-button",
+                "description": "Your CommCare projects: keep their forms and cases up to date here, and build "
+                "dashboards over them",
+                "color": "cyan",
+                "feature": "commcare",
+            },
+            {
                 "name": "Labs Admin",
                 "url": "/labs/admin/",
                 "icon": "fa-screwdriver-wrench",

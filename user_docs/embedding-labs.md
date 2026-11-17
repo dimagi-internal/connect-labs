@@ -99,7 +99,7 @@ Go to **Django admin → Embedding labs in other systems → Embed clients → A
 | **Active** | Ticked. Unticking ends every session this system issued, on its next request. |
 | **Generated data only** | Ticked for demos and the reference example: labs then refuses, at token time, any report that reads anything but generated (synthetic) data, whatever the resources list says. |
 | **Identity authority** | Ticked **only for a system labs already trusts to say who people are**. Today that is Connect, because labs accounts come from Connect sign-in. A system without it cannot get tokens yet (see [What's next](#whats-next)). |
-| **CommCare host** | Ticked off by default. For CommCare HQ only: the HQ host (`www.commcarehq.org`). Such a system may name **only** people called `cchq:<host>:<username>`, may show **only** CommCare project pages (kind `hq_workflow`), and is never an identity authority. See [CommCare project pages](#commcare-project-pages). |
+| **CommCare host** | Ticked off by default. For CommCare HQ only: the HQ host (`www.commcarehq.org`). Such a system may name **only** people called `cchq:<host>:<username>`, may show **only** CommCare project pages (kind `commcare_workflow`), and is never an identity authority. See [CommCare project pages](#commcare-project-pages). |
 | **Vouches for membership** | Only with a CommCare host. Off (the default): the person must already be a verified member of the project in labs, proven from their own CommCare sign-in, so the embedding system's word opens nothing by itself. On: labs accepts the system's statement (and skips the "can this account read forms" test every other path applies) that the person belongs to the project it is registered to show, creates their labs account if needed (no email, never staff) and records them as a plain member of **that one project**. Dimagi staff only: it makes HQ the authority on who belongs to the projects it is registered for. |
 | **JWKS URI** *or* **JWKS** | Where the system publishes its public keys (an `https://` address), **or** the keys themselves pasted in as `{"keys": [ ... ]}`. Fill exactly one. Public keys only: labs refuses a key with private parts. |
 | **Allowed origins** | The websites allowed to frame labs, as a list of exact origins: `["https://connect.dimagi.com"]`. There is no path and no wildcard. |
@@ -147,10 +147,10 @@ Setting the environment variable `LABS_EMBED_ENABLED=false` on the labs deployme
 A person who works in CommCare HQ and has **no Connect login** can see a labs page over their CommCare project inside HQ, the same read-only, sandboxed page they open at `/commcare/`. HQ registers as a client with a **CommCare host** and lists each page as a resource:
 
 ```json
-[{"kind": "hq_workflow", "id": 4711, "project_id": 12}]
+[{"kind": "commcare_workflow", "id": 4711, "project_id": 12}]
 ```
 
-`id` is the page and `project_id` the project (both labs ids); the page is read in that project's own space, so another project's page id is simply not found. The frame address is `/embed/c/<client id>/hq_workflow/<page id>/`.
+`id` is the page and `project_id` the project (both labs ids); the page is read in that project's own space, so another project's page id is simply not found. The frame address is `/embed/c/<client id>/commcare_workflow/<page id>/`.
 
 - **Who:** the assertion's `sub` is `cchq:<host>:<username>`, HQ's username for the person.
 - **No Connect anything:** nothing is asked of Connect, and no Connect token is stored or used.
