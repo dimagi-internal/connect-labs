@@ -39,6 +39,32 @@ PAGE = "page"
 # Run-only endpoints a page never has: it has no run.
 RUN_ENDPOINTS = ("updateState", "saveWorkerResult", "renameRun", "completeRun", "getSnapshot")
 
+#: The data routes a render can be given. A page over a CommCare project is given none but its own
+#: (``getPipelineData``), so nothing reaches ``/labs/...``; ``closed_endpoints`` is that set, shut. A test pins
+#: that a Connect page's ``apiEndpoints`` is exactly these plus the run ones, so a route added there cannot be
+#: missed here (workflow/tests/test_page_mode.py).
+DATA_ENDPOINTS = (
+    "getWorkers",
+    "getPipelineData",
+    "queryPipelineRows",
+    "getSupplyData",
+    "querySupply",
+    "streamPipelineData",
+    "authStatus",
+    "updateOpportunityIds",
+    "getWorkflowData",
+    "queryWorkflow",
+)
+
+
+def closed_endpoints(**open_: str) -> dict:
+    """Every endpoint a render may be given, all absent (``None``) except those named in ``open_``."""
+    endpoints = dict.fromkeys((*DATA_ENDPOINTS, *RUN_ENDPOINTS))
+    unknown = sorted(set(open_) - set(endpoints))
+    if unknown:
+        raise KeyError(f"not render endpoints: {unknown}")
+    return {**endpoints, **open_}
+
 
 #: The template a page starts from. A definition made from it before ``kind`` was
 #: written onto every page carries the template type alone; it is still a page.
@@ -135,6 +161,47 @@ def blank_instance(definition_id, opportunity_id, program_id, opportunity_ids) -
     }
 
 
+def run_instance(run, definition_id, *, opportunity_ids, opportunity_name=None) -> dict:
+    """The ``instance`` prop for a saved run: what a render reads of a run (state, window, and its snapshot once
+    completed). One shape for a Connect run page and a CommCare project's saved run."""
+    return {
+        "id": run.id,
+        "definition_id": definition_id,
+        # The RUN RECORD's own ownership, not whatever the session holds: a program-owned run has no opportunity.
+        "opportunity_id": run.opportunity_id,
+        # Program-owned runs have no owning opp; the render reads instance.program_id to dispatch program jobs.
+        "program_id": run.program_id,
+        "opportunity_ids": opportunity_ids,
+        "opportunity_name": opportunity_name,
+        # User-given display name ("" if never renamed; render code falls back to "Run #<id>").
+        "name": run.name,
+        # Canonical lifecycle: in_progress | completed.
+        "status": run.status,
+        "state": run.state,
+        "period_start": run.period_start,
+        "period_end": run.period_end,
+        "completed_at": run.completed_at,
+        # Null while in_progress; populated on completion. The useRunView helper reads it when completed, so
+        # render code never recomputes against live data on a finalized run.
+        "snapshot": run.snapshot,
+    }
+
+
+def scope_prop(scope_type, key, user, *, settings_url=None) -> dict:
+    """The ``scope`` prop with nothing in it but who is looking: the shape every render receives, whatever owns it."""
+    return {
+        "type": scope_type,
+        "key": key,
+        "organization": None,
+        "program": None,
+        "opportunity": None,
+        "user": {"username": getattr(user, "username", ""), "name": getattr(user, "name", "") or ""},
+        "programs": [],
+        "opportunities": [],
+        "settings_url": settings_url,
+    }
+
+
 def _program(entry: dict | None) -> dict | None:
     if not entry:
         return None
@@ -177,17 +244,12 @@ def page_scope(request, scope: Scope | None) -> dict:
 
     tree = get_org_data(request) or {}
     user = getattr(request, "user", None)
-    out = {
-        "type": scope.type if scope else None,
-        "key": scope.key if scope else None,
-        "organization": None,
-        "program": None,
-        "opportunity": None,
-        "user": {"username": getattr(user, "username", ""), "name": getattr(user, "name", "") or ""},
-        "programs": [],
-        "opportunities": [],
-        "settings_url": f"/labs/settings/{scope.type}/{scope.key}/" if scope and scope.type != "user" else None,
-    }
+    out = scope_prop(
+        scope.type if scope else None,
+        scope.key if scope else None,
+        user,
+        settings_url=f"/labs/settings/{scope.type}/{scope.key}/" if scope and scope.type != "user" else None,
+    )
     if scope is None:
         return out
     org_slug = owner_org(tree, scope)

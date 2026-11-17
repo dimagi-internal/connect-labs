@@ -218,31 +218,38 @@ def _pipeline_entry(user, project: HQProject, source: dict, window=None) -> dict
     return {"rows": rows, "metadata": metadata}
 
 
-def read_project_pipeline_data(user, project: HQProject, definition_id: int, *, aliases=None, window=None) -> dict:
+def read_project_pipeline_data(user, project: HQProject, definition_id: int) -> dict:
     """The ``pipelines`` prop of one of this project's workflows: ``{alias: {"rows", "metadata"}}``.
 
-    A source is ``{"pipeline_id", "alias"}``: a pipeline saved in this project (what the ``commcare_pipeline_*``
-    tools manage). Computed inline from the project's stored rows (they are labs' own, so there is no download
-    to wait on). Every read passes the project gate again, inside the pipeline, as this member.
+    Read through the engine's own data access (``get_pipeline_data``), as the snapshot of a saved run is
+    (``get_cached_pipeline_data``): the two share ``read_sources`` below, so a page and its saved runs
+    cannot read differently.
+    """
+    dao = workflow_dao(user, project)
+    try:
+        return dao.get_pipeline_data(definition_id, dao.opportunity_id)
+    finally:
+        dao.close()
+
+
+def read_sources(user, project: HQProject, definition, *, aliases=None, window=None) -> dict:
+    """``{alias: {"rows", "metadata"}}`` for a workflow's sources: each ``{"pipeline_id", "alias"}`` names a
+    pipeline saved in this project (what the ``commcare_pipeline_*`` tools manage). Computed inline from the
+    project's stored rows (they are labs' own, so there is no download to wait on). Every read passes the
+    project gate again, inside the pipeline, as this member.
 
     ``aliases`` limits the read to those sources; ``window`` (``(start, end)``, half-open) limits a
-    ``period_scoped`` pipeline to that span (see ``pipelines.pipeline_rows``).
+    ``period_scoped`` pipeline to that span (see ``pipelines.pipeline_rows``). Called by the workflow data
+    access for a project scope; read pages through ``read_project_pipeline_data``.
     """
-    workflows = workflow_dao(user, project)
-    try:
-        definition = workflows.get_definition(definition_id)
-        if definition is None:
-            return {}
-        out: dict[str, dict] = {}
-        for source in definition.pipeline_sources or []:
-            if not isinstance(source, dict) or source.get("pipeline_id") is None:
-                continue
-            alias = _source_alias(source)
-            if aliases is None or alias in aliases:
-                out[alias] = _pipeline_entry(user, project, source, window)
-        return out
-    finally:
-        workflows.close()
+    out: dict[str, dict] = {}
+    for source in definition.pipeline_sources or []:
+        if not isinstance(source, dict) or source.get("pipeline_id") is None:
+            continue
+        alias = _source_alias(source)
+        if aliases is None or alias in aliases:
+            out[alias] = _pipeline_entry(user, project, source, window)
+    return out
 
 
 # -- authoring a project's pages ---------------------------------------------------------------------
@@ -439,18 +446,16 @@ class RunNotFound(PageNotFound):
 
 
 def _run_summary(run) -> dict:
-    data = run.data or {}
-    snapshot = data.get("snapshot") or {}
+    snapshot = run.snapshot or {}
     pipelines = snapshot.get("pipelines") or {}
-    state = data.get("state") or {}
     return {
         "id": run.id,
-        "name": state.get("name", ""),
-        "status": data.get("status"),
-        "period_start": data.get("period_start"),
-        "period_end": data.get("period_end"),
+        "name": run.name,
+        "status": run.status,
+        "period_start": run.period_start,
+        "period_end": run.period_end,
         "captured_at": snapshot.get("captured_at"),
-        "completed_at": data.get("completed_at"),
+        "completed_at": run.completed_at,
         "rows": {alias: len((entry or {}).get("rows") or []) for alias, entry in pipelines.items()},
     }
 
@@ -506,8 +511,10 @@ def save_run(user, project: HQProject, workflow_id: int, *, period_start=None, p
             opportunity_id=hq_scope_id(project.pk),
             period_start=str(period_start or today),
             period_end=str(period_end or today),
-            initial_state={"name": str(name or "")[:200], "created_by": user.pk},
+            initial_state={"created_by": user.pk},
         )
+        if name:
+            run = dao.rename_run(run.id, str(name)[:200], run) or run
         try:
             snapshot = _snapshot_of(dao, run)
         except Exception:
@@ -529,7 +536,7 @@ def list_runs(user, project: HQProject, workflow_id: int) -> list[dict]:
         raise PageNotFound("No such page in this project.")
     dao = workflow_dao(user, project)
     try:
-        runs = [r for r in dao.list_runs(int(workflow_id)) if (r.data or {}).get("definition_id") == int(workflow_id)]
+        runs = [r for r in dao.list_runs(int(workflow_id)) if r.definition_id == int(workflow_id)]
     finally:
         dao.close()
     return sorted((_run_summary(r) for r in runs), key=lambda r: r["id"], reverse=True)
@@ -544,7 +551,7 @@ def get_run(user, project: HQProject, workflow_id: int, run_id: int):
         run = dao.get_run(int(run_id))
     finally:
         dao.close()
-    if run is None or (run.data or {}).get("definition_id") != int(workflow_id):
+    if run is None or run.definition_id != int(workflow_id):
         raise RunNotFound("No such saved run of this page.")
     return run
 

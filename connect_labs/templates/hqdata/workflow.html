@@ -15,7 +15,7 @@ A project's workflow page, drawn by the workflow runner in page mode and sandbox
   {% if definition %}
     <section class="mb-4 rounded-lg border border-gray-200 bg-white p-3 text-sm" data-testid="hq-saved-runs">
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span class="font-semibold">{% if run %}Saved run: {{ run.data.state.name|default:run.data.period_end }}{% else %}Live data{% endif %}</span>
+        <span class="font-semibold">{% if run %}Saved run: {{ run.name|default:run.period_end }}{% else %}Live data{% endif %}</span>
         {% if run %}<a class="text-brand-indigo underline" href="{% url 'hq:workflow_page' project.pk definition.id %}">Back to live data</a>{% endif %}
         <form method="post" action="{% url 'hq:workflow_runs' project.pk definition.id %}" class="ml-auto flex flex-wrap items-end gap-2">{% csrf_token %}
           <input name="name" placeholder="Label (optional)" class="rounded border border-gray-300 p-1 text-sm">
