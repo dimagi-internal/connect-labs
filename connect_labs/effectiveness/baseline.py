@@ -189,6 +189,7 @@ MEASURES_READ = (
     "imr",
     "nmr",
     "conflict_rate",
+    "share_beyond_2h",
     "births",
     "births_wpp",
     "ors_coverage",
@@ -198,7 +199,7 @@ MEASURES_READ = (
 )
 
 #: The country-level series ``Baselines`` prefetches for a whole country in one query.
-COUNTRY_MEASURES = ("u5mr", "imr", "nmr", "conflict_rate")
+COUNTRY_MEASURES = ("u5mr", "imr", "nmr", "conflict_rate", "share_beyond_2h")
 
 
 @dataclass
@@ -311,17 +312,17 @@ class Baselines:
             self._births_audit = {a["iso"]: a for a in derive.births_audit(self._isos)} if self._isos else {}
         return self._births_audit.get(iso3)
 
-    def conflict(self, iso3: str, boundary: AdminBoundary | None) -> tuple[float, str] | None:
-        """Reported conflict deaths per 100,000 people a year (UCDP) for a place, and where it came from.
+    def place_figure(self, indicator: str, iso3: str, boundary: AdminBoundary | None) -> tuple[float, str] | None:
+        """One baseline figure for a place (a ceiling's, ``scenario.CAPS``) and where it came from.
 
-        A territory's own figure, or the country's for ``boundary`` None. None when Labs holds none (a place UCDP
-        was not loaded for): never a zero, because nothing then says the place is quiet.
+        A territory's own figure, or the country's for ``boundary`` None. None when Labs holds none (a place a source
+        was not loaded for): never a zero, because nothing then says the place is quiet, or near.
         """
         if boundary is not None and self._resolver is not None:
             ctx = _Ctx(self._resolver, boundary, {}, self._country_rows.get(iso3, {}))
-            own = _local(ctx.get("conflict_rate"))
+            own = _local(ctx.get(indicator))
             return (own.value, f"{_level(own)[1]}, {_src(own)}") if own else None
-        rows = self._country_rows.get(iso3, {}).get("conflict_rate", [])
+        rows = self._country_rows.get(iso3, {}).get(indicator, [])
         latest = max(rows, key=lambda r: r.year) if rows else None
         return (latest.value, f"the country's, {latest.source} {latest.year}") if latest else None
 

@@ -108,10 +108,13 @@ actuals.
 **The plan.** Give a target (`target=1000000`) and `market.plan` fills the places with the highest multiple first, each up to
 the most that can be reached there (the `reach` dial), until the target is met, then reports the people, cost, deaths
 averted, cost per death averted and the spend-weighted multiple of the whole, how far short the places fall if they cannot
-give it, and what spreading the same people evenly would have averted instead. Three limits (`scenario.PlanLimits`, one object so a new
-limit is one field, not an argument through every layer) make it something a team can run: `max_conflict` leaves out a place
-whose reported conflict deaths (UCDP, per 100,000 people a year; `ucdp.py`) are above the ceiling, never changes a multiple, and
-keeps a place Labs has no figure for (nothing says it is unsafe); `min_place` leaves out any place that can give fewer people (and
+give it, and what spreading the same people evenly would have averted instead. The limits (`scenario.PlanLimits`, one object so a new one is not a new argument through every layer) make it something a team can
+run. **Ceilings** are declared once in `scenario.CAPS` (a `Cap`: link key, the baseline indicator, the words, the column): today
+`max_conflict` (reported conflict deaths, UCDP, per 100,000 people a year; `ucdp.py`) and `max_remote` (the share of a place's
+people beyond two hours' walk of care, MAP's travel-time surface x population). The plan, the link, the page's controls and
+columns and the agent tool all read that list, so a new ceiling is one `Cap` and its baseline figure. A ceiling leaves out a
+place above it, never changes a multiple, keeps a place Labs has no figure for (nothing says it is over), and the plan reports,
+per ceiling, the value and how many places it left out. The other two: `min_place` leaves out any place that can give fewer people (and
 counts them); and `max_countries` keeps to the countries the
 best plan leans on most (the best plan is made, its countries ranked by the deaths they avert, and it is made again within
 the first N); `countries_needed` says how many countries it takes to reach the target at all. The plan adds up by country, and
@@ -234,7 +237,7 @@ wait for a deploy.
 ## Left to do
 
 - Saved scenarios: rename and share/unshare without re-saving, versions, and a way to attach one to a proposal.
-- Territory reachability (travel time) as an input to the plan; today the places differ by their own mortality and coverage
+- Reachability as more than a ceiling (a travel time to the nearest facility by territory, road access); today the places differ by their own mortality and coverage
   figures (and optionally observed delivery cost), not by how hard they are to reach (conflict is a ceiling a plan can be held to, not yet a travel time).
 - Put CEA models and Implementations on the scenario too (their own link keys differ: `i_<input>`, `m`), and give the
   workspace a Need lens, a Delivered layer, and region-level shapes (the models hold country figures, so a region's number

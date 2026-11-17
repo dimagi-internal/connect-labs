@@ -10,7 +10,7 @@ from django.middleware.csrf import get_token
 from django.urls import reverse
 
 from connect_labs.effectiveness import engine, explore, groups, market, people, saved, valuation
-from connect_labs.effectiveness.scenario import DIALS, GRAINS, Scenario, dial_defaults
+from connect_labs.effectiveness.scenario import DIALS, GRAINS, Scenario, caps_for_page, dial_defaults
 from connect_labs.labs.indicators.access import OpenLocallyMixin
 
 #: Who may open a scenario page: the baseline's own gate (open on a laptop, signed in elsewhere), read in one place.
@@ -64,6 +64,7 @@ def page_data(request, scenario: Scenario, loaded: dict | None = None, error: st
         "blocks": [{"key": g, "title": groups.TITLES[g]} for g in groups.KEY_GROUPS],
         "dials": list(DIALS),
         "dial_defaults": dial_defaults(),
+        "caps": caps_for_page(),
         "place_risk": {
             k: {
                 "input": r.input,

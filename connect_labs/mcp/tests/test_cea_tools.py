@@ -363,19 +363,19 @@ def test_the_tool_takes_the_plans_limits_and_how_far_to_trust_the_places(fake_pe
         min_place=1_000,
         max_countries=1,
         max_conflict=12,
+        max_remote=30,
         trust=50,
         dials={"reach": 60},
     )
     assert got["plan"]["limits"] == {
         "min_place": 1000.0,
         "max_countries": 1,
-        "max_conflict": 12.0,
+        "caps": {"max_conflict": {"value": 12.0, "left_out": 0}, "max_remote": {"value": 30.0, "left_out": 0}},
         "left_out": 0,
         "left_out_small": 0,
-        "left_out_conflict": 0,
     }
     assert "trust=50" in got["explorer_path"] and "max_countries=1" in got["explorer_path"]
-    assert "max_conflict=12" in got["explorer_path"]
+    assert "max_conflict=12" in got["explorer_path"] and "max_remote=30" in got["explorer_path"]
     # the same scenario on the page is the same answer
     from connect_labs.effectiveness import sizing
     from connect_labs.effectiveness.scenario import Scenario

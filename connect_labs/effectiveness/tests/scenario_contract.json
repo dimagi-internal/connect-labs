@@ -18,6 +18,7 @@
     "min_place": "20000",
     "max_countries": "5",
     "max_conflict": "10",
+    "max_remote": "25",
     "trust": "60"
   },
   "state": {
@@ -58,6 +59,7 @@
     "min_place": 20000.0,
     "max_countries": 5,
     "max_conflict": 10.0,
+    "max_remote": 25.0,
     "trust": 60.0
   }
 }

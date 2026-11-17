@@ -212,10 +212,9 @@ class TestTrustAndTheCheck:
         assert plan["limits"] == {
             "min_place": 1000.0,
             "max_countries": 1,
-            "max_conflict": None,
+            "caps": {},
             "left_out": 0,
             "left_out_small": 0,
-            "left_out_conflict": 0,
         }
 
     def test_the_countrys_figure_reaches_the_row_and_exactly_twice_or_half_is_not_far(self, nigeria, sized):

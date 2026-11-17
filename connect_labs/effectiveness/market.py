@@ -30,7 +30,7 @@ from dataclasses import dataclass
 
 from connect_labs.effectiveness import engine, explore, groups, mortality, reliability, result
 from connect_labs.effectiveness.observed import blend
-from connect_labs.effectiveness.scenario import KNOB_DEFAULT, PlanLimits
+from connect_labs.effectiveness.scenario import CAPS, KNOB_DEFAULT, PlanLimits
 
 #: A place whose figure is more than this many times its country's, either way, is flagged: such a gap is as often a
 #: survey artefact (under-reporting in a remote area, a small sample) as a real difference.
@@ -206,7 +206,7 @@ def size(
                 "measure_how": (p.get("measures_how") or {}).get(shown.measure) if shown else None,
                 "far_from_country": far,
                 "local_inputs": sorted((p.get("inputs") or {}).keys()) if place_risk else [],
-                "conflict_rate": (p.get("measures") or {}).get("conflict_rate"),
+                **{c.field: (p.get("measures") or {}).get(c.field) for c in CAPS},
                 "births_vs_wpp": (p.get("measures") or {}).get("births_vs_wpp"),
                 "births_off": bool(p.get("births_off")),
                 "risk_se": se,
@@ -320,7 +320,7 @@ def _part(r: dict, reached: float) -> dict:
         "deaths_averted": reached * r["deaths_per_person"],
         "risk": r["risk"],
         "far_from_country": r["far_from_country"],
-        "conflict_rate": r.get("conflict_rate"),
+        **{c.field: r.get(c.field) for c in CAPS},
         "regional_proxy": r.get("regional_proxy", False),
         "births_off": r.get("births_off", False),
     }
@@ -360,11 +360,12 @@ def plan(rows: list[dict], target: float, limits: PlanLimits | None = None) -> d
     """The best way to reach ``target`` people: the places with the highest multiple first, each up to the most that
     can be reached there (a row's ``units``, already capped by the reach dial), until the target is met.
 
-    ``limits`` (``PlanLimits``): ``min_place`` leaves out a place too small to be worth a team, ``max_conflict`` one
-    where reported conflict is above the ceiling (a place with no conflict figure is never left out on it: nothing
-    says it is unsafe), and ``max_countries`` keeps to the countries that matter most to the best plan: the best plan
-    is made, the countries ranked by the deaths it averts in each are taken in order, and it is made again within
-    them. ``countries_needed`` says how many countries it takes, in that order, to reach the target at all.
+    ``limits`` (``PlanLimits``): ``min_place`` leaves out a place too small to be worth a team, each ceiling in
+    ``caps`` (``scenario.CAPS``: reported conflict, remoteness) one above it (a place with no figure is never left out
+    on it: nothing says it is over), and ``max_countries`` keeps to the countries that matter most to the best plan:
+    the best plan is made, the countries ranked by the deaths it averts in each are taken in order, and it is made
+    again within them. ``countries_needed`` says how many countries it takes, in that order, to reach the target at
+    all.
 
     Compared with the other obvious plan, spreading the target over every allowed place in proportion to what each can
     give. Places the model has no figures for are never chosen: nothing says what reaching them buys.
@@ -372,14 +373,12 @@ def plan(rows: list[dict], target: float, limits: PlanLimits | None = None) -> d
     able = [r for r in rows if r["units"] and r["multiple"] is not None]
     limits = limits or PlanLimits()
     too_small = [r for r in able if limits.min_place and r["units"] < limits.min_place]
-    unsafe = [
-        r
-        for r in able
-        if limits.max_conflict is not None
-        and r.get("conflict_rate") is not None
-        and r["conflict_rate"] > limits.max_conflict
-    ]
-    left_out = {id(r) for r in too_small + unsafe}
+    over = {
+        c.key: [r for r in able if r.get(c.field) is not None and r[c.field] > limits.caps[c.key]]
+        for c in CAPS
+        if limits.caps.get(c.key) is not None
+    }
+    left_out = {id(r) for r in too_small + [r for rows in over.values() for r in rows]}
     able = [r for r in able if id(r) not in left_out]
     ranked: list[str] = []
     if able:
@@ -430,10 +429,10 @@ def plan(rows: list[dict], target: float, limits: PlanLimits | None = None) -> d
         "limits": {
             "min_place": limits.min_place,
             "max_countries": limits.max_countries,
-            "max_conflict": limits.max_conflict,
+            # each set ceiling with the value it was given and how many places it left out
+            "caps": {k: {"value": limits.caps[k], "left_out": len(rows)} for k, rows in over.items()},
             "left_out": len(left_out),
             "left_out_small": len(too_small),
-            "left_out_conflict": len(unsafe),
         },
         "totals": best,
         "even": even,
