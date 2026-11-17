@@ -179,6 +179,9 @@ Pipelines that are not period-scoped, or that produce one row per form submissio
 !!! note "Early access"
     The project overview is the first workflow available over a CommCare project. The ability to create your own runs, save snapshots, and build custom dashboards over a project will come later.
 
+!!! warning "If you saved a CommCare project page or pipeline before this note appeared"
+    A recent update changed how pages store their pipeline connections. Any page or pipeline saved over a CommCare project before this change was released will need to be **saved again** to continue working correctly. Open the page or pipeline in the editor and save it — no other changes are needed. Pages and pipelines created after this point are not affected.
+
 ### Embedded workflows
 
 Certain workflows and pages can be shown inside another system's interface — for example, inside Connect — without the person needing to sign in to Labs separately. The embedded view displays exactly the same report the person would see if they opened Labs directly, but without the Labs menus or navigation chrome.
@@ -207,12 +210,4 @@ Pages and workflows should otherwise look and behave exactly as they did before.
     - **Background jobs:** The prompt names the job before it runs.
     - **Rate limiting:** If a page keeps asking repeatedly, Labs slows it down. After you say no, Labs will not ask again for a few seconds, and it will ask at most 20 times per minute regardless.
 
-Previously, you could preview the sandboxed version of any page or workflow by adding `?sandbox=1` to its address in your browser. That preview option still works, but the sandbox is now active everywhere — you do not need the parameter to get the protected behaviour.
-
-Specifically, the sandbox means a workflow cannot do any of the following without Labs first prompting you:
-
-- Create tasks or audits
-- Start a coaching conversation with a worker
-- Start a background job that creates records
-- Complete or delete a run
-- Attach or detach
+Previously, you could preview the sandboxed version of any page or workflow by adding `?sandbox=1` to
