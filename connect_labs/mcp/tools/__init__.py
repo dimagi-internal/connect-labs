@@ -5,6 +5,7 @@ Importing this package triggers all registration.
 """
 
 from connect_labs.hqdata import mcp_tools as _hq_tools  # noqa: E402,F401  -- registers hq_* (CommCare projects)
+from connect_labs.hqdata import mcp_workflow_tools as _hq_workflow_tools  # noqa: E402,F401  -- hq_workflow_*
 
 from . import apps  # noqa: F401
 from . import benchmarks  # noqa: F401  -- registers benchmarks_cohort_*
