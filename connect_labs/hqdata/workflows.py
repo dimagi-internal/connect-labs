@@ -77,7 +77,7 @@ def load_page(user, project: HQProject, definition_id: int):
 DASHBOARD_PIPELINE_NAME = "Forms per worker"
 DASHBOARD_NAME = "Project overview"
 #: Marks the overview labs maintains, so renaming or re-sourcing it cannot make labs lose track of it.
-DASHBOARD_SYSTEM_KEY = "hq_project_overview"
+DASHBOARD_SYSTEM_KEY = "commcare_project_overview"
 
 
 def dashboard_pipeline_schema(project: HQProject) -> dict:
@@ -137,7 +137,11 @@ def ensure_project_dashboard(user, project: HQProject) -> int:
                     "name": DASHBOARD_NAME,
                     "system": DASHBOARD_SYSTEM_KEY,
                     "pipeline_sources": [{"pipeline_id": pipeline.id, "alias": "workers"}],
-                    "config": {"templateType": "hq_project_overview", "showFilters": False, "showSummaryCards": False},
+                    "config": {
+                        "templateType": "commcare_project_overview",
+                        "showFilters": False,
+                        "showSummaryCards": False,
+                    },
                 }
                 if wanted != existing.data:
                     workflows.update_definition(existing.id, wanted)
@@ -150,8 +154,8 @@ def ensure_project_dashboard(user, project: HQProject) -> int:
                 "Forms per worker over this CommCare project.",
                 kind="page",
                 statuses=[],
-                templateType="hq_project_overview",
-                config={"templateType": "hq_project_overview", "showFilters": False, "showSummaryCards": False},
+                templateType="commcare_project_overview",
+                config={"templateType": "commcare_project_overview", "showFilters": False, "showSummaryCards": False},
                 pipeline_sources=[{"pipeline_id": pipeline.id, "alias": "workers"}],
                 opportunity_ids=[],
             )
@@ -164,7 +168,7 @@ def ensure_project_dashboard(user, project: HQProject) -> int:
 
 
 def _source_alias(source: dict) -> str:
-    return source.get("alias") or f"pipeline_{source.get('hq_pipeline_id') or source.get('pipeline_id')}"
+    return source.get("alias") or f"pipeline_{source.get('commcare_pipeline_id') or source.get('pipeline_id')}"
 
 
 def _hq_pipeline_entry(user, project: HQProject, source: dict) -> dict:
@@ -174,7 +178,7 @@ def _hq_pipeline_entry(user, project: HQProject, source: dict) -> dict:
     from connect_labs.workflow.pipeline_reads import _alias_metadata
 
     scope = hq_scope_id(project.pk)
-    pipeline_id = source.get("hq_pipeline_id")
+    pipeline_id = source.get("commcare_pipeline_id")
     pipeline = project.pipelines.filter(pk=pipeline_id).first() if isinstance(pipeline_id, int) else None
     if pipeline is None:
         error = f"Pipeline {pipeline_id!r} is not in this project."
@@ -220,7 +224,7 @@ def _hq_pipeline_entry(user, project: HQProject, source: dict) -> dict:
 def read_project_pipeline_data(user, project: HQProject, definition_id: int) -> dict:
     """The ``pipelines`` prop of one of this project's workflows: ``{alias: {"rows", "metadata"}}``.
 
-    A source names either a saved project pipeline (``{"hq_pipeline_id", "alias"}``: what the
+    A source names either a saved project pipeline (``{"commcare_pipeline_id", "alias"}``: what the
     ``commcare_pipeline_*`` tools manage) or a pipeline record in the project's workflow store
     (``{"pipeline_id", "alias"}``: what the overview uses). Computed inline from the project's stored rows
     (they are labs' own, so there is no download to wait on). Every read passes the project gate again,
@@ -239,7 +243,7 @@ def read_project_pipeline_data(user, project: HQProject, definition_id: int) -> 
             if not isinstance(source, dict):
                 continue
             alias = _source_alias(source)
-            if source.get("hq_pipeline_id") is not None:
+            if source.get("commcare_pipeline_id") is not None:
                 out[alias] = _hq_pipeline_entry(user, project, source)
                 continue
             pipeline_id = source.get("pipeline_id")
@@ -288,7 +292,7 @@ class PageNotFound(LookupError):
 
 
 def clean_sources(project: HQProject, sources) -> list[dict]:
-    """``[{"hq_pipeline_id", "alias"}]`` for pipelines saved in THIS project, or ``PageProblem``.
+    """``[{"commcare_pipeline_id", "alias"}]`` for pipelines saved in THIS project, or ``PageProblem``.
 
     A source names a saved ``commcare_pipeline_*`` pipeline by id and the alias the page reads it under
     (``pipelines.<alias>.rows``). Nothing else is accepted, so a page cannot point at another project's pipeline,
@@ -300,11 +304,13 @@ def clean_sources(project: HQProject, sources) -> list[dict]:
         raise PageProblem(f"pipeline_sources is a list of at most {MAX_PAGE_SOURCES} entries.")
     out, seen = [], set()
     for entry in sources:
-        if not isinstance(entry, dict) or set(entry) - {"hq_pipeline_id", "alias"}:
-            raise PageProblem('Each pipeline source is {"hq_pipeline_id": <id>, "alias": "<name>"} and nothing else.')
-        pipeline_id, alias = entry.get("hq_pipeline_id"), entry.get("alias")
+        if not isinstance(entry, dict) or set(entry) - {"commcare_pipeline_id", "alias"}:
+            raise PageProblem(
+                'Each pipeline source is {"commcare_pipeline_id": <id>, "alias": "<name>"} and nothing else.'
+            )
+        pipeline_id, alias = entry.get("commcare_pipeline_id"), entry.get("alias")
         if not isinstance(pipeline_id, int) or isinstance(pipeline_id, bool):
-            raise PageProblem("hq_pipeline_id must be the id of a pipeline saved in this project.")
+            raise PageProblem("commcare_pipeline_id must be the id of a pipeline saved in this project.")
         if not isinstance(alias, str) or not _ALIAS.match(alias):
             raise PageProblem("alias starts with a letter and is letters, digits and underscores (at most 41).")
         if alias in seen:
@@ -312,7 +318,7 @@ def clean_sources(project: HQProject, sources) -> list[dict]:
         if not project.pipelines.filter(pk=pipeline_id).exists():
             raise PageProblem(f"Pipeline {pipeline_id} is not saved in this project.")
         seen.add(alias)
-        out.append({"hq_pipeline_id": pipeline_id, "alias": alias})
+        out.append({"commcare_pipeline_id": pipeline_id, "alias": alias})
     return out
 
 

@@ -114,7 +114,7 @@ def commcare_workflow_get(user, project_id=None, workflow_id=None, **_):
         "Create a workflow page over a CommCare project: render_code (JSX defining function WorkflowUI({definition, "
         "pipelines, scope})) drawn in the standard sandboxed runner, reading pipelines saved with "
         "commcare_pipeline_save. "
-        "pipeline_sources is [{hq_pipeline_id, alias}]; the page reads pipelines.<alias>.rows. Read "
+        "pipeline_sources is [{commcare_pipeline_id, alias}]; the page reads pipelines.<alias>.rows. Read "
         "commcare_workflow_authoring_guide first. Returns the page's address."
     ),
     input_schema={
@@ -128,8 +128,8 @@ def commcare_workflow_get(user, project_id=None, workflow_id=None, **_):
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "properties": {"hq_pipeline_id": {"type": "integer"}, "alias": {"type": "string"}},
-                    "required": ["hq_pipeline_id", "alias"],
+                    "properties": {"commcare_pipeline_id": {"type": "integer"}, "alias": {"type": "string"}},
+                    "required": ["commcare_pipeline_id", "alias"],
                 },
             },
             "config": {
@@ -277,7 +277,7 @@ belong to the project. It reads pipelines you save with commcare_pipeline_save.
                 "fields": [{"name": "case_type", "path": "case.case_type", "aggregation": "first"}]}
      then count rows per case_type with a plain JS reduce.
 2. Make a page:      commcare_workflow_create(project_id, name, render_code,
-                                            pipeline_sources=[{hq_pipeline_id, alias}])
+                                            pipeline_sources=[{commcare_pipeline_id, alias}])
 3. Look at its data: commcare_workflow_data(project_id, workflow_id)   -- exactly what render code receives
 4. Change it:        commcare_workflow_update(project_id, workflow_id, render_code=...)
 
