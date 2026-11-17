@@ -156,6 +156,9 @@ def attach_risk(found: dict) -> dict:
                 p["measures_raw"]["nmr"] = n.value
         if country[p["iso3"]]:
             p["measures"]["nmr_country"] = country[p["iso3"]].value
+        fighting = baselines.conflict(p["iso3"], boundary)
+        if fighting:
+            p["measures"]["conflict_rate"], p["measures_how"]["conflict_rate"] = fighting
         if territory:
             local = {}
             for model in engine.MODELS:

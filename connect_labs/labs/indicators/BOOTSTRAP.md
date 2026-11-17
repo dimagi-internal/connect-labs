@@ -342,6 +342,8 @@ boundaries      geoBoundaries ADM0/1, plus ADM2 where IGME models that deep
       └ calibrate     needs BOTH the raw surveys and the IGME series
       └ fertility     DHS TFR + World Bank national fallback
           └ population    HAPI (minutes) then WorldPop (hours)
+              └ conflict      UCDP reported conflict deaths (one 40 MB file),
+              │               and the rate per 100,000 on population
               └ births        derived from population AND mortality
                   └ lbw            UNICEF-WHO low birthweight + DHS place of
                                    delivery, and the LBW count built on births

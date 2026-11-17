@@ -195,6 +195,48 @@ def load_expected_deaths(iso_codes: list[str] | None = None, year: int | None = 
     return rows
 
 
+def load_conflict_rate(iso_codes: list[str] | None = None, year: int | None = None) -> list[Row]:
+    """Reported conflict deaths per 100,000 people a year: ``conflict_deaths`` over the boundary's population.
+
+    Written under the UCDP source (see the comment on the row), at the same boundaries ``ucdp.load`` writes.
+
+    The year is the conflict window's last year, the population is the nearest the resolver has. A boundary with no
+    population has no rate (never a zero): nothing says how many people the deaths are among.
+    """
+    rows: list[Row] = []
+    for boundary in _boundaries(iso_codes):
+        if boundary.admin_level > 1:
+            continue
+        deaths = resolve("conflict_deaths", boundary, year)
+        pop = resolve("pop_total", boundary, year)
+        if not (deaths and pop and pop.value > 0):
+            continue
+        rows.append(
+            Row(
+                indicator="conflict_rate",
+                boundary=boundary,
+                year=deaths.year,
+                value=deaths.value / pop.value * 100_000,
+                # The UCDP source, not DERIVED: this is the figure the conflict method answers with, and a derived
+                # row is exempt from methods and so could never be targeted on. The population it divides by has
+                # its own source and licence, named in the method text.
+                source=Source.UCDP,
+                source_ref=f"UCDP deaths / population ({pop.source})",
+                license_code=License.CC_BY_4,
+                method=(
+                    f"Derived: reported conflict deaths a year per 100,000 people = conflict_deaths / pop_total x "
+                    f"100,000. Deaths {deaths.value:,.1f} a year ({deaths.source_ref or deaths.source}); population "
+                    f"{pop.value:,.0f} from {pop.source_ref or pop.source}."
+                ),
+                ci_low=deaths.ci_low / pop.value * 100_000 if deaths.ci_low is not None else None,
+                ci_high=deaths.ci_high / pop.value * 100_000 if deaths.ci_high is not None else None,
+                extra={"conflict_deaths": deaths.value, "pop_total": pop.value, "located_share": (deaths.extra or {}).get("located_share")},
+            )
+        )
+    logger.info("derive: %d conflict-rate rows", len(rows))
+    return rows
+
+
 def load_lbw_births(iso_codes: list[str] | None = None, year: int | None = None) -> list[Row]:
     """Annual low-birthweight births: births x the low-birthweight rate.
 

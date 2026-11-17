@@ -193,6 +193,25 @@ register(
 )
 
 
+register(
+    Method(
+        code="national_events",
+        label="Reported events, summed to the country (UCDP)",
+        resolution=Resolution.NATIONAL,
+        source_order=("ucdp",),
+        description=(
+            "Deaths from organised violence reported to the Uppsala Conflict Data Program, placed by the "
+            "coordinates of each event and summed to the country, as a yearly mean over the latest three "
+            "complete years."
+        ),
+        caveat=(
+            "Reported deaths, not all deaths: a quiet figure in a place with few reporters is weaker evidence "
+            "than a loud one. The country row says what share of its coded deaths could be placed."
+        ),
+    )
+)
+
+
 # ---------------------------------------------------------------------------
 # Subnational
 # ---------------------------------------------------------------------------
@@ -284,5 +303,21 @@ register(
             "and therefore looking more certain than it is. A small district's "
             "value is an average over a handful of cells."
         ),
+    )
+)
+
+
+register(
+    Method(
+        code="subnational_events",
+        label="Reported events, placed in this unit (UCDP)",
+        resolution=Resolution.SUBNATIONAL,
+        source_order=("ucdp",),
+        description=(
+            "The same georeferenced events placed by point-in-polygon in each territory: only events coded to "
+            "admin-1 or better count, so where a country's war is mostly coded to a wider area the territory "
+            "figures are floors."
+        ),
+        caveat="Reported, not all, deaths; a territory with no reporters looks quiet whether or not it is.",
     )
 )

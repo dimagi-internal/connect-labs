@@ -205,6 +205,16 @@ POLICY: dict[str, tuple[Eligible, ...]] = {
     "births_fertility_check": (
         Eligible(Source.DERIVED, "The fertility-based figure, kept so the cohort-based one can be checked."),
     ),
+    "conflict_deaths": (
+        Eligible(
+            Source.UCDP,
+            "The Uppsala Conflict Data Program's georeferenced events, the one source that places reported "
+            "conflict deaths in a territory. Reported deaths: a floor where reporting is thin.",
+        ),
+    ),
+    "conflict_rate": (
+        Eligible(Source.UCDP, "UCDP's reported deaths divided by the boundary's population, per 100,000 a year."),
+    ),
     "expected_deaths": (Eligible(Source.DERIVED, "Births multiplied by the resolved mortality rate."),),
     "births_lbw": (Eligible(Source.DERIVED, "Births multiplied by the resolved low-birthweight rate."),),
     # Low birthweight. National only: no source here publishes it below the

@@ -98,8 +98,11 @@ where a place has them they are carried through (`mortality.py`, `reliability.py
 **The plan.** Give a target (`target=1000000`) and `market.plan` fills the places with the highest multiple first, each up to
 the most that can be reached there (the `reach` dial), until the target is met, then reports the people, cost, deaths
 averted, cost per death averted and the spend-weighted multiple of the whole, how far short the places fall if they cannot
-give it, and what spreading the same people evenly would have averted instead. Two limits make it something a team can run:
-`min_place` leaves out any place that can give fewer people (and counts them), and `max_countries` keeps to the countries the
+give it, and what spreading the same people evenly would have averted instead. Three limits (`scenario.PlanLimits`, one object so a new
+limit is one field, not an argument through every layer) make it something a team can run: `max_conflict` leaves out a place
+whose reported conflict deaths (UCDP, per 100,000 people a year; `ucdp.py`) are above the ceiling, never changes a multiple, and
+keeps a place Labs has no figure for (nothing says it is unsafe); `min_place` leaves out any place that can give fewer people (and
+counts them); and `max_countries` keeps to the countries the
 best plan leans on most (the best plan is made, its countries ranked by the deaths they avert, and it is made again within
 the first N); `countries_needed` says how many countries it takes to reach the target at all. The plan adds up by country, and
 downloads as a CSV (`/labs/cea/market/plan.csv`, same link keys). A place with no model figures is never chosen.

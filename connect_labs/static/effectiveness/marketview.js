@@ -293,26 +293,35 @@
                   ' short. Widen the places, or raise the most you can reach.',
               }),
             );
-          if (p.limits && (p.limits.min_place || p.limits.max_countries))
+          var lim = p.limits || {},
+            limitWords = [];
+          if (lim.min_place)
+            limitWords.push(
+              'places that can give under ' +
+                num(lim.min_place) +
+                ' are left out (' +
+                lim.left_out_small +
+                ' of them)',
+            );
+          if (lim.max_conflict)
+            limitWords.push(
+              'places with more than ' +
+                lim.max_conflict +
+                ' reported conflict deaths per 100,000 a year are left out (' +
+                lim.left_out_conflict +
+                ' of them; a place with no figure stays in)',
+            );
+          if (lim.max_countries)
+            limitWords.push(
+              'at most ' +
+                lim.max_countries +
+                (lim.max_countries === 1 ? ' country' : ' countries'),
+            );
+          if (limitWords.length)
             kids.push(
               h('p', {
                 class: 'muted',
-                text:
-                  'Limits: ' +
-                  (p.limits.min_place
-                    ? 'places that can give under ' +
-                      num(p.limits.min_place) +
-                      ' are left out (' +
-                      p.limits.left_out +
-                      ' of them)'
-                    : '') +
-                  (p.limits.min_place && p.limits.max_countries ? '; ' : '') +
-                  (p.limits.max_countries
-                    ? 'at most ' +
-                      p.limits.max_countries +
-                      (p.limits.max_countries === 1 ? ' country' : ' countries')
-                    : '') +
-                  '.',
+                text: 'Limits: ' + limitWords.join('; ') + '.',
               }),
             );
           if (
@@ -633,6 +642,11 @@
           return m.rows.some(function (x) {
             return x.risk != null;
           });
+        }),
+        anyConflict = r.models.some(function (m) {
+          return m.rows.some(function (x) {
+            return x.conflict_rate != null;
+          });
         });
       r.models.forEach(function (m) {
         m.rows.forEach(function (x) {
@@ -675,6 +689,7 @@
         hasPlan ? ['Planned'] : [],
         ['People', 'A year, each', 'Market', 'Deaths a year'],
         anyRisk ? ['Baseline risk'] : [],
+        anyConflict ? ['Conflict'] : [],
         ['Multiple'],
       );
       put(els.rows, [
@@ -721,6 +736,15 @@
                       : pct(x.risk) +
                         (x.risk_basis === 'place' ? '' : '*') +
                         (x.far_from_country ? ' ⚠' : ''),
+                }),
+              );
+            if (anyConflict)
+              cells.push(
+                h('td', {
+                  class: 'n',
+                  title:
+                    'Reported conflict deaths a year per 100,000 people (UCDP, latest three years). Reported, not all: a low figure where few report is weaker evidence.',
+                  text: x.conflict_rate == null ? '–' : x.conflict_rate.toFixed(1),
                 }),
               );
             cells.push(

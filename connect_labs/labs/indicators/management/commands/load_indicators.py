@@ -35,6 +35,7 @@ from connect_labs.labs.indicators.sources import (
     malaria_atlas,
     rainfall,
     settlement,
+    ucdp,
     unicef_lbw,
     unicef_sdmx,
     worldbank,
@@ -48,6 +49,7 @@ STAGES = (
     "calibrate",
     "fertility",
     "population",
+    "conflict",
     "births",
     "lbw",
     "child_health",
@@ -332,6 +334,18 @@ class Command(BaseCommand):
         if div:
             wide = sum(1 for d in div.values() if d > 0.25)
             self.stdout.write(f"  births cross-check: {wide} of {len(div)} regions disagree by >25%")
+
+    def _stage_conflict(self, codes, opts):
+        """Reported conflict deaths (UCDP GED) and the rate per 100,000 people.
+
+        Additive: writes conflict_deaths and conflict_rate only. The rate needs population, so it follows the
+        population stage; without one the deaths still load and the rate waits.
+        """
+        with self._run(Source.UCDP, ucdp.MEASURE) as ctx:
+            rows = ucdp.load(iso_codes=codes)
+            ctx["rows"] = base.upsert(rows)
+            ctx["countries"] = len({r.boundary.iso_code for r in rows})
+        self._derive("conflict_rate", derive.load_conflict_rate, codes)
 
     def _stage_lbw(self, codes, opts):
         """Low birthweight, the facility-delivery signal beside it, and their counts.

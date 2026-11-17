@@ -110,6 +110,21 @@ def _words(raw: str) -> list[str]:
 
 
 @dataclass(frozen=True)
+class PlanLimits:
+    """The limits that make a plan something a team can run. Each is optional, and none changes a place's multiple.
+
+    ``min_place`` leaves out a place that can give fewer people than that, ``max_countries`` keeps to the countries
+    the best plan leans on most, and ``max_conflict`` leaves out a place whose reported conflict deaths (per 100,000
+    people a year, UCDP) are above it. One object so that a new limit is one field here, one in ``Scenario`` (which hands them over as ``limits()``), and its
+    rule in ``market.plan``, not a new argument through every layer between.
+    """
+
+    min_place: float | None = None
+    max_countries: int | None = None
+    max_conflict: float | None = None
+
+
+@dataclass(frozen=True)
 class Scenario:
     """What someone is working on. Dials and assumptions hold only what differs from the default."""
 
@@ -121,6 +136,7 @@ class Scenario:
     target: float | None = None
     min_place: float | None = None
     max_countries: int | None = None
+    max_conflict: float | None = None
     trust: float = 100.0
     place_risk: bool = True
     grain: str = DEFAULT_GRAIN
@@ -165,6 +181,7 @@ class Scenario:
             target=number(params.get("target"), positive=True),
             min_place=number(params.get("min_place"), positive=True),
             max_countries=max(1, int(most)) if most else None,
+            max_conflict=number(params.get("max_conflict"), positive=True),
             trust=min(trust, 100.0),
             place_risk=str(params.get("place_risk", "1")).strip().lower() not in ("0", "false", "off", "no"),
             grain=grain if grain in GRAINS else DEFAULT_GRAIN,
@@ -188,6 +205,10 @@ class Scenario:
 
     def overrides_for(self, model: str) -> dict[str, float]:
         return dict(self.overrides.get(model, {}))
+
+    def limits(self) -> PlanLimits:
+        """The plan's limits, as ``market.size`` takes them."""
+        return PlanLimits(self.min_place, self.max_countries, self.max_conflict)
 
     def resolved_bar(self, default: float) -> float:
         return self.bar if self.bar is not None else default
@@ -240,6 +261,8 @@ class Scenario:
             out["min_place"] = _s(self.min_place)
         if self.max_countries is not None:
             out["max_countries"] = str(self.max_countries)
+        if self.max_conflict is not None:
+            out["max_conflict"] = _s(self.max_conflict)
         if self.trust != 100.0:
             out["trust"] = _s(self.trust)
         if not self.place_risk:
@@ -264,6 +287,7 @@ class Scenario:
             "target": self.target,
             "min_place": self.min_place,
             "max_countries": self.max_countries,
+            "max_conflict": self.max_conflict,
             "trust": self.trust,
             "place_risk": self.place_risk,
             "grain": self.grain,

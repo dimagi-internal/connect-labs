@@ -346,6 +346,13 @@ def cea_opportunities(
                     "plan; `plan.countries_needed` says how many it takes to reach the target at all."
                 ),
             },
+            "max_conflict": {
+                "type": "number",
+                "description": (
+                    "With `model` and `target`: leave out any place whose reported conflict deaths (UCDP, per 100,000 "
+                    "people a year) are above this. A place with no figure is kept. It never changes a multiple."
+                ),
+            },
             "trust": {
                 "type": "number",
                 "minimum": 0,
@@ -396,6 +403,7 @@ def cea_market_size(
     place_risk=True,
     min_place=None,
     max_countries=None,
+    max_conflict=None,
     trust=100,
 ):
     if model:
@@ -415,6 +423,7 @@ def cea_market_size(
             place_risk=place_risk,
             min_place=min_place,
             max_countries=max_countries,
+            max_conflict=max_conflict,
             trust=trust,
         )
     if basis is None or unit_cost is None:
@@ -535,6 +544,7 @@ def _market_size_by_model(
     place_risk=True,
     min_place=None,
     max_countries=None,
+    max_conflict=None,
     trust=100,
 ):
     """``cea_market_size`` with a model: the same ``effectiveness.sizing`` the Market size and Workspace pages call,
@@ -564,6 +574,7 @@ def _market_size_by_model(
         ("target", target),
         ("min_place", min_place),
         ("max_countries", max_countries),
+        ("max_conflict", max_conflict),
         ("trust", None if trust == 100 else trust),
         ("place_risk", None if place_risk else "0"),
     ):
