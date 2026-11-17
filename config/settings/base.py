@@ -220,12 +220,8 @@ LOGIN_URL = "/labs/login/"
 # so a satellite login never becomes a labs login. Each satellite MUST list its
 # URL prefix here (next to its INSTALLED_APPS + urls.py entries) or its own
 # users get logged out on every request to it. See docs/multi-site-auth.md.
-# /hq/ is the CommCare pages' old address: it only redirects, and serves the sign-in callback HQ's OAuth app
-# has registered.
+# /hq/ is the CommCare pages' old address: it only redirects.
 LABS_SATELLITE_URL_PREFIXES = ["/campaign/", "/commcare/", "/hq/"]
-# Where CommCare HQ sends the person back after sign-in. It must be a redirect URI registered on the HQ OAuth app; it
-# stays at the original /hq/ path until /commcare/login/callback/ is registered too, then this is switched.
-HQ_LOGIN_CALLBACK_PATH = env("HQ_LOGIN_CALLBACK_PATH", default="/hq/login/callback/")
 
 # PASSWORDS
 # ------------------------------------------------------------------------------
