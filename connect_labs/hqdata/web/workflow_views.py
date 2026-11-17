@@ -30,7 +30,13 @@ from connect_labs.hqdata.workflows import (
     save_run,
     workflow_dao,
 )
-from connect_labs.workflow.page_mode import RUN_ENDPOINTS, blank_instance, is_page
+from connect_labs.workflow.page_mode import (
+    blank_instance,
+    closed_endpoints,
+    is_page,
+    run_instance,
+    scope_prop,
+)
 from connect_labs.workflow.sandbox import host_frame_src, host_payload, labs_origin
 
 
@@ -52,24 +58,11 @@ def _unavailable(request: HttpRequest, exc: _Unavailable) -> HttpResponse:
 
 
 def _instance_for(definition, run) -> dict:
-    """The blank in-memory instance a page has, or a saved run as a completed one (state and snapshot as saved)."""
+    """The blank in-memory instance a page has, or a saved run as a completed one."""
     if run is None:
         return blank_instance(definition.id, None, None, [])
-    data = run.data or {}
-    return {
-        "id": run.id,
-        "definition_id": definition.id,
-        "opportunity_id": None,
-        "program_id": None,
-        "opportunity_ids": [],
-        "name": (data.get("state") or {}).get("name", ""),
-        "status": data.get("status") or "completed",
-        "state": data.get("state") or {},
-        "period_start": data.get("period_start"),
-        "period_end": data.get("period_end"),
-        "completed_at": data.get("completed_at"),
-        "snapshot": data.get("snapshot"),
-    }
+    # A project's scope id is not a Connect opportunity: the render must not see it as one.
+    return {**run_instance(run, definition.id, opportunity_ids=[]), "opportunity_id": None}
 
 
 def build_workflow_data(
@@ -85,19 +78,7 @@ def build_workflow_data(
     ``data_url`` is None.
     """
     user = request.user
-    api = {
-        "getWorkers": None,
-        "getPipelineData": data_url,
-        "authStatus": None,
-        "streamPipelineData": None,
-        "queryPipelineRows": None,
-        "getWorkflowData": None,
-        "queryWorkflow": None,
-        "getSupplyData": None,
-        "querySupply": None,
-        "updateOpportunityIds": None,
-        **dict.fromkeys(RUN_ENDPOINTS),
-    }
+    api = closed_endpoints(getPipelineData=data_url)
     return {
         "definition": definition.data,
         "definition_id": definition.id,
@@ -111,24 +92,14 @@ def build_workflow_data(
         "is_edit_mode": False,
         "is_page": True,
         "workers": [],
-        "pipeline_data": ((run.data or {}).get("snapshot") or {}).get("pipelines") or {} if run is not None else {},
+        "pipeline_data": (run.snapshot or {}).get("pipelines") or {} if run is not None else {},
         "flags": [],
         "audits": [],
         "tasks": [],
         "links": {"auditUrlBase": "", "taskUrlBase": ""},
         "apiEndpoints": api,
         "viewer_is_staff": False,
-        "scope": {
-            "type": "project",
-            "key": str(project.pk),
-            "organization": None,
-            "program": None,
-            "opportunity": None,
-            "user": {"username": user.username, "name": getattr(user, "name", "") or ""},
-            "programs": [],
-            "opportunities": [],
-            "settings_url": None,
-        },
+        "scope": scope_prop("project", str(project.pk), user),
         "config": {},
         "sandbox": {**host_payload(request), "readable_definitions": []},
         "mapboxToken": settings.MAPBOX_TOKEN or "",

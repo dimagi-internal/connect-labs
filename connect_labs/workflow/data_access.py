@@ -203,6 +203,12 @@ def on_demand_placeholder(source: dict, opp_ids) -> dict:
     }
 
 
+def in_project_scope(data_access) -> bool:
+    """Whether a data access object works over a CommCare project (opened for a verified member: no Connect
+    token, no opportunity). ``is True`` so a test double's auto-attribute never reads as one."""
+    return getattr(data_access, "hq_scope", False) is True
+
+
 def program_drive_scope(config) -> int | None:
     """The program a pipeline config reads a PROGRAM-scoped Google Drive source for, else None.
 
@@ -1673,6 +1679,9 @@ class WorkflowDataAccess(BaseDataAccess):
                     },
                 }
         """
+        if in_project_scope(self):
+            return self._get_hq_pipeline_data(definition_id, None, None, None)
+
         definition = self.get_definition(definition_id)
         if not definition:
             return {}
@@ -1769,17 +1778,24 @@ class WorkflowDataAccess(BaseDataAccess):
         return results
 
     def _get_hq_pipeline_data(self, definition_id, aliases, period_start, period_end) -> dict[str, dict]:
-        """The pipelines of a page over a CommCare project, for a snapshot: the project's own stored rows read
-        as the verified member (nothing here is a Connect cache), over the run's window where a pipeline opts in.
+        """The pipelines of a page over a CommCare project, live or for a snapshot: the project's own stored rows
+        read as the verified member (nothing here is a Connect cache), over a run's window where a pipeline opts in.
         """
         from connect_labs.hqdata.models import HQProject
         from connect_labs.hqdata.scope import project_id_from_scope
-        from connect_labs.hqdata.workflows import read_project_pipeline_data
+        from connect_labs.hqdata.workflows import read_sources
 
+        definition = self.get_definition(definition_id)
+        if not definition:
+            return {}
         project = HQProject.objects.get(pk=project_id_from_scope(self.opportunity_id))
         window = (period_start, period_end) if period_start and period_end else None
-        return read_project_pipeline_data(
-            self.hq_user, project, definition_id, aliases=None if aliases is None else set(aliases), window=window
+        return read_sources(
+            self.hq_user,
+            project,
+            definition,
+            aliases=None if aliases is None else set(aliases),
+            window=window,
         )
 
     def get_cached_pipeline_data(
@@ -1826,7 +1842,7 @@ class WorkflowDataAccess(BaseDataAccess):
                 memo[key] = load()
             return memo[key]
 
-        if self.hq_scope is True:
+        if in_project_scope(self):
             return self._get_hq_pipeline_data(definition_id, aliases, period_start, period_end)
 
         definition = _once(("definition", definition_id), lambda: self.get_definition(definition_id))
@@ -3019,7 +3035,7 @@ class PipelineDataAccess(BaseDataAccess):
         the pipeline runs as the verified member (``local_only_user``) and refuses every source but
         that project's own rows.
         """
-        if self.hq_scope:
+        if in_project_scope(self):
             return pipeline_cls(None, local_only_user=self.user)
         if self.request is not None:
             return pipeline_cls(self.request)
@@ -3507,7 +3523,7 @@ class PipelineDataAccess(BaseDataAccess):
             columns=data_source_dict.get("columns"),
             authorization=data_source_dict.get("authorization") or {},
         )
-        if getattr(self, "hq_scope", False) and data_source.type == "hq_store":
+        if in_project_scope(self) and data_source.type == "hq_store":
             # Over a CommCare project a stored schema cannot name another project: the scope this data
             # access was opened for (and the member proven for) is the only project it reads. getattr,
             # because hqdata.pipelines.config_for calls this with no self at all.

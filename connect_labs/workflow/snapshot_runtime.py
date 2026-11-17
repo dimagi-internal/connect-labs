@@ -85,7 +85,7 @@ def build_snapshot_for_run(
     multi-minute batch job (102k visits, an OOM-killed worker). Only the aliases the
     contract captures are read; hook contracts get all of them.
     """
-    from connect_labs.workflow.data_access import PipelineCacheMiss
+    from connect_labs.workflow.data_access import PipelineCacheMiss, in_project_scope
     from connect_labs.workflow.templates import (
         SnapshotStateNotStagedError,
         SnapshotTooLargeError,
@@ -115,7 +115,7 @@ def build_snapshot_for_run(
     contract = resolve_snapshot_contract(definition)
     if (
         not contract["ok"]
-        and getattr(data_access, "hq_scope", False) is True
+        and in_project_scope(data_access)
         and contract["error"] in ("no_contract", "unknown_template")
     ):
         # A page over a CommCare project has no registered template (the overview names one that is not in
@@ -171,7 +171,7 @@ def build_snapshot_for_run(
 
     workers: list[dict] = []
     # A CommCare project has no Connect workers: its scope id is not an opportunity.
-    for oid in [] if getattr(data_access, "hq_scope", False) is True else effective_opp_ids:
+    for oid in [] if in_project_scope(data_access) else effective_opp_ids:
         try:
             for w in _once(("workers", oid), lambda oid=oid: list(data_access.get_workers(oid) or [])):
                 workers.append({**w, "opportunity_id": oid})

@@ -1479,7 +1479,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             audits_for_run: list[dict] = []
             tasks_for_run: list[dict] = []
 
-            from connect_labs.workflow.page_mode import blank_instance, is_page
+            from connect_labs.workflow.page_mode import blank_instance, is_page, run_instance
 
             # A page has no runs: opened with no run named (and not being edited), it renders
             # in page mode -- a blank in-memory instance, and no run endpoints.
@@ -1529,43 +1529,12 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     # render, which would be handed this run's state and snapshot.
                     context["error"] = f"Workflow run {run_id} does not belong to this workflow."
                     return context
-                run_data = {
-                    "id": run.id,
-                    "definition_id": definition_id,
-                    # Use the RUN RECORD's own ownership, not the ambient
-                    # request/session labs_context. A program-owned run's
-                    # opportunity_id is None on the record itself, but the
-                    # session's "current opportunity" can be non-None here —
-                    # e.g. left over from the workflow list page's background
-                    # per-opp fetches — even while viewing a program-scoped
-                    # page. Trusting that stale value made instance.opportunity_id
-                    # non-null for a program-owned run, so the "Create Audits"
-                    # button sent a real opportunity_id to startJob and
-                    # start_job_api dispatched opp-scoped instead of
-                    # program-scoped, 404ing on get_run() and failing the batch.
-                    "opportunity_id": run.opportunity_id,
-                    # Program-owned runs have no owning opp; the render reads
-                    # instance.program_id to dispatch program-scoped jobs.
-                    "program_id": run.program_id,
-                    "opportunity_ids": effective_opp_ids,
-                    "opportunity_name": labs_context.get("opportunity", {}).get("name"),
-                    # User-given display name ("" if never renamed -- render
-                    # code falls back to "Run #<id>"). Renaming is allowed
-                    # regardless of run status; see rename_run_api.
-                    "name": run.name,
-                    # Canonical lifecycle: in_progress | completed. The proxy
-                    # also maps any legacy `active`/`frozen` rows back to this
-                    # vocabulary.
-                    "status": run.status,
-                    "state": run.state,
-                    "period_start": run.period_start,
-                    "period_end": run.period_end,
-                    "completed_at": run.completed_at,
-                    # Snapshot is null while in_progress; populated on completion.
-                    # The useRunView FE helper reads it when status='completed' so
-                    # render code never recomputes against live data on a finalized run.
-                    "snapshot": run.snapshot,
-                }
+                run_data = run_instance(
+                    run,
+                    definition_id,
+                    opportunity_ids=effective_opp_ids,
+                    opportunity_name=labs_context.get("opportunity", {}).get("name"),
+                )
                 context["is_edit_mode"] = False
 
                 # Flags / Audits / Tasks are surfaced to render code via

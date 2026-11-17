@@ -82,6 +82,20 @@ def test_a_page_renders_with_no_run_and_no_run_endpoints():
 
 
 @pytest.mark.django_db
+def test_a_pages_endpoints_are_exactly_the_ones_a_project_page_shuts(monkeypatch):
+    """hqdata builds its pages' endpoints from page_mode.closed_endpoints; if a route is added for a Connect page
+    and not there, a CommCare page would silently lack it (undefined, not null) -- so the two sets are pinned."""
+    from connect_labs.workflow.page_mode import DATA_ENDPOINTS, RUN_ENDPOINTS, closed_endpoints
+
+    context, _ = _run_context(PAGE)
+    connect_keys = set(context["workflow_data"]["apiEndpoints"])
+    assert connect_keys == set(DATA_ENDPOINTS) | set(RUN_ENDPOINTS)
+    assert set(closed_endpoints()) == connect_keys
+    with pytest.raises(KeyError):
+        closed_endpoints(notAnEndpoint="/x/")
+
+
+@pytest.mark.django_db
 def test_a_page_reads_the_scope_in_view_with_names_and_what_is_under_it():
     context, _ = _run_context(PAGE, page_mode=True, page_scope=Scope.of("organization", "acme"))
     scope = context["workflow_data"]["scope"]
