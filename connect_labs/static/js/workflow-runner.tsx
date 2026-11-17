@@ -1702,7 +1702,7 @@ function WorkflowRunner({
                 before any template-specific render fires. This way every
                 template gets uniform "Authorize X" UX without each
                 template having to implement its own check. */}
-            <div className="px-4">
+            <div className="sm:px-4">
               {authChecking ? (
                 <div className="flex flex-col items-center justify-center py-12 text-gray-500">
                   <i className="fa-solid fa-spinner fa-spin text-2xl mb-3" />
