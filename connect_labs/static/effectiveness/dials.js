@@ -41,6 +41,7 @@
     var targetBox = h('div');
     var riskBox = h('div');
     var trustBox = h('div');
+    var costBox = h('div');
     var dialsBox = h('div');
     var inputsBox = h('div');
     var EVERYWHERE = window.EffScenario.EVERYWHERE;
@@ -252,6 +253,26 @@
       ]);
     }
 
+    function drawCost() {
+      var box = h('input', {
+        type: 'checkbox',
+        checked: s.cost_basis === 'observed' ? true : null,
+      });
+      box.addEventListener('change', function () {
+        scn.setCostBasis(box.checked ? 'observed' : 'model');
+      });
+      put(costBox, [
+        h('label', { class: 'f chk' }, [
+          box,
+          ' Price from delivered programmes where there are some',
+        ]),
+        h('small', {
+          class: 'hint',
+          text: "Moves a country's price per person toward what the opportunities delivered there cost, by how much delivery stands behind it (one opportunity counts a third, ten over 80%). Those are small early programmes, so read it as evidence, not a price. Off uses the model's own figure everywhere.",
+        }),
+      ]);
+    }
+
     function drawTrust() {
       var input = number(
         s.trust,
@@ -383,6 +404,7 @@
       drawTarget();
       drawRisk();
       drawTrust();
+      drawCost();
       drawDials();
       drawInputs();
       drawSummary();
@@ -398,6 +420,7 @@
       targetBox,
       riskBox,
       trustBox,
+      costBox,
       h('h2', { text: 'Dials', css: { marginTop: '16px' } }),
       dialsBox,
       field("GiveWell's bar (x)", barInput),

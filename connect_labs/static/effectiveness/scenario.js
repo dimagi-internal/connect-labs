@@ -34,6 +34,7 @@
       trust: start.trust == null ? 100 : start.trust,
       place_risk: start.place_risk !== false,
       grain: start.grain || COUNTRY,
+      cost_basis: start.cost_basis || 'model',
       dials: start.dials,
       overrides: start.overrides || {},
       extras: start.extras || {},
@@ -82,7 +83,10 @@
     function changes() {
       var out = {
         dials: 0,
-        assumptions: (riskOff() ? 1 : 0) + (s.trust !== 100 ? 1 : 0),
+        assumptions:
+          (riskOff() ? 1 : 0) +
+          (s.trust !== 100 ? 1 : 0) +
+          (s.cost_basis !== 'model' ? 1 : 0),
       };
       s.models.forEach(function (m) {
         var c = changed(m);
@@ -113,6 +117,7 @@
       if (s.trust !== 100) p.set('trust', str(s.trust));
       if (!s.place_risk) p.set('place_risk', '0');
       if (s.grain !== COUNTRY) p.set('grain', s.grain);
+      if (s.cost_basis !== 'model') p.set('cost_basis', s.cost_basis);
       Object.keys(s.extras).forEach(function (k) {
         p.set(k, s.extras[k]);
       });
@@ -194,6 +199,11 @@
         s.trust = Math.min(100, Math.max(0, value));
         emit('trust');
       },
+      // Price a person at the model's own figure ('model') or move it toward what delivered opportunities cost.
+      setCostBasis: function (basis) {
+        s.cost_basis = basis === 'observed' ? 'observed' : 'model';
+        emit('cost');
+      },
       setPlaceRisk: function (on) {
         s.place_risk = !!on;
         emit('risk');
@@ -224,6 +234,7 @@
         s.overrides = {};
         s.place_risk = true;
         s.trust = 100;
+        s.cost_basis = 'model';
         s.bar = data.bar;
         emit('reset');
       },

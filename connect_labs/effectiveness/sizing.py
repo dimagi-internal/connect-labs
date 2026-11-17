@@ -8,8 +8,23 @@ same payload, and no page owns arithmetic.
 
 from __future__ import annotations
 
-from connect_labs.effectiveness import explore, market, people, valuation
+from connect_labs.effectiveness import explore, market, observed, people, valuation
 from connect_labs.effectiveness.scenario import Scenario
+
+
+def observed_costs() -> dict:
+    """What delivered opportunities cost per person, by model and country (``observed.from_rows``), from the ranking
+    the Implementations page shows. Empty where Pulse has nothing, so a scenario asking for it degrades to the
+    model's own.
+    """
+    from connect_labs.effectiveness import implementation
+
+    try:
+        return observed.from_rows(implementation.cached_ranking()["rows"])
+    except (
+        Exception
+    ):  # noqa: BLE001 a missing delivery table must not break a sizing; the answer then says nothing observed
+        return {}
 
 
 def _size(model: str, trust: float, run: dict) -> dict:
@@ -23,6 +38,7 @@ def _size(model: str, trust: float, run: dict) -> dict:
         target=run["target"],
         trust=trust,
         limits=run["limits"],
+        observed=run.get("observed"),
     )
 
 
@@ -69,6 +85,7 @@ def market_of(scenario: Scenario) -> dict:
     question, everywhere = people.question_for(scenario)
     bar = scenario.resolved_bar(valuation.bar())
     found = people.people_by_place(question, scenario.grain)
+    observed_prices = observed_costs() if scenario.cost_basis == "observed" else {}
     sized = []
     for k in scenario.models:
         try:
@@ -80,6 +97,7 @@ def market_of(scenario: Scenario) -> dict:
                 place_risk=scenario.place_risk,
                 target=scenario.target,
                 limits=scenario.limits(),
+                observed=observed_prices.get(k),
             )
             out = _size(k, scenario.trust / 100, run)
             # A plan made at the figures as they are, and how it holds up if they are only half to be believed.

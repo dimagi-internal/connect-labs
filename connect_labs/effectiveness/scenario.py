@@ -37,6 +37,7 @@ from connect_labs.effectiveness import engine, explore
 EVERYWHERE = "all"
 DEFAULT_MODEL = "chc"
 GRAINS = ("country", "territory")
+COST_BASES = ("model", "observed")
 DEFAULT_GRAIN = "country"
 
 #: The three dials, in the order a page shows them. ``extra`` is dollars (and may be negative: delivery cheaper than
@@ -140,6 +141,9 @@ class Scenario:
     trust: float = 100.0
     place_risk: bool = True
     grain: str = DEFAULT_GRAIN
+    #: "model" prices a person at the model's own figure; "observed" moves it toward what delivered opportunities cost
+    #: where there are some (``observed.blend``).
+    cost_basis: str = "model"
     dials: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
     overrides: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
     place_extras: Mapping[str, str] = field(default_factory=dict)
@@ -170,6 +174,7 @@ class Scenario:
             if raw:
                 overrides[m] = explore.clean_overrides(m, raw)
         grain = (params.get("grain") or DEFAULT_GRAIN).strip()
+        basis = (params.get("cost_basis") or "model").strip()
         most = number(params.get("max_countries"), positive=True)
         trust = number(params.get("trust"), 100.0)
         return cls(
@@ -185,6 +190,7 @@ class Scenario:
             trust=min(trust, 100.0),
             place_risk=str(params.get("place_risk", "1")).strip().lower() not in ("0", "false", "off", "no"),
             grain=grain if grain in GRAINS else DEFAULT_GRAIN,
+            cost_basis=basis if basis in COST_BASES else "model",
             dials=dials,
             overrides=overrides,
             place_extras={k: str(params[k]) for k in PLACE_EXTRAS if params.get(k)},
@@ -225,7 +231,8 @@ class Scenario:
             "dials": sum(len(self.dials.get(m, {})) for m in self.models),
             "assumptions": sum(len(self.overrides.get(m, {})) for m in self.models)
             + scaled_off
-            + int(self.trust != 100.0),
+            + int(self.trust != 100.0)
+            + int(self.cost_basis != "model"),
         }
 
     # ---- writing
@@ -269,6 +276,8 @@ class Scenario:
             out["place_risk"] = "0"
         if self.grain != DEFAULT_GRAIN:
             out["grain"] = self.grain
+        if self.cost_basis != "model":
+            out["cost_basis"] = self.cost_basis
         out.update(self.place_extras)
         for m, changed in self.dials.items():
             out.update({f"{m}_{k}": _s(v) for k, v in changed.items()})
@@ -291,6 +300,7 @@ class Scenario:
             "trust": self.trust,
             "place_risk": self.place_risk,
             "grain": self.grain,
+            "cost_basis": self.cost_basis,
             "dials": {m: self.dials_for(m) for m in engine.MODELS},
             "overrides": {m: dict(v) for m, v in self.overrides.items()},
             "extras": dict(self.place_extras),

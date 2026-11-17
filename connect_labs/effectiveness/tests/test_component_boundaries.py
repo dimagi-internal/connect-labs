@@ -34,6 +34,7 @@ PURE_CORE = (
     "sheets_check.py",
     "market.py",
     "mortality.py",
+    "observed.py",
     "reliability.py",
     "scenario.py",
     "implementation/catalog.py",

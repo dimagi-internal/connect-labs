@@ -29,6 +29,7 @@ import math
 from dataclasses import dataclass
 
 from connect_labs.effectiveness import engine, explore, groups, mortality, reliability, result
+from connect_labs.effectiveness.observed import blend
 from connect_labs.effectiveness.scenario import KNOB_DEFAULT, PlanLimits
 
 #: A place whose figure is more than this many times its country's, either way, is flagged: such a gap is as often a
@@ -113,6 +114,7 @@ def size(
     target: float | None = None,
     trust: float = 1.0,
     limits: PlanLimits | None = None,
+    observed: dict | None = None,
 ) -> dict:
     """The model's market over ``places`` = ``{key: {"name", "iso3", "units", "measures", "inputs"}}``, at each
     place's figures.
@@ -125,7 +127,10 @@ def size(
     baseline holds for it (``inputs``). ``trust`` is how far to believe them (1 = fully; 0 = a territory takes its
     country's, a country the model's). A place the model has no published figures for is priced at the model's own
     inputs and flagged ``modelled: False``; it counts in the market but never in the part that clears the bar:
-    nothing says it does. With a ``target`` the best places are filled first (``plan``), within ``limits``.
+    nothing says it does. With a ``target`` the best places are filled first (``plan``), within ``limits``. With
+    ``observed`` (``{iso3: observed.Observed}`` for this model) a country with delivery behind it is priced at
+    ``observed.blend`` instead of the model's figure, and every row says what the model and the observed price were;
+    without it the model's figure is used everywhere.
     """
     unit = UNITS[model]
     dial = {**KNOB_DEFAULT, **(dials or {})}
@@ -155,12 +160,14 @@ def size(
         o = engine.run(model, inputs)
         model_x = result.OUTPUTS[model](o)[0]
         price = unit.annual_cost(o)
-        per_person = price + extra
+        seen = (observed or {}).get(p["iso3"])
+        used_price = blend(price, seen)
+        per_person = used_price + extra
         if per_person <= 0:
             raise explore.ExploreError(
                 f"The extra cost takes the price per person to {per_person:.2f}: it has to stay above zero."
             )
-        x = result.scale_multiple(model_x, price, per_person, effect)
+        x = result.scale_multiple(model_x, price, per_person, effect)  # the multiple moves by the price paid
         deaths_pp = unit.deaths_per_100k(o) / 100_000 * effect
         spread = _spread(model, unit, inputs, risk, se, (x, unit.deaths_per_100k(o)), effect, extra) if se else None
         units = p["units"] * reach if p["units"] is not None else None
@@ -176,6 +183,10 @@ def size(
                 "units": units,
                 "units_all": p["units"],
                 "cost_per_person": per_person,
+                "price_model": price,
+                "price_observed": seen.cost_per_person if seen else None,
+                "price_observed_n": seen.opportunities if seen else 0,
+                "price_observed_people": seen.people if seen else 0,
                 "market_usd": market_usd,
                 "multiple": x if modelled else None,
                 "modelled": modelled,

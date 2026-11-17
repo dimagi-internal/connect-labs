@@ -95,6 +95,16 @@ where a place has them they are carried through (`mortality.py`, `reliability.py
   back on the current national needs the whole country's set, so it waits for that. Production has no bounds until the
   mortality loaders are re-run (`load_indicators --stage mortality`).
 
+**Delivery cost by place.** The models price a person at one figure everywhere (Child Health Campaign $1.84 a child, Kangaroo
+Care $60 a baby), and real delivery does not: the delivered Child Health Campaign opportunities in Nigeria cost near $0.80 a
+child, and Kangaroo Care's three programmes $29 (Uganda), $42 (Nigeria) and $70 (Kenya) a baby, on a few hundred to five
+thousand babies each. `observed.py` aggregates them by model and country from the Implementations ranking (spend over people
+reached, pooled costs counted once). `cost_basis=observed` (the checkbox "Price from delivered programmes", MCP `cost_basis`)
+moves a country's price toward the observed one by how much delivery stands behind it (one opportunity counts a third, ten
+over 80%) and every row says both prices; the default stays the model's figure, because a small early programme's cost per
+person is not its cost at a million. Wage-scaling the model's price by country was rejected: it is contradicted by these
+actuals.
+
 **The plan.** Give a target (`target=1000000`) and `market.plan` fills the places with the highest multiple first, each up to
 the most that can be reached there (the `reach` dial), until the target is met, then reports the people, cost, deaths
 averted, cost per death averted and the spend-weighted multiple of the whole, how far short the places fall if they cannot
@@ -224,9 +234,8 @@ wait for a deploy.
 ## Left to do
 
 - Saved scenarios: rename and share/unshare without re-saving, versions, and a way to attach one to a proposal.
-- Delivery cost by place (Connect's actual price per case by country or programme) and territory reachability (travel time,
-  security) as inputs to the plan; today the places differ by their own mortality and coverage figures, not by what it
-  costs to work in them or how hard they are to reach (conflict is a ceiling a plan can be held to, not yet a travel time).
+- Territory reachability (travel time) as an input to the plan; today the places differ by their own mortality and coverage
+  figures (and optionally observed delivery cost), not by how hard they are to reach (conflict is a ceiling a plan can be held to, not yet a travel time).
 - Put CEA models and Implementations on the scenario too (their own link keys differ: `i_<input>`, `m`), and give the
   workspace a Need lens, a Delivered layer, and region-level shapes (the models hold country figures, so a region's number
   would be an allocation of its country's).

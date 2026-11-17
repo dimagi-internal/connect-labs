@@ -757,7 +757,27 @@
                 class: 'n',
                 text: num(x.units) + (x.partial ? '+' : ''),
               }),
-              h('td', { class: 'n', text: '$' + x.cost_per_person.toFixed(2) }),
+              h('td', {
+                class: 'n',
+                title:
+                  x.price_observed != null
+                    ? "The model's price is $" +
+                      x.price_model.toFixed(2) +
+                      '; ' +
+                      x.price_observed_n +
+                      (x.price_observed_n === 1
+                        ? ' opportunity'
+                        : ' opportunities') +
+                      ' delivered here for $' +
+                      x.price_observed.toFixed(2) +
+                      ' a person (' +
+                      num(x.price_observed_people) +
+                      ' people). This row is priced at $' +
+                      x.cost_per_person.toFixed(2) +
+                      '.'
+                    : null,
+                text: '$' + x.cost_per_person.toFixed(2),
+              }),
               h('td', { class: 'n', text: usd(x.market_usd) }),
               h('td', { class: 'n', text: num(x.deaths_averted) }),
             );
