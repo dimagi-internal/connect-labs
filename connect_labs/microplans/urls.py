@@ -17,6 +17,11 @@ urlpatterns = [
         reached_page.BuildingsReachedPopulation.as_view(),
         name="buildings_reached_population",
     ),
+    path(
+        "buildings-reached/commcare/",
+        reached_page.BuildingsReachedCommCare.as_view(),
+        name="buildings_reached_commcare",
+    ),
     path("buildings-reached/upload/", reached_page.BuildingsReachedUpload.as_view(), name="buildings_reached_upload"),
     path(
         "buildings-reached/template.csv",

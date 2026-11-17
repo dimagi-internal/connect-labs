@@ -30,6 +30,32 @@ def read_households(caller, space, spec: check.CheckSpec, agent: bool) -> list:
         raise MCPToolError("CAPACITY", str(e), {"reason": "truncated"}) from e
 
 
+def _commcare_check(user, settings, project_id, app_id, xmlns) -> dict:
+    """The same check over a CommCare project's forms, as a member of it (counts only, like the Connect read)."""
+    from connect_labs.hqdata.access import ProjectAccessDenied, may_use_project
+    from connect_labs.hqdata.models import HQProject
+    from connect_labs.hqdata.pipelines import PipelineProblem
+    from connect_labs.hqdata.stores import StoreUnavailable
+    from connect_labs.microplans.coverage import commcare as commcare_source
+
+    try:
+        spec = check.CheckSpec.from_dict(settings)
+    except check.SpecError as e:
+        raise MCPToolError("INVALID_SCHEMA", str(e), {"reason": "bad_settings"}) from e
+    project = HQProject.objects.filter(pk=project_id).first()
+    if project is None or not may_use_project(user, project):
+        raise MCPToolError("NOT_FOUND", "No such CommCare project, or you are not a member of it.")
+    try:
+        rows, _served = commcare_source.read(user, project, spec, app_id=app_id or "", xmlns=xmlns or "")
+        result = check.run_check(rows, spec)
+    except (PipelineProblem, ProjectAccessDenied, StoreUnavailable) as e:
+        raise MCPToolError("INVALID_SCHEMA", str(e), {"reason": "commcare_read"}) from e
+    except check.SpecError as e:
+        raise MCPToolError("INVALID_SCHEMA", str(e), {"reason": "bad_settings"}) from e
+    result["total"] = check.total_row(result)
+    return result
+
+
 @register(
     name="microplans_coverage_check",
     description=(
@@ -48,6 +74,16 @@ def read_households(caller, space, spec: check.CheckSpec, agent: bool) -> list:
             "opportunity_ids": {"type": "array", "items": {"type": "integer"}},
             "program_ids": {"type": "array", "items": {"type": "integer"}},
             "space_id": {"type": "integer"},
+            "commcare_project_id": {
+                "type": "integer",
+                "description": (
+                    "Read the households from this CommCare project's stored forms (a campaign CommCare ran: Niger "
+                    "SMC) instead of Connect visits. You must belong to the project; the forms are the ones whose "
+                    "paths `settings` names. Optional `commcare_app_id` / `commcare_xmlns` narrow to one app or form."
+                ),
+            },
+            "commcare_app_id": {"type": "string"},
+            "commcare_xmlns": {"type": "string"},
             "settings": {
                 "type": "object",
                 "description": (
@@ -64,7 +100,18 @@ def read_households(caller, space, spec: check.CheckSpec, agent: bool) -> list:
     },
     is_write=False,
 )
-def microplans_coverage_check(user, settings, opportunity_ids=None, program_ids=None, space_id=None):
+def microplans_coverage_check(
+    user,
+    settings,
+    opportunity_ids=None,
+    program_ids=None,
+    space_id=None,
+    commcare_project_id=None,
+    commcare_app_id="",
+    commcare_xmlns="",
+):
+    if commcare_project_id is not None:
+        return _commcare_check(user, settings, commcare_project_id, commcare_app_id, commcare_xmlns)
     agent = _from_canopy()
     caller = _caller(user)
     try:

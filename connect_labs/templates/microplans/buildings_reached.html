@@ -85,7 +85,25 @@
     <form id="br-form" class="br-form">
       <div class="br-wide br-src">Data:
         <label><input type="radio" name="br-source" value="opps" checked> Labs opportunities</label>
+        <label><input type="radio" name="br-source" value="commcare"> A CommCare project</label>
         <label><input type="radio" name="br-source" value="upload"> Upload a household CSV (real data from a CommCare export)</label>
+      </div>
+      <div id="br-commcare-wrap" class="br-wide" hidden>
+        {% if commcare_connected %}
+          {% if commcare_projects %}
+            <div class="br-form">
+              <label>CommCare project
+                <select id="br-project">{% for p in commcare_projects %}<option value="{{ p.id }}">{{ p.domain }}</option>{% endfor %}</select></label>
+              <label>App id (optional) <input id="br-app" placeholder="narrow to one app"></label>
+              <label>Form namespace (optional) <input id="br-xmlns" placeholder="narrow to one form"></label>
+            </div>
+            <p class="br-note">Read from the project's stored forms as you (the project's own members only), using the form paths below, and never saved. Only counts and 1 km squares come back, never a household or a point. Sync the project first on its <a class="br-link" href="/commcare/">CommCare page</a> if it is new or out of date.</p>
+          {% else %}
+            <p class="br-note">CommCare lists no projects for your login. Add one on the <a class="br-link" href="/commcare/">CommCare page</a>.</p>
+          {% endif %}
+        {% else %}
+          <p class="br-note">Connect your CommCare login to read a CommCare project (you stay signed in here with Connect). <a class="br-link" id="br-connect" href="{{ connect_commcare_url }}">Connect CommCare</a></p>
+        {% endif %}
       </div>
       <label id="br-opps-wrap">Opportunity ids <input id="br-opps" placeholder="10184,10185"></label>
       <div id="br-upload-wrap" class="br-wide" hidden>
@@ -144,6 +162,7 @@
   var LOAD_URL = "{% url 'microplans:buildings_reached_load' %}";
   var POP_URL = "{% url 'microplans:buildings_reached_population' %}";
   var UPLOAD_URL = "{% url 'microplans:buildings_reached_upload' %}";
+  var COMMCARE_URL = "{% url 'microplans:buildings_reached_commcare' %}";
   var LOW_POINTS = 0.10;
   var params = new URLSearchParams(location.search);
   Object.keys(FIELDS).forEach(function (k) { if (params.get(k)) { $(FIELDS[k]).value = params.get(k); } });
@@ -208,7 +227,7 @@
   var POP_STEPS = [[0.60, '#d73027', 'under 60%'], [0.75, '#fc8d59', '60-75%'], [0.85, '#fee08b', '75-85%'], [0.95, '#91cf60', '85-95%'], [1.10, '#1a9850', '95-110%'], [99, '#7b3294', 'over 110%']];
   var NO_DATA = '#9ca3af';
   var lens = 'buildings', popData = null, lastRes = null, lastBody = null, lastFile = null;
-  var source = params.get('source') === 'upload' ? 'upload' : 'opps';
+  var source = ['upload', 'commcare'].indexOf(params.get('source')) >= 0 ? params.get('source') : 'opps';
   var mapState = {map: null, res: null, cycle: null, ready: false};
   function colorFor(share) {
     if (share === null || share === undefined) { return NO_DATA; }
@@ -431,8 +450,9 @@
   function setSource(next) {
     source = next;
     Array.prototype.forEach.call(document.getElementsByName('br-source'), function (r) { r.checked = r.value === next; });
-    $('br-opps-wrap').hidden = next === 'upload';
+    $('br-opps-wrap').hidden = next !== 'opps';
     $('br-upload-wrap').hidden = next !== 'upload';
+    $('br-commcare-wrap').hidden = next !== 'commcare';
   }
   function postForm(url, body, file, lensName) {
     var fd = new FormData();
@@ -446,6 +466,9 @@
   function currentBody() {
     var body = {};
     Object.keys(FIELDS).forEach(function (k) { body[k] = $(FIELDS[k]).value.trim(); });
+    if (source === 'commcare' && $('br-project')) {
+      body.project_id = $('br-project').value; body.app_id = $('br-app').value.trim(); body.xmlns = $('br-xmlns').value.trim();
+    }
     return body;
   }
   function post(url, body) {
@@ -471,7 +494,7 @@
     note.className = 'br-note';
     note.textContent = 'Reading the population grid and placing the children served. The first run on a country can take about a minute.';
     Array.prototype.forEach.call($('br-lensbar').querySelectorAll('button'), function (b) { b.disabled = true; });
-    (source === 'upload' ? postForm(UPLOAD_URL, lastBody, lastFile, 'population') : post(POP_URL, lastBody))
+    (source === 'upload' ? postForm(UPLOAD_URL, lastBody, lastFile, 'population') : source === 'commcare' ? post(COMMCARE_URL, Object.assign({}, lastBody, {lens: 'population'})) : post(POP_URL, lastBody))
       .then(function (r) { popData = r; lens = 'population'; applyLens(); })
       .catch(function (e) { note.className = 'br-note br-err'; note.textContent = 'The population lens could not run: ' + e.message; lensBar(); })
       .finally(function () { Array.prototype.forEach.call($('br-lensbar').querySelectorAll('button'), function (b) { b.disabled = false; }); });
@@ -537,7 +560,7 @@
     fac.forEach(function (f) { var p = f.split(','); if (p[3]) { districts[p[3].trim()] = 1; } });
     var nd = Object.keys(districts).length;
     var opps = String(body.opps || '').split(',').filter(Boolean).length;
-    return '<b>' + esc(body.max_dist_m || 30) + ' m</b> &middot; nearest <b>' + esc(body.catchment_k || 260) + '</b> buildings per facility &middot; <b>' + fac.length + '</b> facilities' + (nd ? ' in ' + nd + ' districts' : '') + ' &middot; ' + opps + ' opportunities';
+    return '<b>' + esc(body.max_dist_m || 30) + ' m</b> &middot; nearest <b>' + esc(body.catchment_k || 260) + '</b> buildings per facility &middot; <b>' + fac.length + '</b> facilities' + (nd ? ' in ' + nd + ' districts' : '') + (source === 'opps' ? ' &middot; ' + opps + ' opportunities' : '');
   }
   function setOpen(open) { $('br-form').hidden = !open; $('br-bar').hidden = open; }
   function failure(status, message) {
@@ -550,9 +573,9 @@
     lastBody = body;
     var q = new URLSearchParams();
     Object.keys(body).forEach(function (k) { if (body[k]) { q.set(k, body[k]); } });
-    if (source === 'upload') { q.set('source', 'upload'); }
+    if (source !== 'opps') { q.set('source', source); }
     history.replaceState(null, '', '?' + q.toString());
-    $('br-summary').innerHTML = settingsSummary(body) + (source === 'upload' ? ' &middot; ' + esc(($('br-file').files[0] || {}).name || 'your file') : '');
+    $('br-summary').innerHTML = settingsSummary(body) + (source === 'upload' ? ' &middot; ' + esc(($('br-file').files[0] || {}).name || 'your file') : source === 'commcare' ? ' &middot; CommCare project ' + esc(($('br-project') && $('br-project').selectedOptions[0] ? $('br-project').selectedOptions[0].text : '')) : '');
     $('br-status').className = 'br-status';
     $('br-status').textContent = 'Loading the visits and reading the footprints. The first run can take about a minute.';
     $('br-out').innerHTML = ''; $('br-run').disabled = true; setOpen(false);
@@ -564,6 +587,11 @@
       $('br-status').textContent = 'Reading your file and the footprints. Nothing is saved.';
       chain = postForm(UPLOAD_URL, body, lastFile, 'buildings');
       empty = 'The file has no household with a usable row. Check the columns against the template.';
+    } else if (source === 'commcare') {
+      if (!$('br-project')) { setOpen(true); $('br-run').disabled = false; $('br-status').className = 'br-status br-err'; $('br-status').textContent = 'Connect your CommCare login and choose a project.'; return; }
+      $('br-status').textContent = 'Reading the project\'s forms and the footprints. Nothing is saved.';
+      chain = post(COMMCARE_URL, Object.assign({}, body, {lens: 'buildings'}));
+      empty = 'No household with a recorded visit was found in this project. Check the app and form namespace, the form paths under Change settings, and that the project has synced.';
     } else {
       // Load first (its own request, so the visits are committed), then read them.
       chain = post(LOAD_URL, body).then(function () { $('br-status').textContent = 'Reading the footprints and placing the households.'; return post(RUN_URL, body); });
@@ -581,7 +609,11 @@
   $('br-change').addEventListener('click', function () { setOpen(true); });
   Array.prototype.forEach.call(document.getElementsByName('br-source'), function (r) { r.addEventListener('change', function () { setSource(r.value); }); });
   setSource(source);
-  if (source === 'opps' && params.get('opps') && params.get('facilities')) { run(); } else { setOpen(true); }
+  if ($('br-connect')) { $('br-connect').addEventListener('click', function () { this.href = this.getAttribute('href').split('?')[0] + '?next=' + encodeURIComponent(location.pathname + '?source=commcare'); }); }
+  if (params.get('project_id') && $('br-project')) { $('br-project').value = params.get('project_id'); }
+  if (params.get('app_id') && $('br-app')) { $('br-app').value = params.get('app_id'); }
+  if (params.get('xmlns') && $('br-xmlns')) { $('br-xmlns').value = params.get('xmlns'); }
+  if ((source === 'opps' && params.get('opps') && params.get('facilities')) || (source === 'commcare' && params.get('project_id') && params.get('facilities') && $('br-project'))) { run(); } else { setOpen(true); }
 }());
 </script>
 {% endblock %}
