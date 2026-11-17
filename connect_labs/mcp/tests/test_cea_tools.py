@@ -381,3 +381,16 @@ def test_the_tool_takes_the_plans_limits_and_how_far_to_trust_the_places(fake_pe
     from connect_labs.effectiveness.scenario import Scenario
 
     assert got["market"] == sizing.market_of(Scenario.from_params(_params(got)))["models"][0]
+
+
+@pytest.mark.django_db
+def test_the_tool_can_price_from_delivered_programmes_and_says_what_it_used(fake_people, monkeypatch):
+    from connect_labs.effectiveness import observed, sizing
+
+    monkeypatch.setattr(sizing, "observed_costs", lambda: {"kc": {"NGA": observed.Observed(30.0, 400, 3, 12_000.0)}})
+    got = cea.cea_market_size(None, indicator="u5mr", model="kc", cost_basis="observed")
+    nga = next(r for r in got["market"]["rows"] if r["iso3"] == "NGA")
+    assert nga["price_observed"] == 30.0 and nga["price_model"] == 60 and nga["cost_per_person"] == pytest.approx(42.0)
+    assert "cost_basis=observed" in got["explorer_path"]
+    plain = cea.cea_market_size(None, indicator="u5mr", model="kc")
+    assert next(r for r in plain["market"]["rows"] if r["iso3"] == "NGA")["cost_per_person"] == 60

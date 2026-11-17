@@ -353,6 +353,16 @@ def cea_opportunities(
                     "people a year) are above this. A place with no figure is kept. It never changes a multiple."
                 ),
             },
+            "cost_basis": {
+                "type": "string",
+                "enum": ["model", "observed"],
+                "description": (
+                    "With `model`: `model` (default) prices a person at the model's own figure everywhere; "
+                    "`observed` moves the price toward what delivered opportunities cost in that country, by how "
+                    "much delivery stands behind it (rows carry `price_model`, `price_observed` and how many "
+                    "opportunities). Observed costs come from small early programmes: read them as evidence, not a price."
+                ),
+            },
             "trust": {
                 "type": "number",
                 "minimum": 0,
@@ -404,6 +414,7 @@ def cea_market_size(
     min_place=None,
     max_countries=None,
     max_conflict=None,
+    cost_basis=None,
     trust=100,
 ):
     if model:
@@ -424,6 +435,7 @@ def cea_market_size(
             min_place=min_place,
             max_countries=max_countries,
             max_conflict=max_conflict,
+            cost_basis=cost_basis,
             trust=trust,
         )
     if basis is None or unit_cost is None:
@@ -545,6 +557,7 @@ def _market_size_by_model(
     min_place=None,
     max_countries=None,
     max_conflict=None,
+    cost_basis=None,
     trust=100,
 ):
     """``cea_market_size`` with a model: the same ``effectiveness.sizing`` the Market size and Workspace pages call,
@@ -575,6 +588,7 @@ def _market_size_by_model(
         ("min_place", min_place),
         ("max_countries", max_countries),
         ("max_conflict", max_conflict),
+        ("cost_basis", None if cost_basis in (None, "model") else cost_basis),
         ("trust", None if trust == 100 else trust),
         ("place_risk", None if place_risk else "0"),
     ):
