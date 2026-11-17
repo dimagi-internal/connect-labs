@@ -349,6 +349,8 @@ boundaries      geoBoundaries ADM0/1, plus ADM2 where IGME models that deep
                                    delivery, and the LBW count built on births
                   └ child_health   diarrhoea, malaria, nutrition, immunisation,
                                    WASH, households, and the gaps they imply
+                  └ poverty        World Bank GSAP by region (one spreadsheet, joined by
+                                   name; unmatched regions are named, not filled)
 ```
 
 Re-running any stage is safe: values upsert on

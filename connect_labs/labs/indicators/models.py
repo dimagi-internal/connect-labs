@@ -82,6 +82,9 @@ class Source(models.TextChoices):
     # Reported conflict deaths from the UCDP Georeferenced Event Dataset, placed
     # in each boundary by point-in-polygon. See sources/ucdp.py.
     UCDP = "ucdp", "UCDP Georeferenced Event Dataset"
+    # The World Bank's Global Subnational Atlas of Poverty: household surveys lined
+    # up to a reference year, by region. See sources/gsap.py.
+    GSAP = "gsap", "World Bank GSAP (poverty)"
     DERIVED = "derived", "Derived"
 
 

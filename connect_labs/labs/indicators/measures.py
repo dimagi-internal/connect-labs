@@ -317,6 +317,45 @@ register(
 
 register(
     Measure(
+        code="poverty_rate_300",
+        threshold_min=5,
+        threshold_max=95,
+        threshold_default=50,
+        label="Below $3.00 a day",
+        kind=Kind.RATE,
+        unit="% of people",
+        agg=Agg.WEIGHTED_MEAN,
+        weight_by="pop_total",
+        downscale=True,
+        description=(
+            "Share of people living below US$3.00 a day (2021 purchasing power), the current extreme-poverty "
+            "line, World Bank GSAP. A household survey lined up to a reference year with national growth, so a "
+            "modelled figure for that year. A region GSAP has no figure for is left blank, not filled."
+        ),
+    )
+)
+
+register(
+    Measure(
+        code="poverty_rate_420",
+        threshold_min=5,
+        threshold_max=95,
+        threshold_default=60,
+        label="Below $4.20 a day",
+        kind=Kind.RATE,
+        unit="% of people",
+        agg=Agg.WEIGHTED_MEAN,
+        weight_by="pop_total",
+        downscale=True,
+        description=(
+            "Share of people living below US$4.20 a day (2021 purchasing power), the lower-middle-income line, "
+            "World Bank GSAP. Tells regions apart in the middle where the $3.00 line reads near 0 or near 100."
+        ),
+    )
+)
+
+register(
+    Measure(
         code="conflict_deaths",
         label="Reported conflict deaths",
         kind=Kind.COUNT,
@@ -1608,6 +1647,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
     ),
     "Seasonality": ("rain_wettest_quarter",),
     "Safety": ("conflict_rate",),
+    "Poverty": ("poverty_rate_300", "poverty_rate_420"),
     "Civil registration": ("birth_certificate",),
 }
 

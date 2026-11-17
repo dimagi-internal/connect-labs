@@ -29,6 +29,7 @@ from connect_labs.labs.indicators.sources import (
     calibrate,
     derive,
     dhs,
+    gsap,
     hapi,
     igme,
     igme_subnational,
@@ -54,6 +55,7 @@ STAGES = (
     "lbw",
     "child_health",
     "national_survey",
+    "poverty",
     "malaria",
     "population_raster",
     "population_agesex",
@@ -460,6 +462,20 @@ class Command(BaseCommand):
                 rows = dhs.load_national(measure, iso_codes=codes)
                 ctx["rows"] = base.upsert(rows)
                 ctx["countries"] = len({r.boundary.iso_code for r in rows})
+
+    def _stage_poverty(self, codes, opts):
+        """Poverty by region (World Bank GSAP), joined to admin-1 boundaries by name.
+
+        Additive and independent of every other stage: it writes the two poverty measures only. Regions that match no
+        boundary are named in the run's detail and left without a value.
+        """
+        with self._run(Source.GSAP, "poverty") as ctx:
+            rows, misses = gsap.load(iso_codes=codes)
+            ctx["rows"] = base.upsert(rows)
+            ctx["countries"] = len({r.boundary.iso_code for r in rows})
+            ctx["detail"] = "; ".join(f"{iso}: {', '.join(m)}" for iso, m in sorted(misses.items()))
+            if misses:
+                self.stdout.write(f"  regions with no boundary match: {ctx['detail']}")
 
     def _stage_rainfall(self, codes, opts):
         """Rainfall seasonality, so a schedule can be defended rather than asserted.
