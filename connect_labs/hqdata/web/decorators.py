@@ -12,10 +12,15 @@ from functools import wraps
 from urllib.parse import quote
 
 from django.contrib.auth import logout
-from django.shortcuts import redirect
+from django.http import Http404
+from django.shortcuts import redirect, render
 
 from connect_labs.hqdata.identity import sync_identity
 from connect_labs.labs.integrations.commcare.cchq_tokens import cchq_token_or_none
+
+
+class ProjectNotYours(Http404):
+    """The project is not one this person may use. Says the same whether or not it exists."""
 
 
 def hq_login_required(view):
@@ -36,6 +41,11 @@ def hq_login_required(view):
             return redirect("/labs/commcare/initiate/")
         request.hq_token = token
         sync_identity(user, token)
-        return view(request, *args, **kwargs)
+        try:
+            return view(request, *args, **kwargs)
+        except ProjectNotYours:
+            # A bare "page not found" tells someone who simply has not joined a project nothing about what to do.
+            # This says the same thing whether the project exists or not, so it reveals nothing about it.
+            return render(request, "hqdata/not_yours.html", {"present_mode": True}, status=404)
 
     return wrapper
