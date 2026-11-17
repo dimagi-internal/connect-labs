@@ -162,7 +162,10 @@ It is about what Claude *sees*, not about whether it may change things.
 - **Build and edit CommCare project pages.** It can create and update dashboard pages for a CommCare project — tiles, tables and charts drawn from that project's forms and cases. Anyone in the project can open or edit a page; only its author or a project admin can delete it.
 - **Set work going on the server.** Creating runs, saving snapshots, rebuilding a report's history, warming a visit cache, handing a report down and publishing a benchmark all work. For these the **server** reads the visits and keeps the result; what comes back to Claude is ids, versions, dates and counts.
 - **Make synthetic data.** It can measure a real opportunity on the server and generate a synthetic copy from that measurement — see [Synthetic Data](synthetic-data.md).
-- **Work with cost-effectiveness scenarios.** It can list and open saved scenarios and size one using `cea_scenarios`. It can also plan to a reach target, work at territory (state/province) level, and read place-level cost-effectiveness figures that account for local newborn mortality. When planning to a reach target it can apply plan limits (smallest place worth including, maximum number of countries), download a by-country summary as a CSV, and assess how the plan holds up if the place figures are only partially reliable. Saving a scenario with `cea_scenario_save` requires a full-access token. Saved scenarios can be renamed, shared with others, or made private again from the scenario list without saving again.
+- **Work with cost-effectiveness scenarios.** It can list and open saved scenarios and size one using `cea_scenarios`. It can also plan to a reach target, work at territory (state/province) level, and read place-level cost-effectiveness figures that account for local newborn mortality. When planning to a reach target it can apply plan limits (smallest place worth including, maximum number of countries), download a by-country summary as a CSV, and assess how the plan holds up if the place figures are only partially reliable. Each territory and country also shows a **Conflict** column — the reported conflict deaths per 100,000 people per year from the Uppsala Conflict Data Program (UCDP) — and a plan can be held to a **"Most reported conflict deaths (per 100,000 a year)"** ceiling that leaves out places above the threshold and reports how many were excluded. A place Labs has no conflict figure for stays in the plan; a multiple is never changed by the conflict figure. Saving a scenario with `cea_scenario_save` requires a full-access token. Saved scenarios can be renamed, shared with others, or made private again from the scenario list without saving again.
+
+!!! note "Conflict figures are reported deaths, not total deaths"
+    The UCDP conflict column records reported deaths only. Events coded less precisely than admin-1 level cannot be placed to a specific territory, so a territory's figure may be a floor rather than a complete count. The country row shows what share of its coded deaths could be placed to a territory. Nothing changes in the data until the `conflict` loader stage has been run.
 
 !!! note "Counts and dates are allowed"
     Opportunity-level counts and dates are on the allowed side of the line, as are the contact details of people who submitted something as an organisation. The line is drawn at an individual visit and its values.
@@ -204,21 +207,4 @@ It is about what Claude *sees*, not about whether it may change things.
 Note the trailing slash on `mcp/no_user_visit/` — without it the address will not work.
 
 !!! tip "Belt and braces: a restricted token too"
-    If you want the restriction to hold even when something is pointed at the full address, mint a **No user visit data** token at [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/) and use that. Either the address or the token is enough on its own; both is simply harder to undo by accident. Stronger still is the account-level lock described above, which an administrator sets.
-
----
-
-## Advanced
-
-Everything below is reference material: tokens, the exact rules of the restricted
-address, job limits and how results are kept. Most people will not need it.
-
-## Personal Access Tokens
-
-Personal Access Tokens let you connect an MCP client to Labs without going through the browser sign-in flow — a script, a scheduled job or any headless agent that cannot open a browser. You create and manage them at [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/).
-
-### Creating and rotating tokens
-
-**No-user-visit tokens** can be created and rotated by you directly on the tokens page, with no extra step.
-
-**Full-access (
+    If you want the restriction to hold even when something is pointed at the full address, mint a **No user visit data** token at [labs.connect.dimagi.com/labs/mcp/tokens/](https://labs.connect.dimagi.com/labs/mcp/tokens/) and use that. Either the address or the token is
