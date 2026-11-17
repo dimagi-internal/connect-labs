@@ -7,14 +7,17 @@ public open data and nothing about the signed-in user (see OpenLocallyMixin) --
 and the dataset changes only when it is loaded or imported. So an answer is
 kept under the request's query and a version of the data, and a new load or
 import gets a new version: every count, highest id and ingest run feeds it, and
-the commands that rewrite rows in place bump it outright. Six hours is the
-backstop for anything that slips past both.
+the commands that rewrite rows in place bump it outright. A cached answer is also the
+product of the code that made it, so the release (the commit a deploy rolled out) is part
+of the version too: a deploy that changes what an answer holds cannot be served stale
+answers from before it. Six hours is the backstop for anything that slips past all three.
 """
 
 from __future__ import annotations
 
 import hashlib
 
+from django.conf import settings
 from django.core.cache import cache
 from django.db.models import Count, Max
 from django.http import HttpResponse
@@ -32,7 +35,7 @@ def invalidate() -> None:
 
 
 def data_version() -> str:
-    """A fingerprint of the dataset, cheap enough to take on every request."""
+    """A fingerprint of the dataset and of the code that answers from it, cheap enough to take on every request."""
     from connect_labs.labs.admin_boundaries.models import AdminBoundary
     from connect_labs.labs.indicators.models import IndicatorValue, IngestRun
 
@@ -40,7 +43,8 @@ def data_version() -> str:
     shapes = AdminBoundary.objects.aggregate(n=Count("pk"), top=Max("pk"))
     run = IngestRun.objects.aggregate(top=Max("pk"))["top"]
     bump = cache.get(_BUMP_KEY) or 0
-    return f"{values['n']}.{values['top']}-{shapes['n']}.{shapes['top']}-{run}-{bump}"
+    release = getattr(settings, "APP_RELEASE", None) or ""
+    return f"{values['n']}.{values['top']}-{shapes['n']}.{shapes['top']}-{run}-{bump}-{release}"
 
 
 def key_for(name: str, request) -> str:
