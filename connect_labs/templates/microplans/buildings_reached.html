@@ -99,7 +99,7 @@
             </div>
             <p class="br-note">Read from the project's stored forms as you (the project's own members only), using the form paths below, and never saved. Only counts and 1 km squares come back, never a household or a point. Sync the project first on its <a class="br-link" href="/commcare/">CommCare page</a> if it is new or out of date.</p>
           {% else %}
-            <p class="br-note">CommCare lists no projects for your login. Add one on the <a class="br-link" href="/commcare/">CommCare page</a>.</p>
+            <p class="br-note">You have not added a CommCare project to labs yet. Add one on the <a class="br-link" href="/commcare/">CommCare page</a> (labs keeps a copy of the project's forms and cases so a report can read them), then come back.</p>
           {% endif %}
         {% else %}
           <p class="br-note">Connect your CommCare login to read a CommCare project (you stay signed in here with Connect). <a class="br-link" id="br-connect" href="{{ connect_commcare_url }}">Connect CommCare</a></p>
