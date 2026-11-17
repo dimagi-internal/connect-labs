@@ -195,6 +195,25 @@ register(
 
 register(
     Method(
+        code="national_lineup",
+        label="Household survey lined up to a year (World Bank GSAP)",
+        resolution=Resolution.NATIONAL,
+        source_order=("gsap",),
+        description=(
+            "Poverty headcounts from the World Bank's Global Subnational Atlas of Poverty: a country's latest "
+            "household survey lined up to a reference year with national growth. Written on a country only where "
+            "GSAP reports the whole country as one region; its territories take it by inheritance."
+        ),
+        caveat=(
+            "A modelled figure for the line-up year, not a measurement of it: the survey may be years older, and "
+            "the row says which year and which survey."
+        ),
+    )
+)
+
+
+register(
+    Method(
         code="national_events",
         label="Reported events, summed to the country (UCDP)",
         resolution=Resolution.NATIONAL,
@@ -269,7 +288,7 @@ register(
         code="subnational_survey",
         label="Survey as measured",
         resolution=Resolution.SUBNATIONAL,
-        source_order=("dhs", "unicef_sdmx"),
+        source_order=("dhs", "unicef_sdmx", "gsap"),
         description=(
             "The survey's own regional figures, unadjusted. What the fieldwork "
             "actually found, at the time it was carried out."

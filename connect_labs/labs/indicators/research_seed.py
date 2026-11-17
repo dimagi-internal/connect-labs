@@ -726,4 +726,50 @@ loaded; the policy would admit it as a second source if one were obtained.
         ],
         "scanned_now": True,
     },
+    {
+        "indicator": "poverty_rate_300",
+        "topic": "which-source",
+        "summary": (
+            "World Bank GSAP is the open source for poverty by region: CC BY 4.0, a free spreadsheet, 51 African "
+            "countries and 712 regions. A survey lined up to a reference year, so modelled for that year."
+        ),
+        "body": """
+GSAP (Global Subnational Atlas of Poverty) gives, per survey region, the share of people below $3.00, $4.20 and
+$8.30 a day (2021 purchasing power). We load the first two: $3.00 is near 100% in the poorest regions and near 0 in
+cities, $4.20 tells regions apart in the middle.
+
+It is a line-up: the latest household survey for a country (its base year) grown to a reference year with national
+growth. Each row keeps both years and the survey's name, so "surveyed 2022, lined up to 2024" is visible. Nigeria's is
+the 2022-23 Living Standards Survey, which is why the Nigerian Bureau's own tables add nothing redistributable.
+
+Regions are keyed to GAUL or GADM codes that do not match our boundaries, so they join by name. Known gaps are left
+blank on purpose: GSAP has no Zamfara or Taraba (Nigeria), no Tigray (Ethiopia), and Sidama sits apart from SNNPR.
+The loader names every region it could not match in the run's detail.
+
+DHS's "population in the lowest wealth quintile" is a different thing: the quintile is cut on the NATIONAL wealth
+index, so it is a relative measure that cannot be compared across countries or read as an income line. It is not
+blended into this figure.
+""".strip(),
+        "checks": [
+            {"kind": "source", "indicator": "poverty_rate_300", "source": "gsap", "expected": True},
+            {"kind": "measure", "code": "poverty_rate_300", "expected": {"kind": "rate"}},
+        ],
+        "alternatives": [
+            {
+                "name": "World Bank GSAP",
+                "url": "https://datacatalog.worldbank.org/search/dataset/0042041",
+                "licence": "CC BY 4.0",
+                "verdict": "adopted",
+                "why": "Open, regional, income-line poverty with its survey and line-up year; no login.",
+            },
+            {
+                "name": "DHS lowest wealth quintile (HC_WIXQ_P_LOW)",
+                "url": "https://api.dhsprogram.com/rest/dhs/data",
+                "licence": "DHS terms",
+                "verdict": "candidate",
+                "why": "Relative to the country, not comparable across countries; useful where GSAP has no region.",
+            },
+        ],
+        "scanned_now": True,
+    },
 )

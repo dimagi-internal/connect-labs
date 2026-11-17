@@ -202,6 +202,15 @@ ALIASES: dict[str, str] = {
     # "Dossa". Normalising both sides onto the correct spelling is the least-bad
     # fix; the alternative is loosening the fuzzy cutoff for everyone.
     "dossa": "dosso",
+    # The World Bank's poverty atlas writes DRC provinces and two Ethiopian regions another way from geoBoundaries.
+    # Both spellings land on one form, so it does not matter which side uses which.
+    "bas uele": "lower uele",
+    "haut uele": "upper uele",
+    "nord kivu": "north kivu",
+    "sud kivu": "south kivu",
+    "kasai central": "central kasai",
+    "hareri": "harari",
+    "beneshangul gumu": "benishangul gumz",
     # Ethiopian zone names reach us transliterated from Amharic while
     # geoBoundaries carries the English. These are the compass words, which are
     # what most of the mismatches turn on.

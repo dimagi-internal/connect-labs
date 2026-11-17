@@ -205,6 +205,16 @@ POLICY: dict[str, tuple[Eligible, ...]] = {
     "births_fertility_check": (
         Eligible(Source.DERIVED, "The fertility-based figure, kept so the cohort-based one can be checked."),
     ),
+    "poverty_rate_300": (
+        Eligible(
+            Source.GSAP,
+            "The World Bank's household-survey line-up by region, the one open source for poverty below the "
+            "country. Regions it has no figure for stay blank.",
+        ),
+    ),
+    "poverty_rate_420": (
+        Eligible(Source.GSAP, "The same line-up at the lower-middle-income line; kept beside the $3.00 one."),
+    ),
     "conflict_deaths": (
         Eligible(
             Source.UCDP,
