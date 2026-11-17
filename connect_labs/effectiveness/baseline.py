@@ -32,6 +32,7 @@ from connect_labs.labs.admin_boundaries.models import AdminBoundary
 from connect_labs.labs.indicators import boundaries as boundary_set
 from connect_labs.labs.indicators.models import IndicatorValue
 from connect_labs.labs.indicators.resolve import BulkResolver, Resolved
+from connect_labs.labs.indicators.sources import derive
 
 LEVEL_NAMES = {0: "country", 1: "state or province", 2: "district"}
 
@@ -179,6 +180,27 @@ MEASURES = (
 )
 
 
+#: Every indicator this layer reads from the baseline, so a rebuild of the baseline can be checked against what the
+#: sizing needs (``tests/test_baseline_reads.py``: each is registered and policy-governed, and none is read that is not
+#: listed). Which loader stage writes each: u5mr, imr, nmr in ``mortality``; the coverage and survey shares in
+#: ``child_health``; births and births_wpp in ``births``; conflict_rate in ``conflict``.
+MEASURES_READ = (
+    "u5mr",
+    "imr",
+    "nmr",
+    "conflict_rate",
+    "births",
+    "births_wpp",
+    "ors_coverage",
+    "vitamin_a_coverage",
+    "deworming_coverage",
+    "exclusive_breastfeeding",
+)
+
+#: The country-level series ``Baselines`` prefetches for a whole country in one query.
+COUNTRY_MEASURES = ("u5mr", "imr", "nmr", "conflict_rate")
+
+
 @dataclass
 class _Row:
     source: str
@@ -231,6 +253,8 @@ class Baselines:
 
     def __init__(self, boundaries: list[AdminBoundary]):
         self._resolver = BulkResolver(boundaries) if boundaries else None
+        self._isos = sorted({b.iso_code for b in boundaries})
+        self._births_audit: dict[str, dict] | None = None
         self._country_rows: dict[str, dict[str, list]] = {}
         if not boundaries:  # country figures only: no database needed
             return
@@ -240,7 +264,7 @@ class Baselines:
         # row ran a production task out of memory, 2026-11-09).
         adm0 = boundary_set.owned().filter(iso_code__in=isos, admin_level=0).values("pk")
         for iso, ind, src, year, value, low, high, extra in IndicatorValue.objects.filter(
-            boundary__in=adm0, indicator__in=("u5mr", "imr", "nmr", "conflict_rate")
+            boundary__in=adm0, indicator__in=COUNTRY_MEASURES
         ).values_list("iso_code", "indicator", "source", "year", "value", "ci_low", "ci_high", "extra"):
             self._country_rows.setdefault(iso, {}).setdefault(ind, []).append(
                 _Row(src, year, value, low, high, (extra or {}).get("interval_level", 0.95))
@@ -279,6 +303,13 @@ class Baselines:
             v.country_value = country
             out[key] = v
         return out
+
+    def births_check(self, iso3: str) -> dict | None:
+        """Our births for a country beside the UN's (``derive.births_audit``): ``{ratio, ours, wpp, off}``, or None
+        when either is missing. ``off`` says the country is more than the audit's tolerance from the UN figure."""
+        if self._births_audit is None:
+            self._births_audit = {a["iso"]: a for a in derive.births_audit(self._isos)} if self._isos else {}
+        return self._births_audit.get(iso3)
 
     def conflict(self, iso3: str, boundary: AdminBoundary | None) -> tuple[float, str] | None:
         """Reported conflict deaths per 100,000 people a year (UCDP) for a place, and where it came from.

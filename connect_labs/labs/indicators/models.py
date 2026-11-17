@@ -85,6 +85,8 @@ class Source(models.TextChoices):
     # The World Bank's Global Subnational Atlas of Poverty: household surveys lined
     # up to a reference year, by region. See sources/gsap.py.
     GSAP = "gsap", "World Bank GSAP (poverty)"
+    # The UN's national births, kept only to check our derived births against.
+    WPP = "wpp", "UN World Population Prospects"
     DERIVED = "derived", "Derived"
 
 

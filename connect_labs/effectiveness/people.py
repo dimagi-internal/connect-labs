@@ -161,6 +161,13 @@ def attach_risk(found: dict) -> dict:
                 p["measures_raw"]["nmr"] = n.value
         if country[p["iso3"]]:
             p["measures"]["nmr_country"] = country[p["iso3"]].value
+        births = baselines.births_check(p["iso3"])
+        if births:
+            p["births_off"] = births["off"]
+            p["measures"]["births_vs_wpp"] = births["ratio"]
+            p["measures_how"][
+                "births_vs_wpp"
+            ] = f"our births {births['ours']:,.0f} against the UN's {births['wpp']:,.0f} ({births['year']})"
         fighting = baselines.conflict(p["iso3"], boundary)
         if fighting:
             p["measures"]["conflict_rate"], p["measures_how"]["conflict_rate"] = fighting
@@ -225,6 +232,7 @@ def for_model(found: dict, model: str) -> dict:
             "measures_se": p.get("measures_se", {}),
             "measures_shared_se": p.get("measures_shared_se", {}),
             "measures_raw": p.get("measures_raw", {}),
+            "births_off": p.get("births_off", False),
         }
         for key, p in found["places"].items()
     }

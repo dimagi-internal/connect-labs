@@ -202,6 +202,12 @@ POLICY: dict[str, tuple[Eligible, ...]] = {
     "births": (
         Eligible(Source.DERIVED, "Computed from a measured infant cohort, or from fertility where that is missing."),
     ),
+    "births_wpp": (
+        Eligible(
+            Source.WPP,
+            "The UN's national count, the one current licensed series. Held only to audit our own births.",
+        ),
+    ),
     "births_fertility_check": (
         Eligible(Source.DERIVED, "The fertility-based figure, kept so the cohort-based one can be checked."),
     ),

@@ -335,23 +335,35 @@ than retrying, keeps whatever was written, and tells you to resume with
 `indicators_bootstrap` encodes this. It matters because a wrong order produces a
 dataset that looks loaded but is quietly short.
 
-```
-boundaries      geoBoundaries ADM0/1, plus ADM2 where IGME models that deep
-  └ parents       derive each unit's parent, which geoBoundaries omits
-  └ mortality     DHS surveys, IGME national series, IGME subnational model
-      └ calibrate     needs BOTH the raw surveys and the IGME series
-      └ fertility     DHS TFR + World Bank national fallback
-          └ population    HAPI (minutes) then WorldPop (hours)
-              └ conflict      UCDP reported conflict deaths (one 40 MB file),
-              │               and the rate per 100,000 on population
-              └ births        derived from population AND mortality
-                  └ lbw            UNICEF-WHO low birthweight + DHS place of
-                                   delivery, and the LBW count built on births
-                  └ child_health   diarrhoea, malaria, nutrition, immunisation,
-                                   WASH, households, and the gaps they imply
-                  └ poverty        World Bank GSAP by region (one spreadsheet, joined by
-                                   name; unmatched regions are named, not filled)
-```
+Run order and what each stage needs (generated from `stages.py`, which both `load_indicators` and `indicators_bootstrap`
+read, so this table cannot disagree with what a rebuild runs):
+
+<!-- stages:start (rendered by stages.markdown_table; tests/test_stages.py checks it) -->
+
+| #   | stage                       | needs                            | what and why                                                                                          |
+| --- | --------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 1   | `mortality`                 | -                                | DHS surveys, the IGME national series, and IGME's subnational model                                   |
+| 2   | `calibrate`                 | mortality                        | re-levels the surveys to the IGME series, so it needs both                                            |
+| 3   | `fertility`                 | -                                | DHS TFR plus the World Bank national fallback                                                         |
+| 4   | `population` (heavy)        | -                                | HAPI first (minutes), then WorldPop (hours, quota-limited)                                            |
+| 5   | `conflict`                  | population                       | UCDP reported conflict deaths per territory, and the rate on population                               |
+| 6   | `births`                    | population, mortality, fertility | the UN's national births, then ours derived from population and mortality, and the audit between them |
+| 7   | `lbw`                       | births                           | UNICEF-WHO low birthweight and DHS place of delivery; the low-birthweight count needs births          |
+| 8   | `child_health`              | population, births               | diarrhoea, nutrition, immunisation, WASH and the gaps they imply (a gap needs a population)           |
+| 9   | `national_survey`           | -                                | the survey's own country figure for every survey indicator the policy admits it for                   |
+| 10  | `poverty`                   | -                                | World Bank GSAP poverty by region, joined to boundaries by name                                       |
+| 11  | `malaria` (heavy)           | -                                | MAP's modelled surfaces aggregated onto our boundaries                                                |
+| 12  | `population_raster` (heavy) | -                                | population summed from WorldPop's own grid, for the units its service refuses                         |
+| 13  | `population_agesex` (heavy) | population_raster                | age bands summed from WorldPop's grids                                                                |
+| 14  | `accessibility` (heavy)     | population_raster                | walking time to healthcare, weighted by where people are                                              |
+| 15  | `settlement` (heavy)        | population_raster                | rural and urban by DEGURBA, counted over people                                                       |
+| 16  | `unicef`                    | -                                | UNICEF's subnational SDMX warehouse: WASH and neonatal mortality where DHS never went                 |
+| 17  | `rainfall` (heavy)          | -                                | CHIRPS rainfall seasonality (120 files to one climatology)                                            |
+
+<!-- stages:end -->
+
+Before stage 1, the boundaries: `load_africa_boundaries` (geoBoundaries ADM0/1, plus ADM2 where IGME models that deep) and
+`link_admin_parents` (each unit's parent, which geoBoundaries omits).
 
 Re-running any stage is safe: values upsert on
 `(indicator, boundary, year, source)`, so a re-run repairs rather than

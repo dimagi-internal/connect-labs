@@ -20,7 +20,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from connect_labs.labs.indicators import boundaries as boundary_set
-from connect_labs.labs.indicators import policy
+from connect_labs.labs.indicators import policy, stages
 from connect_labs.labs.indicators.africa import ISO_CODES
 from connect_labs.labs.indicators.models import IndicatorValue, IngestRun, Source
 from connect_labs.labs.indicators.sources import (
@@ -43,27 +43,10 @@ from connect_labs.labs.indicators.sources import (
     worldpop,
     worldpop_agesex,
     worldpop_raster,
+    wpp,
 )
 
-STAGES = (
-    "mortality",
-    "calibrate",
-    "fertility",
-    "population",
-    "conflict",
-    "births",
-    "lbw",
-    "child_health",
-    "national_survey",
-    "poverty",
-    "malaria",
-    "population_raster",
-    "population_agesex",
-    "accessibility",
-    "settlement",
-    "unicef",
-    "rainfall",
-)
+STAGES = stages.NAMES  # the order and the reasons live in labs/indicators/stages.py
 
 
 class Command(BaseCommand):
@@ -325,12 +308,25 @@ class Command(BaseCommand):
         return rows
 
     def _stage_births(self, codes, opts):
+        # The UN's national births first: they are only read afterwards, by the audit at the end of this stage.
+        with self._run(Source.WPP, wpp.MEASURE) as ctx:
+            rows = wpp.load(iso_codes=codes)
+            ctx["rows"] = base.upsert(rows)
+            ctx["countries"] = len({r.boundary.iso_code for r in rows})
         self._derive("births", derive.load, codes)
         self._derive("births_fertility_check", derive.load_fertility_crosscheck, codes)
 
         # Depend on births, so they run last in this stage.
         self._derive("expected_deaths", derive.load_expected_deaths, codes)
         self._derive("births_lbw", derive.load_lbw_births, codes)
+
+        off = [a for a in derive.births_audit(iso_codes=codes) if a["off"]]
+        if off:
+            self.stdout.write(
+                "  births vs UN WPP, countries more than "
+                f"{derive.BIRTHS_TOLERANCE:.0%} apart: "
+                + ", ".join(f"{a['iso']} {a['ratio']:.2f}x" for a in sorted(off, key=lambda a: a["iso"]))
+            )
 
         div = derive.births_divergence(iso_codes=codes)
         if div:

@@ -427,6 +427,20 @@
                   ') are counted from a regional low-birthweight rate: UNICEF-WHO publish no national figure for these countries, so the count describes the region.',
               }),
             );
+          if (p.births_off && p.births_off.people > 0)
+            kids.push(
+              h('p', {
+                class: 'lo',
+                text:
+                  num(p.births_off.people) +
+                  ' of the people planned (' +
+                  p.births_off.places +
+                  (p.births_off.places === 1 ? ' place' : ' places') +
+                  ' in ' +
+                  p.births_off.countries.join(', ') +
+                  ") are in countries where our births total is more than 15% away from the UN's: the population layer may be wrong there, so their counts are less sure.",
+              }),
+            );
           if (p.reliability) {
             var rel = p.reliability,
               dd = rel.deaths;
