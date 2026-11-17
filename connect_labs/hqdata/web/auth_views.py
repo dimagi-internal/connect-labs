@@ -1,7 +1,7 @@
 """CommCare HQ OAuth as a way into labs for people with no Connect login.
 
 Same HQ OAuth application as Campaign and the labs CommCare connection (``access_apis`` scope,
-PKCE). The redirect URI this flow uses (``settings.HQ_LOGIN_CALLBACK_PATH``), has to be registered on that
+PKCE). The redirect URI this flow uses, ``/commcare/login/callback/``, has to be registered on that
 application in CommCare HQ: until it is, HQ refuses the authorization request.
 """
 
@@ -20,6 +20,7 @@ from django.contrib.auth import login, logout
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect
 from django.shortcuts import render as django_render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
@@ -44,7 +45,7 @@ def render(request, template, context=None, **kwargs):
 
 def _callback_uri(request: HttpRequest) -> str:
     """The redirect URI sent to HQ, which must match one registered on its OAuth app exactly."""
-    return request.build_absolute_uri(getattr(settings, "HQ_LOGIN_CALLBACK_PATH", "/hq/login/callback/"))
+    return request.build_absolute_uri(reverse("hq:login_callback"))
 
 
 def _safe_next(value: str | None) -> str:

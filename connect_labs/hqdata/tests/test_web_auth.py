@@ -48,8 +48,7 @@ def test_initiate_sends_the_person_to_commcare_with_pkce_and_our_callback(client
     q = {k: v[0] for k, v in parse_qs(url.query).items()}
     assert f"{url.scheme}://{url.netloc}{url.path}" == "https://www.commcarehq.org/oauth/authorize/"
     assert q["client_id"] == "client-id" and q["scope"] == "access_apis" and q["response_type"] == "code"
-    # Until /commcare/login/callback/ is registered on the HQ OAuth app, sign-in keeps using the registered /hq/ one.
-    assert q["redirect_uri"].endswith("/hq/login/callback/")
+    assert q["redirect_uri"].endswith("/commcare/login/callback/")
     assert (
         q["code_challenge_method"] == "S256" and q["code_challenge"] and q["state"] == client.session["hq_login_state"]
     )
@@ -178,17 +177,10 @@ def test_a_very_long_commcare_username_still_fits_the_user_table():
     assert identity_username(HOST, "x" * 400) != identity_username(HOST, "x" * 399 + "y")
 
 
-def test_the_callback_path_is_a_setting_so_it_can_move_once_the_new_address_is_registered(client, settings):
-    settings.HQ_LOGIN_CALLBACK_PATH = "/commcare/login/callback/"
-    resp = client.get("/commcare/login/initiate/")
-    q = {k: v[0] for k, v in parse_qs(urlparse(resp["Location"]).query).items()}
-    assert q["redirect_uri"].endswith("/commcare/login/callback/")
-
-
-def test_the_old_callback_address_still_receives_the_sign_in_and_both_addresses_reach_the_same_view(client):
-    for path in ("/hq/login/callback/", "/commcare/login/callback/"):
-        resp = client.get(path)  # no code or state: refused by the callback itself, not a 404 and not a redirect
-        assert resp.status_code == 400, path
+def test_the_callback_lives_at_the_new_address_and_the_old_one_just_redirects(client):
+    assert client.get("/commcare/login/callback/").status_code == 400  # refused by the callback itself (no code)
+    old = client.get("/hq/login/callback/?code=x&state=y")
+    assert old.status_code == 302 and old["Location"] == "/commcare/login/callback/?code=x&state=y"
 
 
 def test_everything_else_on_the_old_address_moves_to_the_new_one_and_keeps_its_query(client):
