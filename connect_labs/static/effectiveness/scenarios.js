@@ -176,12 +176,7 @@
             h('b', { text: s.name }),
             s.group
               ? h('small', {
-                  text:
-                    s.group.name +
-                    ' · ' +
-                    s.group.position +
-                    ' of ' +
-                    s.group.count,
+                  text: 'Scenario ' + s.group.position + ' of ' + s.group.count,
                 })
               : null,
             h('small', { text: meta }),
@@ -193,10 +188,37 @@
     }
 
     function drawLists() {
+      // A list is read by group: each group's scenarios in its order, then the ones in no group.
+      function rows(items) {
+        var groups = [];
+        var loose = [];
+        items.forEach(function (s) {
+          if (!s.group) return loose.push(s);
+          var g = groups.filter(function (x) {
+            return x.id === s.group.id;
+          })[0];
+          if (!g)
+            groups.push(
+              (g = { id: s.group.id, name: s.group.name, items: [] }),
+            );
+          g.items.push(s);
+        });
+        var out = [];
+        groups.forEach(function (g) {
+          g.items.sort(function (a, b) {
+            return a.group.position - b.group.position;
+          });
+          out.push(h('div', { class: 'gs', text: g.name }));
+          out = out.concat(g.items.map(row));
+        });
+        if (groups.length && loose.length)
+          out.push(h('div', { class: 'gs', text: 'Not in a group' }));
+        return out.concat(loose.map(row));
+      }
       function block(title, items, empty) {
         return [h('div', { class: 'gt', text: title })].concat(
           items.length
-            ? items.map(row)
+            ? rows(items)
             : [h('p', { class: 'muted', text: empty })],
         );
       }

@@ -81,7 +81,7 @@
       },
       {
         description:
-          'On a group page, recompute every scenario with today’s data and models (takes about a minute) and show what has moved since it was baselined.',
+          'On a group page, recompute every scenario with today’s data and models (takes about 30 seconds) and show what has moved since it was baselined.',
         input_schema: { type: 'object', properties: {} },
       },
     ],
