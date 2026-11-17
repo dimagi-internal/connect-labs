@@ -1,4 +1,4 @@
-{% comment %}
+{% load supply_chain_extras %}{% comment %}
 The one date control for viewing a program page as of a past day (design doc
 §4.4, history/as_of.py). Shown only where as_of_view wraps the page -- the
 context processor sets supply_as_of_available -- so the market, which is
@@ -37,6 +37,33 @@ a block inside an include cannot fill the parent's.
            value="{% if supply_as_of %}{{ supply_as_of|date:'j M Y' }}{% endif %}"
            {% if supply_as_of %}data-testid="as-of-date" title="Viewing as of {{ supply_as_of|date:'j M Y' }}; choose another day"{% endif %}
            class="w-36 rounded-md border border-gray-300 px-2 py-1 text-sm">
+    {% compact_layout as supply_compact %}
+    {% if supply_compact %}
+      {% comment %}The compact layout (chlorine) adds a calendar to pick the day from ("it's difficult to see", Akash,
+      2026-11-17): the browser's picker opens from the button, and the day it gives is written into the field in the
+      page's own format and opened at once. The field still takes a typed day.{% endcomment %}
+      <button type="button" data-as-of-pick data-testid="as-of-calendar" aria-label="Pick a day from a calendar" title="Pick a day"
+              class="px-2 py-1 rounded-md border border-gray-300 bg-white hover:bg-gray-50"><i class="fa-regular fa-calendar" aria-hidden="true"></i></button>
+      <input type="date" data-as-of-native tabindex="-1" aria-hidden="true" max="{% now 'Y-m-d' %}"
+             {% if supply_as_of %}value="{{ supply_as_of|date:'Y-m-d' }}"{% endif %}
+             style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+      <script>
+        (function () {
+          var form = document.currentScript.closest("form");
+          var native = form.querySelector("[data-as-of-native]"), field = form.querySelector('input[name="as_of"]');
+          var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+          form.querySelector("[data-as-of-pick]").addEventListener("click", function () {
+            try { native.showPicker(); } catch (e) { native.focus(); native.click(); }
+          });
+          native.addEventListener("change", function () {
+            if (!native.value) return;
+            var p = native.value.split("-");
+            field.value = parseInt(p[2], 10) + " " + MONTHS[parseInt(p[1], 10) - 1] + " " + p[0];
+            form.submit();
+          });
+        })();
+      </script>
+    {% endif %}
     <button type="submit" class="px-3 py-1 rounded-md border border-gray-300 bg-white hover:bg-gray-50">Go</button>
   </form>
   {% endif %}
