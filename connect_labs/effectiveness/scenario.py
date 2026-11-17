@@ -8,7 +8,10 @@ change made on one page is the same change on the next and any state is a link s
 * **Places**: an indicator over a threshold in some countries (``indicator=all`` means everywhere with data), at the
   grain of a ``country`` or a ``territory`` (a state or province).
 * **Programmes**: one or more models.
-* **Target**: how many people to reach. With one, the best places are filled first (``market.plan``).
+* **Target**: how many people to reach. With one, the best places are filled first (``market.plan``), within any
+  **limits** (the smallest place worth working in, the most countries).
+* **Trust**: how far to believe a place's own figures, from 100% (all of it) down to 0% (a territory takes its
+  country's, a country takes the model's): the way to see whether a plan survives noisy data.
 * **Dials**: three plain changes to a model, the same on every page: ``extra`` (dollars a person a year the model does
   not count; below zero when delivery is cheaper), ``effect`` (% of the model's effect on deaths) and ``reach`` (the
   most of a place's cases the programme can reach, in %). Link key ``<model>_<dial>``. A model whose practical reach is
@@ -116,6 +119,9 @@ class Scenario:
     iso: tuple[str, ...] = ()
     bar: float | None = None
     target: float | None = None
+    min_place: float | None = None
+    max_countries: int | None = None
+    trust: float = 100.0
     place_risk: bool = True
     grain: str = DEFAULT_GRAIN
     dials: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
@@ -148,6 +154,8 @@ class Scenario:
             if raw:
                 overrides[m] = explore.clean_overrides(m, raw)
         grain = (params.get("grain") or DEFAULT_GRAIN).strip()
+        most = number(params.get("max_countries"), positive=True)
+        trust = number(params.get("trust"), 100.0)
         return cls(
             models=tuple(models) or (DEFAULT_MODEL,),
             indicator=(params.get("indicator") or EVERYWHERE).strip(),
@@ -155,6 +163,9 @@ class Scenario:
             iso=tuple(w.upper() for w in _words(params.get("iso", ""))),
             bar=number(params.get("bar"), positive=True),
             target=number(params.get("target"), positive=True),
+            min_place=number(params.get("min_place"), positive=True),
+            max_countries=max(1, int(most)) if most else None,
+            trust=min(trust, 100.0),
             place_risk=str(params.get("place_risk", "1")).strip().lower() not in ("0", "false", "off", "no"),
             grain=grain if grain in GRAINS else DEFAULT_GRAIN,
             dials=dials,
@@ -191,7 +202,9 @@ class Scenario:
         scaled_off = int(not self.place_risk and any(m in market.PLACE_RISK for m in self.models))
         return {
             "dials": sum(len(self.dials.get(m, {})) for m in self.models),
-            "assumptions": sum(len(self.overrides.get(m, {})) for m in self.models) + scaled_off,
+            "assumptions": sum(len(self.overrides.get(m, {})) for m in self.models)
+            + scaled_off
+            + int(self.trust != 100.0),
         }
 
     # ---- writing
@@ -223,6 +236,12 @@ class Scenario:
             out["bar"] = _s(self.bar)
         if self.target is not None:
             out["target"] = _s(self.target)
+        if self.min_place is not None:
+            out["min_place"] = _s(self.min_place)
+        if self.max_countries is not None:
+            out["max_countries"] = str(self.max_countries)
+        if self.trust != 100.0:
+            out["trust"] = _s(self.trust)
         if not self.place_risk:
             out["place_risk"] = "0"
         if self.grain != DEFAULT_GRAIN:
@@ -243,6 +262,9 @@ class Scenario:
             "iso": ",".join(self.iso),
             "bar": self.resolved_bar(default_bar),
             "target": self.target,
+            "min_place": self.min_place,
+            "max_countries": self.max_countries,
+            "trust": self.trust,
             "place_risk": self.place_risk,
             "grain": self.grain,
             "dials": {m: self.dials_for(m) for m in engine.MODELS},

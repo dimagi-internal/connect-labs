@@ -90,6 +90,25 @@
       put(status, kids);
     }
 
+    // Rename, or share or unshare, a scenario of yours: the list is redrawn before the message, as for a save.
+    function change(s, patch, said) {
+      call('PATCH', data.scenarios_url + s.id + '/', patch).then(
+        function (res) {
+          if (!res.ok) return say(res.j.error, true);
+          if (loaded && loaded.id === s.id) {
+            loaded = Object.assign({}, loaded, {
+              name: res.j.name,
+              shared: res.j.shared,
+            });
+            drawStatus();
+          }
+          refresh().then(function () {
+            say(said);
+          });
+        },
+      );
+    }
+
     function row(s) {
       var open = h('button', { type: 'button', class: 'btn', text: 'Open' });
       open.addEventListener('click', function () {
@@ -97,6 +116,32 @@
       });
       var kids = [open];
       if (s.mine) {
+        // Share it with everyone on Labs, or make it private again.
+        var share = h('button', {
+          type: 'button',
+          class: 'btn',
+          text: s.shared ? 'Make private' : 'Share',
+        });
+        share.addEventListener('click', function () {
+          change(
+            s,
+            { shared: !s.shared },
+            (s.shared ? 'Made "' : 'Shared "') +
+              s.name +
+              '"' +
+              (s.shared ? ' private.' : ' with everyone on Labs.'),
+          );
+        });
+        var rename = h('button', {
+          type: 'button',
+          class: 'btn',
+          text: 'Rename',
+        });
+        rename.addEventListener('click', function () {
+          var to = prompt('Rename "' + s.name + '" to:', s.name);
+          if (to == null || to.trim() === '' || to.trim() === s.name) return;
+          change(s, { name: to.trim() }, 'Renamed to "' + to.trim() + '".');
+        });
         var del = h('button', { type: 'button', class: 'btn', text: 'Delete' });
         del.addEventListener('click', function () {
           if (!confirm('Delete "' + s.name + '"?')) return;
@@ -111,7 +156,7 @@
             });
           });
         });
-        kids.push(del);
+        kids.push(share, rename, del);
       }
       var meta =
         (s.mine ? '' : s.owner + ' · ') +

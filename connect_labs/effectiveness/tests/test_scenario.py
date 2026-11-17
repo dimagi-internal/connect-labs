@@ -130,3 +130,26 @@ def test_the_server_and_the_browser_agree_on_the_link():
     sc = Scenario.from_params(contract["link"])
     assert sc.to_state(contract["default_bar"]) == contract["state"]
     assert sc.to_params() == contract["link"]
+
+
+def test_trust_and_the_plans_limits_are_in_the_link_only_when_set():
+    sc = Scenario.from_params({"models": "kc", "trust": "60", "min_place": "20000", "max_countries": "5"})
+    assert (sc.trust, sc.min_place, sc.max_countries) == (60.0, 20_000.0, 5)
+    assert sc.to_params() == {"models": "kc", "trust": "60", "min_place": "20000", "max_countries": "5"}
+    d = Scenario.from_params({"models": "kc", "trust": "100", "min_place": "-5", "max_countries": "0"})
+    assert (d.trust, d.min_place, d.max_countries) == (100.0, None, None) and d.to_params() == {"models": "kc"}
+
+
+def test_trust_cannot_go_past_everything_and_a_fractional_country_count_is_one():
+    assert Scenario.from_params({"trust": "250"}).trust == 100.0
+    assert Scenario.from_params({"trust": "-5"}).trust == 100.0
+    assert Scenario.from_params({"max_countries": "0.4"}).max_countries == 1
+    assert Scenario.from_params({"max_countries": "2.9"}).max_countries == 2
+
+
+def test_believing_the_places_less_counts_as_a_change_and_a_limit_does_not():
+    assert Scenario.from_params({"models": "kc", "trust": "50"}).changes() == {"dials": 0, "assumptions": 1}
+    assert Scenario.from_params({"models": "kc", "min_place": "1000", "max_countries": "3"}).changes() == {
+        "dials": 0,
+        "assumptions": 0,
+    }

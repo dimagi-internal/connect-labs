@@ -397,3 +397,33 @@
 .mk .tile .big.lo {
   color: var(--low);
 }
+
+.mk td,
+.mk th {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.mk td.far {
+  color: var(--low);
+}
+.mk .cl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 6px 0;
+  font-size: 12.5px;
+}
+.mk .cc b {
+  font-weight: 600;
+}
+.mk .plan p.lo {
+  color: var(--low);
+}
+.mk .srow .sb {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.mk .srow .sb .btn {
+  padding: 3px 8px;
+  font-size: 12px;
+}

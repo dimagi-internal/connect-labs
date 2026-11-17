@@ -63,15 +63,33 @@ model's flat figure.
 **Territories.** Neonatal mortality is held nationally for every African country and below the country for about 24
 (`Baselines.newborn_mortality`): the territory's own figure, else the country's scaled by how the territory's under-five
 mortality compares (the models' own recipe for a subnational place), else the country's. At the `territory` grain every state
-or province is a place, so where small babies are likelier to die shows within a country. What is not in the model at all and
-so cannot change a ranking yet: delivery cost by place (one price per model; override it per scenario), how reachable the
-territory is (travel time, security, facility delivery are baseline indicators not used here), and existing coverage.
+or province is a place, so where small babies are likelier to die shows within a country. **Every model** takes its
+territory's own place inputs where Labs holds them, by the same recipes Implementations value a delivery with
+(`Baselines.for_area`: surveyed ORS, vitamin A and deworming coverage; the country's diarrhoea and child death rates, and
+newborn and infant death rates, scaled by the territory's mortality); an input with nothing local keeps the model's country
+figure. A country takes the model's own figures, not a roll-up of its territories. `place_risk=0` switches all of it off.
+
+**Believing the figures.** A territory's figure is only as good as the survey or estimate behind it (a remote area's survey
+can under-report; the UN estimate for Zimbabwe's neonatal mortality is 33.7 with a range of about 22 to 50, and earlier
+releases put it near 24). So `trust` (0 to 100, link key `trust`) pulls every local figure toward what is known one level up:
+a territory toward its country's, a country toward the model's. A figure more than twice, or under half, its country's is
+marked in the table (`far_from_country`), with the figure, its country's and its source in the tooltip. Every plan also carries
+`check`: the same places valued at half trust, set beside the best plan for those figures. Near 100% the plan does not depend
+on the figures being right; low, it leans on them, and the page says so. (Uncertainty ranges themselves are not shown: the
+national IGME loader does not store them; `ci_low`/`ci_high` exist on the baseline and would slot in.)
 
 **The plan.** Give a target (`target=1000000`) and `market.plan` fills the places with the highest multiple first, each up to
 the most that can be reached there (the `reach` dial), until the target is met, then reports the people, cost, deaths
 averted, cost per death averted and the spend-weighted multiple of the whole, how far short the places fall if they cannot
-give it, and what spreading the same people evenly would have averted instead. A place with no model figures is never
-chosen. `sizing.overall` is the headline the pages show across the programmes chosen.
+give it, and what spreading the same people evenly would have averted instead. Two limits make it something a team can run:
+`min_place` leaves out any place that can give fewer people (and counts them), and `max_countries` keeps to the countries the
+best plan leans on most (the best plan is made, its countries ranked by the deaths they avert, and it is made again within
+the first N); `countries_needed` says how many countries it takes to reach the target at all. The plan adds up by country, and
+downloads as a CSV (`/labs/cea/market/plan.csv`, same link keys). A place with no model figures is never chosen.
+`sizing.overall` is the headline the pages show across the programmes chosen.
+
+On real data the best 1M-case Kangaroo Care plan is spread over 145 territories in 26 countries, but ten countries reach the
+same million at 97% of its deaths averted: concentrating costs little, which is what the limits are for.
 
 ### Saved scenarios
 
@@ -80,8 +98,8 @@ panel in `scenarios.js`, shared by Market size and the workspace). What is store
 the numbers, so opening one reads it with today's models; `saved_against` (the vendored model commit and each programme's
 spec version) is how a scenario says "the models have moved since this was saved" (`models_changed`).
 
-* Private until its owner shares it; a shared one is read and copied by every signed-in user, replaced or deleted only by its
-  owner. Someone else's private scenario is "not found", the same answer as one that does not exist.
+* Private until its owner shares it (the panel's Share / Make private button, or `PATCH` `{shared}`); a shared one is read and
+  copied by every signed-in user, replaced, renamed (`PATCH` `{name}`) or deleted only by its owner. Someone else's private scenario is "not found", the same answer as one that does not exist.
 * A name is per person. Saving a name you already have is refused (409) unless `overwrite`, and the panel asks first.
 * Open one with `?scenario=<id>` on either page (any other key in the link then changes it); the address bar becomes the plain
   link at once. One that cannot be opened (not yours, or an input of a model that has gone) opens the default and says why.
@@ -126,7 +144,7 @@ An agent computes what the page shows, from the same code, and gets the page's l
 
 - `cea_model_run`: a model at inputs you set, with the sensitivity (inputs switched on, grouped), scenarios, places.
 - `cea_scenarios`, `cea_scenario_save`: save, list and open scenarios (above).
-- `cea_market_size` with `model` takes the scenario's options too: `grain`, `target` (returns the `plan`), `dials`, `place_risk`.
+- `cea_market_size` with `model` takes the scenario's options too: `grain`, `target` (returns the `plan`), `min_place`, `max_countries`, `trust`, `dials`, `place_risk`.
 - `cea_opportunities`: any selection of delivered opportunities with its roll-up (full tokens only).
 - `cea_market_size`: Market size. With `model` it is the page's answer (the model's own price, run at each country's
   figures, with the part that clears the bar); without it, a unit cost you set.
@@ -165,7 +183,9 @@ ERROR (Sentry) and the models page shows a one-line note until the specs are ref
 
 - Saved scenarios: rename and share/unshare without re-saving, versions, and a way to attach one to a proposal.
 - Delivery cost by place (Connect's actual price per case by country or programme) and territory reachability (travel time,
-  security) as inputs to the plan; today only risk differs by place.
+  security) as inputs to the plan; today the places differ by their own mortality and coverage figures, not by what it
+  costs to work in them or how hard they are to reach. Real uncertainty ranges on mortality (a loader change and a data
+  reload).
 - Put CEA models and Implementations on the scenario too (their own link keys differ: `i_<input>`, `m`), and give the
   workspace a Need lens, a Delivered layer, and region-level shapes (the models hold country figures, so a region's number
   would be an allocation of its country's).

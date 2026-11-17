@@ -17,6 +17,22 @@
   function pct(v, d) {
     return v == null ? '–' : (v * 100).toFixed(d == null ? 1 : d) + '%';
   }
+  // What a reader needs to judge a place's baseline risk: whose figure it is, where it came from, and whether it is far off.
+  function riskTitle(x) {
+    if (x.risk_basis !== 'place')
+      return "the model's own figure, not scaled to this place";
+    return (
+      "scaled to this place's newborn mortality of " +
+      x.measure.toFixed(1) +
+      (x.measure_country
+        ? ' (its country: ' + x.measure_country.toFixed(1) + ')'
+        : '') +
+      (x.measure_how ? ', ' + x.measure_how : '') +
+      (x.far_from_country
+        ? ". More than twice (or under half) its country's: check the source."
+        : '')
+    );
+  }
   function placeLabel(x) {
     return x.name === x.country ? x.name : x.name + ', ' + x.country;
   }
@@ -192,6 +208,25 @@
           );
         }
       });
+      r.models.forEach(function (m) {
+        var label = data.models[m.model].label,
+          pr = m.place_risk;
+        if (pr.on && pr.local_inputs)
+          lines.push(
+            label +
+              ': ' +
+              pr.local_inputs +
+              " territories use their own coverage and mortality figures where Labs has them, and the model's country figure where it does not.",
+          );
+        if (pr.far_from_country)
+          lines.push(
+            pr.far_from_country +
+              (pr.far_from_country === 1
+                ? ' place has a figure'
+                : ' places have a figure') +
+              ' more than twice (or under half) its country\'s: as often a survey artefact as a real difference, so the table marks them. Lower "trust" to see what changes without them.',
+          );
+      });
       var missing = r.selection.unsupported.length;
       put(
         els.note,
@@ -258,6 +293,46 @@
                   ' short. Widen the places, or raise the most you can reach.',
               }),
             );
+          if (p.limits && (p.limits.min_place || p.limits.max_countries))
+            kids.push(
+              h('p', {
+                class: 'muted',
+                text:
+                  'Limits: ' +
+                  (p.limits.min_place
+                    ? 'places that can give under ' +
+                      num(p.limits.min_place) +
+                      ' are left out (' +
+                      p.limits.left_out +
+                      ' of them)'
+                    : '') +
+                  (p.limits.min_place && p.limits.max_countries ? '; ' : '') +
+                  (p.limits.max_countries
+                    ? 'at most ' +
+                      p.limits.max_countries +
+                      (p.limits.max_countries === 1 ? ' country' : ' countries')
+                    : '') +
+                  '.',
+              }),
+            );
+          if (
+            !p.feasible &&
+            p.countries_needed &&
+            p.limits &&
+            p.limits.max_countries &&
+            p.limits.max_countries < p.countries_needed
+          )
+            kids.push(
+              h('p', {
+                class: 'muted',
+                text:
+                  'It takes at least ' +
+                  p.countries_needed +
+                  ' countries to reach ' +
+                  num(p.target) +
+                  ' at all.',
+              }),
+            );
           kids.push(
             h('p', { class: 'planline' }, [
               h('b', {
@@ -305,6 +380,83 @@
               }),
             );
           }
+          if (p.check) {
+            var k = p.check;
+            kids.push(
+              h('p', {
+                class:
+                  k.kept_share != null && k.kept_share < 0.9 ? 'lo' : 'muted',
+                text:
+                  'If the place figures are only half to be believed, these places would still avert ' +
+                  num(k.kept_deaths) +
+                  ' deaths: ' +
+                  pct(k.kept_share, 0) +
+                  ' of the ' +
+                  num(k.best_deaths) +
+                  ' the best plan for those figures would. ' +
+                  k.places_in_common +
+                  ' of the ' +
+                  k.places +
+                  ' places are in both.' +
+                  (k.kept_share != null && k.kept_share < 0.9
+                    ? ' This plan leans on the figures being right.'
+                    : ''),
+              }),
+            );
+          }
+          if (p.countries && p.countries.length > 1)
+            kids.push(
+              h(
+                'details',
+                { class: 'muted', open: p.countries.length <= 6 ? true : null },
+                [
+                  h('summary', {
+                    text: 'By country (' + p.countries.length + ')',
+                  }),
+                  h(
+                    'div',
+                    { class: 'cl' },
+                    p.countries
+                      .slice(0, 12)
+                      .map(function (c) {
+                        return h('span', { class: 'cc' }, [
+                          h('b', { text: c.country }),
+                          ' ' +
+                            num(c.reached) +
+                            ' · ' +
+                            c.places +
+                            (c.places === 1 ? ' place' : ' places') +
+                            ' · ' +
+                            usd(c.cost) +
+                            ' · ' +
+                            mult(c.multiple),
+                        ]);
+                      })
+                      .concat(
+                        p.countries.length > 12
+                          ? [
+                              h('span', {
+                                class: 'cc',
+                                text:
+                                  '+ ' + (p.countries.length - 12) + ' more',
+                              }),
+                            ]
+                          : [],
+                      ),
+                  ),
+                ],
+              ),
+            );
+          if (opts.csvHref)
+            kids.push(
+              h('p', { css: { margin: '4px 0' } }, [
+                h('a', {
+                  class: 'link',
+                  href: opts.csvHref(),
+                  text: 'Download this plan (CSV)',
+                }),
+              ]),
+            );
           var shown = planAll ? p.places : p.places.slice(0, 12);
           kids.push(
             h('div', { class: 'scroll' }, [
@@ -489,7 +641,9 @@
       els.more.textContent = showAll
         ? 'Show fewer'
         : 'Show all ' + rows.length + ' rows';
-      var head = ['Place', 'Programme'].concat(
+      // The programme is only worth a column when there is more than one.
+      var many = r.models.length > 1;
+      var head = (many ? ['Place', 'Programme'] : ['Place']).concat(
         hasPlan ? ['Planned'] : [],
         ['People', 'A year, each', 'Market', 'Deaths a year'],
         anyRisk ? ['Baseline risk'] : [],
@@ -501,7 +655,7 @@
             'tr',
             {},
             head.map(function (t, i) {
-              return h('th', { class: i < 2 ? '' : 'n', text: t });
+              return h('th', { class: i < (many ? 2 : 1) ? '' : 'n', text: t });
             }),
           ),
         ]),
@@ -510,10 +664,11 @@
           {},
           shown.map(function (o) {
             var x = o.x;
-            var cells = [
-              h('td', { text: placeLabel(x) }),
-              h('td', { text: data.models[o.m].label.split(' ')[0] }),
-            ];
+            var cells = [h('td', { text: placeLabel(x) })];
+            if (many)
+              cells.push(
+                h('td', { text: data.models[o.m].label.split(' ')[0] }),
+              );
             if (hasPlan)
               cells.push(
                 h('td', { class: 'n', text: x.planned ? num(x.planned) : '–' }),
@@ -530,15 +685,14 @@
             if (anyRisk)
               cells.push(
                 h('td', {
-                  class: 'n',
-                  title:
-                    x.risk_basis === 'place'
-                      ? "scaled to this place's newborn mortality"
-                      : "the model's own figure",
+                  class: 'n' + (x.far_from_country ? ' far' : ''),
+                  title: riskTitle(x),
                   text:
                     x.risk == null
                       ? '–'
-                      : pct(x.risk) + (x.risk_basis === 'place' ? '' : '*'),
+                      : pct(x.risk) +
+                        (x.risk_basis === 'place' ? '' : '*') +
+                        (x.far_from_country ? ' ⚠' : ''),
                 }),
               );
             cells.push(
@@ -605,5 +759,6 @@
     mult: mult,
     pct: pct,
     placeLabel: placeLabel,
+    riskTitle: riskTitle,
   };
 })();

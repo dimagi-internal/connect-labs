@@ -40,6 +40,7 @@
     var chips = h('div', { class: 'models' });
     var targetBox = h('div');
     var riskBox = h('div');
+    var trustBox = h('div');
     var dialsBox = h('div');
     var inputsBox = h('div');
     var EVERYWHERE = window.EffScenario.EVERYWHERE;
@@ -143,6 +144,26 @@
       input.addEventListener('input', function () {
         if (input.value.trim() === '') scn.setTarget(null);
       });
+      var small = number(
+        s.min_place == null ? '' : s.min_place,
+        function (v) {
+          scn.setLimit('min_place', v);
+        },
+        { min: '0', placeholder: 'no minimum' },
+      );
+      small.addEventListener('input', function () {
+        if (small.value.trim() === '') scn.setLimit('min_place', null);
+      });
+      var most = number(
+        s.max_countries == null ? '' : s.max_countries,
+        function (v) {
+          scn.setLimit('max_countries', Math.floor(v));
+        },
+        { min: '1', step: '1', placeholder: 'no limit' },
+      );
+      most.addEventListener('input', function () {
+        if (most.value.trim() === '') scn.setLimit('max_countries', null);
+      });
       put(targetBox, [
         field(
           'People to reach' +
@@ -150,6 +171,26 @@
           input,
           noun +
             '. Leave blank for everyone it can reach; give a number and the best places are filled first.',
+        ),
+        h(
+          'details',
+          {
+            class: 'mi',
+            open: s.min_place != null || s.max_countries != null ? true : null,
+          },
+          [
+            h('summary', { text: 'Plan limits' }),
+            field(
+              'Smallest place worth working in (people it can give)',
+              small,
+              'A place that can give fewer is left out of the plan.',
+            ),
+            field(
+              'Most countries',
+              most,
+              'Keeps to the countries the best plan leans on most; the plan says how many it takes to reach the target at all.',
+            ),
+          ],
         ),
       ]);
     }
@@ -188,6 +229,24 @@
             r.label +
             ", from the model's own country scenarios. Switch off for the model's flat figures.",
         }),
+      ]);
+    }
+
+    function drawTrust() {
+      var input = number(
+        s.trust,
+        function (v) {
+          scn.setTrust(v);
+        },
+        { min: '0', max: '100', step: '5' },
+      );
+      put(trustBox, [
+        field(
+          "Trust each place's own figures (%)",
+          input,
+          "100 uses them fully. Lower pulls a territory toward its country's figure and a country toward the model's, " +
+            'to see whether a plan survives noisy survey data. A plan also says how it holds up at 50.',
+        ),
       ]);
     }
 
@@ -303,6 +362,7 @@
       drawChips();
       drawTarget();
       drawRisk();
+      drawTrust();
       drawDials();
       drawInputs();
       drawSummary();
@@ -317,6 +377,7 @@
       chips,
       targetBox,
       riskBox,
+      trustBox,
       h('h2', { text: 'Dials', css: { marginTop: '16px' } }),
       dialsBox,
       field("GiveWell's bar (x)", barInput),

@@ -126,6 +126,39 @@ describe('the link', () => {
     expect(asObject(s.params())).toEqual({ models: 'chc' });
   });
 
+  it('writes the limits and the trust only when they are set', () => {
+    const s = blank();
+    s.setLimit('min_place', 20000);
+    s.setLimit('max_countries', 5);
+    s.setTrust(60);
+    expect(asObject(s.params())).toEqual({
+      models: 'chc',
+      min_place: '20000',
+      max_countries: '5',
+      trust: '60',
+    });
+    s.setLimit('min_place', null);
+    s.setLimit('max_countries', 0);
+    s.setTrust(100);
+    expect(asObject(s.params())).toEqual({ models: 'chc' });
+  });
+
+  it('keeps trust between none and all of it', () => {
+    const s = blank();
+    s.setTrust(250);
+    expect(s.state.trust).toBe(100);
+    s.setTrust(-4);
+    expect(s.state.trust).toBe(0);
+  });
+
+  it('counts believing the places less as a change, and a limit as none', () => {
+    const s = blank();
+    s.setLimit('min_place', 1000);
+    expect(s.changes()).toEqual({ dials: 0, assumptions: 0 });
+    s.setTrust(50);
+    expect(s.changes()).toEqual({ dials: 0, assumptions: 1 });
+  });
+
   it('takes a blank or zero target as no target', () => {
     const s = blank();
     s.setTarget(0);
@@ -205,6 +238,15 @@ describe('changing it', () => {
     expect(s.state.place_risk).toBe(true);
     expect(s.state.target).toBe(500000);
     expect(s.state.grain).toBe('territory');
+  });
+
+  it('puts trust back to all of it on a reset and keeps the plan limits', () => {
+    const s = blank();
+    s.setTrust(40);
+    s.setLimit('max_countries', 3);
+    s.reset();
+    expect(s.state.trust).toBe(100);
+    expect(s.state.max_countries).toBe(3);
   });
 
   it('resets to the models as published and keeps the places', () => {

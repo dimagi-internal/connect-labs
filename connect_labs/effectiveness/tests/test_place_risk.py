@@ -49,7 +49,7 @@ class TestGrain:
         found = people.attach_risk(people.group_selection(selection(nigeria), "country"))
         nga = found["places"]["NGA"]
         assert nga["counts"]["births_lbw"] == 200_000 and nga["name"] == "Nigeria"
-        assert nga["measures"] == {"nmr": pytest.approx(30.0)}
+        assert nga["measures"] == {"nmr": pytest.approx(30.0), "nmr_country": pytest.approx(30.0)}
 
     def test_a_territory_is_a_place_with_its_own_people_and_its_own_mortality(self, nigeria):
         found = people.attach_risk(people.group_selection(selection(nigeria), "territory"))
@@ -57,18 +57,22 @@ class TestGrain:
         assert (kano["name"], kano["country"], kano["iso3"]) == ("Kano", "Nigeria", "NGA")
         assert kano["counts"]["births_lbw"] == 80_000 and lagos["counts"]["births_lbw"] == 120_000
         assert kano["measures"]["nmr"] == pytest.approx(40.0) and lagos["measures"]["nmr"] == pytest.approx(15.0)
+        # the country's figure beside each, so a far-off territory can be flagged and `trust` has something to pull
+        # toward
+        assert kano["measures"]["nmr_country"] == lagos["measures"]["nmr_country"] == pytest.approx(30.0)
 
     def test_for_model_hands_the_sizing_code_everything_it_needs(self, nigeria):
         found = people.attach_risk(people.group_selection(selection(nigeria), "territory"))
         got = people.for_model(found, "kc")[str(nigeria["kano"].pk)]
-        assert got == {
-            "name": "Kano",
-            "country": "Nigeria",
-            "iso3": "NGA",
-            "units": 80_000,
-            "partial": False,
-            "measures": {"nmr": pytest.approx(40.0)},
-        }
+        assert (got["name"], got["country"], got["iso3"], got["units"], got["partial"]) == (
+            "Kano",
+            "Nigeria",
+            "NGA",
+            80_000,
+            False,
+        )
+        assert got["measures"] == {"nmr": pytest.approx(40.0), "nmr_country": pytest.approx(30.0)}
+        assert "Kano" in got["measures_how"]["nmr"] and got["inputs"] == {}  # Kangaroo Care has no place inputs
 
 
 class TestFromTerritoriesToAPlan:
@@ -137,3 +141,117 @@ class TestFromTerritoriesToAPlan:
         assert o["deaths_averted"] == pytest.approx(a["deaths_averted"] + b["deaths_averted"])
         lo, hi = sorted((a["multiple"], b["multiple"]))
         assert lo <= o["multiple"] <= hi
+
+
+class TestEveryModelAtTheTerritoryGrain:
+    """Child Health Campaign and Mother Baby used one figure for every territory in a country. They take the
+    territory's own now, by the same recipes Implementations value a delivery with."""
+
+    @pytest.fixture
+    def found(self, nigeria):
+        return people.attach_risk(people.group_selection(selection(nigeria), "territory"))
+
+    def test_a_territory_hands_on_the_inputs_the_baseline_holds_for_it_and_only_those(self, nigeria, found):
+        kano = people.for_model(found, "chc")[str(nigeria["kano"].pk)]["inputs"]
+        lagos = people.for_model(found, "chc")[str(nigeria["lagos"].pk)]["inputs"]
+        assert kano["ors"] == pytest.approx(0.20) and lagos["ors"] == pytest.approx(0.60)  # surveyed coverage
+        assert {"deaths", "mort659"} <= set(kano)  # scaled by the territory's under-five mortality
+        assert "vas" not in kano  # no vitamin A figure here: the model's country figure stands
+
+    def test_a_country_takes_the_models_own_figures_not_a_roll_up_of_its_territories(self, nigeria):
+        found = people.attach_risk(people.group_selection(selection(nigeria), "country"))
+        assert people.for_model(found, "chc")["NGA"]["inputs"] == {}
+
+    def test_so_two_territories_of_one_country_differ_for_child_health_too(self, nigeria, monkeypatch):
+        monkeypatch.setattr(
+            people,
+            "people_by_place",
+            lambda q, grain="country": people.attach_risk(people.group_selection(selection(nigeria), grain)),
+        )
+        rows = {
+            r["name"]: r
+            for r in sizing.market_of(Scenario.from_params({"models": "chc", "grain": "territory"}))["models"][0][
+                "rows"
+            ]
+        }
+        assert rows["Kano"]["multiple"] != rows["Lagos"]["multiple"] and rows["Kano"]["local_inputs"]
+        flat = sizing.market_of(Scenario.from_params({"models": "chc", "grain": "territory", "place_risk": "0"}))[
+            "models"
+        ][0]["rows"]
+        assert len({round(r["multiple"], 9) for r in flat}) == 1  # switched off: the country's figures, alike
+
+
+class TestTrustAndTheCheck:
+    @pytest.fixture
+    def sized(self, nigeria, monkeypatch):
+        monkeypatch.setattr(
+            people,
+            "people_by_place",
+            lambda q, grain="country": people.attach_risk(people.group_selection(selection(nigeria), grain)),
+        )
+        return lambda params: sizing.market_of(Scenario.from_params(params))
+
+    def test_no_trust_in_a_territory_is_its_countrys_figure(self, nigeria, sized):
+        rows = {r["name"]: r for r in sized({"models": "kc", "grain": "territory", "trust": "0"})["models"][0]["rows"]}
+        assert rows["Kano"]["risk"] == rows["Lagos"]["risk"] == pytest.approx(0.13 * 30 / 28.4)
+
+    def test_a_plan_carries_its_check_and_a_less_trusted_scenario_does_not(self, nigeria, sized):
+        plan = sized({"models": "kc", "grain": "territory", "target": "60000"})["models"][0]["plan"]
+        assert plan["check"]["trust"] == 50 and 0 < plan["check"]["kept_share"] <= 1
+        assert plan["check"]["places"] == len(plan["places"])
+        less = sized({"models": "kc", "grain": "territory", "target": "60000", "trust": "50"})["models"][0]["plan"]
+        assert less["check"] is None if "check" in less else True
+
+    def test_the_plan_adds_up_by_country_and_says_the_limits_it_ran_under(self, nigeria, sized):
+        plan = sized(
+            {"models": "kc", "grain": "territory", "target": "60000", "min_place": "1000", "max_countries": "1"}
+        )["models"][0]["plan"]
+        assert plan["countries"][0]["country"] == "Nigeria" and plan["countries"][0]["places"] == len(plan["places"])
+        assert plan["limits"] == {"min_place": 1000.0, "max_countries": 1, "left_out": 0}
+
+    def test_the_countrys_figure_reaches_the_row_and_exactly_twice_or_half_is_not_far(self, nigeria, sized):
+        rows = {r["name"]: r for r in sized({"models": "kc", "grain": "territory"})["models"][0]["rows"]}
+        # Lagos is exactly half its country's 30, Kano a third above it: far means MORE than twice either way
+        assert rows["Lagos"]["far_from_country"] is False and rows["Kano"]["far_from_country"] is False
+        assert rows["Kano"]["measure_country"] == rows["Lagos"]["measure_country"] == pytest.approx(30.0)
+        assert rows["Kano"]["measure"] == pytest.approx(40.0) and "Kano" in rows["Kano"]["measure_how"]
+
+
+class TestThePlanAsASpreadsheet:
+    @pytest.fixture
+    def signed_in(self, client, django_user_model, nigeria, monkeypatch):
+        monkeypatch.setattr(
+            people,
+            "people_by_place",
+            lambda q, grain="country": people.attach_risk(people.group_selection(selection(nigeria), grain)),
+        )
+        client.force_login(django_user_model.objects.create_user(username="csv", password="x"))
+        return client
+
+    def test_it_is_one_row_per_place_then_the_totals_and_the_scenario(self, signed_in):
+        from django.urls import reverse
+
+        r = signed_in.get(reverse("cea:market_plan_csv"), {"models": "kc", "grain": "territory", "target": "60000"})
+        assert (
+            r.status_code == 200
+            and r["Content-Type"].startswith("text/csv")
+            and "plan-kc-60000.csv" in r["Content-Disposition"]
+        )
+        lines = r.content.decode().splitlines()
+        assert lines[0].startswith("rank,place,country,low-birthweight newborns reached")
+        assert lines[1].split(",")[1:3] == ["Kano", "Nigeria"]
+        assert any(line.startswith("total,") for line in lines) and any(
+            line.startswith("scenario link,") for line in lines
+        )
+
+    def test_without_a_target_there_is_no_plan_to_download(self, signed_in):
+        from django.urls import reverse
+
+        r = signed_in.get(reverse("cea:market_plan_csv"), {"models": "kc"})
+        assert r.status_code == 400 and "target" in r.content.decode()
+
+    def test_a_scenario_that_cannot_run_says_why(self, signed_in):
+        from django.urls import reverse
+
+        r = signed_in.get(reverse("cea:market_plan_csv"), {"models": "chc", "target": "5", "i.chc.nonsense": "1"})
+        assert r.status_code == 400 and "nonsense" in r.content.decode()

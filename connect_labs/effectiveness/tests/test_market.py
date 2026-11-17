@@ -151,6 +151,8 @@ def test_kc_risk_follows_the_places_newborn_mortality_and_so_does_its_multiple()
         "measure": "nmr",
         "reference": 28.4,
         "scaled": 2,  # Tunisia has no mortality figure
+        "far_from_country": 0,
+        "local_inputs": 0,
     }
 
 
@@ -178,6 +180,8 @@ def test_a_model_without_place_risk_is_untouched_by_the_switch():
     off = market.size("chc", PEOPLE, {}, 6.0, place_risk=False)
     assert [r["multiple"] for r in on["rows"]] == [r["multiple"] for r in off["rows"]]
     assert on["place_risk"]["applies"] is False
+    # the switch still says whether place figures are in use, which for this model means a territory's own inputs
+    assert on["place_risk"]["on"] is True and off["place_risk"]["on"] is False
 
 
 # -------------------------------------------------------------------- the plan
@@ -306,3 +310,146 @@ def test_a_target_that_is_met_is_met_exactly():
     plan = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=1_000_000)["plan"]
     assert plan["totals"]["people"] == pytest.approx(1_000_000, abs=1e-9)
     assert plan["shortfall"] == 0 and plan["feasible"]
+
+
+# ------------------------------------------------------ trusting a place's figures
+def with_country(key, units, nmr, country_nmr, iso="NGA", **extra):
+    return {
+        key: {
+            "name": key,
+            "country": iso,
+            "iso3": iso,
+            "units": units,
+            "measures": {"nmr": nmr, "nmr_country": country_nmr},
+            **extra,
+        }
+    }
+
+
+def test_trust_pulls_a_territory_toward_its_country_and_a_country_toward_the_model():
+    terr = with_country("KANO", 100_000, 40.0, 30.0)
+    full = row(market.size("kc", terr, {}, 6.0), "KANO")
+    half = row(market.size("kc", terr, {}, 6.0, trust=0.5), "KANO")
+    none = row(market.size("kc", terr, {}, 6.0, trust=0.0), "KANO")
+    assert full["risk"] == pytest.approx(0.13 * 40.0 / 28.4)
+    assert half["risk"] == pytest.approx(0.13 * 35.0 / 28.4)  # half way between 40 and the country's 30
+    assert none["risk"] == pytest.approx(0.13 * 30.0 / 28.4)  # the country's own
+    assert full["multiple"] > half["multiple"] > none["multiple"]
+    # a country has nothing above it but the model: no trust is the model's flat 13%
+    country = {"NGA": {"name": "Nigeria", "iso3": "NGA", "units": 1e6, "measures": {"nmr": 39.0}}}
+    assert row(market.size("kc", country, {}, 6.0, trust=0.0), "NGA")["risk"] == pytest.approx(0.13)
+
+
+def test_a_figure_far_from_its_countrys_is_flagged_and_one_near_it_is_not():
+    far = with_country("A", 1, 70.0, 30.0)  # more than twice
+    low = with_country("B", 1, 10.0, 30.0)  # less than half
+    near = with_country("C", 1, 40.0, 30.0)
+    assert row(market.size("kc", far, {}, 6.0), "A")["far_from_country"] is True
+    assert row(market.size("kc", low, {}, 6.0), "B")["far_from_country"] is True
+    assert row(market.size("kc", near, {}, 6.0), "C")["far_from_country"] is False
+    assert market.size("kc", {**far, **near}, {}, 6.0)["place_risk"]["far_from_country"] == 1
+
+
+def test_the_row_carries_the_places_figure_and_the_countrys_and_where_it_came_from():
+    terr = with_country("KANO", 1, 40.0, 30.0, measures_how={"nmr": "Kano (state or province), igme_subnational 2021"})
+    r = row(market.size("kc", terr, {}, 6.0), "KANO")
+    assert (r["measure"], r["measure_country"]) == (40.0, 30.0) and "Kano" in r["measure_how"]
+
+
+def test_a_territorys_own_inputs_replace_its_countrys_and_trust_pulls_them_back():
+    country = engine.country("chc", "NGA")["inputs"]["ors"]
+    terr = {"KANO": {"name": "Kano", "country": "Nigeria", "iso3": "NGA", "units": 1e6, "inputs": {"ors": 0.05}}}
+    flat = row(market.size("chc", {"KANO": {**terr["KANO"], "inputs": {}}}, {}, 6.0), "KANO")
+    local = row(market.size("chc", terr, {}, 6.0), "KANO")
+    half = row(market.size("chc", terr, {}, 6.0, trust=0.5), "KANO")
+    none = row(market.size("chc", terr, {}, 6.0, trust=0.0), "KANO")
+    assert country > 0.05
+    assert local["multiple"] != flat["multiple"] and local["local_inputs"] == ["ors"]
+    assert none["multiple"] == pytest.approx(flat["multiple"])
+    assert min(flat["multiple"], local["multiple"]) < half["multiple"] < max(flat["multiple"], local["multiple"])
+
+
+def test_switching_place_figures_off_ignores_a_territorys_own_inputs_too():
+    terr = {"KANO": {"name": "Kano", "country": "Nigeria", "iso3": "NGA", "units": 1e6, "inputs": {"ors": 0.05}}}
+    off = row(market.size("chc", terr, {}, 6.0, place_risk=False), "KANO")
+    plain = row(market.size("chc", {"KANO": {**terr["KANO"], "inputs": {}}}, {}, 6.0), "KANO")
+    assert off["multiple"] == pytest.approx(plain["multiple"]) and off["local_inputs"] == []
+
+
+# ----------------------------------------------------------- the plan's limits
+def in_countries(*specs):
+    """``(key, country, units, nmr)`` -> places."""
+    return {k: {"name": k, "country": c, "iso3": c, "units": u, "measures": {"nmr": n}} for k, c, u, n in specs}
+
+
+def test_a_place_too_small_to_be_worth_a_team_is_left_out_and_counted():
+    ps = in_countries(("BIG", "AAA", 800_000, 30.0), ("TINY", "AAA", 5_000, 60.0), ("MID", "BBB", 600_000, 25.0))
+    plan = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=900_000, min_place=50_000)["plan"]
+    assert [p["key"] for p in plan["places"]] == ["BIG", "MID"] and plan["limits"]["left_out"] == 1
+    free = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=900_000)["plan"]
+    assert free["places"][0]["key"] == "TINY" and free["limits"]["left_out"] == 0
+
+
+def test_keeping_to_some_countries_keeps_the_ones_the_best_plan_leans_on_most():
+    ps = in_countries(
+        ("A1", "AAA", 400_000, 40.0),
+        ("A2", "AAA", 400_000, 38.0),
+        ("B1", "BBB", 300_000, 36.0),
+        ("C1", "CCC", 300_000, 20.0),
+    )
+    plan = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=1_000_000, max_countries=2)["plan"]
+    assert {p["country"] for p in plan["places"]} == {"AAA", "BBB"} and plan["feasible"]
+    assert plan["totals"]["countries"] == 2 and plan["limits"]["max_countries"] == 2
+
+
+def test_it_says_how_many_countries_it_takes_to_reach_the_target_at_all():
+    ps = in_countries(("A1", "AAA", 400_000, 40.0), ("B1", "BBB", 300_000, 36.0), ("C1", "CCC", 300_000, 30.0))
+    plan = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=1_000_000, max_countries=1)["plan"]
+    assert plan["countries_needed"] == 3 and plan["feasible"] is False
+    assert plan["shortfall"] == pytest.approx(600_000)
+    assert market.size("kc", ps, {}, 6.0, {"reach": 100}, target=600_000)["plan"]["countries_needed"] == 2
+
+
+def test_the_plan_adds_up_by_country_and_the_countries_add_up_to_the_plan():
+    ps = in_countries(("A1", "AAA", 400_000, 40.0), ("A2", "AAA", 400_000, 38.0), ("B1", "BBB", 300_000, 36.0))
+    plan = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=900_000)["plan"]
+    assert [c["country"] for c in plan["countries"]] == ["AAA", "BBB"]
+    assert sum(c["reached"] for c in plan["countries"]) == pytest.approx(plan["totals"]["people"])
+    assert sum(c["cost"] for c in plan["countries"]) == pytest.approx(plan["totals"]["cost"])
+    assert sum(c["deaths_averted"] for c in plan["countries"]) == pytest.approx(plan["totals"]["deaths_averted"])
+    assert sum(c["places"] for c in plan["countries"]) == plan["totals"]["places"]
+
+
+# ----------------------------------------------------------- does the plan hold up
+def test_a_plan_that_depends_on_a_high_figure_being_right_does_not_hold_up_when_it_is_only_half_believed():
+    # A looks worse (40) than B (38) only by its own figure, which is well above its country's (30); B's is simply its
+    # country's. Believe A halfway and it is 35: B is the better place, and the plan that chose A was leaning on one
+    # figure.
+    ps = {**with_country("A", 600_000, 40.0, 30.0, iso="AAA"), **with_country("B", 600_000, 38.0, 38.0, iso="BBB")}
+    chosen = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=600_000)["plan"]
+    less = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=600_000, trust=0.5)
+    check = market.plan_check(chosen, less["rows"], less["plan"])
+    assert [p["key"] for p in chosen["places"]] == ["A"] and [p["key"] for p in less["plan"]["places"]] == ["B"]
+    assert check["trust"] == 50 and check["places_in_common"] == 0
+    assert check["kept_share"] == pytest.approx(35 / 38, rel=0.02) and check["kept_share"] < 1
+
+
+def test_a_plan_that_stays_the_best_even_pulled_toward_its_country_holds_up_exactly():
+    ps = {
+        **with_country("SPIKE", 600_000, 70.0, 28.0, iso="XXX"),
+        **with_country("STEADY", 600_000, 30.0, 28.0, iso="YYY"),
+    }
+    chosen = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=600_000)["plan"]
+    less = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=600_000, trust=0.5)
+    assert market.plan_check(chosen, less["rows"], less["plan"])["kept_share"] == pytest.approx(1.0)
+
+
+def test_a_plan_of_places_that_are_alike_holds_up_exactly():
+    alike = in_countries(("A", "AAA", 600_000, 30.0), ("B", "BBB", 600_000, 30.0))
+    chosen = market.size("kc", alike, {}, 6.0, {"reach": 100}, target=600_000)["plan"]
+    less = market.size("kc", alike, {}, 6.0, {"reach": 100}, target=600_000, trust=0.5)
+    assert market.plan_check(chosen, less["rows"], less["plan"])["kept_share"] == pytest.approx(1.0)
+
+
+def test_there_is_nothing_to_check_without_a_plan():
+    assert market.plan_check(None, [], None) is None

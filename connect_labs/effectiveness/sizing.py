@@ -12,6 +12,21 @@ from connect_labs.effectiveness import explore, market, people, valuation
 from connect_labs.effectiveness.scenario import Scenario
 
 
+def _size(model: str, trust: float, run: dict) -> dict:
+    return market.size(
+        model,
+        run["places"],
+        run["overrides"],
+        run["bar"],
+        run["dials"],
+        place_risk=run["place_risk"],
+        target=run["target"],
+        trust=trust,
+        min_place=run["min_place"],
+        max_countries=run["max_countries"],
+    )
+
+
 def overall(sized: list[dict]) -> dict:
     """The programmes chosen, taken together: what they cost, the deaths they avert and the multiple of the whole.
 
@@ -58,15 +73,25 @@ def market_of(scenario: Scenario) -> dict:
     sized = []
     for k in scenario.models:
         try:
-            out = market.size(
-                k,
-                people.for_model(found, k),
-                scenario.overrides_for(k),
-                bar,
-                scenario.dials_for(k),
+            run = dict(
+                places=people.for_model(found, k),
+                overrides=scenario.overrides_for(k),
+                bar=bar,
+                dials=scenario.dials_for(k),
                 place_risk=scenario.place_risk,
                 target=scenario.target,
+                min_place=scenario.min_place,
+                max_countries=scenario.max_countries,
             )
+            out = _size(k, scenario.trust / 100, run)
+            # A plan made at the figures as they are, and how it holds up if they are only half to be believed.
+            if (
+                out.get("plan")
+                and scenario.trust >= 100
+                and (out["place_risk"]["scaled"] or out["place_risk"]["local_inputs"])
+            ):
+                less = _size(k, market.CHECK_TRUST, run)
+                out["plan"]["check"] = market.plan_check(out["plan"], less["rows"], less.get("plan"))
         except ZeroDivisionError:
             raise explore.ExploreError(f"Those inputs divide by zero in the {k} model.") from None
         sized.append({**out, "overrides": scenario.overrides_for(k), "dials": scenario.dials_for(k)})
@@ -75,6 +100,7 @@ def market_of(scenario: Scenario) -> dict:
         "overall": overall(sized),
         "bar": bar,
         "target": scenario.target,
+        "trust": scenario.trust,
         "grain": scenario.grain,
         "selection": people.describe(question, found, everywhere),
         "changes": scenario.changes(),

@@ -241,12 +241,34 @@
             }),
             x.risk != null
               ? h('span', {
+                  title: MV.riskTitle(x),
                   text:
                     'baseline risk ' +
                     MV.pct(x.risk) +
                     (x.risk_basis === 'place'
                       ? ', scaled to this place'
-                      : ", the model's own"),
+                      : ", the model's own") +
+                    (x.far_from_country
+                      ? " ⚠ far from its country's figure: check the source"
+                      : ''),
+                })
+              : null,
+            x.measure != null
+              ? h('span', {
+                  class: 'muted',
+                  text:
+                    'newborn mortality ' +
+                    x.measure.toFixed(1) +
+                    (x.measure_country
+                      ? ' (its country: ' + x.measure_country.toFixed(1) + ')'
+                      : '') +
+                    (x.measure_how ? ' · ' + x.measure_how : ''),
+                })
+              : null,
+            x.local_inputs && x.local_inputs.length
+              ? h('span', {
+                  class: 'muted',
+                  text: 'its own figures for: ' + x.local_inputs.join(', '),
                 })
               : null,
             h('span', {
@@ -292,7 +314,12 @@
       sort: $('sort'),
     },
     D,
-    { onSelect: choose },
+    {
+      onSelect: choose,
+      csvHref: function () {
+        return D.plan_csv_url + '?' + scn.params().toString();
+      },
+    },
   );
 
   function say(text) {

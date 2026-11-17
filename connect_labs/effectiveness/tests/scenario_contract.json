@@ -13,7 +13,10 @@
     "method": "dhs",
     "target": "1000000",
     "place_risk": "0",
-    "grain": "territory"
+    "grain": "territory",
+    "min_place": "20000",
+    "max_countries": "5",
+    "trust": "60"
   },
   "state": {
     "models": ["chc", "kc"],
@@ -48,6 +51,9 @@
     },
     "target": 1000000.0,
     "place_risk": false,
-    "grain": "territory"
+    "grain": "territory",
+    "min_place": 20000.0,
+    "max_countries": 5,
+    "trust": 60.0
   }
 }

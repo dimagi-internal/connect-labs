@@ -81,5 +81,6 @@ def page_data(request, scenario: Scenario, loaded: dict | None = None, error: st
         "csrf": get_token(request),
         "scenarios_url": reverse("cea:scenarios"),
         "api_url": reverse("cea:market_data"),
+        "plan_csv_url": reverse("cea:market_plan_csv"),
         "models_url": reverse("cea:models"),
     }
