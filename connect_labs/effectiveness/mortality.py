@@ -7,10 +7,8 @@ when the number alone is used to rank places:
   interval of 4.1 to 48.1), and ranking on it is ranking on luck. ``shrink`` pulls each territory toward its
   country's typical value by as much as its own interval says it deserves (empirical Bayes, on the log scale, the
   DerSimonian-Laird estimate of how much territories really differ).
-Not done here: subnational estimates are benchmarked to the national estimate of their own release, which is later
-revised (Zimbabwe's current national series says 32.2 for 2021, its provinces' 2021 values average 22.6). Putting the
-territories back on the current national would need every territory of the country, so it is left until Labs holds the
-whole country's set; the plan says which figures carry which interval instead.
+Levelling the territories to the country's current figure is not done here: it needs every territory of the country, so
+it lives with the baseline (``baseline.Baselines.level_factor``), and the figures arrive here already levelled.
 
 ``Estimate`` carries a territory's figure with its log-scale standard error. Everything here works on the log scale
 because a mortality rate is a positive quantity whose uncertainty is multiplicative, and a bound at or near zero

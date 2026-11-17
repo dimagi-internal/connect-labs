@@ -158,7 +158,7 @@ def attach_risk(found: dict) -> dict:
             if n.shared_se:
                 p["measures_shared_se"]["nmr"] = n.shared_se
             if est and est.shrunk:
-                p["measures_raw"]["nmr"] = n.value
+                p["measures_raw"]["nmr"] = n.published or n.value
         if country[p["iso3"]]:
             p["measures"]["nmr_country"] = country[p["iso3"]].value
         births = baselines.births_check(p["iso3"])
