@@ -1,0 +1,20 @@
+{% comment %} The scenario a page opened, above its numbers: what it is called, which question it belongs to, what it sets,
+   and the ones either side of it in its group. `loaded` is `saved.as_dict` of the saved scenario (None for a link). {% endcomment %}
+{% if loaded %}
+<div class="card scn-head" data-testid="scenario-header">
+  {% if loaded.group %}
+  <p class="muted" style="margin:0 0 4px">
+    <a href="{{ loaded.group.path }}">{{ loaded.group.name }}</a> · scenario {{ loaded.group.position }} of {{ loaded.group.count }}
+    {% if loaded.group.previous %} · <a href="{{ loaded.group.previous.open_path }}">&larr; {{ loaded.group.previous.name }}</a>{% endif %}
+    {% if loaded.group.next %} · <a href="{{ loaded.group.next.open_path }}">{{ loaded.group.next.name }} &rarr;</a>{% endif %}
+    · <a href="{{ loaded.group.path }}">compare them</a>
+  </p>
+  {% endif %}
+  <h2 style="margin:0 0 4px">{{ loaded.name }}</h2>
+  {% if loaded.derived_from %}<p class="muted" style="margin:0 0 4px">Made from <a href="{{ loaded.derived_from.open_path }}">{{ loaded.derived_from.name }}</a></p>{% endif %}
+  {% if loaded.note %}<p style="margin:0 0 6px; white-space:pre-wrap">{{ loaded.note }}</p>{% endif %}
+  {% if loaded.sets %}<p class="muted" style="margin:0"><b>Sets:</b> {{ loaded.sets|join:" · " }}</p>
+  {% else %}<p class="muted" style="margin:0"><b>Sets:</b> nothing: the models as published.</p>{% endif %}
+  {% if loaded.models_changed %}<p class="lo" style="margin:4px 0 0">The models have changed since this was saved ({{ loaded.models_changed|join:", " }}): its numbers may differ from its note.</p>{% endif %}
+</div>
+{% endif %}

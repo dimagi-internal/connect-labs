@@ -436,3 +436,39 @@ def test_the_tool_can_price_from_delivered_programmes_and_says_what_it_used(fake
     assert "cost_basis=observed" in got["explorer_path"]
     plain = cea.cea_market_size(None, indicator="u5mr", model="kc")
     assert next(r for r in plain["market"]["rows"] if r["iso3"] == "NGA")["cost_per_person"] == 60
+
+
+@pytest.mark.django_db
+class TestScenarioGroupTools:
+    @pytest.fixture
+    def ann(self, django_user_model):
+        return django_user_model.objects.create_user(username="ann", password="x")
+
+    def test_a_group_is_made_with_its_scenarios_in_order_then_listed_and_compared(self, ann, monkeypatch):
+        from connect_labs.effectiveness import scenario_groups
+
+        monkeypatch.setattr(
+            scenario_groups,
+            "headline_for",
+            lambda r: {"deaths": 20_000.0, "cost": 60e6, "cost_per_death": 3000.0, "multiple": 13.0},
+        )
+        a = cea.cea_scenario_save(ann, name="one", models=["kc"], target=1_000_000)
+        b = cea.cea_scenario_save(
+            ann, name="two", models=["kc"], target=1_000_000, max_remote=40, derived_from=a["id"]
+        )
+        g = cea.cea_scenario_group_save(
+            ann, name="A million", question="How?", summary="So far.", scenario_ids=[b["id"], a["id"]]
+        )
+        assert g["created"] and [s["name"] for s in g["scenarios"]] == ["two", "one"]
+        listed = cea.cea_scenario_groups(ann)["groups"]
+        assert listed[0]["summary"] == "So far." and len(listed[0]["scenarios"]) == 2
+        got = cea.cea_scenario_groups(ann, id=g["id"], reference=a["id"])
+        assert got["reference"] == a["id"] and "scenario" not in got["scenarios"][0]
+        assert got["scenarios"][0]["differs"] == ["Limits: none → remote at most 40"]
+        assert cea.cea_scenario_groups(ann, id=g["id"], compare=False)["summary"] == "So far."
+
+    def test_saving_into_a_group_that_is_not_yours_is_refused(self, ann, django_user_model):
+        bob = django_user_model.objects.create_user(username="bob", password="x")
+        theirs = cea.cea_scenario_group_save(bob, name="theirs")
+        with pytest.raises(MCPToolError):
+            cea.cea_scenario_save(ann, name="x", models=["kc"], group=theirs["id"])

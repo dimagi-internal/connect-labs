@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Scenario groups · Connect Labs{% endblock %}
+{% block css %}{{ block.super }}<link rel="stylesheet" href="{% static 'effectiveness/market.css' %}">{% endblock %}
+{% block content %}
+{% include "effectiveness/tabs.html" with active="groups" %}
+<div class="mk">
+  <h1>Scenario groups</h1>
+  <p class="lede">Scenarios that are all about one question, kept together so they can be walked through and compared. Save a scenario into a group from the Workspace or with the agent tools.</p>
+  {% for g in groups %}
+  <div class="card">
+    <h2><a href="{{ g.path }}">{{ g.name }}</a> <span class="muted">· {{ g.scenarios|length }} scenario{{ g.scenarios|length|pluralize }}{% if g.shared and g.mine %} · shared{% endif %}{% if not g.mine %} · by {{ g.owner }}{% endif %}</span></h2>
+    {% if g.question %}<p style="margin:0 0 6px">{{ g.question }}</p>{% endif %}
+    <ol style="margin:0; padding-left:20px">
+      {% for s in g.scenarios %}<li><a href="{{ s.open_path }}">{{ s.name }}</a></li>{% endfor %}
+    </ol>
+  </div>
+  {% empty %}
+  <div class="card"><p class="muted" style="margin:0">No groups yet.</p></div>
+  {% endfor %}
+</div>
+{% endblock %}

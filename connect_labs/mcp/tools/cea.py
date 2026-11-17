@@ -757,6 +757,17 @@ def cea_scenarios(user, *, id=None, run=False):
                 "type": "object",
                 "additionalProperties": {"type": "object", "additionalProperties": {"type": "number"}},
             },
+            "group": {
+                "type": "integer",
+                "description": (
+                    "Put the scenario in this scenario group (an id from cea_scenario_groups; one the caller made), "
+                    "last in its order, so it can be walked through and compared with the others."
+                ),
+            },
+            "derived_from": {
+                "type": "integer",
+                "description": "The scenario this one was made from by changing something (its id): a branch.",
+            },
             **_PLAN_PROPERTIES,
         },
         "required": ["name", "models"],
@@ -784,6 +795,8 @@ def cea_scenario_save(
     cost_basis=None,
     trust=100,
     place_risk=True,
+    group=None,
+    derived_from=None,
     **caps,
 ):
     from connect_labs.effectiveness import engine, saved
@@ -811,7 +824,97 @@ def cea_scenario_save(
                 else:
                     params[f"i.{model}.{key}"] = value
     try:
-        record, created = saved.save(user, name, params, note=note, shared=shared, overwrite=overwrite)
+        record, created = saved.save(
+            user, name, params, note=note, shared=shared, overwrite=overwrite, group=group, derived_from=derived_from
+        )
     except saved.SavedError as exc:
         raise _saved_error(exc) from None
     return {**saved.as_dict(record, user), "created": created}
+
+
+@register(
+    name="cea_scenario_groups",
+    description=(
+        "Scenario groups: scenarios that are all about one question, kept together. With no `id`, lists the "
+        "caller's own groups and the shared ones, each with its `question`, its `summary` (what the scenarios "
+        "showed, what was decided, what is open: read it before continuing the work) and its scenarios in order. "
+        "With an `id`, returns that group and, with `compare` (default true), its scenarios side by side: what "
+        "each sets, what each gave (deaths averted with its range, cost, cost per death, the multiple, people, "
+        "places, countries, steadiness, the people resting on a regional rate), the change against the reference "
+        "scenario (`reference`, default the first), the best of each result, what differs in words, and what has "
+        "moved since each scenario was last baselined (`drift`). Much smaller than `cea_market_size` for the same "
+        "scenarios. `rebaseline: true` (the group's owner) makes what each gives now the figure later runs are "
+        "compared with."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "id": {"type": "integer"},
+            "compare": {"type": "boolean", "default": True},
+            "reference": {
+                "type": "integer",
+                "description": "A scenario id in the group to compare the others against.",
+            },
+            "rebaseline": {"type": "boolean", "default": False},
+        },
+        "additionalProperties": False,
+    },
+)
+def cea_scenario_groups(user, *, id=None, compare=True, reference=None, rebaseline=False):
+    from connect_labs.effectiveness import saved, scenario_groups
+    from connect_labs.effectiveness.views.groups import _jsonable
+
+    try:
+        if id is None:
+            return {"groups": scenario_groups.listing(user)}
+        group = scenario_groups.get(user, id)
+        if not compare:
+            return scenario_groups.as_dict(group, user)
+        data = scenario_groups.compare_group(user, group, reference=reference, rebaseline=rebaseline)
+        return _jsonable(data)
+    except saved.SavedError as exc:
+        raise _saved_error(exc) from None
+
+
+@register(
+    name="cea_scenario_group_save",
+    is_write=True,
+    description=(
+        "Make a scenario group, or change one of the caller's (`overwrite`). `name` is the group; `question` is what "
+        "we are trying to think about; `summary` is the living account of what the scenarios showed, what was decided "
+        "and what is still open, written to be read cold by whoever continues (replace it as the work moves). "
+        "`scenario_ids` puts the caller's own scenarios in the group in that order (any it already had and you do not "
+        "list are taken out). Private unless `shared`. Returns the group with its scenarios."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "maxLength": 200},
+            "question": {"type": "string"},
+            "summary": {"type": "string"},
+            "shared": {"type": "boolean"},
+            "overwrite": {"type": "boolean", "default": False},
+            "scenario_ids": {"type": "array", "items": {"type": "integer"}},
+        },
+        "required": ["name"],
+        "additionalProperties": False,
+    },
+)
+def cea_scenario_group_save(
+    user, *, name, question=None, summary=None, shared=None, overwrite=False, scenario_ids=None
+):
+    from connect_labs.effectiveness import saved, scenario_groups
+
+    try:
+        group, created = scenario_groups.save(
+            user,
+            name,
+            question=question,
+            summary=summary,
+            shared=shared,
+            overwrite=overwrite,
+            scenario_ids=scenario_ids,
+        )
+    except saved.SavedError as exc:
+        raise _saved_error(exc) from None
+    return {**scenario_groups.as_dict(group, user), "created": created}

@@ -200,6 +200,12 @@ def _shrink_by_country(places: dict, got: dict) -> dict:
     return out
 
 
+def data_version() -> str:
+    """The version of the data answers are made from (changes with a load and a deploy): what a cached answer is keyed
+    under, for the modules that may not read the baseline themselves."""
+    return response_cache.data_version()
+
+
 def people_by_place(question: Question, grain: str = "country") -> dict:
     """``group_selection`` for the question with each place's risk, kept with the data (a selection resolves hundreds
     of regions, and a territory grain resolves every one of them)."""

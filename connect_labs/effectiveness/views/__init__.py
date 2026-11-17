@@ -1,5 +1,6 @@
 """The effectiveness pages' views: CEA models, Implementations, Market size and the workspace."""
 
+from connect_labs.effectiveness.views.groups import GroupBaselineView, GroupListView, GroupView
 from connect_labs.effectiveness.views.implementation import (
     ImplementationDataView,
     ImplementationOppView,
@@ -11,6 +12,9 @@ from connect_labs.effectiveness.views.scenarios import ScenarioDetailView, Scena
 from connect_labs.effectiveness.views.workspace import WorkspaceShapesView, WorkspaceView
 
 __all__ = [
+    "GroupBaselineView",
+    "GroupListView",
+    "GroupView",
     "ImplementationDataView",
     "ImplementationOppView",
     "ImplementationView",

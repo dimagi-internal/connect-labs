@@ -32,6 +32,7 @@ PURE_CORE = (
     "groups.py",
     "explore.py",
     "sheets_check.py",
+    "compare.py",
     "market.py",
     "mortality.py",
     "observed.py",

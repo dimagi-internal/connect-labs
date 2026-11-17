@@ -34,6 +34,9 @@ urlpatterns = [
     path("market/plan.csv", views.MarketPlanCsvView.as_view(), name="market_plan_csv"),
     path("workspace/", views.WorkspaceView.as_view(), name="workspace"),
     path("workspace/shapes/", views.WorkspaceShapesView.as_view(), name="workspace_shapes"),
+    path("groups/", views.GroupListView.as_view(), name="groups"),
+    path("groups/<int:pk>/", views.GroupView.as_view(), name="group"),
+    path("groups/<int:pk>/baseline/", views.GroupBaselineView.as_view(), name="group_baseline"),
     path("scenarios/", views.ScenarioListView.as_view(), name="scenarios"),
     path("scenarios/<int:pk>/", views.ScenarioDetailView.as_view(), name="scenario"),
     # Malaria PMC was retired on 13 Nov 2026: a saved link lands on Market size.
