@@ -281,3 +281,22 @@ def test_the_warm_task_reads_a_program_source_in_the_program_scope(drive, owner)
     assert out == {"warmed": ["answers"], "failed": []}, out
     assert pda_cls.call_args.kwargs.get("program_id") == PROGRAM
     assert pipeline_query.cached_queryset(config, gf.program_cache_scope(PROGRAM)).count() == 3
+
+
+def test_a_commcare_project_source_is_read_once_like_a_program_drive_source():
+    """A Connect workflow that names a CommCare project's rows (an ``hq_store`` source) reads them once, not once per
+    opportunity: the rows are the project's, so fanned out over N opportunities every count would be N times too large.
+    """
+    from connect_labs.workflow.data_access import project_source_scope, read_once_meta
+
+    config = AnalysisPipelineConfig(
+        grouping_key="username", data_source=DataSourceConfig(type="hq_store", project_id=77, store_kind="forms")
+    )
+    assert pipeline_read_targets(config, OPPS) == [("project:77", None, None)]
+    assert pipeline_read_targets(config, []) == [("project:77", None, None)]
+    assert project_source_scope(config) == 77 and program_drive_scope(config) is None
+    assert read_once_meta(config) == {"project_id": 77, "read_once_for_project": True}
+    # nothing else changes: a per-opportunity source, and a program Drive source, read as before
+    plain = AnalysisPipelineConfig(grouping_key="username")
+    assert pipeline_read_targets(plain, OPPS) == [(str(o), o, o) for o in OPPS] and read_once_meta(plain) == {}
+    assert read_once_meta(_config()) == {"program_id": PROGRAM, "read_once_for_program": True}
