@@ -13,7 +13,7 @@
 {% block content %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.13.0/mapbox-gl.css"/>
-<div class="max-w-full mx-auto px-4 py-6" style="overflow-x: clip">
+<div class="max-w-full mx-auto sm:px-4 py-4 sm:py-6" style="overflow-x: clip">
     {% if present_mode %}
     {% comment %} Presentation mode (connect-labs#1295): the breadcrumb is navigation into
        the builder, which a link recipient has no use for and no access to.
@@ -22,12 +22,104 @@
     <h1 class="mb-4 text-2xl font-semibold text-gray-900">{{ definition.name|default:"Run" }}</h1>
     {% else %}
     <!-- Breadcrumb -->
-    <nav class="mb-4">
+    <nav class="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
         <ol class="flex items-center space-x-2 text-sm text-gray-500">
             <li><a href="{% url 'labs:workflow:list' %}" class="hover:text-gray-700">Workflows</a></li>
             <li><i class="fa-solid fa-chevron-right text-xs"></i></li>
             <li class="text-gray-900">{{ definition.name|default:"Run" }}</li>
         </ol>
+        {% comment %} The workflow's embedded agent (config.agent, workflow/agent_sharing.py):
+           whether its runs offer one, which, and the author's brief -- saved by
+           UpdateAgentConfigView. Absent on presentation links and in edit mode. {% endcomment %}
+        {% if agent_settings %}
+        {{ agent_settings|json_script:"agent-settings" }}
+        <div x-data="{
+                show: false,
+                saving: false,
+                error: '',
+                cfg: JSON.parse(document.getElementById('agent-settings').textContent),
+                csrf: '{{ csrf_token }}',
+                chosen() {
+                    return this.cfg.choices.find(c => c.slug === this.cfg.agent);
+                },
+                summary() {
+                    if (!this.cfg.share) return 'off';
+                    const c = this.chosen();
+                    if (!c) return this.cfg.agent + ' (not shown on labs: Labs Admin › Canopy agents)';
+                    return c.slug + (c.read_only ? ' (sensitive-data runners)' : '');
+                },
+                async save() {
+                    if (this.saving) return;
+                    this.saving = true; this.error = '';
+                    try {
+                        const response = await fetch(this.cfg.url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': this.csrf },
+                            body: JSON.stringify({ share: this.cfg.share, agent: this.cfg.agent, brief: this.cfg.brief }),
+                        });
+                        if (response.ok) { window.location.reload(); return; }
+                        const body = await response.json().catch(() => ({}));
+                        this.error = body.error || ('Save failed: ' + response.status);
+                    } catch (e) { this.error = 'Save failed: ' + e; }
+                    this.saving = false;
+                },
+            }"
+             class="text-sm text-gray-600 flex flex-wrap items-center gap-x-2 min-w-0">
+            <span class="font-medium">Agent:</span>
+            <span x-text="summary()"></span>
+            <button type="button" @click="show = true" class="text-blue-600 hover:text-blue-800">
+                <i class="fa-solid fa-pen-to-square"></i> Edit
+            </button>
+            <template x-if="cfg.share && cfg.held_back.length">
+                <span class="basis-full text-xs text-red-700"><i class="fa-solid fa-circle-exclamation mr-1"></i>not shown on this page:
+                    <span x-text="cfg.held_back.join('; ')"></span></span>
+            </template>
+
+            <div x-show="show" x-cloak class="fixed inset-0 z-50">
+                <div class="absolute inset-0 bg-black/30" @click="show = false"></div>
+                <div class="relative mx-auto mt-24 max-w-xl bg-white rounded-lg shadow-lg p-6 space-y-4">
+                    <h3 class="text-lg font-semibold text-gray-900">Embedded agent</h3>
+                    <label class="flex items-center gap-2">
+                        <input type="checkbox" x-model="cfg.share">
+                        <span>Offer an agent on this workflow's runs</span>
+                    </label>
+                    <fieldset class="space-y-2" :disabled="!cfg.share">
+                        <template x-for="c in cfg.choices" :key="c.slug">
+                            <label class="flex items-start gap-2" :class="c.available ? '' : 'opacity-60'">
+                                <input type="radio" :value="c.slug" x-model="cfg.agent" class="mt-1">
+                                <span>
+                                    <span class="font-medium font-mono" x-text="c.slug"></span>
+                                    <span x-show="c.default" class="text-xs text-gray-500">(labs' default agent)</span>:
+                                    <span x-show="c.description" class="block text-xs text-gray-500" x-text="c.description"></span>
+                                    <span x-show="c.read_only">on sensitive-data runners; reads the run, the workflow behind it
+                                        and the raw visits and form JSON<span x-show="c.sensitive_data">, over Labs' sensitive data
+                                        (production visits) too</span>, and can propose edits to this workflow and its pipelines
+                                        for a person to confirm (they stay in Labs). Runs none of the workflow's actions.</span>
+                                    <span x-show="!c.read_only">reads the run and can propose this workflow's actions for a
+                                        person to confirm. Over sensitive data (production visits) it is not offered.</span>
+                                    <span x-show="!c.available" class="block text-red-700 text-xs">
+                                        Not available on this workflow: <span x-text="c.reasons.join('; ')"></span></span>
+                                </span>
+                            </label>
+                        </template>
+                        <p class="text-xs text-gray-500">Which agents are listed is set in Labs Admin › Canopy agents, from those canopy allows on labs.</p>
+                    </fieldset>
+                    <label class="block">
+                        <span class="font-medium text-gray-800">Brief for the agent</span>
+                        <span class="block text-xs text-gray-500">What this workflow is for, what correct looks like, what to check first, known quirks of the form. The agent reads it with the workflow.</span>
+                        <textarea x-model="cfg.brief" :maxlength="cfg.brief_max" rows="6"
+                                  class="mt-1 w-full border rounded px-3 py-2 text-sm"></textarea>
+                    </label>
+                    <p x-show="error" x-text="error" class="text-sm text-red-700"></p>
+                    <div class="flex justify-end gap-2">
+                        <button type="button" @click="show = false" class="px-3 py-1.5 rounded border">Cancel</button>
+                        <button type="button" @click="save()" :disabled="saving"
+                                class="px-3 py-1.5 rounded bg-blue-600 text-white" x-text="saving ? 'Saving…' : 'Save'"></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
     </nav>
     {% endif %}
 
@@ -135,98 +227,6 @@
     </div>
     {% endif %}
 
-    {% comment %} The workflow's embedded agent (config.agent, workflow/agent_sharing.py):
-       whether its runs offer one, which, and the author's brief -- saved by
-       UpdateAgentConfigView. Absent on presentation links and in edit mode. {% endcomment %}
-    {% if agent_settings %}
-    {{ agent_settings|json_script:"agent-settings" }}
-    <div x-data="{
-            show: false,
-            saving: false,
-            error: '',
-            cfg: JSON.parse(document.getElementById('agent-settings').textContent),
-            csrf: '{{ csrf_token }}',
-            chosen() {
-                return this.cfg.choices.find(c => c.slug === this.cfg.agent);
-            },
-            summary() {
-                if (!this.cfg.share) return 'off';
-                const c = this.chosen();
-                if (!c) return this.cfg.agent + ' (not shown on labs: Labs Admin › Canopy agents)';
-                return c.slug + (c.read_only ? ' (sensitive-data runners)' : '');
-            },
-            async save() {
-                if (this.saving) return;
-                this.saving = true; this.error = '';
-                try {
-                    const response = await fetch(this.cfg.url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': this.csrf },
-                        body: JSON.stringify({ share: this.cfg.share, agent: this.cfg.agent, brief: this.cfg.brief }),
-                    });
-                    if (response.ok) { window.location.reload(); return; }
-                    const body = await response.json().catch(() => ({}));
-                    this.error = body.error || ('Save failed: ' + response.status);
-                } catch (e) { this.error = 'Save failed: ' + e; }
-                this.saving = false;
-            },
-        }"
-         class="mb-4 text-sm text-gray-600 flex items-center gap-2">
-        <span class="font-medium">Agent:</span>
-        <span x-text="summary()"></span>
-        <button type="button" @click="show = true" class="text-blue-600 hover:text-blue-800">
-            <i class="fa-solid fa-pen-to-square"></i> Edit
-        </button>
-        <template x-if="cfg.share && cfg.held_back.length">
-            <span class="text-red-700"><i class="fa-solid fa-circle-exclamation mr-1"></i>not shown on this page:
-                <span x-text="cfg.held_back.join('; ')"></span></span>
-        </template>
-
-        <div x-show="show" x-cloak class="fixed inset-0 z-50">
-            <div class="absolute inset-0 bg-black/30" @click="show = false"></div>
-            <div class="relative mx-auto mt-24 max-w-xl bg-white rounded-lg shadow-lg p-6 space-y-4">
-                <h3 class="text-lg font-semibold text-gray-900">Embedded agent</h3>
-                <label class="flex items-center gap-2">
-                    <input type="checkbox" x-model="cfg.share">
-                    <span>Offer an agent on this workflow's runs</span>
-                </label>
-                <fieldset class="space-y-2" :disabled="!cfg.share">
-                    <template x-for="c in cfg.choices" :key="c.slug">
-                        <label class="flex items-start gap-2" :class="c.available ? '' : 'opacity-60'">
-                            <input type="radio" :value="c.slug" x-model="cfg.agent" class="mt-1">
-                            <span>
-                                <span class="font-medium font-mono" x-text="c.slug"></span>
-                                <span x-show="c.default" class="text-xs text-gray-500">(labs' default agent)</span>:
-                                <span x-show="c.description" class="block text-xs text-gray-500" x-text="c.description"></span>
-                                <span x-show="c.read_only">on sensitive-data runners; reads the run, the workflow behind it
-                                    and the raw visits and form JSON<span x-show="c.sensitive_data">, over Labs' sensitive data
-                                    (production visits) too</span>, and can propose edits to this workflow and its pipelines
-                                    for a person to confirm (they stay in Labs). Runs none of the workflow's actions.</span>
-                                <span x-show="!c.read_only">reads the run and can propose this workflow's actions for a
-                                    person to confirm. Over sensitive data (production visits) it is not offered.</span>
-                                <span x-show="!c.available" class="block text-red-700 text-xs">
-                                    Not available on this workflow: <span x-text="c.reasons.join('; ')"></span></span>
-                            </span>
-                        </label>
-                    </template>
-                    <p class="text-xs text-gray-500">Which agents are listed is set in Labs Admin › Canopy agents, from those canopy allows on labs.</p>
-                </fieldset>
-                <label class="block">
-                    <span class="font-medium text-gray-800">Brief for the agent</span>
-                    <span class="block text-xs text-gray-500">What this workflow is for, what correct looks like, what to check first, known quirks of the form. The agent reads it with the workflow.</span>
-                    <textarea x-model="cfg.brief" :maxlength="cfg.brief_max" rows="6"
-                              class="mt-1 w-full border rounded px-3 py-2 text-sm"></textarea>
-                </label>
-                <p x-show="error" x-text="error" class="text-sm text-red-700"></p>
-                <div class="flex justify-end gap-2">
-                    <button type="button" @click="show = false" class="px-3 py-1.5 rounded border">Cancel</button>
-                    <button type="button" @click="save()" :disabled="saving"
-                            class="px-3 py-1.5 rounded bg-blue-600 text-white" x-text="saving ? 'Saving…' : 'Save'"></button>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
 
     {% if is_edit_mode %}
     <!-- Edit Mode Banner -->
