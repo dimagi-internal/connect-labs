@@ -35,7 +35,7 @@ def test_each_row_carries_the_ratio_so_a_reader_can_see_how_far_off(nigeria):
     with_births(nigeria, 5_000_000.0, 7_500_000.0)
     found = people.attach_risk(people.group_selection(selection(nigeria), "territory"))
     rows = market.size("kc", people.for_model(found, "kc"), {}, 6.0)["rows"]
-    assert {r["births_vs_wpp"] for r in rows} == {pytest.approx(2 / 3)} and all(r["births_off"] for r in rows)
+    assert all(r["births_vs_wpp"] == pytest.approx(2 / 3) and r["births_off"] for r in rows)
 
 
 def test_a_plan_in_a_country_far_from_the_uns_total_says_so(nigeria):
