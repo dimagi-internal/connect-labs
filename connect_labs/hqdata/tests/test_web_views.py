@@ -6,7 +6,8 @@ from django.utils import timezone
 
 from connect_labs.hqdata.access import create_project
 from connect_labs.hqdata.models import HQCase, HQForm, HQProject, HQProjectMember, HQSource, HQSyncRun
-from connect_labs.hqdata.tests.conftest import make_hq_user
+from connect_labs.hqdata.pipelines import find_pipeline, list_pipelines
+from connect_labs.hqdata.tests.conftest import make_hq_user, make_pipeline
 from connect_labs.users.tests.factories import UserFactory
 
 pytestmark = pytest.mark.django_db
@@ -300,13 +301,12 @@ def test_saving_a_pipeline_and_running_it_shows_the_rows(client):
     resp = client.post(
         f"/commcare/projects/{project.pk}/pipelines/", {"name": "per worker", "store_kind": "forms", "schema": SCHEMA}
     )
-    pipeline = project.pipelines.get(name="per worker")
-    assert (
-        resp["Location"] == f"/commcare/projects/{project.pk}/pipelines/{pipeline.pk}/" and pipeline.created_by == user
-    )
+    pipeline = find_pipeline(user, project, name="per worker")
+    assert resp["Location"] == f"/commcare/projects/{project.pk}/pipelines/{pipeline.id}/"
+    assert pipeline.data["created_by"] == user.pk
 
     resp = client.post(
-        f"/commcare/projects/{project.pk}/pipelines/{pipeline.pk}/",
+        f"/commcare/projects/{project.pk}/pipelines/{pipeline.id}/",
         {"action": "run", "name": "per worker", "store_kind": "forms", "schema": SCHEMA},
     )
     body = resp.content.decode()
@@ -330,7 +330,7 @@ def test_a_schema_that_cannot_run_is_refused_with_the_reason(client, schema, mes
         {"name": "bad", "store_kind": "forms", "schema": schema},
         follow=True,
     )
-    assert not project.pipelines.exists() and message in resp.content.decode()
+    assert not list_pipelines(user, project) and message in resp.content.decode()
 
 
 def test_a_duplicate_name_is_refused(client):
@@ -340,20 +340,13 @@ def test_a_duplicate_name_is_refused(client):
         client.post(
             f"/commcare/projects/{project.pk}/pipelines/", {"name": "p", "store_kind": "forms", "schema": SCHEMA}
         )
-    assert project.pipelines.count() == 1
+    assert len(list_pipelines(user, project)) == 1
 
 
 def test_pipelines_of_a_project_i_am_not_in_do_not_exist_for_me(client):
     make_hq_user(client)
     other = add_project(UserFactory(), "secret")
-    from connect_labs.hqdata.models import HQPipeline
-
-    pipeline = HQPipeline.objects.create(
-        project=other,
-        name="p",
-        store_kind="forms",
-        schema={"fields": [{"name": "n", "path": "form.x", "aggregation": "count"}]},
-    )
+    pipeline = make_pipeline(other, name="p")
     assert client.get(f"/commcare/projects/{other.pk}/pipelines/").status_code == 404
     assert (
         client.post(
@@ -361,8 +354,8 @@ def test_pipelines_of_a_project_i_am_not_in_do_not_exist_for_me(client):
         ).status_code
         == 404
     )
-    assert client.get(f"/commcare/projects/{other.pk}/pipelines/{pipeline.pk}/").status_code == 404
-    assert client.post(f"/commcare/projects/{other.pk}/pipelines/{pipeline.pk}/", {"action": "run"}).status_code == 404
+    assert client.get(f"/commcare/projects/{other.pk}/pipelines/{pipeline.id}/").status_code == 404
+    assert client.post(f"/commcare/projects/{other.pk}/pipelines/{pipeline.id}/", {"action": "run"}).status_code == 404
     # and a pipeline id from one project does not open under another I do belong to
     mine = add_project(HQProject.objects.get(pk=other.pk).members.first().user, "mine")
     assert mine is not None
@@ -372,28 +365,22 @@ def test_a_pipeline_id_from_another_project_does_not_open_under_mine(client):
     user = make_hq_user(client)
     mine = add_project(user)
     other = add_project(UserFactory(), "secret")
-    from connect_labs.hqdata.models import HQPipeline
-
-    pipeline = HQPipeline.objects.create(project=other, name="p", store_kind="forms", schema={})
-    assert client.get(f"/commcare/projects/{mine.pk}/pipelines/{pipeline.pk}/").status_code == 404
+    pipeline = make_pipeline(other, name="p")
+    assert client.get(f"/commcare/projects/{mine.pk}/pipelines/{pipeline.id}/").status_code == 404
 
 
 def test_only_its_author_or_an_admin_can_delete_a_pipeline(client):
     admin = UserFactory()
     project = add_project(admin)
-    from connect_labs.hqdata.models import HQPipeline
-
     author = make_hq_user(client, username="a@example.org")
     HQProjectMember.objects.create(project=project, user=author, role="member")
-    other_members_pipeline = HQPipeline.objects.create(
-        project=project, name="theirs", store_kind="forms", schema={}, created_by=admin
-    )
-    mine = HQPipeline.objects.create(project=project, name="mine", store_kind="forms", schema={}, created_by=author)
+    other_members_pipeline = make_pipeline(project, name="theirs", created_by=admin)
+    mine = make_pipeline(project, name="mine", created_by=author)
 
-    client.post(f"/commcare/projects/{project.pk}/pipelines/{other_members_pipeline.pk}/", {"action": "delete"})
-    assert HQPipeline.objects.filter(pk=other_members_pipeline.pk).exists()
-    client.post(f"/commcare/projects/{project.pk}/pipelines/{mine.pk}/", {"action": "delete"})
-    assert not HQPipeline.objects.filter(pk=mine.pk).exists()
+    client.post(f"/commcare/projects/{project.pk}/pipelines/{other_members_pipeline.id}/", {"action": "delete"})
+    assert find_pipeline(author, project, pipeline_id=other_members_pipeline.id) is not None
+    client.post(f"/commcare/projects/{project.pk}/pipelines/{mine.id}/", {"action": "delete"})
+    assert find_pipeline(author, project, pipeline_id=mine.id) is None
 
 
 def test_a_project_i_have_not_joined_says_what_to_do_and_says_it_the_same_whether_or_not_it_exists(client):

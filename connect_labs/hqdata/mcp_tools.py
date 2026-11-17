@@ -15,10 +15,17 @@ from django.db.models.fields.json import KeyTransform
 from django.utils.dateparse import parse_datetime
 
 from connect_labs.audit_trail.models import Action
-from connect_labs.hqdata.access import may_use_project, visible_projects
+from connect_labs.hqdata.access import is_project_admin, may_use_project, visible_projects
 from connect_labs.hqdata.audit import project_denied, project_event
-from connect_labs.hqdata.models import HQPipeline, HQProject, HQProjectMember, HQSource, HQSyncRun
-from connect_labs.hqdata.pipelines import PipelineProblem, config_for, run_pipeline
+from connect_labs.hqdata.models import HQProject, HQSyncRun
+from connect_labs.hqdata.pipelines import (
+    PipelineProblem,
+    delete_pipeline,
+    find_pipeline,
+    list_pipelines,
+    run_pipeline,
+    save_pipeline,
+)
 from connect_labs.hqdata.projects import Refused, register_project, set_storage
 from connect_labs.hqdata.stores import StoreUnavailable, store_for
 from connect_labs.labs.integrations.commcare.cchq_tokens import cchq_token_or_none
@@ -38,7 +45,7 @@ def _project(user, project_id) -> HQProject:
 
 
 def _admin(user, project: HQProject) -> None:
-    if not HQProjectMember.objects.filter(project=project, user=user, role=HQProjectMember.ROLE_ADMIN).exists():
+    if not is_project_admin(user, project):
         raise MCPToolError("PERMISSION_DENIED", "Only a project admin can do that.")
 
 
@@ -403,14 +410,11 @@ def commcare_cases(
     return {"total": total, "offset": offset, "cases": out}
 
 
-def _pipeline(project: HQProject, pipeline_id=None, name=None) -> HQPipeline:
-    qs = project.pipelines.all()
-    pipeline = (
-        qs.filter(pk=pipeline_id).first() if isinstance(pipeline_id, int) else qs.filter(name=name or "").first()
-    )
-    if pipeline is None:
+def _pipeline(user, project: HQProject, pipeline_id=None, name=None):
+    record = find_pipeline(user, project, pipeline_id=pipeline_id, name=name)
+    if record is None:
         raise MCPToolError("NOT_FOUND", "No such pipeline in this project.")
-    return pipeline
+    return record
 
 
 @register(
@@ -423,7 +427,7 @@ def commcare_pipeline_list(user, project_id=None, **_):
     return {
         "pipelines": [
             {
-                "id": p.pk,
+                "id": p.id,
                 "name": p.name,
                 "store_kind": p.store_kind,
                 "app_id": p.app_id,
@@ -431,7 +435,7 @@ def commcare_pipeline_list(user, project_id=None, **_):
                 "case_type": p.case_type,
                 "schema": p.schema,
             }
-            for p in project.pipelines.all()
+            for p in list_pipelines(user, project)
         ]
     }
 
@@ -463,22 +467,20 @@ def commcare_pipeline_save(
     user, project_id=None, name="", store_kind="", schema=None, app_id="", xmlns="", case_type="", **_
 ):
     project = _project(user, project_id)
-    name = (name or "").strip()
-    if not name or store_kind not in (HQSource.KIND_FORMS, HQSource.KIND_CASES) or not isinstance(schema, dict):
-        raise MCPToolError(
-            "INVALID_SCHEMA", "A pipeline needs a name, store_kind forms or cases, and a schema object."
-        )
-    pipeline = project.pipelines.filter(name=name).first() or HQPipeline(project=project, name=name, created_by=user)
-    pipeline.store_kind, pipeline.schema = store_kind, schema
-    pipeline.app_id = app_id if store_kind == HQSource.KIND_FORMS else ""
-    pipeline.xmlns = xmlns if store_kind == HQSource.KIND_FORMS else ""
-    pipeline.case_type = case_type if store_kind == HQSource.KIND_CASES else ""
     try:
-        config_for(pipeline)
+        record = save_pipeline(
+            user,
+            project,
+            name=name,
+            store_kind=store_kind,
+            schema=schema,
+            app_id=app_id,
+            xmlns=xmlns,
+            case_type=case_type,
+        )
     except PipelineProblem as exc:
         raise MCPToolError("INVALID_SCHEMA", str(exc))
-    pipeline.save()
-    return {"id": pipeline.pk, "name": pipeline.name}
+    return {"id": record.id, "name": record.name}
 
 
 @register(
@@ -500,9 +502,9 @@ def commcare_pipeline_save(
 )
 def commcare_pipeline_run(user, project_id=None, pipeline_id=None, name=None, fresh=False, **_):
     project = _project(user, project_id)
-    pipeline = _pipeline(project, pipeline_id, name)
+    pipeline = _pipeline(user, project, pipeline_id, name)
     try:
-        result = run_pipeline(user, pipeline, force_refresh=bool(fresh))
+        result = run_pipeline(user, project, pipeline, force_refresh=bool(fresh))
     except PipelineProblem as exc:
         raise MCPToolError("INVALID_SCHEMA", str(exc))
     except StoreUnavailable as exc:
@@ -528,8 +530,9 @@ def commcare_pipeline_run(user, project_id=None, pipeline_id=None, name=None, fr
 )
 def commcare_pipeline_delete(user, project_id=None, pipeline_id=None, name=None, **_):
     project = _project(user, project_id)
-    pipeline = _pipeline(project, pipeline_id, name)
-    if pipeline.created_by_id != user.pk:
-        _admin(user, project)
-    pipeline.delete()
+    pipeline = _pipeline(user, project, pipeline_id, name)
+    try:
+        delete_pipeline(user, project, pipeline, is_admin=is_project_admin(user, project))
+    except PermissionError as exc:
+        raise MCPToolError("PERMISSION_DENIED", str(exc))
     return {"deleted": True}

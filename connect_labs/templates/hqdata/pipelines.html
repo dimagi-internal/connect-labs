@@ -8,8 +8,8 @@
       <ul class="rounded-lg border border-gray-200 bg-white text-sm">
         {% for p in pipelines %}
           <li class="border-t border-gray-100 p-3 first:border-t-0">
-            <a class="font-medium underline" href="{% url 'hq:pipeline_detail' project.pk p.pk %}">{{ p.name }}</a>
-            <span class="text-gray-500">on {{ p.get_store_kind_display|lower }}</span>
+            <a class="font-medium underline" href="{% url 'hq:pipeline_detail' project.pk p.id %}">{{ p.name }}</a>
+            <span class="text-gray-500">on {{ p.store_kind }}</span>
           </li>
         {% endfor %}
       </ul>

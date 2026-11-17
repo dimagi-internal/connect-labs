@@ -8,8 +8,8 @@ import pytest
 
 import connect_labs.hqdata.mcp_tools  # noqa: F401 -- registers the tools
 from connect_labs.hqdata.access import create_project
-from connect_labs.hqdata.models import HQCase, HQForm, HQPipeline, HQProject, HQProjectMember, HQSource
-from connect_labs.hqdata.tests.conftest import make_hq_user
+from connect_labs.hqdata.models import HQCase, HQForm, HQProject, HQProjectMember, HQSource
+from connect_labs.hqdata.tests.conftest import make_hq_user, make_pipeline
 from connect_labs.mcp import server as mcp_server
 from connect_labs.mcp import token_scopes
 from connect_labs.mcp.models import MCPAccessToken
@@ -279,7 +279,8 @@ def test_a_pipeline_is_saved_replaced_run_listed_and_deleted(me, project):
         schema=SCHEMA,
         xmlns="http://x/1",
     )
-    assert again["id"] == saved["id"] and HQPipeline.objects.get(pk=saved["id"]).xmlns == "http://x/1"
+    assert again["id"] == saved["id"]
+    assert call("commcare_pipeline_list", me, project_id=project.pk)["pipelines"][0]["xmlns"] == "http://x/1"
     assert [p["name"] for p in call("commcare_pipeline_list", me, project_id=project.pk)["pipelines"]] == [
         "per worker"
     ]
@@ -287,7 +288,7 @@ def test_a_pipeline_is_saved_replaced_run_listed_and_deleted(me, project):
     assert out["count"] == 1 and out["rows"][0]["n"] == 2
     assert call("commcare_pipeline_run", me, project_id=project.pk, pipeline_id=saved["id"], fresh=True)["count"] == 1
     call("commcare_pipeline_delete", me, project_id=project.pk, name="per worker")
-    assert not HQPipeline.objects.exists()
+    assert call("commcare_pipeline_list", me, project_id=project.pk)["pipelines"] == []
 
 
 @pytest.mark.parametrize("args", [{"name": ""}, {"store_kind": "nope"}, {"schema": []}, {"schema": {"fields": []}}])
@@ -295,7 +296,8 @@ def test_a_pipeline_that_cannot_run_is_not_saved(me, project, args):
     base = {"name": "p", "store_kind": "forms", "schema": SCHEMA, **args}
     with pytest.raises(MCPToolError) as caught:
         call("commcare_pipeline_save", me, project_id=project.pk, **base)
-    assert caught.value.code == "INVALID_SCHEMA" and not HQPipeline.objects.exists()
+    assert caught.value.code == "INVALID_SCHEMA"
+    assert call("commcare_pipeline_list", me, project_id=project.pk)["pipelines"] == []
 
 
 def test_a_pipeline_of_the_wrong_name_is_not_found_and_another_projects_does_not_open_here(me, project):
@@ -310,14 +312,13 @@ def test_a_pipeline_of_the_wrong_name_is_not_found_and_another_projects_does_not
 def test_only_an_author_or_an_admin_can_delete_a_pipeline(project):
     member = UserFactory()
     HQProjectMember.objects.create(project=project, user=member, role="member")
-    pipeline = HQPipeline.objects.create(
-        project=project, name="theirs", store_kind="forms", schema=SCHEMA, created_by=project.created_by
-    )
+    pipeline = make_pipeline(project, name="theirs", schema=SCHEMA, created_by=project.created_by)
     with pytest.raises(MCPToolError) as caught:
-        call("commcare_pipeline_delete", member, project_id=project.pk, pipeline_id=pipeline.pk)
-    assert caught.value.code == "PERMISSION_DENIED" and HQPipeline.objects.filter(pk=pipeline.pk).exists()
-    call("commcare_pipeline_delete", project.created_by, project_id=project.pk, pipeline_id=pipeline.pk)
-    assert not HQPipeline.objects.exists()
+        call("commcare_pipeline_delete", member, project_id=project.pk, pipeline_id=pipeline.id)
+    assert caught.value.code == "PERMISSION_DENIED"
+    assert len(call("commcare_pipeline_list", member, project_id=project.pk)["pipelines"]) == 1
+    call("commcare_pipeline_delete", project.created_by, project_id=project.pk, pipeline_id=pipeline.id)
+    assert call("commcare_pipeline_list", member, project_id=project.pk)["pipelines"] == []
 
 
 def ran(results=None):
