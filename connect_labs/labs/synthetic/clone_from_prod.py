@@ -26,6 +26,34 @@ from .provisioning import allocate_shared_program_id, register_labs_only_opp
 
 logger = logging.getLogger(__name__)
 
+# How much of an exception's message a failure record keeps. Enough to name the
+# cause ("403 Forbidden for url .../user_visits"), short enough for a status page.
+_ERROR_CHARS = 300
+
+
+@dataclass
+class CloneFailure:
+    """One opportunity a clone job could not make, and why -- shown to the person.
+
+    The bulk loops below deliberately survive a bad opportunity. Before this record
+    existed that survival was silent: the failure went to the server log only, and a
+    job whose every opportunity failed still finished SUCCESS with no clones, so the
+    page said "Done" over an empty list (EHA 1236, 2026-11-16).
+    """
+
+    source_opportunity_id: int | None
+    step: str  # "measure" (Phase 1, reads prod) or "generate" (Phase 2)
+    error: str
+
+
+def _note_failure(failures, source_opportunity_id, step: str, exc: BaseException) -> None:
+    if failures is None:
+        return
+    message = f"{type(exc).__name__}: {exc}"
+    if len(message) > _ERROR_CHARS:
+        message = message[: _ERROR_CHARS - 1] + "…"
+    failures.append(CloneFailure(source_opportunity_id=source_opportunity_id, step=step, error=message))
+
 
 def profile_opp_to_bundle(
     source_opp_id: int,
@@ -185,6 +213,7 @@ def profile_opps_bulk(
     curate: bool = False,
     mirror: bool = False,
     progress=NULL_PROGRESS,
+    failures: list[CloneFailure] | None = None,
 ) -> tuple[str, list[str]]:
     """Profile multiple opportunities into one bundle store, isolating per-opp failures.
 
@@ -196,6 +225,8 @@ def profile_opps_bulk(
         bundle_root: a local path, or ``gdrive:`` / ``gdrive:<folder_id>``. When
             ``gdrive:``, a run folder is created and its id is returned (below).
         drive: a Drive client, required when ``bundle_root`` is a ``gdrive:`` uri.
+        failures: when given, each opportunity that could not be profiled is
+            appended as a :class:`CloneFailure`, so the caller can tell the person.
 
     Returns:
         ``(resolved_bundle_root, handles)`` — ``resolved_bundle_root`` is the
@@ -221,6 +252,7 @@ def profile_opps_bulk(
             curate=curate,
             mirror=mirror,
             progress=progress,
+            failures=failures,
         )
         resolved = f"gdrive:{store.root_folder_id}" if hasattr(store, "root_folder_id") else str(bundle_root)
         return resolved, handles
@@ -242,8 +274,9 @@ def profile_opps_bulk(
                 )
             )
             outcome = f"profiled opportunity {sid}"
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             logger.exception("profile_opps_bulk: failed for opp %s", sid)
+            _note_failure(failures, sid, "measure", exc)
             outcome = f"skipped opportunity {sid} (failed)"
         # Emitted for skipped opps too: this loop deliberately survives a bad
         # opp, so a counter that stalled on one would leave the client's idle
@@ -307,16 +340,22 @@ def _profile_one_forked(sid: int) -> str:
 
 
 def _profile_in_parallel(
-    ids, *, workers, store, bundle_root, base_url, oauth_token, curate, mirror, progress
+    ids, *, workers, store, bundle_root, base_url, oauth_token, curate, mirror, progress, failures=None
 ) -> list[str]:
     """Profile ``ids`` across ``workers`` forked processes into the one store.
 
     The store's root (a Drive run folder) was resolved once by the caller, so every
     child writes beside the others. A failure is logged and skipped, as in the serial
     loop. Progress is reported per finished opportunity.
+
+    A child that DIES (killed for memory, a segfault) breaks the whole pool: every
+    opportunity still in it then raises ``BrokenProcessPool``, though nothing is wrong
+    with any of them. Those are not failures of their own, so they are profiled again
+    here, one at a time, in this process.
     """
     import multiprocessing
     from concurrent.futures import ProcessPoolExecutor, as_completed
+    from concurrent.futures.process import BrokenProcessPool
 
     resolved_root = f"gdrive:{store.root_folder_id}" if hasattr(store, "root_folder_id") else str(bundle_root)
     _FORK_JOB.clear()
@@ -326,22 +365,43 @@ def _profile_in_parallel(
     _close_before_fork()
     total = len(ids)
     handles: list[str] = []
+    broken: list[int] = []
     done = 0
     try:
         with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("fork")) as pool:
             futures = {pool.submit(_profile_one_forked, sid): sid for sid in ids}
             for future in as_completed(futures):
                 sid = futures[future]
-                done += 1
                 try:
                     handles.append(future.result())
                     outcome = f"profiled opportunity {sid}"
-                except Exception:  # noqa: BLE001
+                except BrokenProcessPool:
+                    broken.append(sid)
+                    continue
+                except Exception as exc:  # noqa: BLE001
                     logger.exception("profile_opps_bulk: failed for opp %s", sid)
+                    _note_failure(failures, sid, "measure", exc)
                     outcome = f"skipped opportunity {sid} (failed)"
+                done += 1
                 safe_call(progress, done, total, f"{outcome} ({done}/{total})")
     finally:
         _FORK_JOB.clear()
+    if broken:
+        logger.warning("profile_opps_bulk: a profiling process died; profiling %s one at a time", sorted(broken))
+    for sid in broken:
+        try:
+            handles.append(
+                profile_opp_to_bundle(
+                    sid, base_url=base_url, oauth_token=oauth_token, store=store, curate=curate, mirror=mirror
+                )
+            )
+            outcome = f"profiled opportunity {sid}"
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("profile_opps_bulk: failed for opp %s", sid)
+            _note_failure(failures, sid, "measure", exc)
+            outcome = f"skipped opportunity {sid} (failed)"
+        done += 1
+        safe_call(progress, done, total, f"{outcome} ({done}/{total})")
     return handles
 
 
@@ -689,6 +749,7 @@ def _generate_in_parallel(
     created_by,
     new_opportunities,
     progress,
+    failures=None,
 ) -> list[CloneResult]:
     """:func:`generate_opps_bulk` across forked processes, one per vCPU.
 
@@ -696,10 +757,15 @@ def _generate_in_parallel(
     order, here -- a new opportunity takes the next labs-only id, and ids handed out
     in parallel would collide, so each new one is the one after the last -- and every
     opportunity is REGISTERED here afterwards, one at a time. Children generate and
-    upload fixtures and touch no database.
+    upload fixtures and touch no database. A plan lost to a dead child
+    (``BrokenProcessPool``) is built again here, one at a time, as in
+    :func:`_profile_in_parallel`.
     """
     import multiprocessing
     from concurrent.futures import ProcessPoolExecutor, as_completed
+    from concurrent.futures.process import BrokenProcessPool
+
+    from connect_labs.labs.synthetic.gdrive import DriveClient
 
     total = len(handles)
     results: list[CloneResult] = []
@@ -707,6 +773,7 @@ def _generate_in_parallel(
     done = 0
     next_new_id: int | None = None
     for handle in handles:
+        bundle = None
         try:
             bundle = store.read(handle)
             if scope is not None and bundle.source_opp_id not in scope:
@@ -733,8 +800,9 @@ def _generate_in_parallel(
                 # Two brand-new clones were both offered the next free id; give this one the one after.
                 plan.opp_id = max(p.opp_id for p in plans) + 1
             plans.append(plan)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             logger.exception("generate_opps_bulk: failed to plan bundle %s", handle)
+            _note_failure(failures, getattr(bundle, "source_opp_id", None), "generate", exc)
             done += 1
             safe_call(progress, done, total, f"skipped {handle} (failed) ({done}/{total})")
 
@@ -742,6 +810,7 @@ def _generate_in_parallel(
     _FORK_JOB.update(plans=plans, image_config=image_config, person_names=person_names)
     _close_before_fork()
     built: dict[int, dict[str, Any]] = {}
+    broken: list[int] = []
     try:
         with ProcessPoolExecutor(
             max_workers=min(workers, max(len(plans), 1)), mp_context=multiprocessing.get_context("fork")
@@ -753,13 +822,33 @@ def _generate_in_parallel(
                 try:
                     built[i] = future.result()
                     outcome = f"generated opportunity {source}"
-                except Exception:  # noqa: BLE001
+                except BrokenProcessPool:
+                    broken.append(i)
+                    continue
+                except Exception as exc:  # noqa: BLE001
                     logger.exception("generate_opps_bulk: failed for source %s", source)
+                    _note_failure(failures, source, "generate", exc)
                     outcome = f"skipped {source} (failed)"
                 done += 1
                 safe_call(progress, done, total, f"{outcome} ({done}/{total})")
     finally:
         _FORK_JOB.clear()
+    if broken:
+        logger.warning(
+            "generate_opps_bulk: a generating process died; building %s one at a time",
+            sorted(plans[i].bundle.source_opp_id for i in broken),
+        )
+    for i in sorted(broken):
+        source = plans[i].bundle.source_opp_id
+        try:
+            built[i] = _build_one(plans[i], drive=DriveClient(), image_config=image_config, person_names=person_names)
+            outcome = f"generated opportunity {source}"
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("generate_opps_bulk: failed for source %s", source)
+            _note_failure(failures, source, "generate", exc)
+            outcome = f"skipped {source} (failed)"
+        done += 1
+        safe_call(progress, done, total, f"{outcome} ({done}/{total})")
 
     for i, plan in enumerate(plans):
         if i not in built:
@@ -775,8 +864,9 @@ def _generate_in_parallel(
                     created_by=created_by,
                 )
             )
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             logger.exception("generate_opps_bulk: failed to register source %s", plan.bundle.source_opp_id)
+            _note_failure(failures, plan.bundle.source_opp_id, "generate", exc)
     return results
 
 
@@ -795,6 +885,7 @@ def generate_opps_bulk(
     authorize=None,
     created_by=None,
     new_opportunities: bool = False,
+    failures: list[CloneFailure] | None = None,
 ) -> list[CloneResult]:
     """Generate fixtures for every bundle subdirectory under *bundle_root*.
 
@@ -848,9 +939,11 @@ def generate_opps_bulk(
             created_by=created_by,
             new_opportunities=new_opportunities,
             progress=progress,
+            failures=failures,
         )
     for done, handle in enumerate(handles, start=1):
         outcome = f"bundle {handle}"
+        bundle = None
         try:
             bundle = store.read(handle)
             if scope is not None and bundle.source_opp_id not in scope:
@@ -881,8 +974,9 @@ def generate_opps_bulk(
                 )
             )
             outcome = f"generated opportunity {bundle.source_opp_id}"
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             logger.exception("generate_opps_bulk: failed for bundle %s", handle)
+            _note_failure(failures, getattr(bundle, "source_opp_id", None), "generate", exc)
             outcome = f"skipped {handle} (failed)"
         # Every bundle advances the counter, in scope or not — see the note in
         # profile_opps_bulk: a counter that stalls is a client-side hang.
@@ -991,14 +1085,21 @@ def generate_fixtures_only(
 
 
 def profile_cohort(
-    spec: CohortSpec, *, base_url: str, oauth_token: str, drive=None, progress=NULL_PROGRESS
+    spec: CohortSpec,
+    *,
+    base_url: str,
+    oauth_token: str,
+    drive=None,
+    progress=NULL_PROGRESS,
+    failures: list[CloneFailure] | None = None,
 ) -> CohortSpec:
     """Phase 1 (safe mode) for a whole cohort spec.
 
     Profiles every ``spec.opportunity_ids`` into ``spec.bundle_root`` and records the
     resolved bundle_root back on the spec (e.g. a bare ``gdrive:`` becomes
     ``gdrive:<run_folder_id>``), so the SAME spec can be handed straight to
-    :func:`generate_cohort`. Mutates and returns ``spec``.
+    :func:`generate_cohort`. Mutates and returns ``spec``. Opportunities that could
+    not be profiled are appended to ``failures`` when it is given.
     """
     resolved, _handles = profile_opps_bulk(
         spec.opportunity_ids,
@@ -1009,6 +1110,7 @@ def profile_cohort(
         curate=spec.curate,
         mirror=spec.mirror,
         progress=progress,
+        failures=failures,
     )
     spec.bundle_root = resolved
     return spec
@@ -1023,6 +1125,7 @@ def generate_cohort(
     authorize=None,
     created_by=None,
     new_opportunities: bool = False,
+    failures: list[CloneFailure] | None = None,
 ) -> tuple[CohortSpec, list[CloneResult]]:
     """Phase 2 (offline) for a whole cohort spec.
 
@@ -1049,5 +1152,6 @@ def generate_cohort(
         authorize=authorize,
         created_by=created_by,
         new_opportunities=new_opportunities,
+        failures=failures,
     )
     return spec, results
