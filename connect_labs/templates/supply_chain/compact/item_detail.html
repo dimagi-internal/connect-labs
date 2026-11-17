@@ -1,0 +1,334 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+One trade item — the only level that can be ordered, shipped and counted.
+
+Its pack configuration is at the top because everything else on the page is
+computed through it: a price per carton means nothing until you know how many
+sachets are in the carton, and neither does a balance.
+{% endcomment %}
+
+{% block page_info %}{% info "About this page" %}<p>A trade item is one manufacturer's version of a product, and the only level that can be ordered, shipped and counted.</p><p>How it is packed comes first because everything else on the page is worked out through it: a price per carton means nothing until you know how many units are in the carton, and neither does a stock balance.</p>{% endinfo %}{% endblock %}
+
+{% block supply_content %}
+
+<nav class="text-sm text-gray-600 mb-3">
+  <a href="{% url 'supply_chain:catalogue' %}" class="text-brand-indigo hover:underline">Catalogue</a>
+  {% if product %}
+    <span class="mx-1.5 text-gray-300">/</span>
+    <a href="{% url 'supply_chain:product_detail' product.slug %}" class="text-brand-indigo hover:underline">{{ product.name }}</a>
+  {% endif %}
+  <span class="mx-1.5 text-gray-300">/</span>
+  <span class="text-gray-700">{{ item.name }}</span>
+</nav>
+
+<div class="flex flex-wrap items-start justify-between gap-4 mb-5">
+  <div>
+    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">{{ item.name }}</h1>
+    {% comment %}The code sits with the other identifiers below, not as a chip under
+    the name: a slug read as the item's title (the IPTSc render).{% endcomment %}
+    {% if item.manufacturer %}<p class="text-sm text-gray-600 mt-1">made by {{ item.manufacturer }}</p>{% endif %}
+  </div>
+  <div class="flex items-center gap-3">
+    <span class="px-2.5 py-1 rounded-full text-xs font-medium
+      {% if item.status == 'active' %}bg-message-success text-message-success-text{% else %}bg-gray-100 text-gray-600{% endif %}">
+      {{ item.status|humanise }}
+    </span>
+    <a href="{% url 'supply_chain:item_edit' item.id %}" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Edit</a>
+  </div>
+</div>
+
+<div class="bg-white border border-brand-border-light rounded-lg mb-6">
+  <div class="px-5 py-4">
+    <h2 class="text-base font-semibold text-gray-900">How it is packed and identified</h2>
+    <dl class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-3 mt-3">
+      <div>
+        <dt class="text-[11px] text-gray-600">Packed</dt>
+        <dd class="text-sm mt-0.5 tabular-nums {% if item.base_per_pack %}text-gray-900{% else %}text-gray-600{% endif %}">
+          {% if item.base_per_pack %}{{ item.base_per_pack }} {{ item.base_unit|default:product.base_unit|unit_plural }}
+            / {{ item.pack_unit|default:product.pack_unit|unit_words }}{% else %}not recorded{% endif %}
+        </dd>
+      </div>
+      {% comment %}Only when recorded: "Packs per case: not recorded" beside "50 packets /
+      carton" read as a contradiction (the IPTSc render).{% endcomment %}
+      {% if item.pack_per_case %}
+      <div>
+        <dt class="text-[11px] text-gray-600">Packs per case</dt>
+        <dd class="text-sm mt-0.5 tabular-nums text-gray-900">{{ item.pack_per_case }}</dd>
+      </div>
+      {% endif %}
+      <div>
+        <dt class="text-[11px] text-gray-600">Unit weight</dt>
+        <dd class="text-sm mt-0.5 tabular-nums {% if item.base_unit_grams %}text-gray-900{% else %}text-gray-600{% endif %}">
+          {% if item.base_unit_grams %}{{ item.base_unit_grams }} g{% else %}not recorded{% endif %}
+        </dd>
+      </div>
+      <div>
+        <dt class="text-[11px] text-gray-600">Shelf life</dt>
+        <dd class="text-sm mt-0.5 tabular-nums {% if item.shelf_life_months %}text-gray-900{% else %}text-gray-600{% endif %}">
+          {% if item.shelf_life_months %}{{ item.shelf_life_months }} months{% else %}not recorded{% endif %}
+        </dd>
+      </div>
+      <div>
+        <dt class="text-[11px] text-gray-600">Kept or used up</dt>
+        <dd class="text-sm mt-0.5 text-gray-900">
+          {% if item.is_durable %}Durable — kept and moved, not forecast{% else %}Consumable{% endif %}
+        </dd>
+      </div>
+      <div>
+        <dt class="text-[11px] text-gray-600">Against the spec</dt>
+        <dd class="text-sm mt-0.5">
+          {% if item.spec_verdict %}{{ item.spec_verdict }}{% else %}<span class="text-gray-600">no product to check against</span>{% endif %}
+        </dd>
+      </div>
+    </dl>
+
+    {% if item.one_course_is %}
+      {% comment %}The unit every later quantity is read in, so it is the statement on the page.{% endcomment %}
+      <div class="mt-3 rounded-md bg-blue-50 border border-blue-100 px-3 py-2 text-base font-semibold text-blue-900">
+        {% if item.one_course_is == "pack" %}
+          One {{ item.pack_unit|default:product.pack_unit|default:"pack"|unit_words }} is one full course
+        {% else %}
+          One {{ item.base_unit|default:product.base_unit|default:"unit"|unit_words }} is one full course
+        {% endif %}
+        {% info "About one course" %}<p>So its cost per course needs no conversion.</p>{% endinfo %}
+      </div>
+    {% endif %}
+
+    {% if item.is_kit %}
+      <div class="mt-4">
+        <h2 class="text-base font-semibold text-gray-900">What is inside — one {{ item.components_unit|unit_words }} holds{% info "About kits" %}<p>
+          Counted in stock as whole kits: the ledger never breaks one apart. Two
+          suppliers' kits are ranked against each other only when they hold the same
+          products in the same numbers.</p>{% endinfo %}</h2>
+        <div class="overflow-x-auto mt-1" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+          <table class="min-w-[32rem] w-full text-sm">
+            <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+              <tr>
+                <th class="text-left px-3 py-1.5">Product</th>
+                <th class="text-left px-3 py-1.5">How many</th>
+                <th class="text-left px-3 py-1.5">Against its own spec</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              {% for component in item.component_rows %}
+                <tr>
+                  <td class="px-3 py-1.5">
+                    <a class="text-brand-indigo hover:underline"
+                       href="{% url 'supply_chain:product_detail' component.commodity_slug %}">{{ component.name }}</a>
+                  </td>
+                  <td class="px-3 py-1.5 tabular-nums">{{ component.quantity|qty:component.base_unit }}</td>
+                  <td class="px-3 py-1.5 {% if 'fail' in component.verdict %}text-message-error-text{% elif 'not stated' in component.verdict %}text-message-warning-text{% else %}text-gray-700{% endif %}">
+                    {{ component.verdict }}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endif %}
+
+    {% if item.differs_from_product %}
+      <div class="mt-3 text-sm text-orange-800 bg-orange-50 border border-orange-200 rounded px-3 py-2 max-w-2xl">
+        Packed {{ item.base_per_pack }} to the {{ item.pack_unit|default:product.pack_unit|unit_words }} where
+        <a class="underline" href="{% url 'supply_chain:product_detail' product.slug %}">{{ product.name }}</a>
+        says {{ product.base_per_pack }}.{% info "Why this matters" %}<p>Often legitimate, but every price
+        quoted per {{ item.pack_unit|default:product.pack_unit|unit_words }} has to be divided by
+        this number, not the product's.</p>{% endinfo %}
+      </div>
+    {% endif %}
+
+    <div class="mt-4">
+      <div class="text-[11px] text-gray-600">Our code for it</div>
+      <p class="text-sm text-gray-800 mt-0.5">{{ item.sku }}</p>
+    </div>
+
+    <div class="mt-4">
+      <div class="text-[11px] text-gray-600">GS1 keys</div>
+      {% if item.gtins %}
+        <ul class="mt-1 flex flex-wrap gap-x-6 gap-y-1">
+          {% for gtin in item.gtins %}
+            <li class="text-sm tabular-nums text-gray-800">
+              {{ gtin.value }} <span class="text-gray-600 text-xs">{{ gtin.level }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="text-sm text-gray-600 mt-0.5 max-w-2xl">
+          None recorded.{% info "Why GS1 keys matter" %}<p>Without a GTIN, a carton arriving in a store is
+          matched to this row by name, which is how two manufacturers' products
+          end up counted as one.</p>{% endinfo %}
+        </div>
+      {% endif %}
+    </div>
+
+    {% if item.spec_attributes %}
+      <div class="mt-4">
+        <div class="text-[11px] text-gray-600">Stated specification</div>
+        <dl class="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-2 mt-1">
+          {% for key, value in item.spec_attributes.items %}
+            <div>
+              <dt class="text-xs text-gray-600">{{ key|humanise }}</dt>
+              <dd class="text-sm text-gray-800">{{ value }}</dd>
+            </div>
+          {% endfor %}
+        </dl>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if not has_program_context %}
+  <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4">
+    <p class="text-sm text-message-warning-text">
+      Choose a programme to see who quotes this, what was ordered, and what is on hand.
+    </p>
+  </div>
+{% else %}
+
+  <div class="mb-6">
+    {% include "supply_chain/compact/_supply_base.html" with scope_note="for this exact trade item rather than the product" narrowed_to_item=True %}
+  </div>
+
+  <div class="grid gap-6 lg:grid-cols-2 mb-6">
+    <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+      <div class="px-5 py-4 border-b border-brand-border-light">
+        <h2 class="text-base font-semibold text-gray-900">Quoted</h2>
+      </div>
+      {% if quotes %}
+        <ul class="divide-y divide-gray-100">
+          {% for quote in quotes %}
+            <li class="px-5 py-3 text-sm">
+              <a class="text-brand-indigo hover:underline"
+                 href="{% url 'supply_chain:supplier_detail' quote.supplier_id %}">{{ suppliers|dictkey:quote.supplier_id|dictkey:"name"|default:"—" }}</a>
+              <span class="tabular-nums">
+                — {% if quote.as_quoted_amount %}{{ quote.as_quoted_currency }} {{ quote.as_quoted_amount|money }}{% else %}no price{% endif %}
+              </span>
+              <span class="text-gray-600">{{ quote.as_quoted_unit|words }}</span>
+              <div class="text-xs text-gray-600">
+                <a class="text-brand-indigo hover:underline"
+                   href="{% url 'supply_chain:procurement_quote_detail' quote.id %}">quote {{ quote.id }}</a>
+                · {{ tenders|dictkey:quote.tender_id|dictkey:"label"|default:"tender" }}
+                {% if quote.received_on %}· {{ quote.received_on|day }}{% endif %}
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="px-5 py-5 text-sm text-gray-600 max-w-lg">
+          No quote has named this trade item.{% info "Why this is worth asking for" %}<p>A quote that names only the
+          product cannot be turned into a per&#8209;{{ item.base_unit|default:product.base_unit|default:"unit"|unit_words }}
+          price, so ask suppliers to name the trade item.</p>{% endinfo %}
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+      <div class="px-5 py-4 border-b border-brand-border-light">
+        <h2 class="text-base font-semibold text-gray-900">Ordered</h2>
+      </div>
+      {% if contracts %}
+        <ul class="divide-y divide-gray-100">
+          {% for contract in contracts %}
+            <li class="px-5 py-3 text-sm">
+              <a class="text-brand-indigo hover:underline"
+                 href="{% url 'supply_chain:order_detail' contract.id %}">{{ contract.reference|default:"contract" }} {{ contract.id }}</a>
+              <span class="text-gray-600">· {{ contract.status|humanise }}</span>
+              <div class="text-xs text-gray-600">
+                {% if contract.quantity %}{{ contract.quantity|qty:contract.quantity_unit }}{% endif %}
+                {% if contract.unit_price %}at {{ contract.currency }} {{ contract.unit_price|money }}{% endif %}
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="px-5 py-5 text-sm text-gray-600">Nothing contracted for this trade item yet.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
+    <div class="px-5 py-4 border-b border-brand-border-light">
+      <h2 class="text-base font-semibold text-gray-900">Where it is now{% info "About this table" %}<p>The ledger balance, per supply point. Goods in transit are real but
+        are not cover, so they are not added in here.</p>{% endinfo %}</h2>
+    </div>
+    {% if network.points %}
+      <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+        <table class="min-w-[32rem] w-full text-sm">
+          <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+            <tr>
+              <th class="text-left px-4 py-2">Supply point</th>
+              <th class="text-left px-4 py-2">Ledger says</th>
+              <th class="text-left px-4 py-2">Reported</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for point in network.points %}
+              <tr>
+                <td class="px-4 py-2.5">
+                  <div class="text-gray-900">{{ point.name }}</div>
+                  <div class="text-xs text-gray-600">
+                    {{ point.kind|humanise }}{% if point.admin_area %} · {{ point.admin_area }}{% endif %}
+                  </div>
+                </td>
+                <td class="px-4 py-2.5 tabular-nums">
+                  {% comment %}The stock page's own rule: an item counted whole in its single
+                  unit (one packet is one course) leads with that unit, the packing beneath.{% endcomment %}
+                  {% if point.counted_in_base and point.on_hand_in_base %}
+                    {{ point.on_hand_in_base|figure_text }}
+                    <div class="text-xs text-gray-600">{{ point.on_hand|figure_text }}</div>
+                  {% else %}
+                    {{ point.on_hand|figure_text }}
+                  {% endif %}
+                  {% for reason in point.on_hand|unconfirmed_reasons %}
+                    <div class="text-xs text-orange-700 mt-0.5">{{ reason }}</div>
+                  {% endfor %}
+                </td>
+                <td class="px-4 py-2.5 tabular-nums">
+                  {% if point.reported %}
+                    {{ point.reported|figure_text }}
+                    <div class="text-xs text-gray-600">{{ point.reported_kind|humanise }} · {{ point.reported_on|day }}</div>
+                  {% else %}
+                    <span class="text-gray-600">never</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="px-5 py-5 text-sm text-gray-600">
+        Nothing of this has been received anywhere yet.
+      </p>
+    {% endif %}
+  </div>
+
+  <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+    <div class="px-5 py-4 border-b border-brand-border-light">
+      <h2 class="text-base font-semibold text-gray-900">Documents{% info "About documents" %}<p>Specification sheets, certificates and photographs held against this
+        trade item rather than against one order of it.</p>{% endinfo %}</h2>
+    </div>
+    {% if documents %}
+      <ul class="divide-y divide-gray-100">
+        {% for document in documents %}
+          <li class="px-5 py-3 text-sm">
+            {% if document.external_url %}
+              <a class="text-brand-indigo hover:underline" href="{{ document.external_url }}"
+                 target="_blank" rel="noopener noreferrer">{{ document.title|default:document.kind|humanise }}</a>
+            {% else %}
+              <span class="text-gray-800">{{ document.title|default:document.kind|humanise }}</span>
+            {% endif %}
+            <span class="text-xs text-gray-600">· {{ document.kind|humanise }}{% if document.issued_on %} · {{ document.issued_on|day }}{% endif %}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="px-5 py-5 text-sm text-gray-600">No documents attached to this trade item.</p>
+    {% endif %}
+  </div>
+
+{% endif %}
+{% endblock %}

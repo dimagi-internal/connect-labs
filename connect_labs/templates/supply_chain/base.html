@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% load static i18n %}
+{% load static i18n supply_chain_extras %}
 
 {% comment %}
 Domain shell for /supply/. Every supply_chain page extends this, not
@@ -41,6 +41,27 @@ anything else landed under the bar, slicing through the tender's title above it.
   .supply-page .sheet-wrap { border-color: #e4e3ea; box-shadow: 0 1px 2px rgb(22 0 109 / 0.04); }
   .supply-page h2 { letter-spacing: -0.01em; }
 </style>
+{% comment %}The (i) behind which a page keeps its explanations ({% info %}, supply_chain_extras): a small button that
+opens a note under it. Closed by a click elsewhere or Escape (the script below).{% endcomment %}
+<style>
+  .supply-info { position: relative; display: inline-block; vertical-align: middle; margin-left: 0.25rem; }
+  .supply-info > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; border-radius: 9999px; color: #5b6072; font-size: 0.9rem; }
+  .supply-info > summary::-webkit-details-marker { display: none; }
+  .supply-info > summary:hover, .supply-info[open] > summary { color: #3843d0; background: #eef0fb; }
+  .supply-info > summary:focus-visible { outline: 2px solid #3843d0; outline-offset: 1px; }
+  .supply-info-body { position: absolute; z-index: 40; top: 1.75rem; left: -0.5rem; width: min(26rem, 80vw); padding: 0.75rem 0.875rem; border: 1px solid #e4e3ea; border-radius: 0.5rem; background: #fff; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); font-size: 0.8125rem; line-height: 1.45; font-weight: 400; color: #374151; text-transform: none; letter-spacing: normal; white-space: normal; text-align: left; }
+  .supply-info-body p + p, .supply-info-body ul + p, .supply-info-body p + ul { margin-top: 0.5rem; }
+  .supply-info-body ul { list-style: disc; padding-left: 1.1rem; }
+  .supply-info.is-right .supply-info-body { left: auto; right: -0.5rem; }
+</style>
+<style>
+  .supply-subtabs { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0 0 0.75rem; border-bottom: 1px solid #e4e3ea; }
+  .supply-subtab { padding: 0.5rem 0.875rem; margin-bottom: -1px; border-bottom: 2px solid transparent; font-size: 0.875rem; color: #4b5063; text-decoration: none; }
+  .supply-subtab:hover { color: #16006d; border-bottom-color: #c9c5e8; }
+  .supply-subtab.is-active { color: #3843d0; font-weight: 600; border-bottom-color: #3843d0; }
+  .supply-subtab:focus-visible { outline: 2px solid #3843d0; outline-offset: 1px; }
+  .supply-subtab-badge { display: inline-block; min-width: 1.125rem; margin-left: 0.25rem; padding: 0 0.3rem; border-radius: 9999px; background: #b91c1c; color: #fff; font-size: 0.6875rem; line-height: 1.05rem; text-align: center; }
+</style>
 <style>.supply-page, .supply-page * { scroll-margin-top: 5rem; } .supply-page tr[id] { scroll-margin-top: 7.5rem; }</style>
 {% comment %}Below sm a table marked `phone-cards` stops scrolling sideways (where the column a reader came
 for fell off the screen) and becomes one card per row: the `phone-title` cell first, then the
@@ -68,6 +89,17 @@ Plain CSS rather than utilities, so nothing waits on the stylesheet being rebuil
 <div class="supply-shell" data-rail="open">
   {% include 'supply_chain/_rail.html' %}
   <div class="supply-page supply-main">
+    {% comment %}The page's purpose in one line, and its (i): how to read the page, kept off the page itself.{% endcomment %}
+    {% comment %}The pages that share this page's menu entry (navigation.family_tabs), as tabs: Distribution, Stock,
+    Where it went, one click apart without going back to the menu.{% endcomment %}
+    {% with siblings=supply_tabs|family_tabs %}{% if siblings %}
+    <nav class="supply-subtabs" data-testid="supply-subtabs" aria-label="Pages in this section">
+      {% for tab in siblings %}<a href="{{ tab.url }}"{% if tab.active %} aria-current="page"{% endif %} class="supply-subtab{% if tab.active %} is-active{% endif %}">{{ tab.label }}{% if tab.badge %} <span class="supply-subtab-badge">{{ tab.badge }}</span>{% endif %}</a>{% endfor %}
+    </nav>
+    {% endif %}{% endwith %}
+    <div class="supply-toolbar">
+      <div class="supply-purpose">{% with purpose=supply_tabs|page_purpose %}{% if purpose %}<span data-testid="page-purpose">{{ purpose }}</span>{% endif %}{% endwith %}{% block page_info %}{% endblock %}</div>
+    </div>
     {% include 'supply_chain/_header.html' %}
 
     {% block supply_content %}{% endblock %}
@@ -85,6 +117,33 @@ there is no document.body there yet.
   {{ block.super }}
   {% comment %}Any cell a table marks with {% edit_cell %} is edited in place; a page showing the past marks none.{% endcomment %}
   {% if not supply_as_of %}<script src="{% static 'supply_chain/cell_edit.js' %}"></script>{% endif %}
+  <script>
+    // An (i) opens as a box floating over the page, placed under its button and kept on screen, so a table that
+    // scrolls sideways (or any box that clips) cannot cut it off.
+    document.addEventListener("toggle", function (ev) {
+      var d = ev.target;
+      if (!d.classList || !d.classList.contains("supply-info") || !d.open) return;
+      var body = d.querySelector(".supply-info-body"), r = d.querySelector("summary").getBoundingClientRect();
+      body.style.position = "fixed";
+      var w = Math.min(416, window.innerWidth * 0.8);
+      body.style.width = w + "px";
+      body.style.left = Math.max(8, Math.min(r.left - 8, window.innerWidth - w - 8)) + "px";
+      body.style.right = "auto";
+      var top = r.bottom + 6, h = body.offsetHeight;
+      if (top + h > window.innerHeight - 8 && r.top - h - 6 > 8) top = r.top - h - 6;
+      body.style.top = top + "px";
+    }, true);
+    window.addEventListener("scroll", function () {
+      document.querySelectorAll("details.supply-info[open]").forEach(function (d) { d.removeAttribute("open"); });
+    }, true);
+    // One (i) open at a time; a click elsewhere or Escape closes it.
+    document.addEventListener("click", function (ev) {
+      document.querySelectorAll("details.supply-info[open]").forEach(function (d) { if (!d.contains(ev.target)) d.removeAttribute("open"); });
+    });
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape") document.querySelectorAll("details.supply-info[open]").forEach(function (d) { d.removeAttribute("open"); });
+    });
+  </script>
   {% comment %}Any header a sheet marks data-sort sorts its rows on a click -- the past included: sorting reads, never writes.{% endcomment %}
   <script src="{% static 'supply_chain/sheet_sort.js' %}"></script>
   {% if supply_as_of %}

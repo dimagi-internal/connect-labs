@@ -1,0 +1,166 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% block page_info %}{% info "How a test is judged" %}
+  <p>A batch test or a dispenser sample is held to the product's own specification in the Catalogue: each figure must be measured and met to pass. The average of the trials is worked out for you.</p>
+  <p>A storage check fails on any &ldquo;No&rdquo;.</p>
+  <p>A failed batch, dispenser or store is shown at the top, and on the Overview, until a newer test of the same one passes. "Failing now" counts those whose latest test failed.</p>
+  <p>The list shows what was measured; each test's result is in the download. A test recorded by mistake is withdrawn with a reason, never deleted.</p>
+{% endinfo %}{% endblock %}
+
+{% block supply_content %}
+{% if not has_program_context %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+    <p class="text-sm text-amber-900">Tests are programme-scoped.</p>
+  </div>
+{% else %}
+
+<div class="flex flex-wrap items-start justify-between gap-4 mb-4">
+  <h2 class="text-lg font-semibold text-gray-900">
+    Tests{% if partner_name %} — {{ partner_name }}{% endif %}
+  </h2>
+  <div class="flex flex-wrap gap-2" data-testid="record-test">
+    {% for kind, label, href in new_links %}
+      <a href="{{ href }}"
+         class="px-3 py-2 text-sm rounded-md {% if forloop.first %}bg-brand-indigo hover:bg-brand-deep-purple text-white{% else %}border border-gray-300 text-gray-800 hover:bg-gray-50{% endif %}">
+        <i class="fa-solid fa-plus mr-1"></i> {{ label }}
+      </a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-2xl font-semibold tabular-nums {% if counts.failing_now %}text-red-700{% else %}text-gray-900{% endif %}">{{ counts.failing_now }}</div>
+    <div class="text-xs text-gray-600">failing now</div>
+  </div>
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-2xl font-semibold tabular-nums text-gray-900">{{ counts.recent }}</div>
+    <div class="text-xs text-gray-600">tests in the last 30 days</div>
+  </div>
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-2xl font-semibold tabular-nums text-gray-900">{{ counts.recent_failed }}</div>
+    <div class="text-xs text-gray-600">of them failed</div>
+  </div>
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-2xl font-semibold tabular-nums text-gray-900">{% if counts.last_tested %}{{ counts.last_tested|day }}{% else %}—{% endif %}</div>
+    <div class="text-xs text-gray-600">last test</div>
+  </div>
+</div>
+
+{% if failing %}
+  <div class="rounded-lg border border-red-200 bg-red-50 p-4 mb-4" data-testid="tests-failing">
+    <h3 class="text-sm font-semibold text-red-900 mb-2">Failed: act on these</h3>
+    <ul class="space-y-2 text-sm text-red-900">
+      {% for check in failing %}
+        <li>
+          <b>{{ check.subject.label }}</b>, tested {{ check.facts.tested_on|day }} by {{ check.facts.tested_by }}.
+          <span class="text-red-800">{{ check.facts.fails|join:" " }}</span>
+          <div class="text-xs text-red-800">
+            {% if check.facts.test_kind == "batch" %}Do not issue this batch. Set it aside, retest it, and tell the supplier if it fails again.
+            {% elif check.facts.test_kind == "dispenser_sample" %}Check the dispenser and the batch in it, refill it from a batch that passed, and test it again.
+            {% else %}Fix how the stock is kept, then record a new storage check.{% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<form method="get" class="bg-white border border-gray-200 rounded-lg p-3 mb-4 grid grid-cols-2 md:grid-cols-6 gap-3 text-sm items-end" data-testid="tests-filter">
+  <label class="block">
+    <span class="text-xs text-gray-600">Partner</span>
+    <select name="partner" class="base-input">
+      <option value="">All partners</option>
+      {% for p in partners %}<option value="{{ p.id }}" {% if query.partner == p.id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="block">
+    <span class="text-xs text-gray-600">Test</span>
+    <select name="kind" class="base-input">
+      <option value="">Every kind</option>
+      {% for value, label in kinds %}<option value="{{ value }}" {% if query.kind == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="block">
+    <span class="text-xs text-gray-600">Batch</span>
+    <input type="text" name="batch" value="{{ query.batch|default:'' }}" class="base-input" placeholder="e.g. EA-2610">
+  </label>
+  <label class="block">
+    <span class="text-xs text-gray-600">From</span>
+    <input type="date" name="since" value="{{ query.since|default:'' }}" class="base-input">
+  </label>
+  <label class="block">
+    <span class="text-xs text-gray-600">To</span>
+    <input type="date" name="until" value="{{ query.until|default:'' }}" class="base-input">
+  </label>
+  <div class="flex flex-col gap-1">
+    <label class="text-xs text-gray-700"><input type="checkbox" name="show" value="withdrawn" {% if query.show %}checked{% endif %}> Include withdrawn</label>
+    <div class="flex gap-2">
+      <button type="submit" class="px-3 py-1.5 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">Show</button>
+      <a href="{{ clear_url }}" class="px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">Clear</a>
+    </div>
+  </div>
+</form>
+
+<div class="flex items-center justify-between mb-2">
+  <p class="text-sm text-gray-700">{{ rows|length }} test{{ rows|length|pluralize }}{% if partner_name %} at {{ partner_name }}'s places{% endif %}</p>
+  <a href="{{ csv_url }}" class="text-sm text-brand-indigo hover:underline" data-testid="tests-download">
+    <i class="fa-solid fa-download mr-1"></i> Download these as a spreadsheet (CSV)
+  </a>
+</div>
+
+<div class="bg-white border border-gray-200 rounded-lg mb-6 overflow-hidden">
+  <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+  <table class="min-w-[60rem] w-full text-sm" data-testid="tests-table">
+    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+      <tr>
+        <th class="text-left px-4 py-2">Date</th>
+        <th class="text-left px-4 py-2">Test</th>
+        <th class="text-left px-4 py-2">Where</th>
+        <th class="text-left px-4 py-2">Batch or dispenser</th>
+        {% for column in reading_columns %}<th class="text-right px-4 py-2">{{ column }}</th>{% endfor %}
+        <th class="text-left px-4 py-2">Tested by</th>
+        <th class="px-4 py-2"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for row in rows %}
+        <tr class="{% if row.withdrawn %}text-gray-600{% endif %}">
+          <td class="px-4 py-2 whitespace-nowrap {% if row.withdrawn %}line-through{% endif %}">{{ row.tested_on|day }}</td>
+          <td class="px-4 py-2">{{ row.kind_words }}</td>
+          <td class="px-4 py-2">{% if row.point %}{% store_label row.point.id row.point.name %}{% else %}—{% endif %}</td>
+          <td class="px-4 py-2">
+            {% if row.batch %}<div>Batch {{ row.batch }}</div>{% endif %}
+            {% if row.dispenser %}<div>{{ row.dispenser }}</div>{% endif %}
+            {% if row.collected_by or row.collected_on %}<div class="text-xs text-gray-600">collected{% if row.collected_by %} by {{ row.collected_by }}{% endif %}{% if row.collected_on %}, {{ row.collected_on|day }}{% endif %}</div>{% endif %}
+            {% if row.sample_ref %}<div class="text-xs text-gray-600">bottle {{ row.sample_ref }}</div>{% endif %}
+            {% if row.storage_noes %}<div class="text-xs text-gray-700">No: {{ row.storage_noes|join:", " }}</div>{% endif %}
+            {% if row.trials %}<div class="text-xs text-gray-600">trials {{ row.trials|join:" / " }}</div>{% endif %}
+          </td>
+          {% for value in row.reading_cells %}<td class="px-4 py-2 text-right tabular-nums">{{ value|default:"—" }}</td>{% endfor %}
+          <td class="px-4 py-2 text-gray-700">
+            {{ row.tested_by }}
+            {% if row.note %}<div class="text-xs text-gray-600 max-w-xs">{{ row.note }}</div>{% endif %}
+            {% if row.withdrawn %}
+              <div class="text-xs text-gray-600" data-testid="test-withdrawn">Withdrawn {{ row.withdrawn_on|day }}{% if row.withdrawn_by %} by {{ row.withdrawn_by }}{% endif %}: {{ row.withdrawn_reason }}</div>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2 text-xs whitespace-nowrap">
+            {% if not row.withdrawn %}<a class="text-brand-indigo hover:underline" href="{{ row.withdraw_url }}">Withdraw</a>{% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr>
+          <td colspan="{{ reading_columns|length|add:6 }}" class="px-4 py-6 text-center text-gray-600">
+            No tests{% if here %} match these filters{% else %} recorded yet{% endif %}.
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

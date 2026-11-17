@@ -1,0 +1,187 @@
+{% extends 'supply_chain/base.html' %}
+{% load crispy_forms_tags static supply_chain_extras %}
+
+{% comment %}
+TomSelect is bundled but not loaded globally -- every page that wants it pulls
+it in itself (tasks/new_task_modal.html, opportunity/opportunities_list.html
+and five others all do). So a `data-tomselect` attribute on a page that does
+not include the bundle is inert, which is what shipped: the supplier picker
+rendered as a bare <select>. Including it here covers every write screen at
+once, since they all extend this shell.
+{% endcomment %}
+
+{% block css %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'bundles/css/tomselect.css' %}">
+{% endblock %}
+
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/tomselect-bundle.js' %}" defer></script>
+{% endblock %}
+
+{% comment %}
+The page around a write form. Crispy renders the fields from the form's own
+Layout; this supplies the card, the heading, the error summary and the action
+bar, so every write screen in the domain is framed the same way and improving
+that framing is one edit rather than twenty-eight.
+
+`danger` switches the accent for an operation that destroys something. Those
+operations already require a reason, so the form asks for one as an ordinary
+field rather than bolting on a confirmation dialogue nobody reads.
+{% endcomment %}
+
+{% block supply_content %}
+
+{% if breadcrumb %}
+  <nav class="text-sm text-gray-600 mb-3">
+    {% for crumb in breadcrumb %}
+      {% if crumb.href %}
+        <a href="{{ crumb.href }}" class="text-brand-indigo hover:underline">{{ crumb.label }}</a>
+        <span class="mx-1.5 text-gray-300">/</span>
+      {% else %}
+        <span class="text-gray-700">{{ crumb.label }}</span>
+      {% endif %}
+    {% endfor %}
+  </nav>
+{% endif %}
+
+{% if not has_program_context %}
+  <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
+    <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
+    <p class="text-sm text-message-warning-text/90">
+      Choose a programme above. Everything on this screen belongs to one.
+    </p>
+  </div>
+{% else %}
+
+{% comment %}
+`enctype` is read off the form rather than set by hand: a screen with a
+FileField and a form that does not declare multipart posts an empty
+`request.FILES`, and Django reports it as "this field is required" on the
+upload -- a message that describes the symptom and not the cause.
+{% endcomment %}
+<form method="post" class="max-w-3xl supply-operation-form"
+      {% if form.is_multipart %}enctype="multipart/form-data"{% endif %}>
+  {% csrf_token %}
+
+  {% comment %}
+  Not overflow-hidden: an (i) opened near the bottom of a short form would be cut off by the card's edge.
+  The header and footer round their own corners instead.
+  {% endcomment %}
+  <div class="bg-white border rounded-lg
+              {% if danger %}border-message-error-border/50{% else %}border-brand-border-light{% endif %}">
+
+    <div class="px-5 py-4 border-b rounded-t-lg
+                {% if danger %}border-message-error-border/40 bg-message-error/20{% else %}border-brand-border-light{% endif %}">
+      {% comment %}What the form is for, and what follows from saving it, sit behind the (i) beside the title
+      (the screen's `intro` and `footnote`). A destructive form keeps its one-line `warning` in view.{% endcomment %}
+      <h1 class="text-base font-semibold {% if danger %}text-message-error-text{% else %}text-gray-900{% endif %}">{{ title }}{% if intro or footnote %}{% info "About this form" %}{% if intro %}<p data-testid="form-intro">{{ intro }}</p>{% endif %}{% if footnote %}<p data-testid="form-footnote">{{ footnote }}</p>{% endif %}{% endinfo %}{% endif %}</h1>
+      {% if warning %}
+        <p class="text-sm mt-0.5 max-w-2xl text-message-error-text/90" data-testid="form-warning">{{ warning }}</p>
+      {% endif %}
+    </div>
+
+    {% if form.non_field_errors %}
+      <div class="px-5 py-3 border-b border-red-200 bg-red-50">
+        {% for error in form.non_field_errors %}
+          <p class="text-sm text-red-800"><strong>Not saved:</strong> {{ error }}</p>
+        {% endfor %}
+        {% comment %}Only when a field is marked: a refusal about the record itself (an award awaiting approval) has nothing on the form to fix.{% endcomment %}
+        {% if form|has_field_errors %}
+          <p class="text-xs text-red-700 mt-0.5">Nothing you typed was lost — fix what is marked and submit again.</p>
+        {% else %}
+          <p class="text-xs text-red-700 mt-0.5">Nothing you typed was lost.</p>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    <div class="px-5 py-4 space-y-4">
+      {% crispy form %}
+      {% block extra_fields %}{% endblock %}
+    </div>
+
+    <div class="px-5 py-3 border-t border-brand-border-light bg-gray-50/60 rounded-b-lg flex items-center justify-end gap-3">
+      {% if cancel_href %}
+        <a href="{{ cancel_href }}" class="px-3 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</a>
+      {% endif %}
+      <button type="submit"
+              class="px-4 py-2 text-sm font-medium rounded-md text-white transition
+                     focus:outline-none focus:ring-2 focus:ring-offset-2
+                     {% if danger %}bg-red-600 hover:bg-red-700 focus:ring-red-500
+                     {% else %}bg-brand-indigo hover:bg-brand-deep-purple focus:ring-brand-indigo{% endif %}">
+        {{ submit_label }}
+      </button>
+    </div>
+  </div>
+</form>
+{% comment %}
+A select marked data-durable-hides="batch expiry" hides those fields while the
+chosen option is data-durable: a dispenser has no batch and no expiry, so the
+form does not ask. Here, after the form, so the fields exist when it runs.
+{% endcomment %}
+{% comment %}
+A field's help text (crispy's <small id="id_<name>_helptext">) moves behind a small (i) beside the field's label,
+the same (i) the {% info %} tag draws, so a form shows its labels and boxes and not a sentence under each.
+Supply forms only: this runs on this page, not in crispy's shared templates. The node itself is moved, id and
+all, so an input's aria-describedby still finds it; with no script the help stays where crispy put it.
+Errors are not touched.
+{% endcomment %}
+<script>
+  (function () {
+    var form = document.querySelector("form.supply-operation-form");
+    if (!form) return;
+    form.querySelectorAll('[id$="_helptext"]').forEach(function (help) {
+      var fieldId = help.id.slice(0, -"_helptext".length);
+      var label = form.querySelector('label[for="' + fieldId + '"]');
+      if (!label || !help.textContent.trim()) return;
+      var info = document.createElement("details");
+      info.className = "supply-info";
+      info.setAttribute("data-testid", "field-info");
+      var summary = document.createElement("summary");
+      var name = "About " + label.textContent.replace(/\*/g, "").trim();
+      summary.setAttribute("aria-label", name);
+      summary.setAttribute("title", name);
+      summary.innerHTML = '<i class="fa-solid fa-circle-info" aria-hidden="true"></i>';
+      var body = document.createElement("div");
+      body.className = "supply-info-body";
+      body.setAttribute("role", "note");
+      help.classList.remove("text-gray-600");
+      help.style.display = "block";
+      body.appendChild(help);
+      info.appendChild(summary);
+      info.appendChild(body);
+      // The label stays a label; the (i) sits just after it on the same line, not inside it
+      // (a click inside a label would also focus its field).
+      label.classList.remove("block");
+      label.classList.add("inline-block");
+      label.insertAdjacentElement("afterend", info);
+      var after = info.nextElementSibling;
+      if (after && getComputedStyle(after).display.indexOf("inline") === 0) {
+        info.insertAdjacentElement("afterend", document.createElement("br"));
+      }
+    });
+  })();
+</script>
+<script>
+  (function () {
+    document.querySelectorAll("select[data-durable-hides]").forEach(function (select) {
+      var names = select.getAttribute("data-durable-hides").split(/\s+/);
+      function apply() {
+        var option = select.options[select.selectedIndex];
+        var durable = !!(option && option.getAttribute("data-durable") === "1");
+        names.forEach(function (name) {
+          var wrapper = document.getElementById("div_id_" + name);
+          if (wrapper) { wrapper.hidden = durable; }
+          var input = document.getElementById("id_" + name);
+          if (input && durable) { input.value = ""; }
+        });
+      }
+      select.addEventListener("change", apply);
+      apply();
+    });
+  })();
+</script>
+
+{% endif %}
+{% endblock %}

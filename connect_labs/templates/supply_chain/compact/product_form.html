@@ -1,0 +1,19 @@
+{% extends "supply_chain/compact/operation_form.html" %}
+{% load supply_chain_extras %}
+
+{% comment %}
+A product, and the requirements every trade item of it is checked against --
+the technical partner's specification, as rows the check can run.
+{% endcomment %}
+
+{% block extra_fields %}
+{% if requirements %}
+<div class="pt-4 border-t border-gray-100">
+  <h2 class="text-sm font-semibold text-gray-900 mb-3">Requirements every trade item is checked against{% info "About requirements" %}<p>
+    One row per requirement: the figure each trade item states (picked from the ones the
+    catalogue knows, or named if it is new), what it must be, and why in words. The reason is
+    what people read; the rule is what the check runs.</p>{% endinfo %}</h2>
+  {% include "supply_chain/_line_formset.html" with formset=requirements rows_id="requirement-rows" columns="minmax(0,1.5fr) minmax(0,1fr) minmax(0,0.9fr) minmax(0,0.6fr) minmax(0,0.6fr) minmax(0,1.8fr) auto" add_label="+ Add a requirement" %}
+</div>
+{% endif %}
+{% endblock %}

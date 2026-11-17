@@ -1,0 +1,132 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+The movements behind a supply point's balance: what the stock page's ledger
+figure is made of. Newest first. Every class here is one the stock page already
+uses, so nothing ships purged.
+{% endcomment %}
+
+{% block page_info %}{% info "About movements" %}
+  <p>A balance is these movements added up. A correction is another movement naming its cause, never an edit.</p>
+  <p>An entry that should not be here can be removed: it stays in the list, struck through, with who removed it and why, and no longer counts.</p>
+{% endinfo %}{% endblock %}
+
+{% block supply_content %}
+{% if not has_program_context %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+    <p class="text-sm text-amber-900">Stock is programme-scoped.</p>
+  </div>
+{% else %}
+
+<div class="text-xs text-gray-600">
+  <a class="hover:underline" href="{% url 'supply_chain:stock' %}">Stock</a> › movements
+</div>
+<div class="flex items-baseline gap-3 mb-4">
+  <h2 class="text-lg font-semibold text-gray-900">
+    {% if point %}What moved in and out of {{ point.name }}{% else %}Every movement{% endif %}
+  </h2>
+  {% if item %}<span class="text-sm text-gray-600">{{ item.name }}</span>{% endif %}
+</div>
+
+<div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+  <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+  <table class="phone-cards min-w-[44rem] w-full text-sm" data-testid="movements-table">
+    <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+      <tr>
+        <th class="text-left px-4 py-2">Date</th>
+        <th class="text-left px-4 py-2">What</th>
+        <th class="text-left px-4 py-2">From</th>
+        <th class="text-left px-4 py-2">To</th>
+        <th class="text-left px-4 py-2">Batch</th>
+        <th class="text-left px-4 py-2">Quantity</th>
+        <th class="text-left px-4 py-2">Told by</th>
+        <th class="px-4 py-2"><span class="sr-only">Remove</span></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for movement in movements %}
+        <tr{% if movement.removed %} data-removed class="bg-gray-50 text-gray-600"{% endif %}>
+          <td class="px-4 py-2.5 text-gray-600" data-label="Date">{{ movement.occurred_on|day }}</td>
+          <td class="phone-title px-4 py-2.5">
+            {% comment %}A reversal is consumption INTO the worker: a rejected visit's
+            stock put back. Said as what it is, never as a consumption or a
+            delivery arriving.{% endcomment %}
+            {% comment %}A visit is named by its form, which a person knows; the visit id rides
+            in the title for anyone who has to look it up in Connect.{% endcomment %}
+            {% comment %}A removal cancels an entry somebody removed (posting.post_removal): said as
+            that, never as an adjustment of stock.{% endcomment %}
+            {% if movement.reverses_movement_id and movement.kind == "adjustment" %}
+              <span>Removal</span>
+              <div class="text-xs text-gray-600">cancels entry {{ movement.reverses_movement_id }}{% if movement.note %} · {{ movement.note }}{% endif %}</div>
+            {% elif movement.reverses_movement_id %}
+              <span title="Connect visit {{ movement.visit_id }}">Reversed · {{ movement.visit_form|default:"a visit" }}</span>
+              <div class="text-xs text-gray-600">back into {{ points|dictkey:movement.to_supply_point_id }}, undoing that visit's consumption{% if movement.note %} · {{ movement.note }}{% endif %}</div>
+            {% elif movement.visit_id %}
+              <span title="Connect visit {{ movement.visit_id }}">{{ movement.kind|words|capfirst }} · {{ movement.visit_form|default:"a visit" }}</span>{% if movement.estimated %} <span class="ml-1 px-1.5 py-0.5 rounded text-xs bg-amber-50 text-amber-900 border border-amber-200">Estimated</span>{% endif %}
+            {% else %}
+            {{ movement.kind|words|capfirst }}
+            {% with receipt=receipts|dictkey:movement.caused_by.receipt_id %}
+              {% if receipt %}
+                <div class="text-xs text-gray-600">
+                  {{ receipt.reference|default:"goods received note" }}{% if receipt.contract_id %} ·
+                  <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' receipt.contract_id %}">{{ references|dictkey:receipt.contract_id }}</a>{% endif %}
+                </div>
+              {% elif movement.reference %}
+                <div class="text-xs text-gray-600">{{ movement.reference }}</div>
+              {% endif %}
+            {% endwith %}
+            {% endif %}
+            {% if movement.removed %}
+              <div class="mt-1 text-xs font-medium text-red-800" data-removed-note>Removed {{ movement.removed.on|day }}{% if movement.removed.said %} {{ movement.removed.said }}{% endif %}</div>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2.5 text-gray-600" data-label="From">
+            {% with receipt=receipts|dictkey:movement.caused_by.receipt_id %}
+              {% if movement.from_supply_point_id %}{{ points|dictkey:movement.from_supply_point_id }}
+              {% elif receipt and receipt.contract_id and received_from|dictkey:receipt.contract_id %}{{ received_from|dictkey:receipt.contract_id }} <span class="text-xs text-gray-600">(supplier)</span>
+              {% else %}—{% endif %}
+            {% endwith %}
+          </td>
+          <td class="px-4 py-2.5 text-gray-600" data-label="To">{{ points|dictkey:movement.to_supply_point_id|default:"—" }}</td>
+          <td class="px-4 py-2.5 text-gray-600" data-label="Batch">{{ movement.batch|default:"—" }}</td>
+          <td class="phone-lead px-4 py-2.5 tabular-nums font-medium{% if movement.removed %} line-through{% endif %}" data-label="Quantity">{{ movement.quantity|qty:movement.quantity_unit }}</td>
+          <td class="px-4 py-2.5 text-xs text-gray-600" data-label="Told by">{{ movement.source|source_label }}</td>
+          <td class="px-4 py-2.5 text-right" data-label="Remove">
+            {% comment %}A past day is read-only; a removal, an entry already removed and a rejected
+            visit's put-back cannot be removed (the operation refuses them too).{% endcomment %}
+            {% if not supply_as_of and not movement.removed and not movement.reverses_movement_id %}
+              <details data-remove-entry class="inline-block text-left">
+                <summary class="cursor-pointer text-xs text-red-700 hover:underline">Remove</summary>
+                <form method="post" action="{% url 'supply_chain:movement_remove' movement.id %}" class="mt-2 w-64 space-y-2 rounded-md border border-gray-200 bg-white p-3 shadow-sm"
+                      onsubmit="return confirm('Remove this entry? It stays on the ledger, marked removed, and stops counting. This cannot be undone.')">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <label class="block text-xs font-medium text-gray-700" for="remove-reason-{{ movement.id }}">Why is it being removed?</label>
+                  <textarea id="remove-reason-{{ movement.id }}" name="reason" required minlength="5" maxlength="500" rows="2" class="w-full rounded-md border border-gray-300 px-2 py-1 text-sm" placeholder="e.g. entered twice"></textarea>
+                  <button type="submit" class="w-full rounded-md bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-800">Remove entry</button>
+                </form>
+              </details>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="8" class="px-4 py-6 text-center text-gray-600">{% if acl_scoped %}You have no stock movements in this programme.{% else %}Nothing has moved here yet.{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+    {% if balance %}
+      <tfoot class="border-t border-gray-200 bg-gray-50">
+        <tr data-balance>
+          <td colspan="5" class="phone-title px-4 py-2.5 text-right font-semibold text-gray-900">Balance at {{ point.name }}</td>
+          <td class="phone-title px-4 py-2.5 tabular-nums font-semibold text-brand-indigo">{{ balance|figure_text }}</td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tfoot>
+    {% endif %}
+  </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

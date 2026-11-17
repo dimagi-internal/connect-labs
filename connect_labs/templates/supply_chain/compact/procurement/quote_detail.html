@@ -1,0 +1,228 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+The two columns are the argument: what the supplier stated, and what we
+derive from it. An `Unconfirmed` is only legible next to its inputs -- the
+reason names the fact that is missing, and the fact is right there, blank.
+
+So the stated column deliberately shows empty rows rather than hiding them.
+"Sachets per carton — not stated" is the whole explanation for four
+unconfirmed figures on the right.
+{% endcomment %}
+
+{% block page_info %}{% info "About this page" %}<p>One quote, in two columns: what the supplier stated, and what we work out from it.</p><p>A figure we cannot work out yet shows as Unconfirmed, with the missing fact named under it; that fact shows as "not stated" on the left. "Still to answer" lists the questions that would fill the gaps.</p>{% endinfo %}{% endblock %}
+
+{% block supply_content %}
+
+{% if not has_program_context %}
+  <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4">
+    <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
+    <p class="text-sm text-message-warning-text/90">Choose a programme above to open this quote.</p>
+  </div>
+{% else %}
+
+<nav class="text-sm text-gray-600 mb-3">
+  <a href="{% url 'supply_chain:purchases' %}" class="text-brand-indigo hover:underline">Purchases</a>
+  <span class="mx-1.5 text-gray-300">/</span>
+  <a href="{% url 'supply_chain:procurement_tender_detail' quote.tender_id %}"
+     class="text-brand-indigo hover:underline">{{ tender.label }}</a>
+  <span class="mx-1.5 text-gray-300">/</span>
+  <span class="text-gray-700">Quote {{ quote.id }}</span>
+</nav>
+
+<div class="flex flex-wrap items-start justify-between gap-4 mb-5">
+  <div>
+    <h1 class="text-2xl font-semibold leading-tight">
+      <a href="{% url 'supply_chain:supplier_detail' quote.supplier_id %}"
+         class="text-gray-900 hover:text-brand-indigo hover:underline">{{ supplier.name }}</a>
+    </h1>
+    <p class="text-sm text-gray-600 mt-1">
+      {% if quote.delivery_mode == "pickup" %}
+        <span class="block">Collected from {{ quote.pickup_location|default:"the supplier" }}.
+          {% if quote.buyer_transport_amount is None %}<a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_quote_correct' quote.id %}">Enter our own transport cost</a> — until then its delivered cost is unconfirmed.{% else %}Our transport: {{ quote.as_quoted_currency }} {{ quote.buyer_transport_amount }}.{% endif %}
+        </span>
+      {% elif delivery_words %}<span class="block">Delivered {{ delivery_words }}.</span>{% endif %}
+      {% if split_price.note %}<span class="block" data-testid="split-price">{{ split_price.note }}.</span>{% endif %}
+      {% if quote.entered_by == "supplier" %}Entered by {{ supplier.name }} themselves on the supplier marketplace.{% else %}Recorded by the program team.{% endif %}
+      {% if supplier.origin == "self_registered" and not supplier.reviewed_on %}
+        <span class="ml-1 px-2 py-0.5 rounded-full text-xs bg-message-warning text-message-warning-text border border-message-warning-border">Self-registered, not yet reviewed</span>
+      {% endif %}
+    </p>
+    <p class="text-sm text-gray-600 mt-1">
+      <a href="{% url 'supply_chain:product_detail' quote.commodity_slug %}"
+         class="text-brand-indigo hover:underline">{{ quote.commodity_slug|humanise }}</a>
+      {% comment %}
+      Which trade item they quoted was in the data and on no screen — and it
+      is the fact that decides whether a per-carton price can become a
+      per-sachet one, so its absence is worth saying out loud too.
+      {% endcomment %}
+      {% if detail.item %}
+        · <a href="{% url 'supply_chain:item_detail' detail.item.id %}"
+             class="text-brand-indigo hover:underline">{{ detail.item.sku }}</a>
+      {% else %}
+        · <span class="text-amber-800">no trade item named</span>
+      {% endif %}
+      · quoted
+      {% if quote.received_on %}{{ quote.received_on|day }}{% else %}on a date the sheet did not give{% endif %}
+      {% for o in outreach %}{% if o.sent_on %}· asked {{ o.sent_on|day }}{% endif %}{% endfor %}
+    </p>
+  </div>
+  <div class="flex items-center gap-2">
+    {% if quote.voided %}
+      <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-message-error text-message-error-text">Voided</span>
+    {% elif quote.superseded_by_quote_id %}
+      <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-message-warning text-message-warning-text">Superseded</span>
+    {% else %}
+      <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-message-success text-message-success-text">Standing</span>
+    {% endif %}
+    <a href="{% url 'supply_chain:procurement_comparison' quote.tender_id %}?commodity={{ quote.commodity_slug }}"
+       class="px-3 py-1.5 text-sm rounded-md border border-brand-indigo text-brand-indigo hover:bg-message-info">
+      Compare this tender
+    </a>
+    {% if not quote.voided and not quote.superseded_by_quote_id %}
+      <a href="{% url 'supply_chain:procurement_quote_correct' quote.id %}"
+         class="px-3 py-1.5 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">
+        Correct
+      </a>
+    {% endif %}
+    {% if not quote.voided %}
+      <a href="{% url 'supply_chain:procurement_quote_void' quote.id %}"
+         class="px-3 py-1.5 text-sm rounded-md border border-red-300 text-red-700 hover:bg-red-50">
+        Void
+      </a>
+    {% endif %}
+  </div>
+</div>
+
+{% if quote.voided and quote.void_reason %}
+  <div class="rounded-lg bg-message-error/40 border border-message-error-border/40 p-3 mb-5 text-sm text-message-error-text">
+    {{ quote.void_reason }}
+  </div>
+{% endif %}
+
+<div class="grid gap-4 lg:grid-cols-2 mb-6">
+
+  <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+    <header class="px-4 py-2.5 border-b border-brand-border-light">
+      <h2 class="text-sm font-semibold text-gray-900">What they stated{% info "About what they stated" %}<p>On the supplier's own terms. Blanks are facts nobody supplied.</p>{% endinfo %}</h2>
+    </header>
+    <dl class="divide-y divide-brand-border-light/70">
+      {% if item %}
+        <div class="flex items-baseline gap-3 px-4 py-2.5">
+          <dt class="w-44 shrink-0 text-xs text-gray-600">Trade item</dt>
+          <dd class="text-sm text-gray-900">{{ item.name }}</dd>
+        </div>
+      {% endif %}
+      {% if contents %}
+        <div class="flex items-baseline gap-3 px-4 py-2.5">
+          <dt class="w-44 shrink-0 text-xs text-gray-600">One unit holds</dt>
+          <dd class="text-sm text-gray-900">{{ contents }}</dd>
+        </div>
+      {% endif %}
+      {% for row in quote|stated_rows %}
+        <div class="flex items-baseline gap-3 px-4 py-2.5">
+          <dt class="w-44 shrink-0 text-xs text-gray-600">{{ row.label }}</dt>
+          <dd class="text-sm {% if row.value %}text-gray-900{% else %}text-gray-600 italic{% endif %}">
+            {% if row.value %}{{ row.value }}{% else %}not stated{% endif %}
+          </dd>
+        </div>
+      {% endfor %}
+    </dl>
+  </section>
+
+  <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+    <header class="px-4 py-2.5 border-b border-brand-border-light">
+      <h2 class="text-sm font-semibold text-gray-900">What we derive{% info "About what we derive" %}<p>Worked out each time the page opens, never stored. A gap names its missing input.</p>{% endinfo %}</h2>
+    </header>
+    <dl class="divide-y divide-brand-border-light/70">
+      {% for key, figure in detail.figures.items %}
+        <div class="px-4 py-2.5">
+          <div class="flex items-baseline gap-3">
+            <dt class="w-44 shrink-0 text-xs text-gray-600">{{ key|figure_label:commodity }}</dt>
+            <dd class="text-sm">
+              {% if figure.unconfirmed %}
+                <span class="text-gray-600">Unconfirmed</span>
+              {% else %}
+                <span class="text-gray-900 font-medium tabular-nums">{{ figure|figure_text }}</span>
+              {% endif %}
+            </dd>
+          </div>
+          {% for reason in figure.unconfirmed %}
+            <p class="text-xs text-gray-600 mt-1 ml-[11.75rem]">{{ reason }}</p>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </dl>
+  </section>
+
+</div>
+
+{% if questions %}
+  <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden mb-6">
+    <header class="px-4 py-2.5 border-b border-brand-border-light flex items-baseline justify-between gap-3">
+      <h2 class="text-sm font-semibold text-gray-900">Still to answer</h2>
+      <span class="text-xs text-gray-600">{{ questions|length }} outstanding</span>
+    </header>
+    <ul class="divide-y divide-brand-border-light/70">
+      {% for q in questions %}
+        <li class="flex items-start gap-3 px-4 py-3">
+          <span class="mt-0.5 shrink-0 px-2 py-0.5 rounded text-[11px] font-medium
+            {% if q.audience == 'supplier' %}bg-message-warning text-message-warning-text
+            {% elif q.audience == 'partner' %}bg-message-info text-message-info-text
+            {% else %}bg-gray-100 text-gray-600{% endif %}">{{ q.audience|audience_label }}</span>
+          <span class="text-sm text-gray-800">{{ q.question }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}
+
+<div class="grid gap-4 lg:grid-cols-2">
+  <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+    <header class="px-4 py-2.5 border-b border-brand-border-light">
+      <div class="flex items-baseline justify-between gap-3">
+        <h2 class="text-sm font-semibold text-gray-900">Evidence for this quote{% info "About evidence" %}<p>Documents filed with this offer: the quotation, a pro-forma invoice, the product's registration or certificate.</p>{% endinfo %}</h2>
+        <a href="{% url 'supply_chain:quote_document_attach' quote.id %}" class="text-xs text-brand-indigo hover:underline">+ Attach document</a>
+      </div>
+    </header>
+    {% if documents %}
+      <ul class="divide-y divide-brand-border-light/70">
+        {% for doc in documents %}
+          <li class="flex items-baseline gap-3 px-4 py-3">
+            <span class="text-xs text-gray-600 w-36 shrink-0">{{ doc.kind|words|capfirst }}</span>
+            <span class="text-sm text-gray-900">{{ doc.title|default:doc.filename|default:"untitled" }}</span>
+            <a href="{% url 'supply_chain:document_open' doc.id %}" rel="noopener noreferrer" target="_blank"
+               class="text-sm text-brand-indigo hover:underline ml-auto">Open</a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="px-4 py-6 text-sm text-gray-600">Nothing attached yet.</p>
+    {% endif %}
+  </section>
+
+  <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+    <header class="px-4 py-2.5 border-b border-brand-border-light">
+      <h2 class="text-sm font-semibold text-gray-900">On file for {{ supplier.name }}{% info "About documents on file" %}<p>The company's own standing documents (its trading licence, a good distribution practice certificate), recorded against the supplier, not against any one offer.</p>{% endinfo %}</h2>
+    </header>
+    {% if supplier_documents %}
+      <ul class="divide-y divide-brand-border-light/70">
+        {% for doc in supplier_documents %}
+          <li class="flex items-baseline gap-3 px-4 py-3">
+            <span class="text-xs text-gray-600 w-36 shrink-0">{{ doc.kind|words|capfirst }}</span>
+            <span class="text-sm text-gray-900">{{ doc.title|default:doc.filename|default:"untitled" }}</span>
+            <a href="{% url 'supply_chain:document_open' doc.id %}" rel="noopener noreferrer" target="_blank"
+               class="text-sm text-brand-indigo hover:underline ml-auto">Open</a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="px-4 py-6 text-sm text-gray-600">Nothing on file for this supplier.</p>
+    {% endif %}
+  </section>
+</div>
+
+{% endif %}
+
+{% endblock %}

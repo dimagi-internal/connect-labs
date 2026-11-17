@@ -58,6 +58,9 @@ class OperationFormView(SupplyWriteMixin, FormView):
     submit_label = "Save"
     footnote = ""
     danger = False
+    # `intro` and `footnote` open from the (i) beside the title; a destructive screen's one line that
+    # must stay in view ("This cannot be undone.") is its `warning`.
+    warning = ""
 
     # ---- what a screen overrides ----------------------------------------
 
@@ -92,6 +95,7 @@ class OperationFormView(SupplyWriteMixin, FormView):
             submit_label=self.submit_label,
             footnote=self.footnote,
             danger=self.danger,
+            warning=self.warning,
             breadcrumb=self.breadcrumb(**self.kwargs),
             cancel_href=self.cancel_href(**self.kwargs),
         )

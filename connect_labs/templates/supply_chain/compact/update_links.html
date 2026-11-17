@@ -1,0 +1,135 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+Links issued to organisations that have no labs login, so they can record
+their own part of the chain instead of being asked for it by email.
+
+No token appears here, ever -- only its first characters, to tell two links
+apart. The token is shown once, when the link is issued.
+{% endcomment %}
+
+{% block page_info %}{% info "What a link covers" %}<p>An update link lets an organisation with no labs login record its own part of the chain, instead of being asked for it by email.</p><p>
+        A link covers either only the orders, supply points and approvals it was issued for, or everything involving that
+        organisation in the programme, including orders created later. Either way it can only take the
+        organisation's own part, and everything recorded through it is marked as reported by that organisation.</p>
+      <p>Only the first characters of each link are shown here, to tell two apart. The full link is shown once, when it is issued.</p>{% endinfo %}{% endblock %}
+
+{% block supply_content %}
+
+<div class="flex flex-wrap items-end justify-between gap-4 mb-5">
+  <div>
+    <h1 class="text-2xl font-semibold text-gray-900 leading-tight">{% term "update links" "Update links" %}</h1>
+  </div>
+  {% if has_program_context %}
+    <a href="{% url 'supply_chain:update_link_issue' %}"
+       class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+      <i class="fa-solid fa-link mr-1"></i> Issue a link
+    </a>
+  {% endif %}
+</div>
+
+{% if not has_program_context %}
+  <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
+    <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
+    <p class="text-sm text-message-warning-text/90">Choose a programme above. A link belongs to one.</p>
+  </div>
+{% else %}
+
+{% for group in link_groups %}
+  <section class="mb-8">
+    <h2 class="text-sm font-semibold text-gray-900 mb-2">
+      {{ group.label }} <span class="ml-1 font-normal text-gray-600">{{ group.links|length }}</span>
+    </h2>
+    <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
+      <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
+        <table class="min-w-[52rem] w-full text-sm">
+          <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
+            <tr>
+              <th class="text-left px-4 py-2">Organisation</th>
+              <th class="text-left px-4 py-2">Covers</th>
+              <th class="text-left px-4 py-2">{% if group.active %}Expires{% else %}State{% endif %}</th>
+              <th class="text-left px-4 py-2">Used</th>
+              <th class="px-4 py-2"><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for link in group.links %}
+              <tr class="align-top">
+                <td class="px-4 py-2">
+                  <span class="text-gray-900">{{ link.org_name }}</span>{% if link.connect_username %} <span class="text-xs text-gray-600">· sent to {{ link.connect_username }}{% if link.require_verification %}, code required{% endif %}</span>{% endif %}
+                  <div class="text-xs text-gray-600 mt-0.5">
+                    {{ link.label|default:"" }}{% if link.label %} · {% endif %}<code>{{ link.token_hint }}…</code>
+                  </div>
+                </td>
+                <td class="px-4 py-2 text-gray-700" data-coverage="{{ link.coverage }}">
+                  {% if link.follows_org %}
+                    <div class="text-gray-900">Everything involving {{ link.org_name }}</div>
+                    <div class="text-xs text-gray-600 mb-1">including orders created after it was issued · today:</div>
+                  {% else %}
+                    <div class="text-xs text-gray-600 mb-1">Only these</div>
+                  {% endif %}
+                  {% for contract in link.contracts %}
+                    <div>
+                      <a href="{% url 'supply_chain:order_detail' contract.id %}" class="text-brand-indigo hover:underline">{% if contract.reference %}{{ contract.reference }}{% else %}Order {{ contract.id }}{% endif %}</a>
+                      <span class="text-xs text-gray-600">{{ contract.status_label }}</span>
+                    </div>
+                  {% endfor %}
+                  {% for point in link.supply_points %}
+                    <div><i class="fa-solid fa-warehouse text-gray-600 mr-1"></i>{{ point.name }}</div>
+                  {% endfor %}
+                  {% for approval in link.approvals %}
+                    <div><i class="fa-solid fa-circle-check text-gray-600 mr-1"></i>Approval of the award to {{ approval.supplier }}</div>
+                  {% endfor %}
+                  {% if link.follows_org and not link.contracts and not link.supply_points and not link.approvals %}
+                    <div class="text-xs text-gray-600">nothing yet</div>
+                  {% endif %}
+                </td>
+                <td class="px-4 py-2 text-gray-700 whitespace-nowrap">
+                  {% if link.state == "active" %}
+                    {{ link.expires|date:"j M Y" }}
+                  {% elif link.state == "revoked" %}
+                    <span class="px-2 py-0.5 rounded-full text-xs bg-message-error text-message-error-text">revoked</span>
+                    <div class="text-xs text-gray-600 mt-0.5">{{ link.revoked|date:"j M Y" }}</div>
+                  {% else %}
+                    <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">expired</span>
+                    <div class="text-xs text-gray-600 mt-0.5">{{ link.expires|date:"j M Y" }}</div>
+                  {% endif %}
+                </td>
+                <td class="px-4 py-2 text-gray-700">
+                  {% if link.submission_count %}
+                    {{ link.submission_count }} update{{ link.submission_count|pluralize }}
+                    <div class="text-xs text-gray-600 mt-0.5">last {{ link.last_used|date:"j M Y, H:i" }}</div>
+                  {% else %}
+                    <span class="text-gray-600">not yet</span>
+                  {% endif %}
+                </td>
+                <td class="px-4 py-2 text-right whitespace-nowrap">
+                  {% if link.state == "active" %}
+                    <form method="post" action="{% url 'supply_chain:update_link_revoke' link.id %}" class="inline" onsubmit="return confirm('Revoke this link? It stops working at once and cannot be turned back on.')">
+                      {% csrf_token %}
+                      <button type="submit" class="text-red-600 hover:underline">Revoke</button>
+                    </form>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+{% empty %}
+  <div class="bg-white border border-brand-border-light rounded-lg px-5 py-8 text-center">
+    <div class="text-sm text-gray-600">No links yet.{% info "Why issue one" %}<p>
+      Every status update is asked for by email or WhatsApp until there is one. Issue a link to the
+      organisation that holds the stock or ships the order, and they can record it themselves.</p>{% endinfo %}</div>
+    <a href="{% url 'supply_chain:update_link_issue' %}"
+       class="inline-block mt-4 px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
+      Issue the first one
+    </a>
+  </div>
+{% endfor %}
+
+{% endif %}
+{% endblock %}

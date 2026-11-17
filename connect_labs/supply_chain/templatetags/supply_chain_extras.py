@@ -2176,6 +2176,64 @@ def tab_groups_filter(tabs):
     return tab_groups(list(tabs or []))
 
 
+@register.simple_tag(takes_context=True)
+def compact_layout(context):
+    """Whether the programme in view uses the compact layout (navigation.compact_layout)."""
+    from connect_labs.supply_chain.navigation import compact_layout as chosen
+
+    request = context.get("request")
+    return chosen(request) if request is not None else False
+
+
+@register.filter(name="rail_entries")
+def rail_entries_filter(tabs):
+    """One group's tabs as the menu draws them, families folded (navigation.rail_entries)."""
+    from connect_labs.supply_chain.navigation import rail_entries
+
+    return rail_entries(list(tabs or []))
+
+
+class _InfoNode(template.Node):
+    def __init__(self, nodelist, label):
+        self.nodelist = nodelist
+        self.label = label
+
+    def render(self, context):
+        label = self.label.resolve(context) if self.label is not None else "About this"
+        body = self.nodelist.render(context).strip()
+        if not body:
+            return ""
+        return (
+            '<details class="supply-info" data-testid="supply-info">'
+            f'<summary aria-label="{escape(label)}" title="{escape(label)}">'
+            '<i class="fa-solid fa-circle-info" aria-hidden="true"></i></summary>'
+            f'<div class="supply-info-body" role="note">{body}</div></details>'
+        )
+
+
+@register.tag(name="info")
+def info_tag(parser, token):
+    """`{% info %}...{% endinfo %}`: the explanation behind a small (i), not on the page.
+
+    Pages say what they are and show their figures; how a figure is worked out, what a rule means and what to do
+    with it opens from the (i) (Akash, 2026-11-17: "too much text everywhere ... critical info can go in (i)").
+    `{% info "About the plan" %}` names it for a screen reader.
+    """
+    bits = token.split_contents()
+    label = parser.compile_filter(bits[1]) if len(bits) > 1 else None
+    nodelist = parser.parse(("endinfo",))
+    parser.delete_first_token()
+    return _InfoNode(nodelist, label)
+
+
+@register.filter(name="family_tabs")
+def family_tabs_filter(tabs):
+    """The pages sharing a menu entry with the one in view (navigation.family_tabs), for the tabs atop a page."""
+    from connect_labs.supply_chain.navigation import family_tabs
+
+    return family_tabs(list(tabs or []))
+
+
 @register.filter(name="page_purpose")
 def page_purpose_filter(tabs):
     """The one line saying what the page in view is for (navigation.PAGE_PURPOSE), or ""."""

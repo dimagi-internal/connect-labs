@@ -61,6 +61,71 @@ TAB_GROUPS = (
 
 SUPPLY_TABS = tuple(tab for _, tabs in TAB_GROUPS for tab in tabs)
 
+# THE COMPACT LAYOUT -- a programme's own choice (`compact_layout` in its Supply settings, config.py), made for the
+# chlorine programmes (Akash, 2026-11-17: "too much text everywhere", "less tabs are fine", "only for CL and not all
+# supply"). Every other programme keeps the menu above and the pages as they are.
+#
+# In it, tabs share one entry in the menu. Each page keeps its own address, Settings switch, pin and highlight; the
+# menu shows the family's name and opens to its pages, open by itself on the family you are in. A family with one page
+# showing (the rest turned off) is that page's own entry. Pages are drawn from templates/supply_chain/compact/ when
+# there is one (compact_templates.py), with their explanations behind an (i).
+FAMILIES = (
+    ("Overview", ("supply_chain:home", "supply_chain:start_here")),
+    ("Purchases", ("supply_chain:purchases", "supply_chain:suppliers")),
+    ("Network", ("supply_chain:network", "supply_chain:partners", "supply_chain:programme_map")),
+    ("Distribution", ("supply_chain:distribution", "supply_chain:stock", "supply_chain:flow")),
+    # A tab a programme adds after one of these joins it: the chlorine Supply desk sits after Plan.
+    ("Workers and plan", ("supply_chain:workers", "supply_chain:plan")),
+    # Issues and Tests stay entries of their own (Akash, 2026-11-17).
+    (
+        "Settings",
+        (
+            "supply_chain:catalogue",
+            "supply_chain:organisations",
+            "supply_chain:alerts",
+            "supply_chain:update_links",
+            "supply_chain:programme_team",
+        ),
+    ),
+)
+FAMILY_OF = {name: family for family, names in FAMILIES for name in names}
+# The compact menu's order: each family's pages together, in the order its families are listed.
+COMPACT_ORDER = [name for _, names in FAMILIES for name in names]
+# Group names the compact menu says differently ("setup also is way to weirdly named").
+COMPACT_GROUP_NAMES = {"Setup": "Settings"}
+
+# One Font Awesome icon per menu entry, so the menu reads at a glance. A family's entry wears the family's icon.
+FAMILY_ICONS = {
+    "Overview": "fa-house",
+    "Purchases": "fa-cart-shopping",
+    "Network": "fa-diagram-project",
+    "Distribution": "fa-truck",
+    "Workers and plan": "fa-people-group",
+    "Settings": "fa-gear",
+}
+TAB_ICONS = {
+    "supply_chain:home": "fa-house",
+    "supply_chain:start_here": "fa-book-open",
+    "supply_chain:purchases": "fa-cart-shopping",
+    "supply_chain:suppliers": "fa-industry",
+    "supply_chain:network": "fa-diagram-project",
+    "supply_chain:partners": "fa-handshake",
+    "supply_chain:programme_map": "fa-map-location-dot",
+    "supply_chain:distribution": "fa-truck",
+    "supply_chain:stock": "fa-boxes-stacked",
+    "supply_chain:flow": "fa-route",
+    "supply_chain:workers": "fa-people-group",
+    "supply_chain:plan": "fa-calendar-check",
+    "supply_chain:issues": "fa-triangle-exclamation",
+    "supply_chain:tests": "fa-vial",
+    "supply_chain:catalogue": "fa-box-open",
+    "supply_chain:alerts": "fa-bell",
+    "supply_chain:organisations": "fa-building",
+    "supply_chain:programme_team": "fa-user-group",
+    "supply_chain:update_links": "fa-link",
+}
+PIN_ICON = "fa-table-columns"
+
 # The two tabs Purchases replaced, as a programme may still have them switched off in Settings.
 LEGACY_BUYING_TABS = {"supply_chain:procurement_tender_board", "supply_chain:orders"}
 
@@ -414,22 +479,56 @@ def supply_tabs(request) -> list[dict]:
             "label": pin.label,
             "active": current_slug == pin.slug or also_active,
             "group": group,
+            "icon": PIN_ICON if compact else "",
         }
+
+    compact = compact_layout(request)
+    badges = _badges(request) if compact else {}
+
+    def family_of(name):
+        return FAMILY_OF.get(name, "") if compact else ""
+
+    def icon_of(name, default=""):
+        return TAB_ICONS.get(name, default) if compact else ""
+
+    def group_of(name):
+        group = GROUP_OF_TAB.get(name, "")
+        return COMPACT_GROUP_NAMES.get(group, group) if compact else group
+
+    ordered = SUPPLY_TABS
+    if compact:
+        # Each family's pages together; a tab in no family keeps its place.
+        ordered = _compact_order(SUPPLY_TABS, {name: i for i, name in enumerate(COMPACT_ORDER)})
 
     hidden = hidden_tabs(request)
     tabs = []
     keys = []
-    for name, label in SUPPLY_TABS:
+    for name, label in ordered:
         if name in hidden:
             continue
         pin = replacing.get(name)
         if pin is not None:
             # The pinned workflow stands in for this tab; its own page ("classic view") still counts as here.
-            tabs.append(pin_tab(pin, also_active=current == name, group=GROUP_OF_TAB.get(name, "")))
+            tabs.append(
+                {
+                    **pin_tab(pin, also_active=current == name, group=group_of(name)),
+                    "family": family_of(name),
+                    "icon": icon_of(name, PIN_ICON),
+                }
+            )
         else:
             # Overview's tab names Overview, not the front door that may open elsewhere.
             href = scoped_url(request, "supply_chain:overview" if name == "supply_chain:home" else name)
-            tab = {"url": href, "label": label, "active": name == current, "group": GROUP_OF_TAB.get(name, "")}
+            tab = {
+                "url": href,
+                "label": label,
+                "active": name == current,
+                "group": group_of(name),
+                "family": family_of(name),
+                "icon": icon_of(name),
+            }
+            if badges.get(name):
+                tab["badge"] = badges[name]
             # The page's one-line purpose, on the tab's own page only: a record one level
             # below it (a tender, an order) leads with itself.
             if (name == own_view or (name == HOME and own_view == OVERVIEW)) and name in PAGE_PURPOSE:
@@ -445,10 +544,84 @@ def supply_tabs(request) -> list[dict]:
         # After any added tab already placed behind the same anchor, so position order holds.
         while at < len(keys) and keys[at].startswith("pin:"):
             at += 1
-        # Same group as the tab it follows.
-        tabs.insert(at, pin_tab(pin, group=tabs[at - 1]["group"] if at else ""))
+        # Same group as the tab it follows, and the same menu entry (FAMILIES) when that tab shares one.
+        before = tabs[at - 1] if at else {}
+        tabs.insert(at, {**pin_tab(pin, group=before.get("group", "")), "family": before.get("family", "")})
         keys.insert(at, f"pin:{pin.slug}")
     return tabs
+
+
+def _compact_order(tabs, rank) -> tuple:
+    """`tabs` with each family's pages brought together (COMPACT_ORDER), groups and the rest left in place."""
+    out, placed = [], set()
+    for name, label in tabs:
+        if name in placed:
+            continue
+        family = FAMILY_OF.get(name)
+        if family:
+            members = [t for t in tabs if FAMILY_OF.get(t[0]) == family]
+            members.sort(key=lambda t: rank[t[0]])
+            out.extend(members)
+            placed.update(m[0] for m in members)
+        else:
+            out.append((name, label))
+            placed.add(name)
+    return tuple(out)
+
+
+def compact_layout(request) -> bool:
+    """Whether the programme in view has chosen the compact layout (config.py), read once per request."""
+    cached = getattr(request, "_supply_compact", None)
+    if cached is not None:
+        return cached
+    from connect_labs.supply_chain.config import resolved_for
+
+    program_id = (getattr(request, "labs_context", None) or {}).get("program_id")
+    try:
+        compact = bool(resolved_for(request, program_id).get("compact_layout")) if program_id else False
+    except Exception:  # noqa: BLE001 -- unreadable settings draw the usual layout
+        compact = False
+    request._supply_compact = compact
+    return compact
+
+
+def _badges(request) -> dict:
+    """{tab: count} of what is waiting on a person: open stock issues, and batches, dispensers or stores whose latest
+    test failed. Read once per request; a count that cannot be read is simply not shown."""
+    cached = getattr(request, "_supply_badges", None)
+    if cached is not None:
+        return cached
+    badges: dict = {}
+    program_id = (getattr(request, "labs_context", None) or {}).get("program_id")
+    try:
+        program_id = int(program_id) if program_id else None
+    except (TypeError, ValueError):
+        program_id = None
+    if program_id:
+        try:
+            from connect_labs.supply_chain.models import StockIssue
+            from connect_labs.supply_chain.quality.service import latest_standing
+
+            badges["supply_chain:issues"] = (
+                StockIssue.objects.filter(program_id=program_id).exclude(status="resolved").count()
+            )
+            if "supply_chain:tests" not in hidden_tabs(request):
+                badges["supply_chain:tests"] = sum(1 for t in latest_standing(program_id) if t.result == "fail")
+        except Exception:  # noqa: BLE001 -- a badge is a convenience; the page must still draw
+            badges = {}
+    request._supply_badges = badges
+    return badges
+
+
+def family_tabs(tabs: list[dict]) -> list[dict]:
+    """The pages that share a menu entry with the page in view, for the row of tabs at the top of the page; [] when
+    the page stands alone (or its family shows only it)."""
+    active = next((t for t in tabs if t.get("active")), None)
+    family = (active or {}).get("family")
+    if not family:
+        return []
+    siblings = [t for t in tabs if t.get("family") == family]
+    return siblings if len(siblings) > 1 else []
 
 
 def tab_groups(tabs: list[dict]) -> list[dict]:
@@ -466,6 +639,32 @@ def tab_groups(tabs: list[dict]) -> list[dict]:
         else:
             groups.append({"label": label, "tabs": [tab]})
     return groups
+
+
+def rail_entries(tabs: list[dict]) -> list[dict]:
+    """One group's tabs as the menu draws them: a tab on its own, or a family of tabs under one name.
+
+    [{family, active, tabs}] -- `family` is "" for a tab that stands alone, and for a family showing only one of its
+    pages (then it is that page's own entry). A family's pages join it wherever they sit in the group, in order.
+    """
+    entries: list[dict] = []
+    by_family: dict[str, dict] = {}
+    for tab in tabs:
+        family = tab.get("family") or ""
+        if family and family in by_family:
+            by_family[family]["tabs"].append(tab)
+            continue
+        entry = {"family": family, "tabs": [tab]}
+        entries.append(entry)
+        if family:
+            by_family[family] = entry
+    for entry in entries:
+        if len(entry["tabs"]) < 2:
+            entry["family"] = ""
+        entry["active"] = any(t.get("active") for t in entry["tabs"])
+        entry["icon"] = FAMILY_ICONS.get(entry["family"], "") if entry["family"] else entry["tabs"][0].get("icon", "")
+        entry["badge"] = sum(t.get("badge") or 0 for t in entry["tabs"])
+    return entries
 
 
 def page_purpose(tabs: list[dict]) -> str:

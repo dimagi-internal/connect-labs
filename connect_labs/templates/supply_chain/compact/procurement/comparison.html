@@ -1,0 +1,233 @@
+{% extends "supply_chain/base.html" %}
+{% load supply_chain_extras %}
+{% block page_info %}{% info "About this page" %}<p>Every quote for one product, one row each, cheapest landed price first. Each column heading says where its figures come from; click a heading to sort by it.</p><p>The landed price is what a quote comes to delivered, with duty, freight and clearing added. Chips show what is still open on a quote and whose it is: ours to attach, choose, fill or ask, or waiting on the supplier.</p><p>Import duty terms apply to every quote and are set once, at the top. Any quote can be awarded: whether its facts are enough is the buyer's call, recorded with the reason.</p>{% endinfo %}{% endblock %}
+{% block supply_content %}
+<div class="flex flex-col gap-4" data-testid="comparison-page" id="comparison-page" data-live>
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-600" aria-label="Breadcrumb"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:purchases' %}">Purchases</a><span aria-hidden="true">›</span><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:purchase' tender_id %}">{{ tender.label|default:"Purchase" }}</a><span aria-hidden="true">›</span><span>Comparison</span></nav>
+    {% if not grid or not grid.quotes %}{% include "supply_chain/_src_legend.html" %}{% endif %}
+  </div>
+{% if not commodity_slug %}
+  <h1 class="text-brand-deep-purple text-2xl font-semibold">Compare quotes</h1>
+  <div class="card_bg border-brand-border-light flex flex-col gap-3 border">
+    <span class="text-gray-600">Which product?</span>
+    <ul class="m-0 flex list-none flex-col gap-2 p-0">
+      {% for line in tender.lines %}
+        <li><a class="button button-sm outline-style" href="?commodity={{ line.commodity_slug }}">{{ line.commodity_slug }}{% if line.quantity %} — {{ line.quantity|qty:line.quantity_unit }}{% endif %}</a></li>
+      {% empty %}
+        <li class="text-gray-600">No products on this tender yet.</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% else %}
+  {% comment %}A compact head, so the count, the duty terms and the grid down to Import duty share one screen:
+  the title line, then the quote count (and how many have a landed price -- data, never a verdict
+  on which quotes may be compared) on the same row as the tender's duty terms -- they apply to
+  every quote below -- with the source legend at that row's end.{% endcomment %}
+  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+    <h1 class="text-brand-deep-purple text-xl font-semibold">Compare quotes</h1>
+    <span class="text-sm text-gray-600">{{ commodity_name }}{% if tender.label %} · {{ tender.label }}{% endif %}</span>
+  </div>
+  <div class="-mt-2 flex flex-wrap items-center justify-between gap-3" data-testid="comparison-status-row">
+    <div class="flex flex-wrap items-center gap-3">
+    {% if comparison %}<span data-testid="quote-count" class="status-chip status-chip--neutral px-3 py-1 text-sm font-semibold">{{ comparison.total_count }} quote{{ comparison.total_count|pluralize }}{% if comparison.priced_count %} · {{ comparison.priced_count }} with a landed price{% endif %}</span>{% endif %}
+    <div id="duty-terms" data-testid="comparison-duty-terms" class="flex flex-wrap items-center gap-2.5 rounded-lg border px-3 py-1.5 text-sm {% if tender.duty_terms %}border-brand-border-light bg-white{% else %}border-message-warning-border/50 bg-message-warning{% endif %}">
+      <span data-testid="duty-terms-chip"><span class="text-gray-600">Import duty:</span> <strong data-testid="duty-terms-value" {% edit_cell "tender" tender_id "duty_terms" tender.duty_terms %} class="px-1 {% if tender.duty_terms %}text-gray-900{% else %}text-message-warning-text{% endif %}">{% if tender.duty_terms %}{{ tender.duty_terms|duty_terms_words }}{% else %}not chosen yet{% endif %}</strong></span>
+      {% if grid_blocked_by_terms %}<span class="text-gray-700" data-testid="duty-terms-blocks">· holds up {{ grid_blocked_by_terms|join:", " }}</span>{% endif %}
+      {% if tender.duty_terms == "buyer_waiver" %}<span class="text-xs text-gray-600" data-testid="waiver-evidence">· {{ "duty_exemption"|document_kind|capfirst }} {% if waiver_on_file %}on file{% else %}not on file{% endif %}</span>{% if not waiver_on_file and not supply_as_of %}<span class="text-xs text-gray-600">·</span><a class="text-brand-indigo font-semibold hover:underline" data-testid="duty-exemption-attach" href="{% url 'supply_chain:program_document_attach' %}?kind=duty_exemption&next={{ request.path|urlencode }}">Attach</a>{% endif %}{% endif %}
+      {% if not supply_as_of %}
+      <details class="relative">
+        <summary data-testid="duty-terms-change" role="button" class="text-brand-indigo cursor-pointer list-none font-semibold hover:underline [&::-webkit-details-marker]:hidden">{% if tender.duty_terms %}Change{% else %}Choose who pays{% endif %}</summary>
+        <form method="post" action="{% url 'supply_chain:procurement_tender_duty_terms' tender_id %}" class="border-brand-border-light absolute right-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 shadow-sm">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          {% include "supply_chain/procurement/_duty_terms_fields.html" %}
+        </form>
+      </details>
+      {% endif %}
+    </div>
+    {% if grid and grid.quotes and not grid.like_for_like %}<span class="inline-flex items-center"><a href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#import-estimates" data-testid="clearing-not-recorded" class="status-chip status-chip--ours px-3 py-1 text-sm hover:underline">Clearing estimate not recorded</a>{% info "About the clearing estimate" %}<p>Quotes we import are shown excl. clearing until a clearing estimate is recorded on the tender page.</p>{% endinfo %}</span>{% endif %}
+    </div>
+    {% if grid and grid.quotes %}<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600"><span class="inline-flex items-center gap-x-3" data-testid="owner-legend">{% if grid_legend.ours %}<span class="inline-flex items-center gap-1"><span class="status-chip status-chip--fact">ours to attach · choose · fill</span>ours</span>{% endif %}{% if grid_legend.to_ask %}<span class="inline-flex items-center gap-1"><span class="status-chip status-chip--fact">to ask</span>ours to ask</span>{% endif %}{% if grid_legend.waiting %}<span class="inline-flex items-center gap-1"><span class="status-chip status-chip--theirs">waiting</span>on the supplier</span>{% endif %}</span>{% include "supply_chain/_src_legend.html" %}</div>{% endif %}
+  </div>
+
+  {% if award_error %}
+  <div class="border-message-error-border/50 bg-message-error text-message-error-text rounded-lg border px-3.5 py-2.5 text-sm" role="alert" data-testid="award-error">Could not award: {{ award_error }}</div>
+  {% endif %}
+
+  {% comment %}Said in full once, on the tender page; here a line pointing back, not the whole warning again.{% endcomment %}
+  {% if qualification_gaps %}
+  <p class="text-sm text-message-warning-text" data-testid="qualification-gaps-note">A check you require is missing for {% for gap in qualification_gaps %}{{ gap.name }}{% if not forloop.last %}, {% endif %}{% endfor %}. <a class="underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#outreach">What to ask for</a></p>
+  {% endif %}
+
+  {% if awards %}
+  <div class="border-brand-border-light flex flex-wrap items-baseline gap-x-3.5 gap-y-2 rounded-lg border bg-white px-5 py-3 text-sm" data-testid="awards">
+    <span class="status-chip status-chip--primary">Awarded</span>
+    {% for award in awards %}
+      <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:award_detail' award.id %}">award {{ award.id }}{% for row in comparison.all_rows %}{% if row.quote_id == award.quote_id %} to {{ row.supplier_name }}{% endif %}{% endfor %}{% if award.decided_on %}, {{ award.decided_on|day }}{% endif %}</a>{% if award.decided_by %} <span class="text-gray-600">by {{ award.decided_by }}</span>{% endif %}{% if award.rationale %} <span class="text-gray-600" data-award-why>· {{ award.rationale }}</span>{% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if grid and grid.quotes %}
+  {% comment %}A quote to a row, a fact to a column (2026-10-06): the quotes are the records being
+  compared, so each reads across like a line of a sheet, cheapest landed price first, its supplier,
+  status, specification check and next moves held in the pinned cell at the left while the figures
+  scroll. Each column's heading says where its values come from. The landed price leads, then how
+  far it sits above the lowest. A click on a heading sorts the rows by it (sheet_sort.js).{% endcomment %}
+  <p class="mb-1 text-xs text-gray-600" data-testid="comparison-scroll-hint">Scroll sideways for more columns &rarr;</p>
+  <section class="sheet-wrap" tabindex="0" role="region" aria-label="Quotes side by side, scrolls sideways">
+    <table class="sheet" data-testid="comparison-grid">
+      <thead>
+        <tr>
+          <th scope="col" class="sheet-pin" data-sort>Supplier</th>
+          {% for r in grid.rows %}
+          <th scope="col" data-fact="{{ r.key }}" class="align-bottom whitespace-normal{% if r.total %} text-gray-900{% endif %}{% if r.pin %} {{ r.pin }}{% endif %}" data-sort>{{ r.label }}<span class="sub normal-case">{{ r.src_label }}</span></th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for q in grid.quotes %}
+        <tr data-quote-id="{{ q.quote_id }}" data-testid="grid-quote-row">
+          <th scope="row" data-quote-id="{{ q.quote_id }}" data-testid="grid-quote" data-sort-value="{{ q.name }}" class="sheet-pin text-left align-top font-normal whitespace-normal">
+            <a href="{{ q.href }}" class="text-brand-deep-purple font-semibold hover:underline">{{ q.name }}</a>
+            {% if q.item %}<span class="sub">{{ q.item }}</span>{% endif %}
+            <span class="mt-1 flex flex-wrap gap-1">{% for chip in q.chips %}<span class="status-chip status-chip--{{ chip.tone }}"{% if forloop.first %} data-testid="grid-status"{% endif %}>{{ chip.label }}</span>{% endfor %}{% if q.spec %}<span class="status-chip status-chip--{{ q.spec.tone }}" data-testid="grid-spec" data-fact="spec"{% if q.spec.detail %} title="{{ q.spec.detail }}"{% endif %}>{{ q.spec.label }}</span>{% endif %}</span>
+            {% if not supply_as_of %}
+            {% comment %}The next steps on its open facts, as chips by whose they are: ours (to attach, choose, fill or ask), then the
+            supplier's (waiting). Open facts only; the award is the block under the grid, which this
+            quote's Award link opens with it chosen. The tender-wide duty terms are settled once, above.{% endcomment %}
+            {% if q.awardable or q.actions %}
+            <span class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+              {% if q.awardable %}<a class="button button-sm outline-style" data-testid="grid-award" data-quote-id="{{ q.quote_id }}" href="?commodity={{ commodity_slug|urlencode }}&amp;award={{ q.quote_id }}#award">Award</a>{% endif %}
+              {% if q.ours_actions %}<span class="contents" data-testid="grid-actions" data-whose="us">{% for a in q.ours_actions %}{% if a.terms %}{% ifchanged a.terms %}<a class="text-brand-indigo hover:underline" data-testid="grid-terms-link" title="Once, for the whole tender, on the import duty line" href="#duty-terms">{{ a.label }}</a>{% endifchanged %}{% else %}<a class="status-chip status-chip--{{ a.owner|gap_tone }} hover:underline" data-testid="grid-action" data-owner="{{ a.owner }}" href="{{ a.href }}">{{ a.label }}</a>{% endif %}{% endfor %}</span>{% endif %}
+              {% if q.theirs_actions %}<span class="contents" data-testid="grid-actions-theirs" data-whose="suppliers">{% for a in q.theirs_actions %}<a class="status-chip status-chip--{{ a.owner|gap_tone }} hover:underline" data-testid="grid-action" data-owner="{{ a.owner }}" href="{{ a.href }}">{{ a.label }} · waiting</a>{% endfor %}</span>{% endif %}
+            </span>
+            {% endif %}
+            {% endif %}
+          </th>
+          {% for c in q.cells %}
+          <td class="align-top{% if c.pin %} {{ c.pin }}{% endif %}{% if c.fact == "price" or c.fact == "landed" or c.fact == "fx" or c.fact == "vs_lowest" %} tabular-nums{% endif %}{% if c.fact == "price" or c.fact == "landed" or c.fact == "term" or c.fact == "pack" or c.fact == "vs_lowest" %} whitespace-nowrap{% else %} min-w-[7.5rem]{% endif %}{% if c.fact == "landed" %} bg-stone-50 font-semibold text-gray-900{% endif %}" data-testid="grid-cell" data-fact="{{ c.fact }}" data-quote-id="{{ c.quote_id }}"{% if "sort" in c %} data-sort-value="{{ c.sort }}"{% endif %}{% if c.gap %} data-gap{% endif %}{% if c.lowest %} data-lowest{% endif %}{% if c.edit %} {% edit_cell c.edit.0 c.edit.1 c.edit.2 c.edit.3 %}{% endif %}>{% if c.gap %}<span class="{% if c.owner|owner_tone == 'ours' %}text-message-warning-text{% else %}text-gray-900{% endif %} font-medium"{% if c.why %} title="{{ c.why }}"{% endif %}>{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}</span>{% if c.owner %} <span class="status-chip status-chip--{{ c.owner|gap_tone }}" data-testid="gap-owner">{{ c.chip }}</span>{% endif %}{% elif c.needs %}<span class="block min-w-[9rem] max-w-[12rem] whitespace-normal text-sm font-normal text-gray-600" data-testid="landed-needs">{{ c.v }}</span>{% elif c.mute %}<span class="font-normal text-gray-600">{{ c.v }}</span>{% else %}{% include "supply_chain/_src.html" with src=c.src %}{{ c.v }}{% if c.per %}<span class="sub">{{ c.per }}</span>{% endif %}{% if c.lowest or c.qualifier or c.unconfirmed %}<span class="mt-0.5 flex flex-wrap items-center gap-1">{% if c.lowest %}<span class="status-chip status-chip--primary font-medium" data-testid="landed-lowest">lowest</span>{% endif %}{% if c.qualifier %}<span class="text-message-warning-text text-xs font-medium" data-testid="landed-qualifier">{{ c.qualifier }}</span>{% endif %}{% if c.unconfirmed %}<span class="status-chip status-chip--ours font-medium" data-testid="landed-unconfirmed">unconfirmed</span>{% endif %}</span>{% endif %}{% if c.pending %} <span class="status-chip status-chip--{{ c.pending_owner|gap_tone }} mt-1 block w-fit" data-testid="waiver-pending">{{ c.pending }}</span>{% endif %}{% endif %}{% if c.imports and not c.gap %}<span class="sub{% if c.imports.gap %} text-message-warning-text{% endif %}" data-testid="grid-imports" data-fact="imports">{{ c.imports.v }}{% if c.imports.gap and c.imports.owner %} · {{ c.imports.owner|supplies }}{% endif %}</span>{% endif %}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% elif comparison %}
+  <div class="card_bg border-brand-border-light border text-gray-600">No live quote on this product yet.</div>
+  {% endif %}
+
+  {% if award_choice_id and not supply_as_of %}
+  {% comment %}The award: ONE block for the tender, so what is still open on it (deadline days,
+  silent suppliers, replies owed) is said once. A quote's Award link above opens it with that quote
+  chosen; otherwise it starts on the cheapest quote. Every live quote can be awarded: whether its facts
+  are enough is the buyer's call, recorded with the reason. Why, when, who.{% endcomment %}
+  <details class="fold" id="award-block" data-testid="award-start"{% if award_error or award_step %} open{% endif %}>
+    <summary data-testid="award-open" id="award">Award{% if award_open_chips %} <span class="inline-flex flex-wrap items-center gap-1 align-middle text-xs font-normal text-gray-600" data-testid="award-open-facts">· still open {% for chip in award_open_chips %}<span class="status-chip status-chip--{{ chip.tone }}">{{ chip.label }}</span>{% endfor %}</span>{% endif %}</summary>
+    <div class="fold-body">
+                  <form method="post" action="" data-testid="award-form" class="mt-2 flex flex-wrap items-end gap-2 min-w-0">
+                    {% csrf_token %}
+                    <label class="flex flex-col gap-0.5 text-xs text-gray-600" for="award-quote">Quote
+                      <select id="award-quote" name="quote_id" data-testid="award-quote" required
+                              class="border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-900">
+                        {% for q in award_options %}<option value="{{ q.quote_id }}"{% if q.quote_id == award_choice_id %} selected{% endif %}>{{ q.name }}{% if q.item %} · {{ q.item }}{% endif %}{% if q.landed %} · {{ q.landed }}{% endif %}</option>{% endfor %}
+                      </select>
+                    </label>
+                    <label class="flex flex-col gap-0.5 text-xs text-gray-600 min-w-0 flex-1 basis-64" for="award-rationale">Why this offer {% if award_reason_limit %}<span data-testid="award-reason-required">(needed above {{ award_reason_limit|floatformat:"-2" }} US dollars)</span>{% else %}(optional){% endif %}
+                      {% comment %}"Decided on" stays empty until the buyer starts an award -- a date
+                      already in it read as a decision already made; typing the reason fills
+                      it with today, and an empty one is recorded as today anyway.{% endcomment %}
+                      <datalist id="award-reasons"><option value="Lowest delivered price"><option value="Only quote with everything stated"><option value="Shortest lead time"></datalist>
+                      <input type="text" id="award-rationale" name="rationale" placeholder="e.g. lowest delivered price" list="award-reasons"
+                             oninput="var d=document.getElementById('award-decided-on'); if (d &amp;&amp; !d.value) { d.value = '{{ today }}'; }"
+                             class="w-full border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-900">
+                    </label>
+                    <label class="flex flex-col gap-0.5 text-xs text-gray-600" for="award-decided-on">Decided on
+                      <input type="date" id="award-decided-on" name="decided_on" value="" max="{{ today }}"
+                             title="The day the decision was made"
+                             class="border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-900">
+                    </label>
+                    {% comment %}Who decided is who is signed in: the view records that, and
+                    ignores anything posted, so it is shown and not asked.{% endcomment %}
+                    <div class="flex flex-col gap-0.5 text-xs text-gray-600">Decided by
+                      <span data-testid="decided-by" class="py-1 text-sm text-gray-900">{{ decider }}</span>
+                    </div>
+                    <button data-testid="award-submit" class="button button-sm primary-dark shrink-0"
+                            type="submit">
+                      Award
+                    </button>
+                  </form>
+    </div>
+  </details>
+  {% endif %}
+
+{% if comparison.unavailable %}
+  <div class="card_bg border-brand-border-light flex flex-col gap-1.5 border" data-testid="unavailable">
+    <strong class="text-gray-900">Not computed for any quote</strong>
+    <ul class="m-0 list-disc pl-5 text-sm">
+      {% for key, figure in comparison.unavailable.items %}<li><b>{{ figure.label }}</b> — {% for reason in figure.reasons %}{{ reason }}{% if not forloop.last %}; {% endif %}{% endfor %}</li>{% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+{% if set_aside %}
+  <section class="mb-4">
+    <h2 class="text-sm font-semibold text-gray-900 mb-2">Set aside — {{ set_aside|length }}</h2>
+    <div class="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100">
+      {% for entry in set_aside %}
+        <div class="px-4 py-3 text-sm">
+          <a href="{% url 'supply_chain:procurement_quote_detail' entry.quote.id %}"
+             class="font-medium text-brand-indigo hover:underline">{{ entry.item.name|default:entry.quote.supplier_id }}</a>
+          <span class="text-gray-600">· {{ entry.quote.as_quoted_currency }} {{ entry.quote.as_quoted_amount|money }}</span>
+          {% if entry.item.components %}
+            {% include "supply_chain/procurement/_composition.html" with composition=entry.item.components unit=entry.item.components_unit %}
+          {% endif %}
+          <div class="text-gray-700 mt-1">{{ entry.quote.void_reason }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
+
+{% if comparison.not_comparable %}
+  {% comment %}
+  Offers holding other contents than the tender's line: a fact about each offer, said with its
+  contents and price beside what the tender buys, so the buyer can read the difference. Not a
+  question for the supplier, and not a verdict -- these can still be awarded from the block above.
+  {% endcomment %}
+  <section class="mt-6 mb-4" data-testid="different-contents">
+    <h2 class="text-lg font-semibold text-gray-900 mb-2">
+      Different contents from the tender{% info "About different contents" %}<p>These offers hold other contents than the tender's line. Each is shown with its contents and price beside what the tender buys, so you can read the difference. They can still be awarded.</p>{% endinfo %}
+    </h2>
+    {% if comparison.tender_contents %}
+      <p class="text-sm text-gray-600 mb-2">This tender buys</p>
+      {% include "supply_chain/procurement/_composition.html" with composition=comparison.tender_contents unit="" %}
+    {% endif %}
+    <div class="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100 mt-2">
+      {% for row in comparison.not_comparable %}
+        <div class="px-4 py-3 text-sm">
+          <a href="{% url 'supply_chain:supplier_detail' row.supplier_id %}"
+             class="font-medium text-brand-indigo hover:underline">{{ row.supplier_name }}</a>
+          {% include 'supply_chain/procurement/_supplier_flags.html' %}
+          {% if row.item_name %}<span class="text-gray-700">· {{ row.item_name }}</span>{% endif %}
+          {% comment %}Its price, so "cheaper, but not what the tender buys" can be read here and not taken on trust.{% endcomment %}
+          {% with first=comparison.columns.0 %}{% with cell=row.figures|dictkey:first.key %}{% if cell and cell.amount is not None and not cell.unconfirmed %}
+            <span class="text-gray-600">· {{ first.label }}: {{ cell|money_text }}</span>
+          {% endif %}{% endwith %}{% endwith %}
+          {% include "supply_chain/procurement/_composition.html" with composition=row.composition unit=row.composition_unit %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
+
+{% endif %}
+</div>
+{% endblock %}
+
+{% comment %}Ask an AI about these quotes: the canopy agent panel, reading the tables' data as the visitor (procurement/views.py _quotes_panel).{% endcomment %}
+{% block inline_javascript %}
+  {{ block.super }}
+  {% if canopy_panel %}{% include "canopy_host/panel.html" %}{% endif %}
+{% endblock %}
