@@ -129,7 +129,6 @@ class TestsView(OperationBase):
             partners=partners,
             partner_name=next((p["name"] for p in partners if p["id"] == query["partner"]), None),
             kinds=[(k, KIND_WORDS[k]) for k in records.QUALITY_TEST_KINDS],
-            results=[(k, RESULT_WORDS[k]) for k in records.QUALITY_TEST_RESULTS],
             new_links=[
                 (
                     k,
