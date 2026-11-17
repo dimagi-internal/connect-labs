@@ -48,6 +48,17 @@
 .mk .btn.primary:hover {
   background: #3730a3;
 }
+.mk .btn.danger {
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+.mk .btn.danger:hover {
+  background: #fef2f2;
+}
+.mk .btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 .mk .btn.small {
   font-size: 12px;
   padding: 3px 9px;
@@ -91,6 +102,17 @@
 .mk .results {
   grid-area: results;
   min-width: 0;
+}
+/* Wide screens: the controls stay in view beside the results (clear of the fixed header and footer) and scroll on
+   their own, so changing a dial never means scrolling the page away from the map and the plan. */
+@media (min-width: 901px) {
+  .mk .controls {
+    position: sticky;
+    top: 5rem;
+    max-height: calc(100vh - 9rem);
+    overflow-y: auto;
+    padding-right: 2px;
+  }
 }
 @media (max-width: 900px) {
   .mk .layout {

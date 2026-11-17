@@ -143,6 +143,13 @@ def get(user, pk: int) -> SavedScenario:
     return record
 
 
+def my_groups(user) -> list[dict]:
+    """The groups the user made, by name: what a scenario can be moved into."""
+    if not signed_in(user):
+        return []
+    return [{"id": g.pk, "name": g.name} for g in ScenarioGroup.objects.filter(owner=user).order_by("name")]
+
+
 def _own_group(user, group) -> ScenarioGroup | None:
     """The group (an id) a scenario may be put in: one the user owns."""
     if group in (None, ""):
@@ -214,10 +221,15 @@ def _next_position(group: ScenarioGroup | None) -> int:
     return 0 if last is None else last + 1
 
 
+#: ``update(group=KEEP)`` leaves the scenario's group alone; ``group=None`` takes it out of its group.
+KEEP = object()
+
+
 def update(
-    user, pk: int, *, name: str | None = None, note: str | None = None, shared: bool | None = None
+    user, pk: int, *, name: str | None = None, note: str | None = None, shared: bool | None = None, group=KEEP
 ) -> SavedScenario:
-    """Rename a scenario, change its note, or share it with everyone (or make it private again). Only its owner."""
+    """Rename a scenario, change its note, share it with everyone (or make it private again), or move it into one of
+    the owner's groups (last in its order) or out of its group (``group=None``). Only its owner."""
     _need_user(user)
     record = get(user, pk)
     if record.owner_id != user.pk:
@@ -236,6 +248,11 @@ def update(
         record.note = note.strip()
     if shared is not None:
         record.shared = bool(shared)
+    if group is not KEEP:
+        target = None if group in (None, "") else _own_group(user, group)
+        if target is None or target.pk != record.group_id:
+            record.group = target
+            record.position = _next_position(target)
     record.save()
     return record
 

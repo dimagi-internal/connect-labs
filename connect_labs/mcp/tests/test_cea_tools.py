@@ -467,6 +467,19 @@ class TestScenarioGroupTools:
         assert got["scenarios"][0]["differs"] == ["Limits: none → remote at most 40"]
         assert cea.cea_scenario_groups(ann, id=g["id"], compare=False)["summary"] == "So far."
 
+    def test_delete_a_scenario_or_a_group_and_only_your_own(self, ann, django_user_model):
+        bob = django_user_model.objects.create_user(username="bob2", password="x")
+        a = cea.cea_scenario_save(ann, name="one", models=["kc"], target=1_000_000)
+        g = cea.cea_scenario_group_save(ann, name="G", scenario_ids=[a["id"]])
+        with pytest.raises(MCPToolError):
+            cea.cea_scenario_delete(bob, scenario_id=a["id"])
+        with pytest.raises(MCPToolError):
+            cea.cea_scenario_delete(ann)
+        assert cea.cea_scenario_delete(ann, group_id=g["id"]) == {"deleted": "group", "id": g["id"]}
+        assert cea.cea_scenarios(ann, id=a["id"])["name"] == "one"  # the scenario was kept, ungrouped
+        assert cea.cea_scenario_delete(ann, scenario_id=a["id"])["deleted"] == "scenario"
+        assert cea.cea_scenarios(ann)["mine"] == []
+
     def test_saving_into_a_group_that_is_not_yours_is_refused(self, ann, django_user_model):
         bob = django_user_model.objects.create_user(username="bob", password="x")
         theirs = cea.cea_scenario_group_save(bob, name="theirs")

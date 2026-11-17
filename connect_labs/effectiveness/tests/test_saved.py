@@ -199,6 +199,7 @@ class TestOpeningOne:
     def test_the_page_carries_what_saving_needs(self, signed_in, page):
         data = embedded(signed_in.get(reverse(page)).content.decode())
         assert data["signed_in"] is True and data["csrf"] and data["scenarios_url"] == "/labs/cea/scenarios/"
+        assert data["groups_url"] == "/labs/cea/groups/" and data["my_groups"] == []
 
 
 class TestChangingOne:

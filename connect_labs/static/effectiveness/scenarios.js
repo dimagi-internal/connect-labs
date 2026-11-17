@@ -74,11 +74,14 @@
 
     function drawStatus() {
       var kids = [];
+      // The scenario's name and note are in the header above the numbers; this says only whether it matches what is saved.
       if (!loaded) kids.push('Not saved');
       else {
-        kids.push(h('b', { text: loaded.name }));
-        if (!same(scn.params(), loaded.params))
-          kids.push(' · changed since it was saved');
+        kids.push(
+          same(scn.params(), loaded.params)
+            ? 'Saved, and unchanged'
+            : 'Saved, but changed since: Save to keep the changes',
+        );
         if (loaded.models_changed.length)
           kids.push(
             h('div', {
@@ -255,6 +258,7 @@
           if (!res.ok) return say(res.j.error, true);
           loaded = res.j;
           drawStatus();
+          drawGroup();
           // The list first, so the message is never beside a stale one.
           return refresh().then(function () {
             say('Saved "' + res.j.name + '".');
@@ -299,10 +303,80 @@
       shared.disabled = true;
     }
 
+    // Which group the saved scenario is in, and delete: only for one of yours.
+    var mineLoaded = function () {
+      return loaded && loaded.mine;
+    };
+    var groupBox = h('div');
+    function drawGroup() {
+      if (!mineLoaded()) return put(groupBox, []);
+      var pick = h('select', { 'aria-label': 'Group' });
+      var current = loaded.group ? loaded.group.id : '';
+      [{ id: '', name: 'No group' }]
+        .concat(data.my_groups || [])
+        .concat([{ id: 'new', name: 'A new group…' }])
+        .forEach(function (g) {
+          pick.appendChild(
+            h('option', {
+              value: String(g.id),
+              text: g.name,
+              selected: String(g.id) === String(current) ? true : null,
+            }),
+          );
+        });
+      pick.addEventListener('change', function () {
+        function move(gid) {
+          call('PATCH', data.scenarios_url + loaded.id + '/', {
+            group: gid === '' ? null : Number(gid),
+          }).then(function (res) {
+            if (!res.ok) return say(res.j.error, true);
+            location.href = location.pathname + '?scenario=' + loaded.id;
+          });
+        }
+        if (pick.value !== 'new') return move(pick.value);
+        var gname = prompt(
+          'Name the new group (the question it answers works well):',
+        );
+        if (gname == null || gname.trim() === '') return drawGroup();
+        call('POST', data.groups_url, { name: gname.trim() }).then(
+          function (res) {
+            if (!res.ok) {
+              say(res.j.error, true);
+              return drawGroup();
+            }
+            move(res.j.id);
+          },
+        );
+      });
+      var del = h('button', {
+        type: 'button',
+        class: 'btn danger',
+        text: 'Delete this scenario',
+      });
+      del.addEventListener('click', function () {
+        if (!confirm('Delete "' + loaded.name + '"? This cannot be undone.'))
+          return;
+        var back = loaded.group ? loaded.group.path : location.pathname;
+        call('DELETE', data.scenarios_url + loaded.id + '/').then(
+          function (res) {
+            if (!res.ok) return say(res.j.error, true);
+            location.href = back;
+          },
+        );
+      });
+      put(groupBox, [
+        h('label', { class: 'f' }, [h('span', { text: 'Group' }), pick]),
+        h('div', { css: { marginTop: '8px' } }, [del]),
+      ]);
+    }
+
     put(root, [
       h('h2', { text: 'Scenario' }),
       status,
-      h('label', { class: 'f' }, [h('span', { text: 'Name' }), name]),
+      h('label', { class: 'f' }, [
+        h('span', { text: loaded && loaded.mine ? 'Save as' : 'Name' }),
+        name,
+      ]),
       h('label', { class: 'f' }, [h('span', { text: 'Note' }), note]),
       h('label', { class: 'f chk' }, [shared, ' Share with everyone on Labs']),
       h(
@@ -313,9 +387,11 @@
         },
         [saveBtn, copyBtn],
       ),
+      groupBox,
       msg,
       listBox,
     ]);
+    drawGroup();
     drawStatus();
     drawLists();
     refresh();

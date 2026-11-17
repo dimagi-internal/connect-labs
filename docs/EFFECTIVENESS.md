@@ -148,8 +148,13 @@ decided, what is open: written to be read cold by whoever continues) and its sce
   every figure that has moved since, with what it was. The scenario notes say why each exists; the group summary is where
   decisions and open questions live, and it is the first thing to read.
 * **Agents.** `cea_scenario_groups` lists groups and returns one with its comparison (far smaller than `cea_market_size` for
-  the same scenarios), `cea_scenario_group_save` makes or updates a group (question, summary, `scenario_ids` in order), and
-  `cea_scenario_save` takes `group` and `derived_from`.
+  the same scenarios), `cea_scenario_group_save` makes or updates a group (question, summary, `scenario_ids` in order),
+  `cea_scenario_save` takes `group` and `derived_from`, and `cea_scenario_delete` deletes a scenario or a group (a group's
+  scenarios are kept).
+* **Managing them on the pages.** The owner of a group can move a scenario earlier or later, remove it from the group, or
+  delete it from the group page, and delete the group. In the Workspace, a saved scenario of yours has a Group selector
+  (move into a group, a new one, or out) and a Delete button. Over HTTP a scenario's `PATCH` takes `group` (an id, or null
+  to take it out; left out, it stays), and `DELETE` removes it.
 
 ### Saved scenarios
 

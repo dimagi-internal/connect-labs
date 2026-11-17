@@ -102,6 +102,8 @@ def page_data(request, scenario: Scenario, loaded: dict | None = None, error: st
         "signed_in": saved.signed_in(request.user),
         "csrf": get_token(request),
         "scenarios_url": reverse("cea:scenarios"),
+        "groups_url": reverse("cea:groups"),
+        "my_groups": saved.my_groups(request.user),
         "api_url": reverse("cea:market_data"),
         "plan_csv_url": reverse("cea:market_plan_csv"),
         "models_url": reverse("cea:models"),
