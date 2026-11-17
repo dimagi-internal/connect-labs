@@ -75,8 +75,25 @@ releases put it near 24). So `trust` (0 to 100, link key `trust`) pulls every lo
 a territory toward its country's, a country toward the model's. A figure more than twice, or under half, its country's is
 marked in the table (`far_from_country`), with the figure, its country's and its source in the tooltip. Every plan also carries
 `check`: the same places valued at half trust, set beside the best plan for those figures. Near 100% the plan does not depend
-on the figures being right; low, it leans on them, and the page says so. (Uncertainty ranges themselves are not shown: the
-national IGME loader does not store them; `ci_low`/`ci_high` exist on the baseline and would slot in.)
+on the figures being right; low, it leans on them, and the page says so.
+
+The IGME loaders (national and subnational) keep the published 90% bounds (`ci_low`/`ci_high`, `extra.interval_level`), and
+where a place has them they are carried through (`mortality.py`, `reliability.py`):
+
+* `mortality.shrink` pulls each territory's own figure toward its country's by as much as its interval warrants (empirical
+  Bayes on the log scale, DerSimonian-Laird for the real spread between territories; a country with fewer than eight
+  territories that have an interval is left alone). A territory with a wide interval moves a long way, one with a tight
+  interval hardly at all; the published figure is kept beside it (`risk_raw`) and the tooltip says so.
+* Each row has a 90% range for its multiple (`multiple_low`/`multiple_high`) from the elasticity the model measures at the
+  place (one extra model run), and the plan's `reliability` redraws every place's mortality within its interval (400 draws,
+  a part shared by a country's territories, a part its own), rebuilds the plan each time, and reports the deaths averted
+  at the 5th and 95th percentile, how much of the shown plan a typical redraw's own best plan contains (`overlap`), and per
+  place the share of redraws it is chosen in (`p_in_plan`). No interval, no range: places without one are left as they
+  were, and `reliability` is `null` when no place has any.
+* Not done: subnational estimates are benchmarked to the national estimate of their own release, which is later revised
+  (Zimbabwe's current national series says 32.2 for 2021 while its provinces' 2021 values average 22.6). Putting territories
+  back on the current national needs the whole country's set, so it waits for that. Production has no bounds until the
+  mortality loaders are re-run (`load_indicators --stage mortality`).
 
 **The plan.** Give a target (`target=1000000`) and `market.plan` fills the places with the highest multiple first, each up to
 the most that can be reached there (the `reach` dial), until the target is met, then reports the people, cost, deaths

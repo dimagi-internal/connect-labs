@@ -25,7 +25,7 @@ def boundary(level, name, bid, x0, y0, size=1.0, iso="NGA"):
     )
 
 
-def value(boundary, indicator, value, year=2023, source=None):
+def value(boundary, indicator, value, year=2023, source=None, ci=None, extra=None):
     source = source or policy.sources(indicator)[0]
     return IndicatorValue.objects.create(
         indicator=indicator,
@@ -38,4 +38,7 @@ def value(boundary, indicator, value, year=2023, source=None):
         source_ref=f"{source}-{year}",
         license_code=License.OPEN_API,
         retrieved_at=timezone.now(),
+        ci_low=ci[0] if ci else None,
+        ci_high=ci[1] if ci else None,
+        extra=extra or {},
     )

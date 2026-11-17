@@ -404,6 +404,34 @@
               }),
             );
           }
+          if (p.reliability) {
+            var rel = p.reliability,
+              dd = rel.deaths;
+            var shaky = p.places.filter(function (q) {
+              var pr = rel.p_in_plan[q.key];
+              return pr != null && pr < 0.8;
+            }).length;
+            kids.push(
+              h('p', {
+                class: 'muted reliability',
+                title:
+                  "Each place's newborn mortality is redrawn within its published interval " +
+                  rel.draws +
+                  ' times and the plan rebuilt each time.',
+                text:
+                  'How far to trust it: with newborn mortality allowed to vary within its published intervals, the plan averts ' +
+                  num(dd.p05) +
+                  ' to ' +
+                  num(dd.p95) +
+                  ' deaths (90% range), ' +
+                  (rel.overlap * 100).toFixed(0) +
+                  '% of its people are in the best plan on a typical redraw, and ' +
+                  shaky +
+                  (shaky === 1 ? ' place is' : ' places are') +
+                  ' chosen in fewer than 80% of redraws.',
+              }),
+            );
+          }
           if (p.countries && p.countries.length > 1)
             kids.push(
               h(
@@ -698,6 +726,18 @@
             cells.push(
               h('td', {
                 class: 'n ' + (x.clears_bar ? 'ok' : 'lo'),
+                title:
+                  x.multiple_low != null
+                    ? '90% range from its newborn mortality interval: ' +
+                      mult(x.multiple_low) +
+                      ' to ' +
+                      mult(x.multiple_high) +
+                      (x.risk_raw != null
+                        ? ' (the published figure, ' +
+                          x.risk_raw.toFixed(1) +
+                          " per 1,000, was pulled toward the country's)"
+                        : '')
+                    : null,
                 text: x.modelled ? mult(x.multiple) : 'no model figure',
               }),
             );

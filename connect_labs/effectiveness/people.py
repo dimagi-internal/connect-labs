@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 from django.core.cache import cache
 
-from connect_labs.effectiveness import engine, market
+from connect_labs.effectiveness import engine, market, mortality
 from connect_labs.effectiveness.baseline import Baselines
 from connect_labs.effectiveness.scenario import EVERYWHERE, Scenario
 from connect_labs.labs.indicators import boundaries as boundary_set
@@ -134,14 +134,28 @@ def attach_risk(found: dict) -> dict:
     else:
         baselines = Baselines(list(boundary_set.owned().filter(iso_code__in=isos, admin_level=0)))
     country = {iso: baselines.newborn_mortality(iso, None) for iso in isos}
+    got = {
+        key: baselines.newborn_mortality(p["iso3"], found["boundaries"].get(key)) for key, p in found["places"].items()
+    }
+    shrunk = _shrink_by_country(found["places"], got)
     for key, p in found["places"].items():
         boundary = found["boundaries"].get(key)
-        got = baselines.newborn_mortality(p["iso3"], boundary)
+        n, est = got[key], shrunk.get(key)
         p["measures"], p["measures_how"] = {}, {}
-        if got:
-            p["measures"]["nmr"], p["measures_how"]["nmr"] = got
+        # what the figure is worth: its standard error on the log scale (after any shrinkage) and the part shared
+        p["measures_se"], p["measures_shared_se"], p["measures_raw"] = {}, {}, {}
+        if n:
+            p["measures"]["nmr"] = est.value if est else n.value
+            pulled = " (pulled toward the country's figure)" if est and est.shrunk else ""
+            p["measures_how"]["nmr"] = n.how + pulled
+            if est and est.se or n.se:
+                p["measures_se"]["nmr"] = est.se if est else n.se
+            if n.shared_se:
+                p["measures_shared_se"]["nmr"] = n.shared_se
+            if est and est.shrunk:
+                p["measures_raw"]["nmr"] = n.value
         if country[p["iso3"]]:
-            p["measures"]["nmr_country"] = country[p["iso3"]][0]
+            p["measures"]["nmr_country"] = country[p["iso3"]].value
         if territory:
             local = {}
             for model in engine.MODELS:
@@ -155,6 +169,19 @@ def attach_risk(found: dict) -> dict:
 
 #: Where a ``Baselines`` value says it came from when it is the model's own figure, not the place's: nothing local.
 LABS_NOT_LOCAL = ("model country figure", "model default")
+
+
+def _shrink_by_country(places: dict, got: dict) -> dict:
+    """Each territory's own mortality figure pulled toward its country's by what its interval warrants
+    (``mortality.shrink``), per country; only figures measured below the country are shrunk."""
+    by_country: dict[str, list] = {}
+    for key, n in got.items():
+        if n is not None and n.kind == "own" and n.se:
+            by_country.setdefault(places[key]["iso3"], []).append(mortality.Area(key, n.value, n.se))
+    out = {}
+    for areas in by_country.values():
+        out.update(mortality.shrink(areas))
+    return out
 
 
 def people_by_place(question: Question, grain: str = "country") -> dict:
@@ -186,6 +213,9 @@ def for_model(found: dict, model: str) -> dict:
             "measures": p.get("measures", {}),
             "measures_how": p.get("measures_how", {}),
             "inputs": p.get("inputs", {}).get(model, {}),
+            "measures_se": p.get("measures_se", {}),
+            "measures_shared_se": p.get("measures_shared_se", {}),
+            "measures_raw": p.get("measures_raw", {}),
         }
         for key, p in found["places"].items()
     }
