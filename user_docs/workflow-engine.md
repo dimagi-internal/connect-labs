@@ -50,6 +50,12 @@ A report built on CommCare form rows — such as the MBW Visit Verification dash
 
 In practice this means a dashboard can show, for each submitted form, whether the associated photos passed or failed review — without any manual cross-referencing.
 
+### CommCare project data in a Connect workflow
+
+A Connect workflow can include a CommCare project as one of its data sources alongside Drive and Connect sources. When a workflow spans several opportunities, Labs reads that CommCare project source **once** for the whole workflow rather than once per opportunity. This prevents counts and totals from being multiplied by the number of opportunities — without this behaviour, every figure drawn from the CommCare project would be that many times too large.
+
+If you notice that totals from a CommCare project source look unexpectedly inflated in an older workflow, contact Dimagi support — the pipeline may need to be re-saved to pick up the corrected behaviour.
+
 ---
 
 ## Finding Your Workflows
@@ -205,9 +211,4 @@ When a workflow wants to do something beyond displaying its own data — such as
 
 Pages and workflows should otherwise look and behave exactly as they did before.
 
-!!! note "Details shown in confirmation prompts"
-    - **Coaching conversations:** The prompt names the bot, identifies the worker who will receive the message, and quotes the opening message. A workflow can only start a conversation with the task's own worker — it cannot message a different worker on your behalf.
-    - **Background jobs:** The prompt names the job before it runs.
-    - **Rate limiting:** If a page keeps asking repeatedly, Labs slows it down. After you say no, Labs will not ask again for a few seconds, and it will ask at most 20 times per minute regardless.
-
-Previously, you could preview the sandboxed version of any page or workflow by adding `?sandbox=1` to
+!!! note "Details shown in
