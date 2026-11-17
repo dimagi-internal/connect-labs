@@ -142,6 +142,10 @@ COMMCARE_TOOLS: frozenset[str] = frozenset(
         "commcare_workflow_delete",
         "commcare_workflow_data",
         "commcare_workflow_authoring_guide",
+        "commcare_workflow_run_save",
+        "commcare_workflow_run_list",
+        "commcare_workflow_run_get",
+        "commcare_workflow_run_delete",
     }
 )
 

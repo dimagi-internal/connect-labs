@@ -12,6 +12,25 @@ A project's workflow page, drawn by the workflow runner in page mode and sandbox
 {% endblock javascript %}
 {% block hq_content %}
   <p class="mb-2 text-sm"><a class="underline" href="{% url 'hq:workflow_list' project.pk %}">&larr; Workflows in {{ project.domain }}</a></p>
+  {% if definition %}
+    <section class="mb-4 rounded-lg border border-gray-200 bg-white p-3 text-sm" data-testid="hq-saved-runs">
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span class="font-semibold">{% if run %}Saved run: {{ run.data.state.name|default:run.data.period_end }}{% else %}Live data{% endif %}</span>
+        {% if run %}<a class="text-brand-indigo underline" href="{% url 'hq:workflow_page' project.pk definition.id %}">Back to live data</a>{% endif %}
+        <form method="post" action="{% url 'hq:workflow_runs' project.pk definition.id %}" class="ml-auto flex flex-wrap items-end gap-2">{% csrf_token %}
+          <input name="name" placeholder="Label (optional)" class="rounded border border-gray-300 p-1 text-sm">
+          <button class="rounded bg-brand-indigo px-3 py-1 text-sm font-semibold text-white">Save a run now</button>
+        </form>
+      </div>
+      {% if runs %}
+        <ul class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-gray-700">
+          {% for r in runs %}
+            <li><a class="underline {% if run and run.id == r.id %}font-semibold{% endif %}" href="{% url 'hq:workflow_page' project.pk definition.id %}?run={{ r.id }}">{{ r.name|default:r.period_end }}{% if r.captured_at %} ({{ r.captured_at|slice:":10" }}){% endif %}</a></li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </section>
+  {% endif %}
   {% if error %}
     <div class="rounded-md border border-yellow-300 bg-yellow-50 p-4 text-sm text-yellow-800" data-testid="hq-workflow-error">{{ error }}</div>
   {% elif not render_code %}

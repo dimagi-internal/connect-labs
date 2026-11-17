@@ -13,14 +13,20 @@ from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect
 from django.views.decorators.http import require_GET, require_http_methods
 
-from connect_labs.hqdata.models import HQProject
+from connect_labs.hqdata.models import HQProject, HQProjectMember
 from connect_labs.hqdata.web.decorators import hq_login_required
 from connect_labs.hqdata.web.views import _project_for, render
 from connect_labs.hqdata.workflows import (
+    PageNotFound,
+    PageProblem,
     ProjectWorkflowsUnavailable,
+    delete_run,
     ensure_project_dashboard,
+    get_run,
+    list_runs,
     load_page,
     read_project_pipeline_data,
+    save_run,
     workflow_dao,
 )
 from connect_labs.workflow.page_mode import RUN_ENDPOINTS, blank_instance, is_page
@@ -44,13 +50,38 @@ def _unavailable(request: HttpRequest, exc: _Unavailable) -> HttpResponse:
     return render(request, "hqdata/workflow.html", {"project": exc.project, "error": exc.message}, status=409)
 
 
+def _instance_for(definition, run) -> dict:
+    """The blank in-memory instance a page has, or a saved run as a completed one (state and snapshot as saved)."""
+    if run is None:
+        return blank_instance(definition.id, None, None, [])
+    data = run.data or {}
+    return {
+        "id": run.id,
+        "definition_id": definition.id,
+        "opportunity_id": None,
+        "program_id": None,
+        "opportunity_ids": [],
+        "name": (data.get("state") or {}).get("name", ""),
+        "status": data.get("status") or "completed",
+        "state": data.get("state") or {},
+        "period_start": data.get("period_start"),
+        "period_end": data.get("period_end"),
+        "completed_at": data.get("completed_at"),
+        "snapshot": data.get("snapshot"),
+    }
+
+
 def build_workflow_data(
-    request: HttpRequest, project: HQProject, definition, render_code: str, *, data_url: str
+    request: HttpRequest, project: HQProject, definition, render_code: str, *, data_url: str | None, run=None
 ) -> dict:
     """The ``workflow-data`` the runner reads to draw one of a project's pages.
 
     ``data_url`` is the ONE endpoint the page reads; every other ``apiEndpoints`` entry is ``None``, so
     nothing reaches a ``/labs/...`` route. Shared by the ``/commcare/`` page and the embed frame.
+
+    With ``run`` (a saved run) the page is drawn from the data that run froze: it arrives with the page
+    (``pipeline_data``, and the run as ``instance`` with its snapshot, completed), nothing is read live, so
+    ``data_url`` is None.
     """
     user = request.user
     api = {
@@ -75,11 +106,11 @@ def build_workflow_data(
         "opportunity_ids": [],
         "multi_opp": False,
         "render_code": render_code,
-        "instance": blank_instance(definition.id, None, None, []),
+        "instance": _instance_for(definition, run),
         "is_edit_mode": False,
         "is_page": True,
         "workers": [],
-        "pipeline_data": {},
+        "pipeline_data": ((run.data or {}).get("snapshot") or {}).get("pipelines") or {} if run is not None else {},
         "flags": [],
         "audits": [],
         "tasks": [],
@@ -135,12 +166,19 @@ def workflow_page(request: HttpRequest, project_id: int, definition_id: int) -> 
     if loaded is None:
         raise Http404  # a project's runs are not served here, only its pages
     definition, render_code = loaded
+    run = None
+    if request.GET.get("run"):
+        try:
+            run = get_run(request.user, project, definition.id, int(request.GET["run"]))
+        except (ValueError, PageNotFound):
+            raise Http404 from None  # not a saved run of THIS page in THIS project
     workflow_data = build_workflow_data(
         request,
         project,
         definition,
         render_code,
-        data_url=f"/commcare/projects/{project.pk}/workflows/{definition.id}/pipeline-data/",
+        data_url=None if run else f"/commcare/projects/{project.pk}/workflows/{definition.id}/pipeline-data/",
+        run=run,
     )
     response = render(
         request,
@@ -152,12 +190,53 @@ def workflow_page(request: HttpRequest, project_id: int, definition_id: int) -> 
             "workflow_data": workflow_data,
             "sandboxed": True,
             "has_context": True,
+            "run": run,
+            "runs": list_runs(request.user, project, definition.id),
+            "is_admin": HQProjectMember.objects.filter(
+                project=project, user=request.user, role=HQProjectMember.ROLE_ADMIN
+            ).exists(),
         },
     )
     # The enforced policy the workflow page sets: the sandboxed frame may be navigated only to its shell.
     response["Content-Security-Policy"] = host_frame_src(labs_origin(request))
     response.csp_extra_policy = True
     return response
+
+
+@hq_login_required
+@require_http_methods(["POST"])
+def workflow_runs(request: HttpRequest, project_id: int, definition_id: int) -> HttpResponse:
+    """Save a run of the page (freeze its data now), or delete one; then show it."""
+    from django.contrib import messages
+
+    try:
+        project, dao = _open(request, project_id)
+    except _Unavailable as exc:
+        return _unavailable(request, exc)
+    dao.close()
+    page_url = redirect("hq:workflow_page", project_id=project.pk, definition_id=definition_id)
+    try:
+        if request.POST.get("action") == "delete":
+            is_admin = HQProjectMember.objects.filter(
+                project=project, user=request.user, role=HQProjectMember.ROLE_ADMIN
+            ).exists()
+            delete_run(request.user, project, definition_id, int(request.POST.get("run") or 0), is_admin=is_admin)
+            messages.success(request, "Saved run deleted.")
+            return page_url
+        run = save_run(
+            request.user,
+            project,
+            definition_id,
+            period_start=request.POST.get("period_start") or None,
+            period_end=request.POST.get("period_end") or None,
+            name=request.POST.get("name") or "",
+        )
+    except PageNotFound:
+        raise Http404 from None
+    except (PageProblem, PermissionError) as exc:
+        messages.error(request, str(exc))
+        return page_url
+    return redirect(f"{page_url['Location']}?run={run['id']}")
 
 
 @hq_login_required

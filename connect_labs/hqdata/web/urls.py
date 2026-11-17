@@ -21,6 +21,11 @@ urlpatterns = [
         name="workflow_page",
     ),
     path(
+        "projects/<int:project_id>/workflows/<int:definition_id>/runs/",
+        workflow_views.workflow_runs,
+        name="workflow_runs",
+    ),
+    path(
         "projects/<int:project_id>/workflows/<int:definition_id>/pipeline-data/",
         workflow_views.workflow_pipeline_data,
         name="workflow_pipeline_data",

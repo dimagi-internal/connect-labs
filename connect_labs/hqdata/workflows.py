@@ -13,7 +13,9 @@ its data in a customer's database). Never build one from ``labs_context`` or a U
 
 from __future__ import annotations
 
+import json
 import re
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from django.db import transaction
@@ -452,5 +454,125 @@ def delete_page(user, project: HQProject, workflow_id: int, *, is_admin: bool) -
     dao = workflow_dao(user, project)
     try:
         dao.delete_definition(definition.id)
+    finally:
+        dao.close()
+
+
+# -- saved runs: a page's data, frozen --------------------------------------------------------------------
+
+#: What one saved run may weigh. A project's rows are labs' own, so this is a guard against a page over a huge pipeline
+#: filling the database with copies, not a download limit.
+MAX_SNAPSHOT_BYTES = 12_000_000
+
+
+class RunNotFound(PageNotFound):
+    """No such saved run of this page in this project."""
+
+
+def _run_summary(run) -> dict:
+    data = run.data or {}
+    snapshot = data.get("snapshot") or {}
+    pipelines = snapshot.get("pipelines") or {}
+    state = data.get("state") or {}
+    return {
+        "id": run.id,
+        "name": state.get("name", ""),
+        "status": data.get("status"),
+        "period_start": data.get("period_start"),
+        "period_end": data.get("period_end"),
+        "captured_at": snapshot.get("captured_at"),
+        "completed_at": data.get("completed_at"),
+        "rows": {alias: len((entry or {}).get("rows") or []) for alias, entry in pipelines.items()},
+    }
+
+
+def _snapshot_of(user, project: HQProject, workflow_id: int) -> dict:
+    """The page's data as it is right now, ready to be frozen. Refuses to freeze a page whose data did not load."""
+    data = read_project_pipeline_data(user, project, workflow_id)
+    if not data:
+        raise PageProblem("This page reads no pipelines, so there is nothing to save.")
+    for alias, entry in data.items():
+        errors = [
+            m.get("error") for m in ((entry.get("metadata") or {}).get("per_opp") or {}).values() if m.get("error")
+        ]
+        if errors:
+            raise PageProblem(f"The {alias!r} pipeline did not load ({errors[0]}), so the run was not saved.")
+    snapshot = {"pipelines": data, "captured_at": datetime.now(timezone.utc).isoformat()}
+    if len(json.dumps(snapshot, default=str)) > MAX_SNAPSHOT_BYTES:
+        raise PageProblem(
+            "This page's data is too large to save as a run. Narrow its pipelines (one app, form or case type)."
+        )
+    return snapshot
+
+
+def save_run(user, project: HQProject, workflow_id: int, *, period_start=None, period_end=None, name="") -> dict:
+    """Freeze the page's data now as a saved run (the engine's run record, completed), for a verified member.
+
+    The same ``pipelines.<alias>.rows`` the page draws live are what the run keeps, so the page's own render code
+    draws a saved run unchanged. The period is the span the run is about (default: today).
+    """
+    if load_page(user, project, workflow_id) is None:
+        raise PageNotFound("No such page in this project.")
+    today = date.today().isoformat()
+    for label, value in (("period_start", period_start), ("period_end", period_end)):
+        if value is not None:
+            try:
+                date.fromisoformat(str(value))
+            except ValueError:
+                raise PageProblem(f"{label} is a date like 2026-11-30.") from None
+    snapshot = _snapshot_of(user, project, workflow_id)
+    snapshot["period"] = {"start": period_start or today, "end": period_end or today}
+    dao = workflow_dao(user, project)
+    try:
+        run = dao.create_run(
+            int(workflow_id),
+            opportunity_id=hq_scope_id(project.pk),
+            period_start=str(period_start or today),
+            period_end=str(period_end or today),
+            initial_state={"name": str(name or "")[:200], "created_by": user.pk},
+        )
+        done = dao.complete_run(run.id, snapshot, run)
+        if done is None:
+            raise PageProblem("The run could not be completed.")
+        return _run_summary(done)
+    finally:
+        dao.close()
+
+
+def list_runs(user, project: HQProject, workflow_id: int) -> list[dict]:
+    """A page's saved runs, newest first, without their data."""
+    if load_page(user, project, workflow_id) is None:
+        raise PageNotFound("No such page in this project.")
+    dao = workflow_dao(user, project)
+    try:
+        runs = [r for r in dao.list_runs(int(workflow_id)) if (r.data or {}).get("definition_id") == int(workflow_id)]
+    finally:
+        dao.close()
+    return sorted((_run_summary(r) for r in runs), key=lambda r: r["id"], reverse=True)
+
+
+def get_run(user, project: HQProject, workflow_id: int, run_id: int):
+    """One saved run (record, snapshot included) of this page, or ``RunNotFound``."""
+    if load_page(user, project, workflow_id) is None:
+        raise PageNotFound("No such page in this project.")
+    dao = workflow_dao(user, project)
+    try:
+        run = dao.get_run(int(run_id))
+    finally:
+        dao.close()
+    if run is None or (run.data or {}).get("definition_id") != int(workflow_id):
+        raise RunNotFound("No such saved run of this page.")
+    return run
+
+
+def delete_run(user, project: HQProject, workflow_id: int, run_id: int, *, is_admin: bool) -> None:
+    """Delete a saved run: its author or a project admin."""
+    run = get_run(user, project, workflow_id, run_id)
+    author = ((run.data or {}).get("state") or {}).get("created_by")
+    if not is_admin and author != user.pk:
+        raise PermissionError("Only the run's author or a project admin can delete it.")
+    dao = workflow_dao(user, project)
+    try:
+        dao.delete_run(int(run_id), delete_linked=False)
     finally:
         dao.close()
