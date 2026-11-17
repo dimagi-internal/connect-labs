@@ -71,7 +71,7 @@ def test_a_connect_person_with_commcare_connected_uses_the_same_pages(client):
 # -- projects ---------------------------------------------------------------
 
 
-def test_home_lists_my_projects_and_offers_only_unregistered_domains(client):
+def test_home_lists_my_projects_and_offers_every_other_domain_commcare_lists_for_me(client):
     user = make_hq_user(client, domains=("demo", "other", "third"))
     add_project(user, "demo")
     stranger = UserFactory()
@@ -79,7 +79,27 @@ def test_home_lists_my_projects_and_offers_only_unregistered_domains(client):
     body = client.get("/hq/").content.decode()
     assert "/hq/projects/" in body and ">demo<" in body
     assert '<option value="third">' in body and '<option value="demo">' not in body
-    assert '<option value="other">' not in body  # already registered: joining is not "adding"
+    # One a colleague already added is offered too: adding it joins it (a second person must be able to
+    # reach a project the first registered).
+    assert '<option value="other">' in body
+
+
+def test_joining_a_project_a_colleague_added_makes_me_a_plain_member_after_commcare_proves_my_access(client):
+    user = make_hq_user(client, domains=("other",))
+    stranger = UserFactory()
+    project = add_project(stranger, "other")
+    with mock.patch("connect_labs.hqdata.projects.CommCareDataAccess") as access:
+        access.return_value.verify_hq_access.return_value = False
+        refused = client.post("/hq/projects/new/", {"domain": "other"})
+    assert not HQProjectMember.objects.filter(project=project, user=user).exists()  # CommCare said no
+    assert refused["Location"] == "/hq/"
+    with mock.patch("connect_labs.hqdata.projects.CommCareDataAccess") as access:
+        access.return_value.verify_hq_access.return_value = True
+        resp = client.post("/hq/projects/new/", {"domain": "other"})
+    assert resp["Location"] == f"/hq/projects/{project.pk}/"
+    assert HQProjectMember.objects.get(project=project, user=user).role == HQProjectMember.ROLE_MEMBER
+    project.refresh_from_db()
+    assert project.sync_owner == stranger  # joining takes nothing over
 
 
 def test_adding_a_project_needs_commcare_to_list_it_and_to_let_me_read_it(client):

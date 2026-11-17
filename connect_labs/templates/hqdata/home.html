@@ -24,7 +24,7 @@
   </section>
 
   <section>
-    <h2 class="mb-3 text-lg font-semibold">Add a project</h2>
+    <h2 class="mb-3 text-lg font-semibold">Add or join a project</h2>
     {% if unregistered %}
       <form method="post" action="{% url 'hq:project_create' %}" class="flex items-end gap-3">
         {% csrf_token %}
@@ -36,7 +36,8 @@
         <button class="rounded-lg bg-brand-indigo px-4 py-2 font-semibold text-white">Add</button>
       </form>
       <p class="mt-2 text-xs text-gray-500">
-        CommCare must let your account read forms in the project (the Edit Data permission).
+        CommCare must let your account read forms in the project (the Edit Data permission). If a colleague has
+        already added it, this joins it.
       </p>
     {% else %}
       <p class="text-sm text-gray-600">CommCare lists no further projects for your account.</p>
