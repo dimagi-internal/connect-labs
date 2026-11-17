@@ -164,6 +164,8 @@ It is about what Claude *sees*, not about whether it may change things.
 - **Make synthetic data.** It can measure a real opportunity on the server and generate a synthetic copy from that measurement — see [Synthetic Data](synthetic-data.md).
 - **Work with cost-effectiveness scenarios.** It can list and open saved scenarios and size one using `cea_scenarios`. It can also plan to a reach target, work at territory (state/province) level, and read place-level cost-effectiveness figures that account for local newborn mortality. When planning to a reach target it can apply plan limits (smallest place worth including, maximum number of countries), download a by-country summary as a CSV, and assess how the plan holds up if the place figures are only partially reliable. Each territory and country also shows a **Conflict** column — the reported conflict deaths per 100,000 people per year from the Uppsala Conflict Data Program (UCDP) — and a plan can be held to a **"Most reported conflict deaths (per 100,000 a year)"** ceiling that leaves out places above the threshold and reports how many were excluded. A place Labs has no conflict figure for stays in the plan; a multiple is never changed by the conflict figure. A Kangaroo Care plan also reports how many of its people are counted from a regional low-birthweight rate rather than a national one — UNICEF-WHO publish no national figure for sixteen African countries (Nigeria and Ethiopia among them), so those countries use their subregion's rate instead. The plan summary says how many people and how many places rest on a regional rate, lists which countries are affected, and each row in the plan carries a flag where the regional rate applies. Saving a scenario with `cea_scenario_save` requires a full-access token. Saved scenarios can be renamed, shared with others, or made private again from the scenario list without saving again.
 
+    A plan can also price each country from what delivered opportunities actually cost, rather than the model's own figure. The model prices a person at one figure everywhere (for example, Child Health Campaign at $1.84 a child, Kangaroo Care at $60 a baby). Where opportunities have been delivered, their reported cost per person can be used instead: the Nigerian Child Health Campaign came in near $0.80 a child, and Kangaroo Care's three programmes at $29 a baby in Uganda, $42 in Nigeria and $70 in Kenya. Enabling **"Price from delivered programmes where there are some"** (`cost_basis=observed` in MCP, `cost_basis` parameter) moves a country's price toward the observed figure by how much delivery stands behind it — one opportunity counts roughly a third of the way, ten opportunities over 80%. Each row's tooltip shows the model's price, the observed price and how many opportunities informed it. The default is the model's own figure, because a small early programme's cost per person is not its cost at a million people, and a country's handful of opportunities are not a price list.
+
 !!! note "Conflict figures are reported deaths, not total deaths"
     The UCDP conflict column records reported deaths only. Events coded less precisely than admin-1 level cannot be placed to a specific territory, so a territory's figure may be a floor rather than a complete count. The country row shows what share of its coded deaths could be placed to a territory. Nothing changes in the data until the `conflict` loader stage has been run.
 
@@ -187,19 +189,4 @@ It is about what Claude *sees*, not about whether it may change things.
     claude mcp list
     ```
 
-    Look at the `connect_labs` row. (Typing `/mcp` inside a Claude Code session shows the same servers and lets you sign in or out.) The setting itself lives in `~/.claude.json`, under `mcpServers`.
-
-    To switch to the restricted address, remove the server and add it back:
-
-    ```bash
-    claude mcp remove connect_labs
-    claude mcp add --transport http connect_labs https://labs.connect.dimagi.com/mcp/no_user_visit/
-    ```
-
-    **Restart Claude Code afterwards.** A change to the address does not take effect in a session that is already running — quit fully and start again, then type `/mcp` and sign in.
-
-=== "Claude desktop or claude.ai"
-
-    Open **Settings → Connectors** and find the Connect Labs connector. The address it was added with is shown there.
-
-    To switch, remove the connector and add it again with `https://labs.connect.dimagi.com/mcp/no_user_visit/`, then click **Connect** and sign in. There is no way to edit an existing connector's address in
+    Look at the `connect_labs
