@@ -17,6 +17,27 @@ from connect_labs.labs.indicators.access import OpenLocallyMixin
 ScenarioPageGate = OpenLocallyMixin
 
 
+def agent_panel(request, resource: str, backing_tool: str, filters: dict | None = None):
+    """The canopy agent panel for a scenario page, or None (no panel) when nobody is signed in or no agent may be
+    offered.
+
+    What the page shows is open data and the signed-in person's own and shared scenarios, read by the agent as that
+    person through ``scenarios:read`` and ``targeting:read``; the page state carries only which scenario or group is
+    open. Signed-in visitors only: the panel mints a token about ``request.user``."""
+    if not getattr(request.user, "is_authenticated", False):
+        return None
+    from connect_labs.labs import canopy_panel
+
+    return canopy_panel.panel(
+        request,
+        reads=canopy_panel.NO_VISIT_DATA,
+        resource=resource,
+        backing_tool=backing_tool,
+        filters={k: v for k, v in (filters or {}).items() if v},
+        path=request.path,
+    )
+
+
 def scenario_or_default(request, default_grain: str | None = None) -> tuple[Scenario, dict | None, str | None]:
     """The scenario in the link, the saved scenario it opened (if any), and why it could not be run (if so).
 

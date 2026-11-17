@@ -13,10 +13,12 @@ import json
 
 from django.http import JsonResponse
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views import View
 
 from connect_labs.effectiveness import saved, scenario_groups
+from connect_labs.effectiveness.views import scenario_page
 from connect_labs.effectiveness.views.scenario_page import ScenarioPageGate
 from connect_labs.labs.chrome import NOT_USED, page_chrome
 
@@ -81,13 +83,139 @@ def table(data: dict) -> dict:
     return {"settings": setting_rows, "results": result_rows}
 
 
+def first_sentence(text: str, limit: int = 160) -> str:
+    """The first sentence of a note, for a card: the rest is one click away."""
+    text = " ".join((text or "").split())
+    cut = text.find(". ")
+    head = text if cut < 0 else text[: cut + 1]
+    return head if len(head) <= limit else head[: limit - 1].rsplit(" ", 1)[0] + "…"
+
+
+def sections(summary: str) -> list[dict]:
+    """A group's summary as sections a person can open one at a time: ``## Heading`` starts one, ``- `` lines are a
+    list,
+    ``1. `` lines a numbered one, anything else a paragraph. A summary with no headings is one section."""
+    out: list[dict] = []
+    for raw in (summary or "").splitlines():
+        line = raw.rstrip()
+        if line.startswith("## "):
+            out.append({"title": line[3:].strip(), "blocks": []})
+            continue
+        if not line.strip():
+            continue
+        if not out:
+            out.append({"title": "What we know", "blocks": []})
+        blocks = out[-1]["blocks"]
+        stripped = line.strip()
+        kind = (
+            "ul"
+            if stripped.startswith("- ")
+            else "ol" if stripped[:2].rstrip(".").isdigit() and ". " in stripped[:4] else "p"
+        )
+        text = stripped[2:].strip() if kind == "ul" else stripped.split(". ", 1)[1] if kind == "ol" else stripped
+        if kind != "p" and blocks and blocks[-1]["kind"] == kind:
+            blocks[-1]["items"].append(text)
+        else:
+            blocks.append({"kind": kind, "items": [text]})
+    return out
+
+
+#: How much of a bar's track the longest bar (or range) fills; the rest holds its value label.
+BAR_SPACE = 0.78
+
+#: The comparison's charts: one result each, which way is better, and whether it has a range to draw.
+CHARTS = (
+    (
+        "deaths",
+        "Deaths averted a year",
+        "More is better. The line is the 90% range as mortality varies within its published intervals.",
+        True,
+    ),
+    ("cost_per_death", "Cost per death averted", "Less is better.", False),
+    ("multiple", "Multiple of GiveWell's benchmark", "More is better; the bar is 6x.", False),
+)
+
+
+def charts(data: dict) -> list[dict]:
+    """The scenarios as horizontal bars on one scale per result, best marked, with the range where there is one."""
+    by_key = {r["key"]: r for r in data["attributes"]}
+    out = []
+    for key, title, hint, ranged in CHARTS:
+        unit = by_key[key]["unit"]
+        vals = [(s, (s.get("headline") or {}).get(key)) for s in data["scenarios"]]
+        shown = [v for _, v in vals if v is not None]
+        if not shown:
+            continue
+        top = (
+            max([*shown, *[(s["headline"].get("deaths_p95") or 0) for s, _ in vals if ranged and s.get("headline")]])
+            or 1
+        ) / BAR_SPACE  # the longest bar stops short of the edge, leaving room for its value
+        rows = []
+        for s, v in vals:
+            h = s.get("headline") or {}
+            lo, hi = (h.get("deaths_p05"), h.get("deaths_p95")) if ranged else (None, None)
+            rows.append(
+                {
+                    "id": s["id"],
+                    "name": s["name"],
+                    "text": show(unit, v),
+                    "width": 0 if v is None else v / top * 100,
+                    "lo": None if lo is None else lo / top * 100,
+                    "hi": None if hi is None else hi / top * 100,
+                    "span": None if lo is None or hi is None else (hi - lo) / top * 100,
+                    "range": None if lo is None or hi is None else f"{show(unit, lo)} to {show(unit, hi)}",
+                    "label_at": max(0 if v is None else v, hi or 0) / top * 100 + 1.5,
+                    "best": key in s["best"],
+                    "reference": s["id"] == data["reference"],
+                }
+            )
+        out.append({"key": key, "title": title, "hint": hint, "rows": rows})
+    return out
+
+
+def cards(data: dict) -> list[dict]:
+    """One card a scenario: its name, the one thing it changes, and its headline."""
+    out = []
+    for s in data["scenarios"]:
+        h = s.get("headline") or {}
+        out.append(
+            {
+                "id": s["id"],
+                "name": s["name"],
+                "open_path": s["open_path"],
+                "why": first_sentence(s.get("note")),
+                "note": s.get("note", ""),
+                "changes": s["differs"],
+                "changes_from": (s.get("differs_from") or {}).get("name"),
+                "reference": s["id"] == data["reference"],
+                "deaths": show("count", h.get("deaths")),
+                "range": (
+                    None
+                    if h.get("deaths_p05") is None
+                    else f"{show('count', h['deaths_p05'])} to {show('count', h['deaths_p95'])}"
+                ),
+                "multiple": show("multiple", h.get("multiple")),
+                "cost": show("usd", h.get("cost")),
+                "per_death": show("usd", h.get("cost_per_death")),
+                "best": [r["label"] for r in data["attributes"] if r["key"] in s["best"] and r.get("headline")],
+                "delta": s["delta"].get("deaths"),
+                "moved": bool(s.get("drift")),
+                "error": s.get("error"),
+                "models_changed": s.get("models_changed"),
+                "source": s.get("source"),
+            }
+        )
+    return out
+
+
 @CONTEXT_NOT_USED
 class GroupView(ScenarioPageGate, View):
     def get(self, request, pk):
         try:
             group = scenario_groups.get(request.user, pk)
             ref = request.GET.get("ref")
-            data = scenario_groups.compare_group(request.user, group, reference=int(ref) if ref else None)
+            live = request.GET.get("live") == "1" or request.GET.get("format") == "json"
+            data = scenario_groups.compare_group(request.user, group, reference=int(ref) if ref else None, live=live)
         except (saved.SavedError, ValueError) as exc:
             if request.GET.get("format") == "json":
                 return (
@@ -98,10 +226,31 @@ class GroupView(ScenarioPageGate, View):
             )
         if request.GET.get("format") == "json":
             return JsonResponse(_jsonable(data))
+        sources = {s.get("source") for s in data["scenarios"]}
         return render(
             request,
             "effectiveness/group.html",
-            {"group": data["group"], "data": data, "table": table(data), "scenarios": data["scenarios"]},
+            {
+                "group": data["group"],
+                "data": data,
+                "table": table(data),
+                "scenarios": data["scenarios"],
+                "cards": cards(data),
+                "charts": charts(data),
+                "sections": sections(data["group"]["summary"]),
+                "live": live,
+                "urls": {
+                    "group": reverse("cea:group", args=[pk]),
+                    "baseline": reverse("cea:group_baseline", args=[pk]),
+                },
+                "baselined": "baseline" in sources or None in sources,
+                "canopy_panel": scenario_page.agent_panel(
+                    request,
+                    f"labs-cea://group/{pk}",
+                    "cea_scenario_groups",
+                    {"id": str(pk), **({"ref": ref} if ref else {})},
+                ),
+            },
         )
 
     def patch(self, request, pk):

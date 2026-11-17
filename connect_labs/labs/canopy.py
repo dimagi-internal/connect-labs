@@ -104,6 +104,11 @@ SCOPE_TOOLS: dict[str, frozenset[str]] = {
             "cea_model_run",
         }
     ),
+    # A person's own and shared saved scenarios and scenario groups, and the comparison of a group's scenarios
+    # (cea_scenarios, cea_scenario_groups). Read as the visitor, so what the agent sees is what the person may see:
+    # their private scenarios stay theirs and a shared one is read-only. Nothing is saved through this scope: the agent
+    # proposes in chat and the person saves on the page.
+    "scenarios:read": frozenset({"cea_scenarios", "cea_scenario_groups"}),
     # A tender and its quotes, read as the visitor through the supply operations, which
     # check program membership on every call. Reads only: the panel analyses what the
     # tables show (ruling 2026-10-07: the product shows the data, the AI judges it on
@@ -187,6 +192,10 @@ PAGE_SCOPES: dict[str, tuple[str, ...]] = {
     "labs:page": ("page:read",),
     "supply_chain:workflow_view": ("page:read",),
     "indicators:index": ("targeting:read",),
+    # The scenario pages: the open data and models behind them, and the visitor's own and shared scenarios and groups.
+    "cea:group": ("targeting:read", "scenarios:read"),
+    "cea:workspace": ("targeting:read", "scenarios:read"),
+    "cea:market": ("targeting:read", "scenarios:read"),
     "labsdata:index": ("data:read",),
     # A data space's page: the same scope; the data_* tools read the space only through
     # labsdata.spaces.open, as the visitor.
@@ -209,6 +218,9 @@ PAGE_TITLES: dict[str, str] = {
     "labs:page": "A page",
     "supply_chain:workflow_view": "A supply page",
     "indicators:index": "Baseline explorer",
+    "cea:group": "A scenario group: scenarios about one question, compared",
+    "cea:workspace": "The cost-effectiveness workspace (one scenario)",
+    "cea:market": "Market size (one scenario)",
     "labsdata:index": "Data",
     "labsdata:space": "A data space (a named set of sources on the Data page)",
     "supply_chain:procurement_tender_detail": "A tender",
@@ -330,6 +342,7 @@ SCOPE_LABELS: dict[str, str] = {
     "workflow:edit": "propose changes to the workflow; each is saved only when you confirm it",
     "page:read": "read what this page is built from",
     "targeting:read": "read indicators and cost-effectiveness data: population, burden, the models, market sizing",
+    "scenarios:read": "read your saved scenarios and scenario groups, and those shared with you; you do any saving",
     "data:read": "run read-only queries over the data you can access, including visits and workflows",
     "supply:read": "read supply-chain records: tenders, quotes, awards and commitments",
 }

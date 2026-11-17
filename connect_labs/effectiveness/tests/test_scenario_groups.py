@@ -60,6 +60,10 @@ class TestComparing:
             "Limits: remote at most 40 → conflict at most 10; remote at most 40"
         ]
 
+    def test_when_scenarios_are_alike_on_a_result_nobody_is_best_on_it(self):
+        got = compare.compare([self.item(1, 1000, 100.0), self.item(2, 1000, 100.0, max_remote="40")])["scenarios"]
+        assert got[0]["best"] == [] and got[1]["best"] == []
+
     def test_another_scenario_can_be_the_reference(self):
         got = compare.compare([self.item(1, 1000, 100.0), self.item(2, 1200, 130.0)], reference=2)
         assert got["reference"] == 2 and got["scenarios"][0]["delta"]["deaths"] == pytest.approx(-16.666, abs=0.01)
@@ -236,7 +240,7 @@ class TestPages:
         return g
 
     def test_the_group_page_sets_the_scenarios_side_by_side(self, client, seen):
-        body = client.get(reverse("cea:group", args=[seen.pk])).content.decode()
+        body = client.get(reverse("cea:group", args=[seen.pk]), {"live": "1"}).content.decode()
         for want in (
             "How do we reach a million?",
             "What we know so far",
@@ -299,3 +303,58 @@ class TestTheReport:
         call_command("cea_group_report", str(g.pk))
         out = capsys.readouterr().out
         assert "What we know." in out and "Baselined" in out and "(was 20,000)" in out
+
+
+@pytest.mark.django_db
+class TestTheGroupPageIsQuickAndReadable:
+    @pytest.fixture
+    def seen(self, client, ann):
+        g, _ = scenario_groups.save(
+            ann,
+            "A million",
+            question="How?",
+            summary="## What it shows\nFirst para.\n- one\n- two\n## Open questions\n1. Is it so?\n2. Or not?",
+            shared=True,
+        )
+        a = make(ann, "one", g.pk, shared=True, note="Why one. And more detail that follows.")
+        a.snapshot = {
+            "headline": {
+                "deaths": 20_000.0,
+                "cost": 6e7,
+                "cost_per_death": 3000.0,
+                "multiple": 13.0,
+                "deaths_p05": 18_000.0,
+                "deaths_p95": 22_000.0,
+            },
+            "at": "2026-11-17T00:00:00+00:00",
+        }
+        a.save()
+        client.force_login(ann)
+        return g
+
+    def test_it_opens_from_the_baseline_without_computing_anything(self, client, seen, monkeypatch):
+        def boom(record):
+            raise AssertionError("the page must not size a scenario to open")
+
+        monkeypatch.setattr(scenario_groups, "headline_for", boom)
+        body = client.get(reverse("cea:group", args=[seen.pk])).content.decode()
+        assert 'data-testid="group-cards"' in body and "20,000" in body and "Check against today" in body
+        assert 'data-testid="group-charts"' in body and "baselined" in body
+
+    def test_the_summary_is_sections_you_open_not_a_wall_of_text(self):
+        from connect_labs.effectiveness.views.groups import first_sentence, sections
+
+        got = sections("## What it shows\nFirst para.\n- one\n- two\n## Open\n1. Is it so?\n2. Or not?")
+        assert [s["title"] for s in got] == ["What it shows", "Open"]
+        assert got[0]["blocks"] == [{"kind": "p", "items": ["First para."]}, {"kind": "ul", "items": ["one", "two"]}]
+        assert got[1]["blocks"] == [{"kind": "ol", "items": ["Is it so?", "Or not?"]}]
+        assert [s["title"] for s in sections("Just prose.")] == ["What we know"]
+        assert first_sentence("Why one. And more detail.") == "Why one."
+
+    def test_the_page_offers_the_agent_where_one_may_be_offered_and_the_scopes_are_registered(self):
+        from connect_labs.labs import canopy
+
+        for page in ("cea:group", "cea:workspace", "cea:market"):
+            assert canopy.PAGE_SCOPES[page] == ("targeting:read", "scenarios:read") and page in canopy.PAGE_TITLES
+        assert canopy.SCOPE_TOOLS["scenarios:read"] == {"cea_scenarios", "cea_scenario_groups"}
+        assert "scenarios:read" in canopy.SCOPE_LABELS
