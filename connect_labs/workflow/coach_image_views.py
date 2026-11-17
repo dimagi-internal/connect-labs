@@ -63,7 +63,29 @@ def _png(payload: dict) -> HttpResponse:
     return response
 
 
-def _for_signed_in_user(request, token: str):
+#: The card is Labs' own HTML of one case, opened in a browser by a signed-in person
+#: (to preview it) or fetched by Open Chat Studio (to attach). Served sandboxed with
+#: no network, as the Connect app's card host does, so a preview behaves like the app.
+CARD_CSP = (
+    "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; "
+    "base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+)
+
+
+def _card(payload: dict) -> HttpResponse:
+    try:
+        body = images.card_html_for(payload)
+    except images.BadImageLink:
+        raise Http404("No such card")
+    response = HttpResponse(body.encode("utf-8"), content_type="text/html; charset=utf-8")
+    response["Content-Security-Policy"] = CARD_CSP
+    response["Cache-Control"] = "private, no-store"
+    response["X-Robots-Tag"] = "noindex, nofollow"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+def _for_signed_in_user(request, token: str, serve=None):
     if not _has_live_labs_session(request):
         return _refuse(401, "Sign in to Labs to see this picture.")
     try:
@@ -83,14 +105,13 @@ def _for_signed_in_user(request, token: str):
         if e.code == "UPSTREAM_ERROR":
             return JsonResponse({"error": {"code": e.code, "message": "Could not check access; retry."}}, status=503)
         return _refuse(403, "You do not have access to this picture's opportunity.")
-    return _png(payload)
+    return (serve or _png)(payload)
 
 
-@require_GET
-def coach_image(request, token: str):
+def _serve(request, token: str, serve):
     header = request.headers.get("authorization", "")
     if not header.lower().startswith(_BEARER):
-        return _for_signed_in_user(request, token)
+        return _for_signed_in_user(request, token, serve)
     pat = MCPAccessToken.verify(header[len(_BEARER) :].strip())
     if pat is None:
         return _refuse(401, "Invalid or expired token")
@@ -104,4 +125,17 @@ def coach_image(request, token: str):
         # One answer for altered, expired and foreign links alike.
         raise Http404("No such picture")
 
-    return _png(payload)
+    return serve(payload)
+
+
+@require_GET
+def coach_image(request, token: str):
+    return _serve(request, token, _png)
+
+
+@require_GET
+def coach_card(request, token: str):
+    """``GET /labs/coach-card/<token>/``: a case chart's frozen card as ``index.html``
+    (``coach_charts/case_card.py``), on the same signed link and the same access as its
+    picture."""
+    return _serve(request, token, _card)

@@ -121,17 +121,43 @@ def png_for(payload: dict) -> bytes:
 def chart_attachment(record, opportunity_id: int | None = None) -> dict | None:
     """``{"url", "caption"}`` for a stored chart (``coach_charts/store.py``), or None
     when the site has no public origin to link from. The caption is Labs' own,
-    written when the chart was built, naming no peer."""
+    written when the chart was built, naming no peer.
+
+    A case chart that froze a CARD beside it (``coach_charts/case_card.py``) adds
+    ``card_url`` -- the same signed link, at ``coach-card/`` -- and ``card_call``, the
+    tap-to-call line the conversation's text carries (a card cannot dial)."""
     payload: dict[str, Any] = {"chart": record.pk}
     if opportunity_id is not None:
         payload["opportunity_id"] = int(opportunity_id)
     base = (getattr(settings, "LABS_PUBLIC_URL", "") or "").rstrip("/")
     if not base:
         return None
-    return {
-        "url": base + reverse("labs:coach_image", args=[sign(payload)]),
+    token = sign(payload)
+    out = {
+        "url": base + reverse("labs:coach_image", args=[token]),
         "caption": record.chart.get("caption") or "",
     }
+    card = record.chart.get("card")
+    if isinstance(card, dict):
+        from connect_labs.workflow.coach_charts import case_card
+
+        out["card_url"] = base + reverse("labs:coach_card", args=[token])
+        out["card_call"] = case_card.call_markdown(card)
+    return out
+
+
+def card_html_for(payload: dict) -> str:
+    """The ``index.html`` a link names: its stored chart's frozen card. Raises
+    ``BadImageLink`` when the link names no chart, or a chart with no card."""
+    if not _is_chart_link(payload):
+        raise BadImageLink("not a chart link")
+    from connect_labs.workflow.coach_charts import case_card, store
+
+    record = store.get(payload["chart"])
+    card = (record.chart or {}).get("card") if record is not None else None
+    if not isinstance(card, dict):
+        raise BadImageLink("no card")
+    return case_card.render_html(card)
 
 
 def _is_payload(payload: Any) -> bool:

@@ -130,6 +130,13 @@ visit_columns:
     optional: true
     null_as: date
     column: dob
+  # The mother's phone number, for the case card's "who to call" (case_call). NULL
+  # until the visits pipeline carries a `mother_phone` field: none of the shared KMC
+  # pipelines does today, deliberately -- a number is the family's, not a metric.
+  - name: visit_mother_phone
+    optional: true
+    null_as: text
+    column: mother_phone
   - name: visit_kmc_providers
     optional: true
     null_as: text
@@ -392,6 +399,10 @@ aggregates:
     label: "Mother's name"
     means: "The mother's name, as the latest visit that recorded one gives it."
     sql: "(ARRAY_AGG(visit_mother_name ORDER BY visit_date DESC) FILTER (WHERE visit_mother_name <> ''))[1]"
+  - name: mother_phone
+    label: "Mother's phone"
+    means: "The mother's phone number, as the latest visit that recorded one gives it."
+    sql: "(ARRAY_AGG(visit_mother_phone ORDER BY visit_date DESC) FILTER (WHERE visit_mother_phone <> ''))[1]"
   - name: child_sex
     label: 'Sex'
     means: "The baby's sex as the latest visit recorded it."
@@ -1192,6 +1203,13 @@ case_name:
     text: 'Baby {child_name} · mother {mother_name}'
   - { when: child_name, text: 'Baby {child_name}' }
   - { when: mother_name, text: 'Baby of {mother_name}' }
+
+# Who to call about a case: the case card's contact (coach_charts/case_card.py). The
+# first choice whose column holds a number wins; with none, the card names the
+# coaching action's `supervisor_phone`, else no one. A card cannot dial (card-html
+# blocks tel:), so the number is shown and the conversation's text carries the link.
+case_call:
+  - { column: mother_phone, label: 'Call the mother' }
 
 # One line about a case, as a coach is told it (semantic/case_states.py `about`).
 case_about:

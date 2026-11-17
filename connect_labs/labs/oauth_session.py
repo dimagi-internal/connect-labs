@@ -61,6 +61,7 @@ _LABS_SKIP_PATH_PREFIXES = (
     # Studio with a coach-images Bearer token, never a session; a signed-in
     # staffer opening one must not be logged out by it.
     "/labs/coach-image/",
+    "/labs/coach-card/",
     # A public link to a saved run (workflow/public_run_views.py). Same reasoning as
     # Pulse above: it authenticates nobody and grants nothing beyond the one revocable,
     # expiring token in its path.

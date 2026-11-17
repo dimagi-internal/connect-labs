@@ -381,6 +381,7 @@ def case_state_problems(props_doc: dict[str, Any], columns: frozenset[str]) -> l
         problems += _template_problems(props_doc["case_about"], "case_about", columns, 300)
     if props_doc.get("case_name") is not None:
         problems += _template_problems(props_doc["case_name"], "case_name", columns, 120)
+    problems += case_call_problems(props_doc, columns)
     series = series_names(props_doc)
     constants = props_doc.get("constants") if isinstance(props_doc.get("constants"), dict) else {}
     priorities: dict[int, str] = {}
@@ -429,6 +430,36 @@ def case_state_problems(props_doc: dict[str, Any], columns: frozenset[str]) -> l
                 problems += [f"{label}.coach.{k}: not a coach key" for k in coach if k not in COACH_KEYS]
                 for k in COACH_KEYS:
                     problems += _text_problem(coach.get(k), f"{label}.coach.{k}", 1500)
+    return problems
+
+
+def case_call(props_doc: dict[str, Any]) -> list[dict]:
+    """Who to call about a case (the case card's contact): the registry's ``case_call``,
+    a list of ``{column, label}`` -- the first whose column holds a number wins. Empty
+    when the registry declares none."""
+    raw = props_doc.get("case_call")
+    if not isinstance(raw, list):
+        return []
+    return [c for c in raw if isinstance(c, dict) and isinstance(c.get("column"), str)]
+
+
+def case_call_problems(props_doc: dict[str, Any], columns: frozenset[str]) -> list[str]:
+    raw = props_doc.get("case_call")
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or len(raw) > 5:
+        return ["case_call: must list up to 5 {column, label} choices"]
+    problems: list[str] = []
+    for i, c in enumerate(raw):
+        label = f"case_call[{i}]"
+        if not isinstance(c, dict):
+            problems.append(f"{label}: must be a mapping of column and label")
+            continue
+        problems += [f"{label}.{k}: not a case_call key (column, label)" for k in c if k not in ("column", "label")]
+        if not isinstance(c.get("column"), str) or (columns and c["column"] not in columns):
+            problems.append(f"{label}.column: {c.get('column')!r} is not a column of this registry")
+        if "label" in c:
+            problems += _template_problems(c["label"], f"{label}.label", columns, 80)
     return problems
 
 
@@ -535,6 +566,9 @@ def case_fields(props_doc: dict[str, Any]) -> dict[str, str]:
     """``{output: column}`` a case index needs to carry every state: each state, its
     date and its evidence (the picture's and facts' columns too), under their own names."""
     names: list[str] = _template_columns(props_doc.get("case_about")) + _template_columns(props_doc.get("case_name"))
+    for choice in case_call(props_doc):
+        names.append(choice["column"])
+        names += _template_columns(choice.get("label"))
     for s in catalog(props_doc):
         names.append(s["name"])
         if s["date"]:
