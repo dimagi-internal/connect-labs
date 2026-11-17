@@ -6,6 +6,7 @@ import pytest
 from django.urls import reverse
 
 from connect_labs.effectiveness import compare, saved, scenario_groups
+from connect_labs.effectiveness.models import SavedScenario
 from connect_labs.effectiveness.scenario import Scenario
 
 # ------------------------------------------------------------------------------------------------ pure: compare
@@ -282,6 +283,28 @@ class TestPages:
         assert edited["summary"] == "Decided X."
         assert client.post(reverse("cea:group_baseline", args=[seen.pk])).status_code == 200
         assert client.delete(path).json() == {"deleted": gid}
+
+    def test_a_scenario_is_moved_into_a_group_out_of_it_and_deleted_over_http(self, client, ann, bob, seen):
+        loose = make(ann, "loose")
+        url = reverse("cea:scenario", args=[loose.pk])
+        into = client.patch(url, json.dumps({"group": seen.pk}), content_type="application/json").json()
+        assert into["group"]["id"] == seen.pk and into["group"]["position"] == 3  # last
+        again = client.patch(url, json.dumps({"note": "x"}), content_type="application/json").json()
+        assert again["group"]["id"] == seen.pk  # a patch that does not name the group leaves it
+        out = client.patch(url, json.dumps({"group": None}), content_type="application/json").json()
+        assert out["group"] is None
+        theirs, _ = scenario_groups.save(bob, "theirs")
+        refused = client.patch(url, json.dumps({"group": theirs.pk}), content_type="application/json")
+        assert refused.status_code == 403
+        assert client.delete(url).json() == {"deleted": loose.pk}
+        assert not SavedScenario.objects.filter(pk=loose.pk).exists()
+
+    def test_only_the_owner_sees_the_controls_to_reorder_and_delete(self, client, ann, bob, seen):
+        mine = client.get(reverse("cea:group", args=[seen.pk])).content.decode()
+        assert mine.count('data-testid="card-manage"') == 2 and 'id="g-delete"' in mine
+        client.force_login(bob)
+        theirs = client.get(reverse("cea:group", args=[seen.pk])).content.decode()
+        assert 'data-testid="card-manage"' not in theirs and 'id="g-delete"' not in theirs
 
     def test_a_private_group_is_a_404_page_for_someone_else(self, client, ann, bob, seen):
         scenario_groups.update(ann, seen.pk, shared=False)

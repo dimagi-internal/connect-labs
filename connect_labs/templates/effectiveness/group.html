@@ -16,6 +16,7 @@
   .grp .tag { font-size: 11px; color: var(--acc); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
   .grp .acts { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: auto; padding-top: 6px; }
   .grp .btn.ghost { color: var(--muted); }
+  .grp .acts.manage { margin-top: 0; border-top: 1px dashed var(--line, #e5e7eb); padding-top: 6px; }
   .grp .refpick { display: inline-flex; align-items: center; gap: 6px; }
   .grp .refpick select { width: auto; max-width: 28em; padding: 4px 8px; }
   .grp .why { font-size: 13px; color: var(--muted); margin: 0; }
@@ -97,6 +98,14 @@
         <a class="btn small" href="{{ c.open_path }}" title="Open this scenario in the Workspace to see its map and change it">Open in Workspace &rarr;</a>
         {% if c.reference %}<span class="tag">The reference</span>{% else %}<a class="btn small ghost" href="?ref={{ c.id }}{% if live %}&live=1{% endif %}" title="Show every other scenario as a change from this one">Compare against this</a>{% endif %}
       </div>
+      {% if group.mine %}
+      <div class="acts manage" data-testid="card-manage">
+        <button type="button" class="btn small ghost" data-act="earlier" data-id="{{ c.id }}"{% if forloop.first %} disabled{% endif %}>&larr; Earlier</button>
+        <button type="button" class="btn small ghost" data-act="later" data-id="{{ c.id }}"{% if forloop.last %} disabled{% endif %}>Later &rarr;</button>
+        <button type="button" class="btn small ghost" data-act="out" data-id="{{ c.id }}" data-name="{{ c.name }}" title="Keep the scenario, but take it out of this group">Remove from group</button>
+        <button type="button" class="btn small danger" data-act="delete" data-id="{{ c.id }}" data-name="{{ c.name }}" title="Delete the scenario for good">Delete</button>
+      </div>
+      {% endif %}
     </div>
     {% endfor %}
   </div>
@@ -161,7 +170,9 @@
     <details style="margin-top:6px"><summary class="muted">Edit the question and summary</summary>
       <p><label>Question<br><textarea id="g-question" rows="2" style="width:100%">{{ group.question }}</textarea></label></p>
       <p><label>Summary (a line starting <code>## </code> opens a section; <code>- </code> makes a list)<br><textarea id="g-summary" rows="12" style="width:100%">{{ group.summary }}</textarea></label></p>
-      <p><button type="button" class="btn" id="g-save">Save</button> <span class="muted" id="g-state"></span></p>
+      <p><button type="button" class="btn" id="g-save">Save</button>
+        <button type="button" class="btn danger" id="g-delete" title="Delete the group; its scenarios are kept">Delete this group</button>
+        <span class="muted" id="g-state"></span></p>
     </details>
     {% endif %}
   </div>

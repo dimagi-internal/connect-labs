@@ -877,6 +877,34 @@ def cea_scenario_groups(user, *, id=None, compare=True, reference=None, rebaseli
 
 
 @register(
+    name="cea_scenario_delete",
+    is_write=True,
+    description=(
+        "Delete one of the caller's saved scenarios (`scenario_id`), or one of their scenario groups (`group_id`; its "
+        "scenarios are kept, ungrouped). Give exactly one. Deleting cannot be undone, so say which you are deleting."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {"scenario_id": {"type": "integer"}, "group_id": {"type": "integer"}},
+        "additionalProperties": False,
+    },
+)
+def cea_scenario_delete(user, *, scenario_id=None, group_id=None):
+    from connect_labs.effectiveness import saved, scenario_groups
+
+    if (scenario_id is None) == (group_id is None):
+        raise MCPToolError("BAD_REQUEST", "Give exactly one of `scenario_id` or `group_id`.")
+    try:
+        if scenario_id is not None:
+            saved.delete(user, scenario_id)
+            return {"deleted": "scenario", "id": scenario_id}
+        scenario_groups.delete(user, group_id)
+        return {"deleted": "group", "id": group_id}
+    except saved.SavedError as exc:
+        raise _saved_error(exc) from None
+
+
+@register(
     name="cea_scenario_group_save",
     is_write=True,
     description=(

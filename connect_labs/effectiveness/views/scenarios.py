@@ -1,8 +1,8 @@
 """Saved scenarios over HTTP: what the scenario panel on Market size and the workspace calls.
 
 ``GET`` lists the viewer's own and the shared ones, ``POST`` saves one (``{name, params, note, shared, overwrite}``),
-and a scenario's own address reads, changes (``PATCH`` a name, note or ``shared``) and deletes it. All the rules are
-``effectiveness.saved``; this only carries them.
+and a scenario's own address reads, changes (``PATCH`` a name, note, ``shared`` or ``group``) and deletes it. All the
+rules are ``effectiveness.saved``; this only carries them.
 """
 
 from __future__ import annotations
@@ -63,7 +63,12 @@ class ScenarioDetailView(ScenarioPageGate, View):
         try:
             body = _body(request)
             record = saved.update(
-                request.user, pk, name=body.get("name"), note=body.get("note"), shared=body.get("shared")
+                request.user,
+                pk,
+                name=body.get("name"),
+                note=body.get("note"),
+                shared=body.get("shared"),
+                group=body["group"] if "group" in body else saved.KEEP,
             )
         except saved.SavedError as exc:
             return _fail(exc)

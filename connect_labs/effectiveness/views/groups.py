@@ -282,6 +282,9 @@ class GroupView(ScenarioPageGate, View):
                 "urls": {
                     "group": reverse("cea:group", args=[pk]),
                     "baseline": reverse("cea:group_baseline", args=[pk]),
+                    "scenarios": reverse("cea:scenarios"),
+                    "groups": reverse("cea:groups"),
+                    "order": [s["id"] for s in data["scenarios"]],
                 },
                 "baselined": "baseline" in sources or None in sources,
                 "canopy_panel": scenario_page.agent_panel(
