@@ -146,7 +146,9 @@
             class: 'cap',
             text:
               (r.selection.grain === 'territory'
-                ? 'territories in ' + r.selection.countries + ' countries'
+                ? 'territories in ' +
+                  r.selection.countries +
+                  (r.selection.countries === 1 ? ' country' : ' countries')
                 : r.selection.everywhere
                   ? 'of ' +
                     r.selection.africa_total +
@@ -380,7 +382,9 @@
                 class: 'muted',
                 text:
                   g < 0.5
-                    ? 'Every place is alike here, so choosing places changes nothing: spreading the same people evenly averts the same deaths.'
+                    ? p.shortfall > 0
+                      ? 'The target is more than these places can give, so every place is used and choosing between them changes nothing.'
+                      : 'Every place is alike here, so choosing places changes nothing: spreading the same people evenly averts the same deaths.'
                     : 'Choosing the places is worth ' +
                       g.toFixed(0) +
                       '% more deaths averted for the same people: spreading ' +
@@ -397,9 +401,11 @@
               }),
             );
           }
+          // What a reader needs to know before believing the plan, kept together rather than as a column of grey lines.
+          var trust = [];
           if (p.check) {
             var k = p.check;
-            kids.push(
+            trust.push(
               h('p', {
                 class:
                   k.kept_share != null && k.kept_share < 0.9 ? 'lo' : 'muted',
@@ -422,7 +428,7 @@
             );
           }
           if (p.regional_proxy && p.regional_proxy.people > 0)
-            kids.push(
+            trust.push(
               h('p', {
                 class: 'muted',
                 text:
@@ -436,7 +442,7 @@
               }),
             );
           if (p.births_off && p.births_off.people > 0)
-            kids.push(
+            trust.push(
               h('p', {
                 class: 'lo',
                 text:
@@ -456,7 +462,7 @@
               var pr = rel.p_in_plan[q.key];
               return pr != null && pr < 0.8;
             }).length;
-            kids.push(
+            trust.push(
               h('p', {
                 class: 'muted reliability',
                 title:
@@ -477,6 +483,16 @@
               }),
             );
           }
+          if (trust.length)
+            kids.push(
+              h(
+                'details',
+                { class: 'trust', open: true },
+                [h('summary', { text: 'How far to trust this plan' })].concat(
+                  trust,
+                ),
+              ),
+            );
           if (p.countries && p.countries.length > 1)
             kids.push(
               h(
