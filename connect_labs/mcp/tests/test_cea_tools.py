@@ -308,6 +308,38 @@ class TestSavedScenarios:
         }
         assert got["open_path"] == f"/labs/cea/workspace/?scenario={got['id']}"
 
+    def test_a_plan_is_saved_whole_grain_target_limits_ceilings_price_basis_and_trust(self, ann):
+        got = cea.cea_scenario_save(
+            ann,
+            name="A million",
+            models=["kc"],
+            grain="territory",
+            target=1_000_000,
+            min_place=5000,
+            max_countries=10,
+            max_conflict=10,
+            max_remote=40,
+            cost_basis="observed",
+            trust=80,
+            place_risk=False,
+        )
+        assert got["params"] == {
+            "models": "kc",
+            "grain": "territory",
+            "target": "1000000",
+            "min_place": "5000",
+            "max_countries": "10",
+            "max_conflict": "10",
+            "max_remote": "40",
+            "cost_basis": "observed",
+            "trust": "80",
+            "place_risk": "0",
+        }
+
+    def test_a_default_plan_adds_nothing_to_the_link(self, ann):
+        got = cea.cea_scenario_save(ann, name="Plain", models=["kc"], grain="country", cost_basis="model", trust=100)
+        assert got["params"] == {"models": "kc"}
+
     def test_it_lists_what_is_yours_and_what_is_shared_and_opens_one_with_its_numbers(self, ann, bob):
         mine = cea.cea_scenario_save(ann, **self.SAVE)
         cea.cea_scenario_save(bob, name="Open", models=["kc"], shared=True)

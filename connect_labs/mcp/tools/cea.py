@@ -230,6 +230,117 @@ def cea_opportunities(
     return out
 
 
+# The place-and-plan choices a scenario can carry (grain, target, limits, ceilings, price basis, trust, place-scaled
+# risk), shared by the sizing tool and the save tool so one scenario means the same thing to both.
+_PLAN_PROPERTIES = {
+    "grain": {
+        "type": "string",
+        "enum": ["country", "territory"],
+        "default": "country",
+        "description": (
+            "With `model`: size countries, or each state or province (`territory`), where the best places to "
+            "work show."
+        ),
+    },
+    "target": {
+        "type": "number",
+        "description": (
+            "With `model`: how many people to reach (the model's own unit: low-birthweight newborns for kc). "
+            "Returns `plan`: the best places first, each up to the most that can be reached there (`dials."
+            "reach`), with deaths averted, cost per death averted, the blended multiple and the gain over "
+            "spreading the same target evenly."
+        ),
+    },
+    "min_place": {
+        "type": "number",
+        "description": (
+            "With `model` and `target`: leave out any place that can give fewer people than this (too small "
+            "to be worth a team)."
+        ),
+    },
+    "max_countries": {
+        "type": "integer",
+        "minimum": 1,
+        "description": (
+            "With `model` and `target`: keep to this many countries, the ones that matter most to the best "
+            "plan; `plan.countries_needed` says how many it takes to reach the target at all."
+        ),
+    },
+    # one ceiling per scenario.CAPS entry (max_conflict, max_remote, ...): a plan leaves out a place above it
+    **{
+        c.key: {
+            "type": "number",
+            "description": (
+                f"With `model` and `target`: {c.label.lower()} ({c.unit}). {c.hint} " "It never changes a multiple."
+            ),
+        }
+        for c in CAPS
+    },
+    "cost_basis": {
+        "type": "string",
+        "enum": ["model", "observed"],
+        "description": (
+            "With `model`: `model` (default) prices a person at the model's own figure everywhere; "
+            "`observed` moves the price toward what delivered opportunities cost in that country, by how "
+            "much delivery stands behind it (rows carry `price_model`, `price_observed` and how many "
+            "opportunities). Observed costs come from small early programmes: read them as evidence."
+        ),
+    },
+    "trust": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100,
+        "default": 100,
+        "description": (
+            "With `model`: how far to believe each place's own figures, in %. 100 uses them fully; lower "
+            "pulls "
+            "a territory toward its country's and a country toward the model's, to see whether a plan "
+            "survives "
+            "noisy data. A plan also carries `check`: how it holds up at 50."
+        ),
+    },
+    "place_risk": {
+        "type": "boolean",
+        "default": True,
+        "description": (
+            "With `model`: kc's baseline risk is one number for the world in the model itself, but cost-"
+            "effectiveness is proportional to it, so by default it is scaled to each place's newborn "
+            "mortality "
+            "(a Labs reading, calibrated on the model's own Nigeria, Liberia and Uganda scenarios). False "
+            "gives the model's flat figures."
+        ),
+    },
+}
+
+
+def _plan_params(
+    grain="country",
+    target=None,
+    min_place=None,
+    max_countries=None,
+    cost_basis=None,
+    trust=100,
+    place_risk=True,
+    caps=None,
+) -> dict:
+    """The link keys for those choices; only what differs from the default is returned."""
+    out = {}
+    if grain and grain != "country":
+        out["grain"] = grain
+    for key, value in (
+        ("target", target),
+        ("min_place", min_place),
+        ("max_countries", max_countries),
+        *[(k, v) for k, v in (caps or {}).items() if k in CAP_KEYS],
+        ("cost_basis", None if cost_basis in (None, "model") else cost_basis),
+        ("trust", None if trust == 100 else trust),
+        ("place_risk", None if place_risk else "0"),
+    ):
+        if value is not None:
+            out[key] = value
+    return out
+
+
 @register(
     name="cea_market_size",
     description=(
@@ -305,24 +416,7 @@ def cea_opportunities(
                 "type": "integer",
                 "description": "Carry counts to the delivery year before costing. See indicators_select.",
             },
-            "grain": {
-                "type": "string",
-                "enum": ["country", "territory"],
-                "default": "country",
-                "description": (
-                    "With `model`: size countries, or each state or province (`territory`), where the best places to "
-                    "work show."
-                ),
-            },
-            "target": {
-                "type": "number",
-                "description": (
-                    "With `model`: how many people to reach (the model's own unit: low-birthweight newborns for kc). "
-                    "Returns `plan`: the best places first, each up to the most that can be reached there (`dials."
-                    "reach`), with deaths averted, cost per death averted, the blended multiple and the gain over "
-                    "spreading the same target evenly."
-                ),
-            },
+            **_PLAN_PROPERTIES,
             "dials": {
                 "type": "object",
                 "properties": {k: {"type": "number"} for k in ("extra", "effect", "reach")},
@@ -331,66 +425,6 @@ def cea_opportunities(
                     "With `model`: `extra` dollars a person a year the model does not count (below zero when delivery "
                     "is cheaper), `effect` as % of the model's, `reach` as the most % of a place's cases that can be "
                     "reached (kc starts at 50, the others at 100)."
-                ),
-            },
-            "min_place": {
-                "type": "number",
-                "description": (
-                    "With `model` and `target`: leave out any place that can give fewer people than this (too small "
-                    "to be worth a team)."
-                ),
-            },
-            "max_countries": {
-                "type": "integer",
-                "minimum": 1,
-                "description": (
-                    "With `model` and `target`: keep to this many countries, the ones that matter most to the best "
-                    "plan; `plan.countries_needed` says how many it takes to reach the target at all."
-                ),
-            },
-            # one ceiling per scenario.CAPS entry (max_conflict, max_remote, ...): a plan leaves out a place above it
-            **{
-                c.key: {
-                    "type": "number",
-                    "description": (
-                        f"With `model` and `target`: {c.label.lower()} ({c.unit}). {c.hint} "
-                        "It never changes a multiple."
-                    ),
-                }
-                for c in CAPS
-            },
-            "cost_basis": {
-                "type": "string",
-                "enum": ["model", "observed"],
-                "description": (
-                    "With `model`: `model` (default) prices a person at the model's own figure everywhere; "
-                    "`observed` moves the price toward what delivered opportunities cost in that country, by how "
-                    "much delivery stands behind it (rows carry `price_model`, `price_observed` and how many "
-                    "opportunities). Observed costs come from small early programmes: read them as evidence."
-                ),
-            },
-            "trust": {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 100,
-                "default": 100,
-                "description": (
-                    "With `model`: how far to believe each place's own figures, in %. 100 uses them fully; lower "
-                    "pulls "
-                    "a territory toward its country's and a country toward the model's, to see whether a plan "
-                    "survives "
-                    "noisy data. A plan also carries `check`: how it holds up at 50."
-                ),
-            },
-            "place_risk": {
-                "type": "boolean",
-                "default": True,
-                "description": (
-                    "With `model`: kc's baseline risk is one number for the world in the model itself, but cost-"
-                    "effectiveness is proportional to it, so by default it is scaled to each place's newborn "
-                    "mortality "
-                    "(a Labs reading, calibrated on the model's own Nigeria, Liberia and Uganda scenarios). False "
-                    "gives the model's flat figures."
                 ),
             },
         },
@@ -580,7 +614,7 @@ def _market_size_by_model(
     if model not in engine.MODELS:
         raise MCPToolError("BAD_REQUEST", f"Unknown model {model!r}. Choose one of: {', '.join(engine.MODELS)}.")
     availability_mod, _, _, measures_mod, methods_mod, _, _ = _imports()
-    params = {"models": model, "indicator": indicator, "grain": grain}
+    params = {"models": model, "indicator": indicator}
     if indicator != EVERYWHERE:
         if indicator not in measures_mod.MEASURES:
             raise MCPToolError("BAD_REQUEST", f"Unknown indicator {indicator!r}. Call indicators_list to list them.")
@@ -590,16 +624,10 @@ def _market_size_by_model(
         ("iso", ",".join(iso_codes) if iso_codes else None),
         ("target_year", target_year),
         ("bar", bar),
-        ("target", target),
-        ("min_place", min_place),
-        ("max_countries", max_countries),
-        *[(k, v) for k, v in (caps or {}).items() if k in CAP_KEYS],
-        ("cost_basis", None if cost_basis in (None, "model") else cost_basis),
-        ("trust", None if trust == 100 else trust),
-        ("place_risk", None if place_risk else "0"),
     ):
         if value is not None:
             params[key] = value
+    params.update(_plan_params(grain, target, min_place, max_countries, cost_basis, trust, place_risk, caps))
     for key, value in (dials or {}).items():
         if key not in KNOBS:
             raise MCPToolError("BAD_REQUEST", f"{key!r} is not a dial: {', '.join(KNOBS)}.")
@@ -696,7 +724,9 @@ def cea_scenarios(user, *, id=None, run=False):
         "`iso_codes` (blank for all Africa), `bar`, `dials` per model (`extra` dollars a person a year, `effect` and "
         "`reach` as percent of the model's and of the people in the places) and `overrides` per model "
         "(input key to number; `cea_model_run` with include `inputs` lists the keys). Anything left out is the models "
-        "as published. Returns the saved scenario and `open_path`."
+        "as published. Also `grain` (country or territory), `target` (people to reach), the plan limits (`min_place`, "
+        "`max_countries` and the ceilings `max_conflict`, `max_remote`), `cost_basis`, `trust` and `place_risk`, "
+        "as for cea_market_size. Returns the saved scenario and `open_path`."
     ),
     input_schema={
         "type": "object",
@@ -722,6 +752,7 @@ def cea_scenarios(user, *, id=None, run=False):
                 "type": "object",
                 "additionalProperties": {"type": "object", "additionalProperties": {"type": "number"}},
             },
+            **_PLAN_PROPERTIES,
         },
         "required": ["name", "models"],
         "additionalProperties": False,
@@ -741,6 +772,14 @@ def cea_scenario_save(
     bar=None,
     dials=None,
     overrides=None,
+    grain="country",
+    target=None,
+    min_place=None,
+    max_countries=None,
+    cost_basis=None,
+    trust=100,
+    place_risk=True,
+    **caps,
 ):
     from connect_labs.effectiveness import engine, saved
     from connect_labs.effectiveness.scenario import KNOBS
@@ -752,6 +791,7 @@ def cea_scenario_save(
         params["iso"] = ",".join(iso_codes)
     if bar is not None:
         params["bar"] = bar
+    params.update(_plan_params(grain, target, min_place, max_countries, cost_basis, trust, place_risk, caps))
     for kind, per_model in (("dials", dials), ("overrides", overrides)):
         for model, changes in (per_model or {}).items():
             if model not in engine.MODELS:
