@@ -196,6 +196,7 @@ def size(
                 "far_from_country": far,
                 "local_inputs": sorted((p.get("inputs") or {}).keys()) if place_risk else [],
                 "conflict_rate": (p.get("measures") or {}).get("conflict_rate"),
+                "births_off": bool(p.get("births_off")),
                 "risk_se": se,
                 "risk_shared_se": shared,
                 "risk_raw": (p.get("measures_raw") or {}).get(risk.measure) if risk is not None else None,
@@ -309,6 +310,7 @@ def _part(r: dict, reached: float) -> dict:
         "far_from_country": r["far_from_country"],
         "conflict_rate": r.get("conflict_rate"),
         "regional_proxy": r.get("regional_proxy", False),
+        "births_off": r.get("births_off", False),
     }
 
 
@@ -412,6 +414,7 @@ def plan(rows: list[dict], target: float, limits: PlanLimits | None = None) -> d
         "countries": by_country(picked),
         "countries_needed": needed,
         "regional_proxy": _proxy(picked),
+        "births_off": _lean_on(picked, "births_off"),
         "limits": {
             "min_place": limits.min_place,
             "max_countries": limits.max_countries,
@@ -429,7 +432,12 @@ def plan(rows: list[dict], target: float, limits: PlanLimits | None = None) -> d
 def _proxy(picked: list[dict]) -> dict:
     """How much of a plan's people are counted from a regional rate rather than their country's own (low birthweight
     for the sixteen countries UNICEF-WHO publish no national figure for), and in which countries."""
-    on = [p for p in picked if p.get("regional_proxy")]
+    return _lean_on(picked, "regional_proxy")
+
+
+def _lean_on(picked: list[dict], flag: str) -> dict:
+    """The people, places and countries of a plan whose count carries ``flag``."""
+    on = [p for p in picked if p.get(flag)]
     return {
         "people": sum(p["reached"] for p in on),
         "places": len(on),

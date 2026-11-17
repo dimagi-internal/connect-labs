@@ -199,13 +199,32 @@ exports a `spec.json` Labs vendors. Labs reads no Sheet at run time.
 A daily task (`tasks.check_model_sheets`, 06:12 UTC) runs the same check inside Labs, where the service account already is. On drift it logs an
 ERROR (Sentry) and the models page shows a one-line note until the specs are refreshed; a Sheet it cannot read fails the task.
 
+## Rebuilding it
+
+The effectiveness layer keeps no numbers of its own except saved scenarios (a link and a name, `models.SavedScenario`). Every
+figure on a page is computed from three things, and a rebuild is restoring them:
+
+1. **The baseline** (`labs/indicators`): boundaries and indicator values. Restore a snapshot (`BOOTSTRAP.md`, about two
+   minutes) or rebuild from source with `indicators_bootstrap`, which runs every stage in `labs/indicators/stages.py` in order
+   (`--skip-heavy` for a refresh that leaves out the hours-long raster and quota-limited stages). That module is the one list
+   of stages, what each needs and why; `load_indicators`, the bootstrap command and the table in `BOOTSTRAP.md` all read it,
+   and `tests/test_stages.py` fails if a stage, a source or the table is added without the rest.
+   What the sizing reads from it is `baseline.MEASURES_READ`, checked by `test_baseline_reads.py`: each must be registered and
+   policy-governed, and none may be read unlisted.
+2. **The models** (`effectiveness/data/*.json`, vendored from `connect-cea-models`): `effectiveness_vendor`.
+3. **The code's own assumptions**, each named where it is made: `market.PLACE_RISK` (Kangaroo Care's risk scaling),
+   `scenario.PlanLimits` (the plan's limits), `mortality` and `reliability` (how mortality's uncertainty is used).
+
+Nothing else needs restoring. Computed answers are cached under `response_cache.data_version()`, which `load_indicators`
+and the bootstrap start afresh on every run, so a reload cannot leave a stale answer; the people cache key carries a version
+(`market:people:vN`) that is bumped when the shape of what it holds changes.
+
 ## Left to do
 
 - Saved scenarios: rename and share/unshare without re-saving, versions, and a way to attach one to a proposal.
 - Delivery cost by place (Connect's actual price per case by country or programme) and territory reachability (travel time,
   security) as inputs to the plan; today the places differ by their own mortality and coverage figures, not by what it
-  costs to work in them or how hard they are to reach. Real uncertainty ranges on mortality (a loader change and a data
-  reload).
+  costs to work in them or how hard they are to reach (conflict is a ceiling a plan can be held to, not yet a travel time).
 - Put CEA models and Implementations on the scenario too (their own link keys differ: `i_<input>`, `m`), and give the
   workspace a Need lens, a Delivered layer, and region-level shapes (the models hold country figures, so a region's number
   would be an allocation of its country's).

@@ -595,6 +595,43 @@ def load_coverage_gaps(
     return rows
 
 
+#: How far a country's births may sit from the UN's before the audit calls it off (a ratio outside 1 +/- this).
+BIRTHS_TOLERANCE = 0.15
+
+
+def births_audit(iso_codes: list[str] | None = None) -> list[dict]:
+    """Our country births beside the UN WPP's, for each country that has both.
+
+    ``ratio`` is ours over theirs in the same year (the WPP year nearest ours); ``off`` says it is more than
+    ``BIRTHS_TOLERANCE`` from 1. A ratio far from 1 means the population layer, not the births formula, is wrong
+    for the country. This audits the country total only: a total can be right while territories are wrong, so a pass
+    does not clear a territory's figure.
+    """
+    out = []
+    # Countries only, and without their outlines: a boundary row carries its whole geometry.
+    countries = boundary_set.owned().filter(admin_level=0).defer("geometry")
+    if iso_codes:
+        countries = countries.filter(iso_code__in=[c.upper() for c in iso_codes])
+    for country in countries:
+        ours = resolve("births", country)
+        theirs = resolve("births_wpp", country, ours.year if ours else None)
+        if not (ours and theirs and theirs.value > 0):
+            continue
+        ratio = ours.value / theirs.value
+        out.append(
+            {
+                "iso": country.iso_code,
+                "ours": ours.value,
+                "wpp": theirs.value,
+                "ratio": ratio,
+                "year": ours.year,
+                "wpp_year": theirs.year,
+                "off": abs(ratio - 1) > BIRTHS_TOLERANCE,
+            }
+        )
+    return out
+
+
 def births_divergence(iso_codes: list[str] | None = None) -> dict[int, float]:
     """How far apart the two births methods are, per boundary.
 

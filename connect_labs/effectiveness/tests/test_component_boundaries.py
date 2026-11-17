@@ -33,6 +33,8 @@ PURE_CORE = (
     "explore.py",
     "sheets_check.py",
     "market.py",
+    "mortality.py",
+    "reliability.py",
     "scenario.py",
     "implementation/catalog.py",
     "implementation/whatif.py",

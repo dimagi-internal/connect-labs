@@ -26,20 +26,9 @@ import time
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
-from connect_labs.labs.indicators import boundaries
+from connect_labs.labs.indicators import boundaries, stages
 from connect_labs.labs.indicators.africa import ISO_CODES
 from connect_labs.labs.indicators.models import IndicatorValue
-
-#: Stages in dependency order. The comment on each is why it sits where it does.
-STAGE_ORDER = [
-    ("mortality", "DHS surveys, the IGME national series, and IGME's subnational model"),
-    ("calibrate", "needs both the raw surveys and the IGME series from the stage above"),
-    ("fertility", "DHS TFR plus the World Bank national fallback"),
-    ("population", "HAPI first (minutes), then WorldPop (hours, quota-limited)"),
-    ("births", "derived from population and mortality, so it must follow both"),
-    ("lbw", "UNICEF-WHO low birthweight and DHS place of delivery; the LBW count needs births"),
-    ("child_health", "diarrhoea, malaria, nutrition, immunisation, WASH, and the gaps they imply"),
-]
 
 
 class Command(BaseCommand):
@@ -53,6 +42,14 @@ class Command(BaseCommand):
             help="Assume boundaries are already loaded",
         )
         parser.add_argument(
+            "--skip-heavy",
+            action="store_true",
+            help=(
+                "Leave out the stages marked heavy in stages.py (hours of fetching, or rasters): "
+                "a quick refresh, not a rebuild"
+            ),
+        ),
+        parser.add_argument(
             "--skip-worldpop",
             action="store_true",
             help=(
@@ -63,7 +60,7 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--from-stage",
-            choices=[s for s, _ in STAGE_ORDER],
+            choices=list(stages.NAMES),
             help="Resume from a stage instead of starting at the beginning",
         )
 
@@ -100,14 +97,15 @@ class Command(BaseCommand):
             self.stdout.write("    Deriving parent links, which the source omits.")
             call_command("link_admin_parents", *iso_args)
 
-        stages = [s for s, _ in STAGE_ORDER]
+        to_run = list(stages.NAMES)
         if opts.get("from_stage"):
-            stages = stages[stages.index(opts["from_stage"]) :]
+            to_run = to_run[to_run.index(opts["from_stage"]) :]
+        if opts["skip_heavy"]:
+            to_run = [n for n in to_run if not stages.BY_NAME[n].heavy]
 
-        for n, stage in enumerate(stages, start=2):
-            why = dict(STAGE_ORDER)[stage]
+        for n, stage in enumerate(to_run, start=2):
             self.stdout.write(self.style.MIGRATE_HEADING(f"\n[{n}] {stage}"))
-            self.stdout.write(f"    {why}")
+            self.stdout.write(f"    {stages.BY_NAME[stage].why}")
 
             args = ["load_indicators", "--stage", stage, *iso_args]
             if stage == "population" and opts["skip_worldpop"]:

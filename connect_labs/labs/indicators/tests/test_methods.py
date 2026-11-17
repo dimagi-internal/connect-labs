@@ -448,6 +448,7 @@ class TestEveryTargetableIndicatorIsReachable:
             Source.WORLDPOP_RASTER,
             Source.HAPI,
             Source.WORLDBANK,
+            Source.WPP,  # a national count held to audit our births against; resolves through policy
         }
         orphans = {s for s in Source.values if s not in declared and s not in exempt}
         assert not orphans, (

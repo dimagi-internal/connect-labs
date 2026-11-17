@@ -205,6 +205,20 @@ register(
 
 register(
     Measure(
+        code="births_wpp",
+        label="Annual births (UN WPP)",
+        kind=Kind.COUNT,
+        unit="births/year",
+        agg=Agg.SUM,
+        description=(
+            "The UN World Population Prospects' births for the country and year, kept to check our derived births "
+            "against (derive.births_audit). Country level only; it does not replace or rescale them."
+        ),
+    )
+)
+
+register(
+    Measure(
         code="births_lbw",
         label="Annual low-birthweight births",
         kind=Kind.COUNT,
