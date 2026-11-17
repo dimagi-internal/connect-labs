@@ -5,7 +5,7 @@ HQ (an embed client with a ``commcare_host``) signs an assertion naming the pers
 read-only frame as ``/commcare/``, with one data read. Differences from the Connect-shaped ``workflow`` kind:
 
 * no Connect token is stored, asked for or used (``needs_connect_token = False``);
-* the resource names a PROJECT as well as a page (``{"kind": "hq_workflow", "id": <page>, "project_id": <n>}``),
+* the resource names a PROJECT as well as a page (``{"kind": "commcare_workflow", "id": <page>, "project_id": <n>}``),
   and the page is read in that project's scope, so another project's page id is not found;
 * labs' own record of membership is re-checked on EVERY request (``still_allowed``), so a session ends as
   soon as that record is deleted or lapses (24 hours), not when the session would. It does not ask HQ:
@@ -26,11 +26,11 @@ from django.core.exceptions import ValidationError
 from connect_labs.embed.kinds import EmbedKind, register
 
 #: The one route a session of this kind reads, beside its frame.
-DATA_ROUTE = re.compile(r"^/embed/hq/(?P<project>\d+)/(?P<page>\d+)/pipeline-data/$")
+DATA_ROUTE = re.compile(r"^/embed/commcare/(?P<project>\d+)/(?P<page>\d+)/pipeline-data/$")
 
 
 def data_path(project_id, definition_id) -> str:
-    return f"/embed/hq/{int(project_id)}/{int(definition_id)}/pipeline-data/"
+    return f"/embed/commcare/{int(project_id)}/{int(definition_id)}/pipeline-data/"
 
 
 def _int(value, what: str) -> int:
@@ -44,7 +44,7 @@ def _int(value, what: str) -> int:
 
 
 class HQWorkflowKind(EmbedKind):
-    name = "hq_workflow"
+    name = "commcare_workflow"
     needs_connect_token = False
     commcare_subjects = True
 
@@ -53,7 +53,7 @@ class HQWorkflowKind(EmbedKind):
         _int(entry.get("project_id"), "project_id")
         extra = set(entry) - {"kind", "id", "project_id"}
         if extra:
-            raise ValidationError(f"An hq_workflow resource names only id and project_id, not {sorted(extra)}.")
+            raise ValidationError(f"An commcare_workflow resource names only id and project_id, not {sorted(extra)}.")
 
     def validate_for_client(self, client, entry):
         project = self.project_for(entry)

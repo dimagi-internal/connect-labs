@@ -436,7 +436,7 @@ def pipeline_detail(request: HttpRequest, project_id: int, pipeline_id: int) -> 
 def tokens(request: HttpRequest) -> HttpResponse:
     """Mint and revoke the person's CommCare-scope MCP tokens (``token_scopes.COMMCARE``).
 
-    A token made here reaches the ``hq_*`` tools and nothing else, so it is something a person with
+    A token made here reaches the ``commcare_*`` tools and nothing else, so it is something a person with
     no Connect login may hold. The raw token is shown once, in the response that creates it.
     """
     from connect_labs.mcp import token_scopes

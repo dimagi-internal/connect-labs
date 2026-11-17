@@ -65,7 +65,7 @@ def test_a_page_queues_a_job_owned_by_the_person_who_asked(project, owner, fake_
     job = MCPJob.objects.get(pk=reply["job_id"])
     assert (
         job.user == other
-        and job.tool_name == "hq_project_sync"
+        and job.tool_name == "commcare_project_sync"
         and job.arguments == {"project_id": project.pk, "mode": None}
     )
     assert job.actor == "page" and job.restricted is False and job.state == MCPJob.SUCCEEDED  # tests run jobs inline
@@ -87,7 +87,7 @@ def test_a_sync_already_queued_or_running_is_returned_not_doubled(project, owner
     live = MCPJob.objects.create(
         id=uuid.uuid4(),
         user=owner,
-        tool_name="hq_project_sync",
+        tool_name="commcare_project_sync",
         arguments={"project_id": project.pk, "mode": None},
         state=MCPJob.RUNNING,
     )
@@ -105,7 +105,7 @@ def test_too_many_jobs_for_one_person_is_a_refusal_with_the_reason(project, owne
         MCPJob.objects.create(
             id=uuid.uuid4(),
             user=owner,
-            tool_name="hq_project_sync",
+            tool_name="commcare_project_sync",
             arguments={"project_id": 1000 + i},
             state=MCPJob.QUEUED,
         )

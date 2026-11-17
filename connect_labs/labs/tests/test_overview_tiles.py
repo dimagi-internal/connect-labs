@@ -38,6 +38,14 @@ def test_the_data_page_has_a_tile_for_everyone(is_dimagi):
 
 
 @pytest.mark.django_db
-def test_a_dimagi_user_sees_eight_tiles():
+def test_a_dimagi_user_sees_nine_tiles():
     with patch("connect_labs.utils.feature_access.is_dimagi_user", return_value=True):
-        assert len(_tiles(UserFactory())) == 8
+        assert len(_tiles(UserFactory())) == 9
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("is_dimagi", [True, False])
+def test_the_commcare_pages_have_a_tile_for_everyone_because_they_are_not_in_the_sidebar(is_dimagi):
+    # CommCare is not a standing sidebar item (it appears there only on its own pages), so the tile is the way in.
+    with patch("connect_labs.utils.feature_access.is_dimagi_user", return_value=is_dimagi):
+        assert _tiles(UserFactory())["CommCare"]["url"] == "/commcare/"

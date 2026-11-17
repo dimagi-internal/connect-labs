@@ -298,7 +298,7 @@ def render_hq_workflow(request, session):
 
 @require_GET
 def hq_data_view(request, project_id, definition_id):
-    """The one read an ``hq_workflow`` frame makes: the page's pipelines, over its project.
+    """The one read an ``commcare_workflow`` frame makes: the page's pipelines, over its project.
 
     Reached only through the embed middleware (a live session, from its own frame, on the route its
     kind allows); the project and page are the SESSION's, so the URL cannot name anything else.
@@ -310,7 +310,7 @@ def hq_data_view(request, project_id, definition_id):
     entry = (session.entry or {}) if session is not None else {}
     if (
         session is None
-        or session.kind != "hq_workflow"
+        or session.kind != "commcare_workflow"
         or str(entry.get("project_id")) != str(project_id)
         or str(session.resource_id) != str(definition_id)
     ):

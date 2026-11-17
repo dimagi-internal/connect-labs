@@ -63,7 +63,7 @@ Three rules keep that row honest:
    session could mint a token there. `mcp/server.py::_verify_bearer_sync` lets a user for whom
    `hqdata.access.is_commcare_only` holds (an HQ identity, no Connect token) in with a PAT of the
    `commcare` scope only, and refuses every other credential. That scope reaches
-   `token_scopes.COMMCARE_TOOLS` (the `hq_*` tools) and nothing else, whoever holds it.
+   `token_scopes.COMMCARE_TOOLS` (the `commcare_*` tools) and nothing else, whoever holds it.
 3. **Access is membership proven by CommCare.** `hqdata.access.may_use_project`; see
    `docs/superpowers/specs/2026-11-13-commcare-first-class-design.md`.
 

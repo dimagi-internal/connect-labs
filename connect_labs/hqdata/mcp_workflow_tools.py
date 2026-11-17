@@ -1,10 +1,11 @@
-"""The ``hq_workflow_*`` MCP tools: write and change the workflow pages over a CommCare project.
+"""The ``commcare_workflow_*`` MCP tools: write and change the workflow pages over a CommCare project.
 
 A page is a workflow of the page kind (``workflow/page_mode.py``): render code drawn by the standard workflow
-runner in a sandbox, reading pipelines saved in the project (``hq_pipeline_save``), read-only, no runs. These tools
+runner in a sandbox, reading pipelines saved in the project (``commcare_pipeline_save``), read-only, no runs. These
+tools
 act as the signed-in person and pass the same gate as everything in ``hqdata``: a verified member of the project; a
 project the person is not in is "not found". A ``commcare``-scope token reaches them
-(``token_scopes.COMMCARE_TOOLS``; a test pins that the registered ``hq_*`` tools and that list are the same).
+(``token_scopes.COMMCARE_TOOLS``; a test pins that the registered ``commcare_*`` tools and that list are the same).
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from connect_labs.hqdata.workflows import (
 from connect_labs.mcp.tool_registry import MCPToolError, register
 from connect_labs.workflow.page_mode import is_page
 
-_WORKFLOW_ID = {"type": "integer", "description": "The page's id (from hq_workflow_list)."}
+_WORKFLOW_ID = {"type": "integer", "description": "The page's id (from commcare_workflow_list)."}
 
 
 def _url(project: HQProject, workflow_id: int) -> str:
@@ -66,11 +67,11 @@ def _summary(project: HQProject, definition) -> dict:
 
 
 @register(
-    name="hq_workflow_list",
+    name="commcare_workflow_list",
     description="The workflow pages in a CommCare project, each with its address.",
     input_schema={"type": "object", "properties": {"project_id": _PROJECT_ID}, "required": ["project_id"]},
 )
-def hq_workflow_list(user, project_id=None, **_):
+def commcare_workflow_list(user, project_id=None, **_):
     project = _project(user, project_id)
 
     def run():
@@ -84,7 +85,7 @@ def hq_workflow_list(user, project_id=None, **_):
 
 
 @register(
-    name="hq_workflow_get",
+    name="commcare_workflow_get",
     description="One workflow page: its description, pipeline sources, flags and its render code (JSX).",
     input_schema={
         "type": "object",
@@ -92,7 +93,7 @@ def hq_workflow_list(user, project_id=None, **_):
         "required": ["project_id", "workflow_id"],
     },
 )
-def hq_workflow_get(user, project_id=None, workflow_id=None, **_):
+def commcare_workflow_get(user, project_id=None, workflow_id=None, **_):
     project = _project(user, project_id)
     if not isinstance(workflow_id, int):
         raise MCPToolError("INVALID_SCHEMA", "workflow_id is the page's id.")
@@ -108,12 +109,13 @@ def hq_workflow_get(user, project_id=None, workflow_id=None, **_):
 
 
 @register(
-    name="hq_workflow_create",
+    name="commcare_workflow_create",
     description=(
         "Create a workflow page over a CommCare project: render_code (JSX defining function WorkflowUI({definition, "
-        "pipelines, scope})) drawn in the standard sandboxed runner, reading pipelines saved with hq_pipeline_save. "
+        "pipelines, scope})) drawn in the standard sandboxed runner, reading pipelines saved with "
+        "commcare_pipeline_save. "
         "pipeline_sources is [{hq_pipeline_id, alias}]; the page reads pipelines.<alias>.rows. Read "
-        "hq_workflow_authoring_guide first. Returns the page's address."
+        "commcare_workflow_authoring_guide first. Returns the page's address."
     ),
     input_schema={
         "type": "object",
@@ -139,7 +141,7 @@ def hq_workflow_get(user, project_id=None, workflow_id=None, **_):
     },
     is_write=True,
 )
-def hq_workflow_create(
+def commcare_workflow_create(
     user, project_id=None, name="", description="", render_code=None, pipeline_sources=None, config=None, **_
 ):
     project = _project(user, project_id)
@@ -159,7 +161,7 @@ def hq_workflow_create(
 
 
 @register(
-    name="hq_workflow_update",
+    name="commcare_workflow_update",
     description=(
         "Change a workflow page. Send only what changes: name, description, pipeline_sources (replaces the list), "
         "config flags, render_code (replaces the JSX). Any member of the project may change a page."
@@ -179,14 +181,14 @@ def hq_workflow_create(
     },
     is_write=True,
 )
-def hq_workflow_update(user, project_id=None, workflow_id=None, **changes):
+def commcare_workflow_update(user, project_id=None, workflow_id=None, **changes):
     project = _project(user, project_id)
     if not isinstance(workflow_id, int):
         raise MCPToolError("INVALID_SCHEMA", "workflow_id is the page's id.")
     fields = {"name", "description", "render_code", "pipeline_sources", "config"}
     unknown = sorted(set(changes) - fields)
     if unknown:
-        raise MCPToolError("INVALID_SCHEMA", f"hq_workflow_update changes only {sorted(fields)}, not {unknown}.")
+        raise MCPToolError("INVALID_SCHEMA", f"commcare_workflow_update changes only {sorted(fields)}, not {unknown}.")
     allowed = dict(changes)
     _guard(lambda: update_page(user, project, workflow_id, **allowed))
     project_event(Action.UPDATE, project.pk, user=user, kind="workflow")
@@ -198,7 +200,7 @@ def hq_workflow_update(user, project_id=None, workflow_id=None, **changes):
 
 
 @register(
-    name="hq_workflow_delete",
+    name="commcare_workflow_delete",
     description=(
         "Delete a workflow page (a backup of its definition and code is kept). Its author or a project admin only."
     ),
@@ -209,7 +211,7 @@ def hq_workflow_update(user, project_id=None, workflow_id=None, **changes):
     },
     is_write=True,
 )
-def hq_workflow_delete(user, project_id=None, workflow_id=None, **_):
+def commcare_workflow_delete(user, project_id=None, workflow_id=None, **_):
     project = _project(user, project_id)
     if not isinstance(workflow_id, int):
         raise MCPToolError("INVALID_SCHEMA", "workflow_id is the page's id.")
@@ -220,7 +222,7 @@ def hq_workflow_delete(user, project_id=None, workflow_id=None, **_):
 
 
 @register(
-    name="hq_workflow_data",
+    name="commcare_workflow_data",
     description=(
         "The data a page receives, exactly as its render code sees it: {alias: {rows, metadata}} for each pipeline "
         "source. Use it to write and debug render code. Rows are capped here for size (the page itself gets all)."
@@ -235,7 +237,7 @@ def hq_workflow_delete(user, project_id=None, workflow_id=None, **_):
         "required": ["project_id", "workflow_id"],
     },
 )
-def hq_workflow_data(user, project_id=None, workflow_id=None, max_rows=20, **_):
+def commcare_workflow_data(user, project_id=None, workflow_id=None, max_rows=20, **_):
     project = _project(user, project_id)
     if not isinstance(workflow_id, int):
         raise MCPToolError("INVALID_SCHEMA", "workflow_id is the page's id.")
@@ -260,13 +262,13 @@ Workflow pages over a CommCare project
 ======================================
 
 A page is a React component drawn by labs' workflow runner inside a sandboxed frame, read-only, for people who
-belong to the project. It reads pipelines you save with hq_pipeline_save.
+belong to the project. It reads pipelines you save with commcare_pipeline_save.
 
-1. Save a pipeline:   hq_pipeline_save(project_id, name, store_kind="forms"|"cases", schema={...})
+1. Save a pipeline:   commcare_pipeline_save(project_id, name, store_kind="forms"|"cases", schema={...})
    schema = {"grouping_key": "username", "terminal_stage": "aggregated",
              "fields": [{"name": "forms", "path": "form.meta.username", "aggregation": "count"}]}
    Form field paths start with form. (e.g. form.meta.username, form.<question>); case paths start with case.
-   Check it with hq_pipeline_run. Aggregations include count, sum, avg, min, max, first.
+   Check it with commcare_pipeline_run. Aggregations include count, sum, avg, min, max, first.
    Two shapes (read live on real projects):
    - "aggregated" groups rows by a worker: forms per username work this way.
    - "visit_level" returns ONE ROW PER form or case with the fields you list (plus entity_name = the case's
@@ -274,9 +276,10 @@ belong to the project. It reads pipelines you save with hq_pipeline_save.
      group by: {"terminal_stage": "visit_level",
                 "fields": [{"name": "case_type", "path": "case.case_type", "aggregation": "first"}]}
      then count rows per case_type with a plain JS reduce.
-2. Make a page:      hq_workflow_create(project_id, name, render_code, pipeline_sources=[{hq_pipeline_id, alias}])
-3. Look at its data: hq_workflow_data(project_id, workflow_id)   -- exactly what render code receives
-4. Change it:        hq_workflow_update(project_id, workflow_id, render_code=...)
+2. Make a page:      commcare_workflow_create(project_id, name, render_code,
+                                            pipeline_sources=[{hq_pipeline_id, alias}])
+3. Look at its data: commcare_workflow_data(project_id, workflow_id)   -- exactly what render code receives
+4. Change it:        commcare_workflow_update(project_id, workflow_id, render_code=...)
 
 Render code is JSX defining ONE function component:
 
@@ -289,18 +292,19 @@ Render code is JSX defining ONE function component:
 - Style with Tailwind utility classes (text-brand-indigo is the accent). React is in scope (React.useState, ...).
   Chart.js is available as window.Chart for charts. Do not fetch(): the frame has no network.
 - The page is read-only and sandboxed: no buttons that save, no runs, no links out except plain <a href>.
-- A pipeline over a very large project is refused in words by hq_pipeline_run; narrow it (app_id/xmlns/case_type).
+- A pipeline over a very large project is refused in words by commcare_pipeline_run; narrow it
+  (app_id/xmlns/case_type).
 - The page's address (returned by create/get/list) is /commcare/projects/<id>/workflows/<id>/; the same page can be
   embedded inside CommCare HQ once HQ is registered as an embed client.
 """
 
 
 @register(
-    name="hq_workflow_authoring_guide",
+    name="commcare_workflow_authoring_guide",
     description=(
         "How to write a workflow page over a CommCare project: the pipeline schema, the render contract, an example."
     ),
     input_schema={"type": "object", "properties": {}},
 )
-def hq_workflow_authoring_guide(user, **_):  # noqa: ARG001 -- read-only static text
+def commcare_workflow_authoring_guide(user, **_):  # noqa: ARG001 -- read-only static text
     return {"guide": GUIDE}

@@ -120,28 +120,28 @@ def is_commcare(scopes) -> bool:
 
 
 #: Every tool a CommCare-scoped token may call. Deny-by-default like the sets below: a tool added to
-#: the catalogue reaches no such caller until it is named here, and a test pins that every ``hq_*``
+#: the catalogue reaches no such caller until it is named here, and a test pins that every ``commcare_*``
 #: tool is named, that every name here is registered, and that none reads Connect data.
 COMMCARE_TOOLS: frozenset[str] = frozenset(
     {
-        "hq_project_list",
-        "hq_project_get",
-        "hq_project_create",
-        "hq_project_sync",
-        "hq_project_set_storage",
-        "hq_forms",
-        "hq_cases",
-        "hq_pipeline_list",
-        "hq_pipeline_save",
-        "hq_pipeline_run",
-        "hq_pipeline_delete",
-        "hq_workflow_list",
-        "hq_workflow_get",
-        "hq_workflow_create",
-        "hq_workflow_update",
-        "hq_workflow_delete",
-        "hq_workflow_data",
-        "hq_workflow_authoring_guide",
+        "commcare_project_list",
+        "commcare_project_get",
+        "commcare_project_create",
+        "commcare_project_sync",
+        "commcare_project_set_storage",
+        "commcare_forms",
+        "commcare_cases",
+        "commcare_pipeline_list",
+        "commcare_pipeline_save",
+        "commcare_pipeline_run",
+        "commcare_pipeline_delete",
+        "commcare_workflow_list",
+        "commcare_workflow_get",
+        "commcare_workflow_create",
+        "commcare_workflow_update",
+        "commcare_workflow_delete",
+        "commcare_workflow_data",
+        "commcare_workflow_authoring_guide",
     }
 )
 

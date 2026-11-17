@@ -153,7 +153,7 @@ def test_a_case_property_named_like_a_lookup_filters_on_the_property():
     HQCase.objects.create(project_id=project.pk, case_id="c2", case_type="t", properties={"in": "no"})
 
     def ids(**props):
-        got = get_tool("hq_cases").handler(user=me, project_id=project.pk, properties=props)
+        got = get_tool("commcare_cases").handler(user=me, project_id=project.pk, properties=props)
         return [c["case_id"] for c in got["cases"]]
 
     assert ids(**{"in": "yes"}) == ["c1"]

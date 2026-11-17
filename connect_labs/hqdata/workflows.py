@@ -168,7 +168,7 @@ def _source_alias(source: dict) -> str:
 
 
 def _hq_pipeline_entry(user, project: HQProject, source: dict) -> dict:
-    """One ``pipelines`` entry for a source naming a saved ``hq_pipeline_*`` pipeline of this project."""
+    """One ``pipelines`` entry for a source naming a saved ``commcare_pipeline_*`` pipeline of this project."""
     from connect_labs.hqdata.pipelines import PipelineProblem, config_for, pipeline_rows
     from connect_labs.hqdata.stores import StoreUnavailable
     from connect_labs.workflow.pipeline_reads import _alias_metadata
@@ -221,7 +221,7 @@ def read_project_pipeline_data(user, project: HQProject, definition_id: int) -> 
     """The ``pipelines`` prop of one of this project's workflows: ``{alias: {"rows", "metadata"}}``.
 
     A source names either a saved project pipeline (``{"hq_pipeline_id", "alias"}``: what the
-    ``hq_pipeline_*`` tools manage) or a pipeline record in the project's workflow store
+    ``commcare_pipeline_*`` tools manage) or a pipeline record in the project's workflow store
     (``{"pipeline_id", "alias"}``: what the overview uses). Computed inline from the project's stored rows
     (they are labs' own, so there is no download to wait on). Every read passes the project gate again,
     inside the pipeline, as this member.
@@ -290,7 +290,7 @@ class PageNotFound(LookupError):
 def clean_sources(project: HQProject, sources) -> list[dict]:
     """``[{"hq_pipeline_id", "alias"}]`` for pipelines saved in THIS project, or ``PageProblem``.
 
-    A source names a saved ``hq_pipeline_*`` pipeline by id and the alias the page reads it under
+    A source names a saved ``commcare_pipeline_*`` pipeline by id and the alias the page reads it under
     (``pipelines.<alias>.rows``). Nothing else is accepted, so a page cannot point at another project's pipeline,
     a Connect source, or anything the engine would fetch on its own.
     """

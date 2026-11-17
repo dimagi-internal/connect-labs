@@ -434,6 +434,8 @@ def test_a_person_with_a_connect_login_gets_the_standard_labs_layout_and_a_commc
     ):
         body = client.get("/commcare/").content.decode()
     assert 'id="labs-sidenav"' in body and 'data-testid="commcare-breadcrumb"' in body  # the standard chrome
+    # CommCare is not a standing sidebar item: it appears there only while you are on a CommCare page.
+    assert 'href="/commcare/"' in body.split('id="labs-sidenav"')[1].split("<main")[0]
 
     from django.test import Client
 
@@ -441,3 +443,21 @@ def test_a_person_with_a_connect_login_gets_the_standard_labs_layout_and_a_commc
     make_hq_user(only)
     bare = only.get("/commcare/").content.decode()
     assert 'id="labs-sidenav"' not in bare and 'data-testid="commcare-breadcrumb"' not in bare
+
+
+def test_commcare_is_in_the_sidebar_only_on_commcare_pages_and_on_the_overview_as_a_card(client):
+    from connect_labs.labs.models import UserCCHQToken, UserConnectToken
+
+    user = UserFactory()
+    for model in (UserConnectToken, UserCCHQToken):
+        model.objects.create(
+            user=user, access_token="t", refresh_token="r", expires_at=timezone.now() + timedelta(hours=1)
+        )
+    client.force_login(user)
+    session = client.session
+    session["labs_oauth"] = {"access_token": "t", "expires_at": (timezone.now() + timedelta(hours=1)).timestamp()}
+    session.save()
+    overview = client.get("/labs/overview/").content.decode()
+    rail = overview.split('id="labs-sidenav"')[1].split("<main")[0]
+    assert 'href="/commcare/"' not in rail  # not a standing item in the main menu
+    assert 'href="/commcare/"' in overview.split("<main")[1]  # reached from the Labs overview instead

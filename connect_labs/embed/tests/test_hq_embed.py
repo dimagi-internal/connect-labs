@@ -1,7 +1,7 @@
 """A CommCare project's page shown inside CommCare HQ to a person with no Connect login.
 
 HQ is an embed client with a ``commcare_host``. It may name only ``cchq:<its host>:<user>``, only for the
-``hq_workflow`` kind, and (unless it vouches) only people labs already knows to belong to the project.
+``commcare_workflow`` kind, and (unless it vouches) only people labs already knows to belong to the project.
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ def make_client(key, project, page, **overrides):
         "commcare_host": HOST,
         "jwks": {"keys": [public_jwk(key)]},
         "allowed_origins": [HQ_ORIGIN],
-        "resources": [{"kind": "hq_workflow", "id": page, "project_id": project.pk}],
+        "resources": [{"kind": "commcare_workflow", "id": page, "project_id": project.pk}],
     }
     fields.update(overrides)
     return EmbedClient.objects.create(**fields)
@@ -97,7 +97,7 @@ def hq(key, project, page):
 
 
 def resource(page, client_id="hq"):
-    return f"{LABS}/embed/c/{client_id}/hq_workflow/{page}/"
+    return f"{LABS}/embed/c/{client_id}/commcare_workflow/{page}/"
 
 
 def assertion(key, page, sub, **overrides):
@@ -130,7 +130,7 @@ def test_a_known_member_gets_a_token_with_no_connect_token_anywhere(client, key,
     response = redeem(client, assertion(key, page, sub_of()))
     assert response.status_code == 200, response.json()
     session = EmbedSession.objects.get()
-    assert (session.user, session.kind, session.resource_id) == (member, "hq_workflow", str(page))
+    assert (session.user, session.kind, session.resource_id) == (member, "commcare_workflow", str(page))
     assert response.json()["embed_url"] == resource(page)
 
 
@@ -168,7 +168,7 @@ def test_a_connect_style_client_cannot_show_a_project_page_or_name_commcare_peop
         identity_authority=True,
         jwks={"keys": [public_jwk(key)]},
         allowed_origins=[HQ_ORIGIN],
-        resources=[{"kind": "hq_workflow", "id": page, "project_id": project.pk}],
+        resources=[{"kind": "commcare_workflow", "id": page, "project_id": project.pk}],
     )
     with pytest.raises(ValidationError):
         row.full_clean()
@@ -202,7 +202,7 @@ def test_a_commcare_client_is_registered_narrowly(key, project, page, fields):
         identity_authority=fields.get("identity_authority", False),
         jwks={"keys": [public_jwk(key)]},
         allowed_origins=[HQ_ORIGIN],
-        resources=[{"kind": "hq_workflow", "id": page, "project_id": project.pk}],
+        resources=[{"kind": "commcare_workflow", "id": page, "project_id": project.pk}],
     )
     with pytest.raises(ValidationError):
         row.full_clean()
@@ -260,7 +260,7 @@ def test_vouching_never_promotes_and_never_reaches_a_project_on_another_host(
 
 def test_vouching_does_not_create_a_project_that_is_not_registered(client, key, project, page):
     row = make_client(key, project, page, vouches_for_membership=True)
-    row.resources = [{"kind": "hq_workflow", "id": page, "project_id": project.pk + 999}]
+    row.resources = [{"kind": "commcare_workflow", "id": page, "project_id": project.pk + 999}]
     row.save()
     assert redeem(client, assertion(key, page, sub_of("new@example.org"))).status_code == 400
     assert not HQProject.objects.filter(pk=project.pk + 999).exists()
@@ -272,7 +272,7 @@ def test_vouching_does_not_create_a_project_that_is_not_registered(client, key, 
 def start(client, token, page):
     # A browser's frame sends its own address as the Referer, which is what makes the middleware treat the
     # POST as "from a frame" (and so subject to the read-only rule).
-    payload = {"token": token, "client_id": "hq", "kind": "hq_workflow", "id": str(page)}
+    payload = {"token": token, "client_id": "hq", "kind": "commcare_workflow", "id": str(page)}
     return client.post(
         "/embed/session/", payload, content_type="application/json", HTTP_REFERER=resource(page), HTTP_ORIGIN=LABS
     )
@@ -294,7 +294,7 @@ def test_the_frame_draws_the_page_sandboxed_with_one_data_read_and_no_labs_route
     )
     assert data["sandbox"]["mode"] == "page" and data["is_page"] is True
     api = data["apiEndpoints"]
-    assert api["getPipelineData"] == f"/embed/hq/{hq.resources[0]['project_id']}/{page}/pipeline-data/"
+    assert api["getPipelineData"] == f"/embed/commcare/{hq.resources[0]['project_id']}/{page}/pipeline-data/"
     assert all(v is None for k, v in api.items() if k != "getPipelineData")
     assert (
         response["Content-Security-Policy"].startswith("frame-src ")
@@ -305,7 +305,7 @@ def test_the_frame_draws_the_page_sandboxed_with_one_data_read_and_no_labs_route
 def test_the_frames_one_read_returns_the_projects_rows_as_the_person(client, key, hq, page, project):
     frame = sign_in(client, key, page)
     client.get(frame)  # the frame is drawn once
-    url = f"/embed/hq/{project.pk}/{page}/pipeline-data/"
+    url = f"/embed/commcare/{project.pk}/{page}/pipeline-data/"
     got = client.get(url, HTTP_REFERER=LABS + frame)
     assert got.status_code == 200
     assert sorted((r["username"], r["forms"]) for r in got.json()["workers"]["rows"]) == [("ann", 2), ("bob", 1)]
@@ -314,7 +314,7 @@ def test_the_frames_one_read_returns_the_projects_rows_as_the_person(client, key
 def test_the_read_is_refused_without_the_frames_own_referrer_and_without_a_session(client, key, hq, page, project):
     frame = sign_in(client, key, page)
     client.get(frame)
-    url = f"/embed/hq/{project.pk}/{page}/pipeline-data/"
+    url = f"/embed/commcare/{project.pk}/{page}/pipeline-data/"
     assert client.get(url).status_code == 404  # no Referer from the frame: the cookie is not authority here
     client.cookies.clear()
     assert client.get(url, HTTP_REFERER=LABS + frame).status_code == 404
@@ -325,8 +325,8 @@ def test_a_session_reaches_nothing_but_its_own_pages_read(client, key, hq, page,
     client.get(frame)
     other = HQProject.objects.create(domain="other", hq_host=HOST)
     for path in (
-        f"/embed/hq/{other.pk}/{page}/pipeline-data/",  # another project
-        f"/embed/hq/{project.pk}/{page + 1}/pipeline-data/",  # another page
+        f"/embed/commcare/{other.pk}/{page}/pipeline-data/",  # another project
+        f"/embed/commcare/{project.pk}/{page + 1}/pipeline-data/",  # another page
         "/commcare/",  # the person's /hq/ home is not an embed route
         f"/commcare/projects/{project.pk}/",
         "/labs/workflow/api/1/pipeline-data/",
@@ -339,7 +339,7 @@ def test_a_session_reaches_nothing_but_its_own_pages_read(client, key, hq, page,
 def test_a_write_from_the_frame_is_refused(client, key, hq, page, project):
     frame = sign_in(client, key, page)
     client.get(frame)
-    got = client.post(f"/embed/hq/{project.pk}/{page}/pipeline-data/", {}, HTTP_REFERER=LABS + frame)
+    got = client.post(f"/embed/commcare/{project.pk}/{page}/pipeline-data/", {}, HTTP_REFERER=LABS + frame)
     assert got.status_code == 403
 
 
@@ -348,7 +348,7 @@ def test_a_person_removed_from_the_project_stops_reading_at_once_not_when_the_se
 ):
     frame = sign_in(client, key, page)
     client.get(frame)
-    url = f"/embed/hq/{project.pk}/{page}/pipeline-data/"
+    url = f"/embed/commcare/{project.pk}/{page}/pipeline-data/"
     assert client.get(url, HTTP_REFERER=LABS + frame).status_code == 200
     HQProjectMember.objects.filter(project=project).delete()
     got = client.get(url, HTTP_REFERER=LABS + frame)
@@ -359,7 +359,9 @@ def test_a_membership_that_lapses_mid_session_also_stops_it(client, key, hq, pag
     frame = sign_in(client, key, page)
     client.get(frame)
     HQProjectMember.objects.filter(project=project).update(verified_at=dj_timezone.now() - timedelta(days=3))
-    assert client.get(f"/embed/hq/{project.pk}/{page}/pipeline-data/", HTTP_REFERER=LABS + frame).status_code == 401
+    assert (
+        client.get(f"/embed/commcare/{project.pk}/{page}/pipeline-data/", HTTP_REFERER=LABS + frame).status_code == 401
+    )
 
 
 def test_the_session_carries_no_connect_session_and_the_users_labs_session_is_untouched(client, key, hq, page):
@@ -403,8 +405,8 @@ def test_a_project_on_another_host_is_refused_even_when_hq_does_not_vouch(client
 
 def test_registering_a_project_on_another_host_or_a_missing_one_is_refused(key, project, page):
     for entry in (
-        {"kind": "hq_workflow", "id": page, "project_id": project.pk + 999},
-        {"kind": "hq_workflow", "id": page, "project_id": project.pk},
+        {"kind": "commcare_workflow", "id": page, "project_id": project.pk + 999},
+        {"kind": "commcare_workflow", "id": page, "project_id": project.pk},
     ):
         HQProject.objects.filter(pk=project.pk).update(hq_host="other.example.org")
         row = EmbedClient(
@@ -428,8 +430,8 @@ def test_one_page_id_cannot_be_listed_twice_for_two_projects(key, project, page,
         jwks={"keys": [public_jwk(key)]},
         allowed_origins=[HQ_ORIGIN],
         resources=[
-            {"kind": "hq_workflow", "id": page, "project_id": project.pk},
-            {"kind": "hq_workflow", "id": page, "project_id": second.pk},
+            {"kind": "commcare_workflow", "id": page, "project_id": project.pk},
+            {"kind": "commcare_workflow", "id": page, "project_id": second.pk},
         ],
     )
     with pytest.raises(ValidationError):
@@ -439,9 +441,9 @@ def test_one_page_id_cannot_be_listed_twice_for_two_projects(key, project, page,
 def test_only_a_post_to_the_session_start_is_exempt_from_the_read_only_rule():
     from connect_labs.embed.kinds import get_kind
 
-    kind = get_kind("hq_workflow")
+    kind = get_kind("commcare_workflow")
     assert not kind.writes("POST", "/embed/session/")
     for method in ("PUT", "DELETE", "PATCH"):
         assert kind.writes(method, "/embed/session/")
-    assert kind.writes("POST", "/embed/hq/1/2/pipeline-data/")
-    assert not kind.writes("GET", "/embed/hq/1/2/pipeline-data/")
+    assert kind.writes("POST", "/embed/commcare/1/2/pipeline-data/")
+    assert not kind.writes("GET", "/embed/commcare/1/2/pipeline-data/")
