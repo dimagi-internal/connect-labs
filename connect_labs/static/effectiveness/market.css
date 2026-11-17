@@ -383,6 +383,11 @@
   font-size: 13px;
   margin-bottom: 4px;
 }
+.mk .gs {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 10px 0 2px;
+}
 .mk .srow {
   display: flex;
   justify-content: space-between;

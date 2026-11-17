@@ -75,7 +75,7 @@
   <div class="status" id="status">
     {% if live %}<span>Today's numbers, from the data and models as they are now.</span>
     {% else %}<span>{% if baselined %}Numbers as they were when last baselined{% else %}Numbers as of today{% endif %}.</span>
-      <a class="btn" id="check-today" href="?{% if data.reference %}ref={{ data.reference }}&{% endif %}live=1">Check against today's data</a><span>(takes about a minute)</span>{% endif %}
+      <a class="btn" id="check-today" href="?{% if data.reference %}ref={{ data.reference }}&{% endif %}live=1">Check against today's data</a><span>(takes about 30 seconds)</span>{% endif %}
     <label class="refpick">Compare against
       <select id="ref-pick" data-live="{% if live %}1{% endif %}">{% for c in cards %}<option value="{{ c.id }}"{% if c.reference %} selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></label>
     {% if group.mine %}<button type="button" class="btn" id="g-baseline" title="Make these numbers the ones later runs are compared with">Re-baseline</button><span id="b-state"></span>{% endif %}

@@ -46,7 +46,7 @@
   if (baseline)
     baseline.addEventListener('click', function () {
       document.getElementById('b-state').textContent =
-        'Computing today\u2019s numbers: about a minute…';
+        'Computing today\u2019s numbers: about 30 seconds…';
       send(data.baseline, 'POST', {}, 'b-state', function () {
         location.reload();
       });
