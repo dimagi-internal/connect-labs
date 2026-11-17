@@ -14,7 +14,6 @@ from django.views.decorators.http import require_POST
 from connect_labs.hqdata.access import may_use_project, visible_projects
 from connect_labs.hqdata.audit import project_denied
 from connect_labs.hqdata.external import SECURE_SSLMODES, check_connection
-from connect_labs.hqdata.identity import hq_host
 from connect_labs.hqdata.jobs import queue_sync
 from connect_labs.hqdata.models import (
     HQExternalDatabase,
@@ -55,11 +54,13 @@ def _is_admin(request: HttpRequest, project: HQProject) -> bool:
 def home(request: HttpRequest) -> HttpResponse:
     projects = visible_projects(request.user).order_by("domain")
     identity = HQIdentity.objects.filter(user=request.user).first()
-    registered = set(HQProject.objects.filter(hq_host=hq_host()).values_list("domain", flat=True))
-    unregistered = sorted(d for d in (identity.domains if identity else []) if d.lower() not in registered)
-    return render(
-        request, "hqdata/home.html", {"projects": projects, "identity": identity, "unregistered": unregistered}
-    )
+    # Every project CommCare lists for the person that they are not a member of here yet: ones nobody has
+    # added AND ones someone else already added (adding one of those joins it; register_project proves
+    # the person's own access either way). Offering only unregistered ones left a second person unable
+    # to reach a project a colleague had added.
+    mine = {p.domain.lower() for p in projects}
+    joinable = sorted(d for d in (identity.domains if identity else []) if d.lower() not in mine)
+    return render(request, "hqdata/home.html", {"projects": projects, "identity": identity, "unregistered": joinable})
 
 
 @hq_login_required
