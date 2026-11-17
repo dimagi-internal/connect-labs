@@ -168,24 +168,31 @@ def commcare_projects(user) -> tuple[list[dict], bool]:
     return [{"id": p.pk, "domain": p.domain} for p in visible_projects(user).order_by("domain")], True
 
 
-def from_commcare(request, body: dict) -> dict:
-    """Either lens from a CommCare project's stored forms, as the person: nothing is stored, only counts come back."""
-    from connect_labs.hqdata.access import ProjectAccessDenied, may_use_project
+def _project_of_person(request, body: dict):
+    """The project the person named if it is theirs; the same answer whether it does not exist or is not theirs."""
+    from connect_labs.hqdata.access import may_use_project
     from connect_labs.hqdata.models import HQProject
-    from connect_labs.hqdata.pipelines import PipelineProblem
-    from connect_labs.hqdata.stores import StoreUnavailable
 
-    spec, labels, _ = build_spec(body, need_opps=False)
-    projects, connected = commcare_projects(request.user)
+    _projects, connected = commcare_projects(request.user)
     if not connected:
         raise CommCareNotConnected()
     try:
         project = HQProject.objects.filter(pk=int(body.get("project_id"))).first()
     except (TypeError, ValueError):
         project = None
-    # The same answer whether the project does not exist or is not the person's.
     if project is None or not may_use_project(request.user, project):
         raise BadRequest("choose one of your CommCare projects")
+    return project
+
+
+def from_commcare(request, body: dict) -> dict:
+    """Either lens from a CommCare project's stored forms, as the person: nothing is stored, only counts come back."""
+    from connect_labs.hqdata.access import ProjectAccessDenied
+    from connect_labs.hqdata.pipelines import PipelineProblem
+    from connect_labs.hqdata.stores import StoreUnavailable
+
+    spec, labels, _ = build_spec(body, need_opps=False)
+    project = _project_of_person(request, body)
     try:
         rows, served = commcare_source.read(
             request.user,
@@ -205,6 +212,31 @@ def from_commcare(request, body: dict) -> dict:
         result["households_total"] = result.get("households_total", len(rows))
     result["commcare"] = {"project": project.domain, "households": len(rows)}
     return result
+
+
+def _plain(text) -> str:
+    """A name as one field of a facility line: no separators."""
+    return str(text or "").replace(",", " ").replace(";", " ").replace("\n", " ").strip()
+
+
+def commcare_facilities(request, body: dict) -> dict:
+    """The project's facilities as CommCare holds them (locations of the facility type), as the facility list the
+    page runs on. Read live with the person's own CommCare login and never stored."""
+    from connect_labs.hqdata import locations
+    from connect_labs.labs.integrations.commcare.cchq_tokens import cchq_token_or_none
+
+    project = _project_of_person(request, body)
+    try:
+        found = commcare_source.facility_list(cchq_token_or_none(request.user), project.domain, body.get("type_id"))
+    except locations.LocationsError as e:
+        raise BadRequest(str(e)) from e
+    except (TypeError, ValueError) as e:
+        raise BadRequest("type_id is a location type id") from e
+    found["text"] = "\n".join(
+        f"{f['id']},{f['lon']},{f['lat']},{_plain(f['district'])}" for f in found.pop("facilities")
+    )
+    found["facilities"] = found["text"].count("\n") + 1 if found["text"] else 0
+    return found
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
@@ -261,6 +293,12 @@ class BuildingsReachedCommCare(BuildingsReachedRun):
                 },
                 status=403,
             )
+
+
+class BuildingsReachedFacilities(BuildingsReachedCommCare):
+    """The project's facilities from CommCare's locations, for the facility list."""
+
+    action = staticmethod(commcare_facilities)
 
 
 class BuildingsReachedLoad(BuildingsReachedRun):
