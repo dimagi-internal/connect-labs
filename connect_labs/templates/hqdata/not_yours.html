@@ -1,0 +1,12 @@
+{% extends "hqdata/base.html" %}
+{% block hq_content %}
+  <div class="mx-auto max-w-lg rounded-xl border border-gray-200 bg-white p-8 shadow-sm" data-testid="hq-not-yours">
+    <h1 class="mb-2 text-xl font-semibold">This isn't one of your projects</h1>
+    <p class="mb-4 text-sm text-gray-700">
+      Either the address is wrong, or you have not added this CommCare project here yet. If it is a project you
+      work in, go to your projects and add it: labs checks with CommCare that your account can read its forms, then
+      the page opens.
+    </p>
+    <a href="{% url 'hq:home' %}" class="rounded-lg bg-brand-indigo px-4 py-2 text-sm font-semibold text-white">Go to my projects</a>
+  </div>
+{% endblock %}

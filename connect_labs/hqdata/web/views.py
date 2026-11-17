@@ -29,7 +29,7 @@ from connect_labs.hqdata.pipelines import PipelineProblem, config_for, run_pipel
 from connect_labs.hqdata.projects import Refused, register_project, set_storage
 from connect_labs.hqdata.store_schema import SCHEMA_NAME_RE
 from connect_labs.hqdata.store_switch import SwitchRefused, switch_store
-from connect_labs.hqdata.web.decorators import hq_login_required
+from connect_labs.hqdata.web.decorators import ProjectNotYours, hq_login_required
 
 
 def render(request, template, context=None, **kwargs):
@@ -42,7 +42,7 @@ def _project_for(request: HttpRequest, project_id: int) -> HQProject:
     project = HQProject.objects.filter(pk=project_id).first()
     if project is None or not may_use_project(request.user, project):
         project_denied(project_id, request.user, kind="page")
-        raise Http404
+        raise ProjectNotYours
     return project
 
 

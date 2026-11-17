@@ -390,3 +390,15 @@ def test_only_its_author_or_an_admin_can_delete_a_pipeline(client):
     assert HQPipeline.objects.filter(pk=other_members_pipeline.pk).exists()
     client.post(f"/hq/projects/{project.pk}/pipelines/{mine.pk}/", {"action": "delete"})
     assert not HQPipeline.objects.filter(pk=mine.pk).exists()
+
+
+def test_a_project_i_have_not_joined_says_what_to_do_and_says_it_the_same_whether_or_not_it_exists(client):
+    make_hq_user(client, domains=("demo",))
+    stranger = UserFactory()
+    theirs = add_project(stranger, "theirs")
+    for path in (f"/hq/projects/{theirs.pk}/", "/hq/projects/999999/", f"/hq/projects/{theirs.pk}/workflows/1/"):
+        resp = client.get(path)
+        assert resp.status_code == 404, path
+        body = resp.content.decode()
+        assert "isn't one of your projects" in body and 'href="/hq/"' in body, path
+        assert "theirs" not in body  # nothing about the project leaks
