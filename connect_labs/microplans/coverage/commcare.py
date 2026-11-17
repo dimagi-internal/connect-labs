@@ -13,6 +13,7 @@ Nothing here is stored and nothing leaves as a household or a point: the page sh
 
 from __future__ import annotations
 
+from connect_labs.hqdata import locations
 from connect_labs.hqdata.pipelines import data_source_for, rows_for_schema
 from connect_labs.microplans.coverage import check
 
@@ -80,3 +81,32 @@ def read(user, project, spec: check.CheckSpec, *, app_id: str = "", xmlns: str =
     forms = rows_for_schema(user, project, pipeline_schema(spec, project.pk, app_id=app_id, xmlns=xmlns))
     points, served = reduce_rows(forms, spec)
     return points, check.parse_served(served)
+
+
+def facility_list(access_token: str, domain: str, type_id=None) -> dict:
+    """The project's facilities as CommCare holds them: its locations of the facility type, with coordinates.
+
+    ``type_id`` names the location type; left out, the one that looks like the health facility is used. Returns
+    ``{"types": [{id, name, count, with_coordinates}], "type_id", "facilities": [{id, lon, lat, district}],
+    "without_coordinates"}``; ``id`` is the location id, which is what a form records as its facility. Raises
+    ``locations.LocationsError`` when CommCare cannot give them."""
+    types, found = locations.fetch(access_token, domain)
+    if type_id in (None, ""):
+        type_id = locations.facility_type(types)
+    counts = {t["id"]: {"id": t["id"], "name": t["name"], "count": 0, "with_coordinates": 0} for t in types}
+    for loc in found:
+        entry = counts.get(loc["type_id"])
+        if entry:
+            entry["count"] += 1
+            entry["with_coordinates"] += 1 if loc["lon"] is not None and loc["lat"] is not None else 0
+    mine = [loc for loc in found if type_id is not None and loc["type_id"] == type_id]
+    placed = [loc for loc in mine if loc["lon"] is not None and loc["lat"] is not None]
+    return {
+        "types": [counts[t["id"]] for t in types],
+        "type_id": type_id,
+        "facilities": [
+            {"id": loc["location_id"], "lon": loc["lon"], "lat": loc["lat"], "district": loc["parent"]}
+            for loc in placed
+        ],
+        "without_coordinates": len(mine) - len(placed),
+    }

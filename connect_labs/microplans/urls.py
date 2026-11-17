@@ -22,6 +22,11 @@ urlpatterns = [
         reached_page.BuildingsReachedCommCare.as_view(),
         name="buildings_reached_commcare",
     ),
+    path(
+        "buildings-reached/commcare/facilities/",
+        reached_page.BuildingsReachedFacilities.as_view(),
+        name="buildings_reached_facilities",
+    ),
     path("buildings-reached/upload/", reached_page.BuildingsReachedUpload.as_view(), name="buildings_reached_upload"),
     path(
         "buildings-reached/template.csv",

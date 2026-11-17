@@ -38,13 +38,34 @@ def _commcare_check(user, settings, project_id, app_id, xmlns) -> dict:
     from connect_labs.hqdata.stores import StoreUnavailable
     from connect_labs.microplans.coverage import commcare as commcare_source
 
+    project = HQProject.objects.filter(pk=project_id).first()
+    if project is None or not may_use_project(user, project):
+        raise MCPToolError("NOT_FOUND", "No such CommCare project, or you are not a member of it.")
+    settings = dict(settings or {})
+    if not settings.get("facilities"):
+        # No facility list given: the project's own, from its CommCare locations (as the caller's CommCare login).
+        from connect_labs.hqdata import locations
+        from connect_labs.labs.integrations.commcare.cchq_tokens import cchq_token_or_none
+
+        token = cchq_token_or_none(user)
+        if token is None:
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                "Connect your CommCare login (/labs/commcare/initiate/) so the facilities can be read from the "
+                "project's locations, or pass settings.facilities.",
+                {"reason": "commcare_not_connected"},
+            )
+        try:
+            settings["facilities"] = [
+                {"id": f["id"], "lon": f["lon"], "lat": f["lat"]}
+                for f in commcare_source.facility_list(token, project.domain)["facilities"]
+            ]
+        except locations.LocationsError as e:
+            raise MCPToolError("INVALID_SCHEMA", str(e), {"reason": "commcare_locations"}) from e
     try:
         spec = check.CheckSpec.from_dict(settings)
     except check.SpecError as e:
         raise MCPToolError("INVALID_SCHEMA", str(e), {"reason": "bad_settings"}) from e
-    project = HQProject.objects.filter(pk=project_id).first()
-    if project is None or not may_use_project(user, project):
-        raise MCPToolError("NOT_FOUND", "No such CommCare project, or you are not a member of it.")
     try:
         rows, _served = commcare_source.read(user, project, spec, app_id=app_id or "", xmlns=xmlns or "")
         result = check.run_check(rows, spec)
@@ -79,7 +100,9 @@ def _commcare_check(user, settings, project_id, app_id, xmlns) -> dict:
                 "description": (
                     "Read the households from this CommCare project's stored forms (a campaign CommCare ran: Niger "
                     "SMC) instead of Connect visits. You must belong to the project; the forms are the ones whose "
-                    "paths `settings` names. Optional `commcare_app_id` / `commcare_xmlns` narrow to one app or form."
+                    "paths `settings` names. Optional `commcare_app_id` / `commcare_xmlns` narrow to one app or form. "
+                    "Without `settings.facilities` the facilities are the project's CommCare locations of the "
+                    "facility type."
                 ),
             },
             "commcare_app_id": {"type": "string"},

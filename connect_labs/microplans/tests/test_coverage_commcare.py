@@ -217,3 +217,132 @@ def test_the_tool_reads_a_project_as_a_member_and_refuses_anyone_else(person, pr
         with pytest.raises(MCPToolError) as caught:
             handler(user=UserFactory(), settings=settings, commcare_project_id=project.pk)
     assert caught.value.code == "NOT_FOUND"
+
+
+# --- the facilities come from CommCare's locations ------------------------------------------------------------
+
+
+def hq_page(objects, next_path=None):
+    class Resp:
+        status_code = 200
+
+        def json(self):
+            return {"meta": {"next": next_path}, "objects": objects}
+
+    return Resp()
+
+
+TYPES = [
+    {"id": 1, "name": "District", "code": "district"},
+    {"id": 2, "name": "CSI", "code": "csi"},
+]
+
+
+def locations_get(url, headers=None, timeout=None):
+    if "/location_type/" in url:
+        return hq_page(TYPES)
+    base = "https://www.commcarehq.org/a/niger-smc/api/v0.5/location_type/"
+    place = "https://www.commcarehq.org/a/niger-smc/api/v0.5/location/"
+    if "offset=1" in url:
+        return hq_page(
+            [
+                {
+                    "id": 12,
+                    "location_id": "csi-b",
+                    "name": "CSI B",
+                    "latitude": None,
+                    "longitude": None,
+                    "parent": f"{place}10/",
+                    "location_type": f"{base}2/",
+                }
+            ]
+        )
+    return hq_page(
+        [
+            {
+                "id": 10,
+                "location_id": "dist-1",
+                "name": "Maradi, Ville",
+                "latitude": 13.5,
+                "longitude": 7.1,
+                "parent": None,
+                "location_type": f"{base}1/",
+            },
+            {
+                "id": 11,
+                "location_id": "csi-a",
+                "name": "CSI A",
+                "latitude": "13.51",
+                "longitude": "7.09",
+                "parent": f"{place}10/",
+                "location_type": f"{base}2/",
+            },
+        ],
+        next_path="?limit=1000&offset=1",
+    )
+
+
+def test_the_facilities_are_the_projects_locations_of_the_facility_type_with_their_district(person, project):
+    with patch("connect_labs.hqdata.locations.httpx.get", locations_get):
+        found = source.facility_list("tok", "niger-smc")
+    assert found["type_id"] == 2  # the type that looks like the health facility
+    assert found["facilities"] == [{"id": "csi-a", "lon": 7.09, "lat": 13.51, "district": "Maradi, Ville"}]
+    assert found["without_coordinates"] == 1  # csi-b has none in CommCare: said, not drawn
+    assert {t["name"]: (t["count"], t["with_coordinates"]) for t in found["types"]} == {
+        "District": (1, 1),
+        "CSI": (2, 1),
+    }
+
+
+def test_the_page_fills_the_facility_list_from_commcare_and_the_run_uses_it(client, person, project):
+    with patch("connect_labs.hqdata.locations.httpx.get", locations_get):
+        resp = client.post(
+            reverse("microplans:buildings_reached_facilities"),
+            data=json.dumps({"project_id": project.pk}),
+            content_type="application/json",
+        )
+    assert resp.status_code == 200
+    out = resp.json()
+    assert (
+        out["text"] == "csi-a,7.09,13.51,Maradi  Ville" and out["facilities"] == 1 and out["without_coordinates"] == 1
+    )
+
+
+def test_a_person_without_commcare_or_the_project_gets_no_locations(client, person, project):
+    other = create_project(UserFactory(), "secret", hq_host=HOST, can_read_domain=lambda: True)
+    resp = client.post(
+        reverse("microplans:buildings_reached_facilities"),
+        data=json.dumps({"project_id": other.pk}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400 and "your CommCare projects" in resp.json()["message"]
+
+
+def test_commcare_refusing_the_locations_is_said_in_words(client, person, project):
+    def refused(url, headers=None, timeout=None):
+        return type("R", (), {"status_code": 403, "json": lambda self: {}})()
+
+    with patch("connect_labs.hqdata.locations.httpx.get", refused):
+        resp = client.post(
+            reverse("microplans:buildings_reached_facilities"),
+            data=json.dumps({"project_id": project.pk}),
+            content_type="application/json",
+        )
+    assert resp.status_code == 400 and "permission to view locations" in resp.json()["message"]
+
+
+def test_the_tool_needs_no_facility_list_for_a_project(person, project):
+    import connect_labs.mcp.tools  # noqa: F401 -- registers the tools
+    from connect_labs.mcp.tool_registry import get_tool
+
+    handler = get_tool("microplans_coverage_check").handler
+    with (
+        patch("connect_labs.hqdata.locations.httpx.get", locations_get),
+        patch.object(check, "default_fetch", lambda f: buildings_at),
+    ):
+        out = handler(
+            user=person,
+            settings={"catchment_k": 10, "group_path": "form.localisation.csi_id"},
+            commcare_project_id=project.pk,
+        )
+    assert [a["group"] for a in out["areas"]] == ["csi-a"]

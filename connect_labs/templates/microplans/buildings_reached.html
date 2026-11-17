@@ -97,6 +97,11 @@
               <label>App id (optional) <input id="br-app" placeholder="narrow to one app"></label>
               <label>Form namespace (optional) <input id="br-xmlns" placeholder="narrow to one form"></label>
             </div>
+            <div class="br-form">
+              <label>Facility type <select id="br-factype"><option value="">(choose)</option></select></label>
+              <div style="display:flex;align-items:flex-end"><button type="button" id="br-facload" class="br-link">Load facilities from CommCare</button></div>
+            </div>
+            <p class="br-note" id="br-facnote">The facilities are this project's CommCare locations of the facility type (a form records the facility as a location id), with their coordinates from CommCare. Nothing to type in.</p>
             <p class="br-note">Read from the project's stored forms as you (the project's own members only), using the form paths below, and never saved. Only counts and 1 km squares come back, never a household or a point. Sync the project first on its <a class="br-link" href="/commcare/">CommCare page</a> if it is new or out of date.</p>
           {% else %}
             <p class="br-note">You have not added a CommCare project to labs yet. Add one on the <a class="br-link" href="/commcare/">CommCare page</a> (labs keeps a copy of the project's forms and cases so a report can read them), then come back.</p>
@@ -163,6 +168,7 @@
   var POP_URL = "{% url 'microplans:buildings_reached_population' %}";
   var UPLOAD_URL = "{% url 'microplans:buildings_reached_upload' %}";
   var COMMCARE_URL = "{% url 'microplans:buildings_reached_commcare' %}";
+  var FACILITIES_URL = "{% url 'microplans:buildings_reached_facilities' %}";
   var LOW_POINTS = 0.10;
   var params = new URLSearchParams(location.search);
   Object.keys(FIELDS).forEach(function (k) { if (params.get(k)) { $(FIELDS[k]).value = params.get(k); } });
@@ -453,6 +459,31 @@
     $('br-opps-wrap').hidden = next !== 'opps';
     $('br-upload-wrap').hidden = next !== 'upload';
     $('br-commcare-wrap').hidden = next !== 'commcare';
+    if (next === 'commcare') { loadFacilities(false); }
+  }
+  function loadFacilities(force) {
+    var proj = $('br-project');
+    if (!proj) { return Promise.resolve(); }
+    if (!force && $('br-fac').value.trim()) { return Promise.resolve(); }
+    var note = $('br-facnote');
+    note.className = 'br-note';
+    note.textContent = 'Reading the project\'s locations from CommCare...';
+    return post(FACILITIES_URL, {project_id: proj.value, type_id: $('br-factype').value})
+      .then(function (r) {
+        var sel = $('br-factype');
+        sel.innerHTML = '<option value="">(choose)</option>' + r.types.map(function (t) {
+          return '<option value="' + t.id + '"' + (t.id === r.type_id ? ' selected' : '') + '>' + esc(t.name) + ' (' + t.with_coordinates + '/' + t.count + ' with coordinates)</option>';
+        }).join('');
+        if (r.type_id === null || r.type_id === undefined) {
+          note.className = 'br-note br-err';
+          note.textContent = 'Choose which location type is the health facility, then load.';
+          return;
+        }
+        $('br-fac').value = r.text;
+        note.className = 'br-note';
+        note.textContent = r.facilities + ' facilities loaded from CommCare' + (r.without_coordinates ? '; ' + r.without_coordinates + ' have no coordinates in CommCare and cannot be drawn (their households are counted under data quality)' : '') + '.';
+      })
+      .catch(function (e) { note.className = 'br-note br-err'; note.textContent = e.message; });
   }
   function postForm(url, body, file, lensName) {
     var fd = new FormData();
@@ -590,7 +621,11 @@
     } else if (source === 'commcare') {
       if (!$('br-project')) { setOpen(true); $('br-run').disabled = false; $('br-status').className = 'br-status br-err'; $('br-status').textContent = 'Connect your CommCare login and choose a project.'; return; }
       $('br-status').textContent = 'Reading the project\'s forms and the footprints. Nothing is saved.';
-      chain = post(COMMCARE_URL, Object.assign({}, body, {lens: 'buildings'}));
+      chain = loadFacilities(false).then(function () {
+        body.facilities = $('br-fac').value.trim(); lastBody = body;
+        if (!body.facilities) { throw new Error('No facilities yet: choose the location type that is the health facility.'); }
+        return post(COMMCARE_URL, Object.assign({}, body, {lens: 'buildings'}));
+      });
       empty = 'No household with a recorded visit was found in this project. Check the app and form namespace, the form paths under Change settings, and that the project has synced.';
     } else {
       // Load first (its own request, so the visits are committed), then read them.
@@ -608,12 +643,13 @@
   $('br-form').addEventListener('submit', function (e) { e.preventDefault(); run(); });
   $('br-change').addEventListener('click', function () { setOpen(true); });
   Array.prototype.forEach.call(document.getElementsByName('br-source'), function (r) { r.addEventListener('change', function () { setSource(r.value); }); });
-  setSource(source);
-  if ($('br-connect')) { $('br-connect').addEventListener('click', function () { this.href = this.getAttribute('href').split('?')[0] + '?next=' + encodeURIComponent(location.pathname + '?source=commcare'); }); }
   if (params.get('project_id') && $('br-project')) { $('br-project').value = params.get('project_id'); }
   if (params.get('app_id') && $('br-app')) { $('br-app').value = params.get('app_id'); }
   if (params.get('xmlns') && $('br-xmlns')) { $('br-xmlns').value = params.get('xmlns'); }
-  if ((source === 'opps' && params.get('opps') && params.get('facilities')) || (source === 'commcare' && params.get('project_id') && params.get('facilities') && $('br-project'))) { run(); } else { setOpen(true); }
+  setSource(source);
+  if ($('br-facload')) { $('br-facload').addEventListener('click', function () { loadFacilities(true); }); $('br-factype').addEventListener('change', function () { loadFacilities(true); }); $('br-project').addEventListener('change', function () { $('br-fac').value = ''; $('br-factype').value = ''; loadFacilities(true); }); }
+  if ($('br-connect')) { $('br-connect').addEventListener('click', function () { this.href = this.getAttribute('href').split('?')[0] + '?next=' + encodeURIComponent(location.pathname + '?source=commcare'); }); }
+  if ((source === 'opps' && params.get('opps') && params.get('facilities')) || (source === 'commcare' && params.get('project_id') && $('br-project'))) { run(); } else { setOpen(true); }
 }());
 </script>
 {% endblock %}
