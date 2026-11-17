@@ -90,10 +90,14 @@ where a place has them they are carried through (`mortality.py`, `reliability.py
   at the 5th and 95th percentile, how much of the shown plan a typical redraw's own best plan contains (`overlap`), and per
   place the share of redraws it is chosen in (`p_in_plan`). No interval, no range: places without one are left as they
   were, and `reliability` is `null` when no place has any.
-* Not done: subnational estimates are benchmarked to the national estimate of their own release, which is later revised
-  (Zimbabwe's current national series says 32.2 for 2021 while its provinces' 2021 values average 22.6). Putting territories
-  back on the current national needs the whole country's set, so it waits for that. Production has no bounds until the
-  mortality loaders are re-run (`load_indicators --stage mortality`).
+* **Levelling.** IGME's subnational estimates are benchmarked to the national estimate of their own release, which is later
+  revised (Zimbabwe's current national series says 33.7 while its provinces' last model averages about 23). So a country's
+  territories are scaled by `national / births-weighted mean` (`Baselines.level_factor`), which makes a territory-grain plan
+  add up to the same country as the country grain. It needs every admin-1 unit of the country, each with its own figure and
+  births (never a partial selection, never a country levelled on part of its territories), the row says "levelled to the
+  country's current IGME figure (x1.05)" and a factor beyond 1.5 either way is said to be a large adjustment. The published
+  figure is kept as `risk_raw`. Production has no bounds until the mortality loaders are re-run (`load_indicators --stage
+  mortality`).
 
 **Delivery cost by place.** The models price a person at one figure everywhere (Child Health Campaign $1.84 a child, Kangaroo
 Care $60 a baby), and real delivery does not: the delivered Child Health Campaign opportunities in Nigeria cost near $0.80 a

@@ -225,6 +225,15 @@ class Nmr(NamedTuple):
     #: "own" (measured below the country), "ratio" (the country's scaled by the area's under-five mortality)
     #: or "country".
     kind: str = "country"
+    #: What the source published, before the territory was levelled to the country's current figure (``kind`` "own"
+    #: only).
+    published: float | None = None
+    #: The factor it was levelled by (1 when it was not).
+    level: float = 1.0
+
+
+#: A level factor further from 1 than this is applied but said to be large: the two releases disagree a lot there.
+LARGE_LEVEL = 1.5
 
 
 class _Ctx:
@@ -256,6 +265,7 @@ class Baselines:
         self._resolver = BulkResolver(boundaries) if boundaries else None
         self._isos = sorted({b.iso_code for b in boundaries})
         self._births_audit: dict[str, dict] | None = None
+        self._levels: dict[str, float | None] = {}
         self._country_rows: dict[str, dict[str, list]] = {}
         if not boundaries:  # country figures only: no database needed
             return
@@ -312,6 +322,41 @@ class Baselines:
             self._births_audit = {a["iso"]: a for a in derive.births_audit(self._isos)} if self._isos else {}
         return self._births_audit.get(iso3)
 
+    def level_factor(self, iso3: str, national: float | None) -> float | None:
+        """The factor that makes a country's territories average (births-weighted) to its current national figure.
+
+        IGME's subnational estimates are benchmarked to the national estimate of their own release, which is later
+        revised: Zimbabwe's current national series says 33.7 while the provinces' last model averages about 23. The
+        national figure is the better-constrained quantity and the territories give the pattern around it, so each
+        territory is scaled by ``national / weighted mean``, and a territory-grain plan then adds up to the same
+        country as the country grain. It needs EVERY admin-1 unit of the country (a partial selection would level to
+        the wrong mean), each with its own figure and births; otherwise None: a country is never levelled on part of
+        its territories.
+        """
+        if national is None:
+            return None
+        if iso3 not in self._levels:
+            self._levels[iso3] = self._compute_level(iso3, national)
+        return self._levels[iso3]
+
+    def _compute_level(self, iso3: str, national: float) -> float | None:
+        units = list(boundary_set.owned().filter(iso_code=iso3, admin_level=1).defer("geometry"))
+        if len(units) < 2:
+            return None
+        resolver = BulkResolver(units)
+        total = weighted = 0.0
+        for b in units:
+            try:
+                nmr, births = resolver.get("nmr", b), resolver.get("births", b)
+            except KeyError:
+                return None
+            nmr = _local(nmr)
+            if nmr is None or nmr.source != "igme_subnational" or not births or births.value <= 0:
+                return None
+            total += births.value
+            weighted += births.value * nmr.value
+        return national / (weighted / total) if total and weighted else None
+
     def place_figure(self, indicator: str, iso3: str, boundary: AdminBoundary | None) -> tuple[float, str] | None:
         """One baseline figure for a place (a ceiling's, ``scenario.CAPS``) and where it came from.
 
@@ -345,7 +390,21 @@ class Baselines:
             own = _local(ctx.get("nmr"))
             if own is not None:
                 lvl, where = _level(own)
-                return Nmr(own.value, f"{where} ({lvl}), {_src(own)}", _se(own), national_se, "own")
+                factor = self.level_factor(iso3, national) if own.source == "igme_subnational" else None
+                how = f"{where} ({lvl}), {_src(own)}"
+                if factor is not None:
+                    how += f", levelled to the country's current IGME figure (x{factor:.2f})"
+                    if not 1 / LARGE_LEVEL <= factor <= LARGE_LEVEL:
+                        how += ": a large adjustment, the subnational and national releases disagree a lot here"
+                return Nmr(
+                    own.value * (factor or 1.0),
+                    how,
+                    _se(own),
+                    national_se,
+                    "own",
+                    own.value if factor else None,
+                    factor or 1.0,
+                )
             got = _ratio(ctx, "u5mr") if national is not None else None
             if got is not None:
                 ratio, area = got
