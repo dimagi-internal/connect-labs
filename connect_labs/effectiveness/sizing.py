@@ -22,8 +22,7 @@ def _size(model: str, trust: float, run: dict) -> dict:
         place_risk=run["place_risk"],
         target=run["target"],
         trust=trust,
-        min_place=run["min_place"],
-        max_countries=run["max_countries"],
+        limits=run["limits"],
     )
 
 
@@ -80,8 +79,7 @@ def market_of(scenario: Scenario) -> dict:
                 dials=scenario.dials_for(k),
                 place_risk=scenario.place_risk,
                 target=scenario.target,
-                min_place=scenario.min_place,
-                max_countries=scenario.max_countries,
+                limits=scenario.limits(),
             )
             out = _size(k, scenario.trust / 100, run)
             # A plan made at the figures as they are, and how it holds up if they are only half to be believed.

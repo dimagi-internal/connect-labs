@@ -680,4 +680,50 @@ release to bump to, so unlike MAP's malaria layers this one does not refresh.
         ],
         "scanned_now": True,
     },
+    {
+        "indicator": "conflict_rate",
+        "topic": "which-source",
+        "summary": (
+            "UCDP GED is the conflict source we can use: georeferenced reported deaths, CC BY 4.0, bulk CSV. "
+            "It says where fighting is; it does not say whether a team can work there."
+        ),
+        "body": """
+A delivery plan that ranks territories by cost-effectiveness will happily rank an active war zone first, because
+newborn mortality there is high. The plan needs to say where the fighting is and let a person set a ceiling. It must
+not multiply a multiple by a safety coefficient: whether a team can work somewhere is a decision, not a number.
+
+UCDP's Georeferenced Event Dataset codes each reported lethal event of organised violence (state-based, non-state,
+one-sided) with a point, a coordinate precision (`where_prec`) and best/low/high death estimates. We place each event
+in the territory its point falls in (only events coded to admin-1 or better), average the latest three complete years
+and divide by population for a rate per 100,000. The country row carries `located_share`: how much of the country's
+coded deaths could be placed. Where a war is mostly coded "northern region", territory figures are floors.
+
+**Read it as reported, not true.** A quiet figure in a place with few journalists is weaker evidence than a loud one.
+A place with no figure is never treated as safe or unsafe by the plan: it stays in.
+
+ACLED is the other well-known source. It needs a commercial licence for use by a for-profit organisation, so it is not
+loaded; the policy would admit it as a second source if one were obtained.
+""".strip(),
+        "checks": [
+            {"kind": "source", "indicator": "conflict_deaths", "source": "ucdp", "expected": True},
+            {"kind": "measure", "code": "conflict_rate", "expected": {"kind": "rate"}},
+        ],
+        "alternatives": [
+            {
+                "name": "UCDP Georeferenced Event Dataset (GED)",
+                "url": "https://ucdp.uu.se/downloads/",
+                "licence": "CC BY 4.0",
+                "verdict": "adopted",
+                "why": "Open, georeferenced, with low/high estimates and a release each year; bulk CSV, no key.",
+            },
+            {
+                "name": "ACLED",
+                "url": "https://acleddata.com/",
+                "licence": "restricted; corporate licence for commercial use",
+                "verdict": "rejected",
+                "why": "Richer event types and faster, but not usable here without a commercial licence.",
+            },
+        ],
+        "scanned_now": True,
+    },
 )

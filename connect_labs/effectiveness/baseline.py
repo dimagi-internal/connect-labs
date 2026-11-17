@@ -240,7 +240,7 @@ class Baselines:
         # row ran a production task out of memory, 2026-11-09).
         adm0 = boundary_set.owned().filter(iso_code__in=isos, admin_level=0).values("pk")
         for iso, ind, src, year, value, low, high, extra in IndicatorValue.objects.filter(
-            boundary__in=adm0, indicator__in=("u5mr", "imr", "nmr")
+            boundary__in=adm0, indicator__in=("u5mr", "imr", "nmr", "conflict_rate")
         ).values_list("iso_code", "indicator", "source", "year", "value", "ci_low", "ci_high", "extra"):
             self._country_rows.setdefault(iso, {}).setdefault(ind, []).append(
                 _Row(src, year, value, low, high, (extra or {}).get("interval_level", 0.95))
@@ -279,6 +279,20 @@ class Baselines:
             v.country_value = country
             out[key] = v
         return out
+
+    def conflict(self, iso3: str, boundary: AdminBoundary | None) -> tuple[float, str] | None:
+        """Reported conflict deaths per 100,000 people a year (UCDP) for a place, and where it came from.
+
+        A territory's own figure, or the country's for ``boundary`` None. None when Labs holds none (a place UCDP
+        was not loaded for): never a zero, because nothing then says the place is quiet.
+        """
+        if boundary is not None and self._resolver is not None:
+            ctx = _Ctx(self._resolver, boundary, {}, self._country_rows.get(iso3, {}))
+            own = _local(ctx.get("conflict_rate"))
+            return (own.value, f"{_level(own)[1]}, {_src(own)}") if own else None
+        rows = self._country_rows.get(iso3, {}).get("conflict_rate", [])
+        latest = max(rows, key=lambda r: r.year) if rows else None
+        return (latest.value, f"the country's, {latest.source} {latest.year}") if latest else None
 
     def newborn_mortality(self, iso3: str, boundary: AdminBoundary | None) -> Nmr | None:
         """Neonatal deaths per 1,000 live births for a place, how the figure was made, and how sure it is. None when

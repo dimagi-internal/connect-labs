@@ -208,7 +208,14 @@ class TestTrustAndTheCheck:
             {"models": "kc", "grain": "territory", "target": "60000", "min_place": "1000", "max_countries": "1"}
         )["models"][0]["plan"]
         assert plan["countries"][0]["country"] == "Nigeria" and plan["countries"][0]["places"] == len(plan["places"])
-        assert plan["limits"] == {"min_place": 1000.0, "max_countries": 1, "left_out": 0}
+        assert plan["limits"] == {
+            "min_place": 1000.0,
+            "max_countries": 1,
+            "max_conflict": None,
+            "left_out": 0,
+            "left_out_small": 0,
+            "left_out_conflict": 0,
+        }
 
     def test_the_countrys_figure_reaches_the_row_and_exactly_twice_or_half_is_not_far(self, nigeria, sized):
         rows = {r["name"]: r for r in sized({"models": "kc", "grain": "territory"})["models"][0]["rows"]}

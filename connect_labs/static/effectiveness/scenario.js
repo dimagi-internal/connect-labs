@@ -30,6 +30,7 @@
       target: start.target == null ? null : start.target,
       min_place: start.min_place == null ? null : start.min_place,
       max_countries: start.max_countries == null ? null : start.max_countries,
+      max_conflict: start.max_conflict == null ? null : start.max_conflict,
       trust: start.trust == null ? 100 : start.trust,
       place_risk: start.place_risk !== false,
       grain: start.grain || COUNTRY,
@@ -107,6 +108,8 @@
         p.set('min_place', str(s.min_place));
       if (s.max_countries != null && s.max_countries > 0)
         p.set('max_countries', str(s.max_countries));
+      if (s.max_conflict != null && s.max_conflict > 0)
+        p.set('max_conflict', str(s.max_conflict));
       if (s.trust !== 100) p.set('trust', str(s.trust));
       if (!s.place_risk) p.set('place_risk', '0');
       if (s.grain !== COUNTRY) p.set('grain', s.grain);

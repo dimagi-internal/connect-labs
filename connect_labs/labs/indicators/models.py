@@ -79,6 +79,9 @@ class Source(models.TextChoices):
     # different source code, so that no query, policy or reader can mistake
     # one for the other. See sources/unicef_lbw.py.
     UNICEF_LBW_REGIONAL = "unicef_lbw_region", "UNICEF-WHO low birthweight (regional aggregate)"
+    # Reported conflict deaths from the UCDP Georeferenced Event Dataset, placed
+    # in each boundary by point-in-polygon. See sources/ucdp.py.
+    UCDP = "ucdp", "UCDP Georeferenced Event Dataset"
     DERIVED = "derived", "Derived"
 
 

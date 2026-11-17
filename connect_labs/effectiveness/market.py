@@ -29,7 +29,7 @@ import math
 from dataclasses import dataclass
 
 from connect_labs.effectiveness import engine, explore, groups, mortality, reliability, result
-from connect_labs.effectiveness.scenario import KNOB_DEFAULT
+from connect_labs.effectiveness.scenario import KNOB_DEFAULT, PlanLimits
 
 #: A place whose figure is more than this many times its country's, either way, is flagged: such a gap is as often a
 #: survey artefact (under-reporting in a remote area, a small sample) as a real difference.
@@ -112,8 +112,7 @@ def size(
     place_risk: bool = True,
     target: float | None = None,
     trust: float = 1.0,
-    min_place: float | None = None,
-    max_countries: int | None = None,
+    limits: PlanLimits | None = None,
 ) -> dict:
     """The model's market over ``places`` = ``{key: {"name", "iso3", "units", "measures", "inputs"}}``, at each
     place's figures.
@@ -126,8 +125,7 @@ def size(
     baseline holds for it (``inputs``). ``trust`` is how far to believe them (1 = fully; 0 = a territory takes its
     country's, a country the model's). A place the model has no published figures for is priced at the model's own
     inputs and flagged ``modelled: False``; it counts in the market but never in the part that clears the bar:
-    nothing says it does. With a ``target`` the best places are filled first (``plan``), within ``min_place`` and
-    ``max_countries``.
+    nothing says it does. With a ``target`` the best places are filled first (``plan``), within ``limits``.
     """
     unit = UNITS[model]
     dial = {**KNOB_DEFAULT, **(dials or {})}
@@ -196,6 +194,7 @@ def size(
                 "measure_how": (p.get("measures_how") or {}).get(shown.measure) if shown else None,
                 "far_from_country": far,
                 "local_inputs": sorted((p.get("inputs") or {}).keys()) if place_risk else [],
+                "conflict_rate": (p.get("measures") or {}).get("conflict_rate"),
                 "risk_se": se,
                 "risk_shared_se": shared,
                 "risk_raw": (p.get("measures_raw") or {}).get(risk.measure) if risk is not None else None,
@@ -235,7 +234,7 @@ def size(
         },
     }
     if target:
-        out["plan"] = plan(rows, target, min_place=min_place, max_countries=max_countries)
+        out["plan"] = plan(rows, target, limits)
         out["plan"]["reliability"] = reliability.assess(rows, target)
     return out
 
@@ -307,6 +306,7 @@ def _part(r: dict, reached: float) -> dict:
         "deaths_averted": reached * r["deaths_per_person"],
         "risk": r["risk"],
         "far_from_country": r["far_from_country"],
+        "conflict_rate": r.get("conflict_rate"),
     }
 
 
@@ -340,22 +340,31 @@ def by_country(parts: list[dict]) -> list[dict]:
     return sorted(out.values(), key=lambda c: -c["reached"])
 
 
-def plan(rows: list[dict], target: float, *, min_place: float | None = None, max_countries: int | None = None) -> dict:
+def plan(rows: list[dict], target: float, limits: PlanLimits | None = None) -> dict:
     """The best way to reach ``target`` people: the places with the highest multiple first, each up to the most that
     can be reached there (a row's ``units``, already capped by the reach dial), until the target is met.
 
-    ``min_place`` leaves out a place that can give fewer people than that (too small to be worth a team), and
-    ``max_countries`` keeps to the countries that matter most to the best plan: the best plan is made, the countries
-    ranked by the deaths it averts in each are taken in order, and it is made again within them. ``countries_needed``
-    says how many countries it takes, in that order, to reach the target at all.
+    ``limits`` (``PlanLimits``): ``min_place`` leaves out a place too small to be worth a team, ``max_conflict`` one
+    where reported conflict is above the ceiling (a place with no conflict figure is never left out on it: nothing
+    says it is unsafe), and ``max_countries`` keeps to the countries that matter most to the best plan: the best plan
+    is made, the countries ranked by the deaths it averts in each are taken in order, and it is made again within
+    them. ``countries_needed`` says how many countries it takes, in that order, to reach the target at all.
 
     Compared with the other obvious plan, spreading the target over every allowed place in proportion to what each can
     give. Places the model has no figures for are never chosen: nothing says what reaching them buys.
     """
     able = [r for r in rows if r["units"] and r["multiple"] is not None]
-    left_out = len([r for r in able if min_place and r["units"] < min_place])
-    if min_place:
-        able = [r for r in able if r["units"] >= min_place]
+    limits = limits or PlanLimits()
+    too_small = [r for r in able if limits.min_place and r["units"] < limits.min_place]
+    unsafe = [
+        r
+        for r in able
+        if limits.max_conflict is not None
+        and r.get("conflict_rate") is not None
+        and r["conflict_rate"] > limits.max_conflict
+    ]
+    left_out = {id(r) for r in too_small + unsafe}
+    able = [r for r in able if id(r) not in left_out]
     ranked: list[str] = []
     if able:
         unconstrained, _ = _fill(able, target)
@@ -374,8 +383,8 @@ def plan(rows: list[dict], target: float, *, min_place: float | None = None, max
         if have >= target:
             needed = i
             break
-    if max_countries and ranked:
-        kept = set(ranked[:max_countries])
+    if limits.max_countries and ranked:
+        kept = set(ranked[: limits.max_countries])
         able = [r for r in able if r["country"] in kept]
     capacity = sum(r["units"] for r in able)
     picked, remaining = _fill(able, target)
@@ -400,7 +409,14 @@ def plan(rows: list[dict], target: float, *, min_place: float | None = None, max
         "places": picked,
         "countries": by_country(picked),
         "countries_needed": needed,
-        "limits": {"min_place": min_place, "max_countries": max_countries, "left_out": left_out},
+        "limits": {
+            "min_place": limits.min_place,
+            "max_countries": limits.max_countries,
+            "max_conflict": limits.max_conflict,
+            "left_out": len(left_out),
+            "left_out_small": len(too_small),
+            "left_out_conflict": len(unsafe),
+        },
         "totals": best,
         "even": even,
         "gain": gain,

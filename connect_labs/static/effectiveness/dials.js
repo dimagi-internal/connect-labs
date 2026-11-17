@@ -164,6 +164,16 @@
       most.addEventListener('input', function () {
         if (most.value.trim() === '') scn.setLimit('max_countries', null);
       });
+      var fighting = number(
+        s.max_conflict == null ? '' : s.max_conflict,
+        function (v) {
+          scn.setLimit('max_conflict', v);
+        },
+        { min: '0', placeholder: 'no ceiling' },
+      );
+      fighting.addEventListener('input', function () {
+        if (fighting.value.trim() === '') scn.setLimit('max_conflict', null);
+      });
       put(targetBox, [
         field(
           'People to reach' +
@@ -176,7 +186,12 @@
           'details',
           {
             class: 'mi',
-            open: s.min_place != null || s.max_countries != null ? true : null,
+            open:
+              s.min_place != null ||
+              s.max_countries != null ||
+              s.max_conflict != null
+                ? true
+                : null,
           },
           [
             h('summary', { text: 'Plan limits' }),
@@ -184,6 +199,11 @@
               'Smallest place worth working in (people it can give)',
               small,
               'A place that can give fewer is left out of the plan.',
+            ),
+            field(
+              'Most reported conflict deaths (per 100,000 a year)',
+              fighting,
+              'A place with more reported deaths from organised violence (UCDP) is left out. A place with no figure stays in, and a multiple is never changed by it.',
             ),
             field(
               'Most countries',

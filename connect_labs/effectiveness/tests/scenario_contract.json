@@ -16,6 +16,7 @@
     "grain": "territory",
     "min_place": "20000",
     "max_countries": "5",
+    "max_conflict": "10",
     "trust": "60"
   },
   "state": {
@@ -54,6 +55,7 @@
     "grain": "territory",
     "min_place": 20000.0,
     "max_countries": 5,
+    "max_conflict": 10.0,
     "trust": 60.0
   }
 }

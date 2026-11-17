@@ -2,7 +2,7 @@ import pytest
 from django.urls import reverse
 
 from connect_labs.effectiveness import engine, explore, market, result
-from connect_labs.effectiveness.scenario import KNOB_DEFAULT
+from connect_labs.effectiveness.scenario import KNOB_DEFAULT, PlanLimits
 
 PEOPLE = {
     "NGA": {"name": "Nigeria", "iso3": "NGA", "units": 30_000_000, "measures": {"nmr": 39.0}},
@@ -384,7 +384,7 @@ def in_countries(*specs):
 
 def test_a_place_too_small_to_be_worth_a_team_is_left_out_and_counted():
     ps = in_countries(("BIG", "AAA", 800_000, 30.0), ("TINY", "AAA", 5_000, 60.0), ("MID", "BBB", 600_000, 25.0))
-    plan = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=900_000, min_place=50_000)["plan"]
+    plan = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=900_000, limits=PlanLimits(min_place=50_000))["plan"]
     assert [p["key"] for p in plan["places"]] == ["BIG", "MID"] and plan["limits"]["left_out"] == 1
     free = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=900_000)["plan"]
     assert free["places"][0]["key"] == "TINY" and free["limits"]["left_out"] == 0
@@ -397,14 +397,14 @@ def test_keeping_to_some_countries_keeps_the_ones_the_best_plan_leans_on_most():
         ("B1", "BBB", 300_000, 36.0),
         ("C1", "CCC", 300_000, 20.0),
     )
-    plan = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=1_000_000, max_countries=2)["plan"]
+    plan = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=1_000_000, limits=PlanLimits(max_countries=2))["plan"]
     assert {p["country"] for p in plan["places"]} == {"AAA", "BBB"} and plan["feasible"]
     assert plan["totals"]["countries"] == 2 and plan["limits"]["max_countries"] == 2
 
 
 def test_it_says_how_many_countries_it_takes_to_reach_the_target_at_all():
     ps = in_countries(("A1", "AAA", 400_000, 40.0), ("B1", "BBB", 300_000, 36.0), ("C1", "CCC", 300_000, 30.0))
-    plan = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=1_000_000, max_countries=1)["plan"]
+    plan = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=1_000_000, limits=PlanLimits(max_countries=1))["plan"]
     assert plan["countries_needed"] == 3 and plan["feasible"] is False
     assert plan["shortfall"] == pytest.approx(600_000)
     assert market.size("kc", ps, {}, 6.0, {"reach": 100}, target=600_000)["plan"]["countries_needed"] == 2

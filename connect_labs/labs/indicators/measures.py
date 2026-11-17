@@ -317,6 +317,44 @@ register(
 
 register(
     Measure(
+        code="conflict_deaths",
+        label="Reported conflict deaths",
+        kind=Kind.COUNT,
+        unit="deaths/year",
+        agg=Agg.SUM,
+        description=(
+            "Deaths from organised violence reported to the Uppsala Conflict Data Program (state-based "
+            "conflict, non-state conflict, one-sided violence), a yearly mean over the latest three complete "
+            "years, placed in the territory the event's coordinates fall in. Reported, not all, deaths: a quiet "
+            "figure in a place with few reporters is weaker evidence than a loud one. Events coded less "
+            "precisely than admin-1 are not placed, so a territory figure can be a floor; the country row says "
+            "what share was placed."
+        ),
+    )
+)
+
+register(
+    Measure(
+        code="conflict_rate",
+        threshold_min=0,
+        threshold_max=50,
+        threshold_default=5,
+        label="Conflict deaths",
+        kind=Kind.RATE,
+        unit="per 100,000 people a year",
+        agg=Agg.WEIGHTED_MEAN,
+        weight_by="pop_total",
+        downscale=False,
+        description=(
+            "Reported conflict deaths a year (UCDP, latest three complete years) per 100,000 people. Says where "
+            "a delivery team would work in active fighting; it is not a score of whether a programme can be "
+            "delivered there. Derived from conflict_deaths and the population."
+        ),
+    )
+)
+
+register(
+    Measure(
         code="expected_deaths",
         label="Expected under-5 deaths",
         kind=Kind.COUNT,
@@ -1569,6 +1607,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "share_rural",
     ),
     "Seasonality": ("rain_wettest_quarter",),
+    "Safety": ("conflict_rate",),
     "Civil registration": ("birth_certificate",),
 }
 
