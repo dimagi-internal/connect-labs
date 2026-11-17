@@ -249,7 +249,8 @@ def size(
     }
     if target:
         out["plan"] = plan(rows, target, limits)
-        out["plan"]["reliability"] = reliability.assess(rows, target)
+        # the plan's own places: a place a limit left out can no more enter a redraw than the plan
+        out["plan"]["reliability"] = reliability.assess([r for r in rows if not r.get("left_out_by")], target)
     return out
 
 
@@ -379,6 +380,10 @@ def plan(rows: list[dict], target: float, limits: PlanLimits | None = None) -> d
         if limits.caps.get(c.key) is not None
     }
     left_out = {id(r) for r in too_small + [r for rows in over.values() for r in rows]}
+    why: dict[int, str] = {id(r): "min_place" for r in too_small}  # the first limit that left a row out, for the row
+    for key, rows_over in over.items():
+        for r in rows_over:
+            why.setdefault(id(r), key)
     able = [r for r in able if id(r) not in left_out]
     ranked: list[str] = []
     if able:
@@ -400,6 +405,7 @@ def plan(rows: list[dict], target: float, limits: PlanLimits | None = None) -> d
             break
     if limits.max_countries and ranked:
         kept = set(ranked[: limits.max_countries])
+        why.update({id(r): "max_countries" for r in able if r["country"] not in kept})
         able = [r for r in able if r["country"] in kept]
     capacity = sum(r["units"] for r in able)
     picked, remaining = _fill(able, target)
@@ -416,6 +422,7 @@ def plan(rows: list[dict], target: float, limits: PlanLimits | None = None) -> d
     planned = {p["key"]: p["reached"] for p in picked}
     for r in rows:
         r["planned"] = planned.get(r["key"], 0.0)
+        r["left_out_by"] = why.get(id(r))  # which limit kept it out of the plan, if one did
     return {
         "target": target,
         "capacity": capacity,

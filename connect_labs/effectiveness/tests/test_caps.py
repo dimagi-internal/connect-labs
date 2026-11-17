@@ -117,3 +117,34 @@ def test_each_ceiling_names_the_baseline_figure_it_reads_and_every_one_is_read_b
 
     assert len(set(CAP_KEYS)) == len(CAPS) and all(c.indicator in baseline.MEASURES_READ for c in CAPS)
     assert [c["key"] for c in caps_for_page()] == list(CAP_KEYS)
+
+
+def test_the_reliability_is_of_the_plan_that_was_made_not_of_the_one_without_its_limits():
+    # WAR is the best place by far; a ceiling leaves it out, so no redraw may put it back in
+    ps = places(("CALM", 600_000, 25.0, 0.4), ("WAR", 600_000, 60.0, 30.0), ("MID", 600_000, 30.0, 0.5))
+    for p in ps.values():
+        p["measures_se"] = {"nmr": 0.3}  # a published interval, so there is something to redraw
+    plain = market.size("kc", ps, {}, 6.0, {"reach": 100}, target=500_000, observed=None)["plan"]["reliability"]
+    got = market.size(
+        "kc", ps, {}, 6.0, {"reach": 100}, target=500_000, limits=PlanLimits(caps={"max_conflict": 10.0})
+    )
+    assert "WAR" in plain["p_in_plan"] and "WAR" not in got["plan"]["reliability"]["p_in_plan"]
+    assert got["plan"]["reliability"]["deaths"]["p50"] < plain["deaths"]["p50"]
+
+
+def test_each_row_says_which_limit_kept_it_out_of_the_plan():
+    ps = places(("BIG", 800_000, 30.0, 1.0), ("TINY", 5_000, 60.0, 1.0), ("WAR", 600_000, 50.0, 30.0))
+    got = market.size(
+        "kc",
+        ps,
+        {},
+        6.0,
+        {"reach": 100},
+        target=700_000,
+        limits=PlanLimits(min_place=50_000, caps={"max_conflict": 10.0}),
+    )
+    assert {r["key"]: r["left_out_by"] for r in got["rows"]} == {
+        "BIG": None,
+        "TINY": "min_place",
+        "WAR": "max_conflict",
+    }
