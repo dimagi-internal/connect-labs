@@ -21,6 +21,12 @@
 
   function create(data) {
     var start = clone(data.state);
+    // The ceilings a plan can be held to (`data.caps`, from scenario.CAPS): one link key each, held on the state flat.
+    function capKeys() {
+      return (data.caps || []).map(function (c) {
+        return c.key;
+      });
+    }
     var s = {
       models: start.models,
       indicator: start.indicator,
@@ -30,7 +36,6 @@
       target: start.target == null ? null : start.target,
       min_place: start.min_place == null ? null : start.min_place,
       max_countries: start.max_countries == null ? null : start.max_countries,
-      max_conflict: start.max_conflict == null ? null : start.max_conflict,
       trust: start.trust == null ? 100 : start.trust,
       place_risk: start.place_risk !== false,
       grain: start.grain || COUNTRY,
@@ -39,6 +44,9 @@
       overrides: start.overrides || {},
       extras: start.extras || {},
     };
+    capKeys().forEach(function (k) {
+      s[k] = start[k] == null ? null : start[k];
+    });
     // Things a page keeps in the link that are not the scenario (a map lens): written back, never sent to the model.
     var ui = {};
     var listeners = [];
@@ -112,8 +120,9 @@
         p.set('min_place', str(s.min_place));
       if (s.max_countries != null && s.max_countries > 0)
         p.set('max_countries', str(s.max_countries));
-      if (s.max_conflict != null && s.max_conflict > 0)
-        p.set('max_conflict', str(s.max_conflict));
+      capKeys().forEach(function (k) {
+        if (s[k] != null && s[k] > 0) p.set(k, str(s[k]));
+      });
       if (s.trust !== 100) p.set('trust', str(s.trust));
       if (!s.place_risk) p.set('place_risk', '0');
       if (s.grain !== COUNTRY) p.set('grain', s.grain);

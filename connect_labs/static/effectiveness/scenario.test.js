@@ -46,9 +46,13 @@ const PLACE_RISK = {
   },
 };
 
+// scenario.CAPS as the page is given it (only the keys matter to the scenario)
+const CAPS = [{ key: 'max_conflict' }, { key: 'max_remote' }];
+
 function data(state) {
   return {
     state,
+    caps: CAPS,
     dials: DIALS,
     dial_defaults: DIAL_DEFAULTS,
     place_risk: PLACE_RISK,

@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from connect_labs.effectiveness import engine, explore
@@ -111,18 +111,72 @@ def _words(raw: str) -> list[str]:
 
 
 @dataclass(frozen=True)
+class Cap:
+    """A ceiling on a figure a plan can be held to: a place above it is left out, a place with no figure is kept
+    (nothing says it is over), and a multiple is never changed by it.
+
+    One row here is the whole definition: the link key, where the figure comes from in the baseline, the words the page
+    uses, and the column it shows. The plan, the link, the page's controls and the agent tool all read this list, so a
+    new ceiling is one ``Cap`` (and the baseline figure behind it), not a new argument through every layer between.
+    """
+
+    key: str
+    #: The baseline indicator the figure comes from, and the name it carries on a place and a row.
+    indicator: str
+    field: str
+    label: str
+    unit: str
+    hint: str
+    column: str
+    column_hint: str
+
+
+CAPS: tuple[Cap, ...] = (
+    Cap(
+        "max_conflict",
+        "conflict_rate",
+        "conflict_rate",
+        "Most reported conflict deaths",
+        "per 100,000 people a year",
+        "A place with more reported deaths from organised violence (UCDP) is left out. "
+        "A place with no figure stays in.",
+        "Conflict",
+        "Reported conflict deaths a year per 100,000 people (UCDP, latest three years). Reported, not all: a low "
+        "figure where few report is weaker evidence.",
+    ),
+    Cap(
+        "max_remote",
+        "share_beyond_2h",
+        "remote_share",
+        "Most people beyond two hours' walk of care",
+        "% of a place's people",
+        "A place where more of the people are further than two hours' walk from a health facility is left out: a "
+        "team has a harder time reaching them. A place with no figure stays in.",
+        "Remote",
+        "Share of the people more than two hours' walk from healthcare (travel-time surface x population).",
+    ),
+)
+CAP_KEYS = tuple(c.key for c in CAPS)
+
+
+def caps_for_page() -> list[dict]:
+    """The ceilings as a page reads them: what to ask for, in what words, and which column to show."""
+    return [asdict(c) for c in CAPS]
+
+
+@dataclass(frozen=True)
 class PlanLimits:
     """The limits that make a plan something a team can run. Each is optional, and none changes a place's multiple.
 
-    ``min_place`` leaves out a place that can give fewer people than that, ``max_countries`` keeps to the countries
-    the best plan leans on most, and ``max_conflict`` leaves out a place whose reported conflict deaths (per 100,000
-    people a year, UCDP) are above it. One object so that a new limit is one field here, one in ``Scenario`` (which
-    hands them over as ``limits()``), and its rule in ``market.plan``, not a new argument through every layer between.
+    ``min_place`` leaves out a place that can give fewer people than that, ``max_countries`` keeps to the countries the
+    best plan leans on most, and ``caps`` holds any of the ceilings in ``CAPS`` that are set (``{key: value}``). One
+    object, so a new kind of limit is a field here, one in ``Scenario`` (which hands them over as ``limits()``), and
+    its rule in ``market.plan``, not a new argument through every layer between.
     """
 
     min_place: float | None = None
     max_countries: int | None = None
-    max_conflict: float | None = None
+    caps: Mapping[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -137,7 +191,8 @@ class Scenario:
     target: float | None = None
     min_place: float | None = None
     max_countries: int | None = None
-    max_conflict: float | None = None
+    #: The ceilings that are set, ``{Cap.key: value}``.
+    caps: Mapping[str, float] = field(default_factory=dict)
     trust: float = 100.0
     place_risk: bool = True
     grain: str = DEFAULT_GRAIN
@@ -186,7 +241,7 @@ class Scenario:
             target=number(params.get("target"), positive=True),
             min_place=number(params.get("min_place"), positive=True),
             max_countries=max(1, int(most)) if most else None,
-            max_conflict=number(params.get("max_conflict"), positive=True),
+            caps={c.key: v for c in CAPS if (v := number(params.get(c.key), positive=True)) is not None},
             trust=min(trust, 100.0),
             place_risk=str(params.get("place_risk", "1")).strip().lower() not in ("0", "false", "off", "no"),
             grain=grain if grain in GRAINS else DEFAULT_GRAIN,
@@ -214,7 +269,7 @@ class Scenario:
 
     def limits(self) -> PlanLimits:
         """The plan's limits, as ``market.size`` takes them."""
-        return PlanLimits(self.min_place, self.max_countries, self.max_conflict)
+        return PlanLimits(self.min_place, self.max_countries, dict(self.caps))
 
     def resolved_bar(self, default: float) -> float:
         return self.bar if self.bar is not None else default
@@ -268,8 +323,7 @@ class Scenario:
             out["min_place"] = _s(self.min_place)
         if self.max_countries is not None:
             out["max_countries"] = str(self.max_countries)
-        if self.max_conflict is not None:
-            out["max_conflict"] = _s(self.max_conflict)
+        out.update({k: _s(v) for k, v in self.caps.items() if k in CAP_KEYS})
         if self.trust != 100.0:
             out["trust"] = _s(self.trust)
         if not self.place_risk:
@@ -296,7 +350,7 @@ class Scenario:
             "target": self.target,
             "min_place": self.min_place,
             "max_countries": self.max_countries,
-            "max_conflict": self.max_conflict,
+            **{c.key: self.caps.get(c.key) for c in CAPS},
             "trust": self.trust,
             "place_risk": self.place_risk,
             "grain": self.grain,

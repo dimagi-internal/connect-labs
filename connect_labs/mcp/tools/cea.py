@@ -23,6 +23,8 @@ from __future__ import annotations
 
 from urllib.parse import urlencode
 
+from connect_labs.effectiveness.scenario import CAP_KEYS, CAPS  # pure: the ceilings a plan can be held to
+
 from ..tool_registry import MCPToolError, register
 from .indicators import _selection
 
@@ -346,12 +348,16 @@ def cea_opportunities(
                     "plan; `plan.countries_needed` says how many it takes to reach the target at all."
                 ),
             },
-            "max_conflict": {
-                "type": "number",
-                "description": (
-                    "With `model` and `target`: leave out any place whose reported conflict deaths (UCDP, per 100,000 "
-                    "people a year) are above this. A place with no figure is kept. It never changes a multiple."
-                ),
+            # one ceiling per scenario.CAPS entry (max_conflict, max_remote, ...): a plan leaves out a place above it
+            **{
+                c.key: {
+                    "type": "number",
+                    "description": (
+                        f"With `model` and `target`: {c.label.lower()} ({c.unit}). {c.hint} "
+                        "It never changes a multiple."
+                    ),
+                }
+                for c in CAPS
             },
             "cost_basis": {
                 "type": "string",
@@ -413,9 +419,9 @@ def cea_market_size(
     place_risk=True,
     min_place=None,
     max_countries=None,
-    max_conflict=None,
     cost_basis=None,
     trust=100,
+    **caps,
 ):
     if model:
         return _market_size_by_model(
@@ -434,9 +440,9 @@ def cea_market_size(
             place_risk=place_risk,
             min_place=min_place,
             max_countries=max_countries,
-            max_conflict=max_conflict,
             cost_basis=cost_basis,
             trust=trust,
+            caps=caps,
         )
     if basis is None or unit_cost is None:
         raise MCPToolError(
@@ -556,9 +562,9 @@ def _market_size_by_model(
     place_risk=True,
     min_place=None,
     max_countries=None,
-    max_conflict=None,
     cost_basis=None,
     trust=100,
+    caps=None,
 ):
     """``cea_market_size`` with a model: the same ``effectiveness.sizing`` the Market size and Workspace pages call,
     so an agent's answer is the page's for the same scenario. The tool only turns its arguments into a scenario."""
@@ -587,7 +593,7 @@ def _market_size_by_model(
         ("target", target),
         ("min_place", min_place),
         ("max_countries", max_countries),
-        ("max_conflict", max_conflict),
+        *[(k, v) for k, v in (caps or {}).items() if k in CAP_KEYS],
         ("cost_basis", None if cost_basis in (None, "model") else cost_basis),
         ("trust", None if trust == 100 else trust),
         ("place_risk", None if place_risk else "0"),

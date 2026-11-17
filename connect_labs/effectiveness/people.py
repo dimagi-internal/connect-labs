@@ -18,7 +18,7 @@ from django.core.cache import cache
 
 from connect_labs.effectiveness import engine, market, mortality
 from connect_labs.effectiveness.baseline import Baselines
-from connect_labs.effectiveness.scenario import EVERYWHERE, Scenario
+from connect_labs.effectiveness.scenario import CAPS, EVERYWHERE, Scenario
 from connect_labs.labs.indicators import boundaries as boundary_set
 from connect_labs.labs.indicators import measures, response_cache
 from connect_labs.labs.indicators.africa import ISO_CODES
@@ -168,9 +168,10 @@ def attach_risk(found: dict) -> dict:
             p["measures_how"][
                 "births_vs_wpp"
             ] = f"our births {births['ours']:,.0f} against the UN's {births['wpp']:,.0f} ({births['year']})"
-        fighting = baselines.conflict(p["iso3"], boundary)
-        if fighting:
-            p["measures"]["conflict_rate"], p["measures_how"]["conflict_rate"] = fighting
+        for cap in CAPS:  # the figures a plan can be held to a ceiling on
+            got_figure = baselines.place_figure(cap.indicator, p["iso3"], boundary)
+            if got_figure:
+                p["measures"][cap.field], p["measures_how"][cap.field] = got_figure
         if territory:
             local = {}
             for model in engine.MODELS:

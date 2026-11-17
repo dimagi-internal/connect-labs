@@ -165,15 +165,23 @@
       most.addEventListener('input', function () {
         if (most.value.trim() === '') scn.setLimit('max_countries', null);
       });
-      var fighting = number(
-        s.max_conflict == null ? '' : s.max_conflict,
-        function (v) {
-          scn.setLimit('max_conflict', v);
-        },
-        { min: '0', placeholder: 'no ceiling' },
-      );
-      fighting.addEventListener('input', function () {
-        if (fighting.value.trim() === '') scn.setLimit('max_conflict', null);
+      // One control per ceiling the page was given (`data.caps`, from scenario.CAPS).
+      var caps = (data.caps || []).map(function (c) {
+        var box = number(
+          s[c.key] == null ? '' : s[c.key],
+          function (v) {
+            scn.setLimit(c.key, v);
+          },
+          { min: '0', placeholder: 'no ceiling' },
+        );
+        box.addEventListener('input', function () {
+          if (box.value.trim() === '') scn.setLimit(c.key, null);
+        });
+        return field(
+          c.label + ' (' + c.unit + ')',
+          box,
+          c.hint + ' A multiple is never changed by it.',
+        );
       });
       put(targetBox, [
         field(
@@ -190,7 +198,9 @@
             open:
               s.min_place != null ||
               s.max_countries != null ||
-              s.max_conflict != null
+              (data.caps || []).some(function (c) {
+                return s[c.key] != null;
+              })
                 ? true
                 : null,
           },
@@ -201,17 +211,15 @@
               small,
               'A place that can give fewer is left out of the plan.',
             ),
-            field(
-              'Most reported conflict deaths (per 100,000 a year)',
-              fighting,
-              'A place with more reported deaths from organised violence (UCDP) is left out. A place with no figure stays in, and a multiple is never changed by it.',
-            ),
-            field(
-              'Most countries',
-              most,
-              'Keeps to the countries the best plan leans on most; the plan says how many it takes to reach the target at all.',
-            ),
-          ],
+          ]
+            .concat(caps)
+            .concat([
+              field(
+                'Most countries',
+                most,
+                'Keeps to the countries the best plan leans on most; the plan says how many it takes to reach the target at all.',
+              ),
+            ]),
         ),
       ]);
     }

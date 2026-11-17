@@ -311,14 +311,21 @@
                 lim.left_out_small +
                 ' of them)',
             );
-          if (lim.max_conflict)
-            limitWords.push(
-              'places with more than ' +
-                lim.max_conflict +
-                ' reported conflict deaths per 100,000 a year are left out (' +
-                lim.left_out_conflict +
-                ' of them; a place with no figure stays in)',
-            );
+          (data.caps || []).forEach(function (c) {
+            var set = (lim.caps || {})[c.key];
+            if (set)
+              limitWords.push(
+                'places above ' +
+                  set.value +
+                  ' ' +
+                  c.label.toLowerCase().replace(/^most /, '') +
+                  ' (' +
+                  c.unit +
+                  ') are left out (' +
+                  set.left_out +
+                  ' of them; a place with no figure stays in)',
+              );
+          });
           if (lim.max_countries)
             limitWords.push(
               'at most ' +
@@ -679,9 +686,12 @@
             return x.risk != null;
           });
         }),
-        anyConflict = r.models.some(function (m) {
-          return m.rows.some(function (x) {
-            return x.conflict_rate != null;
+        // a column for each ceiling's figure that any row has
+        capCols = (data.caps || []).filter(function (c) {
+          return r.models.some(function (m) {
+            return m.rows.some(function (x) {
+              return x[c.field] != null;
+            });
           });
         });
       r.models.forEach(function (m) {
@@ -725,7 +735,9 @@
         hasPlan ? ['Planned'] : [],
         ['People', 'A year, each', 'Market', 'Deaths a year'],
         anyRisk ? ['Baseline risk'] : [],
-        anyConflict ? ['Conflict'] : [],
+        capCols.map(function (c) {
+          return c.column;
+        }),
         ['Multiple'],
       );
       put(els.rows, [
@@ -794,16 +806,15 @@
                         (x.far_from_country ? ' ⚠' : ''),
                 }),
               );
-            if (anyConflict)
+            capCols.forEach(function (c) {
               cells.push(
                 h('td', {
                   class: 'n',
-                  title:
-                    'Reported conflict deaths a year per 100,000 people (UCDP, latest three years). Reported, not all: a low figure where few report is weaker evidence.',
-                  text:
-                    x.conflict_rate == null ? '–' : x.conflict_rate.toFixed(1),
+                  title: c.column_hint,
+                  text: x[c.field] == null ? '–' : x[c.field].toFixed(1),
                 }),
               );
+            });
             cells.push(
               h('td', {
                 class: 'n ' + (x.clears_bar ? 'ok' : 'lo'),
