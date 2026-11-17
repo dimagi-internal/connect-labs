@@ -1,5 +1,6 @@
 {% extends "supply_chain/base.html" %}
 {% load supply_chain_extras %}
+{% block page_info %}{% info "About this page" %}<p>Every quote for one product, one row each, cheapest landed price first. Each column heading says where its figures come from; click a heading to sort by it.</p><p>The landed price is what a quote comes to delivered, with duty, freight and clearing added. Chips show what is still open on a quote and whose it is: ours to attach, choose, fill or ask, or waiting on the supplier.</p><p>Import duty terms apply to every quote and are set once, at the top. Any quote can be awarded: whether its facts are enough is the buyer's call, recorded with the reason.</p>{% endinfo %}{% endblock %}
 {% block supply_content %}
 <div class="flex flex-col gap-4" data-testid="comparison-page" id="comparison-page" data-live>
   <div class="flex flex-wrap items-center justify-between gap-3">
@@ -45,7 +46,7 @@
       </details>
       {% endif %}
     </div>
-    {% if grid and grid.quotes and not grid.like_for_like %}<a href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#import-estimates" data-testid="clearing-not-recorded" class="status-chip status-chip--ours px-3 py-1 text-sm hover:underline">Clearing estimate not recorded · quotes we import are shown excl. clearing</a>{% endif %}
+    {% if grid and grid.quotes and not grid.like_for_like %}<span class="inline-flex items-center"><a href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#import-estimates" data-testid="clearing-not-recorded" class="status-chip status-chip--ours px-3 py-1 text-sm hover:underline">Clearing estimate not recorded</a>{% info "About the clearing estimate" %}<p>Quotes we import are shown excl. clearing until a clearing estimate is recorded on the tender page.</p>{% endinfo %}</span>{% endif %}
     </div>
     {% if grid and grid.quotes %}<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600"><span class="inline-flex items-center gap-x-3" data-testid="owner-legend">{% if grid_legend.ours %}<span class="inline-flex items-center gap-1"><span class="status-chip status-chip--fact">ours to attach · choose · fill</span>ours</span>{% endif %}{% if grid_legend.to_ask %}<span class="inline-flex items-center gap-1"><span class="status-chip status-chip--fact">to ask</span>ours to ask</span>{% endif %}{% if grid_legend.waiting %}<span class="inline-flex items-center gap-1"><span class="status-chip status-chip--theirs">waiting</span>on the supplier</span>{% endif %}</span>{% include "supply_chain/_src_legend.html" %}</div>{% endif %}
   </div>
@@ -56,7 +57,7 @@
 
   {% comment %}Said in full once, on the tender page; here a line pointing back, not the whole warning again.{% endcomment %}
   {% if qualification_gaps %}
-  <p class="text-sm text-message-warning-text" data-testid="qualification-gaps-note">A check you require is missing for {% for gap in qualification_gaps %}{{ gap.name }}{% if not forloop.last %}, {% endif %}{% endfor %}. <a class="underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#outreach">What to ask for is on the tender page.</a></p>
+  <p class="text-sm text-message-warning-text" data-testid="qualification-gaps-note">A check you require is missing for {% for gap in qualification_gaps %}{{ gap.name }}{% if not forloop.last %}, {% endif %}{% endfor %}. <a class="underline" href="{% url 'supply_chain:procurement_tender_detail' tender_id %}#outreach">What to ask for</a></p>
   {% endif %}
 
   {% if awards %}
@@ -74,7 +75,7 @@
   status, specification check and next moves held in the pinned cell at the left while the figures
   scroll. Each column's heading says where its values come from. The landed price leads, then how
   far it sits above the lowest. A click on a heading sorts the rows by it (sheet_sort.js).{% endcomment %}
-  <p class="mb-1 text-xs text-gray-600" data-testid="comparison-scroll-hint">More columns sit to the right: scroll this table sideways (arrow keys work too) &rarr;</p>
+  <p class="mb-1 text-xs text-gray-600" data-testid="comparison-scroll-hint">Scroll sideways for more columns &rarr;</p>
   <section class="sheet-wrap" tabindex="0" role="region" aria-label="Quotes side by side, scrolls sideways">
     <table class="sheet" data-testid="comparison-grid">
       <thead>
@@ -197,7 +198,7 @@
   {% endcomment %}
   <section class="mt-6 mb-4" data-testid="different-contents">
     <h2 class="text-lg font-semibold text-gray-900 mb-2">
-      Different contents from the tender
+      Different contents from the tender{% info "About different contents" %}<p>These offers hold other contents than the tender's line. Each is shown with its contents and price beside what the tender buys, so you can read the difference. They can still be awarded.</p>{% endinfo %}
     </h2>
     {% if comparison.tender_contents %}
       <p class="text-sm text-gray-600 mb-2">This tender buys</p>

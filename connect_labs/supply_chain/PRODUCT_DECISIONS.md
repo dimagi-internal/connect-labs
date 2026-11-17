@@ -47,8 +47,8 @@ quotes, §17 buyer of record, and `2026-09-26-supply-sophie-history-design.md`).
   (`{% block page_info %}`) or beside a section heading. Guide pages (Start here, the purchase guide) keep their text.
 - **Related tabs share one menu entry** (same date: "less tabs are fine ... merge as much as u can"; "test and
   issue can stay diff"). `navigation.FAMILIES`: Overview (with Start here), Purchases (with Suppliers), Network (with
-  Partners, Map), Distribution (with Stock, Where it went), Workers and plan (Workers, Plan) and Setup (Catalogue,
-  Alerts, Organisations, Team, Update links), each a name that opens to its pages; Issues and Tests stay entries of
+  Partners, Map), Distribution (with Stock, Where it went), Workers and plan (Workers, Plan) and Settings (Catalogue,
+  Organisations, Alerts, Update links, Team; the group was called Setup), each a name that opens to its pages; Issues and Tests stay entries of
   their own (the layout Akash drew). A tab a programme adds joins the entry of the tab it is placed after. Each page keeps
   its own address, Settings switch, pin and landing; only the menu changes.
 

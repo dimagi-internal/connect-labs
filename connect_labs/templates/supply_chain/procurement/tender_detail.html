@@ -1,6 +1,8 @@
 {% extends "supply_chain/base.html" %}
 {% load static i18n supply_chain_extras %}
 
+{% block page_info %}{% if tender %}{% info "About this page" %}<p>The tender: what it buys and on what terms, where it is in its steps, one row per supplier, and what is to do.</p><p>"To do" is ours; "Waiting on suppliers" is theirs. Dates, prices, delivery terms and pack sizes in the Suppliers table can be edited where they sit, and the counts above follow.</p><p>Questions and promises, draft emails, quotes, history and the tender's details are folded below, each with its count.</p><p>"Send these from labs" opens the draft emails as one draft to check and send; sending marks each sent here.</p>{% endinfo %}{% endif %}{% endblock %}
+
 {% block supply_content %}
 {% if tender %}
 {% comment %}
@@ -60,7 +62,7 @@ is folded away, each fold with its count.
         </span>
         {% comment %}Who set the terms and when, and the waiver's evidence: each its own field
         beside the terms, not run on after them.{% endcomment %}
-        {% if tender.duty_terms_derived %}<span class="whitespace-nowrap text-xs text-gray-600" data-testid="duty-terms-derived">Because this tender asks for delivery duty paid (DDP). Change it if that is not so.</span>{% endif %}
+        {% if tender.duty_terms_derived %}<span data-testid="duty-terms-derived">{% info "Why these duty terms" %}<p>Set because this tender asks for delivery duty paid (DDP). Change it if that is not so.</p>{% endinfo %}</span>{% endif %}
         {% if tender.duty_terms and tender.duty_terms_set_on %}<span class="whitespace-nowrap text-xs text-gray-600" data-testid="duty-terms-set">Set {{ tender.duty_terms_set_on|day }}{% if status.terms.duty_set_by %} · {{ status.terms.duty_set_by }}{% endif %}</span>{% endif %}
         {% if tender.duty_terms == "buyer_waiver" %}<span data-testid="waiver-evidence" class="whitespace-nowrap text-xs text-gray-600">{{ "duty_exemption"|document_kind|capfirst }} {% if waiver_on_file %}on file{% else %}<span class="text-message-warning-text font-medium">not on file</span>{% endif %}</span>{% if not waiver_on_file and not supply_as_of %} <span class="text-xs text-gray-600">·</span> <a class="text-xs text-brand-indigo font-semibold hover:underline" data-testid="duty-exemption-attach" href="{% url 'supply_chain:program_document_attach' %}?kind=duty_exemption&next={{ request.path|urlencode }}">Attach</a>{% endif %}{% endif %}
         {% if not supply_as_of %}
@@ -78,7 +80,7 @@ is folded away, each fold with its count.
       import, freight to the delivery point on E and F terms. Per unit of the tender's line.{% endcomment %}
       {% if estimates_needed %}
       <span class="flex flex-wrap items-center gap-2" id="import-estimates" data-testid="import-estimates"{% if estimates_changed %} data-changed{% endif %}>
-        <span class="text-gray-600" title="Your estimate of clearing and freight per {{ estimate_unit }}, for quotes that do not include them.">Your estimate of clearing and freight per {{ estimate_unit }}, for quotes that do not include them:</span>
+        <span class="text-gray-600">Our estimates per {{ estimate_unit }}{% info "About our estimates" %}<p>Your estimate of clearing and freight per {{ estimate_unit }}, for quotes that do not include them. Clearing and forwarding applies to every quote we import; freight to the delivery point applies on E and F delivery terms.</p>{% endinfo %}:</span>
         <span class="text-gray-600">clearing</span>
         <span data-testid="clearing-estimate" class="px-1" {% edit_cell "tender" tender.id "clearing_estimate_per_unit" tender.clearing_estimate_per_unit %}>{% if tender.clearing_estimate_per_unit is not None %}<span class="font-medium text-gray-900">USD {{ tender.clearing_estimate_per_unit|floatformat:2 }} / {{ estimate_unit }}</span>{% else %}<span class="status-chip status-chip--ours">Not recorded</span>{% endif %}</span>
         <span class="text-gray-600">· freight</span>
@@ -93,7 +95,7 @@ is folded away, each fold with its count.
       <span class="flex flex-wrap items-center gap-2" data-testid="tender-needed-by"><span class="text-gray-600">Needed by</span>
         <span class="px-1" {% edit_cell "tender" tender.id "needed_by" tender.needed_by %}>{% if tender.needed_by %}<span class="whitespace-nowrap font-medium text-gray-900">{{ tender.needed_by|day|slice:":-5" }}</span>{% else %}<span class="text-gray-600">not set</span>{% endif %}</span>
         {% if tender.start_by_note %}<span class="text-xs {% if tender.late_to_start %}text-message-warning-text font-medium{% else %}text-gray-600{% endif %}" data-testid="start-by-note">{{ tender.start_by_note }}</span>{% endif %}
-        {% if tender.needed_by %}<span class="text-xs text-gray-600" data-testid="start-by-working">{% if tender.start_by_working %}{{ tender.start_by_working }}{% endif %}{% if tender.lead_time_days_expected is not None %} Our estimate of the delivery time: {{ tender.lead_time_days_expected }} days (used until a supplier quotes its own).{% endif %}</span>{% endif %}
+        {% if tender.needed_by %}<span data-testid="start-by-working">{% if tender.start_by_working or tender.lead_time_days_expected is not None %}{% info "How the start day is worked out" %}{% if tender.start_by_working %}<p>{{ tender.start_by_working }}</p>{% endif %}{% if tender.lead_time_days_expected is not None %}<p>Our estimate of the delivery time: {{ tender.lead_time_days_expected }} days (used until a supplier quotes its own).</p>{% endif %}{% endinfo %}{% endif %}</span>{% endif %}
       </span>
     </section>
     {% if tender.status == "draft" and not supply_as_of %}
@@ -106,14 +108,13 @@ is folded away, each fold with its count.
     {% if award_card %}
     <section class="rounded-lg border border-brand-indigo bg-indigo-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3" data-testid="award-card">
       <div class="text-sm text-gray-900"><span class="font-semibold">Awarded to {{ award_card.supplier }}</span>{% if award_card.decided_on %} on {{ award_card.decided_on|day }}{% endif %}.
-        <span class="text-gray-700">{{ award_card.emails }} email{{ award_card.emails|pluralize }} to send (the selection email{% if award_card.handovers %} and {{ award_card.handovers }} handover{{ award_card.handovers|pluralize }}{% endif %}), and the orders and costs, are on the award page.</span></div>
+        <span class="text-gray-700">{{ award_card.emails }} email{{ award_card.emails|pluralize }} to send.</span>{% info "About the award" %}<p>The emails to send (the selection email{% if award_card.handovers %} and {{ award_card.handovers }} handover{{ award_card.handovers|pluralize }}{% endif %}), and the orders and costs, are on the award page.</p>{% endinfo %}</div>
       <a class="button button-md primary-dark" data-testid="award-link" href="{% url 'supply_chain:award_detail' award_card.id %}">Open the award</a>
     </section>
     {% endif %}
     {% if tender.partner_splits %}
     <section class="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="partner-splits">
-      <div class="px-4 py-2.5 border-b border-gray-100 text-xs font-semibold text-gray-600">Split by local partner (LLO)
-        <span class="font-normal ml-2">one delivery, quantity and receiver per partner; the award and orders follow it</span></div>
+      <div class="px-4 py-2.5 border-b border-gray-100 text-xs font-semibold text-gray-600">Split by local partner (LLO){% info "About the split" %}<p>One delivery, quantity and receiver per partner; the award and orders follow it.</p>{% endinfo %}</div>
       {% if split and split.ordered %}
       <div class="px-4 py-2 border-b border-gray-100 text-sm" data-testid="split-progress"><span class="font-medium text-gray-900">{{ split.words }}</span>
         {% for line in split.to_do %}<span class="ml-3 text-message-warning-text font-medium" data-testid="split-todo">To do: {{ line }}</span>{% endfor %}</div>
@@ -312,7 +313,7 @@ next action on anyone (design doc section 22).
     <form method="post" action="{% url 'communications:outbox' %}?kind=supply_chain.tender_emails&amp;about={{ tender.id }}" class="mt-1 flex flex-wrap items-center gap-2" data-testid="send-from-labs">
       {% csrf_token %}
       <button class="text-sm px-3 py-1.5 rounded-md bg-brand-deep-purple text-white">Send these from labs</button>
-      <span class="text-xs text-gray-600">Opens them as one draft to check and send; sending marks each sent here. <a class="text-brand-indigo hover:underline" href="{% url 'communications:outbox' %}?kind=supply_chain.tender_emails&amp;about={{ tender.id }}">Messages for this tender</a></span>
+      <a class="text-xs text-brand-indigo hover:underline" href="{% url 'communications:outbox' %}?kind=supply_chain.tender_emails&amp;about={{ tender.id }}">Messages for this tender</a>
     </form>
     {% endif %}
     {% for d in drafts.drafts %}

@@ -11,6 +11,8 @@ anything inside a fold opens it. Landed cost and the three-way match are worked
 out on every render and never stored.
 {% endcomment %}
 
+{% block page_info %}{% info "About this page" %}<p>One order: who supplies it, how many, and where the goods and the money are across the steps in the bar.</p><p>"To do" lists what is ours to do next; the panel beside it, what we are waiting on from the supplier or forwarder. The records behind them (cost and payment, shipments, receipts, evidence and history) are folded below, each with its count.</p><p>The landed cost and the check of what was ordered, received and invoiced are worked out each time the page opens, never stored.</p>{% endinfo %}{% endblock %}
+
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4">
@@ -190,8 +192,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
 {% for panel in link_updates %}
 <section data-link-updates="{{ panel.org }}" class="overflow-hidden rounded-lg border border-gray-100">
   <div class="px-4 py-2.5 border-b border-gray-100">
-    <span class="text-xs font-semibold text-gray-600">Recorded through the update link held by {{ panel.org }}</span>
-    <span class="text-xs text-gray-600 ml-2">entered by them, without signing in</span>
+    <span class="text-xs font-semibold text-gray-600">Recorded through the update link held by {{ panel.org }}</span>{% info "About the update link" %}<p>Entered by them, without signing in.</p>{% endinfo %}
   </div>
   <ul class="divide-y divide-gray-100">
     {% for update in panel.updates %}
@@ -449,8 +450,7 @@ was ordered. Before, the page showed this order's half and a link to the other.
 {% if where_now %}
 <div id="where-now" class="overflow-hidden rounded-lg border border-gray-100">
   <div class="px-4 py-2.5 border-b border-gray-100">
-    <span class="text-xs font-semibold text-gray-600">Where they are now</span>
-    <span class="text-xs text-gray-600 ml-2">equipment is kept and moved, not used up</span>
+    <span class="text-xs font-semibold text-gray-600">Where they are now</span>{% info "About where they are now" %}<p>Equipment is kept and moved, not used up, so this shows where the units are held.</p><p>{% if where_now.other_orders %}Other orders of the same item are in these figures too.{% else %}This is the only order of it, so these are its units.{% endif %}</p>{% endinfo %}
   </div>
   {% if where_now.points %}
   <table class="min-w-full text-sm">
@@ -472,7 +472,6 @@ was ordered. Before, the page showed this order's half and a link to the other.
   {% else %}
   <p class="px-4 py-2.5 text-sm text-gray-600">None of it is held anywhere yet.</p>
   {% endif %}
-  <p class="border-t border-gray-100 px-4 py-2 text-xs text-gray-600">{% if where_now.other_orders %}Other orders of the same item are in these figures too.{% else %}This is the only order of it, so these are its units.{% endif %}</p>
 </div>
 {% endif %}
 {% if contract.consideration == "priced" or invoices %}
@@ -644,10 +643,9 @@ was ordered. Before, the page showed this order's half and a link to the other.
 partner are tracked here, apart from the supplier's bills above, which the match above reads.{% endcomment %}
 {% if contract.buying_model == "partner_buys" and contract.consideration == "priced" or partner_invoices %}
 <div class="flex flex-wrap items-baseline justify-between gap-2 pt-4" id="partner-invoices" data-testid="partner-invoices">
-  <h3 class="text-base font-semibold text-brand-deep-purple">The partner's invoice to us <span class="text-sm font-normal tabular-nums text-gray-600">{{ partner_invoices|length }}</span></h3>
+  <h3 class="text-base font-semibold text-brand-deep-purple">The partner's invoice to us <span class="text-sm font-normal tabular-nums text-gray-600">{{ partner_invoices|length }}</span>{% info "About the partner's invoice" %}<p>The partner paid the supplier on our quote and bills us to be reimbursed. We pay the partner, not the supplier.</p>{% endinfo %}</h3>
   {% if not supply_as_of %}<a href="{% url 'supply_chain:invoice_record' contract.id %}?from=partner" class="text-sm text-brand-indigo hover:underline">+ Record the partner's invoice</a>{% endif %}
 </div>
-<p class="text-sm text-gray-600 mb-2">The partner paid the supplier on our quote and bills us to be reimbursed. We pay the partner, not the supplier.</p>
 {% if partner_invoices %}
 <div class="overflow-hidden rounded-lg border border-gray-100"><div class="overflow-x-auto">
   <table class="w-full text-sm">
@@ -718,9 +716,7 @@ partner are tracked here, apart from the supplier's bills above, which the match
             </td>
             <td class="px-4 py-2" {% if forloop.first %}{% edit_cell "shipment" shipment.id "status" shipment.status %}{% endif %}>
               {{ shipment.status|words|capfirst }}
-              {% if shipment.is_in_transit %}
-                <div class="text-xs text-message-warning-text">not received yet, so not counted as stock</div>
-              {% endif %}
+              {% if shipment.is_in_transit %}{% info "About goods in transit" %}<p>Not received yet, so not counted as stock.</p>{% endinfo %}{% endif %}
               {% with late=late_shipments|dictkey:shipment.id %}
                 {% if late %}
                   <div class="text-xs text-message-warning-text">{{ late.facts.days_late }} days past {{ late.facts.expected_on|day }}</div>

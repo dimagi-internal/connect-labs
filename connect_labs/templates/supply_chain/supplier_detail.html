@@ -10,6 +10,8 @@ history is scattered across four tiers by design, and reading it used to mean
 four screens and an id held in your head.
 {% endcomment %}
 
+{% block page_info %}{% info "About this page" %}<p>One supplier, and everything this programme has done with them, in the order it happened: what we asked, what they quoted, what was awarded and ordered, and how their orders went.</p>{% endinfo %}{% endblock %}
+
 {% block supply_content %}
 
 <nav class="text-sm text-gray-600 mb-3">
@@ -21,12 +23,12 @@ four screens and an id held in your head.
 <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">{{ supplier.name }}</h1>
-    <p class="text-sm text-gray-600 mt-1">
+    <div class="text-sm text-gray-600 mt-1">
       {% if supplier.type == "donor" %}<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-900">Donor</span>
-        supplies in kind — ships and is received from, never paid for the goods
+        supplies in kind{% info "About donors" %}<p>A donor ships goods and is received from, but is never paid for the goods.</p>{% endinfo %}
       {% elif supplier.type %}{{ supplier.type|words|capfirst }}{% endif %}
       {% if supplier.city %}· {{ supplier.city }}{% elif supplier.country %}· {{ supplier.country }}{% endif %}
-    </p>
+    </div>
   </div>
   <div class="flex items-center gap-3">
     <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700" title="{{ supplier.status|supplier_status_note }}">
@@ -39,13 +41,13 @@ four screens and an id held in your head.
 
 {% if supplier.origin == "self_registered" %}
   <div class="mb-5 rounded-lg border {% if supplier.reviewed_on %}border-gray-200 bg-white{% else %}border-message-warning-border/50 bg-message-warning{% endif %} p-3 flex flex-wrap items-center justify-between gap-3">
-    <p class="text-sm {% if not supplier.reviewed_on %}text-message-warning-text{% else %}text-gray-600{% endif %}">
+    <div class="text-sm {% if not supplier.reviewed_on %}text-message-warning-text{% else %}text-gray-600{% endif %}">
       {% if supplier.reviewed_on %}
         Registered itself on the supplier marketplace; reviewed on {{ supplier.reviewed_on|day }}.
       {% else %}
-        <strong>Self-registered, not yet reviewed.</strong> This supplier found your tender on the supplier marketplace and bid on it; nobody on the team has looked at them yet. Their quotes count, and are flagged, until you do.
+        <strong>Self-registered, not yet reviewed.</strong>{% info "About self-registered suppliers" %}<p>This supplier found your tender on the supplier marketplace and bid on it; nobody on the team has looked at them yet. Their quotes count, and are flagged, until you mark them reviewed.</p>{% endinfo %}
       {% endif %}
-    </p>
+    </div>
     {% if not supplier.reviewed_on %}
       <form method="post" action="{% url 'supply_chain:supplier_mark_reviewed' supplier.id %}">{% csrf_token %}
         <button class="px-3 py-1.5 text-sm rounded-md bg-white border border-gray-300 hover:bg-gray-50">Mark reviewed</button>
@@ -56,8 +58,7 @@ four screens and an id held in your head.
 
 {% if offerings %}
   <div class="mb-5 bg-white border border-brand-border-light rounded-lg px-5 py-4">
-    <h2 class="text-sm font-semibold text-gray-900">What they say they offer</h2>
-    <p class="text-xs text-gray-600 mt-0.5">Their own claim, from the supplier marketplace — not something we have verified.</p>
+    <h2 class="text-sm font-semibold text-gray-900">What they say they offer{% info "About what they say they offer" %}<p>Their own claim, from the supplier marketplace. Not something we have verified.</p>{% endinfo %}</h2>
     <ul class="mt-2 text-sm divide-y">
       {% for o in offerings %}<li class="py-1.5">{{ o.product_name }} <span class="text-gray-600">· {{ o.get_category_display }}{% if o.pack_description %} · {{ o.pack_description }}{% endif %}{% if o.certifications %} · {{ o.certifications|join:", " }}{% endif %} · updated {{ o.updated_at|day }}</span></li>{% endfor %}
     </ul>
@@ -99,7 +100,7 @@ four screens and an id held in your head.
 
   <div class="bg-white border border-brand-border-light rounded-lg px-5 py-4">
     <div class="flex items-baseline justify-between gap-3">
-      <h2 class="text-base font-semibold text-gray-900">Qualifications</h2>
+      <h2 class="text-base font-semibold text-gray-900">Qualifications{% info "About qualifications" %}<p>Prequalification is a fact about the company, not about one offer, so it is recorded here rather than on a quote.</p><p>"Connect organisation": a linked supplier can sign in and answer for themselves.</p>{% endinfo %}</h2>
       {% if has_program_context %}<a href="{% url 'supply_chain:supplier_qualifications' supplier.id %}" class="text-sm text-brand-indigo hover:underline">Edit</a>{% endif %}
     </div>
     {% if supplier.qualifications %}
@@ -111,10 +112,7 @@ four screens and an id held in your head.
         {% endfor %}
       </ul>
     {% else %}
-      <p class="text-sm text-gray-600 mt-1">
-        None on file. Prequalification is a fact about the company, not about
-        one offer, so it belongs here rather than on a quote.
-      </p>
+      <p class="text-sm text-gray-600 mt-1">None on file.</p>
     {% endif %}
 
     {% if usual_lacks %}
@@ -130,7 +128,7 @@ four screens and an id held in your head.
         {% if supplier.connect_organization_id %}
           linked · {{ supplier.connect_organization_id }}
         {% else %}
-          not linked — they cannot sign in and answer for themselves
+          not linked, so they cannot sign in
         {% endif %}
       </p>
     </div>
@@ -148,11 +146,7 @@ four screens and an id held in your head.
 {% comment %} ---- what they are connected to ---- {% endcomment %}
 <div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
   <div class="px-5 py-4 border-b border-brand-border-light">
-    <h2 class="text-base font-semibold text-gray-900">What they supply</h2>
-    <p class="text-sm text-gray-600 mt-0.5 max-w-2xl">
-      Read back off what happened, not off a list somebody keeps. Each product
-      says the strongest thing we hold about them and it.
-    </p>
+    <h2 class="text-base font-semibold text-gray-900">What they supply{% info "About what they supply" %}<p>Read back off what happened, not off a list somebody keeps. Each product shows the strongest record we hold linking them to it.</p>{% endinfo %}</h2>
   </div>
   {% if supplies %}
     <ul class="divide-y divide-gray-100">
@@ -190,7 +184,7 @@ hundred are different claims, and a reader cannot tell them apart.
 {% if performance %}
 <div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
   <div class="px-5 py-4 border-b border-brand-border-light">
-    <h2 class="text-base font-semibold text-gray-900">How their orders went</h2>
+    <h2 class="text-base font-semibold text-gray-900">How their orders went{% info "About how their orders went" %}<p>Each figure is a count out of the orders that can be measured, never a bare percentage.</p><p>Punctuality is measured against the lead time promised on the order. An order with no promised date, or still on the way, is not counted.</p>{% endinfo %}</h2>
   </div>
   <div class="px-5 py-4">
     {% if performance.measurable %}
@@ -219,7 +213,7 @@ hundred are different claims, and a reader cannot tell them apart.
       read as one, which is why the service returns null rather than zero.
       {% endcomment %}
       <p class="text-sm text-gray-700">
-        Nothing to judge yet. Punctuality is measured against a promised lead time on the order, and none of theirs carries one.
+        Nothing to judge yet: none of their orders has a promised lead time.
       </p>
     {% endif %}
     {% if performance.no_promise or performance.not_yet_due %}
@@ -266,11 +260,7 @@ hundred are different claims, and a reader cannot tell them apart.
 {% comment %} ---- they answered ---- {% endcomment %}
 <div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
   <div class="px-5 py-4 border-b border-brand-border-light">
-    <h2 class="text-base font-semibold text-gray-900">What they quoted</h2>
-    <p class="text-sm text-gray-600 mt-0.5">
-      As stated, beside what it comes to once normalised. An Unconfirmed here
-      is a question outstanding with them, and the count says how many.
-    </p>
+    <h2 class="text-base font-semibold text-gray-900">What they quoted{% info "About what they quoted" %}<p>Each price as stated, beside what it comes to in US dollars per base unit. A figure that cannot be worked out yet is a question outstanding with them, and the count says how many.</p>{% endinfo %}</h2>
   </div>
   {% if quotes %}
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
@@ -354,10 +344,7 @@ hundred are different claims, and a reader cannot tell them apart.
 
 <div class="bg-white border border-brand-border-light rounded-lg mb-6 overflow-hidden">
   <div class="px-5 py-4 border-b border-brand-border-light">
-    <h2 class="text-base font-semibold text-gray-900">Orders with them</h2>
-    <p class="text-sm text-gray-600 mt-0.5">
-      What was committed, what has shipped, what arrived, and what they billed.
-    </p>
+    <h2 class="text-base font-semibold text-gray-900">Orders with them{% info "About orders with them" %}<p>What was committed, what has shipped, what arrived, and what they billed.</p>{% endinfo %}</h2>
   </div>
   {% if contracts %}
     <ul class="divide-y divide-gray-100">
@@ -390,11 +377,7 @@ hundred are different claims, and a reader cannot tell them apart.
 
 <div class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
   <div class="px-5 py-4 border-b border-brand-border-light">
-    <h2 class="text-base font-semibold text-gray-900">Documents</h2>
-    <p class="text-sm text-gray-600 mt-0.5">
-      Held against the company rather than one offer — a certification belongs
-      to the supplier, not to the quote that mentioned it.
-    </p>
+    <h2 class="text-base font-semibold text-gray-900">Documents{% info "About documents" %}<p>Held against the company rather than one offer: a certification belongs to the supplier, not to the quote that mentioned it.</p>{% endinfo %}</h2>
   </div>
   {% if documents %}
     <ul class="divide-y divide-gray-100">

@@ -49,13 +49,14 @@ TAB_GROUPS = (
         ),
     ),
     (
-        "Setup",
+        # Named Settings, not Setup (Akash, 2026-11-17: "setup also is way to weirdly named").
+        "Settings",
         (
             ("supply_chain:catalogue", "Catalogue"),
-            ("supply_chain:alerts", "Alerts"),
             ("supply_chain:organisations", "Organisations"),
-            ("supply_chain:programme_team", "Team"),
+            ("supply_chain:alerts", "Alerts"),
             ("supply_chain:update_links", "Update links"),
+            ("supply_chain:programme_team", "Team"),
         ),
     ),
 )
@@ -74,13 +75,13 @@ FAMILIES = (
     ("Workers and plan", ("supply_chain:workers", "supply_chain:plan")),
     # Issues and Tests stay entries of their own (Akash, 2026-11-17).
     (
-        "Setup",
+        "Settings",
         (
             "supply_chain:catalogue",
-            "supply_chain:alerts",
             "supply_chain:organisations",
-            "supply_chain:programme_team",
+            "supply_chain:alerts",
             "supply_chain:update_links",
+            "supply_chain:programme_team",
         ),
     ),
 )
@@ -93,7 +94,7 @@ FAMILY_ICONS = {
     "Network": "fa-diagram-project",
     "Distribution": "fa-truck",
     "Workers and plan": "fa-people-group",
-    "Setup": "fa-gear",
+    "Settings": "fa-gear",
 }
 TAB_ICONS = {
     "supply_chain:home": "fa-house",

@@ -31,11 +31,11 @@ def test_every_tab_is_in_exactly_one_group():
 
 
 def test_the_groups_are_the_ones_the_feedback_asked_for():
-    assert [g for g, _ in TAB_GROUPS] == ["", "Buying", "Distribution and stock", "Setup"]
+    assert [g for g, _ in TAB_GROUPS] == ["", "Buying", "Distribution and stock", "Settings"]
     by_group = {g: [label for _, label in tabs] for g, tabs in TAB_GROUPS}
     assert by_group[""] == ["Overview", "Start here"]
     assert by_group["Buying"] == ["Purchases", "Suppliers"]
-    assert {"Catalogue", "Organisations", "Alerts", "Team"} <= set(by_group["Setup"])
+    assert {"Catalogue", "Organisations", "Alerts", "Team"} <= set(by_group["Settings"])
     assert {"Network", "Map", "Distribution", "Stock", "Where it went"} <= set(by_group["Distribution and stock"])
 
 
@@ -49,12 +49,12 @@ def test_grouping_keeps_the_order_and_puts_a_pinned_tab_with_its_neighbour():
         {"label": "A", "group": ""},
         {"label": "B", "group": "Buying"},
         {"label": "Pinned", "group": "Buying"},
-        {"label": "C", "group": "Setup"},
+        {"label": "C", "group": "Settings"},
     ]
     assert [(g["label"], [t["label"] for t in g["tabs"]]) for g in tab_groups(tabs)] == [
         ("", ["A"]),
         ("Buying", ["B", "Pinned"]),
-        ("Setup", ["C"]),
+        ("Settings", ["C"]),
     ]
 
 

@@ -34,7 +34,7 @@ GROUP_LINES = (
         "Where the stock is, what to hand out each week, and where it went. Weekly, and partly the local "
         "partners' (LLOs') work.",
     ),
-    ("Setup", "Setup", "The product, the organisations, who is told what, and who can act. Mostly once."),
+    ("Settings", "Settings", "The product, the organisations, who is told what, and who can act. Mostly once."),
 )
 
 # (key, title, what you do, view name, evidence key in the facts or None for "no tick, a recurring check")

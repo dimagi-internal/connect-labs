@@ -357,7 +357,7 @@ class TestTheScreensAreReachable:
         """A page under no tab makes the nav read as though you have left the domain."""
         from connect_labs.supply_chain.navigation import GROUP_OF_TAB, TAB_FOR_VIEW
 
-        assert GROUP_OF_TAB["supply_chain:organisations"] == "Setup"
+        assert GROUP_OF_TAB["supply_chain:organisations"] == "Settings"
         assert TAB_FOR_VIEW["supply_chain:org_edit"] == "supply_chain:organisations"
 
 

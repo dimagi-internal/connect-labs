@@ -1,4 +1,7 @@
 {% extends "supply_chain/base.html" %}
+{% load supply_chain_extras %}
+
+{% block page_info %}{% info "About this page" %}<p>Enter how many children each partner expects to treat. We multiply by what one child needs (by default one carton, 150 sachets) and add a buffer for losses and delays.</p><p>Stock a partner already holds is not taken off: subtract it yourself if you want to.</p>{% endinfo %}{% endblock %}
 
 {% block supply_content %}
 <nav class="text-sm text-gray-600 mb-3">
@@ -9,8 +12,6 @@
 <div class="max-w-3xl space-y-4">
   <div>
     <h1 class="text-base font-semibold text-gray-900">How much to buy for each partner</h1>
-    <p class="text-sm text-gray-600 mt-0.5">Enter how many children each partner expects to treat. We multiply by what one child needs (by default one carton, 150 sachets) and add a
-      buffer for losses and delays. Stock a partner already holds is not taken off: subtract it yourself if you want to.</p>
   </div>
 
   <form method="get" class="bg-white border border-gray-200 rounded-lg p-4 space-y-3" data-testid="sizing-form">
@@ -32,7 +33,7 @@
     </table>
     <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-700">
       <label>Buffer for everyone (%) <input type="number" min="0" step="any" name="buffer" value="{{ buffer }}" placeholder="10" class="ml-1 w-20 border border-gray-300 rounded-md px-2 py-1"></label>
-      <label>How much one child needs <input type="number" min="0" step="any" name="course" value="{{ course }}" placeholder="one carton" class="ml-1 w-44 border border-gray-300 rounded-md px-2 py-1"> <span class="text-xs text-gray-600">leave empty for one carton a child; the measured course is a floor, because the fastest recoveries finish first</span></label>
+      <label>How much one child needs <input type="number" min="0" step="any" name="course" value="{{ course }}" placeholder="one carton" class="ml-1 w-44 border border-gray-300 rounded-md px-2 py-1"> </label>{% info "About how much one child needs" %}<p>Leave it empty for one carton a child. The measured course is a floor, because the fastest recoveries finish first.</p>{% endinfo %}
     </div>
     <button type="submit" class="px-4 py-2 text-sm font-medium rounded-md text-white bg-brand-indigo hover:bg-brand-deep-purple">Work it out</button>
   </form>
@@ -45,8 +46,7 @@
     <ul class="divide-y divide-gray-100">
     {% for p in sized.partners %}
       <li class="px-4 py-3 flex flex-wrap items-center justify-between gap-3" data-testid="sizing-row">
-        <div class="min-w-0"><div class="text-sm font-medium text-gray-900">{{ p.org_name }}: {{ p.figure_text }} {{ unit }}</div>
-          <div class="text-xs text-gray-600" data-testid="sizing-working">{{ p.sentence }}</div></div>
+        <div class="min-w-0"><div class="text-sm font-medium text-gray-900">{{ p.org_name }}: {{ p.figure_text }} {{ unit }}<span data-testid="sizing-working">{% info "How this is worked out" %}<p>{{ p.sentence }}</p>{% endinfo %}</span></div></div>
         <form method="post" action="{% url 'supply_chain:procurement_tender_sizing_apply' tender.id %}">{% csrf_token %}
           <input type="hidden" name="org_id" value="{{ p.org_id }}"><input type="hidden" name="commodity_slug" value="{{ product }}">
           <input type="hidden" name="quantity" value="{{ p.figure }}"><input type="hidden" name="next" value="{{ request.get_full_path }}">
