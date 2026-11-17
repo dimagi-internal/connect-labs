@@ -526,3 +526,17 @@ def test_a_registration_keys_to_the_case_its_visits_name_not_the_subcase_they_ar
     struct = profile_entity_structure(visits)
 
     assert struct.visits_per_entity == {4: 1}
+
+
+def test_a_visits_fields_come_out_in_one_order_however_the_paths_were_given():
+    """The case models draw per field in field order, so a path set's iteration order
+    (which Python varies per process) must not reach the visits."""
+    form = {"form": {"b": 2.0, "a": 1.0, "c": 3.0, "y": "yes", "x": "no"}}
+    visits = [{"entity_id": "e1", "username": "flwA", "visit_date": "2026-01-01", "form_json": form}]
+    numeric, cats = ["form.c", "form.a", "form.b"], ["form.y", "form.x"]
+    one = profile_entity_structure(visits, numeric_paths=set(numeric), categorical_paths=set(cats))
+    other = profile_entity_structure(visits, numeric_paths=numeric[::-1], categorical_paths=cats[::-1])
+    for struct in (one, other):
+        visit = struct.transplant_pool[0]["visits"][0]
+        assert list(visit["values"]) == ["form.a", "form.b", "form.c"]
+        assert list(visit["cats"]) == ["form.x", "form.y"]

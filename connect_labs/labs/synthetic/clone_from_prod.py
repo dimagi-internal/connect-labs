@@ -64,6 +64,7 @@ def profile_opp_to_bundle(
     curate: bool = False,
     mirror: bool = False,
     progress=NULL_PROGRESS,
+    processes: int | None = None,
 ) -> str:
     """Fetch real prod exports for *source_opp_id* and write a self-contained profile bundle.
 
@@ -117,6 +118,12 @@ def profile_opp_to_bundle(
     if not isinstance(user_visits, list) or not user_visits:
         raise ValueError(f"No user_visits for opportunity_id={source_opp_id}")
 
+    # Processes for the case models: every vCPU of a job's own machine unless the caller
+    # (a cohort already profiling several opportunities at once) hands out its share.
+    if processes is None:
+        processes = _profile_parallelism()
+    if processes > 1:
+        _close_before_fork()
     manifest_yaml = _profile(
         opportunity_id=source_opp_id,
         user_visits=user_visits,
@@ -125,6 +132,7 @@ def profile_opp_to_bundle(
         app_structure=app_structure if isinstance(app_structure, dict) else {},
         curate=curate,
         mirror=mirror,
+        processes=processes,
     )
     safe_call(progress, 5, stages, "built manifest; writing bundle")
     return store.write(
@@ -336,6 +344,7 @@ def _profile_one_forked(sid: int) -> str:
         store=store,
         curate=job["curate"],
         mirror=job["mirror"],
+        processes=job["processes"],
     )
 
 
@@ -360,7 +369,14 @@ def _profile_in_parallel(
     resolved_root = f"gdrive:{store.root_folder_id}" if hasattr(store, "root_folder_id") else str(bundle_root)
     _FORK_JOB.clear()
     _FORK_JOB.update(
-        resolved_root=resolved_root, base_url=base_url, oauth_token=oauth_token, curate=curate, mirror=mirror
+        resolved_root=resolved_root,
+        base_url=base_url,
+        oauth_token=oauth_token,
+        curate=curate,
+        mirror=mirror,
+        # The machine's vCPUs shared among the opportunities profiling at once: a cohort
+        # of 2 on 8 vCPUs gives each opportunity's case models 4 processes.
+        processes=max(1, _profile_parallelism() // workers),
     )
     _close_before_fork()
     total = len(ids)

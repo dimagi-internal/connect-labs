@@ -27,7 +27,7 @@ import yaml
 from connect_labs.labs.deid import classify as deid
 
 from .case_model import synthesize_case_pool
-from .manifest import Manifest, ManifestValidationError
+from .manifest import YAML_DUMPER, Manifest, ManifestValidationError
 from .mirror import build_entity_resolver, profile_entity_structure
 from .schema_loader import FormSchema, parse_form_schema_from_app_json
 
@@ -971,6 +971,7 @@ def profile(
     mirror: bool = False,
     noise_seed: int | None = None,
     case_timelines: bool = False,
+    processes: int = 1,
 ) -> str:
     """Analyze real export data and return a Manifest YAML string.
 
@@ -992,6 +993,8 @@ def profile(
         noise_seed: Seed for sampling the modelled cases (tests pin it). Left None,
             it is derived from the server secret and the opportunity id, so a
             re-profile is reproducible on this server.
+        processes: Processes to sample the modelled cases across
+            (case_model.synthesize_case_pool); the pool is the same for any count.
 
     Returns:
         YAML string that validates against Manifest.from_yaml().
@@ -1180,6 +1183,7 @@ def profile(
                 pool,
                 seed=noise_seed if noise_seed is not None else _mirror_noise_seed(opportunity_id),
                 frozen_paths=computed_whole,
+                processes=processes,
             )
             logger.info("case timelines for opp %s: %s", opportunity_id, model_report)
             if pool:
@@ -1217,11 +1221,13 @@ def profile(
     if geography is not None:
         manifest_dict["geography"] = geography
 
-    manifest_yaml = yaml.dump(manifest_dict, default_flow_style=False, sort_keys=False)
-
+    # The SAFE dumper refuses anything a safe load could not read back (a tuple, a numpy
+    # number), so the written YAML always parses to manifest_dict -- and the dict is
+    # validated as is, rather than written and parsed again (half a large profile).
     try:
-        Manifest.from_yaml(manifest_yaml)
-    except ManifestValidationError as exc:
+        manifest_yaml = yaml.dump(manifest_dict, Dumper=YAML_DUMPER, default_flow_style=False, sort_keys=False)
+        Manifest.from_dict(manifest_dict)
+    except (ManifestValidationError, yaml.representer.RepresenterError) as exc:
         raise ManifestValidationError(f"Profiler produced an invalid manifest (this is a bug): {exc}") from exc
 
     return manifest_yaml

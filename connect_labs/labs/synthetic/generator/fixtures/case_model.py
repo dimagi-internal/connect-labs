@@ -65,6 +65,7 @@ The output has the same shape the engine already replays (``entities.plan_mirror
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import math
 import random
 from collections import Counter, defaultdict
@@ -519,29 +520,62 @@ def _fit_aliases(series_list: list[dict[str, Any]]) -> dict[str, str]:
     B is an alias of A when B is recorded only with A (95%+ of B's visits) and equal to
     it on 99%+ of those, over K_MIN visits or more; A is the more often recorded. The
     same for numbers, dates and categories.
+
+    Vectorised over visits. It compared every pair of a visit's fields in pure Python:
+    quadratic in a form's width, so a 200-field form took 72 s per 30,000 visits and a
+    large opportunity's hidden-calculation-heavy forms took hours. Now one matrix per
+    kind (visits x fields): pair counts from one matrix product, then the equality
+    count only for pairs that could still qualify. The tests keep the pairwise loop as
+    the definition and hold the two equal.
     """
-    seen: Counter = Counter()
-    together: Counter = Counter()
-    equal: Counter = Counter()
-    for s in series_list:
-        for v in s["visits"]:
-            for kind in ("values", "dates", "cats"):
-                fields = v.get(kind) or {}
-                keys = sorted(fields)
-                seen.update((kind, k) for k in keys)
-                for i, a in enumerate(keys):
-                    for b in keys[i + 1 :]:
-                        together[(kind, a, b)] += 1
-                        x, y = fields[a], fields[b]
-                        same = abs(float(x) - float(y)) <= 1e-9 * max(1.0, abs(float(x))) if kind != "cats" else x == y
-                        equal[(kind, a, b)] += same
-    out: dict[str, str] = {}
-    for (kind, a, b), n in together.items():
-        if n < K_MIN or equal[(kind, a, b)] < 0.99 * n:
+    rows = [v for s in series_list for v in s["visits"]]
+    # (first visit holding both, kind, a, b): the order the pairwise loop met them in,
+    # which decides which primary an alias with two candidates takes (setdefault).
+    found: list[tuple[int, int, str, str]] = []
+    for ki, kind in enumerate(("values", "dates", "cats")):
+        names = sorted({k for v in rows for k in (v.get(kind) or {})})
+        if len(names) < 2:
             continue
-        primary, alias = (a, b) if (seen[(kind, a)], b) >= (seen[(kind, b)], a) else (b, a)
-        if n >= 0.95 * seen[(kind, alias)]:
-            out.setdefault(alias, primary)
+        col = {name: i for i, name in enumerate(names)}
+        present = np.zeros((len(rows), len(names)), dtype=bool)
+        if kind == "cats":
+            codes: dict = {}
+            data = np.zeros((len(rows), len(names)), dtype=np.int64)
+        else:
+            data = np.zeros((len(rows), len(names)), dtype=np.float64)
+        for r, v in enumerate(rows):
+            for k, x in (v.get(kind) or {}).items():
+                c = col[k]
+                present[r, c] = True
+                data[r, c] = codes.setdefault(x, len(codes)) if kind == "cats" else float(x)
+        seen = present.sum(axis=0)
+        pf = present.astype(np.float32)
+        together = np.rint(pf.T @ pf).astype(np.int64)  # exact: counts stay far below 2**24
+        smaller = np.minimum.outer(seen, seen)
+        # Necessary for a pair (a < b): recorded together K_MIN+ times and on 95%+ of
+        # the less-recorded one's visits (the alias is always the less recorded).
+        cand_a, cand_b = np.nonzero(np.triu((together >= K_MIN) & (together >= 0.95 * smaller), k=1))
+        for a in np.unique(cand_a):
+            bs = cand_b[cand_a == a]
+            both = present[:, [a]] & present[:, bs]
+            if kind == "cats":
+                same = data[:, [a]] == data[:, bs]
+            else:
+                x = data[:, [a]]
+                with np.errstate(invalid="ignore"):
+                    same = np.abs(x - data[:, bs]) <= 1e-9 * np.maximum(1.0, np.abs(x))
+            equal = (both & same).sum(axis=0)
+            for b, eq in zip(bs, equal):
+                n = together[a, b]
+                if eq < 0.99 * n:
+                    continue
+                primary, alias = (a, b) if (seen[a], names[b]) >= (seen[b], names[a]) else (b, a)
+                if n >= 0.95 * seen[alias]:
+                    first = int(np.argmax(present[:, a] & present[:, b]))
+                    found.append((first, ki, names[alias], names[primary]))
+    out: dict[str, str] = {}
+    for _, _, alias, primary in sorted(found, key=lambda f: (f[0], f[1])):
+        out.setdefault(alias, primary)
     # A chain (C copies B, B copies A) resolves to its root.
     for alias in list(out):
         root, hops = out[alias], 0
@@ -2011,6 +2045,14 @@ def _distance(a: dict, b: dict) -> float | None:
     return float(np.mean(diffs)) if diffs else None
 
 
+# Set just before forking, so a child reads one schedule's matrices without pickling them.
+_FORK_GATE: dict[str, np.ndarray] = {}
+
+
+def _gate_block_forked(lo: int) -> np.ndarray:
+    return _Gate._nearest_in_block(_FORK_GATE["matrix"], _FORK_GATE["denom"], lo)
+
+
 class _Gate:
     """Distance-to-closest-record: a sampled case is ON a real case when it is within
     ``_GATE_REL_TOL`` of one AND closer to it than a quarter (``_GATE_NN_SHARE``) of
@@ -2032,7 +2074,7 @@ class _Gate:
     # (n x n x columns) array at once.
     _BLOCK = 256
 
-    def __init__(self, real: list[dict], frozen_paths: set[str] | frozenset = frozenset()):
+    def __init__(self, real: list[dict], frozen_paths: set[str] | frozenset = frozenset(), processes: int = 1):
         # Any length, the gate's other half: a case whose measured numbers are exactly a
         # real case's is refused unless K_MIN real cases share them. The distance test
         # starts at three visits, and a short case of rare values (five two-visit cases,
@@ -2057,17 +2099,34 @@ class _Gate:
                     for path, x in (v.get("values") or {}).items():
                         matrix[ci, columns[(vi, path)]] = x
             denom = np.maximum(np.abs(matrix), 1e-9)
-            nn = np.full(len(cases), np.inf)
-            for lo in range(0, len(cases), self._BLOCK):
-                block = matrix[lo : lo + self._BLOCK]
-                # d[i, j] = mean over shared columns of |a_i - b_j| / max(|b_j|, eps)
-                d = self._mean_rel(block[:, None, :], matrix[None, :, :], denom[None, :, :])
-                for i in range(block.shape[0]):
-                    d[i, lo + i] = np.nan  # a case is not its own neighbour
-                with np.errstate(all="ignore"):
-                    row_min = np.nanmin(np.where(np.isnan(d), np.inf, d), axis=1)
-                nn[lo : lo + block.shape[0]] = row_min
+            starts = range(0, len(cases), self._BLOCK)
+            if processes > 1 and len(starts) > 1:
+                # The one quadratic step left in a profile (16,000 cases: 22 s here), and
+                # its blocks are independent: forked processes, the same numbers.
+                import multiprocessing
+                from concurrent.futures import ProcessPoolExecutor
+
+                _FORK_GATE.update(matrix=matrix, denom=denom)
+                try:
+                    ctx = multiprocessing.get_context("fork")
+                    with ProcessPoolExecutor(max_workers=processes, mp_context=ctx) as pool:
+                        nn = np.concatenate(list(pool.map(_gate_block_forked, starts)))
+                finally:
+                    _FORK_GATE.clear()
+            else:
+                nn = np.concatenate([self._nearest_in_block(matrix, denom, lo) for lo in starts])
             self._shapes[shape] = (columns, matrix, denom, nn)
+
+    @classmethod
+    def _nearest_in_block(cls, matrix: np.ndarray, denom: np.ndarray, lo: int) -> np.ndarray:
+        """Each real case in rows ``lo``.. of the block: its distance to its nearest other real case."""
+        block = matrix[lo : lo + cls._BLOCK]
+        # d[i, j] = mean over shared columns of |a_i - b_j| / max(|b_j|, eps)
+        d = cls._mean_rel(block[:, None, :], matrix[None, :, :], denom[None, :, :])
+        for i in range(block.shape[0]):
+            d[i, lo + i] = np.nan  # a case is not its own neighbour
+        with np.errstate(all="ignore"):
+            return np.nanmin(np.where(np.isnan(d), np.inf, d), axis=1)
 
     @staticmethod
     def _mean_rel(a: np.ndarray, b: np.ndarray, denom: np.ndarray) -> np.ndarray:
@@ -2108,45 +2167,102 @@ class _Gate:
         return bool(np.any(hit))
 
 
+#: Below this many real cases sampling takes seconds and is not worth forking for.
+_PARALLEL_MIN_CASES = 2000
+
+
+def _owner_rngs(seed: int, owner: str) -> tuple[random.Random, np.random.Generator]:
+    """One worker's own random streams, from the pool's seed and the worker's id.
+
+    Per worker, not one stream for the whole pool, so a worker's cases do not depend
+    on which worker was sampled before it -- the caseloads can then be split across
+    processes and come out the same."""
+    digest = hashlib.sha256(f"case-pool:{seed}:{owner}".encode()).digest()
+    return random.Random(digest), np.random.default_rng(int.from_bytes(digest[:16], "big"))
+
+
+def _sample_owner(model: CaseModel, gate: _Gate, owner: str, seed: int) -> tuple[list[dict[str, Any]], int]:
+    """One worker's new caseload, and how many cases the privacy gate redrew."""
+    rng, nrng = _owner_rngs(seed, owner)
+    starts = model.owner_starts[owner]
+    # A case starts near the start of one of its worker's real cases of the same
+    # length, each once. Length and start go together: a case still being visited
+    # when the source was read is short BECAUSE it started late, and a short
+    # schedule put on an early start reads as a baby lost to follow-up (lost by day
+    # 28: 41% on a clone against the source's 19%, KMC 2026-10-14).
+    by_length: dict[int, list[int]] = defaultdict(list)
+    for n, start in zip(model.owners[owner], starts):
+        by_length[n].append(start)
+    for pile in by_length.values():
+        rng.shuffle(pile)
+    out: list[dict[str, Any]] = []
+    redrawn = 0
+    for n in model.owners[owner]:
+        anchor = by_length[n].pop() if by_length[n] else rng.choice(starts)
+        for _ in range(_GATE_MAX_TRIES):
+            case = _sample_case(model, owner, n, anchor, rng, nrng)
+            if not gate.too_close(case):
+                break
+            redrawn += 1
+        else:
+            continue  # never emit a case the gate kept refusing
+        out.append(case)
+    return out, redrawn
+
+
+# Set just before forking, so a child reads the fitted model and gate without pickling them.
+_FORK_SAMPLING: dict[str, Any] = {}
+
+
+def _sample_owner_forked(owner: str) -> tuple[list[dict[str, Any]], int]:
+    job = _FORK_SAMPLING
+    return _sample_owner(job["model"], job["gate"], owner, job["seed"])
+
+
+def _sample_owners_in_parallel(
+    model: CaseModel, gate: _Gate, owners: list[str], seed: int, processes: int
+) -> list[tuple[list[dict[str, Any]], int]]:
+    """``_sample_owner`` for every worker, across ``processes`` forked processes, in ``owners`` order."""
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor
+
+    _FORK_SAMPLING.update(model=model, gate=gate, seed=seed)
+    try:
+        with ProcessPoolExecutor(max_workers=processes, mp_context=multiprocessing.get_context("fork")) as pool:
+            # Small chunks: caseloads are uneven (one worker can hold a tenth of the
+            # cases), so handing them out a few at a time keeps every process busy.
+            return list(pool.map(_sample_owner_forked, owners, chunksize=max(1, len(owners) // (processes * 8))))
+    finally:
+        _FORK_SAMPLING.clear()
+
+
 def synthesize_case_pool(
     pool: list[dict[str, Any]],
     *,
     seed: int,
     frozen_paths: set[str] | frozenset = frozenset(),
+    processes: int = 1,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Fit models to the real ``pool`` and return ``(new_pool, report)``. See the module doc."""
+    """Fit models to the real ``pool`` and return ``(new_pool, report)``. See the module doc.
+
+    ``processes`` > 1 samples the workers' caseloads across that many forked processes
+    (a large source only, ``_PARALLEL_MIN_CASES``). Each worker draws from its own
+    random streams, seeded from ``seed`` and the worker, so the pool is the same
+    whatever ``processes`` is. The caller must hold no database connection a child
+    could inherit (``clone_from_prod._close_before_fork``)."""
     real = [dict(s, visits=list(s.get("visits") or [])) for s in pool if s.get("visits")]
     if not real:
         return [], {"real_cases": 0}
     model = fit_case_model(real, frozen_paths=frozen_paths)
-    rng = random.Random(seed)
-    nrng = np.random.default_rng(seed)
-    gate = _Gate(real, frozen_paths)
+    gate = _Gate(real, frozen_paths, processes=processes)
 
-    out: list[dict[str, Any]] = []
-    redrawn = 0
-    for owner in sorted(model.owners):
-        starts = model.owner_starts[owner]
-        # A case starts near the start of one of its worker's real cases of the same
-        # length, each once. Length and start go together: a case still being visited
-        # when the source was read is short BECAUSE it started late, and a short
-        # schedule put on an early start reads as a baby lost to follow-up (lost by day
-        # 28: 41% on a clone against the source's 19%, KMC 2026-10-14).
-        by_length: dict[int, list[int]] = defaultdict(list)
-        for n, start in zip(model.owners[owner], starts):
-            by_length[n].append(start)
-        for pile in by_length.values():
-            rng.shuffle(pile)
-        for n in model.owners[owner]:
-            anchor = by_length[n].pop() if by_length[n] else rng.choice(starts)
-            for _ in range(_GATE_MAX_TRIES):
-                case = _sample_case(model, owner, n, anchor, rng, nrng)
-                if not gate.too_close(case):
-                    break
-                redrawn += 1
-            else:
-                continue  # never emit a case the gate kept refusing
-            out.append(case)
+    owners = sorted(model.owners)
+    if processes > 1 and len(owners) > 1 and len(real) >= _PARALLEL_MIN_CASES:
+        sampled = _sample_owners_in_parallel(model, gate, owners, seed, processes)
+    else:
+        sampled = [_sample_owner(model, gate, owner, seed) for owner in owners]
+    out = [case for cases, _ in sampled for case in cases]
+    redrawn = sum(n for _, n in sampled)
     report = {
         **model.report,
         "synthetic_cases": len(out),

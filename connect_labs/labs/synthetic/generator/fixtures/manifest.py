@@ -33,6 +33,14 @@ class ManifestValidationError(ValueError):
     """Raised when a manifest fails schema validation."""
 
 
+# libyaml's C parser and emitter where the install has them (PyYAML's wheels do). A
+# case-timelines manifest carries every modelled case, tens to hundreds of MB for a
+# large opportunity, and the pure-Python ones spent most of a profile writing and
+# re-reading it (4,000 cases: 168 of 221 seconds). Same documents, same safety.
+YAML_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+YAML_DUMPER = getattr(yaml, "CSafeDumper", yaml.SafeDumper)
+
+
 # ---------- Distributions ----------
 
 
@@ -884,9 +892,13 @@ class Manifest(BaseModel):
     @classmethod
     def from_yaml(cls, source: str | bytes) -> Manifest:
         try:
-            data = yaml.safe_load(source)
+            data = yaml.load(source, Loader=YAML_LOADER)  # noqa: S506 -- a safe loader
         except yaml.YAMLError as exc:
             raise ManifestValidationError(f"YAML parse error: {exc}") from exc
+        return cls.from_dict(data)
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Manifest:
         try:
             return cls.model_validate(data)
         except ValidationError as exc:
