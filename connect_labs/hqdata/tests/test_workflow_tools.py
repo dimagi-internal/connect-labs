@@ -368,3 +368,53 @@ def test_a_run_freezes_the_data_the_page_has_now_and_survives_the_data_changing(
     frozen = get_run(me, project, wid, run["id"]).data["snapshot"]["pipelines"]["workers"]["rows"]
     assert sorted((r["username"], r["forms"]) for r in frozen) == [("ann", 2), ("bob", 1)]
     assert [r["id"] for r in list_runs(me, project, wid)] == [run["id"]]
+
+
+def test_a_run_over_a_period_scoped_pipeline_freezes_only_that_periods_rows(me, project):
+    from connect_labs.hqdata.workflows import get_run, save_run
+
+    HQForm.objects.create(
+        project_id=project.pk,
+        form_id="late",
+        xmlns="http://x/1",
+        app_id="app1",
+        username="ann",
+        received_on=datetime(2026, 11, 10, 10, tzinfo=timezone.utc),
+        form_json={"id": "late", "received_on": "2026-11-10T10:00:00Z", "form": {"meta": {"username": "ann"}}},
+    )
+    scoped = call(
+        "commcare_pipeline_save",
+        me,
+        project_id=project.pk,
+        name="per worker, by period",
+        store_kind="forms",
+        schema={**SCHEMA, "period_scoped": True},
+    )["id"]
+    wid = make(me, project, scoped)["workflow_id"]
+
+    def frozen(start, end):
+        run = save_run(me, project, wid, period_start=start, period_end=end)
+        data = get_run(me, project, wid, run["id"]).data["snapshot"]
+        return data, sorted((r["username"], r["forms"]) for r in data["pipelines"]["workers"]["rows"])
+
+    first, rows = frozen("2026-11-01", "2026-11-08")
+    assert rows == [("ann", 2), ("bob", 1)]
+    assert first["period"] == {"start": "2026-11-01", "end": "2026-11-08"}
+    assert "workers" not in first and first["schema_version"] == 1  # the engine's default shape, no Connect workers
+    assert frozen("2026-11-08", "2026-11-15")[1] == [("ann", 1)]
+
+
+def test_a_failed_snapshot_leaves_no_empty_run_behind(me, project):
+    from connect_labs.hqdata.workflows import PageProblem, list_runs, save_run
+
+    made = call(
+        "commcare_workflow_create",
+        me,
+        project_id=project.pk,
+        name="Empty",
+        render_code=CODE,
+        pipeline_sources=[],
+    )
+    with pytest.raises(PageProblem):
+        save_run(me, project, made["workflow_id"])
+    assert list_runs(me, project, made["workflow_id"]) == []

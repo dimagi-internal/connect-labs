@@ -113,6 +113,21 @@ def build_snapshot_for_run(
         raise SnapshotBuildError("definition_not_found", f"workflow definition {definition_id} not found")
 
     contract = resolve_snapshot_contract(definition)
+    if (
+        not contract["ok"]
+        and getattr(data_access, "hq_scope", False) is True
+        and contract["error"] in ("no_contract", "unknown_template")
+    ):
+        # A page over a CommCare project has no registered template (the overview names one that is not in
+        # the registry): by default it freezes every pipeline it reads and nothing else (no workers, no run
+        # state). A page that declares `snapshot_inputs` keeps its own.
+        contract = {
+            "ok": True,
+            "source": "definition",
+            "template_key": None,
+            "snapshot_inputs": {"pipelines": None, "workers": False, "state_keys": []},
+            "recovered_template_key": False,
+        }
     if not contract["ok"]:
         raise SnapshotBuildError(contract["error"], contract_error_message(contract), contract=contract)
 
@@ -155,7 +170,8 @@ def build_snapshot_for_run(
             ) from e
 
     workers: list[dict] = []
-    for oid in effective_opp_ids:
+    # A CommCare project has no Connect workers: its scope id is not an opportunity.
+    for oid in [] if getattr(data_access, "hq_scope", False) is True else effective_opp_ids:
         try:
             for w in _once(("workers", oid), lambda oid=oid: list(data_access.get_workers(oid) or [])):
                 workers.append({**w, "opportunity_id": oid})

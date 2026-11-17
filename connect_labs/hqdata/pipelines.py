@@ -42,9 +42,15 @@ def config_for(pipeline: HQPipeline):
         raise PipelineProblem(str(exc) or type(exc).__name__) from exc
 
 
-def pipeline_rows(user, pipeline: HQPipeline, *, force_refresh: bool = False) -> list[dict]:
+def pipeline_rows(
+    user, pipeline: HQPipeline, *, force_refresh: bool = False, window: tuple[str, str] | None = None
+) -> list[dict]:
     """EVERY row of a saved pipeline, as the person. The ``rows`` of ``run_pipeline`` are capped for display;
     a workflow draws from all of them.
+
+    ``window`` is a half-open ``[start, end)`` visit-date span. It applies only to a pipeline whose schema
+    sets ``period_scoped`` (and groups to one row per worker): that pipeline is re-aggregated over the
+    window, exactly as the workflow engine does for a saved run; any other pipeline returns all its rows.
 
     ``require_project`` is checked here and again, inside the pipeline, on the read itself, so a
     caller that skips this function still cannot read.
@@ -59,10 +65,21 @@ def pipeline_rows(user, pipeline: HQPipeline, *, force_refresh: bool = False) ->
 
     ensure_fits(config.data_source)  # a very large project fails here, in words, not in the worker
     # The session closes whatever connection into a customer's database the run opened.
+    scoped = bool(window) and bool((pipeline.schema or {}).get("period_scoped"))
     with store_for(pipeline.project).session():
-        result = AnalysisPipeline(None, local_only_user=user).stream_analysis_ignore_events(
+        analysis = AnalysisPipeline(None, local_only_user=user)
+        result = analysis.stream_analysis_ignore_events(
             config, opportunity_id=pipeline.project.scope_id, force_refresh=force_refresh
         )
+        if scoped:
+            config.date_from, config.date_to = window
+            windowed = analysis.get_period_scoped_result_only(config, pipeline.project.scope_id)
+            if windowed is None:
+                raise PipelineProblem(
+                    "This pipeline cannot be limited to a period (only a pipeline that groups to one row per "
+                    "worker can)."
+                )
+            result = windowed
     return [serialize_pipeline_row(r) for r in result.rows]
 
 

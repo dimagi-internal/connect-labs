@@ -173,7 +173,7 @@ def _source_alias(source: dict) -> str:
     return source.get("alias") or f"pipeline_{source.get('commcare_pipeline_id') or source.get('pipeline_id')}"
 
 
-def _hq_pipeline_entry(user, project: HQProject, source: dict) -> dict:
+def _hq_pipeline_entry(user, project: HQProject, source: dict, window=None) -> dict:
     """One ``pipelines`` entry for a source naming a saved ``commcare_pipeline_*`` pipeline of this project."""
     from connect_labs.hqdata.pipelines import PipelineProblem, config_for, pipeline_rows
     from connect_labs.hqdata.stores import StoreUnavailable
@@ -197,7 +197,7 @@ def _hq_pipeline_entry(user, project: HQProject, source: dict) -> dict:
     error = None
     rows: list[dict] = []
     try:
-        rows = pipeline_rows(user, pipeline)
+        rows = pipeline_rows(user, pipeline, window=window)
     except (PipelineProblem, StoreUnavailable) as exc:
         error = str(exc)
     per_opp = {str(scope): {"row_count": len(rows), "from_cache": False, **({"error": error} if error else {})}}
@@ -223,7 +223,7 @@ def _hq_pipeline_entry(user, project: HQProject, source: dict) -> dict:
     return {"rows": rows, "metadata": metadata}
 
 
-def read_project_pipeline_data(user, project: HQProject, definition_id: int) -> dict:
+def read_project_pipeline_data(user, project: HQProject, definition_id: int, *, aliases=None, window=None) -> dict:
     """The ``pipelines`` prop of one of this project's workflows: ``{alias: {"rows", "metadata"}}``.
 
     A source names either a saved project pipeline (``{"commcare_pipeline_id", "alias"}``: what the
@@ -231,6 +231,9 @@ def read_project_pipeline_data(user, project: HQProject, definition_id: int) -> 
     (``{"pipeline_id", "alias"}``: what the overview uses). Computed inline from the project's stored rows
     (they are labs' own, so there is no download to wait on). Every read passes the project gate again,
     inside the pipeline, as this member.
+
+    ``aliases`` limits the read to those sources; ``window`` (``(start, end)``, half-open) limits a
+    ``period_scoped`` pipeline to that span (see ``pipelines.pipeline_rows``).
     """
     from connect_labs.workflow.pipeline_reads import _alias_metadata
 
@@ -245,8 +248,10 @@ def read_project_pipeline_data(user, project: HQProject, definition_id: int) -> 
             if not isinstance(source, dict):
                 continue
             alias = _source_alias(source)
+            if aliases is not None and alias not in aliases:
+                continue
             if source.get("commcare_pipeline_id") is not None:
-                out[alias] = _hq_pipeline_entry(user, project, source)
+                out[alias] = _hq_pipeline_entry(user, project, source, window)
                 continue
             pipeline_id = source.get("pipeline_id")
             record = pipelines.get_definition(pipeline_id) if pipeline_id else None
@@ -486,9 +491,20 @@ def _run_summary(run) -> dict:
     }
 
 
-def _snapshot_of(user, project: HQProject, workflow_id: int) -> dict:
-    """The page's data as it is right now, ready to be frozen. Refuses to freeze a page whose data did not load."""
-    data = read_project_pipeline_data(user, project, workflow_id)
+def _snapshot_of(dao, run) -> dict:
+    """The page's data as the engine's snapshot builder freezes it for ``run``. Refuses to freeze a page whose
+    data did not load, or one that is too large."""
+    from connect_labs.workflow.snapshot_runtime import SnapshotBuildError, build_snapshot_for_run
+
+    try:
+        payload = build_snapshot_for_run(dao, run)["payload"]
+    except SnapshotBuildError as exc:
+        if exc.code == "too_large":
+            raise PageProblem(
+                "This page's data is too large to save as a run. Narrow its pipelines (one app, form or case type)."
+            ) from exc
+        raise PageProblem(exc.message) from exc
+    data = payload.get("pipelines") or {}
     if not data:
         raise PageProblem("This page reads no pipelines, so there is nothing to save.")
     for alias, entry in data.items():
@@ -497,12 +513,11 @@ def _snapshot_of(user, project: HQProject, workflow_id: int) -> dict:
         ]
         if errors:
             raise PageProblem(f"The {alias!r} pipeline did not load ({errors[0]}), so the run was not saved.")
-    snapshot = {"pipelines": data, "captured_at": datetime.now(timezone.utc).isoformat()}
-    if len(json.dumps(snapshot, default=str)) > MAX_SNAPSHOT_BYTES:
+    if len(json.dumps(payload, default=str)) > MAX_SNAPSHOT_BYTES:
         raise PageProblem(
             "This page's data is too large to save as a run. Narrow its pipelines (one app, form or case type)."
         )
-    return snapshot
+    return payload
 
 
 def save_run(user, project: HQProject, workflow_id: int, *, period_start=None, period_end=None, name="") -> dict:
@@ -520,8 +535,6 @@ def save_run(user, project: HQProject, workflow_id: int, *, period_start=None, p
                 date.fromisoformat(str(value))
             except ValueError:
                 raise PageProblem(f"{label} is a date like 2026-11-30.") from None
-    snapshot = _snapshot_of(user, project, workflow_id)
-    snapshot["period"] = {"start": period_start or today, "end": period_end or today}
     dao = workflow_dao(user, project)
     try:
         run = dao.create_run(
@@ -531,6 +544,13 @@ def save_run(user, project: HQProject, workflow_id: int, *, period_start=None, p
             period_end=str(period_end or today),
             initial_state={"name": str(name or "")[:200], "created_by": user.pk},
         )
+        try:
+            snapshot = _snapshot_of(dao, run)
+        except Exception:
+            dao.delete_run(run.id, delete_linked=False)  # nothing was frozen: do not leave an empty run behind
+            raise
+        snapshot["captured_at"] = datetime.now(timezone.utc).isoformat()
+        snapshot["period"] = {"start": period_start or today, "end": period_end or today}
         done = dao.complete_run(run.id, snapshot, run)
         if done is None:
             raise PageProblem("The run could not be completed.")
