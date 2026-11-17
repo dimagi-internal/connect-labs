@@ -87,3 +87,12 @@ def test_every_source_is_written_by_some_stage():
         f"sources {orphans} are in the model but no load_indicators stage writes them, so a rebuild would never "
         "restore them: add a stage (stages.py + _stage_<name>) or list them in WRITTEN_BY_ANOTHER_STAGE with where"
     )
+
+
+def test_the_cache_version_changes_with_the_release_so_a_deploy_cannot_serve_older_code_answers(settings, db):
+    from connect_labs.labs.indicators import response_cache
+
+    settings.APP_RELEASE = "abc123"
+    before = response_cache.data_version()
+    settings.APP_RELEASE = "def456"
+    assert response_cache.data_version() != before and before.endswith("abc123")

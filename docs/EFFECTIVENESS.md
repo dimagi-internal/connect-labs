@@ -215,9 +215,11 @@ figure on a page is computed from three things, and a rebuild is restoring them:
 3. **The code's own assumptions**, each named where it is made: `market.PLACE_RISK` (Kangaroo Care's risk scaling),
    `scenario.PlanLimits` (the plan's limits), `mortality` and `reliability` (how mortality's uncertainty is used).
 
-Nothing else needs restoring. Computed answers are cached under `response_cache.data_version()`, which `load_indicators`
-and the bootstrap start afresh on every run, so a reload cannot leave a stale answer; the people cache key carries a version
-(`market:people:vN`) that is bumped when the shape of what it holds changes.
+Nothing else needs restoring. Computed answers are cached under `response_cache.data_version()`: a fingerprint of the data
+(which `load_indicators` and the bootstrap start afresh on every run) **and of the release** (`settings.APP_RELEASE`, the
+commit a deploy rolled out), so neither a reload nor a deploy can leave an answer made by older data or older code. The
+people cache key (`market:people:vN`) also carries a version, kept only as a manual lever for a shape change that must not
+wait for a deploy.
 
 ## Left to do
 
