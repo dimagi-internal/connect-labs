@@ -4,18 +4,20 @@
 {% block css %}{{ block.super }}
 <link rel="stylesheet" href="{% static 'effectiveness/market.css' %}">
 <style>
-  .grp .sub { color: var(--muted); font-size: 14px; margin: 4px 0 0; }
-  .grp .q { font-size: 16px; margin: 6px 0 0; max-width: 62em; }
+  .grp .sub { color: var(--muted); font-size: 13px; margin: 0 0 4px; }
+  .grp .q { font-size: 14px; margin: 6px 0 0; max-width: 62em; }
+  .grp .sc, .grp .card { font-size: 14px; }
   .grp .status { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; font-size: 13px; color: var(--muted); }
   .grp .status .btn { font-size: 13px; }
   .grp .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin: 0 0 16px; }
   .grp .sc { background: #fff; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,.06); padding: 14px; border-top: 3px solid var(--rule); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .grp .sc.ref { border-top-color: var(--acc); }
-  .grp .sc h3 { font-size: 14px; margin: 0; line-height: 1.3; }
-  .grp .sc h3 a { color: var(--ink); text-decoration: none; }
-  .grp .sc h3 a:hover { text-decoration: underline; }
+  .grp .sc h3 { font-size: 14px; font-weight: 600; margin: 0; line-height: 1.3; }
   .grp .tag { font-size: 11px; color: var(--acc); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
-  .grp .tag a { color: var(--acc); font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .grp .acts { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: auto; padding-top: 6px; }
+  .grp .btn.ghost { color: var(--muted); }
+  .grp .refpick { display: inline-flex; align-items: center; gap: 6px; }
+  .grp .refpick select { width: auto; max-width: 28em; padding: 4px 8px; }
   .grp .why { font-size: 13px; color: var(--muted); margin: 0; }
   .grp .chg { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; }
   .grp .chg li { font-size: 11px; background: #eef2ff; color: #3730a3; border-radius: 999px; padding: 2px 8px; }
@@ -29,9 +31,9 @@
   .grp .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
   .grp .chart h3 { font-size: 13px; margin: 0 0 2px; }
   .grp .chart p { font-size: 11px; color: var(--muted); margin: 0 0 8px; }
-  .grp .bar { display: grid; grid-template-columns: minmax(80px, 32%) 1fr; gap: 8px; align-items: center; margin: 5px 0; font-size: 12px; }
-  .grp .bar .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .grp .bar .nm a { color: var(--ink); text-decoration: none; }
+  .grp .bar { display: grid; grid-template-columns: minmax(110px, 42%) 1fr; gap: 8px; align-items: center; margin: 5px 0; font-size: 12px; }
+  .grp .bar .nm { line-height: 1.25; }
+  .grp .bar .nm small { display: block; color: var(--muted); font-size: 11px; }
   .grp .track { position: relative; height: 18px; }
   .grp .fill { position: absolute; left: 0; top: 3px; height: 12px; background: #818cf8; border-radius: 0 4px 4px 0; }
   .grp .bar.ref .fill { background: var(--acc); }
@@ -43,7 +45,10 @@
   .grp details.card > summary { cursor: pointer; font-weight: 600; font-size: 15px; }
   .grp .acc details { border-top: 1px solid var(--rule); padding: 8px 0; }
   .grp .acc summary { cursor: pointer; font-weight: 600; font-size: 14px; }
-  .grp .acc ul, .grp .acc ol { margin: 6px 0 0; padding-left: 20px; font-size: 13px; }
+  .grp .acc ul, .grp .acc ol { margin: 6px 0 0; padding-left: 22px; font-size: 13px; }
+  .grp .acc ul { list-style: disc; }
+  .grp .acc ol { list-style: decimal; }
+  .grp .acc li { margin: 2px 0; }
   .grp .acc p { font-size: 13px; margin: 6px 0 0; max-width: 70em; }
   .cmp { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 10px; }
   .cmp th, .cmp td { padding: 6px 10px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
@@ -70,14 +75,15 @@
     {% if live %}<span>Today's numbers, from the data and models as they are now.</span>
     {% else %}<span>{% if baselined %}Numbers as they were when last baselined{% else %}Numbers as of today{% endif %}.</span>
       <a class="btn" id="check-today" href="?{% if data.reference %}ref={{ data.reference }}&{% endif %}live=1">Check against today's data</a><span>(takes about a minute)</span>{% endif %}
+    <label class="refpick">Compare against
+      <select id="ref-pick" data-live="{% if live %}1{% endif %}">{% for c in cards %}<option value="{{ c.id }}"{% if c.reference %} selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></label>
     {% if group.mine %}<button type="button" class="btn" id="g-baseline" title="Make these numbers the ones later runs are compared with">Re-baseline</button><span id="b-state"></span>{% endif %}
   </div>
 
   <div class="cards" data-testid="group-cards">
     {% for c in cards %}
     <div class="sc{% if c.reference %} ref{% endif %}" data-scenario="{{ c.id }}">
-      <span class="tag">{% if c.reference %}the reference{% else %}<a href="?ref={{ c.id }}{% if live %}&live=1{% endif %}">compare against this</a>{% endif %}</span>
-      <h3><a href="{{ c.open_path }}">{{ c.name }}</a></h3>
+      <h3>{{ c.name }}</h3>
       {% if c.why %}<p class="why">{{ c.why }}</p>{% endif %}
       {% if c.changes %}<ul class="chg" title="What it changes from {{ c.changes_from }}">{% for x in c.changes %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
       {% if c.error %}<p class="lo" style="margin:0">Cannot run: {{ c.error }}</p>{% endif %}
@@ -87,6 +93,10 @@
       {% if c.best %}<span class="badge">Best: {{ c.best|join:", " }}</span>{% endif %}
       {% if c.moved %}<span class="moved">Has moved since it was baselined</span>{% endif %}
       {% if c.models_changed %}<span class="moved">Models changed since it was saved</span>{% endif %}
+      <div class="acts">
+        <a class="btn small" href="{{ c.open_path }}" title="Open this scenario in the Workspace to see its map and change it">Open in Workspace &rarr;</a>
+        {% if c.reference %}<span class="tag">The reference</span>{% else %}<a class="btn small ghost" href="?ref={{ c.id }}{% if live %}&live=1{% endif %}" title="Show every other scenario as a change from this one">Compare against this</a>{% endif %}
+      </div>
     </div>
     {% endfor %}
   </div>
@@ -98,7 +108,7 @@
         <h3>{{ ch.title }}</h3><p>{{ ch.hint }}</p>
         {% for r in ch.rows %}
         <div class="bar{% if r.best %} best{% endif %}{% if r.reference %} ref{% endif %}" title="{{ r.name }}: {{ r.text }}{% if r.range %} ({{ r.range }}){% endif %}">
-          <div class="nm"><a href="?ref={{ r.id }}">{{ r.name }}</a></div>
+          <div class="nm" title="{{ r.name }}">{{ r.short }}</div>
           <div class="track">
             <div class="fill" style="width: {{ r.width|floatformat:1 }}%"></div>
             {% if r.lo is not None %}<div class="whisk" style="left: {{ r.lo|floatformat:1 }}%; width: {{ r.span|floatformat:1 }}%"></div>{% endif %}
@@ -116,7 +126,7 @@
     <div class="scroll">
     <table class="cmp" data-testid="group-compare">
       <thead><tr><th></th>
-        {% for s in scenarios %}<th><a href="{{ s.open_path }}">{{ s.name }}</a></th>{% endfor %}
+        {% for s in scenarios %}<th>{{ s.name }}</th>{% endfor %}
       </tr></thead>
       <tbody>
         <tr class="sec"><th colspan="{{ scenarios|length|add:1 }}">What it sets (a difference is shaded)</th></tr>
@@ -157,7 +167,8 @@
   </div>
   {% endif %}
 </div>
-{% if group.mine %}{{ urls|json_script:"group-data" }}<script src="{% static 'effectiveness/group.js' %}"></script>{% endif %}
+{% if group.mine %}{{ urls|json_script:"group-data" }}{% endif %}
 {% if canopy_panel %}{% include "canopy_host/panel.html" %}{% endif %}
+<script src="{% static 'effectiveness/group.js' %}"></script>
 <script src="{% static 'effectiveness/agent.js' %}"></script>
 {% endblock %}

@@ -157,9 +157,10 @@ def compare(items: list[dict], reference: int | None = None) -> dict:
     for r in RESULTS:
         vals = [i["headline"][r.key] for i in items if i.get("headline") and i["headline"].get(r.key) is not None]
         if r.better and vals:
-            # a "best" means something only when the scenarios differ on it: all alike, nobody is best
-            if max(vals) - min(vals) > 1e-9 * max(abs(max(vals)), 1):
-                best[r.key] = max(vals) if r.better == "high" else min(vals)
+            # a "best" means something only when ONE scenario is ahead on it: a tie for the top is nobody's win
+            top = max(vals) if r.better == "high" else min(vals)
+            if sum(1 for v in vals if abs(v - top) < 1e-9 * max(abs(top), 1)) == 1:
+                best[r.key] = top
     by_id = {i["id"]: i for i in items}
     out = []
     for i in items:

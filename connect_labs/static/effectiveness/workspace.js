@@ -33,14 +33,16 @@
   // the bar. plan: only the places the plan reaches, painted by their multiple.
   var LENSES = {
     market: {
-      label: 'Market',
+      label: 'Cost to reach everyone',
+      hint: 'Each place coloured by what it would cost a year to reach everyone it can: the size of the market.',
       value: function (c) {
         return c.market_usd;
       },
       fmt: usd,
     },
     worth: {
-      label: 'Worth it',
+      label: 'Cost-effectiveness',
+      hint: "Each place coloured by its multiple of GiveWell's benchmark, and outlined where it clears the bar.",
       value: function (c) {
         return c.best && c.best.multiple;
       },
@@ -49,7 +51,8 @@
       },
     },
     plan: {
-      label: 'Plan',
+      label: 'The plan',
+      hint: 'Only the places the plan reaches, coloured by their multiple; the rest are left grey.',
       value: function (c) {
         return c.planned > 0 && c.best ? c.best.multiple : null;
       },
@@ -97,6 +100,7 @@
         return b;
       }),
     );
+    put($('lens-hint'), [LENSES[lens].hint]);
   }
 
   // ---- the map

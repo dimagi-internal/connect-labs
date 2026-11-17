@@ -1,22 +1,61 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block title %}Scenario groups · Connect Labs{% endblock %}
-{% block css %}{{ block.super }}<link rel="stylesheet" href="{% static 'effectiveness/market.css' %}">{% endblock %}
+{% block css %}{{ block.super }}<link rel="stylesheet" href="{% static 'effectiveness/market.css' %}">
+<style>
+  .mk .gcard { padding: 18px 20px; }
+  .mk .ghead { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+  .mk .ghead h2 { font-size: 18px; margin: 0; }
+  .mk .ghead h2 a { color: var(--ink); }
+  .mk .ghead h2 a:hover { color: var(--acc); }
+  .mk .gq { color: var(--ink); margin: 4px 0 0; max-width: 62em; }
+  .mk .gmeta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 0 14px; font-size: 12px; color: var(--muted); }
+  .mk .gmeta b { color: var(--ink); font-weight: 600; }
+  .mk .grows { border-top: 1px solid var(--rule); }
+  .mk .grow { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto; gap: 4px 14px; align-items: center; padding: 10px 4px; border-bottom: 1px solid var(--rule); }
+  .mk .grow:hover { background: #f9fafb; }
+  .mk .grow .num { width: 22px; height: 22px; border-radius: 999px; background: #eef2ff; color: #3730a3; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+  .mk .grow .sname { font-weight: 600; color: var(--ink); }
+  .mk .grow .why { margin: 0; font-size: 12px; color: var(--muted); }
+  .mk .grow .res { text-align: right; font-size: 13px; white-space: nowrap; }
+  .mk .grow .res b { display: block; font-size: 14px; }
+  .mk .grow .res span { font-size: 11px; color: var(--muted); }
+  .mk .gfoot { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
+</style>
+{% endblock %}
 {% block content %}
 {% include "effectiveness/tabs.html" with active="groups" %}
 <div class="mk">
   <h1>Scenario groups</h1>
-  <p class="lede">Scenarios that are all about one question, kept together so they can be walked through and compared. Save a scenario into a group from the Workspace or with the agent tools.</p>
+  <p class="lede">A group is one question and the scenarios tried against it. Compare them side by side, or open any one in the Workspace to change it.</p>
   {% for g in groups %}
-  <div class="card">
-    <h2><a href="{{ g.path }}">{{ g.name }}</a> <span class="muted">· {{ g.scenarios|length }} scenario{{ g.scenarios|length|pluralize }}{% if g.shared and g.mine %} · shared{% endif %}{% if not g.mine %} · by {{ g.owner }}{% endif %}</span></h2>
-    {% if g.question %}<p style="margin:0 0 6px">{{ g.question }}</p>{% endif %}
-    <ol style="margin:0; padding-left:20px">
-      {% for s in g.scenarios %}<li><a href="{{ s.open_path }}">{{ s.name }}</a></li>{% endfor %}
-    </ol>
-  </div>
+  <section class="card gcard" data-testid="group-card">
+    <div class="ghead">
+      <div>
+        <h2><a href="{{ g.path }}">{{ g.name }}</a></h2>
+        {% if g.question %}<p class="gq">{{ g.question }}</p>{% endif %}
+      </div>
+      <a class="btn primary" href="{{ g.path }}">Compare the {{ g.rows|length }} scenario{{ g.rows|length|pluralize }} &rarr;</a>
+    </div>
+    <div class="gmeta">
+      <span><b>{{ g.rows|length }}</b> scenario{{ g.rows|length|pluralize }}</span>
+      {% if g.span %}<span>{{ g.span }}</span>{% endif %}
+      <span>{% if g.mine %}yours{% else %}by {{ g.owner }}{% endif %}{% if g.shared %} · shared{% endif %}</span>
+    </div>
+    <div class="grows">
+      {% for r in g.rows %}
+      <div class="grow">
+        <span class="num">{{ r.number }}</span>
+        <div><a class="sname" href="{{ r.open_path }}">{{ r.name }}</a>{% if r.why %}<p class="why">{{ r.why }}</p>{% endif %}</div>
+        <div class="res">{% if r.deaths %}<b>{{ r.deaths }}</b><span>deaths a year · {{ r.multiple }}</span>{% endif %}</div>
+        <a class="btn small" href="{{ r.open_path }}">Open in Workspace</a>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="gfoot">Numbers are as of the last baseline. Opening a scenario shows it with today's data.</p>
+  </section>
   {% empty %}
-  <div class="card"><p class="muted" style="margin:0">No groups yet.</p></div>
+  <div class="card"><p class="muted" style="margin:0">No groups yet. Save a scenario into a group from the Workspace or with the agent tools.</p></div>
   {% endfor %}
 </div>
 {% endblock %}
