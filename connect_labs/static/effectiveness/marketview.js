@@ -30,6 +30,14 @@
       (x.measure_how ? ', ' + x.measure_how : '') +
       (x.far_from_country
         ? ". More than twice (or under half) its country's: check the source."
+        : '') +
+      (x.births_vs_wpp != null
+        ? '. Our births for its country are ' +
+          (x.births_vs_wpp * 100).toFixed(0) +
+          "% of the UN's" +
+          (x.births_off
+            ? ': more than 15% apart, so its counts are less sure.'
+            : '.')
         : '')
     );
   }

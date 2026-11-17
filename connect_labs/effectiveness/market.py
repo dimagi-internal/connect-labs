@@ -196,6 +196,7 @@ def size(
                 "far_from_country": far,
                 "local_inputs": sorted((p.get("inputs") or {}).keys()) if place_risk else [],
                 "conflict_rate": (p.get("measures") or {}).get("conflict_rate"),
+                "births_vs_wpp": (p.get("measures") or {}).get("births_vs_wpp"),
                 "births_off": bool(p.get("births_off")),
                 "risk_se": se,
                 "risk_shared_se": shared,
