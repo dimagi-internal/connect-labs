@@ -15,7 +15,9 @@ from connect_labs.audit_trail.models import Action
 from connect_labs.hqdata.audit import project_event
 from connect_labs.hqdata.mcp_tools import _PROJECT_ID, _project
 from connect_labs.hqdata.models import HQProject, HQProjectMember
+from connect_labs.hqdata.pipelines import PipelineProblem
 from connect_labs.hqdata.workflows import (
+    PageNotFound,
     PageProblem,
     ProjectWorkflowsUnavailable,
     create_page,
@@ -42,8 +44,10 @@ def _guard(call):
         return call()
     except PageProblem as exc:
         raise MCPToolError("INVALID_SCHEMA", str(exc))
-    except LookupError as exc:
+    except PageNotFound as exc:
         raise MCPToolError("NOT_FOUND", str(exc))
+    except PipelineProblem as exc:
+        raise MCPToolError("INVALID_SCHEMA", str(exc))
     except PermissionError as exc:
         raise MCPToolError("PERMISSION_DENIED", str(exc))
     except ProjectWorkflowsUnavailable as exc:
@@ -179,9 +183,11 @@ def hq_workflow_update(user, project_id=None, workflow_id=None, **changes):
     project = _project(user, project_id)
     if not isinstance(workflow_id, int):
         raise MCPToolError("INVALID_SCHEMA", "workflow_id is the page's id.")
-    allowed = {
-        k: v for k, v in changes.items() if k in {"name", "description", "render_code", "pipeline_sources", "config"}
-    }
+    fields = {"name", "description", "render_code", "pipeline_sources", "config"}
+    unknown = sorted(set(changes) - fields)
+    if unknown:
+        raise MCPToolError("INVALID_SCHEMA", f"hq_workflow_update changes only {sorted(fields)}, not {unknown}.")
+    allowed = dict(changes)
     _guard(lambda: update_page(user, project, workflow_id, **allowed))
     project_event(Action.UPDATE, project.pk, user=user, kind="workflow")
     return {

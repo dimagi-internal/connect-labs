@@ -213,3 +213,108 @@ def test_the_data_a_page_gets_has_every_row_but_the_tool_caps_what_it_returns(me
     got = call("hq_workflow_data", me, project_id=project.pk, workflow_id=made["workflow_id"], max_rows=1)
     assert got["pipelines"]["workers"]["row_count"] == 2 and len(got["pipelines"]["workers"]["rows"]) == 1
     assert got["pipelines"]["workers"]["truncated"] is True
+
+
+# --- review fixes ---------------------------------------------------------------------------------
+
+
+def test_no_pipeline_stream_is_not_a_flag_a_page_may_set_because_it_would_blank_the_page(me, project, pipeline):
+    with pytest.raises(MCPToolError):
+        call("hq_workflow_create", me, project_id=project.pk, name="x", config={"noPipelineStream": True})
+
+
+def test_one_source_that_cannot_run_shows_its_own_error_and_leaves_the_others_alone(me, project, pipeline):
+    made = make(me, project, pipeline)
+    wid = made["workflow_id"]
+    call(
+        "hq_workflow_update",
+        me,
+        project_id=project.pk,
+        workflow_id=wid,
+        pipeline_sources=[{"hq_pipeline_id": pipeline, "alias": "workers"}],
+    )
+    from connect_labs.hqdata.models import HQPipeline
+
+    HQPipeline.objects.filter(pk=pipeline).update(schema={"fields": []})  # no longer runnable
+    other = call("hq_pipeline_save", me, project_id=project.pk, name="ok", store_kind="forms", schema=SCHEMA)["id"]
+    call(
+        "hq_workflow_update",
+        me,
+        project_id=project.pk,
+        workflow_id=wid,
+        pipeline_sources=[{"hq_pipeline_id": pipeline, "alias": "broken"}, {"hq_pipeline_id": other, "alias": "good"}],
+    )
+    data = call("hq_workflow_data", me, project_id=project.pk, workflow_id=wid)["pipelines"]
+    assert data["good"]["row_count"] == 2
+    assert "error" in list(data["broken"]["metadata"]["per_opp"].values())[0]
+
+
+def test_changing_a_flag_keeps_the_others_instead_of_replacing_them(me, project, pipeline):
+    wid = make(me, project, pipeline, config={"showFilters": True, "showSummaryCards": True})["workflow_id"]
+    call("hq_workflow_update", me, project_id=project.pk, workflow_id=wid, config={"renderWhileLoading": True})
+    assert call("hq_workflow_get", me, project_id=project.pk, workflow_id=wid)["config"] == {
+        "showFilters": True,
+        "showSummaryCards": True,
+        "renderWhileLoading": True,
+    }
+
+
+def test_the_overview_is_labs_to_keep_a_member_cannot_change_it_and_a_page_with_its_name_is_just_a_page(
+    me, project, pipeline
+):
+    overview = ensure_project_dashboard(me, project)
+    with pytest.raises(MCPToolError) as err:
+        call("hq_workflow_update", me, project_id=project.pk, workflow_id=overview, render_code=CODE)
+    assert err.value.code == "INVALID_SCHEMA"
+    copy = call("hq_workflow_create", me, project_id=project.pk, name="Project overview", render_code=CODE)
+    assert ensure_project_dashboard(me, project) == overview  # found by its marker, not its name
+    assert call("hq_workflow_get", me, project_id=project.pk, workflow_id=copy["workflow_id"])["render_code"] == CODE
+
+
+def test_an_overview_made_before_the_marker_existed_is_adopted_and_repaired(me, project):
+    from connect_labs.hqdata.workflows import DASHBOARD_RENDER_CODE
+
+    overview = ensure_project_dashboard(me, project)
+    dao = workflow_dao_for(me, project)
+    data = dict(dao.get_definition(overview).data)
+    data.pop("system")
+    data["pipeline_sources"] = []
+    dao.update_definition(overview, data)
+    dao.save_render_code(overview, "function WorkflowUI(){return null}")
+    dao.close()
+    assert ensure_project_dashboard(me, project) == overview
+    dao = workflow_dao_for(me, project)
+    fixed = dao.get_definition(overview).data
+    assert fixed["system"] and fixed["pipeline_sources"]
+    assert dao.get_render_code(overview).data["component_code"] == DASHBOARD_RENDER_CODE
+    dao.close()
+
+
+def workflow_dao_for(user, project):
+    from connect_labs.hqdata.workflows import workflow_dao
+
+    return workflow_dao(user, project)
+
+
+def test_a_misspelt_argument_is_refused_not_ignored(me, project, pipeline):
+    wid = make(me, project, pipeline)["workflow_id"]
+    with pytest.raises(MCPToolError) as err:
+        call("hq_workflow_update", me, project_id=project.pk, workflow_id=wid, renderCode=CODE)
+    assert err.value.code == "INVALID_SCHEMA"
+
+
+def test_text_that_cannot_be_encoded_is_a_clear_refusal_not_a_traceback(me, project):
+    with pytest.raises(MCPToolError) as err:
+        call("hq_workflow_create", me, project_id=project.pk, name="x", render_code="function WorkflowUI(){}\ud800")
+    assert err.value.code == "INVALID_SCHEMA"
+
+
+def test_a_stray_lookup_error_is_not_reported_as_a_missing_page(me, project, pipeline, monkeypatch):
+    wid = make(me, project, pipeline)["workflow_id"]
+
+    def boom(*a, **k):
+        raise KeyError("engine bug")
+
+    monkeypatch.setattr("connect_labs.hqdata.mcp_workflow_tools.read_project_pipeline_data", boom)
+    with pytest.raises(KeyError):
+        call("hq_workflow_data", me, project_id=project.pk, workflow_id=wid)

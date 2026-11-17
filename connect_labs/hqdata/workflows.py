@@ -76,6 +76,8 @@ def load_page(user, project: HQProject, definition_id: int):
 
 DASHBOARD_PIPELINE_NAME = "Forms per worker"
 DASHBOARD_NAME = "Project overview"
+#: Marks the overview labs maintains, so renaming or re-sourcing it cannot make labs lose track of it.
+DASHBOARD_SYSTEM_KEY = "hq_project_overview"
 
 
 def dashboard_pipeline_schema(project: HQProject) -> dict:
@@ -119,8 +121,26 @@ def ensure_project_dashboard(user, project: HQProject) -> int:
                 )
             elif pipeline.schema != schema:
                 pipelines.update_definition(pipeline.id, schema=schema)
-            existing = next((d for d in workflows.list_definitions() if d.name == DASHBOARD_NAME), None)
+            existing = next(
+                (
+                    d
+                    for d in workflows.list_definitions()
+                    if (d.data or {}).get("system") == DASHBOARD_SYSTEM_KEY
+                    # made before the marker existed: labs' own (no author) and still named for it
+                    or (d.name == DASHBOARD_NAME and not (d.data or {}).get("created_by"))
+                ),
+                None,
+            )
             if existing is not None:
+                wanted = {
+                    **existing.data,
+                    "name": DASHBOARD_NAME,
+                    "system": DASHBOARD_SYSTEM_KEY,
+                    "pipeline_sources": [{"pipeline_id": pipeline.id, "alias": "workers"}],
+                    "config": {"templateType": "hq_project_overview", "showFilters": False, "showSummaryCards": False},
+                }
+                if wanted != existing.data:
+                    workflows.update_definition(existing.id, wanted)
                 stored = workflows.get_render_code(existing.id)
                 if stored is None or (stored.data or {}).get("component_code") != DASHBOARD_RENDER_CODE:
                     workflows.save_render_code(existing.id, DASHBOARD_RENDER_CODE)
@@ -135,6 +155,7 @@ def ensure_project_dashboard(user, project: HQProject) -> int:
                 pipeline_sources=[{"pipeline_id": pipeline.id, "alias": "workers"}],
                 opportunity_ids=[],
             )
+            workflows.update_definition(definition.id, {**definition.data, "system": DASHBOARD_SYSTEM_KEY})
             workflows.save_render_code(definition.id, DASHBOARD_RENDER_CODE)
             return definition.id
     finally:
@@ -174,17 +195,26 @@ def _hq_pipeline_entry(user, project: HQProject, source: dict) -> dict:
     except (PipelineProblem, StoreUnavailable) as exc:
         error = str(exc)
     per_opp = {str(scope): {"row_count": len(rows), "from_cache": False, **({"error": error} if error else {})}}
-    return {
-        "rows": rows,
-        "metadata": _alias_metadata(
+    try:
+        metadata = _alias_metadata(
             pipeline_id=pipeline.pk,
             name=pipeline.name,
             rows=rows,
             opp_ids=[scope],
             per_opp=per_opp,
             config=config_for(pipeline),
-        ),
-    }
+        )
+    except PipelineProblem as exc:
+        # One source that cannot run shows its own error; it never takes the page's other sources down with it.
+        per_opp[str(scope)]["error"] = per_opp[str(scope)].get("error") or str(exc)
+        metadata = {
+            "pipeline_id": pipeline.pk,
+            "pipeline_name": pipeline.name,
+            "row_count": len(rows),
+            "opportunity_ids": [scope],
+            "per_opp": per_opp,
+        }
+    return {"rows": rows, "metadata": metadata}
 
 
 def read_project_pipeline_data(user, project: HQProject, definition_id: int) -> dict:
@@ -243,7 +273,7 @@ def read_project_pipeline_data(user, project: HQProject, definition_id: int) -> 
 # -- authoring a project's pages ---------------------------------------------------------------------
 
 #: The runner flags a page may set. Anything else (``sandbox``, agent sharing...) is not an author's to choose.
-PAGE_CONFIG_FLAGS = frozenset({"showFilters", "showSummaryCards", "renderWhileLoading", "noPipelineStream"})
+PAGE_CONFIG_FLAGS = frozenset({"showFilters", "showSummaryCards", "renderWhileLoading"})
 MAX_PAGE_SOURCES = 20
 MAX_RENDER_CODE_BYTES = 300_000
 _ALIAS = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,40}$")
@@ -251,6 +281,10 @@ _ALIAS = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,40}$")
 
 class PageProblem(ValueError):
     """What is wrong with a page being made or changed, written for the person (or AI) who sent it."""
+
+
+class PageNotFound(LookupError):
+    """No such page in this project. Its own type so a stray KeyError is never mistaken for it."""
 
 
 def clean_sources(project: HQProject, sources) -> list[dict]:
@@ -300,7 +334,11 @@ def _check_render_code(render_code) -> str:
 
     if not isinstance(render_code, str):
         raise PageProblem("render_code is the JSX text of a function WorkflowUI({...}).")
-    if len(render_code.encode()) > MAX_RENDER_CODE_BYTES:
+    try:
+        size = len(render_code.encode("utf-8"))
+    except UnicodeEncodeError:
+        raise PageProblem("render_code is not valid text.") from None
+    if size > MAX_RENDER_CODE_BYTES:
         raise PageProblem("render_code is too large.")
     problem = render_code_problem(render_code)
     if problem:
@@ -343,44 +381,64 @@ def create_page(
 
 
 def update_page(user, project: HQProject, workflow_id: int, **changes):
-    """Change a page's name, description, pipeline sources, flags or render code. ``None`` leaves a field alone."""
+    """Change a page's name, description, pipeline sources, flags or render code. ``None`` leaves a field alone.
+
+    Serialised per page and re-read under the lock, so two people changing different fields of one page both
+    land. ``config`` is merged onto what the page has, not substituted for it.
+    """
+    from django.db import connection
+
     unknown = sorted(set(changes) - {"name", "description", "render_code", "pipeline_sources", "config"})
     if unknown:
         raise PageProblem(f"Cannot change {unknown}.")
-    loaded = load_page(user, project, workflow_id)
-    if loaded is None:
-        raise LookupError("No such page in this project.")
-    definition, _ = loaded
-    data = dict(definition.data)
+    if load_page(user, project, workflow_id) is None:
+        raise PageNotFound("No such page in this project.")
+    # Validate everything before touching anything.
+    name = None
     if changes.get("name") is not None:
         name = changes["name"].strip() if isinstance(changes["name"], str) else ""
         if not name or len(name) > 200:
             raise PageProblem("A page needs a name (at most 200 characters).")
-        data["name"] = name
-    if changes.get("description") is not None:
-        data["description"] = str(changes["description"])[:2000]
-    if changes.get("pipeline_sources") is not None:
-        data["pipeline_sources"] = clean_sources(project, changes["pipeline_sources"])
-    if changes.get("config") is not None:
-        data["config"] = clean_config(changes["config"])
+    sources = (
+        clean_sources(project, changes["pipeline_sources"]) if changes.get("pipeline_sources") is not None else None
+    )
+    flags = clean_config(changes["config"]) if changes.get("config") is not None else None
     code = _check_render_code(changes["render_code"]) if changes.get("render_code") is not None else None
     dao = workflow_dao(user, project)
     try:
         with transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [74_002, int(workflow_id)])
+            definition = dao.get_definition(int(workflow_id))
+            if definition is None:
+                raise PageNotFound("No such page in this project.")
+            data = dict(definition.data)
+            if data.get("system"):
+                raise PageProblem(
+                    "The project overview is kept up to date by labs. Make a page of your own to change it."
+                )
+            if name is not None:
+                data["name"] = name
+            if changes.get("description") is not None:
+                data["description"] = str(changes["description"])[:2000]
+            if sources is not None:
+                data["pipeline_sources"] = sources
+            if flags is not None:
+                data["config"] = {**(data.get("config") or {}), **flags}
             dao.update_definition(definition.id, data)
             if code is not None:
                 stored = dao.get_render_code(definition.id)
                 dao.save_render_code(definition.id, code, version=(stored.version + 1) if stored else 1)
     finally:
         dao.close()
-    return definition.id
+    return int(workflow_id)
 
 
 def delete_page(user, project: HQProject, workflow_id: int, *, is_admin: bool) -> None:
     """Delete a page: its author or a project admin. A backup of its definition and code is kept first."""
     loaded = load_page(user, project, workflow_id)
     if loaded is None:
-        raise LookupError("No such page in this project.")
+        raise PageNotFound("No such page in this project.")
     definition, _ = loaded
     author = (definition.data or {}).get("created_by")
     if not is_admin and author != user.pk:
