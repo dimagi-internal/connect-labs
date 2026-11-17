@@ -185,6 +185,7 @@ class _FakeSelection:
         def __init__(self, iso, name, u5):
             self.iso_code, self.country_name, self.name = iso, name, name
             self.counts = {"pop_u5": u5, "births_lbw": u5 // 10, "births": 20}
+            self.regional_proxy_units = {}
 
     areas = [_Area("NGA", "Nigeria", 1_000_000), _Area("NGA", "Nigeria", 500_000), _Area("NER", "Niger", 200_000)]
 
