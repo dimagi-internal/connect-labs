@@ -31,18 +31,47 @@ static/effectiveness/                                                           
 ### The scenario
 
 The pages are views of one object, a `Scenario` (`effectiveness/scenario.py`): the **places** (an indicator over a
-threshold in some countries; `indicator=all` is everywhere with data), the **programmes** (models), three **dials**
-(`extra` dollars a person a year, `effect` and `reach` as percent; link key `<model>_<dial>`), any model **assumptions**
-(`i.<model>.<input>`) and the **bar**. It is read from a link and written back to one, and only what differs from the
-default is written, so the default scenario is the bare page. The dials are the Implementations what-if's (`whatif.py`
-imports them), and `result.scale_multiple` is the one statement of how cost and effect move a multiple, used by both
-`result.reprice` (a delivery) and `market.size` (a market).
+threshold in some countries; `indicator=all` is everywhere with data) at a **grain** (a `country`, or a `territory`: a state or
+province), the **programmes** (models), a **target** (how many people to reach), three **dials** (`extra` dollars a person a
+year, which may be below zero when delivery is cheaper; `effect` as % of the model's; `reach` as the most of a place's cases
+that can be reached; link key `<model>_<dial>`), any model **assumptions** (`i.<model>.<input>`) and the **bar**. It is read
+from a link and written back to one, and only what differs from the default is written, so the default scenario is the bare
+page. A dial starts at its model's own value (`scenario.DIAL_DEFAULTS`): Kangaroo Care enrols small babies at home through
+visits and starts at reaching half of a place's cases (owner, 17 Nov 2026); the others start at all of them. The dials are the
+Implementations what-if's (`whatif.py` imports them), and `result.scale_multiple` is the one statement of how cost and effect
+move a multiple, used by `result.reprice` (a delivery) and `market.size` (a market).
 
 `sizing.market_of(scenario)` is the answer Market size and the workspace both draw (`cea:market_data`); `people.question_for`
 turns the scenario's places into the baseline's own question. In the browser the same parts are shared:
 `scenario.js` (state, link, fetch), `dials.js` (the controls), `marketview.js` (tiles, programme lines, country table) and
 `areamap.js` (a country choropleth that knows nothing of models). `tests/scenario_contract.json` is the one definition of
 the link, tested from Python (`test_scenario.py`) and from the page's script (`scenario.test.js`).
+
+### Where to work: risk by place, reach, and the plan
+
+**Why the places differ.** A model's multiple is its deaths averted per dollar over the benchmark. For Kangaroo Care, deaths
+averted per small baby is `post_ref x effect x validity`, so the multiple is proportional to `post_ref`: the 28-day death
+risk of an enrolled small baby without the programme. The published model holds that at one number (13%, "not scaled by
+place", SM, 30 Oct 2026), so every country came back at $60 and 10.3x and the model could not say where it is worth more.
+Its own scenarios say it varies: 18% "like Nigeria", 15.2% "like Liberia", 9.6% "like Uganda", which are 4.62, 4.62 and
+4.51 times each country's national neonatal mortality (39.0, 32.9, 21.3 per 1,000). So **a labelled Labs reading, on by
+default and switchable off (`place_risk=0`)**: the risk is scaled by the place's neonatal mortality from the point where it
+is the model's 13% (28.4 per 1,000, `market.PLACE_RISK`; `test_market` pins the three anchors to 3%). Nothing else about the
+model changes, and a risk you set yourself is scaled to the place, not replaced by it. Implementations still value KC with the
+model's flat figure.
+
+**Territories.** Neonatal mortality is held nationally for every African country and below the country for about 24
+(`Baselines.newborn_mortality`): the territory's own figure, else the country's scaled by how the territory's under-five
+mortality compares (the models' own recipe for a subnational place), else the country's. At the `territory` grain every state
+or province is a place, so where small babies are likelier to die shows within a country. What is not in the model at all and
+so cannot change a ranking yet: delivery cost by place (one price per model; override it per scenario), how reachable the
+territory is (travel time, security, facility delivery are baseline indicators not used here), and existing coverage.
+
+**The plan.** Give a target (`target=1000000`) and `market.plan` fills the places with the highest multiple first, each up to
+the most that can be reached there (the `reach` dial), until the target is met, then reports the people, cost, deaths
+averted, cost per death averted and the spend-weighted multiple of the whole, how far short the places fall if they cannot
+give it, and what spreading the same people evenly would have averted instead. A place with no model figures is never
+chosen. `sizing.overall` is the headline the pages show across the programmes chosen.
 
 ### Saved scenarios
 
@@ -97,6 +126,7 @@ An agent computes what the page shows, from the same code, and gets the page's l
 
 - `cea_model_run`: a model at inputs you set, with the sensitivity (inputs switched on, grouped), scenarios, places.
 - `cea_scenarios`, `cea_scenario_save`: save, list and open scenarios (above).
+- `cea_market_size` with `model` takes the scenario's options too: `grain`, `target` (returns the `plan`), `dials`, `place_risk`.
 - `cea_opportunities`: any selection of delivered opportunities with its roll-up (full tokens only).
 - `cea_market_size`: Market size. With `model` it is the page's answer (the model's own price, run at each country's
   figures, with the part that clears the bar); without it, a unit cost you set.
@@ -134,6 +164,8 @@ ERROR (Sentry) and the models page shows a one-line note until the specs are ref
 ## Left to do
 
 - Saved scenarios: rename and share/unshare without re-saving, versions, and a way to attach one to a proposal.
+- Delivery cost by place (Connect's actual price per case by country or programme) and territory reachability (travel time,
+  security) as inputs to the plan; today only risk differs by place.
 - Put CEA models and Implementations on the scenario too (their own link keys differ: `i_<input>`, `m`), and give the
   workspace a Need lens, a Delivered layer, and region-level shapes (the models hold country figures, so a region's number
   would be an allocation of its country's).

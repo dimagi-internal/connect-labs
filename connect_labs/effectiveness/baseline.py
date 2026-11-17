@@ -17,8 +17,9 @@ coverage for the zone, and the country's diarrhoea death rate scaled by the
 zone's child mortality.
 
 Inputs with no recipe (CHC's worm burden and rotavirus gain, for example) always
-take the country figure and say so. KC has no location inputs at all: its risk is
-the model's 13% for enrolled small babies, not scaled by place (SM, 30 Oct 2026).
+take the country figure and say so. KC has no location inputs at all: the model's risk is
+13% for enrolled small babies in every place (SM, 30 Oct 2026). Sizing a market scales it to the place anyway, as a
+labelled Labs reading (``market.PLACE_RISK``), from the newborn mortality ``Baselines.newborn_mortality`` returns.
 """
 
 from __future__ import annotations
@@ -252,3 +253,28 @@ class Baselines:
             v.country_value = country
             out[key] = v
         return out
+
+    def newborn_mortality(self, iso3: str, boundary: AdminBoundary | None) -> tuple[float, str] | None:
+        """Neonatal deaths per 1,000 live births for a place, and how the figure was made. None when there is none.
+
+        The place's own figure when Labs has one below the country; else the country's IGME figure scaled by how the
+        place's under-five mortality compares with the country's (the models' own recipe for a subnational place, as
+        ``RECIPES["mbw"]["nmr"]`` does); else the country's. ``boundary`` is None for the country as a whole.
+        """
+        rows = self._country_rows.get(iso3, {}).get("nmr", [])
+        igme = [r for r in rows if r.source == "igme"] or rows
+        national = max(igme, key=lambda r: r.year).value if igme else None
+        if boundary is not None and self._resolver is not None:
+            ctx = _Ctx(self._resolver, boundary, {}, self._country_rows.get(iso3, {}))
+            own = _local(ctx.get("nmr"))
+            if own is not None:
+                lvl, where = _level(own)
+                return own.value, f"{where} ({lvl}), {_src(own)}"
+            got = _ratio(ctx, "u5mr") if national is not None else None
+            if got is not None:
+                ratio, area = got
+                return (
+                    national * ratio,
+                    f"the country's x the area's under-five mortality / the country's ({ratio:.2f})",
+                )
+        return (national, "the country's IGME estimate") if national is not None else None

@@ -1,7 +1,7 @@
-/* What a scenario's market looks like in words and numbers: the tiles, a line per programme, a table by country.
+/* What a scenario's market looks like in words and numbers: the tiles, the plan, a line per programme, a table of places.
  *
  * Market size draws these and the workspace draws them beside its map, so neither has a figure of its own: every
- * number is the API's (`effectiveness.sizing`). `byCountry` is the one reshaping the map and the detail card share. */
+ * number is the API's (`effectiveness.sizing`). `byPlace` is the one reshaping the map and the detail card share. */
 (function () {
   'use strict';
   var U = window.EffUI;
@@ -10,22 +10,31 @@
     usd = U.usd,
     num = U.num;
 
+  // One decimal always: 10.3x and 15.5x are different answers, and "10x" for both hides it.
   function mult(v) {
-    return v == null ? '–' : U.mult(v) + 'x';
+    return v == null ? '–' : v.toFixed(1) + 'x';
+  }
+  function pct(v, d) {
+    return v == null ? '–' : (v * 100).toFixed(d == null ? 1 : d) + '%';
+  }
+  function placeLabel(x) {
+    return x.name === x.country ? x.name : x.name + ', ' + x.country;
   }
 
-  // One entry per country across the chosen programmes: the market added together, the best multiple and which
-  // programme gives it, and whether any programme clears the bar there.
-  function byCountry(r) {
+  // One entry per place across the chosen programmes: the market added together, the best multiple and which programme
+  // gives it, what the plan puts there, and whether any programme clears the bar.
+  function byPlace(r) {
     var out = {};
     r.models.forEach(function (m) {
       m.rows.forEach(function (x) {
         var c =
-          out[x.iso3] ||
-          (out[x.iso3] = {
-            iso: x.iso3,
+          out[x.key] ||
+          (out[x.key] = {
+            key: x.key,
+            name: x.name,
             country: x.country,
             market_usd: null,
+            planned: 0,
             best: null,
             clears: false,
             partial: false,
@@ -34,6 +43,7 @@
         c.rows.push({ model: m.model, noun: m.noun, row: x });
         if (x.market_usd != null)
           c.market_usd = (c.market_usd || 0) + x.market_usd;
+        c.planned += x.planned || 0;
         if (x.clears_bar) c.clears = true;
         if (x.partial) c.partial = true;
         if (
@@ -49,84 +59,322 @@
   function create(els, data, opts) {
     opts = opts || {};
     var showAll = false,
+      planAll = false,
       last = null,
-      selected = null;
+      selected = null,
+      sortChosen = null;
+
+    function noun(r) {
+      return r.models.length === 1 ? r.models[0].noun : 'people';
+    }
 
     function tiles(r) {
-      var all = 0,
-        clear = 0,
-        floor = false;
-      r.models.forEach(function (m) {
-        all += m.totals.market_usd;
-        clear += m.totals.clearing_usd;
-        floor = floor || m.totals.is_floor;
-      });
+      var o = r.overall,
+        floor = o.is_floor;
       put(els.tiles, [
         h('div', { class: 'tile' }, [
-          h('div', { class: 'big', text: usd(all) + (floor ? '+' : '') }),
+          h('div', {
+            class: 'big',
+            text: usd(o.cost) + (floor && !o.planned ? '+' : ''),
+          }),
+          h('div', {
+            class: 'cap',
+            text: o.planned
+              ? 'a year, to reach ' + num(o.people) + ' ' + noun(r)
+              : 'a year, to reach what it can in these places (' +
+                num(o.people) +
+                ' ' +
+                noun(r) +
+                ')',
+          }),
+        ]),
+        h('div', { class: 'tile' }, [
+          h('div', { class: 'big', text: num(o.deaths_averted) }),
           h('div', {
             class: 'cap',
             text:
-              'a year, to reach everyone in these places' +
-              (r.models.length > 1 ? ' (programmes added together)' : ''),
+              'deaths averted a year' +
+              (o.cost_per_death
+                ? ' · ' + usd(o.cost_per_death) + ' per death averted'
+                : ''),
           }),
         ]),
         h('div', { class: 'tile' }, [
-          h('div', { class: 'big', text: usd(clear) }),
+          h('div', {
+            class:
+              'big ' +
+              (o.multiple != null && o.multiple >= r.bar ? 'ok' : 'lo'),
+            text: mult(o.multiple),
+          }),
           h('div', {
             class: 'cap',
-            text: 'where the model clears ' + r.bar + "x GiveWell's benchmark",
+            text:
+              "of GiveWell's benchmark" +
+              (r.models.length > 1 ? ', all together' : '') +
+              ' · the bar is ' +
+              r.bar +
+              'x',
           }),
         ]),
         h('div', { class: 'tile' }, [
-          h('div', { class: 'big', text: String(r.selection.countries) }),
+          h('div', { class: 'big', text: String(r.selection.places) }),
           h('div', {
             class: 'cap',
-            text: r.selection.everywhere
-              ? 'of ' +
-                r.selection.africa_total +
-                ' African countries have data'
-              : 'countries with ' +
-                r.selection.regions +
-                ' regions above ' +
-                r.selection.threshold +
-                ' on ' +
-                r.selection.indicator_label,
+            text:
+              (r.selection.grain === 'territory'
+                ? 'territories in ' + r.selection.countries + ' countries'
+                : r.selection.everywhere
+                  ? 'of ' +
+                    r.selection.africa_total +
+                    ' African countries have data'
+                  : 'countries with ' +
+                    r.selection.regions +
+                    ' regions above ' +
+                    r.selection.threshold +
+                    ' on ' +
+                    r.selection.indicator_label) +
+              (o.planned ? ', ' + o.clearing_places + ' clear the bar' : ''),
           }),
         ]),
       ]);
     }
 
+    // What a reader must know to trust the figures: what is only a floor, what has no model figure, and the one thing
+    // that makes the places differ (or does not).
     function notes(r) {
+      var lines = [];
       var floor = false,
         unm = 0;
       r.models.forEach(function (m) {
         floor = floor || m.totals.is_floor;
         unm += m.totals.unmodelled_countries;
       });
+      if (floor)
+        lines.push(
+          'A plus means some places have no count, so this is a floor.',
+        );
+      if (unm)
+        lines.push(
+          unm +
+            (unm === 1 ? ' place has' : ' places have') +
+            ' no model figures: counted in the market, never in the clearing part, never in a plan.',
+        );
+      r.models.forEach(function (m) {
+        var label = data.models[m.model].label,
+          pr = m.place_risk;
+        if (m.flat) {
+          lines.push(
+            pr.applies && !pr.on
+              ? label +
+                  ': every place has the same multiple because scaling to local ' +
+                  data.place_risk[m.model].label +
+                  ' is off. Switch it on to see where it is worth more.'
+              : pr.applies && pr.scaled === 0
+                ? label +
+                  ': no place has a ' +
+                  data.place_risk[m.model].label +
+                  " figure, so every place gets the model's own risk and the same multiple."
+                : label +
+                  ': this model has no place detail, so every place has the same multiple: where you work cannot change it.',
+          );
+        } else if (pr.applies && pr.on) {
+          var without = m.rows.length - pr.scaled;
+          lines.push(
+            label +
+              ": baseline risk is scaled to each place's " +
+              data.place_risk[m.model].label +
+              ' (a Labs reading; the model itself uses one figure everywhere).' +
+              (without
+                ? ' ' +
+                  without +
+                  " places have no figure and use the model's own risk."
+                : ''),
+          );
+        }
+      });
       var missing = r.selection.unsupported.length;
-      put(els.note, [
-        (floor
-          ? 'A plus means some places have no count, so this is a floor. '
-          : '') +
-          (unm
-            ? unm +
-              (unm === 1 ? ' country has' : ' countries have') +
-              ' no model figures: counted in the market, never in the clearing part. '
-            : ''),
-        missing > 0
-          ? h('details', { css: { display: 'inline' } }, [
-              h('summary', {
-                css: { display: 'inline', cursor: 'pointer' },
+      put(
+        els.note,
+        lines
+          .map(function (t) {
+            return h('p', { class: 'muted note', text: t });
+          })
+          .concat(
+            missing > 0
+              ? [
+                  h('details', { class: 'muted note' }, [
+                    h('summary', {
+                      css: { cursor: 'pointer' },
+                      text:
+                        missing +
+                        (missing === 1 ? ' country has' : ' countries have') +
+                        ' no data',
+                    }),
+                    r.selection.unsupported.join(', ') + '.',
+                  ]),
+                ]
+              : [],
+          ),
+      );
+    }
+
+    // The plan: the best places first, each up to the most that can be reached there.
+    function plan(r) {
+      var withPlan = r.models.filter(function (m) {
+        return m.plan;
+      });
+      els.plan.hidden = !withPlan.length;
+      if (!withPlan.length) return;
+      put(
+        els.plan,
+        withPlan.map(function (m) {
+          var p = m.plan,
+            t = p.totals,
+            kids = [
+              h('h2', {
                 text:
-                  missing +
-                  (missing === 1 ? ' country has' : ' countries have') +
-                  ' no data',
+                  'Plan: reach ' +
+                  num(p.target) +
+                  ' ' +
+                  m.noun +
+                  ' (' +
+                  data.models[m.model].label +
+                  ')',
               }),
-              ' ' + r.selection.unsupported.join(', ') + '.',
-            ])
-          : '',
-      ]);
+            ];
+          if (!p.feasible)
+            kids.push(
+              h('p', {
+                class: 'err',
+                text:
+                  'These places can give at most ' +
+                  num(p.capacity) +
+                  ' ' +
+                  m.noun +
+                  ' at ' +
+                  m.dials.reach +
+                  '% of their cases: ' +
+                  num(p.shortfall) +
+                  ' short. Widen the places, or raise the most you can reach.',
+              }),
+            );
+          kids.push(
+            h('p', { class: 'planline' }, [
+              h('b', {
+                text:
+                  num(t.people) +
+                  ' reached in ' +
+                  t.places +
+                  (t.places === 1 ? ' place' : ' places'),
+              }),
+              ' for ' +
+                usd(t.cost) +
+                ' a year: ' +
+                num(t.deaths_averted) +
+                ' deaths averted, ' +
+                usd(t.cost_per_death) +
+                ' per death averted, ',
+              h('b', {
+                class: t.multiple >= r.bar ? 'ok' : 'lo',
+                text: mult(t.multiple),
+              }),
+              " of GiveWell's benchmark.",
+            ]),
+          );
+          if (p.even && p.gain) {
+            var g = p.gain.deaths_averted_pct;
+            kids.push(
+              h('p', {
+                class: 'muted',
+                text:
+                  g < 0.5
+                    ? 'Every place is alike here, so choosing places changes nothing: spreading the same people evenly averts the same deaths.'
+                    : 'Choosing the places is worth ' +
+                      g.toFixed(0) +
+                      '% more deaths averted for the same people: spreading ' +
+                      num(p.target) +
+                      ' evenly over all ' +
+                      p.even.places +
+                      ' places instead would avert ' +
+                      num(p.even.deaths_averted) +
+                      ' for ' +
+                      usd(p.even.cost) +
+                      ', at ' +
+                      usd(p.even.cost_per_death) +
+                      ' per death.',
+              }),
+            );
+          }
+          var shown = planAll ? p.places : p.places.slice(0, 12);
+          kids.push(
+            h('div', { class: 'scroll' }, [
+              h('table', {}, [
+                h('thead', {}, [
+                  h('tr', {}, [
+                    h('th', { text: '#' }),
+                    h('th', { text: 'Place' }),
+                    h('th', { class: 'n', text: 'Reached' }),
+                    h('th', { class: 'n', text: 'Of its cases' }),
+                    h('th', { class: 'n', text: 'Cost' }),
+                    h('th', { class: 'n', text: 'Deaths averted' }),
+                    h('th', { class: 'n', text: 'Multiple' }),
+                  ]),
+                ]),
+                h(
+                  'tbody',
+                  {},
+                  shown.map(function (x, i) {
+                    var tr = h(
+                      'tr',
+                      {
+                        class:
+                          x.key === selected
+                            ? 'sel'
+                            : opts.onSelect
+                              ? 'pick'
+                              : '',
+                        data: { key: x.key },
+                      },
+                      [
+                        h('td', { text: String(i + 1) }),
+                        h('td', { text: placeLabel(x) }),
+                        h('td', { class: 'n', text: num(x.reached) }),
+                        h('td', { class: 'n', text: pct(x.share_of_cases, 0) }),
+                        h('td', { class: 'n', text: usd(x.cost) }),
+                        h('td', { class: 'n', text: num(x.deaths_averted) }),
+                        h('td', {
+                          class: 'n ' + (x.multiple >= r.bar ? 'ok' : 'lo'),
+                          text: mult(x.multiple),
+                        }),
+                      ],
+                    );
+                    if (opts.onSelect)
+                      tr.addEventListener('click', function () {
+                        opts.onSelect(x.key);
+                      });
+                    return tr;
+                  }),
+                ),
+              ]),
+            ]),
+          );
+          if (p.places.length > 12) {
+            var more = h('button', {
+              type: 'button',
+              class: 'btn',
+              text: planAll
+                ? 'Show fewer'
+                : 'Show all ' + p.places.length + ' places',
+            });
+            more.addEventListener('click', function () {
+              planAll = !planAll;
+              if (last) plan(last);
+            });
+            kids.push(h('p', { css: { margin: '8px 0 0' } }, [more]));
+          }
+          return h('div', {}, kids);
+        }),
+      );
     }
 
     function programmes(r) {
@@ -136,15 +384,25 @@
           var t = m.totals;
           return h('div', { class: 'mline' }, [
             h('b', { text: data.models[m.model].label }),
-            h('span', { text: num(t.units) + ' ' + m.noun }),
+            h('span', {
+              text:
+                num(t.units) +
+                ' ' +
+                m.noun +
+                ' (' +
+                m.dials.reach +
+                '% of their cases at most)',
+            }),
             h('span', { text: usd(t.market_usd) + ' a year' }),
+            h('span', { text: num(t.deaths_averted) + ' deaths averted' }),
+            h('span', { text: mult(t.multiple) + ' blended' }),
             h('span', {
               class: t.clearing_countries ? 'ok' : 'lo',
               text:
                 t.clearing_countries +
                 ' of ' +
-                t.countries +
-                ' countries clear the bar (' +
+                t.places +
+                ' places clear the bar (' +
                 usd(t.clearing_usd) +
                 ')',
             }),
@@ -153,65 +411,155 @@
       );
     }
 
+    function sorter(hasPlan, flat) {
+      var options = [
+        ['multiple', 'Highest multiple'],
+        ['market', 'Biggest market'],
+      ];
+      if (hasPlan) options.unshift(['plan', 'In the plan first']);
+      var keys = options.map(function (o) {
+        return o[0];
+      });
+      var current =
+        keys.indexOf(sortChosen) >= 0
+          ? sortChosen
+          : hasPlan
+            ? 'plan'
+            : flat
+              ? 'market'
+              : 'multiple';
+      if (els.sort) {
+        put(
+          els.sort,
+          options.map(function (o) {
+            return h('option', {
+              value: o[0],
+              text: o[1],
+              selected: o[0] === current ? true : null,
+            });
+          }),
+        );
+        els.sort.value = current;
+      }
+      return current;
+    }
+
     function table(r) {
-      var rows = [];
+      var rows = [],
+        hasPlan = r.models.some(function (m) {
+          return m.plan;
+        }),
+        anyRisk = r.models.some(function (m) {
+          return m.rows.some(function (x) {
+            return x.risk != null;
+          });
+        });
       r.models.forEach(function (m) {
         m.rows.forEach(function (x) {
           rows.push({ m: m.model, x: x });
         });
       });
+      var how = sorter(
+        hasPlan,
+        r.models.every(function (m) {
+          return m.flat;
+        }),
+      );
+      var by = {
+        plan: function (a) {
+          return [a.x.planned || 0, a.x.multiple || 0];
+        },
+        multiple: function (a) {
+          return [
+            a.x.multiple == null ? -1 : a.x.multiple,
+            a.x.market_usd || 0,
+          ];
+        },
+        market: function (a) {
+          return [a.x.market_usd || 0, a.x.multiple || 0];
+        },
+      }[how];
       rows.sort(function (a, b) {
-        return (b.x.market_usd || 0) - (a.x.market_usd || 0);
+        var u = by(a),
+          v = by(b);
+        return v[0] - u[0] || v[1] - u[1];
       });
       var shown = showAll ? rows : rows.slice(0, 12);
       els.more.hidden = rows.length <= 12;
       els.more.textContent = showAll
         ? 'Show fewer'
         : 'Show all ' + rows.length + ' rows';
+      var head = ['Place', 'Programme'].concat(
+        hasPlan ? ['Planned'] : [],
+        ['People', 'A year, each', 'Market', 'Deaths a year'],
+        anyRisk ? ['Baseline risk'] : [],
+        ['Multiple'],
+      );
       put(els.rows, [
         h('thead', {}, [
-          h('tr', {}, [
-            h('th', { text: 'Country' }),
-            h('th', { text: 'Programme' }),
-            h('th', { class: 'n', text: 'People' }),
-            h('th', { class: 'n', text: 'A year, each' }),
-            h('th', { class: 'n', text: 'Market' }),
-            h('th', { class: 'n', text: 'Multiple' }),
-          ]),
+          h(
+            'tr',
+            {},
+            head.map(function (t, i) {
+              return h('th', { class: i < 2 ? '' : 'n', text: t });
+            }),
+          ),
         ]),
         h(
           'tbody',
           {},
           shown.map(function (o) {
             var x = o.x;
+            var cells = [
+              h('td', { text: placeLabel(x) }),
+              h('td', { text: data.models[o.m].label.split(' ')[0] }),
+            ];
+            if (hasPlan)
+              cells.push(
+                h('td', { class: 'n', text: x.planned ? num(x.planned) : '–' }),
+              );
+            cells.push(
+              h('td', {
+                class: 'n',
+                text: num(x.units) + (x.partial ? '+' : ''),
+              }),
+              h('td', { class: 'n', text: '$' + x.cost_per_person.toFixed(2) }),
+              h('td', { class: 'n', text: usd(x.market_usd) }),
+              h('td', { class: 'n', text: num(x.deaths_averted) }),
+            );
+            if (anyRisk)
+              cells.push(
+                h('td', {
+                  class: 'n',
+                  title:
+                    x.risk_basis === 'place'
+                      ? "scaled to this place's newborn mortality"
+                      : "the model's own figure",
+                  text:
+                    x.risk == null
+                      ? '–'
+                      : pct(x.risk) + (x.risk_basis === 'place' ? '' : '*'),
+                }),
+              );
+            cells.push(
+              h('td', {
+                class: 'n ' + (x.clears_bar ? 'ok' : 'lo'),
+                text: x.modelled ? mult(x.multiple) : 'no model figure',
+              }),
+            );
             var tr = h(
               'tr',
               {
                 class:
-                  x.iso3 === selected ? 'sel' : opts.onSelect ? 'pick' : '',
-                data: { iso: x.iso3 },
+                  (x.key === selected ? 'sel ' : opts.onSelect ? 'pick ' : '') +
+                  (x.planned ? 'inplan' : ''),
+                data: { key: x.key },
               },
-              [
-                h('td', { text: x.country }),
-                h('td', { text: data.models[o.m].label.split(' ')[0] }),
-                h('td', {
-                  class: 'n',
-                  text: num(x.units) + (x.partial ? '+' : ''),
-                }),
-                h('td', {
-                  class: 'n',
-                  text: '$' + x.cost_per_person.toFixed(2),
-                }),
-                h('td', { class: 'n', text: usd(x.market_usd) }),
-                h('td', {
-                  class: 'n ' + (x.clears_bar ? 'ok' : 'lo'),
-                  text: x.modelled ? mult(x.multiple) : 'no model figure',
-                }),
-              ],
+              cells,
             );
             if (opts.onSelect)
               tr.addEventListener('click', function () {
-                opts.onSelect(x.iso3);
+                opts.onSelect(x.key);
               });
             return tr;
           }),
@@ -223,6 +571,7 @@
       last = r;
       tiles(r);
       notes(r);
+      plan(r);
       programmes(r);
       table(r);
     }
@@ -231,16 +580,30 @@
       showAll = !showAll;
       if (last) table(last);
     });
+    if (els.sort)
+      els.sort.addEventListener('change', function () {
+        sortChosen = els.sort.value;
+        if (last) table(last);
+      });
 
     return {
       draw: draw,
-      // The country a page is looking at: its table rows are marked.
-      select: function (iso) {
-        selected = iso;
-        if (last) table(last);
+      // The place a page is looking at: its table rows are marked.
+      select: function (key) {
+        selected = key;
+        if (last) {
+          plan(last);
+          table(last);
+        }
       },
     };
   }
 
-  window.EffMarketView = { create: create, byCountry: byCountry, mult: mult };
+  window.EffMarketView = {
+    create: create,
+    byPlace: byPlace,
+    mult: mult,
+    pct: pct,
+    placeLabel: placeLabel,
+  };
 })();

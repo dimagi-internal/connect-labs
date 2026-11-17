@@ -1,4 +1,5 @@
-/* The scenario's controls: where, which programmes, the bar, three dials per programme, and every assumption behind them.
+/* The scenario's controls: where, which programmes, how many people, the bar, three dials per programme, and every
+ * assumption behind them.
  *
  * One panel, mounted by Market size and by the workspace, so the controls are the same and a change on one page is the
  * same change on the next. It changes the scenario (`EffScenario`) and draws nothing else. */
@@ -8,8 +9,12 @@
   var h = U.h,
     put = U.put;
 
-  function field(label, control) {
-    return h('label', { class: 'f' }, [h('span', { text: label }), control]);
+  function field(label, control, hint) {
+    return h('label', { class: 'f' }, [
+      h('span', { text: label }),
+      control,
+      hint ? h('small', { class: 'hint', text: hint }) : null,
+    ]);
   }
 
   function number(value, on, attrs) {
@@ -31,9 +36,13 @@
     var s = scn.state;
     var summary = h('p', { class: 'muted', css: { margin: '8px 0 0' } });
     var places = h('div');
+    var grainBox = h('div', { class: 'seg' });
     var chips = h('div', { class: 'models' });
+    var targetBox = h('div');
+    var riskBox = h('div');
     var dialsBox = h('div');
     var inputsBox = h('div');
+    var EVERYWHERE = window.EffScenario.EVERYWHERE;
 
     // ---- where
     function drawPlaces() {
@@ -51,7 +60,7 @@
       ind.value = s.indicator;
       ind.addEventListener('change', function () {
         scn.setIndicator(ind.value);
-        thr.hidden = s.indicator === window.EffScenario.EVERYWHERE;
+        thr.hidden = s.indicator === EVERYWHERE;
         thrInput.value = s.threshold == null ? '' : String(s.threshold);
       });
       var thrInput = number(
@@ -61,7 +70,7 @@
         },
       );
       var thr = field('Above', thrInput);
-      thr.hidden = s.indicator === window.EffScenario.EVERYWHERE;
+      thr.hidden = s.indicator === EVERYWHERE;
       var iso = h('input', {
         type: 'text',
         value: s.iso,
@@ -77,7 +86,29 @@
       ]);
     }
 
-    // ---- programmes, and each one's dials
+    // Countries are what the models hold figures for; territories (states and provinces) are where the best places show.
+    var GRAIN_LABEL = { country: 'Countries', territory: 'Territories' };
+    function drawGrain() {
+      put(
+        grainBox,
+        data.grains.map(function (g) {
+          var b = h('button', {
+            type: 'button',
+            class: 'btn' + (g === s.grain ? ' on' : ''),
+            text: GRAIN_LABEL[g],
+          });
+          b.addEventListener('click', function () {
+            if (s.grain !== g) {
+              scn.setGrain(g);
+              drawGrain();
+            }
+          });
+          return b;
+        }),
+      );
+    }
+
+    // ---- programmes, how many people, and each one's dials
     function drawChips() {
       put(
         chips,
@@ -100,6 +131,66 @@
       );
     }
 
+    function drawTarget() {
+      var noun = data.models[s.models[0]].noun;
+      var input = number(
+        s.target == null ? '' : s.target,
+        function (v) {
+          scn.setTarget(v);
+        },
+        { min: '0', placeholder: 'everyone it can reach' },
+      );
+      input.addEventListener('input', function () {
+        if (input.value.trim() === '') scn.setTarget(null);
+      });
+      put(targetBox, [
+        field(
+          'People to reach' +
+            (s.models.length > 1 ? ' (each programme, in its own unit)' : ''),
+          input,
+          noun +
+            '. Leave blank for everyone it can reach; give a number and the best places are filled first.',
+        ),
+      ]);
+    }
+
+    // Only a programme whose baseline risk can be scaled to the place has this switch (Kangaroo Care).
+    function drawRisk() {
+      var scaled = s.models.filter(function (m) {
+        return data.place_risk[m];
+      });
+      if (!scaled.length) return put(riskBox, []);
+      var r = data.place_risk[scaled[0]];
+      var box = h('input', {
+        type: 'checkbox',
+        checked: s.place_risk ? true : null,
+      });
+      box.addEventListener('change', function () {
+        scn.setPlaceRisk(box.checked);
+      });
+      put(riskBox, [
+        h('label', { class: 'f chk' }, [
+          box,
+          " Scale baseline risk to each place's " + r.label,
+        ]),
+        h('small', {
+          class: 'hint',
+          text:
+            'The model itself uses one figure for every place (' +
+            String(
+              Math.round(
+                data.models[scaled[0]].inputs.filter(function (i) {
+                  return i.key === r.input;
+                })[0].value * 100,
+              ),
+            ) +
+            '%). Cost-effectiveness is proportional to it, so by default it is scaled to local ' +
+            r.label +
+            ", from the model's own country scenarios. Switch off for the model's flat figures.",
+        }),
+      ]);
+    }
+
     function drawDials() {
       put(
         dialsBox,
@@ -109,19 +200,23 @@
             { class: 'dials' },
             [h('div', { class: 'gt', text: data.models[m].label })].concat(
               data.dials.map(function (d) {
+                var start = scn.dialDefault(m, d.key);
                 var row = h('div', { class: 'ir' });
                 var input = number(s.dials[m][d.key], function (v) {
                   scn.setDial(m, d.key, v);
-                  row.classList.toggle('changed', v !== d.default);
+                  row.classList.toggle('changed', v !== start);
                 });
-                row.classList.toggle(
-                  'changed',
-                  s.dials[m][d.key] !== d.default,
-                );
+                row.classList.toggle('changed', s.dials[m][d.key] !== start);
                 put(row, [
                   h('div', { title: d.hint }, [
                     d.label,
-                    h('small', { text: d.unit }),
+                    h('small', {
+                      text:
+                        d.unit +
+                        (start !== d.default
+                          ? ' · this programme starts at ' + start
+                          : ''),
+                    }),
                   ]),
                   input,
                 ]);
@@ -204,7 +299,10 @@
     });
     function drawAll() {
       drawPlaces();
+      drawGrain();
       drawChips();
+      drawTarget();
+      drawRisk();
       drawDials();
       drawInputs();
       drawSummary();
@@ -214,8 +312,11 @@
     put(root, [
       h('h2', { text: 'Places' }),
       places,
+      grainBox,
       h('h2', { text: 'Programmes', css: { marginTop: '16px' } }),
       chips,
+      targetBox,
+      riskBox,
       h('h2', { text: 'Dials', css: { marginTop: '16px' } }),
       dialsBox,
       field("GiveWell's bar (x)", barInput),

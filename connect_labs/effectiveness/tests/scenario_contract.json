@@ -10,7 +10,10 @@
     "chc_reach": "50",
     "kc_extra": "2.5",
     "i.chc.cost": "3",
-    "method": "dhs"
+    "method": "dhs",
+    "target": "1000000",
+    "place_risk": "0",
+    "grain": "territory"
   },
   "state": {
     "models": ["chc", "kc"],
@@ -19,11 +22,32 @@
     "iso": "NGA,NER",
     "bar": 8.0,
     "dials": {
-      "chc": { "extra": 0.0, "effect": 100.0, "reach": 50.0 },
-      "kc": { "extra": 2.5, "effect": 100.0, "reach": 100.0 },
-      "mbw": { "extra": 0.0, "effect": 100.0, "reach": 100.0 }
+      "chc": {
+        "extra": 0.0,
+        "effect": 100.0,
+        "reach": 50.0
+      },
+      "kc": {
+        "extra": 2.5,
+        "effect": 100.0,
+        "reach": 50.0
+      },
+      "mbw": {
+        "extra": 0.0,
+        "effect": 100.0,
+        "reach": 100.0
+      }
     },
-    "overrides": { "chc": { "cost": 3.0 } },
-    "extras": { "method": "dhs" }
+    "overrides": {
+      "chc": {
+        "cost": 3.0
+      }
+    },
+    "extras": {
+      "method": "dhs"
+    },
+    "target": 1000000.0,
+    "place_risk": false,
+    "grain": "territory"
   }
 }

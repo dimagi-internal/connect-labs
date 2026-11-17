@@ -1,9 +1,12 @@
-"""People per country in the places the baseline selects: the count every market is sized from.
+"""People per place in the places the baseline selects: the count every market is sized from.
 
 Market size (the page and the ``cea_market_size`` tool) asks the baseline one question, *which places*, and needs back
-how many people each model serves in each country there (children under 5 for CHC, low-birthweight births for KC,
-births for MBW). This module is that seam: it reads the baseline through its public ``Question`` and hands the pure
-sizing code (``market``) plain dictionaries.
+how many people each model serves in each place (children under 5 for CHC, low-birthweight births for KC, births for
+MBW), and how risky each place is (newborn mortality, for the models whose risk scales to the place). This module is
+that seam: it reads the baseline through its public ``Question`` and hands the pure sizing code (``market``) plain
+dictionaries.
+
+A place is a country or, at the ``territory`` grain, a state or province: the same selection, one entry per region.
 """
 
 from __future__ import annotations
@@ -14,7 +17,9 @@ from types import SimpleNamespace
 from django.core.cache import cache
 
 from connect_labs.effectiveness import market
+from connect_labs.effectiveness.baseline import Baselines
 from connect_labs.effectiveness.scenario import EVERYWHERE, Scenario
+from connect_labs.labs.indicators import boundaries as boundary_set
 from connect_labs.labs.indicators import measures, response_cache
 from connect_labs.labs.indicators.africa import ISO_CODES
 from connect_labs.labs.indicators.query import Question, float_param, indicator_param
@@ -58,7 +63,9 @@ def describe(question: Question, found: dict, everywhere: bool) -> dict:
         "indicator_label": measures.get(question.indicator).label,
         "threshold": question.threshold,
         "method": found["method"],
-        "countries": len(found["countries"]),
+        "grain": found["grain"],
+        "places": len(found["places"]),
+        "countries": len({p["iso3"] for p in found["places"].values()}),
         "africa_total": africa_total(),
         "everywhere": everywhere,
         "regions": found["regions"],
@@ -66,14 +73,29 @@ def describe(question: Question, found: dict, everywhere: bool) -> dict:
     }
 
 
-def group_selection(selection) -> dict:
-    """A baseline selection as people per country, for every model's count, with what it could not count.
+def group_selection(selection, grain: str = "country") -> dict:
+    """A baseline selection as people per place, for every model's count, with what it could not count.
 
-    ``partial`` names the counts a country is missing for some of its areas, so its total is a floor.
+    At the ``country`` grain a place is a country and its regions are added together; at ``territory`` each region is
+    a place. ``partial`` names the counts a place is missing for some of its areas, so its total is a floor.
+    ``boundaries`` (territory grain only, dropped before the answer is kept) are the regions' own boundaries.
     """
-    by_country: dict[str, dict] = {}
+    places: dict[str, dict] = {}
+    boundaries: dict[str, object] = {}
     for area in selection.areas:
-        c = by_country.setdefault(area.iso_code, {"name": area.country_name, "counts": {}, "partial": set()})
+        key = str(area.boundary.pk) if grain == "territory" else area.iso_code
+        c = places.setdefault(
+            key,
+            {
+                "name": area.name if grain == "territory" else area.country_name,
+                "country": area.country_name,
+                "iso3": area.iso_code,
+                "counts": {},
+                "partial": set(),
+            },
+        )
+        if grain == "territory":
+            boundaries[key] = area.boundary
         for m in market.count_measures():
             v = area.counts.get(m)
             if v is None:
@@ -81,33 +103,63 @@ def group_selection(selection) -> dict:
             else:
                 c["counts"][m] = c["counts"].get(m, 0) + v
     return {
-        "countries": {
-            iso: {"name": c["name"], "counts": c["counts"], "partial": sorted(c["partial"])}
-            for iso, c in by_country.items()
-        },
+        "places": {k: {**c, "partial": sorted(c["partial"])} for k, c in places.items()},
+        "boundaries": boundaries,
         "regions": selection.unit_count,
         "unsupported": selection.countries_unsupported,
         "method": selection.method,
+        "grain": grain,
     }
 
 
-def people_by_country(question: Question) -> dict:
-    """``group_selection`` for the question, kept with the data (a selection resolves hundreds of regions)."""
+def attach_risk(found: dict) -> dict:
+    """Put each place's newborn mortality on it (``measures``), for the models whose risk scales to the place.
+
+    A country's is the country's own estimate; a territory's is its own figure where Labs has one, else the country's
+    scaled by how the territory's under-five mortality compares (``Baselines.newborn_mortality``). A place with no
+    figure is left without one and is sized at the model's own risk, and says so.
+    """
+    isos = sorted({p["iso3"] for p in found["places"].values()})
+    if not isos:
+        return found
+    if found["grain"] == "territory":
+        baselines = Baselines(list(found["boundaries"].values()))
+    else:
+        baselines = Baselines(list(boundary_set.owned().filter(iso_code__in=isos, admin_level=0)))
+    for key, p in found["places"].items():
+        got = baselines.newborn_mortality(p["iso3"], found["boundaries"].get(key))
+        p["measures"] = {"nmr": got[0]} if got else {}
+        p["measures_how"] = {"nmr": got[1]} if got else {}
+    return found
+
+
+def people_by_place(question: Question, grain: str = "country") -> dict:
+    """``group_selection`` for the question with each place's risk, kept with the data (a selection resolves hundreds
+    of regions, and a territory grain resolves every one of them)."""
     key = (
-        "market:people:" + hashlib.sha1(f"{response_cache.data_version()}|{question.cache_key()}".encode()).hexdigest()
+        "market:people:v2:"
+        + hashlib.sha1(f"{response_cache.data_version()}|{grain}|{question.cache_key()}".encode()).hexdigest()
     )
     got = cache.get(key)
     if got is not None:
         return got
-    out = group_selection(question.select(extra_counts=market.count_measures()))
+    out = attach_risk(group_selection(question.select(extra_counts=market.count_measures()), grain))
+    out.pop("boundaries", None)
     cache.set(key, out, response_cache.TTL_SECONDS)
     return out
 
 
 def for_model(found: dict, model: str) -> dict:
-    """One model's people per country from ``people_by_country``/``group_selection``, in ``market.size``'s shape."""
+    """One model's people per place from ``people_by_place``/``group_selection``, in ``market.size``'s shape."""
     measure = market.UNITS[model].measure
     return {
-        iso: {"name": c["name"], "units": c["counts"].get(measure), "partial": measure in c["partial"]}
-        for iso, c in found["countries"].items()
+        key: {
+            "name": p["name"],
+            "country": p["country"],
+            "iso3": p["iso3"],
+            "units": p["counts"].get(measure),
+            "partial": measure in p["partial"],
+            "measures": p.get("measures", {}),
+        }
+        for key, p in found["places"].items()
     }

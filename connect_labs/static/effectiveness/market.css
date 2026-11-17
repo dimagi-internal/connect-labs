@@ -348,3 +348,52 @@
   gap: 6px;
   flex: none;
 }
+
+.mk .seg {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.mk .seg .btn {
+  flex: 1;
+  font-weight: 600;
+}
+.mk small.hint {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 3px;
+  line-height: 1.35;
+}
+.mk .note {
+  margin: 6px 0 0;
+  line-height: 1.4;
+}
+.mk .plan {
+  border-left: 4px solid var(--acc);
+}
+.mk .planline {
+  font-size: 14px;
+  margin: 6px 0;
+  line-height: 1.5;
+}
+.mk tr.inplan td:first-child {
+  box-shadow: inset 3px 0 0 var(--good);
+}
+.mk .sortl {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mk .sortl select {
+  width: auto;
+  padding: 3px 6px;
+}
+.mk .tile .big.ok {
+  color: var(--good);
+}
+.mk .tile .big.lo {
+  color: var(--low);
+}

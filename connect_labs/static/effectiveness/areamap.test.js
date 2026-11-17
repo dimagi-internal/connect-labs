@@ -31,6 +31,13 @@ describe('ramp', () => {
     expect(r.color(NaN)).toBeNull();
   });
 
+  it('draws one class, not a ramp of the same value, when every place has the same figure', () => {
+    const r = ramp([10.3, 10.3, 10.3, null]);
+    expect(r.classes).toEqual([{ color: SEQUENTIAL[2], from: 10.3, to: 10.3 }]);
+    expect(r.color(10.3)).toBe(SEQUENTIAL[2]);
+    expect(r.color(null)).toBeNull();
+  });
+
   it('copes with one value, and with none', () => {
     expect(ramp([7]).color(7)).toBeTruthy();
     expect(ramp([]).classes).toEqual([]);

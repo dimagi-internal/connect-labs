@@ -31,10 +31,27 @@ const INDICATORS = [
   { key: 'nmr', label: 'NMR', threshold: 20 },
 ];
 
+// Kangaroo Care starts at reaching half of a place's cases; the others at all of them.
+const DIAL_DEFAULTS = {
+  chc: { extra: 0, effect: 100, reach: 100 },
+  kc: { extra: 0, effect: 100, reach: 50 },
+  mbw: { extra: 0, effect: 100, reach: 100 },
+};
+const PLACE_RISK = {
+  kc: {
+    input: 'post_ref',
+    measure: 'nmr',
+    reference: 28.4,
+    label: 'newborn mortality',
+  },
+};
+
 function data(state) {
   return {
     state,
     dials: DIALS,
+    dial_defaults: DIAL_DEFAULTS,
+    place_risk: PLACE_RISK,
     indicators: INDICATORS,
     bar: contract.default_bar,
   };
@@ -52,12 +69,10 @@ function blank() {
       threshold: null,
       iso: '',
       bar: contract.default_bar,
-      dials: Object.fromEntries(
-        ['chc', 'kc', 'mbw'].map((m) => [
-          m,
-          { extra: 0, effect: 100, reach: 100 },
-        ]),
-      ),
+      target: null,
+      place_risk: true,
+      grain: 'country',
+      dials: JSON.parse(JSON.stringify(DIAL_DEFAULTS)),
       overrides: {},
       extras: {},
     }),
@@ -80,6 +95,49 @@ describe('the link', () => {
     expect(asObject(s.params()).chc_reach).toBe('60');
     s.setDial('chc', 'reach', 100);
     expect(asObject(s.params())).toEqual({ models: 'chc' });
+  });
+
+  it("starts each programme's dials at its own default, so Kangaroo Care's half is not a change", () => {
+    const s = blank();
+    s.toggleModel('kc', true);
+    expect(asObject(s.params())).toEqual({ models: 'chc,kc' });
+    s.setDial('kc', 'reach', 100);
+    expect(asObject(s.params()).kc_reach).toBe('100');
+    s.setDial('kc', 'reach', 50);
+    expect(asObject(s.params())).toEqual({ models: 'chc,kc' });
+    s.setDial('chc', 'reach', 50);
+    expect(asObject(s.params()).chc_reach).toBe('50');
+  });
+
+  it('writes a target, the risk switch and the grain only when they are not the default', () => {
+    const s = blank();
+    s.setTarget(1000000);
+    s.setPlaceRisk(false);
+    s.setGrain('territory');
+    expect(asObject(s.params())).toEqual({
+      models: 'chc',
+      target: '1000000',
+      place_risk: '0',
+      grain: 'territory',
+    });
+    s.setTarget(null);
+    s.setPlaceRisk(true);
+    s.setGrain('country');
+    expect(asObject(s.params())).toEqual({ models: 'chc' });
+  });
+
+  it('takes a blank or zero target as no target', () => {
+    const s = blank();
+    s.setTarget(0);
+    expect(s.state.target).toBeNull();
+    s.setTarget(NaN);
+    expect(s.state.target).toBeNull();
+  });
+
+  it('lets the extra cost go below zero for delivery cheaper than the model', () => {
+    const s = blank();
+    s.setDial('chc', 'extra', -10);
+    expect(asObject(s.params()).chc_extra).toBe('-10');
   });
 
   it('leaves out an assumption set back to the model value', () => {
@@ -125,6 +183,28 @@ describe('changing it', () => {
     s.setDial('kc', 'reach', 50);
     s.setInput('kc', 'cost', 99, 60);
     expect(s.changes()).toEqual({ dials: 1, assumptions: 0 });
+  });
+
+  it('counts switching off place risk as a change only when a programme in play has it', () => {
+    const s = blank();
+    s.setPlaceRisk(false);
+    expect(s.changes()).toEqual({ dials: 0, assumptions: 0 });
+    s.toggleModel('kc', true);
+    expect(s.changes()).toEqual({ dials: 0, assumptions: 1 });
+  });
+
+  it('keeps the target and the places through a reset, and puts Kangaroo Care back to half', () => {
+    const s = blank();
+    s.toggleModel('kc', true);
+    s.setTarget(500000);
+    s.setGrain('territory');
+    s.setDial('kc', 'reach', 90);
+    s.setPlaceRisk(false);
+    s.reset();
+    expect(s.state.dials.kc.reach).toBe(50);
+    expect(s.state.place_risk).toBe(true);
+    expect(s.state.target).toBe(500000);
+    expect(s.state.grain).toBe('territory');
   });
 
   it('resets to the models as published and keeps the places', () => {

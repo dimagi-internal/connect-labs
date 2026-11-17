@@ -10,16 +10,13 @@ import json
 from decimal import Decimal
 
 import pytest
-from django.contrib.gis.geos import MultiPolygon, Polygon
 from django.urls import reverse
-from django.utils import timezone
 
 from connect_labs.effectiveness import baseline, engine
 from connect_labs.effectiveness import implementation as cea
 from connect_labs.effectiveness import places, result
-from connect_labs.labs.admin_boundaries.models import AdminBoundary
-from connect_labs.labs.indicators import policy
-from connect_labs.labs.indicators.models import IndicatorValue, License
+from connect_labs.effectiveness.tests.helpers import value as _value
+from connect_labs.labs.indicators.models import IndicatorValue
 from connect_labs.pulse import costs
 from connect_labs.pulse.models import PulseEvent, PulseOpportunity, PulseWork
 
@@ -72,56 +69,6 @@ class TestEngine:
 
 
 # ---------------------------------------------------------------- place layer
-def _square(x0, y0, size=1.0):
-    return MultiPolygon(
-        Polygon(((x0, y0), (x0 + size, y0), (x0 + size, y0 + size), (x0, y0 + size), (x0, y0))), srid=4326
-    )
-
-
-def _boundary(level, name, bid, x0, y0, size=1.0, iso="NGA"):
-    return AdminBoundary.objects.create(
-        iso_code=iso,
-        admin_level=level,
-        name=name,
-        boundary_id=bid,
-        geometry=_square(x0, y0, size),
-        source=AdminBoundary.Source.GEOBOUNDARIES,
-    )
-
-
-def _value(boundary, indicator, value, year=2023, source=None):
-    source = source or policy.sources(indicator)[0]
-    return IndicatorValue.objects.create(
-        indicator=indicator,
-        boundary=boundary,
-        iso_code=boundary.iso_code,
-        admin_level=boundary.admin_level,
-        year=year,
-        value=value,
-        source=source,
-        source_ref=f"{source}-{year}",
-        license_code=License.OPEN_API,
-        retrieved_at=timezone.now(),
-    )
-
-
-@pytest.fixture
-def nigeria(db):
-    """A country of two states side by side: Kano (high mortality, low ORS) and Lagos."""
-    ng = _boundary(0, "Nigeria", "NGA", 0, 0, size=2)
-    kano = _boundary(1, "Kano", "NGA-KN", 0, 0)
-    lagos = _boundary(1, "Lagos", "NGA-LA", 1, 0)
-    # Area mortality is IGME's subnational model, levelled to IGME's national estimate.
-    _value(ng, "u5mr", 100.0, source="igme")
-    _value(kano, "u5mr", 150.0, source="igme_subnational")
-    _value(lagos, "u5mr", 50.0, source="igme_subnational")
-    _value(kano, "ors_coverage", 20.0)
-    _value(lagos, "ors_coverage", 60.0)
-    _value(ng, "nmr", 30.0, source="igme")
-    _value(kano, "nmr", 40.0, source="igme_subnational")
-    return {"ng": ng, "kano": kano, "lagos": lagos}
-
-
 @pytest.mark.django_db
 class TestBaseline:
     def test_an_area_takes_its_own_figure_and_says_where_it_came_from(self, nigeria):

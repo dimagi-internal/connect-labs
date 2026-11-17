@@ -303,6 +303,45 @@ def cea_opportunities(
                 "type": "integer",
                 "description": "Carry counts to the delivery year before costing. See indicators_select.",
             },
+            "grain": {
+                "type": "string",
+                "enum": ["country", "territory"],
+                "default": "country",
+                "description": (
+                    "With `model`: size countries, or each state or province (`territory`), where the best places to "
+                    "work show."
+                ),
+            },
+            "target": {
+                "type": "number",
+                "description": (
+                    "With `model`: how many people to reach (the model's own unit: low-birthweight newborns for kc). "
+                    "Returns `plan`: the best places first, each up to the most that can be reached there (`dials."
+                    "reach`), with deaths averted, cost per death averted, the blended multiple and the gain over "
+                    "spreading the same target evenly."
+                ),
+            },
+            "dials": {
+                "type": "object",
+                "properties": {k: {"type": "number"} for k in ("extra", "effect", "reach")},
+                "additionalProperties": False,
+                "description": (
+                    "With `model`: `extra` dollars a person a year the model does not count (below zero when delivery "
+                    "is cheaper), `effect` as % of the model's, `reach` as the most % of a place's cases that can be "
+                    "reached (kc starts at 50, the others at 100)."
+                ),
+            },
+            "place_risk": {
+                "type": "boolean",
+                "default": True,
+                "description": (
+                    "With `model`: kc's baseline risk is one number for the world in the model itself, but cost-"
+                    "effectiveness is proportional to it, so by default it is scaled to each place's newborn "
+                    "mortality "
+                    "(a Labs reading, calibrated on the model's own Nigeria, Liberia and Uganda scenarios). False "
+                    "gives the model's flat figures."
+                ),
+            },
         },
         "required": ["indicator"],
         "additionalProperties": False,
@@ -323,6 +362,10 @@ def cea_market_size(
     iso_codes=None,
     reach=1.0,
     target_year=None,
+    grain="country",
+    target=None,
+    dials=None,
+    place_risk=True,
 ):
     if model:
         return _market_size_by_model(
@@ -335,6 +378,10 @@ def cea_market_size(
             method=method,
             iso_codes=iso_codes,
             target_year=target_year,
+            grain=grain,
+            target=target,
+            dials=dials,
+            place_risk=place_risk,
         )
     if basis is None or unit_cost is None:
         raise MCPToolError(
@@ -437,56 +484,89 @@ def cea_market_size(
     }
 
 
-def _market_size_by_model(*, model, overrides, bar, indicator, threshold, resolution, method, iso_codes, target_year):
-    """``cea_market_size`` with a model: ``effectiveness.market`` over the baseline's people, as the page does."""
+def _market_size_by_model(
+    *,
+    model,
+    overrides,
+    bar,
+    indicator,
+    threshold,
+    resolution,
+    method,
+    iso_codes,
+    target_year,
+    grain="country",
+    target=None,
+    dials=None,
+    place_risk=True,
+):
+    """``cea_market_size`` with a model: the same ``effectiveness.sizing`` the Market size and Workspace pages call,
+    so an agent's answer is the page's for the same scenario. The tool only turns its arguments into a scenario."""
     from urllib.parse import urlencode
 
     from django.urls import reverse
 
-    from connect_labs.effectiveness import engine, explore, market, people, valuation
-    from connect_labs.effectiveness.scenario import Scenario
+    from connect_labs.effectiveness import engine, explore, sizing
+    from connect_labs.effectiveness.scenario import EVERYWHERE, KNOBS, Scenario
+
+    from .indicators import _imports, _resolve_method
 
     if model not in engine.MODELS:
         raise MCPToolError("BAD_REQUEST", f"Unknown model {model!r}. Choose one of: {', '.join(engine.MODELS)}.")
+    availability_mod, _, _, measures_mod, methods_mod, _, _ = _imports()
+    params = {"models": model, "indicator": indicator, "grain": grain}
+    if indicator != EVERYWHERE:
+        if indicator not in measures_mod.MEASURES:
+            raise MCPToolError("BAD_REQUEST", f"Unknown indicator {indicator!r}. Call indicators_list to list them.")
+        params["method"] = _resolve_method(availability_mod, methods_mod, indicator, resolution, method)
+    for key, value in (
+        ("threshold", threshold),
+        ("iso", ",".join(iso_codes) if iso_codes else None),
+        ("target_year", target_year),
+        ("bar", bar),
+        ("target", target),
+        ("place_risk", None if place_risk else "0"),
+    ):
+        if value is not None:
+            params[key] = value
+    for key, value in (dials or {}).items():
+        if key not in KNOBS:
+            raise MCPToolError("BAD_REQUEST", f"{key!r} is not a dial: {', '.join(KNOBS)}.")
+        params[f"{model}_{key}"] = value
+    params.update({f"i.{model}.{k}": v for k, v in (overrides or {}).items()})
     try:
-        clean = explore.clean_overrides(model, overrides)
+        scenario = Scenario.from_params({k: str(v) for k, v in params.items()})
+        payload = sizing.market_of(scenario)
     except explore.ExploreError as exc:
         raise MCPToolError("BAD_REQUEST", exc.message) from None
-    selection, _, chosen = _selection(
-        indicator,
-        threshold,
-        resolution,
-        method,
-        iso_codes,
-        extra_counts=market.count_measures(),
-        target_year=target_year,
-    )
-    found = people.group_selection(selection)
-    bar = float(bar) if bar is not None else valuation.bar()
-    try:
-        sized = market.size(model, people.for_model(found, model), clean, bar)
-    except ZeroDivisionError:
-        raise MCPToolError("BAD_REQUEST", f"Those inputs divide by zero in the {model} model.") from None
-    # The page's own link, spelled by the scenario that the page reads it with.
-    link = Scenario(
-        models=(model,), indicator=indicator, threshold=selection.threshold, bar=bar, overrides={model: clean}
-    ).to_params()
-    return {
+    sel, sized = payload["selection"], payload["models"][0]
+    # The page's own link: the map and the plan are on the workspace, a country table is on Market size.
+    page = "cea:workspace" if (scenario.grain == "territory" or scenario.target) else "cea:market"
+    out = {
         "indicator": indicator,
-        "threshold": selection.threshold,
-        "method": chosen,
-        "bar": bar,
-        "overrides": clean,
-        "countries": len(found["countries"]),
-        "countries_with_no_data": found["unsupported"],
+        "threshold": sel["threshold"],
+        "method": sel["method"],
+        "bar": payload["bar"],
+        "overrides": scenario.overrides_for(model),
+        "dials": scenario.dials_for(model),
+        "grain": scenario.grain,
+        "countries": sel["countries"],
+        "places": sel["places"],
+        "countries_with_no_data": sel["unsupported"],
         "market": sized,
-        "explorer_path": f"{reverse('cea:market')}?{urlencode(link)}",
+        "explorer_path": f"{reverse(page)}?{urlencode(payload['link'])}",
         "caveat": (
-            "A year of cost to reach everyone in these places at the model's price. A country with no published "
-            "model figures counts in the market and never in the part that clears the bar; a place with no count "
-            "makes the total a floor."
+            "A year of cost to reach the people a programme can reach in these places, at the model's price. A place "
+            "with no published model figures counts in the market and never in the part that clears the bar; a place "
+            "with no count makes the total a floor. Kangaroo Care's risk is scaled to each place's newborn mortality "
+            "by "
+            "Labs (the model itself holds one figure for the world): `market.place_risk` says whether, and "
+            "`place_risk: false` gives the model's flat figures. Cost per place is the model's, not measured."
         ),
     }
+    if sized.get("plan"):
+        out["plan"] = sized["plan"]
+    return out
 
 
 _SAVED_STATUS = {403: "PERMISSION_DENIED", 404: "NOT_FOUND", 409: "CONFLICT"}
