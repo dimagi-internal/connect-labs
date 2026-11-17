@@ -44,7 +44,8 @@ def _fill(order: list[tuple[str, float, float]], target: float) -> dict[str, flo
 def assess(rows: list[dict], target: float, draws: int = DRAWS, seed: int = SEED) -> dict | None:
     """The plan's reliability, or None when no place has an uncertainty to redraw.
 
-    ``rows`` are ``market.size`` rows: ``key``, ``iso3``, ``units`` (reachable), ``multiple``, ``deaths_per_person`` and
+    ``rows`` are ``market.size`` rows: ``key``, ``iso3``, ``units`` (reachable), ``multiple``, ``deaths_per_person``
+    and
     the uncertainty fields ``risk_se``, ``risk_shared_se`` and the elasticities ``multiple_elasticity`` and
     ``deaths_elasticity`` (how many per cent the multiple and the deaths per person move for one per cent of risk).
     """
@@ -52,7 +53,10 @@ def assess(rows: list[dict], target: float, draws: int = DRAWS, seed: int = SEED
     if not any(r.get("risk_se") for r in able):
         return None
     shown = _fill(
-        [(r["key"], r["multiple"], r["units"]) for r in sorted(able, key=lambda r: (-r["multiple"], -r["units"], r["name"]))],
+        [
+            (r["key"], r["multiple"], r["units"])
+            for r in sorted(able, key=lambda r: (-r["multiple"], -r["units"], r["name"]))
+        ],
         target,
     )
     rng = random.Random(seed)

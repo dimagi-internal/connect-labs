@@ -134,7 +134,9 @@ def attach_risk(found: dict) -> dict:
     else:
         baselines = Baselines(list(boundary_set.owned().filter(iso_code__in=isos, admin_level=0)))
     country = {iso: baselines.newborn_mortality(iso, None) for iso in isos}
-    got = {key: baselines.newborn_mortality(p["iso3"], found["boundaries"].get(key)) for key, p in found["places"].items()}
+    got = {
+        key: baselines.newborn_mortality(p["iso3"], found["boundaries"].get(key)) for key, p in found["places"].items()
+    }
     shrunk = _shrink_by_country(found["places"], got)
     for key, p in found["places"].items():
         boundary = found["boundaries"].get(key)
@@ -167,7 +169,6 @@ def attach_risk(found: dict) -> dict:
 
 #: Where a ``Baselines`` value says it came from when it is the model's own figure, not the place's: nothing local.
 LABS_NOT_LOCAL = ("model country figure", "model default")
-
 
 
 def _shrink_by_country(places: dict, got: dict) -> dict:

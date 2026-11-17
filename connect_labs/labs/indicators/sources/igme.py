@@ -50,7 +50,8 @@ METHOD = (
 )
 
 #: The coverage IGME's published bounds are documented to have: 90% uncertainty intervals. The SDMX answer does not say
-#: (its INTERVAL attribute is not this), so it is stated here and travels with every row as ``extra["interval_level"]``.
+#: (its INTERVAL attribute is not this), so it is stated here and travels with every row as
+#: ``extra["interval_level"]``.
 INTERVAL_LEVEL = 0.90
 
 #: Dimension order in the CME dataflow.

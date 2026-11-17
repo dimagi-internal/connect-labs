@@ -199,7 +199,8 @@ class Nmr(NamedTuple):
     se: float | None = None
     #: The part of ``se`` every territory of the country shares (the national estimate's), None for a national figure.
     shared_se: float | None = None
-    #: "own" (measured below the country), "ratio" (the country's scaled by the area's under-five mortality) or "country".
+    #: "own" (measured below the country), "ratio" (the country's scaled by the area's under-five mortality)
+    #: or "country".
     kind: str = "country"
 
 

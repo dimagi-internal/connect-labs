@@ -18,13 +18,17 @@ class TestTheIntervalArithmetic:
         se = mortality.se_ln(22.5, 49.7, 0.90)
         assert se == pytest.approx((math.log(49.7) - math.log(22.5)) / (2 * 1.6449), rel=1e-6)
         low, high = mortality.interval(33.7, se, 0.90)
-        assert 22 < low < 25 and 46 < high < 52  # about the published 22.5 and 49.7, though the interval is symmetric in logs
+        assert (
+            22 < low < 25 and 46 < high < 52
+        )  # about the published 22.5 and 49.7, though the interval is symmetric in logs
 
     def test_the_same_bounds_read_as_a_95_percent_interval_mean_a_smaller_standard_error(self):
         assert mortality.se_ln(20, 50, 0.95) < mortality.se_ln(20, 50, 0.90)
 
     def test_a_bound_at_zero_does_not_break_the_log(self):
-        assert mortality.se_ln(0.0, 7.0, 0.95) == pytest.approx((math.log(7.0) - math.log(mortality.FLOOR)) / (2 * 1.96))
+        assert mortality.se_ln(0.0, 7.0, 0.95) == pytest.approx(
+            (math.log(7.0) - math.log(mortality.FLOOR)) / (2 * 1.96)
+        )
         assert mortality.se_ln(-3.0, 7.0, 0.95) > 0
 
     @pytest.mark.parametrize("low, high", [(None, 5.0), (5.0, None), (None, None), (3.0, 0.0)])

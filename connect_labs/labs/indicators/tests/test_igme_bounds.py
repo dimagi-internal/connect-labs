@@ -1,7 +1,8 @@
 """The IGME loaders keep the uncertainty bounds UN IGME publishes.
 
 The national and subnational answers carry a lower and an upper bound on every modelled estimate, as coded observation
-attributes (a pointer into a list of values, not the number). The loaders used to read only the value, so ``ci_low`` and
+attributes (a pointer into a list of values, not the number). The loaders used to read only the value, so
+``ci_low`` and
 ``ci_high`` were empty for every neonatal mortality figure and a planner could not tell a firm estimate from a guess.
 The fixtures are real answers from sdmx.data.unicef.org (Nigeria and Zimbabwe national; Zimbabwe's provinces).
 """
@@ -50,7 +51,11 @@ class TestNational:
     def test_zimbabwes_estimate_comes_with_its_wide_range(self):
         got = {(iso, year): (v, lo, hi) for iso, year, v, lo, hi in igme._parse(national())}
         v, lo, hi = got[("ZWE", 2024)]
-        assert v == pytest.approx(33.7, abs=0.05) and lo == pytest.approx(22.5, abs=0.05) and hi == pytest.approx(49.7, abs=0.05)
+        assert (
+            v == pytest.approx(33.7, abs=0.05)
+            and lo == pytest.approx(22.5, abs=0.05)
+            and hi == pytest.approx(49.7, abs=0.05)
+        )
 
     def test_nigerias_is_narrower_and_the_bounds_bracket_the_estimate_everywhere(self):
         rows = igme._parse(national())

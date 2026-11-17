@@ -9,7 +9,9 @@ pytestmark = pytest.mark.django_db
 
 
 def bound(boundary, indicator, low, high, level=0.90):
-    boundary.indicator_values.filter(indicator=indicator).update(ci_low=low, ci_high=high, extra={"interval_level": level})
+    boundary.indicator_values.filter(indicator=indicator).update(
+        ci_low=low, ci_high=high, extra={"interval_level": level}
+    )
 
 
 def add_intervals(nigeria):
@@ -68,9 +70,7 @@ class TestTheMarketsRange:
 class TestShrinkageIsAppliedPerCountry:
     def test_only_figures_measured_below_the_country_are_shrunk(self):
         places = {i: {"iso3": "NGA"} for i in range(10)}
-        got = {
-            i: baseline.Nmr(10.0 + 5 * i, "x", 0.25, 0.1, "own" if i < 9 else "ratio") for i in range(10)
-        }
+        got = {i: baseline.Nmr(10.0 + 5 * i, "x", 0.25, 0.1, "own" if i < 9 else "ratio") for i in range(10)}
         shrunk = people._shrink_by_country(places, got)
         assert set(shrunk) == set(range(9))
 
@@ -114,7 +114,10 @@ class TestReliability:
         # Two places, one per country, against two in one country: a shared national error moves them together, so the
         # ranking between them is steadier than when they err independently.
         def steadiness(iso_b, shared):
-            rows = [self.row("a", 10.0, iso="AAA", shared=shared, se=0.4), self.row("b", 9.8, iso=iso_b, shared=shared, se=0.4)]
+            rows = [
+                self.row("a", 10.0, iso="AAA", shared=shared, se=0.4),
+                self.row("b", 9.8, iso=iso_b, shared=shared, se=0.4),
+            ]
             return reliability.assess(rows, 100)["p_in_plan"]["a"]
 
         together = steadiness("AAA", 0.4)

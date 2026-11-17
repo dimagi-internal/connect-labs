@@ -1,7 +1,7 @@
 """A place's mortality with an honest range: how far to believe each territory's figure, and how sure a ranking is.
 
-A survey or model gives a territory a number and, if we kept it, a published interval. One thing goes wrong when the number
-alone is used to rank places:
+A survey or model gives a territory a number and, if we kept it, a published interval. One thing goes wrong
+when the number alone is used to rank places:
 
 * **Noise.** A small territory's figure can be far from the truth (Zimbabwe's modelled Bulawayo is 17.1 with a 90%
   interval of 4.1 to 48.1), and ranking on it is ranking on luck. ``shrink`` pulls each territory toward its
@@ -13,8 +13,8 @@ territories back on the current national would need every territory of the count
 whole country's set; the plan says which figures carry which interval instead.
 
 ``Estimate`` carries a territory's figure with its log-scale standard error. Everything here works on the log scale
-because a mortality rate is a positive quantity whose uncertainty is multiplicative, and a bound at or near zero breaks a
-log: ``FLOOR`` keeps it positive.
+because a mortality rate is a positive quantity whose uncertainty is multiplicative, and a bound at or near zero
+breaks a log: ``FLOOR`` keeps it positive.
 
 Pure: no Django, no database.
 """
@@ -64,7 +64,7 @@ def combine(*ses: float | None) -> float | None:
 
 @dataclass(frozen=True)
 class Area:
-    """One territory's figure going in: its key, value, log-scale standard error (None if unknown) and weight (births)."""
+    """One territory's figure going in: key, value, log-scale standard error (None if unknown) and weight (births)."""
 
     key: Hashable
     value: float
@@ -90,7 +90,8 @@ def shrink(areas: Sequence[Area], *, min_areas: int = MIN_AREAS, min_tau: float 
     On the log scale, with ``y`` the figure and ``s`` its standard error: the spread of real differences between
     territories ``tau`` is estimated from how much more the figures differ than their intervals allow (DerSimonian and
     Laird); the country's typical value is the precision-weighted mean; and each territory is ``B*mean + (1-B)*y`` with
-    ``B = s^2 / (s^2 + tau^2)``. A territory with a tight interval keeps its figure; one with a wide interval moves toward
+    ``B = s^2 / (s^2 + tau^2)``. A territory with a tight interval keeps its figure; one with a wide interval moves
+    toward
     the country's. Its posterior standard error is ``sqrt(s^2 * tau^2 / (s^2 + tau^2))``. Territories with no interval,
     or a country with fewer than ``min_areas`` that have one, are returned as they came.
     """
