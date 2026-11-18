@@ -84,6 +84,11 @@
     reordered: reordered,
     config: config,
     later: later,
+    // Where a group's page is, from a scenario page (they are siblings under /labs/cea/): a path built from a number, not
+    // from text the page was handed.
+    groupPage: function (id) {
+      return '../groups/' + Number(id) + '/';
+    },
     // ---- scenarios
     list: function () {
       return request('GET', config().scenarios);

@@ -102,7 +102,7 @@
     function row(s) {
       var open = h('button', { type: 'button', class: 'btn', text: 'Open' });
       open.addEventListener('click', function () {
-        location.href = location.pathname + '?scenario=' + s.id;
+        location.href = '?scenario=' + Number(s.id);
       });
       var kids = [open];
       if (s.mine) {
@@ -240,7 +240,9 @@
       return A.removeScenario(s.id, s.name).then(function (gone) {
         if (!gone) return null;
         if (loaded && loaded.id === s.id) {
-          var back = loaded.group ? loaded.group.path : location.pathname;
+          var back = loaded.group
+            ? A.groupPage(loaded.group.id)
+            : location.pathname;
           A.later(function () {
             location.href = back;
           });
@@ -332,7 +334,7 @@
     // Into one of the person's groups, or out of its group (null); the page then opens the scenario in its new place.
     function moveToGroup(gid) {
       return A.moveToGroup(loaded.id, gid).then(function (j) {
-        var to = location.pathname + '?scenario=' + loaded.id;
+        var to = '?scenario=' + Number(loaded.id);
         A.later(function () {
           location.href = to;
         });

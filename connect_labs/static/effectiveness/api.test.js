@@ -108,3 +108,10 @@ describe('deleting', () => {
     ]);
   });
 });
+
+describe('groupPage', () => {
+  it('is a path built from a number, beside the scenario pages', () => {
+    expect(A.groupPage(3)).toBe('../groups/3/');
+    expect(A.groupPage('3<script>')).toBe('../groups/NaN/');
+  });
+});

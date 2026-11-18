@@ -44,7 +44,7 @@
         function (gone) {
           if (gone)
             A.later(function () {
-              window.location.assign(data.groups_url);
+              window.location.assign('../'); // the groups list, beside this page
             });
           return gone;
         },
