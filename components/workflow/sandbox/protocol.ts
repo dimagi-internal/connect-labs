@@ -211,6 +211,8 @@ export const NAVIGATE_PREFIXES = [
   '/labs/settings/',
   '/labs/targeting/',
   '/labs/marketplace/',
+  // Pulse's displays (the night map, an engagement's page); never its API, below.
+  '/labs/pulse/',
   '/microplans/',
 ];
 /** ...a workflow's run page, and the workflow list (page_blank links to it). */
@@ -237,7 +239,13 @@ export const WORKFLOW_NAVIGATE_PATTERNS = [
 /** Inside the workflow prefixes above, still never these. */
 export const WORKFLOW_NAVIGATE_DENIED = ['/audit/api/', '/tasks/api/'];
 /** Never, whatever the lists above say. */
-export const NAVIGATE_DENIED = ['/o/', '/accounts/', '/labs/mcp/', '/admin/'];
+export const NAVIGATE_DENIED = [
+  '/o/',
+  '/accounts/',
+  '/labs/mcp/',
+  '/admin/',
+  '/labs/pulse/api/',
+];
 /** Query parameters a page's link may never carry: on the run page they once made a
  * GET write (`?sync=true&template=...` overwrote the render code). */
 export const NAVIGATE_DENIED_PARAMS = [

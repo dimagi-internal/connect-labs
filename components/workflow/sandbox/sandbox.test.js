@@ -118,6 +118,8 @@ describe('navigate', () => {
     '/labs/workflow/12/run/?sync=true',
     '/labs/workflow/12/run/?program_id=25&sync=true&template=page_blank',
     '/labs/workflow/12/run/?TEMPLATE=x',
+    // Pulse's displays may be opened; its API never.
+    '/labs/pulse/api/summary/',
   ];
   for (const url of refused) {
     it(`refuses ${JSON.stringify(url)}`, () => {
@@ -137,6 +139,9 @@ describe('navigate', () => {
     ).toBe(`${LABS}/labs/workflow/99/run/?program_id=25&run_id=3`);
     expect(checkNavigate('/labs/workflow/?program_id=25', LABS)).toBe(
       `${LABS}/labs/workflow/?program_id=25`,
+    );
+    expect(checkNavigate('/labs/pulse/v/nightmap/', LABS)).toBe(
+      `${LABS}/labs/pulse/v/nightmap/`,
     );
   });
 
