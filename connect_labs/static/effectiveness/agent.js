@@ -1,4 +1,4 @@
-/* What the canopy agent can do on the scenario pages: see what is on screen, change the scenario, save it, put it in a group,
+/* What the canopy agent can do on the scenario pages: change the scenario, save it, put it in a group,
  * reorder and delete, and move the person around. Each action runs in the person's own tab, as them, and calls the very
  * functions the page's buttons call (`EffApi`, `EffScenarios.current`, `EffGroup`, `EffPage`), so there is one way to do each
  * thing and the page shows it happening. A delete asks the person in their tab first, exactly as its button does.
@@ -64,67 +64,61 @@
   };
   var NONE = { type: 'object', properties: {} };
 
-  var ACTIONS = {
-    // ---- what is on screen
-    describeScreen: [
-      function () {
-        var m = G.exec(here().pathname);
-        if (m) {
-          var cards = [].map.call(
-            document.querySelectorAll('[data-testid="group-cards"] .sc'),
-            function (c) {
-              return {
-                scenario_id: Number(c.dataset.scenario),
-                name: c.querySelector('h3').textContent.trim(),
-                result: text(
-                  '[data-scenario="' + c.dataset.scenario + '"] .big',
-                  200,
-                ),
-                reference: c.classList.contains('ref'),
-              };
+  // What the person is looking at, lent to the agent the way the SDK intends: pulled when a conversation opens
+  // (`provideContext`) and pushed whenever it changes (`setPageState`), so it is in the agent's context and no action has to
+  // be called to read it.
+  function pageState() {
+    var m = G.exec(here().pathname);
+    if (m) {
+      return {
+        page: 'group',
+        group_id: Number(m[1]),
+        status: text('#status', 300),
+        scenarios: [].map.call(
+          document.querySelectorAll('[data-testid="group-cards"] .sc'),
+          function (c) {
+            return {
+              scenario_id: Number(c.dataset.scenario),
+              name: c.querySelector('h3').textContent.trim(),
+              result: text(
+                '[data-scenario="' + c.dataset.scenario + '"] .big',
+                200,
+              ),
+              reference: c.classList.contains('ref'),
+            };
+          },
+        ),
+      };
+    }
+    var P = window.EffPage;
+    if (!P) return { page: here().pathname };
+    var loaded = P.data.loaded;
+    return {
+      page: /workspace/.test(here().pathname) ? 'workspace' : 'market',
+      saved_scenario: loaded
+        ? {
+            id: loaded.id,
+            name: loaded.name,
+            mine: loaded.mine,
+            group: loaded.group && {
+              id: loaded.group.id,
+              name: loaded.group.name,
             },
-          );
-          return {
-            page: 'group',
-            group_id: Number(m[1]),
-            status: text('#status', 300),
-            scenarios: cards,
-          };
-        }
-        var P = window.EffPage;
-        if (!P) return { page: here().pathname };
-        var loaded = P.data.loaded;
-        return {
-          page: /workspace/.test(here().pathname) ? 'workspace' : 'market',
-          saved_scenario: loaded
-            ? {
-                id: loaded.id,
-                name: loaded.name,
-                mine: loaded.mine,
-                group: loaded.group && {
-                  id: loaded.group.id,
-                  name: loaded.group.name,
-                },
-                matches_saved: window.EffScenarios.same(
-                  P.scn.params(),
-                  loaded.params,
-                ),
-              }
-            : null,
-          settings: Object.fromEntries(P.scn.params().entries()),
-          map_colouring: P.lens ? P.lens() : null,
-          selected_place: P.selected ? P.selected() : null,
-          figures: text('#tiles', 800),
-          problem: text('#error', 300) || text('#notice', 300),
-          plan: text('#plan', 1500),
-        };
-      },
-      {
-        description:
-          'Read what the person is looking at: on a scenario page, the open saved scenario, its settings (as link keys), the map colouring, the selected place and the headline figures; on a group page, the group and each scenario’s result. Call it before and after you change something.',
-        parameters: NONE,
-      },
-    ],
+            matches_saved: window.EffScenarios.same(
+              P.scn.params(),
+              loaded.params,
+            ),
+          }
+        : null,
+      settings: Object.fromEntries(P.scn.params().entries()),
+      map_colouring: P.lens ? P.lens() : null,
+      selected_place: P.selected ? P.selected() : null,
+      figures: text('#tiles', 800),
+      problem: text('#error', 300) || text('#notice', 300),
+    };
+  }
+
+  var ACTIONS = {
     // ---- changing the scenario in the Workspace or Market size
     changeScenario: [
       function (a) {
@@ -500,6 +494,7 @@
       return [e[0], e[1][0]];
     }),
   );
+  window.CEA_PAGE_STATE = pageState;
   window.CEA_AGENT_SPECS = Object.fromEntries(
     Object.entries(ACTIONS).map(function (e) {
       return [e[0], e[1][1]];
@@ -511,6 +506,19 @@
     Object.keys(ACTIONS).forEach(function (name) {
       host.widget.registerAction(name, ACTIONS[name][0], ACTIONS[name][1]);
     });
+    var w = host.widget;
+    if (w.provideContext) w.provideContext(pageState);
+    if (w.setPageState) {
+      var timer = null;
+      var push = function () {
+        clearTimeout(timer);
+        timer = setTimeout(function () {
+          w.setPageState(pageState());
+        }, 400);
+      };
+      push();
+      if (window.EffPage) window.EffPage.scn.onChange(push);
+    }
   }
   if (window.canopyHost) register(window.canopyHost);
   else
