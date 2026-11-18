@@ -59,16 +59,18 @@ arranging is in supply_chain/purchases.py.
   </section>
 
   {% for s in stages %}
-  <section id="step-{{ s.key }}" class="card_bg border-brand-border-light flex flex-col gap-3 border" aria-labelledby="step-{{ s.key }}-title" data-testid="step-{{ s.key }}" data-step-state="{{ s.state }}">
-    <div class="flex flex-wrap items-center justify-between gap-3">
+  {% comment %}A finished step is one line (its summary), closed; the step under way and the ones to come are open.{% endcomment %}
+  <section id="step-{{ s.key }}" class="card_bg border-brand-border-light border" aria-labelledby="step-{{ s.key }}-title" data-testid="step-{{ s.key }}" data-step-state="{{ s.state }}">
+    <details {% if s.state != "done" %}open{% endif %} class="flex flex-col gap-3" data-testid="step-fold">
+    <summary class="flex cursor-pointer flex-wrap items-baseline gap-x-3 gap-y-1">
       <h2 id="step-{{ s.key }}-title" class="text-lg font-semibold text-brand-deep-purple">{{ s.number }}. {{ s.title }}
-        <span class="status-chip status-chip--{% if s.state == 'done' %}neutral{% elif s.state == 'now' %}primary{% else %}neutral{% endif %} ml-2 align-middle">{% if s.state == "done" %}done{% elif s.state == "now" %}now{% else %}later{% endif %}</span></h2>
-      {% if not supply_as_of %}<div class="flex flex-wrap items-center gap-3">
-        {% for l in s.links %}<a class="text-sm text-brand-indigo hover:underline" href="{{ l.url }}">{{ l.label }}</a>{% endfor %}
-        {% if s.primary and s.state != "todo" %}<a href="{{ s.primary.url }}" class="button button-sm outline-style">{{ s.primary.label }}</a>{% endif %}
-      </div>{% endif %}
-    </div>
-    <p class="text-sm text-gray-700">{{ s.summary }}</p>
+        <span class="status-chip status-chip--{% if s.state == 'now' %}primary{% else %}neutral{% endif %} ml-2 align-middle">{% if s.state == "done" %}done{% elif s.state == "now" %}now{% else %}later{% endif %}</span></h2>
+      <span class="text-sm text-gray-700" data-testid="step-summary">{{ s.summary }}</span>
+    </summary>
+    {% if not supply_as_of and s.links or s.primary and s.state != "todo" and not supply_as_of %}<div class="flex flex-wrap items-center gap-3">
+      {% for l in s.links %}<a class="text-sm text-brand-indigo hover:underline" href="{{ l.url }}">{{ l.label }}</a>{% endfor %}
+      {% if s.primary and s.state != "todo" %}<a href="{{ s.primary.url }}" class="button button-sm outline-style">{{ s.primary.label }}</a>{% endif %}
+    </div>{% endif %}
 
     {% if s.key == "orders" %}
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Orders, scrolls sideways">
@@ -80,12 +82,13 @@ arranging is in supply_chain/purchases.py.
             <td class="px-3 py-2 text-sm">{{ o.llo|default:"—" }}</td>
             <td class="px-3 py-2 text-sm">{{ o.quantity|default:"—" }}</td>
             <td class="px-3 py-2 text-sm"><a class="text-brand-indigo hover:underline" href="{{ o.url }}">{{ o.reference }}</a>{% if o.supplier %}<div class="text-xs text-gray-600">{{ o.supplier }}</div>{% endif %}</td>
-            <td class="px-3 py-2 text-sm">{{ o.status }}{% if o.in_transit and o.expected %}<div class="text-xs text-gray-600">expected {{ o.expected }}</div>{% endif %}</td>
-            {% if not supply_as_of %}<td class="px-3 py-2 text-right">
+            <td class="px-3 py-2 text-sm">{{ o.status }}{% if o.in_transit and o.expected and "expected" not in o.status %}<div class="text-xs text-gray-600">expected {{ o.expected }}</div>{% endif %}</td>
+            {% if not supply_as_of %}<td class="px-3 py-2 text-right whitespace-nowrap">
+              {% if o.actions.primary %}<a href="{{ o.actions.primary.url }}" class="button button-sm primary-dark" data-testid="next-event">{{ o.actions.primary.label }}</a>{% endif %}
               <details class="relative inline-block text-left" data-testid="what-happened">
-                <summary class="button button-sm outline-style list-none [&::-webkit-details-marker]:hidden" role="button">What happened?</summary>
-                <div class="border-brand-border-light absolute right-0 z-20 mt-1.5 flex w-60 flex-col gap-2.5 rounded-lg border bg-white p-3.5 text-sm shadow-sm">
-                  {% for a in o.actions %}<a class="text-brand-indigo hover:underline" href="{{ a.url }}">{{ a.label }}</a>{% endfor %}
+                <summary class="button button-sm outline-style list-none [&::-webkit-details-marker]:hidden" role="button">Something else…</summary>
+                <div class="border-brand-border-light absolute right-0 z-20 mt-1.5 flex w-60 flex-col gap-2.5 rounded-lg border bg-white p-3.5 text-left text-sm shadow-sm">
+                  {% for a in o.actions.more %}<a class="text-brand-indigo hover:underline" href="{{ a.url }}">{{ a.label }}</a>{% endfor %}
                 </div>
               </details>
             </td>{% endif %}
@@ -98,6 +101,7 @@ arranging is in supply_chain/purchases.py.
         </tbody>
       </table>
     </div>
+    {% if orders and not supply_as_of %}<p class="text-xs text-gray-600" data-testid="update-link-note">The button on each row is the next thing this order is waiting for. A supplier or an LLO can also record its own step with an <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:update_links' %}">update link</a>, without signing in.</p>{% endif %}
     {% elif s.key == "delivered" and orders %}
     <ul class="flex flex-col gap-1 text-sm" data-testid="delivery-rows">
       {% for o in orders %}<li>{{ o.llo|default:o.reference }}: {% if o.delivered %}delivered{% elif o.in_transit %}in transit{% if o.expected %}, expected {{ o.expected }}{% endif %}{% else %}{{ o.status }}{% endif %}</li>{% endfor %}
@@ -107,6 +111,7 @@ arranging is in supply_chain/purchases.py.
       {% for o in orders %}<li>{{ o.llo|default:o.reference }}: {{ o.money.words }}{% if o.money.state == "owed" and o.money.owed_to == "partner" %} (the partner's invoice to us){% endif %}</li>{% endfor %}
     </ul>
     {% endif %}
+    </details>
   </section>
   {% endfor %}
 </div>

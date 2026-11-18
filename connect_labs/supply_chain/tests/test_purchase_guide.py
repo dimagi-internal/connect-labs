@@ -56,7 +56,8 @@ def test_a_later_step_never_leaves_an_earlier_one_open():
 
 
 @pytest.mark.django_db
-def test_the_sourcing_page_shows_the_guide_with_the_next_step_marked(client_in_programme):
+def test_neither_purchases_nor_the_orders_list_carries_the_old_guide(client_in_programme):
+    """Round 3: the 11-step guide repeated the purchase page's seven steps under other names, so it is gone."""
     from connect_labs.supply_chain.models import Tender
 
     Tender.objects.create(
@@ -65,45 +66,6 @@ def test_the_sourcing_page_shows_the_guide_with_the_next_step_marked(client_in_p
         status="open",
         lines=[{"commodity_slug": "rutf", "quantity": "100", "quantity_unit": "carton"}],
     )
-    body = client_in_programme.get(reverse("supply_chain:purchases")).content.decode()
-
-    assert 'data-testid="purchase-guide"' in body and "How a purchase works" in body
-    assert body.count('data-testid="guide-step"') == len(STEPS)
-    assert body.count('data-state="next"') == 1
-    marked = body.split('data-state="next"', 1)[1].split("</li>", 1)[0]
-    assert "Review suppliers" in marked and "Next step" in marked
-    assert reverse("supply_chain:orders") in body
-
-
-@pytest.mark.django_db
-def test_the_orders_page_shows_the_guide_too(client_in_programme):
-    body = client_in_programme.get(reverse("supply_chain:orders")).content.decode()
-    assert 'data-testid="purchase-guide"' in body and 'data-state="next"' in body
-
-
-def _guide_tag(body):
-    return body.split('data-testid="purchase-guide"', 1)[0].rsplit("<details", 1)[1]
-
-
-@pytest.mark.django_db
-def test_the_orders_page_folds_the_guide_to_one_line_but_keeps_it_expandable(client_in_programme):
-    body = client_in_programme.get(reverse("supply_chain:orders")).content.decode()
-    assert " open " not in _guide_tag(body) + " "
-    assert "Next: Check partners" in body and body.count('data-testid="guide-step"') == len(STEPS)
-
-
-@pytest.mark.django_db
-def test_the_sourcing_page_folds_the_guide_once_every_step_is_done(client_in_programme, monkeypatch):
-    from connect_labs.supply_chain import guide
-
-    done = {"suppliers": 3, "tenders": 1, "quotes": 2, "awards": 1, "orders": 2, "stock_points": 3, "receipts": 1}
-    monkeypatch.setattr(guide, "facts_for", lambda program_id: done)
-    body = client_in_programme.get(reverse("supply_chain:purchases")).content.decode()
-    assert f"All {len(STEPS)} steps done" in body
-    assert " open" not in _guide_tag(body)
-
-
-@pytest.mark.django_db
-def test_the_sourcing_page_keeps_the_guide_open_while_a_step_remains(client_in_programme):
-    body = client_in_programme.get(reverse("supply_chain:purchases")).content.decode()
-    assert " open" in _guide_tag(body) and "Next: " in body
+    for name in ("supply_chain:purchases", "supply_chain:orders"):
+        body = client_in_programme.get(reverse(name)).content.decode()
+        assert 'data-testid="purchase-guide"' not in body and "How a purchase works" not in body

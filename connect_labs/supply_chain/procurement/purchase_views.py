@@ -18,7 +18,6 @@ from django.urls import reverse
 
 from connect_labs.supply_chain import guide, purchases
 from connect_labs.supply_chain.api_views import _access, has_program_context
-from connect_labs.supply_chain.guide import guide_context
 from connect_labs.supply_chain.procurement.services.award_orders import order_words
 from connect_labs.supply_chain.procurement.sourcing import marketplace_in_use, sourcing_rows
 from connect_labs.supply_chain.procurement.views import _Base
@@ -35,6 +34,30 @@ FILTERS = (
 
 def _today(request) -> date:
     return getattr(request, "supply_as_of", None) or date.today()
+
+
+def _pay_words(contracts, invoices, orgs, suppliers) -> str:
+    """The move when invoices are open: "Pay Acacia's invoice", "Pay Acacia's and DABS's invoices"."""
+    payees = []
+    by_id = {c["id"]: c for c in contracts}
+    for inv in purchases.live_invoices(invoices):
+        contract = by_id.get(inv.get("contract_id"))
+        if contract is None or purchases.is_paid(inv) or contract.get("consideration") not in (None, "", "priced"):
+            continue
+        if inv.get("direction") == "from_partner":
+            org = orgs.get(contract.get("partner_org_id") or contract.get("buyer_org_id")) or {}
+            name = org.get("name")
+        else:
+            name = (suppliers.get(contract.get("supplier_id")) or {}).get("name")
+        payees.append(name or "the supplier")
+    names = list(dict.fromkeys(payees))
+    if not payees:
+        return ""
+    if len(payees) == 1:
+        return f"Pay {names[0]}'s invoice"
+    if len(names) == 2 and len(payees) == 2:
+        return f"Pay {names[0]}'s and {names[1]}'s invoices"
+    return f"Pay {len(payees)} invoices"
 
 
 def _contract_flags(contracts, shipments, invoices, words) -> dict:
@@ -62,6 +85,7 @@ class PurchasesView(_Base):
         chosen = self.request.GET.get("show") or "active"
         context["show"] = chosen if chosen in dict(FILTERS) else "active"
         if not context["has_program_context"]:
+            # No program in the address: list the user's own to pick from (`user_programs`, the context processor).
             return context
         access = _access(self.request)
         program_id = access.program_id
@@ -83,7 +107,17 @@ class PurchasesView(_Base):
             by_tender.setdefault(c.get("tender_id"), []).append(c)
         for row in rows:
             row["purchase_url"] = reverse("supply_chain:purchase", args=[row["id"]])
-            row.update(_contract_flags(by_tender.get(row["id"], []), shipments, invoices, words))
+            mine = by_tender.get(row["id"], [])
+            row.update(_contract_flags(mine, shipments, invoices, words))
+            if row["finished"]:
+                # Delivered and paid: nothing is left, so the stage says so ("Ordered · Paid" read as half done).
+                row["stage"], row["stage_detail"] = "Done", "delivered and paid"
+            pay = _pay_words(mine, invoices, orgs, suppliers) if row["unpaid"] else ""
+            if pay and not row["next_move"]:
+                # An open invoice is a move on us even when the tender itself has nothing left to do.
+                row["next_move"], row["next_whose"] = pay, "Ours"
+            elif pay:
+                row["to_do"] = [*row.get("to_do", []), pay]
         direct = []
         for c in by_tender.get(None, []):
             if c.get("status") == "cancelled":
@@ -128,10 +162,6 @@ class PurchasesView(_Base):
             for key, label in FILTERS
         ]
         context["marketplace_in_use"] = marketplace_in_use(program_id)
-        if not context["acl_scoped"]:
-            # The purchase guide is the running organisation's checklist, drawn from program-wide facts and
-            # naming every tender: a partner under read enforcement is not shown it.
-            context.update(guide_context(self.request, program_id))
         return context
 
 
@@ -206,6 +236,7 @@ class PurchaseView(_Base):
             steps=steps,
             comparison_urls=comparison_urls,
             today=today,
+            suppliers=suppliers,
         )
         context.update(
             tender=tender,

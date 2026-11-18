@@ -71,7 +71,7 @@ def test_the_sourcing_page_reads_per_tender_and_shows_the_overview_columns(clien
     assert response.status_code == 200
     body = response.content.decode()
     assert "All 11 steps done" not in body
-    assert 'data-testid="guide-tenders"' in body and "Feb re-quote" in body
+    assert "Feb re-quote" in body
     for heading in ("Where it stands", "Quotes in", "Local partners (LLOs)", "Needed by", "Next move"):
         assert heading in body
     assert "Ordered 2 of 3 · Delivered 1 of 3" in body

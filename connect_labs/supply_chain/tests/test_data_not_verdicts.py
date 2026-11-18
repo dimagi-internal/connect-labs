@@ -167,18 +167,13 @@ class TestCountsAreData:
         assert _primary_action(tender, deadline, 0) == "decide"
         assert _primary_action(SimpleNamespace(status="draft"), deadline, 2) == "open"
 
-    def test_the_tender_page_has_no_comparable_chip_and_a_plain_quotes_tile(self, da, world, client_in_program):
+    def test_the_tender_page_has_no_comparable_chip_and_no_tiles(self, da, world, client_in_program):
         op(da, "quote_record", data=_kanem_quote(world, pack_spec_source="not_stated"))
         body = client_in_program.get(
             reverse("supply_chain:procurement_tender_detail", args=[world["tender"]["id"]])
         ).content.decode()
         assert 'data-testid="comparable-chip"' not in body and "omparable" not in body
-        tiles = dict(
-            re.findall(
-                r'class="stat-tile-label">([^<]+)</div>\s*<div class="stat-tile-value[^"]*">([^<]+)</div>', body
-            )
-        )
-        assert tiles["Quotes"] == "1"
+        assert 'data-testid="status-tiles"' not in body  # progress moved to the purchase page
 
     def test_the_check_reads_as_missing_facts(self):
         from connect_labs.supply_chain.templatetags.supply_chain_extras import CHECK_LABELS
