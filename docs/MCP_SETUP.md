@@ -94,11 +94,13 @@ A process with no browser uses a Personal Access Token (PAT) instead:
 
 ### Which way in
 
-| | Sign-in | Token page | `/labs-token-setup` | `/labs-token-setup --temporary` |
-|---|---|---|---|---|
-| **For** | An app you add yourself | A script or headless agent | Claude Code on your machine | An agent doing one job you asked for |
-| **Lasts** | Until you disconnect it | What you set (1 to 365 days) | 90 days | 1 hour, no renewal |
-| **Listed under** | Apps you've signed in | Your active tokens | Your active tokens | Your active tokens |
+| | Sign-in | Token page | `/labs-token-setup` | `/labs-token-setup --temporary` | Agent request (`request_agent_token.py`) |
+|---|---|---|---|---|---|
+| **For** | An app you add yourself | A script or headless agent | Claude Code on your machine | An agent on your computer doing one job you asked for | An agent anywhere else (a cloud runner, a Slack or email turn) doing one job you asked for |
+| **Works from** | Your MCP app | Anywhere | Your computer | Your computer only (`127.0.0.1` callback) | Any runner |
+| **You approve** | On the sign-in page | On the token page | On the token page | On the token page | On `/labs/mcp/agent-requests/<ref>/`, with your passkey at either level |
+| **Lasts** | Until you disconnect it | What you set (1 to 365 days) | 90 days | 1 hour, no renewal | 1 hour, no renewal (the request waits 30 minutes) |
+| **Listed under** | Apps you've signed in | Your active tokens | Your active tokens | Your active tokens | Your active tokens |
 
 An agent that is not on your computer (a cloud runner, a remote box) cannot receive a token on
 `127.0.0.1`. It asks with its own labs token (`POST /mcp/admin/agent-requests/`, the helper is
@@ -113,7 +115,7 @@ The page also says which canopy runner asked. A runner with an approved device k
 (`mcp/runner_check.py`). A request without that proof still goes through and is shown as "Not
 verified"; a proof canopy refuses refuses the request.
 
-Full access needs your passkey on all four. An agent that needs access should use
+Full access needs your passkey on every row; the agent request needs it at either level. An agent that needs access should use
 the temporary token, not write its own sign-in against `/o/register/`.
 
 ## How the sign-in works
