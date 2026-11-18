@@ -110,6 +110,8 @@ def test_the_migrated_history_tools_are_long_running():
 
     assert get_tool("workflow_preview_as_of").long_running
     assert get_tool("workflow_rebuild_history").long_running
+    # A cold fill is minutes of CPU; in the web request it pinned a web task (2026-11-18).
+    assert get_tool("workflow_ensure_visit_cache").long_running
     assert get_tool("workflow_history_eligibility").long_running is False
 
 

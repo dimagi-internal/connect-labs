@@ -485,6 +485,13 @@ def workflow_preview_as_of(
     },
     is_write=True,
     wants_progress=True,
+    # A cold opportunity is a full download plus every pipeline computed over it: minutes
+    # of CPU. In the web request that held a 1-vCPU web task at 100% and starved every
+    # other request on it (2026-11-18: 148,719 visits, 436s download then ~7 min of
+    # pipelines; labs-jj-web-cpu-high paged). As a job it runs on the worker tier, like the
+    # two history tools that call it. Safe to run again: a valid cache is a hit, a hold is
+    # just re-extended.
+    long_running=True,
 )
 def workflow_ensure_visit_cache(
     user,
