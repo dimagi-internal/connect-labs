@@ -50,13 +50,13 @@ cryptography>=50
 # Labs
 # ------------------------------------------------------------------------------
 pandas
-pydantic-ai
+pydantic-ai>=2.53.0  # floor: security fix (2026-11-18 audit)
 shapely>=2.0.0  # For coverage maps WKT parsing
 geopandas>=1.1.4  # For coverage maps spatial operations
 markdown  # For solicitation markdown rendering
 nh3  # HTML sanitizer for user-authored markdown output (XSS defense)
 mcp>=1.0.0  # MCP protocol library (low-level; pulled in by fastmcp)
-fastmcp>=4.0.10,<5.0.0  # FastMCP 4.x server (remote labs MCP — Streamable-HTTP transport)
+fastmcp>=4.1.2,<5.0.0  # FastMCP 4.x server (remote labs MCP — Streamable-HTTP transport); 4.1.2+ for a security fix
 uvicorn>=0.52.4  # ASGI server worker for the MCP Streamable-HTTP app (config.asgi)
 pyjwt[crypto]  # JWTs (the canopy SDK signs/verifies through it too)
 # The canopy SDK: labs' side of canopy's host grant contract (visitor assertion,

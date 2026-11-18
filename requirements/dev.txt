@@ -19,11 +19,11 @@ astroid==4.0.4
     #   pylint-celery
 asttokens==3.0.2
     # via stack-data
-black==26.5.1
+black==26.10.1
     # via -r requirements/dev.in
 build==1.6.1
     # via pip-tools
-certifi==2026.7.22
+certifi==2026.10.23
     # via
     #   -c requirements/base.txt
     #   httpcore
@@ -67,7 +67,7 @@ factory-boy==3.3.3
     # via -r requirements/dev.in
 faker==40.39.0
     # via factory-boy
-filelock==3.32.7
+filelock==4.2.12
     # via
     #   python-discovery
     #   virtualenv
@@ -143,6 +143,7 @@ packaging==26.3
     #   black
     #   build
     #   pytest
+    #   virtualenv
     #   wheel
 parso==0.8.7
     # via jedi
@@ -190,7 +191,7 @@ pygments==2.21.0
     #   ipython
     #   ipython-pygments-lexers
     #   pytest
-pylint==4.0.8
+pylint==4.0.10
     # via
     #   pylint-celery
     #   pylint-django
@@ -225,7 +226,7 @@ pytest-playwright==0.3.0
     # via -r requirements/dev.in
 pytest-xdist==3.8.0
     # via -r requirements/dev.in
-python-discovery==1.6.0
+python-discovery==1.9.6
     # via virtualenv
 python-slugify==9.0.0
     # via
@@ -272,7 +273,7 @@ urllib3==2.8.0
     # via
     #   -c requirements/base.txt
     #   requests
-virtualenv==21.7.11
+virtualenv==21.15.8
     # via pre-commit
 watchdog==6.0.0
     # via werkzeug
@@ -284,7 +285,7 @@ wcwidth==0.8.3
     # via
     #   -c requirements/base.txt
     #   prompt-toolkit
-werkzeug[watchdog]==3.1.8
+werkzeug[watchdog]==3.1.9
     # via -r requirements/dev.in
 wheel==0.48.0
     # via pip-tools
