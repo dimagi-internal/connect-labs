@@ -136,6 +136,11 @@ urlpatterns = [
     path("purchases/", purchase_views.PurchasesView.as_view(), name="purchases"),
     path("purchases/<int:tender_id>/", purchase_views.PurchaseView.as_view(), name="purchase"),
     path(
+        "purchases/outside-a-tender/",
+        fulfilment_views.DirectPurchaseView.as_view(),
+        name="purchase_outside_tender",
+    ),
+    path(
         "procurement/",
         RedirectView.as_view(pattern_name="supply_chain:purchases", query_string=True),
         name="procurement_tender_board",

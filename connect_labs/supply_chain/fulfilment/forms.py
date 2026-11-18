@@ -27,7 +27,7 @@ and believe the number moved.
 from datetime import date
 
 from crispy_forms.helper import FormHelper
-from crispy_forms.layout import Column, Field, Fieldset, Layout, Row
+from crispy_forms.layout import HTML, Column, Field, Fieldset, Layout, Row
 from django import forms
 from django.db.models import Case, Q, Value, When
 from django.utils.translation import gettext_lazy as _
@@ -57,7 +57,14 @@ from connect_labs.supply_chain.models import (
 )
 from connect_labs.supply_chain.network.forms import SOURCE_CHOICES
 
-__all__ = ["ContractForm", "DocumentForm", "InvoiceForm", "PaymentConfirmationForm", "PaymentForm"]
+__all__ = [
+    "ContractForm",
+    "DirectPurchaseForm",
+    "DocumentForm",
+    "InvoiceForm",
+    "PaymentConfirmationForm",
+    "PaymentForm",
+]
 
 
 class ProvenancedForm(ScopedForm):
@@ -439,6 +446,69 @@ class ContractForm(ProvenancedForm):
         # invisible, so TestThePayloadBoundary asserts it directly; a
         # `to_payload` "simplified" to `if not value` would break it silently.
         return data
+
+
+class DirectPurchaseForm(ContractForm):
+    """A purchase made without a tender, in the few questions it takes; everything else under "More options".
+
+    Round 3 (Sophie Feintuch): "Record a purchase outside a tender" opened the full New order form, with all of
+    its jargon. The same fields, the same operation and the same checks: only the layout differs, and the
+    answers the full form asks for on freight, duties and VAT start on "not specified", which the operation
+    accepts, so a direct purchase of a few cartons does not need them.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in ("freight_basis", "duties_basis", "vat_basis"):
+            self.fields[name].initial = "not_specified"
+        if not self.is_bound:
+            self.fields["currency"].initial = self.fields["currency"].initial or "USD"
+        self.fields["supplier"].label = _("Who from")
+        self.fields["commodity"].label = _("What")
+        self.fields["buyer_of_record"].label = _("Who is buying")
+        self.fields["buyer_org"].label = _("For which LLO, or buying organization")
+        self.fields["consideration"].label = _("Bought or donated")
+        self.fields["payment_terms"].label = _("How it is paid")
+        self.fields["unit_price"].label = _("Price")
+        self.fields["unit_price_unit"].label = _("Per")
+        self.helper.layout = Layout(
+            Row(Column("supplier"), Column("commodity"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Row(Column("buyer_of_record"), Column("buyer_org"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Row(Column("consideration"), Column("payment_terms"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Row(
+                Column("quantity"),
+                Column("quantity_unit"),
+                Column("unit_price"),
+                Column("unit_price_unit"),
+                css_class="grid md:grid-cols-4 gap-x-6",
+            ),
+            Field("currency"),
+            HTML(
+                '<details class="mt-4 rounded-md border border-gray-200 p-3" data-testid="more-options">'
+                '<summary class="cursor-pointer text-sm font-medium text-brand-indigo">More options</summary>'
+                '<div class="mt-3">'
+            ),
+            Row(Column("item"), Column("buying_model"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Row(
+                Column("reference"),
+                Column("signed_on"),
+                Column("status"),
+                css_class="grid md:grid-cols-3 gap-x-6",
+            ),
+            Row(Column("freight_basis"), Column("freight_amount"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Row(Column("duties_basis"), Column("duties_amount"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Row(Column("vat_basis"), Column("vat_amount"), css_class="grid md:grid-cols-2 gap-x-6"),
+            Field("duty_relief_claimed"),
+            Row(
+                Column("incoterm"),
+                Column("delivery_supply_point"),
+                Column("promised_lead_time_days"),
+                css_class="grid md:grid-cols-3 gap-x-6",
+            ),
+            Field("covers_shortfall_of"),
+            Field("source"),
+            HTML("</div></details>"),
+        )
 
 
 class InvoiceForm(ProvenancedForm):

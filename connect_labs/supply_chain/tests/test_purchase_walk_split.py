@@ -33,8 +33,8 @@ def _tender_page(client, world):
 def test_the_set_is_counted_with_each_partners_order_and_what_is_left(client_in_programme, world):
     body = _tender_page(client_in_programme, world)
     assert "Ordered 2 of 3 · Delivered 1 of 3" in body
-    assert "To do: Savanna to order" in body
-    assert "2 of 3 ordered" in body and "1 of 3 delivered" in body  # the stage bar's notes
+    # The tender page no longer carries its own progress or to-do: the purchase page does (round 3).
+    assert "To do: Savanna to order" not in body and 'data-testid="stage-bar"' not in body
     split = body.split('data-testid="partner-splits"', 1)[1].split("</section>", 1)[0]
     assert "Received" in split and "In transit" in split and "Not ordered yet" in split
     assert "North Star warehouse, Kano" in split and "ns-wh" not in split
@@ -42,11 +42,11 @@ def test_the_set_is_counted_with_each_partners_order_and_what_is_left(client_in_
     assert "We buy and ship to the partner" in split and "programme buys" not in split.lower()
 
 
-def test_the_tender_stage_is_not_done_until_every_partner_has_ordered_and_received(client_in_programme, world):
-    body = _tender_page(client_in_programme, world)
-    states = body.split('data-testid="stage-bar"', 1)[1].split("</ol>", 1)[0]
+def test_the_purchase_page_is_not_delivered_until_every_partner_has_ordered_and_received(client_in_programme, world):
+    body = client_in_programme.get(reverse("supply_chain:purchase", args=[world["tender"]["id"]])).content.decode()
+    states = body.split('data-testid="purchase-stages"', 1)[1].split("</ol>", 1)[0]
     assert states.count('data-stage-state="now"') == 1
-    assert states.index('data-stage-state="now"') < states.index("Delivery")  # still at Ordered
+    assert states.index('data-stage-state="now"') < states.index("Delivered")  # still at Orders
 
 
 def test_the_price_holding_for_the_split_is_said(client_in_programme, world):

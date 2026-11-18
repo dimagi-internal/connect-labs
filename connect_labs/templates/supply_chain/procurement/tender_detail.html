@@ -116,7 +116,7 @@ is folded away, each fold with its count.
         <span class="font-normal ml-2">one delivery, quantity and receiver per partner; the award and orders follow it</span></div>
       {% if split and split.ordered %}
       <div class="px-4 py-2 border-b border-gray-100 text-sm" data-testid="split-progress"><span class="font-medium text-gray-900">{{ split.words }}</span>
-        {% for line in split.to_do %}<span class="ml-3 text-message-warning-text font-medium" data-testid="split-todo">To do: {{ line }}</span>{% endfor %}</div>
+</div>
       {% endif %}
       {% if price_holds %}<p class="px-4 py-2 border-b border-gray-100 text-sm text-gray-700" data-testid="split-price-holds">{{ price_holds }}</p>{% endif %}
       <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
@@ -139,25 +139,8 @@ is folded away, each fold with its count.
     </section>
     {% endif %}
 
-    <ol class="stage-bar" data-testid="stage-bar" aria-label="Stage">
-      {% for s in status.stages %}
-      <li class="stage--{{ s.state }}" data-stage-state="{{ s.state }}"{% if s.state == "now" %} aria-current="step"{% endif %}>
-        <div class="stage-seg stage-seg--{{ s.state }}"></div>
-        <div class="stage-name">{{ s.name }}</div>
-        <div class="stage-note">{% if s.note != "—" %}{% for part in s.note|dot_parts %}<span class="block {% if part|length > 18 %}break-words{% else %}whitespace-nowrap{% endif %}">{% if forloop.first %}{% include "supply_chain/_src.html" with src="calc" %}{% endif %}{{ part }}</span>{% endfor %}{% else %}{{ s.note }}{% endif %}</div>
-      </li>
-      {% endfor %}
-    </ol>
-
-    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="status-tiles">
-      {% for t in status.tiles %}
-      <div class="stat-tile" data-testid="tile"{% if t.tone == 'ours' %} data-tone="ours"{% endif %}>
-        <div class="stat-tile-label">{{ t.label }}</div>
-        <div class="stat-tile-value{% if t.tone == 'ours' %} text-message-warning-text{% endif %}">{{ t.value }}</div>
-        <div class="text-xs text-gray-600">{{ t.sub|default:"&nbsp;" }}</div>
-      </div>
-      {% endfor %}
-    </div>
+    {% comment %}Progress lives on the purchase page now (round 3): this page is the suppliers and their quotes.{% endcomment %}
+    <p class="text-sm" data-testid="back-to-purchase-card"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:purchase' tender.id %}">See this purchase from sizing to payment</a></p>
   </section>
 
   {% comment %}The moves first, side by side: what is ours to do and who we are waiting on. Then the

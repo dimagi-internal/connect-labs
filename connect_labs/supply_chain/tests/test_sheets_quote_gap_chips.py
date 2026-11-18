@@ -95,19 +95,8 @@ def test_the_tender_page_reads_one_name_and_the_fact_chips(da, world, client_in_
     )
     assert on_us is not None and on_us.group(1) == "fact"
     assert " · ours to " in _text(on_us.group(2)) and "to do" not in _text(on_us.group(2))
-    # To do still counts moves only: the quote's facts add nothing to it.
-    tiles = re.findall(
-        r'class="stat-tile-label">([^<]+)</div>\s*'
-        r'<div class="stat-tile-value[^"]*">([^<]+)</div>\s*'
-        r'<div class="text-xs text-gray-600">([^<]*)</div>',
-        body,
-    )
-    by_label = {label: (value, sub) for label, value, sub in tiles}
-    assert by_label["To do"][0] == "0"
-    # The quotes tile counts quotes -- data -- and says whose the open facts are; no verdict.
-    assert "Comparable quotes" not in by_label
-    assert by_label["Quotes"][0] == "1"
-    assert re.search(r"ours to \w+ on 1 quote", by_label["Quotes"][1])
+    # Progress is on the purchase page now: the tender page has no tiles of its own (round 3).
+    assert 'data-testid="status-tiles"' not in body
 
 
 @pytest.mark.django_db

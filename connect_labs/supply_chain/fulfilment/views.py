@@ -17,6 +17,7 @@ from connect_labs.supply_chain.api_views import _access
 from connect_labs.supply_chain.form_views import OperationFormView
 from connect_labs.supply_chain.fulfilment.forms import (
     ContractForm,
+    DirectPurchaseForm,
     DocumentForm,
     InvoiceDisputeForm,
     InvoiceForm,
@@ -141,6 +142,18 @@ class ContractCreateView(_ContractScreen):
         if award is None:
             return {}
         return {"data": {"award_id": award.pk, "tender_id": award.tender_id}}
+
+
+class DirectPurchaseView(ContractCreateView):
+    """The short form for a purchase outside a tender (round 3): the few questions it takes, the rest folded."""
+
+    form_class = DirectPurchaseForm
+    title = "Record a purchase outside a tender"
+    intro = (
+        "A direct order, a donation in kind or a one-off charge. Only what is needed; the rest is under More options."
+    )
+    submit_label = "Record purchase"
+    footnote = "Need every field? Use the full order form: Purchases, then New order."
 
 
 class ContractUpdateView(_ContractScreen):

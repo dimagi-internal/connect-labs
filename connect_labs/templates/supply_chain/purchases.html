@@ -12,7 +12,14 @@ one click away ("All orders") for finance and audit.
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
     <h3 class="text-lg font-semibold text-blue-900 mb-1">No program selected</h3>
+    {% if user_programs %}
+    <p class="text-sm text-amber-900">Choose a program to see its purchases:</p>
+    <ul class="mt-2 flex flex-col gap-1 text-sm" data-testid="program-picker">
+      {% for p in user_programs %}<li><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:purchases' %}?program_id={{ p.id }}">{{ p.name }}</a></li>{% endfor %}
+    </ul>
+    {% else %}
     <p class="text-sm text-amber-900">Select a program from the context selector to see its purchases.</p>
+    {% endif %}
   </div>
 {% else %}
 <div class="mb-4 flex flex-wrap items-end justify-between gap-4">
@@ -22,14 +29,13 @@ one click away ("All orders") for finance and audit.
   </div>
   {% if not supply_as_of %}{# a past day is read-only #}
   <div class="flex flex-wrap items-center gap-2">
-    <a href="{% url 'supply_chain:contract_create' %}" class="px-3 py-2 text-sm border border-brand-indigo text-brand-indigo hover:bg-message-info rounded-md" data-testid="record-direct-purchase">Record a purchase outside a tender</a>
+    <a href="{% url 'supply_chain:purchase_outside_tender' %}" class="px-3 py-2 text-sm border border-brand-indigo text-brand-indigo hover:bg-message-info rounded-md" data-testid="record-direct-purchase">Record a purchase outside a tender</a>
     <a href="{% url 'supply_chain:procurement_tender_create' %}" class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md" data-testid="new-purchase"><i class="fa-solid fa-plus mr-1"></i> New purchase</a>
   </div>
   {% endif %}
 </div>
 
-{% include "supply_chain/_purchase_guide.html" %}
-
+{% if not supply_as_of %}<p class="-mt-2 mb-3 text-xs text-gray-600" data-testid="direct-purchase-note">A direct order, a donation in kind or a one-off charge is recorded with "Record a purchase outside a tender"; it is listed under "Bought outside a tender" below once recorded.</p>{% endif %}
 <nav class="mb-4 flex flex-wrap items-center gap-2" aria-label="Show" data-testid="purchase-filters">
   {% for f in filters %}
   <a href="{{ f.url }}" class="rounded-full border px-3 py-1 text-sm {% if f.current %}border-brand-indigo bg-brand-indigo text-white{% else %}border-gray-300 text-gray-700 hover:bg-gray-50{% endif %}"{% if f.current %} aria-current="true"{% endif %} data-filter="{{ f.key }}">{{ f.label }} <span class="{% if f.current %}text-white{% else %}text-gray-600{% endif %}">{{ f.count }}</span></a>

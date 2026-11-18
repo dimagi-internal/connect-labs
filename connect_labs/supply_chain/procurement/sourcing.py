@@ -8,11 +8,22 @@ goods are needed, and the next move -- read from the same rows the Overview read
 
 from __future__ import annotations
 
+import re
+
 from django.urls import reverse
 
 from connect_labs.supply_chain import moves as rules
 from connect_labs.supply_chain.procurement.services.award_orders import order_words, split_progress
 from connect_labs.supply_chain.values import day_text
+
+
+def short_product(name: str) -> str:
+    """A product by its short name: "RUTF", not "RUTF (ready-to-use therapeutic food)" or "RUTF, 92 g sachet".
+
+    The full name belongs on the product page only (Sophie Feintuch, round 3, wording).
+    """
+    short = re.split(r"\s*[(,]", name or "", maxsplit=1)[0].strip()
+    return short or name or ""
 
 
 def marketplace_in_use(program_id) -> bool:
@@ -57,6 +68,11 @@ def sourcing_rows(program_id, today) -> list[dict]:
             else:
                 detail = " · ".join(states[c.pk][0] for c in mine if c.pk in states)
         move, whose = (row.next_move, row.whose) if row is not None else (None, "")
+        next_text = move.text if move is not None else ""
+        silent = row.silent_names if row is not None else []
+        if move is not None and move.rule == rules.RULE_NO_REPLY and len(silent) > 1:
+            # "Chase DABS" read as the only one: say how many have not replied.
+            next_text = f"Chase the {len(silent)} suppliers who have not replied"
         to_do = list(progress["to_do"]) if progress else []
         out.append(
             {
@@ -66,16 +82,22 @@ def sourcing_rows(program_id, today) -> list[dict]:
                 "status": tender.status,
                 "restricted": tender.visibility == "private",
                 "products": [
-                    {"slug": ln["commodity_slug"], "name": names.get(ln["commodity_slug"], ln["commodity_slug"])}
+                    {
+                        "slug": ln["commodity_slug"],
+                        "name": short_product(names.get(ln["commodity_slug"], ln["commodity_slug"])),
+                    }
                     for ln in lines
                 ],
                 "stage": stage,
                 "stage_detail": detail,
                 "deadline": row.deadline_note if row is not None else "",
-                "quotes": (row.quotes_chip if row is not None else "") or "none yet",
+                # "delivered price", the words a program manager uses, where the comparison says "landed"
+                "quotes": ((row.quotes_chip if row is not None else "") or "none yet").replace(
+                    "landed price", "delivered price"
+                ),
                 "partners": [p["org_name"] for p in progress["partners"]] if progress else [],
                 "needed_by": day_text(tender.needed_by),
-                "next_move": move.text if move is not None else "",
+                "next_move": next_text,
                 "next_whose": "Ours" if whose == rules.US else "Waiting on suppliers" if whose else "",
                 "to_do": to_do,
             }

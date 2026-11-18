@@ -97,35 +97,72 @@ def order_rows(*, tender_id, contracts, orgs, suppliers, shipments, invoices, wo
                 "money": money,
                 "paid": money["state"] in ("paid", "not_billed"),
                 "url": reverse("supply_chain:order_detail", args=[cid]),
-                "actions": order_actions(cid, mine),
+                "actions": order_actions(
+                    contract,
+                    mine,
+                    invoices,
+                    delivered=bool(delivered),
+                    in_transit=bool(moving),
+                ),
             }
         )
     return rows
 
 
-def order_actions(contract_id, shipments) -> list[dict]:
-    """ "What happened?" on one order: the forms that record it, each one named by what happened."""
-    acts = [
-        {"label": "It was dispatched", "url": reverse("supply_chain:shipment_record", args=[contract_id])},
-        {"label": "It arrived", "url": reverse("supply_chain:receipt_record", args=[contract_id])},
-        {"label": "An invoice came in", "url": reverse("supply_chain:invoice_record", args=[contract_id])},
-        {"label": "An advance was paid", "url": reverse("supply_chain:advance_payment_record", args=[contract_id])},
-        {"label": "Attach a document", "url": reverse("supply_chain:document_attach", args=[contract_id])},
-        {
-            "label": "Record something we owe",
-            "url": reverse("supply_chain:contract_commitment_record", args=[contract_id]),
-        },
-    ]
+def order_actions(contract, shipments, invoices, *, delivered, in_transit) -> dict:
+    """What can happen to one order next: {"primary": the next expected event as a button, "more": the rest}.
+
+    Round 3: "What happened?" offered the same seven options on every row, including "It was dispatched" on
+    an order already received. The button is now the one event this order is waiting for (dispatch, arrival,
+    the invoice, the payment); everything else is behind "Something else". A partner-buys order is billed by
+    the LLO to us, not by the supplier, and takes no advance.
+    """
+    cid = contract["id"]
+    partner_buys = contract.get("buying_model") == "partner_buys"
+    priced = contract.get("consideration") in (None, "", "priced")
+    mine = live_invoices([i for i in invoices if i.get("contract_id") == cid])
+    unpaid = [i for i in mine if not is_paid(i)]
+    invoice_url = reverse("supply_chain:invoice_record", args=[cid]) + ("?from=partner" if partner_buys else "")
+    invoice_label = "Record the LLO's invoice" if partner_buys else "Record the invoice"
+
+    primary = None
+    if not delivered and in_transit:
+        primary = {"label": "Mark as arrived", "url": reverse("supply_chain:receipt_record", args=[cid])}
+    elif not delivered and not shipments:
+        primary = {"label": "Record a dispatch", "url": reverse("supply_chain:shipment_record", args=[cid])}
+    elif delivered and priced and not mine:
+        primary = {"label": invoice_label, "url": invoice_url}
+    elif unpaid:
+        primary = {
+            "label": "Record payment",
+            "url": reverse("supply_chain:payment_record", args=[unpaid[0]["id"]]),
+        }
+
+    more = []
+    if not delivered:
+        more.append({"label": "It was dispatched", "url": reverse("supply_chain:shipment_record", args=[cid])})
+        more.append({"label": "It arrived", "url": reverse("supply_chain:receipt_record", args=[cid])})
+    if priced:
+        more.append({"label": invoice_label, "url": invoice_url})
+        if not partner_buys:
+            more.append(
+                {"label": "An advance was paid", "url": reverse("supply_chain:advance_payment_record", args=[cid])}
+            )
     if shipments:
-        acts.insert(
-            3,
-            {"label": "An extra charge", "url": reverse("supply_chain:charge_record", args=[shipments[-1]["id"]])},
+        more.append(
+            {"label": "An extra charge", "url": reverse("supply_chain:charge_record", args=[shipments[-1]["id"]])}
         )
-    return acts
+    more.append({"label": "Attach a document", "url": reverse("supply_chain:document_attach", args=[cid])})
+    more.append(
+        {"label": "Record something we owe", "url": reverse("supply_chain:contract_commitment_record", args=[cid])}
+    )
+    if primary:
+        more = [m for m in more if m["url"] != primary["url"]]
+    return {"primary": primary, "more": more}
 
 
 def stages(
-    *, tender, outreach, quotes, awards, orders, planned_orders, steps, comparison_urls, today=None
+    *, tender, outreach, quotes, awards, orders, planned_orders, steps, comparison_urls, today=None, suppliers=None
 ) -> list[dict]:
     """The seven steps, each {key, number, title, state, summary, links, primary}.
 
@@ -139,6 +176,7 @@ def stages(
     asked = len(outreach)
     replied = sum(1 for o in outreach if o.get("responded"))
     award = awards[0] if awards else None
+    chosen = ((suppliers or {}).get(award.get("supplier_id")) or {}).get("name") if award else ""
 
     ordered_all = bool(orders) and len(orders) >= planned_orders
     delivered_n = sum(1 for o in orders if o["delivered"])
@@ -165,10 +203,11 @@ def stages(
             "key": "ask",
             "title": "Ask suppliers",
             "done": bool(done.get("replies")) or (tender.get("status") not in ("draft", None) and replied > 0),
+            # "0 asked · 0 replied · 5 quotes in" read as a contradiction: the asks are only counted when logged.
             "summary": (
                 f"{asked} asked · {replied} replied · {_count(len(live_quotes), 'quote')} in"
-                if asked or live_quotes
-                else "No supplier has been asked yet."
+                if asked
+                else f"{_count(len(live_quotes), 'quote')} in" if live_quotes else "No supplier has been asked yet."
             ),
             "links": [{"label": "Suppliers and replies", "url": tender_url}],
             "primary": {
@@ -181,9 +220,13 @@ def stages(
             "title": "Compare",
             "done": bool(done.get("compare")),
             "summary": (
-                f"{len(live_quotes)} quote{'s' if len(live_quotes) != 1 else ''} to line up"
-                if live_quotes
-                else "Nothing to compare until a quote is in."
+                f"Chosen: {chosen}" + (f" ({award['rationale']})" if award.get("rationale") else "")
+                if award and chosen
+                else (
+                    f"{_count(len(live_quotes), 'quote')} to line up"
+                    if live_quotes
+                    else "Nothing to compare until a quote is in."
+                )
             ),
             "links": comparison_urls if live_quotes else [],
             "primary": None,
@@ -194,6 +237,7 @@ def stages(
             "done": bool(award),
             "summary": (
                 "Awarded"
+                + (f" to {chosen}" if chosen else "")
                 + (f" on {day_text(date.fromisoformat(award['decided_on']))}" if award.get("decided_on") else "")
                 if award
                 else "No supplier chosen yet."

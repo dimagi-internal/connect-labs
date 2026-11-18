@@ -198,6 +198,7 @@ TAB_FOR_VIEW = {
     "supply_chain:procurement_tender_board": "supply_chain:purchases",
     "supply_chain:orders": "supply_chain:purchases",
     "supply_chain:purchase": "supply_chain:purchases",
+    "supply_chain:purchase_outside_tender": "supply_chain:purchases",
     # Overview at its own address, which its tab links to: /supply/ itself may
     # open on another tab (landing.py).
     "supply_chain:overview": "supply_chain:home",

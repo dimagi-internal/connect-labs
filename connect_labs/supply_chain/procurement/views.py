@@ -591,6 +591,12 @@ class TenderDetailView(_Base):
         }
         context["canopy_panel"] = _quotes_panel(self.request, tender_id, [q.get("id") for q in current])
         context.update(_award_on_tender(tender_id, found, context["quotes"], context.get("status")))
+        if context.get("award_card"):
+            # Once awarded, only the winner delivers: the others are not asked for anything "with this delivery".
+            winner = context["award_card"]["supplier_id"]
+            context["qualification_gaps"] = [
+                g for g in context.get("qualification_gaps") or [] if g["supplier_id"] == winner
+            ]
         return context
 
 
@@ -634,6 +640,7 @@ def _award_on_tender(tender_id, tender, quotes, status) -> dict:
         out["award_card"] = {
             "id": award.pk,
             "supplier": award.supplier.name,
+            "supplier_id": award.supplier_id,
             "decided_on": award.decided_on,
             "emails": emails,
             "handovers": emails - 1,
