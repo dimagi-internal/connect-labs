@@ -113,3 +113,19 @@ def test_an_owned_call_is_not_a_round(round_):
     with pytest.raises(MCPToolError) as err:
         tools.marketplace_round_responses(make_user("d", email="d@dimagi.com"), slug="owned-call")
     assert err.value.code == "NOT_FOUND"
+
+
+def test_a_round_larger_than_one_page_is_read_by_paging(round_, monkeypatch):
+    # The Community Health RFI 2026 has 333 submissions; one call returns 200.
+    monkeypatch.setattr(tools, "MAX_RESPONSES", 1)
+    reader = make_user("reader", email="d@dimagi.com")
+    first = _call(reader)
+    assert (first["count"], first["total"], first["offset"]) == (1, 2, 0)
+    assert first["truncated"] and first["next_offset"] == 1
+    second = _call(reader, offset=first["next_offset"])
+    assert second["count"] == 1 and second["next_offset"] is None and not second["truncated"]
+    assert {first["responses"][0]["response_id"], second["responses"][0]["response_id"]} == {
+        r["response_id"] for r in _call(reader, limit=1, offset=0)["responses"]
+    } | {second["responses"][0]["response_id"]}
+    past_end = _call(reader, offset=2)
+    assert past_end["responses"] == [] and past_end["next_offset"] is None

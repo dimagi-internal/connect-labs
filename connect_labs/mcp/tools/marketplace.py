@@ -268,8 +268,9 @@ def marketplace_rounds_list(
     return {"rounds": out, "count": len(out)}
 
 
-#: One round's submissions. The largest round (CHC 2025) has a little over a
-#: hundred, so a single page covers every round there is.
+#: The most submissions one call returns. The Community Health RFI 2026 has
+#: 333, so a round can outgrow one call: page with `offset` until `next_offset`
+#: is null.
 MAX_RESPONSES = 200
 
 
@@ -284,12 +285,27 @@ MAX_RESPONSES = 200
         "history (what it applied to before, what it delivered). Only the round's "
         "owner (Dimagi) and platform support may read it. The contact person's "
         "name, email, phone and signature are left out unless `include_contacts` "
-        "is true — ask for them only when you are going to write to them. Read-only."
+        "is true — ask for them only when you are going to write to them. A call returns "
+        "at most 200 submissions; when `next_offset` is not null, call again with "
+        "`offset` set to it until it is null — `truncated` alone never means the "
+        "read is complete. Pass a smaller `limit` when the page is too large to "
+        "hold. Read-only."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "slug": {"type": "string", "description": "The round's slug, from `marketplace_rounds_list`."},
+            "offset": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Submissions to skip; use the previous page's `next_offset`.",
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 200,
+                "description": "Submissions to return in this page (default and maximum 200).",
+            },
             "include_contacts": {
                 "type": "boolean",
                 "description": "Include each submission's contact name, emails, phone and signature line.",
@@ -299,7 +315,9 @@ MAX_RESPONSES = 200
         "additionalProperties": False,
     },
 )
-def marketplace_round_responses(user, slug: str, include_contacts: bool = False) -> dict[str, Any]:
+def marketplace_round_responses(
+    user, slug: str, include_contacts: bool = False, offset: int = 0, limit: int = MAX_RESPONSES
+) -> dict[str, Any]:
     from connect_labs.solicitations import access
     from connect_labs.solicitations.local_models import Solicitation
 
@@ -319,11 +337,13 @@ def marketplace_round_responses(user, slug: str, include_contacts: bool = False)
 
     rows = round_.responses.select_related("llo_entity").order_by("source_form", "source_row")
     total = rows.count()
+    offset = max(int(offset or 0), 0)
+    limit = min(max(int(limit or MAX_RESPONSES), 1), MAX_RESPONSES)
     # A round with several forms holds each form's questions; a submission
     # answers only its own form's, so only those are listed against it.
     multi_form = len(round_.directory_forms) > 1
     out = []
-    for response in rows[:MAX_RESPONSES]:
+    for response in rows[offset : offset + limit]:
         answers = response.responses or {}
         row = {
             # What `create_review` and `list_reviews` take.
@@ -370,7 +390,10 @@ def marketplace_round_responses(user, slug: str, include_contacts: bool = False)
         "responses": out,
         "count": len(out),
         "total": total,
-        "truncated": total > len(out),
+        "offset": offset,
+        # Where the next page starts; null once the last submission is out.
+        "next_offset": offset + len(out) if offset + len(out) < total else None,
+        "truncated": offset + len(out) < total,
     }
 
 
