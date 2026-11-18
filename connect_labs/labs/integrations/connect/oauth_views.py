@@ -115,6 +115,18 @@ def labs_oauth_login(request: HttpRequest) -> HttpResponse:
     return HttpResponseRedirect(authorize_url)
 
 
+def _failed_sign_in() -> HttpResponse:
+    """Where a failed callback lands: the login page, which shows the error message.
+
+    Never back to /labs/initiate/. A failure Connect repeats on every attempt (an
+    error=invalid_scope from /o/authorize/, say) then becomes an endless
+    initiate -> Connect -> callback loop that the browser reports as "too many
+    redirects" and nobody can read. The login page shows the message and waits
+    for a deliberate click.
+    """
+    return redirect("labs:login")
+
+
 def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
     """
     Handle OAuth callback from Connect production.
@@ -136,7 +148,7 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
             return redirect(completed.get("next") or "/labs/overview/")
         logger.warning("OAuth callback with invalid state parameter", extra={"received_state": state})
         messages.error(request, "Invalid authentication state. Please try logging in again.")
-        return redirect("labs:oauth_initiate")
+        return _failed_sign_in()
 
     # Get authorization code
     code = request.GET.get("code")
@@ -145,14 +157,14 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
         error_description = request.GET.get("error_description", "")
         logger.error(f"OAuth error: {error}", extra={"description": error_description})
         messages.error(request, f"Authentication failed: {error_description or error}")
-        return redirect("labs:oauth_initiate")
+        return _failed_sign_in()
 
     # Get PKCE code verifier from session
     code_verifier = request.session.get("oauth_code_verifier")
     if not code_verifier:
         logger.error("OAuth callback missing code verifier in session")
         messages.error(request, "Session expired. Please try logging in again.")
-        return redirect("labs:oauth_initiate")
+        return _failed_sign_in()
 
     # Exchange code for token with PKCE
     callback_url = request.build_absolute_uri(reverse("labs:oauth_callback"))
@@ -175,11 +187,11 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
     except httpx.HTTPStatusError as e:
         logger.error(f"OAuth token exchange failed with status {e.response.status_code}", exc_info=True)
         messages.error(request, "Failed to authenticate with Connect. Please try again.")
-        return redirect("labs:oauth_initiate")
+        return _failed_sign_in()
     except Exception as e:
         logger.error(f"OAuth token exchange failed: {str(e)}", exc_info=True)
         messages.error(request, "Authentication service unavailable. Please try again later.")
-        return redirect("labs:oauth_initiate")
+        return _failed_sign_in()
 
     # Get user info from Connect production
     access_token = token_json["access_token"]
@@ -195,7 +207,7 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
     if not profile_data:
         logger.error("Could not retrieve user information from token introspection")
         messages.error(request, "Could not retrieve your profile from Connect. Please try again.")
-        return redirect("labs:oauth_initiate")
+        return _failed_sign_in()
 
     # The canopy probe's service account is never a login, whatever Connect says
     # (connect_labs/labs/canopy.py). Checked before the user row is touched, so a
