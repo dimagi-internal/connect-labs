@@ -11,9 +11,11 @@ members and platform support read them (``access.can_read_round_responses``).
 That covers ``marketplace_round_responses``, ``include_applicants`` on
 ``marketplace_rounds_list`` and the ``applied_programs`` an org row carries.
 
-Read-only, all of it. Writing to the directory is the LLO Directory sheet's job
-(``marketplace_import``), and a tool that wrote here would be a second source of
-truth for rows a human maintains.
+Read-only, with one exception. Writing to the directory is the LLO Directory sheet's
+job, and a tool that wrote rows here would be a second source of truth for rows a human
+maintains. The exception is ``marketplace_import``, which writes nothing of its own: it
+runs the importer that copies the sheet into labs, so a person or agent who has just
+edited the sheet does not have to wait for the daily beat or find an engineer.
 
 **These return contact details — real people's names, addresses and phone
 numbers.** That is deliberate: drafting an outreach email per organisation is
@@ -835,3 +837,65 @@ def marketplace_round_observations_set(
         "compared_with": record.observations_compared_with,
         "written_at": record.observations_at.isoformat() if record.observations_at else None,
     }
+
+
+def _may_import(user) -> bool:
+    """Dimagi members and platform operators: the people who maintain the directory.
+
+    The import is global -- one sheet, one registry -- so it is not scoped to a round or
+    an org the way the rest of this module is. It reads a sheet Dimagi owns and writes
+    labs' copy of it, which is what "a member of the organisation that ran every round"
+    already means.
+    """
+    from connect_labs.solicitations import access
+    from connect_labs.supply_chain.runner import dimagi_org
+
+    caller = access.caller_for(user)
+    return bool(caller.is_operator or caller.is_member(dimagi_org()))
+
+
+@register(
+    name="marketplace_import",
+    description=(
+        "Copy the LLO Directory sheet into labs now: organisations, contacts, join dates, "
+        "Connect-slug attributions and, with `eoi` (the default), the EOI/RFP rounds and every "
+        "submission to them, matched to organisations. Run it after adding organisations to the "
+        "directory sheet so they exist on labs and the round's unresolved count drops; the same "
+        "import also runs daily. It never deletes anything (there is no prune here) and never "
+        "changes a sheet row you maintain; it only refreshes the findings tab and the access "
+        "columns on the rounds tab. Returns the counts, what it skipped, the data-quality "
+        "findings and, per round, how many submissions matched an organisation and how many still "
+        "await a verdict. `dry_run` reads and reports without writing. Takes minutes, so it runs "
+        "as a job: the result comes back here if it finishes quickly, otherwise poll `job_status`. "
+        "Only Dimagi members and platform support may run it."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "eoi": {
+                "type": "boolean",
+                "default": True,
+                "description": "Also import the EOI/RFP rounds and their submissions. Default true.",
+            },
+            "dry_run": {
+                "type": "boolean",
+                "default": False,
+                "description": "Read the sheet and report what would be imported; write nothing.",
+            },
+        },
+        "additionalProperties": False,
+    },
+    is_write=True,
+    long_running=True,
+)
+def marketplace_import(user, eoi: bool = True, dry_run: bool = False) -> dict[str, Any]:
+    from connect_labs.marketplace.importer import ImportFailed, run_import
+
+    if not _may_import(user):
+        raise MCPToolError(
+            "PERMISSION_DENIED", "Only Dimagi members and platform support may run the marketplace import."
+        )
+    try:
+        return run_import(eoi_rounds=eoi, dry_run=dry_run)
+    except ImportFailed as e:
+        raise MCPToolError(e.code, str(e)) from e

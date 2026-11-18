@@ -190,3 +190,62 @@ class TestRoundsList:
     def test_an_unknown_slug_is_a_miss_not_an_empty_list(self, user, directory):
         with pytest.raises(MCPToolError):
             tools.marketplace_rounds_list(user, slug="never-existed")
+
+
+class TestImport:
+    """``marketplace_import``: copy the directory sheet into labs, as a job, for the people who maintain it."""
+
+    @pytest.fixture
+    def staff(self, django_user_model):
+        return django_user_model.objects.create(username="support", email="support@example.invalid", is_staff=True)
+
+    @pytest.fixture
+    def outsider(self, django_user_model):
+        return django_user_model.objects.create(username="outsider", email="someone@partner.example.invalid")
+
+    def test_it_is_a_long_running_write_and_takes_no_prune(self):
+        tool = get_tool("marketplace_import")
+        assert tool.is_write is True and tool.long_running is True
+        assert "prune" not in tool.input_schema["properties"]
+        assert set(tool.input_schema["properties"]) == {"eoi", "dry_run", "wait"}
+
+    def test_a_dimagi_member_runs_it_and_gets_the_result(self, user, monkeypatch):
+        seen = {}
+
+        def fake_run_import(**kwargs):
+            seen.update(kwargs)
+            return {"dry_run": False, "organisations": 3}
+
+        monkeypatch.setattr("connect_labs.marketplace.importer.run_import", fake_run_import)
+        assert tools.marketplace_import(user) == {"dry_run": False, "organisations": 3}
+        assert seen == {"eoi_rounds": True, "dry_run": False}
+
+    def test_it_passes_dry_run_and_eoi_through(self, user, monkeypatch):
+        seen = {}
+        monkeypatch.setattr("connect_labs.marketplace.importer.run_import", lambda **kw: seen.update(kw) or {})
+        tools.marketplace_import(user, eoi=False, dry_run=True)
+        assert seen == {"eoi_rounds": False, "dry_run": True}
+
+    def test_platform_support_may_run_it(self, staff, monkeypatch):
+        monkeypatch.setattr("connect_labs.marketplace.importer.run_import", lambda **kw: {"ok": True})
+        assert tools.marketplace_import(staff) == {"ok": True}
+
+    def test_someone_outside_dimagi_may_not(self, outsider, monkeypatch):
+        def never(**kw):
+            raise AssertionError("the importer must not run for an outsider")
+
+        monkeypatch.setattr("connect_labs.marketplace.importer.run_import", never)
+        with pytest.raises(MCPToolError) as exc:
+            tools.marketplace_import(outsider)
+        assert exc.value.code == "PERMISSION_DENIED"
+
+    def test_an_importer_failure_comes_back_with_its_code(self, user, monkeypatch):
+        from connect_labs.marketplace.importer import ImportFailed
+
+        def busy(**kw):
+            raise ImportFailed("IMPORT_IN_PROGRESS", "Another marketplace import is running.")
+
+        monkeypatch.setattr("connect_labs.marketplace.importer.run_import", busy)
+        with pytest.raises(MCPToolError) as exc:
+            tools.marketplace_import(user)
+        assert exc.value.code == "IMPORT_IN_PROGRESS"

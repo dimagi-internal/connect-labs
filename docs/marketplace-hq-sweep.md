@@ -30,7 +30,7 @@ Three columns at the end of the directory's **Organizations** tab. The importer 
 3. **Split into batches of ~30** and dispatch one research subagent per batch, in parallel, each with the prompt below plus its input and output file paths.
 4. **Validate every answer before writing.** Run each `hq_city` through `connect_labs.pulse.hq_location.resolve(countries, "", "", hq_city=<answer>)` and require `precision == "city"`. The town part is matched by exact name, so a small town works as long as the gazetteer lists it. An answer that does not resolve usually names a neighbourhood or a spelling the gazetteer lacks. Fix it by hand (use the city, or GeoNames' spelling) rather than adding a rule to the code.
 5. **Write to the sheet**, into blank HQ City cells only. Locate the three columns by header, never by letter.
-6. **Run the importer**: the `Run Labs management command` GitHub workflow with `marketplace_import`. It prints the tier counts (`N city, N region, N country`).
+6. **Run the importer**: the `marketplace_import` MCP tool (no GitHub workflow needed). Its result carries the tier counts under `located` (`{"city": N, "region": N, "country": N}`).
 7. **Spot-check** the low-confidence answers, and every delivered organisation whose HQ is far from its delivery area. The distance sheet flags those.
 
 ## Practical limits
