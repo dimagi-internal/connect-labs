@@ -178,8 +178,9 @@ things about it are expensive to rediscover.
 partner *names* only for the orgs the polling account belongs to — a minority of
 those that deliver. The rest arrive as a slug and are matched against the team's
 directory sheet, loaded into the organisation registry (`labs.LabsOrg` +
-`marketplace.OrgProfile`) by `marketplace_import` (daily on beat, and runnable by
-hand). No partner name is written down in source; if the
+`marketplace.OrgProfile`) by `marketplace_import` (daily on beat, on demand through
+the `marketplace_import` MCP tool, or `make manage CMD="marketplace_import"`; all three
+are `marketplace/importer.py::run_import`). No partner name is written down in source; if the
 board shows slugs instead of names, that import has not run.
 
 Slugs no string rule can reach are resolved by a human on the directory's
@@ -379,7 +380,7 @@ Connect OAuth token (`~/.commcare-connect/token.json`).
 A remote MCP server hosted inside the labs Django app (`connect_labs/mcp/`)
 at `https://labs.connect.dimagi.com/mcp/`. The protocol endpoint is a
 FastMCP 3.x Streamable-HTTP ASGI app mounted in `config/asgi.py`; the catalog
-registers **276 tools** as of 2026-10-15 (write tools are rate-limited and fully argument-logged
+registers **277 tools** as of 2026-11-18 (write tools are rate-limited and fully argument-logged
 to `MCPAuditLog`) — 116 of them generated from the supply-chain
 operation registry (`connect_labs/supply_chain/operations.py`), one tool per
 operation, so the count moves whenever that registry does. The registry holds
@@ -387,7 +388,7 @@ operation, so the count moves whenever that registry does. The registry holds
 `stock_report_ingest`, `visit_consumption_ingest`) and are deliberately kept OFF the MCP catalogue —
 seeds, bulk imports and ingests are run by an engineer through a management
 command, the way every other bootstrap in this repo is (`indicators_bootstrap`,
-`load_indicators`, `marketplace_import`, `seed_semantic_registry`). They stay
+`load_indicators`, `seed_semantic_registry`). They stay
 in the registry so their commands keep its schema validation and provenance
 stamping. Those carry the
 prefix **`supply_chain_`** (`connect_labs/supply_chain/mcp_tools.py`,

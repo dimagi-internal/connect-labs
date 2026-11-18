@@ -82,7 +82,9 @@ only the current criteria.
 ## Google Forms intake (directory rounds only)
 
 Code: `marketplace/directory.py` (parsing), `marketplace/eoi.py`
-(upsert, access check, ingest), `marketplace/management/commands/marketplace_import.py`.
+(upsert, access check, ingest), `marketplace/importer.py` (`run_import`, the one
+implementation), `marketplace/management/commands/marketplace_import.py` (its terminal
+face) and the `marketplace_import` tool in `mcp/tools/marketplace.py`.
 
 - The master sheet is the LLO Directory (`directory.DIRECTORY_ID`). Its
   `EOI/RFP` tab (`directory.ROUNDS_TAB`) has one row per form.
@@ -120,6 +122,12 @@ Code: `marketplace/directory.py` (parsing), `marketplace/eoi.py`
 - Schedule: Celery beat `pulse-partner-directory` at 04:20 daily
   (`config/settings/base.py`) runs `pulse.tasks.import_partner_directory`,
   which calls `marketplace_import` with `eoi=True`.
+- On demand: the `marketplace_import` MCP tool (`eoi`, `dry_run`; never prunes). It returns
+  `organisations`, `contacts`, `attributions`, `skipped`, `findings`, and under `rounds`
+  `per_round: [{slug, submissions, matched, unmatched}]`, `access_problems` and `totals`;
+  `unmatched` is the number still awaiting a verdict. Errors carry a stable code:
+  `DIRECTORY_UNREADABLE`, `DIRECTORY_EMPTY`, `IMPORT_IN_PROGRESS` (a lock; a dry run takes none)
+  and `PERMISSION_DENIED`. A caller restricted to no-user-visit data does not get it.
 - The service-account key comes from `LABS_SYNTHETIC_GDRIVE_SA_KEY`.
 
 **Labs-sourced calls have no in-labs Forms importer.** `check_access` and
@@ -172,9 +180,11 @@ firm's behalf).
      versions is not merged by machine — the import reports it and leaves it.
 2. Share the response sheet with
    `connect-labs-sa@connect-labs.iam.gserviceaccount.com` (Viewer).
-3. Wait for the 04:20 beat run, or run it by hand:
-   `make manage CMD="marketplace_import --check-access"` to verify access, then
-   `make manage CMD="marketplace_import --eoi"` to ingest.
+3. Wait for the 04:20 beat run, or run it now: call the `marketplace_import` MCP tool
+   (Dimagi members and platform support; `eoi` defaults to true; it runs as a job and
+   returns the per-round counts, or a `job_id` to poll with `job_status`). From a shell,
+   `make manage CMD="marketplace_import --check-access"` verifies access and
+   `make manage CMD="marketplace_import --eoi"` ingests. No GitHub dispatch is needed.
 4. Read the result. In the command output, a readable round prints
    `<slug>: N submissions, M matched, K unmatched`. On the sheet, `Labs Access`
    should read `OK — readable` and `Next Step` should be empty. Each form's row gets
