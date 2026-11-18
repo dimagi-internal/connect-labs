@@ -199,12 +199,11 @@ CSRF_TRUSTED_ORIGINS = ["https://*.127.0.0.1"] + env.list("CSRF_TRUSTED_ORIGINS"
 DEPLOY_ENVIRONMENT = "labs"
 
 # OAuth configuration
-# No "openid": labs' application on Connect has no ID-token signing algorithm, and
-# since commcare-connect#1765 Connect refuses openid at /o/authorize/ for such an app
-# (error=invalid_scope), which took every labs sign-in down. The email openid gave us
-# via /o/userinfo/ falls back to the org-data email in labs_oauth_callback. Add it
-# back only after the Connect application is given a signing algorithm.
-LABS_OAUTH_SCOPES = ["export"]
+# "openid" needs labs' application on Connect to have Algorithm = RS256: Connect refuses
+# openid at /o/authorize/ (error=invalid_scope) for an app that cannot sign ID tokens
+# (commcare-connect#1765, #1781), and that refusal took every labs sign-in down on
+# 2026-11-18. Never ship openid here before that application setting is in place.
+LABS_OAUTH_SCOPES = ["openid", "export"]
 LOGIN_URL = "/labs/login/"
 
 # The origin MCP clients connect to, named in the sign-in's discovery documents.
