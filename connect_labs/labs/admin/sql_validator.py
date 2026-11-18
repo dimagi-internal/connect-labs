@@ -19,7 +19,13 @@ Additional Safety:
 import logging
 import re
 
+import sqlglot
+from sqlglot import exp
+
 logger = logging.getLogger(__name__)
+
+#: The visit-cache columns a WHERE clause may filter on.
+ALLOWED_COLUMNS = ["form_json", "entity_id", "username", "visit_date", "status", "deliver_unit"]
 
 # Dangerous SQL keywords that should not appear in WHERE clauses
 BLACKLISTED_KEYWORDS = [
@@ -98,7 +104,7 @@ def validate_where_clause(clause: str) -> tuple[bool, str]:
 
     # Verify it references allowed columns
     # These are the columns available in the query and safe to filter on
-    allowed_columns = ["form_json", "entity_id", "username", "visit_date", "status", "deliver_unit"]
+    allowed_columns = ALLOWED_COLUMNS
     clause_lower = clause.lower()
     has_allowed_column = any(col in clause_lower for col in allowed_columns)
 
@@ -109,8 +115,46 @@ def validate_where_clause(clause: str) -> tuple[bool, str]:
     if len(clause) > 1000:
         return False, "WHERE clause is too long (max 1000 characters)"
 
+    # Parse it. A keyword list cannot see structure: "1=1) OR (1=1" closed the
+    # opportunity filter around it, and a subquery read any table in labs' database.
+    try:
+        _parse_where_clause(clause, allowed_columns)
+    except ValueError as e:
+        return False, str(e)
+
     logger.info(f"Validated WHERE clause: {clause[:100]}...")
     return True, ""
+
+
+#: Node types a filter on one visit row never needs: anything that reads another
+#: table, and any function sqlglot does not know (pg_sleep, current_setting, dblink...).
+_FORBIDDEN_NODES = (exp.Query, exp.Subquery, exp.Anonymous, exp.Command, exp.Block)
+
+
+def _parse_where_clause(clause: str, allowed_columns: list[str]) -> exp.Expression:
+    """Parse ``clause`` as ONE Postgres boolean expression over ``allowed_columns``.
+
+    Raises ValueError saying why it is not one.
+    """
+    try:
+        tree = sqlglot.parse_one(clause, dialect="postgres")
+    except sqlglot.errors.ParseError as e:
+        raise ValueError("WHERE clause is not a single valid expression") from e
+    if tree is None or isinstance(tree, (exp.Query, exp.Block, exp.Command)):
+        raise ValueError("WHERE clause is not a single valid expression")
+    for node in tree.walk():
+        if isinstance(node, _FORBIDDEN_NODES):
+            raise ValueError("Subqueries and unknown functions are not allowed in WHERE clauses")
+        if isinstance(node, exp.Column) and (node.table or node.name.lower() not in allowed_columns):
+            raise ValueError(f"Column {node.sql()!r} is not one of: {', '.join(allowed_columns)}")
+    return tree
+
+
+def _canonical(where_clause: str) -> str:
+    """The clause as sqlglot renders what it parsed, so the SQL that runs is the SQL
+    that was checked (not text Postgres might read differently, e.g. dollar quoting).
+    """
+    return _parse_where_clause(where_clause, ALLOWED_COLUMNS).sql(dialect="postgres")
 
 
 def build_safe_query(opportunity_id: int, where_clause: str, limit: int = 1000) -> tuple[str, list]:
@@ -143,7 +187,7 @@ def build_safe_query(opportunity_id: int, where_clause: str, limit: int = 1000) 
             entity_id,
             form_json
         FROM labs_raw_visit_cache
-        WHERE opportunity_id = %s AND ({where_clause})
+        WHERE opportunity_id = %s AND ({_canonical(where_clause)})
         ORDER BY visit_id DESC
         LIMIT {limit}
     """

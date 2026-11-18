@@ -33,6 +33,9 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
+from connect_labs.labs.synthetic.access import labs_only_scope_denied_reason
+from connect_labs.utils.sandbox_guard import require_same_origin
+
 logger = logging.getLogger(__name__)
 
 
@@ -82,6 +85,7 @@ def _coaching_conversation(prompt_text: str, flw_name: str = "there") -> list[di
 
 @login_required
 @csrf_exempt
+@require_same_origin
 @require_http_methods(["POST"])
 def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
     """Create a fresh (all-pending, clean-pool) audit for the manager-flow demo.
@@ -108,6 +112,8 @@ def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
 
     opportunity_id = int(opportunity_id)
     run_id = int(run_id)
+    if labs_only_scope_denied_reason(request.user, opportunity_id=opportunity_id):
+        return JsonResponse({"error": "Not found"}, status=404)
 
     from connect_labs.audit.data_access import AuditDataAccess
     from connect_labs.labs.synthetic.archetypes import build_audit_data
@@ -183,6 +189,7 @@ def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
 
 @login_required
 @csrf_exempt
+@require_same_origin
 @require_http_methods(["POST"])
 def manager_coaching_attach_api(request: HttpRequest, run_id: int) -> JsonResponse:
     """Attach a synthetic OCS coaching conversation onto an existing task.
@@ -204,6 +211,8 @@ def manager_coaching_attach_api(request: HttpRequest, run_id: int) -> JsonRespon
 
     opportunity_id = int(body["opportunity_id"])
     task_id = int(body["task_id"])
+    if labs_only_scope_denied_reason(request.user, opportunity_id=opportunity_id):
+        return JsonResponse({"error": "Not found"}, status=404)
     prompt_text = body["prompt_text"]
 
     try:

@@ -19,6 +19,14 @@ def rf():
     return RequestFactory()
 
 
+@pytest.fixture(autouse=True)
+def _labs_only_gate_allows():
+    """These tests mock the data access; the labs-only gate (which reads the DB) is
+    tested on its own below."""
+    with patch("connect_labs.flags.views.labs_only_scope_denied_reason", return_value=None):
+        yield
+
+
 def _post(rf, url, body):
     req = rf.post(url, data=json.dumps(body), content_type="application/json")
     # Stub the labs OAuth session so BaseDataAccess can spin up.
@@ -202,3 +210,19 @@ def test_get_flags_for_run_returns_list(MockDA, rf):
     assert flags[0]["evidence"] == {"sam_pct": 0.2}
     assert flags[1]["flag_key"] == "gender_skew"
     instance.get_flags_for_run.assert_called_once_with(503)
+
+
+@patch("connect_labs.flags.views.FlagsDataAccess")
+def test_a_labs_only_opp_the_user_cannot_open_is_not_written(MockDA, rf):
+    # The opportunity is named in the body, outside the checked labs context.
+    from connect_labs.flags import views as v
+
+    req = _attach_user(_post(rf, "/labs/workflow/api/503/flags/", {"opportunity_id": 10001, "flw_id": "a"}))
+    with (
+        patch("connect_labs.flags.views._refuse_if_run_completed", return_value=None),
+        patch("connect_labs.flags.views.labs_only_scope_denied_reason", return_value="no") as gate,
+    ):
+        resp = v.create_flag_for_run(req, workflow_run_id=503)
+    assert resp.status_code == 404
+    gate.assert_called_once_with(req.user, opportunity_id=10001)
+    MockDA.assert_not_called()

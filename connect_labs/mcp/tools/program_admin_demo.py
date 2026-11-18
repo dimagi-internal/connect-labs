@@ -15,7 +15,7 @@ from typing import Any
 
 from connect_labs.labs.synthetic.program_admin_demo import program_admin_demo_seed as _seed
 
-from ..tool_registry import register
+from ..tool_registry import MCPToolError, register
 
 
 @register(
@@ -122,6 +122,15 @@ def program_admin_demo_seed(
     current_week: str | None = None,
     program_id: int | None = None,
 ) -> dict[str, Any]:
+    from connect_labs.labs.synthetic.access import labs_only_scope_denied_reason
+
+    # The opportunities are nested in opps[], where the dispatcher's labs-only gate
+    # (top-level opportunity_id / program_id) cannot see them, and cleanup_first
+    # deletes their runs, audits and tasks.
+    for opp in opps or []:
+        reason = labs_only_scope_denied_reason(user, opportunity_id=(opp or {}).get("opportunity_id"))
+        if reason:
+            raise MCPToolError("PERMISSION_DENIED", reason)
     return _seed(
         user=user,
         weeks=weeks,

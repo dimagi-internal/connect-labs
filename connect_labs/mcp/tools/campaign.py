@@ -50,7 +50,12 @@ def campaign_build_national(
     name: str = "Measles–Rubella Vaccination Campaign (National)",
 ) -> dict[str, Any]:
     from connect_labs.campaign.services import geography, synthetic_campaign
+    from connect_labs.utils.dimagi_user import is_dimagi_staff
 
+    # Rebuilding deletes the campaign with this code first, and nothing names an
+    # opportunity for the dispatcher's gate to check.
+    if not is_dimagi_staff(user):
+        raise MCPToolError("PERMISSION_DENIED", "Only Dimagi staff may build synthetic campaigns.")
     if not geography.is_loaded():
         raise MCPToolError(
             "UPSTREAM_ERROR",
