@@ -13,6 +13,23 @@ logger = logging.getLogger(__name__)
 LABS_ONLY_OPP_ID_FLOOR = 10_000
 
 
+def email_in_domains(email: str | None, domains) -> bool:
+    """Whether ``email``'s domain is one of ``domains`` (or a subdomain of one).
+
+    An entry may be written ``partner.org`` or ``@partner.org``. A bare suffix test
+    (``email.endswith("partner.org")``) also admitted ``x@evilpartner.org``.
+    """
+    email = (email or "").strip().lower()
+    if "@" not in email:
+        return False
+    domain = email.rsplit("@", 1)[1]
+    for entry in domains or ():
+        want = (entry or "").strip().lower().lstrip("@")
+        if want and (domain == want or domain.endswith("." + want)):
+            return True
+    return False
+
+
 class SyntheticOpportunity(models.Model):
     """Registry entry marking an opportunity as backed by GDrive fixtures.
 
@@ -183,7 +200,7 @@ class SyntheticOpportunity(models.Model):
         if not self.allowed_domains:
             return True
         email = (getattr(user, "email", "") or "").lower()
-        if any(email.endswith(d.lower()) for d in self.allowed_domains):
+        if email_in_domains(email, self.allowed_domains):
             return True
         # Dimagi equivalence: the AI team uses @dimagi-ai.com, associates use
         # @dimagi-associate.com, and most demo opps are registered for @dimagi.com
@@ -253,7 +270,7 @@ class SyntheticOpportunity(models.Model):
                 email or "<no email>",
             )
             return True
-        return any(email.endswith(d.strip().lower()) for d in self.allowed_domains)
+        return email_in_domains(email, self.allowed_domains)
 
 
 class LabsLocalRecord(models.Model):
