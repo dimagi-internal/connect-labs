@@ -38,8 +38,8 @@ CELERY_TASK_STORE_EAGER_RESULT = True  # Store results even in eager mode so we 
 # CommCareConnect
 # ------------------------------------------------------------------------------
 
-# OAuth configuration
-LABS_OAUTH_SCOPES = ["export", "openid"]
+# OAuth configuration (no "openid": see the note in labs_aws.py)
+LABS_OAUTH_SCOPES = ["export"]
 
 # CLI OAuth Configuration (for get_cli_token management command)
 # Register a "Public" OAuth application at your production instance with:
