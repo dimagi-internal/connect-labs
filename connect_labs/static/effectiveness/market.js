@@ -36,6 +36,7 @@
     $('notice').hidden = false;
     $('notice').textContent = D.error + ' Showing the models as published.';
   }
+  window.EffPage = { scn: scn, data: D };
   scn.follow(
     D.api_url,
     function (r) {

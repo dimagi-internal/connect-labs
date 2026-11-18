@@ -13,18 +13,28 @@ TEMPLATES = ROOT / "templates" / "effectiveness"
 #: Template -> the scripts it loads, in order. ``ui.js`` (the DOM builder and number formats) comes first where used.
 PAGES = {
     "models.html": ["ui.js", "models.js"],
-    "market.html": ["ui.js", "scenario.js", "dials.js", "scenarios.js", "marketview.js", "market.js", "agent.js"],
+    "market.html": [
+        "ui.js",
+        "scenario.js",
+        "dials.js",
+        "api.js",
+        "scenarios.js",
+        "marketview.js",
+        "market.js",
+        "agent.js",
+    ],
     "workspace.html": [
         "ui.js",
         "scenario.js",
         "dials.js",
+        "api.js",
         "scenarios.js",
         "marketview.js",
         "areamap.js",
         "workspace.js",
         "agent.js",
     ],
-    "group.html": ["group.js", "agent.js"],
+    "group.html": ["api.js", "group.js", "agent.js"],
     "implementation.html": ["implementation.js"],
 }
 
@@ -72,6 +82,7 @@ def test_no_page_carries_inline_code(page):
     [
         "ui.js",
         "models.js",
+        "api.js",
         "scenario.js",
         "dials.js",
         "scenarios.js",

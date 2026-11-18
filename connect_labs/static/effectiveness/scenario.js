@@ -228,6 +228,85 @@
         else o[key] = value;
         emit('input');
       },
+      // Change the scenario by naming what to change in the link's own spelling (the keys `params()` writes): the way a
+      // saved scenario, a pasted link and the agent all say it. A value of null, '' or 'default' puts that key back at the
+      // model's own. Anything the link does not spell is kept as an extra for the server to read or refuse, as at load.
+      // One redraw, as for Reset.
+      apply: function (patch) {
+        var blank = function (v) {
+          return v == null || v === '' || v === 'default';
+        };
+        var num = function (v) {
+          var n = Number(v);
+          if (isNaN(n)) throw new Error('"' + v + '" is not a number.');
+          return n;
+        };
+        var positive = function (v) {
+          return blank(v) || num(v) <= 0 ? null : num(v);
+        };
+        var keys = Object.keys(patch);
+        // The indicator brings its own threshold, which an explicit one then replaces.
+        keys.sort(function (a) {
+          return a === 'indicator' ? -1 : 0;
+        });
+        keys.forEach(function (k) {
+          var v = patch[k];
+          var at = k.indexOf('_');
+          var model = k.slice(0, at);
+          var input = /^i\.([^.]+)\.(.+)$/.exec(k);
+          if (k === 'models') {
+            var want = (Array.isArray(v) ? v : String(v).split(',')).filter(
+              function (m) {
+                return s.dials[m];
+              },
+            );
+            if (!want.length) throw new Error('Name at least one programme.');
+            s.models = want;
+          } else if (k === 'indicator') {
+            s.indicator = blank(v) ? EVERYWHERE : v;
+            s.threshold =
+              s.indicator === EVERYWHERE
+                ? null
+                : indicatorMeta(s.indicator).threshold;
+          } else if (k === 'threshold') s.threshold = blank(v) ? null : num(v);
+          else if (k === 'iso') s.iso = blank(v) ? '' : [].concat(v).join(',');
+          else if (k === 'bar') s.bar = blank(v) ? data.bar : num(v);
+          else if (k === 'trust')
+            s.trust = blank(v) ? 100 : Math.min(100, Math.max(0, num(v)));
+          else if (k === 'place_risk')
+            s.place_risk = blank(v) || !(v === false || v === '0' || v === 0);
+          else if (k === 'grain') s.grain = blank(v) ? COUNTRY : v;
+          else if (k === 'cost_basis')
+            s.cost_basis = v === 'observed' ? 'observed' : 'model';
+          else if (
+            k === 'target' ||
+            k === 'min_place' ||
+            k === 'max_countries' ||
+            capKeys().indexOf(k) >= 0
+          )
+            s[k] = positive(v);
+          else if (
+            at > 0 &&
+            s.dials[model] &&
+            dialKeys().indexOf(k.slice(at + 1)) >= 0
+          )
+            s.dials[model][k.slice(at + 1)] = blank(v)
+              ? dialDefault(model, k.slice(at + 1))
+              : num(v);
+          else if (input) {
+            var o = (s.overrides[input[1]] = s.overrides[input[1]] || {});
+            var meta = (
+              ((data.models || {})[input[1]] || {}).inputs || []
+            ).filter(function (i) {
+              return i.key === input[2];
+            })[0];
+            if (blank(v) || (meta && num(v) === meta.value)) delete o[input[2]];
+            else o[input[2]] = num(v);
+          } else if (blank(v)) delete s.extras[k];
+          else s.extras[k] = String(v);
+        });
+        emit('reset');
+      },
       setUi: function (key, value) {
         ui[key] = value;
         emit('ui');

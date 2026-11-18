@@ -156,6 +156,27 @@ decided, what is open: written to be read cold by whoever continues) and its sce
   (move into a group, a new one, or out) and a Delete button. Over HTTP a scenario's `PATCH` takes `group` (an id, or null
   to take it out; left out, it stays), and `DELETE` removes it.
 
+### The canopy agent on these pages
+
+The group page, the Workspace and Market size carry the canopy panel (when an agent is ticked under Labs Admin › Canopy
+agents). It can do what a person can, and it does it **in the person's own tab, through the same functions the buttons
+call**, so there is one way to do each thing:
+
+| Layer | File | What it holds |
+| --- | --- | --- |
+| Server rules | `saved.py`, `scenario_groups.py` | save, update, move into or out of a group, delete, arrange, re-baseline |
+| Browser calls | `static/effectiveness/api.js` (`EffApi`) | one request per rule, one delete question, `reordered` |
+| The page's operations | `scenarios.js` (`EffScenarios.current`), `group.js` (`EffGroup`), `scenario.js` (`scn.apply`), `workspace.js` (`EffPage`) | what each button does |
+| The agent's actions | `agent.js` | thin: check the page, call the operation, say what happened |
+
+`scn.apply` changes a scenario in the link's own words (the keys `params()` writes, the ones `cea_scenario_save` takes), so a
+saved scenario, a pasted link and the agent all say it one way; `scenario.test.js` round-trips the contract link through it.
+Page-action specs use canopy's `parameters` key (not `input_schema`, which canopy ignores). A delete always asks the person
+in their tab first. The actions: `describeScreen`, `changeScenario`, `resetScenario`, `setMapColouring`, `selectPlace`,
+`saveScenario`, `updateScenario`, `moveScenarioToGroup`, `createGroup`, `deleteScenario`, `moveScenarioInGroup`,
+`removeScenarioFromGroup`, `editGroup`, `rebaselineGroup`, `deleteGroup`, and the moves `openScenario`, `openGroup`,
+`compareAgainst`, `checkAgainstToday`, `highlightScenario`. Add an operation to the page first, then a thin action over it.
+
 ### Saved scenarios
 
 A person keeps a scenario under a name (`models.SavedScenario`, rules in `saved.py`, HTTP in `views/scenarios.py`, the

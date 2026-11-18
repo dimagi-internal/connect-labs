@@ -274,3 +274,62 @@ describe('changing it', () => {
     expect(kinds).toEqual(['dial', 'models', 'ui', 'reset']);
   });
 });
+
+describe("apply: changing a scenario in the link's own words", () => {
+  it('reads every key of the contract link into the state that writes it back', () => {
+    const s = blank();
+    s.apply(contract.link);
+    expect(asObject(s.params())).toEqual(contract.link);
+  });
+
+  it('puts a key back at the model\'s own with null, an empty value or "default"', () => {
+    const s = fresh();
+    s.apply({
+      chc_reach: null,
+      target: '',
+      place_risk: 'default',
+      grain: 'default',
+      'i.chc.cost': 'default',
+      max_remote: 0,
+    });
+    const link = asObject(s.params());
+    for (const k of [
+      'chc_reach',
+      'target',
+      'place_risk',
+      'grain',
+      'i.chc.cost',
+      'max_remote',
+    ])
+      expect(link).not.toHaveProperty(k);
+  });
+
+  it('redraws once, as Reset does, and says why a value is refused', () => {
+    const s = blank();
+    const kinds = [];
+    s.onChange((_, kind) => kinds.push(kind));
+    s.apply({ target: 500000, kc_reach: 80, models: 'chc,kc' });
+    expect(kinds).toEqual(['reset']);
+    expect(asObject(s.params())).toMatchObject({
+      target: '500000',
+      kc_reach: '80',
+      models: 'chc,kc',
+    });
+    expect(() => s.apply({ target: 'lots' })).toThrow(/not a number/);
+    expect(() => s.apply({ models: 'nope' })).toThrow(/at least one/);
+  });
+
+  it('takes an indicator with its own threshold, and an explicit threshold over it', () => {
+    const s = blank();
+    s.apply({ indicator: 'u5mr' });
+    expect(asObject(s.params())).toMatchObject({
+      indicator: 'u5mr',
+      threshold: '80',
+    });
+    s.apply({ indicator: 'nmr', threshold: 25 });
+    expect(asObject(s.params())).toMatchObject({
+      indicator: 'nmr',
+      threshold: '25',
+    });
+  });
+});

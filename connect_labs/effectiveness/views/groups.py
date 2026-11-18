@@ -13,7 +13,6 @@ import json
 
 from django.http import JsonResponse
 from django.shortcuts import render
-from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views import View
 
@@ -279,11 +278,10 @@ class GroupView(ScenarioPageGate, View):
                 "charts": charts(data),
                 "sections": sections(data["group"]["summary"]),
                 "live": live,
-                "urls": {
-                    "group": reverse("cea:group", args=[pk]),
-                    "baseline": reverse("cea:group_baseline", args=[pk]),
-                    "scenarios": reverse("cea:scenarios"),
-                    "groups": reverse("cea:groups"),
+                "page_facts": {
+                    **scenario_page.api_data(request),
+                    "group_id": pk,
+                    "group_name": data["group"]["name"],
                     "order": [s["id"] for s in data["scenarios"]],
                 },
                 "baselined": "baseline" in sources or None in sources,
