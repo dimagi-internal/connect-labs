@@ -281,13 +281,17 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
     last_name = profile_data.get("last_name") or ""
     name = f"{first_name} {last_name}".strip() or profile_data.get("username", "")
 
+    # A login that carries no email must not erase the one already on file: Labs gates
+    # labs-only synthetic opps by email domain, so a blank here locks the user out of them.
+    defaults = {"name": name}
+    if profile_data.get("email"):
+        defaults["email"] = profile_data["email"]
     user, created = User.objects.update_or_create(
         username=profile_data.get("username"),
-        defaults={
-            "email": profile_data.get("email") or None,
-            "name": name,
-        },
+        defaults=defaults,
     )
+    if user.email and not request.session["labs_oauth"]["user_profile"].get("email"):
+        request.session["labs_oauth"]["user_profile"]["email"] = user.email
 
     # Persist to DB so the MCP server (no session) can look up this token.
     # expires_at is already a timezone-aware datetime (timezone.now() + timedelta).
