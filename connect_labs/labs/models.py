@@ -12,6 +12,7 @@ from django.contrib.postgres.fields import ArrayField
 from django.db import models
 from django.utils import timezone
 
+from connect_labs.utils.encrypted_fields import EncryptedTextField
 from connect_labs.workflow.run_codec import decode_record_data
 from connect_labs.workflow.run_snapshot_store import LazyRunData
 
@@ -116,8 +117,10 @@ class UserConnectToken(models.Model):
         on_delete=models.CASCADE,
         related_name="connect_token",
     )
-    access_token = models.TextField()
-    refresh_token = models.TextField(blank=True)
+    # Encrypted at rest (LABS_FIELD_ENCRYPTION_KEYS): a database read must not hand out
+    # working tokens. Rows written before 2026-11-18 are read as stored and encrypted on save.
+    access_token = EncryptedTextField()
+    refresh_token = EncryptedTextField(blank=True)
     expires_at = models.DateTimeField()
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -149,8 +152,10 @@ class UserCCHQToken(models.Model):
         on_delete=models.CASCADE,
         related_name="cchq_token",
     )
-    access_token = models.TextField()
-    refresh_token = models.TextField(blank=True)
+    # Encrypted at rest (LABS_FIELD_ENCRYPTION_KEYS): a database read must not hand out
+    # working tokens. Rows written before 2026-11-18 are read as stored and encrypted on save.
+    access_token = EncryptedTextField()
+    refresh_token = EncryptedTextField(blank=True)
     expires_at = models.DateTimeField()
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -186,8 +191,10 @@ class UserOCSToken(models.Model):
         on_delete=models.CASCADE,
         related_name="ocs_token",
     )
-    access_token = models.TextField()
-    refresh_token = models.TextField(blank=True)
+    # Encrypted at rest (LABS_FIELD_ENCRYPTION_KEYS): a database read must not hand out
+    # working tokens. Rows written before 2026-11-18 are read as stored and encrypted on save.
+    access_token = EncryptedTextField()
+    refresh_token = EncryptedTextField(blank=True)
     expires_at = models.DateTimeField()
     scope = models.CharField(max_length=255, blank=True, default="")
     updated_at = models.DateTimeField(auto_now=True)
