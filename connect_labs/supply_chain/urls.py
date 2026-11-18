@@ -2,7 +2,7 @@ from django.conf import settings
 from django.urls import path, re_path
 from django.views.generic import RedirectView
 
-from connect_labs.supply_chain import api_views, cells, start_here, views
+from connect_labs.supply_chain import api_views, cells, llo_views, start_here, views
 from connect_labs.supply_chain.alerts import views as alert_views
 from connect_labs.supply_chain.distribution import views as distribution_views
 from connect_labs.supply_chain.fulfilment import views as fulfilment_views
@@ -133,6 +133,10 @@ urlpatterns = [
     # sub-component one: procurement
     # Purchases (round 3, "organise Supply around workflows"): the list, and one page per purchase from
     # sizing to payment. Sourcing's list and the Orders list live here now; each old address still answers.
+    path("stock-by-llo/", llo_views.StockByLLOView.as_view(), name="stock_by_llo"),
+    path("stock-by-llo/<int:org_id>/", llo_views.LLOStockView.as_view(), name="llo_stock"),
+    path("this-week/", llo_views.ThisWeekView.as_view(), name="this_week"),
+    path("this-week/<int:org_id>/", llo_views.LLOWeekView.as_view(), name="llo_week"),
     path("purchases/", purchase_views.PurchasesView.as_view(), name="purchases"),
     path("purchases/<int:tender_id>/", purchase_views.PurchaseView.as_view(), name="purchase"),
     path(
