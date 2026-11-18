@@ -83,6 +83,15 @@ def test_unauthenticated_redirects_to_login(client):
 
 
 @pytest.mark.django_db
+def test_an_unknown_scope_is_not_reflected_as_html(client, logged_in_user):
+    # The scope comes from the link; answered as HTML it ran script on labs' origin.
+    url = reverse("mcp:admin_create_token")
+    resp = client.get(url, {"callback": VALID_CALLBACK, "state": VALID_STATE, "scope": "<script>x()</script>"})
+    assert resp.status_code == 400
+    assert resp["Content-Type"].startswith("text/plain")
+
+
+@pytest.mark.django_db
 def test_non_localhost_callback_rejected(client, logged_in_user):
     url = reverse("mcp:admin_create_token")
     for bad in [

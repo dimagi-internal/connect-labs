@@ -12,6 +12,7 @@ from connect_labs.labs.integrations.commcare.api_client import is_cchq_oauth_act
 from connect_labs.labs.integrations.connect.oauth import fetch_user_organization_data, is_connect_oauth_active
 from connect_labs.labs.integrations.ocs.api_client import is_ocs_oauth_active
 from connect_labs.utils.feature_access import user_has_feature_access
+from connect_labs.utils.safe_redirect import referer_or
 
 
 @login_required
@@ -21,7 +22,7 @@ def clear_context(request):
     clear_context_from_session(request)
 
     # Redirect to the referrer or labs overview
-    redirect_url = request.headers.get("referer", "/labs/overview/")
+    redirect_url = referer_or(request, "/labs/overview/")
 
     # Remove any context params from the redirect URL
     from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
@@ -48,7 +49,7 @@ def refresh_org_data(request):
     """Refresh organization data from Connect API."""
     if not request.user.is_authenticated:
         messages.error(request, "You must be logged in to refresh organization data.")
-        return HttpResponseRedirect(request.headers.get("referer", "/"))
+        return HttpResponseRedirect(referer_or(request, "/"))
 
     # Get OAuth token from session
     labs_oauth = request.session.get("labs_oauth")
@@ -86,7 +87,7 @@ def refresh_org_data(request):
         )
 
     # Redirect back to referrer
-    return HttpResponseRedirect(request.headers.get("referer", "/"))
+    return HttpResponseRedirect(referer_or(request, "/"))
 
 
 class ScoutEmbedView(LoginRequiredMixin, TemplateView):

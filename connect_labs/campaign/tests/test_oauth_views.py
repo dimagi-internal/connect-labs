@@ -110,3 +110,51 @@ def test_callback_rejects_bad_state(client):
     resp = client.get(reverse("campaign:oauth_callback"), {"code": "C", "state": "WRONG"})
     assert resp.status_code == 400
     assert "campaign_oauth" not in client.session
+
+
+_HQ = dict(
+    CAMPAIGN_BOOTSTRAP_ADMIN_DOMAINS=None,
+    COMMCARE_OAUTH_CLIENT_ID="cid",
+    COMMCARE_OAUTH_CLIENT_SECRET="sec",
+    COMMCARE_HQ_URL="https://hq.example",
+)
+
+
+def _callback(client, ident):
+    _prime_pkce(client)
+    with (
+        patch("connect_labs.campaign.auth.oauth_views.httpx.Client") as Client,
+        patch("connect_labs.campaign.auth.oauth_views.fetch_identity", return_value=ident),
+    ):
+        Client.return_value.__enter__.return_value.post.return_value = _token_resp()
+        return client.get(reverse("campaign:oauth_callback"), {"code": "C", "state": "STATE"})
+
+
+@pytest.mark.django_db
+@override_settings(**_HQ)
+def test_an_hq_email_field_cannot_sign_in_as_the_labs_user_who_owns_it(client):
+    # Anyone can make a CommCare project and give a mobile worker any email. Before
+    # 2026-11-18 that email both made them a campaign admin (a Dimagi domain) and
+    # signed them in AS the labs user holding it.
+    staff = User.objects.create(username="connectid-staff", email="staff@dimagi.com", name="Staff")
+    ident = {"username": "w1@evil-project.commcarehq.org", "email": "staff@dimagi.com", "name": "W", "domains": []}
+    resp = _callback(client, ident)
+    assert resp.status_code == 403
+    assert client.session.get("_auth_user_id") is None
+    assert not CampaignUser.objects.filter(commcare_username=ident["username"]).exists()
+    created = User.objects.get(username=ident["username"])
+    assert created.pk != staff.pk
+    assert created.email is None
+
+
+@pytest.mark.django_db
+@override_settings(**_HQ)
+def test_a_whitelisted_worker_with_someone_elses_email_gets_their_own_account(client):
+    staff = User.objects.create(username="connectid-staff", email="staff@dimagi.com", name="Staff")
+    CampaignUser.objects.create(commcare_username="w2@proj.commcarehq.org", role="reporting_user")
+    ident = {"username": "w2@proj.commcarehq.org", "email": "staff@dimagi.com", "name": "W", "domains": []}
+    resp = _callback(client, ident)
+    assert resp.status_code == 302
+    signed_in = int(client.session["_auth_user_id"])
+    assert signed_in != staff.pk
+    assert User.objects.get(pk=signed_in).email is None

@@ -20,6 +20,23 @@ def is_bootstrap_admin(email: str) -> bool:
     return domain in [d.lower().lstrip("@") for d in configured]
 
 
+def verified_email(identity: dict) -> str:
+    """The address CommCare HQ vouches for, or "".
+
+    HQ's identity API returns an ``email`` field that a project's admin can set to
+    anything on a user they manage (a mobile worker's email is never confirmed), so
+    it proves nothing about who is signing in. The one address HQ does stand behind
+    is a web user's login name, which IS their email. So an address counts only when
+    it is the HQ username itself. A mobile worker (``name@project.commcarehq.org``)
+    therefore never matches a Dimagi domain or anyone else's labs account.
+    """
+    username = (identity.get("username") or "").strip()
+    email = (identity.get("email") or "").strip()
+    if "@" in username and (not email or email.lower() == username.lower()):
+        return username
+    return ""
+
+
 def resolve_campaign_user(identity: dict, django_user) -> CampaignUser | None:
     username = identity.get("username") or ""
     email = identity.get("email") or ""
@@ -28,7 +45,10 @@ def resolve_campaign_user(identity: dict, django_user) -> CampaignUser | None:
     cu = CampaignUser.objects.filter(commcare_username=username).first()
 
     if cu is None:
-        if not is_bootstrap_admin(email):
+        # Bootstrap on the address HQ vouches for, never on the editable email field:
+        # otherwise anyone who can create a CommCare project could name a mobile
+        # worker x@dimagi.com and be made a campaign admin.
+        if not is_bootstrap_admin(verified_email(identity)):
             return None
         cu = CampaignUser(commcare_username=username, role="campaign_admin")
     elif not cu.is_active_member:

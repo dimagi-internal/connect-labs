@@ -21,6 +21,7 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
 from connect_labs.labs.models import UserCCHQToken
+from connect_labs.utils.safe_redirect import referer_or
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ def labs_commcare_initiate(request: HttpRequest) -> HttpResponseRedirect:
 
     if not client_id:
         messages.error(request, "CommCare OAuth not configured. Contact administrator.")
-        return redirect(request.headers.get("referer", "/audit/"))
+        return redirect(referer_or(request, "/audit/"))
 
     # Store next URL in session
     request.session["commcare_oauth_next"] = request.GET.get("next", "/audit/")
@@ -203,5 +204,5 @@ def labs_commcare_logout(request: HttpRequest) -> HttpResponseRedirect:
     messages.info(request, "Disconnected from CommCare.")
 
     # Redirect back to referrer or labs overview
-    redirect_url = request.headers.get("referer", "/labs/overview/")
+    redirect_url = referer_or(request, "/labs/overview/")
     return redirect(redirect_url)
