@@ -125,6 +125,11 @@ def _aws(args: list[str], timeout: int = 120) -> dict | list:
     return json.loads(proc.stdout or "{}")
 
 
+def _now() -> datetime:
+    """The current time in UTC. One seam, so tests can pin the clock."""
+    return datetime.now(timezone.utc)
+
+
 def _window(hours: int, period: int = 300) -> tuple[str, str]:
     """UTC window with an explicit Z, FLOORED to the period. Never local time.
 
@@ -145,7 +150,7 @@ def _window(hours: int, period: int = 300) -> tuple[str, str]:
     verdict that shifts with the minute you ran it is not comparable across
     runs, and here it is not comparable with the pager either.
     """
-    now = datetime.now(timezone.utc)
+    now = _now()
     # timestamp() carries the sub-second part, so one modulo floors whole
     # seconds and microseconds together -- subtracting .microsecond as well
     # would take it off twice.
@@ -492,6 +497,13 @@ def collect(hours: int) -> dict:
     ]
     alarms = [{"name": a["AlarmName"], "state": a["StateValue"]} for a in raw_alarms]
     paging = {a["AlarmName"] for a in raw_alarms if a.get("ActionsEnabled") and a.get("AlarmActions")}
+    # History runs to NOW, not to the floored `end`. The floor exists so metric
+    # buckets line up with the alarm's; a state transition has no bucket. With the
+    # floored end, a page in the last <period> minutes falls outside the window,
+    # which is exactly when an alarm turn runs this: on 2026-11-18 the CPU page
+    # fired 09:51:29Z, the window ended 09:50:00Z, and the verdict said "healthy"
+    # beside "alarms firing: labs-jj-web-cpu-high-actionable".
+    history_end = _now().strftime("%Y-%m-%dT%H:%M:%SZ")
     paged_in_window = _paged_from_history(
         _aws(
             [
@@ -505,7 +517,7 @@ def collect(hours: int) -> dict:
                 "--start-date",
                 start,
                 "--end-date",
-                end,
+                history_end,
             ]
         ).get("AlarmHistoryItems", []),
         paging,
