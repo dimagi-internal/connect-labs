@@ -71,3 +71,20 @@ def test_deactivated_whitelist_row_is_denied():
     u = User.objects.get(username="gone@other.org")
     identity = {"username": "gone@other.org", "email": "gone@other.org", "name": "Gone", "domains": []}
     assert whitelist.resolve_campaign_user(identity, u) is None
+
+
+def test_only_the_hq_login_name_is_a_vouched_email():
+    assert whitelist.verified_email({"username": "a@dimagi.com", "email": "a@dimagi.com"}) == "a@dimagi.com"
+    assert whitelist.verified_email({"username": "a@dimagi.com", "email": ""}) == "a@dimagi.com"
+    # A mobile worker's email field is whatever its project admin typed.
+    assert whitelist.verified_email({"username": "w@p.commcarehq.org", "email": "a@dimagi.com"}) == ""
+    assert whitelist.verified_email({"username": "a@dimagi.com", "email": "b@dimagi.com"}) == ""
+    assert whitelist.verified_email({"username": "plain", "email": "a@dimagi.com"}) == ""
+
+
+@pytest.mark.django_db
+@override_settings(CAMPAIGN_BOOTSTRAP_ADMIN_DOMAINS=None)
+def test_a_claimed_dimagi_email_is_not_a_bootstrap_admin():
+    u = User.objects.create(username="w@p.commcarehq.org", name="W")
+    identity = {"username": "w@p.commcarehq.org", "email": "boss@dimagi.com", "name": "W", "domains": []}
+    assert whitelist.resolve_campaign_user(identity, u) is None

@@ -19,6 +19,8 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
+from connect_labs.utils.safe_redirect import referer_or
+
 logger = logging.getLogger(__name__)
 
 
@@ -34,7 +36,7 @@ def labs_ocs_initiate(request: HttpRequest) -> HttpResponseRedirect:
 
     if not client_id:
         messages.error(request, "Open Chat Studio OAuth not configured. Contact administrator.")
-        return redirect(request.headers.get("referer", "/labs/overview/"))
+        return redirect(referer_or(request, "/labs/overview/"))
 
     # Store next URL in session
     request.session["ocs_oauth_next"] = request.GET.get("next", "/labs/overview/")
@@ -190,5 +192,5 @@ def labs_ocs_logout(request: HttpRequest) -> HttpResponseRedirect:
     messages.info(request, "Disconnected from Open Chat Studio.")
 
     # Redirect back to referrer or labs overview
-    redirect_url = request.headers.get("referer", "/labs/overview/")
+    redirect_url = referer_or(request, "/labs/overview/")
     return redirect(redirect_url)

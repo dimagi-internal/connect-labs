@@ -21,7 +21,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from connect_labs.campaign.auth.identity import IdentityError, fetch_identity
-from connect_labs.campaign.auth.whitelist import resolve_campaign_user
+from connect_labs.campaign.auth.whitelist import resolve_campaign_user, verified_email
 from connect_labs.users.models import User
 
 logger = logging.getLogger(__name__)
@@ -127,13 +127,21 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
     # person may already exist under a different OAuth username (e.g. a ConnectID
     # from a prior Connect login) with this email. Reusing that row avoids a
     # duplicate-email IntegrityError on the unique_user_email constraint.
-    email = identity.get("email") or None
+    #
+    # Only an address HQ vouches for (the web user's login name, `verified_email`)
+    # may join an existing account. HQ's `email` field is editable by any project
+    # admin, so trusting it let anyone who made a CommCare project name a mobile
+    # worker after a labs user and be signed in AS that user, on every path the
+    # labs session boundary skips (/admin/, /o/ ...). An unvouched address is never
+    # stored on the user either: labs reads a user's email as who they are
+    # (`is_dimagi_user`), so a claimed x@dimagi.com would make them Dimagi.
     name = identity.get("name") or ""
+    vouched = verified_email(identity) or None
     django_user = User.objects.filter(username=username).first()
-    if django_user is None and email:
-        django_user = User.objects.filter(email=email).first()
+    if django_user is None and vouched:
+        django_user = User.objects.filter(email__iexact=vouched).first()
     if django_user is None:
-        django_user = User.objects.create(username=username, email=email, name=name)
+        django_user = User.objects.create(username=username, email=vouched, name=name)
     elif name and django_user.name != name:
         django_user.name = name
         django_user.save(update_fields=["name"])

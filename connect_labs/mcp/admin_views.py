@@ -60,7 +60,11 @@ def create_token_browser(request):
     scope = request.GET.get("scope") or request.POST.get("scope") or token_scopes.FULL
     scope_labels = dict(token_scopes.SCOPE_CHOICES)
     if scope not in scope_labels:
-        return HttpResponseBadRequest(f"Unknown scope {scope!r}")
+        # Not echoed: the scope is the link's own text, and this response is HTML.
+        known = ", ".join(scope_labels)
+        return HttpResponseBadRequest(
+            f"Unknown scope. Known scopes: {known}", content_type="text/plain; charset=utf-8"
+        )
 
     # ``?temporary=1`` (``labs-token-setup --temporary``): the page says how long it lasts.
     temporary = (request.GET.get("temporary") or request.POST.get("temporary")) == "1"
