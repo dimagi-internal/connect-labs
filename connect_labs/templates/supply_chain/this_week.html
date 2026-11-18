@@ -1,0 +1,40 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+This week (round 3, step 2): each LLO's handout for the week, side by side. Plan and Distribution become one page per
+LLO (llo_week.html); this is the list that opens it. About FLWs: restocking a store is on the LLO's stock page.
+{% endcomment %}
+
+{% block supply_content %}
+{% if not has_program_context %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4"><h3 class="text-lg font-semibold text-blue-900">No program selected</h3></div>
+{% else %}
+<div class="mb-4">
+  <h2 class="text-xl font-semibold text-brand-deep-purple">This week</h2>
+  <p class="mt-0.5 text-sm text-gray-600">What each local partner (LLO) hands out to its FLWs, and what is still to confirm.</p>
+</div>
+<div class="bg-white rounded-lg shadow-sm overflow-hidden">
+  <div class="overflow-x-auto" tabindex="0" role="region" aria-label="LLOs, scrolls sideways">
+  <table class="min-w-[40rem] w-full divide-y divide-gray-200" data-testid="week-table">
+    <thead class="bg-gray-50"><tr>
+      <th class="px-4 py-2 text-left">Local partner (LLO)</th><th class="px-4 py-2 text-left">Handouts, last two weeks</th>
+      <th class="px-4 py-2 text-left">To confirm</th><th class="px-4 py-2 text-left">FLWs low</th>
+    </tr></thead>
+    <tbody class="divide-y divide-gray-200">
+      {% for r in rows %}
+      <tr data-testid="week-row">
+        <td class="px-4 py-2 text-sm"><a class="font-medium text-brand-indigo hover:underline" href="{{ r.week_url }}">{{ r.name }}</a></td>
+        <td class="px-4 py-2 text-sm text-gray-700">{{ r.handouts_recent }}</td>
+        <td class="px-4 py-2 text-sm text-gray-700">{{ r.handouts_to_confirm }}</td>
+        <td class="px-4 py-2 text-sm text-gray-700">{{ r.flws_low }} of {{ r.flws }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="4" class="px-4 py-6 text-center text-gray-600">No LLO hands out stock in this program yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

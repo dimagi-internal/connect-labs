@@ -1,0 +1,59 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+Stock by LLO (round 3, step 2): every local partner side by side, one row each, in place of reading Stock, Network,
+Map and Workers one after another. A row opens that LLO's stock page. The figures are the Partners cards' own
+(partners/status.py), so the two cannot disagree. The roll-up at the top is the program-wide picture for a funder.
+{% endcomment %}
+
+{% block supply_content %}
+{% if not has_program_context %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4"><h3 class="text-lg font-semibold text-blue-900">No program selected</h3></div>
+{% else %}
+<div class="mb-4 flex flex-wrap items-end justify-between gap-4">
+  <div>
+    <h2 class="text-xl font-semibold text-brand-deep-purple">Stock by LLO</h2>
+    <p class="mt-0.5 text-sm text-gray-600">How much each local partner (LLO) has. Open one for its stock locations and FLWs.</p>
+  </div>
+  <nav class="flex items-center gap-1 text-sm" aria-label="List or map" data-testid="list-map-switch">
+    <span class="rounded-md bg-brand-indigo px-3 py-1 text-white" aria-current="true">List</span>
+    <a class="rounded-md border border-gray-300 px-3 py-1 text-gray-700 hover:bg-gray-50" href="{% url 'supply_chain:programme_map' %}">Map</a>
+  </nav>
+</div>
+
+<div class="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5" data-testid="llo-roll-up">
+  <div class="stat-tile"><div class="stat-tile-label">LLOs</div><div class="stat-tile-value">{{ roll.llos }}</div></div>
+  <div class="stat-tile"><div class="stat-tile-label">FLWs</div><div class="stat-tile-value">{{ roll.flws }}</div></div>
+  <div class="stat-tile"><div class="stat-tile-label">FLWs low</div><div class="stat-tile-value">{{ roll.flws_low }}</div></div>
+  <div class="stat-tile"><div class="stat-tile-label">Open issues</div><div class="stat-tile-value">{{ roll.open_issues }}</div></div>
+  <div class="stat-tile"><div class="stat-tile-label">Handouts to confirm</div><div class="stat-tile-value">{{ roll.unconfirmed_handouts }}</div></div>
+</div>
+
+<div class="bg-white rounded-lg shadow-sm overflow-hidden">
+  <div class="overflow-x-auto" tabindex="0" role="region" aria-label="LLOs, scrolls sideways">
+  <table class="min-w-[48rem] w-full divide-y divide-gray-200" data-testid="llo-table">
+    <thead class="bg-gray-50"><tr>
+      <th class="px-4 py-2 text-left">Local partner (LLO)</th><th class="px-4 py-2 text-left">Holds</th>
+      <th class="px-4 py-2 text-left">RUTF stock locations</th><th class="px-4 py-2 text-left">FLWs</th>
+      <th class="px-4 py-2 text-left">Open issues</th><th class="px-4 py-2 text-left">Next delivery</th>
+    </tr></thead>
+    <tbody class="divide-y divide-gray-200">
+      {% for r in rows %}
+      <tr data-testid="llo-row">
+        <td class="px-4 py-2 text-sm"><a class="font-medium text-brand-indigo hover:underline" href="{{ r.url }}">{{ r.name }}</a></td>
+        <td class="px-4 py-2 text-sm text-gray-700">{{ r.stock_text }}</td>
+        <td class="px-4 py-2 text-sm text-gray-700">{{ r.locations }}</td>
+        <td class="px-4 py-2 text-sm text-gray-700">{{ r.flws }}{% if r.flws_low %} <span class="text-message-warning-text">({{ r.flws_low }} low)</span>{% endif %}</td>
+        <td class="px-4 py-2 text-sm text-gray-700">{{ r.open_issues }}</td>
+        <td class="px-4 py-2 text-sm text-gray-700">{{ r.next_delivery|default:"none on the way" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6" class="px-4 py-6 text-center text-gray-600">No LLO runs a stock location in this program yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

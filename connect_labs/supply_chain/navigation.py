@@ -34,6 +34,10 @@ TAB_GROUPS = (
     (
         "Distribution and stock",
         (
+            # Round 3, step 2: one page per LLO for how much it has, and one for the week's handout. The pages they
+            # gather (Network, Stock, Workers, Plan...) stay in the menu until the new menu replaces them (step 3).
+            ("supply_chain:stock_by_llo", "Stock by LLO"),
+            ("supply_chain:this_week", "This week"),
             ("supply_chain:network", "Network"),
             ("supply_chain:partners", "Partners"),
             ("supply_chain:programme_map", "Map"),
@@ -107,6 +111,8 @@ TAB_ICONS = {
     "supply_chain:home": "fa-house",
     "supply_chain:start_here": "fa-book-open",
     "supply_chain:purchases": "fa-cart-shopping",
+    "supply_chain:stock_by_llo": "fa-boxes-stacked",
+    "supply_chain:this_week": "fa-calendar-check",
     "supply_chain:suppliers": "fa-industry",
     "supply_chain:network": "fa-diagram-project",
     "supply_chain:partners": "fa-handshake",
@@ -125,6 +131,9 @@ TAB_ICONS = {
     "supply_chain:update_links": "fa-link",
 }
 PIN_ICON = "fa-table-columns"
+
+# The two tabs round 3's step 2 added: off in the compact layout, which keeps the menu it chose.
+LLO_TABS = {"supply_chain:stock_by_llo", "supply_chain:this_week"}
 
 # The two tabs Purchases replaced, as a programme may still have them switched off in Settings.
 LEGACY_BUYING_TABS = {"supply_chain:procurement_tender_board", "supply_chain:orders"}
@@ -146,6 +155,8 @@ PAGE_PURPOSE = {
     "supply_chain:home": "What is open, and who to chase.",
     "supply_chain:start_here": "What each part is for, step by step.",
     "supply_chain:purchases": "Every purchase, from sizing to payment.",
+    "supply_chain:stock_by_llo": "How much each LLO has, side by side.",
+    "supply_chain:this_week": "What each LLO hands out this week, and what to confirm.",
     "supply_chain:suppliers": "The companies you may buy from.",
     "supply_chain:network": "Where stock is kept, and what each place holds.",
     "supply_chain:partners": "Which partner runs which place, and how they hand out.",
@@ -199,6 +210,8 @@ TAB_FOR_VIEW = {
     "supply_chain:orders": "supply_chain:purchases",
     "supply_chain:purchase": "supply_chain:purchases",
     "supply_chain:purchase_outside_tender": "supply_chain:purchases",
+    "supply_chain:llo_stock": "supply_chain:stock_by_llo",
+    "supply_chain:llo_week": "supply_chain:this_week",
     # Overview at its own address, which its tab links to: /supply/ itself may
     # open on another tab (landing.py).
     "supply_chain:overview": "supply_chain:home",
@@ -434,6 +447,9 @@ def hidden_tabs(request) -> set[str]:
     from connect_labs.supply_chain.config import hidden_from
 
     hidden = hidden_from(_program_tabs(request))
+    if compact_layout(request):
+        # The compact menu (the chlorine programs' own choice) is not changed by round 3's RUTF pages.
+        hidden = hidden | LLO_TABS
     # Sourcing and Orders became one Purchases tab: a programme that had turned off both has no use for it either.
     if LEGACY_BUYING_TABS <= hidden:
         hidden = hidden | {"supply_chain:purchases"}

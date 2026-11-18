@@ -1,0 +1,73 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+One LLO's week (round 3, step 2): what to give each FLW, record what was given, confirm it arrived, and the flags to
+follow up. Plan and Distribution in one page. Mainly for the LLO; the program team can open it too. The buttons are the
+Distribution page's own actions, returning here.
+{% endcomment %}
+
+{% block supply_content %}
+{% if not has_program_context %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4"><h3 class="text-lg font-semibold text-blue-900">No program selected</h3></div>
+{% else %}
+<div class="flex flex-col gap-5" data-testid="llo-week">
+  <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-600" aria-label="Breadcrumb">
+    <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:this_week' %}">This week</a><span aria-hidden="true">›</span><span>{{ llo.name }}</span>
+  </nav>
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <h1 class="text-2xl font-semibold text-brand-deep-purple" data-testid="week-title">{{ llo.name }}: this week</h1>
+    {% if not supply_as_of %}
+    <div class="flex flex-wrap items-center gap-2.5">
+      <a href="{{ llo.links.plan_one }}" class="button button-md outline-style">Plan a handout</a>
+      <a href="{{ llo.links.record }}" class="button button-md primary-dark">Record a handout</a>
+    </div>
+    {% endif %}
+  </div>
+
+  <section class="card_bg border-brand-border-light border" data-testid="week-flags">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-2">Who to give to</h2>
+    <p class="text-sm text-gray-700">
+      {% if llo.flws_low %}{{ llo.flws_low|length }} of {{ llo.flws|length }} FLWs are low:
+      {% for f in llo.flws_low %}<a class="text-brand-indigo hover:underline" href="{{ f.url }}">{{ f.name }}</a> ({{ f.holds }}){% if not forloop.last %}, {% endif %}{% endfor %}.
+      {% else %}No FLW is low.{% endif %}
+      <a class="ml-1 text-brand-indigo hover:underline" href="{{ llo.links.plan }}" data-testid="plan-link">What to give each FLW (the plan)</a>
+    </p>
+  </section>
+
+  <section class="card_bg border-brand-border-light border" data-testid="week-handouts">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-2">Handouts to record and confirm</h2>
+    <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Handouts, scrolls sideways">
+      <table class="w-full min-w-[40rem] divide-y divide-gray-200">
+        <thead><tr><th class="px-3 py-2 text-left">Handout</th><th class="px-3 py-2 text-left">From</th><th class="px-3 py-2 text-left">FLWs</th><th class="px-3 py-2 text-left">Where it stands</th>{% if not supply_as_of %}<th class="px-3 py-2 text-right"><span class="sr-only">Actions</span></th>{% endif %}</tr></thead>
+        <tbody class="divide-y divide-gray-200">
+          {% for h in llo.handouts %}
+          <tr data-testid="week-handout">
+            <td class="px-3 py-2 text-sm">{{ h.reference }}<div class="text-xs text-gray-600">{{ h.on }}</div></td>
+            <td class="px-3 py-2 text-sm">{{ h.from }}</td>
+            <td class="px-3 py-2 text-sm">{{ h.flws }}</td>
+            <td class="px-3 py-2 text-sm">{{ h.status }}{% if h.unreceived %}<div class="text-xs text-gray-600">{{ h.unreceived }} not yet confirmed as received</div>{% endif %}</td>
+            {% if not supply_as_of %}<td class="px-3 py-2 text-right whitespace-nowrap">
+              {% if h.to_confirm %}<form method="post" action="{{ h.confirm_url }}" class="inline">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button type="submit" class="button button-sm primary-dark" data-testid="confirm-as-planned">Confirm as planned</button></form>{% endif %}
+              {% if h.unreceived %}<form method="post" action="{{ h.received_url }}" class="inline">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button type="submit" class="button button-sm outline-style" data-testid="mark-received">All received</button></form>{% endif %}
+              <a class="ml-1 text-sm text-brand-indigo hover:underline" href="{{ h.message_url }}">From a message</a>
+            </td>{% endif %}
+          </tr>
+          {% empty %}<tr><td colspan="5" class="px-3 py-4 text-sm text-gray-600">No handout in the last two weeks and none waiting to be confirmed.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <a class="mt-2 inline-block text-sm text-brand-indigo hover:underline" href="{{ llo.links.distribution }}">Every handout of this LLO</a>
+  </section>
+
+  <section class="card_bg border-brand-border-light border" data-testid="week-issues">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-2">Flags to follow up <span class="text-sm font-normal text-gray-600">{{ llo.issues|length }}</span></h2>
+    <ul class="flex flex-col gap-1 text-sm">
+      {% for i in llo.issues %}<li>{{ i.kind|capfirst }}: {{ i.quantity }} at {{ i.where }}{% if i.taken_by %}, taken by {{ i.taken_by }}{% endif %} · {{ i.status }} · {{ i.days }} days</li>
+      {% empty %}<li class="text-gray-600">Nothing open.</li>{% endfor %}
+    </ul>
+    <p class="mt-2 text-sm"><a class="text-brand-indigo hover:underline" href="{{ llo.links.issues }}">All issues</a> · <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:llo_stock' llo.org_id %}">{{ llo.name }}'s stock page</a></p>
+  </section>
+</div>
+{% endif %}
+{% endblock %}

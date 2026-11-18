@@ -242,6 +242,16 @@ def _run(request, distribution_id):
     return found
 
 
+def _back_to(request, default: str) -> str:
+    """Where a handout button returns: the page it was pressed on when it says so (`next`), else the usual page."""
+    from django.utils.http import url_has_allowed_host_and_scheme
+
+    back = request.POST.get("next") or ""
+    if back.startswith("/supply/") and url_has_allowed_host_and_scheme(back, {request.get_host()}):
+        return back
+    return default
+
+
 class DistributionConfirmAsPlannedView(OperationActionView):
     """One button: what was planned is what was given. The prepared list, confirmed."""
 
@@ -261,7 +271,7 @@ class DistributionConfirmAsPlannedView(OperationActionView):
         }
 
     def redirect_to(self, **kwargs):
-        return reverse("supply_chain:distribution")
+        return _back_to(self.request, reverse("supply_chain:distribution"))
 
 
 class DistributionReceivedView(OperationActionView):
@@ -285,7 +295,7 @@ class DistributionReceivedView(OperationActionView):
         }
 
     def redirect_to(self, **kwargs):
-        return reverse("supply_chain:distribution")
+        return _back_to(self.request, reverse("supply_chain:distribution"))
 
 
 class DistributionReceivedAllView(OperationActionView):
@@ -304,7 +314,7 @@ class DistributionReceivedAllView(OperationActionView):
         return {"distribution_id": run.pk, "exceptions": exceptions}
 
     def redirect_to(self, **kwargs):
-        return reverse("supply_chain:distribution")
+        return _back_to(self.request, reverse("supply_chain:distribution"))
 
 
 @method_decorator(login_required, name="dispatch")

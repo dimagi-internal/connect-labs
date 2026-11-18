@@ -1,0 +1,95 @@
+{% extends 'supply_chain/base.html' %}
+{% load supply_chain_extras %}
+
+{% comment %}
+One LLO's stock page (round 3, step 2): its RUTF stock locations and FLWs with what each holds, the open issues, the
+deliveries due, and where its stock went. Restocking a store is here too (Send stock, the suggested deliveries, the
+stores plan); "This week" stays about FLWs. The pages this gathers (Network, Stock, Workers, Where it went, Movements)
+are one click away, filtered to this LLO.
+{% endcomment %}
+
+{% block supply_content %}
+{% if not has_program_context %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-4"><h3 class="text-lg font-semibold text-blue-900">No program selected</h3></div>
+{% else %}
+<div class="flex flex-col gap-5" data-testid="llo-stock">
+  <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-600" aria-label="Breadcrumb">
+    <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:stock_by_llo' %}">Stock by LLO</a><span aria-hidden="true">›</span><span>{{ llo.name }}</span>
+  </nav>
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <h1 class="text-2xl font-semibold text-brand-deep-purple" data-testid="llo-title">{{ llo.name }}</h1>
+    {% if not supply_as_of %}
+    <div class="flex flex-wrap items-center gap-2.5">
+      <a href="{{ llo.links.this_week }}" class="button button-md outline-style">This week</a>
+      <details class="relative" data-testid="send-stock-menu">
+        <summary class="button button-md primary-dark list-none [&::-webkit-details-marker]:hidden" role="button">Send stock</summary>
+        <div class="border-brand-border-light absolute right-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 text-sm shadow-sm">
+          {% for p in llo.places %}<a class="text-brand-indigo hover:underline" href="{{ p.send_url }}">From {{ p.name }}</a>{% endfor %}
+          <a class="text-brand-indigo hover:underline" href="{{ llo.links.suggestions }}">Suggested deliveries</a>
+          <a class="text-brand-indigo hover:underline" href="{{ llo.links.restocking }}">The stores plan: enough until the next delivery?</a>
+          <a class="text-brand-indigo hover:underline" href="{{ llo.links.count }}">Count stock</a>
+          <a class="text-brand-indigo hover:underline" href="{{ llo.links.record_movement }}">Record a movement</a>
+        </div>
+      </details>
+    </div>
+    {% endif %}
+  </div>
+
+  <section class="card_bg border-brand-border-light border" data-testid="llo-places">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-2">RUTF stock locations</h2>
+    <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Stock locations, scrolls sideways">
+      <table class="w-full min-w-[32rem] divide-y divide-gray-200">
+        <thead><tr><th class="px-3 py-2 text-left">Location</th><th class="px-3 py-2 text-left">Holds</th><th class="px-3 py-2 text-left">Looked after by</th></tr></thead>
+        <tbody class="divide-y divide-gray-200">
+          {% for p in llo.places %}
+          <tr data-testid="llo-place"><td class="px-3 py-2 text-sm">{{ p.name }}</td><td class="px-3 py-2 text-sm">{{ p.holds }}{% if p.status %} <span class="text-xs text-gray-600">({{ p.status }})</span>{% endif %}</td><td class="px-3 py-2 text-sm text-gray-700">{{ p.keeper|default:"—" }}</td></tr>
+          {% empty %}<tr><td colspan="3" class="px-3 py-4 text-sm text-gray-600">No stock location recorded for this LLO.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card_bg border-brand-border-light border" data-testid="llo-flws">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-2">FLWs <span class="text-sm font-normal text-gray-600">{{ llo.flws|length }}{% if llo.flws_low %}, {{ llo.flws_low|length }} low{% endif %}</span></h2>
+    <div class="overflow-x-auto" tabindex="0" role="region" aria-label="FLWs, scrolls sideways">
+      <table class="w-full min-w-[28rem] divide-y divide-gray-200">
+        <thead><tr><th class="px-3 py-2 text-left">FLW</th><th class="px-3 py-2 text-left">Holds</th></tr></thead>
+        <tbody class="divide-y divide-gray-200">
+          {% for f in llo.flws %}
+          <tr data-testid="llo-flw"><td class="px-3 py-2 text-sm"><a class="text-brand-indigo hover:underline" href="{{ f.url }}">{{ f.name }}</a></td><td class="px-3 py-2 text-sm">{{ f.holds }}{% if f.low %} <span class="text-message-warning-text">({{ f.status }})</span>{% endif %}</td></tr>
+          {% empty %}<tr><td colspan="2" class="px-3 py-4 text-sm text-gray-600">No FLW holds stock for this LLO.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card_bg border-brand-border-light border" data-testid="llo-issues">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-2">Open issues <span class="text-sm font-normal text-gray-600">{{ llo.issues|length }}</span></h2>
+    <ul class="flex flex-col gap-1 text-sm">
+      {% for i in llo.issues %}<li data-testid="llo-issue">{{ i.kind|capfirst }}: {{ i.quantity }} at {{ i.where }}{% if i.taken_by %}, taken by {{ i.taken_by }}{% endif %} · {{ i.status }} · {{ i.days }} days</li>
+      {% empty %}<li class="text-gray-600">Nothing open.</li>{% endfor %}
+    </ul>
+    <a class="mt-2 inline-block text-sm text-brand-indigo hover:underline" href="{{ llo.links.issues }}">All of this LLO's issues</a>
+  </section>
+
+  <section class="card_bg border-brand-border-light border" data-testid="llo-deliveries">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-2">Deliveries on the way</h2>
+    <ul class="flex flex-col gap-1 text-sm">
+      {% for d in llo.deliveries %}<li data-testid="llo-delivery"><a class="text-brand-indigo hover:underline" href="{{ d.url }}">{{ d.reference }}</a>, expected {{ d.expected }}</li>
+      {% empty %}<li class="text-gray-600">None.</li>{% endfor %}
+    </ul>
+  </section>
+
+  <section class="card_bg border-brand-border-light border" data-testid="llo-more">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-2">More on this LLO</h2>
+    <p class="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+      <a class="text-brand-indigo hover:underline" href="{{ llo.links.where_it_went }}">Where its RUTF went</a>
+      <a class="text-brand-indigo hover:underline" href="{{ llo.links.movements }}">History: every movement</a>
+      <a class="text-brand-indigo hover:underline" href="{{ llo.links.network }}">Network</a>
+      <a class="text-brand-indigo hover:underline" href="{{ llo.links.workers }}">FLW stock, by cover</a>
+      <a class="text-brand-indigo hover:underline" href="{{ llo.links.llo_card }}">Its card: contact and how it hands out</a>
+    </p>
+  </section>
+</div>
+{% endif %}
+{% endblock %}
