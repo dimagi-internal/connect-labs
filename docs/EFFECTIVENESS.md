@@ -172,10 +172,15 @@ call**, so there is one way to do each thing:
 `scn.apply` changes a scenario in the link's own words (the keys `params()` writes, the ones `cea_scenario_save` takes), so a
 saved scenario, a pasted link and the agent all say it one way; `scenario.test.js` round-trips the contract link through it.
 Page-action specs use canopy's `parameters` key (not `input_schema`, which canopy ignores). A delete always asks the person
-in their tab first. The actions: `describeScreen`, `changeScenario`, `resetScenario`, `setMapColouring`, `selectPlace`,
+in their tab first. The actions: `changeScenario`, `resetScenario`, `setMapColouring`, `selectPlace`,
 `saveScenario`, `updateScenario`, `moveScenarioToGroup`, `createGroup`, `deleteScenario`, `moveScenarioInGroup`,
 `removeScenarioFromGroup`, `editGroup`, `rebaselineGroup`, `deleteGroup`, and the moves `openScenario`, `openGroup`,
 `compareAgainst`, `checkAgainstToday`, `highlightScenario`. Add an operation to the page first, then a thin action over it.
+
+What the person is looking at reaches the agent as **page state** (`widget.provideContext`, pulled when a conversation opens, and
+`widget.setPageState`, pushed on every change), not through an action. How to use the actions is
+`effectiveness/agent_guidance.py`, returned by `cea_scenarios` / `cea_scenario_groups` to a canopy caller as the Data page's
+`data_describe` does for its own; `test_agent_guidance.py` holds it to the actions `agent.js` registers.
 
 ### Saved scenarios
 

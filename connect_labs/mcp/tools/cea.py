@@ -704,9 +704,9 @@ def cea_scenarios(user, *, id=None, run=False):
 
     try:
         if id is None:
-            return saved.listing(user)
+            return _for_canopy(saved.listing(user))
         record = saved.get(user, id)
-        out = saved.as_dict(record, user)
+        out = _for_canopy(saved.as_dict(record, user))
         if run:
             try:
                 out["market"] = sizing.market_of(saved.scenario_of(record))
@@ -715,6 +715,15 @@ def cea_scenarios(user, *, id=None, run=False):
         return out
     except saved.SavedError as exc:
         raise _saved_error(exc) from None
+
+
+def _for_canopy(out: dict) -> dict:
+    """Add how to use the scenario pages' own actions, for a caller that is canopy's panel (the only one with them)."""
+    from connect_labs.effectiveness import agent_guidance
+
+    from .labsdata import _from_canopy
+
+    return {**out, "page_actions": agent_guidance.PAGE_ACTIONS} if _from_canopy() else out
 
 
 @register(
@@ -866,12 +875,12 @@ def cea_scenario_groups(user, *, id=None, compare=True, reference=None, rebaseli
 
     try:
         if id is None:
-            return {"groups": scenario_groups.listing(user)}
+            return _for_canopy({"groups": scenario_groups.listing(user)})
         group = scenario_groups.get(user, id)
         if not compare:
-            return scenario_groups.as_dict(group, user)
+            return _for_canopy(scenario_groups.as_dict(group, user))
         data = scenario_groups.compare_group(user, group, reference=reference, rebaseline=rebaseline)
-        return _jsonable(data)
+        return _for_canopy(_jsonable(data))
     except saved.SavedError as exc:
         raise _saved_error(exc) from None
 

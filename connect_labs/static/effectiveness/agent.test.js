@@ -1,8 +1,11 @@
 // What the canopy agent is told it can do (./agent.js), and that each action calls what the page's own buttons call.
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 let page;
+afterEach(() => {
+  vi.useRealTimers();
+});
 beforeEach(() => {
   page = { pathname: '/labs/cea/workspace/', search: '' };
   globalThis.window = globalThis;
@@ -53,7 +56,6 @@ describe('what the agent is told', () => {
         'createGroup',
         'deleteGroup',
         'deleteScenario',
-        'describeScreen',
         'editGroup',
         'highlightScenario',
         'moveScenarioInGroup',
@@ -69,6 +71,49 @@ describe('what the agent is told', () => {
         'updateScenario',
       ].sort(),
     );
+  });
+});
+
+describe('what the agent sees', () => {
+  it('is lent as page state: pulled on open and pushed when the scenario changes', () => {
+    vi.useFakeTimers();
+    let ready;
+    document.addEventListener = (name, fn) => {
+      if (name === 'canopy:ready') ready = fn;
+    };
+    let onChange;
+    window.EffPage = {
+      data: { loaded: null },
+      scn: {
+        params: () => new URLSearchParams('models=kc'),
+        onChange: (fn) => (onChange = fn),
+      },
+    };
+    // eslint-disable-next-line no-eval
+    eval(readFileSync(new URL('./agent.js', import.meta.url), 'utf8'));
+    const host = {
+      widget: {
+        registerAction: vi.fn(),
+        provideContext: vi.fn(),
+        setPageState: vi.fn(),
+      },
+    };
+    ready({ detail: host });
+    expect(host.widget.registerAction).toHaveBeenCalledTimes(
+      Object.keys(window.CEA_AGENT_ACTIONS).length,
+    );
+    const lend = host.widget.provideContext.mock.calls[0][0];
+    expect(lend()).toMatchObject({
+      page: 'workspace',
+      settings: { models: 'kc' },
+    });
+    vi.advanceTimersByTime(500);
+    expect(host.widget.setPageState).toHaveBeenCalledTimes(1);
+    onChange();
+    onChange();
+    vi.advanceTimersByTime(500);
+    expect(host.widget.setPageState).toHaveBeenCalledTimes(2); // one push for a burst of changes
+    vi.useRealTimers();
   });
 });
 
