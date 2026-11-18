@@ -11,7 +11,7 @@ from connect_labs.labs.tests.test_settings import LABS_SETTINGS
 
 @pytest.fixture
 def user(db):
-    return get_user_model().objects.create_user(username="tester", password="pw")
+    return get_user_model().objects.create_user(username="tester", password="pw", email="tester@dimagi.com")
 
 
 @pytest.fixture
@@ -262,3 +262,28 @@ def test_dump_stream_uploads_detail_endpoint_as_bare_dict(authed_client_dump, mo
     uploaded_json = json.loads(opp_upload[2])
     assert isinstance(uploaded_json, dict)
     assert uploaded_json == {"id": 42, "name": "Demo A", "organization": "march-demo"}
+
+
+@override_settings(**LABS_SETTINGS)
+@pytest.mark.django_db
+def test_a_partner_cannot_dump_even_their_own_opportunity(client, settings, monkeypatch):
+    # The dump copies raw production exports to Dimagi's Drive, unscrubbed.
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent-abc"
+    partner = get_user_model().objects.create_user(username="p", password="pw", email="p@partner.org")
+    client.force_login(partner)
+    session = client.session
+    session["labs_oauth"] = {
+        "access_token": "tok",
+        "organization_data": {"opportunities": [{"id": 42, "name": "Theirs"}]},
+    }
+    session["labs_context"] = {"opportunity_id": 42}
+    session.save()
+
+    from connect_labs.labs.synthetic import dump
+
+    uploads = []
+    monkeypatch.setattr(dump, "DriveClient", lambda: uploads.append(1) or FakeDrive())
+
+    events = _collect_events(client.get(reverse("labs:synthetic:dump_stream")))
+    assert any("PermissionDenied" in (e.get("error") or "") for e in events), events
+    assert uploads == []

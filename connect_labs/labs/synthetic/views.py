@@ -25,6 +25,7 @@ from connect_labs.labs.synthetic.forms import LabsOnlySyntheticOpportunityForm, 
 from connect_labs.labs.synthetic.gdrive import DriveAPIError, DriveAuthError, DriveClient
 from connect_labs.labs.synthetic.invalidation import invalidate_synthetic_caches
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
+from connect_labs.utils.dimagi_user import is_dimagi_user
 
 logger = logging.getLogger(__name__)
 
@@ -313,6 +314,11 @@ class DumpStreamView(BaseSSEStreamView):
 
     def stream_data(self, request) -> Generator[str]:
         try:
+            # A dump copies an opportunity's raw production exports (form answers, GPS,
+            # worker identities) to Dimagi's Drive, unscrubbed: Dimagi's own tooling,
+            # never a partner's, whatever opportunities they can see.
+            if not is_dimagi_user(request.user):
+                raise PermissionDenied("Only Dimagi staff may dump an opportunity's exports.")
             labs_context = getattr(request, "labs_context", None) or {}
             opp_id = labs_context.get("opportunity_id")
             if not opp_id:
