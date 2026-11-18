@@ -19,6 +19,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from connect_labs.flags.data_access import FlagsDataAccess
+from connect_labs.labs.synthetic.access import labs_only_scope_denied_reason
 from connect_labs.utils.sandbox_guard import require_same_origin
 from connect_labs.workflow.data_access import WorkflowDataAccess
 
@@ -62,6 +63,11 @@ def create_flag_for_run(request: HttpRequest, workflow_run_id: int) -> JsonRespo
         body = json.loads(request.body or b"{}")
     except json.JSONDecodeError as exc:
         return JsonResponse({"error": f"Invalid JSON: {exc}"}, status=400)
+
+    # The opportunity comes from the body, not the checked labs context: a labs-only
+    # one is written straight to the labs DB, so hold it to the labs-only gate here.
+    if labs_only_scope_denied_reason(request.user, opportunity_id=body.get("opportunity_id")):
+        return JsonResponse({"error": "Not found"}, status=404)
 
     da = FlagsDataAccess(request=request, opportunity_id=body.get("opportunity_id"))
     try:

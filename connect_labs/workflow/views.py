@@ -165,6 +165,20 @@ def _validated_opportunity_id(request, opportunity_id: int | None) -> int | None
     return opportunity_id if validated.get("opportunity_id") == opportunity_id else None
 
 
+def _scoped_opportunity_id(request) -> int | None:
+    """The opportunity in view: the checked labs context's, else the URL's after the
+    same check. The context middleware DROPS a labs-only id the user cannot reach, so
+    falling back to the raw ``?opportunity_id=`` would put it straight back."""
+    in_context = _coerce_int((getattr(request, "labs_context", {}) or {}).get("opportunity_id"))
+    return in_context or _validated_opportunity_id(request, _coerce_int(request.GET.get("opportunity_id")))
+
+
+def _scoped_program_id(request) -> int | None:
+    """``_scoped_opportunity_id`` for a program."""
+    in_context = _coerce_int((getattr(request, "labs_context", {}) or {}).get("program_id"))
+    return in_context or _validated_program_id(request, _coerce_int(request.GET.get("program_id")))
+
+
 def _resolve_pipeline_definition(pipeline_access, pipeline_id, opp_ids=None, request=None, access_token=None):
     """Look up a pipeline definition, retrying across every opportunity a
     multi-opp workflow spans.
@@ -2230,8 +2244,7 @@ def workflow_auth_status_api(request):
 @require_GET
 def get_workers_api(request):
     """API endpoint to fetch workers for an opportunity."""
-    labs_context = getattr(request, "labs_context", {})
-    opportunity_id = labs_context.get("opportunity_id") or request.GET.get("opportunity_id")
+    opportunity_id = _scoped_opportunity_id(request)
 
     if not opportunity_id:
         return JsonResponse({"error": "opportunity_id required"}, status=400)
@@ -2814,13 +2827,14 @@ def _parse_pipeline_rows_params(request) -> dict:
     endpoint rejects.
     """
     alias = (request.GET.get("alias") or "").strip()
-    opportunity_id = _coerce_int(request.GET.get("rows_opportunity_id")) or _coerce_int(
-        request.GET.get("opportunity_id")
-    )
+    # Both ids come from the URL, so each passes the context check (a labs-only one the
+    # user cannot reach reads as absent).
+    url_opp = _validated_opportunity_id(request, _coerce_int(request.GET.get("opportunity_id")))
+    opportunity_id = _validated_opportunity_id(request, _coerce_int(request.GET.get("rows_opportunity_id"))) or url_opp
     # The scope the RECORDS (workflow, pipeline) are read in, as distinct from the
     # opportunity whose rows are wanted. They coincide for a single-opp caller and
     # diverge on a multi-opp drill.
-    scope_opportunity_id = _coerce_int(request.GET.get("opportunity_id")) or opportunity_id
+    scope_opportunity_id = url_opp or opportunity_id
     if not alias or not opportunity_id:
         raise PipelineRowsError("alias and opportunity_id are required")
     case_ids = {c.strip() for c in (request.GET.get("case_ids") or "").split(",") if c.strip()}
@@ -3252,10 +3266,9 @@ def pipeline_query_api(request, definition_id):
         if not isinstance(alias, str) or not alias.strip():
             return error("alias is required", 400)
 
-        labs_context = getattr(request, "labs_context", {}) or {}
-        scope_opp = _coerce_int(labs_context.get("opportunity_id") or request.GET.get("opportunity_id"))
-        scope_program = _coerce_int(labs_context.get("program_id") or request.GET.get("program_id"))
-        rows_opp = _coerce_int(body.get("opportunity_id")) or scope_opp
+        scope_opp = _scoped_opportunity_id(request)
+        scope_program = _scoped_program_id(request)
+        rows_opp = _validated_opportunity_id(request, _coerce_int(body.get("opportunity_id"))) or scope_opp
 
         wf_access = WorkflowDataAccess(request=request)
         several_opps = False
@@ -4581,9 +4594,7 @@ def semantic_indicators_api(request, definition_id):
 
         opportunity_ids = definition.opportunity_ids or []
         if not opportunity_ids:
-            opp = _coerce_int(
-                getattr(request, "labs_context", {}).get("opportunity_id") or request.GET.get("opportunity_id")
-            )
+            opp = _scoped_opportunity_id(request)
             if not opp:
                 return JsonResponse({"error": "opportunity_id required"}, status=400)
             opportunity_ids = [opp]
@@ -5465,7 +5476,7 @@ def execute_pipeline_preview_api(request, definition_id):
     # spanned opps as opportunity_id (it can't derive a pipeline's opp from the
     # bare pipeline id). _coerce_int tolerates a stray `undefined` from older
     # bundles; a real numeric opp is still required to run the preview.
-    opportunity_id = _coerce_int(labs_context.get("opportunity_id") or request.GET.get("opportunity_id"))
+    opportunity_id = _scoped_opportunity_id(request)
 
     # In a program context a program-scoped Drive pipeline previews with no
     # opportunity (it is read once for the program); anything else still needs one,
@@ -5504,10 +5515,9 @@ def get_pipeline_sql_preview_api(request, definition_id):
     from connect_labs.labs.analysis.backends.sql.query_builder import generate_sql_preview
     from connect_labs.workflow.data_access import PipelineDataAccess
 
-    labs_context = getattr(request, "labs_context", {})
     # Single-opp like the preview endpoint above — a program-scoped runner
     # passes one of the workflow's spanned opps as opportunity_id.
-    opportunity_id = _coerce_int(labs_context.get("opportunity_id") or request.GET.get("opportunity_id"))
+    opportunity_id = _scoped_opportunity_id(request)
 
     if not opportunity_id:
         return JsonResponse({"error": "opportunity_id required"}, status=400)

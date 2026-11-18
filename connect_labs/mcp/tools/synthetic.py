@@ -1609,6 +1609,13 @@ def synthetic_env_get(user, *, env: str) -> dict[str, Any]:
 def synthetic_env_ensure(user, *, env: str, fresh: bool = False) -> dict[str, Any]:
     from connect_labs.labs.synthetic.ensure.engine import ensure_synthetic_data
     from connect_labs.labs.synthetic.ensure.registry import get_env_path
+    from connect_labs.utils.dimagi_user import is_dimagi_staff
+
+    # The envs are Dimagi's shared demo environments, named in the repo rather than by
+    # an opportunity argument, so the dispatcher's labs-only gate never sees them; and
+    # fresh=true deletes every run, flag, audit and task in one.
+    if not is_dimagi_staff(user):
+        raise MCPToolError("PERMISSION_DENIED", "Only Dimagi staff may seed the shared synthetic environments.")
 
     try:
         env_path = get_env_path(env)

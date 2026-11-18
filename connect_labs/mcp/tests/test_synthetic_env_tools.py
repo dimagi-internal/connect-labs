@@ -28,7 +28,7 @@ PAR = "program-admin-report"
 
 @pytest.fixture
 def user(db):
-    return get_user_model().objects.create_user(username="t", password="p")
+    return get_user_model().objects.create_user(username="t", password="p", email="t@dimagi.com")
 
 
 def test_synthetic_env_list_includes_par():
@@ -83,3 +83,14 @@ def test_synthetic_env_ensure_rejects_bad_names(user, bad):
     with pytest.raises(MCPToolError) as exc:
         tool.handler(user=user, env=bad)
     assert exc.value.code == "NOT_FOUND"
+
+
+@pytest.mark.django_db
+def test_synthetic_env_ensure_is_for_dimagi_staff_only():
+    # The shared demo envs are named in the repo, not by an opportunity the dispatcher
+    # gate checks, and fresh=true wipes one.
+    outsider = get_user_model().objects.create_user(username="o", password="p", email="o@partner.org")
+    tool = get_tool("synthetic_env_ensure")
+    with pytest.raises(MCPToolError) as exc:
+        tool.handler(user=outsider, env=PAR, fresh=True)
+    assert exc.value.code == "PERMISSION_DENIED"
