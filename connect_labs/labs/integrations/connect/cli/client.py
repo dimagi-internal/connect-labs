@@ -297,10 +297,10 @@ def get_labs_user_from_token(
     # Create Django User from profile data
     user, _ = User.objects.update_or_create(
         username=user_profile.get("username"),
-        defaults={
-            "email": user_profile.get("email", ""),
-            "name": f"{user_profile.get('first_name') or ''} {user_profile.get('last_name') or ''}".strip(),
-        },
+        defaults=_user_defaults(
+            user_profile,
+            f"{user_profile.get('first_name') or ''} {user_profile.get('last_name') or ''}".strip(),
+        ),
     )
     return user
 
@@ -383,10 +383,7 @@ def create_cli_request(
     name = f"{first_name} {last_name}".strip() or user_profile.get("username", "")
     user, _ = User.objects.update_or_create(
         username=user_profile.get("username"),
-        defaults={
-            "email": user_profile.get("email", ""),
-            "name": name,
-        },
+        defaults=_user_defaults(user_profile, name),
     )
 
     # Build labs_context similar to what LabsContextMiddleware does
@@ -485,3 +482,12 @@ def _inject_commcare_token(request):
         "expires_at": expires_at,
         "token_type": token_data.get("token_type", "Bearer"),
     }
+
+
+def _user_defaults(user_profile: dict, name: str) -> dict:
+    """The User fields a login sets. An email is set only when the login carries one, so a
+    login without it never erases the email already on file."""
+    defaults = {"name": name}
+    if user_profile.get("email"):
+        defaults["email"] = user_profile["email"]
+    return defaults

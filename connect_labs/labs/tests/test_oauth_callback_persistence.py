@@ -186,3 +186,33 @@ def test_callback_keys_the_org_cache_on_the_tokens_owner():
         labs_oauth_callback(request)
 
     assert fetch.call_args.kwargs.get("owner") == _PROFILE_DATA["username"]
+
+
+@pytest.mark.django_db
+def test_a_login_without_an_email_keeps_the_one_on_file():
+    """Connect's OpenID userinfo can come back with no email (2026-11, every login). Labs
+    gates labs-only synthetic opps by email domain, so writing a blank over the stored
+    email locked the user out of them -- ACE's account lost its synthetic opps this way."""
+    User.objects.create(username="noemail", email="noemail@dimagi-ai.com")
+    factory = RequestFactory()
+    request = factory.get("/labs/callback/", {"state": "s", "code": "c"})
+    request.session = {"oauth_state": "s", "oauth_code_verifier": "v", "oauth_next": "/labs/overview/"}
+    blank_userinfo = MagicMock(status_code=200)
+    blank_userinfo.json.return_value = {}
+    with (
+        patch("httpx.post", return_value=_make_token_response()),
+        patch("httpx.get", return_value=blank_userinfo),
+        patch(
+            "connect_labs.labs.integrations.connect.oauth_views.introspect_token",
+            return_value={**_PROFILE_DATA, "username": "noemail", "email": ""},
+        ),
+        patch("connect_labs.labs.integrations.connect.oauth_views.fetch_user_organization_data", return_value={}),
+        patch("connect_labs.labs.integrations.connect.oauth_views.login"),
+        patch("connect_labs.labs.integrations.connect.oauth_views.messages"),
+    ):
+        from connect_labs.labs.integrations.connect.oauth_views import labs_oauth_callback
+
+        labs_oauth_callback(request)
+
+    assert User.objects.get(username="noemail").email == "noemail@dimagi-ai.com"
+    assert request.session["labs_oauth"]["user_profile"]["email"] == "noemail@dimagi-ai.com"
