@@ -1,11 +1,24 @@
 ---
 name: labs-token-setup
-description: Use when the user wants to set up or refresh their labs MCP Personal Access Token (PAT), or asks an agent to get short-lived labs access for one job (from their own computer, or from a cloud runner or remote box). Triggers on "set up labs mcp", "I need a labs token", "configure claude for labs", "my labs token expired", "connect me to labs", "request a short-lived token", "get a temporary token on my behalf". Opens the labs UI to approve a new token, receives it via a localhost callback, and registers a `connect_labs` MCP server in Claude Code via `claude mcp add --scope user`.
+description: Use when the user wants to set up or refresh their labs MCP Personal Access Token (PAT), or when an agent needs short-lived labs access for one job as the person, from wherever the agent runs: a cloud runner, a Slack or email turn, a remote box (request_agent_token.py, approved on a labs page with the person's passkey), or the person's own computer (setup_labs_token.py --temporary). Triggers on "set up labs mcp", "I need a labs token", "configure claude for labs", "my labs token expired", "connect me to labs", "request a short-lived token", "get a temporary token on my behalf", "use my labs access", "you can only see some programmes", "ask me for access", "step up". A long-lived token is approved in the labs UI and registered as a `connect_labs` MCP server via `claude mcp add --scope user`; a one-job token comes back sealed to the agent (off-machine) or to a localhost callback (same machine).
 ---
 
 # Labs MCP Token Setup
 
 Seamless flow for creating an MCP Personal Access Token and wiring it into Claude Code's config.
+
+## Which flow — three look-alikes
+
+| Flow | Token is for | Works from | Lasts | How it comes back |
+|---|---|---|---|---|
+| `setup_labs_token.py <url>` (this page's Procedure) | the person, in their own Claude Code | the person's computer | 90 days | localhost callback → `claude mcp add` |
+| `setup_labs_token.py <url> --temporary` | the person, one job | the person's computer only (the browser and the agent on one machine) | 1 hour | localhost callback → a file |
+| `request_agent_token.py ask` / `collect` | the person, one job | **any runner**: a cloud runner, a Slack or email turn, a remote box | 1 hour; the request waits 30 minutes | sealed to the agent's key |
+
+An agent's OWN token (ACE's `labs-token-mint`, minting for `ace@dimagi-ai.com`) is none of
+these: it shows what the agent's account sees, never the person's view. When an agent's own
+account sees less than the question needs, the third row is how it asks to see what the
+person sees ([below](#an-agent-that-is-not-on-the-persons-computer-a-cloud-runner-a-remote-box)).
 
 ## Procedure
 
