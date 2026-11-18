@@ -65,6 +65,16 @@ def scenario_or_default(request, default_grain: str | None = None) -> tuple[Scen
         return Scenario(), None, exc.message
 
 
+def api_data(request) -> dict:
+    """What ``EffApi`` (static/effectiveness/api.js) needs on every scenario page: where saved scenarios and groups
+    live, and the token that lets the person's own tab change them."""
+    return {
+        "scenarios_url": reverse("cea:scenarios"),
+        "groups_url": reverse("cea:groups"),
+        "csrf": get_token(request),
+    }
+
+
 def page_data(request, scenario: Scenario, loaded: dict | None = None, error: str | None = None) -> dict:
     """The JSON a scenario page embeds: the starting state and everything its controls need to draw themselves."""
     meta = explore.models()
@@ -100,9 +110,7 @@ def page_data(request, scenario: Scenario, loaded: dict | None = None, error: st
         "bar": bar,
         "loaded": loaded,
         "signed_in": saved.signed_in(request.user),
-        "csrf": get_token(request),
-        "scenarios_url": reverse("cea:scenarios"),
-        "groups_url": reverse("cea:groups"),
+        **api_data(request),
         "my_groups": saved.my_groups(request.user),
         "api_url": reverse("cea:market_data"),
         "plan_csv_url": reverse("cea:market_plan_csv"),

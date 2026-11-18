@@ -78,6 +78,23 @@
     );
   }
 
+  function setLens(k) {
+    if (!LENSES[k] || (k === 'plan' && !hasPlan()))
+      throw new Error(
+        'Colour the map by one of: ' +
+          Object.keys(LENSES)
+            .filter(function (x) {
+              return x !== 'plan' || hasPlan();
+            })
+            .join(', ') +
+          '.',
+      );
+    lens = k;
+    scn.setUi('lens', k);
+    drawLensButtons();
+    paint();
+  }
+
   function drawLensButtons() {
     var keys = Object.keys(LENSES).filter(function (k) {
       return k !== 'plan' || hasPlan();
@@ -92,10 +109,7 @@
           text: LENSES[k].label,
         });
         b.addEventListener('click', function () {
-          lens = k;
-          scn.setUi('lens', k);
-          drawLensButtons();
-          paint();
+          setLens(k);
         });
         return b;
       }),
@@ -341,6 +355,35 @@
     }
   });
   drawLensButtons();
+  // What the canopy agent works with (static/effectiveness/agent.js): the scenario, and the map's lens and selection.
+  window.EffPage = {
+    scn: scn,
+    data: D,
+    setLens: setLens,
+    lens: function () {
+      return lens;
+    },
+    // Select a place on the map by its name (or key); none, or the one already selected, clears it.
+    selectPlace: function (name) {
+      var key = null;
+      if (name)
+        Object.keys(places).forEach(function (k) {
+          var c = places[k];
+          if (
+            k === name ||
+            String(c.name || '').toLowerCase() === String(name).toLowerCase()
+          )
+            key = k;
+        });
+      if (name && !key)
+        throw new Error('No place called "' + name + '" is on the map.');
+      if ((key || null) !== selected) choose(key || selected);
+      return key;
+    },
+    selected: function () {
+      return selected && places[selected] ? places[selected].name : null;
+    },
+  };
   scn.follow(
     D.api_url,
     function (r) {

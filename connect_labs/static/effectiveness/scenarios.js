@@ -7,7 +7,8 @@
   'use strict';
   var U = window.EffUI;
   var h = U.h,
-    put = U.put;
+    put = U.put,
+    A = window.EffApi;
 
   // Two links are the same scenario when every key has the same value, numbers compared as numbers ("1e-7" is "1e-07").
   function entries(p) {
@@ -56,20 +57,8 @@
       msg.style.margin = '6px 0 0';
     }
 
-    function call(method, url, body) {
-      return fetch(url, {
-        method: method,
-        credentials: 'same-origin',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': data.csrf,
-        },
-        body: body ? JSON.stringify(body) : undefined,
-      }).then(function (r) {
-        return r.json().then(function (j) {
-          return { ok: r.ok, status: r.status, j: j };
-        });
-      });
+    function fail(err) {
+      say(err.message, true);
     }
 
     function drawStatus() {
@@ -95,21 +84,19 @@
 
     // Rename, or share or unshare, a scenario of yours: the list is redrawn before the message, as for a save.
     function change(s, patch, said) {
-      call('PATCH', data.scenarios_url + s.id + '/', patch).then(
-        function (res) {
-          if (!res.ok) return say(res.j.error, true);
-          if (loaded && loaded.id === s.id) {
-            loaded = Object.assign({}, loaded, {
-              name: res.j.name,
-              shared: res.j.shared,
-            });
-            drawStatus();
-          }
-          refresh().then(function () {
-            say(said);
+      return A.update(s.id, patch).then(function (j) {
+        if (loaded && loaded.id === s.id) {
+          loaded = Object.assign({}, loaded, {
+            name: j.name,
+            shared: j.shared,
           });
-        },
-      );
+          drawStatus();
+        }
+        return refresh().then(function () {
+          say(said);
+          return j;
+        });
+      }, fail);
     }
 
     function row(s) {
@@ -147,17 +134,7 @@
         });
         var del = h('button', { type: 'button', class: 'btn', text: 'Delete' });
         del.addEventListener('click', function () {
-          if (!confirm('Delete "' + s.name + '"?')) return;
-          call('DELETE', data.scenarios_url + s.id + '/').then(function (res) {
-            if (!res.ok) return say(res.j.error, true);
-            if (loaded && loaded.id === s.id) {
-              loaded = null;
-              drawStatus();
-            }
-            refresh().then(function () {
-              say('Deleted "' + s.name + '".');
-            });
-          });
+          removeScenario(s);
         });
         kids.push(share, rename, del);
       }
@@ -248,25 +225,54 @@
     }
 
     function refresh() {
-      return call('GET', data.scenarios_url)
-        .then(function (res) {
-          if (res.ok) lists = res.j;
-        })
-        .catch(function () {})
+      return A.list()
+        .then(
+          function (j) {
+            lists = j;
+          },
+          function () {},
+        )
         .then(drawLists);
     }
 
+    // Delete a saved scenario (asks first); the one that is open leaves its page for its group, or the bare workspace.
+    function removeScenario(s) {
+      return A.removeScenario(s.id, s.name).then(function (gone) {
+        if (!gone) return null;
+        if (loaded && loaded.id === s.id) {
+          var back = loaded.group ? loaded.group.path : location.pathname;
+          A.later(function () {
+            location.href = back;
+          });
+          return gone;
+        }
+        return refresh().then(function () {
+          say('Deleted "' + s.name + '".');
+          return gone;
+        });
+      }, fail);
+    }
+
     function save(overwrite) {
-      var body = {
+      return A.save({
         name: name.value,
         note: note.value,
         shared: shared.checked,
         overwrite: !!overwrite,
         params: Object.fromEntries(scn.params().entries()),
-      };
-      return call('POST', data.scenarios_url, body)
-        .then(function (res) {
-          if (res.status === 409 && !overwrite) {
+      }).then(
+        function (j) {
+          loaded = j;
+          drawStatus();
+          drawGroup();
+          // The list first, so the message is never beside a stale one.
+          return refresh().then(function () {
+            say('Saved "' + j.name + '".');
+            return j;
+          });
+        },
+        function (err) {
+          if (err.status === 409 && !overwrite) {
             if (
               confirm(
                 'You already have a scenario called "' +
@@ -275,20 +281,13 @@
               )
             )
               return save(true);
-            return say('Not saved.');
+            say('Not saved.');
+            return null;
           }
-          if (!res.ok) return say(res.j.error, true);
-          loaded = res.j;
-          drawStatus();
-          drawGroup();
-          // The list first, so the message is never beside a stale one.
-          return refresh().then(function () {
-            say('Saved "' + res.j.name + '".');
-          });
-        })
-        .catch(function () {
-          say('The server did not respond. Try again.', true);
-        });
+          fail(err);
+          return null;
+        },
+      );
     }
 
     var saveBtn = h('button', {
@@ -330,6 +329,27 @@
       return loaded && loaded.mine;
     };
     var groupBox = h('div');
+    // Into one of the person's groups, or out of its group (null); the page then opens the scenario in its new place.
+    function moveToGroup(gid) {
+      return A.moveToGroup(loaded.id, gid).then(function (j) {
+        var to = location.pathname + '?scenario=' + loaded.id;
+        A.later(function () {
+          location.href = to;
+        });
+        return j;
+      }, fail);
+    }
+    function newGroup(gname) {
+      return A.createGroup({ name: gname }).then(
+        function (g) {
+          return moveToGroup(g.id);
+        },
+        function (err) {
+          fail(err);
+          drawGroup();
+        },
+      );
+    }
     function drawGroup() {
       if (!mineLoaded()) return put(groupBox, []);
       var pick = h('select', { 'aria-label': 'Group' });
@@ -347,28 +367,14 @@
           );
         });
       pick.addEventListener('change', function () {
-        function move(gid) {
-          call('PATCH', data.scenarios_url + loaded.id + '/', {
-            group: gid === '' ? null : Number(gid),
-          }).then(function (res) {
-            if (!res.ok) return say(res.j.error, true);
-            location.href = location.pathname + '?scenario=' + loaded.id;
-          });
+        if (pick.value === 'new') {
+          var gname = prompt(
+            'Name the new group (the question it answers works well):',
+          );
+          if (gname == null || gname.trim() === '') return drawGroup();
+          return newGroup(gname.trim());
         }
-        if (pick.value !== 'new') return move(pick.value);
-        var gname = prompt(
-          'Name the new group (the question it answers works well):',
-        );
-        if (gname == null || gname.trim() === '') return drawGroup();
-        call('POST', data.groups_url, { name: gname.trim() }).then(
-          function (res) {
-            if (!res.ok) {
-              say(res.j.error, true);
-              return drawGroup();
-            }
-            move(res.j.id);
-          },
-        );
+        moveToGroup(pick.value === '' ? null : Number(pick.value));
       });
       var del = h('button', {
         type: 'button',
@@ -376,15 +382,7 @@
         text: 'Delete this scenario',
       });
       del.addEventListener('click', function () {
-        if (!confirm('Delete "' + loaded.name + '"? This cannot be undone.'))
-          return;
-        var back = loaded.group ? loaded.group.path : location.pathname;
-        call('DELETE', data.scenarios_url + loaded.id + '/').then(
-          function (res) {
-            if (!res.ok) return say(res.j.error, true);
-            location.href = back;
-          },
-        );
+        removeScenario(loaded);
       });
       put(groupBox, [
         h('label', { class: 'f' }, [h('span', { text: 'Group' }), pick]),
@@ -415,6 +413,41 @@
     ]);
     drawGroup();
     drawStatus();
+    // What the buttons do, for the canopy agent to do too: the same functions, so there is one way to save, move or delete.
+    window.EffScenarios.current = {
+      loaded: function () {
+        return loaded;
+      },
+      // Fill in the fields it is given, then press Save: a name already in use asks to replace, as for the person.
+      save: function (fields) {
+        fields = fields || {};
+        if (fields.name != null) name.value = fields.name;
+        if (fields.note != null) note.value = fields.note;
+        if (fields.shared != null) shared.checked = !!fields.shared;
+        return save(false).then(function (j) {
+          if (j && fields.group !== undefined) return moveToGroup(fields.group);
+          return j;
+        });
+      },
+      update: function (patch) {
+        if (!mineLoaded())
+          throw new Error('Open one of your saved scenarios first.');
+        return change(loaded, patch, 'Saved.');
+      },
+      moveToGroup: function (gid) {
+        if (!mineLoaded())
+          throw new Error('Open one of your saved scenarios first.');
+        return moveToGroup(gid);
+      },
+      newGroup: function (gname) {
+        if (!mineLoaded())
+          throw new Error('Open one of your saved scenarios first.');
+        return newGroup(gname);
+      },
+      remove: function (s) {
+        return removeScenario(s || loaded);
+      },
+    };
     drawLists();
     refresh();
     scn.onChange(drawStatus);

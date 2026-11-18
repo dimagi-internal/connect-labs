@@ -1,6 +1,7 @@
 """Scenario groups: keeping scenarios under one question, walking between them, and setting them side by side."""
 
 import json
+import re
 
 import pytest
 from django.urls import reverse
@@ -298,6 +299,12 @@ class TestPages:
         assert refused.status_code == 403
         assert client.delete(url).json() == {"deleted": loose.pk}
         assert not SavedScenario.objects.filter(pk=loose.pk).exists()
+
+    def test_the_group_page_hands_the_shared_api_what_it_needs(self, client, seen):
+        body = client.get(reverse("cea:group", args=[seen.pk])).content.decode()
+        facts = json.loads(re.search(r'<script id="group-data"[^>]*>(.*?)</script>', body, re.S).group(1))
+        assert facts["scenarios_url"] == "/labs/cea/scenarios/" and facts["groups_url"] == "/labs/cea/groups/"
+        assert facts["group_id"] == seen.pk and facts["csrf"] and len(facts["order"]) == 2
 
     def test_only_the_owner_sees_the_controls_to_reorder_and_delete(self, client, ann, bob, seen):
         mine = client.get(reverse("cea:group", args=[seen.pk])).content.decode()
