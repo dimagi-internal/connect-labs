@@ -3089,26 +3089,29 @@ def _case_states_once(key, compute):
 @login_required
 @require_GET
 def case_states_api(request, definition_id):
-    """ONE case's CASE STATES as of today (``semantic/case_states.py``), read as the
-    viewer from the workflow's own registry: what a case panel needs to offer "Coach
-    about this baby". Params: ``rows_opportunity_id`` (an opportunity the workflow
-    spans) and ``case_id``. Answers ``{case_state, label, facts, case_states, username}``
+    """ONE case's CASE STATES (``semantic/case_states.py``), read as the viewer from the
+    workflow's own registry: what a case panel needs to offer "Coach about this baby".
+    Params: ``rows_opportunity_id`` (an opportunity the workflow spans), ``case_id`` and,
+    optionally, ``run_id``: a run of this workflow, whose report date (``period_end``)
+    the states are read as of -- the same date "Coach about this baby" checks them
+    against, so the page never offers a coaching the action then refuses. Without it,
+    as of today. Answers ``{case_state, label, facts, case_states, username, as_of}``
     -- ``case_state`` the most urgent one the case is in, or null."""
     from connect_labs.semantic import case_states
     from connect_labs.workflow.snapshot_builders import case_context, case_rows
 
-    def read_answer(definition, opportunity_id, case_id, token):
+    def read_answer(definition, opportunity_id, case_id, token, as_of):
         r = case_context(definition, opportunity_id=opportunity_id, access_token=token, request=request)
         catalog = case_states.catalog(r["props_doc"])
         if not catalog:
-            return {"case_state": None, "reason": "no_case_states"}
-        rows = case_rows(r, opportunity_id=opportunity_id, entity_ids=[case_id])
+            return {"case_state": None, "reason": "no_case_states", "as_of": as_of}
+        rows = case_rows(r, opportunity_id=opportunity_id, entity_ids=[case_id], as_of=as_of)
         if not rows:
-            return {"case_state": None, "reason": "no_such_case"}
+            return {"case_state": None, "reason": "no_such_case", "as_of": as_of}
         row = rows[0]
         held = case_states.true_case_states(row, catalog)
         if not held:
-            return {"case_state": None, "case_states": [], "username": row.get("username")}
+            return {"case_state": None, "case_states": [], "username": row.get("username"), "as_of": as_of}
         state = held[0]
         return {
             "case_state": state["name"],
@@ -3116,6 +3119,7 @@ def case_states_api(request, definition_id):
             "facts": case_states.facts(state, row),
             "case_states": [s["name"] for s in held],
             "username": row.get("username"),
+            "as_of": as_of,
         }
 
     opportunity_id = _coerce_int(request.GET.get("rows_opportunity_id"))
@@ -3130,12 +3134,21 @@ def case_states_api(request, definition_id):
         spanned = [int(o) for o in (definition.opportunity_ids or [])] or [opportunity_id]
         if opportunity_id not in spanned:
             return JsonResponse({"error": "this workflow does not span that opportunity"}, status=403)
+        as_of = None
+        run_id = _coerce_int(request.GET.get("run_id"))
+        if run_id:
+            run = wf_access.get_run(run_id)
+            if not run or int(run.definition_id or 0) != int(definition_id):
+                return JsonResponse({"error": "no such run of this workflow"}, status=404)
+            as_of = str(run.period_end or "")[:10] or None
         token = (request.session.get("labs_oauth", {}) or {}).get("access_token")
         # Per viewer, because the read resolves the workflow's pipelines as the person.
         # The id is hashed because it comes straight from the query string.
-        parts = (request.user.username, definition_id, opportunity_id, case_id, dj_timezone.now().date())
+        parts = (request.user.username, definition_id, opportunity_id, case_id, as_of or dj_timezone.now().date())
         key = "case-states:" + hashlib.sha256(repr(parts).encode()).hexdigest()
-        return JsonResponse(_case_states_once(key, lambda: read_answer(definition, opportunity_id, case_id, token)))
+        return JsonResponse(
+            _case_states_once(key, lambda: read_answer(definition, opportunity_id, case_id, token, as_of))
+        )
     except Exception:
         logger.exception("Failed to read the case states for definition %s", definition_id)
         return JsonResponse({"error": "An internal error occurred"}, status=500)

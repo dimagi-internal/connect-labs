@@ -95,6 +95,45 @@ def test_only_the_workflows_own_opportunities():
     assert status == 403
 
 
+def _call_with_run(run, **params):
+    from connect_labs.workflow import views
+
+    request = RequestFactory().get("/labs/workflow/api/5618/case-states/", params)
+    request.user = MagicMock(is_authenticated=True, username="as-of-viewer")
+    request.session = {"labs_oauth": {"access_token": "t"}}
+    wda = MagicMock()
+    wda.get_definition.return_value = SimpleNamespace(opportunity_ids=[10042], data={}, template_type=None)
+    wda.get_run.return_value = run
+    rows_mock = MagicMock(return_value=[_danger_row()])
+    with (
+        patch.object(views, "WorkflowDataAccess", return_value=wda),
+        patch("connect_labs.workflow.snapshot_builders.case_context", return_value={"props_doc": PROPS}),
+        patch("connect_labs.workflow.snapshot_builders.case_rows", rows_mock),
+    ):
+        response = views.case_states_api(request, 5618)
+    return json.loads(response.content), response.status_code, rows_mock
+
+
+def test_a_run_reads_the_states_as_of_its_report_date(clean_cache):
+    """The page reads a case's states on the same date "Coach about this baby" checks
+    them against: the run's period_end, not today."""
+    run = SimpleNamespace(definition_id=5618, period_end="2026-06-15T00:00:00")
+    out, status, rows_mock = _call_with_run(run, rows_opportunity_id="10042", case_id="baby-1", run_id="77")
+    assert status == 200 and out["as_of"] == "2026-06-15"
+    assert rows_mock.call_args.kwargs["as_of"] == "2026-06-15"
+
+
+def test_without_a_run_the_states_are_as_of_today(clean_cache):
+    out, _, rows_mock = _call_with_run(None, rows_opportunity_id="10042", case_id="baby-1")
+    assert out["as_of"] is None and rows_mock.call_args.kwargs["as_of"] is None
+
+
+def test_a_run_of_another_workflow_is_refused(clean_cache):
+    run = SimpleNamespace(definition_id=9999, period_end="2026-06-15")
+    _, status, _ = _call_with_run(run, rows_opportunity_id="10042", case_id="baby-1", run_id="77")
+    assert status == 404
+
+
 def _read_as(username, rows_mock, case_id="cost-1"):
     from connect_labs.workflow import views
 
