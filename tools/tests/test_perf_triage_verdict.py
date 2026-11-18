@@ -667,3 +667,49 @@ def test_reads_default_to_the_read_only_observe_role():
     """connect-labs#2770: every read here is allowed to labs-jj-observe-readonly, so
     the admin `labs` SSO session is an override, never the default."""
     assert perf_triage.DEFAULT_PROFILE == "labs-observe"
+
+
+def test_a_page_after_the_floored_window_end_still_counts(monkeypatch):
+    """2026-11-18: page at 09:51:29Z, tool run at 09:54:15Z, window floored to 09:50:00Z.
+
+    The metric window must stay floored (bucket alignment), but the alarm-history read
+    must not: a page in the last <period> minutes is exactly what an alarm turn runs
+    this for, and dropping it turned a firing pager into VERDICT: healthy.
+    """
+    frozen = datetime(2026, 11, 18, 9, 54, 15, tzinfo=timezone.utc)
+    monkeypatch.setattr(perf_triage, "_now", lambda: frozen)
+    seen = []
+
+    def fake_aws(args, timeout=120):
+        seen.append(args)
+        if args[:2] == ["cloudwatch", "describe-alarms"]:
+            return {
+                "CompositeAlarms": [
+                    {
+                        "AlarmName": "labs-jj-web-cpu-high-actionable",
+                        "StateValue": "ALARM",
+                        "ActionsEnabled": True,
+                        "AlarmActions": ["arn:aws:sns:us-east-1:1:labs-jj-alerts"],
+                    }
+                ]
+            }
+        if args[:2] == ["cloudwatch", "describe-alarm-history"]:
+            end = args[args.index("--end-date") + 1]
+            page = "2026-11-18T09:51:29Z"
+            items = [
+                {
+                    "AlarmName": "labs-jj-web-cpu-high-actionable",
+                    "Timestamp": "2026-11-18T09:51:29.495000+00:00",
+                    "HistorySummary": "Alarm updated from OK to ALARM",
+                }
+            ]
+            return {"AlarmHistoryItems": items if end >= page else []}
+        return _fake_aws(args)
+
+    monkeypatch.setattr(perf_triage, "_aws", fake_aws)
+    data = perf_triage.collect(1)
+
+    assert data["window"]["end"] == "2026-11-18T09:50:00Z", "metric window stays floored"
+    history = [a for a in seen if a[:2] == ["cloudwatch", "describe-alarm-history"]]
+    assert history[0][history[0].index("--end-date") + 1] == "2026-11-18T09:54:15Z"
+    assert [row["at"] for row in data["paged_in_window"]] == ["2026-11-18T09:51:29Z"]
