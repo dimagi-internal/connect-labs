@@ -2050,7 +2050,33 @@ _FORK_GATE: dict[str, np.ndarray] = {}
 
 
 def _gate_block_forked(lo: int) -> np.ndarray:
-    return _Gate._nearest_in_block(_FORK_GATE["matrix"], _FORK_GATE["denom"], lo)
+    return _Gate._nearest_in_block(_FORK_GATE["matrix"], _FORK_GATE["denom"], lo, _FORK_GATE["rows"])
+
+
+def _map_forked(fn, items, processes: int, chunksize: int = 1) -> list | None:
+    """``list(map(fn, items))`` across ``processes`` forked processes, or None if a process died.
+
+    None tells the caller to do the work in this process instead: a child killed for
+    memory must cost the job time, not the job. ``gc.freeze`` first, so a child's
+    garbage collector does not touch -- and so copy -- every object it inherited.
+    """
+    import gc
+    import logging
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor
+    from concurrent.futures.process import BrokenProcessPool
+
+    gc.freeze()
+    try:
+        with ProcessPoolExecutor(max_workers=processes, mp_context=multiprocessing.get_context("fork")) as pool:
+            return list(pool.map(fn, items, chunksize=chunksize))
+    except BrokenProcessPool:
+        logging.getLogger(__name__).warning(
+            "a forked %s process died (likely out of memory); doing that step in one process", fn.__name__
+        )
+        return None
+    finally:
+        gc.unfreeze()
 
 
 class _Gate:
@@ -2073,6 +2099,8 @@ class _Gate:
     # Rows per block of the pairwise computation, so a large shape never builds one
     # (n x n x columns) array at once.
     _BLOCK = 256
+    # One block's rows x cases x columns float64 array; _mean_rel holds ~3 of them.
+    _BLOCK_BYTES = 256 * 1024 * 1024
 
     def __init__(self, real: list[dict], frozen_paths: set[str] | frozenset = frozenset(), processes: int = 1):
         # Any length, the gate's other half: a case whose measured numbers are exactly a
@@ -2099,28 +2127,39 @@ class _Gate:
                     for path, x in (v.get("values") or {}).items():
                         matrix[ci, columns[(vi, path)]] = x
             denom = np.maximum(np.abs(matrix), 1e-9)
-            starts = range(0, len(cases), self._BLOCK)
+            rows = self._block_rows(matrix.shape[0], matrix.shape[1])
+            starts = range(0, len(cases), rows)
+            nn = None
             if processes > 1 and len(starts) > 1:
                 # The one quadratic step left in a profile (16,000 cases: 22 s here), and
                 # its blocks are independent: forked processes, the same numbers.
-                import multiprocessing
-                from concurrent.futures import ProcessPoolExecutor
-
-                _FORK_GATE.update(matrix=matrix, denom=denom)
+                _FORK_GATE.update(matrix=matrix, denom=denom, rows=rows)
                 try:
-                    ctx = multiprocessing.get_context("fork")
-                    with ProcessPoolExecutor(max_workers=processes, mp_context=ctx) as pool:
-                        nn = np.concatenate(list(pool.map(_gate_block_forked, starts)))
+                    blocks = _map_forked(_gate_block_forked, starts, processes)
                 finally:
                     _FORK_GATE.clear()
-            else:
-                nn = np.concatenate([self._nearest_in_block(matrix, denom, lo) for lo in starts])
+                nn = None if blocks is None else np.concatenate(blocks)
+            if nn is None:
+                nn = np.concatenate([self._nearest_in_block(matrix, denom, lo, rows) for lo in starts])
             self._shapes[shape] = (columns, matrix, denom, nn)
 
     @classmethod
-    def _nearest_in_block(cls, matrix: np.ndarray, denom: np.ndarray, lo: int) -> np.ndarray:
+    def _block_rows(cls, cases: int, columns: int) -> int:
+        """Rows per block, so one block's working arrays stay inside ``_BLOCK_BYTES``.
+
+        A block compares its rows with every case of the shape, so its arrays are
+        rows x cases x columns -- and ``_mean_rel`` holds about three of them at once.
+        At 256 rows a 4,000-case shape of 260 columns took 6 GB a process, and eight
+        processes on a 32 GB job machine were killed for memory (2026-11-18). Fewer rows
+        per block is the same arithmetic in more steps: the distances do not change.
+        """
+        per_row = max(1, cases * columns * 8)
+        return max(1, min(cls._BLOCK, cls._BLOCK_BYTES // per_row))
+
+    @classmethod
+    def _nearest_in_block(cls, matrix: np.ndarray, denom: np.ndarray, lo: int, rows: int | None = None) -> np.ndarray:
         """Each real case in rows ``lo``.. of the block: its distance to its nearest other real case."""
-        block = matrix[lo : lo + cls._BLOCK]
+        block = matrix[lo : lo + (rows or cls._BLOCK)]
         # d[i, j] = mean over shared columns of |a_i - b_j| / max(|b_j|, eps)
         d = cls._mean_rel(block[:, None, :], matrix[None, :, :], denom[None, :, :])
         for i in range(block.shape[0]):
@@ -2223,17 +2262,18 @@ def _sample_owners_in_parallel(
     model: CaseModel, gate: _Gate, owners: list[str], seed: int, processes: int
 ) -> list[tuple[list[dict[str, Any]], int]]:
     """``_sample_owner`` for every worker, across ``processes`` forked processes, in ``owners`` order."""
-    import multiprocessing
-    from concurrent.futures import ProcessPoolExecutor
-
     _FORK_SAMPLING.update(model=model, gate=gate, seed=seed)
     try:
-        with ProcessPoolExecutor(max_workers=processes, mp_context=multiprocessing.get_context("fork")) as pool:
-            # Small chunks: caseloads are uneven (one worker can hold a tenth of the
-            # cases), so handing them out a few at a time keeps every process busy.
-            return list(pool.map(_sample_owner_forked, owners, chunksize=max(1, len(owners) // (processes * 8))))
+        # Small chunks: caseloads are uneven (one worker can hold a tenth of the
+        # cases), so handing them out a few at a time keeps every process busy.
+        sampled = _map_forked(
+            _sample_owner_forked, owners, processes, chunksize=max(1, len(owners) // (processes * 8))
+        )
     finally:
         _FORK_SAMPLING.clear()
+    if sampled is None:  # a process died: same streams per worker, so the same pool
+        sampled = [_sample_owner(model, gate, owner, seed) for owner in owners]
+    return sampled
 
 
 def synthesize_case_pool(

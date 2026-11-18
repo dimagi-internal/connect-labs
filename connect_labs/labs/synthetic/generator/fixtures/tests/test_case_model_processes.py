@@ -41,3 +41,43 @@ def test_the_gate_measures_the_same_neighbours_on_several_processes(monkeypatch)
     assert all(len(nn) == 40 for _, _, _, nn in one.values())
     for shape in one:
         np.testing.assert_array_equal(one[shape][3], several[shape][3])
+
+
+def _regular_pool():
+    rng = np.random.default_rng(3)
+    return [
+        {"visits": [{"day": d, "values": {"w": float(1500 + 20 * d + rng.normal(0, 30))}} for d in days]}
+        for days in [(0, 1, 3, 7), (0, 2, 4, 8)] * 40
+    ]
+
+
+def test_a_memory_budget_shrinks_the_blocks_not_the_neighbours(monkeypatch):
+    pool = _regular_pool()
+    whole = cm._Gate(pool)._shapes
+    # Room for 3 rows of 40 cases x 4 columns: the blocks get small, the answer must not move.
+    monkeypatch.setattr(cm._Gate, "_BLOCK_BYTES", 3 * 40 * 4 * 8)
+    assert cm._Gate._block_rows(40, 4) == 3
+    for processes in (1, 3):
+        small = cm._Gate(pool, processes=processes)._shapes
+        for shape in whole:
+            np.testing.assert_array_equal(whole[shape][3], small[shape][3])
+
+
+def _die(_):
+    import os
+
+    os._exit(1)  # as a child killed for memory does
+
+
+def test_a_process_that_dies_hands_the_work_back_instead_of_failing():
+    assert cm._map_forked(_die, range(4), processes=2) is None
+
+
+def test_the_gate_still_answers_when_its_processes_die(monkeypatch):
+    pool = _regular_pool()
+    whole = cm._Gate(pool)._shapes
+    monkeypatch.setattr(cm._Gate, "_BLOCK", 16)
+    monkeypatch.setattr(cm, "_gate_block_forked", _die)
+    survived = cm._Gate(pool, processes=3)._shapes
+    for shape in whole:
+        np.testing.assert_array_equal(whole[shape][3], survived[shape][3])
