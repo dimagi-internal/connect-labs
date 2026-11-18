@@ -89,6 +89,7 @@ def test_an_unknown_scope_is_not_reflected_as_html(client, logged_in_user):
     resp = client.get(url, {"callback": VALID_CALLBACK, "state": VALID_STATE, "scope": "<script>x()</script>"})
     assert resp.status_code == 400
     assert resp["Content-Type"].startswith("text/plain")
+    assert b"<script>" not in resp.content
 
 
 @pytest.mark.django_db
