@@ -418,11 +418,13 @@ def test_an_empty_feed_at_the_aggregated_stage_is_also_a_valid_empty_cache():
 
 @pytest.mark.django_db
 def test_other_sources_still_miss_when_nothing_is_stored():
-    """The marker is scoped to labs_audits: a gdrive/cchq/ocs config with no rows is a miss."""
+    """The marker is scoped to EMPTY_IS_AN_ANSWER_SOURCES: a visits config with no rows
+    is a miss (zero visits there is usually a short read). The other answerable-when-empty
+    sources are covered in test_empty_source_marker.py."""
     from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
 
     config = _visit_level_config()
-    config.data_source = DataSourceConfig(type="ocs_sessions", experiment_id="e")
+    config.data_source = DataSourceConfig(type="connect_csv")
     SQLCacheManager(EMPTY_OPP, config).store_empty_marker()  # even a stray marker is ignored
     assert _pipeline().get_cached_result_only(config, EMPTY_OPP) is None
 
