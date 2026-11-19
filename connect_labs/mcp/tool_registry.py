@@ -30,6 +30,11 @@ class Tool:
     #: Where a long-running tool's job runs: "worker" (the Celery queue) or "standalone"
     #: (a Fargate task of its own, for jobs of an hour or more).
     job_runner: str = "worker"
+    #: Argument keys naming an opportunity or program that this tool's HANDLER gates
+    #: itself, so the central labs-only gate (``server.labs_only_arguments_denied_reason``)
+    #: skips them. Only for a scope a caller may legitimately name without access to it,
+    #: e.g. the home of a template its owners shared publicly. Say why where it is set.
+    scope_gated_in_handler: tuple[str, ...] = ()
 
 
 JOB_RUNNERS = ("worker", "standalone")
@@ -60,6 +65,7 @@ def register(
     text: Callable[[dict], str] | None = None,
     long_running: bool = False,
     job_runner: str = "worker",
+    scope_gated_in_handler: tuple[str, ...] = (),
 ) -> Callable[[Callable], Callable]:
     """Decorator that registers a tool handler.
 
@@ -111,6 +117,7 @@ def register(
             text=text,
             long_running=long_running,
             job_runner=job_runner,
+            scope_gated_in_handler=tuple(scope_gated_in_handler),
         )
         return fn
 

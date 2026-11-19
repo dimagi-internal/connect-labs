@@ -1265,6 +1265,19 @@ def synthetic_image_server_status(user) -> dict[str, Any]:
     return result
 
 
+def _require_local_records_access(user, opportunity_id) -> None:
+    """The diagnostic record tools read ``LabsLocalRecord`` straight from the ORM, so they
+    open only a registered labs-only opportunity the caller may access. Without this they
+    also read a CommCare project's records (a negative scope, which the central labs-only
+    gate does not treat as labs-only) and records left behind by a deleted opportunity."""
+    from connect_labs.labs.synthetic.access import user_can_access_labs_only_opp
+
+    if not user_can_access_labs_only_opp(user, opportunity_id):
+        raise MCPToolError(
+            "PERMISSION_DENIED", f"{opportunity_id} is not a labs-only opportunity your account can access"
+        )
+
+
 @register(
     name="synthetic_local_records_count",
     description=(
@@ -1281,6 +1294,7 @@ def synthetic_image_server_status(user) -> dict[str, Any]:
     is_write=False,
 )
 def synthetic_local_records_count(user, *, opportunity_id: int) -> dict[str, Any]:
+    _require_local_records_access(user, opportunity_id)
     from django.db.models import Count
 
     from connect_labs.labs.synthetic.models import LabsLocalRecord
@@ -1318,6 +1332,7 @@ def synthetic_local_records_count(user, *, opportunity_id: int) -> dict[str, Any
     is_write=False,
 )
 def synthetic_local_record_dump(user, *, opportunity_id: int, record_id: int) -> dict[str, Any]:
+    _require_local_records_access(user, opportunity_id)
     from connect_labs.labs.synthetic.models import LabsLocalRecord
 
     try:

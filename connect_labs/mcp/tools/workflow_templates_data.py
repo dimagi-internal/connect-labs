@@ -678,6 +678,11 @@ def workflow_template_set_sharing(
         "additionalProperties": False,
     },
     is_write=True,
+    # A template its owners shared publicly may be followed from outside its home
+    # scope, so naming that scope is not itself a breach. The handler gates it: a
+    # caller outside it reads the template only if it is public, and never writes
+    # its follower list.
+    scope_gated_in_handler=("template_opportunity_id", "template_program_id"),
 )
 def workflow_follow_template(
     user,
