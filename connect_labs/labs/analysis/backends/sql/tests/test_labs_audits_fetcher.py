@@ -418,11 +418,13 @@ def test_an_empty_feed_at_the_aggregated_stage_is_also_a_valid_empty_cache():
 
 @pytest.mark.django_db
 def test_other_sources_still_miss_when_nothing_is_stored():
-    """The marker is scoped to labs_audits: a gdrive/cchq/ocs config with no rows is a miss."""
+    """The marker is scoped to EMPTY_IS_AN_ANSWER_SOURCES: a visits config with no rows
+    is a miss (zero visits there is usually a short read). The other answerable-when-empty
+    sources are covered in test_empty_source_marker.py."""
     from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
 
     config = _visit_level_config()
-    config.data_source = DataSourceConfig(type="ocs_sessions", experiment_id="e")
+    config.data_source = DataSourceConfig(type="connect_csv")
     SQLCacheManager(EMPTY_OPP, config).store_empty_marker()  # even a stray marker is ignored
     assert _pipeline().get_cached_result_only(config, EMPTY_OPP) is None
 
@@ -448,3 +450,47 @@ def test_the_workflow_cache_read_returns_zero_rows_for_an_empty_audit_feed():
     got = pda.get_cached_pipeline_result(PIPELINE_ID, EMPTY_OPP, config=config)
     assert got is not None
     assert got["rows"] == [] and got["metadata"]["row_count"] == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("rows", [[], "one"], ids=["empty_build", "non_empty_build"])
+def test_a_failed_build_never_leaves_an_empty_marker(rows):
+    """The marker is published only once processing succeeded, and a build that fails
+    drops the previous one: readers retry instead of answering 'empty'."""
+    from connect_labs.labs.analysis.backends.sql.backend import SQLBackend
+    from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
+
+    config = _visit_level_config()
+    with _fetch_returns([]):
+        _pipeline().stream_analysis_ignore_events(config, EMPTY_OPP)
+    assert SQLCacheManager(EMPTY_OPP, config).has_empty_marker()  # a marker from an earlier build
+
+    with _fetch_returns([_audit_row()] if rows else []):
+        with patch.object(SQLBackend, "_process_visit_level", side_effect=RuntimeError("boom")):
+            with pytest.raises(RuntimeError):
+                _pipeline().stream_analysis_ignore_events(config, EMPTY_OPP, force_refresh=True)
+
+    assert not SQLCacheManager(EMPTY_OPP, config).has_empty_marker()
+    assert _pipeline().get_cached_result_only(config, EMPTY_OPP) is None
+
+
+@pytest.mark.django_db
+def test_a_config_scoped_delete_drops_only_that_configs_empty_marker():
+    from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
+
+    first = _visit_level_config()
+    second = _visit_level_config()
+    second.fields = second.fields[:1]  # a different config hash, another pipeline
+    second.pipeline_id = PIPELINE_ID + 1
+    other_opp_config = _visit_level_config()
+    with _fetch_returns([]):
+        _pipeline().stream_analysis_ignore_events(first, EMPTY_OPP)
+        _pipeline().stream_analysis_ignore_events(second, EMPTY_OPP)
+        _pipeline().stream_analysis_ignore_events(other_opp_config, EMPTY_OPP + 1)
+    assert SQLCacheManager(EMPTY_OPP, first).config_hash != SQLCacheManager(EMPTY_OPP, second).config_hash
+
+    SQLCacheManager.delete_config_cache(EMPTY_OPP, SQLCacheManager(EMPTY_OPP, first).config_hash)
+
+    assert _pipeline().get_cached_result_only(first, EMPTY_OPP) is None
+    assert _pipeline().get_cached_result_only(second, EMPTY_OPP).rows == []
+    assert _pipeline().get_cached_result_only(other_opp_config, EMPTY_OPP + 1).rows == []

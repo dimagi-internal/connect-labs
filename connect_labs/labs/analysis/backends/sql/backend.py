@@ -440,11 +440,24 @@ def flw_row_from_cache(row) -> FLWRow:
     return flw_row
 
 
+# Sources where zero rows from a fetch that SUCCEEDED is a real answer, so an empty
+# build is recorded (SQLCacheManager.store_empty_marker) instead of leaving nothing a
+# cache-only read can find. Each one's fetcher raises on any API or HTTP failure, so
+# an empty list never stands for a failed read: no audits reviewed yet, an opportunity
+# with no assigned tasks, a case type with no cases, an experiment with no sessions.
+# Without the marker a report over such a source never reads as filled: the fill
+# "succeeds", the cache-only build still misses, and the live preview looped
+# fill -> warm_failed -> fill for an hour on 2026-11-19 (run 29804, an
+# assigned_tasks pipeline with 0 rows; connect-labs#2810). The visit sources keep
+# treating a missing row set as a miss: their emptiness is checked against an
+# expected count, and zero visits there usually means a read that came back short.
+EMPTY_IS_AN_ANSWER_SOURCES = frozenset({"labs_audits", "connect_export", "cchq_cases", "ocs_sessions"})
+
+
 def _is_empty_cached(config: AnalysisPipelineConfig, cache_manager: SQLCacheManager) -> bool:
-    """A labs_audits config that was last built from zero audited visits (see
-    SQLCacheManager.store_empty_marker). Scoped to that source: others keep treating
-    a missing row set as a miss."""
-    return config.data_source.type == "labs_audits" and cache_manager.has_empty_marker()
+    """A config on an EMPTY_IS_AN_ANSWER_SOURCES source that was last built from zero
+    rows (see SQLCacheManager.store_empty_marker)."""
+    return config.data_source.type in EMPTY_IS_AN_ANSWER_SOURCES and cache_manager.has_empty_marker()
 
 
 class SQLBackend:
@@ -1553,22 +1566,29 @@ class SQLBackend:
 
         cache_manager = SQLCacheManager(opportunity_id, config)
 
+        # An empty build on a source where empty is an answer is recorded as a marker
+        # (EMPTY_IS_AN_ANSWER_SOURCES, SQLCacheManager.store_empty_marker): a zero-row
+        # result leaves no row for a cache read to find. Any earlier marker is dropped
+        # BEFORE the raw store (which replaces the rows it described) and the new one
+        # set only AFTER processing succeeds, so a build that fails part-way never
+        # leaves one behind for readers to answer "empty" from instead of retrying.
+        marks_empty = config.data_source.type in EMPTY_IS_AN_ANSWER_SOURCES and not skip_raw_store
+        if marks_empty:
+            cache_manager.clear_empty_marker()
+
         # Step 1: Store raw visits to SQL (skip if already stored during streaming)
         if not skip_raw_store:
             logger.info(f"[SQL] Storing {visit_count} raw visits to SQL")
             cache_manager.store_raw_visits(visit_dicts, visit_count)
-            if config.data_source.type == "labs_audits":
-                # No audits reviewed yet is this source's normal initial state, and a
-                # zero-row result leaves no row for a cache read to find: mark it
-                # (see SQLCacheManager.store_empty_marker); a later non-empty build
-                # drops the marker so it can never shadow real rows.
-                if visit_count == 0:
-                    cache_manager.store_empty_marker()
-                else:
-                    cache_manager.clear_empty_marker()
         else:
             logger.info(f"[SQL] Skipping raw store ({visit_count} visits already in DB)")
 
+        result = self._process_terminal_stage(config, opportunity_id, visit_count, cache_manager)
+        if marks_empty and visit_count == 0:
+            cache_manager.store_empty_marker()
+        return result
+
+    def _process_terminal_stage(self, config, opportunity_id, visit_count, cache_manager):
         # Branch based on terminal stage
         if config.terminal_stage == CacheStage.VISIT_LEVEL:
             return self._process_visit_level(config, opportunity_id, visit_count, cache_manager)

@@ -1306,12 +1306,12 @@ class AnalysisPipeline:
                     request=self.request,
                     data_source=config.data_source,
                 )
+                # Zero sessions is an answer: it goes through process_and_cache so the
+                # empty result is recorded for cache-only readers (EMPTY_IS_AN_ANSWER_SOURCES).
                 if not visit_dicts:
                     yield (EVENT_STATUS, {"message": "No sessions found"})
-                    yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))
-                    return
-
-                yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} sessions..."})
+                else:
+                    yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} sessions..."})
                 result = self.backend.process_and_cache(
                     self.request,
                     config,
@@ -1362,12 +1362,14 @@ class AnalysisPipeline:
                     access_token=self.access_token,
                     opportunity_id=opp_id,
                 )
+                # Zero records is an answer (an opportunity with no assigned tasks): it goes
+                # through process_and_cache so the empty result is recorded for cache-only
+                # readers. Returning it unstored left a report's fill unable to ever
+                # finish (connect-labs#2810, EMPTY_IS_AN_ANSWER_SOURCES).
                 if not visit_dicts:
                     yield (EVENT_STATUS, {"message": f"No {ep} found"})
-                    yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))
-                    return
-
-                yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} {ep} records..."})
+                else:
+                    yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} {ep} records..."})
                 result = self.backend.process_and_cache(
                     self.request,
                     config,
@@ -1435,12 +1437,12 @@ class AnalysisPipeline:
                     opportunity_id=opp_id,
                     cchq_access_token=self.cchq_access_token,
                 )
+                # Zero cases is an answer: it goes through process_and_cache so the empty
+                # result is recorded for cache-only readers (EMPTY_IS_AN_ANSWER_SOURCES).
                 if not visit_dicts:
                     yield (EVENT_STATUS, {"message": f"No '{ct}' cases found"})
-                    yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))
-                    return
-
-                yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} cases..."})
+                else:
+                    yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} cases..."})
                 result = self.backend.process_and_cache(
                     self.request,
                     config,
