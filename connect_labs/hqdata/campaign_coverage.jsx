@@ -158,8 +158,18 @@ function WorkflowUI({ definition, pipelines }) {
   }
 
   var reachCycles = reachMeta.cycles || [];
-  var activeCycle =
-    cycle || (reachCycles.length ? reachCycles[reachCycles.length - 1] : null);
+  var busiest = null;
+  var busiestN = 0;
+  reachCycles.forEach(function (c) {
+    var n = reachRows.filter(function (r) {
+      return r.cycle === c;
+    }).length;
+    if (n >= busiestN) {
+      busiestN = n;
+      busiest = c;
+    }
+  });
+  var activeCycle = cycle || busiest;
   var reachShown = reachRows
     .filter(function (r) {
       return r.cycle === activeCycle;
@@ -233,7 +243,14 @@ function WorkflowUI({ definition, pipelines }) {
       <h2 className="text-sm font-semibold text-gray-700 mb-2">
         Whole campaign, by cycle
       </h2>
-      <div className="grid grid-cols-5 gap-3 mb-2">
+      <div
+        className="mb-2"
+        style={{
+          display: 'grid',
+          gap: 12,
+          gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+        }}
+      >
         {cycles.map(function (c) {
           var v = all[c];
           var s = shade(v ? v.share : null);
@@ -264,12 +281,26 @@ function WorkflowUI({ definition, pipelines }) {
           );
         })}
       </div>
-      <p className="text-xs text-gray-600 mb-6">
-        Goal: {Math.round(goal * 100)}% of the target. Green is at or above the
-        goal, amber 75% to the goal, red below 75%, purple over 110% (the plan
-        counted fewer children than were found). A cycle's target is that of the
-        health centres that reported in it.
-      </p>
+      <div className="flex flex-wrap items-center gap-2 text-xs mb-6">
+        <span className="text-gray-600">Goal {Math.round(goal * 100)}%:</span>
+        {[
+          ['at or above the goal', 1],
+          ['75% to the goal', 0.8],
+          ['below 75%', 0.5],
+          ['over 110%: the plan counted too few', 1.2],
+        ].map(function (l) {
+          var c = shade(l[1]);
+          return (
+            <span
+              key={l[0]}
+              className="rounded px-2 py-0.5"
+              style={{ background: c.bg, color: c.fg }}
+            >
+              {l[0]}
+            </span>
+          );
+        })}
+      </div>
 
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-sm font-semibold text-gray-700">
@@ -461,48 +492,71 @@ function WorkflowUI({ definition, pipelines }) {
               </tbody>
             </table>
           </div>
-          <p className="text-xs text-gray-600 mt-2">
-            <b>Against the plan</b>: the health centres' administrative target.{' '}
-            <b>Against satellite estimate</b>: children under five that the
-            population map puts in the 1 km squares the households fall in,
-            times the share who are eligible. <b>Against the whole district</b>:
-            the same over the whole admin district, shown only where the
-            households cover at least half of its children.{' '}
-            <b>Buildings reached</b>: of the nearest{' '}
-            {reachMeta.catchment_k || 260} buildings to each health centre, the
-            share with a recorded household point within{' '}
-            {reachMeta.max_dist_m || 30} m; a health centre's catchment is an
-            approximation, since no catchment boundaries exist. A dash means
-            that comparison is not available for the district.
-          </p>
+          {reachMeta.stale ? (
+            <p className="text-xs text-amber-700 mt-2">
+              Updating: showing the previous result until the new data is
+              processed.
+            </p>
+          ) : null}
+          <details className="mt-2 text-xs text-gray-600">
+            <summary className="cursor-pointer">What each column means</summary>
+            <ul className="list-disc pl-5 mt-1 space-y-1">
+              <li>
+                Against the plan: the health centres' administrative target.
+              </li>
+              <li>
+                Against satellite estimate: children under five a population map
+                puts in the 1 km squares the households fall in, times the
+                eligible share.
+              </li>
+              <li>
+                Against the whole district: the same over the whole admin
+                district; shown only where the households cover at least half of
+                its children.
+              </li>
+              <li>
+                Buildings reached: of the nearest {reachMeta.catchment_k || 260}{' '}
+                buildings to each health centre, the share with a household
+                point within {reachMeta.max_dist_m || 30} m. The catchment is an
+                approximation: no catchment boundaries exist.
+              </li>
+              <li>
+                A dash means that comparison is not available for the district.
+              </li>
+            </ul>
+          </details>
         </div>
       )}
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
-        <div className="font-semibold text-gray-900 mb-1">How to read this</div>
-        <p className="mb-2">
-          <b>Reported coverage</b> is the number of distinct children recorded
-          as given the dose in a cycle, divided by the target population of the
-          health centres that reported in that cycle. A child seen twice in a
-          cycle counts once. The target is each health centre's latest plan
-          record (children aged 3 to 11 months plus 12 to 59 months).
-        </p>
-        <p className="mb-2">
-          This is reported coverage against the administrative plan, not against
-          the true number of children, so it can pass 100% where the plan
-          counted too few. Comparing it with satellite population and with
-          buildings reached is the next step on this page.
-        </p>
-        <p>
-          {noPlan
-            ? noPlan +
-              ' of ' +
-              (meta.health_centres || 0) +
-              ' health centres have no plan record and are left out of the percentages. '
-            : 'Every health centre that reported has a plan record. '}
-          {meta.names_note ? meta.names_note : ''}
-        </p>
-      </div>
+      <details className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
+        <summary className="font-semibold text-gray-900 cursor-pointer">
+          How these numbers are made
+        </summary>
+        <ul className="list-disc pl-5 mt-2 space-y-1">
+          <li>
+            Reported coverage: children recorded as given the dose in a cycle,
+            out of the plan of the health centres that reported that cycle.
+          </li>
+          <li>A child seen twice in a cycle counts once.</li>
+          <li>
+            The plan is each health centre's latest plan record: children aged 3
+            to 11 months plus 12 to 59 months.
+          </li>
+          <li>
+            It is coverage against the plan, not against the true number of
+            children, so it can pass 100% where the plan counted too few.
+          </li>
+          <li>
+            {noPlan
+              ? noPlan +
+                ' of ' +
+                (meta.health_centres || 0) +
+                ' health centres have no plan record and are left out of the percentages.'
+              : 'Every health centre that reported has a plan record.'}
+          </li>
+          {meta.names_note ? <li>{meta.names_note}</li> : null}
+        </ul>
+      </details>
     </div>
   );
 }
