@@ -864,8 +864,11 @@ def _may_import(user) -> bool:
         "import also runs daily. It never deletes anything (there is no prune here) and never "
         "changes a sheet row you maintain; it only refreshes the findings tab and the access "
         "columns on the rounds tab. Returns the counts, what it skipped, the data-quality "
-        "findings and, per round, how many submissions matched an organisation and how many still "
-        "await a verdict. `dry_run` reads and reports without writing. Takes minutes, so it runs "
+        "findings and, per round, how many submissions matched an organisation and who still "
+        "awaits one (`awaiting_verdict`: name, form, sheet row, submitted_at, country, website). "
+        "Contacts, dates, attributions and verdicts whose organisation name differs from the "
+        "Organizations tab only by case, accents or spacing are joined anyway, and listed under "
+        "`names_aligned`. `dry_run` reads and reports without writing. Takes minutes, so it runs "
         "as a job: the result comes back here if it finishes quickly, otherwise poll `job_status`. "
         "Only Dimagi members and platform support may run it."
     ),
@@ -882,13 +885,28 @@ def _may_import(user) -> bool:
                 "default": False,
                 "description": "Read the sheet and report what would be imported; write nothing.",
             },
+            "open_only": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Re-read only the rounds still taking applications (a round no longer open does not "
+                    "change). Several times faster than the full import; the daily run still does them all."
+                ),
+            },
+            "rounds": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Re-read only these round slugs (overrides `open_only`). An unknown slug is refused.",
+            },
         },
         "additionalProperties": False,
     },
     is_write=True,
     long_running=True,
 )
-def marketplace_import(user, eoi: bool = True, dry_run: bool = False) -> dict[str, Any]:
+def marketplace_import(
+    user, eoi: bool = True, dry_run: bool = False, open_only: bool = False, rounds: list[str] | None = None
+) -> dict[str, Any]:
     from connect_labs.marketplace.importer import ImportFailed, run_import
 
     if not _may_import(user):
@@ -896,6 +914,6 @@ def marketplace_import(user, eoi: bool = True, dry_run: bool = False) -> dict[st
             "PERMISSION_DENIED", "Only Dimagi members and platform support may run the marketplace import."
         )
     try:
-        return run_import(eoi_rounds=eoi, dry_run=dry_run)
+        return run_import(eoi_rounds=eoi, dry_run=dry_run, open_only=open_only, rounds=rounds)
     except ImportFailed as e:
         raise MCPToolError(e.code, str(e)) from e

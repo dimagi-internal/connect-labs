@@ -41,6 +41,18 @@ class Command(BaseCommand):
             help="Also import EOI/RFP rounds and their submissions",
         )
         parser.add_argument(
+            "--open-only",
+            action="store_true",
+            help="With --eoi: re-read only the rounds still taking applications",
+        )
+        parser.add_argument(
+            "--round",
+            action="append",
+            dest="rounds",
+            default=None,
+            help="With --eoi: re-read only this round slug (repeatable)",
+        )
+        parser.add_argument(
             "--prune",
             action="store_true",
             help="Treat the sheet as authoritative: delete organisations, contacts and attributions it does not carry",
@@ -59,6 +71,8 @@ class Command(BaseCommand):
                 eoi_rounds=opts["eoi"],
                 check_access=opts["check_access"],
                 prune=opts["prune"],
+                rounds=opts["rounds"],
+                open_only=opts["open_only"],
                 emit=emit,
             )
         except ImportFailed as exc:

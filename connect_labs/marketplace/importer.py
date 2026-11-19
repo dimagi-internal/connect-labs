@@ -33,6 +33,7 @@ from connect_labs.labs.models import LabsOrg
 from connect_labs.marketplace import directory, eoi
 from connect_labs.marketplace.identity import ensure_org
 from connect_labs.marketplace.models import OrgConnectSlug, OrgContact, OrgProfile
+from connect_labs.marketplace.quality import _fold as fold_name
 from connect_labs.marketplace.quality import audit, findings_tab_rows
 from connect_labs.pulse.hq_location import operating_areas
 from connect_labs.pulse.hq_location import resolve as resolve_hq
@@ -199,6 +200,41 @@ def _quiet(level: str, line: str) -> None:
     logger.info("marketplace_import: %s", line)
 
 
+def align_names(rows, tab: str, header: str, known: set[str], aligned: list[str]):
+    """Rewrite an organisation-name cell to the Organizations tab's spelling when only its
+    case, accents or spacing differ.
+
+    Labs joins contacts, dates, attributions and verdicts to an organisation by exact name,
+    and a hand-maintained sheet gets "Society for Family Health" on one tab and "Society For
+    Family Health" on another. Duplicate detection already folds those away; the join did
+    not, so every such contact silently fell off its organisation (about 70 on 2026-11-19).
+    The rewrite happens on the rows read here, never in the sheet, and only when exactly one
+    organisation folds to the name -- two candidates is a human's call and is left alone.
+    ``aligned`` collects what was matched loosely so the result can say.
+    """
+    if not rows:
+        return rows
+    index = directory.Columns(rows, tab).index(header)
+    if index is None:
+        return rows
+    by_fold: dict[str, set[str]] = {}
+    for name in known:
+        by_fold.setdefault(fold_name(name), set()).add(name)
+    out = [list(rows[0])]
+    for row in rows[1:]:
+        row = list(row)
+        if index < len(row):
+            raw = (row[index] or "").strip()
+            if raw and raw not in known:
+                candidates = by_fold.get(fold_name(raw), set())
+                if len(candidates) == 1:
+                    (target,) = candidates
+                    aligned.append(f"{tab}: {raw!r} → {target!r}")
+                    row[index] = target
+        out.append(row)
+    return out
+
+
 def run_import(
     *,
     spreadsheet_id: str | None = None,
@@ -206,6 +242,8 @@ def run_import(
     eoi_rounds: bool = False,
     check_access: bool = False,
     prune: bool = False,
+    rounds: list[str] | None = None,
+    open_only: bool = False,
     emit: Emit = _quiet,
 ) -> dict:
     """Read the LLO Directory and update the registry; return what happened.
@@ -229,6 +267,11 @@ def run_import(
         ) from exc
 
     orgs = directory.parse_organizations(org_rows)
+    known = {o.name for o in orgs}
+    aligned: list[str] = []
+    contact_rows = align_names(contact_rows, directory.CONTACTS_TAB, directory.ORG_NAME, known, aligned)
+    date_rows = align_names(date_rows, directory.DATES_TAB, directory.ORG_NAME, known, aligned)
+    map_rows = align_names(map_rows, directory.MAPPING_TAB, "Corrected Partner", known, aligned)
     contacts = directory.parse_contacts(contact_rows)
 
     if dry_run:
@@ -244,6 +287,7 @@ def run_import(
             "contacts": len(contacts),
             "attributions": len(mapped),
             "skipped": list(skipped),
+            "names_aligned": _aligned_summary(aligned),
             "findings": _findings_summary(findings, emit),
         }
 
@@ -258,9 +302,15 @@ def run_import(
         return _import_locked(
             sid, org_rows, contact_rows, date_rows, map_rows, orgs, contacts,
             eoi_rounds=eoi_rounds, check_access=check_access, prune=prune, emit=emit,
+            rounds=rounds, open_only=open_only, aligned=aligned, known=known,
         )  # fmt: skip
     finally:
         cache.delete(LOCK_KEY)
+
+
+def _aligned_summary(aligned: list[str]) -> dict:
+    """What matched on case/accents/spacing alone: the sheet's own spelling differs, so tell the owner."""
+    return {"count": len(aligned), "examples": aligned[:25]}
 
 
 def _findings_summary(findings, emit: Emit) -> dict:
@@ -278,7 +328,22 @@ def _findings_summary(findings, emit: Emit) -> dict:
 
 
 def _import_locked(
-    sid, org_rows, contact_rows, date_rows, map_rows, orgs, contacts, *, eoi_rounds, check_access, prune, emit
+    sid,
+    org_rows,
+    contact_rows,
+    date_rows,
+    map_rows,
+    orgs,
+    contacts,
+    *,
+    eoi_rounds,
+    check_access,
+    prune,
+    emit,
+    rounds=None,
+    open_only=False,
+    aligned=(),
+    known=frozenset(),
 ) -> dict:
     try:
         stats = import_directory(org_rows, contact_rows, date_rows, map_rows, prune=prune)
@@ -314,20 +379,35 @@ def _import_locked(
 
     invalidate()
 
-    result = {"dry_run": False, **stats, "findings": findings_summary}
+    result = {
+        "dry_run": False,
+        **stats,
+        "findings": findings_summary,
+        "names_aligned": _aligned_summary(list(aligned)),
+    }
     if eoi_rounds or check_access:
-        result["rounds"] = _import_rounds(sid, eoi_rounds=eoi_rounds, emit=emit)
+        result["rounds"] = _import_rounds(
+            sid, eoi_rounds=eoi_rounds, rounds=rounds, open_only=open_only, known=known, emit=emit
+        )
     return result
 
 
-def _import_rounds(sid, *, eoi_rounds: bool, emit: Emit) -> dict:
-    """Import the EOI/RFP tab, then each round's submissions."""
+def _import_rounds(sid, *, eoi_rounds: bool, emit: Emit, rounds=None, open_only=False, known=frozenset()) -> dict:
+    """Import the EOI/RFP tab, then each selected round's submissions.
+
+    ``rounds`` (slugs) or ``open_only`` limit which rounds' response sheets are read and
+    re-ingested. The rounds TAB is always read and upserted, so a new round row appears
+    either way. A round no longer taking applications does not change, so an import run
+    often can skip it; the daily beat imports them all.
+    """
     round_rows = directory.read_tab(sid, directory.ROUNDS_TAB)
-    rounds, skipped = directory.parse_rounds(round_rows)
+    parsed_rounds, skipped = directory.parse_rounds(round_rows)
     out: dict = {"skipped": list(skipped), "access_problems": []}
     for line in skipped:
         emit("warning", f"  round skipped: {line}")
-    stats = eoi.upsert_rounds(rounds)
+    stats = eoi.upsert_rounds(parsed_rounds)
+    only = _selected_rounds(rounds, open_only)
+    out["selected"] = sorted(only) if only is not None else "all"
     for slug in stats["collisions"]:
         emit("warning", f"  round skipped: slug {slug!r} belongs to a solicitation that is not a round")
         out["skipped"].append(f"{slug}: belongs to a solicitation that is not a round")
@@ -343,7 +423,7 @@ def _import_rounds(sid, *, eoi_rounds: bool, emit: Emit) -> dict:
     out["rounds"] = stats["rounds"]
     emit("success", f"{stats['rounds']} rounds")
 
-    results = eoi.check_access(directory.read_tab, write_back_to=rounds, spreadsheet_id=sid)
+    results = eoi.check_access(directory.read_tab, write_back_to=parsed_rounds, spreadsheet_id=sid, only=only)
     readable = [r for r in results if r["state"] == "ok"]
     for result in results:
         if result["state"] != "ok":
@@ -358,12 +438,14 @@ def _import_rounds(sid, *, eoi_rounds: bool, emit: Emit) -> dict:
         return out
 
     # Verdicts a person already reached, which outrank every inference.
-    known = {o.name for o in directory.parse_organizations(directory.read_tab(sid, directory.ORGANIZATIONS_TAB))}
+    if not known:
+        known = {o.name for o in directory.parse_organizations(directory.read_tab(sid, directory.ORGANIZATIONS_TAB))}
     try:
         verdict_rows = directory.read_tab(sid, directory.RESPONSE_MAPPING_TAB)
     except Exception:  # noqa: BLE001 — the tab is optional until someone needs it
         verdict_rows = []
         emit("info", f"  (no {directory.RESPONSE_MAPPING_TAB} tab yet — nothing to apply)")
+    verdict_rows = align_names(verdict_rows, directory.RESPONSE_MAPPING_TAB, "Organisation", set(known), [])
     verdicts, verdict_skips = directory.parse_response_mapping(verdict_rows, known)
     for line in verdict_skips:
         emit("warning", f"  verdict refused: {line}")
@@ -392,7 +474,9 @@ def _import_rounds(sid, *, eoi_rounds: bool, emit: Emit) -> dict:
         got = eoi.ingest_round(round_, rows, human_verdicts=verdicts)
         for key in totals:
             totals[key] += got[key]
-        per_round.append({"slug": round_.slug, **{key: got[key] for key in totals}})
+        per_round.append(
+            {"slug": round_.slug, **{key: got[key] for key in totals}, "awaiting_verdict": _awaiting(round_)}
+        )
         emit(
             "info",
             f"  {round_.slug}: {got['submissions']} submissions, "
@@ -411,3 +495,45 @@ def _import_rounds(sid, *, eoi_rounds: bool, emit: Emit) -> dict:
     out["per_round"] = per_round
     out["totals"] = totals
     return out
+
+
+def _selected_rounds(rounds, open_only) -> set[str] | None:
+    """The slugs an import is limited to: named rounds, the open ones, or None for every round."""
+    if rounds:
+        wanted = {str(s).strip() for s in rounds if str(s).strip()}
+        have = set(eoi.Solicitation.objects.directory_rounds().values_list("slug", flat=True))
+        unknown = sorted(wanted - have)
+        if unknown:
+            raise ImportFailed(
+                "UNKNOWN_ROUND",
+                f"No marketplace round with slug {', '.join(map(repr, unknown))} (see marketplace_rounds_list).",
+            )
+        return wanted
+    if open_only:
+        from connect_labs.marketplace import queries
+
+        return {r.slug for r in queries.open_rounds()}
+    return None
+
+
+def _awaiting(round_) -> list[dict]:
+    """Submissions no organisation could be certain for: who still needs adding or a verdict.
+
+    Names, the form and its sheet row, never a person: a caller that must write to the
+    applicant reads ``marketplace_round_responses`` (owner-gated, contacts opt-in) at that row.
+    """
+    rows = round_.responses.filter(match_state=eoi.SolicitationResponse.MATCH_UNMATCHED).order_by(
+        "source_form", "source_row"
+    )
+    return [
+        {
+            "response_id": r.pk,
+            "form": r.source_form,
+            "source_row": r.source_row,
+            "org_name": r.org_name,
+            "submitted_at": r.submission_date.isoformat() if r.submission_date else None,
+            "country": r.country_as_submitted,
+            "website": r.website_as_submitted,
+        }
+        for r in rows
+    ]
