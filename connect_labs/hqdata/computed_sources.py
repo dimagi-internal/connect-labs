@@ -33,6 +33,7 @@ def _campaign_coverage(user, project, params, report):
             names = {loc["location_id"]: loc["name"] for loc in found}
         except locations.LocationsError as exc:
             name_note = f"Names could not be read from CommCare ({exc})"
+    report("Counting children served per health centre and cycle...")
     try:
         with store_for(project).session() as store:
             rows, metadata = campaign.rows(store, project.pk, spec, names)
