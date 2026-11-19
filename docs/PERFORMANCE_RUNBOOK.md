@@ -536,10 +536,15 @@ aws cloudwatch get-metric-statistics --profile labs-observe --region us-east-1 \
   --start-time <page-1h>Z --end-time <page>Z
 ```
 
-These are kernel OOM kills of single requests, so the memory gauge often reads normal. Two
+These are kernel OOM kills of single requests, so the memory gauge often reads normal. Three
 causes seen: one request materialising a whole opportunity's visits (a large
-`[SQL] Loaded N visits` near the kills), and the RawVisitCache stampede (#1361), where several
-workers rebuild one opportunity's cache at once. Reading the logs needs `labs` SSO
+`[SQL] Loaded N visits` near the kills), the RawVisitCache stampede (#1361), where several
+workers rebuild one opportunity's cache at once, and a viewer re-previewing a run's snapshot
+(`labs/workflow/api/run/<id>/snapshot/preview/`, #2810): several 5-8 minute requests at once,
+`perf_triage --hours 3` lists them, and the kills line up with memory at 85-99% and no deploy
+(2026-11-19: 17 kills in 70 minutes). Also, the alarm's 30-minute sum can clear a minute after
+it fires (4 in the next bucket) while kills continue, so read the per-minute kills above
+before treating an `OK:` as recovery. Reading the logs needs `labs` SSO
 (`tools/kill_stampede_triage.py`). Since 2026-10-29 (#2776) outbound-request lines carry no
 query string, so the exact tell (one `last_id` cursor repeating across web tasks) survives
 only in older lines. Newer lines end in non-identifying facts --
