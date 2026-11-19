@@ -28,6 +28,12 @@ MCP tool calls are additionally logged to `MCPAuditLog` (tool-level); their
 data touches flow through the same client choke points and land here too,
 attributed via the PAT user with `source="mcp"`.
 
+**`MCPAuditLog` is kept indefinitely** (decided 2026-11-19, #3123): nothing
+prunes it. It is the only per-tool record of what an agent asked labs to do
+(write arguments in full), and HIPAA keeps audit records for six years.
+Revisit only if its size becomes a cost problem, and then archive rather than
+delete.
+
 **Session reconstruction.** Every event carries the request's `path` and its
 `query_string` — with **free-text parameter values redacted**
 (`service.FREE_TEXT_PARAMS`: `q`, `search`, `notes`, ... — a search box may

@@ -703,16 +703,78 @@ def policy_denial(tool_name: str, arguments: dict, user, restricted: bool, deleg
             return reason
     # Central labs-only access gate. Any tool scoped to a labs-only opp/program
     # routes to the local backend with no downstream Connect membership check, so
-    # enforce the synthetic access model here — one place every tool passes through,
+    # enforce the synthetic access model here -- one place every tool passes through,
     # rather than relying on each handler to remember its own gate. Real opps are
     # untouched (the production API enforces them per request).
+    spec = _REGISTRY.get(tool_name)
+    skip = spec.scope_gated_in_handler if spec is not None else ()
+    return labs_only_arguments_denied_reason(user, {k: v for k, v in arguments.items() if k not in skip})
+
+
+def labs_only_arguments_denied_reason(user, arguments) -> str | None:
+    """The labs-only gate over EVERY opportunity and program a call names.
+
+    Not only the top-level ``opportunity_id`` / ``program_id``: a scope also arrives
+    as a list (``pipeline_preview``'s ``opportunity_ids``), under a prefixed name
+    (``workflow_clone``'s ``source_opportunity_id`` / ``target_program_id``) or nested
+    (``workflow_add_pipeline_source``'s ``home_scope``, a ``registry_source``, each
+    ``pipeline_sources[].home_scope``, ``program_admin_demo_seed``'s ``opps[]``). Each
+    of those tools once let a caller read or write a labs-only opportunity it could
+    not open, because its author did not repeat the check (#3123). So the whole
+    argument tree is walked, and any key ending in ``opportunity_id(s)`` or
+    ``program_id(s)`` is gated. A scope reached only through a record id (a workflow,
+    a run) is still the handler's to resolve.
+    """
     from connect_labs.labs.synthetic.access import labs_only_scope_denied_reason
 
-    return labs_only_scope_denied_reason(
-        user,
-        opportunity_id=arguments.get("opportunity_id"),
-        program_id=arguments.get("program_id"),
-    )
+    for kind, value in _named_scopes(arguments):
+        reason = labs_only_scope_denied_reason(user, **{kind: value})
+        if reason:
+            return reason
+    return None
+
+
+_SCOPE_KEY_SUFFIXES = (
+    ("opportunity_ids", "opportunity_id"),
+    ("program_ids", "program_id"),
+    ("opportunity_id", "opportunity_id"),
+    ("program_id", "program_id"),
+)
+
+
+def _named_scopes(value, depth: int = 0):
+    """Yield ``(kind, id)`` for every opportunity or program named anywhere in ``value``."""
+    if depth > 8:
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            kind = next((k for suffix, k in _SCOPE_KEY_SUFFIXES if str(key).endswith(suffix)), None)
+            if kind is not None:
+                for one in _id_list(item):
+                    if not isinstance(one, (dict, list)):
+                        yield kind, one
+            yield from _named_scopes(_decoded(item), depth + 1)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _named_scopes(_decoded(item), depth + 1)
+
+
+def _decoded(value):
+    """MCP arguments can arrive as a JSON string despite their declared schema."""
+    if isinstance(value, str) and value[:1] in ("[", "{"):
+        try:
+            return json.loads(value)
+        except ValueError:
+            return value
+    return value
+
+
+def _id_list(value) -> list:
+    """An id argument as the tool will read it: one id, or a list of them."""
+    value = _decoded(value)
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    return [] if value is None else [value]
 
 
 def _run_registry_tool_inner(
