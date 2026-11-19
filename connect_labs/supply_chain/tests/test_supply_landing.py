@@ -50,9 +50,17 @@ def test_a_programme_with_no_stock_in_the_field_opens_on_the_overview(client_in_
     assert 'data-testid="tab-hidden"' not in response.content.decode()
 
 
-def test_a_programme_whose_workers_hold_stock_opens_on_stock_review(client_in_programme):
+def test_a_programme_whose_workers_hold_stock_opens_on_the_overview_in_the_usual_layout(client_in_programme):
+    """Round 3: the Overview is the front door; the field-stock landing belongs to the compact layout."""
     _worker()
     _set({"tabs": {"supply_chain:workers": STOCK_REVIEW}})
+
+    assert client_in_programme.get(reverse("supply_chain:home")).status_code == 200
+
+
+def test_a_compact_programme_whose_workers_hold_stock_opens_on_stock_review(client_in_programme):
+    _worker()
+    _set({"compact_layout": True, "tabs": {"supply_chain:workers": STOCK_REVIEW}})
 
     response = client_in_programme.get(reverse("supply_chain:home"))
 
@@ -62,6 +70,7 @@ def test_a_programme_whose_workers_hold_stock_opens_on_stock_review(client_in_pr
 
 def test_with_no_workflow_in_the_tab_it_opens_on_the_workers_page(client_in_programme):
     _worker()
+    _set({"compact_layout": True})
     response = client_in_programme.get(reverse("supply_chain:home"))
     assert response["Location"] == f"/supply/workers/?program_id={PROGRAM}"
 
@@ -73,7 +82,7 @@ def test_only_active_workers_count(client_in_programme):
 
 def test_the_date_and_other_parameters_ride_along(client_in_programme):
     _worker()
-    _set({"tabs": {"supply_chain:workers": STOCK_REVIEW}})
+    _set({"compact_layout": True, "tabs": {"supply_chain:workers": STOCK_REVIEW}})
 
     response = client_in_programme.get(reverse("supply_chain:home"), {"as_of": "2026-09-01", "commodity": "rutf"})
 
@@ -128,7 +137,10 @@ def test_an_organisation_sets_the_landing_for_every_programme_it_owns(client_in_
         "connect_labs.labs.context.get_org_data",
         lambda request: {"programs": [{"id": PROGRAM, "organization": "owner-org", "name": "P"}]},
     )
-    assert client_in_programme.get(reverse("supply_chain:home"))["Location"] == f"/supply/stock/?program_id={PROGRAM}"
+    assert (
+        client_in_programme.get(reverse("supply_chain:home"))["Location"]
+        == f"/supply/stock-by-llo/?program_id={PROGRAM}"
+    )
 
 
 def test_a_programme_overrides_its_organisations_landing(client_in_programme, monkeypatch):

@@ -30,9 +30,9 @@ class HiddenSupplyTabMiddleware:
         match = getattr(request, "resolver_match", None)
         if match is None or not match.view_name.startswith("supply_chain:"):
             return None
-        from connect_labs.supply_chain.navigation import SUPPLY_TABS, TAB_FOR_VIEW, hidden_tabs
+        from connect_labs.supply_chain.navigation import SUPPLY_TABS, hidden_tabs, tab_of
 
-        tab = TAB_FOR_VIEW.get(match.view_name, match.view_name)
+        tab = tab_of(request, match.view_name)
         if tab not in hidden_tabs(request):
             return None
         from connect_labs.supply_chain.banner import program_line

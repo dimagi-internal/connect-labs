@@ -16,6 +16,12 @@ def _today(request) -> date:
 
 
 class _LLOPage(_Base):
+    def memo(self):
+        """One dict for the request, so the plan is worked out once however many figures read it."""
+        if not hasattr(self.request, "_llo_memo"):
+            self.request._llo_memo = {}
+        return self.request._llo_memo
+
     def visible(self, context):
         """The supply points this viewer may see, or None for all (a partner under read enforcement sees its own)."""
         if not context.get("acl_scoped"):
@@ -38,7 +44,10 @@ class StockByLLOView(_LLOPage):
         if not context["has_program_context"]:
             return context
         rows = llo_stock.llo_rows(
-            _access(self.request).program_id, visible=self.visible(context), today=_today(self.request)
+            _access(self.request).program_id,
+            visible=self.visible(context),
+            today=_today(self.request),
+            memo=self.memo(),
         )
         context.update(rows=rows, roll=llo_stock.roll_up(rows))
         return context
@@ -54,7 +63,11 @@ class LLOStockView(_LLOPage):
         if not context["has_program_context"]:
             return context
         detail = llo_stock.llo_detail(
-            _access(self.request).program_id, org_id, visible=self.visible(context), today=_today(self.request)
+            _access(self.request).program_id,
+            org_id,
+            visible=self.visible(context),
+            today=_today(self.request),
+            memo=self.memo(),
         )
         if detail is None:
             raise Http404(f"no LLO {org_id} with anything to hold in this program")
@@ -72,7 +85,10 @@ class ThisWeekView(_LLOPage):
         if not context["has_program_context"]:
             return context
         context["rows"] = llo_stock.week_rows(
-            _access(self.request).program_id, visible=self.visible(context), today=_today(self.request)
+            _access(self.request).program_id,
+            visible=self.visible(context),
+            today=_today(self.request),
+            memo=self.memo(),
         )
         return context
 
@@ -87,7 +103,11 @@ class LLOWeekView(_LLOPage):
         if not context["has_program_context"]:
             return context
         week = llo_stock.llo_week(
-            _access(self.request).program_id, org_id, visible=self.visible(context), today=_today(self.request)
+            _access(self.request).program_id,
+            org_id,
+            visible=self.visible(context),
+            today=_today(self.request),
+            memo=self.memo(),
         )
         if week is None:
             raise Http404(f"no LLO {org_id} with anything to hand out in this program")

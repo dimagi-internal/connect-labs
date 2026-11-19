@@ -20,6 +20,7 @@ WATCH_LABELS = {
     "stock_variance": "A count differs from the records",
     "stock_negative": "More was given out than was ever received",
     "stock_stockout": "A place has run out of stock",
+    "flw_short_for_week": "An FLW cannot cover the visits before the next handout",
     "stock_below_minimum": "A place holds less than its minimum",
     "stock_expiring": "Stock is close to its expiry date, or past it",
     "delivery_after_stockout": "A place runs out before its next delivery",

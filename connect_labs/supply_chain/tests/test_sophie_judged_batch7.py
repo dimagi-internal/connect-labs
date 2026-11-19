@@ -105,9 +105,8 @@ class TestWaitingOnSaysTwoThings:
 class TestAsOfHasNoFlagsColumn:
     def test_the_column_goes_and_one_note_says_why(self, da, base, home_client):
         past = _home(home_client, as_of="2026-08-20")
-        standing = batch6._standing(past)
         # No flags column at all now, on any date.
-        assert ">Flags<" not in standing and 'data-testid="stale-flag"' not in standing
+        assert ">Flags<" not in past and 'data-testid="stale-flag"' not in past
         assert ">Flags</th>" not in _home(home_client)
 
 

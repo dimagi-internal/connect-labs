@@ -74,6 +74,70 @@ def _contract_flags(contracts, shipments, invoices, words) -> dict:
     return {"in_transit": moving, "unpaid": owed, "finished": delivered and paid}
 
 
+def purchase_data(op, program_id, today, acl_scoped=False) -> dict:
+    """Every purchase of the program as rows (tenders, and orders bought outside one), with the figures behind them.
+
+    Shared by the Purchases list and the Overview's Buying half, so the two say the same thing.
+    """
+    tenders = op("tender_list")
+    visible = {t["id"] for t in tenders}
+    rows = sourcing_rows(program_id, today)
+    if acl_scoped:
+        # `sourcing_rows` reads the tables itself; a partner keeps only the tenders it may list.
+        rows = [r for r in rows if r["id"] in visible]
+    contracts = op("contract_list")
+    shipments = op("shipment_list")
+    invoices = op("invoice_list")
+    words = order_words(program_id, [c["id"] for c in contracts], today)
+    orgs = {o["id"]: o for o in op("org_list")}
+    suppliers = {s["id"]: s for s in op("supplier_list")}
+    by_tender: dict = {}
+    for c in contracts:
+        by_tender.setdefault(c.get("tender_id"), []).append(c)
+    for row in rows:
+        row["purchase_url"] = reverse("supply_chain:purchase", args=[row["id"]])
+        mine = by_tender.get(row["id"], [])
+        row.update(_contract_flags(mine, shipments, invoices, words))
+        if row["finished"]:
+            # Delivered and paid: nothing is left, so the stage says so ("Ordered · Paid" read as half done).
+            row["stage"], row["stage_detail"] = "Done", "delivered and paid"
+        pay = _pay_words(mine, invoices, orgs, suppliers) if row["unpaid"] else ""
+        if pay and not row["next_move"]:
+            # An open invoice is a move on us even when the tender itself has nothing left to do.
+            row["next_move"], row["next_whose"] = pay, "Ours"
+        elif pay:
+            row["to_do"] = [*row.get("to_do", []), pay]
+    direct = []
+    for c in by_tender.get(None, []):
+        if c.get("status") == "cancelled":
+            continue
+        flags = _contract_flags([c], shipments, invoices, words)
+        org_id = c.get("partner_org_id") or c.get("buyer_org_id")
+        direct.append(
+            {
+                "id": c["id"],
+                "label": c.get("reference") or f"Order {c['id']}",
+                "supplier": (suppliers.get(c.get("supplier_id")) or {}).get("name") or "",
+                "llo": (orgs.get(org_id) or {}).get("name") or "",
+                "status": words.get(c["id"], ("", False))[0] or str(c.get("status") or "").capitalize(),
+                "money": purchases.money_state(c, invoices),
+                "signed": day_text(date.fromisoformat(c["signed_on"])) if c.get("signed_on") else "",
+                "url": reverse("supply_chain:order_detail", args=[c["id"]]),
+                **flags,
+            }
+        )
+    return {
+        "rows": rows,
+        "direct": direct,
+        "contracts": contracts,
+        "invoices": invoices,
+        "orgs": orgs,
+        "suppliers": suppliers,
+        "shipments": shipments,
+        "words": words,
+    }
+
+
 class PurchasesView(_Base):
     """Every purchase of the program, with the filters that stand in for the old Orders list."""
 
@@ -90,53 +154,8 @@ class PurchasesView(_Base):
         access = _access(self.request)
         program_id = access.program_id
         today = _today(self.request)
-        tenders = self.op("tender_list")
-        visible = {t["id"] for t in tenders}
-        rows = sourcing_rows(program_id, today)
-        if context["acl_scoped"]:
-            # `sourcing_rows` reads the tables itself; a partner keeps only the tenders it may list.
-            rows = [r for r in rows if r["id"] in visible]
-        contracts = self.op("contract_list")
-        shipments = self.op("shipment_list")
-        invoices = self.op("invoice_list")
-        words = order_words(program_id, [c["id"] for c in contracts], today)
-        orgs = {o["id"]: o for o in self.op("org_list")}
-        suppliers = {s["id"]: s for s in self.op("supplier_list")}
-        by_tender: dict = {}
-        for c in contracts:
-            by_tender.setdefault(c.get("tender_id"), []).append(c)
-        for row in rows:
-            row["purchase_url"] = reverse("supply_chain:purchase", args=[row["id"]])
-            mine = by_tender.get(row["id"], [])
-            row.update(_contract_flags(mine, shipments, invoices, words))
-            if row["finished"]:
-                # Delivered and paid: nothing is left, so the stage says so ("Ordered · Paid" read as half done).
-                row["stage"], row["stage_detail"] = "Done", "delivered and paid"
-            pay = _pay_words(mine, invoices, orgs, suppliers) if row["unpaid"] else ""
-            if pay and not row["next_move"]:
-                # An open invoice is a move on us even when the tender itself has nothing left to do.
-                row["next_move"], row["next_whose"] = pay, "Ours"
-            elif pay:
-                row["to_do"] = [*row.get("to_do", []), pay]
-        direct = []
-        for c in by_tender.get(None, []):
-            if c.get("status") == "cancelled":
-                continue
-            flags = _contract_flags([c], shipments, invoices, words)
-            org_id = c.get("partner_org_id") or c.get("buyer_org_id")
-            direct.append(
-                {
-                    "id": c["id"],
-                    "label": c.get("reference") or f"Order {c['id']}",
-                    "supplier": (suppliers.get(c.get("supplier_id")) or {}).get("name") or "",
-                    "llo": (orgs.get(org_id) or {}).get("name") or "",
-                    "status": words.get(c["id"], ("", False))[0] or str(c.get("status") or "").capitalize(),
-                    "money": purchases.money_state(c, invoices),
-                    "signed": day_text(date.fromisoformat(c["signed_on"])) if c.get("signed_on") else "",
-                    "url": reverse("supply_chain:order_detail", args=[c["id"]]),
-                    **flags,
-                }
-            )
+        data = purchase_data(self.op, program_id, today, context["acl_scoped"])
+        rows, direct = data["rows"], data["direct"]
         counts = {
             "active": sum(1 for r in rows if not r["finished"]) + sum(1 for d in direct if not d["finished"]),
             "unpaid": sum(1 for r in rows if r["unpaid"]) + sum(1 for d in direct if d["unpaid"]),

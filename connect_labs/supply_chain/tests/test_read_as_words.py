@@ -296,9 +296,9 @@ class TestTheOrder:
         assert "buyer of record: the program" not in header
 
     def test_the_overview_names_the_buyer_of_record(self, client_in_programme, chain):
-        # The Overview no longer repeats every order in a second table; the Orders page it links to has the buyer.
+        # The Overview no longer repeats every order in a second table; the Orders page has the buyer.
         overview = client_in_programme.get(reverse("supply_chain:home")).content.decode()
-        assert 'data-testid="all-orders-link"' in overview
+        assert 'data-testid="all-purchases-link"' in overview
         body = client_in_programme.get(reverse("supply_chain:orders")).content.decode()
         row = body[body.index("CHC-1", body.index("Buyer of record")) :]
         row = row[: row.index("</tr>")]

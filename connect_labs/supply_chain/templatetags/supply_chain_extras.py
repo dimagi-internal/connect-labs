@@ -176,6 +176,7 @@ CHECK_LABELS = {
     "stock_variance": "Ledger and count disagree",
     "stock_negative": "Dispensed more than was ever received",
     "stock_stockout": "No stock on hand",
+    "flw_short_for_week": "Cannot cover the visits before the next handout",
     "stock_below_minimum": "Below its own minimum",
     "stock_expiring": "Stock expiring soon or already expired",
     "delivery_after_stockout": "A delivery arrives after the stock runs out",

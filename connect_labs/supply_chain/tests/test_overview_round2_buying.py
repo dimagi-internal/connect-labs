@@ -100,10 +100,11 @@ class TestASplitTenderIsOneRow:
         response = client_in_program.get(reverse("supply_chain:overview"))
         assert response.status_code == 200
         body = response.content.decode()
-        assert body.count('data-testid="overview-row"') == 1
-        assert body.count('data-testid="row-partner"') == 3
-        assert re.search(r'data-state="waiting"[^>]*>.*?Savanna.*?Not ordered yet', body, re.S)
-        assert "North Star" in body and "Riverbend" in body
+        assert body.count('data-testid="buying-row"') == 1
+        row = body.split('data-testid="buying-row"')[1].split("</tr>")[0]
+        assert "North Star" in row and "Riverbend" in row and "Savanna" in row
+        waiting = body.split('data-group="Waiting on partners"')[1].split('data-testid="attention-group"')[0]
+        assert "Savanna has not ordered" in waiting
 
     def test_orders_list_has_a_partner_column_and_the_same_status_words(self, client_in_program, da, split):
         body = client_in_program.get(reverse("supply_chain:orders")).content.decode()
@@ -148,4 +149,7 @@ class TestNextMoveAgreesWithTheChaseList:
         order = ts._order(da, base, "PO-1")
         ts._ship(da, order, datetime.date(2026, 9, 5))
         body = client_in_program.get(reverse("supply_chain:overview")).content.decode()
-        assert "for the batch certificate" in body.split('id="supply-standing"')[1].split("</table>")[0]
+        assert (
+            "for the batch certificate"
+            in body.split('data-testid="buying-attention"')[1].split('data-testid="buying-stands"')[0]
+        )

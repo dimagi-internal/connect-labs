@@ -22,19 +22,23 @@ from django.views.generic import TemplateView
 
 # What each group of tabs is for, one line each (navigation.TAB_GROUPS names the groups).
 GROUP_LINES = (
-    ("", "Overview", "Where the program stands, and who to chase."),
+    ("", "Overview", "Buying and Distribution, each with what needs attention and where things stand."),
     (
         "Buying",
         "Buying",
         "Ask suppliers for prices, compare, choose, order and track the delivery. A few times a year.",
     ),
     (
-        "Distribution and stock",
-        "Distribution and stock",
-        "Where the stock is, what to hand out each week, and where it went. Weekly, and partly the local "
-        "partners' (LLOs') work.",
+        "Distribution",
+        "Distribution",
+        "Where the RUTF stock is, what to give each FLW this week, and what needs following up. Weekly, and "
+        "partly the local partners' (LLOs') work.",
     ),
-    ("Setup", "Setup", "The product, the organisations, who is told what, and who can act. Mostly once."),
+    (
+        "Setup",
+        "Setup",
+        "The local partners (LLOs), suppliers, product, who can act and who is told what. Mostly once.",
+    ),
 )
 
 # (key, title, what you do, view name, evidence key in the facts or None for "no tick, a recurring check")
@@ -78,8 +82,13 @@ MOMENTS = (
         "Every week",
         "While children are being treated.",
         (
-            ("plan", "Plan: what to issue each field worker", "plans", "supply_chain:plan"),
-            ("distribution", "Distribution: hand it out and confirm it", "handouts", "supply_chain:distribution"),
+            ("plan", "This week: what to give each FLW, with the working", "plans", "supply_chain:this_week"),
+            (
+                "distribution",
+                "Stock by LLO: where the RUTF is, and confirm the handouts",
+                "handouts",
+                "supply_chain:stock_by_llo",
+            ),
             ("issues", "Issues: follow up anything missing, taken or damaged", "issues", "supply_chain:issues"),
         ),
     ),
@@ -90,11 +99,11 @@ MOMENTS = (
         (
             (
                 "chase",
-                "Read the chase list on Overview and ask whoever is holding things up",
+                "Read Needs attention on the Overview and ask whoever is holding things up",
                 None,
                 "supply_chain:overview",
             ),
-            ("enough", "Plan, running organisation view: will we have enough?", None, "supply_chain:plan_programme"),
+            ("enough", "Will we have enough RUTF? (the line on the Overview)", None, "supply_chain:plan_programme"),
             (
                 "buy_next",
                 "Decide when to start the next tender",
@@ -110,39 +119,32 @@ ROLES = (
     (
         "lead",
         "Program lead",
-        "Runs the program for the funder: buying, partners and the whole picture.",
+        "Runs the program for the funder: buying, local partners and the whole picture.",
         (
             ("supply_chain:overview", "Overview"),
             ("supply_chain:purchases", "Purchases"),
-            ("supply_chain:partners", "Partners"),
-            ("supply_chain:plan_programme", "Plan, running organisation view"),
-            ("supply_chain:flow", "Where it went"),
+            ("supply_chain:stock_by_llo", "Stock by LLO"),
+            ("supply_chain:partners", "LLOs"),
             ("supply_chain:alerts", "Alerts"),
         ),
     ),
     (
         "manager",
         "LLO manager",
-        "Runs one local partner's stock: its stores and its supervisors.",
+        "Runs one local partner's RUTF stock: its stock locations and its supervisors.",
         (
-            ("supply_chain:plan", "Plan, supervisor weekly view"),
-            ("supply_chain:plan_stores", "Plan, store manager view"),
-            ("supply_chain:distribution", "Distribution"),
+            ("supply_chain:stock_by_llo", "Stock by LLO"),
+            ("supply_chain:this_week", "This week"),
             ("supply_chain:issues", "Issues"),
-            ("supply_chain:workers", "Stock review"),
-            ("supply_chain:flow", "Where it went"),
-            ("supply_chain:network", "Network"),
         ),
     ),
     (
         "supervisor",
         "Supervisor",
-        "Looks after a group of field workers (FLWs) for a local partner.",
+        "Looks after a group of FLWs for a local partner.",
         (
-            ("supply_chain:plan", "Plan, supervisor weekly view"),
-            ("supply_chain:distribution", "Distribution"),
+            ("supply_chain:this_week", "This week"),
             ("supply_chain:issues", "Issues"),
-            ("supply_chain:workers", "Stock review"),
         ),
     ),
 )

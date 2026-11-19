@@ -40,7 +40,7 @@ def test_a_failed_alert_is_on_the_overview_chase_list_and_clears_when_it_works(d
         delivery_note="Your Open Chat Studio connection has expired.",
     )
     body = _home(home_client)
-    assert 'data-testid="chase-list"' in body
+    assert 'data-group="Alerts that could not be sent"' in body
     assert "An alert could not be sent" in body and "Partner stock alerts" in body
     AlertNotice.objects.create(
         subscription=sub,

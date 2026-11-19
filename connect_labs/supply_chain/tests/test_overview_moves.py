@@ -23,7 +23,7 @@ from connect_labs.supply_chain.templatetags.supply_chain_extras import (
     short_day,
 )
 from connect_labs.supply_chain.tests import rehearsal_world
-from connect_labs.supply_chain.tests.rehearsal_world import PROGRAM, TODAY, _contract, _held_on_our_form_m, _text, op
+from connect_labs.supply_chain.tests.rehearsal_world import PROGRAM, TODAY, _contract, _held_on_our_form_m, op
 
 # The world's fixtures, shared rather than copied.
 da = rehearsal_world.da
@@ -46,8 +46,8 @@ def test_waiting_on_labels_read_alike():
 def test_a_held_document_makes_the_orders_move_ours(da, world, client_in_program):
     _held_on_our_form_m(da, world)
     body = client_in_program.get(reverse("supply_chain:home")).content.decode()
-    assert 'data-testid="whose-us" data-count="1">To do 1<' in body
-    assert "Provide 1 document to " in body
+    waiting = body.split('data-group="Waiting on us"')[1].split('data-testid="attention-group"')[0]
+    assert "Provide 1 document to " in waiting and '<span class="tabular-nums">1</span>' in waiting
 
 
 class TestTheOverview:
@@ -127,12 +127,6 @@ class TestTheOverviewAgreesWithTheOrderPage:
         assert row.stage.endswith("at customs, held")
         assert "waiting on us" not in row.stage
         assert "in transit" not in row.stage
-
-    def test_the_chain_s_dispatched_tile_says_so_too(self, da, world, client_in_program):
-        _held_on_our_form_m(da, world)
-        body = client_in_program.get(reverse("supply_chain:home")).content.decode()
-        assert "1 at customs — held, waiting on us · not yet stock on hand" in _text(body)
-        assert "in transit — not yet stock on hand" not in _text(body)
 
 
 def _standing():
@@ -246,28 +240,20 @@ class TestMoveCounts:
     def test_a_row_with_no_moves_counts_nothing(self):
         assert move_counts([_standing_row(), _standing_row()]) == {"ours": 0, "theirs": 0}
 
-    def test_the_overview_heading_carries_the_count_its_rows_give(self, da, world, client_in_program):
+    def test_the_overview_group_carries_the_count_its_rows_give(self, da, world, client_in_program):
         _held_on_our_form_m(da, world)
         expected = move_counts(standing_rows(PROGRAM, TODAY))["ours"]
         assert expected >= 1
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
-        count = _text(re.search(r'data-testid="standing-our-moves">(.*?)</div>', body, re.S).group(1))
-        assert count.startswith(f"{expected} to do in Buying")
-        assert "on you" not in count
+        waiting = body.split('data-group="Waiting on us"')[1].split('data-testid="attention-group"')[0]
+        assert re.search(rf'Waiting on us <span class="tabular-nums">{expected}</span>', body)
+        assert waiting.count('data-testid="attention-item"') == expected
 
     def test_the_page_title_names_the_page_not_just_connect(self, da, world, client_in_program):
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
         assert "<title>Overview — Supply</title>" in body
         checks = client_in_program.get(reverse("supply_chain:checks")).content.decode()
         assert re.search(r"<title>[^<]+ — Supply</title>", checks)
-
-    def test_each_rows_whose_chips_sum_to_the_heading(self, da, world, client_in_program):
-        _held_on_our_form_m(da, world)
-        totals = move_counts(standing_rows(PROGRAM, TODAY))
-        body = client_in_program.get(reverse("supply_chain:home")).content.decode()
-        ours = sum(int(n) for n in re.findall(r'data-testid="whose-us" data-count="(\d+)"', body))
-        theirs = sum(int(n) for n in re.findall(r'data-testid="whose-suppliers" data-count="(\d+)"', body))
-        assert (ours, theirs) == (totals["ours"], totals["theirs"])
 
 
 class TestMoneyStaysOnOneLine:

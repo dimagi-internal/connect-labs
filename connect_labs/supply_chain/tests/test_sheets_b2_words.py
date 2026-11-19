@@ -165,11 +165,6 @@ def test_the_overview_chip_is_the_quote_count_and_the_priced_count_wraps_beneath
     _quote(da, world, duties_basis="included")
     row = next(r for r in _tender_rows(reality.PROGRAM, None, None) if r.tender_id == world["tender"]["id"])
     assert re.fullmatch(r"1 quote( · 1 with a landed price)?", row.quotes_chip)
+    # The Overview no longer carries the chip (round 3): the quotes are on the purchase page.
     body = client_in_program.get(reverse("supply_chain:home")).content.decode()
-    chip = _text(re.search(r'data-testid="row-quotes"[^>]*>(.*?)</span>', body, re.S).group(1))
-    count, _, priced = row.quotes_chip.partition(" · ")
-    assert chip == count == "1 quote"
-    if priced:
-        shown = _text(re.search(r'data-testid="row-quotes-priced"[^>]*>(.*?)</span>', body, re.S).group(1))
-        assert shown == priced
-    assert 'data-testid="row-comparable"' not in body
+    assert 'data-testid="row-quotes"' not in body and 'data-testid="row-comparable"' not in body

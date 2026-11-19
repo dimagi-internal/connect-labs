@@ -11,6 +11,7 @@ from django.template import Context, Template
 from connect_labs.supply_chain.navigation import (
     GLOSSARY,
     GROUP_OF_TAB,
+    MENU_GROUPS,
     PAGE_PURPOSE,
     SUPPLY_TABS,
     TAB_GROUPS,
@@ -74,8 +75,8 @@ def test_the_header_draws_each_group_under_its_name(client_in_programme):
     from django.urls import reverse
 
     body = client_in_programme.get(reverse("supply_chain:catalogue")).content.decode()
-    assert body.count('data-testid="supply-tab-group"') == len(TAB_GROUPS)
-    assert 'data-group="Buying"' in body and 'data-group="Distribution and stock"' in body
+    assert body.count('data-testid="supply-tab-group"') == len(MENU_GROUPS)
+    assert 'data-group="Buying"' in body and 'data-group="Distribution"' in body
     assert 'data-testid="page-purpose"' in body and "What you buy." in body
 
 

@@ -704,8 +704,9 @@ class TestATenderIsAwardedOnceEveryLineIs:
 
     def test_the_overview_and_tender_page_say_awarded(self, client_in_programme, chain):
         overview = client_in_programme.get(reverse("supply_chain:home")).content.decode()
-        # Awarded and ordered: on the overview it is its order's row, "from" the tender.
-        assert f"from {chain['tender']['label']}" in overview
+        # Awarded and ordered: on the overview it is the purchase's row, linking to the purchase page.
+        table = overview.split('data-testid="buying-table"')[1].split("</table>")[0]
+        assert chain["tender"]["label"] in table
         page = client_in_programme.get(
             reverse("supply_chain:procurement_tender_detail", args=[chain["tender"]["id"]])
         ).content.decode()

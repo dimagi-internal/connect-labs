@@ -2,7 +2,7 @@
 
 {% comment %}
 "Start here": what each group of tabs is for, the steps by moment (each linking to its page, ticked from the
-program's own records, supply_chain/start_here.py), and where each kind of person goes. A side-menu item;
+program's own records, supply_chain/start_here.py; a plain list, no ticks), and where each kind of person goes. A side-menu item;
 nothing sends anyone through it.
 {% endcomment %}
 
@@ -31,10 +31,9 @@ nothing sends anyone through it.
       <h3 class="border-b border-gray-100 px-4 py-2 text-sm font-semibold text-gray-900">{{ moment.title }} <span class="font-normal text-gray-600">· {{ moment.when }}</span></h3>
       <ol class="divide-y divide-gray-100">
         {% for step in moment.steps %}
-        <li class="flex flex-wrap items-baseline gap-x-3 px-4 py-2 text-sm{% if step == moment.next %} bg-indigo-50{% endif %}" data-testid="start-step" data-state="{% if step.done is None %}check{% elif step.done %}done{% elif step == moment.next %}next{% else %}todo{% endif %}">
-          <span class="w-5 shrink-0 text-center">{% if step.done %}<span class="text-teal-700" title="Done">&#10003;<span class="sr-only"> done</span></span>{% elif step.done is None %}<span class="text-gray-600" aria-hidden="true">&#8635;</span>{% else %}<span class="text-gray-600" aria-hidden="true">&#9675;</span>{% endif %}</span>
+        <li class="flex flex-wrap items-baseline gap-x-3 px-4 py-2 text-sm" data-testid="start-step">
+          <span class="w-5 shrink-0 text-right text-gray-600">{{ forloop.counter }}.</span>
           <a href="{{ step.url }}" class="font-medium text-brand-indigo hover:underline">{{ step.title }}</a>
-          {% if step == moment.next %}<span class="text-xs font-semibold uppercase tracking-wide text-brand-indigo">Next</span>{% endif %}
           {% if step.note %}<span class="text-xs text-gray-600">{{ step.note }}</span>{% endif %}
         </li>
         {% endfor %}

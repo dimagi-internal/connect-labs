@@ -46,7 +46,7 @@ DEFAULT_AFTER = "supply_chain:flow"
 def _builtin_names() -> tuple[str, ...]:
     from connect_labs.supply_chain.navigation import SUPPLY_TABS
 
-    return tuple(name for name, _ in SUPPLY_TABS)
+    return tuple(name for name, _ in SUPPLY_TABS)  # every tab, compact menu's included
 
 
 def _accepted_names() -> set[str]:

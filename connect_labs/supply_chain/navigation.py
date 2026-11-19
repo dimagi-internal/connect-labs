@@ -65,6 +65,52 @@ TAB_GROUPS = (
 
 SUPPLY_TABS = tuple(tab for _, tabs in TAB_GROUPS for tab in tabs)
 
+# THE MENU a program sees unless it chose the compact layout (round 3, step 3): the work, not the record types.
+# Buying is Purchases; Distribution is how much each LLO has, the week's handout and the issues; Setup is the lists a
+# program keeps up to date. SUPPLY_TABS above stays the registry of every tab (Settings' switches, saved landings,
+# pins and the compact menu all name them); the pages the new ones replace are still reachable by address and
+# redirect (retired_pages.py), and sit under the tab that replaces them.
+MENU_GROUPS = (
+    ("", (("supply_chain:home", "Overview"), ("supply_chain:start_here", "Start here"))),
+    ("Buying", (("supply_chain:purchases", "Purchases"),)),
+    (
+        "Distribution",
+        (
+            ("supply_chain:stock_by_llo", "Stock by LLO"),
+            ("supply_chain:this_week", "This week"),
+            ("supply_chain:issues", "Issues"),
+            # Off unless a programme turns it on (config.py: SUPPLY defaults).
+            ("supply_chain:tests", "Tests"),
+        ),
+    ),
+    (
+        "Setup",
+        (
+            ("supply_chain:partners", "LLOs"),
+            ("supply_chain:suppliers", "Suppliers"),
+            ("supply_chain:catalogue", "Product"),
+            ("supply_chain:programme_team", "Access"),
+            ("supply_chain:alerts", "Alerts"),
+        ),
+    ),
+)
+MENU_TABS = tuple(tab for _, tabs in MENU_GROUPS for tab in tabs)
+MENU_GROUP_OF = {name: group for group, tabs in MENU_GROUPS for name, _ in tabs}
+
+# The tabs the new menu no longer has, and the tab that now carries each one's pages (non-compact only).
+RETIRED_TO = {
+    "supply_chain:network": "supply_chain:stock_by_llo",
+    "supply_chain:programme_map": "supply_chain:stock_by_llo",
+    "supply_chain:stock": "supply_chain:stock_by_llo",
+    "supply_chain:workers": "supply_chain:stock_by_llo",
+    "supply_chain:flow": "supply_chain:stock_by_llo",
+    "supply_chain:distribution": "supply_chain:this_week",
+    "supply_chain:plan": "supply_chain:this_week",
+    "supply_chain:plan_programme": "supply_chain:purchases",
+    "supply_chain:organisations": "supply_chain:partners",
+    "supply_chain:update_links": "supply_chain:programme_team",
+}
+
 # THE COMPACT LAYOUT -- a programme's own choice (`compact_layout` in its Supply settings, config.py), made for the
 # chlorine programmes (Akash, 2026-11-17: "too much text everywhere", "less tabs are fine", "only for CL and not all
 # supply"). Every other programme keeps the menu above and the pages as they are.
@@ -139,9 +185,13 @@ LLO_TABS = {"supply_chain:stock_by_llo", "supply_chain:this_week"}
 LEGACY_BUYING_TABS = {"supply_chain:procurement_tender_board", "supply_chain:orders"}
 
 
-def canonical_tab(name):
-    """A saved tab name as the tab it is now: Sourcing and Orders are Purchases."""
-    return "supply_chain:purchases" if name in LEGACY_BUYING_TABS else name
+def canonical_tab(name, request=None):
+    """A saved tab name as the tab it is now: Sourcing and Orders are Purchases; in the new menu, so are the
+    tabs RETIRED_TO names (a program that chose the compact layout keeps its own)."""
+    name = "supply_chain:purchases" if name in LEGACY_BUYING_TABS else name
+    if request is not None and not compact_layout(request):
+        return RETIRED_TO.get(name, name)
+    return name
 
 
 GROUP_OF_TAB = {name: group for group, tabs in TAB_GROUPS for name, _ in tabs}
@@ -482,10 +532,16 @@ def pinned_replacement(request, tab_name: str) -> dict | None:
     return None
 
 
+def tab_of(request, view_name: str) -> str:
+    """The tab a view sits under: the compact menu's own, else the new menu's (RETIRED_TO maps the old tabs on)."""
+    tab = TAB_FOR_VIEW.get(view_name, view_name)
+    return tab if compact_layout(request) else RETIRED_TO.get(tab, tab)
+
+
 def supply_tabs(request) -> list[dict]:
     match = request.resolver_match
     own_view = match.view_name if match else ""
-    current = TAB_FOR_VIEW.get(own_view, own_view)
+    current = tab_of(request, own_view)
     current_slug = (match.kwargs or {}).get("slug") if match and current == "supply_chain:workflow_view" else None
     pins = _pinned(request)
     replacing = {p.replaces: p for p in pins if p.replaces}
@@ -509,11 +565,13 @@ def supply_tabs(request) -> list[dict]:
         return TAB_ICONS.get(name, default) if compact else ""
 
     def group_of(name):
-        group = GROUP_OF_TAB.get(name, "")
-        return COMPACT_GROUP_NAMES.get(group, group) if compact else group
+        if not compact:
+            return MENU_GROUP_OF.get(name, "")
+        return COMPACT_GROUP_NAMES.get(GROUP_OF_TAB.get(name, ""), GROUP_OF_TAB.get(name, ""))
 
-    ordered = SUPPLY_TABS
+    ordered = MENU_TABS
     if compact:
+        ordered = SUPPLY_TABS
         # Each family's pages together; a tab in no family keeps its place.
         ordered = _compact_order(SUPPLY_TABS, {name: i for i, name in enumerate(COMPACT_ORDER)})
 
@@ -556,6 +614,8 @@ def supply_tabs(request) -> list[dict]:
     # the stock pages; one naming a tab that is not there goes at the end.
     for pin in (p for p in pins if not p.replaces):
         after = "supply_chain:purchases" if pin.after in LEGACY_BUYING_TABS else pin.after
+        if not compact:
+            after = RETIRED_TO.get(after, after)
         anchor = after if after in keys else f"pin:{after}"
         at = keys.index(anchor) + 1 if anchor in keys else len(tabs)
         # After any added tab already placed behind the same anchor, so position order holds.

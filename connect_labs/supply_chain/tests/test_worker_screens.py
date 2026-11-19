@@ -343,22 +343,19 @@ def test_a_receipt_no_store_recorded_is_a_fact_on_the_row(client_in_program, wor
     assert f"Reports receiving 50 sachets on {day}; no store recorded a delivery" in text
 
 
-def test_network_and_overview_print_the_same_below_minimum_headline(client_in_program, world):
-    """#2344: one count of workers in trouble, worded once, on every screen; checks are "open checks"."""
+def test_the_network_prints_the_below_minimum_headline_once(client_in_program, world):
+    """#2344: one count of workers in trouble, worded once; checks are "open checks". The Overview no longer
+    prints a second copy (round 3: each figure on one page)."""
     # Baobab's minimum is far above what it holds at its pace; acacia has none set.
     SupplyPoint.objects.filter(pk=world["worker-baobab"].pk).update(min_months_of_stock=Decimal("100"))
     tree_line = re.search(
         r'data-testid="workers-below-minimum">(.*?)</span></span>', get(client_in_program, "network"), re.S
     )
-    overview = get(client_in_program, "overview")
-    overview_line = re.search(r'data-testid="workers-below-minimum">(.*?)</div>', overview, re.S)
 
-    assert tree_line and overview_line
+    assert tree_line
     headline = text_of(tree_line.group(1)).strip().lstrip("· ")
     assert headline == "1 of 2 workers below minimum at their own 14-day pace"
-    assert text_of(overview_line.group(1)).strip() == headline
-    assert re.search(r'data-testid="open-checks"[^>]*>Every check, with its facts', overview, re.S)
-    assert "Checks <span" not in overview
+    assert 'data-testid="workers-below-minimum"' not in get(client_in_program, "overview")
 
 
 # ---- Network -------------------------------------------------------------

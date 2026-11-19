@@ -25,7 +25,7 @@ Map and Workers one after another. A row opens that LLO's stock page. The figure
 <div class="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5" data-testid="llo-roll-up">
   <div class="stat-tile"><div class="stat-tile-label">LLOs</div><div class="stat-tile-value">{{ roll.llos }}</div></div>
   <div class="stat-tile"><div class="stat-tile-label">FLWs</div><div class="stat-tile-value">{{ roll.flws }}</div></div>
-  <div class="stat-tile"><div class="stat-tile-label">FLWs low</div><div class="stat-tile-value">{{ roll.flws_low }}</div></div>
+  <div class="stat-tile"><div class="stat-tile-label">FLWs short for the week</div><div class="stat-tile-value">{{ roll.flws_low }}</div></div>
   <div class="stat-tile"><div class="stat-tile-label">Open issues</div><div class="stat-tile-value">{{ roll.open_issues }}</div></div>
   <div class="stat-tile"><div class="stat-tile-label">Handouts to confirm</div><div class="stat-tile-value">{{ roll.unconfirmed_handouts }}</div></div>
 </div>
@@ -44,7 +44,7 @@ Map and Workers one after another. A row opens that LLO's stock page. The figure
         <td class="px-4 py-2 text-sm"><a class="font-medium text-brand-indigo hover:underline" href="{{ r.url }}">{{ r.name }}</a></td>
         <td class="px-4 py-2 text-sm text-gray-700">{{ r.stock_text }}</td>
         <td class="px-4 py-2 text-sm text-gray-700">{{ r.locations }}</td>
-        <td class="px-4 py-2 text-sm text-gray-700">{{ r.flws }}{% if r.flws_low %} <span class="text-message-warning-text">({{ r.flws_low }} low)</span>{% endif %}</td>
+        <td class="px-4 py-2 text-sm text-gray-700">{{ r.flws }}{% if r.flws_low %} <span class="text-message-warning-text">({{ r.flws_low }} short)</span>{% endif %}</td>
         <td class="px-4 py-2 text-sm text-gray-700">{{ r.open_issues }}</td>
         <td class="px-4 py-2 text-sm text-gray-700">{{ r.next_delivery|default:"none on the way" }}</td>
       </tr>

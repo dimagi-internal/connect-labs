@@ -76,4 +76,5 @@ class TestTheAwaitingCountIsTheTablesCount:
         _open(da, base["tender"]["id"])
         _outreach(da, base["tender"]["id"], base["supplier"]["id"], "2026-09-01")
         body = _home(home_client)
-        assert "1 awaiting a reply on 1 open tender" in body
+        waiting = body.split('data-group="Waiting on suppliers"')[1].split('data-testid="attention-group"')[0]
+        assert "1 supplier has not replied" in waiting

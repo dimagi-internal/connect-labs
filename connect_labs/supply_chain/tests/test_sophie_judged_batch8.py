@@ -79,21 +79,6 @@ class TestTheAgentBadge:
         assert _bare(pill) == "AI assistant"  # since DDD 003 batch 7
         assert re.search(r'<i data-testid="ai-glyph" [^>]*role="img" aria-label="AI"', pill)
 
-    def test_the_overview_badge_says_what_was_recorded_on_hover(self, da, base, ace, home_client):
-        _ace_quote(da, base, ace)
-        standing = batch6._standing(_home(home_client))
-        badge = re.search(r'data-ai data-testid="ai-badge" title="([^"]*)">(<span[^>]*></span>[^<]*)</span>', standing)
-        assert _bare(badge.group(2)) == "AI assistant" and 'data-src="ai"' in badge.group(2)
-        assert badge.group(1) == "ACE recorded Quote · Northwind Foods from a forwarded email"
-
-    def test_a_person_via_ai_gets_no_second_marker(self, da, base, sophie, home_client):
-        _quote_with(da, base["tender"]["id"], base["supplier"]["id"], AUG_20, {}, channel="mcp", actor=sophie)
-        standing = batch6._standing(_home(home_client))
-        badge = re.search(r'data-ai data-testid="ai-badge" title="([^"]*)">(<span[^>]*></span>[^<]*)</span>', standing)
-        assert _bare(badge.group(2)).startswith("via AI")
-        assert "ai-glyph" not in badge.group(2)
-        assert "via an AI assistant recorded Quote · Northwind Foods" in badge.group(1)
-
 
 # ---- 5. the timeline: the button says what a click does; the new value is bold
 
@@ -192,5 +177,5 @@ def test_the_hooks_stay(da, base, order, client_in_program, home_client):
     for hook in ("timeline", "revision-line", "actor-badge", "source-excerpt"):
         assert f'data-testid="{hook}"' in body
     home = _home(home_client)
-    for hook in ("overview-row", "as-of-control"):
+    for hook in ("buying-row", "as-of-control"):
         assert f'data-testid="{hook}"' in home

@@ -493,10 +493,10 @@ def test_a_programmes_map_draws_that_programme_and_no_other(client, django_user_
     assert payload["cover_url"] == reverse("supply_chain:programme_map_cover")
     assert "A Store In Two" not in json.dumps(payload)
     assert "All my programs" not in response.content.decode()
-    # The same supply header and tabs as every other supply page, with Map the current tab.
+    # The same supply header and tabs as every other supply page; the map sits under Stock by LLO (round 3).
     body = response.content.decode()
     assert 'data-testid="supply-banner"' in body
-    assert re.search(r'bg-brand-indigo text-white[^"]*">Map</a>', body)
+    assert re.search(r'bg-brand-indigo text-white[^"]*">Stock by LLO</a>', body)
 
 
 def test_a_programmes_map_sits_in_the_supply_headers_column(client, django_user_model, in_programme):

@@ -87,10 +87,6 @@ def _colgroup(body):
 
 @pytest.mark.django_db
 class TestAsOf:
-    def test_the_last_change_is_the_day_alone(self, da, base, home_client):
-        standing = _standing(_home(home_client, as_of="2026-08-20"))
-        assert re.search(r'data-testid="last-change"[^>]*>3 Aug 2026<', standing)
-        assert "days ago" not in standing and 'data-testid="last-change-day"' not in standing
 
     def test_the_applied_day_is_said_and_the_native_field_steps_back(self, da, base, home_client):
         past = _home(home_client, as_of="2026-08-20")
@@ -137,7 +133,7 @@ class TestTheProgramHeading:
         # Before the first request: the test client builds its middleware chain once.
         settings.MIDDLEWARE = [*settings.MIDDLEWARE, f"{__name__}._NamedProgramMiddleware"]
         body = _home(home_client)
-        assert 'data-testid="overview-row"' in body
+        assert 'data-testid="overview"' in body
         assert self.HEADING not in body
 
 

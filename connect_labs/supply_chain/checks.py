@@ -102,6 +102,9 @@ KIND_CATEGORIES = {
     # threshold -- a derived figure crossed a bound stored in the data
     "stock_stockout": "threshold",
     "stock_below_minimum": "threshold",
+    # An FLW who cannot cover the visits due before their next handout (weekly.py). Opt-in like the planning
+    # checks, because it runs the plan.
+    "flw_short_for_week": "threshold",
     # The bound is the product's own warning period before a batch's expiry date.
     "stock_expiring": "threshold",
     # Looking ahead, from the forecast and the tender's start-by date (partners/planning.py). Run only
@@ -1175,9 +1178,11 @@ def _stock(access, as_of, opportunity_id=None):
                     as_of=as_of,
                 )
             )
-        elif row["status"] == "stockout":
+        elif row["status"] == "stockout" and row["kind"] != "user_held":
+            # An FLW is judged by the weekly-cycle rule (weekly.py), not by months of stock: ending a week at or
+            # near zero is the plan, so these two flagged every FLW every weekend.
             out.append(_check("stock_stockout", **subject, facts={"kind": row["kind"], **_stocked(row)}, as_of=as_of))
-        elif row["status"] == "below_min":
+        elif row["status"] == "below_min" and row["kind"] != "user_held":
             out.append(
                 _check(
                     "stock_below_minimum",

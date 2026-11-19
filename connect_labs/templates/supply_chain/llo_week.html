@@ -25,14 +25,37 @@ Distribution page's own actions, returning here.
     {% endif %}
   </div>
 
-  <section class="card_bg border-brand-border-light border" data-testid="week-flags">
-    <h2 class="text-lg font-semibold text-brand-deep-purple mb-2">Who to give to</h2>
-    <p class="text-sm text-gray-700">
-      {% if llo.flws_low %}{{ llo.flws_low|length }} of {{ llo.flws|length }} FLWs are low:
-      {% for f in llo.flws_low %}<a class="text-brand-indigo hover:underline" href="{{ f.url }}">{{ f.name }}</a> ({{ f.holds }}){% if not forloop.last %}, {% endif %}{% endfor %}.
-      {% else %}No FLW is low.{% endif %}
-      <a class="ml-1 text-brand-indigo hover:underline" href="{{ llo.links.plan }}" data-testid="plan-link">What to give each FLW (the plan)</a>
-    </p>
+  <section class="card_bg border-brand-border-light border" data-testid="week-plan">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-1">What to give each FLW</h2>
+    {% if llo.plan and llo.plan.groups %}
+    <p class="mb-2 text-sm text-gray-700" data-testid="plan-summary">For the handout on {{ llo.plan.handout }}{% if llo.plan.planned %} (the next one planned){% endif %}: {{ llo.plan.total|floatformat:"0g" }} sachets in all.
+      {% if llo.flws_low %}{{ llo.flws_low|length }} of {{ llo.flws|length }} FLWs hold less than they need before the next handout.{% else %}Every FLW holds enough for the visits before the next handout.{% endif %}
+      {% if llo.plan.data_to %}<span class="text-xs text-gray-600">Visit data runs to {{ llo.plan.data_to }}.</span>{% endif %}</p>
+    {% for g in llo.plan.groups %}
+    <h3 class="mt-3 text-sm font-semibold text-gray-900">Pack at {{ g.place }}: {{ g.to_issue|floatformat:"0g" }} sachets</h3>
+    <div class="overflow-x-auto" tabindex="0" role="region" aria-label="{{ g.place }}, scrolls sideways">
+      <table class="w-full min-w-[34rem] divide-y divide-gray-200" data-testid="plan-table">
+        <thead><tr><th class="px-3 py-2 text-left">FLW</th><th class="px-3 py-2 text-left">Children due</th><th class="px-3 py-2 text-left">Needs</th><th class="px-3 py-2 text-left">Holds</th><th class="px-3 py-2 text-left">Give</th></tr></thead>
+        <tbody class="divide-y divide-gray-200">
+          {% for r in g.rows %}
+          <tr data-testid="plan-row">
+            <td class="px-3 py-2 text-sm align-top"><a class="text-brand-indigo hover:underline" href="{{ r.url }}">{{ r.name }}</a>{% if r.short %} <span class="text-xs text-message-warning-text">short</span>{% endif %}
+              <details class="mt-1 text-xs text-gray-700" data-testid="plan-working"><summary class="cursor-pointer text-brand-indigo">How this works out</summary>
+                <ol class="mt-1 flex flex-col gap-1">{% for st in r.steps %}<li><span class="font-medium">{{ st.sign }} {{ st.label }}:</span> {{ st.value }} <span class="text-gray-600">({{ st.source }})</span></li>{% endfor %}</ol>
+              </details></td>
+            <td class="px-3 py-2 text-sm align-top">{{ r.children|default_if_none:"—" }}</td>
+            <td class="px-3 py-2 text-sm align-top">{{ r.need|floatformat:"0g" }}</td>
+            <td class="px-3 py-2 text-sm align-top">{% if r.held is None %}not known{% else %}{{ r.held|floatformat:"0g" }}{% endif %}</td>
+            <td class="px-3 py-2 text-sm align-top font-medium">{{ r.to_issue|floatformat:"0g" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="text-sm text-gray-600">No plan can be worked out yet: Supply has no visits to count from.</p>
+    {% endif %}
   </section>
 
   <section class="card_bg border-brand-border-light border" data-testid="week-handouts">
@@ -57,7 +80,6 @@ Distribution page's own actions, returning here.
         </tbody>
       </table>
     </div>
-    <a class="mt-2 inline-block text-sm text-brand-indigo hover:underline" href="{{ llo.links.distribution }}">Every handout of this LLO</a>
   </section>
 
   <section class="card_bg border-brand-border-light border" data-testid="week-issues">

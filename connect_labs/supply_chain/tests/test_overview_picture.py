@@ -223,10 +223,14 @@ class TestThePage:
         _outreach(da, base["tender"]["id"], base["supplier"]["id"], "2026-09-01")
         body = _home(home_client)
         assert ">Overview</h1>" in body and ">Procurements</h1>" not in body
-        assert 'data-testid="next-step-line"' in body and "Tender: collecting quotes" in body
-        assert body.index('data-testid="next-step"') < body.index('data-testid="chase-list"')
-        assert body.index('data-testid="chase-list"') < body.index('data-testid="distribution-overview"')
-        assert body.index('data-testid="distribution-overview"') < body.index('data-testid="standing-table"')
+        # Two halves, each with what needs attention above where things stand (round 3, step 3).
+        order = [
+            'data-testid="buying-attention"',
+            'data-testid="buying-stands"',
+            'data-testid="distribution-attention"',
+            'data-testid="distribution-stands"',
+        ]
+        assert [body.index(t) for t in order] == sorted(body.index(t) for t in order)
 
     def test_the_chase_header_counts_the_rows_it_shows(self, da, base, home_client):
         import re
@@ -234,13 +238,15 @@ class TestThePage:
         _open(da, base["tender"]["id"])
         _outreach(da, base["tender"]["id"], base["supplier"]["id"], "2026-09-01")
         body = _home(home_client)
-        header = re.search(r'To chase.*?tabular-nums text-gray-600">(\d+)</span>', body, re.S)
-        assert header, "the chase list has a header count"
-        assert int(header.group(1)) == body.count('data-testid="chase-item"')
+        attention = body.split('data-testid="buying-attention"')[1].split('data-testid="buying-stands"')[0]
+        counts = re.findall(r'tabular-nums">(\d+)</span>', attention)
+        assert counts, "each group of Needs attention has a count"
+        assert sum(int(n) for n in counts) == attention.count('data-testid="attention-item"')
 
     def test_open_issues_no_longer_say_they_are_not_recorded(self, da, base, home_client):
         body = _home(home_client)
-        assert 'data-testid="issues-not-recorded"' not in body and "No open issues." in body
+        assert 'data-testid="issues-not-recorded"' not in body
+        assert "Nothing in Distribution needs attention." in body
 
 
 class TestAnOpenTenderWinsOverReceivedOrders:

@@ -26,7 +26,7 @@ def _stock_text(totals: dict) -> str:
     return " and ".join(f"{amount:,.0f} {unit}".strip() for unit, amount in sorted(totals.items()))
 
 
-def partner_status(program_id) -> dict:
+def partner_status(program_id, *, memo=None) -> dict:
     """{org id: {"stock_text", "workers_running_out", "workers", "open_issues"}} for every partner with a place."""
     owner = issues.partner_by_point(program_id)
     totals: dict = defaultdict(lambda: defaultdict(Decimal))
@@ -39,10 +39,15 @@ def partner_status(program_id) -> dict:
             continue
         if kinds.get(row["supply_point_id"]) == "user_held":
             workers[org] += 1
-            if row["status"] in RUNNING_OUT:
-                running_out[org] += 1
         elif isinstance(row["on_hand"], Quantity):
             totals[org][row["on_hand"].unit or ""] += row["on_hand"].amount
+    # "Running out" is the weekly-cycle rule (weekly.py): an FLW who cannot cover the visits due before their next
+    # handout. Months of stock flagged every FLW every weekend.
+    from connect_labs.supply_chain import weekly
+
+    for org, rows in weekly.short_by_org(program_id, owner, memo=memo).items():
+        if org is not None:
+            running_out[org] += len(rows)
     open_issues = {p["org_id"]: p["total_open"] for p in issues.open_issue_summary(program_id)["by_partner"]}
     orgs = set(totals) | set(workers) | set(open_issues)
     return {
