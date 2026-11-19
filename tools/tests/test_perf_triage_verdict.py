@@ -167,6 +167,40 @@ def test_a_page_that_is_all_boots_gets_its_own_verdict():
     assert "do not hunt a request path" in verdict["next_step"]
 
 
+def test_boots_with_worker_kills_point_at_the_request_that_filled_memory():
+    """2026-11-19 06:02Z: memory hit 100%, two workers were SIGKILLed, and the mem70
+    scale-outs' boots paged. "Do not hunt a request path" was the wrong advice: a
+    snapshot preview had filled memory."""
+    snapshot = _boot_snapshot()
+    snapshot["boot_shaped_pages"][0].update(
+        perf_triage._oom_evidence(
+            [
+                {"Timestamp": "2026-11-05T01:44:00-07:00", "Sum": 1.0},
+                {"Timestamp": "2026-11-05T01:45:00-07:00", "Sum": 0.0},
+                {"Timestamp": "2026-11-05T01:46:00-07:00", "Sum": 2.0},
+            ],
+            [{"Timestamp": "2026-11-05T01:43:00-07:00", "Maximum": 99.6}],
+        )
+    )
+    verdict = perf_triage.judge(snapshot)
+    assert verdict["verdict"] == "paged_by_oom_scale_out"
+    assert "do not hunt a request path" not in verdict["next_step"]
+    assert (
+        "WORKERS KILLED around labs-jj-web-cpu-high-actionable at 2026-11-05T08:51:25Z: 08:44 x1, 08:46 x2, "
+        "web memory peaked at 100%. The boots followed memory, not a routine scale-out."
+    ) in verdict["findings"]
+
+
+def test_boots_with_no_kills_stay_routine():
+    snapshot = _boot_snapshot()
+    snapshot["boot_shaped_pages"][0].update(
+        perf_triage._oom_evidence([{"Timestamp": "2026-11-05T01:44:00-07:00", "Sum": 0.0}], [])
+    )
+    verdict = perf_triage.judge(snapshot)
+    assert verdict["verdict"] == "paged_by_task_boots"
+    assert not any(f.startswith("WORKERS KILLED") for f in verdict["findings"])
+
+
 def test_a_second_unexplained_page_keeps_the_general_verdict():
     snapshot = _boot_snapshot()
     snapshot["paged_in_window"] = [_NOV5_PAGE, {"name": _NOV5_PAGE["name"], "at": "2026-11-05T07:00:00Z"}]

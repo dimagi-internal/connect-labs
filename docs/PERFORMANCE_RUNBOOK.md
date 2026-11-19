@@ -177,6 +177,12 @@ minutes. A single boot cannot reach 4 of 5. Two boots about 3 minutes apart can,
 scored 4 and paged: 2026-11-05 08:51Z (#2872). The low minute between boots is the tell, because a
 request pinning a running task does not drop to 2% and come back.
 
+**Boots are not always routine.** A `mem70` scale-out means memory rose, and if workers were
+OOM-killed in the same minutes, a request filled memory and the boots are its symptom. The tool then
+returns `paged_by_oom_scale_out` with a `WORKERS KILLED` line (kills and peak web memory around the
+page) instead of `paged_by_task_boots`; go to §8, then §3. 2026-11-19 06:02Z paged this way: a
+snapshot preview took web memory to 97–100%, two workers were killed, and both scale-outs followed.
+
 A boot-shaped page does not mean nothing happened. `labs-jj-web-mem70` scaling out means memory
 rose, so read memory and worker kills as below. It does mean there is no request path to hunt for
 this page. A task ECS replaced after a crash is not a scale-out, so it stays `paged_below_sustained`.
